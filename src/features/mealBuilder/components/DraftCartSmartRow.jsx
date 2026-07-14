@@ -25,6 +25,7 @@ export default function DraftCartSmartRow({
   onRemove,
   onDeepEdit,
   embedded = false,
+  variant = 'card',
 }) {
   const name = item.desc || item.name || 'Alimento';
   const provenance = resolveProvenanceFromDraftItem(item);
@@ -55,6 +56,52 @@ export default function DraftCartSmartRow({
   const handleAmountChange = (next) => {
     onUpdateAmount(item.id, next, selectedUnit);
   };
+
+  if (variant === 'compact') {
+    const Wrapper = embedded ? 'div' : 'li';
+    return (
+      <Wrapper
+        className={`flex min-w-0 max-w-full items-center gap-2.5 ${
+          embedded
+            ? 'rounded-lg border border-slate-800/80 bg-slate-950/50 px-2.5 py-2'
+            : 'rounded-xl border border-slate-800/80 bg-slate-950/60 px-2.5 py-2'
+        }`}
+        style={{ gap: '10px' }}
+      >
+        <FoodThumbnail
+          visual={visual}
+          name={visual.name}
+          sizeClassName="h-8 w-8"
+          className="shrink-0 rounded-lg ring-1 ring-white/[0.08]"
+        />
+        <button
+          type="button"
+          onClick={() => onDeepEdit?.(item)}
+          className="min-w-0 flex-1 truncate text-left text-sm font-medium text-slate-100 transition-colors hover:text-cyan-300"
+          title={name}
+        >
+          {name}
+        </button>
+        <AmountStepper
+          inputRef={amountInputRef}
+          value={multiplier}
+          onChange={handleAmountChange}
+          step={step}
+          unitLabel={unitLabel}
+          size="sm"
+          className="shrink-0 gap-1"
+        />
+        <button
+          type="button"
+          onClick={() => onRemove(item.id)}
+          aria-label={`Rimuovi ${name}`}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-transparent text-slate-500 transition-all hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 active:scale-90"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </Wrapper>
+    );
+  }
 
   const Wrapper = embedded ? 'div' : 'li';
 

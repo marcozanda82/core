@@ -113,6 +113,7 @@ function MealProposalItemRow({
   onSelectAlternative,
   onEditName,
   onEditGrams,
+  onRemoveItem,
 }) {
   const [open, setOpen] = useState(false);
   const hasAlternatives = !isEditing && Array.isArray(item.alternatives) && item.alternatives.length > 1;
@@ -147,6 +148,16 @@ function MealProposalItemRow({
             onChange={(e) => onEditGrams?.(itemIdx, e.target.value)}
           />
           <span className="kentu-meal-proposal-card__edit-grams-suffix">g</span>
+          <button
+            type="button"
+            className="kentu-meal-proposal-card__edit-remove"
+            disabled={disabled}
+            aria-label={`Rimuovi ${name}`}
+            title="Rimuovi alimento"
+            onClick={() => onRemoveItem?.(itemIdx)}
+          >
+            🗑️
+          </button>
         </div>
       </li>
     );
@@ -233,6 +244,7 @@ function MealProposalCard({
     : mealLabel(mealType);
   const items = Array.isArray(localProposal?.items) ? localProposal.items : [];
   const totals = formatMacroTotals(localProposal?.totals || sumItemMacros(items));
+  const canSaveOrConfirm = items.length > 0;
 
   const commitProposal = useCallback((nextProposal) => {
     setLocalProposal(nextProposal);
@@ -274,6 +286,15 @@ function MealProposalCard({
       ii === itemIndex ? { ...item, grams: parsed } : item
     ));
     setLocalProposal((prev) => ({ ...prev, items: nextItems }));
+  }, [items]);
+
+  const handleRemoveItem = useCallback((itemIndex) => {
+    const nextItems = items.filter((_, ii) => ii !== itemIndex);
+    setLocalProposal((prev) => ({
+      ...prev,
+      items: nextItems,
+      totals: sumItemMacros(nextItems),
+    }));
   }, [items]);
 
   const handleStartEdit = () => {
@@ -334,6 +355,7 @@ function MealProposalCard({
               onSelectAlternative={handleSelectAlternative}
               onEditName={handleEditName}
               onEditGrams={handleEditGrams}
+              onRemoveItem={handleRemoveItem}
             />
           ))}
         </ul>
@@ -345,7 +367,7 @@ function MealProposalCard({
             <KentuButton
               variant="primary"
               className="kentu-meal-proposal-card__save"
-              disabled={isLoaded}
+              disabled={isLoaded || !canSaveOrConfirm}
               onClick={handleSaveEdit}
             >
               Salva Modifiche
@@ -364,9 +386,9 @@ function MealProposalCard({
             <KentuButton
               variant="primary"
               className={`kentu-meal-proposal-card__confirm${isLoaded ? ' kentu-meal-proposal-card__confirm--loaded' : ''}`}
-              disabled={isLoaded}
+              disabled={isLoaded || !canSaveOrConfirm}
               onClick={() => {
-                if (isLoaded) return;
+                if (isLoaded || !canSaveOrConfirm) return;
                 onConfirm?.(localProposal, index, adviceId);
               }}
             >

@@ -1395,7 +1395,7 @@
 
 .kentu-meal-proposal-card__edit-fields {
   display: grid;
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: 1fr auto auto auto;
   gap: 8px;
   align-items: center;
   width: 100%;
@@ -1430,6 +1430,32 @@
   font-size: 0.72rem;
   font-weight: 700;
   color: rgba(125, 211, 252, 0.95);
+}
+
+.kentu-meal-proposal-card__edit-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.25);
+  color: #fecaca;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.kentu-meal-proposal-card__edit-remove:hover:not(:disabled) {
+  background: rgba(185, 28, 28, 0.45);
+  border-color: rgba(248, 113, 113, 0.65);
+}
+
+.kentu-meal-proposal-card__edit-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .kentu-meal-proposal-card__save,

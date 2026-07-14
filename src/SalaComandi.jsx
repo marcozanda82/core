@@ -12,7 +12,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import { useNavigate } from 'react-router-dom';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell, Sector } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell } from 'recharts';
 
 import { ref, get, set, update, push, onValue, remove } from 'firebase/database';
 
@@ -30,7 +30,6 @@ import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandT
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
 import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
-import { useTimelineDrag } from './hooks/useTimelineDrag';
 import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
@@ -105,6 +104,42 @@ import {
   WORKOUT_DURATION_MIN,
   WORKOUT_DURATION_MAX,
 } from './utils/durationMinutesInput';
+import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
+import { workoutActivityRequiresStrengthDetailNote } from './utils/workoutActivityNotes';
+import { calculateAge } from './utils/profileAge';
+import { stripUndefined } from './utils/firebasePayloadUtils';
+import { getCurrentTimeRoundedTo15Min } from './utils/decimalTimeUtils';
+import {
+  getStrategyKey,
+  mealIdFromCanonical,
+  normalizeAiMealTypeToStorageId,
+} from './utils/mealTypeNormalization';
+import { predictMealTypeFromHistory } from './utils/mealTypePrediction';
+import { buildComputedMealNodes } from './utils/mealNodeAggregation';
+import {
+  buildMealProposalConfirmMessage,
+  buildMealProposalLogEntries,
+  buildMealUpdateConfirmMessage,
+  replaceMealSlotInLog,
+  sumMealProposalMacroTotals,
+} from './utils/mealProposalBuilders';
+import {
+  buildDailyPlanGhostLogEntries,
+  collectRealMealTitlesFromLog,
+  dedupeDailyPlanGhostEntriesById,
+  mergeDiaryLogWithGhostEntries,
+} from './utils/dailyPlanGhostUtils';
+import {
+  isRestPlanBlockForSwap,
+  buildUserRestDayBlock,
+  relocatePlanBlockToDate,
+} from './features/weeklyBlocks/planBlockSwapUtils';
+import {
+  NEURAL_RESET_PATTERNS,
+  ZEN_SESSION_DURATION_OPTIONS,
+  getNeuralResetZenStep,
+  getZenBreathAudioFade,
+} from './drawers/vistas/neuralResetZenModel';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import MetabolicMonitorCard from './components/MetabolicMonitorCard';
@@ -127,6 +162,10 @@ import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
 import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPhaseState';
+import useWorkoutManager from './hooks/salaComandi/useWorkoutManager';
+import useKentuMealHandlers from './hooks/salaComandi/useKentuMealHandlers';
+import useDiaryFirebaseSync from './hooks/salaComandi/useDiaryFirebaseSync';
+import useTimelineDiaryActions from './hooks/salaComandi/useTimelineDiaryActions';
 import useSleepEngine from './hooks/useSleepEngine';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
@@ -134,6 +173,9 @@ import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
+import KentuLazySectionFallback from './components/KentuLazySectionFallback';
+import SalaComandiLoginScreen from './components/auth/SalaComandiLoginScreen';
+import { createMealPieCustomizedLabel, MealPieActiveShape } from './components/charts/mealPieChartRenderers';
 import {
   FastChargeNapQuickPanel,
   FastChargeMeditationQuickPanel,
@@ -224,7 +266,6 @@ import {
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
-  RADIAN,
   DEFAULT_NO_SLEEP_ENERGY,
   getTodayString,
   getYesterdayString,
@@ -324,38 +365,7 @@ import {
   coachEvalSemanticEqual,
 } from './utils/salaComandiUtils';
 
-const ZEN_SUN_MAX = 2.2;
-
-/** SWR: aggiorna localStorage per il giorno corrente (sync, best-effort). */
-function writeTodayTrackerLocalCache(dateStr, log, mealTimes) {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  if (dateStr !== getTodayString()) return;
-  try {
-    window.localStorage.setItem(
-      TRACKER_STORICO_KEY(dateStr),
-      JSON.stringify({ log: log ?? [], mealTimes: mealTimes ?? {} }),
-    );
-  } catch (err) {
-    console.warn('tracker local cache write failed:', err);
-  }
-}
-
-function workoutActivityRequiresStrengthDetailNote(typeId) {
-  if (typeId === 'pesi') return false;
-  const def = getWorkoutActivityTypeDef(typeId);
-  if (def?.category === 'strength') return true;
-  const raw = String(typeId || '').toLowerCase();
-  return raw.includes('strength') || raw.includes('bodybuilding');
-}
-
-function KentuLazySectionFallback({ label = 'Caricamento…' }) {
-  return (
-    <div className="kentu-lazy-section-fallback" role="status" aria-live="polite" aria-label={label}>
-      <div className="kentu-lazy-section-fallback__spinner" />
-      <span>{label}</span>
-    </div>
-  );
-}
+export { calculateAge } from './utils/profileAge';
 
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
@@ -373,122 +383,6 @@ const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOver
 const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
 const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
-
-/** Pattern respirazione Neural Reset: fasi in ordine, ms e scala sole per fase */
-const NEURAL_RESET_PATTERNS = {
-  square: {
-    id: 'square',
-    label: 'Respiro quadrato (4-4-4-4)',
-    hint: 'Quattro tempi uguali: segui il sole sul mare.',
-    steps: [
-      { phase: 'Inspira', ms: 4000, sunTarget: ZEN_SUN_MAX },
-      { phase: 'Trattieni', ms: 4000, sunTarget: ZEN_SUN_MAX, dimHold: true },
-      { phase: 'Espira', ms: 4000, sunTarget: 1 },
-      { phase: 'Pausa', ms: 4000, sunTarget: 1 },
-    ],
-  },
-  relax478: {
-    id: 'relax478',
-    label: 'Rilassamento (4-7-8)',
-    hint: 'Inspira 4 s, trattieni 7 s, espira 8 s; il ciclo riparte subito.',
-    steps: [
-      { phase: 'Inspira', ms: 4000, sunTarget: ZEN_SUN_MAX },
-      { phase: 'Trattieni', ms: 7000, sunTarget: ZEN_SUN_MAX, dimHold: true },
-      { phase: 'Espira', ms: 8000, sunTarget: 1 },
-    ],
-  },
-  coherent: {
-    id: 'coherent',
-    label: 'Coerente (5.5 - 5.5)',
-    hint: '5,5 s di inspiro e 5,5 s di espiro, senza pause.',
-    steps: [
-      { phase: 'Inspira', ms: 5500, sunTarget: ZEN_SUN_MAX },
-      { phase: 'Espira', ms: 5500, sunTarget: 1 },
-    ],
-  },
-};
-
-const ZEN_SESSION_DURATION_OPTIONS = [
-  { value: '1', label: '1 minuto', sec: 60 },
-  { value: '3', label: '3 minuti', sec: 180 },
-  { value: '5', label: '5 minuti', sec: 300 },
-  { value: '10', label: '10 minuti', sec: 600 },
-  { value: 'infinite', label: 'Infinito', sec: null },
-];
-
-function getNeuralResetZenStep(patternId, phaseName) {
-  return NEURAL_RESET_PATTERNS[patternId]?.steps.find((s) => s?.phase === phaseName);
-}
-
-function getZenBreathAudioFade(phaseName, phaseMs) {
-  if (phaseName === 'Inspira') return { target: 0.9, duration: Math.min(4000, phaseMs) };
-  if (phaseName === 'Espira') return { target: 0.6, duration: Math.min(4000, phaseMs) };
-  if (phaseName === 'Trattieni' || phaseName === 'Pausa') return { target: 0.02, duration: Math.min(3000, phaseMs) };
-  return null;
-}
-
-/** Età in anni interi dalla data di nascita (formato YYYY-MM-DD). */
-export function calculateAge(dobString) {
-  if (!dobString) return null;
-  const today = new Date();
-  const birthDate = new Date(dobString);
-  if (Number.isNaN(birthDate.getTime())) return null;
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  return age;
-}
-
-/** @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock | null | undefined} block */
-function isRestPlanBlockForSwap(block) {
-  if (!isUserAssignedDayBlock(block)) return false;
-  if (String(block.meta?.plannerWorkoutType || '').toLowerCase() === 'riposo') return true;
-  const kind = String(block.activity?.kind || '').toUpperCase();
-  return kind === 'REST' || kind === 'RECOVERY';
-}
-
-/**
- * @param {string} dateIso
- * @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock | null | undefined} todayPlanBlock
- * @param {number | null | undefined} userProfileKcalBase
- */
-function buildUserRestDayBlock(dateIso, todayPlanBlock, userProfileKcalBase) {
-  const strategyExtra = {};
-  const existingBase = Number(todayPlanBlock?.calorieStrategy?.profileKcalBase);
-  if (Number.isFinite(existingBase) && existingBase > 0) {
-    strategyExtra.profileKcalBase = Math.round(existingBase);
-  } else if (userProfileKcalBase != null) {
-    strategyExtra.profileKcalBase = userProfileKcalBase;
-  }
-  return createDayBlock(
-    dateIso,
-    createBlockActivity('REST', { hour: '18:00' }),
-    createCalorieStrategy('maintenance', 0, strategyExtra),
-    {
-      source: 'user',
-      plannerWorkoutType: 'riposo',
-      plannerIntensity: 'rest',
-      plannerDurationMin: 0,
-      updatedAt: Date.now(),
-    }
-  );
-}
-
-/** @param {import('./features/weeklyBlocks/weeklyBlockSchema').DayBlock} block @param {string} targetDate */
-function relocatePlanBlockToDate(block, targetDate) {
-  return {
-    ...block,
-    date: targetDate,
-    activity: {
-      ...block.activity,
-      focus: Array.isArray(block.activity?.focus) ? [...block.activity.focus] : [],
-    },
-    calorieStrategy: { ...block.calorieStrategy },
-    meta: { ...(block.meta || {}), source: 'user', updatedAt: Date.now() },
-  };
-}
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -866,8 +760,6 @@ export default function SalaComandi() {
   const [showStrategicPlanner, setShowStrategicPlanner] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
   const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
-  const planningWizardMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
-  const dailyPlanMealConfirmGuardRef = useRef({ busy: false, lastAt: 0 });
   const [remotePlanning, setRemotePlanning] = useState(null);
 
   /** Piano settimanale: goal, kcal settimanale, giorni `{ [dateKey]: { type, kcalTarget } }`. Pasti non collegati. */
@@ -1011,35 +903,8 @@ export default function SalaComandi() {
   });
 
   const [isPlanActionSheetOpen, setIsPlanActionSheetOpen] = useState(false);
-  /** Bozza tracker aperta da Widget del Giorno (piano odierno). */
-  const [workoutPlanDraft, setWorkoutPlanDraft] = useState(/** @type {import('./drawers/vistas/WorkoutView').WorkoutPlanDraft | null} */ (null));
 
-  const [workoutType, setWorkoutType] = useState('pesi');
-  const [workoutKcal, setWorkoutKcal] = useState(300);
-  const [workoutEndTime, setWorkoutEndTime] = useState(19);
-  const [workoutDurationMin, setWorkoutDurationMin] = useState(String(WORKOUT_DURATION_DEFAULT));
-  const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
-  const [workoutMuscles, setWorkoutMuscles] = useState([]);
-  const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   const [editingMealId, setEditingMealId] = useState(null);
-
-  const workoutDurationHours = Math.max(
-    0.25,
-    Math.min(
-      24,
-      parseDurationMinutesInput(workoutDurationMin, {
-        min: WORKOUT_DURATION_MIN,
-        max: WORKOUT_DURATION_MAX,
-        fallback: WORKOUT_DURATION_DEFAULT,
-      }) / 60,
-    ),
-  );
-  const workoutStartTime = (() => {
-    let s = Number(workoutEndTime) - workoutDurationHours;
-    if (s < 0) s += 24;
-    if (s >= 24) s -= 24;
-    return s;
-  })();
 
   const dailyWaterGoal = userTargets.water ?? 2500; 
   const [isZenActive, setIsZenActive] = useState(false);
@@ -1306,18 +1171,12 @@ export default function SalaComandi() {
   const [kentuDailyCalorieStrategy, setKentuDailyCalorieStrategy] = useState('pari');
   const CHAT_HISTORY_WINDOW = 10;
   const lastDinnerOptionsRef = useRef(null);
-  const lastAgendaOptionsRef = useRef(null);
   const kentuAgendaAwaitingRef = useRef(false);
   /** Flusso chat: conferma orario allenamento prima del log. */
   const pendingWorkoutFlowRef = useRef(null);
-  const lastWorkoutCommitRef = useRef({ key: '', at: 0 });
   /** Contesto per prompt AI: allenamento programmato nel futuro (no pasti "adesso"). */
   const scheduledWorkoutContextRef = useRef(null);
-  const lastLogFromFirebaseRef = useRef(null);
-  const pendingLogRef = useRef(null);
-  const pendingNodesRef = useRef(null);
   const csvInputRef = useRef(null);
-  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [startupSafetyBypass, setStartupSafetyBypass] = useState(false);
 
   useEffect(() => {
@@ -1559,13 +1418,6 @@ export default function SalaComandi() {
   const manualNodesRef = useRef(manualNodes);
   manualNodesRef.current = manualNodes;
   const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
-  const [touchingNodeId, setTouchingNodeId] = useState(null);
-  const [historyStack, setHistoryStack] = useState([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
-  const [showUndoToast, setShowUndoToast] = useState(false);
-  /** Modale trascina-in-zona-cancella per ghost_meal / ghost_workout */
-  const [ghostProgramDeleteModal, setGhostProgramDeleteModal] = useState(null);
-  const [programmingRemovedToast, setProgrammingRemovedToast] = useState(false);
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
   const initialPinchDistance = useRef(null);
@@ -1574,8 +1426,6 @@ export default function SalaComandi() {
   const longPressTimerRef = useRef(null);
   const longPressMoveCleanupRef = useRef(null);
   const pendingClickRef = useRef(null);
-  const historyStackRef = useRef([]);
-  const historyIndexRef = useRef(-1);
   const miniTimelineActivityRef = useRef(null);
   const miniTimelineWaterRef = useRef(null);
   const [drawerWaterTime, setDrawerWaterTime] = useState(12);
@@ -1585,19 +1435,31 @@ export default function SalaComandi() {
   const [fastChargeSupplementName, setFastChargeSupplementName] = useState('');
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
-  useEffect(() => { historyStackRef.current = historyStack; historyIndexRef.current = historyIndex; }, [historyStack, historyIndex]);
 
-  const pushTimelineUndoSnapshot = useCallback((newDailyLog, newManualNodes) => {
-    const newStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
-    newStack.push({
-      dailyLog: JSON.parse(JSON.stringify(newDailyLog)),
-      manualNodes: JSON.parse(JSON.stringify(newManualNodes)),
-    });
-    setHistoryStack(newStack);
-    setHistoryIndex(newStack.length - 1);
-    setShowUndoToast(true);
-    setTimeout(() => setShowUndoToast(false), 4000);
-  }, []);
+  const { syncDatiFirebase, isInitialLoadComplete } = useDiaryFirebaseSync({
+    db,
+    auth,
+    user,
+    currentTrackerDate,
+    currentTrackerDateRef,
+    isSimulationMode,
+    setDailyLog,
+    setManualNodes,
+    fullHistory,
+    setFullHistory,
+    fullStorico,
+    setFullStorico,
+    setActiveAction,
+    setUserProfile,
+    setBirthDate,
+    setUserTargets,
+    setUserModel,
+    setLastCalibrationWeek,
+    setFoodDb,
+    setWeeklyPlan,
+    weeklyPlanningListenerReadyRef,
+    weeklyPlanningRemoteSigRef,
+  });
 
   const {
     handleCSVUpload,
@@ -1752,67 +1614,10 @@ export default function SalaComandi() {
   // COMPUTED CON RETROCOMPATIBILITÀ
   // ============================================================================
 
-  const getStrategyKey = (mealType) => {
-    const map = {
-      colazione: 'colazione',
-      merenda1: 'colazione',
-      snack: 'snack',
-      merenda_am: 'snack',
-      merenda_pm: 'snack',
-      merenda2: 'snack',
-      spuntino: 'snack',
-      pranzo: 'pranzo',
-      cena: 'cena',
-    };
-    return map[mealType] || toCanonicalMealType(mealType) || mealType;
-  };
-
-  const computedMealNodes = useMemo(() => {
-    const anchorDate = currentTrackerDate || getTodayString();
-    const mealTimesObj = fullHistory?.[TRACKER_STORICO_KEY(anchorDate)]?.mealTimes ?? {};
-    const groups = {};
-    (activeLog || []).forEach((f) => {
-      if (f.type !== 'food' && f.type !== 'recipe') return;
-      const typeKey = f.mealType || 'pasto';
-      const resolvedHour =
-        resolveMealTimeFromLogItem(f, mealTimesObj)
-        ?? normalizeMealHour(
-          typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 12,
-        )
-        ?? 12;
-      const timeKey = String(resolvedHour);
-      const mealId = `${typeKey}_${timeKey}`;
-      const foodKcal = Number(f.kcal ?? f.cal ?? 0) || 0;
-      if (!groups[mealId]) {
-        groups[mealId] = {
-          mealId,
-          mealType: typeKey,
-          originalTypes: new Set(),
-          time: resolvedHour,
-          strategyKey: getStrategyKey(toCanonicalMealType(String(typeKey).split('_')[0])),
-          kcal: 0,
-          items: [],
-        };
-      }
-      groups[mealId].kcal += foodKcal;
-      groups[mealId].originalTypes.add(f.mealType);
-      groups[mealId].items.push({ ...f });
-    });
-
-    return Object.values(groups).map((m) => ({
-      id: m.mealId,
-      mealId: m.mealId,
-      type: 'meal',
-      time: m.time,
-      mealType: m.mealType,
-      strategyKey: m.strategyKey,
-      kcal: m.kcal ?? 0,
-      originalTypes: Array.from(m.originalTypes),
-      items: m.items,
-      foods: (m.items || []).map((it) => ({ ...it })),
-      icon: getMealIcon(String(m.mealType).split('_')[0]),
-    }));
-  }, [activeLog, fullHistory, currentTrackerDate]);
+  const computedMealNodes = useMemo(
+    () => buildComputedMealNodes(activeLog, fullHistory, currentTrackerDate),
+    [activeLog, fullHistory, currentTrackerDate],
+  );
 
   const ghostMealTimelineNodes = useMemo(() => {
     return (activeLog || [])
@@ -2060,20 +1865,6 @@ export default function SalaComandi() {
   }, [manualNodes]);
 
   useEffect(() => {
-    if (!fullStorico || typeof fullStorico !== 'object') return;
-    if (currentTrackerDateRef.current !== getTodayString()) return;
-    const todayKey = TRACKER_STORICO_KEY(getTodayString());
-    const todayNode = fullStorico[todayKey];
-
-    if (todayNode?.hasEditedNodes || (todayNode?.manualNodes && todayNode.manualNodes.length > 0)) {
-      setManualNodes(todayNode.manualNodes || []);
-    } else {
-      // BUGFIX: Se oggi è vuoto, partiamo puliti. Nessun trascinamento da ieri.
-      setManualNodes([]);
-    }
-  }, [fullStorico]);
-
-  useEffect(() => {
     localStorage.setItem('vyta_idealStrategy', JSON.stringify(idealStrategy));
   }, [idealStrategy]);
 
@@ -2141,190 +1932,6 @@ export default function SalaComandi() {
     return () => window.clearTimeout(t);
   }, [weeklyPlan, db, user?.uid, isSimulationMode]);
 
-  // Bootstrap: today node + profile_targets in parallelo (gate UI); storico completo in background
-  useEffect(() => {
-    if (!user) {
-      setIsInitialLoadComplete(false);
-      setWeeklyPlan(createInitialWeeklyPlan());
-      weeklyPlanningListenerReadyRef.current = false;
-      weeklyPlanningRemoteSigRef.current = '';
-      return undefined;
-    }
-
-    let cancelled = false;
-    let unsubToday = null;
-    const today = getTodayString();
-    const basePath = `users/${user.uid}/tracker_data`;
-    const todayRef = ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`);
-    const profileRef = ref(db, `users/${user.uid}/profile_targets`);
-
-    // Stale-While-Revalidate: idratazione immediata da cache locale (zero-latency cold start)
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const cacheRaw = window.localStorage.getItem(TRACKER_STORICO_KEY(today));
-        if (cacheRaw) {
-          const cached = JSON.parse(cacheRaw);
-          const incomingLog = cached?.log ?? cached?.dati?.log ?? [];
-          const normalized = normalizeLogData(
-            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-          );
-          const mealTimes = cached?.mealTimes ?? {};
-          lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-          setDailyLog(applyMealTimes(normalized, mealTimes));
-          setActiveAction('home');
-          setIsInitialLoadComplete(true);
-        }
-      }
-    } catch (err) {
-      console.warn('Bootstrap cache read failed:', err);
-    }
-
-    const attachTodayLiveListener = () => {
-      unsubToday = onValue(todayRef, (liveSnap) => {
-        if (cancelled) return;
-        if (liveSnap.exists() && currentTrackerDateRef.current === getTodayString()) {
-          const val = liveSnap.val();
-          const incomingLog = val?.log ?? [];
-          const normalized = normalizeLogData(
-            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-          );
-          const mealTimes = val?.mealTimes ?? {};
-          lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-          setDailyLog(applyMealTimes(normalized, mealTimes));
-          writeTodayTrackerLocalCache(
-            getTodayString(),
-            Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-            mealTimes,
-          );
-        }
-      });
-    };
-
-    Promise.all([get(todayRef), get(profileRef)])
-      .then(([todaySnap, profileSnap]) => {
-        if (cancelled) return;
-
-        const todayVal = todaySnap.exists() ? todaySnap.val() : null;
-        const incomingLog = todayVal?.log ?? [];
-        const normalized = normalizeLogData(
-          Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-        );
-        const mealTimes = todayVal?.mealTimes ?? {};
-        lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-        setDailyLog(applyMealTimes(normalized, mealTimes));
-        writeTodayTrackerLocalCache(
-          today,
-          Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-          mealTimes,
-        );
-
-        if (profileSnap.exists()) {
-          const data = profileSnap.val();
-          const mergedProfile = data?.profile
-            ? mergeProfileNutritionFromServer(data.profile)
-            : null;
-          if (mergedProfile) {
-            setUserProfile((prev) => ({ ...prev, ...mergedProfile }));
-            setBirthDate(typeof mergedProfile?.birthDate === 'string' ? mergedProfile.birthDate : '');
-          }
-          setUserTargets((prev) => {
-            let next = { ...prev };
-            if (data?.targets) {
-              next = {
-                ...next,
-                ...data.targets,
-                autoCalculated: data?.targets?.autoCalculated === true,
-                targetHistory: Array.isArray(data?.targets?.targetHistory)
-                  ? data.targets.targetHistory
-                  : next.targetHistory || [],
-              };
-            }
-            if (mergedProfile) {
-              if (mergedProfile.targetCalories != null && Number.isFinite(Number(mergedProfile.targetCalories))) {
-                next.kcal = Math.round(Number(mergedProfile.targetCalories));
-              }
-              if (mergedProfile.proteinTarget != null && mergedProfile.proteinTarget !== '') {
-                next.prot = Math.round(Number(mergedProfile.proteinTarget));
-              }
-            }
-            return next;
-          });
-        }
-
-        setActiveAction('home');
-        setIsInitialLoadComplete(true);
-        attachTodayLiveListener();
-
-        get(ref(db, basePath))
-          .then((histSnap) => {
-            if (cancelled) return;
-            const tree = histSnap.exists() ? histSnap.val() : null;
-            setFullStorico(tree);
-            setFullHistory(tree || {});
-          })
-          .catch((err) => console.warn('tracker_data background load:', err));
-      })
-      .catch((err) => {
-        console.warn('Bootstrap load failed:', err);
-        if (cancelled) return;
-        setActiveAction('home');
-        setIsInitialLoadComplete(true);
-        attachTodayLiveListener();
-      });
-
-    get(ref(db, `users/${user.uid}/physiology_model`)).then((physSnap) => {
-      if (cancelled || !physSnap.exists()) return;
-      const data = physSnap.val();
-      const { lastCalibrationWeek: savedCalWeek, ...model } = data;
-      if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
-      if (model && typeof model === 'object') {
-        setUserModel((prev) => ({
-          ...DEFAULT_USER_MODEL,
-          ...model,
-          caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
-          carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
-          stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
-          hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
-          recoveryRate: clampModelValue(model.recoveryRate ?? 1),
-        }));
-      }
-    });
-
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
-      if (cancelled) return;
-      if (!s.exists()) return;
-      const val = s.val();
-      if (!val || typeof val !== 'object') {
-        setFoodDb({});
-        return;
-      }
-      const enriched = {};
-      Object.keys(val).forEach((k) => {
-        const row = val[k];
-        if (!row || typeof row !== 'object') return;
-        enriched[k] = row.isRecipe === true || row.type === 'recipe' ? row : enrichDbRowWithFoodUnits(row, k);
-      });
-      setFoodDb(enriched);
-    });
-
-    return () => {
-      cancelled = true;
-      unsubToday?.();
-    };
-  }, [user]);
-
-  // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
-  useEffect(() => {
-    if (!fullHistory || typeof fullHistory !== 'object' || !currentTrackerDate) return;
-    if (Object.keys(fullHistory).length === 0) return;
-    setDailyLog(prev => {
-      if (prev && prev.length > 0) return prev;
-      const node = fullHistory[TRACKER_STORICO_KEY(currentTrackerDate)];
-      const initialLog = getLogFromStoricoTree(fullHistory, currentTrackerDate);
-      return applyMealTimes(initialLog, node?.mealTimes ?? {});
-    });
-  }, [fullHistory, currentTrackerDate]);
-
   // Weekly calibration: at start of new week (Monday), adjust userModel from last week's data and persist.
   useEffect(() => {
     if (!userUid || !isAuthenticated || typeof fullHistory !== 'object') return;
@@ -2369,89 +1976,6 @@ export default function SalaComandi() {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [isAuthenticated]);
-
-  /** stripUndefined: rimuove undefined ricorsivamente per payload Firebase. */
-  const stripUndefined = (obj, depth = 0) => {
-    const MAX_STRIP_DEPTH = 25;
-    if (depth > MAX_STRIP_DEPTH) return obj;
-    if (obj === undefined) return null;
-    if (obj === null) return null;
-    if (Array.isArray(obj)) return obj.map((v) => stripUndefined(v, depth + 1)).filter((v) => v !== undefined);
-    if (typeof obj === 'object') {
-      const out = {};
-      for (const k of Object.keys(obj)) {
-        const v = stripUndefined(obj[k], depth + 1);
-        if (v !== undefined) out[k] = v;
-      }
-      return out;
-    }
-    return obj;
-  };
-
-  /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */
-  const syncDatiFirebase = useCallback((nuovoLog, nuoviNodi) => {
-    if (isSimulationMode) return;
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      console.warn("⚠️ Firebase Sync interrotto: Nessun utente loggato rilevato da auth.currentUser");
-      return;
-    }
-    const uid = currentUser.uid;
-
-    console.log("🔄 Preparazione salvataggio su Firebase per UID:", uid);
-
-    try {
-      const dateStr = currentTrackerDate;
-      const logForFirebase = denormalizeLogForFirebase(nuovoLog || []);
-      const mealTimes = (nuovoLog || []).filter(i => i.type === 'food' || i.type === 'recipe').reduce((acc, f) => ({
-        ...acc,
-        [f.mealType]: f.mealTime ?? 12
-      }), {});
-      const sanitizedLog = stripUndefined(logForFirebase);
-      const sanitizedNodes = stripUndefined(nuoviNodi || []);
-      const payload = {
-        data: dateStr,
-        log: sanitizedLog,
-        mealTimes,
-        manualNodes: sanitizedNodes,
-        hasEditedNodes: true
-      };
-      const sanitized = stripUndefined(payload);
-
-      writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
-
-      const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
-      console.log("📁 Percorso di salvataggio:", dbPath);
-
-      set(ref(db, dbPath), sanitized)
-        .then(() => {
-          setFullHistory(prev => ({ ...prev, [TRACKER_STORICO_KEY(dateStr)]: sanitized }));
-          console.log("✅ Dati salvati con successo su Firebase!");
-        })
-        .catch(err => console.error("❌ Errore critico durante il salvataggio Firebase:", err));
-    } catch (error) {
-      console.error("❌ Errore durante la preparazione del payload Firebase:", error);
-    }
-  }, [currentTrackerDate, isSimulationMode]);
-
-  const {
-    draggingNode,
-    setDraggingNode,
-    dragOffsetY,
-    dragOffsetYRef,
-    dragLiveTime,
-  } = useTimelineDrag({
-    timelineContainerRef,
-    dailyLogRef,
-    manualNodesRef,
-    isSimulationMode,
-    pushTimelineUndoSnapshot,
-    syncDatiFirebase,
-    setDailyLog,
-    setManualNodes,
-    setGhostProgramDeleteModal,
-    setTouchingNodeId,
-  });
 
   const saveProfileToFirebase = (newProfile, newTargets) => {
     const currentUser = auth.currentUser;
@@ -2803,108 +2327,134 @@ export default function SalaComandi() {
   // FUNZIONI CRITICHE CON RETROCOMPATIBILITÀ
   // ============================================================================
 
-  const mealIdFromCanonical = (c) => {
-    const canon = toCanonicalMealType(String(c || '').split('_')[0]);
-    if (canon === 'colazione') return 'colazione';
-    if (canon === 'snack') return 'snack';
-    if (canon === 'pranzo') return 'pranzo';
-    if (canon === 'cena') return 'cena';
-    return canon || 'pranzo';
+  const predictMealType = useCallback(
+    (timeDecimal) => predictMealTypeFromHistory(
+      fullStorico,
+      timeDecimal,
+      getCurrentTimeRoundedTo15Min(),
+    ),
+    [fullStorico],
+  );
+
+  const parseTimeStrToDecimal = (value) => {
+    const digits = (value || '').replace(/\D/g, '');
+    if (digits.length === 0) return 12;
+    const formatted = digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2, 4) : digits;
+    const [hh, mm] = formatted.includes(':') ? formatted.split(':') : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
+    const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
+    const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
+    return h + m / 60;
   };
 
-  /** Vocabolario AI → id diario: colazione, snack, pranzo, cena. */
-  const normalizeAiMealTypeToStorageId = (raw, decimalHourInfer) => {
-    const inferH =
-      typeof decimalHourInfer === 'number' && !Number.isNaN(decimalHourInfer)
-        ? decimalHourInfer
-        : new Date().getHours() + new Date().getMinutes() / 60;
-    const k = String(raw ?? '')
-      .trim()
-      .toLowerCase()
-      .replace(/_/g, ' ')
-      .replace(/\s+/g, ' ');
-    if (!k) return 'snack';
-    const phraseExact = {
-      colazione: 'colazione',
-      merenda1: 'colazione',
-      breakfast: 'colazione',
-      pranzo: 'pranzo',
-      lunch: 'pranzo',
-      cena: 'cena',
-      dinner: 'cena',
-      'pasto serale': 'cena',
-      snack: 'snack',
-      spuntino: 'snack',
-      merenda: 'snack',
-      merenda_am: 'snack',
-      merenda_pm: 'snack',
-      merenda2: 'snack',
-      'merenda am': 'snack',
-      'merenda pm': 'snack',
-      'spuntino mattina': 'snack',
-      'spuntino pomeridiano': 'snack',
-      'spuntino pomeriggio': 'snack',
-    };
-    if (Object.prototype.hasOwnProperty.call(phraseExact, k)) return phraseExact[k];
-    const base = k.includes(' ') ? k.replace(/\s/g, '_') : k;
-    const canon = toCanonicalMealType(base);
-    const id = mealIdFromCanonical(canon);
-    const allowed = new Set(['colazione', 'snack', 'pranzo', 'cena']);
-    if (allowed.has(id)) return id;
-    return 'snack';
-  };
+  const {
+    workoutPlanDraft,
+    setWorkoutPlanDraft,
+    workoutType,
+    setWorkoutType,
+    workoutKcal,
+    setWorkoutKcal,
+    workoutEndTime,
+    setWorkoutEndTime,
+    workoutDurationMin,
+    setWorkoutDurationMin,
+    workoutStrengthDetail,
+    setWorkoutStrengthDetail,
+    workoutMuscles,
+    setWorkoutMuscles,
+    editingWorkoutId,
+    setEditingWorkoutId,
+    workoutDurationHours,
+    workoutStartTime,
+    openWorkoutFromTodayPlan,
+    openWorkoutEditorFromLogItem,
+    handleStartWorkoutSession,
+    clearWorkoutPlanDraft,
+    skipTodayPlanSession,
+    handlePostponeWorkout,
+    handleSaveWorkout,
+    commitAddWorkoutCommand,
+  } = useWorkoutManager({
+    user,
+    db,
+    currentTrackerDate,
+    isSimulationMode,
+    todayPlanBlock,
+    userProfileKcalBase,
+    dailyLog,
+    manualNodes,
+    setDailyLog,
+    setManualNodes,
+    setSimulatedLog,
+    syncDatiFirebase,
+    manualNodesRef,
+    closeDrawer,
+    setActiveAction,
+    setIsDrawerOpen,
+    setIsPlanActionSheetOpen,
+    setShowDiarySheet,
+    parseFlexibleTimeToDecimal,
+  });
 
-  const fallbackPredict = (now) => {
-    if (now >= 5 && now < 10) return 'colazione';
-    if (now >= 10 && now < 12.5) return 'snack';
-    if (now >= 12.5 && now < 14.5) return 'pranzo';
-    if (now >= 14.5 && now < 19) return 'snack';
-    return 'cena';
-  };
-
-  /**
-   * Predizione a 3 giorni: media degli orari degli ultimi 3 giorni per categoria, poi match sul più vicino a targetTime.
-   */
-  const predictMealType = (timeDecimal) => {
-    const targetTime = typeof timeDecimal === 'number' && !Number.isNaN(timeDecimal) ? timeDecimal : getCurrentTimeRoundedTo15Min();
-    if (!fullStorico) return fallbackPredict(targetTime);
-
-    const pastDays = Object.keys(fullStorico)
-      .filter(k => k.startsWith('trackerStorico_') && k !== TRACKER_STORICO_KEY(getTodayString()))
-      .sort((a, b) => b.localeCompare(a))
-      .slice(0, 3);
-    if (pastDays.length === 0) return fallbackPredict(targetTime);
-
-    const timeAcc = {};
-    const timeCount = {};
-    pastDays.forEach(dayKey => {
-      const mealTimesObj = fullStorico[dayKey]?.mealTimes || {};
-      const log = fullStorico[dayKey]?.log || [];
-      const flatLog = normalizeLogData(Array.isArray(log) ? log : Object.values(log));
-      flatLog.forEach(item => {
-        if (item.type !== 'food' && item.type !== 'recipe') return;
-        const canonical = toCanonicalMealType(item.mealType);
-        const t = mealTimesObj[item.mealType] ?? item.mealTime;
-        if (typeof t === 'number') {
-          timeAcc[canonical] = (timeAcc[canonical] || 0) + t;
-          timeCount[canonical] = (timeCount[canonical] || 0) + 1;
-        }
-      });
-    });
-
-    let bestMatch = 'pranzo';
-    let minDiff = Infinity;
-    Object.keys(timeAcc).forEach(canonical => {
-      const avgTime = timeAcc[canonical] / timeCount[canonical];
-      const diff = Math.abs(avgTime - targetTime);
-      if (diff < minDiff) {
-        minDiff = diff;
-        bestMatch = canonical;
-      }
-    });
-    if (minDiff > 3) return fallbackPredict(targetTime);
-    return mealIdFromCanonical(bestMatch);
-  };
+  const {
+    historyStack,
+    historyIndex,
+    showUndoToast,
+    pushTimelineUndoSnapshot,
+    draggingNode,
+    setDraggingNode,
+    dragOffsetY,
+    dragOffsetYRef,
+    dragLiveTime,
+    touchingNodeId,
+    setTouchingNodeId,
+    getFoodItemsForMealSlot,
+    updateMealTime,
+    onTimelineStripDragOutsideDelete,
+    handleUndo,
+    handleRedo,
+    handleFastLoggerSave,
+    removeLogItem,
+    handleMiniTimelineDrag,
+    startNodeDrag,
+    releaseNodePointer,
+    handleCloseQuickNodeEdit,
+    handleDeleteQuickNodeEdit,
+    handleSaveQuickNodeEdit,
+    quickNodeEditStartTime,
+    quickNodeEditEndTime,
+    ghostProgramDeleteModal,
+    setGhostProgramDeleteModal,
+    programmingRemovedToast,
+    handleConfirmGhostDeleteSingle,
+    handleConfirmGhostDeleteAll,
+  } = useTimelineDiaryActions({
+    dailyLog,
+    manualNodes,
+    simulatedLog,
+    activeLog,
+    isSimulationMode,
+    isInitialLoadComplete,
+    dailyLogRef,
+    manualNodesRef,
+    syncDatiFirebase,
+    setDailyLog,
+    setManualNodes,
+    setSimulatedLog,
+    setMealToEdit,
+    setEditingMealId,
+    setFastLoggerInitialSlot,
+    setPendingGhostMealId,
+    setShowFastLogger,
+    editingQuickNode,
+    setEditingQuickNode,
+    parseFlexibleTimeToDecimal,
+    parseTimeStrToDecimal,
+    decimalToTimeStr,
+    pendingGhostMealId,
+    timelineContainerRef,
+    longPressTimerRef,
+    longPressMoveCleanupRef,
+  });
 
   const computeTimelineHourFromPointer = useCallback((e) => {
     const el = timelineContainerRef.current;
@@ -2944,123 +2494,6 @@ export default function SalaComandi() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [timelineInsertUI]);
-
-  /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
-  const getFoodItemsForMealSlot = useCallback((log, slotId) => {
-    if (slotId == null || slotId === 'rimanenti') return [];
-    const idStr = String(slotId);
-    const list = log || [];
-    let items = list.filter(item => getSlotKey(item) === idStr);
-    if (items.length === 0) {
-      const u = idStr.lastIndexOf('_');
-      if (u > 0) {
-        const baseMealType = idStr.slice(0, u);
-        const parsedTime = Number(idStr.slice(u + 1));
-        if (!Number.isNaN(parsedTime)) {
-          items = list.filter(item =>
-            (item.type === 'food' || item.type === 'recipe') &&
-            item.mealType === baseMealType &&
-            typeof item.mealTime === 'number' &&
-            Math.abs(item.mealTime - parsedTime) < 1e-4
-          );
-        }
-      }
-    }
-    return items;
-  }, []);
-
-  /** Commit orario nodo timeline (pasto aggregato, ghost_meal, manualNodes: work/cognitive/water/…). */
-  const updateMealTime = useCallback(
-    (nodeId, newTimeRaw) => {
-      if (isSimulationMode) return;
-      const t = Number(newTimeRaw);
-      if (!Number.isFinite(t)) return;
-      const finalTimeRounded = normalizeMealHour(Math.max(0, Math.min(24, t))) ?? Math.max(0, Math.min(24, t));
-      const dragId = nodeId;
-      const dlSnap = dailyLogRef.current;
-      const mnSnap = manualNodesRef.current;
-      const idMatch = (a, b) => a === b || String(a) === String(b);
-
-      if (mnSnap.some((n) => idMatch(n.id, dragId))) {
-        const next = mnSnap.map((node) => {
-          if (!idMatch(node.id, dragId)) return node;
-          if (node.type === 'work' || node.type === 'cognitive') {
-            return { ...node, time: finalTimeRounded };
-          }
-          return { ...node, time: finalTimeRounded, mealTime: finalTimeRounded };
-        });
-        setManualNodes(next);
-        syncDatiFirebase(dlSnap, next);
-        pushTimelineUndoSnapshot(dlSnap, next);
-        return;
-      }
-
-      const ghost = dlSnap.find((item) => idMatch(item?.id, dragId) && item?.type === 'ghost_meal');
-      if (ghost) {
-        const nextLog = dlSnap.map((item) =>
-          idMatch(item.id, dragId) && item.type === 'ghost_meal'
-            ? { ...item, mealTime: finalTimeRounded, time: finalTimeRounded }
-            : item
-        );
-        setDailyLog(nextLog);
-        syncDatiFirebase(nextLog, mnSnap);
-        pushTimelineUndoSnapshot(nextLog, mnSnap);
-        return;
-      }
-
-      const mealSlotForDrag = String(dragId);
-      const itemIds = getFoodItemsForMealSlot(dlSnap, mealSlotForDrag).map((i) => i.id).filter((id) => id != null);
-      if (itemIds.length === 0) return;
-      const idSet = new Set(itemIds.map((x) => String(x)));
-      const nextLog = dlSnap.map((item) =>
-        idSet.has(String(item.id)) ? { ...item, mealTime: finalTimeRounded } : item
-      );
-      setDailyLog(nextLog);
-      syncDatiFirebase(nextLog, mnSnap);
-      pushTimelineUndoSnapshot(nextLog, mnSnap);
-    },
-    [isSimulationMode, syncDatiFirebase, pushTimelineUndoSnapshot, getFoodItemsForMealSlot]
-  );
-
-  /** Cancellazione dopo drag orizzontale sulla striscia con puntatore fuori dalla fascia verticale della timeline. */
-  const onTimelineStripDragOutsideDelete = useCallback(
-    (node) => {
-      if (!node || isSimulationMode) return;
-      const dragId = node.id;
-      const dragType = node.type;
-      const dlSnap = dailyLogRef.current;
-      const mnSnap = manualNodesRef.current;
-      const idMatch = (a, b) => a === b || String(a) === String(b);
-      const isGhostDrag = dragType === 'ghost_meal' || dragType === 'ghost_workout';
-
-      if (isGhostDrag) {
-        setGhostProgramDeleteModal({ nodeId: dragId, dragType });
-        return;
-      }
-
-      const confirmDelete = window.confirm('Vuoi eliminare questo elemento?');
-      if (!confirmDelete) return;
-
-      if (dragType === 'meal') {
-        const slotId = String(node.mealId || node.id);
-        const itemIds = getFoodItemsForMealSlot(dlSnap, slotId).map((i) => i.id).filter((id) => id != null);
-        if (itemIds.length === 0) return;
-        const idSet = new Set(itemIds.map((x) => String(x)));
-        const newLog = dlSnap.filter((item) => !idSet.has(String(item.id)));
-        setDailyLog(newLog);
-        syncDatiFirebase(newLog, mnSnap);
-        pushTimelineUndoSnapshot(newLog, mnSnap);
-      } else {
-        const newLog = dlSnap.filter((item) => !idMatch(item.id, dragId));
-        const newNodes = mnSnap.filter((n) => !idMatch(n.id, dragId));
-        setDailyLog(newLog);
-        setManualNodes(newNodes);
-        syncDatiFirebase(newLog, newNodes);
-        pushTimelineUndoSnapshot(newLog, newNodes);
-      }
-    },
-    [isSimulationMode, getFoodItemsForMealSlot, syncDatiFirebase, pushTimelineUndoSnapshot]
-  );
 
   const loadMealToConstructor = useCallback((mTypeOrId) => {
     const log = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
@@ -3143,197 +2576,6 @@ export default function SalaComandi() {
     setPendingGhostMealId(null);
     setShowFastLogger(true);
   }, []);
-
-  const getCurrentTimeRoundedTo15Min = () => {
-    const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    const decimal = h + m / 60;
-    return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
-  };
-
-  const openWorkoutFromTodayPlan = useCallback(() => {
-    if (!todayPlanBlock) return;
-    const draft = buildWorkoutDraftFromPlanBlock(todayPlanBlock);
-    if (!draft) return;
-
-    const typeVal = draft.workoutType || 'pesi';
-    const durationMin = parseDurationMinutesInput(draft.workoutDurationMin, {
-      min: WORKOUT_DURATION_MIN,
-      max: WORKOUT_DURATION_MAX,
-      fallback: WORKOUT_DURATION_DEFAULT,
-    });
-    const startT = Number.isFinite(Number(draft.workoutStartTime))
-      ? Number(draft.workoutStartTime)
-      : getCurrentTimeRoundedTo15Min();
-
-    setEditingWorkoutId(null);
-    setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
-    setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
-    setWorkoutKcal(Number(draft.workoutKcal) || 300);
-    setWorkoutDurationMin(String(durationMin));
-    setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
-    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
-    setWorkoutPlanDraft(draft);
-    setIsPlanActionSheetOpen(false);
-    setActiveAction('allenamento');
-    setIsDrawerOpen(true);
-  }, [todayPlanBlock]);
-
-  const openWorkoutEditorFromLogItem = useCallback((workout) => {
-    if (!workout?.id) return;
-    const startT = typeof workout.time === 'number' && !Number.isNaN(workout.time) ? workout.time : 12;
-    const durH = Math.max(0.25, Number(workout.duration) || 1);
-    const editSt = workout.subType || 'pesi';
-
-    setEditingWorkoutId(workout.id);
-    setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
-    setWorkoutEndTime(Math.min(24, startT + durH));
-    setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
-    setWorkoutKcal(Number(workout.kcal || workout.cal) || 300);
-    setWorkoutStrengthDetail(String(workout.workoutDetailNote || '').trim());
-    setWorkoutMuscles(
-      normalizeMuscleGroupArray(
-        Array.isArray(workout.muscles)
-          ? workout.muscles
-          : Array.isArray(workout.workoutMuscles)
-            ? workout.workoutMuscles
-            : [],
-      ),
-    );
-    setWorkoutPlanDraft(null);
-    setShowDiarySheet(false);
-    setActiveAction('allenamento');
-    setIsDrawerOpen(true);
-  }, []);
-
-  const handleStartWorkoutSession = useCallback(() => {
-    const startT = getCurrentTimeRoundedTo15Min();
-    const durationMin = parseDurationMinutesInput(workoutDurationMin, {
-      min: WORKOUT_DURATION_MIN,
-      max: WORKOUT_DURATION_MAX,
-      fallback: WORKOUT_DURATION_DEFAULT,
-    });
-    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
-  }, [workoutDurationMin]);
-
-  const clearWorkoutPlanDraft = useCallback(() => {
-    setWorkoutPlanDraft(null);
-  }, []);
-
-  const skipTodayPlanSession = useCallback(async () => {
-    const uid = user?.uid;
-    const todayIso = currentTrackerDate || getTodayString();
-    const weekStart = getWeekStartMondayKeyLocal(todayIso);
-
-    if (isSimulationMode || !db || !uid) {
-      setIsPlanActionSheetOpen(false);
-      return;
-    }
-
-    const restBlock = buildUserRestDayBlock(todayIso, todayPlanBlock, userProfileKcalBase);
-
-    try {
-      const payload = dayBlockToFirebasePayload(restBlock);
-      await set(
-        ref(db, `users/${uid}/weeklyBlockPlan/${weekStart}/blocks/${todayIso}`),
-        payload
-      );
-      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekStart}`), {
-        updatedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error('[SalaComandi] Salta sessione fallito:', err);
-    } finally {
-      setIsPlanActionSheetOpen(false);
-    }
-  }, [
-    user?.uid,
-    currentTrackerDate,
-    isSimulationMode,
-    db,
-    todayPlanBlock,
-    userProfileKcalBase,
-  ]);
-
-  const handlePostponeWorkout = useCallback(async () => {
-    const uid = user?.uid;
-    const todayIso = currentTrackerDate || getTodayString();
-
-    if (isSimulationMode || !db || !uid || !todayPlanBlock) {
-      setIsPlanActionSheetOpen(false);
-      return;
-    }
-
-    if (isRestPlanBlockForSwap(todayPlanBlock)) {
-      setIsPlanActionSheetOpen(false);
-      return;
-    }
-
-    try {
-      /** @type {Map<string, import('./features/weeklyBlocks/weeklyBlockSchema').WeeklyBlockPlan>} */
-      const plansByWeek = new Map();
-
-      const loadPlanForDate = async (isoDate) => {
-        const weekMonday = getWeekStartMondayKeyLocal(isoDate);
-        if (!plansByWeek.has(weekMonday)) {
-          const snap = await get(ref(db, `users/${uid}/weeklyBlockPlan/${weekMonday}`));
-          plansByWeek.set(
-            weekMonday,
-            snap.exists()
-              ? sanitizeWeeklyBlockPlanFromFirebase(snap.val(), weekMonday)
-              : createEmptyWeeklyBlockPlan(weekMonday)
-          );
-        }
-        return plansByWeek.get(weekMonday);
-      };
-
-      let restDate = null;
-      for (let offset = 1; offset <= 6; offset += 1) {
-        const candidateIso = addDays(todayIso, offset);
-        const plan = await loadPlanForDate(candidateIso);
-        const candidateBlock = plan?.blocks?.[candidateIso];
-        if (isRestPlanBlockForSwap(candidateBlock)) {
-          restDate = candidateIso;
-          break;
-        }
-      }
-
-      if (!restDate) {
-        window.alert(
-          "Nessun giorno di riposo disponibile per posticipare l'allenamento. Usa 'Salta sessione'."
-        );
-        setIsPlanActionSheetOpen(false);
-        return;
-      }
-
-      const weekToday = getWeekStartMondayKeyLocal(todayIso);
-      const weekRest = getWeekStartMondayKeyLocal(restDate);
-      const todayRestBlock = buildUserRestDayBlock(todayIso, todayPlanBlock, userProfileKcalBase);
-      const relocatedBlock = relocatePlanBlockToDate(todayPlanBlock, restDate);
-
-      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekToday}`), {
-        [`blocks/${todayIso}`]: dayBlockToFirebasePayload(todayRestBlock),
-        updatedAt: Date.now(),
-      });
-
-      await update(ref(db, `users/${uid}/weeklyBlockPlan/${weekRest}`), {
-        [`blocks/${restDate}`]: dayBlockToFirebasePayload(relocatedBlock),
-        updatedAt: Date.now(),
-      });
-    } catch (err) {
-      console.error('[SalaComandi] Posticipa allenamento fallito:', err);
-    } finally {
-      setIsPlanActionSheetOpen(false);
-    }
-  }, [
-    user?.uid,
-    currentTrackerDate,
-    isSimulationMode,
-    db,
-    todayPlanBlock,
-    userProfileKcalBase,
-  ]);
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
@@ -3499,16 +2741,6 @@ export default function SalaComandi() {
     return fallbackFromSlot();
   };
 
-  const parseTimeStrToDecimal = (value) => {
-    const digits = (value || '').replace(/\D/g, '');
-    if (digits.length === 0) return 12;
-    const formatted = digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2, 4) : digits;
-    const [hh, mm] = formatted.includes(':') ? formatted.split(':') : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
-    const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
-    const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
-    return h + m / 60;
-  };
-
   /** Stima media verosimile per nutriente mancante (mai 0: usa contesto nome o media). */
   const getAverageEstimate = useCallback((nutrientKey, foodDesc = '') => {
     return getAverageEstimateFromEngine({ nutrientKey, foodDesc, fullHistory });
@@ -3582,14 +2814,14 @@ export default function SalaComandi() {
    * Usato da chat add_food e da espansione ghost timeline → costruttore pasto.
    */
   const mapProposalItemsToDiaryFoods = useCallback(
-    (addFoodItems, mealDecFood, explicitMealType = null) => {
+    (addFoodItems, mealDecFood, explicitMealType = null, forcedMealSlot = null) => {
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return [];
       const canonicalMeal =
         toCanonicalMealType(String(explicitMealType || '').split('_')[0])
         || predictMealType(mealDecFood);
-      // Ogni conferma chat = nuovo carrello: slot sequenziale snack, snack_2, snack_3…
-      const batchMealType = getGhostMealType(canonicalMeal, dailyLogRef.current || []);
-      const mealDec = mealDecFood;
+      const batchMealType = forcedMealSlot?.mealType
+        || getGhostMealType(canonicalMeal, dailyLogRef.current || []);
+      const mealDec = forcedMealSlot?.mealTime ?? mealDecFood;
       const batchIdFood = `batch_${Date.now()}`;
       return addFoodItems
         .map((item, index) => {
@@ -3763,6 +2995,77 @@ Ottimo! Diario aggiornato. 🥗`;
       setSimulatedLog,
       setDailyLog,
       syncDatiFirebase,
+    ]
+  );
+
+  /** Sovrascrive un nodo pasto esistente (UPDATE_LOGGED_MEAL) invece di appendere nuove voci. */
+  const commitUpdateMealChatPayload = useCallback(
+    (payload) => {
+      const {
+        targetNodeId,
+        timeString: oraStringFood,
+        mealDec: mealDecFood,
+        items: addFoodItems,
+      } = payload || {};
+      const slotId = String(targetNodeId || '').trim();
+      if (!slotId || !Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+
+      const logSnap = dailyLogRef.current || [];
+      const existing = getFoodItemsForMealSlot(logSnap, slotId);
+      if (!existing.length) return null;
+
+      const forcedMealSlot = {
+        mealType: existing[0]?.mealType,
+        mealTime: typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
+          ? existing[0].mealTime
+          : mealDecFood,
+      };
+      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
+        addFoodItems,
+        forcedMealSlot.mealTime,
+        toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
+        forcedMealSlot,
+      );
+      if (!alimentiProcessatiFood.length) return null;
+
+      const totKcal = Math.round(
+        alimentiProcessatiFood.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0)
+      );
+      const totPro =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.prot) || 0), 0) * 10) / 10;
+      const totCar =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.carb) || 0), 0) * 10) / 10;
+      const totFat =
+        Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) /
+        10;
+      const confirmTime = oraStringFood || decimalToTimeStr(forcedMealSlot.mealTime);
+      const testoRispostaFood = buildMealUpdateConfirmMessage(confirmTime, {
+        kcal: totKcal,
+        prot: totPro,
+        carbo: totCar,
+        fat: totFat,
+      });
+
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood));
+      } else {
+        setDailyLog((prev) => {
+          const next = replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood);
+          syncDatiFirebase(next, manualNodesRef.current);
+          return next;
+        });
+      }
+      return testoRispostaFood;
+    },
+    [
+      mapProposalItemsToDiaryFoods,
+      getFoodItemsForMealSlot,
+      isSimulationMode,
+      setSimulatedLog,
+      setDailyLog,
+      syncDatiFirebase,
+      decimalToTimeStr,
+      toCanonicalMealType,
     ]
   );
 
@@ -3942,108 +3245,6 @@ Ottimo! Diario aggiornato. 🥗`;
     setIsFullScreenGraph(false);
   };
 
-  const handleFastLoggerSave = useCallback((draftFoods, targetMealType, editMealId, customMealTime) => {
-    if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return;
-
-    const mealTimeBySlot = {
-      colazione: 8.0,
-      pranzo: 13.0,
-      cena: 20.0,
-      snack: 10.5,
-    };
-    const slot = normalizeMealSlotType(String(targetMealType || 'pranzo').split('_')[0]);
-    const batchId = Date.now();
-    const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
-
-    let mealTypeToUse = slot;
-    let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
-
-    if (typeof customMealTime === 'number' && !Number.isNaN(customMealTime)) {
-      mealTimeToUse = customMealTime;
-    } else if (editMealId) {
-      const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
-      if (existing.length > 0) {
-        if (typeof existing[0].mealTime === 'number' && !Number.isNaN(existing[0].mealTime)) {
-          mealTimeToUse = existing[0].mealTime;
-        }
-      }
-    } else if (pendingGhostMealId) {
-      const ghost = logToUse.find(
-        (e) =>
-          e?.type === 'ghost_meal' &&
-          e?.id != null &&
-          String(e.id) === String(pendingGhostMealId)
-      );
-      if (ghost) {
-        let t = ghost.mealTime;
-        if (typeof t !== 'number' || Number.isNaN(t)) t = ghost.time;
-        if (typeof t === 'number' && !Number.isNaN(t)) {
-          mealTimeToUse = t;
-        } else {
-          const parsed = parseFlexibleTimeToDecimal(String(t ?? ''));
-          if (parsed != null) mealTimeToUse = parsed;
-        }
-      }
-    }
-
-    const nuoviAlimenti = draftFoods.map((f, index) => {
-      const weight = Number(f.weight ?? f.qta) || 100;
-      return {
-        ...f,
-        type: 'food',
-        mealType: mealTypeToUse,
-        mealTime: mealTimeToUse,
-        id: `f_${batchId}_${index}`,
-        qta: weight,
-        weight,
-        kcal: Number(f.kcal ?? f.cal) || 0,
-        cal: Number(f.cal ?? f.kcal) || 0,
-      };
-    });
-
-    let nuovoLog;
-    if (editMealId) {
-      const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(editMealId));
-      const removeSet = new Set(foodsToRemove);
-      nuovoLog = logToUse.filter((item) => !removeSet.has(item));
-      nuovoLog = [...nuoviAlimenti, ...nuovoLog];
-    } else {
-      nuovoLog = [...logToUse, ...nuoviAlimenti];
-      if (pendingGhostMealId) {
-        nuovoLog = nuovoLog.filter(
-          (e) =>
-            !(
-              e?.type === 'ghost_meal' &&
-              e?.id != null &&
-              String(e.id) === String(pendingGhostMealId)
-            )
-        );
-      }
-    }
-
-    if (isSimulationMode) {
-      setSimulatedLog(nuovoLog);
-    } else {
-      setDailyLog(nuovoLog);
-      syncDatiFirebase(nuovoLog, manualNodes || []);
-    }
-    setMealToEdit(null);
-    setEditingMealId(null);
-    setFastLoggerInitialSlot(null);
-    setPendingGhostMealId(null);
-    setShowFastLogger(false);
-  }, [
-    dailyLog,
-    simulatedLog,
-    manualNodes,
-    syncDatiFirebase,
-    isSimulationMode,
-    isInitialLoadComplete,
-    getFoodItemsForMealSlot,
-    pendingGhostMealId,
-    parseFlexibleTimeToDecimal,
-  ]);
-
   const fastLoggerInitialMealTime = useMemo(() => {
     if (!showFastLogger) return undefined;
 
@@ -4070,99 +3271,6 @@ Ottimo! Diario aggiornato. 🥗`;
     dailyLog,
     getFoodItemsForMealSlot,
   ]);
-
-  const startNodeDrag = useCallback((node, edge) => (e, activationOpts) => {
-    e.stopPropagation();
-    setTouchingNodeId(node.id);
-    const target = e.currentTarget;
-    const startX = Number.isFinite(activationOpts?.clientX0) ? activationOpts.clientX0 : e.clientX;
-    const startY = Number.isFinite(activationOpts?.clientY0) ? activationOpts.clientY0 : e.clientY;
-
-    longPressMoveCleanupRef.current?.();
-    longPressMoveCleanupRef.current = null;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-
-    const onMove = (ev) => {
-      const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
-      if (dist > NODE_DRAG_ARM_CANCEL_MOVE_PX) {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
-        target.removeEventListener('pointermove', onMove, { passive: true });
-        longPressMoveCleanupRef.current = null;
-      }
-    };
-    const moveListenerOpts = { passive: true };
-    target.addEventListener('pointermove', onMove, moveListenerOpts);
-    longPressMoveCleanupRef.current = () => {
-      target.removeEventListener('pointermove', onMove, moveListenerOpts);
-      longPressMoveCleanupRef.current = null;
-    };
-
-    const innerDelayMs = activationOpts?.skipInnerLongPressDelay === true ? 0 : 180;
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      longPressMoveCleanupRef.current?.();
-      longPressMoveCleanupRef.current = null;
-      target.setPointerCapture(e.pointerId);
-      dragOffsetYRef.current = 0;
-      const mealSlotForDrag = String(node.mealId || node.id);
-      const itemIds =
-        node.type === 'meal'
-          ? getFoodItemsForMealSlot(activeLog || [], mealSlotForDrag)
-              .map((i) => i.id)
-              .filter((id) => id != null)
-          : [];
-      setDraggingNode({
-        id: node.id,
-        type: node.type,
-        itemIds,
-        originalTime: node.time,
-        originalDuration: node.duration,
-        edge
-      });
-    }, innerDelayMs);
-  }, [activeLog, manualNodes, dailyLog]);
-
-  const releaseNodePointer = (e) => {
-    setTouchingNodeId(null);
-    longPressMoveCleanupRef.current?.();
-    longPressMoveCleanupRef.current = null;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-      return;
-    }
-    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-
-  const handleUndo = useCallback(() => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    const prev = historyStack[newIndex];
-    if (!prev) return;
-    setHistoryIndex(newIndex);
-    setDailyLog(prev.dailyLog);
-    setManualNodes(prev.manualNodes);
-    syncDatiFirebase(prev.dailyLog, prev.manualNodes);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
-
-  const handleRedo = useCallback(() => {
-    if (historyIndex >= historyStack.length - 1) return;
-    const newIndex = historyIndex + 1;
-    const next = historyStack[newIndex];
-    if (!next) return;
-    setHistoryIndex(newIndex);
-    setDailyLog(next.dailyLog);
-    setManualNodes(next.manualNodes);
-    syncDatiFirebase(next.dailyLog, next.manualNodes);
-    setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase]);
 
   const handleNodeTap = useCallback((node) => (event) => {
     if (Math.abs(dragOffsetYRef.current) >= 10) return;
@@ -4379,86 +3487,6 @@ Ottimo! Diario aggiornato. 🥗`;
     setFastChargeSupplementName('');
   };
 
-  const handleSaveWorkout = () => {
-    if (workoutActivityRequiresStrengthDetailNote(workoutType) && !String(workoutStrengthDetail).trim()) {
-      window.alert('Compila «Dettaglio workout» per salvare questo tipo di attività.');
-      return;
-    }
-    const normalizedDurationMin = parseDurationMinutesInput(workoutDurationMin, {
-      min: WORKOUT_DURATION_MIN,
-      max: WORKOUT_DURATION_MAX,
-      fallback: WORKOUT_DURATION_DEFAULT,
-    });
-    setWorkoutDurationMin(String(normalizedDurationMin));
-    const duration = Math.max(0.25, Math.min(24, normalizedDurationMin / 60));
-    const def = getWorkoutActivityTypeDef(workoutType);
-    const nodeKind = def?.nodeKind ?? 'workout';
-    const isWork = nodeKind === 'work';
-    const isCognitive = nodeKind === 'cognitive';
-    const startDec = workoutStartTime;
-    const finalId = editingWorkoutId || (isWork ? 'work_' : isCognitive ? 'cognitive_' : 'workout_') + Date.now();
-
-    const musclesCanon = normalizeMuscleGroupArray(workoutMuscles);
-    const detailTrim = String(workoutStrengthDetail).trim();
-    const baseDesc = getWorkoutActivityLogDescription(workoutType, musclesCanon);
-    const desc =
-      detailTrim && workoutActivityRequiresStrengthDetailNote(workoutType)
-        ? `${baseDesc} — ${detailTrim}`
-        : baseDesc;
-    const cognitiveKcal = isCognitive ? Math.round(getCognitiveMetForActivity(workoutType) * 70 * duration) : workoutKcal;
-    const iconNode = isCognitive ? (def?.icon || '📚') : isWork ? '💼' : def?.icon || '🏋️';
-    const nodeData = {
-      id: finalId,
-      type: isCognitive ? 'cognitive' : isWork ? 'work' : 'workout',
-      time: Number(startDec),
-      duration,
-      kcal: isCognitive ? cognitiveKcal : workoutKcal,
-      icon: iconNode,
-      subType: workoutType,
-      muscles: musclesCanon,
-      ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
-    };
-    const logData = {
-      id: finalId,
-      type: 'workout',
-      workoutType,
-      desc,
-      name: isCognitive ? desc : isWork ? 'Lavoro' : desc,
-      kcal: isCognitive ? cognitiveKcal : workoutKcal,
-      cal: isCognitive ? cognitiveKcal : workoutKcal,
-      duration,
-      ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
-    };
-
-    if (isSimulationMode) {
-      setSimulatedLog(prev => {
-        const base = prev || [];
-        return base.some(n => n.id === finalId) ? base.map(n => n.id === finalId ? logData : n) : [logData, ...base];
-      });
-      setEditingWorkoutId(null);
-      setWorkoutMuscles([]);
-      setWorkoutStrengthDetail('');
-      setWorkoutPlanDraft(null);
-      setIsPlanActionSheetOpen(false);
-      closeDrawer();
-      return;
-    }
-    const baseLog = dailyLog;
-    const newLog = baseLog.some(n => n.id === finalId) ? baseLog.map(n => n.id === finalId ? logData : n) : [logData, ...baseLog];
-    const newNodesRaw = manualNodes.some(n => n.id === finalId) ? manualNodes.map(n => n.id === finalId ? nodeData : n) : [...manualNodes, nodeData];
-    const newNodes = newNodesRaw.filter((n) => n && n.type !== 'ghost_workout');
-    setDailyLog(newLog);
-    setManualNodes(newNodes);
-    syncDatiFirebase(newLog, newNodes);
-
-    setEditingWorkoutId(null);
-    setWorkoutMuscles([]);
-    setWorkoutStrengthDetail('');
-    setWorkoutPlanDraft(null);
-    setIsPlanActionSheetOpen(false);
-    closeDrawer();
-  };
-
   const processTestoAI = (testo) => {
     let trovati = 0;
     const batchId = Date.now();
@@ -4520,77 +3548,6 @@ Ottimo! Diario aggiornato. 🥗`;
     }
   };
 
-  const removeLogItem = (id) => {
-    if (isSimulationMode) {
-      // Stessa chiave della logica reale: item.id (non idLog)
-      setSimulatedLog(prev => (prev || []).filter(item => item.id !== id));
-      return;
-    }
-    const newLog = dailyLog.filter(item => item.id !== id);
-    const newNodes = manualNodes.filter(n => n.id !== id);
-    setDailyLog(newLog);
-    setManualNodes(newNodes);
-    syncDatiFirebase(newLog, newNodes);
-  };
-
-  const handleMiniTimelineDrag = (
-    e,
-    containerRef,
-    type,
-    currentStart,
-    currentEnd,
-    setterStart,
-    setterEnd,
-    dragOpts = null,
-  ) => {
-    if (!containerRef?.current) return;
-    e.preventDefault();
-    const target = e.currentTarget;
-    const pointerId = e.pointerId;
-    const container = containerRef.current;
-    const rect = container.getBoundingClientRect();
-    target.setPointerCapture(pointerId);
-    const fixedD =
-      dragOpts && typeof dragOpts.fixedDurationHours === 'number' && dragOpts.fixedDurationHours > 0
-        ? dragOpts.fixedDurationHours
-        : null;
-
-    const onMove = (moveEvent) => {
-      moveEvent.preventDefault();
-      const percent = Math.max(0, Math.min(1, (moveEvent.clientX - rect.left) / rect.width));
-      const newTime = Math.round(percent * 24 * 4) / 4;
-      if (type === 'point') {
-        setterStart(newTime);
-      } else if (type === 'bar-start') {
-        setterStart(Math.min(newTime, currentEnd - 0.25));
-      } else if (type === 'bar-end' && fixedD != null) {
-        /* Durata fissa: l'inizio è derivato da fine − durata (anche con wrap 0–24h). Non vincolare la fine al vecchio inizio+durata, altrimenti non si può spostare la fine a un'ora precedente (es. log serale di una sessione pomeridiana). */
-        setterEnd(Math.min(24, Math.max(0, newTime)));
-      } else if (type === 'bar-end') {
-        setterEnd(Math.max(newTime, currentStart + 0.25));
-      } else if (type === 'bar-all' && fixedD != null) {
-        const clampedStart = Math.min(24 - fixedD, newTime);
-        setterEnd(clampedStart + fixedD);
-      } else if (type === 'bar-all') {
-        const duration = currentEnd - currentStart;
-        const clampedStart = Math.min(24 - duration, newTime);
-        setterStart(clampedStart);
-        setterEnd(clampedStart + duration);
-      }
-    };
-
-    const onUp = () => {
-      try { target.releasePointerCapture(pointerId); } catch (_) {}
-      target.removeEventListener('pointermove', onMove);
-      target.removeEventListener('pointerup', onUp);
-      target.removeEventListener('pointercancel', onUp);
-    };
-
-    target.addEventListener('pointermove', onMove);
-    target.addEventListener('pointerup', onUp);
-    target.addEventListener('pointercancel', onUp);
-  };
-
   // --- CLUSTER AI (BFF Firebase) ---
   callGeminiAPIWithRotationRef.current = callGeminiAPIWithRotation;
 
@@ -4641,733 +3598,49 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     bodyBattery?.maxCapacity ?? 100
   );
 
-  const handleAutoLogDinner = useCallback(
-    (mealData) => {
-      if (!mealData || typeof mealData !== 'object') return;
-      const defaultStr = decimalToTimeStr(getCurrentTimeRoundedTo15Min());
-      const raw = typeof window !== 'undefined' ? window.prompt('Orario del pasto (HH:MM)', defaultStr) : null;
-      if (raw === null) return;
-      const mealTime = parseTimeStrToDecimal(raw);
-      const t = typeof mealTime === 'number' && !Number.isNaN(mealTime) ? mealTime : getCurrentTimeRoundedTo15Min();
-      const ghostType = getGhostMealType('cena', dailyLog || []);
-      const label = String(mealData.label || mealData.description || 'Cena').trim() || 'Cena';
-      const kcal = Math.max(0, Math.round(Number(mealData.kcal) || 0));
-      const prot = Math.max(0, Math.round((Number(mealData.prot) || 0) * 10) / 10);
-      const carb = Math.max(0, Math.round((Number(mealData.carb) || 0) * 10) / 10);
-      const fat = Math.max(0, Math.round((Number(mealData.fat ?? mealData.fatTotal) || 0) * 10) / 10);
-      const newItem = {
-        id: `kentu_dinner_${Date.now()}`,
-        type: 'food',
-        mealType: ghostType,
-        mealTime: t,
-        desc: label,
-        name: label,
-        qta: 100,
-        weight: 100,
-        kcal,
-        cal: kcal,
-        prot,
-        carb,
-        fatTotal: fat,
-        fat,
-      };
-      Object.keys(TARGETS).forEach((g) => {
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (newItem[k] == null) {
-            newItem[k] = getDefaultNutrientValue(k, fullHistory);
-          }
-        });
-      });
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => [...(prev || []), newItem]);
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Cena salvata nel diario! (sandbox)' }]);
-        return;
-      }
-      const nuovoLog = [newItem, ...(dailyLog || [])];
-      setDailyLog(nuovoLog);
-      syncDatiFirebase(nuovoLog, manualNodes);
-      const uid = auth.currentUser?.uid;
-      const dateStr = currentTrackerDate || getTodayString();
-      if (uid && db) {
-        push(ref(db, `users/${uid}/history/${dateStr}/meals`), {
-          label,
-          kcal,
-          prot,
-          carb,
-          fat,
-          mealTime: t,
-          source: 'kentu_dinner',
-          loggedAt: Date.now(),
-        }).catch(() => {});
-      }
-      setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Cena salvata nel diario!' }]);
-    },
-    [
-      dailyLog,
-      manualNodes,
-      syncDatiFirebase,
-      isSimulationMode,
-      fullHistory,
-      currentTrackerDate,
-      auth,
-      db,
-    ]
-  );
-
-  const handleAutoLogAgenda = useCallback(
-    (agendaOptions) => {
-      if (!Array.isArray(agendaOptions) || agendaOptions.length === 0) return;
-      const dateStr = currentTrackerDate || getTodayString();
-      const uid = auth.currentUser?.uid;
-      const n = agendaOptions.length;
-      const newItems = agendaOptions.map((opt, idx) => {
-        const name = String(opt?.name || opt?.label || 'Attività').trim() || 'Attività';
-        const durMin = Math.max(15, Math.round(Number(opt?.duration) || 60));
-        const kcal = Math.max(0, Math.round(Number(opt?.kcal) || 0));
-        const durationH = Math.max(0.25, durMin / 60);
-        const spreadT = n <= 1 ? 12 : 8 + (idx / Math.max(1, n - 1)) * 10;
-        const mealTime = Math.min(22.75, Math.round(spreadT * 4) / 4);
-        return {
-          id: `kentu_agenda_${Date.now()}_${idx}`,
-          type: 'workout',
-          workoutType: 'misto',
-          desc: name.toUpperCase(),
-          name,
-          kcal,
-          cal: kcal,
-          duration: durationH,
-          mealTime,
-          time: mealTime,
-        };
-      });
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => [...newItems, ...(prev || [])]);
-        dismissKentuAgendaTrigger();
-        lastAgendaOptionsRef.current = null;
-        setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Attività caricate nella timeline! (sandbox)' }]);
-        return;
-      }
-      const nuovoLog = [...newItems, ...(dailyLog || [])];
-      setDailyLog(nuovoLog);
-      syncDatiFirebase(nuovoLog, manualNodes);
-      if (uid && db) {
-        newItems.forEach((item) => {
-          push(ref(db, `users/${uid}/history/${dateStr}/activities`), {
-            name: item.name,
-            durationMin: Math.round(Math.max(15, (item.duration || 0.25) * 60)),
-            kcal: item.kcal,
-            mealTime: item.mealTime,
-            source: 'kentu_agenda',
-            loggedAt: Date.now(),
-          }).catch(() => {});
-        });
-      }
-      dismissKentuAgendaTrigger();
-      lastAgendaOptionsRef.current = null;
-      setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Attività caricate nella timeline!' }]);
-    },
-    [
-      dailyLog,
-      manualNodes,
-      syncDatiFirebase,
-      isSimulationMode,
-      currentTrackerDate,
-      auth,
-      db,
-      dismissKentuAgendaTrigger,
-    ]
-  );
-
-  const applyKentuChatCmd = useCallback((cmd) => {
-    if (!cmd || typeof cmd !== 'object') return;
-    if (cmd.target != null) {
-      const t = normalizeCalorieStrategyTarget(cmd.target);
-      setKentuDailyCalorieStrategy(t);
-      try {
-        const d = currentTrackerDateRef.current || getTodayString();
-        localStorage.setItem(`kentu_cal_strategy_${d}`, t);
-      } catch (_) {
-        /* noop */
-      }
-    }
-    const anchorW = currentTrackerDateRef.current || getTodayString();
-    if (Object.prototype.hasOwnProperty.call(cmd, 'workoutTime')) {
-      const wt = cmd.workoutTime;
-      if (wt != null && String(wt).trim() && String(wt).toLowerCase() !== 'null') {
-        const dec = parseFlexibleTimeToDecimal(String(wt).trim());
-        if (dec != null && anchorW === getTodayString()) {
-          scheduledWorkoutContextRef.current = {
-            workoutDecimalHour: dec,
-            label: 'Allenamento (Kentu)',
-            dateStr: anchorW,
-          };
-        }
-      } else {
-        scheduledWorkoutContextRef.current = null;
-      }
-    }
-  }, []);
-
-  /** Conferma [MEAL_PROPOSAL]: scrive alimenti reali in dailyLog (non solo ghost timeline). */
-  const handleMealProposalConfirm = useCallback(
-    (proposal, selectedItems) => {
-      if (!selectedItems?.length) return;
-      const timeStr =
-        (proposal?.timeString && String(proposal.timeString).trim()) ||
-        decimalToTimeStr(getCurrentTimeRoundedTo15Min());
-      let mealDec = parseFlexibleTimeToDecimal(timeStr);
-      if (mealDec == null) mealDec = getCurrentTimeRoundedTo15Min();
-
-      const logSnap = dailyLogRef.current || [];
-      const predicted = predictMealType(mealDec);
-      const mealSlot = getGhostMealType(predicted, logSnap);
-      const mealTypeCanonical = toCanonicalMealType(String(mealSlot).split('_')[0]);
-      const batchId = `meal_proposal_${Date.now()}`;
-
-      const entries = selectedItems.map((it, index) => {
-        const name = String(it.name || '').trim() || 'Alimento';
-        const qty = Math.max(1, Math.round(Number(it.qty) || 100));
-        const matchedKey =
-          it.dbKey != null && foodDb[it.dbKey] != null ? it.dbKey : findBestFoodMatch(name, foodDb);
-
-        if (matchedKey != null) {
-          const dati = estraiDatiFoodDb(name, qty, mealSlot, matchedKey);
-          const isRecipe = dati.type === 'recipe';
-          return {
-            ...dati,
-            id: dati.id || `${batchId}_${index}`,
-            type: isRecipe ? 'recipe' : 'food',
-            name: dati.name ?? dati.desc ?? name,
-            desc: dati.desc ?? name,
-            qta: dati.qta ?? dati.weight ?? qty,
-            weight: dati.weight ?? dati.qta ?? qty,
-            mealType: mealTypeCanonical,
-            mealTime: mealDec,
-            batchId,
-            isEstimated: false,
-          };
-        }
-
-        const qSafe = Math.max(5, qty);
-        let kcal = Math.round(Number(it.estKcal));
-        let prot = Number(it.estPro);
-        let carb = Number(it.estCar);
-        let fat = Number(it.estFat);
-        if (!Number.isFinite(kcal) || kcal <= 0) {
-          kcal = Math.max(10, Math.round((getAverageEstimate('kcal', name) / 100) * qSafe));
-        }
-        if (!Number.isFinite(prot) || prot < 0) {
-          prot = (getAverageEstimate('prot', name) / 100) * qSafe;
-        }
-        if (!Number.isFinite(carb) || carb < 0) {
-          carb = (getAverageEstimate('carb', name) / 100) * qSafe;
-        }
-        if (!Number.isFinite(fat) || fat < 0) {
-          fat = (getAverageEstimate('fatTotal', name) / 100) * qSafe;
-        }
-        prot = Math.round(prot * 10) / 10;
-        carb = Math.round(carb * 10) / 10;
-        fat = Math.round(fat * 10) / 10;
-
-        return {
-          id: `${batchId}_food_${index}`,
-          type: 'food',
-          name,
-          desc: name,
-          qta: qSafe,
-          weight: qSafe,
-          kcal,
-          cal: kcal,
-          prot,
-          carb,
-          fat,
-          fatTotal: fat,
-          mealType: mealTypeCanonical,
-          mealTime: mealDec,
-          batchId,
-          isEstimated: true,
-        };
-      });
-
-      const totKcal = Math.round(entries.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0));
-      const totPro = Math.round(entries.reduce((s, f) => s + (Number(f.prot) || 0), 0) * 10) / 10;
-      const totCar = Math.round(entries.reduce((s, f) => s + (Number(f.carb) || 0), 0) * 10) / 10;
-      const totFat =
-        Math.round(entries.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) / 10;
-
-      const testo = `🎯 **Pasto Registrato**
-- **Orario:** ${timeStr}
-- **Kcal Totali:** ${totKcal}
-- **Proteine:** ${totPro}g
-- **Carboidrati:** ${totCar}g
-- **Grassi:** ${totFat}g
-
-Ottimo! Diario aggiornato. 🥗`;
-
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => [...entries, ...(prev || [])]);
-      } else {
-        setDailyLog((prev) => {
-          const next = [...entries, ...(prev || [])];
-          syncDatiFirebase(next, manualNodesRef.current);
-          return next;
-        });
-      }
-
-      setChatHistory((prev) => {
-        const withoutCard = prev.filter((m) => !m.mealProposal);
-        return [...withoutCard, { sender: 'ai', text: testo }];
-      });
-    },
-    [
-      estraiDatiFoodDb,
-      foodDb,
-      getAverageEstimate,
-      getCurrentTimeRoundedTo15Min,
-      getGhostMealType,
-      isSimulationMode,
-      predictMealType,
-      setDailyLog,
-      setSimulatedLog,
-      syncDatiFirebase,
-    ]
-  );
-
-  const handleMealProposalCancel = useCallback(() => {
-    setChatHistory((prev) => prev.filter((m) => !m.mealProposal));
-  }, []);
-
-  const handleDailyPlanConfirm = useCallback(
-    (plan) => {
-      if (!plan || typeof plan !== 'object') return;
-      if (!tryAcquireMealConfirmGuard(dailyPlanMealConfirmGuardRef)) return;
-      try {
-      let workoutTime = plan.workoutTime != null && String(plan.workoutTime).trim() ? String(plan.workoutTime).trim() : null;
-      if (!workoutTime && Array.isArray(plan.activities)) {
-        const wRe = /allenament|workout|palestra|corr|run|pesi|cardio|yoga|hiit|spinning|nuot/i;
-        const hit = plan.activities.find((a) => wRe.test(String(a?.desc || '')));
-        if (hit?.time) workoutTime = String(hit.time).trim();
-      }
-      applyKentuChatCmd({
-        target: plan.target,
-        workoutTime: workoutTime || null,
-      });
-      const rawGhostList = Array.isArray(plan.ghostMeals) ? plan.ghostMeals : [];
-      const ghostList = dedupeGhostMealsPayloadForConfirm(rawGhostList, (gm) => {
-        const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
-        if (rawId) return `id:${rawId}`;
-        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-        const timeStr = gm.time != null ? String(gm.time) : '12:00';
-        const dec = parseFlexibleTimeToDecimal(timeStr);
-        const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
-        return `slot:${mt}|${Number(mealTime).toFixed(3)}`;
-      });
-      const batchTs = Date.now();
-      const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-      const nowDec = getNowDecimalHourForPlanMerge();
-      const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
-      const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
-      const normalizeDailyPlanConflictTitle = (s) =>
-        String(s || '')
-          .trim()
-          .toLowerCase()
-          .replace(/\s+/g, ' ');
-      const realTitles = new Set();
-      (srcLog || []).forEach((n) => {
-        if (!n || n.isGhost === true || n.type === 'ghost_meal' || n.type === 'ghost_workout') return;
-        [n.desc, n.title, n.name].forEach((piece) => {
-          const norm = normalizeDailyPlanConflictTitle(piece);
-          if (norm.length >= 2) realTitles.add(norm);
-        });
-      });
-      const baseLog = buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec);
-      const newGhostEntries = ghostList
-        .filter((gm) => {
-          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-          if (realMealsSet.has(mt)) return false;
-          const gTitle = normalizeDailyPlanConflictTitle(gm.title);
-          if (gTitle && realTitles.has(gTitle)) return false;
-          return true;
-        })
-        .map((gm, i) => {
-          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-          const timeStr = gm.time != null ? String(gm.time) : '12:00';
-          const dec = parseFlexibleTimeToDecimal(timeStr);
-          const mealTime = dec != null && !Number.isNaN(dec) ? dec : 12;
-          const persistedDraftFoods = gm.draftFoods || [];
-          const draftFoods = Array.isArray(persistedDraftFoods)
-            ? persistedDraftFoods.map((x) => String(x).trim()).filter(Boolean)
-            : [];
-          let foodsArr = normalizeMealFoodsArray(mealFoodsRead(gm));
-          if (foodsArr.length === 0 && draftFoods.length > 0) {
-            foodsArr = normalizeMealFoodsArray(draftStringsToFoods(draftFoods));
-          }
-          const entry = {
-            id: ghostMealLogEntryIdFromPayload(gm, i, batchTs),
-            type: 'ghost_meal',
-            mealType: mt,
-            mealTime,
-            title: String(gm.title || 'Pasto pianificato').trim(),
-            microDesc: String(gm.microDesc || '').trim(),
-            draftFoods,
-            foods: foodsArr,
-            isGhost: true,
-          };
-          return entry;
-        });
-      const seenDailyGhostIds = new Set();
-      const uniqueDailyGhostEntries = newGhostEntries.filter((e) => {
-        if (!e?.id || seenDailyGhostIds.has(e.id)) return false;
-        seenDailyGhostIds.add(e.id);
-        return true;
-      });
-      const logTimeKey = (e) => {
-        if (!e) return 0;
-        if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
-          return Number(e.mealTime) || 0;
-        }
-        return Number(e.time ?? e.mealTime) || 0;
-      };
-      const mergedLog = [...baseLog, ...uniqueDailyGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
-      const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
-      let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      if (!isSimulationMode && workoutTime && !hasRealWorkout) {
-        const wDec = parseFlexibleTimeToDecimal(workoutTime);
-        if (wDec != null && !Number.isNaN(wDec)) {
-          mergedManual = [
-            ...baseManual,
-            {
-              id: `ghost_workout_${Date.now()}`,
-              type: 'ghost_workout',
-              time: wDec,
-              title: 'Allenamento Pianificato',
-              isGhost: true,
-            },
-          ].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-        }
-      }
-      if (isSimulationMode) {
-        setSimulatedLog(mergedLog);
-      } else {
-        setDailyLog(mergedLog);
-        setManualNodes(mergedManual);
-        syncDatiFirebase(mergedLog, mergedManual);
-      }
-      setChatHistory((prev) => {
-        const withoutCard = prev.filter((m) => !m.dailyPlan);
-        return [...withoutCard, { sender: 'ai', text: 'Piano confermato e caricato nel sistema.' }];
-      });
-      } finally {
-        releaseMealConfirmGuard(dailyPlanMealConfirmGuardRef);
-      }
-    },
-    [applyKentuChatCmd, dailyLog, manualNodes, syncDatiFirebase, isSimulationMode, simulatedLog, parseFlexibleTimeToDecimal, toCanonicalMealType]
-  );
-
-  const handleDailyPlanCancel = useCallback(() => {
-    setChatHistory((prev) => prev.filter((m) => !m.dailyPlan));
-  }, []);
-
-  const handleGeneratePlanGhostMealDraft = useCallback(
-    async ({
-      mealType,
-      time,
-      title,
-      microDesc,
-      planTarget,
-      aiMealConstraints,
-      manualFoods,
-      mealMacroResidual,
-      mealMacroTargetTotal,
-    }) => {
-      const manualNorm = normalizeMealFoodsArray(manualFoods);
-      const cov =
-        manualNorm.length > 0
-          ? manualNorm.reduce(
-              (a, f) => ({
-                kcal: a.kcal + (Number(f.kcal) || 0),
-                prot: a.prot + (Number(f.prot) || 0),
-                carb: a.carb + (Number(f.carb) || 0),
-                fat: a.fat + (Number(f.fat) || 0),
-              }),
-              { kcal: 0, prot: 0, carb: 0, fat: 0 }
-            )
-          : null;
-      const mt = mealMacroTargetTotal || {};
-      const mr = mealMacroResidual || {};
-      const manualBlock =
-        manualNorm.length > 0
-          ? `
-
-ALIMENTI GIÀ INSERITI DALL'UTENTE (fissi: non modificare grammi, non rimuovere, non ripetere nel JSON):
-${manualNorm.map((f) => `- ${f.qty}g ${f.name}`).join('\n')}
-
-Target pasto complessivo (riferimento motore): ~${Math.round(Number(mt.kcal) || 0)} kcal, P${mt.prot}g, C${mt.carb}g, F${mt.fat}g.
-Macro stimate dai fissi (se note): ~${Math.round(cov.kcal)} kcal, P${cov.prot.toFixed(1)}g, C${cov.carb.toFixed(1)}g, F${cov.fat.toFixed(1)}g.
-RESIDUO da colmare SOLO con nuove voci nell'array "items" (o in draftFoods se usi il formato legacy): ~${Math.round(Number(mr.kcal) || 0)} kcal, P${mr.prot}g, C${mr.carb}g, F${mr.fat}g.
-
-REGOLE CON FISSI:
-- "items" / draftFoods devono contenere SOLO alimenti AGGIUNTIVI (nessun nome uguale o equivalente ai fissi).
-- Se il residuo è trascurabile (es. kcal ≤ 30 e ogni macro residua ≤ 3 g), restituisci aggiunte vuote: {"items":[]} o draftFoods [].
-- Se il residuo non è trascurabile: almeno 1 nuova voce, massimo 10 nuove voci.
-`
-          : '';
-
-      const anchor = currentTrackerDate || getTodayString();
-      const burnedKcalContext = (activeLog || [])
-        .filter((item) => item && item.type === 'workout')
-        .reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
-      const dynamicKcal =
-        applyCalorieStrategyToProfileKcal(userTargets?.kcal ?? 2000, kentuDailyCalorieStrategy) + burnedKcalContext;
-      const recent7 = buildLast7DaysMealLinesForDraftPrompt(fullHistory, anchor);
-      const storicoBreve = buildRecentMealsContextForDinner(fullHistory, anchor);
-      const dispensa = collectDispensaProbableFoods(fullHistory, anchor, 18, 7);
-      const dbKeys = Object.keys(foodDb || {})
-        .slice(0, 45)
-        .join(', ');
-      const oggiBreve = (activeLog || [])
-        .filter((e) => e && (e.type === 'food' || e.type === 'recipe') && !e.isGhost)
-        .map((e) => `${e.desc || e.title || '?'} (~${Math.round(Number(e.kcal || e.cal) || 0)} kcal)`)
-        .slice(0, 20)
-        .join('; ');
-      const constraintsBlock = buildAiMealConstraintsPromptBlock(aiMealConstraints);
-      const minVociRule =
-        manualNorm.length > 0
-          ? 'Con alimenti fissi: solo aggiunte nel JSON (vedi blocco sotto). Senza fissi: minimo 2 voci, massimo 10.'
-          : 'Minimo 2 voci, massimo 10.';
-      const prompt = `Sei Kentu (nutrizionista operativo). Rispondi SOLO con un JSON valido su una riga o un blocco, senza testo prima o dopo, senza markdown.
-Formato preferito (voci strutturate con stime):
-{"items":[{"name":"Riso basmati","qty":200,"estKcal":260,"estPro":5,"estCar":58,"estFat":0.6,"dbKey":""}]}
-(dbKey opzionale: chiave da database se nota; altrimenti stringa vuota)
-
-Formato legacy accettato:
-{"draftFoods":["200g Riso basmati","120g Petto di pollo","10g Olio EVO"]}
-
-Pasto pianificato (slot):
-- mealType: ${String(mealType || '')}
-- orario: ${String(time || '')}
-- titolo: ${String(title || '')}
-- microDesc / focus: ${String(microDesc || '')}
-- target strategia giornata: ${String(planTarget || 'pari')}
-- kcal giornaliere di riferimento (adattate): ~${Math.round(dynamicKcal)}
-
-Gerarchia obbligatoria: (1) ultimi 3-7 giorni pasti simili; (2) storico più lungo; (3) dispensa + database; (4) combinazione nuova solo se necessario.
-Ogni voce deve essere "grammi + nome" (es. 150g Tofu). ${minVociRule}
-${constraintsBlock}
-${manualBlock}
-
-ULTIMI 7 GIORNI:
-${recent7}
-
-STORICO PASTI (sintesi 30gg):
-${String(storicoBreve).slice(0, 2200)}
-
-DISPENSA PROBABILE:
-${dispensa}
-
-OGGI GIÀ REGISTRATO:
-${oggiBreve || 'niente'}
-
-CHIAVI DB (subset):
-${dbKeys || 'n/d'}`;
-
-      const raw = await callGeminiAPIWithRotation(prompt);
-      try {
-        return parsePlanMealDraftAiResponse(raw);
-      } catch (e) {
-        throw new Error(e?.message ? `JSON non valido: ${e.message}` : 'Risposta AI non valida (piano pasto)');
-      }
-    },
-    [
-      activeLog,
-      callGeminiAPIWithRotation,
-      currentTrackerDate,
-      foodDb,
-      fullHistory,
-      kentuDailyCalorieStrategy,
-      userTargets,
-    ]
-  );
-
-  const savePlanning = useCallback(
-    async (dateStr, doc) => {
-      const uid = auth.currentUser?.uid;
-      if (!uid || !db || !dateStr || isSimulationMode || !doc) return;
-      try {
-        await set(ref(db, `planning/${uid}/${dateStr}`), doc);
-      } catch (e) {
-        console.warn('savePlanning:', e);
-      }
-    },
-    [auth, db, isSimulationMode]
-  );
-
-  const handlePlanningWizardConfirm = useCallback(
-    (payload) => {
-      if (!payload || typeof payload !== 'object') return;
-      if (!tryAcquireMealConfirmGuard(planningWizardMealConfirmGuardRef)) return;
-      try {
-      const rawGhostList = Array.isArray(payload.ghostMeals) ? payload.ghostMeals : [];
-      const ghostList = dedupeGhostMealsPayloadForConfirm(rawGhostList, (gm) => {
-        const rawId = gm.id != null && String(gm.id).trim() !== '' ? String(gm.id).trim() : '';
-        if (rawId) return `id:${rawId}`;
-        const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-        const mealTime =
-          typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
-            ? gm.mealTime
-            : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-        return `slot:${mt}|${Number(mealTime).toFixed(3)}`;
-      });
-      const batchTs = Date.now();
-      const srcLog = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-      const nowDec = getNowDecimalHourForPlanMerge();
-      const realMealsSet = buildPastOnlyRealMealTypeSet(srcLog, nowDec);
-      const hasRealWorkout = (srcLog || []).some((n) => n && !n.isGhost && n.type === 'workout');
-      const normalizeDailyPlanConflictTitle = (s) =>
-        String(s || '')
-          .trim()
-          .toLowerCase()
-          .replace(/\s+/g, ' ');
-      const realTitles = new Set();
-      (srcLog || []).forEach((n) => {
-        if (!n || n.isGhost === true || n.type === 'ghost_meal' || n.type === 'ghost_workout') return;
-        [n.desc, n.title, n.name].forEach((piece) => {
-          const norm = normalizeDailyPlanConflictTitle(piece);
-          if (norm.length >= 2) realTitles.add(norm);
-        });
-      });
-      const baseLog = buildBaseLogForGhostPlanMerge(srcLog, ghostList, nowDec);
-      const newGhostEntries = ghostList
-        .filter((gm) => {
-          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-          if (realMealsSet.has(mt)) return false;
-          const gTitle = normalizeDailyPlanConflictTitle(gm.title);
-          if (gTitle && realTitles.has(gTitle)) return false;
-          return true;
-        })
-        .map((gm, i) => {
-          const mt = toCanonicalMealType(String(gm.mealType || 'pranzo').split('_')[0]) || 'pranzo';
-          const mealTime =
-            typeof gm.mealTime === 'number' && !Number.isNaN(gm.mealTime)
-              ? gm.mealTime
-              : parseFlexibleTimeToDecimal(String(gm.time || '12:00')) ?? 12;
-          let foodsArr = normalizeMealFoodsArray(mealFoodsRead(gm));
-          if (foodsArr.length === 0 && Array.isArray(gm.draftFoods)) {
-            const objs = gm.draftFoods.filter((x) => x && typeof x === 'object' && (x.name || x.desc));
-            if (objs.length > 0) {
-              foodsArr = normalizeMealFoodsArray(objs);
-            } else {
-              const strOnly = gm.draftFoods
-                .map((x) => (typeof x === 'string' ? String(x).trim() : ''))
-                .filter(Boolean);
-              if (strOnly.length > 0) {
-                foodsArr = normalizeMealFoodsArray(draftStringsToFoods(strOnly));
-              }
-            }
-          }
-          const persistedDraftFoods = gm.draftFoods || [];
-          let draftFoods = [];
-          if (foodsArr.length > 0) {
-            draftFoods = foodsArr.map((f) => {
-              if (typeof f === 'string') return f.trim();
-              if (f && typeof f === 'object') {
-                const name = String(f.name || '').trim();
-                const q = Math.round(Number(f.qty) || 0);
-                return q > 0 ? `${q}g ${name}` : name;
-              }
-              return '';
-            }).filter(Boolean);
-          } else if (Array.isArray(persistedDraftFoods)) {
-            draftFoods = persistedDraftFoods
-              .map((x) => {
-                if (typeof x === 'string') return x.trim();
-                if (x && typeof x === 'object') {
-                  const name = String(x.name || x.desc || '').trim();
-                  const q = x.qty != null ? Math.round(Number(x.qty) || 0) : null;
-                  return q ? `${q}g ${name}` : name;
-                }
-                return '';
-              })
-              .filter(Boolean);
-          }
-          const entry = {
-            id: ghostMealLogEntryIdFromPayload(gm, i, batchTs),
-            type: 'ghost_meal',
-            mealType: mt,
-            mealTime,
-            title: String(gm.title || 'Pasto pianificato').trim(),
-            microDesc: String(gm.microDesc || '').trim(),
-            draftFoods,
-            foods: foodsArr,
-            isGhost: true,
-          };
-          return entry;
-        });
-      const seenGhostEntryIds = new Set();
-      const uniqueGhostEntries = newGhostEntries.filter((e) => {
-        if (!e?.id || seenGhostEntryIds.has(e.id)) return false;
-        seenGhostEntryIds.add(e.id);
-        return true;
-      });
-      const logTimeKey = (e) => {
-        if (!e) return 0;
-        if (e.type === 'ghost_meal' || e.type === 'food' || e.type === 'recipe') {
-          return Number(e.mealTime) || 0;
-        }
-        return Number(e.time ?? e.mealTime) || 0;
-      };
-      const mergedLog = [...baseLog, ...uniqueGhostEntries].sort((a, b) => logTimeKey(a) - logTimeKey(b));
-
-      const baseManual = (manualNodes || []).filter((n) => n && n.type !== 'ghost_workout');
-      let mergedManual = [...baseManual].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      const workoutTimesRaw = Array.isArray(payload.workoutTimesDec)
-        ? payload.workoutTimesDec
-        : typeof payload.workoutTimeDec === 'number' && !Number.isNaN(payload.workoutTimeDec)
-          ? [payload.workoutTimeDec]
-          : [];
-      const workoutTimes = [...new Set(workoutTimesRaw.filter((x) => typeof x === 'number' && !Number.isNaN(x)))].sort(
-        (a, b) => a - b
-      );
-      if (!isSimulationMode && payload.addGhostWorkout && workoutTimes.length > 0 && !hasRealWorkout) {
-        const ghostWos = workoutTimes.map((t, idx) => ({
-          id: `ghost_workout_${batchTs}_${idx}`,
-          type: 'ghost_workout',
-          time: t,
-          title: 'Allenamento Pianificato',
-          isGhost: true,
-        }));
-        mergedManual = [...baseManual, ...ghostWos].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      }
-
-      if (isSimulationMode) {
-        setSimulatedLog(mergedLog);
-      } else {
-        setDailyLog(mergedLog);
-        setManualNodes(mergedManual);
-        syncDatiFirebase(mergedLog, mergedManual);
-        if (auth.currentUser?.uid) {
-          const planningDoc = buildPlanningFirebaseDoc(payload);
-          void savePlanning(currentTrackerDate, planningDoc);
-        }
-      }
-      setPlanningWizardOverlayOpen(false);
-      } finally {
-        releaseMealConfirmGuard(planningWizardMealConfirmGuardRef);
-      }
-    },
-    [
-      auth,
-      currentTrackerDate,
-      dailyLog,
-      manualNodes,
-      savePlanning,
-      syncDatiFirebase,
-      isSimulationMode,
-      simulatedLog,
-      parseFlexibleTimeToDecimal,
-      toCanonicalMealType,
-    ]
-  );
+  const {
+    handleAutoLogDinner,
+    handleAutoLogAgenda,
+    applyKentuChatCmd,
+    handleMealProposalConfirm,
+    handleMealProposalCancel,
+    handleDailyPlanConfirm,
+    handleDailyPlanCancel,
+    handleGeneratePlanGhostMealDraft,
+    savePlanning,
+    handlePlanningWizardConfirm,
+    lastAgendaOptionsRef,
+  } = useKentuMealHandlers({
+    auth,
+    db,
+    foodDb,
+    dailyLog,
+    manualNodes,
+    simulatedLog,
+    activeLog,
+    fullHistory,
+    currentTrackerDate,
+    isSimulationMode,
+    dailyLogRef,
+    manualNodesRef,
+    scheduledWorkoutContextRef,
+    currentTrackerDateRef,
+    syncDatiFirebase,
+    predictMealType,
+    estraiDatiFoodDb,
+    getAverageEstimate,
+    parseFlexibleTimeToDecimal,
+    parseTimeStrToDecimal,
+    setChatHistory,
+    setKentuDailyCalorieStrategy,
+    setDailyLog,
+    setManualNodes,
+    setSimulatedLog,
+    setPlanningWizardOverlayOpen,
+    dismissKentuAgendaTrigger,
+    kentuDailyCalorieStrategy,
+    userTargets,
+  });
 
   const planningWizardBurnedKcal = useMemo(
     () =>
@@ -5542,75 +3815,6 @@ ${dbKeys || 'n/d'}`;
       const percent = target > 0 ? (amount / target) * 100 : 0;
       return { name, amount, percent };
     }).sort((a, b) => b.amount - a.amount);
-  };
-
-  // Renderizzatore Barre Telemetria
-  const renderProgressBar = (label, current, target, unit = 'g', nutrientKey = null) => {
-    const c = Number(current) ?? 0;
-    const t = Number(target) ?? 0;
-    const p = t > 0 ? Math.min((c / t) * 100, 100) : 0;
-    const color = p >= 100 ? '#00e676' : p > 50 ? '#00e5ff' : '#ff6d00';
-    return (
-      <div
-        style={{ marginBottom: '12px', cursor: nutrientKey ? 'pointer' : 'default', transition: 'transform 0.2s' }}
-        onClick={() => nutrientKey && setNutrientModal({ label, key: nutrientKey, target: t, unit, isWeekly: false })}
-        onMouseEnter={(e) => nutrientKey && (e.currentTarget.style.transform = 'scale(1.02)')}
-        onMouseLeave={(e) => nutrientKey && (e.currentTarget.style.transform = 'scale(1)')}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#aaa', marginBottom: '4px' }}>
-          <span>{label}</span>
-          <span>{Math.round(c)} / {Math.round(t)} {unit}</span>
-        </div>
-        <div style={{ height: '12px', background: '#333', borderRadius: '6px', overflow: 'hidden' }}>
-          <div style={{ width: `${p}%`, height: '100%', background: color, borderRadius: '6px', transition: 'width 0.5s' }}></div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderRatioBar = (title, labelA, valA, labelB, valB, idealText, isGood) => {
-    const vA = Number(valA) || 0;
-    const vB = Number(valB) || 0;
-    const total = vA + vB;
-    const percentA = total > 0 ? (vA / total) * 100 : 50;
-    return (
-      <div style={{ marginBottom: '20px', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #2a2a2a' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#aaa', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          <span>{title}</span>
-          <span style={{ color: isGood ? '#00e676' : '#ffea00' }}>{idealText}</span>
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '6px', fontWeight: 'bold' }}>
-          <span style={{ color: '#ff6d00' }}>{labelA}: {Math.round(vA)}</span>
-          <span style={{ color: '#00e5ff' }}>{labelB}: {Math.round(vB)}</span>
-        </div>
-        <div style={{ height: '8px', background: '#00e5ff', borderRadius: '4px', overflow: 'hidden', display: 'flex', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.5)' }}>
-          <div style={{ width: `${percentA}%`, background: '#ff6d00', transition: 'width 0.5s', borderRight: '2px solid #111' }}></div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderWeeklyBar = (label, current, dailyTarget, unit, nutrientKey = null) => {
-    const target = (Number(dailyTarget) || 1) * 7;
-    const percent = Math.min((current / target) * 100, 100);
-    const isOver = current > target * 1.5;
-    return (
-      <div
-        key={label}
-        style={{ marginBottom: '10px', cursor: nutrientKey ? 'pointer' : 'default', transition: 'transform 0.2s' }}
-        onClick={() => nutrientKey && setNutrientModal({ label, key: nutrientKey, target, unit, isWeekly: true })}
-        onMouseEnter={(e) => nutrientKey && (e.currentTarget.style.transform = 'scale(1.02)')}
-        onMouseLeave={(e) => nutrientKey && (e.currentTarget.style.transform = 'scale(1)')}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#888', marginBottom: '4px', textTransform: 'uppercase' }}>
-          <span>{label}</span>
-          <span style={{ color: isOver ? '#ff3d00' : '#ccc' }}>{Math.round(current)} / {Math.round(target)} {unit}</span>
-        </div>
-        <div style={{ height: '5px', background: '#222', borderRadius: '3px', overflow: 'hidden' }}>
-          <div style={{ width: `${percent}%`, height: '100%', background: isOver ? '#ff3d00' : (percent >= 100 ? '#00e676' : '#b388ff'), transition: 'width 0.5s' }}></div>
-        </div>
-      </div>
-    );
   };
 
   // ========================================================
@@ -6932,6 +5136,18 @@ ${dbKeys || 'n/d'}`;
         };
       });
 
+      const targetNodeId = String(payload?.targetNodeId || '').trim();
+      if (targetNodeId) {
+        const message = commitUpdateMealChatPayload({
+          targetNodeId,
+          timeString,
+          mealDec,
+          items,
+        });
+        if (message) return message;
+        throw new Error('Aggiornamento pasto fallito');
+      }
+
       const message = commitAddFoodChatPayload({
         timeString,
         mealDec,
@@ -6946,81 +5162,11 @@ ${dbKeys || 'n/d'}`;
     },
     [
       commitAddFoodChatPayload,
+      commitUpdateMealChatPayload,
       decimalToTimeStr,
       getCurrentTimeRoundedTo15Min,
       parseFlexibleTimeToDecimal,
       toCanonicalMealType,
-    ],
-  );
-
-  const commitAddWorkoutCommand = useCallback(
-    (payload) => {
-      const fingerprint = JSON.stringify({
-        workoutName: payload?.workoutName,
-        timeString: payload?.timeString || payload?.exactTime,
-        durationMinutes: payload?.durationMinutes,
-        estimatedKcal: payload?.estimatedKcal,
-        exercises: payload?.exercises,
-      });
-      const now = Date.now();
-      if (
-        lastWorkoutCommitRef.current.key === fingerprint
-        && now - lastWorkoutCommitRef.current.at < 4000
-      ) {
-        return null;
-      }
-      lastWorkoutCommitRef.current = { key: fingerprint, at: now };
-
-      const workoutName = String(payload?.workoutName || '').trim()
-        || (Array.isArray(payload?.exercises)
-          ? payload.exercises.map((item) => String(item?.exerciseName || '').trim()).filter(Boolean).join(', ')
-          : '');
-      if (!workoutName && !(Array.isArray(payload?.exercises) && payload.exercises.length > 0)) {
-        throw new Error('workoutName mancante');
-      }
-
-      const timeLabel = String(payload?.timeString || payload?.exactTime || '').trim();
-      if (!timeLabel) {
-        throw new Error('timeString mancante');
-      }
-      const timeDecimal = parseFlexibleTimeToDecimal(timeLabel);
-      if (!Number.isFinite(timeDecimal)) {
-        throw new Error('orario non valido');
-      }
-
-      const { logItem, timelineNode } = mapChatWorkoutToNativePayload(payload, timeDecimal);
-      const durationMinutes = Math.max(1, Math.round((Number(logItem.duration) || 0) * 60));
-      const label = String(logItem.desc || logItem.name || workoutName).trim();
-
-      if (isSimulationMode) {
-        setSimulatedLog((prev) => {
-          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
-          return [logItem, ...filteredLog];
-        });
-      } else {
-        setDailyLog((prev) => {
-          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
-          const newLog = [logItem, ...filteredLog];
-          const filteredNodes = (manualNodesRef.current || []).filter(
-            (node) => node?.id !== timelineNode.id,
-          );
-          const newNodes = [...filteredNodes, timelineNode].filter(
-            (node) => node && node.type !== 'ghost_workout',
-          );
-          setManualNodes(newNodes);
-          syncDatiFirebase(newLog, newNodes);
-          return newLog;
-        });
-      }
-      return `✅ Allenamento registrato: ${label} (${durationMinutes} min, ~${logItem.kcal} kcal).`;
-    },
-    [
-      isSimulationMode,
-      parseFlexibleTimeToDecimal,
-      setDailyLog,
-      setManualNodes,
-      setSimulatedLog,
-      syncDatiFirebase,
     ],
   );
 
@@ -7154,51 +5300,10 @@ ${dbKeys || 'n/d'}`;
     },
   });
 
-  const renderCustomizedLabel = (props) => {
-    const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
-    if (name === 'Rimanenti' || value === 0) return null;
-    const radius = outerRadius + 14;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
-    let icon = '🍎';
-    const n = (name || '').toLowerCase();
-    if (n.includes('pranzo')) icon = '🍝';
-    else if (n.includes('cena')) icon = '🍽️';
-    else if (n.includes('colazion')) icon = '🍳';
-    else if (n.includes('snack') || n.includes('merenda')) icon = '🫐';
-    const fullEntry = payload && typeof payload === 'object' ? payload : null;
-    return (
-      <g
-        transform={`translate(${x},${y})`}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (!fullEntry || fullEntry.id === 'rimanenti') return;
-          setSelectedMealCenter(fullEntry);
-        }}
-        style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-      >
-        <circle cx="0" cy="0" r="16" fill="#111" stroke={fill} strokeWidth="1.5" style={{ filter: `drop-shadow(0 0 4px ${fill}80)` }} />
-        <text x="0" y="0" dy="4.5" textAnchor="middle" fontSize="14">{icon}</text>
-      </g>
-    );
-  };
-
-  const renderActiveMealShape = (props) => {
-    const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-    return (
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 6}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        stroke="#00e5ff"
-        strokeWidth={2}
-      />
-    );
-  };
+  const renderCustomizedLabel = useMemo(
+    () => createMealPieCustomizedLabel(setSelectedMealCenter),
+    [setSelectedMealCenter],
+  );
 
   const selectedMealCenterIndex = selectedMealCenter
     ? mealPieDisplayData.findIndex((e) => e.id === selectedMealCenter.id)
@@ -7329,44 +5434,6 @@ ${dbKeys || 'n/d'}`;
     setShowSleepPrompt(false);
   };
 
-  const handleCloseQuickNodeEdit = () => {
-    setEditingQuickNode(null);
-  };
-
-  const handleDeleteQuickNodeEdit = () => {
-    if (!editingQuickNode) return;
-    if (window.confirm('Vuoi eliminare questa attività?')) {
-      const next = manualNodes.filter((n) => n.id !== editingQuickNode.id);
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
-      setEditingQuickNode(null);
-    }
-  };
-
-  const handleSaveQuickNodeEdit = () => {
-    if (!editingQuickNode) return;
-    const newStart = document.getElementById('quick-start-time')?.value;
-    const newEnd = document.getElementById('quick-end-time')?.value;
-    if (newStart != null && newEnd != null && newStart !== '' && newEnd !== '') {
-      const startDec = parseTimeStrToDecimal(newStart);
-      const endDec = parseTimeStrToDecimal(newEnd);
-      let duration = endDec - startDec;
-      if (duration <= 0) duration += 24;
-      duration = Math.max(0.08, Math.min(24, duration));
-      const next = manualNodes.map((n) => (n.id === editingQuickNode.id ? { ...n, time: startDec, startTime: startDec, endTime: endDec, duration } : n));
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
-    }
-    setEditingQuickNode(null);
-  };
-
-  const quickNodeEditStartTime = editingQuickNode
-    ? decimalToTimeStr(editingQuickNode.time ?? editingQuickNode.startTime ?? 14)
-    : '14:00';
-  const quickNodeEditEndTime = editingQuickNode
-    ? decimalToTimeStr((editingQuickNode.time ?? editingQuickNode.startTime ?? 14) + (editingQuickNode.duration ?? 0.25))
-    : '14:15';
-
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
@@ -7395,66 +5462,15 @@ ${dbKeys || 'n/d'}`;
     salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />;
   } else if (!isAuthenticated) {
     salaContent = (
-      <div style={{ backgroundColor: '#000', color: '#00e5ff', minHeight: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', overflow: 'hidden', position: 'relative' }}>
-        <style>
-          {`
-            .login-box { background: rgba(10,10,10,0.9); border: 1px solid #333; padding: 40px; border-radius: 15px; z-index: 10; width: 90%; max-width: 400px; box-shadow: 0 0 40px rgba(0, 229, 255, 0.1); position: relative; }
-            .login-box::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 50px; height: 2px; background: #00e5ff; box-shadow: 0 0 10px #00e5ff; }
-            .sys-title { text-align: center; letter-spacing: 4px; margin-bottom: 30px; font-size: 1.2rem; }
-            .login-input { width: 100%; background: #050505; border: 1px solid #333; padding: 15px; color: #fff; font-family: monospace; margin-bottom: 15px; border-radius: 5px; outline: none; transition: 0.3s; }
-            .login-input:focus { border-color: #00e5ff; box-shadow: inset 0 0 10px rgba(0,229,255,0.1); }
-            .login-btn { width: 100%; background: transparent; border: 1px solid #00e5ff; color: #00e5ff; padding: 15px; font-family: monospace; font-weight: bold; letter-spacing: 2px; cursor: pointer; transition: 0.3s; border-radius: 5px; margin-top: 10px; }
-            .login-btn:hover { background: #00e5ff; color: #000; box-shadow: 0 0 20px rgba(0,229,255,0.4); }
-            .spinner { border: 2px solid transparent; border-top-color: #00e5ff; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto 20px auto; }
-            @keyframes spin { to { transform: rotate(360deg); } }
-          `}
-        </style>
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'radial-gradient(circle at center, #050505 0%, #000 100%)', opacity: 0.8, pointerEvents: 'none' }}></div>
-        {isBooting ? (
-          <div className="login-box" style={{textAlign: 'center', color: '#fff', fontSize: '0.8rem', lineHeight: '1.8'}}>
-            <div className="spinner"></div>
-            <div>VERIFICA CREDENZIALI...</div>
-            <div style={{color: '#888'}}>CONNESSIONE CLOUD [OK]</div>
-            <div style={{color: '#00e676', marginTop: '10px'}}>ACCESSO CONSENTITO</div>
-          </div>
-        ) : (
-          <form className="login-box" onSubmit={handleLogin}>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-              <img
-                src="/nuovo%20logo%20trasparente2.png"
-                alt="Kentuos Logo"
-                decoding="async"
-                style={{
-                  maxHeight: 52,
-                  width: 'auto',
-                  maxWidth: 'min(280px, 88vw)',
-                  objectFit: 'contain',
-                  display: 'block',
-                }}
-              />
-            </div>
-            <p
-              className="kentu-intro-phrase-text kentu-intro-phrase-text--glow"
-              style={{
-                textAlign: 'center',
-                fontSize: '0.72rem',
-                fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-                fontWeight: 300,
-                letterSpacing: '0.06em',
-                color: 'rgba(255,255,255,0.42)',
-                marginBottom: '16px',
-                lineHeight: 1.5,
-              }}
-            >
-              {introPhrase}
-            </p>
-            <p style={{textAlign: 'center', fontSize: '0.65rem', color: '#666', marginBottom: '20px'}}>SYSTEM ENCRYPTED. REQUIRE AUTHENTICATION.</p>
-            <input type="email" placeholder="USER ID (EMAIL)" className="login-input" required value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
-            <input type="password" placeholder="PASSWORD" className="login-input" required value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
-            <button type="submit" className="login-btn">INIZIALIZZA</button>
-          </form>
-        )}
-      </div>
+      <SalaComandiLoginScreen
+        isBooting={isBooting}
+        introPhrase={introPhrase}
+        loginEmail={loginEmail}
+        setLoginEmail={setLoginEmail}
+        loginPassword={loginPassword}
+        setLoginPassword={setLoginPassword}
+        onSubmit={handleLogin}
+      />
     );
   } else if (!isInitialLoadComplete) {
     salaContent = (
@@ -7583,23 +5599,7 @@ ${dbKeys || 'n/d'}`;
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button
                 type="button"
-                onClick={() => {
-                  const { nodeId, dragType } = ghostProgramDeleteModal;
-                  setGhostProgramDeleteModal(null);
-                  const dl = dailyLogRef.current || [];
-                  const mn = manualNodesRef.current || [];
-                  if (dragType === 'ghost_meal') {
-                    const nextLog = dl.filter((e) => e.id !== nodeId);
-                    setDailyLog(nextLog);
-                    syncDatiFirebase(nextLog, mn);
-                    pushTimelineUndoSnapshot(nextLog, mn);
-                  } else {
-                    const nextNodes = mn.filter((n) => n.id !== nodeId);
-                    setManualNodes(nextNodes);
-                    syncDatiFirebase(dl, nextNodes);
-                    pushTimelineUndoSnapshot(dl, nextNodes);
-                  }
-                }}
+                onClick={handleConfirmGhostDeleteSingle}
                 style={{
                   padding: '12px 14px',
                   borderRadius: 12,
@@ -7615,19 +5615,7 @@ ${dbKeys || 'n/d'}`;
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setGhostProgramDeleteModal(null);
-                  const dl = dailyLogRef.current || [];
-                  const mn = manualNodesRef.current || [];
-                  const nextLog = dl.filter((e) => !(e.isGhost === true || e.type === 'ghost_meal'));
-                  const nextNodes = mn.filter((n) => !(n.isGhost === true || n.type === 'ghost_workout'));
-                  setDailyLog(nextLog);
-                  setManualNodes(nextNodes);
-                  syncDatiFirebase(nextLog, nextNodes);
-                  pushTimelineUndoSnapshot(nextLog, nextNodes);
-                  setProgrammingRemovedToast(true);
-                  setTimeout(() => setProgrammingRemovedToast(false), 4000);
-                }}
+                onClick={handleConfirmGhostDeleteAll}
                 style={{
                   padding: '12px 14px',
                   borderRadius: 12,
@@ -8222,7 +6210,7 @@ ${dbKeys || 'n/d'}`;
                             stroke="none"
                             labelLine={false}
                             label={renderCustomizedLabel}
-                            activeShape={renderActiveMealShape}
+                            activeShape={MealPieActiveShape}
                             activeIndex={selectedMealCenterIndex}
                             onClick={(data, index, e) => {
                               if (e && e.stopPropagation) e.stopPropagation();

@@ -21,7 +21,8 @@ export function initNutritionHandlers({
     try {
       const result = await onAddFoodCommand(envelope?.payload || {}, envelope);
       if (envelope?.meta?.correlationId === 'advice_accept'
-        || envelope?.meta?.correlationId === 'meal_proposal_accept') {
+        || envelope?.meta?.correlationId === 'meal_proposal_accept'
+        || envelope?.meta?.correlationId === 'meal_proposal_update') {
         return;
       }
       if (typeof result === 'string' && result.trim()) {

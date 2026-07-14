@@ -13,7 +13,7 @@ import {
   resolveMealProposalItems,
   sumProposalItemMacros,
 } from '../utils/foodResolver.js';
-import { resolveExactTimeForMeal } from '../features/commandTerminal/conversation/mealLogIntent.js';
+import { resolveExactTimeForMeal, isMealProposalQuery, matchDraftItemByFoodQuery, findMostProblematicDraftItem } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import { analyzeTodayFromLog } from '../aiDayCoach';
 import {
   aggregatePredictiveMealCombos,
@@ -26,7 +26,6 @@ import {
   isUserAssignedDayBlock,
   resolveBlockKcalTarget,
 } from '../features/weeklyBlocks/weeklyBlockSchema';
-import { isMealProposalQuery } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import {
   formatDecimalHourIt,
   parseFlexibleTimeToDecimal,
@@ -316,6 +315,388 @@ export function ensureMealProposalsForAdvice(mealProposals, adviceContext = {}) 
     .map((proposal) => enrichMealProposal(proposal, adviceContext))
     .filter(Boolean)
     .slice(0, MAX_HABIT_PROPOSALS);
+}
+
+const CARB_HEAVY_FOOD_PATTERN = /pizza|pasta|riso|pane|patat|gnocch|crack|farro|orzo|cous|polenta/i;
+const FAT_HEAVY_FOOD_PATTERN = /olio|noci|pesto|edamame|burro|formagg|mandorl|avocado|semi/i;
+const PROTEIN_PRESERVE_FOOD_PATTERN = /salmone|merluzzo|tonno|pollo|uov|manzo|tacchino|gamber|bresaol|prosciutt/i;
+
+function isScalableDraftItem(item) {
+  const name = String(item?.foodName || '').toLowerCase();
+  if (PROTEIN_PRESERVE_FOOD_PATTERN.test(name)) return false;
+  if (CARB_HEAVY_FOOD_PATTERN.test(name) || FAT_HEAVY_FOOD_PATTERN.test(name)) return true;
+
+  const kcal = Number(item?.kcal) || 0;
+  const pro = Number(item?.pro) || 0;
+  if (kcal <= 0) return true;
+  return (pro * 4) / kcal < 0.35;
+}
+
+function enforceProposalBudgetCap(proposal, budgetKcal, adviceContext = {}) {
+  if (!proposal || !Array.isArray(proposal.items) || proposal.items.length === 0) return proposal;
+
+  const cap = Math.round(Number(budgetKcal) || 0);
+  if (cap <= 0) return proposal;
+
+  const mealType = String(proposal.mealType || adviceContext?.currentMealType || 'pranzo').toLowerCase();
+  let items = proposal.items.map((item) => ({ ...item }));
+  let totals = roundTotals(sumItemMacros(items));
+
+  if (totals.kcal <= cap) {
+    return { ...proposal, items, totals };
+  }
+
+  for (let pass = 0; pass < 12 && totals.kcal > cap; pass += 1) {
+    const scalable = items.filter(isScalableDraftItem);
+    if (scalable.length === 0) break;
+
+    const ratio = Math.max(0.45, cap / totals.kcal);
+    items = items.map((item) => {
+      if (!isScalableDraftItem(item)) return item;
+      const newGrams = Math.max(1, Math.round(Number(item.grams) * ratio));
+      if (newGrams >= item.grams) {
+        const forcedGrams = Math.max(1, item.grams - 1);
+        if (forcedGrams === item.grams) return item;
+        return enrichProposalItemWithResolver(
+          { ...item, grams: forcedGrams, rawQuery: item.rawQuery || item.foodName },
+          adviceContext,
+          mealType,
+        ) || item;
+      }
+      return enrichProposalItemWithResolver(
+        { ...item, grams: newGrams, rawQuery: item.rawQuery || item.foodName },
+        adviceContext,
+        mealType,
+      ) || item;
+    }).filter(Boolean);
+    totals = roundTotals(sumItemMacros(items));
+  }
+
+  return {
+    ...proposal,
+    items,
+    totals,
+  };
+}
+
+function buildFixedMealProposalFromDraft(mealDraftProjection, adviceContext = {}) {
+  const projection = mealDraftProjection && typeof mealDraftProjection === 'object'
+    ? mealDraftProjection
+    : null;
+  const rawItems = Array.isArray(projection?.items) ? projection.items : [];
+  if (rawItems.length === 0) return null;
+
+  const mealType = String(
+    projection?.mealType || adviceContext?.currentMealType || 'pranzo',
+  ).toLowerCase();
+  const budgetKcal = Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0);
+  const items = rawItems
+    .map((item) => enrichProposalItemWithResolver(
+      {
+        foodName: String(item?.foodName || item?.name || '').trim(),
+        grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+        rawQuery: String(item?.foodName || item?.name || '').trim(),
+        foodDbKey: item?.foodDbKey ?? null,
+      },
+      adviceContext,
+      mealType,
+    ))
+    .filter(Boolean);
+
+  if (items.length === 0) return null;
+
+  const label = items.length === 1
+    ? `${items[0].foodName} (${items[0].grams}g)`
+    : items.map((item) => item.foodName).join(' + ');
+
+  const baseProposal = {
+    id: `fixed_draft_${Date.now()}`,
+    label: 'Porzioni riparate',
+    mealType,
+    source: 'what_if_fix',
+    items,
+    totals: roundTotals(sumItemMacros(items)),
+    ...(projection?.exactTime ? { exactTime: projection.exactTime } : {}),
+  };
+
+  return enforceProposalBudgetCap(baseProposal, budgetKcal, adviceContext);
+}
+
+/**
+ * Garantisce una card pasto riparata entro budget per FIX_MEAL_DRAFT.
+ * @param {Array<object>} mealProposals
+ * @param {object} adviceContext
+ * @returns {Array<object>}
+ */
+export function ensureMealProposalsForFixDraft(mealProposals, adviceContext = {}) {
+  const budgetKcal = Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0);
+  const sanitized = sanitizeMealProposals(mealProposals, adviceContext)
+    .map((proposal) => enforceProposalBudgetCap(proposal, budgetKcal, adviceContext))
+    .filter(Boolean);
+
+  if (sanitized.length > 0) {
+    return [sanitized[0]];
+  }
+
+  const fixed = buildFixedMealProposalFromDraft(adviceContext?.mealDraftProjection, adviceContext);
+  return fixed ? [fixed] : [];
+}
+
+export function buildFixMealDraftAdviceMessage(adviceContext = {}) {
+  const budgetKcal = Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0);
+  if (budgetKcal > 0) {
+    return `Ecco le porzioni esatte per mangiare quello che volevi senza sforare le tue ${budgetKcal} kcal. Modifica pure se serve.`;
+  }
+  return 'Ecco le porzioni esatte per mangiare quello che volevi senza sforare il budget. Modifica pure se serve.';
+}
+
+function normalizeDraftFoodKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function resolveRemovedEnrichedDraftItem(items, removedFoodQuery) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (list.length === 0) return null;
+  if (removedFoodQuery) {
+    const matched = matchDraftItemByFoodQuery(list, removedFoodQuery);
+    if (matched) return matched;
+  }
+  return findMostProblematicDraftItem(list);
+}
+
+function partitionEnrichedDraftForSubstitute(items, removedItem) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!removedItem) return { kept: list, removed: null };
+  const removedKey = normalizeDraftFoodKey(removedItem.foodName);
+  const kept = list.filter((item) => normalizeDraftFoodKey(item.foodName) !== removedKey);
+  const removed = list.find((item) => normalizeDraftFoodKey(item.foodName) === removedKey) || removedItem;
+  return { kept, removed };
+}
+
+function mergeKeptItemsIntoSubstituteProposal(proposal, keptItems, adviceContext = {}) {
+  if (!proposal || !Array.isArray(proposal.items)) return proposal;
+  const kept = Array.isArray(keptItems) ? keptItems : [];
+  if (kept.length === 0) return proposal;
+
+  const keptKeys = new Set(kept.map((item) => normalizeDraftFoodKey(item.foodName)));
+  const substituteItems = proposal.items.filter(
+    (item) => !keptKeys.has(normalizeDraftFoodKey(item.foodName)),
+  );
+  const mealType = String(proposal.mealType || adviceContext?.currentMealType || 'pranzo').toLowerCase();
+  const items = [...kept.map((item) => ({ ...item })), ...substituteItems];
+  const totals = roundTotals(sumItemMacros(items));
+  return {
+    ...proposal,
+    mealType,
+    items,
+    totals,
+  };
+}
+
+function buildSubstituteFallbackProposals(adviceContext = {}) {
+  const kept = adviceContext?.keptDraftProjection?.items || [];
+  const residualCap = Math.round(Number(adviceContext?.residualBudgetAfterRemoval?.kcal) || 0);
+  const mealType = String(
+    adviceContext?.keptDraftProjection?.mealType
+    || adviceContext?.currentMealType
+    || 'pranzo',
+  ).toLowerCase();
+  const fallback = Array.isArray(adviceContext?.fallbackMealProposals)
+    ? adviceContext.fallbackMealProposals
+    : [];
+
+  return fallback
+    .map((proposal, index) => {
+      const enriched = enrichMealProposal(proposal, adviceContext);
+      if (!enriched) return null;
+      const substituteOnly = (enriched.items || []).filter(
+        (item) => !kept.some(
+          (keptItem) => normalizeDraftFoodKey(keptItem.foodName) === normalizeDraftFoodKey(item.foodName),
+        ),
+      );
+      const capped = enforceProposalBudgetCap(
+        { ...enriched, items: substituteOnly },
+        residualCap > 0 ? residualCap : Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0),
+        adviceContext,
+      );
+      if (!capped) return null;
+      return mergeKeptItemsIntoSubstituteProposal(
+        {
+          ...capped,
+          id: `substitute_fallback_${index + 1}`,
+          label: `Opzione ${index + 1}`,
+          source: 'what_if_substitute_fallback',
+        },
+        kept,
+        adviceContext,
+      );
+    })
+    .map((proposal) => enforceProposalBudgetCap(
+      proposal,
+      Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0),
+      adviceContext,
+    ))
+    .filter(Boolean)
+    .slice(0, MAX_HABIT_PROPOSALS);
+}
+
+/**
+ * Garantisce 3 proposte pasto per SUBSTITUTE_MEAL_DRAFT_ITEM (buoni + sostituto).
+ * @param {Array<object>} mealProposals
+ * @param {object} adviceContext
+ * @returns {Array<object>}
+ */
+export function ensureMealProposalsForSubstituteDraft(mealProposals, adviceContext = {}) {
+  const budgetKcal = Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0);
+  const kept = adviceContext?.keptDraftProjection?.items || [];
+  const residualCap = Math.round(Number(adviceContext?.residualBudgetAfterRemoval?.kcal) || budgetKcal);
+
+  let proposals = sanitizeMealProposals(mealProposals, adviceContext)
+    .map((proposal) => mergeKeptItemsIntoSubstituteProposal(proposal, kept, adviceContext))
+    .map((proposal) => {
+      const substituteOnly = (proposal.items || []).filter(
+        (item) => !kept.some(
+          (keptItem) => normalizeDraftFoodKey(keptItem.foodName) === normalizeDraftFoodKey(item.foodName),
+        ),
+      );
+      const substituteTotals = roundTotals(sumItemMacros(substituteOnly));
+      if (residualCap > 0 && substituteTotals.kcal > residualCap) {
+        return enforceProposalBudgetCap(
+          { ...proposal, items: [...kept, ...substituteOnly] },
+          budgetKcal,
+          adviceContext,
+        );
+      }
+      return enforceProposalBudgetCap(proposal, budgetKcal, adviceContext);
+    })
+    .filter(Boolean);
+
+  if (proposals.length === 0) {
+    proposals = buildSubstituteFallbackProposals(adviceContext);
+  }
+
+  return proposals
+    .slice(0, MAX_HABIT_PROPOSALS)
+    .map((proposal, index) => ({
+      ...proposal,
+      label: proposal.label || `Opzione ${index + 1}`,
+    }));
+}
+
+export function buildSubstituteMealDraftAdviceMessage(adviceContext = {}) {
+  const removedName = String(
+    adviceContext?.removedDraftItem?.foodName || 'quell\'alimento',
+  ).trim();
+  return `Ho rimosso ${removedName}. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget.`;
+}
+
+const MEAL_TYPE_LABELS = {
+  colazione: 'Colazione',
+  pranzo: 'Pranzo',
+  cena: 'Cena',
+  snack: 'Snack',
+};
+
+export function buildUpdateLoggedMealAdviceMessage(adviceContext = {}) {
+  const mealType = String(adviceContext?.existingMealNode?.mealType || 'pasto').toLowerCase();
+  const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
+  return `Ho recuperato il tuo ${mealLabel}. Ecco la versione aggiornata, conferma per sovrascrivere.`;
+}
+
+/**
+ * Card preview locale (turno 1) clonando gli items del nodo esistente.
+ * @param {object} existingMealNode
+ * @returns {object | null}
+ */
+export function buildUpdateLoggedMealPreviewProposal(existingMealNode) {
+  if (!existingMealNode?.targetNodeId) return null;
+  const items = Array.isArray(existingMealNode.items)
+    ? existingMealNode.items.map((item) => ({
+        foodName: String(item?.foodName || item?.name || '').trim(),
+        foodDbKey: item?.foodDbKey ?? null,
+        grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+        kcal: Math.round(Number(item?.kcal) || 0),
+        pro: Number(item?.pro) || 0,
+        carbo: Number(item?.carbo) || 0,
+        fat: Number(item?.fat) || 0,
+      })).filter((item) => item.foodName && item.grams > 0)
+    : [];
+  if (items.length === 0) return null;
+
+  return {
+    id: `update_preview_${existingMealNode.targetNodeId}_${Date.now()}`,
+    label: 'Pasto recuperato',
+    mealType: existingMealNode.mealType,
+    exactTime: existingMealNode.exactTime || null,
+    targetNodeId: existingMealNode.targetNodeId,
+    source: 'logged_meal_update_preview',
+    items,
+    totals: existingMealNode.totals || roundTotals(sumItemMacros(items)),
+  };
+}
+
+/**
+ * Garantisce una singola mealProposal per UPDATE_LOGGED_MEAL con targetNodeId.
+ * @param {Array<object>} mealProposals
+ * @param {object} adviceContext
+ * @returns {Array<object>}
+ */
+export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceContext = {}) {
+  const existing = adviceContext?.existingMealNode;
+  if (!existing?.targetNodeId) return [];
+
+  const existingItems = Array.isArray(existing.items) ? existing.items : [];
+
+  const pickValidUpdateItems = (items) => {
+    const source = Array.isArray(items) ? items : [];
+    return source
+      .map((item) => ({
+        foodName: String(item?.foodName || item?.name || '').trim(),
+        foodDbKey: item?.foodDbKey ?? null,
+        grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+        kcal: Math.round(Number(item?.kcal) || 0),
+        pro: Number(item?.pro) || 0,
+        carbo: Number(item?.carbo) || 0,
+        fat: Number(item?.fat) || 0,
+      }))
+      .filter((item) => item.foodName && item.grams > 0);
+  };
+
+  const sanitized = sanitizeMealProposals(mealProposals, adviceContext).filter(Boolean);
+  if (sanitized.length > 0) {
+    const proposal = sanitized[0];
+    const validItems = pickValidUpdateItems(proposal.items);
+    const resolvedItems = validItems.length > 0 ? validItems : existingItems;
+    const totals = validItems.length > 0
+      ? roundTotals(sumItemMacros(resolvedItems))
+      : (proposal.totals || existing.totals);
+    return [{
+      ...proposal,
+      id: proposal.id || `update_${existing.targetNodeId}_${Date.now()}`,
+      label: proposal.label || 'Pasto aggiornato',
+      mealType: existing.mealType || proposal.mealType,
+      exactTime: existing.exactTime || proposal.exactTime || null,
+      targetNodeId: existing.targetNodeId,
+      source: 'logged_meal_update',
+      items: resolvedItems,
+      totals,
+    }];
+  }
+
+  return [{
+    id: `update_${existing.targetNodeId}_${Date.now()}`,
+    label: 'Pasto aggiornato',
+    mealType: existing.mealType,
+    exactTime: existing.exactTime || null,
+    targetNodeId: existing.targetNodeId,
+    source: 'logged_meal_update_fallback',
+    items: existingItems,
+    totals: existing.totals,
+  }];
 }
 
 /**
@@ -956,6 +1337,69 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
       ? computeResidualBudgetAfterPartialMeal(remainingBudget, partialMealTotals)
       : null;
 
+  const mealDraftRaw = options?.mealDraftProjection && typeof options.mealDraftProjection === 'object'
+    ? options.mealDraftProjection
+    : null;
+  const mealDraftItemsRaw = Array.isArray(mealDraftRaw?.items) ? mealDraftRaw.items : [];
+  const mealDraftType = String(mealDraftRaw?.mealType || currentMealType || '').trim() || currentMealType;
+
+  const mealDraftResolvedItems = mealDraftItemsRaw
+    .map((it) => enrichProposalItemWithResolver(
+      {
+        foodName: String(it?.foodName || it?.name || '').trim(),
+        grams: Math.round(Number(it?.grams ?? it?.qta) || 0),
+        rawQuery: String(it?.foodName || it?.name || '').trim(),
+      },
+      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      mealDraftType,
+    ))
+    .filter(Boolean)
+    .map((it, index) => ({
+      ...it,
+      role: String(mealDraftItemsRaw[index]?.role || 'draft').trim() || 'draft',
+    }));
+
+  const mealDraftTotals = mealDraftResolvedItems.length > 0
+    ? roundTotals(sumItemMacros(mealDraftResolvedItems))
+    : { kcal: 0, pro: 0, carbo: 0, fat: 0 };
+
+  const budgetKcal = Math.round(Number(remainingBudget?.kcal) || 0);
+  const draftTotalKcal = Math.round(Number(mealDraftTotals.kcal) || 0);
+  const budgetOverflowAmount = Math.max(0, draftTotalKcal - budgetKcal);
+
+  const intent = String(options?.intent || '').trim().toUpperCase();
+  const removedFoodQuery = String(options?.removedFoodQuery || '').trim() || null;
+  const existingMealNodeRaw = options?.existingMealNode && typeof options.existingMealNode === 'object'
+    ? options.existingMealNode
+    : null;
+
+  let removedDraftItem = null;
+  let keptDraftResolvedItems = mealDraftResolvedItems;
+  let keptDraftTotals = mealDraftTotals;
+  let residualBudgetAfterRemoval = null;
+
+  if (intent === 'SUBSTITUTE_MEAL_DRAFT_ITEM' && mealDraftResolvedItems.length > 0) {
+    removedDraftItem = resolveRemovedEnrichedDraftItem(mealDraftResolvedItems, removedFoodQuery);
+    const partitioned = partitionEnrichedDraftForSubstitute(mealDraftResolvedItems, removedDraftItem);
+    keptDraftResolvedItems = partitioned.kept;
+    removedDraftItem = partitioned.removed;
+    keptDraftTotals = keptDraftResolvedItems.length > 0
+      ? roundTotals(sumItemMacros(keptDraftResolvedItems))
+      : { kcal: 0, pro: 0, carbo: 0, fat: 0 };
+    residualBudgetAfterRemoval = computeResidualBudgetAfterPartialMeal(remainingBudget, keptDraftTotals);
+  }
+
+  const mapDraftItemForContext = (it) => ({
+    foodName: it.foodName,
+    foodDbKey: it.foodDbKey ?? null,
+    grams: it.grams,
+    kcal: it.kcal,
+    pro: it.pro,
+    carbo: it.carbo,
+    fat: it.fat,
+    role: it.role || 'draft',
+  });
+
   return {
     targetFood: foodQuery,
     rawUserQuery: rawQuery,
@@ -977,6 +1421,37 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
         }
       : null,
     residualBudgetAfterPartialMeal,
+    residualBudgetAfterRemoval,
+    mealDraftProjection: mealDraftResolvedItems.length > 0
+      ? {
+          items: mealDraftResolvedItems.map(mapDraftItemForContext),
+          totals: mealDraftTotals,
+          mealType: mealDraftType,
+          exactTime: mealDraftRaw?.exactTime || null,
+        }
+      : null,
+    keptDraftProjection: intent === 'SUBSTITUTE_MEAL_DRAFT_ITEM' && keptDraftResolvedItems.length > 0
+      ? {
+          items: keptDraftResolvedItems.map(mapDraftItemForContext),
+          totals: keptDraftTotals,
+          mealType: mealDraftType,
+          exactTime: mealDraftRaw?.exactTime || null,
+        }
+      : null,
+    removedDraftItem: removedDraftItem
+      ? {
+          foodName: removedDraftItem.foodName,
+          foodDbKey: removedDraftItem.foodDbKey ?? null,
+          grams: removedDraftItem.grams,
+          kcal: removedDraftItem.kcal,
+          pro: removedDraftItem.pro,
+          carbo: removedDraftItem.carbo,
+          fat: removedDraftItem.fat,
+          role: removedDraftItem.role || 'draft',
+        }
+      : null,
+    draftTotalKcal: mealDraftResolvedItems.length > 0 ? draftTotalKcal : null,
+    budgetOverflowAmount: mealDraftResolvedItems.length > 0 ? budgetOverflowAmount : null,
     dailyTotals,
     dailyTargets,
     foodCandidates,
@@ -986,6 +1461,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     fallbackMealProposals,
     isGenericMealSuggestion: isGenericSuggestion,
     intent: String(options?.intent || '').trim() || null,
+    existingMealNode: existingMealNodeRaw,
     upcomingWorkout,
     dailyCalorieStrategy,
     eveningMetabolicContext,
@@ -1003,6 +1479,8 @@ export function generateConsultantSystemInstruction() {
     'Sei Kentu Cameriere (Meal Advice). Rispondi SOLO con JSON valido conforme allo schema.',
     'Non aggiungere markdown né testo fuori dal JSON.',
     'REGOLA ENTITY RESOLUTION: l LLM estrae SOLO nome grezzo alimento e quantità (grams).',
+    'HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName (e mealProposals.items[].foodName) deve contenere SOLO il nome puro dell ingrediente. VIETATO includere grammature, parentesi, porzioni o suffissi tipo "200 g" nel nome. La quantità va SOLO in grams.',
+    'HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: ignora "e", "con", "più", virgola come separatori tra alimenti, non come parte del nome. Mai creare voci tipo "e pesca" o duplicare lo stesso alimento.',
     'NON inventare foodDbKey, nomi DB esatti né macronutrienti: li calcola il sistema locale dal database.',
     'Per mealProposals.items usa foodName come testo utente/LLM e grams; kcal/pro/carbo/fat possono essere 0 o omessi.',
     'ORARIO ESPLICITO: se l utente indica un orario (es. "ore 14.45", "alle 20:30"), estrailo in HH:mm nel campo exactTime di ogni mealProposal pertinente.',
@@ -1027,6 +1505,15 @@ export function generateConsultantSystemInstruction() {
     'HARD CONSTRAINT — OTTIMIZZAZIONE MICRO-NUTRIENTI: quando completi un pasto (ASK_MEAL_COMPLETION), devi dare priorità assoluta a ingredienti che colmano le carenze segnalate in [METABOLIC_BUDGET].micros (alte remaining). Esempio: se fibre e magnesio sono bassi, preferisci legumi/verdure/frutta secca in quantità compatibili col budget; se sodio basso, valuta un aggiustamento controllato. Mantieni sempre il vincolo kcal.',
     'HARD CONSTRAINT — COMPLETION OUTPUT: quando [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL] è presente, mealProposals DEVONO contenere SOLO alimenti integrativi (NON ripetere gli alimenti già in [PARTIAL_MEAL]). Il totale kcal degli alimenti integrativi di ciascuna opzione deve essere <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal (vincolo assoluto).',
     'INTENTO ASK_DAY_REVIEW (DEBRIEFING SERALE): quando l intent è ASK_DAY_REVIEW o nel contesto sono presenti [DAILY_TOTALS] e [DAILY_TARGETS], NON devi generare mealProposals. Devi produrre SOLO adviceMessage (reviewMessage) empatico e serale, considerando stress/cortisolo alto.',
+    'INTENTO EVALUATE_MEAL_DRAFT (NAVIGATORE WHAT-IF LIVE): quando l intent è EVALUATE_MEAL_DRAFT o nel prompt sono presenti [MEAL_DRAFT_PROJECTION], [DRAFT_TOTAL_KCAL] e [BUDGET_OVERFLOW_AMOUNT], NON devi generare mealProposals né JSON di registrazione pasto. Produci SOLO adviceMessage di allerta live.',
+    'INTENTO FIX_MEAL_DRAFT (RIPARAZIONE PORZIONI): quando l intent è FIX_MEAL_DRAFT, DEVI generare mealProposals (1 proposta unica) basata su [MEAL_DRAFT_PROJECTION]. Applica SCALING OBBLIGATORIO su carboidrati e grassi finché totals.kcal <= [METABOLIC_BUDGET].kcal. Preserva le proteine. NON generare 3 opzioni: una sola card riparata pronta per conferma.',
+    'STRUTTURA OBBLIGATORIA adviceMessage (FIX_MEAL_DRAFT): breve conferma tipo "Ecco le porzioni esatte per mangiare quello che volevi senza sforare le tue [METABOLIC_BUDGET].kcal kcal. Modifica pure se serve." Nessun semaforo, nessuna Opzione 1/2/3.',
+    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM (SOSTITUZIONE ALIMENTO): quando l intent è SUBSTITUTE_MEAL_DRAFT_ITEM, DEVI generare mealProposals (2-3 opzioni). Mantieni TUTTI gli alimenti in [KEPT_DRAFT_PROJECTION] invariati in ogni proposta. Sostituisci SOLO [REMOVED_DRAFT_ITEM] con un alimento alternativo diverso per opzione. Il totale kcal di ogni proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Gli alimenti sostitutivi di ciascuna opzione DEVONO avere totals.kcal <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal (vincolo assoluto sul buco da riempire).',
+    'STRUTTURA OBBLIGATORIA adviceMessage (SUBSTITUTE_MEAL_DRAFT_ITEM): "Ho rimosso [REMOVED_DRAFT_ITEM].foodName. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget." Poi elenca Opzione 1/2/3 allineate a mealProposals. Nessun semaforo.',
+    'INTENTO UPDATE_LOGGED_MEAL (MODIFICA PASTO REGISTRATO): quando l intent è UPDATE_LOGGED_MEAL e nel prompt è presente [EXISTING_MEAL_NODE], DEVI generare UNA SOLA mealProposal. Parti dagli alimenti in [EXISTING_MEAL_NODE].items, applica le aggiunte/rimozioni/modifiche richieste dall utente, e restituisci la lista aggiornata completa. OBBLIGATORIO: imposta targetNodeId uguale a [EXISTING_MEAL_NODE].targetNodeId. Preserva mealType ed exactTime del nodo esistente salvo richiesta esplicita di cambio orario. NON creare un nuovo pasto: stai sovrascrivendo quello esistente. label: "Pasto aggiornato". source: "logged_meal_update".',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire l array COMPLETO items[] con foodName e grams compilati per OGNI alimento. Se la richiesta è vaga o non specifica modifiche, restituisci l elenco ESATTO degli alimenti originali da [EXISTING_MEAL_NODE] senza alterazioni. MAI restituire items[] vuoto o con foodName/grams mancanti.',
+    'STRUTTURA OBBLIGATORIA adviceMessage (UPDATE_LOGGED_MEAL): "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere." Nessun semaforo, nessuna Opzione 2/3.',
+    'STRUTTURA OBBLIGATORIA adviceMessage (EVALUATE_MEAL_DRAFT):\n1) Check Matematico: cita il totale kcal della bozza ([DRAFT_TOTAL_KCAL]) vs [METABOLIC_BUDGET].kcal. Se [BUDGET_OVERFLOW_AMOUNT] > 0, dichiara esplicitamente di quanto sfora (es. "sforeresti il budget di 600 kcal"). Se è 0, conferma che rientri.\n2) Intervento (tagli chirurgici): individua quale alimento in [MEAL_DRAFT_PROJECTION] causa l esubero (es. pizza, noci, grassi) e proponi tagli precisi (es. "Dimezza la porzione di pizza e togli le noci").\n3) CTA finale: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"\nTono: diretto, da buttafuori nutrizionale, max ~8 righe. Nessuna Opzione 1/2/3.',
     'STRUTTURA OBBLIGATORIA adviceMessage (ASK_DAY_REVIEW):\n- L Esito: (es. "Ottimo lavoro" / "Giornata discreta") basato sul rispetto di [DAILY_CALORIE_STRATEGY] e scostamento kcal.\n- Cosa ha funzionato: elogia 1-2 target centrati.\n- Cosa migliorare: 1-2 punti su eccessi/carenze, con priorità ai micro-nutrienti in [METABOLIC_BUDGET].micros.\n- Il Consiglio per domani: 1 azione pratica.\nTono: empatico, rassicurante, chiusura serale senza stress. Max ~10 righe.',
     'REGOLA CORTISOLO SERALE E RECUPERO NERVOSO: quando il pasto di contesto è la cena, è orario serale (dopo le 18:00), o [EVENING_STRESS_CONTEXT].eveningStressRisk è "high", analizza il livello di cortisolo stimato in [EVENING_STRESS_CONTEXT].cortisolScore. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In adviceMessage e nelle proposte DEVI prioritizzare scelte calmanti: carboidrati complessi (aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega-3 o triptofano. Evita pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero.',
     'PASTI ANTI-CORTISOLO (CENA): se l utente chiede consigli per la cena o il tema è serale, orienta mealProposals verso combinazioni anti-stress: privilegia carboidrati complessi e fibre moderate, evita eccessi di grassi saturi, caffeina o pasti troppo proteici-magri se [EVENING_STRESS_CONTEXT].eveningStressRisk è "high". Puoi etichettare le proposte in label (es. "Cena recupero") senza cambiare lo schema JSON.',
@@ -1070,6 +1557,18 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const partialJson = JSON.stringify(partialMeal, null, 0);
   const residualAfterPartial = ctx.residualBudgetAfterPartialMeal ?? null;
   const residualJson = JSON.stringify(residualAfterPartial, null, 0);
+  const residualAfterRemoval = ctx.residualBudgetAfterRemoval ?? null;
+  const residualRemovalJson = JSON.stringify(residualAfterRemoval, null, 0);
+  const mealDraftProjection = ctx.mealDraftProjection ?? null;
+  const mealDraftJson = JSON.stringify(mealDraftProjection, null, 0);
+  const keptDraftProjection = ctx.keptDraftProjection ?? null;
+  const keptDraftJson = JSON.stringify(keptDraftProjection, null, 0);
+  const removedDraftItem = ctx.removedDraftItem ?? null;
+  const removedDraftJson = JSON.stringify(removedDraftItem, null, 0);
+  const existingMealNode = ctx.existingMealNode ?? null;
+  const existingMealJson = JSON.stringify(existingMealNode, null, 0);
+  const draftTotalKcal = ctx.draftTotalKcal ?? null;
+  const budgetOverflowAmount = ctx.budgetOverflowAmount ?? null;
   const intent = String(ctx.intent || '').trim().toUpperCase();
   const dailyTotalsJson = JSON.stringify(ctx.dailyTotals || ctx.DAILY_TOTALS || null, null, 0);
   const dailyTargetsJson = JSON.stringify(ctx.dailyTargets || ctx.DAILY_TARGETS || null, null, 0);
@@ -1110,6 +1609,13 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `[DAILY_CALORIE_STRATEGY: ${strategyJson}]`,
     `[PARTIAL_MEAL: ${partialJson}]`,
     `[RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL: ${residualJson}]`,
+    residualAfterRemoval ? `[RESIDUAL_BUDGET_AFTER_REMOVAL: ${residualRemovalJson}]` : '',
+    keptDraftProjection ? `[KEPT_DRAFT_PROJECTION: ${keptDraftJson}]` : '',
+    removedDraftItem ? `[REMOVED_DRAFT_ITEM: ${removedDraftJson}]` : '',
+    existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
+    mealDraftProjection ? `[MEAL_DRAFT_PROJECTION: ${mealDraftJson}]` : '',
+    mealDraftProjection ? `[DRAFT_TOTAL_KCAL: ${draftTotalKcal}]` : '',
+    mealDraftProjection ? `[BUDGET_OVERFLOW_AMOUNT: ${budgetOverflowAmount}]` : '',
     `[INTENT: ${intent || 'ASK_MEAL_ADVICE'}]`,
     ctx.dailyTotals || ctx.DAILY_TOTALS ? `[DAILY_TOTALS: ${dailyTotalsJson}]` : '',
     ctx.dailyTargets || ctx.DAILY_TARGETS ? `[DAILY_TARGETS: ${dailyTargetsJson}]` : '',
@@ -1159,6 +1665,46 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
         'NON generare mealProposals. NON generare suggestedAction. Produci SOLO adviceMessage con la struttura richiesta (Esito / Cosa ha funzionato / Cosa migliorare / Consiglio per domani).',
         'Basa il giudizio su [DAILY_CALORIE_STRATEGY] e su [DAILY_TOTALS] vs [DAILY_TARGETS].',
         'Dai priorità alle carenze micro in [METABOLIC_BUDGET].micros. Tono empatico, senza stress.',
+      ].join('\n')
+      : '',
+    intent === 'EVALUATE_MEAL_DRAFT'
+      ? [
+        'NAVIGATORE WHAT-IF LIVE ATTIVO (EVALUATE_MEAL_DRAFT).',
+        'NON generare mealProposals. NON generare suggestedAction. NON preparare JSON di salvataggio pasto.',
+        'Usa i valori precalcolati [DRAFT_TOTAL_KCAL] e [BUDGET_OVERFLOW_AMOUNT] — NON ricalcolarli.',
+        'In adviceMessage segui: Check Matematico → Intervento (tagli chirurgici su [MEAL_DRAFT_PROJECTION]) → CTA finale.',
+        'Chiudi con: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"',
+      ].join('\n')
+      : '',
+    intent === 'FIX_MEAL_DRAFT'
+      ? [
+        'RIPARAZIONE PORZIONI ATTIVA (FIX_MEAL_DRAFT).',
+        'Genera UNA SOLA mealProposal con tutti gli alimenti di [MEAL_DRAFT_PROJECTION] e grammature scalate.',
+        'HARD CONSTRAINT: totals.kcal della proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Taglia carboidrati e grassi (anche 50-70%), preserva proteine.',
+        'label: "Porzioni riparate". source: "what_if_fix". NON generare Opzione 2/3.',
+        'adviceMessage breve: conferma porzioni esatte entro budget, invita a modificare se serve.',
+      ].join('\n')
+      : '',
+    intent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
+      ? [
+        'SOSTITUZIONE ALIMENTO ATTIVA (SUBSTITUTE_MEAL_DRAFT_ITEM).',
+        'Genera 2-3 mealProposals distinte. Ogni proposta DEVE includere TUTTI gli alimenti di [KEPT_DRAFT_PROJECTION] senza modificarli.',
+        'Aggiungi SOLO alimenti sostitutivi per colmare il buco lasciato da [REMOVED_DRAFT_ITEM].',
+        'HARD CONSTRAINT: totals.kcal di ogni proposta <= [METABOLIC_BUDGET].kcal.',
+        'HARD CONSTRAINT: kcal totali degli alimenti sostitutivi (esclusi i kept) <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal per ogni opzione.',
+        'label: "Opzione 1", "Opzione 2", "Opzione 3". source: "what_if_substitute".',
+        'adviceMessage: "Ho rimosso [nome alimento rimosso]. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget."',
+      ].join('\n')
+      : '',
+    intent === 'UPDATE_LOGGED_MEAL'
+      ? [
+        'MODIFICA PASTO REGISTRATO ATTIVA (UPDATE_LOGGED_MEAL).',
+        'Genera UNA SOLA mealProposal con la lista COMPLETA aggiornata degli alimenti.',
+        'Parti da [EXISTING_MEAL_NODE].items, applica aggiunte/rimozioni/modifiche richieste dall utente.',
+        'OBBLIGATORIO: targetNodeId = [EXISTING_MEAL_NODE].targetNodeId. Preserva mealType ed exactTime del nodo esistente.',
+        'HARD CONSTRAINT: items[] DEVE contenere TUTTI gli alimenti con foodName e grams > 0. Se la richiesta è vaga, restituisci gli alimenti originali invariati.',
+        'label: "Pasto aggiornato". source: "logged_meal_update". NON generare Opzione 2/3.',
+        'adviceMessage: "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere."',
       ].join('\n')
       : '',
     '',

@@ -18,6 +18,7 @@ export const MEAL_REGISTRATION_SLOT_ORDER = Object.freeze(['foods', 'mealType', 
 
 const SYSTEM_MEMORY_PROPOSALS_TAG = 'MEMORIA DI SISTEMA - PROPOSTE APPENA MOSTRATE';
 const SYSTEM_MEMORY_DRAFT_TAG = 'MEMORIA DI SISTEMA - BOZZA IN ATTESA DI CONFERMA';
+const SYSTEM_MEMORY_DRAFT_PROJECTION_TAG = 'MEMORIA DI SISTEMA - BOZZA WHAT-IF IN VALUTAZIONE';
 
 function formatFoodItemForMemory(item) {
   const name = String(item?.foodName || item?.name || item?.desc || '').trim();
@@ -77,6 +78,21 @@ export function serializeMealDraftMemoryTag(mealDraft) {
 }
 
 /**
+ * Serializza mealDraftProjection What-If in tag di memoria per l'LLM.
+ * @param {object} mealDraftProjection
+ * @returns {string}
+ */
+export function serializeMealDraftProjectionMemoryTag(mealDraftProjection) {
+  if (!mealDraftProjection || typeof mealDraftProjection !== 'object') return '';
+  const items = Array.isArray(mealDraftProjection.items) ? mealDraftProjection.items : [];
+  const itemsText = formatFoodItemsListForMemory(items);
+  if (!itemsText) return '';
+  const mealType = String(mealDraftProjection.mealType || '').trim();
+  const mealSuffix = mealType ? ` (${mealType})` : '';
+  return `[${SYSTEM_MEMORY_DRAFT_PROJECTION_TAG}${mealSuffix}: ${itemsText}]`;
+}
+
+/**
  * Testo inviato al modello per un messaggio chat, con memoria strutturata invisibile in UI.
  * @param {object} entry
  * @returns {string}
@@ -92,6 +108,11 @@ export function buildChatEntryTextForLlm(entry) {
 
   if (entry?.mealDraft) {
     const tag = serializeMealDraftMemoryTag(entry.mealDraft);
+    if (tag) memoryLines.push(tag);
+  }
+
+  if (entry?.mealDraftProjection) {
+    const tag = serializeMealDraftProjectionMemoryTag(entry.mealDraftProjection);
     if (tag) memoryLines.push(tag);
   }
 

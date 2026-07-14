@@ -31,7 +31,14 @@ import {
 import {
   buildAdviceContext,
   buildMealLogProposalFromPayload,
+  buildFixMealDraftAdviceMessage,
+  buildSubstituteMealDraftAdviceMessage,
+  buildUpdateLoggedMealAdviceMessage,
+  buildUpdateLoggedMealPreviewProposal,
   ensureMealProposalsForAdvice,
+  ensureMealProposalsForFixDraft,
+  ensureMealProposalsForSubstituteDraft,
+  ensureMealProposalsForUpdateLoggedMeal,
   extractTargetFoodFromQuery,
   generateConsultantPrompt,
   isGenericMealSuggestionQuery,
@@ -42,12 +49,29 @@ import {
   isConsumedMealLogDescription,
   isDayReviewIntent,
   isMealCompletionIntent,
+  isMealDraftEvaluationIntent,
+  isFixMealDraftIntent,
+  isSubstituteMealDraftIntent,
   isCreateNewFoodIntent,
   isFoodRegistrationIntent,
   isMealAdviceIntent,
+  isUpdateLoggedMealIntent,
+  parseTargetMealTypeFromUpdateText,
+  resolveUpdateMealContext,
+  findPendingUpdateLoggedMealContext,
+  hasExplicitUpdateAction,
+  buildUpdateLoggedMealCombinedQuery,
+  buildUpdateWaitingPromptMessage,
+  buildUpdateMealDisambiguationMessage,
+  buildUpdateMealNoMatchMessage,
+  MEAL_UPDATE_WAITING_STATE,
+  MEAL_UPDATE_DISAMBIGUATION_STATE,
   looksLikeComplexMealLog,
   normalizeExactTime,
   parseConsumedMealFromNaturalText,
+  parseMealDraftProjectionFromText,
+  findLatestMealDraftProjectionFromChatHistory,
+  parseRemovedFoodQueryFromSubstituteText,
   parseExactTimeFromUserText,
 } from './conversation/mealLogIntent.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
@@ -176,6 +200,24 @@ export class CommandTerminalController {
     this.pendingWorkoutBypassConflict = false;
     this.pendingWorkoutOriginUserText = '';
     this.isExecutingAction = false;
+    /** @type {object | null} Stato multi-turno UPDATE_LOGGED_MEAL (indipendente da chatHistory). */
+    this.pendingMealUpdate = null;
+  }
+
+  setPendingMealUpdate(ctx) {
+    if (!ctx || typeof ctx !== 'object') {
+      this.pendingMealUpdate = null;
+      return;
+    }
+    this.pendingMealUpdate = { ...ctx };
+  }
+
+  clearPendingMealUpdate() {
+    this.pendingMealUpdate = null;
+  }
+
+  getPendingMealUpdate() {
+    return this.pendingMealUpdate ? { ...this.pendingMealUpdate } : null;
   }
 
   getConversationSnapshot() {
@@ -189,6 +231,7 @@ export class CommandTerminalController {
       pendingAction: this.pendingAction
         ? { ...this.pendingAction, payload: { ...(this.pendingAction.payload || {}) } }
         : null,
+      pendingMealUpdate: this.getPendingMealUpdate(),
     };
   }
 
@@ -201,6 +244,7 @@ export class CommandTerminalController {
     this.pendingWorkoutBypassConflict = false;
     this.pendingWorkoutOriginUserText = '';
     this.isExecutingAction = false;
+    this.pendingMealUpdate = null;
   }
 
   publishSystemMessage(message) {
@@ -386,12 +430,22 @@ export class CommandTerminalController {
     const explicit = String(options.intent || '').trim().toUpperCase();
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
+    if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
     if (options?.hasImages && isCreateNewFoodIntent(userText)) return 'CREATE_NEW_FOOD';
     if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
+    if (isSubstituteMealDraftIntent(userText, options?.chatHistory || [])) return 'SUBSTITUTE_MEAL_DRAFT_ITEM';
+    if (isFixMealDraftIntent(userText, options?.chatHistory || [])) return 'FIX_MEAL_DRAFT';
+    if (isMealDraftEvaluationIntent(userText)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
-    if (isMealAdviceIntent(userText)) return 'ASK_MEAL_ADVICE';
+    if (isUpdateLoggedMealIntent(userText, options?.chatHistory || [])) return 'UPDATE_LOGGED_MEAL';
+    if (isMealAdviceIntent(userText, options?.chatHistory || [])) return 'ASK_MEAL_ADVICE';
 
-    const detected = this.composer.detectIntent(userText, { hasImages: options.hasImages });
+    const detected = this.composer.detectIntent(userText, {
+      hasImages: options.hasImages,
+      chatHistory: options?.chatHistory || [],
+      pendingMealUpdate: this.getPendingMealUpdate(),
+    });
     if (detected !== 'UNKNOWN') return detected;
 
     if (isFoodRegistrationIntent(userText)) {
@@ -428,7 +482,13 @@ export class CommandTerminalController {
     return expandFoodPayloadItems(normalized).length > 0;
   }
 
-  publishAdviceMessage({ text, suggestedAction = null, mealProposals = null }) {
+  publishAdviceMessage({
+    text,
+    suggestedAction = null,
+    mealProposals = null,
+    mealDraftProjection = null,
+    pendingMealUpdate = null,
+  }) {
     const adviceMessage = String(text || '').trim();
     if (!adviceMessage) return;
     this.bus.publish(
@@ -440,6 +500,12 @@ export class CommandTerminalController {
         suggestedAction: suggestedAction || null,
         mealProposals: Array.isArray(mealProposals) && mealProposals.length > 0
           ? mealProposals
+          : null,
+        mealDraftProjection: mealDraftProjection && typeof mealDraftProjection === 'object'
+          ? mealDraftProjection
+          : null,
+        pendingMealUpdate: pendingMealUpdate && typeof pendingMealUpdate === 'object'
+          ? pendingMealUpdate
           : null,
         adviceId: `advice_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       },
@@ -1155,17 +1221,171 @@ export class CommandTerminalController {
     return { ok: false, reason: 'invalid_conversation_state' };
   }
 
+  /**
+   * Pubblica preview card + messaggio di attesa modifica per UPDATE_LOGGED_MEAL.
+   * @param {string} targetMealType
+   * @param {object} existingMealNode
+   * @param {string | null} [timeQualifier]
+   * @returns {object}
+   */
+  publishUpdateMealWaitingWithPreview(targetMealType, existingMealNode, timeQualifier = null) {
+    this.setPendingMealUpdate({
+      state: MEAL_UPDATE_WAITING_STATE,
+      targetMealType,
+      targetNodeId: existingMealNode.targetNodeId,
+      existingMealNode,
+      timeQualifier,
+    });
+    const previewProposal = buildUpdateLoggedMealPreviewProposal(existingMealNode);
+    this.publishAdviceMessage({
+      text: buildUpdateWaitingPromptMessage(targetMealType),
+      mealProposals: previewProposal ? [previewProposal] : null,
+      pendingMealUpdate: this.getPendingMealUpdate(),
+    });
+    return {
+      ok: true,
+      intent: 'UPDATE_LOGGED_MEAL',
+      waitingForDetails: true,
+      targetMealType,
+      mealProposals: previewProposal ? [previewProposal] : [],
+    };
+  }
+
   async processMealAdvice(userText, currentState = {}, options = {}) {
     const rawQuery = String(userText || '').trim();
     const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
     const isCompletion = isMealCompletionIntent(rawQuery);
+    const isDraftEval = isMealDraftEvaluationIntent(rawQuery);
+    const isFixDraft = isFixMealDraftIntent(rawQuery, chatHistory);
+    const isSubstituteDraft = isSubstituteMealDraftIntent(rawQuery, chatHistory);
+    const pendingUpdate = this.getPendingMealUpdate()
+      || findPendingUpdateLoggedMealContext(chatHistory);
+    const isUpdateFollowUp = Boolean(pendingUpdate?.targetMealType);
+    const isUpdateLogged = isUpdateFollowUp
+      || isUpdateLoggedMealIntent(rawQuery, chatHistory)
+      || String(options?.forcedIntent || '').toUpperCase() === 'UPDATE_LOGGED_MEAL';
     const partialMeal = isCompletion ? parseConsumedMealFromNaturalText(rawQuery) : null;
+    const mealDraftProjection = isDraftEval
+      ? parseMealDraftProjectionFromText(rawQuery)
+      : isFixDraft || isSubstituteDraft
+        ? findLatestMealDraftProjectionFromChatHistory(chatHistory)
+        : null;
     const isDayReview = isDayReviewIntent(rawQuery);
     const isGeneric = isGenericMealSuggestionQuery(rawQuery);
+
+    if ((isFixDraft || isSubstituteDraft) && !mealDraftProjection?.items?.length) {
+      this.publishSystemMessage(
+        'Non trovo il pasto che stavamo valutando. Descrivi di nuovo cosa stai mangiando e cosa vorresti aggiungere.',
+      );
+      return { ok: false, reason: 'missing_meal_draft_projection' };
+    }
+
+    const targetMealTypeForUpdate = isUpdateLogged
+      ? (parseTargetMealTypeFromUpdateText(rawQuery)?.mealType || pendingUpdate?.targetMealType)
+      : null;
+    const updateContext = isUpdateLogged
+      ? resolveUpdateMealContext(
+        Array.isArray(currentState?.activeLog) ? currentState.activeLog : [],
+        rawQuery,
+        currentState?.fullHistory || {},
+        currentState?.activeDate || null,
+        pendingUpdate,
+      )
+      : null;
+    const existingMealNode = updateContext?.existingMealNode || null;
+
+    if (isUpdateLogged && updateContext?.disambiguationUnresolved) {
+      this.publishSystemMessage(
+        'Non ho capito quale pasto intendi. Indica l\'orario (es. «10:30» o «19:00») o specifica mattina/pomeriggio/sera.',
+      );
+      return { ok: false, reason: 'ambiguous_meal_slot_unresolved' };
+    }
+
+    if (
+      isUpdateLogged
+      && updateContext?.resolvedFromDisambiguation
+      && existingMealNode?.targetNodeId
+      && hasExplicitUpdateAction(rawQuery)
+    ) {
+      this.setPendingMealUpdate({
+        state: MEAL_UPDATE_WAITING_STATE,
+        targetMealType: updateContext.targetMealType,
+        targetNodeId: existingMealNode.targetNodeId,
+        existingMealNode,
+        timeQualifier: updateContext.timeQualifier || null,
+      });
+    }
+
+    if (isUpdateLogged && updateContext?.resolution?.resolutionMethod === 'ambiguous') {
+      const ambiguousMatches = updateContext.resolution.matches || [];
+      this.setPendingMealUpdate({
+        state: MEAL_UPDATE_DISAMBIGUATION_STATE,
+        targetMealType: targetMealTypeForUpdate,
+        candidateNodes: ambiguousMatches,
+        timeQualifier: updateContext.timeQualifier || null,
+      });
+      this.publishAdviceMessage({
+        text: buildUpdateMealDisambiguationMessage(targetMealTypeForUpdate, ambiguousMatches),
+        pendingMealUpdate: this.getPendingMealUpdate(),
+      });
+      return {
+        ok: true,
+        intent: 'UPDATE_LOGGED_MEAL',
+        waitingForMealSlot: true,
+        targetMealType: targetMealTypeForUpdate,
+      };
+    }
+
+    if (isUpdateLogged && updateContext?.resolution?.resolutionMethod === 'no_match') {
+      const allMatches = updateContext.resolution.allMatches || [];
+      this.setPendingMealUpdate({
+        state: MEAL_UPDATE_DISAMBIGUATION_STATE,
+        targetMealType: targetMealTypeForUpdate,
+        candidateNodes: allMatches,
+        timeQualifier: updateContext.timeQualifier || null,
+      });
+      this.publishAdviceMessage({
+        text: buildUpdateMealNoMatchMessage(
+          targetMealTypeForUpdate,
+          updateContext.timeQualifier,
+          allMatches,
+        ),
+        pendingMealUpdate: this.getPendingMealUpdate(),
+      });
+      return {
+        ok: true,
+        intent: 'UPDATE_LOGGED_MEAL',
+        waitingForMealSlot: true,
+        targetMealType: targetMealTypeForUpdate,
+      };
+    }
+
+    if (isUpdateLogged && !existingMealNode?.targetNodeId) {
+      const mealLabel = targetMealTypeForUpdate || 'pasto';
+      this.publishSystemMessage(
+        `Non trovo un ${mealLabel} registrato oggi nel diario. Registra prima il pasto o specifica quale vuoi modificare.`,
+      );
+      return { ok: false, reason: 'missing_existing_meal_node' };
+    }
+
+    if (isUpdateLogged && !hasExplicitUpdateAction(rawQuery)) {
+      return this.publishUpdateMealWaitingWithPreview(
+        targetMealTypeForUpdate,
+        existingMealNode,
+        updateContext?.timeQualifier || null,
+      );
+    }
+
+    const queryForAdvice = isUpdateLogged && pendingUpdate?.targetMealType
+      ? buildUpdateLoggedMealCombinedQuery(pendingUpdate.targetMealType, rawQuery)
+      : rawQuery;
+
     const targetFood = isDayReview
       ? rawQuery
       : isGeneric
       ? rawQuery
+      : isUpdateLogged
+        ? queryForAdvice
       : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
     if (!targetFood) {
       this.publishSystemMessage('Dimmi quale alimento vuoi valutare (es. «Posso mangiare una pizza?»).');
@@ -1177,10 +1397,23 @@ export class CommandTerminalController {
       adviceContext = await buildAdviceContext(targetFood, currentState, {
         intent: isDayReview
           ? 'ASK_DAY_REVIEW'
-          : isCompletion
-            ? 'ASK_MEAL_COMPLETION'
-            : 'ASK_MEAL_ADVICE',
+          : isUpdateLogged
+            ? 'UPDATE_LOGGED_MEAL'
+          : isSubstituteDraft
+            ? 'SUBSTITUTE_MEAL_DRAFT_ITEM'
+          : isFixDraft
+            ? 'FIX_MEAL_DRAFT'
+            : isDraftEval
+              ? 'EVALUATE_MEAL_DRAFT'
+              : isCompletion
+                ? 'ASK_MEAL_COMPLETION'
+                : 'ASK_MEAL_ADVICE',
         partialMeal,
+        mealDraftProjection,
+        existingMealNode,
+        removedFoodQuery: isSubstituteDraft
+          ? parseRemovedFoodQueryFromSubstituteText(rawQuery)
+          : null,
       });
     } catch (error) {
       const reason = `Consultant context failure: ${error?.message || 'unknown error'}`;
@@ -1205,15 +1438,60 @@ export class CommandTerminalController {
         });
       const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
       let mealProposals = sanitizeMealProposals(rawProposals, adviceContext);
-      if (isGeneric || adviceContext.isGenericMealSuggestion) {
+      if (isSubstituteDraft) {
+        mealProposals = ensureMealProposalsForSubstituteDraft(mealProposals, adviceContext);
+      } else if (isFixDraft) {
+        mealProposals = ensureMealProposalsForFixDraft(mealProposals, adviceContext);
+      } else if (isUpdateLogged) {
+        mealProposals = ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceContext);
+      } else if (isGeneric || adviceContext.isGenericMealSuggestion) {
         mealProposals = ensureMealProposalsForAdvice(mealProposals, adviceContext);
       }
+      if (isDayReview || isDraftEval) {
+        mealProposals = [];
+      }
+
+      const finalAdviceMessage = isSubstituteDraft
+        ? buildSubstituteMealDraftAdviceMessage(adviceContext)
+        : isFixDraft
+        ? buildFixMealDraftAdviceMessage(adviceContext)
+        : isUpdateLogged
+          ? buildUpdateLoggedMealAdviceMessage(adviceContext)
+        : adviceMessage;
+
       this.publishAdviceMessage({
-        text: adviceMessage,
-        suggestedAction,
-        mealProposals,
+        text: finalAdviceMessage,
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged ? null : suggestedAction,
+        mealProposals: mealProposals.length > 0 ? mealProposals : null,
+        mealDraftProjection: isDraftEval
+          ? adviceContext?.mealDraftProjection || null
+          : isSubstituteDraft
+            ? adviceContext?.keptDraftProjection || adviceContext?.mealDraftProjection || null
+            : null,
       });
-      return { ok: true, intent: 'ASK_MEAL_ADVICE', model, adviceContext, suggestedAction, mealProposals };
+      if (isUpdateLogged && mealProposals.length > 0) {
+        this.clearPendingMealUpdate();
+      }
+      return {
+        ok: true,
+        intent: isSubstituteDraft
+          ? 'SUBSTITUTE_MEAL_DRAFT_ITEM'
+          : isFixDraft
+          ? 'FIX_MEAL_DRAFT'
+          : isUpdateLogged
+            ? 'UPDATE_LOGGED_MEAL'
+          : isDraftEval
+            ? 'EVALUATE_MEAL_DRAFT'
+            : isDayReview
+              ? 'ASK_DAY_REVIEW'
+              : isCompletion
+                ? 'ASK_MEAL_COMPLETION'
+                : 'ASK_MEAL_ADVICE',
+        model,
+        adviceContext,
+        suggestedAction: isDraftEval || isFixDraft || isSubstituteDraft || isUpdateLogged ? null : suggestedAction,
+        mealProposals,
+      };
     } catch (error) {
       const reason = `Consultant LLM failure: ${error?.message || 'unknown error'}`;
       console.error('[CommandTerminalController] Meal advice LLM error', error);
@@ -1281,16 +1559,33 @@ export class CommandTerminalController {
       return { ok: false, reason, userNotified: true };
     }
 
+    if (this.pendingMealUpdate?.targetMealType) {
+      if (/^(?:annulla|cancel|stop)\b/i.test(userText)) {
+        this.clearPendingMealUpdate();
+        this.publishSystemMessage('Modifica pasto annullata.');
+        return { ok: true, cancelled: true, intent: 'UPDATE_LOGGED_MEAL' };
+      }
+      return this.processMealAdvice(userText, currentState, {
+        ...options,
+        forcedIntent: 'UPDATE_LOGGED_MEAL',
+      });
+    }
+
     const inferredIntent = this.resolveEffectiveIntent(userText, {
       intent: options.intent,
       hasImages: images.length > 0,
+      chatHistory,
     });
 
     if (
       inferredIntent === 'ASK_DAY_REVIEW'
+      || inferredIntent === 'EVALUATE_MEAL_DRAFT'
+      || inferredIntent === 'FIX_MEAL_DRAFT'
+      || inferredIntent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
       || inferredIntent === 'ASK_MEAL_ADVICE'
       || inferredIntent === 'ASK_MEAL_COMPLETION'
-      || (isMealAdviceIntent(userText) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
+      || inferredIntent === 'UPDATE_LOGGED_MEAL'
+      || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
     ) {
       return this.processMealAdvice(userText, currentState, options);
     }
@@ -1301,7 +1596,26 @@ export class CommandTerminalController {
         ? 'ADD_FOOD'
         : inferredIntent;
 
-    const contextBundle = this.composer.buildPromptContext(commandHint, currentState, userText);
+    if (
+      commandHint === 'ADD_FOOD'
+      && (
+        this.getPendingMealUpdate()?.targetMealType
+        || isUpdateLoggedMealIntent(userText, chatHistory)
+      )
+    ) {
+      return this.processMealAdvice(userText, currentState, {
+        ...options,
+        forcedIntent: 'UPDATE_LOGGED_MEAL',
+      });
+    }
+
+    const contextBundle = this.composer.buildPromptContext(
+      commandHint,
+      currentState,
+      userText,
+      chatHistory,
+      { pendingMealUpdate: this.getPendingMealUpdate() },
+    );
 
     let commandResponse;
     try {
@@ -1360,7 +1674,7 @@ export class CommandTerminalController {
 
     if (
       commandType === 'ADD_FOOD'
-      && isMealAdviceIntent(userText)
+      && isMealAdviceIntent(userText, chatHistory)
       && !isConsumedMealLogDescription(userText)
       && !looksLikeComplexMealLog(userText)
     ) {

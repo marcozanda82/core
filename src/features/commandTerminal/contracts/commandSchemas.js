@@ -5,13 +5,14 @@ export const foodItemSchema = {
   properties: {
     foodName: {
       type: 'string',
-      description: 'Nome dell alimento o piatto',
+      description:
+        'Nome PURO dell ingrediente, senza grammature, parentesi, virgole finali o congiunzioni iniziali. Esempi corretti: "Pane integrale con semi e noci", "Tonno al naturale", "Pomodoro", "Pesca". VIETATO: "e pesca", "pesca 100 g", "pomodoro 200 g", "(160g)". La quantita va SOLO in grams, mai nel nome.',
     },
     grams: {
       type: 'number',
       nullable: true,
       description:
-        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente. Se non specificata: null o ometti — NON stimare.',
+        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente nel testo (es. 160g, 56 g). Se non specificata: null o ometti — NON stimare. MAI includere grammi nel foodName.',
     },
   },
   required: ['foodName'],
@@ -23,7 +24,7 @@ export const addFoodPayloadSchema = {
     items: {
       type: 'array',
       description:
-        'TUTTI gli alimenti menzionati dall utente. Obbligatorio se l utente elenca piu alimenti (es. pollo e riso).',
+        'TUTTI e SOLO gli alimenti menzionati dall utente, uno per voce, senza duplicati da congiunzioni. Es. "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" = 4 voci, NON 5. Le congiunzioni (e, con, più, virgola) separano alimenti ma NON diventano mai un foodName.',
       items: foodItemSchema,
       minItems: 1,
     },
@@ -171,7 +172,7 @@ export const terminalCommandEnvelopeSchema = {
       type: 'string',
       nullable: true,
       description:
-        'Consiglio breve opzionale (max 1 frase) per ADD_FOOD se budget/metabolico/workout lo richiede. Ometti se non necessario.',
+        'Solo per registrazione pasto (ADD_FOOD): riepilogo neutro della corretta estrazione (es. "Ho registrato 4 alimenti per lo snack delle 19:00."). VIETATO in fase di semplice log: allarmi su grassi, budget, semafori o valutazioni What-If non richieste. Compila SOLO se serve confermare il log; altrimenti ometti.',
     },
     confidence: {
       type: 'number',
@@ -230,13 +231,25 @@ export const consultantResponseSchema = {
             nullable: true,
             description: 'Orario esplicito HH:mm se indicato dall utente (es. ore 14:45).',
           },
+          targetNodeId: {
+            type: 'string',
+            nullable: true,
+            description:
+              'ID nodo pasto esistente da sovrascrivere (UPDATE_LOGGED_MEAL). Copia da [EXISTING_MEAL_NODE].targetNodeId.',
+          },
           source: { type: 'string' },
           items: {
             type: 'array',
+            description:
+              'Lista COMPLETA alimenti del pasto. Ogni voce DEVE avere foodName e grams > 0. Per UPDATE_LOGGED_MEAL: mai array vuoto; se richiesta vaga, ripeti [EXISTING_MEAL_NODE].items.',
             items: {
               type: 'object',
               properties: {
-                foodName: { type: 'string' },
+                foodName: {
+                  type: 'string',
+                  description:
+                    'Nome PURO ingrediente: senza grammi, parentesi o congiunzioni iniziali (es. "Pesca", non "e pesca 100 g").',
+                },
                 foodDbKey: { type: 'string', nullable: true },
                 grams: { type: 'number' },
                 kcal: { type: 'number' },
@@ -282,7 +295,7 @@ export const geminiToolSchemas = Object.freeze({
   ADD_FOOD: {
     name: 'dispatch_add_food',
     description:
-      'Aggiunge uno o piu alimenti al diario. Usa items[] con TUTTI gli alimenti elencati; grams e mealType solo se espliciti (altrimenti null/omessi per slot filling).',
+      'Aggiunge uno o piu alimenti al diario. items[]: un oggetto per alimento citato; foodName = nome puro (no grammi/parentesi/congiunzioni); grams separato. Nessun duplicato da "e"/virgole.',
     inputSchema: addFoodPayloadSchema,
   },
   ADD_WORKOUT: {

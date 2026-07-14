@@ -30,6 +30,7 @@ export function useCommandTerminal({
 
   const setChatHistoryRef = useRef(setChatHistory);
   const chatHistoryRef = useRef(chatHistory);
+  const pendingMealUpdateRef = useRef(null);
   useEffect(() => {
     setChatHistoryRef.current = setChatHistory;
   }, [setChatHistory]);
@@ -257,6 +258,12 @@ export function useCommandTerminal({
         type: payload.type || null,
         suggestedAction: payload.suggestedAction || null,
         mealProposals: Array.isArray(payload.mealProposals) ? payload.mealProposals : null,
+        mealDraftProjection: payload.mealDraftProjection && typeof payload.mealDraftProjection === 'object'
+          ? payload.mealDraftProjection
+          : null,
+        pendingMealUpdate: payload.pendingMealUpdate && typeof payload.pendingMealUpdate === 'object'
+          ? payload.pendingMealUpdate
+          : null,
         adviceId: payload.adviceId || null,
         newFoodDraft: payload.newFoodDraft || null,
         isError: payload.type === 'ERROR',
@@ -319,6 +326,7 @@ export function useCommandTerminal({
           intent: imageOnly ? 'LOG_SLEEP' : undefined,
           chatHistory: historyForLlm,
         });
+        pendingMealUpdateRef.current = controller.getPendingMealUpdate();
         if (result && result.ok === false && !result.userNotified) {
           appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
             type: 'ERROR',
@@ -344,6 +352,8 @@ export function useCommandTerminal({
   const handleDraftCancel = useCallback(
     (draftId) => {
       controller.cancelPendingAction();
+      controller.clearPendingMealUpdate();
+      pendingMealUpdateRef.current = null;
       resolveDraftMessage(draftId, { cancelled: true });
       setActiveQuickReplies([]);
       appendAiMessage('Inserimento annullato.');
@@ -611,24 +621,33 @@ export function useCommandTerminal({
     }
 
     const exactTime = String(proposal.exactTime || proposal.timeString || '').trim();
+    const targetNodeId = String(proposal.targetNodeId || '').trim();
     const payload = {
       mealType,
       items: payloadItems,
       ...(exactTime ? { timeString: exactTime, exactTime } : {}),
+      ...(targetNodeId ? { targetNodeId } : {}),
     };
 
     try {
       commandBus.publish(DISPATCH_ADD_FOOD, payload, {
         source: 'useCommandTerminal',
-        correlationId: 'meal_proposal_accept',
+        correlationId: targetNodeId ? 'meal_proposal_update' : 'meal_proposal_accept',
         dedupeKey: {
           adviceId: adviceId || proposalId,
           proposalId,
           mealType,
           items: payloadItems,
+          ...(targetNodeId ? { targetNodeId } : {}),
         },
       });
-      appendAiMessage(`✅ Pasto caricato: ${String(proposal.label || proposal.name || mealType).trim()}.`);
+      appendAiMessage(
+        targetNodeId
+          ? `✅ Pasto aggiornato: ${String(proposal.label || proposal.name || mealType).trim()}.`
+          : `✅ Pasto caricato: ${String(proposal.label || proposal.name || mealType).trim()}.`,
+      );
+      controller.clearPendingMealUpdate();
+      pendingMealUpdateRef.current = null;
       return { ok: true };
     } catch (error) {
       const reason = `Meal proposal accept failure: ${error?.message || 'unknown error'}`;
