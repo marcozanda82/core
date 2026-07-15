@@ -164,6 +164,12 @@ import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
 import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPhaseState';
+import { evaluateDailyPillars } from './features/salaComandi/engines/KentuPhysiologyEngine';
+import {
+  saveDiaryLogForDate,
+  extractMealTimesFromLog,
+  getLogForDateFromStorico,
+} from './utils/storicoDayPersistence';
 import useWorkoutManager from './hooks/salaComandi/useWorkoutManager';
 import useKentuMealHandlers from './hooks/salaComandi/useKentuMealHandlers';
 import useDiaryFirebaseSync from './hooks/salaComandi/useDiaryFirebaseSync';
@@ -358,6 +364,8 @@ import {
   readPersistedEventUsage,
   readDismissedAiCoachInsights,
   computeSleepDurationHours,
+  computeBedtimeFromWakeAndDuration,
+  formatSleepDurationParts,
   kentuChatStorageKey,
   readKentuChatHistoryFromLocalStorage,
   kentuChatHistoryForPersistence,
@@ -385,6 +393,7 @@ const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOver
 const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
 const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
+const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -804,8 +813,11 @@ export default function SalaComandi() {
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
   /** null | { editingId: string | null } — editingId null = nuovo sonno */
   const [sleepModal, setSleepModal] = useState(null);
-  const [sleepFormBedStr, setSleepFormBedStr] = useState('23:00');
   const [sleepFormWakeStr, setSleepFormWakeStr] = useState('07:00');
+  const [sleepFormDurationHours, setSleepFormDurationHours] = useState(7);
+  const [sleepFormDurationMinutes, setSleepFormDurationMinutes] = useState(30);
+  const [sleepFormNotes, setSleepFormNotes] = useState('');
+  const [sleepFormQuality, setSleepFormQuality] = useState(3);
 
   useEffect(() => {
     if (sleepModal == null) return;
@@ -817,15 +829,49 @@ export default function SalaComandi() {
       console.warn('[SalaComandi] sleep entry not found for edit', { editingId: sleepModal.editingId });
     }
     if (item) {
-      const bed = Number(item.bedtime ?? item.sleepStart);
       const wake = Number(item.wakeTime ?? item.sleepEnd);
-      setSleepFormBedStr(decimalToTimeStr(Number.isFinite(bed) ? bed : 23));
       setSleepFormWakeStr(decimalToTimeStr(Number.isFinite(wake) ? wake : 7.5));
+      const durationMinutes = Number(item.durationMinutes);
+      const hoursDec = Number(item.hours ?? item.duration ?? item.sleepHours);
+      if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
+        setSleepFormDurationHours(Math.floor(durationMinutes / 60));
+        setSleepFormDurationMinutes(durationMinutes % 60);
+      } else if (Number.isFinite(hoursDec) && hoursDec > 0) {
+        setSleepFormDurationHours(Math.floor(hoursDec));
+        setSleepFormDurationMinutes(Math.round((hoursDec % 1) * 60));
+      } else {
+        const bed = Number(item.bedtime ?? item.sleepStart);
+        if (Number.isFinite(bed) && Number.isFinite(wake)) {
+          const inferred = computeSleepDurationHours(bed, wake);
+          setSleepFormDurationHours(Math.floor(inferred));
+          setSleepFormDurationMinutes(Math.round((inferred % 1) * 60));
+        } else {
+          setSleepFormDurationHours(7);
+          setSleepFormDurationMinutes(30);
+        }
+      }
+      setSleepFormNotes(String(item.notes ?? item.note ?? item.details ?? '').trim());
+      const q = Number(item.quality ?? item.rating);
+      setSleepFormQuality(Number.isFinite(q) && q >= 1 && q <= 5 ? Math.round(q) : 3);
     } else {
-      setSleepFormBedStr('23:00');
       setSleepFormWakeStr('07:00');
+      setSleepFormDurationHours(7);
+      setSleepFormDurationMinutes(30);
+      setSleepFormNotes('');
+      setSleepFormQuality(3);
     }
   }, [sleepModal, isSimulationMode, dailyLog, simulatedLog]);
+
+  useEffect(() => {
+    if (!showSleepPrompt) return;
+    const nowHour = getWallClockDecimalHour();
+    const roundedWake = Math.round(nowHour * 4) / 4;
+    setSleepFormWakeStr(decimalToTimeStr(roundedWake));
+    setSleepFormDurationHours(7);
+    setSleepFormDurationMinutes(30);
+    setSleepFormNotes('');
+    setSleepFormQuality(3);
+  }, [showSleepPrompt]);
 
   const [selectedNodeReport, setSelectedNodeReport] = useState(null);
   /** Menu inserimento rapido timeline: `{ hour, view: 'main' | 'events' }`. */
@@ -1437,6 +1483,10 @@ export default function SalaComandi() {
   const [fastChargeSupplementName, setFastChargeSupplementName] = useState('');
   const currentTrackerDateRef = useRef(currentTrackerDate);
   useEffect(() => { currentTrackerDateRef.current = currentTrackerDate; }, [currentTrackerDate]);
+  const fullHistoryRef = useRef(fullHistory);
+  const fullStoricoRef = useRef(fullStorico);
+  useEffect(() => { fullHistoryRef.current = fullHistory; }, [fullHistory]);
+  useEffect(() => { fullStoricoRef.current = fullStorico; }, [fullStorico]);
 
   const { syncDatiFirebase, isInitialLoadComplete } = useDiaryFirebaseSync({
     db,
@@ -3682,8 +3732,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   } = useSleepEngine(activeLog);
 
   const sleepWakeTime = mainNightSleep?.wakeTime ?? mainNightSleep?.sleepEnd ?? 7.5;
-  
+
   const todayStr = getTodayString();
+  const hasSleepDataToday = useMemo(
+    () => currentTrackerDate === todayStr && hasSleepEngineData,
+    [currentTrackerDate, todayStr, hasSleepEngineData],
+  );
+
+  const isViewingToday = currentTrackerDate === todayStr;
+  const showMissingSleepState = isViewingToday && !hasSleepDataToday;
 
   const selectedDayData = useMemo(() => {
     if (!selectedHistoryDate || !fullStorico) return null;
@@ -4419,6 +4476,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const aiCoachTargetKcalKey = useMemo(
     () => Math.round(Number(dynamicDailyKcal) || Number(targetKcalForAlerts) || 0),
     [dynamicDailyKcal, targetKcalForAlerts],
+  );
+
+  const physiologySnapshot = useMemo(
+    () => evaluateDailyPillars(activeLog, fullHistory, {
+      userTargets,
+      dynamicDailyKcal,
+      anchorDate: currentTrackerDate,
+      biometrics: metabolicBiometrics,
+    }),
+    [activeLog, fullHistory, userTargets, dynamicDailyKcal, currentTrackerDate, metabolicBiometrics],
   );
 
   const aiCoachEvalCacheRef = useRef({
@@ -5347,31 +5414,42 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setAddChoiceView('main');
   };
 
-  const sleepDurationLabel = (() => {
-    const dur = computeSleepDurationHours(
-      parseTimeStrToDecimal(sleepFormBedStr),
-      parseTimeStrToDecimal(sleepFormWakeStr)
-    );
-    const hh = Math.floor(dur);
-    const mm = Math.round((dur % 1) * 60);
-    return `${hh}h ${String(mm).padStart(2, '0')}m`;
+  const sleepDurationLabel = formatSleepDurationParts(
+    sleepFormDurationHours,
+    sleepFormDurationMinutes,
+  );
+
+  const computedSleepBedtimeLabel = (() => {
+    const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
+    const durationHours = (Number(sleepFormDurationHours) || 0)
+      + (Number(sleepFormDurationMinutes) || 0) / 60;
+    const bedDec = computeBedtimeFromWakeAndDuration(wakeDec, durationHours);
+    return Number.isFinite(bedDec) ? decimalToTimeStr(bedDec) : null;
   })();
 
-  const handleSaveSleepModal = () => {
-    const bedDec = parseTimeStrToDecimal(sleepFormBedStr);
+  const handleSaveSleepEntry = (editingId = null) => {
     const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
-    const hours = computeSleepDurationHours(bedDec, wakeDec);
-    if (!(hours > 0)) {
-      window.alert('Controlla gli orari di addormentamento e risveglio.');
+    const durationHours = (Number(sleepFormDurationHours) || 0)
+      + (Number(sleepFormDurationMinutes) || 0) / 60;
+    if (!(durationHours > 0)) {
+      window.alert('Inserisci una durata di sonno valida (ore o minuti).');
       return;
     }
-    const id = sleepModal.editingId || `sleep_${Date.now()}`;
+    const bedDec = computeBedtimeFromWakeAndDuration(wakeDec, durationHours);
+    if (!Number.isFinite(bedDec) || !Number.isFinite(wakeDec)) {
+      window.alert('Controlla l\'ora di risveglio.');
+      return;
+    }
+    const durationMinutes = Math.round(durationHours * 60);
+    const hoursRounded = Math.round(durationHours * 100) / 100;
+    const notesTrim = String(sleepFormNotes || '').trim();
+    const id = editingId || `sleep_${Date.now()}`;
     const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
-    const existing = sleepModal.editingId
-      ? logLook.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
+    const existing = editingId
+      ? logLook.find((e) => e?.id === editingId && e?.type === 'sleep')
       : null;
-    if (sleepModal.editingId && !existing) {
-      console.warn('[SalaComandi] sleep entry not found while saving edit', { editingId: sleepModal.editingId });
+    if (editingId && !existing) {
+      console.warn('[SalaComandi] sleep entry not found while saving edit', { editingId });
     }
     const entry = {
       type: 'sleep',
@@ -5380,52 +5458,304 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       bedtime: bedDec,
       sleepStart: bedDec,
       sleepEnd: wakeDec,
-      hours,
-      duration: hours,
-      sleepHours: hours,
+      hours: hoursRounded,
+      duration: hoursRounded,
+      sleepHours: hoursRounded,
+      durationMinutes,
+      notes: notesTrim,
+      note: notesTrim,
+      details: notesTrim,
       deepMin: existing?.deepMin ?? 60,
       remMin: existing?.remMin ?? 60,
+      quality: Math.max(1, Math.min(5, Math.round(Number(sleepFormQuality) || 3))),
       ...(existing?.hr != null ? { hr: existing.hr } : {}),
-      ...(existing?.quality != null ? { quality: existing.quality } : {}),
     };
     if (isSimulationMode) {
       setSimulatedLog((prev) => {
         const base = prev || [];
-        const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+        const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
         return [...rest, entry];
       });
     } else {
       const base = dailyLog || [];
-      const rest = sleepModal.editingId ? base.filter((e) => e.id !== sleepModal.editingId) : base;
+      const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
       const next = [...rest, entry];
       setDailyLog(next);
       syncDatiFirebase(next, manualNodes || []);
     }
     dismissKentuSleepTrigger();
+    setShowSleepPrompt(false);
     setSleepModal(null);
   };
 
-  const handleSleepPromptInsertSleep = () => {
-    setShowSleepPrompt(false);
-    setSleepModal({ editingId: null });
+  const handleSaveSleepModal = () => {
+    handleSaveSleepEntry(sleepModal?.editingId ?? null);
   };
 
+  const handleSaveSleepPrompt = () => {
+    handleSaveSleepEntry(null);
+  };
+
+  const handleOpenEnergyArc = () => {
+    if (physiologySnapshot?.SLEEP?.status === 'alert') {
+      setShowSleepPrompt(true);
+      return;
+    }
+    setShowEnergySheet(true);
+  };
+
+  const handleCloseSleepPrompt = () => {
+    setShowSleepPrompt(false);
+  };
+
+  const handleUpdateWorkoutProgressionNote = useCallback((workoutId, noteText) => {
+    const id = String(workoutId || '').trim();
+    if (!id) return;
+    const trimmed = String(noteText || '').trim();
+    const applyPatch = (prev) => (Array.isArray(prev) ? prev : []).map((entry) => {
+      if (entry?.type !== 'workout' || String(entry.id) !== id) return entry;
+      return {
+        ...entry,
+        progressionNote: trimmed,
+        note: trimmed,
+        details: trimmed,
+      };
+    });
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => applyPatch(prev));
+      return;
+    }
+    const next = applyPatch(dailyLog || []);
+    setDailyLog(next);
+    syncDatiFirebase(next, manualNodes || []);
+  }, [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase]);
+
+  const handleUpdateWorkoutQuestionnaire = useCallback((workoutId, patch) => {
+    const id = String(workoutId || '').trim();
+    if (!id || !patch || typeof patch !== 'object') return;
+    const applyPatch = (prev) => (Array.isArray(prev) ? prev : []).map((entry) => {
+      if (entry?.type !== 'workout' || String(entry.id) !== id) return entry;
+      return {
+        ...entry,
+        ...patch,
+      };
+    });
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => applyPatch(prev));
+      return;
+    }
+    const next = applyPatch(dailyLog || []);
+    setDailyLog(next);
+    syncDatiFirebase(next, manualNodes || []);
+  }, [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase]);
+
+  const handleSaveSleepFromDiary = useCallback((payload) => {
+    const wakeDec = Number(payload?.wakeTime);
+    const hours = Number(payload?.hours);
+    const quality = Math.max(1, Math.min(5, Math.round(Number(payload?.quality) || 3)));
+    const durationMinutes = Number.isFinite(Number(payload?.durationMinutes))
+      ? Math.round(Number(payload.durationMinutes))
+      : Math.round(hours * 60);
+    if (!(hours > 0) || !Number.isFinite(wakeDec)) {
+      window.alert('Controlla risveglio e durata del sonno.');
+      return;
+    }
+    const bedDec = Number.isFinite(Number(payload?.bedtime))
+      ? Number(payload.bedtime)
+      : computeBedtimeFromWakeAndDuration(wakeDec, hours);
+    const editingId = payload?.editingId ? String(payload.editingId) : null;
+    const id = editingId || `sleep_${Date.now()}`;
+    const logLook = isSimulationMode ? (simulatedLog || []) : (dailyLog || []);
+    const existing = editingId
+      ? logLook.find((e) => e?.id === editingId && e?.type === 'sleep')
+      : null;
+    const hoursRounded = Math.round(hours * 100) / 100;
+    const notesTrim = String(existing?.notes ?? existing?.note ?? '').trim();
+    const entry = {
+      type: 'sleep',
+      id,
+      wakeTime: wakeDec,
+      bedtime: bedDec,
+      sleepStart: bedDec,
+      sleepEnd: wakeDec,
+      hours: hoursRounded,
+      duration: hoursRounded,
+      sleepHours: hoursRounded,
+      durationMinutes,
+      notes: notesTrim,
+      note: notesTrim,
+      details: notesTrim,
+      deepMin: existing?.deepMin ?? 60,
+      remMin: existing?.remMin ?? 60,
+      quality,
+      ...(existing?.hr != null ? { hr: existing.hr } : {}),
+    };
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => {
+        const base = prev || [];
+        const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
+        return [...rest, entry];
+      });
+      return;
+    }
+    const base = dailyLog || [];
+    const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
+    const next = [...rest, entry];
+    setDailyLog(next);
+    syncDatiFirebase(next, manualNodes || []);
+  }, [isSimulationMode, simulatedLog, dailyLog, manualNodes, syncDatiFirebase]);
+
+  const handleStoricoSaveDayEntry = useCallback(async ({ dateStr, entryId, patch, isSynthetic }) => {
+    if (isSimulationMode) return;
+    const uid = auth.currentUser?.uid;
+    if (!db || !uid || !dateStr) return;
+
+    const storico = fullHistoryRef.current || fullStoricoRef.current || {};
+    const currentLog = getLogForDateFromStorico(storico, dateStr);
+    const id = String(entryId || patch?.id || '').trim();
+    let nextLog;
+
+    if (isSynthetic) {
+      const { isSynthetic: _drop, ...cleanPatch } = patch || {};
+      nextLog = [...currentLog, { ...cleanPatch, id: cleanPatch.id || `log_${dateStr}_${Date.now()}` }];
+    } else if (id) {
+      const hasMatch = currentLog.some((entry) => String(entry?.id) === id);
+      nextLog = hasMatch
+        ? currentLog.map((entry) => (String(entry?.id) === id ? { ...entry, ...patch } : entry))
+        : [...currentLog, { ...patch, id }];
+    } else {
+      nextLog = [...currentLog, { ...patch, id: patch?.id || `log_${Date.now()}` }];
+    }
+
+    const dayKey = TRACKER_STORICO_KEY(dateStr);
+    const manualNodesForDay = Array.isArray(storico[dayKey]?.manualNodes)
+      ? storico[dayKey].manualNodes
+      : [];
+    const mealTimes = extractMealTimesFromLog(nextLog);
+
+    const payload = await saveDiaryLogForDate({
+      db,
+      uid,
+      dateStr,
+      log: nextLog,
+      manualNodes: manualNodesForDay,
+      mealTimes,
+    });
+
+    setFullHistory((prev) => ({ ...(prev || {}), [dayKey]: payload }));
+    setFullStorico((prev) => ({ ...(prev || {}), [dayKey]: payload }));
+
+    if (dateStr === currentTrackerDateRef.current) {
+      setDailyLog(nextLog);
+    }
+  }, [auth, db, isSimulationMode, setDailyLog, setFullHistory, setFullStorico]);
+
+  const handleStoricoUpdateWorkoutQuestionnaire = useCallback(async (dateStr, workoutId, patch) => {
+    const id = String(workoutId || '').trim();
+    if (!dateStr || !id || !patch) return;
+    if (dateStr === currentTrackerDateRef.current) {
+      handleUpdateWorkoutQuestionnaire(id, patch);
+      return;
+    }
+    await handleStoricoSaveDayEntry({
+      dateStr,
+      entryId: id,
+      patch: { id, type: 'workout', ...patch },
+      isSynthetic: false,
+    });
+  }, [handleStoricoSaveDayEntry, handleUpdateWorkoutQuestionnaire]);
+
+  const handleStoricoSaveSleep = useCallback(async (dateStr, payload) => {
+    if (!dateStr || !payload) return;
+    const wakeDec = Number(payload.wakeTime);
+    const hours = Number(payload.hours);
+    const quality = Math.max(1, Math.min(5, Math.round(Number(payload.quality) || 3)));
+    const durationMinutes = Number.isFinite(Number(payload.durationMinutes))
+      ? Math.round(Number(payload.durationMinutes))
+      : Math.round(hours * 60);
+    if (!(hours > 0) || !Number.isFinite(wakeDec)) {
+      window.alert('Controlla risveglio e durata del sonno.');
+      return;
+    }
+    const bedDec = Number.isFinite(Number(payload.bedtime))
+      ? Number(payload.bedtime)
+      : computeBedtimeFromWakeAndDuration(wakeDec, hours);
+    const editingId = payload.editingId ? String(payload.editingId) : null;
+    const id = editingId || `sleep_${Date.now()}`;
+    const hoursRounded = Math.round(hours * 100) / 100;
+
+    if (dateStr === currentTrackerDateRef.current) {
+      handleSaveSleepFromDiary({
+        ...payload,
+        editingId,
+        wakeTime: wakeDec,
+        bedtime: bedDec,
+        hours: hoursRounded,
+        durationMinutes,
+        quality,
+      });
+      return;
+    }
+
+    const storico = fullHistoryRef.current || fullStoricoRef.current || {};
+    const currentLog = getLogForDateFromStorico(storico, dateStr);
+    const existing = editingId
+      ? currentLog.find((e) => e?.id === editingId && e?.type === 'sleep')
+      : null;
+    const notesTrim = String(existing?.notes ?? existing?.note ?? '').trim();
+    const entry = {
+      type: 'sleep',
+      id,
+      wakeTime: wakeDec,
+      bedtime: bedDec,
+      sleepStart: bedDec,
+      sleepEnd: wakeDec,
+      hours: hoursRounded,
+      duration: hoursRounded,
+      sleepHours: hoursRounded,
+      durationMinutes,
+      notes: notesTrim,
+      note: notesTrim,
+      details: notesTrim,
+      deepMin: existing?.deepMin ?? 60,
+      remMin: existing?.remMin ?? 60,
+      quality,
+      ...(existing?.hr != null ? { hr: existing.hr } : {}),
+    };
+    await handleStoricoSaveDayEntry({
+      dateStr,
+      entryId: id,
+      patch: entry,
+      isSynthetic: false,
+    });
+  }, [handleSaveSleepFromDiary, handleStoricoSaveDayEntry]);
+
   const handleSleepPromptUseAverage = () => {
-    const bed = 23;
-    const wake = 6;
-    const hours = computeSleepDurationHours(bed, wake);
+    setSleepFormWakeStr('07:00');
+    setSleepFormDurationHours(8);
+    setSleepFormDurationMinutes(0);
+    setSleepFormNotes('');
+    setSleepFormQuality(3);
+    const wake = 7;
+    const hours = 8;
+    const bed = computeBedtimeFromWakeAndDuration(wake, hours);
     const sleepEntry = {
       type: 'sleep',
       id: `sleep_avg_${Date.now()}`,
       hours,
       duration: hours,
       sleepHours: hours,
-      deepMin: 60,
-      remMin: 60,
+      durationMinutes: 480,
       wakeTime: wake,
       bedtime: bed,
       sleepStart: bed,
       sleepEnd: wake,
+      quality: 3,
+      notes: '',
+      note: '',
+      details: '',
+      deepMin: 60,
+      remMin: 60,
     };
     if (isSimulationMode) {
       setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
@@ -5722,8 +6052,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               metabolicPhase={metabolicSnapshot?.phase}
               dynamicDailyKcal={dynamicDailyKcal}
               workoutsLog={workoutsLog}
-              hasSleepData={hasSleepEngineData}
-              onClick={() => setShowEnergySheet(true)}
+              hasSleepData={isViewingToday ? hasSleepDataToday : hasSleepEngineData}
+              missingSleep={showMissingSleepState}
+              physiologySnapshot={physiologySnapshot}
+              onClick={handleOpenEnergyArc}
             />
           </div>
         }
@@ -6291,7 +6623,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               />
               <MetabolicMonitorCard
                 metabolicSnapshot={metabolicSnapshot}
-                onClick={() => setShowMetabolicSheet(true)}
+                missingSleepData={physiologySnapshot?.SLEEP?.status === 'alert'}
+                onClick={() => {
+                  if (physiologySnapshot?.SLEEP?.status === 'alert') {
+                    setShowSleepPrompt(true);
+                    return;
+                  }
+                  setShowMetabolicSheet(true);
+                }}
                 onCenterTap={() => setShowDiarySheet(true)}
               />
             </div>
@@ -6738,130 +7077,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
         {/* VISTA ARCHIVIO STORICO */}
         {activeAction === 'storico' && (
-          <div className="view-animate">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <button onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
-              <h2 style={{ fontSize: '0.8rem', color: '#b0bec5', letterSpacing: '2px', margin: 0 }}>📚 ARCHIVIO STORICO</h2>
-              <div style={{ width: '70px' }}></div>
-            </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '0.7rem', color: '#888', letterSpacing: '1px', marginBottom: '8px' }}>Cerca per data</label>
-              <input
-                type="date"
-                value={selectedHistoryDate}
-                onChange={(e) => setSelectedHistoryDate(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', background: '#111', border: '1px solid #2a2a2a', borderRadius: '10px', color: '#fff', fontSize: '0.9rem', outline: 'none' }}
-              />
-            </div>
-            {selectedHistoryDate && (
-              <div style={{ marginBottom: '24px', padding: '16px', background: 'rgba(176, 190, 197, 0.06)', border: '1px solid rgba(176, 190, 197, 0.2)', borderRadius: '12px' }}>
-                {selectedDayData ? (
-                  <>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', fontSize: '0.8rem' }}>
-                      <span style={{ color: '#b0bec5' }}>{new Date(selectedHistoryDate + 'T12:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                      <span style={{ color: '#00e5ff' }}>{Math.round(selectedDayData.calorie)} kcal</span>
-                      <span style={{ color: '#b388ff' }}>{selectedDayData.proteine.toFixed(1)} g prot</span>
-                      <span style={{ color: selectedDayData.deficit < 0 ? '#00e676' : selectedDayData.deficit > 0 ? '#ff6d00' : '#888' }}>
-                        {selectedDayData.deficit < 0 ? `${selectedDayData.deficit} kcal (Deficit)` : selectedDayData.deficit > 0 ? `+${selectedDayData.deficit} kcal (Surplus)` : '0 kcal (Pari)'}
-                      </span>
-                    </div>
-                    <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '8px' }}>Dettaglio</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      {(selectedDayData.log || []).map((entry, idx) => {
-                        if (entry.type === 'meal' && entry.items) {
-                          const tot = (entry.items || []).reduce((a, it) => ({ prot: a.prot + (it.prot || 0), cal: a.cal + ((it.cal || it.kcal) || 0) }), { prot: 0, cal: 0 });
-                          return (
-                            <div key={idx}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#e4e6eb' }}>{entry.desc || 'Pasto'} — {tot.prot.toFixed(1)} g prot, {Math.round(tot.cal)} kcal</div>
-                              {(entry.items || []).map((item, i) => (
-                                <div key={i} style={{ paddingLeft: '12px', fontSize: '0.75rem', color: '#b0b3b8' }}>{item.desc} · {(item.qta || item.weight) || ''}g · {Math.round((item.cal || item.kcal) || 0)} kcal</div>
-                              ))}
-                            </div>
-                          );
-                        }
-                        if (entry.type === 'single' || !entry.type) {
-                          return <div key={idx} style={{ fontSize: '0.8rem', color: '#b0b3b8' }}>{entry.desc} · {Math.round((entry.cal || entry.kcal) || 0)} kcal</div>;
-                        }
-                        if (entry.type === 'workout') {
-                          return <div key={idx} style={{ fontSize: '0.8rem', color: '#ff6d00' }}>{entry.desc} — {Math.round((entry.cal || entry.kcal) || 0)} kcal (bruciate)</div>;
-                        }
-                        return null;
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <p style={{ margin: 0, fontSize: '0.85rem', color: '#888', fontStyle: 'italic' }}>Nessun dato registrato per questa data.</p>
-                )}
-              </div>
-            )}
-            <h3 className="diary-group-title" style={{ borderLeftColor: '#b0bec5', marginBottom: '12px' }}>Tutti i giorni</h3>
-            {pastDaysStorico.length === 0 ? (
-              <p style={{ textAlign: 'center', color: '#444', fontSize: '0.8rem', fontStyle: 'italic' }}>Nessun giorno passato in archivio.</p>
-            ) : (
-              <div className="storico-accordion">
-                {pastDaysStorico.map(({ dataStr, log, calorie, proteine, deficit }) => {
-                  const isExpanded = expandedStoricoDate === dataStr;
-                  const dataFormatted = new Date(dataStr + 'T12:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                  const deficitText = deficit < 0 ? `${deficit} kcal (Deficit)` : deficit > 0 ? `+${deficit} kcal (Surplus)` : '0 kcal (Pari)';
-                  return (
-                    <div key={dataStr} style={{ marginBottom: '8px', border: '1px solid #2a2a2a', borderRadius: '12px', overflow: 'hidden', background: isExpanded ? 'rgba(176, 190, 197, 0.06)' : 'rgba(255,255,255,0.02)' }}>
-                      <button type="button" onClick={() => setExpandedStoricoDate(isExpanded ? null : dataStr)} style={{ width: '100%', padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', background: 'none', border: 'none', color: '#fff', cursor: 'pointer', textAlign: 'left', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{dataFormatted}</span>
-                        <span style={{ fontSize: '0.75rem', color: '#00e5ff' }}>{Math.round(calorie)} kcal</span>
-                        <span style={{ fontSize: '0.75rem', color: '#b388ff' }}>{proteine.toFixed(1)} g prot</span>
-                        <span style={{ fontSize: '0.75rem', color: deficit < 0 ? '#00e676' : deficit > 0 ? '#ff6d00' : '#888' }}>{deficitText}</span>
-                        <span style={{ fontSize: '1rem', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>▶</span>
-                      </button>
-                      {isExpanded && (
-                        <div style={{ padding: '12px 16px 16px', borderTop: '1px solid #2a2a2a', background: 'rgba(0,0,0,0.3)' }}>
-                          <h4 style={{ fontSize: '0.7rem', color: '#b0bec5', letterSpacing: '1px', marginBottom: '10px' }}>Dettaglio pasti e alimenti</h4>
-                          {(log || []).length === 0 ? (
-                            <p style={{ fontSize: '0.8rem', color: '#666', fontStyle: 'italic' }}>Nessun dettaglio per questo giorno.</p>
-                          ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {(log || []).map((entry, idx) => {
-                                if (entry.type === 'meal' && entry.items) {
-                                  const totPasto = (entry.items || []).reduce((a, it) => ({ prot: a.prot + (it.prot || 0), cal: a.cal + ((it.cal || it.kcal) || 0) }), { prot: 0, cal: 0 });
-                                  return (
-                                    <div key={idx} style={{ marginBottom: '4px' }}>
-                                      <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#e4e6eb', marginBottom: '4px' }}>{entry.desc || 'Pasto'} — {totPasto.prot.toFixed(1)} g prot, {Math.round(totPasto.cal)} kcal</div>
-                                      {(entry.items || []).map((item, i) => (
-                                        <div key={i} style={{ paddingLeft: '16px', fontSize: '0.8rem', color: '#b0b3b8', display: 'flex', justifyContent: 'space-between' }}>
-                                          <span>{item.desc}</span>
-                                          <span>{item.qta || item.weight}g · {(item.prot || 0).toFixed(1)} g · {Math.round((item.cal || item.kcal) || 0)} kcal</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                }
-                                if (entry.type === 'single' || !entry.type) {
-                                  return (
-                                    <div key={idx} style={{ fontSize: '0.8rem', color: '#b0b3b8', display: 'flex', justifyContent: 'space-between' }}>
-                                      <span>{entry.desc}</span>
-                                      <span>{(entry.qta || entry.weight) || ''}g · {(entry.prot || 0).toFixed(1)} g · {Math.round((entry.cal || entry.kcal) || 0)} kcal</span>
-                                    </div>
-                                  );
-                                }
-                                if (entry.type === 'workout') {
-                                  return (
-                                    <div key={idx} style={{ fontSize: '0.8rem', color: '#ff6d00', display: 'flex', justifyContent: 'space-between' }}>
-                                      <span>{entry.desc}</span>
-                                      <span>{Math.round((entry.cal || entry.kcal) || 0)} kcal (bruciate)</span>
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <Suspense fallback={<KentuLazySectionFallback label="Archivio storico…" />}>
+            <ArchivioStoricoView
+              onBack={() => setActiveAction(null)}
+              selectedHistoryDate={selectedHistoryDate}
+              setSelectedHistoryDate={setSelectedHistoryDate}
+              selectedDayData={selectedDayData}
+              pastDaysStorico={pastDaysStorico}
+              expandedStoricoDate={expandedStoricoDate}
+              setExpandedStoricoDate={setExpandedStoricoDate}
+              fullHistory={fullHistory}
+              decimalToTimeStr={decimalToTimeStr}
+              onUpdateWorkoutQuestionnaire={handleStoricoUpdateWorkoutQuestionnaire}
+              onSaveSleep={handleStoricoSaveSleep}
+            />
+          </Suspense>
         )}
 
         {/* VISTA ZEN — Neural Reset fullscreen (portal su document.body) */}
@@ -7653,19 +7883,40 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       <SleepPromptOverlay
         showSleepPrompt={showSleepPrompt}
-        onInsertSleep={handleSleepPromptInsertSleep}
+        onClose={handleCloseSleepPrompt}
+        trackerDate={currentTrackerDate || getTodayString()}
+        sleepFormWakeStr={sleepFormWakeStr}
+        setSleepFormWakeStr={setSleepFormWakeStr}
+        sleepFormDurationHours={sleepFormDurationHours}
+        setSleepFormDurationHours={setSleepFormDurationHours}
+        sleepFormDurationMinutes={sleepFormDurationMinutes}
+        setSleepFormDurationMinutes={setSleepFormDurationMinutes}
+        sleepFormNotes={sleepFormNotes}
+        setSleepFormNotes={setSleepFormNotes}
+        sleepFormQuality={sleepFormQuality}
+        setSleepFormQuality={setSleepFormQuality}
+        sleepDurationLabel={sleepDurationLabel}
+        computedBedtimeLabel={computedSleepBedtimeLabel}
+        onSave={handleSaveSleepPrompt}
         onUseAverage={handleSleepPromptUseAverage}
-        onLater={() => setShowSleepPrompt(false)}
       />
 
       <SleepModalOverlay
         sleepModal={sleepModal}
         onClose={() => setSleepModal(null)}
-        sleepFormBedStr={sleepFormBedStr}
-        setSleepFormBedStr={setSleepFormBedStr}
+        trackerDate={currentTrackerDate}
         sleepFormWakeStr={sleepFormWakeStr}
         setSleepFormWakeStr={setSleepFormWakeStr}
+        sleepFormDurationHours={sleepFormDurationHours}
+        setSleepFormDurationHours={setSleepFormDurationHours}
+        sleepFormDurationMinutes={sleepFormDurationMinutes}
+        setSleepFormDurationMinutes={setSleepFormDurationMinutes}
+        sleepFormNotes={sleepFormNotes}
+        setSleepFormNotes={setSleepFormNotes}
+        sleepFormQuality={sleepFormQuality}
+        setSleepFormQuality={setSleepFormQuality}
         sleepDurationLabel={sleepDurationLabel}
+        computedBedtimeLabel={computedSleepBedtimeLabel}
         onSave={handleSaveSleepModal}
       />
 
@@ -7928,11 +8179,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <DiaryDetailsSheet
         isOpen={showDiarySheet}
         onClose={() => setShowDiarySheet(false)}
+        activeLog={activeLog}
         groupedFoods={groupedFoods}
         workoutsLog={workoutsLog}
         totali={totali}
         dynamicDailyKcal={dynamicDailyKcal}
         decimalToTimeStr={decimalToTimeStr}
+        fastingData={fastingData}
+        currentHour={isViewingPastDate ? 24 : currentTime}
         onEditMeal={(slotKey) => {
           setShowDiarySheet(false);
           loadMealToConstructor(slotKey);
@@ -7940,6 +8194,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onEditWorkout={openWorkoutEditorFromLogItem}
         onDeleteItem={removeLogItem}
         onInspectFood={setSelectedFoodForInfo}
+        onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
+        onSaveSleep={handleSaveSleepFromDiary}
       />
 
       <EnergyBalanceSheet

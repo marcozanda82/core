@@ -79,6 +79,27 @@ export function computeSleepDurationHours(bedDecimal, wakeDecimal) {
   return Math.round(Math.min(24, Math.max(0, dur)) * 100) / 100;
 }
 
+/** Calcola l'ora di addormentamento sottraendo la durata all'ora di risveglio. */
+export function computeBedtimeFromWakeAndDuration(wakeDecimal, durationHours) {
+  const w = Number(wakeDecimal);
+  const dur = Number(durationHours);
+  if (!Number.isFinite(w) || !Number.isFinite(dur) || dur <= 0) return NaN;
+  let bed = w - dur;
+  while (bed < 0) bed += 24;
+  while (bed >= 24) bed -= 24;
+  return Math.round(bed * 100) / 100;
+}
+
+/** Etichetta leggibile per durata ore + minuti (es. "6h 30m"). */
+export function formatSleepDurationParts(hoursPart, minutesPart) {
+  const h = Math.max(0, Math.floor(Number(hoursPart) || 0));
+  const m = Math.max(0, Math.min(59, Math.floor(Number(minutesPart) || 0)));
+  if (h === 0 && m === 0) return '—';
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
+}
+
 export function kentuChatStorageKey(dateStr) {
   return `kentu_chat_${dateStr}`;
 }

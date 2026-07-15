@@ -103,6 +103,8 @@ function resolvePhaseLabel(metabolicPhase) {
  *   dynamicDailyKcal?: number,
  *   workoutsLog?: Array<Record<string, unknown>>,
  *   hasSleepData?: boolean,
+ *   missingSleep?: boolean,
+ *   physiologySnapshot?: Record<string, { status?: string, summary?: string, value?: string }> | null,
  *   variant?: 'full' | 'mini',
  *   onClick?: () => void,
  *   className?: string,
@@ -116,51 +118,66 @@ export default function EnergyArcWidget({
   dynamicDailyKcal = 0,
   workoutsLog = [],
   hasSleepData = false,
+  missingSleep = false,
+  physiologySnapshot = null,
   variant = 'full',
   onClick,
   className = '',
 }) {
   const isMini = variant === 'mini';
-  const phaseColor = resolvePhaseColor(metabolicPhase);
+  const isSleepAlert = physiologySnapshot
+    ? physiologySnapshot.SLEEP?.status === 'alert'
+    : (missingSleep && !hasSleepData);
+  const isMissingSleep = isSleepAlert;
+  const phaseColor = isMissingSleep ? '#ef4444' : resolvePhaseColor(metabolicPhase);
   const phaseLabel = resolvePhaseLabel(metabolicPhase);
 
   const { maxCharge, currentLevel, fillRatio } = useMemo(
-    () => computeMetabolicDrain({
-      recoveryScore,
-      wakeTime,
-      currentHour,
-      dynamicDailyKcal,
-      workoutsLog,
-    }),
-    [recoveryScore, wakeTime, currentHour, dynamicDailyKcal, workoutsLog],
+    () => (isMissingSleep
+      ? { maxCharge: 0, currentLevel: 0, fillRatio: 1 }
+      : computeMetabolicDrain({
+        recoveryScore,
+        wakeTime,
+        currentHour,
+        dynamicDailyKcal,
+        workoutsLog,
+      })),
+    [isMissingSleep, recoveryScore, wakeTime, currentHour, dynamicDailyKcal, workoutsLog],
   );
 
-  const filledLength = ARC_LENGTH * fillRatio;
+  const filledLength = isMissingSleep ? ARC_LENGTH : ARC_LENGTH * fillRatio;
   const dashArray = `${filledLength} ${ARC_LENGTH}`;
 
-  const centerValue = hasSleepData && maxCharge > 0
-    ? `${Math.round(currentLevel)}%`
-    : '—';
-  const centerSub = hasSleepData && maxCharge > 0
-    ? `${Math.round(maxCharge)}% al risveglio · ${phaseLabel}`
-    : 'Registra il sonno';
+  const centerValue = isMissingSleep
+    ? null
+    : hasSleepData && maxCharge > 0
+      ? `${Math.round(currentLevel)}%`
+      : '—';
+  const centerSub = isMissingSleep
+    ? 'Quantifica Recupero'
+    : hasSleepData && maxCharge > 0
+      ? `${Math.round(maxCharge)}% al risveglio · ${phaseLabel}`
+      : 'Registra il sonno';
 
   const rootClassName = [
     'energy-arc-widget',
     isMini ? 'energy-arc-widget--mini' : '',
+    isMissingSleep ? 'energy-arc-widget--missing-sleep' : '',
     onClick ? 'energy-arc-widget--interactive' : '',
     className,
   ].filter(Boolean).join(' ');
 
-  const ariaLabel = hasSleepData
-    ? `Batteria energetica ${Math.round(currentLevel)} percento, fase ${phaseLabel}`
-    : 'Batteria energetica, sonno non registrato';
+  const ariaLabel = isMissingSleep
+    ? 'Sonno non registrato. Tocca per quantificare il recupero.'
+    : hasSleepData
+      ? `Batteria energetica ${Math.round(currentLevel)} percento, fase ${phaseLabel}`
+      : 'Batteria energetica, sonno non registrato';
 
   const content = (
     <>
       <svg
         viewBox="0 0 200 118"
-        className="energy-arc-widget__svg"
+        className={`energy-arc-widget__svg${isMissingSleep ? ' animate-pulse' : ''}`}
         aria-hidden
       >
         <defs>
@@ -189,18 +206,35 @@ export default function EnergyArcWidget({
           strokeLinecap="round"
           strokeDasharray={dashArray}
           filter={isMini ? 'url(#energy-arc-glow-mini)' : 'url(#energy-arc-glow)'}
-          className="energy-arc-widget__fill"
+          className={`energy-arc-widget__fill${isMissingSleep ? ' energy-arc-widget__fill--alert' : ''}`}
         />
       </svg>
 
       <div className="energy-arc-widget__center">
-        <span className="energy-arc-widget__value" style={{ color: phaseColor }}>
-          {centerValue}
-        </span>
-        {!isMini && (
+        {isMissingSleep ? (
+          <div className="energy-arc-widget__recovery-prompt">
+            <span className="energy-arc-widget__recovery-icon" aria-hidden>🛏️</span>
+            <span
+              className="energy-arc-widget__recovery-label"
+              style={{ color: phaseColor }}
+            >
+              Quantifica Recupero
+            </span>
+          </div>
+        ) : (
           <>
-            <span className="energy-arc-widget__label">Body Battery</span>
-            <span className="energy-arc-widget__sub">{centerSub}</span>
+            <span
+              className="energy-arc-widget__value"
+              style={{ color: phaseColor }}
+            >
+              {centerValue}
+            </span>
+            {!isMini && (
+              <>
+                <span className="energy-arc-widget__label">Body Battery</span>
+                <span className="energy-arc-widget__sub">{centerSub}</span>
+              </>
+            )}
           </>
         )}
       </div>
@@ -214,7 +248,7 @@ export default function EnergyArcWidget({
         className={rootClassName}
         onClick={onClick}
         aria-label={ariaLabel}
-        title={isMini ? centerSub : undefined}
+        title={isMini ? (isMissingSleep ? 'Quantifica Recupero' : centerSub) : undefined}
       >
         {content}
       </button>

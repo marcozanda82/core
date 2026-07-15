@@ -1,121 +1,201 @@
 /**
- * Calcola i 4 pilastri 0–100 da metriche aggregate (single source of truth).
- *
- * @param {{
- *   energyBalance?: number,
- *   trainingLoadAxis?: number,
- *   meanTraining01?: number,
- *   sleepPenalty?: number,
- *   longevityScore?: number,
- *   distance?: number,
- * }} metrics
- * @returns {{ ipertrofia: number, definizione: number, longevita: number, energia: number }}
+ * KentuOS — 4 pilastri fisiologici ufficiali (Fase 1 Architettura).
+ * Single source of truth per icone, colori Tailwind e mapping eventi diario → pilastro.
  */
-export function mapMetricsToPillars(metrics = {}) {
-  const energyBalance = num(metrics.energyBalance, 0);
-  const trainingLoadAxis = num(metrics.trainingLoadAxis, 0);
-  const meanTraining01 = num(metrics.meanTraining01, NaN);
-  const sleepPenalty = num(metrics.sleepPenalty, 0);
-  const longevityScore = num(metrics.longevityScore, NaN);
-  const distance = num(metrics.distance, NaN);
 
-  const trainingPct = Number.isFinite(meanTraining01)
-    ? clamp(meanTraining01, 0, 100)
-    : clamp(((trainingLoadAxis + 100) / 2), 0, 100);
+/** @typedef {'NUTRITION' | 'TRAINING' | 'SLEEP' | 'FASTING'} KentuPillarId */
 
-  let ipertrofia = trainingPct;
-  if (energyBalance > 0) {
-    ipertrofia += clamp((energyBalance / 100) * 18, 0, 18);
-  }
-  ipertrofia = clamp(Math.round(ipertrofia), 0, 100);
+export const PILLAR_IDS = /** @type {const} */ (['NUTRITION', 'TRAINING', 'SLEEP', 'FASTING']);
 
-  const definizione = clamp(Math.round(50 - energyBalance * 0.5), 0, 100);
+/**
+ * @type {Record<KentuPillarId, {
+ *   id: KentuPillarId,
+ *   label: string,
+ *   icon: string,
+ *   color: string,
+ *   tailwind: {
+ *     text: string,
+ *     border: string,
+ *     bg: string,
+ *     bgHover: string,
+ *     ring: string,
+ *   },
+ * }>}
+ */
+export const KENTU_PILLARS = {
+  NUTRITION: {
+    id: 'NUTRITION',
+    label: 'Alimentazione',
+    icon: '🍎',
+    color: '#f97316',
+    tailwind: {
+      text: 'text-orange-400',
+      border: 'border-orange-400',
+      bg: 'bg-orange-500/20',
+      bgHover: 'bg-orange-500/35',
+      ring: 'ring-orange-400/60',
+    },
+  },
+  TRAINING: {
+    id: 'TRAINING',
+    label: 'Allenamento',
+    icon: '🏋️',
+    color: '#ef4444',
+    tailwind: {
+      text: 'text-red-400',
+      border: 'border-red-400',
+      bg: 'bg-red-500/20',
+      bgHover: 'bg-red-500/35',
+      ring: 'ring-red-400/60',
+    },
+  },
+  SLEEP: {
+    id: 'SLEEP',
+    label: 'Sonno',
+    icon: '🛏️',
+    color: '#818cf8',
+    tailwind: {
+      text: 'text-indigo-400',
+      border: 'border-indigo-400',
+      bg: 'bg-indigo-500/20',
+      bgHover: 'bg-indigo-500/35',
+      ring: 'ring-indigo-400/60',
+    },
+  },
+  FASTING: {
+    id: 'FASTING',
+    label: 'Digiuno',
+    icon: '⏳',
+    color: '#a855f7',
+    tailwind: {
+      text: 'text-purple-400',
+      border: 'border-purple-400',
+      bg: 'bg-purple-500/20',
+      bgHover: 'bg-purple-500/35',
+      ring: 'ring-purple-400/60',
+    },
+  },
+};
 
-  let longevita;
-  if (Number.isFinite(longevityScore)) {
-    longevita = clamp(Math.round(longevityScore), 0, 100);
-  } else if (Number.isFinite(distance)) {
-    longevita = clamp(Math.round(100 - distance), 0, 100);
-  } else {
-    longevita = 50;
-  }
+/** @type {Record<string, KentuPillarId>} */
+const LOG_ENTRY_TYPE_TO_PILLAR = {
+  meal: 'NUTRITION',
+  ghost_meal: 'NUTRITION',
+  water: 'NUTRITION',
+  alcohol: 'NUTRITION',
+  stimulant: 'NUTRITION',
+  supplements: 'NUTRITION',
+  food: 'NUTRITION',
+  workout: 'TRAINING',
+  ghost_workout: 'TRAINING',
+  work: 'TRAINING',
+  cognitive: 'TRAINING',
+  sleep: 'SLEEP',
+  nap: 'SLEEP',
+  meditation: 'SLEEP',
+  sunlight: 'SLEEP',
+  fasting: 'FASTING',
+};
 
-  let energia = 100;
-  if (sleepPenalty > 0) {
-    energia -= clamp(sleepPenalty * 9, 0, 45);
-  }
-  const trainingExcess = Number.isFinite(meanTraining01)
-    ? Math.max(0, meanTraining01 - 82)
-    : Math.max(0, trainingLoadAxis - 55);
-  if (trainingExcess > 0) {
-    energia -= clamp(trainingExcess * 0.55, 0, 35);
-  }
-  energia = clamp(Math.round(energia), 0, 100);
-
-  return { ipertrofia, definizione, longevita, energia };
+/**
+ * Risolve il pilastro KentuOS da una voce del daily log.
+ *
+ * @param {Record<string, unknown> | null | undefined} entry
+ * @returns {KentuPillarId | null}
+ */
+export function resolvePillarForLogEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const type = String(entry.type || '').trim().toLowerCase();
+  if (!type) return null;
+  return LOG_ENTRY_TYPE_TO_PILLAR[type] ?? null;
 }
 
 /**
- * Coordinate bolla dal quadruplo pilastri (stessa formula della testa principale).
+ * Risolve il pilastro da un nodo timeline (stesso schema del log, con alias UI).
  *
- * @param {{ ipertrofia: number, definizione: number, longevita: number, energia: number }} pillars
- * @returns {{ x: number, y: number }}
+ * @param {Record<string, unknown> | null | undefined} node
+ * @returns {KentuPillarId | null}
  */
-export function pillarsToBubbleCoords(pillars) {
-  const ipertrofia = num(pillars?.ipertrofia, 0);
-  const definizione = num(pillars?.definizione, 0);
-  const longevita = num(pillars?.longevita, 0);
-  const energia = num(pillars?.energia, 0);
+export function resolvePillarForTimelineNode(node) {
+  return resolvePillarForLogEntry(node);
+}
+
+/**
+ * Meta visiva del pilastro (icona, colori hex, classi Tailwind).
+ *
+ * @param {KentuPillarId | null | undefined} pillarId
+ * @returns {typeof KENTU_PILLARS[KentuPillarId] | null}
+ */
+export function getPillarMeta(pillarId) {
+  if (!pillarId || !KENTU_PILLARS[pillarId]) return null;
+  return KENTU_PILLARS[pillarId];
+}
+
+/**
+ * Converte un colore hex (#rrggbb) in rgba con alpha per sfondi timeline.
+ *
+ * @param {string} hex
+ * @param {number} alpha
+ * @returns {string}
+ */
+export function pillarColorToRgba(hex, alpha = 0.2) {
+  const normalized = String(hex || '').replace('#', '');
+  if (normalized.length !== 6) return `rgba(148, 163, 184, ${alpha})`;
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return `rgba(148, 163, 184, ${alpha})`;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
+ * Stili inline per un nodo timeline in base al pilastro.
+ *
+ * @param {Record<string, unknown> | null | undefined} node
+ * @param {{ touching?: boolean, activeDrag?: boolean, ghost?: boolean }} [state]
+ * @returns {{
+ *   pillarId: KentuPillarId | null,
+ *   icon: string,
+ *   color: string,
+ *   bgColor: string,
+ *   borderColor: string,
+ *   glowShadow: string,
+ *   tailwind: typeof KENTU_PILLARS[KentuPillarId]['tailwind'] | null,
+ * }}
+ */
+export function getTimelineNodePillarStyles(node, state = {}) {
+  const pillarId = resolvePillarForTimelineNode(node);
+  const meta = getPillarMeta(pillarId);
+  const touching = Boolean(state.touching);
+  const activeDrag = Boolean(state.activeDrag);
+  const ghost = Boolean(state.ghost);
+
+  if (!meta) {
+    return {
+      pillarId: null,
+      icon: '•',
+      color: '#94a3b8',
+      bgColor: touching ? 'rgba(148, 163, 184, 0.35)' : 'rgba(0, 0, 0, 0.6)',
+      borderColor: '#94a3b8',
+      glowShadow: touching ? '0 0 15px rgba(148, 163, 184, 0.45)' : 'none',
+      tailwind: null,
+    };
+  }
+
+  const baseAlpha = ghost ? 0.06 : touching || activeDrag ? 0.4 : 0.2;
+  const bgColor = pillarColorToRgba(meta.color, baseAlpha);
+  const borderColor = meta.color;
+  const glowShadow = touching || activeDrag
+    ? `0 0 15px ${pillarColorToRgba(meta.color, 0.85)}`
+    : `0 0 8px ${pillarColorToRgba(meta.color, 0.35)}`;
+
   return {
-    x: clamp(energia - longevita, -100, 100),
-    y: clamp(ipertrofia - definizione, -100, 100),
+    pillarId,
+    icon: meta.icon,
+    color: meta.color,
+    bgColor,
+    borderColor,
+    glowShadow,
+    tailwind: meta.tailwind,
   };
-}
-
-/**
- * Mappa l'output di useMetabolicMapEngine / computeMetabolicMapCompassBundle
- * in 4 score telemetrici 0–100 (nessun nuovo motore metabolico).
- *
- * @param {Record<string, unknown> | null | undefined} compassBundle
- * @returns {{ ipertrofia: number, definizione: number, longevita: number, energia: number }}
- */
-export function mapBundleToPillars(compassBundle) {
-  const b = compassBundle != null && typeof compassBundle === 'object' ? compassBundle : {};
-  const inputs =
-    b.metabolicMapInputs != null && typeof b.metabolicMapInputs === 'object'
-      ? b.metabolicMapInputs
-      : {};
-  const rawDetails =
-    b.metabolicMapRawDetails != null && typeof b.metabolicMapRawDetails === 'object'
-      ? b.metabolicMapRawDetails
-      : {};
-
-  return mapMetricsToPillars({
-    energyBalance: num(b.energyBalance ?? inputs.energyBalance, 0),
-    trainingLoadAxis: num(b.trainingLoad ?? inputs.trainingLoad, 0),
-    meanTraining01: num(rawDetails.meanTraining01, NaN),
-    sleepPenalty: num(b.sleepPenalty, 0),
-    longevityScore: num(b.longevityScore, NaN),
-    distance: num(b.mapPositionInertial?.distance ?? b.distance, NaN),
-  });
-}
-
-/**
- * @param {unknown} value
- * @param {number} fallback
- * @returns {number}
- */
-function num(value, fallback) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-/**
- * @param {number} value
- * @param {number} min
- * @param {number} max
- * @returns {number}
- */
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }

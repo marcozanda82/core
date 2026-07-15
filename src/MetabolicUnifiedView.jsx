@@ -8,7 +8,7 @@ import {
   calculateBodyComposition,
   calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
-import { mapBundleToPillars } from './features/metabolic/pillarsMapper';
+import { mapBundleToPillars } from './features/metabolic/pillarsMapperLegacy';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 

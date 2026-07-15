@@ -249,9 +249,19 @@ export function resolveLastNightSleepQuality(fullHistory, activeLog, anchorDate)
   if (!sleepEntry) return null;
 
   const hours = sleepHoursFromEntry(sleepEntry) ?? 0;
-  const qualityLabel = String(
-    sleepEntry.quality ?? sleepEntry.sleepQuality ?? sleepEntry.rating ?? '',
-  ).toLowerCase();
+  const qualityRaw = sleepEntry.quality ?? sleepEntry.sleepQuality ?? sleepEntry.rating ?? '';
+  const qualityNum = Number(qualityRaw);
+
+  if (Number.isFinite(qualityNum) && qualityNum >= 1 && qualityNum <= 5) {
+    let score = Math.round((qualityNum / 5) * 100);
+    if (hours >= 7.5) score = Math.min(100, score + 8);
+    else if (hours >= 6.5) score = Math.min(100, score + 4);
+    else if (hours > 0 && hours < 6) score = Math.max(0, score - 18);
+    else if (hours > 0 && hours < 5) score = Math.max(0, score - 32);
+    return Math.max(0, Math.min(100, score));
+  }
+
+  const qualityLabel = String(qualityRaw).toLowerCase();
 
   let score = 58;
   if (qualityLabel.includes('ottim') || qualityLabel.includes('eccell')) score = 92;

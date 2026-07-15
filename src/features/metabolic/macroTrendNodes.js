@@ -1,6 +1,6 @@
 import { applyEnergyDeadBandToKcalBalance } from '../../metabolicDirectionEngine';
 import { convertToSvgCoords } from './bubbleRadarCoords';
-import { mapMetricsToPillars, pillarsToBubbleCoords } from './pillarsMapper';
+import { mapMetricsToPillars, pillarsToBubbleCoords } from './pillarsMapperLegacy';
 
 const MACRO_WINDOWS = {
   '30d': 30,

@@ -43,39 +43,44 @@ export function formatSinceLastMealLabel(hoursSinceLastMeal) {
  *
  * @param {{
  *   metabolicSnapshot: import('../features/salaComandi/utils/metabolicStateEngine').buildMetabolicSnapshot extends (...args: any[]) => infer R ? R : object | null | undefined,
+ *   missingSleepData?: boolean,
  *   onClick?: (event: React.MouseEvent) => void,
  *   onCenterTap?: (event: React.MouseEvent) => void,
  * }} props
  */
-export default function MetabolicMonitorCard({ metabolicSnapshot, onClick, onCenterTap }) {
+export default function MetabolicMonitorCard({ metabolicSnapshot, missingSleepData = false, onClick, onCenterTap }) {
   const phase = metabolicSnapshot?.phase;
   if (!phase) return null;
 
-  const isOverload = metabolicSnapshot?.isOverloadOverride || phase.id === 'sovraccarico';
+  const isMissingSleep = Boolean(missingSleepData);
+  const isOverload = !isMissingSleep && (metabolicSnapshot?.isOverloadOverride || phase.id === 'sovraccarico');
   const hasMealLogged = metabolicSnapshot?.hasMealLogged !== false;
   const hoursSinceLastMeal = metabolicSnapshot?.hoursSinceLastMeal;
   const nextPhase = metabolicSnapshot?.nextPhase;
   const hoursUntilNext = metabolicSnapshot?.hoursUntilNext;
 
   const phaseLabel = useMemo(() => {
+    if (isMissingSleep) return 'Recupero da quantificare';
     if (isOverload) return phase.label;
     if (!hasMealLogged) return 'Nessun pasto loggato';
     return phase.label;
-  }, [isOverload, hasMealLogged, phase.label]);
+  }, [isMissingSleep, isOverload, hasMealLogged, phase.label]);
 
-  const sinceLastMealLabel = useMemo(
-    () => (hasMealLogged ? formatSinceLastMealLabel(hoursSinceLastMeal) : 'Registra un pasto per attivare il monitor'),
-    [hasMealLogged, hoursSinceLastMeal],
-  );
+  const sinceLastMealLabel = useMemo(() => {
+    if (isMissingSleep) return '⚠ Sonno non registrato — inserisci la notte per sbloccare il monitor';
+    return hasMealLogged
+      ? formatSinceLastMealLabel(hoursSinceLastMeal)
+      : 'Registra un pasto per attivare il monitor';
+  }, [isMissingSleep, hasMealLogged, hoursSinceLastMeal]);
 
   const nextPhaseLabel = useMemo(() => {
-    if (isOverload || !nextPhase) return null;
+    if (isMissingSleep || isOverload || !nextPhase) return null;
     const until = formatMetabolicRelativeDuration(hoursUntilNext);
     if (!until || until === '—') return null;
     return `→ ${nextPhase.label} tra ${until}`;
-  }, [isOverload, nextPhase, hoursUntilNext]);
+  }, [isMissingSleep, isOverload, nextPhase, hoursUntilNext]);
 
-  const cardTone = isOverload
+  const cardTone = isMissingSleep || isOverload
     ? 'border-red-500/40 bg-gradient-to-r from-red-950/70 via-slate-900/70 to-slate-900/50 shadow-red-900/20'
     : 'border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-cyan-900/20';
 
@@ -98,8 +103,8 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, onClick, onCen
         </button>
         <div className="min-w-0 flex-1">
           <p
-            className={`truncate text-base font-bold leading-tight ${isOverload ? 'text-red-400' : ''}`}
-            style={!isOverload ? { color: phase.iconColor ?? '#e2e8f0' } : undefined}
+            className={`truncate text-base font-bold leading-tight ${isMissingSleep || isOverload ? 'text-red-400' : ''}`}
+            style={!isMissingSleep && !isOverload ? { color: phase.iconColor ?? '#e2e8f0' } : undefined}
           >
             {phaseLabel}
           </p>
