@@ -77,9 +77,11 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
       const mealType = items[0]?.mealType || slotKey.split('_')[0];
       const baseType = String(mealType).split('_')[0];
       const suffix = String(mealType).includes('_') ? ` ${String(mealType).split('_')[1]}` : '';
-      const mealTime = items[0]?.mealTime ?? 12;
+      const mealTimeRaw = items[0]?.mealTime ?? items[0]?.time ?? 12;
+      const mealTime = Number(mealTimeRaw);
+      const sortTime = Number.isFinite(mealTime) ? mealTime : 12;
       const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffix}`;
-      const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(mealTime) : '';
+      const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
       const subtotalKcal = items.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
       const subtotalProt = items.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
       const subtotalCarb = items.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
@@ -87,7 +89,6 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
         (sum, f) => sum + (Number(f.fatTotal ?? f.fat) || 0),
         0,
       );
-      const sortTime = Number(mealTime) || 0;
       return {
         slotKey,
         label,
@@ -101,7 +102,12 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => a.sortTime - b.sortTime);
+    // Ordinamento cronologico indipendente dall'ordine di inserimento nel log.
+    .sort((a, b) => {
+      const dt = a.sortTime - b.sortTime;
+      if (dt !== 0) return dt;
+      return String(a.slotKey).localeCompare(String(b.slotKey));
+    });
 }
 
 function buildWorkoutEntries(workoutsLog, decimalToTimeStr) {
@@ -271,7 +277,47 @@ function SleepTabPanel({
   );
 }
 
-function FastingTabPanel({ fastingData, currentHour, decimalToTimeStr }) {
+function EmptyDayTrackingPrompt({ isIntentionalFast, onMarkIntentionalFast, onClearIntentionalFast }) {
+  if (isIntentionalFast) {
+    return (
+      <div className="diary-intentional-fast">
+        <p className="diary-intentional-fast__title">Digiuno intenzionale 24h</p>
+        <p className="diary-intentional-fast__hint">
+          Questo giorno conta come digiuno tracciato (0 kcal) e può estendere la catena metabolica.
+        </p>
+        {typeof onClearIntentionalFast === 'function' ? (
+          <button type="button" className="diary-intentional-fast__btn diary-intentional-fast__btn--ghost" onClick={onClearIntentionalFast}>
+            Annulla flag digiuno
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="diary-intentional-fast">
+      <p className="diary-intentional-fast__title">Nessun pasto registrato</p>
+      <p className="diary-intentional-fast__hint">
+        È un buco di tracciamento o un digiuno intenzionale?
+      </p>
+      {typeof onMarkIntentionalFast === 'function' ? (
+        <button type="button" className="diary-intentional-fast__btn" onClick={onMarkIntentionalFast}>
+          Segna come Digiuno 24h
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function FastingTabPanel({
+  fastingData,
+  currentHour,
+  decimalToTimeStr,
+  hasMeals = false,
+  isIntentionalFast = false,
+  onMarkIntentionalFast,
+  onClearIntentionalFast,
+}) {
   const hoursFasted = Math.max(0, Number(fastingData?.hoursFasted) || 0);
   const phaseName = String(fastingData?.phaseName || '').trim();
   const durationLabel = fastingData?.timeString
@@ -285,10 +331,21 @@ function FastingTabPanel({ fastingData, currentHour, decimalToTimeStr }) {
 
   return (
     <div className="diary-pillar-panel">
+      {!hasMeals ? (
+        <EmptyDayTrackingPrompt
+          isIntentionalFast={isIntentionalFast}
+          onMarkIntentionalFast={onMarkIntentionalFast}
+          onClearIntentionalFast={onClearIntentionalFast}
+        />
+      ) : null}
       <div className="diary-pillar-card" style={{ borderColor: pillarColorToRgba(KENTU_PILLARS.FASTING.color, 0.4) }}>
         <h3 style={{ color: KENTU_PILLARS.FASTING.color }}>Digiuno odierno</h3>
         {hoursFasted < 0.25 ? (
-          <p className="diary-pillar-hint">Nessuna finestra di digiuno rilevante al momento (pasto recente o dati mancanti).</p>
+          <p className="diary-pillar-hint">
+            {hasMeals
+              ? 'Nessuna finestra di digiuno rilevante al momento (pasto recente).'
+              : 'Dati insufficienti: senza pasti e senza digiuno intenzionale non si calcola una catena trans-giornaliera.'}
+          </p>
         ) : (
           <>
             {startedLabel ? <p>Iniziato alle <strong>{startedLabel}</strong></p> : null}
@@ -318,6 +375,9 @@ export default function DiaryDetailsSheet({
   decimalToTimeStr,
   fastingData = null,
   currentHour = 12,
+  isIntentionalFast = false,
+  onMarkIntentionalFast,
+  onClearIntentionalFast,
   onEditMeal,
   onEditWorkout,
   onDeleteItem,
@@ -472,7 +532,11 @@ export default function DiaryDetailsSheet({
           {activePillarTab === 'NUTRITION' ? (
             <>
               {!hasMeals ? (
-                <p className="diary-details-empty">Nessun pasto registrato oggi.</p>
+                <EmptyDayTrackingPrompt
+                  isIntentionalFast={isIntentionalFast}
+                  onMarkIntentionalFast={onMarkIntentionalFast}
+                  onClearIntentionalFast={onClearIntentionalFast}
+                />
               ) : null}
               {hasMeals
                 ? mealSections.map((section) => (
@@ -667,6 +731,10 @@ export default function DiaryDetailsSheet({
               fastingData={fastingData}
               currentHour={currentHour}
               decimalToTimeStr={decimalToTimeStr}
+              hasMeals={hasMeals}
+              isIntentionalFast={isIntentionalFast}
+              onMarkIntentionalFast={onMarkIntentionalFast}
+              onClearIntentionalFast={onClearIntentionalFast}
             />
           ) : null}
 

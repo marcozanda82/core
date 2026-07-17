@@ -183,8 +183,12 @@ function KentuTimelineBar({
     (hour, fromUser = false) => {
       if (typeof onMealTimeChange !== 'function') return;
       if (hour == null || !Number.isFinite(hour)) return;
+      // Auto-sync (orologio) non deve mai sovrascrivere un orario scelto a mano.
+      if (!fromUser && isManualOverride()) return;
+      // Nessun clamp rispetto all'ultimo pasto loggato: solo bound giornata 0–24.
+      const bounded = Math.max(0, Math.min(24, hour));
       if (fromUser) markManualOverride();
-      onMealTimeChange(hour);
+      onMealTimeChange(bounded);
     },
     [markManualOverride, onMealTimeChange],
   );

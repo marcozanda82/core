@@ -110,6 +110,11 @@ import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
 import { workoutActivityRequiresStrengthDetailNote } from './utils/workoutActivityNotes';
 import { calculateAge } from './utils/profileAge';
 import { stripUndefined } from './utils/firebasePayloadUtils';
+import {
+  dayHasFoodLog,
+  isDayIntentionalFast,
+  resolveOvernightCarryMeal,
+} from './utils/dayTrackingStatus';
 import { getCurrentTimeRoundedTo15Min } from './utils/decimalTimeUtils';
 import {
   getStrategyKey,
@@ -167,6 +172,7 @@ import useMetabolicPhaseState from './features/salaComandi/hooks/useMetabolicPha
 import { evaluateDailyPillars } from './features/salaComandi/engines/KentuPhysiologyEngine';
 import {
   saveDiaryLogForDate,
+  setDayIntentionalFastFlag,
   extractMealTimesFromLog,
   getLogForDateFromStorico,
 } from './utils/storicoDayPersistence';
@@ -2566,12 +2572,25 @@ export default function SalaComandi() {
       const weight = Number(f.qta ?? f.weight) || 100;
       const dbKey = f.foodDbKey;
       const dbRow = dbKey && foodDb?.[dbKey] ? foodDb[dbKey] : null;
+
+      // Macro nel log sono già della porzione: se manca il DB, reverse-engineer per-100g
+      // così normalizeDraftFood → scaleNutrientsForWeight non li ridoppia.
+      const portionKcal = Number(f.kcal ?? f.cal) || 0;
+      const portionProt = Number(f.prot) || 0;
+      const portionCarb = Number(f.carb ?? f.cho) || 0;
+      const portionFat = Number(f.fatTotal ?? f.fat) || 0;
+      const toPer100 = (portionValue) => (
+        weight > 0 ? (portionValue / weight) * 100 : portionValue
+      );
+
       const row = dbRow || {
         desc: f.desc || f.name,
-        kcal: Number(f.kcal ?? f.cal) || 0,
-        prot: Number(f.prot) || 0,
-        carb: Number(f.carb) || 0,
-        fatTotal: Number(f.fatTotal ?? f.fat) || 0,
+        kcal: toPer100(portionKcal),
+        cal: toPer100(portionKcal),
+        prot: toPer100(portionProt),
+        carb: toPer100(portionCarb),
+        fat: toPer100(portionFat),
+        fatTotal: toPer100(portionFat),
       };
       return {
         ...f,
@@ -2584,12 +2603,12 @@ export default function SalaComandi() {
         multiplier: Number(f.multiplier) || weight,
         qta: weight,
         weight,
-        kcal: Number(f.kcal ?? f.cal) || 0,
-        cal: Number(f.cal ?? f.kcal) || 0,
-        prot: Number(f.prot) || 0,
-        carb: Number(f.carb) || 0,
-        fat: Number(f.fatTotal ?? f.fat) || 0,
-        fatTotal: Number(f.fatTotal ?? f.fat) || 0,
+        kcal: portionKcal,
+        cal: Number(f.cal ?? f.kcal) || portionKcal,
+        prot: portionProt,
+        carb: portionCarb,
+        fat: portionFat,
+        fatTotal: portionFat,
       };
     });
 
@@ -3797,24 +3816,35 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const piano = PIANO_SETTIMANALE[giornoSettimana] ?? PIANO_SETTIMANALE[1];
       const obiettivo = piano.cal + workoutKcal;
       const deficit = Math.round(calorie - obiettivo);
-      return { dataStr, log, calorie, proteine, workoutKcal, deficit, note: node?.note };
+      return {
+        dataStr,
+        log,
+        calorie,
+        proteine,
+        workoutKcal,
+        deficit,
+        note: node?.note,
+        isIntentionalFast: node?.isIntentionalFast === true,
+      };
     });
   }, [fullStorico, todayStr]);
 
   const weeklyTrendData = useMemo(() => {
-    return [...pastDaysStorico].slice(0, 7).reverse().map(d => {
-      const prevDate = new Date(d.dataStr + 'T12:00:00');
-      prevDate.setDate(prevDate.getDate() - 1);
-      const prevStr = prevDate.toISOString().slice(0, 10);
-      const prevNode = fullStorico?.[TRACKER_STORICO_KEY(prevStr)];
-      const prevLog = Array.isArray(prevNode?.log) ? prevNode.log : Object.values(prevNode?.log || {});
-      const prevFood = prevLog.filter(i => (i?.type === 'food' || i?.type === 'recipe') && i?.mealTime != null);
-      const todayFood = (d.log || []).filter(i => (i?.type === 'food' || i?.type === 'recipe') && i?.mealTime != null);
-      const lastMealPrev = prevFood.length ? Math.max(...prevFood.map(i => i.mealTime)) : null;
-      const firstMealToday = todayFood.length ? Math.min(...todayFood.map(i => i.mealTime)) : null;
+    return [...pastDaysStorico].slice(0, 7).reverse().map((d) => {
+      const todayFood = (d.log || []).filter(
+        (i) => (i?.type === 'food' || i?.type === 'recipe') && i?.mealTime != null,
+      );
+      const firstMealToday = todayFood.length ? Math.min(...todayFood.map((i) => i.mealTime)) : null;
       let maxFastingHours = null;
-      if (lastMealPrev != null && firstMealToday != null) {
-        maxFastingHours = (24 - lastMealPrev) + firstMealToday;
+      // Carry protetto: spezza sui giorni Null; attraversa solo isIntentionalFast.
+      if (firstMealToday != null && fullStorico) {
+        const carry = resolveOvernightCarryMeal(fullStorico, d.dataStr);
+        if (carry?.lastMealTime != null) {
+          maxFastingHours =
+            (24 - carry.lastMealTime)
+            + firstMealToday
+            + (Number(carry.intentionalEmptyDays) || 0) * 24;
+        }
       }
       return { ...d, shortDate: d.dataStr.substring(5), maxFastingHours };
     });
@@ -5123,6 +5153,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       referenceHour,
       metabolicTimelineMeals.todayMealTimes,
       metabolicTimelineMeals.yesterdayLastMealTime,
+      metabolicTimelineMeals.intentionalEmptyDays,
     );
     const coloreCalcolatoPerOraCorrente = resolveMetabolicColorForHoursFasted(hoursAtNow);
     console.log(
@@ -5255,6 +5286,24 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           : 60;
       const qualityScore =
         payload?.qualityScore != null ? Number(payload.qualityScore) : null;
+      const sleepQualityRaw =
+        payload?.sleepQuality != null ? Number(payload.sleepQuality) : null;
+      const sleepQuality =
+        sleepQualityRaw != null
+        && Number.isFinite(sleepQualityRaw)
+        && sleepQualityRaw >= 1
+        && sleepQualityRaw <= 5
+          ? Math.round(sleepQualityRaw)
+          : null;
+      // Stelle 1–5 (NLP) → quality; punti wearable → qualityScore (non sovrascrivere le stelle).
+      const qualityFromWearablePoints =
+        sleepQuality == null
+        && qualityScore != null
+        && Number.isFinite(qualityScore)
+        && qualityScore >= 1
+        && qualityScore <= 5
+          ? Math.round(qualityScore)
+          : null;
       const wake = 7;
       let bed = wake - roundedHours;
       if (bed < 0) bed += 24;
@@ -5271,7 +5320,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         sleepEnd: wake,
         deepMin,
         remMin: 60,
-        ...(qualityScore != null && Number.isFinite(qualityScore) ? { quality: Math.round(qualityScore) } : {}),
+        ...(sleepQuality != null
+          ? { quality: sleepQuality, sleepQuality }
+          : qualityFromWearablePoints != null
+            ? { quality: qualityFromWearablePoints }
+            : {}),
+        ...(qualityScore != null && Number.isFinite(qualityScore) && qualityScore > 5
+          ? { qualityScore: Math.round(qualityScore) }
+          : {}),
       };
       if (isSimulationMode) {
         setSimulatedLog((prev) => {
@@ -5549,6 +5605,82 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setDailyLog(next);
     syncDatiFirebase(next, manualNodes || []);
   }, [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase]);
+
+  const currentDayIntentionalFast = useMemo(() => {
+    const key = TRACKER_STORICO_KEY(currentTrackerDate || getTodayString());
+    return isDayIntentionalFast(fullHistory?.[key] || fullStorico?.[key]);
+  }, [currentTrackerDate, fullHistory, fullStorico]);
+
+  const handleSetIntentionalFast = useCallback(async (enabled) => {
+    const dateStr = currentTrackerDate || getTodayString();
+    const key = TRACKER_STORICO_KEY(dateStr);
+    const existing = fullHistory?.[key] || fullStorico?.[key] || {
+      data: dateStr,
+      log: isSimulationMode ? (simulatedLog || []) : (dailyLog || []),
+      mealTimes: {},
+      manualNodes: manualNodes || [],
+    };
+
+    if (enabled && dayHasFoodLog(existing.log)) {
+      window.alert('Rimuovi i pasti del giorno prima di segnarlo come digiuno intenzionale.');
+      return;
+    }
+
+    if (isSimulationMode) {
+      setFullHistory((prev) => ({
+        ...(prev || {}),
+        [key]: {
+          ...existing,
+          data: dateStr,
+          isIntentionalFast: enabled ? true : undefined,
+        },
+      }));
+      return;
+    }
+
+    if (!userUid || !db) return;
+
+    try {
+      const next = await setDayIntentionalFastFlag({
+        db,
+        uid: userUid,
+        dateStr,
+        value: enabled,
+        existingDayNode: existing,
+      });
+      setFullHistory((prev) => ({
+        ...(prev || {}),
+        [key]: {
+          ...(prev?.[key] || existing),
+          ...next,
+          isIntentionalFast: enabled ? true : undefined,
+        },
+      }));
+      setFullStorico((prev) => ({
+        ...(prev || {}),
+        [key]: {
+          ...(prev?.[key] || existing),
+          ...next,
+          isIntentionalFast: enabled ? true : undefined,
+        },
+      }));
+    } catch (err) {
+      console.error('[IntentionalFast] save failed', err);
+      window.alert('Non è stato possibile salvare il flag digiuno.');
+    }
+  }, [
+    currentTrackerDate,
+    fullHistory,
+    fullStorico,
+    isSimulationMode,
+    simulatedLog,
+    dailyLog,
+    manualNodes,
+    userUid,
+    db,
+    setFullHistory,
+    setFullStorico,
+  ]);
 
   const handleSaveSleepFromDiary = useCallback((payload) => {
     const wakeDec = Number(payload?.wakeTime);
@@ -8218,6 +8350,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         decimalToTimeStr={decimalToTimeStr}
         fastingData={fastingData}
         currentHour={isViewingPastDate ? 24 : currentTime}
+        isIntentionalFast={currentDayIntentionalFast}
+        onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
+        onClearIntentionalFast={() => handleSetIntentionalFast(false)}
         onEditMeal={(slotKey) => {
           setShowDiarySheet(false);
           loadMealToConstructor(slotKey);

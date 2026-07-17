@@ -4,7 +4,8 @@
  * Nessuna dipendenza da React o UI.
  */
 
-import { getLogFromStoricoTree, getTodayString } from '../../coreEngine';
+import { getLogFromStoricoTree, getTodayString, TRACKER_STORICO_KEY } from '../../coreEngine';
+import { isDayIntentionalFast } from '../../utils/dayTrackingStatus';
 import { aggregateEnergyBalance, computeDayEnergySnapshot } from './energyBalanceMath';
 import { resolveDayKcalTarget } from './resolveDayKcalTarget';
 
@@ -105,13 +106,21 @@ export function buildWeeklyBubbleSnapshot({
 
     const { targetKcal } = resolveDayKcalTarget(dateKey, targetContext);
     const log = getLogFromStoricoTree(tree, dateKey) || [];
-    const snapshot = computeDayEnergySnapshot({ log, targetKcal, date: dateKey });
+    const dayNode = tree[TRACKER_STORICO_KEY(dateKey)];
+    const intentional = isDayIntentionalFast(dayNode);
+    const snapshot = computeDayEnergySnapshot({
+      log,
+      targetKcal,
+      date: dateKey,
+      isIntentionalFast: intentional,
+    });
 
+    // I Null restano in lista con hasTrackableData=false (esclusi da mean/divisor).
     days.push({
       ...snapshot,
-      intakeKcal: snapshot.hasLogData ? snapshot.intakeKcal : 0,
-      kcalBalance: snapshot.hasLogData ? snapshot.kcalBalance : 0,
-      trainingLoad: snapshot.hasLogData ? snapshot.trainingLoad : 0,
+      intakeKcal: snapshot.hasTrackableData ? snapshot.intakeKcal : 0,
+      kcalBalance: snapshot.hasTrackableData ? snapshot.kcalBalance : 0,
+      trainingLoad: snapshot.hasTrackableData ? snapshot.trainingLoad : 0,
     });
   }
 

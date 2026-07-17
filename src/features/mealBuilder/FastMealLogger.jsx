@@ -298,6 +298,8 @@ function FastMealLoggerContent({
   const addFeedbackTimerRef = useRef(null);
   const mealTimeInputRef = useRef(null);
   const mealTimeManualRef = useRef(false);
+  /** true = l'utente ha impostato l'orario dall'<input type="time"> (source of truth). */
+  const mealTimeFromNativeInputRef = useRef(false);
   const {
     draftFoods,
     draftTotals,
@@ -311,12 +313,33 @@ function FastMealLoggerContent({
     loadInitialDraft,
   } = useMealComposer();
 
-  const handleMealTimeChange = useCallback((hour) => {
+  /** Imposta l'orario bozza senza vincoli rispetto ai pasti già loggati (solo bound 0–24). */
+  const commitDraftMealTime = useCallback((hour, { fromNativeInput = false } = {}) => {
+    if (typeof hour !== 'number' || Number.isNaN(hour)) return;
+    const bounded = Math.max(0, Math.min(24, hour));
     mealTimeManualRef.current = true;
-    setMealTime(hour);
+    if (fromNativeInput) mealTimeFromNativeInputRef.current = true;
+    else mealTimeFromNativeInputRef.current = false;
+    setMealTime(bounded);
   }, [setMealTime]);
 
+  /** Timeline: gesto utente esplicito (tap/drag) aggiorna l'orario e rilascia il lock dell'input nativo. */
+  const handleMealTimeChange = useCallback((hour) => {
+    commitDraftMealTime(hour, { fromNativeInput: false });
+  }, [commitDraftMealTime]);
+
+  const handleNativeMealTimeInputChange = useCallback((event) => {
+    const raw = event?.target?.value;
+    const parsed = parseTimeStrToDecimal(raw);
+    // Aggiornamento incondizionato del valore scelto dall'utente (nessun confronto con ultimo log).
+    if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
+      commitDraftMealTime(parsed, { fromNativeInput: true });
+    }
+  }, [commitDraftMealTime]);
+
   useEffect(() => {
+    // Non resettare l'orario se l'utente lo ha già scelto a mano.
+    if (mealTimeManualRef.current || mealTimeFromNativeInputRef.current) return;
     if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) return;
     if (Array.isArray(initialDraft) && initialDraft.length > 0) {
       const t = initialDraft[0]?.mealTime;
@@ -1549,13 +1572,7 @@ function FastMealLoggerContent({
                       id="fast-logger-cart-meal-time"
                       type="time"
                       value={decimalToTimeStr(mealTime)}
-                      onChange={(event) => {
-                        const parsed = parseTimeStrToDecimal(event.target.value);
-                        if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
-                          mealTimeManualRef.current = true;
-                          setMealTime(parsed);
-                        }
-                      }}
+                      onChange={handleNativeMealTimeInputChange}
                       onClick={(event) => {
                         if (typeof event.currentTarget.showPicker === 'function') {
                           try {

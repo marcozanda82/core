@@ -143,6 +143,12 @@ function validateWorkoutPayload(payload) {
   if (!isFiniteNumber(payload.durationMinutes) || Number(payload.durationMinutes) <= 0) {
     return 'durationMinutes must be > 0';
   }
+  if (payload.rpe != null) {
+    const rpe = Number(payload.rpe);
+    if (!Number.isFinite(rpe) || rpe < 1 || rpe > 10) {
+      return 'rpe must be an integer from 1 to 10 when provided';
+    }
+  }
   return null;
 }
 
@@ -168,6 +174,12 @@ function validateSleepPayload(payload) {
   }
   if (payload.qualityScore != null && !isFiniteNumber(payload.qualityScore)) {
     return 'qualityScore must be a number when provided';
+  }
+  if (payload.sleepQuality != null) {
+    const sq = Number(payload.sleepQuality);
+    if (!Number.isFinite(sq) || sq < 1 || sq > 5) {
+      return 'sleepQuality must be an integer from 1 to 5 when provided';
+    }
   }
   return null;
 }

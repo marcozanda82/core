@@ -8,6 +8,7 @@ import {
   calculateMealKinetics,
   readMealMacroGrams,
 } from './features/metabolic/MetabolicKinetics';
+import { resolveOvernightCarryMeal } from './utils/dayTrackingStatus';
 
 const RADIAN = Math.PI / 180;
 
@@ -3056,19 +3057,17 @@ export function getLastMealMacrosForTrainingWave(trackerData, anchorDateStr, cur
     };
   }
 
-  const prevStr = addDays(anchorDateStr, -1);
-  const yNode = trackerData[TRACKER_STORICO_KEY(prevStr)];
+  const carry = resolveOvernightCarryMeal(trackerData, anchorDateStr);
+  if (!carry) {
+    // Giorno Null / dati insufficienti: non inventare digiuni lunghi.
+    return { kcal: 0, carb: 0, fat: 0, hoursSinceMeal: 0, mealTime: null, fromYesterday: false };
+  }
+
+  const maxT = carry.lastMealTime;
+  const yNode = trackerData[TRACKER_STORICO_KEY(carry.sourceDate)];
   const rawY = yNode?.log ?? yNode?.dati?.log;
   const yLog = normalizeLogData(Array.isArray(rawY) ? rawY : Object.values(rawY || {}));
   const yFoods = yLog.filter((i) => i.type === 'food' || i.type === 'recipe');
-  let maxT = -1;
-  yFoods.forEach((m) => {
-    const t = yNode?.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
-    if (t > maxT) maxT = t;
-  });
-  if (maxT < 0) {
-    return { kcal: 0, carb: 0, fat: 0, hoursSinceMeal: Math.min(18, ct + 6), mealTime: null, fromYesterday: false };
-  }
   const bucket = yFoods.filter((m) => {
     const t = yNode?.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
     return Math.abs(t - maxT) < 0.02;
@@ -3081,7 +3080,7 @@ export function getLastMealMacrosForTrainingWave(trackerData, anchorDateStr, cur
     carb += Number(i.carb ?? i.carboidrati) || 0;
     fat += Number(i.fatTotal ?? i.fat ?? i.grassi) || 0;
   });
-  const hoursSinceMeal = 24 - maxT + ct;
+  const hoursSinceMeal = 24 - maxT + ct + (Number(carry.intentionalEmptyDays) || 0) * 24;
   return {
     kcal,
     carb,

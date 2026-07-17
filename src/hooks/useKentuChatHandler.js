@@ -725,9 +725,9 @@ export function useKentuChatHandler(ctx) {
 
   COMANDI DI SISTEMA (INVISIBILI): Se l'utente dichiara nel testo l'intenzione di cambiare strategia calorica (es. andare in deficit, mantenimento/pari, o surplus) OPPURE dichiara un orario in cui si allenerà, DEVI inserire alla FINE ASSOLUTA della tua risposta testuale un blocco dati formattato esattamente così: ===CMD:{"target":"deficit|pari|surplus", "workoutTime":"HH:MM"|null}===. Se l'utente non menziona modifiche strategiche né un orario di allenamento, non inserire il comando. Per solo orario di allenamento senza cambio strategia usa "pari" come target. workoutTime in 24h (es. "18:30") o null se non applichi un orario; null cancella l'orario programmato nel sistema quando l'utente lo revoca esplicitamente.
 
-  SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Restituisci RIGOROSAMENTE un JSON con questo formato: {"action":"add_sleep","hours":<numero_ore>}. Non aggiungere alcun testo fuori dal JSON.
+  SONNO (ZERO FORM — solo messaggio testuale, niente screenshot Mi Fitness): Se l'utente riferisce di aver dormito (sonno notturno o sonnellino/pisolino), estrai la durata in ore decimali (es. 45 minuti = 0.75, 1 ora e mezza = 1.5). Se valuta esplicitamente come ha dormito o menziona stelle, convertila in sleepQuality intero 1-5. Formato: {"action":"add_sleep","hours":<numero_ore>,"sleepQuality":<1-5_o_null>}. Non aggiungere alcun testo fuori dal JSON.
 
-  ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
+  ALLENAMENTO (ZERO FORM — solo messaggio testuale): Se l'utente riferisce di essersi allenato o di aver fatto un'attività fisica, estrai titolo, orario di INIZIO esatto e durata in minuti. Se menziona fatica 1-10 salvala in rpe; se menziona obiettivo (ipertrofia/forza/resistenza/mantenimento/junk) salvalo in trainingGoal; note carichi/variazioni in progressionNote. SLOT FILLING SEVERO: se mancano dati cruciali (orario esatto di inizio o durata in minuti), NON inventarli: imposta "timeString" a null o "" e "duration" a null. Non usare add_workout finché l'utente non ha fornito entrambi in modo chiaro nel messaggio. Se le calorie non sono note, puoi stimarle solo quando durata e orario sono entrambi presenti; altrimenti "calories" può essere null. Formato JSON obbligatorio: {"action":"add_workout","title":"nome_attività","timeString":"HH:mm","duration":<minuti_intero>,"calories":<kcal_o_null>,"trainingGoal":<"Ipertrofia"|"Forza"|"Resistenza"|"Mantenimento"|"Junk"|null>,"rpe":<1-10_o_null>,"progressionNote":<stringa_o_null>}. timeString in 24h (es. "18:30"). Restituisci RIGOROSAMENTE solo questo JSON senza altro testo. Non usare add_workout nella stessa risposta di add_sleep o log_sleep.
 
   PASTI (ZERO FORM — add_food): Se l'utente riferisce di aver mangiato, estrai l'orario del pasto (timeString HH:mm) e una lista di alimenti con le rispettive quantità in grammi. Per ogni alimento fornisci anche una tua stima biochimica dei macronutrienti per quella specifica quantità nei campi estKcal (kcal), estPro (proteine g), estCar (carboidrati g), estFat (grassi g). SLOT FILLING SEVERO: se manca l'orario o la quantità in grammi di un alimento, NON inventarli: usa timeString null o "" e qty null. Restituisci RIGOROSAMENTE solo questo JSON senza altro testo: {"action":"add_food","timeString":"HH:mm","items":[{"name":"nome_alimento","qty":grammi,"estKcal":stima,"estPro":stima,"estCar":stima,"estFat":stima}]}. Non mischiare add_food con add_sleep, add_workout o log_sleep. Per elenchi senza orario/chiarezza per add_food usa l'array JSON legacy descritto sopra.
 
@@ -865,7 +865,12 @@ export function useKentuChatHandler(ctx) {
               if (addParsed && addParsed.action === 'add_sleep') {
                 const sleepHoursParsed = Number(addParsed.hours) || 0;
                 if (Number.isFinite(sleepHoursParsed) && sleepHoursParsed > 0 && sleepHoursParsed <= 24) {
-                  addSleepHours = Math.round(sleepHoursParsed * 1000) / 1000;
+                  const sq = Number(addParsed.sleepQuality);
+                  addSleepHours = {
+                    hours: Math.round(sleepHoursParsed * 1000) / 1000,
+                    sleepQuality:
+                      Number.isFinite(sq) && sq >= 1 && sq <= 5 ? Math.round(sq) : null,
+                  };
                 }
               }
             } catch (_) {}
@@ -913,12 +918,24 @@ export function useKentuChatHandler(ctx) {
                   if (!Number.isFinite(wCalories) || wCalories <= 0) {
                     wCalories = Math.max(80, Math.round(wDuration * 8));
                   }
+                  const rpeRaw = Number(woParsed.rpe);
+                  const goalRaw = woParsed.trainingGoal != null
+                    ? String(woParsed.trainingGoal).trim()
+                    : '';
+                  const noteRaw = woParsed.progressionNote != null
+                    ? String(woParsed.progressionNote).trim()
+                    : '';
                   addWorkoutPayload = {
                     title: wTitle,
                     duration: wDuration,
                     calories: wCalories,
                     timeString: timeStrRaw,
                     timeDec: timeDecFromSlot,
+                    trainingGoal: goalRaw || null,
+                    rpe: Number.isFinite(rpeRaw) && rpeRaw >= 1 && rpeRaw <= 10
+                      ? Math.round(rpeRaw)
+                      : null,
+                    progressionNote: noteRaw || null,
                   };
                 }
               }
@@ -1076,7 +1093,12 @@ export function useKentuChatHandler(ctx) {
         }
 
         if (addSleepHours != null) {
-          const sleepHours = addSleepHours;
+          const sleepHours = typeof addSleepHours === 'object'
+            ? Number(addSleepHours.hours)
+            : Number(addSleepHours);
+          const sleepQuality = typeof addSleepHours === 'object'
+            ? addSleepHours.sleepQuality
+            : null;
           const timeDec = new Date().getHours() + new Date().getMinutes() / 60;
           const sleepEntry = {
             id: Date.now().toString(),
@@ -1085,6 +1107,9 @@ export function useKentuChatHandler(ctx) {
             duration: sleepHours,
             sleepHours: sleepHours,
             time: timeDec,
+            ...(sleepQuality != null
+              ? { quality: sleepQuality, sleepQuality }
+              : {}),
           };
           const hoursDisplay = String(Math.round(sleepHours * 100) / 100).replace('.', ',');
           const testoRisposta =
@@ -1136,7 +1161,16 @@ export function useKentuChatHandler(ctx) {
         }
 
         if (addWorkoutPayload != null) {
-          const { title: wTitle, duration: wDuration, calories: wCalories, timeString: oraString, timeDec } = addWorkoutPayload;
+          const {
+            title: wTitle,
+            duration: wDuration,
+            calories: wCalories,
+            timeString: oraString,
+            timeDec,
+            trainingGoal: rawGoal,
+            rpe: rawRpe,
+            progressionNote: rawNote,
+          } = addWorkoutPayload;
           const durationHours = Math.max(1 / 60, wDuration / 60);
           const titleLower = wTitle.toLowerCase();
           const isCardioHint = /corr|corsa|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|walk|cammin|cardio|hiit|saltell|jump/i.test(wTitle);
@@ -1151,6 +1185,38 @@ export function useKentuChatHandler(ctx) {
             timelineNodeType = 'work';
             workoutTypeForLog = 'lavoro';
           }
+          const goalKey = String(rawGoal || '').trim().toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const trainingGoalId = (
+            ['ipertrofia', 'forza', 'resistenza', 'mantenimento', 'junk'].includes(goalKey)
+              ? goalKey
+              : goalKey.includes('ipertrof') ? 'ipertrofia'
+                : goalKey.includes('forza') ? 'forza'
+                  : goalKey.includes('resist') ? 'resistenza'
+                    : goalKey.includes('manten') ? 'mantenimento'
+                      : goalKey.includes('junk') ? 'junk'
+                        : ''
+          );
+          const progressionNote = String(rawNote || '').trim();
+          const rpe = Number.isFinite(Number(rawRpe)) ? Math.round(Number(rawRpe)) : null;
+          const structuredPatch = {
+            ...(trainingGoalId
+              ? { trainingGoal: trainingGoalId, workoutGoal: trainingGoalId }
+              : {}),
+            ...(rpe != null && rpe >= 1 && rpe <= 10 ? { rpe } : {}),
+            ...(progressionNote
+              ? { progressionNote, note: progressionNote, details: progressionNote }
+              : {}),
+            ...((trainingGoalId || (rpe != null && rpe >= 1 && rpe <= 10) || progressionNote)
+              ? {
+                  questionnaire: {
+                    goal: trainingGoalId || null,
+                    rpe: rpe != null && rpe >= 1 && rpe <= 10 ? rpe : null,
+                    notes: progressionNote,
+                  },
+                }
+              : {}),
+          };
           const workoutId = Date.now().toString();
           const workoutEntry = {
             id: workoutId,
@@ -1168,6 +1234,7 @@ export function useKentuChatHandler(ctx) {
             mealTime: timeDec,
             ora: oraString,
             timeString: oraString,
+            ...structuredPatch,
           };
           const timelineNode = {
             id: workoutId,

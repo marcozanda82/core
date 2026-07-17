@@ -23,19 +23,21 @@ const DEFAULT_TARGET_KCAL = 2000;
  * @property {number} kcalBalance — intakeKcal − targetKcal
  * @property {number} trainingLoad — indice 0–100 derivato dal burn workout
  * @property {boolean} hasLogData — `true` se il log conteneva almeno una voce
+ * @property {boolean} isIntentionalFast — digiuno 24h esplicito (conta come giorno tracciato a 0 kcal)
+ * @property {boolean} hasTrackableData — pasti/log oppure digiuno intenzionale (i Null restano fuori dalle medie)
  */
 
 /**
  * @typedef {object} EnergyBalanceAggregate
- * @property {number} sumBalance — Σ kcalBalance
+ * @property {number} sumBalance — Σ kcalBalance (solo giorni tracciati)
  * @property {number} sumTarget — Σ targetKcal
  * @property {number} sumIntake — Σ intakeKcal
  * @property {number} sumWorkoutBurn — Σ workoutBurnKcal
- * @property {number} meanBalance — media kcalBalance sui giorni inclusi
+ * @property {number} meanBalance — media kcalBalance sui giorni tracciati
  * @property {number} meanTarget — media targetKcal
  * @property {number} meanIntake — media intakeKcal
- * @property {number} dayCount — numero di snapshot nell'array
- * @property {number} daysWithData — giorni con hasLogData === true
+ * @property {number} dayCount — giorni tracciati usati come divisore
+ * @property {number} daysWithData — alias di dayCount (giorni con hasTrackableData)
  */
 
 /**
@@ -75,15 +77,18 @@ export function normalizeTargetKcal(targetKcal) {
  * @param {string} [params.date] — ISO opzionale da allegare allo snapshot
  * @returns {DayEnergySnapshot}
  */
-export function computeDayEnergySnapshot({ log, targetKcal, date }) {
+export function computeDayEnergySnapshot({ log, targetKcal, date, isIntentionalFast = false }) {
   const entries = Array.isArray(log) ? log : [];
   const hasLogData = entries.length > 0;
+  const intentional = isIntentionalFast === true;
+  // Tracciato = pasti/log OPPURE digiuno intenzionale (0 kcal). I Null restano fuori dalle medie.
+  const hasTrackableData = hasLogData || intentional;
 
   const totals = hasLogData ? computeTotali(entries) : { kcal: 0, workout: 0 };
   const intakeKcal = Math.max(0, Math.round(Number(totals.kcal) || 0));
   const workoutBurnKcal = Math.max(0, Math.round(Number(totals.workout) || 0));
   const resolvedTarget = normalizeTargetKcal(targetKcal);
-  const kcalBalance = intakeKcal - resolvedTarget;
+  const kcalBalance = intentional && !hasLogData ? 0 - resolvedTarget : intakeKcal - resolvedTarget;
   const trainingLoad = computeTrainingLoadIndex(workoutBurnKcal);
 
   /** @type {DayEnergySnapshot} */
@@ -94,6 +99,8 @@ export function computeDayEnergySnapshot({ log, targetKcal, date }) {
     kcalBalance,
     trainingLoad,
     hasLogData,
+    isIntentionalFast: intentional,
+    hasTrackableData,
   };
 
   if (date != null && String(date).trim() !== '') {
@@ -133,23 +140,28 @@ export function aggregateEnergyBalance(snapshots) {
   let daysWithData = 0;
 
   for (const s of list) {
+    const trackable =
+      s.hasTrackableData === true
+      || (s.hasTrackableData !== false && (s.hasLogData || s.isIntentionalFast));
+    if (!trackable) continue;
     sumBalance += Number(s.kcalBalance) || 0;
     sumTarget += Number(s.targetKcal) || 0;
     sumIntake += Number(s.intakeKcal) || 0;
     sumWorkoutBurn += Number(s.workoutBurnKcal) || 0;
-    if (s.hasLogData) daysWithData += 1;
+    daysWithData += 1;
   }
 
-  const dayCount = list.length;
+  // Divisore = solo giorni tracciati (pasti o digiuno intenzionale), mai i Null.
+  const dayCount = daysWithData;
 
   return {
     sumBalance: Math.round(sumBalance),
     sumTarget: Math.round(sumTarget),
     sumIntake: Math.round(sumIntake),
     sumWorkoutBurn: Math.round(sumWorkoutBurn),
-    meanBalance: Math.round(sumBalance / dayCount),
-    meanTarget: Math.round(sumTarget / dayCount),
-    meanIntake: Math.round(sumIntake / dayCount),
+    meanBalance: dayCount > 0 ? Math.round(sumBalance / dayCount) : 0,
+    meanTarget: dayCount > 0 ? Math.round(sumTarget / dayCount) : 0,
+    meanIntake: dayCount > 0 ? Math.round(sumIntake / dayCount) : 0,
     dayCount,
     daysWithData,
   };

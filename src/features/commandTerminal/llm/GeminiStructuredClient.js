@@ -936,6 +936,7 @@ export class GeminiStructuredClient {
         "REGOLA ADD_WORKOUT (durata): Includi durationMinutes SOLO se l'utente ha indicato esplicitamente minuti o ore (es. '45 min', '1 ora'). NON inventare durate di default.",
         "REGOLA ADD_WORKOUT (serie/ripetizioni/carico): Includi sets, reps e weightKg SOLO se l'utente li ha scritti esplicitamente oppure se provieno da SMART RESOLUTION sullo storico abituale per un esercizio gia citato.",
         "REGOLA ADD_WORKOUT (workoutName): Compila workoutName come etichetta sintetica dell'allenamento (es. 'Pesi — panca e trazioni'). Se citi esercizi in exercises[], workoutName puo riassumerli.",
+        "REGOLA ADD_WORKOUT (dati strutturati): Se l'utente registra un allenamento e menziona la fatica da 1 a 10, salvala nel campo rpe. Se menziona l'obiettivo (ipertrofia, forza, resistenza, mantenimento, junk), salvalo in trainingGoal usando uno di: Ipertrofia, Forza, Resistenza, Mantenimento, Junk. Se aggiunge note su carichi, esercizi o variazioni, salvale in progressionNote. Ometti questi campi se non sono citati esplicitamente.",
       );
     }
 
@@ -947,6 +948,7 @@ export class GeminiStructuredClient {
 - Converti OBBLIGATORIAMENTE questo valore in un numero decimale usando la formula: Ore + (Minuti / 60). Esempio: 5 ore e 55 min diventa 5.91. Usa questo valore numerico per 'durationHours'.
 - Cerca la voce 'Profondo' (es. 1 ora 43 min) e fai la stessa conversione decimale per 'deepSleepPhase' (es. 1.71).
 - Cerca il numero grande dei punti (es. '80 punti') e inseriscilo come intero in 'qualityScore'.`,
+        "REGOLA LOG_SLEEP (dati strutturati): Se l'utente registra il sonno e valuta esplicitamente come ha dormito o menziona una valutazione in stelle, convertila in un numero da 1 a 5 e salvalo in sleepQuality. Esempi: 'ho dormito benissimo' → 5, 'male'/'pessimo' → 1-2, 'così così' → 3, '4 stelle'/'3/5' → numero indicato. Non inventare sleepQuality se non c'è una valutazione esplicita. Non confondere sleepQuality (1-5) con qualityScore (punti wearable).",
         "Non restituire MAI durationHours = 0. Se non riesci a leggere i valori, imposta uiMessage con un messaggio chiaro e NON inventare numeri.",
       );
     }

@@ -48,7 +48,14 @@ export default function StatisticsView({
   kcalReferenceLine = 2300,
 }) {
   const historyArray = pastDaysStorico || [];
-  const last7Days = historyArray.slice(0, 7);
+  // Escludi giorni Null (0 kcal senza digiuno intenzionale) dal divisore della media.
+  const last7Days = historyArray.slice(0, 7).filter((day) => {
+    const kcal = Number(day.calorie ?? day.totali?.kcal ?? day.kcalAssunte ?? 0) || 0;
+    const hasFood = kcal > 0 || (Array.isArray(day.log) && day.log.some(
+      (e) => e && (e.type === 'food' || e.type === 'recipe' || e.type === 'meal'),
+    ));
+    return hasFood || day.isIntentionalFast === true;
+  });
   let sumKcalIn = 0;
   let sumKcalTarget = 0;
   last7Days.forEach((day) => {

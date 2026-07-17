@@ -1,4 +1,5 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../../../coreEngine';
+import { resolveOvernightCarryMeal } from '../../../utils/dayTrackingStatus';
 import { parseDecimalHourFromValue } from './mealConsumedTime';
 import { METABOLIC_PHASES, resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
 import {
@@ -189,23 +190,34 @@ function getYesterdayDateStr(referenceDateObj, anchorDate) {
   return null;
 }
 
-function getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate) {
-  if (!fullHistory) return null;
+function resolveAnchorDateStr(referenceDateObj, anchorDate) {
+  if (typeof anchorDate === 'string' && anchorDate.trim()) return anchorDate.trim();
+  if (referenceDateObj instanceof Date && !Number.isNaN(referenceDateObj.getTime())) {
+    const offset = referenceDateObj.getTimezoneOffset() * 60000;
+    return new Date(referenceDateObj.getTime() - offset).toISOString().slice(0, 10);
+  }
   const yesterdayStr = getYesterdayDateStr(referenceDateObj, anchorDate);
   if (!yesterdayStr) return null;
-  const yesterdayNode = fullHistory[TRACKER_STORICO_KEY(yesterdayStr)];
-  if (!yesterdayNode?.log) return null;
-  const yesterdayLog = normalizeLogData(
-    Array.isArray(yesterdayNode.log) ? yesterdayNode.log : Object.values(yesterdayNode.log),
-  );
-  let maxYestTime = -1;
-  yesterdayLog
-    .filter((i) => isFastingBreakerLogItem(i))
-    .forEach((m) => {
-      const t = yesterdayNode.mealTimes?.[m.mealType] ?? m.mealTime ?? 20;
-      if (typeof t === 'number' && t > maxYestTime) maxYestTime = t;
-    });
-  return maxYestTime >= 0 ? maxYestTime : null;
+  const d = new Date(`${yesterdayStr}T12:00:00`);
+  d.setDate(d.getDate() + 1);
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
+
+/**
+ * Carry overnight: non attraversa giorni Null (vuoti senza isIntentionalFast).
+ * @returns {{ lastMealTime: number, intentionalEmptyDays: number, sourceDate: string } | null}
+ */
+function getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate) {
+  if (!fullHistory) return null;
+  const anchorStr = resolveAnchorDateStr(referenceDateObj, anchorDate);
+  if (!anchorStr) return null;
+  return resolveOvernightCarryMeal(fullHistory, anchorStr);
+}
+
+/** @returns {number | null} orario ultimo pasto sul giorno sorgente */
+function getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate) {
+  return getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate)?.lastMealTime ?? null;
 }
 
 /**
@@ -231,10 +243,14 @@ export function computeHoursFastedAtHour(referenceHour, activeLog, options = {})
     return Math.max(0, hour - lastMealTime);
   }
 
-  const yesterdayLastMealTime = getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate);
-  if (yesterdayLastMealTime != null) {
-    return Math.max(0, (24 - yesterdayLastMealTime) + hour);
+  const carry = getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate);
+  if (carry?.lastMealTime != null) {
+    return (
+      Math.max(0, (24 - carry.lastMealTime) + hour)
+      + (Number(carry.intentionalEmptyDays) || 0) * 24
+    );
   }
+  // Giorno Null intermedio o dati insufficienti: non inventare digiuni trans-giornalieri.
   return 0;
 }
 
@@ -244,13 +260,21 @@ export function computeHoursFastedAtHour(referenceHour, activeLog, options = {})
  * @param {number[]} todayMealTimes
  * @param {number | null} yesterdayLastMealTime
  */
-export function hoursFastedAtTimelineHour(hour, todayMealTimes = [], yesterdayLastMealTime = null) {
+export function hoursFastedAtTimelineHour(
+  hour,
+  todayMealTimes = [],
+  yesterdayLastMealTime = null,
+  intentionalEmptyDays = 0,
+) {
   const mealsBefore = (todayMealTimes || []).filter((t) => t <= hour + MEAL_HOUR_EPS);
   if (mealsBefore.length > 0) {
     return Math.max(0, hour - mealsBefore[mealsBefore.length - 1]);
   }
   if (yesterdayLastMealTime != null && Number.isFinite(yesterdayLastMealTime)) {
-    return Math.max(0, (24 - yesterdayLastMealTime) + hour);
+    return (
+      Math.max(0, (24 - yesterdayLastMealTime) + hour)
+      + (Number(intentionalEmptyDays) || 0) * 24
+    );
   }
   return 0;
 }
@@ -271,8 +295,12 @@ export function collectMetabolicTimelineMeals(activeLog, options = {}) {
   }
 
   const todayMealTimes = uniqueSortedMealHours([...eventTimes]);
-  const yesterdayLastMealTime = getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate);
-  return { todayMealTimes, yesterdayLastMealTime };
+  const carry = getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate);
+  return {
+    todayMealTimes,
+    yesterdayLastMealTime: carry?.lastMealTime ?? null,
+    intentionalEmptyDays: carry?.intentionalEmptyDays ?? 0,
+  };
 }
 
 /** Aggrega voci diario allo stesso slot orario pasto (per cinetica macro). */
@@ -340,7 +368,12 @@ function buildMealAggregateCache(activeLog, options = {}) {
  * Ultimo pasto rilevante e ore trascorse in un punto orario della timeline 0–24h.
  * @returns {{ mealHour: number, hoursSinceMeal: number, fromYesterday: boolean } | null}
  */
-export function resolveLastMealContextAtTimelineHour(hour, todayMealTimes = [], yesterdayLastMealTime = null) {
+export function resolveLastMealContextAtTimelineHour(
+  hour,
+  todayMealTimes = [],
+  yesterdayLastMealTime = null,
+  intentionalEmptyDays = 0,
+) {
   const clampedHour = Math.max(0, Math.min(24, Number(hour) || 0));
   const mealsBefore = (todayMealTimes || []).filter((t) => t <= clampedHour + MEAL_HOUR_EPS);
   if (mealsBefore.length > 0) {
@@ -354,7 +387,9 @@ export function resolveLastMealContextAtTimelineHour(hour, todayMealTimes = [], 
   if (yesterdayLastMealTime != null && Number.isFinite(yesterdayLastMealTime)) {
     return {
       mealHour: yesterdayLastMealTime,
-      hoursSinceMeal: Math.max(0, (24 - yesterdayLastMealTime) + clampedHour),
+      hoursSinceMeal:
+        Math.max(0, (24 - yesterdayLastMealTime) + clampedHour)
+        + (Number(intentionalEmptyDays) || 0) * 24,
       fromYesterday: true,
     };
   }
@@ -368,10 +403,16 @@ export function resolveKineticColorAtTimelineHour(hour, options = {}) {
   const {
     todayMealTimes = [],
     yesterdayLastMealTime = null,
+    intentionalEmptyDays = 0,
     mealAggregateCache = null,
   } = options;
 
-  const ctx = resolveLastMealContextAtTimelineHour(hour, todayMealTimes, yesterdayLastMealTime);
+  const ctx = resolveLastMealContextAtTimelineHour(
+    hour,
+    todayMealTimes,
+    yesterdayLastMealTime,
+    intentionalEmptyDays,
+  );
   if (!ctx) return METABOLIC_PHASES[0].iconColor;
 
   const cacheKey = ctx.fromYesterday ? `y_${ctx.mealHour}` : ctx.mealHour;
@@ -493,13 +534,22 @@ function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStar
  * @param {{ fullHistory?: object, anchorDate?: string, mealTimesObj?: object, referenceDateObj?: Date }} [options]
  */
 export function buildMetabolicFastingSnapshot(activeLog, referenceHour, options = {}) {
-  const { todayMealTimes, yesterdayLastMealTime } = collectMetabolicTimelineMeals(activeLog, options);
+  const {
+    todayMealTimes,
+    yesterdayLastMealTime,
+    intentionalEmptyDays = 0,
+  } = collectMetabolicTimelineMeals(activeLog, options);
   const mealAggregateCache = buildMealAggregateCache(activeLog, {
     ...options,
     todayMealTimes,
     yesterdayLastMealTime,
   });
-  const ctx = resolveLastMealContextAtTimelineHour(referenceHour, todayMealTimes, yesterdayLastMealTime);
+  const ctx = resolveLastMealContextAtTimelineHour(
+    referenceHour,
+    todayMealTimes,
+    yesterdayLastMealTime,
+    intentionalEmptyDays,
+  );
   const hoursFasted = ctx?.hoursSinceMeal ?? computeHoursFastedAtHour(referenceHour, activeLog, options);
   const cacheKey = ctx?.fromYesterday ? `y_${ctx.mealHour}` : ctx?.mealHour;
   const mealNode = cacheKey != null ? mealAggregateCache.get(cacheKey) ?? null : null;
@@ -525,6 +575,7 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
   const {
     todayMealTimes = [],
     yesterdayLastMealTime = null,
+    intentionalEmptyDays = 0,
     activeLog = [],
     domainStart = 0,
     domainEnd = 24,
@@ -549,6 +600,7 @@ export function buildMetabolicTimelineGradientStops(options = {}) {
   const colorOptions = {
     todayMealTimes: meals,
     yesterdayLastMealTime,
+    intentionalEmptyDays,
     mealAggregateCache,
   };
 

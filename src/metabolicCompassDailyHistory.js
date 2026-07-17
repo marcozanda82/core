@@ -1,7 +1,8 @@
 import { addDays } from './calendarDateUtils';
-import { getLogFromStoricoTree, getTodayString, getYesterdayString } from './coreEngine';
+import { getLogFromStoricoTree, getTodayString, getYesterdayString, TRACKER_STORICO_KEY } from './coreEngine';
 import { computeDayEnergySnapshot } from './features/energyBalance/energyBalanceMath';
 import { resolveDayKcalTarget } from './features/energyBalance/resolveDayKcalTarget';
+import { dayHasFoodLog, isDayIntentionalFast } from './utils/dayTrackingStatus';
 
 const DEFAULT_WINDOW_DAYS = 30;
 
@@ -83,18 +84,33 @@ export function buildMetabolicCompassDailyHistory(
 
   for (let i = maxDays - 1; i >= 0; i -= 1) {
     const dStr = addDays(yesterday, -i);
+    const dayNode = tree[TRACKER_STORICO_KEY(dStr)];
     const log = getLogFromStoricoTree(tree, dStr) || [];
+    const intentional = isDayIntentionalFast(dayNode);
+    const hasFood = dayHasFoodLog(log);
 
-    if (log.length === 0) {
-      out.push({ date: dStr, kcalBalance: 0, trainingLoad: 0, sleepHours: null });
+    // Giorni Null: esclusi dalla serie (non contano come 0 kcal nel divisore).
+    if (!hasFood && !intentional && log.length === 0) {
+      continue;
+    }
+    if (!hasFood && !intentional) {
+      // Log non alimentare (solo workout/sonno): non usare come media kcal.
+      const sleepHours = mainNightSleepHoursFromLog(log);
+      if (sleepHours == null) continue;
+      out.push({ date: dStr, kcalBalance: null, trainingLoad: null, sleepHours, skipEnergyAverage: true });
       continue;
     }
 
     const { targetKcal } = resolveDayKcalTarget(dStr, targetContext);
-    const snapshot = computeDayEnergySnapshot({ log, targetKcal, date: dStr });
+    const snapshot = computeDayEnergySnapshot({
+      log,
+      targetKcal,
+      date: dStr,
+      isIntentionalFast: intentional,
+    });
 
-    const kcalBalance = snapshot.hasLogData ? snapshot.kcalBalance : 0;
-    const trainingLoad = snapshot.hasLogData ? snapshot.trainingLoad : 0;
+    const kcalBalance = snapshot.hasTrackableData ? snapshot.kcalBalance : 0;
+    const trainingLoad = snapshot.hasTrackableData ? snapshot.trainingLoad : 0;
     const sleepHours = mainNightSleepHoursFromLog(log);
 
     out.push({ date: dStr, kcalBalance, trainingLoad, sleepHours });

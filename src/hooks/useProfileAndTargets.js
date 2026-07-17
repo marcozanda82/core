@@ -280,18 +280,24 @@ export function useProfileAndTargets(ctx) {
       const dateStr = d.toISOString().split('T')[0];
       const dayData = fullHistory[`trackerStorico_${dateStr}`];
 
-      if (dayData && dayData.log) {
-        const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || []);
-        const flatLog = normalizeLogData(rawLog);
-        const foodItems = flatLog.filter(item => item.type === 'food' || item.type === 'recipe');
-        if (foodItems.length > 0) totalDaysFound++;
-        foodItems.forEach(food => {
-          REPORT_NUTRIENT_KEYS.forEach(key => {
-            const val = key === 'kcal' ? (food.kcal ?? food.cal) : food[key];
-            aggregated[key] += (parseFloat(val) || 0);
-          });
+      if (!dayData) continue;
+
+      const rawLog = Array.isArray(dayData.log) ? dayData.log : Object.values(dayData.log || []);
+      const flatLog = normalizeLogData(rawLog);
+      const foodItems = flatLog.filter((item) => item.type === 'food' || item.type === 'recipe');
+      const intentional = dayData.isIntentionalFast === true;
+
+      // Null (né pasti né digiuno intenzionale) → escluso dal divisore.
+      if (foodItems.length === 0 && !intentional) continue;
+
+      totalDaysFound++;
+      foodItems.forEach((food) => {
+        REPORT_NUTRIENT_KEYS.forEach((key) => {
+          const val = key === 'kcal' ? (food.kcal ?? food.cal) : food[key];
+          aggregated[key] += (parseFloat(val) || 0);
         });
-      }
+      });
+      // Digiuno intenzionale senza pasti: contribuisce 0 ai totali ma conta nel divisore.
     }
 
     if (totalDaysFound === 0) return null;

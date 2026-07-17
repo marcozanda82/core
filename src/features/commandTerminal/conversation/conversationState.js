@@ -338,6 +338,29 @@ export function normalizeWorkoutPayload(payload = {}) {
     next.durationMinutes = Math.round(mins);
   }
 
+  const trainingGoal = String(next.trainingGoal || next.workoutGoal || '').trim();
+  if (trainingGoal) {
+    next.trainingGoal = trainingGoal;
+    next.workoutGoal = trainingGoal;
+  } else {
+    delete next.trainingGoal;
+    delete next.workoutGoal;
+  }
+
+  const rpe = Number(next.rpe);
+  if (Number.isFinite(rpe) && rpe >= 1 && rpe <= 10) {
+    next.rpe = Math.round(rpe);
+  } else {
+    delete next.rpe;
+  }
+
+  const progressionNote = String(next.progressionNote || '').trim();
+  if (progressionNote) {
+    next.progressionNote = progressionNote;
+  } else {
+    delete next.progressionNote;
+  }
+
   return next;
 }
 
@@ -368,11 +391,19 @@ export function buildWorkoutDraftUiMessage(payload = {}) {
   const time = String(payload?.exactTime || payload?.timeString || '').trim() || '--:--';
   const kcal = Number(payload?.estimatedKcal ?? payload?.kcal);
   const kcalLabel = Number.isFinite(kcal) && kcal > 0 ? `, ~${Math.round(kcal)} kcal` : '';
+  const extras = [];
+  const goal = String(payload?.trainingGoal || payload?.workoutGoal || '').trim();
+  if (goal) extras.push(goal);
+  const rpe = Number(payload?.rpe);
+  if (Number.isFinite(rpe) && rpe >= 1 && rpe <= 10) extras.push(`RPE ${Math.round(rpe)}`);
+  const extrasLabel = extras.length ? `, ${extras.join(', ')}` : '';
   const exercises = expandWorkoutPayloadExercises(payload);
   const lines = exercises.length > 0
     ? exercises.map((item) => formatWorkoutExerciseLine(item))
     : [`- ${String(payload?.workoutName || 'Allenamento').trim()}`];
-  return `Riepilogo Allenamento delle [${time}] (${durationLabel}${kcalLabel}):\n${lines.join('\n')}\nConfermi?`;
+  const note = String(payload?.progressionNote || '').trim();
+  if (note) lines.push(`- Note: ${note}`);
+  return `Riepilogo Allenamento delle [${time}] (${durationLabel}${kcalLabel}${extrasLabel}):\n${lines.join('\n')}\nConfermi?`;
 }
 
 export function buildSleepConfirmationSummary(payload) {
@@ -381,7 +412,10 @@ export function buildSleepConfirmationSummary(payload) {
   if (Number.isFinite(Number(payload?.deepSleepPhase))) {
     extras.push(`profondo ${Math.round(Number(payload.deepSleepPhase) * 100) / 100}h`);
   }
-  if (Number.isFinite(Number(payload?.qualityScore))) {
+  const sleepQuality = Number(payload?.sleepQuality);
+  if (Number.isFinite(sleepQuality) && sleepQuality >= 1 && sleepQuality <= 5) {
+    extras.push(`${Math.round(sleepQuality)}/5 stelle`);
+  } else if (Number.isFinite(Number(payload?.qualityScore))) {
     extras.push(`punteggio ${Math.round(Number(payload.qualityScore))}`);
   }
   const suffix = extras.length ? ` (${extras.join(', ')})` : '';

@@ -4,6 +4,7 @@ import { enrichDbRowWithFoodUnits } from '../../foodUnits';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import { writeTodayTrackerLocalCache } from '../../utils/trackerCacheUtils';
 import { stripUndefined } from '../../utils/firebasePayloadUtils';
+import { dayHasFoodLog } from '../../utils/dayTrackingStatus';
 import {
   TRACKER_STORICO_KEY,
   normalizeLogData,
@@ -271,12 +272,16 @@ export function useDiaryFirebaseSync({
           );
         const sanitizedLog = stripUndefined(logForFirebase);
         const sanitizedNodes = stripUndefined(nuoviNodi || []);
+        const existingNode = fullHistory?.[TRACKER_STORICO_KEY(dateStr)];
+        const keepIntentionalFast =
+          !dayHasFoodLog(sanitizedLog) && existingNode?.isIntentionalFast === true;
         const payload = {
           data: dateStr,
           log: sanitizedLog,
           mealTimes,
           manualNodes: sanitizedNodes,
           hasEditedNodes: true,
+          ...(keepIntentionalFast ? { isIntentionalFast: true } : {}),
         };
         const sanitized = stripUndefined(payload);
 
@@ -295,7 +300,7 @@ export function useDiaryFirebaseSync({
         console.error('❌ Errore durante la preparazione del payload Firebase:', error);
       }
     },
-    [currentTrackerDate, isSimulationMode, auth, setFullHistory],
+    [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory],
   );
 
   return {

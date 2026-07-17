@@ -394,6 +394,9 @@ export function useWorkoutManager({
         durationMinutes: payload?.durationMinutes,
         estimatedKcal: payload?.estimatedKcal,
         exercises: payload?.exercises,
+        trainingGoal: payload?.trainingGoal || payload?.workoutGoal || null,
+        rpe: payload?.rpe ?? null,
+        progressionNote: payload?.progressionNote || null,
       });
       const now = Date.now();
       if (

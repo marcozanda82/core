@@ -103,9 +103,13 @@ function averageDailyNutrientFromTrackerData(trackerData, key) {
   if (dayKeys.length === 0) return null;
   const samples = [];
   for (const dk of dayKeys) {
-    const log = getLogArrayFromTrackerNode(trackerData[dk]);
-    if (!log.some(e => e && (e.type === 'food' || e.type === 'recipe'))) continue;
-    const totali = computeTotali(log);
+    const node = trackerData[dk];
+    const log = getLogArrayFromTrackerNode(node);
+    const hasFood = log.some((e) => e && (e.type === 'food' || e.type === 'recipe'));
+    const intentional = node?.isIntentionalFast === true;
+    // Null (né pasti né digiuno intenzionale) esclusi dal divisore.
+    if (!hasFood && !intentional) continue;
+    const totali = hasFood ? computeTotali(log) : { kcal: 0 };
     let v;
     if (key === 'kcal' || key === 'cal') v = Number(totali.kcal || 0) || 0;
     else v = totali[key] != null && typeof totali[key] === 'number' ? totali[key] : 0;

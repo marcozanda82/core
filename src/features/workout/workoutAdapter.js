@@ -7,8 +7,42 @@ import { workoutActivityRequiresStrengthDetailNote } from '../../drawers/vistas/
 const CARDIO_KEYWORD_PATTERN =
   /\b(corsa|correre|running|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|tapis|walk|cammin|cardio)\b/i;
 
+/** Allineato a TRAINING_GOALS del questionario diario. */
+const TRAINING_GOAL_ENTRIES = [
+  { id: 'ipertrofia', labels: ['ipertrofia', 'hypertrophy'] },
+  { id: 'forza', labels: ['forza', 'strength'] },
+  { id: 'resistenza', labels: ['resistenza', 'endurance'] },
+  { id: 'mantenimento', labels: ['mantenimento', 'maintenance'] },
+  { id: 'junk', labels: ['junk', 'junk workout'] },
+];
+
 function asTrimmedString(value) {
   return String(value ?? '').trim();
+}
+
+/** Normalizza trainingGoal AI/UI → id questionario (ipertrofia|forza|…). */
+export function normalizeTrainingGoalId(raw) {
+  const s = asTrimmedString(raw).toLowerCase();
+  if (!s) return '';
+  const folded = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const exact = TRAINING_GOAL_ENTRIES.find(
+    (g) => g.id === folded || g.id === s || g.labels.includes(folded) || g.labels.includes(s),
+  );
+  if (exact) return exact.id;
+  if (folded.includes('ipertrof') || folded.includes('hypertroph')) return 'ipertrofia';
+  if (folded.includes('forza') || folded.includes('strength')) return 'forza';
+  if (folded.includes('resist') || folded.includes('endurance')) return 'resistenza';
+  if (folded.includes('manten') || folded.includes('mainten')) return 'mantenimento';
+  if (folded.includes('junk')) return 'junk';
+  return '';
+}
+
+export function normalizeRpeValue(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  if (rounded < 1 || rounded > 10) return null;
+  return rounded;
 }
 
 function normalizeChatExercises(chatPayload) {
@@ -126,6 +160,45 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     throw new Error('currentTimeDecimal non valido');
   }
 
+  const trainingGoal = normalizeTrainingGoalId(
+    chatPayload?.trainingGoal ?? chatPayload?.workoutGoal,
+  );
+  const rpe = normalizeRpeValue(chatPayload?.rpe);
+  const progressionNote = asTrimmedString(
+    chatPayload?.progressionNote ?? chatPayload?.notes,
+  );
+
+  const structuredPatch = {
+    ...(trainingGoal
+      ? {
+          trainingGoal,
+          workoutGoal: trainingGoal,
+          questionnaire: {
+            goal: trainingGoal,
+            rpe: rpe ?? null,
+            notes: progressionNote,
+          },
+        }
+      : {}),
+    ...(rpe != null ? { rpe } : {}),
+    ...(progressionNote
+      ? {
+          progressionNote,
+          note: progressionNote,
+          details: progressionNote,
+        }
+      : {}),
+  };
+
+  // Se c'è solo RPE/note senza goal, aggiorna comunque questionnaire parziale.
+  if (!trainingGoal && (rpe != null || progressionNote)) {
+    structuredPatch.questionnaire = {
+      goal: null,
+      rpe: rpe ?? null,
+      notes: progressionNote,
+    };
+  }
+
   const logItem = {
     id,
     type: 'workout',
@@ -137,6 +210,7 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     duration,
     ...(workoutDetailNote ? { workoutDetailNote } : {}),
     ...(exercises.length ? { exercises } : {}),
+    ...structuredPatch,
   };
 
   const timelineNode = {
@@ -149,6 +223,7 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     subType: workoutType,
     muscles,
     ...(workoutDetailNote ? { workoutDetailNote } : {}),
+    ...structuredPatch,
   };
 
   return { logItem, timelineNode };

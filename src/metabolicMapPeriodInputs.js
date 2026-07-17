@@ -126,8 +126,10 @@ export function computeMetabolicMapInputsAndAudit(dailyHistory, timeframe = '7d'
     };
   }
 
-  const kcalBalances = slice.map((d) => Number(d.kcalBalance) || 0);
-  const trainingLoads = slice.map((d) => clamp(Number(d.trainingLoad) || 0, 0, 100));
+  // Escludi giorni Null / skipEnergyAverage dal divisore delle medie energetiche.
+  const energySlice = slice.filter((d) => d && d.skipEnergyAverage !== true && d.kcalBalance != null);
+  const kcalBalances = energySlice.map((d) => Number(d.kcalBalance) || 0);
+  const trainingLoads = energySlice.map((d) => clamp(Number(d.trainingLoad) || 0, 0, 100));
 
   const meanKcal = arithmeticMean(kcalBalances);
   const { adjusted: meanKcalForAxes, deadBandApplied: deadBandAppliedOnMean } =

@@ -125,6 +125,27 @@ export const addWorkoutPayloadSchema = {
       type: 'string',
       description: 'Note aggiuntive opzionali',
     },
+    trainingGoal: {
+      type: 'string',
+      nullable: true,
+      enum: ['Ipertrofia', 'Forza', 'Resistenza', 'Mantenimento', 'Junk'],
+      description:
+        'Obiettivo allenamento se menzionato (Ipertrofia, Forza, Resistenza, Mantenimento, Junk). Ometti se non citato.',
+    },
+    rpe: {
+      type: 'number',
+      nullable: true,
+      minimum: 1,
+      maximum: 10,
+      description:
+        'RPE / fatica percepita intera 1-10 se l utente la menziona. Ometti se non citata.',
+    },
+    progressionNote: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Note su carichi, esercizi, variazioni o sensazioni. Ometti se non citate.',
+    },
   },
   required: ['workoutName', 'durationMinutes'],
 };
@@ -146,7 +167,15 @@ export const logSleepPayloadSchema = {
     qualityScore: {
       type: 'number',
       description:
-        'Punteggio sonno intero estratto da etichetta punti (es. 80 punti = 80).',
+        'Punteggio sonno intero estratto da etichetta punti wearable (es. 80 punti = 80). Non confondere con sleepQuality (stelle 1-5).',
+    },
+    sleepQuality: {
+      type: 'number',
+      nullable: true,
+      minimum: 1,
+      maximum: 5,
+      description:
+        'Valutazione soggettiva del sonno in stelle 1-5 se l utente la menziona esplicitamente (es. "ho dormito bene 4 stelle", "qualita 3/5"). Ometti se non citata.',
     },
   },
   required: ['durationHours'],
