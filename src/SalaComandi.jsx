@@ -394,6 +394,7 @@ const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
 const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
 const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
+const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -7092,6 +7093,36 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               onSaveSleep={handleStoricoSaveSleep}
             />
           </Suspense>
+        )}
+
+        {/* DEV CONSOLE — fullscreen admin overlay */}
+        {activeAction === 'dev_console' && createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              width: '100dvw',
+              height: '100dvh',
+              zIndex: 100000,
+              boxSizing: 'border-box',
+              background: 'radial-gradient(ellipse at top, #1e293b 0%, #0a0a0a 55%, #000 100%)',
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingLeft: 'env(safe-area-inset-left)',
+              paddingRight: 'env(safe-area-inset-right)',
+              overflow: 'auto',
+            }}
+          >
+            <Suspense fallback={<KentuLazySectionFallback label="Dev Console…" />}>
+              <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 16px 40px', minHeight: '100%' }}>
+                <DevConsoleView
+                  uid={userUid}
+                  onBack={() => setActiveAction('menu_secondary')}
+                />
+              </div>
+            </Suspense>
+          </div>,
+          document.body,
         )}
 
         {/* VISTA ZEN — Neural Reset fullscreen (portal su document.body) */}

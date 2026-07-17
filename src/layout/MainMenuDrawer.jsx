@@ -104,6 +104,27 @@ export default function MainMenuDrawer({
               <img src="/nuova-icona.png" alt="" className="action-icon-img action-icon-img-lg" style={{ filter: 'drop-shadow(0 0 10px rgba(179, 136, 255, 0.45))' }} width={29} height={29} decoding="async" /><span className="action-label" style={{ color: '#b388ff' }}>Kentu</span>
             </button>
           </div>
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid rgba(148, 163, 184, 0.22)',
+            }}
+          >
+            <button
+              type="button"
+              className="action-btn"
+              onClick={() => setActiveAction('dev_console')}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.9))',
+                borderColor: '#334155',
+              }}
+            >
+              <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(148, 163, 184, 0.45))' }}>🛠️</span>
+              <span className="action-label" style={{ color: '#cbd5e1' }}>Dev Console</span>
+            </button>
+          </div>
         </div>
       )}
 

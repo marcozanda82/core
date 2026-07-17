@@ -646,6 +646,7 @@
 
 /* —— Input strip —— */
 .kentu-input-strip {
+  position: relative;
   margin-top: 10px;
   flex-shrink: 0;
   display: flex;
@@ -658,6 +659,101 @@
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 4px 28px rgba(0, 0, 0, 0.35);
+}
+
+.kentu-input-strip--notes {
+  border-color: rgba(250, 204, 21, 0.45);
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(250, 204, 21, 0.12);
+}
+
+.kentu-devtools-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.kentu-devtools-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.kentu-devtools-btn:hover {
+  border-color: rgba(148, 163, 184, 0.5);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.kentu-devtools-btn:active {
+  transform: scale(0.96);
+}
+
+.kentu-devtools-btn--notes {
+  border-color: rgba(250, 204, 21, 0.55);
+  background: rgba(113, 63, 18, 0.35);
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.2);
+}
+
+.kentu-devtools-menu {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kentu-devtools-menu__item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #e2e8f0;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.kentu-devtools-menu__item:hover {
+  background: rgba(51, 65, 85, 0.7);
+}
+
+.kentu-devtools-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%);
+  z-index: 45;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 .kentu-input-strip .chat-input {

@@ -1,7 +1,7 @@
 /**
  * AiCluster.jsx — KentuOS: superficie chat (messaggi, quick replies, input).
  */
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import MealDraftConfirmation from './components/MealDraftConfirmation';
@@ -16,6 +16,11 @@ import {
   KentuInsightHero,
   KentuInsightCard,
 } from './components/kentuos/KentuOSUI';
+import {
+  extractLastUserAiPair,
+  saveAiErrorLog,
+  saveDevNote,
+} from './utils/devToolsPersistence';
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
 function stripInvisibleContextFromBubble(text) {
@@ -107,6 +112,81 @@ export default function AiCluster({
       (label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()),
     );
   }, [activeQuickReplies, hasActiveWorkoutDraft]);
+
+  const [isNotesMode, setIsNotesMode] = useState(false);
+  const [showToolsMenu, setShowToolsMenu] = useState(false);
+  const [devToolsToast, setDevToolsToast] = useState('');
+  const toolsMenuRef = useRef(null);
+
+  const showDevToast = useCallback((message) => {
+    setDevToolsToast(message);
+    window.setTimeout(() => setDevToolsToast(''), 2200);
+  }, []);
+
+  useEffect(() => {
+    if (!showToolsMenu) return undefined;
+    const onPointerDown = (event) => {
+      if (toolsMenuRef.current && !toolsMenuRef.current.contains(event.target)) {
+        setShowToolsMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showToolsMenu]);
+
+  const handleToolsButtonClick = useCallback(() => {
+    if (isNotesMode) {
+      setIsNotesMode(false);
+      setShowToolsMenu(false);
+      showDevToast('Modalità note disattivata');
+      return;
+    }
+    setShowToolsMenu((prev) => !prev);
+  }, [isNotesMode, showDevToast]);
+
+  const handleActivateNotesMode = useCallback(() => {
+    setIsNotesMode(true);
+    setShowToolsMenu(false);
+  }, []);
+
+  const handleLogAIError = useCallback(async () => {
+    try {
+      const { userPrompt, aiResponse } = extractLastUserAiPair(chatHistory);
+      if (!userPrompt && !aiResponse) {
+        showDevToast('Nessun messaggio da registrare');
+        setShowToolsMenu(false);
+        return;
+      }
+      await saveAiErrorLog({ userPrompt, aiResponse });
+      showDevToast('Errore AI registrato');
+    } catch (err) {
+      console.error('[DevTools] saveAiErrorLog failed', err);
+      showDevToast('Salvataggio errore fallito');
+    } finally {
+      setShowToolsMenu(false);
+    }
+  }, [chatHistory, showDevToast]);
+
+  const handleSendFromInput = useCallback(async () => {
+    if (isProcessing) return;
+
+    if (isNotesMode) {
+      const noteText = String(chatInput || '').trim();
+      if (!noteText) return;
+      try {
+        await saveDevNote({ text: noteText });
+        setChatInput('');
+        showDevToast('Nota salvata');
+      } catch (err) {
+        console.error('[DevTools] saveDevNote failed', err);
+        showDevToast('Salvataggio nota fallito');
+      }
+      return;
+    }
+
+    onSendMessage(undefined, { fromInput: true });
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  }, [isProcessing, isNotesMode, chatInput, setChatInput, showDevToast, onSendMessage]);
 
   return (
     <div
@@ -445,7 +525,7 @@ export default function AiCluster({
             ))}
           </div>
         ) : null}
-        <div className="kentu-input-strip">
+        <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>
           <input
             type="file"
             accept="image/*"
@@ -474,34 +554,62 @@ export default function AiCluster({
           <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
             <KentuIcon name="camera" size={22} />
           </KentuButton>
+          <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
+            <button
+              type="button"
+              className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
+              aria-label={isNotesMode ? 'Disattiva modalità note' : 'Dev Tools'}
+              aria-expanded={showToolsMenu}
+              onClick={handleToolsButtonClick}
+            >
+              <span aria-hidden="true">{isNotesMode ? '💡' : '🛠️'}</span>
+            </button>
+            {showToolsMenu ? (
+              <div className="kentu-devtools-menu" role="menu">
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleLogAIError}>
+                  ⚠️ Log Ultimo Errore AI
+                </button>
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
+                  💡 Attiva Modalità Note
+                </button>
+              </div>
+            ) : null}
+          </div>
           <input
             type="text"
             className="chat-input"
-            placeholder={chatImages.length > 0 ? 'Commento immagini…' : 'Query sistema…'}
+            placeholder={
+              isNotesMode
+                ? 'Nota di sviluppo…'
+                : chatImages.length > 0
+                  ? 'Commento immagini…'
+                  : 'Query sistema…'
+            }
             value={chatInput}
-            disabled={isProcessing}
+            disabled={isProcessing && !isNotesMode}
             onChange={(e) => setChatInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isProcessing) {
-                onSendMessage(undefined, { fromInput: true });
-                setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSendFromInput();
               }
             }}
             style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', outline: 'none', minWidth: 0 }}
           />
           <KentuButton
             variant="primary"
-            className={`kentu-send-btn ${!(chatInput.trim() || chatImages.length > 0) || isProcessing ? 'kentu-send-btn--idle' : ''}`}
-            aria-label="Invia"
-            disabled={isProcessing}
-            onClick={() => {
-              if (isProcessing) return;
-              onSendMessage(undefined, { fromInput: true });
-              setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
+            aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
+            disabled={isProcessing && !isNotesMode}
+            onClick={handleSendFromInput}
           >
             <KentuIcon name="send" size={18} />
           </KentuButton>
+          {devToolsToast ? (
+            <div className="kentu-devtools-toast" role="status" aria-live="polite">
+              {devToolsToast}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
