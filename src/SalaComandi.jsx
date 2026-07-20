@@ -115,6 +115,7 @@ import {
   isDayIntentionalFast,
   resolveOvernightCarryMeal,
 } from './utils/dayTrackingStatus';
+import { useChatOverlay } from './contexts/ChatOverlayContext';
 import { getCurrentTimeRoundedTo15Min } from './utils/decimalTimeUtils';
 import {
   getStrategyKey,
@@ -696,6 +697,9 @@ export default function SalaComandi() {
 
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
+  const [mealBuilder, setMealBuilder] = useState({ active: false, mealType: '', foods: [] });
+  const mealBuilderRef = useRef(mealBuilder);
+  mealBuilderRef.current = mealBuilder;
   const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
   const [coachPrefsTick, setCoachPrefsTick] = useState(0);
   const [hasNewInsight, setHasNewInsight] = useState(false);
@@ -5271,6 +5275,110 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ],
   );
 
+  const cancelMealBuilder = useCallback(() => {
+    setMealBuilder({ active: false, mealType: '', foods: [] });
+  }, []);
+
+  const handleDraftMealItems = useCallback((payload = {}) => {
+    const incoming = Array.isArray(payload?.foods) ? payload.foods : [];
+    const normalized = incoming
+      .map((item) => {
+        const foodName = String(item?.foodName || item?.name || '').trim();
+        if (!foodName) return null;
+        const gramsNum = Number(item?.grams ?? item?.qty);
+        const protNum = Number(item?.prot ?? item?.pro);
+        return {
+          foodName,
+          name: foodName,
+          ...(Number.isFinite(gramsNum) && gramsNum > 0 ? { grams: gramsNum } : {}),
+          ...(Number.isFinite(Number(item?.kcal)) ? { kcal: Number(item.kcal) } : {}),
+          ...(Number.isFinite(protNum) ? { prot: protNum, pro: protNum } : {}),
+          ...(Number.isFinite(Number(item?.carb)) ? { carb: Number(item.carb) } : {}),
+          ...(Number.isFinite(Number(item?.fat)) ? { fat: Number(item.fat) } : {}),
+        };
+      })
+      .filter(Boolean);
+
+    setMealBuilder((prev) => ({
+      active: true,
+      mealType: String(payload?.mealType || prev.mealType || 'Pasto').trim() || 'Pasto',
+      foods: [...(prev.foods || []), ...normalized],
+    }));
+  }, []);
+
+  const commitMealBuilder = useCallback(
+    ({ announce = true } = {}) => {
+      const snapshot = mealBuilderRef.current || { active: false, mealType: '', foods: [] };
+      const foods = Array.isArray(snapshot.foods) ? snapshot.foods : [];
+      if (!foods.length) {
+        cancelMealBuilder();
+        const emptyMsg = '⚠️ Nessun alimento nella bozza pasto.';
+        if (announce) {
+          setChatHistory((prev) => [...(prev || []), { sender: 'ai', text: emptyMsg }]);
+        }
+        return emptyMsg;
+      }
+
+      const items = foods
+        .map((item) => {
+          const foodName = String(item?.foodName || item?.name || '').trim();
+          if (!foodName) return null;
+          return {
+            foodName,
+            grams: Math.max(1, Math.round(Number(item?.grams) || 100)),
+          };
+        })
+        .filter(Boolean);
+
+      if (!items.length) {
+        cancelMealBuilder();
+        const invalidMsg = '⚠️ Nessun alimento valido nella bozza.';
+        if (announce) {
+          setChatHistory((prev) => [...(prev || []), { sender: 'ai', text: invalidMsg }]);
+        }
+        return invalidMsg;
+      }
+
+      const totals = foods.reduce(
+        (acc, item) => ({
+          kcal: acc.kcal + (Number(item?.kcal) || 0),
+          prot: acc.prot + (Number(item?.prot ?? item?.pro) || 0),
+          carb: acc.carb + (Number(item?.carb) || 0),
+          fat: acc.fat + (Number(item?.fat) || 0),
+        }),
+        { kcal: 0, prot: 0, carb: 0, fat: 0 },
+      );
+
+      try {
+        const savedMessage = commitAddFoodCommand({
+          mealType: snapshot.mealType || 'pranzo',
+          items,
+        });
+        cancelMealBuilder();
+        const macroHint =
+          totals.kcal > 0
+            ? ` (bozza ~${Math.round(totals.kcal)} kcal · P${Math.round(totals.prot)} C${Math.round(totals.carb)} F${Math.round(totals.fat)})`
+            : '';
+        const message =
+          (typeof savedMessage === 'string' && savedMessage.trim()
+            ? savedMessage.trim()
+            : `✅ Pasto a tappe salvato (${items.length} alimenti).`)
+          + macroHint;
+        if (announce) {
+          setChatHistory((prev) => [...(prev || []), { sender: 'ai', text: message }]);
+        }
+        return message;
+      } catch (error) {
+        const failMsg = `⚠️ Salvataggio pasto fallito: ${error?.message || 'errore'}`;
+        if (announce) {
+          setChatHistory((prev) => [...(prev || []), { sender: 'ai', text: failMsg }]);
+        }
+        return failMsg;
+      }
+    },
+    [cancelMealBuilder, commitAddFoodCommand, setChatHistory],
+  );
+
   const commitLogSleepCommand = useCallback(
     (payload) => {
       const hours = Number(payload?.durationHours);
@@ -5384,6 +5492,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
+    getMealBuilderState: () => mealBuilderRef.current,
+    onDraftMealItems: handleDraftMealItems,
+    onCommitMealBuilder: () => commitMealBuilder({ announce: false }),
     onSaveFoodDbEntry: async (entryPer100, donorMeta = null) => {
       const safe = entryPer100 && typeof entryPer100 === 'object' ? entryPer100 : null;
       if (!safe?.desc) throw new Error('missing_desc');
@@ -5427,6 +5538,72 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       };
     },
   });
+
+  const { registerHandlers } = useChatOverlay();
+
+  useEffect(() => {
+    registerHandlers({
+      chatHistory,
+      chatInput: commandChatInput,
+      setChatInput: setCommandChatInput,
+      chatImages: commandChatImages,
+      setChatImages: setCommandChatImages,
+      onSendMessage: sendMessage,
+      activeQuickReplies,
+      onSlotQuickReplyClick: handleQuickReplyClick,
+      onAcceptAdvice: handleAcceptAdvice,
+      onAcceptMealProposal: handleAcceptMealProposal,
+      foodDatabase: foodDb,
+      fullHistory,
+      dailyLog: activeLog,
+      onDraftConfirm: handleDraftConfirm,
+      onDraftCancel: handleDraftCancel,
+      onDraftRemoveItem: handleDraftRemoveItem,
+      onDraftUpdateItemGrams: handleDraftUpdateItemGrams,
+      onDraftUpdateMealMeta: handleDraftUpdateMealMeta,
+      onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
+      onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
+      onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
+      onWorkoutDraftRemoveExercise: handleWorkoutDraftRemoveExercise,
+      onSaveNewFoodEntry: handleSaveNewFoodEntry,
+      introPhrase,
+      isProcessing: isChatProcessing,
+      mealBuilder,
+      setMealBuilder,
+      cancelMealBuilder,
+      commitMealBuilder,
+    });
+  }, [
+    registerHandlers,
+    chatHistory,
+    commandChatInput,
+    setCommandChatInput,
+    commandChatImages,
+    setCommandChatImages,
+    sendMessage,
+    activeQuickReplies,
+    handleQuickReplyClick,
+    handleAcceptAdvice,
+    handleAcceptMealProposal,
+    foodDb,
+    fullHistory,
+    activeLog,
+    handleDraftConfirm,
+    handleDraftCancel,
+    handleDraftRemoveItem,
+    handleDraftUpdateItemGrams,
+    handleDraftUpdateMealMeta,
+    handleDraftUpdateFoodItemName,
+    handleWorkoutDraftUpdateMeta,
+    handleWorkoutDraftUpdateExercise,
+    handleWorkoutDraftRemoveExercise,
+    handleSaveNewFoodEntry,
+    introPhrase,
+    isChatProcessing,
+    mealBuilder,
+    cancelMealBuilder,
+    commitMealBuilder,
+  ]);
 
   const renderCustomizedLabel = useMemo(
     () => createMealPieCustomizedLabel(setSelectedMealCenter),
@@ -7096,6 +7273,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onBack={() => setActiveAction(null)}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}
+            mealBuilder={mealBuilder}
+            cancelMealBuilder={cancelMealBuilder}
+            commitMealBuilder={commitMealBuilder}
           />
         )}
 

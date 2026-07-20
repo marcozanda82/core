@@ -5,6 +5,8 @@ import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
   DISPATCH_LOG_SLEEP,
+  DISPATCH_DRAFT_MEAL_ITEMS,
+  DISPATCH_COMMIT_MEAL_BUILDER,
   DISPATCH_COMMAND_ACCEPTED,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
@@ -109,7 +111,48 @@ const COMMAND_TO_EVENT = Object.freeze({
   ADD_FOOD: DISPATCH_ADD_FOOD,
   ADD_WORKOUT: DISPATCH_ADD_WORKOUT,
   LOG_SLEEP: DISPATCH_LOG_SLEEP,
+  DRAFT_MEAL_ITEMS: DISPATCH_DRAFT_MEAL_ITEMS,
+  COMMIT_MEAL_BUILDER: DISPATCH_COMMIT_MEAL_BUILDER,
 });
+
+const MEAL_BUILDER_COMMIT_RE =
+  /^(?:salva|conferma|fatto|chiudi|commit)\b|\b(?:salva\s+(?:il\s+)?pasto|commit(?:ti)?\s+(?:il\s+)?pasto|chiudi\s+(?:il\s+)?pasto)\b/i;
+const MEAL_BUILDER_START_RE =
+  /\b(?:pasto\s+a\s+tappe|a\s+tappe|meal\s+builder|costru(?:isci|iamo)\s+(?:un\s+)?pasto)\b/i;
+
+function wantsMealBuilderCommit(userText) {
+  return MEAL_BUILDER_COMMIT_RE.test(String(userText || '').trim());
+}
+
+function isMealBuilderStartIntent(userText) {
+  return MEAL_BUILDER_START_RE.test(String(userText || '').trim());
+}
+
+function normalizeDraftMealItemsPayload(payload = {}) {
+  const foodsRaw = Array.isArray(payload?.foods) ? payload.foods : [];
+  const foods = foodsRaw
+    .map((item) => {
+      const foodName = String(item?.foodName || item?.name || '').trim();
+      if (!foodName) return null;
+      const gramsNum = Number(item?.grams ?? item?.qty);
+      const protNum = Number(item?.prot ?? item?.pro);
+      return {
+        foodName,
+        name: foodName,
+        ...(Number.isFinite(gramsNum) && gramsNum > 0 ? { grams: gramsNum } : {}),
+        ...(Number.isFinite(Number(item?.kcal)) ? { kcal: Number(item.kcal) } : {}),
+        ...(Number.isFinite(protNum) ? { prot: protNum, pro: protNum } : {}),
+        ...(Number.isFinite(Number(item?.carb)) ? { carb: Number(item.carb) } : {}),
+        ...(Number.isFinite(Number(item?.fat)) ? { fat: Number(item.fat) } : {}),
+      };
+    })
+    .filter(Boolean);
+  const mealType = String(payload?.mealType || '').trim();
+  return {
+    ...(mealType ? { mealType } : {}),
+    foods,
+  };
+}
 
 function isFiniteNumber(value) {
   return Number.isFinite(Number(value));
@@ -192,6 +235,8 @@ function validateEnvelope(command) {
   if (commandType === 'ADD_FOOD') return validateFoodPayload(command.payload);
   if (commandType === 'ADD_WORKOUT') return validateWorkoutPayload(command.payload);
   if (commandType === 'LOG_SLEEP') return validateSleepPayload(command.payload);
+  if (commandType === 'DRAFT_MEAL_ITEMS') return null;
+  if (commandType === 'COMMIT_MEAL_BUILDER') return null;
   return 'Unsupported commandType';
 }
 
@@ -451,6 +496,13 @@ export class CommandTerminalController {
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
+    if (options?.mealBuilderActive) {
+      return wantsMealBuilderCommit(userText) ? 'COMMIT_MEAL_BUILDER' : 'DRAFT_MEAL_ITEMS';
+    }
+    if (isMealBuilderStartIntent(userText)) {
+      return wantsMealBuilderCommit(userText) ? 'COMMIT_MEAL_BUILDER' : 'DRAFT_MEAL_ITEMS';
+    }
 
     if (options?.hasImages && isCreateNewFoodIntent(userText)) return 'CREATE_NEW_FOOD';
     if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
@@ -1700,19 +1752,25 @@ export class CommandTerminalController {
       intent: options.intent,
       hasImages: images.length > 0,
       chatHistory,
+      mealBuilderActive: Boolean(options?.mealBuilderActive),
+      wipMealItems: options?.wipMealItems || currentState?.wipMealItems || [],
     });
 
     if (
-      inferredIntent === 'ASK_DAY_REVIEW'
-      || inferredIntent === 'EVALUATE_MEAL_DRAFT'
-      || inferredIntent === 'FIX_MEAL_DRAFT'
-      || inferredIntent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
-      || inferredIntent === 'ASK_MEAL_ADVICE'
-      || inferredIntent === 'CONSULTANT_MEAL'
-      || inferredIntent === 'WIP_MEAL_BUILD'
-      || inferredIntent === 'ASK_MEAL_COMPLETION'
-      || inferredIntent === 'UPDATE_LOGGED_MEAL'
-      || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
+      inferredIntent !== 'DRAFT_MEAL_ITEMS'
+      && inferredIntent !== 'COMMIT_MEAL_BUILDER'
+      && (
+        inferredIntent === 'ASK_DAY_REVIEW'
+        || inferredIntent === 'EVALUATE_MEAL_DRAFT'
+        || inferredIntent === 'FIX_MEAL_DRAFT'
+        || inferredIntent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
+        || inferredIntent === 'ASK_MEAL_ADVICE'
+        || inferredIntent === 'CONSULTANT_MEAL'
+        || inferredIntent === 'WIP_MEAL_BUILD'
+        || inferredIntent === 'ASK_MEAL_COMPLETION'
+        || inferredIntent === 'UPDATE_LOGGED_MEAL'
+        || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
+      )
     ) {
       return this.processMealAdvice(userText, currentState, options);
     }
@@ -1744,10 +1802,14 @@ export class CommandTerminalController {
       { pendingMealUpdate: this.getPendingMealUpdate() },
     );
 
+    const llmUserText = options?.mealBuilderPromptPrefix
+      ? `${String(options.mealBuilderPromptPrefix).trim()} ${userText}`.trim()
+      : userText;
+
     let commandResponse;
     try {
       commandResponse = await this.llmClient.generateStructuredCommand({
-        userText,
+        userText: llmUserText,
         contextBundle,
         commandHint,
         images,
@@ -1797,6 +1859,23 @@ export class CommandTerminalController {
         sourceImageCount: images.length,
       });
       return { ok: true, intent: 'CREATE_NEW_FOOD', commandType: 'CREATE_NEW_FOOD', entryPer100: inherited, donor };
+    }
+
+    if (commandType === 'DRAFT_MEAL_ITEMS' || commandType === 'COMMIT_MEAL_BUILDER') {
+      const normalized =
+        commandType === 'DRAFT_MEAL_ITEMS'
+          ? normalizeDraftMealItemsPayload(rawPayload)
+          : {};
+      const uiMessage = String(commandResponse.command?.uiMessage || '').trim();
+      const payload = {
+        ...normalized,
+        ...(uiMessage ? { uiMessage } : {}),
+      };
+      this.dispatchCommand(commandType, payload, {
+        confidence: commandResponse.command?.confidence ?? null,
+        requiresConfirmation: false,
+      });
+      return { ok: true, commandType, payload };
     }
 
     if (

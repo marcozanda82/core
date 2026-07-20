@@ -82,6 +82,9 @@ export default function AiCluster({
   onRemoveWipItem,
   onClearWipMeal,
   onAddWipSuggestion,
+  mealBuilder = null,
+  cancelMealBuilder,
+  commitMealBuilder,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -523,6 +526,32 @@ export default function AiCluster({
                 {label}
               </button>
             ))}
+          </div>
+        ) : null}
+        {mealBuilder?.active ? (
+          <div
+            className="mx-2 mb-2 flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 dark:bg-blue-900/30"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-slate-100">
+              {`🍳 Costruzione ${mealBuilder.mealType || 'Pasto'}: ${Array.isArray(mealBuilder.foods) ? mealBuilder.foods.length : 0} alimenti`}
+            </span>
+            <button
+              type="button"
+              className="shrink-0 rounded-lg px-2 py-1 text-sm text-slate-500 transition-colors hover:bg-slate-200/60 hover:text-slate-800 dark:hover:bg-slate-700/60 dark:hover:text-slate-100"
+              aria-label="Annulla costruzione pasto"
+              onClick={() => cancelMealBuilder?.()}
+            >
+              ❌
+            </button>
+            <button
+              type="button"
+              className="shrink-0 rounded-lg bg-cyan-600 px-3 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500"
+              onClick={() => commitMealBuilder?.()}
+            >
+              ✅ Salva Pasto
+            </button>
           </div>
         ) : null}
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>

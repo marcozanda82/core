@@ -8,6 +8,8 @@ import {
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_LOG_SLEEP,
   DISPATCH_SYSTEM_MESSAGE,
+  DISPATCH_DRAFT_MEAL_ITEMS,
+  DISPATCH_COMMIT_MEAL_BUILDER,
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
@@ -24,6 +26,9 @@ export function useCommandTerminal({
   onAddWorkoutCommand = null,
   onLogSleepCommand = null,
   onSaveFoodDbEntry = null,
+  getMealBuilderState = null,
+  onDraftMealItems = null,
+  onCommitMealBuilder = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -74,11 +79,17 @@ export function useCommandTerminal({
   const getCurrentStateRef = useRef(getCurrentState);
   const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const onWipMealSeedRef = useRef(onWipMealSeed);
+  const getMealBuilderStateRef = useRef(getMealBuilderState);
+  const onDraftMealItemsRef = useRef(onDraftMealItems);
+  const onCommitMealBuilderRef = useRef(onCommitMealBuilder);
   useEffect(() => {
     getCurrentStateRef.current = getCurrentState;
     getWipMealSnapshotRef.current = getWipMealSnapshot;
     onWipMealSeedRef.current = onWipMealSeed;
-  }, [getCurrentState, getWipMealSnapshot, onWipMealSeed]);
+    getMealBuilderStateRef.current = getMealBuilderState;
+    onDraftMealItemsRef.current = onDraftMealItems;
+    onCommitMealBuilderRef.current = onCommitMealBuilder;
+  }, [getCurrentState, getWipMealSnapshot, onWipMealSeed, getMealBuilderState, onDraftMealItems, onCommitMealBuilder]);
 
   const controller = useMemo(() => {
     const llmClient = new GeminiStructuredClient();
@@ -220,6 +231,39 @@ export function useCommandTerminal({
       }
     });
 
+    const unsubscribeDraftMeal = commandBus.subscribe(DISPATCH_DRAFT_MEAL_ITEMS, (envelope) => {
+      const payload = envelope?.payload || {};
+      if (typeof onDraftMealItemsRef.current === 'function') {
+        onDraftMealItemsRef.current(payload);
+      }
+      const uiMessage = String(payload.uiMessage || '').trim();
+      if (uiMessage) {
+        appendAiMessage(uiMessage);
+        return;
+      }
+      const count = Array.isArray(payload.foods) ? payload.foods.length : 0;
+      appendAiMessage(
+        count > 0
+          ? `🍳 +${count} alimenti nella bozza pasto a tappe.`
+          : '🍳 Pasto a tappe attivo. Invia gli alimenti uno alla volta.',
+      );
+    });
+
+    const unsubscribeCommitMeal = commandBus.subscribe(DISPATCH_COMMIT_MEAL_BUILDER, async () => {
+      try {
+        if (typeof onCommitMealBuilderRef.current !== 'function') {
+          appendAiMessage('⚠️ Meal Builder non disponibile.');
+          return;
+        }
+        const result = await onCommitMealBuilderRef.current();
+        if (typeof result === 'string' && result.trim()) {
+          appendAiMessage(result.trim());
+        }
+      } catch (error) {
+        appendAiMessage(`⚠️ Salvataggio pasto fallito: ${error?.message || 'errore'}`);
+      }
+    });
+
     const unsubscribeSystem = commandBus.subscribe(DISPATCH_SYSTEM_MESSAGE, (envelope) => {
       const payload = envelope?.payload || {};
       if (payload.type === 'MEAL_DRAFT') {
@@ -286,6 +330,8 @@ export function useCommandTerminal({
 
     return () => {
       unsubscribeLogSleep();
+      unsubscribeDraftMeal();
+      unsubscribeCommitMeal();
       unsubscribeSystem();
       unsubscribeRejected();
       cleanupFns.forEach((fn) => {
@@ -328,10 +374,20 @@ export function useCommandTerminal({
         const wipSnapshot = typeof getWipMealSnapshotRef.current === 'function'
           ? getWipMealSnapshotRef.current()
           : { wipMealItems: [], mealType: null };
+        const mealBuilderState =
+          typeof getMealBuilderStateRef.current === 'function'
+            ? getMealBuilderStateRef.current() || {}
+            : {};
+        const mealBuilderActive = Boolean(mealBuilderState.active);
         const imageOnly = !resolvedText && attachedImages.length > 0;
         const fallbackText =
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
+        const mealBuilderPromptPrefix = mealBuilderActive && resolvedText
+          ? `[SISTEMA: Stiamo costruendo un pasto a tappe (${mealBuilderState.mealType || 'Pasto'}). `
+            + `Aggiungi i seguenti alimenti usando l'azione 'DRAFT_MEAL_ITEMS', oppure concludi il pasto con 'COMMIT_MEAL_BUILDER' se l'utente chiede di salvare. `
+            + `Alimenti già in bozza: ${Array.isArray(mealBuilderState.foods) ? mealBuilderState.foods.length : 0}.]`
+          : null;
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
@@ -341,6 +397,8 @@ export function useCommandTerminal({
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
+          mealBuilderActive,
+          mealBuilderPromptPrefix,
         });
         if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
           onWipMealSeedRef.current(result.wipSeed);

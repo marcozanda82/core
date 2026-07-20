@@ -2,6 +2,8 @@ import {
   addFoodPayloadSchema,
   logSleepPayloadSchema,
   addWorkoutPayloadSchema,
+  draftMealItemsPayloadSchema,
+  commitMealBuilderPayloadSchema,
   terminalCommandEnvelopeSchema,
   consultantResponseSchema,
   createNewFoodPayloadSchema,
@@ -857,6 +859,26 @@ function getEnvelopeSchemaForIntent(commandHint) {
       },
     };
   }
+  if (commandHint === 'DRAFT_MEAL_ITEMS' || commandHint === 'MEAL_BUILDER') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['DRAFT_MEAL_ITEMS', 'COMMIT_MEAL_BUILDER'] },
+        payload: draftMealItemsPayloadSchema,
+      },
+    };
+  }
+  if (commandHint === 'COMMIT_MEAL_BUILDER') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['COMMIT_MEAL_BUILDER'] },
+        payload: commitMealBuilderPayloadSchema,
+      },
+    };
+  }
   return terminalCommandEnvelopeSchema;
 }
 
@@ -891,11 +913,25 @@ export class GeminiStructuredClient {
     const includeFoodRules = fixedHint === 'ADD_FOOD' || fixedHint === 'UNKNOWN';
     const includeWorkoutRules = fixedHint === 'ADD_WORKOUT' || fixedHint === 'UNKNOWN';
     const includeNewFoodRules = fixedHint === 'CREATE_NEW_FOOD' || (hasImages && fixedHint === 'UNKNOWN');
+    const includeMealBuilderRules =
+      fixedHint === 'DRAFT_MEAL_ITEMS'
+      || fixedHint === 'COMMIT_MEAL_BUILDER'
+      || fixedHint === 'MEAL_BUILDER';
     const parts = [
       'Sei Kentu Command Terminal.',
       'Rispondi SOLO con JSON valido e conforme allo schema fornito.',
       'Non aggiungere markdown, spiegazioni o testo fuori dal JSON.',
     ];
+
+    if (includeMealBuilderRules) {
+      parts.push(
+        "INTENTO PASTO A TAPPE (Meal Builder): l utente costruisce un pasto in piu messaggi.",
+        "Se l utente elenca alimenti: commandType=DRAFT_MEAL_ITEMS con payload.mealType (se noto) e payload.foods[] (foodName obbligatorio, grams/kcal/prot/carb/fat se disponibili).",
+        "Se l utente chiede di salvare/confermare/chiudere il pasto: commandType=COMMIT_MEAL_BUILDER con payload {}.",
+        "NON usare ADD_FOOD mentre il pasto a tappe e in costruzione: gli alimenti vanno in bozza, non sul diario.",
+        "uiMessage: conferma breve in italiano (es. 'Aggiunti 2 alimenti alla bozza pranzo.').",
+      );
+    }
 
     if (includeNewFoodRules) {
       parts.push(
@@ -996,6 +1032,13 @@ export class GeminiStructuredClient {
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.exercises[] = SOLO esercizi citati dall utente. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Serie/ripetizioni/carico solo se espliciti o da storico abituale.'
+        : null,
+      asTrimmedString(commandHint).toUpperCase() === 'DRAFT_MEAL_ITEMS'
+      || asTrimmedString(commandHint).toUpperCase() === 'MEAL_BUILDER'
+        ? 'Pasto a tappe: usa DRAFT_MEAL_ITEMS per aggiungere alimenti alla bozza (foods[]), oppure COMMIT_MEAL_BUILDER se l utente chiede di salvare. Non usare ADD_FOOD.'
+        : null,
+      asTrimmedString(commandHint).toUpperCase() === 'COMMIT_MEAL_BUILDER'
+        ? 'Chiudi il pasto a tappe: commandType COMMIT_MEAL_BUILDER, payload vuoto.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]

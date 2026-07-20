@@ -35,6 +35,9 @@ export default function KentuChatUI({
   onRemoveWipItem,
   onClearWipMeal,
   onAddWipSuggestion,
+  mealBuilder = null,
+  cancelMealBuilder,
+  commitMealBuilder,
 }) {
   return (
     <div
@@ -81,6 +84,9 @@ export default function KentuChatUI({
         onRemoveWipItem={onRemoveWipItem}
         onClearWipMeal={onClearWipMeal}
         onAddWipSuggestion={onAddWipSuggestion}
+        mealBuilder={mealBuilder}
+        cancelMealBuilder={cancelMealBuilder}
+        commitMealBuilder={commitMealBuilder}
       />
     </div>
   );

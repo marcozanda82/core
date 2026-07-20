@@ -181,17 +181,70 @@ export const logSleepPayloadSchema = {
   required: ['durationHours'],
 };
 
+/** Singolo alimento per pasto a tappe (Meal Builder). */
+export const draftMealFoodItemSchema = {
+  type: 'object',
+  properties: {
+    foodName: {
+      type: 'string',
+      description: 'Nome puro dell alimento (senza grammi nel nome).',
+    },
+    name: {
+      type: 'string',
+      description: 'Alias di foodName.',
+    },
+    grams: {
+      type: 'number',
+      nullable: true,
+      description: 'Grammi se indicati dall utente.',
+    },
+    kcal: { type: 'number', nullable: true },
+    prot: { type: 'number', nullable: true },
+    pro: { type: 'number', nullable: true },
+    carb: { type: 'number', nullable: true },
+    fat: { type: 'number', nullable: true },
+  },
+  required: ['foodName'],
+};
+
+export const draftMealItemsPayloadSchema = {
+  type: 'object',
+  properties: {
+    mealType: {
+      type: 'string',
+      nullable: true,
+      description: 'Tipo pasto (colazione/pranzo/cena/snack) se noto.',
+    },
+    foods: {
+      type: 'array',
+      description: 'Alimenti da aggiungere alla bozza pasto a tappe in questo turno.',
+      items: draftMealFoodItemSchema,
+    },
+  },
+};
+
+export const commitMealBuilderPayloadSchema = {
+  type: 'object',
+  properties: {},
+};
+
 export const terminalCommandEnvelopeSchema = {
   type: 'object',
   properties: {
     commandType: {
       type: 'string',
-      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP'],
+      enum: [
+        'ADD_FOOD',
+        'ADD_WORKOUT',
+        'LOG_SLEEP',
+        'DRAFT_MEAL_ITEMS',
+        'COMMIT_MEAL_BUILDER',
+      ],
     },
     payload: {
       type: 'object',
       description:
-        'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, se LOG_SLEEP usa schema sonno.',
+        'Payload del comando. ADD_FOOD=cibo, ADD_WORKOUT=allenamento, LOG_SLEEP=sonno, DRAFT_MEAL_ITEMS=aggiungi alimenti al pasto a tappe, COMMIT_MEAL_BUILDER=salva/chiudi il pasto a tappe.',
     },
     uiMessage: {
       type: 'string',
@@ -361,5 +414,17 @@ export const geminiToolSchemas = Object.freeze({
     description:
       'Estrae e registra dati sonno da testo o screenshot smartwatch (durationHours obbligatorio).',
     inputSchema: logSleepPayloadSchema,
+  },
+  DRAFT_MEAL_ITEMS: {
+    name: 'dispatch_draft_meal_items',
+    description:
+      'Aggiunge alimenti alla bozza del pasto a tappe (Meal Builder) senza salvare ancora sul diario. Usa quando meal builder e attivo o l utente costruisce un pasto in piu messaggi.',
+    inputSchema: draftMealItemsPayloadSchema,
+  },
+  COMMIT_MEAL_BUILDER: {
+    name: 'dispatch_commit_meal_builder',
+    description:
+      'Chiude e salva il pasto a tappe costruito a step. Nessun payload richiesto.',
+    inputSchema: commitMealBuilderPayloadSchema,
   },
 });

@@ -1,23 +1,15 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import AiCluster from '../AiCluster';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
 
 /**
  * FAB globale + bottom sheet chat (AiCluster).
- * Montato a root: non dipende da SalaComandi.
+ * Le props operative arrivano da SalaComandi via registerHandlers (DI).
  */
 export default function GlobalChatOverlay() {
-  const { isChatOpen, openChat, closeChat } = useChatOverlay();
-  const [chatHistory, setChatHistory] = useState(() => [
-    {
-      sender: 'ai',
-      text: 'Ciao — sono Kentu. Scrivi pure da qui: questa chat è sempre a portata di mano.',
-    },
-  ]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatImages, setChatImages] = useState([]);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { isChatOpen, openChat, closeChat, actionHandlers } = useChatOverlay();
+  const handlersReady = typeof actionHandlers?.onSendMessage === 'function';
 
   useEffect(() => {
     if (!isChatOpen) return undefined;
@@ -37,35 +29,6 @@ export default function GlobalChatOverlay() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isChatOpen, closeChat]);
 
-  const handleSendMessage = useCallback(async () => {
-    const text = String(chatInput || '').trim();
-    if ((!text && !(chatImages || []).length) || isProcessing) return;
-
-    const userMessage = {
-      sender: 'user',
-      text: text || (chatImages.length ? '📷 Immagine allegata' : ''),
-      ...(chatImages.length ? { images: [...chatImages] } : {}),
-    };
-
-    setChatHistory((prev) => [...(prev || []), userMessage]);
-    setChatInput('');
-    setChatImages([]);
-    setIsProcessing(true);
-
-    // Shell locale indipendente da SalaComandi: risposta di cortesia.
-    // Il Command Terminal completo resta nella chat Kentu del drawer.
-    window.setTimeout(() => {
-      setChatHistory((prev) => [
-        ...(prev || []),
-        {
-          sender: 'ai',
-          text: 'Ricevuto. Per log strutturati (pasto / workout / sonno) usa Kentu dal menu ☰ — qui hai la chat sempre a portata di mano.',
-        },
-      ]);
-      setIsProcessing(false);
-    }, 450);
-  }, [chatInput, chatImages, isProcessing]);
-
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -81,7 +44,6 @@ export default function GlobalChatOverlay() {
         </button>
       ) : null}
 
-      {/* Backdrop */}
       <div
         aria-hidden={!isChatOpen}
         className={`fixed inset-0 z-[100055] bg-black/55 transition-opacity duration-300 ${
@@ -90,7 +52,6 @@ export default function GlobalChatOverlay() {
         onClick={closeChat}
       />
 
-      {/* Bottom sheet */}
       <div
         role="dialog"
         aria-modal="true"
@@ -106,7 +67,9 @@ export default function GlobalChatOverlay() {
             <span className="text-lg" aria-hidden>🤖</span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-wide text-slate-100">Kentu Chat</p>
-              <p className="truncate text-[11px] text-slate-500">Accesso rapido globale</p>
+              <p className="truncate text-[11px] text-slate-500">
+                {handlersReady ? 'Collegata a Sala Comandi' : 'In attesa degli handler…'}
+              </p>
             </div>
           </div>
           <button
@@ -120,17 +83,16 @@ export default function GlobalChatOverlay() {
         </header>
 
         <div className="kentu-os flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AiCluster
-            chatHistory={chatHistory}
-            chatInput={chatInput}
-            setChatInput={setChatInput}
-            chatImages={chatImages}
-            setChatImages={setChatImages}
-            onSendMessage={handleSendMessage}
-            onBack={closeChat}
-            introPhrase="Accesso rapido"
-            isProcessing={isProcessing}
-          />
+          {handlersReady ? (
+            <AiCluster
+              {...actionHandlers}
+              onBack={closeChat}
+            />
+          ) : (
+            <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">
+              Caricamento chat…
+            </div>
+          )}
         </div>
       </div>
     </>,
