@@ -166,6 +166,7 @@ import { buildProteinDetailsData } from './features/nutrition/buildProteinDetail
 import { buildMineralsDetailsData } from './features/nutrition/buildMineralsDetailsData';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
+import KentuChatUI from './features/chat/KentuChatWithWipMeal';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
@@ -388,7 +389,6 @@ const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCh
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const ChartModal = lazy(() => import('./ChartModal'));
 const FullscreenGraphView = lazy(() => import('./features/charts/FullscreenGraphView'));
-const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
 const LongevityView = lazy(() => import('./LongevityView'));
 const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
@@ -5605,6 +5605,119 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     commitMealBuilder,
   ]);
 
+  const generateDailySnapshot = useCallback(() => {
+    const date = String(currentTrackerDate || getTodayString());
+    const log = activeLog || [];
+    const foods = log.filter((item) => item?.type === 'food' || item?.type === 'recipe');
+    const workouts = log.filter((item) => item?.type === 'workout' && item?.isGhost !== true);
+
+    const mealSeen = new Set();
+    const meals = [];
+    for (const food of foods) {
+      const canon =
+        toCanonicalMealType(String(food?.mealType || '').split('_')[0]) || 'pasto';
+      const label = MEAL_LABELS_SAVE?.[canon] || canon;
+      if (!mealSeen.has(label)) {
+        mealSeen.add(label);
+        meals.push(label);
+      }
+    }
+
+    const primaryWorkout = workouts[0] || null;
+    const workout = primaryWorkout
+      ? {
+          name: String(
+            primaryWorkout.name
+            || primaryWorkout.workoutName
+            || primaryWorkout.desc
+            || primaryWorkout.activity
+            || 'Allenamento',
+          ).trim(),
+          kcal: Math.round(Number(primaryWorkout.kcal ?? primaryWorkout.cal) || 0),
+          ...(primaryWorkout.rpe != null && Number.isFinite(Number(primaryWorkout.rpe))
+            ? { rpe: Number(primaryWorkout.rpe) }
+            : {}),
+          ...(primaryWorkout.volume != null && Number.isFinite(Number(primaryWorkout.volume))
+            ? { volume: Number(primaryWorkout.volume) }
+            : {}),
+          ...(primaryWorkout.durationMinutes != null
+            || primaryWorkout.duration != null
+            || primaryWorkout.durationHours != null
+            ? {
+                durationMinutes: Math.round(
+                  Number(primaryWorkout.durationMinutes)
+                  || (Number(primaryWorkout.durationHours) || 0) * 60
+                  || Number(primaryWorkout.duration)
+                  || 0,
+                ),
+              }
+            : {}),
+        }
+      : null;
+
+    const sleepHours = Number(
+      totalSleepHours
+      ?? mainNightSleep?.hours
+      ?? mainNightSleep?.duration
+      ?? mainNightSleep?.sleepHours,
+    );
+    const sleepQuality = Number(
+      mainNightSleep?.quality
+      ?? mainNightSleep?.sleepQuality
+      ?? mainNightSleep?.qualityScore,
+    );
+    const sleep = hasSleepEngineData
+      ? {
+          hours: Number.isFinite(sleepHours) ? Math.round(sleepHours * 100) / 100 : null,
+          quality: Number.isFinite(sleepQuality) ? sleepQuality : null,
+        }
+      : null;
+
+    return {
+      date,
+      nutrition: {
+        totalKcal: Math.round(Number(totali?.kcal) || 0),
+        totalPro: Math.round(Number(totali?.prot) || 0),
+        totalCarb: Math.round(Number(totali?.carb) || 0),
+        totalFat: Math.round(Number(totali?.fatTotal ?? totali?.fat) || 0),
+      },
+      meals,
+      workout,
+      sleep,
+      fasting: {
+        hoursFasted: Math.round((Number(fastingData?.hoursFasted) || 0) * 10) / 10,
+        phaseName: fastingData?.phaseName || null,
+      },
+    };
+  }, [
+    activeLog,
+    currentTrackerDate,
+    fastingData,
+    hasSleepEngineData,
+    mainNightSleep,
+    toCanonicalMealType,
+    totalSleepHours,
+    totali,
+  ]);
+
+  const handleRequestDailyReport = useCallback(() => {
+    const payload = generateDailySnapshot();
+    const aiPrompt =
+      "[SISTEMA: Modalità Report Serale. Agisci come un coach esperto. Analizza i seguenti dati della giornata dell'utente. "
+      + 'Restituisci un referto breve, discorsivo ma analitico, evidenziando correlazioni '
+      + '(es. deficit calorico vs stanchezza da allenamento). Usa markdown, sii diretto e professionale. DATI: '
+      + JSON.stringify(payload)
+      + ']';
+
+    setActiveAction('ai_chat');
+    setIsDrawerOpen(true);
+    void sendMessage(aiPrompt, {
+      isHiddenUserMessage: true,
+      visibleUserText: 'Genera il report della mia giornata basato sui dati attuali.',
+      intent: 'ASK_DAY_REVIEW',
+    });
+  }, [generateDailySnapshot, sendMessage]);
+
   const renderCustomizedLabel = useMemo(
     () => createMealPieCustomizedLabel(setSelectedMealCenter),
     [setSelectedMealCenter],
@@ -6914,6 +7027,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               className="flex w-full flex-col gap-2 box-border shrink-0"
               style={{ width: '100%', padding: '0 14px', boxSizing: 'border-box' }}
             >
+              <button
+                type="button"
+                onClick={handleRequestDailyReport}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-slate-900/70 px-3 py-2.5 text-sm font-semibold text-cyan-100 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 active:scale-[0.99]"
+              >
+                <span aria-hidden="true">📊</span>
+                Analisi Giornata
+              </button>
               <HomeNutrientStrip
                 totali={totali}
                 targets={userTargets}
@@ -7226,6 +7347,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
         <MainMenuDrawer
           activeAction={activeAction}
           setActiveAction={setActiveAction}
@@ -7245,40 +7376,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         />
 
         <Suspense fallback={<KentuLazySectionFallback label="Apertura vista…" />}>
-        {/* VISTA CHAT AI */}
-        {activeAction === 'ai_chat' && (
-          <KentuChatUI
-            chatHistory={chatHistory}
-            chatInput={commandChatInput}
-            setChatInput={setCommandChatInput}
-            chatImages={commandChatImages}
-            setChatImages={setCommandChatImages}
-            handleChatSubmit={sendMessage}
-            activeQuickReplies={activeQuickReplies}
-            handleQuickReplyClick={handleQuickReplyClick}
-            handleAcceptAdvice={handleAcceptAdvice}
-            onAcceptMealProposal={handleAcceptMealProposal}
-            foodDatabase={foodDb}
-            fullHistory={fullHistory}
-            onDraftConfirm={handleDraftConfirm}
-            onDraftCancel={handleDraftCancel}
-            onDraftRemoveItem={handleDraftRemoveItem}
-            onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
-            onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
-            onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
-            onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
-            onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
-            onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}
-            onSaveNewFoodEntry={handleSaveNewFoodEntry}
-            onBack={() => setActiveAction(null)}
-            introPhrase={introPhrase}
-            isProcessing={isChatProcessing}
-            mealBuilder={mealBuilder}
-            cancelMealBuilder={cancelMealBuilder}
-            commitMealBuilder={commitMealBuilder}
-          />
-        )}
-
         {import.meta.env.DEV && activeAction === 'api_diary' && (
           <ApiDiary onBack={() => setActiveAction('menu_secondary')} />
         )}
@@ -7813,6 +7910,51 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             </div>
           </div>
         )}
+
+      </div>
+
+        {/* VISTA CHAT AI — sempre montata; visibilità via transform (apertura istantanea) */}
+        <div
+          className={[
+            'absolute inset-0 z-[2] flex min-h-0 flex-col overflow-hidden bg-[#0f0f0f]',
+            'transform transition-transform duration-300 ease-in-out will-change-transform',
+            activeAction === 'ai_chat'
+              ? 'translate-y-0'
+              : 'translate-y-full pointer-events-none',
+          ].join(' ')}
+          aria-hidden={activeAction !== 'ai_chat'}
+        >
+          <KentuChatUI
+            chatHistory={chatHistory}
+            chatInput={commandChatInput}
+            setChatInput={setCommandChatInput}
+            chatImages={commandChatImages}
+            setChatImages={setCommandChatImages}
+            handleChatSubmit={sendMessage}
+            activeQuickReplies={activeQuickReplies}
+            handleQuickReplyClick={handleQuickReplyClick}
+            handleAcceptAdvice={handleAcceptAdvice}
+            onAcceptMealProposal={handleAcceptMealProposal}
+            foodDatabase={foodDb}
+            fullHistory={fullHistory}
+            onDraftConfirm={handleDraftConfirm}
+            onDraftCancel={handleDraftCancel}
+            onDraftRemoveItem={handleDraftRemoveItem}
+            onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
+            onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
+            onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
+            onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
+            onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
+            onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}
+            onSaveNewFoodEntry={handleSaveNewFoodEntry}
+            onBack={() => setActiveAction(null)}
+            introPhrase={introPhrase}
+            isProcessing={isChatProcessing}
+            mealBuilder={mealBuilder}
+            cancelMealBuilder={cancelMealBuilder}
+            commitMealBuilder={commitMealBuilder}
+          />
+        </div>
 
       </MenuDrawerShell>
 

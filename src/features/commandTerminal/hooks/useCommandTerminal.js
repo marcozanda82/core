@@ -360,10 +360,21 @@ export function useCommandTerminal({
 
       const userBubbleText =
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
+      const hideUserPrompt = Boolean(options?.isHiddenUserMessage);
+      const visibleBubbleText = hideUserPrompt
+        ? String(
+          options?.visibleUserText
+          || 'Genera il report della mia giornata basato sui dati attuali.',
+        ).trim()
+        : userBubbleText;
       const priorHistory = chatHistoryRef.current || [];
-      setChatHistoryRef.current((prev) => [...(prev || []), { sender: 'user', text: userBubbleText }]);
+      setChatHistoryRef.current((prev) => [
+        ...(prev || []),
+        { sender: 'user', text: visibleBubbleText },
+      ]);
       // History completa (inclusi mealProposals/mealDraft): serializzazione memoria in
       // buildGeminiContentsFromChatHistory prima della chiamata LLM.
+      // Per prompt di sistema nascosti, l'LLM riceve il testo completo (resolvedText).
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
@@ -388,12 +399,13 @@ export function useCommandTerminal({
             + `Aggiungi i seguenti alimenti usando l'azione 'DRAFT_MEAL_ITEMS', oppure concludi il pasto con 'COMMIT_MEAL_BUILDER' se l'utente chiede di salvare. `
             + `Alimenti già in bozza: ${Array.isArray(mealBuilderState.foods) ? mealBuilderState.foods.length : 0}.]`
           : null;
+        const forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
         }, {
           images: attachedImages,
-          intent: imageOnly ? 'LOG_SLEEP' : undefined,
+          intent: forcedIntent || (imageOnly ? 'LOG_SLEEP' : undefined),
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
