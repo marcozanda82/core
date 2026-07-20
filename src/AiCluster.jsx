@@ -88,10 +88,28 @@ export default function AiCluster({
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
+  const chatTextareaRef = useRef(null);
+
+  const handleInputResize = useCallback((e) => {
+    const el = e?.target || chatTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  const resetInputHeight = useCallback(() => {
+    const el = chatTextareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+  }, []);
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, isProcessing]);
+
+  useEffect(() => {
+    if (!String(chatInput || '').trim()) resetInputHeight();
+  }, [chatInput, resetInputHeight]);
 
   const suppressQuickReplies = useMemo(
     () => (chatHistory || []).some(
@@ -179,6 +197,7 @@ export default function AiCluster({
       try {
         await saveDevNote({ text: noteText });
         setChatInput('');
+        resetInputHeight();
         showDevToast('Nota salvata');
       } catch (err) {
         console.error('[DevTools] saveDevNote failed', err);
@@ -188,8 +207,17 @@ export default function AiCluster({
     }
 
     onSendMessage(undefined, { fromInput: true });
+    resetInputHeight();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  }, [isProcessing, isNotesMode, chatInput, setChatInput, showDevToast, onSendMessage]);
+  }, [isProcessing, isNotesMode, chatInput, setChatInput, showDevToast, onSendMessage, resetInputHeight]);
+
+  const handleChatKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendFromInput();
+      e.target.style.height = 'auto';
+    }
+  }, [handleSendFromInput]);
 
   return (
     <div
@@ -604,9 +632,10 @@ export default function AiCluster({
               </div>
             ) : null}
           </div>
-          <input
-            type="text"
-            className="chat-input"
+          <textarea
+            ref={chatTextareaRef}
+            rows={1}
+            className="chat-input resize-none overflow-hidden min-h-[44px] max-h-[150px]"
             placeholder={
               isNotesMode
                 ? 'Nota di sviluppo…'
@@ -616,14 +645,22 @@ export default function AiCluster({
             }
             value={chatInput}
             disabled={isProcessing && !isNotesMode}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                handleSendFromInput();
-              }
+            onChange={(e) => {
+              setChatInput(e.target.value);
+              handleInputResize(e);
             }}
-            style={{ flex: 1, background: 'transparent', border: 'none', color: '#fff', outline: 'none', minWidth: 0 }}
+            onKeyDown={handleChatKeyDown}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: 'none',
+              color: '#fff',
+              outline: 'none',
+              minWidth: 0,
+              lineHeight: 1.4,
+              paddingTop: 10,
+              paddingBottom: 10,
+            }}
           />
           <KentuButton
             variant="primary"

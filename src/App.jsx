@@ -3,7 +3,6 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import SalaComandi from './SalaComandi';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import { ChatOverlayProvider } from './contexts/ChatOverlayContext';
-import GlobalChatOverlay from './components/GlobalChatOverlay';
 
 export default function App() {
   return (
@@ -16,7 +15,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
-      <GlobalChatOverlay />
     </ChatOverlayProvider>
   );
 }
