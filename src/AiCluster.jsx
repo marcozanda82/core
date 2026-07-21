@@ -86,6 +86,7 @@ export default function AiCluster({
   commitMealBuilder,
   onManualShortcut,
   onRequestReport,
+  onRequestBarcodeScan,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -197,6 +198,13 @@ export default function AiCluster({
     setShowToolsMenu(false);
     onRequestReport?.();
   }, [onRequestReport]);
+
+  const handleBarcodeTool = useCallback(() => {
+    // 1. Chiudi menu Tools
+    setShowToolsMenu(false);
+    // 2–3. Chiudi chat + apri FastMealLogger con scanner (SalaComandi)
+    onRequestBarcodeScan?.();
+  }, [onRequestBarcodeScan]);
 
   const handleSendFromInput = useCallback(async () => {
     if (isProcessing) return;
@@ -651,6 +659,9 @@ export default function AiCluster({
               <div className="kentu-devtools-menu" role="menu">
                 <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
                   🧠 Analisi Oggi
+                </button>
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
+                  📷 Scanner Barcode
                 </button>
                 <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
                   📝 Modalità Note

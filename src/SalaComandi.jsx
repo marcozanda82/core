@@ -447,6 +447,7 @@ export default function SalaComandi() {
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
+  const [fastLoggerAutoOpenScanner, setFastLoggerAutoOpenScanner] = useState(false);
   const [mealToEdit, setMealToEdit] = useState(null);
   const [fastLoggerInitialSlot, setFastLoggerInitialSlot] = useState(null);
   /** Ghost meal in conferma: salvataggio = pasto reale + rimozione ghost dal log. */
@@ -2646,6 +2647,7 @@ export default function SalaComandi() {
 
   const closeFastLogger = useCallback(() => {
     setShowFastLogger(false);
+    setFastLoggerAutoOpenScanner(false);
     setMealToEdit(null);
     setEditingMealId(null);
     setFastLoggerInitialSlot(null);
@@ -6223,6 +6225,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     else openChat();
   }, [activeAction, closeChat, openChat]);
 
+  const handleRequestBarcodeScan = useCallback(() => {
+    closeChat();
+    setFastLoggerAutoOpenScanner(true);
+    openFastLoggerNew();
+  }, [closeChat, openFastLoggerNew]);
+
   const handleChatManualShortcut = useCallback(
     (actionId) => {
       closeChat();
@@ -8031,6 +8039,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             commitMealBuilder={commitMealBuilder}
             onManualShortcut={handleChatManualShortcut}
             onRequestReport={handleRequestDailyReport}
+            onRequestBarcodeScan={handleRequestBarcodeScan}
           />
           </Suspense>
         </div>
@@ -8942,6 +8951,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               : undefined)
           }
           initialMealTime={fastLoggerInitialMealTime}
+          autoOpenBarcodeScanner={fastLoggerAutoOpenScanner}
+          onAutoOpenBarcodeScannerConsumed={() => setFastLoggerAutoOpenScanner(false)}
           onClose={closeFastLogger}
           onSave={handleFastLoggerSave}
           onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}

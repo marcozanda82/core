@@ -268,6 +268,8 @@ function FastMealLoggerContent({
   editingMealId,
   initialMealSlot,
   initialMealTime,
+  autoOpenBarcodeScanner = false,
+  onAutoOpenBarcodeScannerConsumed,
 }) {
   const [selectedSlot, setSelectedSlot] = useState(
     () => initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
@@ -525,6 +527,13 @@ function FastMealLoggerContent({
     onAcquireExternalFood,
     onFoodResolved: handleFoodSelection,
   });
+
+  useEffect(() => {
+    if (!autoOpenBarcodeScanner) return;
+    setScannerError('');
+    openScanner();
+    onAutoOpenBarcodeScannerConsumed?.();
+  }, [autoOpenBarcodeScanner, openScanner, onAutoOpenBarcodeScannerConsumed, setScannerError]);
 
   useEffect(() => {
     if (prefillAppliedRef.current) return;
@@ -1816,6 +1825,8 @@ export default function FastMealLogger({
   editingMealId,
   initialMealSlot,
   initialMealTime,
+  autoOpenBarcodeScanner = false,
+  onAutoOpenBarcodeScannerConsumed,
 }) {
   const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb } = useFoodDb({ defer: false });
   const resolvedKentuItDb = loadedKentuItDb;
@@ -1868,6 +1879,8 @@ export default function FastMealLogger({
           editingMealId={editingMealId}
           initialMealSlot={initialMealSlot}
           initialMealTime={initialMealTime}
+          autoOpenBarcodeScanner={autoOpenBarcodeScanner}
+          onAutoOpenBarcodeScannerConsumed={onAutoOpenBarcodeScannerConsumed}
         />
         </div>
       </MealComposerProvider>

@@ -40,6 +40,7 @@ export default function KentuChatUI({
   commitMealBuilder,
   onManualShortcut,
   onRequestReport,
+  onRequestBarcodeScan,
 }) {
   return (
     <div
@@ -91,6 +92,7 @@ export default function KentuChatUI({
         commitMealBuilder={commitMealBuilder}
         onManualShortcut={onManualShortcut}
         onRequestReport={onRequestReport}
+        onRequestBarcodeScan={onRequestBarcodeScan}
       />
     </div>
   );
