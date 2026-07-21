@@ -314,10 +314,17 @@ export function useCommandTerminal({
 
       const userBubbleText =
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
+      const hideUserPrompt = Boolean(options?.isHiddenUserMessage);
+      const visibleBubbleText = hideUserPrompt
+        ? String(options?.visibleUserText || '📊 Analizzo la giornata...').trim()
+        : userBubbleText;
       const priorHistory = chatHistoryRef.current || [];
-      setChatHistoryRef.current((prev) => [...(prev || []), { sender: 'user', text: userBubbleText }]);
-      // History completa (inclusi mealProposals/mealDraft): serializzazione memoria in
-      // buildGeminiContentsFromChatHistory prima della chiamata LLM.
+      setChatHistoryRef.current((prev) => [
+        ...(prev || []),
+        { sender: 'user', text: visibleBubbleText },
+      ]);
+      // Per richieste con contesto nascosto: in chat resta il testo pulito;
+      // all'LLM arriva resolvedText (richiesta utente) + systemInstructionExtra.
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
@@ -332,15 +339,17 @@ export function useCommandTerminal({
         const fallbackText =
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
+        const forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
         }, {
           images: attachedImages,
-          intent: imageOnly ? 'LOG_SLEEP' : undefined,
+          intent: forcedIntent || (imageOnly ? 'LOG_SLEEP' : undefined),
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
+          systemInstructionExtra: options?.systemInstructionExtra || null,
         });
         if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
           onWipMealSeedRef.current(result.wipSeed);

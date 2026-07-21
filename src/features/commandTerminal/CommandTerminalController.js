@@ -45,6 +45,7 @@ import {
   ensureMealProposalsForUpdateLoggedMeal,
   extractTargetFoodFromQuery,
   generateConsultantPrompt,
+  generateConsultantSystemInstruction,
   isGenericMealSuggestionQuery,
   sanitizeMealProposals,
   sanitizeSuggestedAction,
@@ -1500,12 +1501,18 @@ export class CommandTerminalController {
 
     const consultantPrompt = generateConsultantPrompt(adviceContext, targetFood);
 
+    const extraSystem = String(options?.systemInstructionExtra || '').trim();
+    const consultantSystemInstruction = extraSystem
+      ? `${generateConsultantSystemInstruction()}\n\n${extraSystem}`
+      : undefined;
+
     try {
       const { adviceMessage, suggestedAction: rawAction, mealProposals: rawProposals, suggestions: rawSuggestions, model } =
         await this.llmClient.generateConsultantResponse({
           prompt: consultantPrompt,
           temperature: 0.35,
           chatHistory,
+          ...(consultantSystemInstruction ? { systemInstruction: consultantSystemInstruction } : {}),
         });
       const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
       let mealProposals = sanitizeMealProposals(rawProposals, adviceContext);

@@ -250,16 +250,8 @@ export default function AiCluster({
             ) : null}
           </div>
         </div>
-        <KentuButton
-          variant="ghost"
-          className="kentu-btn--icon"
-          type="button"
-          onClick={() => onManualShortcut?.('menu')}
-          aria-label="Menu principale"
-          title="Menu principale"
-        >
-          <span aria-hidden="true" style={{ fontSize: '1.35rem', lineHeight: 1 }}>☰</span>
-        </KentuButton>
+        {/* Spacer simmetrico al back button (niente menu in header) */}
+        <div style={{ width: 40, flexShrink: 0 }} aria-hidden />
       </header>
 
       <div
@@ -621,6 +613,15 @@ export default function AiCluster({
                 <span className="mt-1 text-[0.65rem] font-medium">{item.label}</span>
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => onManualShortcut?.('menu')}
+              className="flex min-w-[72px] flex-shrink-0 flex-col items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-500/40 hover:bg-zinc-800"
+              aria-label="Menu principale"
+            >
+              <span className="text-xl" aria-hidden>☰</span>
+              <span className="mt-1 text-[0.65rem] font-medium">Menu</span>
+            </button>
           </div>
         ) : null}
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>

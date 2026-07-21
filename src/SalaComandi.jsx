@@ -5702,20 +5702,23 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleRequestDailyReport = useCallback(() => {
     const payload = generateDailySnapshot();
-    const aiPrompt =
-      "[SISTEMA: Modalità Report Serale. Agisci come un coach esperto. Analizza i seguenti dati della giornata dell'utente. "
-      + 'Restituisci un referto breve, discorsivo ma analitico, evidenziando correlazioni '
-      + '(es. deficit calorico vs stanchezza da allenamento). Usa markdown, sii diretto e professionale. DATI: '
-      + JSON.stringify(payload)
-      + ']';
+    const systemInstructionExtra =
+      'Sei un coach esperto. Modalità Report Serale. '
+      + 'Analizza questi dati JSON della giornata e restituisci un referto breve, discorsivo ma analitico in markdown, '
+      + 'evidenziando correlazioni (es. deficit calorico vs stanchezza da allenamento). Sii diretto e professionale. '
+      + `DATI_GIORNATA: ${JSON.stringify(payload)}`;
 
     setActiveAction('ai_chat');
     setIsDrawerOpen(false);
-    void sendMessage(aiPrompt, {
-      isHiddenUserMessage: true,
-      visibleUserText: 'Genera il report della mia giornata basato sui dati attuali.',
-      intent: 'ASK_DAY_REVIEW',
-    });
+    void sendMessage(
+      'Genera il report analitico della mia giornata basandoti sui dati attuali.',
+      {
+        isHiddenUserMessage: true,
+        visibleUserText: '📊 Analizzo la giornata...',
+        intent: 'ASK_DAY_REVIEW',
+        systemInstructionExtra,
+      },
+    );
   }, [generateDailySnapshot, sendMessage]);
 
   const renderCustomizedLabel = useMemo(
