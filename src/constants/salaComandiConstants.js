@@ -4,13 +4,12 @@ export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 /** Tab bottom bar persistibili in localStorage (include viste fuori dallo swipe). */
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER, 'pianifica'];
 
-/** Voci barra inferiore (sempre tutte visibili; non condizionare al caricamento dati). */
+/** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome). */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
   { id: 'bussola', label: 'Trend', icon: '❤️' },
   { id: 'pianifica', label: 'Pianifica', icon: '🗓️' },
-  { id: 'menu', label: 'Menu', icon: '≡' },
 ];
 
 export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';

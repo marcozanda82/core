@@ -5710,7 +5710,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       + ']';
 
     setActiveAction('ai_chat');
-    setIsDrawerOpen(true);
+    setIsDrawerOpen(false);
     void sendMessage(aiPrompt, {
       isHiddenUserMessage: true,
       visibleUserText: 'Genera il report della mia giornata basato sui dati attuali.',
@@ -6194,19 +6194,44 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   // ========================================================
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
-  /** Barra Kentu + navigazione: sempre montata dopo login, anche durante caricamento dati (Bussola sempre visibile). */
+  /** Barra Arc Reactor: sempre montata dopo login (anche durante caricamento dati). */
   const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null;
+
+  const openChat = useCallback(() => {
+    setIsDrawerOpen(false);
+    setIsFabOpen(false);
+    setActiveAction('ai_chat');
+  }, []);
+
+  const closeChat = useCallback(() => {
+    setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
+  }, []);
+
+  const handleChatManualShortcut = useCallback(
+    (actionId) => {
+      closeChat();
+      if (actionId === 'menu') {
+        setActiveAction('menu_secondary');
+        setIsDrawerOpen(true);
+        return;
+      }
+      if (actionId === 'sleep') {
+        setShowSleepPrompt(true);
+        return;
+      }
+      if (actionId === 'weight') {
+        setShowWeightModal(true);
+        return;
+      }
+      handleAddEventMenuItem(actionId === 'pasto' ? 'meal' : actionId, 'chat_shortcut');
+    },
+    [closeChat, handleAddEventMenuItem],
+  );
+
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
     <AppBottomNavigation
       kentuChatNotificationBadge={kentuChatNotificationBadge}
-      setActiveAction={setActiveAction}
-      setIsDrawerOpen={setIsDrawerOpen}
-      isFabOpen={isFabOpen}
-      trackEventUsage={trackEventUsage}
-      handleAddEventMenuItem={handleAddEventMenuItem}
-      setIsFabOpen={setIsFabOpen}
-      mostUsedEventButtons={mostUsedEventButtons}
-      setShowChoiceModal={setShowChoiceModal}
+      openChat={openChat}
       BOTTOM_NAV_ITEMS={BOTTOM_NAV_ITEMS}
       handleBottomNavTabSelect={handleBottomNavTabSelect}
       activeBottomTab={activeBottomTab}
@@ -6412,7 +6437,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           role="status"
           style={{
             position: 'fixed',
-            bottom: 'calc(80px + 75px + env(safe-area-inset-bottom, 0px))',
+            bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 100026,
@@ -6488,7 +6513,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <div
         key={activeBottomTab}
         className={`main-tab-swipe-area ${slideDirection}`}
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)', boxSizing: 'border-box', width: '100%' }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', width: '100%' }}
         onTouchStart={handleMainTabTouchStart}
         onTouchMove={handleMainTabTouchMove}
         onTouchEnd={handleMainTabTouchEnd}
@@ -7027,14 +7052,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               className="flex w-full flex-col gap-2 box-border shrink-0"
               style={{ width: '100%', padding: '0 14px', boxSizing: 'border-box' }}
             >
-              <button
-                type="button"
-                onClick={handleRequestDailyReport}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/30 bg-slate-900/70 px-3 py-2.5 text-sm font-semibold text-cyan-100 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 active:scale-[0.99]"
-              >
-                <span aria-hidden="true">📊</span>
-                Analisi Giornata
-              </button>
               <HomeNutrientStrip
                 totali={totali}
                 targets={userTargets}
@@ -7275,7 +7292,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)',
+            paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
             boxSizing: 'border-box',
             width: '100%',
           }}
@@ -7331,7 +7348,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             WebkitOverflowScrolling: 'touch',
             width: '100%',
             boxSizing: 'border-box',
-            paddingBottom: 'calc(90px + env(safe-area-inset-bottom, 0px) + 78px)',
+            paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
           }}
         >
           <Suspense fallback={<KentuLazySectionFallback label="Planner settimanale…" />}>
@@ -7913,17 +7930,31 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       </div>
 
-        {/* VISTA CHAT AI — sempre montata; visibilità via transform (apertura istantanea) */}
-        <div
-          className={[
-            'absolute inset-0 z-[2] flex min-h-0 flex-col overflow-hidden bg-[#0f0f0f]',
-            'transform transition-transform duration-300 ease-in-out will-change-transform',
-            activeAction === 'ai_chat'
-              ? 'translate-y-0'
-              : 'translate-y-full pointer-events-none',
-          ].join(' ')}
-          aria-hidden={activeAction !== 'ai_chat'}
-        >
+      </MenuDrawerShell>
+
+      {/* Chat Bottom Sheet — sempre montata; sale dal basso (mobile-first) */}
+      <div
+        className={[
+          'fixed inset-0 z-[100000] bg-black/60 transition-opacity duration-300',
+          activeAction === 'ai_chat' ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        ].join(' ')}
+        onClick={closeChat}
+        aria-hidden={activeAction !== 'ai_chat'}
+      />
+      <div
+        className={[
+          'fixed inset-x-0 bottom-0 z-[100001] flex h-[min(85vh,100dvh)] w-full max-h-[85vh] flex-col',
+          'rounded-t-3xl bg-zinc-950 shadow-2xl',
+          'transform transition-transform duration-300 ease-in-out will-change-transform',
+          activeAction === 'ai_chat' ? 'translate-y-0' : 'translate-y-full pointer-events-none',
+        ].join(' ')}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chat Kentu"
+        aria-hidden={activeAction !== 'ai_chat'}
+      >
+        <div className="mx-auto mt-3 mb-1 h-1.5 w-12 shrink-0 rounded-full bg-zinc-600" aria-hidden />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
           <KentuChatUI
             chatHistory={chatHistory}
             chatInput={commandChatInput}
@@ -7947,16 +7978,17 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
             onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}
             onSaveNewFoodEntry={handleSaveNewFoodEntry}
-            onBack={() => setActiveAction(null)}
+            onBack={closeChat}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}
             mealBuilder={mealBuilder}
             cancelMealBuilder={cancelMealBuilder}
             commitMealBuilder={commitMealBuilder}
+            onManualShortcut={handleChatManualShortcut}
+            onRequestReport={handleRequestDailyReport}
           />
         </div>
-
-      </MenuDrawerShell>
+      </div>
 
       {isAiCoachSuggestionModalOpen && aiCoachSuggestion
         ? createPortal(

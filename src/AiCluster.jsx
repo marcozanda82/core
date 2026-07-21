@@ -17,8 +17,7 @@ import {
   KentuInsightCard,
 } from './components/kentuos/KentuOSUI';
 import {
-  extractLastUserAiPair,
-  saveAiErrorLog,
+  saveAiFeedback,
   saveDevNote,
 } from './utils/devToolsPersistence';
 
@@ -85,6 +84,8 @@ export default function AiCluster({
   mealBuilder = null,
   cancelMealBuilder,
   commitMealBuilder,
+  onManualShortcut,
+  onRequestReport,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -168,25 +169,34 @@ export default function AiCluster({
   const handleActivateNotesMode = useCallback(() => {
     setIsNotesMode(true);
     setShowToolsMenu(false);
-  }, []);
+    showDevToast('Modalità note attiva');
+  }, [showDevToast]);
 
-  const handleLogAIError = useCallback(async () => {
+  const handleFlagAnomaly = useCallback(async () => {
     try {
-      const { userPrompt, aiResponse } = extractLastUserAiPair(chatHistory);
-      if (!userPrompt && !aiResponse) {
-        showDevToast('Nessun messaggio da registrare');
+      const lastMessages = (chatHistory || []).slice(-2);
+      if (!lastMessages.length) {
+        showDevToast('Nessuno scambio da segnalare');
         setShowToolsMenu(false);
         return;
       }
-      await saveAiErrorLog({ userPrompt, aiResponse });
-      showDevToast('Errore AI registrato');
+      await saveAiFeedback({
+        messages: lastMessages,
+        note: "Segnalato manualmente dall'utente per risposta anomala",
+      });
+      showDevToast('Segnalazione salvata');
     } catch (err) {
-      console.error('[DevTools] saveAiErrorLog failed', err);
-      showDevToast('Salvataggio errore fallito');
+      console.error('[DevTools] saveAiFeedback failed', err);
+      showDevToast('Segnalazione fallita');
     } finally {
       setShowToolsMenu(false);
     }
   }, [chatHistory, showDevToast]);
+
+  const handleRequestReportFromTools = useCallback(() => {
+    setShowToolsMenu(false);
+    onRequestReport?.();
+  }, [onRequestReport]);
 
   const handleSendFromInput = useCallback(async () => {
     if (isProcessing) return;
@@ -225,7 +235,7 @@ export default function AiCluster({
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
       <header className="kentu-os-header">
-        <KentuButton variant="ghost" className="kentu-btn--icon" onClick={onBack} aria-label="Menu">
+        <KentuButton variant="ghost" className="kentu-btn--icon" onClick={onBack} aria-label="Chiudi chat">
           <KentuIcon name="arrow-left" size={22} />
         </KentuButton>
         <div className="kentu-os-brand">
@@ -240,6 +250,16 @@ export default function AiCluster({
             ) : null}
           </div>
         </div>
+        <KentuButton
+          variant="ghost"
+          className="kentu-btn--icon"
+          type="button"
+          onClick={() => onManualShortcut?.('menu')}
+          aria-label="Menu principale"
+          title="Menu principale"
+        >
+          <span aria-hidden="true" style={{ fontSize: '1.35rem', lineHeight: 1 }}>☰</span>
+        </KentuButton>
       </header>
 
       <div
@@ -582,6 +602,27 @@ export default function AiCluster({
             </button>
           </div>
         ) : null}
+        {!isNotesMode ? (
+          <div className="flex w-full shrink-0 flex-nowrap gap-2 overflow-x-auto py-2 scrollbar-hide">
+            {[
+              { id: 'pasto', icon: '🍳', label: 'Pasto' },
+              { id: 'workout', icon: '🏋️', label: 'Workout' },
+              { id: 'sleep', icon: '😴', label: 'Sonno' },
+              { id: 'acqua', icon: '💧', label: 'Acqua' },
+              { id: 'weight', icon: '⚖️', label: 'Peso' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onManualShortcut?.(item.id === 'acqua' ? 'water' : item.id)}
+                className="flex min-w-[72px] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-500/40 hover:bg-zinc-800"
+              >
+                <span className="text-xl" aria-hidden>{item.icon}</span>
+                <span className="mt-1 text-[0.65rem] font-medium">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>
           <input
             type="file"
@@ -615,19 +656,22 @@ export default function AiCluster({
             <button
               type="button"
               className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
-              aria-label={isNotesMode ? 'Disattiva modalità note' : 'Dev Tools'}
+              aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
               aria-expanded={showToolsMenu}
               onClick={handleToolsButtonClick}
             >
-              <span aria-hidden="true">{isNotesMode ? '💡' : '🛠️'}</span>
+              {isNotesMode ? '📝' : '🛠️'}
             </button>
             {showToolsMenu ? (
               <div className="kentu-devtools-menu" role="menu">
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleLogAIError}>
-                  ⚠️ Log Ultimo Errore AI
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
+                  🧠 Analisi Oggi
                 </button>
                 <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
-                  💡 Attiva Modalità Note
+                  📝 Modalità Note
+                </button>
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
+                  ⚠️ Segnala Anomalia
                 </button>
               </div>
             ) : null}

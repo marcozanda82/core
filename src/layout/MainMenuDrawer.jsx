@@ -84,7 +84,7 @@ export default function MainMenuDrawer({
                 <span className="action-label" style={{ color: '#fbbf24' }}>Diario API</span>
               </button>
             ) : null}
-            <button type="button" className="action-btn" onClick={() => setActiveAction('ai_chat')} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
+            <button type="button" className="action-btn" onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(false); }} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
               {kentuChatNotificationBadge ? (
                 <span
                   aria-hidden

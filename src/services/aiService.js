@@ -1,6 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebaseConfig';
 import { recordUsage } from './apiUsageDiary';
+import { logSystemError } from '../utils/devToolsPersistence';
 
 const callAiFunction = httpsCallable(functions, 'callGemini');
 
@@ -95,6 +96,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
     result = await callAiFunction(payload);
   } catch (error) {
     console.error('[askAI] callable error', error?.code, error?.message, error?.details);
+    void logSystemError(error, 'Gemini API Call');
     unwrapCallableError(error);
   }
 

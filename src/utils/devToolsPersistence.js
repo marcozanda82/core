@@ -162,6 +162,56 @@ export async function saveAiErrorLog({ userPrompt, aiResponse, uid } = {}) {
 }
 
 /**
+ * Log silente errori di sistema (es. fallimento callGemini).
+ * RTDB: logs/system_errors/{pushId}
+ */
+export async function logSystemError(error, context = 'Gemini API Call') {
+  try {
+    const payload = {
+      timestamp: serverTimestamp(),
+      error: String(error?.message || error || 'Errore sconosciuto').trim() || 'Errore sconosciuto',
+      code: error?.code != null ? String(error.code) : null,
+      details:
+        error?.details != null
+          ? (typeof error.details === 'string' ? error.details : JSON.stringify(error.details))
+          : null,
+      context: String(context || 'Gemini API Call'),
+      uid: auth.currentUser?.uid || null,
+      route: typeof window !== 'undefined' ? window.location.pathname : '',
+    };
+    await push(ref(db, 'logs/system_errors'), payload);
+    return payload;
+  } catch (err) {
+    console.error('[DevTools] logSystemError failed', err);
+    return null;
+  }
+}
+
+/**
+ * Feedback utente su risposta AI anomala (ultimo scambio).
+ * RTDB: logs/ai_feedback/{pushId}
+ *
+ * @param {{ messages?: Array, note?: string, uid?: string | null }} params
+ */
+export async function saveAiFeedback({ messages, note, uid } = {}) {
+  const payload = {
+    timestamp: serverTimestamp(),
+    messages: Array.isArray(messages)
+      ? messages.map((m) => ({
+          sender: m?.sender ?? null,
+          text: String(m?.text || '').slice(0, 8000),
+        }))
+      : [],
+    note: String(note || "Segnalato manualmente dall'utente per risposta anomala").trim(),
+    uid: resolveUid(uid),
+    route: typeof window !== 'undefined' ? window.location.pathname : '',
+  };
+
+  await push(ref(db, 'logs/ai_feedback'), payload);
+  return payload;
+}
+
+/**
  * Estrae ultimo messaggio user e ultima risposta AI dalla cronologia chat.
  * @param {Array<{ sender?: string, text?: string }>} chatHistory
  */

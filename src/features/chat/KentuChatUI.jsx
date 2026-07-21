@@ -38,6 +38,8 @@ export default function KentuChatUI({
   mealBuilder = null,
   cancelMealBuilder,
   commitMealBuilder,
+  onManualShortcut,
+  onRequestReport,
 }) {
   return (
     <div
@@ -87,6 +89,8 @@ export default function KentuChatUI({
         mealBuilder={mealBuilder}
         cancelMealBuilder={cancelMealBuilder}
         commitMealBuilder={commitMealBuilder}
+        onManualShortcut={onManualShortcut}
+        onRequestReport={onRequestReport}
       />
     </div>
   );
