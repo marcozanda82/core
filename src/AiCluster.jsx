@@ -231,11 +231,11 @@ export default function AiCluster({
 
   return (
     <div
-      className="view-animate ai-cluster-root kentu-os"
+      className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3 py-3">
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-2">
+      <header className="flex shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-14">
           <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
             Kentu AI Workspace
           </span>
@@ -245,15 +245,6 @@ export default function AiCluster({
             </span>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex h-10 min-w-[40px] shrink-0 items-center justify-center rounded-lg px-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
-          aria-label="Chiudi chat"
-          title="Chiudi"
-        >
-          <span className="text-lg leading-none" aria-hidden>✕</span>
-        </button>
       </header>
 
       <div

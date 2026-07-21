@@ -2,12 +2,9 @@ import React from 'react';
 import { TrendingUp } from 'lucide-react';
 
 /**
- * Bottom Navigation "Arc Reactor": 4 tab + Kentu centrale sollevato.
- * La chat si apre dal bottone centrale (niente barra "Chiedi a Kentu" né FAB +).
+ * Bottom Navigation "Arc Reactor": 4 tab + slot centrale (Emblema flottante gestito da SalaComandi).
  */
 export default function BottomChrome({
-  kentuChatNotificationBadge,
-  openChat,
   BOTTOM_NAV_ITEMS,
   handleBottomNavTabSelect,
   activeBottomTab,
@@ -50,7 +47,6 @@ export default function BottomChrome({
       className="fixed bottom-0 left-0 right-0 z-40 h-16 w-full overflow-visible px-2 pb-[env(safe-area-inset-bottom,0px)]"
       style={{ boxSizing: 'border-box', overflow: 'visible' }}
     >
-      {/* Sfondo/blur isolati: non devono clippare il bottone centrale sollevato */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md"
@@ -58,32 +54,8 @@ export default function BottomChrome({
 
       <div className="relative z-10 flex h-full w-full items-center justify-around overflow-visible">
         {leftItems.map(renderTab)}
-
-        {/* Slot centrale — Arc Reactor / Kentu */}
-        <div className="relative flex flex-1 items-center justify-center overflow-visible">
-          <button
-            type="button"
-            onClick={() => openChat?.()}
-            aria-label="Kentu AI"
-            className="absolute left-1/2 -top-8 z-20 flex h-14 w-14 -translate-x-1/2 items-center justify-center border-none bg-transparent p-0 shadow-none focus:outline-none transition-transform active:scale-95"
-          >
-            {kentuChatNotificationBadge ? (
-              <span
-                aria-hidden
-                className="absolute right-0.5 top-0.5 z-10 h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.7)]"
-              />
-            ) : null}
-            <img
-              src="/EmblemaKbianca.png"
-              alt="Kentu"
-              width={56}
-              height={56}
-              decoding="async"
-              className="h-full w-full object-contain drop-shadow-lg"
-            />
-          </button>
-        </div>
-
+        {/* Slot centrale: spazio per Emblema flottante (fuori dalla nav) */}
+        <div className="relative flex flex-1 items-center justify-center overflow-visible" aria-hidden />
         {rightItems.slice(0, 2).map(renderTab)}
       </div>
     </nav>

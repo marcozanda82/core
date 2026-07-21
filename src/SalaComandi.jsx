@@ -855,7 +855,7 @@ export default function SalaComandi() {
       } else if (Number.isFinite(hoursDec) && hoursDec > 0) {
         setSleepFormDurationHours(Math.floor(hoursDec));
         setSleepFormDurationMinutes(Math.round((hoursDec % 1) * 60));
-      } else {
+    } else {
         const bed = Number(item.bedtime ?? item.sleepStart);
         if (Number.isFinite(bed) && Number.isFinite(wake)) {
           const inferred = computeSleepDurationHours(bed, wake);
@@ -2574,7 +2574,7 @@ export default function SalaComandi() {
       const equivalents = getEquivalentMealTypes(canonical);
       items = log.filter(
         (item) =>
-          (item.type === 'food' || item.type === 'recipe') &&
+            (item.type === 'food' || item.type === 'recipe') &&
           equivalents.includes(item.mealType)
       );
     }
@@ -2604,7 +2604,7 @@ export default function SalaComandi() {
         fatTotal: toPer100(portionFat),
       };
       return {
-        ...f,
+      ...f,
         type: f.type === 'recipe' ? 'recipe' : 'food',
         foodDbKey: dbKey,
         row,
@@ -3135,7 +3135,7 @@ Ottimo! Diario aggiornato. 🥗`;
         setDailyLog((prev) => {
           const next = replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood);
           syncDatiFirebase(next, manualNodesRef.current);
-          return next;
+        return next;
         });
       }
       return testoRispostaFood;
@@ -3694,35 +3694,35 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handlePlanningWizardConfirm,
     lastAgendaOptionsRef,
   } = useKentuMealHandlers({
-    auth,
-    db,
+      auth,
+      db,
     foodDb,
-    dailyLog,
-    manualNodes,
+      dailyLog,
+      manualNodes,
     simulatedLog,
     activeLog,
     fullHistory,
-    currentTrackerDate,
-    isSimulationMode,
+      currentTrackerDate,
+      isSimulationMode,
     dailyLogRef,
     manualNodesRef,
     scheduledWorkoutContextRef,
     currentTrackerDateRef,
     syncDatiFirebase,
-    predictMealType,
+      predictMealType,
     estraiDatiFoodDb,
     getAverageEstimate,
     parseFlexibleTimeToDecimal,
     parseTimeStrToDecimal,
     setChatHistory,
     setKentuDailyCalorieStrategy,
-    setDailyLog,
+      setDailyLog,
     setManualNodes,
-    setSimulatedLog,
+      setSimulatedLog,
     setPlanningWizardOverlayOpen,
     dismissKentuAgendaTrigger,
-    kentuDailyCalorieStrategy,
-    userTargets,
+      kentuDailyCalorieStrategy,
+      userTargets,
   });
 
   const planningWizardBurnedKcal = useMemo(
@@ -6205,7 +6205,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
   /** Barra Arc Reactor: sempre montata dopo login (anche durante caricamento dati). */
-  const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null;
+  const isChatOpen = activeAction === 'ai_chat';
+  const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null || isChatOpen;
 
   const openChat = useCallback(() => {
     setIsDrawerOpen(false);
@@ -6216,6 +6217,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const closeChat = useCallback(() => {
     setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
   }, []);
+
+  const toggleChat = useCallback(() => {
+    if (activeAction === 'ai_chat') closeChat();
+    else openChat();
+  }, [activeAction, closeChat, openChat]);
 
   const handleChatManualShortcut = useCallback(
     (actionId) => {
@@ -6240,13 +6246,44 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
     <AppBottomNavigation
-      kentuChatNotificationBadge={kentuChatNotificationBadge}
-      openChat={openChat}
       BOTTOM_NAV_ITEMS={BOTTOM_NAV_ITEMS}
       handleBottomNavTabSelect={handleBottomNavTabSelect}
       activeBottomTab={activeBottomTab}
     />
   );
+
+  const kentuEmblemFab =
+    authReady && isAuthenticated ? (
+      <button
+        type="button"
+        onClick={toggleChat}
+        className={[
+          'fixed left-1/2 z-[100010] flex -translate-x-1/2 items-center justify-center',
+          'border-none bg-transparent p-0 shadow-none focus:outline-none',
+          'transition-all duration-300 ease-in-out active:scale-95',
+          isChatOpen
+            ? 'top-[calc(1rem+env(safe-area-inset-top,0px))] bottom-auto h-14 w-14'
+            : 'bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] top-auto h-[72px] w-[72px]',
+        ].join(' ')}
+        aria-label={isChatOpen ? 'Chiudi chat' : 'Apri chat Kentu'}
+        aria-pressed={isChatOpen}
+      >
+        {kentuChatNotificationBadge && !isChatOpen ? (
+          <span
+            aria-hidden
+            className="absolute right-1 top-1 z-10 h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.7)]"
+          />
+        ) : null}
+        <img
+          src="/EmblemaKbianca.png"
+          alt="Kentu"
+          width={72}
+          height={72}
+          decoding="async"
+          className="h-full w-full object-contain drop-shadow-xl"
+        />
+      </button>
+    ) : null;
 
   let salaContent;
 
@@ -6492,15 +6529,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         accessory={
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {user?.uid && (
-              <WeeklyMetabolicIndicator
-                db={db}
-                user={user}
-                fullHistory={fullHistory}
-                userTargets={userTargets}
-                currentTrackerDate={currentTrackerDate}
-                isSimulationMode={isSimulationMode}
-                getTodayString={getTodayString}
-              />
+            <WeeklyMetabolicIndicator
+              db={db}
+              user={user}
+              fullHistory={fullHistory}
+              userTargets={userTargets}
+              currentTrackerDate={currentTrackerDate}
+              isSimulationMode={isSimulationMode}
+              getTodayString={getTodayString}
+            />
             )}
             <EnergyArcWidget
               variant="mini"
@@ -6714,19 +6751,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                   showMetabolicOverlay={true}
                   onMetabolicPhaseClick={() => setShowMetabolicSheet(true)}
                 />
-                <div
-                  style={{
-                    flexShrink: 0,
-                    position: 'relative',
-                    width: '100%',
-                    paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
-                    paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
-                    boxSizing: 'border-box',
-                    paddingTop: 6,
-                    zIndex: 10,
-                  }}
-                >
-                  <TimelineNodi
+              <div
+                style={{
+                  flexShrink: 0,
+                  position: 'relative',
+                  width: '100%',
+                  paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
+                  paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
+                  boxSizing: 'border-box',
+                  paddingTop: 6,
+                  zIndex: 10,
+                }}
+              >
+                <TimelineNodi
                   activeNodesWithStack={activeNodesWithStack}
                   chartUnit={chartUnit}
                   activeAction={activeAction}
@@ -7054,7 +7091,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                     </div>
                   </div>
                 </div>
-                </div>
+                      </div>
             );
           })()}
 
@@ -7091,8 +7128,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 }}
                 onCenterTap={() => setShowDiarySheet(true)}
               />
-            </div>
-          </div>
+                      </div>
+                    </div>
         </div>
       )}
 
@@ -7199,7 +7236,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               );
             })()}
           </div>
-        </div>
+      </div>
       )}
       {activeBottomTab === 'planning' && (
         <div
@@ -7292,7 +7329,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </Suspense>
         </div>
       )}
-      </div>
+        </div>
       )}
       {activeBottomTab === 'longevita' && (
         <div
@@ -7320,28 +7357,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             }}
           >
             <Suspense fallback={<KentuLazySectionFallback label="Longevità…" />}>
-            <LongevityView
-              data={longevityData}
-              minimalOnly={false}
-              showPriorityFocus
-              userAge={userAge}
-              bodyMetricsHistory={bodyMetricsHistory}
-              scoreHistory={longevityScoreHistory}
-              periodAnchorDate={currentTrackerDate}
-              fullHistory={fullHistory}
-              userTargets={userTargets}
-              userProfile={userProfile}
-              onUpdateTDEE={handleUpdateTDEE}
-              tdeeHistory={tdeeHistory}
-              predictionCalibration={predictiveCalibration}
-              onBalanceCsvImport={handleCSVUpload}
-              onQuickWeighInSubmit={handleQuickWeighInFromHistory}
-              onDeleteBodyMetrics={handleDeleteBodyMetrics}
-              pastDaysStorico={pastDaysStorico}
-              weeklyTrendData={weeklyTrendData}
-              weeklyMicrosTotals={weeklyMicrosTotals}
-              weeklyKcalChartReference={weeklyKcalChartReference}
-            />
+          <LongevityView
+            data={longevityData}
+            minimalOnly={false}
+            showPriorityFocus
+            userAge={userAge}
+            bodyMetricsHistory={bodyMetricsHistory}
+            scoreHistory={longevityScoreHistory}
+            periodAnchorDate={currentTrackerDate}
+            fullHistory={fullHistory}
+            userTargets={userTargets}
+            userProfile={userProfile}
+            onUpdateTDEE={handleUpdateTDEE}
+            tdeeHistory={tdeeHistory}
+            predictionCalibration={predictiveCalibration}
+            onBalanceCsvImport={handleCSVUpload}
+            onQuickWeighInSubmit={handleQuickWeighInFromHistory}
+            onDeleteBodyMetrics={handleDeleteBodyMetrics}
+            pastDaysStorico={pastDaysStorico}
+            weeklyTrendData={weeklyTrendData}
+            weeklyMicrosTotals={weeklyMicrosTotals}
+            weeklyKcalChartReference={weeklyKcalChartReference}
+          />
             </Suspense>
           </div>
         </div>
@@ -7370,7 +7407,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onSaveSuccess={() => setActiveBottomTab('oggi')}
           />
           </Suspense>
-        </div>
+      </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
@@ -7524,7 +7561,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               expandedStoricoDate={expandedStoricoDate}
               setExpandedStoricoDate={setExpandedStoricoDate}
               fullHistory={fullHistory}
-              decimalToTimeStr={decimalToTimeStr}
+          decimalToTimeStr={decimalToTimeStr}
               onUpdateWorkoutQuestionnaire={handleStoricoUpdateWorkoutQuestionnaire}
               onSaveSleep={handleStoricoSaveSleep}
             />
@@ -7533,8 +7570,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
         {/* DEV CONSOLE — fullscreen admin overlay */}
         {activeAction === 'dev_console' && createPortal(
-          <div
-            style={{
+                                <div
+                                  style={{
               position: 'fixed',
               inset: 0,
               width: '100dvw',
@@ -7554,8 +7591,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 <DevConsoleView
                   uid={userUid}
                   onBack={() => setActiveAction('menu_secondary')}
-                />
-              </div>
+              />
+            </div>
             </Suspense>
           </div>,
           document.body,
@@ -8319,7 +8356,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       {showStrategicPlanner && (
         <Suspense fallback={<KentuLazySectionFallback label="Planner strategico…" />}>
-        <StrategicPlannerOverlay
+      <StrategicPlannerOverlay
         isOpen={showStrategicPlanner}
         onClose={() => setShowStrategicPlanner(false)}
         strategicPlan={strategicPlan}
@@ -8929,6 +8966,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         <>
           <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} phrase={introPhrase} />
           {salaContent}
+          {kentuEmblemFab}
         </>
       </WipMealProvider>
     </UserNutritionGoalsProvider>
