@@ -234,34 +234,34 @@ export default function AiCluster({
       className="view-animate ai-cluster-root kentu-os"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="kentu-os-header">
-        <KentuButton variant="ghost" className="kentu-btn--icon" onClick={onBack} aria-label="Chiudi chat">
-          <KentuIcon name="arrow-left" size={22} />
-        </KentuButton>
-        <div className="kentu-os-brand">
-          <img src="/nuovo%20logo%20trasparente2.png" alt="Kentu" decoding="async" />
-          <div
-            className={`kentu-os-status${introPhrase ? ' kentu-os-status--intro' : ''}`}
-            title={introPhrase || undefined}
-          >
-            <span className="kentu-os-status__pulse" aria-hidden />
-            {introPhrase ? (
-              <span className="kentu-intro-phrase-text kentu-intro-phrase-text--glow">{introPhrase}</span>
-            ) : null}
-          </div>
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-800 px-3 py-3">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-2">
+          <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
+            Kentu AI Workspace
+          </span>
+          {introPhrase ? (
+            <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
+              {introPhrase}
+            </span>
+          ) : null}
         </div>
-        {/* Spacer simmetrico al back button (niente menu in header) */}
-        <div style={{ width: 40, flexShrink: 0 }} aria-hidden />
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-10 min-w-[40px] shrink-0 items-center justify-center rounded-lg px-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+          aria-label="Chiudi chat"
+          title="Chiudi"
+        >
+          <span className="text-lg leading-none" aria-hidden>✕</span>
+        </button>
       </header>
 
       <div
-        className="chat-container"
+        className="chat-container flex min-h-0 flex-1 flex-col"
         style={{
-          flex: 1,
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          height: 'auto',
         }}
       >
         <WipMealCartBar
@@ -271,7 +271,7 @@ export default function AiCluster({
           onRemoveItem={onRemoveWipItem}
           onClear={onClearWipMeal}
         />
-        <div className="chat-messages" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
+        <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
           {chatHistory.map((msg, idx) => (
             <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
               {msg.sender === 'ai' && msg.mealProposal && !msg.isTyping ? (
@@ -522,6 +522,7 @@ export default function AiCluster({
           ) : null}
           <div ref={chatEndRef} />
         </div>
+        <div className="flex shrink-0 flex-col">
         {chatImages.length > 0 && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>
             {chatImages.map((imgSrc, index) => (
@@ -602,6 +603,7 @@ export default function AiCluster({
               { id: 'sleep', icon: '😴', label: 'Sonno' },
               { id: 'acqua', icon: '💧', label: 'Acqua' },
               { id: 'weight', icon: '⚖️', label: 'Peso' },
+              { id: 'menu', icon: '☰', label: 'Menu' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -613,15 +615,6 @@ export default function AiCluster({
                 <span className="mt-1 text-[0.65rem] font-medium">{item.label}</span>
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => onManualShortcut?.('menu')}
-              className="flex min-w-[72px] flex-shrink-0 flex-col items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-500/40 hover:bg-zinc-800"
-              aria-label="Menu principale"
-            >
-              <span className="text-xl" aria-hidden>☰</span>
-              <span className="mt-1 text-[0.65rem] font-medium">Menu</span>
-            </button>
           </div>
         ) : null}
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>
@@ -721,6 +714,7 @@ export default function AiCluster({
               {devToolsToast}
             </div>
           ) : null}
+        </div>
         </div>
       </div>
     </div>

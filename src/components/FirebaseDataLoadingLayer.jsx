@@ -4,8 +4,10 @@ import { takeNextKentuIntroPhrase } from '../kentuIntroPhrases';
 import { FIREBASE_LOAD_OVERLAY_FADE_MS } from '../constants/salaComandiConstants';
 
 /** Overlay fullscreen: unico piano visibile finché auth/data non sono pronti per la dashboard/login. */
-export default function FirebaseDataLoadingLayer({ blocking }) {
-  const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
+export default function FirebaseDataLoadingLayer({ blocking, phrase }) {
+  const [introPhrase] = useState(
+    () => (typeof phrase === 'string' && phrase.trim() ? phrase : takeNextKentuIntroPhrase()),
+  );
   const [mounted, setMounted] = useState(false);
   const [opaque, setOpaque] = useState(true);
 

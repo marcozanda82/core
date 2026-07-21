@@ -1817,7 +1817,7 @@ export default function FastMealLogger({
   initialMealSlot,
   initialMealTime,
 }) {
-  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb } = useFoodDb();
+  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb } = useFoodDb({ defer: false });
   const resolvedKentuItDb = loadedKentuItDb;
   const resolvedGlobalDb = masterDbProp ?? loadedGlobalDb;
   const composerInitialMealTime = useMemo(() => {

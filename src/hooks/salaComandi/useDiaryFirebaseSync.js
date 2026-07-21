@@ -5,6 +5,7 @@ import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import { writeTodayTrackerLocalCache } from '../../utils/trackerCacheUtils';
 import { stripUndefined } from '../../utils/firebasePayloadUtils';
 import { dayHasFoodLog } from '../../utils/dayTrackingStatus';
+import { scheduleAfterPaint } from '../../utils/scheduleAfterPaint';
 import {
   TRACKER_STORICO_KEY,
   normalizeLogData,
@@ -73,6 +74,7 @@ export function useDiaryFirebaseSync({
 
     let cancelled = false;
     let unsubToday = null;
+    const backgroundCancels = [];
     const today = getTodayString();
     const basePath = `users/${user.uid}/tracker_data`;
     const todayRef = ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`);
@@ -175,14 +177,18 @@ export function useDiaryFirebaseSync({
         setIsInitialLoadComplete(true);
         attachTodayLiveListener();
 
-        get(ref(db, basePath))
-          .then((histSnap) => {
-            if (cancelled) return;
-            const tree = histSnap.exists() ? histSnap.val() : null;
-            setFullStorico(tree);
-            setFullHistory(tree || {});
-          })
-          .catch((err) => console.warn('tracker_data background load:', err));
+        // Storico completo: dopo il primo paint della dashboard (non blocca TTI).
+        const cancelHist = scheduleAfterPaint(() => {
+          get(ref(db, basePath))
+            .then((histSnap) => {
+              if (cancelled) return;
+              const tree = histSnap.exists() ? histSnap.val() : null;
+              setFullStorico(tree);
+              setFullHistory(tree || {});
+            })
+            .catch((err) => console.warn('tracker_data background load:', err));
+        }, { timeout: 4000 });
+        backgroundCancels.push(cancelHist);
       })
       .catch((err) => {
         console.warn('Bootstrap load failed:', err);
@@ -192,44 +198,55 @@ export function useDiaryFirebaseSync({
         attachTodayLiveListener();
       });
 
-    get(ref(db, `users/${user.uid}/physiology_model`)).then((physSnap) => {
-      if (cancelled || !physSnap.exists()) return;
-      const data = physSnap.val();
-      const { lastCalibrationWeek: savedCalWeek, ...model } = data;
-      if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
-      if (model && typeof model === 'object') {
-        setUserModel((prev) => ({
-          ...DEFAULT_USER_MODEL,
-          ...model,
-          caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
-          carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
-          stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
-          hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
-          recoveryRate: clampModelValue(model.recoveryRate ?? 1),
-        }));
-      }
-    });
-
-    get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
-      if (cancelled) return;
-      if (!s.exists()) return;
-      const val = s.val();
-      if (!val || typeof val !== 'object') {
-        setFoodDb({});
-        return;
-      }
-      const enriched = {};
-      Object.keys(val).forEach((k) => {
-        const row = val[k];
-        if (!row || typeof row !== 'object') return;
-        enriched[k] = row.isRecipe === true || row.type === 'recipe' ? row : enrichDbRowWithFoodUnits(row, k);
+    // Physiology + food DB personale: non necessari per il primo frame della home.
+    const cancelSecondary = scheduleAfterPaint(() => {
+      get(ref(db, `users/${user.uid}/physiology_model`)).then((physSnap) => {
+        if (cancelled || !physSnap.exists()) return;
+        const data = physSnap.val();
+        const { lastCalibrationWeek: savedCalWeek, ...model } = data;
+        if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
+        if (model && typeof model === 'object') {
+          setUserModel((prev) => ({
+            ...DEFAULT_USER_MODEL,
+            ...model,
+            caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
+            carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
+            stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
+            hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
+            recoveryRate: clampModelValue(model.recoveryRate ?? 1),
+          }));
+        }
       });
-      setFoodDb(enriched);
-    });
+
+      get(ref(db, `${basePath}/trackerFoodDatabase`)).then((s) => {
+        if (cancelled) return;
+        if (!s.exists()) return;
+        const val = s.val();
+        if (!val || typeof val !== 'object') {
+          setFoodDb({});
+          return;
+        }
+        const enriched = {};
+        Object.keys(val).forEach((k) => {
+          const row = val[k];
+          if (!row || typeof row !== 'object') return;
+          enriched[k] = row.isRecipe === true || row.type === 'recipe' ? row : enrichDbRowWithFoodUnits(row, k);
+        });
+        setFoodDb(enriched);
+      });
+    }, { timeout: 3500 });
+    backgroundCancels.push(cancelSecondary);
 
     return () => {
       cancelled = true;
       unsubToday?.();
+      backgroundCancels.forEach((cancel) => {
+        try {
+          cancel?.();
+        } catch {
+          /* ignore */
+        }
+      });
     };
   }, [user]);
 

@@ -169,7 +169,9 @@ async function fetchKentuJson(url) {
  *
  * @returns {Promise<{ kentuItDb: Record<string, object>, globalDb: Record<string, object>, masterDb: Record<string, object> }>}
  */
-export async function loadKentuDatabases() {
+let kentuDatabasesPromise = null;
+
+async function loadKentuDatabasesUncached() {
   const empty = { kentuItDb: {}, globalDb: {}, masterDb: {} };
 
   try {
@@ -184,10 +186,16 @@ export async function loadKentuDatabases() {
       }),
     ]);
 
+    // Yield so first paint / dashboard interactions aren't blocked by index work.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const kentuItRecords = kentuItJson != null ? extractRecords(kentuItJson) : [];
     const globalRecords = globalJson != null ? extractRecords(globalJson) : [];
 
     const kentuItDb = indexRecords(kentuItRecords, FOOD_DB_SOURCE.KENTU_IT);
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     const globalDbRaw = indexRecords(globalRecords, FOOD_DB_SOURCE.GLOBAL);
 
     const globalDb = { ...globalDbRaw };
@@ -209,4 +217,14 @@ export async function loadKentuDatabases() {
     console.error('[foodLoader] failed to load Kentu databases', error);
     return empty;
   }
+}
+
+export function loadKentuDatabases() {
+  if (!kentuDatabasesPromise) {
+    kentuDatabasesPromise = loadKentuDatabasesUncached().catch((error) => {
+      kentuDatabasesPromise = null;
+      throw error;
+    });
+  }
+  return kentuDatabasesPromise;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadKentuDatabases } from './foodLoader';
+import { scheduleAfterPaint } from './utils/scheduleAfterPaint';
 
 const EMPTY_DBS = {
   kentuItDb: {},
@@ -7,15 +8,26 @@ const EMPTY_DBS = {
   masterDb: {},
 };
 
-export function useFoodDb() {
+/**
+ * Loads the large Kentu master food JSON off the critical startup path.
+ * Default: defer until after first paint (+ idle when available).
+ * Pass `enabled: false` to skip until a feature needs the DB.
+ */
+export function useFoodDb({ enabled = true, defer = true } = {}) {
   const [kentuItDb, setKentuItDb] = useState(EMPTY_DBS.kentuItDb);
   const [globalDb, setGlobalDb] = useState(EMPTY_DBS.globalDb);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(Boolean(enabled));
 
   useEffect(() => {
+    if (!enabled) {
+      setIsLoading(false);
+      return undefined;
+    }
+
     let cancelled = false;
 
     const load = async () => {
+      if (cancelled) return;
       setIsLoading(true);
       try {
         const data = await loadKentuDatabases();
@@ -40,12 +52,20 @@ export function useFoodDb() {
       }
     };
 
-    load();
+    const cancelSchedule = defer
+      ? scheduleAfterPaint(() => {
+          void load();
+        }, { timeout: 3500 })
+      : (() => {
+          void load();
+          return () => {};
+        })();
 
     return () => {
       cancelled = true;
+      cancelSchedule();
     };
-  }, []);
+  }, [enabled, defer]);
 
   return {
     kentuItDb,

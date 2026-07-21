@@ -166,7 +166,6 @@ import { buildProteinDetailsData } from './features/nutrition/buildProteinDetail
 import { buildMineralsDetailsData } from './features/nutrition/buildMineralsDetailsData';
 import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
-import KentuChatUI from './features/chat/KentuChatWithWipMeal';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
 import DateCalendarOverlay from './features/salaComandi/overlays/DateCalendarOverlay';
@@ -402,6 +401,7 @@ const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/Biochemic
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
 const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
 const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
+const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -438,6 +438,11 @@ export default function SalaComandi() {
   const timelineStripPreviewDepsRef = useRef({});
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
+  /** Chat montata solo dalla prima apertura in poi (evita costo AiCluster all'avvio). */
+  const [chatShellMounted, setChatShellMounted] = useState(false);
+  useEffect(() => {
+    if (activeAction === 'ai_chat') setChatShellMounted(true);
+  }, [activeAction]);
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
@@ -689,7 +694,7 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
-  const { masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb();
+  const { masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true });
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -1337,6 +1342,8 @@ export default function SalaComandi() {
 
   const calendarZoneByDate = useMemo(() => {
     const out = {};
+    // Calcolo 60× risk matrix: solo quando il calendario è aperto (evita jank post-storico).
+    if (!showDateCalendarModal) return out;
     if (!fullHistory || typeof fullHistory !== 'object' || !userTargets) return out;
     const anchor = getTodayString();
     for (let i = 0; i < 60; i += 1) {
@@ -1351,7 +1358,7 @@ export default function SalaComandi() {
       }
     }
     return out;
-  }, [fullHistory, userTargets]);
+  }, [fullHistory, userTargets, showDateCalendarModal]);
 
   const calendarGridDays = useMemo(() => {
     const [yy, mm] = String(calendarMonthIso || '').split('-').map(Number);
@@ -7935,19 +7942,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       </MenuDrawerShell>
 
-      {/* Chat Bottom Sheet — sempre montata; sale dal basso (mobile-first) */}
+      {/* Chat Full-Screen — montata dalla prima apertura; slide dal basso */}
+      {chatShellMounted ? (
       <div
         className={[
-          'fixed inset-0 z-[100000] bg-black/60 transition-opacity duration-300',
-          activeAction === 'ai_chat' ? 'opacity-100' : 'opacity-0 pointer-events-none',
-        ].join(' ')}
-        onClick={closeChat}
-        aria-hidden={activeAction !== 'ai_chat'}
-      />
-      <div
-        className={[
-          'fixed inset-x-0 bottom-0 z-[100001] flex h-[min(85vh,100dvh)] w-full max-h-[85vh] flex-col',
-          'rounded-t-3xl bg-zinc-950 shadow-2xl',
+          'fixed inset-0 z-[100001] flex h-full w-full flex-col bg-zinc-950',
           'transform transition-transform duration-300 ease-in-out will-change-transform',
           activeAction === 'ai_chat' ? 'translate-y-0' : 'translate-y-full pointer-events-none',
         ].join(' ')}
@@ -7956,8 +7955,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         aria-label="Chat Kentu"
         aria-hidden={activeAction !== 'ai_chat'}
       >
-        <div className="mx-auto mt-3 mb-1 h-1.5 w-12 shrink-0 rounded-full bg-zinc-600" aria-hidden />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          style={{
+            paddingTop: 'env(safe-area-inset-top, 0px)',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          }}
+        >
+          <Suspense fallback={<div className="flex flex-1 items-center justify-center bg-zinc-950" aria-busy />}>
           <KentuChatUI
             chatHistory={chatHistory}
             chatInput={commandChatInput}
@@ -7990,8 +7995,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onManualShortcut={handleChatManualShortcut}
             onRequestReport={handleRequestDailyReport}
           />
+          </Suspense>
         </div>
       </div>
+      ) : null}
 
       {isAiCoachSuggestionModalOpen && aiCoachSuggestion
         ? createPortal(
@@ -8920,7 +8927,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     <UserNutritionGoalsProvider value={nutritionGoalsValue}>
       <WipMealProvider>
         <>
-          <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} />
+          <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} phrase={introPhrase} />
           {salaContent}
         </>
       </WipMealProvider>

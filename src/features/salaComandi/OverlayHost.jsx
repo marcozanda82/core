@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { createPortal } from 'react-dom';
-import PlanningWizard from '../../PlanningWizard';
 import PesataDrawer from '../../components/drawers/PesataDrawer';
+
+const PlanningWizard = lazy(() => import('../../PlanningWizard'));
 
 export default function OverlayHost({
   showWeightModal,
@@ -73,20 +74,22 @@ export default function OverlayHost({
             role="presentation"
           >
             <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 400, maxHeight: '90vh', overflow: 'auto' }}>
-              <PlanningWizard
-                dailyLog={activeLog || []}
-                userTargets={userTargets}
-                calorieStrategy={kentuDailyCalorieStrategy}
-                burnedKcalBonus={planningWizardBurnedKcal}
-                firebasePlanning={remotePlanning}
-                initialMeals={planningWizardInitialMeals}
-                hydrateNonce={planningWizardHydrateNonce}
-                weeklyPlan={weeklyPlan}
-                planningDateKey={planningDateKey}
-                onClose={() => setPlanningWizardOverlayOpen(false)}
-                onConfirmApply={handlePlanningWizardConfirm}
-                onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
-              />
+              <Suspense fallback={null}>
+                <PlanningWizard
+                  dailyLog={activeLog || []}
+                  userTargets={userTargets}
+                  calorieStrategy={kentuDailyCalorieStrategy}
+                  burnedKcalBonus={planningWizardBurnedKcal}
+                  firebasePlanning={remotePlanning}
+                  initialMeals={planningWizardInitialMeals}
+                  hydrateNonce={planningWizardHydrateNonce}
+                  weeklyPlan={weeklyPlan}
+                  planningDateKey={planningDateKey}
+                  onClose={() => setPlanningWizardOverlayOpen(false)}
+                  onConfirmApply={handlePlanningWizardConfirm}
+                  onGeneratePlanGhostMealDraft={handleGeneratePlanGhostMealDraft}
+                />
+              </Suspense>
             </div>
           </div>,
           document.body
