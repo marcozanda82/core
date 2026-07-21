@@ -74,7 +74,7 @@ export default function BottomChrome({
               />
             ) : null}
             <img
-              src="/rotondo.png"
+              src="/EmblemaKbianca.png"
               alt="Kentu"
               width={56}
               height={56}
