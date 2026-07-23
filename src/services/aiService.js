@@ -81,7 +81,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   const payload = {
     prompt: buildPromptWithHistory(prompt, opts),
     systemInstruction: systemInstruction || opts.systemInstruction || '',
-    model: opts.model || 'gemini-2.5-flash',
+    model: opts.model || 'gemini-3.6-flash',
   };
 
   if (opts.images?.length) payload.images = opts.images;

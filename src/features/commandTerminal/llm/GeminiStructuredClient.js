@@ -22,8 +22,8 @@ import {
   parseExactTimeFromUserText,
 } from '../conversation/mealLogIntent.js';
 
-const DEFAULT_MODEL = 'gemini-2.5-flash-001';
-const CONSULTANT_MODEL = 'gemini-2.5-flash-001';
+const DEFAULT_MODEL = 'gemini-3.6-flash';
+const CONSULTANT_MODEL = 'gemini-3.6-flash';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();

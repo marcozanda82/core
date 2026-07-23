@@ -40,7 +40,6 @@ export default function AnalisiTodayProPanel({
   historyStackLength,
   handleUndo,
   handleRedo,
-  enterFullscreen,
   chartScrollRef,
   handleChartTouchStart,
   handleChartTouchMove,
@@ -317,27 +316,6 @@ export default function AnalisiTodayProPanel({
                     🤖 Pilota idratazione attivo
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={enterFullscreen}
-                  title="Fullscreen"
-                  style={{
-                    width: '36px',
-                    height: '36px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: 'rgba(255,255,255,0.06)',
-                    border: '1px solid #333',
-                    borderRadius: '8px',
-                    color: '#00e5ff',
-                    fontSize: '1rem',
-                    cursor: 'pointer',
-                  }}
-                  aria-label="Apri a tutto schermo"
-                >
-                  ⛶
-                </button>
               </div>
             </div>
             <DailyTimelineList

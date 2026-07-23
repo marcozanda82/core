@@ -306,12 +306,7 @@ import {
   generateAnabolicCurve,
   generateCortisolCurve,
   generateCalorieTimeline,
-  buildAIPrompt,
-  buildGlobalAIPrompt,
   SLEEP_AI_MI_FITNESS_INSTRUCTIONS,
-  AI_KEYWORD_TO_HIGHLIGHT,
-  AI_KEYWORDS_ORDERED,
-  InteractiveAIText,
   TRACKER_STORICO_KEY,
   DESC_TO_MEAL_ID,
   inferMealType,
@@ -386,8 +381,6 @@ export { calculateAge } from './utils/profileAge';
 
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
-const ChartModal = lazy(() => import('./ChartModal'));
-const FullscreenGraphView = lazy(() => import('./features/charts/FullscreenGraphView'));
 const LongevityView = lazy(() => import('./LongevityView'));
 const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
@@ -419,13 +412,6 @@ export default function SalaComandi() {
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
-  const [expandedChart, setExpandedChart] = useState(null); // 'percent' | 'kcal' | 'glicemia' | ... per modale fullscreen
-  const [activeHighlight, setActiveHighlight] = useState(null); // glossario: 'energia' | 'anabolica' | 'cortisolo' | 'sveglia' | 'digestione' | 'ora'
-  const [bottomTab, setBottomTab] = useState('ai'); // 'desc' | 'ai' (metà inferiore modale)
-  const [aiInsightsList, setAiInsightsList] = useState([]); // Array di { time: string, text: string }
-  const [currentAiIndex, setCurrentAiIndex] = useState(0);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const highlightResetTimeoutRef = useRef(null);
   const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   /** Anteprima curve (energia/kcal) durante drag nodo timeline; null = stato committato. */
@@ -640,21 +626,6 @@ export default function SalaComandi() {
   });
 
   useEffect(() => {
-    if (expandedChart == null) {
-      if (highlightResetTimeoutRef.current) {
-        clearTimeout(highlightResetTimeoutRef.current);
-        highlightResetTimeoutRef.current = null;
-      }
-    }
-    return () => {
-      if (highlightResetTimeoutRef.current) {
-        clearTimeout(highlightResetTimeoutRef.current);
-        highlightResetTimeoutRef.current = null;
-      }
-    };
-  }, [expandedChart]);
-
-  useEffect(() => {
     window.history.pushState({ noExit: true }, '');
     const handlePopState = () => {
       if (isDrawerOpenRef.current) {
@@ -796,30 +767,6 @@ export default function SalaComandi() {
   const weeklyPlanningListenerReadyRef = useRef(false);
   const weeklyPlanRef = useRef(weeklyPlan);
   weeklyPlanRef.current = weeklyPlan;
-
-  const [isFullScreenGraph, setIsFullScreenGraph] = useState(false);
-  const availableFullscreenCharts = ['percent', 'cortisolo', 'calorieTimeline', 'glicemia', 'idratazione', 'neuro', 'digestione', 'kcal'];
-  const [fullscreenChartIndex, setFullscreenChartIndex] = useState(0);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(orientation: landscape)");
-
-    const handleOrientationChange = (e) => {
-      // Se diventa landscape, attiva il fullscreen. Altrimenti lo disattiva.
-      setIsFullScreenGraph(e.matches);
-    };
-
-    // Controllo iniziale nel caso l'app venga aperta già in orizzontale
-    if (mediaQuery.matches) {
-      setIsFullScreenGraph(true);
-    }
-
-    // Aggiungi il listener
-    mediaQuery.addEventListener("change", handleOrientationChange);
-
-    // Cleanup
-    return () => mediaQuery.removeEventListener("change", handleOrientationChange);
-  }, []);
 
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
   const [showLongevityModal, setShowLongevityModal] = useState(false);
@@ -1610,37 +1557,15 @@ export default function SalaComandi() {
     }
   }, [currentTime, currentTrackerDate, zoomLevel]);
 
-  const fullscreenChartScrollRef = useRef(null);
-
-  const centerCurrentTimeFullscreen = useCallback(() => {
-    if (!fullscreenChartScrollRef.current) return;
-    const container = fullscreenChartScrollRef.current;
-    const scrollWidth = container.scrollWidth;
-    const clientWidth = container.clientWidth;
-    if (currentTrackerDate === getTodayString()) {
-      const chartWidth = Math.max(
-        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX,
-        1
-      );
-      const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
-      const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
-      container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
-    } else {
-      container.scrollLeft = Math.max(0, scrollWidth - clientWidth);
-    }
-  }, [currentTime, currentTrackerDate, zoomLevel]);
-
   const handleCenterZoomAndPan = useCallback(() => {
     setZoomLevel(1);
     const runPan = () => {
-      if (isFullScreenGraph && fullscreenChartScrollRef.current) {
-        centerCurrentTimeFullscreen();
-      } else if (chartScrollRef.current) {
+      if (chartScrollRef.current) {
         centerCurrentTime();
       }
     };
     setTimeout(runPan, 120);
-  }, [isFullScreenGraph, centerCurrentTime, centerCurrentTimeFullscreen]);
+  }, [centerCurrentTime]);
 
   useEffect(() => {
     const timer = setTimeout(centerCurrentTime, 50);
@@ -3309,26 +3234,6 @@ Ottimo! Diario aggiornato. 🥗`;
       return next;
     });
   }, [userUid, db]);
-
-  const enterFullscreen = async () => {
-    const idx = availableFullscreenCharts.indexOf(chartUnit);
-    setFullscreenChartIndex(idx >= 0 ? idx : 0);
-    try {
-      const el = document.documentElement;
-      if (el.requestFullscreen) await el.requestFullscreen();
-      if (window.screen?.orientation?.lock) await window.screen.orientation.lock('landscape');
-    } catch (err) { console.warn('Landscape lock non supportato', err); }
-    setIsFullScreenGraph(true);
-    setTimeout(() => centerCurrentTimeFullscreen(), 180);
-  };
-
-  const exitFullscreen = async () => {
-    try {
-      if (document.exitFullscreen) await document.exitFullscreen();
-      if (window.screen?.orientation?.unlock) window.screen.orientation.unlock();
-    } catch (err) { console.warn('Exit fullscreen fallito', err); }
-    setIsFullScreenGraph(false);
-  };
 
   const fastLoggerInitialMealTime = useMemo(() => {
     if (!showFastLogger) return undefined;
@@ -5100,7 +5005,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const finalChartData = renderDataWithSegments;
   const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
-    if (chartUnit !== 'calorieTimeline' && expandedChart !== 'calorieTimeline') return null;
+    if (chartUnit !== 'calorieTimeline') return null;
     const tl = safeCalorieTimelineData;
     const idx = Math.floor(displayTime);
     const next = Math.min(24, idx + 1);
@@ -5109,7 +5014,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const b = tl[next]?.kcal;
     return a != null ? (b != null ? a + (b - a) * frac : a) : 0;
   })();
-  const modalChartData = expandedChart === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const finalDotY = chartUnit === 'calorieTimeline' ? (dotYCalorieTimeline ?? 0) : (chartUnit === 'glicemia' ? dotGlicemia : (chartUnit === 'idratazione' ? dotIdratazione : (chartUnit === 'cortisolo' ? dotCortisolo : (chartUnit === 'digestione' ? dotDigestione : (chartUnit === 'neuro' ? dotNeuro : (chartUnit === 'percent' ? dotY : (chartUnit === 'kcal' ? scale(dotY) : dotY)))))));
 
   const energyAt20Percent = energyAt20 ?? 50;
@@ -6316,70 +6220,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         {fixedAppBottomChrome}
       </>
     );
-  } else if (isFullScreenGraph) {
-    salaContent = (
-      <Suspense fallback={<KentuLazySectionFallback label="Grafico fullscreen…" />}>
-      <FullscreenGraphView
-        fullscreenChartScrollRef={fullscreenChartScrollRef}
-        availableFullscreenCharts={availableFullscreenCharts}
-        fullscreenChartIndex={fullscreenChartIndex}
-        setFullscreenChartIndex={setFullscreenChartIndex}
-        exitFullscreen={exitFullscreen}
-        zoomLevel={zoomLevel}
-        setZoomLevel={setZoomLevel}
-        handleCenterZoomAndPan={handleCenterZoomAndPan}
-        openTimelineQuickAddAtCenter={openTimelineQuickAddAtCenter}
-        openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
-        finalChartData={finalChartData}
-        safeCalorieTimelineData={safeCalorieTimelineData}
-        displayTime={displayTime}
-        dotY={dotY}
-        dotCortisolo={dotCortisolo}
-        dotGlicemia={dotGlicemia}
-        dotIdratazione={dotIdratazione}
-        dotNeuro={dotNeuro}
-        dotDigestione={dotDigestione}
-        nodesForEnergySimulation={nodesForEnergySimulation}
-        targetKcalChart={targetKcalChart}
-        totalCaloriesTimeline={totalCaloriesTimeline}
-        scale={scale}
-        isViewingPastDate={isViewingPastDate}
-        currentTime={currentTime}
-        chartUnit={chartUnit}
-        activeBottomTab={activeBottomTab}
-        activeNodesWithStack={activeNodesWithStack}
-        idealStrategy={idealStrategy}
-        realTotals={realTotals}
-        draggingNode={draggingNode}
-        touchingNodeId={touchingNodeId}
-        dragOffsetY={dragOffsetY}
-        dragLiveTime={dragLiveTime}
-        timelineContainerRef={timelineContainerRef}
-        startNodeDrag={startNodeDrag}
-        releaseNodePointer={releaseNodePointer}
-        onTimelineNodeClick={onTimelineNodeClick}
-        handleNodeTap={handleNodeTap}
-        decimalToTimeStr={decimalToTimeStr}
-        syncDatiFirebase={syncDatiFirebase}
-        setManualNodes={setManualNodes}
-        setDailyLog={setDailyLog}
-        bodyBattery={bodyBattery}
-        timelineEnergySeries={timelineEnergySeries}
-        chartData={chartData}
-        updateMealTime={updateMealTime}
-        onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
-        scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
-        clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
-        onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
-        activeAction={activeAction}
-        NODE_IMPORTANCE={NODE_IMPORTANCE}
-        NODE_TYPE_ICON={NODE_TYPE_ICON}
-        metabolicGradientStops={metabolicGradientStops}
-        metabolicChartGradientStops={metabolicChartGradientStops}
-        currentMetabolicColor={currentMetabolicColor}
-      />
-      </Suspense>
-    );
   } else {
     salaContent = (
     <div style={{ backgroundColor: isSimulationMode ? '#1a1625' : '#000', color: '#fff', height: '100dvh', maxHeight: '100dvh', display: 'flex', flexDirection: 'column', padding: 'max(10px, 1.5vh) 15px max(15px, 2vh) 15px', paddingBottom: 0, fontFamily: 'sans-serif', overflow: 'hidden' }}>
@@ -6686,8 +6526,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               {chartUnit === 'idratazione' && isWaterHydrationAutoPilot && (
                 <span title="Nessun record acqua: il motore assume idratazione ottimale (100%). Aggiungi acqua dal diario per il tracking reale." style={{ fontSize: '0.65rem', color: '#00e5ff', opacity: 0.9, maxWidth: '140px', lineHeight: 1.2, textAlign: 'right' }}>🤖 Pilota idratazione attivo</span>
               )}
-              <button type="button" onClick={() => { setExpandedChart(chartUnit); setActiveHighlight(null); }} title="Dettagli / Telemetria" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Dettagli grafico">🎯</button>
-              <button type="button" onClick={enterFullscreen} title="Fullscreen" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: '#00e5ff', fontSize: '1rem', cursor: 'pointer' }} aria-label="Apri a tutto schermo">⛶</button>
             </div>
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
@@ -6732,12 +6570,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               }}
             >
               <div
-                role="button"
-                tabIndex={0}
-                onClick={() => { if (!draggingNode) { setExpandedChart(chartUnit); setActiveHighlight(null); } }}
-                onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && !draggingNode) { e.preventDefault(); setExpandedChart(chartUnit); setActiveHighlight(null); } }}
-                style={{ flex: 1, minHeight: 0, cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative' }}
-                aria-label="Apri grafico a tutto schermo"
+                style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}
               >
                 <Suspense fallback={<KentuLazySectionFallback label="Cruscotto energetico…" />}>
                 <MainDashboardCharts
@@ -6817,52 +6650,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
         </div>
 
-        {/* Modale Grafico Fullscreen con Glossario e Carosello Swipe */}
-        {expandedChart != null && (
-          <Suspense fallback={<KentuLazySectionFallback label="Dettaglio grafico…" />}>
-          <ChartModal
-            expandedChart={expandedChart}
-            onClose={() => setExpandedChart(null)}
-            setExpandedChart={setExpandedChart}
-            setActiveHighlight={setActiveHighlight}
-            modalChartData={modalChartData}
-            safeCalorieTimelineData={safeCalorieTimelineData}
-            displayTime={displayTime}
-            timeLabel={timeLabel}
-            dotY={dotY}
-            dotGlicemia={dotGlicemia}
-            dotIdratazione={dotIdratazione}
-            dotCortisolo={dotCortisolo}
-            dotDigestione={dotDigestione}
-            dotNeuro={dotNeuro}
-            dotYCalorieTimeline={dotYCalorieTimeline}
-            idealDotY={idealDotY}
-            targetKcalChart={targetKcalChart}
-            scale={scale}
-            dailyLog={activeLog}
-            activeHighlight={activeHighlight}
-            activeNodesWithStack={activeNodesWithStack}
-            bottomTab={bottomTab}
-            setBottomTab={setBottomTab}
-            aiInsightsList={aiInsightsList}
-            setAiInsightsList={setAiInsightsList}
-            currentAiIndex={currentAiIndex}
-            setCurrentAiIndex={setCurrentAiIndex}
-            isAiLoading={isAiLoading}
-            setIsAiLoading={setIsAiLoading}
-            callGeminiAPIWithRotation={callGeminiAPIWithRotation}
-            totalCaloriesTimeline={totalCaloriesTimeline}
-            isSimulationMode={isSimulationMode}
-            onTimeChange={handleSimulatedTimeChange}
-            activeAlerts={activeAlertsArray}
-            wallClockNowLineHour={!isViewingPastDate ? currentTime : undefined}
-            timelineEnergySeries={timelineEnergySeries}
-            metabolicGradientStops={metabolicGradientStops}
-            metabolicChartGradientStops={metabolicChartGradientStops}
-            currentMetabolicColor={currentMetabolicColor}
-          />
-          </Suspense>
-        )}
       </>
 
       </div>
