@@ -52,19 +52,8 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import DialMaintenanceMarker from './components/DialMaintenanceMarker';
-import DayPlanWidget from './components/DayPlanWidget';
-import DayPlanActionSheet from './components/DayPlanActionSheet';
+import AiTargetWidget from './components/AiTargetWidget';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
-import { buildWorkoutDraftFromPlanBlock } from './features/weeklyBlocks/activityCatalog';
-import {
-  createBlockActivity,
-  createCalorieStrategy,
-  createDayBlock,
-  createEmptyWeeklyBlockPlan,
-  dayBlockToFirebasePayload,
-  isUserAssignedDayBlock,
-  sanitizeWeeklyBlockPlanFromFirebase,
-} from './features/weeklyBlocks/weeklyBlockSchema';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
 import CustomDateTick from './components/CustomDateTick';
@@ -384,8 +373,8 @@ const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const LongevityView = lazy(() => import('./LongevityView'));
 const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
-const WeeklyBuilder = lazy(() => import('./features/weeklyBlocks/components/WeeklyBuilder'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
+const WavePlannerView = lazy(() => import('./drawers/vistas/WavePlannerView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
 const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
 const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOverlay'));
@@ -572,7 +561,8 @@ export default function SalaComandi() {
         return;
       }
       if (tabId === 'pianifica') {
-        setActiveBottomTab('pianifica');
+        setActiveAction('wave_planner');
+        setIsDrawerOpen(true);
         return;
       }
       const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
@@ -1286,6 +1276,84 @@ export default function SalaComandi() {
       });
     },
     [currentTrackerDate, getTodayString]
+  );
+
+  /** Applica i daily_targets AI al budget del giorno corrente (targetHistory + profile_targets). */
+  const applyAiDailyTargets = useCallback(
+    async (dailyTargets) => {
+      const kcal = Math.round(Number(dailyTargets?.kcal) || 0);
+      const prot = Math.round(Number(dailyTargets?.pro) || 0);
+      const carb = Math.round(Number(dailyTargets?.cho) || 0);
+      const fat = Math.round(Number(dailyTargets?.fat) || 0);
+      if (kcal <= 0 && prot <= 0 && carb <= 0 && fat <= 0) {
+        throw new Error('Target AI non validi.');
+      }
+
+      const effectiveDate = currentTrackerDate || getTodayString();
+      const patch = {
+        kcal,
+        prot,
+        carb,
+        fat,
+        fatTotal: fat,
+      };
+
+      let nextTargetsSnapshot = null;
+      setUserTargets((prev) => {
+        const nextHistory = upsertTargetHistoryEntry({
+          history: prev?.targetHistory,
+          effectiveDate,
+          targets: patch,
+          todayDate: getTodayString(),
+          source: 'ai-wave-targets',
+          seedPreviousTargets: prev,
+        });
+        nextTargetsSnapshot = {
+          ...prev,
+          ...patch,
+          autoCalculated: false,
+          customTargets: {
+            ...(prev?.customTargets && typeof prev.customTargets === 'object' ? prev.customTargets : {}),
+            [effectiveDate]: {
+              ...patch,
+              source: 'ai-wave-targets',
+              appliedAt: Date.now(),
+            },
+          },
+          targetHistory: nextHistory,
+        };
+        return nextTargetsSnapshot;
+      });
+
+      const uid = user?.uid || auth?.currentUser?.uid;
+      if (db && uid && nextTargetsSnapshot) {
+        await update(ref(db, `users/${uid}/profile_targets`), {
+          'targets/kcal': patch.kcal,
+          'targets/prot': patch.prot,
+          'targets/carb': patch.carb,
+          'targets/fat': patch.fat,
+          'targets/fatTotal': patch.fatTotal,
+          'targets/autoCalculated': false,
+          'targets/targetHistory': nextTargetsSnapshot.targetHistory,
+          'targets/customTargets': nextTargetsSnapshot.customTargets,
+        });
+
+        // Copia audit sul nodo giornata (non sostituisce il log pasti/workout).
+        const dateStr = effectiveDate;
+        try {
+          await update(ref(db, `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`), {
+            customTargets: {
+              ...patch,
+              source: 'ai-wave-targets',
+              appliedAt: Date.now(),
+            },
+          });
+        } catch (err) {
+          console.warn('[applyAiDailyTargets] customTargets day node:', err);
+        }
+      }
+    },
+    [auth, currentTrackerDate, db, getTodayString, user?.uid],
   );
 
   const calendarZoneByDate = useMemo(() => {
@@ -6165,7 +6233,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const kentuEmblemFab =
-    authReady && isAuthenticated ? (
+    authReady && isAuthenticated
+    && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
+    && (isChatOpen || !isDrawerOpen) ? (
       <button
         type="button"
         onClick={toggleChat}
@@ -6896,20 +6966,32 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             >
               <HomeNutrientStrip
                 totali={totali}
-                targets={userTargets}
-                targetProt={userTargets?.prot ?? 150}
-                targetCarb={userTargets?.carb ?? 200}
-                targetFat={userTargets?.fatTotal ?? userTargets?.fat ?? 65}
+                targets={effectiveTargetsForCurrentDate}
+                targetProt={effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150}
+                targetCarb={effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200}
+                targetFat={
+                  effectiveTargetsForCurrentDate?.fatTotal
+                  ?? effectiveTargetsForCurrentDate?.fat
+                  ?? userTargets?.fatTotal
+                  ?? userTargets?.fat
+                  ?? 65
+                }
                 onProteinClick={() => setShowProteinSheet(true)}
                 onCarbsClick={() => setShowCarbsSheet(true)}
                 onFatClick={() => setShowFatSheet(true)}
                 onMineralsClick={() => setShowMineralsSheet(true)}
                 onVitaminsClick={() => setShowVitaminsSheet(true)}
               />
-              <DayPlanWidget
-                todayPlanBlock={todayPlanBlock}
-                isWorkoutDoneToday={hasRealWorkoutInActiveLog}
-                onOpenActionSheet={() => setIsPlanActionSheetOpen(true)}
+              <AiTargetWidget
+                baseKcal={Number(userProfileKcalBase) || Number(userTargets?.kcal) || 2000}
+                userWeight={Number(userProfile?.weight) || Number(userProfile?.peso) || 75}
+                db={db}
+                userUid={user?.uid ?? null}
+                onApplyTargets={applyAiDailyTargets}
+                onOpenWavePlanner={() => {
+                  setActiveAction('wave_planner');
+                  setIsDrawerOpen(true);
+                }}
               />
               <MetabolicMonitorCard
                 metabolicSnapshot={metabolicSnapshot}
@@ -7178,32 +7260,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </div>
         </div>
       )}
-      {activeBottomTab === 'pianifica' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            width: '100%',
-            boxSizing: 'border-box',
-            paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
-          }}
-        >
-          <Suspense fallback={<KentuLazySectionFallback label="Planner settimanale…" />}>
-          <WeeklyBuilder
-            db={db}
-            userUid={user?.uid ?? null}
-            weekStart={getWeekStartMondayKeyLocal(currentTrackerDate || getTodayString())}
-            authReady={authReady}
-            onSaveSuccess={() => setActiveBottomTab('oggi')}
-          />
-          </Suspense>
-      </div>
-      )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
         <div
@@ -7307,6 +7363,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
         {/* VISTA ALLENAMENTO */}
         {activeAction === 'allenamento' && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <WorkoutView
             onBack={() => {
               clearWorkoutPlanDraft();
@@ -7341,6 +7398,32 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             workoutsLog={workoutsLog}
             removeLogItem={removeLogItem}
           />
+          </div>
+        )}
+
+        {activeAction === 'wave_planner' && (
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+            <WavePlannerView
+              onBack={() => setActiveAction(null)}
+              db={db}
+              userUid={user?.uid ?? null}
+              initialWave={null}
+              initialMacroGoal={userProfile?.macroGoal || 'mantenimento'}
+              getTodayString={getTodayString}
+              onSaved={({ wave, macroGoal }) => {
+                if (macroGoal) {
+                  setUserProfile((prev) => ({
+                    ...prev,
+                    macroGoal,
+                  }));
+                }
+                if (wave) {
+                  setActiveAction(null);
+                  setIsDrawerOpen(false);
+                }
+              }}
+            />
+          </div>
         )}
         </Suspense>
 
@@ -7928,14 +8011,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           document.body
         )
         : null}
-
-      <DayPlanActionSheet
-        open={isPlanActionSheetOpen}
-        onClose={() => setIsPlanActionSheetOpen(false)}
-        onStartWorkout={openWorkoutFromTodayPlan}
-        onPostpone={handlePostponeWorkout}
-        onSkip={skipTodayPlanSession}
-      />
 
       {showBiochemicalDiagnostics ? (
         <Suspense fallback={<KentuLazySectionFallback label="Diagnostica…" />}>

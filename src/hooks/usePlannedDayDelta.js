@@ -1,15 +1,9 @@
 /**
- * Delta calorico pianificato per un giorno da `weeklyBlockPlan` (Firebase RTDB).
+ * Piano giornaliero da `users/{uid}/current_wave.schedule[dateKey]`.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { onValue, ref } from 'firebase/database';
-import {
-  createEmptyWeeklyBlockPlan,
-  isUserAssignedDayBlock,
-  resolveBlockKcalTarget,
-  sanitizeWeeklyBlockPlanFromFirebase,
-} from '../features/weeklyBlocks/weeklyBlockSchema';
-import { getWeekStartMondayKeyLocal } from '../weeklyPlanning';
+import { useMemo } from 'react';
+import useTrainingWave from './useTrainingWave';
+import { waveDayToDayBlock } from '../features/training/waveSchema';
 
 /**
  * @param {object} params
@@ -18,95 +12,57 @@ import { getWeekStartMondayKeyLocal } from '../weeklyPlanning';
  * @param {string | null | undefined} params.dateKey — ISO YYYY-MM-DD
  * @param {number} [params.profileKcal]
  * @param {boolean} [params.isSimulationMode]
- * @returns {{
- *   plannedDelta: number,
- *   hasPlannedBlock: boolean,
- *   plannedTargetKcal: number,
- *   todayPlanBlock: import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null,
- *   dayPlanBlock: import('../features/weeklyBlocks/weeklyBlockSchema').DayBlock | null,
- *   mesocycleSettings: {
- *     startDate: string | null,
- *     loadWeeks: number,
- *     deloadWeeks: number,
- *   },
- *   isLoading: boolean,
- * }}
  */
 export default function usePlannedDayDelta({
-  db,
-  user,
-  dateKey,
+  db = null,
+  user = null,
+  dateKey = null,
   profileKcal = 2000,
-  isSimulationMode = false,
 }) {
-  const [weeklyBlockPlan, setWeeklyBlockPlan] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const userUid = user?.uid || null;
+  const refIso = String(dateKey || '').trim().slice(0, 10) || undefined;
 
-  const weekStart = useMemo(
-    () => getWeekStartMondayKeyLocal(dateKey || undefined),
-    [dateKey]
-  );
+  const { wave, todayProfile, isBeforeStart, isLoading } = useTrainingWave({
+    db,
+    userUid,
+    referenceDate: refIso,
+  });
+
   const normalizedProfileKcal = (() => {
     const n = Math.round(Number(profileKcal));
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return Number.isFinite(n) && n > 0 ? n : 0;
   })();
 
-  useEffect(() => {
-    if (!db || !user?.uid || isSimulationMode || !dateKey) {
-      setWeeklyBlockPlan(createEmptyWeeklyBlockPlan(weekStart));
-      setIsLoading(false);
-      return undefined;
-    }
-
-    setIsLoading(true);
-    const planRef = ref(db, `users/${user.uid}/weeklyBlockPlan/${weekStart}`);
-    const unsub = onValue(
-      planRef,
-      (snap) => {
-        setWeeklyBlockPlan(
-          snap.exists()
-            ? sanitizeWeeklyBlockPlanFromFirebase(snap.val(), weekStart)
-            : createEmptyWeeklyBlockPlan(weekStart)
-        );
-        setIsLoading(false);
-      },
-      () => {
-        setWeeklyBlockPlan(createEmptyWeeklyBlockPlan(weekStart));
-        setIsLoading(false);
-      }
-    );
-
-    return () => unsub();
-  }, [db, user?.uid, weekStart, isSimulationMode, dateKey]);
-
   return useMemo(() => {
-    const plan = weeklyBlockPlan ?? createEmptyWeeklyBlockPlan(weekStart);
-    const block =
-      dateKey && plan.blocks && typeof plan.blocks === 'object' ? plan.blocks[dateKey] : null;
-    const settings = plan.settings && typeof plan.settings === 'object' ? plan.settings : {};
-    const hasPlannedBlock = isUserAssignedDayBlock(block);
-    const plannedDelta = hasPlannedBlock
-      ? Math.round(Number(block?.calorieStrategy?.deltaKcal) || 0)
-      : 0;
-    const plannedTargetKcal = hasPlannedBlock
-      ? resolveBlockKcalTarget(block, normalizedProfileKcal ?? undefined)
-      : normalizedProfileKcal ?? 0;
+    const entry =
+      (refIso && wave?.schedule?.[refIso])
+      || (!isBeforeStart && todayProfile?.activityId ? todayProfile : null);
+
+    const todayPlanBlock =
+      entry && refIso ? waveDayToDayBlock(entry, refIso) : null;
+
+    const burn = Number(todayPlanBlock?.activity?.estimatedBurnKcal) || 0;
 
     return {
-      plannedDelta,
-      hasPlannedBlock,
-      plannedTargetKcal,
-      todayPlanBlock: hasPlannedBlock ? block : null,
-      dayPlanBlock: block,
+      plannedDelta: 0,
+      hasPlannedBlock: Boolean(todayPlanBlock),
+      plannedTargetKcal: normalizedProfileKcal,
+      todayPlanBlock,
+      dayPlanBlock: todayPlanBlock,
       mesocycleSettings: {
-        startDate:
-          typeof settings.mesocycleStartDate === 'string' && settings.mesocycleStartDate.trim()
-            ? settings.mesocycleStartDate.trim()
-            : null,
-        loadWeeks: Math.max(0, Math.round(Number(settings.mesocycleLoadWeeks) || 0)),
-        deloadWeeks: Math.max(0, Math.round(Number(settings.mesocycleDeloadWeeks) || 0)),
+        startDate: wave?.startDate || null,
+        loadWeeks: 0,
+        deloadWeeks: 0,
       },
-      isLoading,
+      plannedBurnKcal: burn,
+      isLoading: Boolean(isLoading),
     };
-  }, [weeklyBlockPlan, weekStart, dateKey, normalizedProfileKcal, isLoading]);
+  }, [
+    wave,
+    todayProfile,
+    isBeforeStart,
+    isLoading,
+    refIso,
+    normalizedProfileKcal,
+  ]);
 }

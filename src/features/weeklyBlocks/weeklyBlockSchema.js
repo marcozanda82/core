@@ -533,6 +533,8 @@ function sanitizePlannerMetaForFirebase(meta) {
     'plannerActionName',
     'plannerDurationMin',
     'plannerStrengthDetail',
+    'plannerTimeTag',
+    'plannerExactTime',
     'isDeload',
     'phase',
   ];

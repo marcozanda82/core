@@ -1,8 +1,8 @@
-/** Tab principali per swipe laterale (stesso ordine della bottom navigation, senza «Menu» e «Pianifica»). */
+/** Tab principali per swipe laterale (stesso ordine della bottom navigation). */
 export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 
-/** Tab bottom bar persistibili in localStorage (include viste fuori dallo swipe). */
-export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER, 'pianifica'];
+/** Tab bottom bar persistibili in localStorage (Pianifica apre un drawer, non una tab). */
+export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
 /** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome). */
 export const BOTTOM_NAV_ITEMS = [

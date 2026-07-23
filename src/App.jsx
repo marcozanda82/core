@@ -22,7 +22,7 @@ export default function App() {
         <Suspense fallback={<AppBootFallback />}>
           <Routes>
             <Route path="/" element={<SalaComandi />} />
-            {/* Legacy deep-link: reindirizza a / con tab «Pianifica» (WeeklyBuilder in SalaComandi). */}
+            {/* Legacy deep-link: `/planner` → home (WeeklyBuilder smantellato). */}
             <Route path="/planner" element={<WeeklyPlannerPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

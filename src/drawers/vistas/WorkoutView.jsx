@@ -481,8 +481,8 @@ export default function WorkoutView({
   };
 
   return (
-    <div className="view-animate">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px' }}>
+    <div className="view-animate flex h-full min-h-[85vh] flex-1 flex-col">
+      <div className="mb-4 flex shrink-0 items-center justify-between">
         <button
           type="button"
           onClick={handleBack}
@@ -508,6 +508,8 @@ export default function WorkoutView({
         </h2>
         <div style={{ width: '70px' }} />
       </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-24 [-webkit-overflow-scrolling:touch]">
       {isPlanDraftMode && trackerPhase === 'draft' ? (
         <div
           style={{
@@ -933,24 +935,6 @@ export default function WorkoutView({
           <span>750</span>
         </div>
       </div>
-      {isPlanDraftMode && trackerPhase === 'draft' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button type="button" onClick={handleStartSession} style={primaryButtonStyle}>
-            AVVIA ALLENAMENTO
-          </button>
-          <button type="button" onClick={handleSaveClick} style={secondaryButtonStyle}>
-            REGISTRA COMPLETATO
-          </button>
-        </div>
-      ) : isPlanDraftMode && trackerPhase === 'running' ? (
-        <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
-          TERMINA E REGISTRA
-        </button>
-      ) : (
-        <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
-          {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
-        </button>
-      )}
       {!isPlannerMode && (
         <div style={{ marginTop: '30px' }}>
           {workoutsLog.length > 0 && (
@@ -982,6 +966,31 @@ export default function WorkoutView({
           ))}
         </div>
       )}
+      </div>
+
+      <div
+        className="sticky bottom-0 z-10 shrink-0 border-t border-orange-500/25 bg-[#0f0f0f]/95 px-1 pt-3 backdrop-blur-md"
+        style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}
+      >
+        {isPlanDraftMode && trackerPhase === 'draft' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button type="button" onClick={handleStartSession} style={primaryButtonStyle}>
+              AVVIA ALLENAMENTO
+            </button>
+            <button type="button" onClick={handleSaveClick} style={secondaryButtonStyle}>
+              REGISTRA COMPLETATO
+            </button>
+          </div>
+        ) : isPlanDraftMode && trackerPhase === 'running' ? (
+          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
+            TERMINA E REGISTRA
+          </button>
+        ) : (
+          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
+            {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
