@@ -1,0 +1,792 @@
+/**
+ * Motore puro "4 cilindri" — decadimento muscolare e fatica sistemica.
+ *
+ * Nessuna dipendenza React/Firebase. Consumato da hook e save-path in fasi successive.
+ *
+ * Semantica approvata:
+ * - decay.push | pull | legs : 0 = muscolo atrofizzato/da allenare, 1 = stimolato al massimo.
+ *   Decresce con i giorni senza stimolo (mezzanotte virtuale).
+ * - systemic_fatigue : 0 = riposato, 1 = sovrallenato. Decresce a riposo, sale con il carico.
+ */
+
+/** @typedef {'push' | 'pull' | 'legs'} MuscleCylinderId */
+
+/**
+ * @typedef {object} FourCylinderDecay
+ * @property {number} push 0–1 stimolo residuo spinta
+ * @property {number} pull 0–1 stimolo residuo trazione
+ * @property {number} legs 0–1 stimolo residuo gambe
+ */
+
+/**
+ * @typedef {object} FourCylinderParams
+ * @property {FourCylinderDecay} decayPerDay Quanto scende ogni cilindro muscolare per giorno di riposo
+ * @property {number} systemicRecoveryPerDay Quanto scende systemic_fatigue per giorno di riposo
+ * @property {number} maxMuscleBump Incremento massimo per cilindro in una singola sessione
+ * @property {number} maxSystemicBump Incremento massimo fatica sistemica per sessione
+ * @property {number} maxSystemicRecoveryPerSleep Quanto può scendere al max la fatica con sonno perfetto
+ * @property {number} poorSleepFatiguePenalty Incremento fatica se recoveryEfficiency < 0.4
+ * @property {FourCylinderDecay} stimulusGain Moltiplicatori v1 (fissi a 1)
+ */
+
+/**
+ * @typedef {object} FourCylinderLastStimulus
+ * @property {string} workoutId
+ * @property {string} date ISO YYYY-MM-DD
+ * @property {number} at epoch ms
+ * @property {string} workoutType
+ * @property {string[]} muscles
+ * @property {FourCylinderDecay & { systemic: number }} applied
+ */
+
+/**
+ * @typedef {object} FourCylinderState
+ * @property {number} engineVersion
+ * @property {string} lastProcessedDate ISO YYYY-MM-DD — ultimo giorno di decay virtuale applicato
+ * @property {number} updatedAt epoch ms
+ * @property {FourCylinderDecay} decay
+ * @property {number} systemic_fatigue 0–1
+ * @property {FourCylinderParams} params
+ * @property {FourCylinderLastStimulus | null} [lastStimulus]
+ */
+
+/**
+ * @typedef {object} WorkoutStimulusInput
+ * @property {string} [workoutId]
+ * @property {string} [date] ISO YYYY-MM-DD
+ * @property {string} [workoutType] es. pesi | cardio | hiit | riposo
+ * @property {string[]} [muscles] gruppi muscolari canonici
+ * @property {number} [kcal]
+ * @property {number} [duration] ore decimali (es. 1.0 = 60 min)
+ * @property {number} [rpe] 1–10 opzionale
+ */
+
+/**
+ * Input sonno per il 2° pilastro (raffreddamento sistemico).
+ * `recoveryEfficiency` 0–1 — pre-calcolato da useSleepEngine / computeSleepEngineSnapshot.
+ *
+ * @typedef {object} SleepRecoveryInput
+ * @property {number} sleepHours ore totali di sonno (informativo v1, riservato tuning futuro)
+ * @property {number} recoveryEfficiency 0–1 efficienza recupero notturno
+ * @property {string} [sleepId] id voce log sonno
+ * @property {string} [date] ISO YYYY-MM-DD
+ */
+
+/**
+ * Delta applicato dal sonno (flat log + nested).
+ * @typedef {FourCylinderDecay & { systemic: number }} SleepRecoveryDelta
+ */
+
+/**
+ * Snapshot flat per voce diario sonno (`fourCylinderSnapshot` con chiave `recovery`).
+ * @typedef {object} FourCylinderSleepLogSnapshot
+ * @property {number} engineVersion
+ * @property {number} capturedAt epoch ms
+ * @property {FourCylinderFlatLevels} before
+ * @property {FourCylinderFlatLevels} recovery delta fatica/recupero applicato
+ * @property {FourCylinderFlatLevels} after
+ * @property {boolean} [optimizedRecovery] true se recoveryEfficiency > 0.7
+ */
+
+/**
+ * Snapshot flat per voce diario (`fourCylinderSnapshot`).
+ * @typedef {object} FourCylinderFlatLevels
+ * @property {number} decay_push
+ * @property {number} decay_pull
+ * @property {number} decay_legs
+ * @property {number} systemic_fatigue
+ */
+
+/**
+ * @typedef {object} FourCylinderLogSnapshot
+ * @property {number} engineVersion
+ * @property {number} capturedAt epoch ms
+ * @property {FourCylinderFlatLevels} before
+ * @property {FourCylinderFlatLevels} stimulus
+ * @property {FourCylinderFlatLevels} after
+ */
+
+export const FOUR_CYLINDER_ENGINE_VERSION = 1;
+
+/** Parametri v1 hardcoded — tuning utente in fase 2. */
+export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
+  decayPerDay: Object.freeze({
+    push: 0.12,
+    pull: 0.12,
+    legs: 0.10,
+  }),
+  systemicRecoveryPerDay: 0.08,
+  maxMuscleBump: 0.55,
+  maxSystemicBump: 0.35,
+  maxSystemicRecoveryPerSleep: 0.35,
+  poorSleepFatiguePenalty: 0.10,
+  stimulusGain: Object.freeze({
+    push: 1,
+    pull: 1,
+    legs: 1,
+  }),
+});
+
+/** @type {FourCylinderDecay} */
+export const DEFAULT_MUSCLE_LEVELS = Object.freeze({
+  push: 0,
+  pull: 0,
+  legs: 0,
+});
+
+/** Mappa gruppo muscolare → cilindro. */
+const MUSCLE_CYLINDER_MAP = Object.freeze({
+  petto: 'push',
+  spalle: 'push',
+  tricipiti: 'push',
+  tricipite: 'push',
+  dorso: 'pull',
+  schiena: 'pull',
+  bicipiti: 'pull',
+  bicipite: 'pull',
+  gambe: 'legs',
+  abs: 'legs',
+  addominali: 'legs',
+  core: 'legs',
+});
+
+const CARDIO_TYPES = new Set(['cardio', 'hiit', 'misto']);
+const REST_TYPES = new Set(['riposo', 'rest']);
+
+/** Soglia sotto la quale il sonno penalizza la fatica invece di smaltirla. */
+export const POOR_SLEEP_EFFICIENCY_THRESHOLD = 0.4;
+
+/** Soglia sopra la quale il recupero notturno abilita optimizedRecovery (decadimento muscolare). */
+export const OPTIMIZED_RECOVERY_EFFICIENCY_THRESHOLD = 0.7;
+
+/**
+ * @param {unknown} value
+ * @returns {number} clamp 0–1
+ */
+export function clamp01(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(1, n));
+}
+
+/**
+ * @param {string | null | undefined} iso
+ * @returns {Date | null} mezzanotte UTC
+ */
+function parseIsoDateUtc(iso) {
+  const raw = String(iso || '').trim().slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+  return new Date(Date.UTC(y, mo - 1, d));
+}
+
+/**
+ * @param {Date} date
+ * @returns {string} YYYY-MM-DD UTC
+ */
+function toIsoDateUtc(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
+ * Giorni calendariali interi tra due ISO (UTC). Positivo se `toIso` è dopo `fromIso`.
+ * @param {string} fromIso
+ * @param {string} toIso
+ * @returns {number | null}
+ */
+export function diffCalendarDaysUtc(fromIso, toIso) {
+  const from = parseIsoDateUtc(fromIso);
+  const to = parseIsoDateUtc(toIso);
+  if (!from || !to) return null;
+  const MS = 24 * 60 * 60 * 1000;
+  return Math.round((to.getTime() - from.getTime()) / MS);
+}
+
+/**
+ * @param {FourCylinderDecay} decay
+ * @returns {FourCylinderDecay}
+ */
+export function clampMuscleDecay(decay) {
+  return {
+    push: clamp01(decay?.push),
+    pull: clamp01(decay?.pull),
+    legs: clamp01(decay?.legs),
+  };
+}
+
+/**
+ * @param {unknown} partial
+ * @param {string} [todayIso] default oggi UTC
+ * @returns {FourCylinderState}
+ */
+export function createDefaultFourCylinderState(todayIso) {
+  const today = todayIso || toIsoDateUtc(new Date());
+  return sanitizeFourCylinderState({
+    engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
+    lastProcessedDate: today,
+    updatedAt: Date.now(),
+    decay: { ...DEFAULT_MUSCLE_LEVELS },
+    systemic_fatigue: 0,
+    params: DEFAULT_FOUR_CYLINDER_PARAMS,
+    lastStimulus: null,
+  }, today);
+}
+
+/**
+ * @param {unknown} raw
+ * @param {string} [fallbackDate]
+ * @returns {FourCylinderState}
+ */
+export function sanitizeFourCylinderState(raw, fallbackDate) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const today = String(fallbackDate || src.lastProcessedDate || toIsoDateUtc(new Date())).slice(0, 10);
+  const paramsSrc = src.params && typeof src.params === 'object' ? src.params : {};
+
+  const decayPerDaySrc = paramsSrc.decayPerDay && typeof paramsSrc.decayPerDay === 'object'
+    ? paramsSrc.decayPerDay
+    : {};
+
+  /** @type {FourCylinderParams} */
+  const params = {
+    decayPerDay: {
+      push: clamp01(decayPerDaySrc.push ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.push),
+      pull: clamp01(decayPerDaySrc.pull ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.pull),
+      legs: clamp01(decayPerDaySrc.legs ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs),
+    },
+    systemicRecoveryPerDay: clamp01(
+      paramsSrc.systemicRecoveryPerDay ?? DEFAULT_FOUR_CYLINDER_PARAMS.systemicRecoveryPerDay,
+    ),
+    maxMuscleBump: clamp01(paramsSrc.maxMuscleBump ?? DEFAULT_FOUR_CYLINDER_PARAMS.maxMuscleBump),
+    maxSystemicBump: clamp01(paramsSrc.maxSystemicBump ?? DEFAULT_FOUR_CYLINDER_PARAMS.maxSystemicBump),
+    maxSystemicRecoveryPerSleep: clamp01(
+      paramsSrc.maxSystemicRecoveryPerSleep ?? DEFAULT_FOUR_CYLINDER_PARAMS.maxSystemicRecoveryPerSleep,
+    ),
+    poorSleepFatiguePenalty: clamp01(
+      paramsSrc.poorSleepFatiguePenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.poorSleepFatiguePenalty,
+    ),
+    stimulusGain: {
+      push: clamp01(paramsSrc.stimulusGain?.push ?? 1) || 1,
+      pull: clamp01(paramsSrc.stimulusGain?.pull ?? 1) || 1,
+      legs: clamp01(paramsSrc.stimulusGain?.legs ?? 1) || 1,
+    },
+  };
+
+  const lastProcessed = String(src.lastProcessedDate || today).trim().slice(0, 10);
+
+  return {
+    engineVersion: Number(src.engineVersion) || FOUR_CYLINDER_ENGINE_VERSION,
+    lastProcessedDate: /^\d{4}-\d{2}-\d{2}$/.test(lastProcessed) ? lastProcessed : today,
+    updatedAt: Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : Date.now(),
+    decay: clampMuscleDecay(src.decay || src.muscleDecay || DEFAULT_MUSCLE_LEVELS),
+    systemic_fatigue: clamp01(src.systemic_fatigue ?? src.systemicFatigue ?? 0),
+    params,
+    lastStimulus: sanitizeLastStimulus(src.lastStimulus),
+  };
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {FourCylinderLastStimulus | null}
+ */
+function sanitizeLastStimulus(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const applied = raw.applied && typeof raw.applied === 'object' ? raw.applied : {};
+  return {
+    workoutId: String(raw.workoutId || ''),
+    date: String(raw.date || '').slice(0, 10),
+    at: Number.isFinite(Number(raw.at)) ? Number(raw.at) : Date.now(),
+    workoutType: String(raw.workoutType || ''),
+    muscles: Array.isArray(raw.muscles) ? raw.muscles.map(String) : [],
+    applied: {
+      push: clamp01(applied.push),
+      pull: clamp01(applied.pull),
+      legs: clamp01(applied.legs),
+      systemic: clamp01(applied.systemic ?? applied.systemic_fatigue),
+    },
+  };
+}
+
+/**
+ * Converte livelli nested → flat per il log diario.
+ * @param {FourCylinderDecay} decay
+ * @param {number} systemicFatigue
+ * @returns {FourCylinderFlatLevels}
+ */
+export function flattenFourCylinderLevels(decay, systemicFatigue) {
+  const d = clampMuscleDecay(decay);
+  return {
+    decay_push: d.push,
+    decay_pull: d.pull,
+    decay_legs: d.legs,
+    systemic_fatigue: clamp01(systemicFatigue),
+  };
+}
+
+/**
+ * Delta flat (stimulus) per snapshot log.
+ * @param {FourCylinderDecay & { systemic?: number }} delta
+ * @returns {FourCylinderFlatLevels}
+ */
+export function flattenStimulusDelta(delta) {
+  return {
+    decay_push: clamp01(delta?.push),
+    decay_pull: clamp01(delta?.pull),
+    decay_legs: clamp01(delta?.legs),
+    systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
+  };
+}
+
+/**
+ * Delta flat (recovery sonno) per snapshot log — magnitude applicata su systemic_fatigue.
+ * I cilindri muscolari restano 0 (il sonno non alza lo stimolo in v1).
+ *
+ * @param {SleepRecoveryDelta} delta
+ * @returns {FourCylinderFlatLevels}
+ */
+export function flattenRecoveryDelta(delta) {
+  return {
+    decay_push: clamp01(delta?.push),
+    decay_pull: clamp01(delta?.pull),
+    decay_legs: clamp01(delta?.legs),
+    systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
+  };
+}
+
+/**
+ * Applica un singolo giorno di riposo virtuale (mezzanotte).
+ * I cilindri muscolari scendono; la fatica sistemica si smaltisce.
+ *
+ * @param {FourCylinderState} state
+ * @returns {FourCylinderState}
+ */
+export function applySingleDayRecovery(state) {
+  const safe = sanitizeFourCylinderState(state);
+  const { decayPerDay, systemicRecoveryPerDay } = safe.params;
+
+  return {
+    ...safe,
+    updatedAt: Date.now(),
+    decay: clampMuscleDecay({
+      push: safe.decay.push - decayPerDay.push,
+      pull: safe.decay.pull - decayPerDay.pull,
+      legs: safe.decay.legs - decayPerDay.legs,
+    }),
+    systemic_fatigue: clamp01(safe.systemic_fatigue - systemicRecoveryPerDay),
+  };
+}
+
+/**
+ * Applica N giorni consecutivi di recovery (decadimento stimolo muscolare).
+ *
+ * @param {FourCylinderState} state
+ * @param {number} days intero ≥ 0
+ * @returns {{ nextState: FourCylinderState, daysApplied: number }}
+ */
+export function applyDailyDecay(state, days) {
+  const safe = sanitizeFourCylinderState(state);
+  const n = Math.max(0, Math.floor(Number(days) || 0));
+  if (n === 0) {
+    return { nextState: safe, daysApplied: 0 };
+  }
+
+  let current = safe;
+  for (let i = 0; i < n; i += 1) {
+    current = applySingleDayRecovery(current);
+  }
+
+  return {
+    nextState: {
+      ...current,
+      updatedAt: Date.now(),
+    },
+    daysApplied: n,
+  };
+}
+
+/**
+ * Catch-up: applica il decay per ogni notte tra `lastProcessedDate` e `todayIso`.
+ * Aggiorna `lastProcessedDate` a `todayIso` se almeno un giorno è stato processato.
+ *
+ * @param {FourCylinderState} state
+ * @param {string} todayIso YYYY-MM-DD
+ * @returns {{ nextState: FourCylinderState, daysApplied: number }}
+ */
+export function catchUpDecayToDate(state, todayIso) {
+  const safe = sanitizeFourCylinderState(state, todayIso);
+  const today = String(todayIso || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    return { nextState: safe, daysApplied: 0 };
+  }
+
+  const days = diffCalendarDaysUtc(safe.lastProcessedDate, today);
+  if (days == null || days <= 0) {
+    return { nextState: safe, daysApplied: 0 };
+  }
+
+  const { nextState, daysApplied } = applyDailyDecay(safe, days);
+  return {
+    nextState: {
+      ...nextState,
+      lastProcessedDate: today,
+      updatedAt: Date.now(),
+    },
+    daysApplied,
+  };
+}
+
+/**
+ * @param {string} muscle
+ * @returns {MuscleCylinderId | null}
+ */
+function muscleToCylinder(muscle) {
+  const key = String(muscle || '').trim().toLowerCase();
+  if (!key) return null;
+  if (key.includes('total') && key.includes('body')) return null;
+  return MUSCLE_CYLINDER_MAP[key] || null;
+}
+
+/**
+ * Fattore di carico 0–1 da durata e kcal.
+ * @param {number} durationHours
+ * @param {number} kcal
+ * @returns {number}
+ */
+function computeLoadFactor(durationHours, kcal) {
+  const dur = Math.max(0, Number(durationHours) || 0);
+  const k = Math.max(0, Number(kcal) || 0);
+  const durPart = Math.min(1, dur / 1.25);
+  const kcalPart = Math.min(1, k / 350);
+  return clamp01(0.35 + durPart * 0.35 + kcalPart * 0.3);
+}
+
+/**
+ * Calcola incrementi grezzi prima del clamp (non muta lo state).
+ *
+ * @param {WorkoutStimulusInput} workout
+ * @param {FourCylinderParams} params
+ * @returns {FourCylinderDecay & { systemic: number }}
+ */
+export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLINDER_PARAMS) {
+  const type = String(workout?.workoutType || 'pesi').trim().toLowerCase();
+  if (REST_TYPES.has(type)) {
+    return { push: 0, pull: 0, legs: 0, systemic: 0 };
+  }
+
+  const loadFactor = computeLoadFactor(workout?.duration, workout?.kcal);
+  const rpe = Number(workout?.rpe);
+  const rpeBoost = Number.isFinite(rpe) && rpe >= 8 ? 1.12 : 1;
+
+  /** @type {Record<MuscleCylinderId, number>} */
+  const weights = { push: 0, pull: 0, legs: 0 };
+  const muscles = Array.isArray(workout?.muscles) ? workout.muscles : [];
+  let isTotalBody = false;
+
+  for (const raw of muscles) {
+    const label = String(raw || '').trim();
+    const lower = label.toLowerCase();
+    if (/total\s*body|full\s*body|fullbody/.test(lower)) {
+      isTotalBody = true;
+      continue;
+    }
+    const cyl = muscleToCylinder(label);
+    if (cyl) weights[cyl] += 1;
+  }
+
+  if (isTotalBody) {
+    weights.push += 1;
+    weights.pull += 1;
+    weights.legs += 1;
+  }
+
+  const weightSum = weights.push + weights.pull + weights.legs;
+
+  /** @type {FourCylinderDecay} */
+  let muscleDeltas = { push: 0, pull: 0, legs: 0 };
+
+  if (CARDIO_TYPES.has(type) && weightSum === 0) {
+    muscleDeltas = {
+      push: 0,
+      pull: 0,
+      legs: clamp01(0.18 * loadFactor * params.stimulusGain.legs),
+    };
+  } else if (weightSum > 0) {
+    const baseBump = params.maxMuscleBump * loadFactor;
+    for (const cyl of /** @type {MuscleCylinderId[]} */ (['push', 'pull', 'legs'])) {
+      if (weights[cyl] <= 0) continue;
+      const share = weights[cyl] / weightSum;
+      muscleDeltas[cyl] = clamp01(baseBump * share * params.stimulusGain[cyl]);
+    }
+  } else if (type === 'pesi' || type.includes('strength') || type.includes('peso')) {
+    muscleDeltas = {
+      push: clamp01(params.maxMuscleBump * 0.45 * loadFactor),
+      pull: 0,
+      legs: 0,
+    };
+  }
+
+  const systemicBase = CARDIO_TYPES.has(type) ? 0.28 : 0.16;
+  const systemic = clamp01(params.maxSystemicBump * systemicBase * loadFactor * rpeBoost);
+
+  return {
+    push: muscleDeltas.push,
+    pull: muscleDeltas.pull,
+    legs: muscleDeltas.legs,
+    systemic,
+  };
+}
+
+/**
+ * Applica stimolo allenamento sui cilindri muscolari (sale verso 1) e fatica sistemica (sale verso 1).
+ *
+ * @param {FourCylinderState} state — già catch-uppato fino a oggi
+ * @param {WorkoutStimulusInput} workout
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   stimulus: FourCylinderDecay & { systemic: number },
+ *   snapshot: FourCylinderLogSnapshot,
+ * }}
+ */
+export function applyWorkoutStimulus(state, workout) {
+  const safe = sanitizeFourCylinderState(state);
+  const beforeFlat = flattenFourCylinderLevels(safe.decay, safe.systemic_fatigue);
+
+  const stimulus = computeWorkoutStimulusDeltas(workout, safe.params);
+
+  const nextDecay = clampMuscleDecay({
+    push: safe.decay.push + stimulus.push,
+    pull: safe.decay.pull + stimulus.pull,
+    legs: safe.decay.legs + stimulus.legs,
+  });
+
+  const nextSystemic = clamp01(safe.systemic_fatigue + stimulus.systemic);
+  const afterFlat = flattenFourCylinderLevels(nextDecay, nextSystemic);
+
+  const workoutId = String(workout?.workoutId || `workout_${Date.now()}`);
+  const date = String(workout?.date || safe.lastProcessedDate).slice(0, 10);
+  const capturedAt = Date.now();
+
+  /** @type {FourCylinderLogSnapshot} */
+  const snapshot = {
+    engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
+    capturedAt,
+    before: beforeFlat,
+    stimulus: flattenStimulusDelta(stimulus),
+    after: afterFlat,
+  };
+
+  return {
+    nextState: {
+      ...safe,
+      updatedAt: capturedAt,
+      decay: nextDecay,
+      systemic_fatigue: nextSystemic,
+      lastStimulus: {
+        workoutId,
+        date,
+        at: capturedAt,
+        workoutType: String(workout?.workoutType || 'pesi'),
+        muscles: Array.isArray(workout?.muscles) ? [...workout.muscles] : [],
+        applied: {
+          push: stimulus.push,
+          pull: stimulus.pull,
+          legs: stimulus.legs,
+          systemic: stimulus.systemic,
+        },
+      },
+    },
+    stimulus,
+    snapshot,
+  };
+}
+
+/**
+ * Pipeline completa pre-save: catch-up decay → stimolo workout.
+ *
+ * @param {FourCylinderState} state
+ * @param {WorkoutStimulusInput} workout
+ * @param {string} todayIso
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   decayDaysApplied: number,
+ *   stimulus: FourCylinderDecay & { systemic: number },
+ *   snapshot: FourCylinderLogSnapshot,
+ * }}
+ */
+export function applyWorkoutPipeline(state, workout, todayIso) {
+  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(state, todayIso);
+  const {
+    nextState,
+    stimulus,
+    snapshot,
+  } = applyWorkoutStimulus(afterDecay, {
+    ...workout,
+    date: workout?.date || todayIso,
+  });
+
+  return {
+    nextState,
+    decayDaysApplied: daysApplied,
+    stimulus,
+    snapshot,
+  };
+}
+
+/**
+ * Calcola il delta di recupero sistemico da input sonno (non muta lo state).
+ *
+ * @param {SleepRecoveryInput} sleepInput
+ * @param {FourCylinderParams} [params]
+ * @returns {{ recovery: SleepRecoveryDelta, optimizedRecovery: boolean, isPoorSleep: boolean }}
+ */
+export function computeSleepRecoveryDeltas(sleepInput, params = DEFAULT_FOUR_CYLINDER_PARAMS) {
+  const efficiency = clamp01(sleepInput?.recoveryEfficiency);
+  const isPoorSleep = efficiency < POOR_SLEEP_EFFICIENCY_THRESHOLD;
+
+  /** @type {SleepRecoveryDelta} */
+  let recovery = { push: 0, pull: 0, legs: 0, systemic: 0 };
+
+  if (isPoorSleep) {
+    recovery.systemic = clamp01(params.poorSleepFatiguePenalty);
+  } else {
+    recovery.systemic = clamp01(params.maxSystemicRecoveryPerSleep * efficiency);
+  }
+
+  const optimizedRecovery = !isPoorSleep && efficiency > OPTIMIZED_RECOVERY_EFFICIENCY_THRESHOLD;
+
+  return {
+    recovery,
+    optimizedRecovery,
+    isPoorSleep,
+  };
+}
+
+/**
+ * Applica recupero sonno: raffreddamento sistemico (o penalità se sonno scarso).
+ * Non modifica i livelli muscolari decay.* in v1 — abilita solo optimizedRecovery per il decadimento.
+ *
+ * @param {FourCylinderState} state — già catch-uppato fino a oggi
+ * @param {SleepRecoveryInput} sleepInput
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   recovery: SleepRecoveryDelta,
+ *   optimizedRecovery: boolean,
+ *   isPoorSleep: boolean,
+ *   snapshot: FourCylinderSleepLogSnapshot,
+ * }}
+ */
+export function applySleepRecovery(state, sleepInput) {
+  const safe = sanitizeFourCylinderState(state);
+  const beforeFlat = flattenFourCylinderLevels(safe.decay, safe.systemic_fatigue);
+
+  const {
+    recovery,
+    optimizedRecovery,
+    isPoorSleep,
+  } = computeSleepRecoveryDeltas(sleepInput, safe.params);
+
+  const nextSystemic = isPoorSleep
+    ? clamp01(safe.systemic_fatigue + recovery.systemic)
+    : clamp01(safe.systemic_fatigue - recovery.systemic);
+
+  const nextDecay = clampMuscleDecay(safe.decay);
+  const afterFlat = flattenFourCylinderLevels(nextDecay, nextSystemic);
+  const capturedAt = Date.now();
+
+  /** @type {FourCylinderSleepLogSnapshot} */
+  const snapshot = {
+    engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
+    capturedAt,
+    before: beforeFlat,
+    recovery: flattenRecoveryDelta(recovery),
+    after: afterFlat,
+    optimizedRecovery,
+  };
+
+  return {
+    nextState: {
+      ...safe,
+      updatedAt: capturedAt,
+      decay: nextDecay,
+      systemic_fatigue: nextSystemic,
+    },
+    recovery,
+    optimizedRecovery,
+    isPoorSleep,
+    snapshot,
+  };
+}
+
+/**
+ * Pipeline completa pre-save sonno: catch-up decay → recupero notturno.
+ *
+ * @param {FourCylinderState} state
+ * @param {SleepRecoveryInput} sleepInput
+ * @param {string} todayIso
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   decayDaysApplied: number,
+ *   recovery: SleepRecoveryDelta,
+ *   optimizedRecovery: boolean,
+ *   isPoorSleep: boolean,
+ *   snapshot: FourCylinderSleepLogSnapshot,
+ * }}
+ */
+export function applySleepPipeline(state, sleepInput, todayIso) {
+  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(state, todayIso);
+  const {
+    nextState,
+    recovery,
+    optimizedRecovery,
+    isPoorSleep,
+    snapshot,
+  } = applySleepRecovery(afterDecay, {
+    ...sleepInput,
+    date: sleepInput?.date || todayIso,
+  });
+
+  return {
+    nextState,
+    decayDaysApplied: daysApplied,
+    recovery,
+    optimizedRecovery,
+    isPoorSleep,
+    snapshot,
+  };
+}
+
+/**
+ * Estrae il blocco `fourCylinder` da un documento `physiology_model` grezzo.
+ * @param {unknown} physiologyModelDoc
+ * @param {string} [todayIso]
+ * @returns {FourCylinderState}
+ */
+export function fourCylinderFromPhysiologyModel(physiologyModelDoc, todayIso) {
+  const doc = physiologyModelDoc && typeof physiologyModelDoc === 'object'
+    ? physiologyModelDoc
+    : {};
+  const block = doc.fourCylinder ?? doc.four_cylinder ?? doc;
+  return sanitizeFourCylinderState(block, todayIso);
+}
+
+/**
+ * Merge per scrittura su `physiology_model` (preserva campi legacy sibling).
+ * @param {unknown} physiologyModelDoc documento esistente
+ * @param {FourCylinderState} fourCylinder
+ * @returns {object}
+ */
+export function physiologyModelWithFourCylinder(physiologyModelDoc, fourCylinder) {
+  const base = physiologyModelDoc && typeof physiologyModelDoc === 'object'
+    ? { ...physiologyModelDoc }
+    : {};
+  return {
+    ...base,
+    fourCylinder: sanitizeFourCylinderState(fourCylinder),
+  };
+}

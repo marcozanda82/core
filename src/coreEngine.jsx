@@ -5409,6 +5409,7 @@ export {
   DESC_TO_MEAL_ID,
   inferMealType,
   normalizeLogData,
+  normalizeSleepEntry,
   MEAL_ORDER_SAVE,
   MEAL_LABELS_SAVE,
   NODE_IMPORTANCE,

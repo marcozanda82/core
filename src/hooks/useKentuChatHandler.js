@@ -42,6 +42,68 @@ import {
   extractAndStripDailyPlan,
 } from '../features/salaComandi/utils/aiContextUtils';
 import { findRecentFoodHabit } from '../features/salaComandi/utils/foodUtils';
+import {
+  attachFourCylinderSleepSnapshot,
+  persistFourCylinderAfterSleep,
+} from '../features/salaComandi/utils/fourCylinderSleepBridge';
+
+/**
+ * Salva voce sonno su log + tracker sync + physiology_model fourCylinder.
+ * @param {object} config
+ */
+function commitSleepEntryWithFourCylinder({
+  sleepEntry,
+  isSimulationMode,
+  dailyLog,
+  manualNodes,
+  setDailyLog,
+  setSimulatedLog,
+  syncDatiFirebase,
+  userModel,
+  setUserModel,
+  currentTrackerDate,
+  db,
+  userUid,
+  lastCalibrationWeek,
+  replaceExistingSleep = false,
+}) {
+  let finalEntry = sleepEntry;
+  let fourCylinderNextState = null;
+  if (userModel && setUserModel) {
+    const attached = attachFourCylinderSleepSnapshot(
+      sleepEntry,
+      userModel,
+      currentTrackerDate || getTodayString(),
+    );
+    finalEntry = attached.entry;
+    fourCylinderNextState = attached.nextFourCylinderState;
+  }
+
+  if (isSimulationMode) {
+    setSimulatedLog((prev) => {
+      const base = prev || [];
+      const rest = replaceExistingSleep ? base.filter((e) => e?.type !== 'sleep') : base;
+      return [...rest, finalEntry];
+    });
+    return;
+  }
+
+  const base = dailyLog || [];
+  const rest = replaceExistingSleep ? base.filter((e) => e?.type !== 'sleep') : base;
+  const nuovoLog = [...rest, finalEntry];
+  setDailyLog(nuovoLog);
+  syncDatiFirebase(nuovoLog, manualNodes);
+  if (fourCylinderNextState) {
+    persistFourCylinderAfterSleep({
+      db,
+      userUid,
+      userModel,
+      nextFourCylinderState: fourCylinderNextState,
+      lastCalibrationWeek,
+      setUserModel,
+    });
+  }
+}
 
 /**
  * Kentu chat submit handler (extracted from SalaComandi).
@@ -117,6 +179,10 @@ export function useKentuChatHandler(ctx) {
         userModel,
         userProfile,
         userTargets,
+        setUserModel,
+        db,
+        userUid,
+        lastCalibrationWeek,
     } = ctx;
 
     const meta = sendMeta && typeof sendMeta === 'object' ? sendMeta : null;
@@ -268,15 +334,22 @@ export function useKentuChatHandler(ctx) {
           hr: 58,
           quality,
         };
-        if (isSimulationMode) {
-          setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
-          setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Registrato una stima del sonno (sandbox). Dal diario puoi rifinire i valori.' }]);
-          return;
-        }
-        const nuovoLog = [...(dailyLog || []), sleepEntry];
-        setDailyLog(nuovoLog);
-        syncDatiFirebase(nuovoLog, manualNodes);
-        setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: 'Perfetto, ho salvato una stima del sonno. Puoi correggere i dettagli dal diario se serve.' }]);
+        commitSleepEntryWithFourCylinder({
+          sleepEntry,
+          isSimulationMode,
+          dailyLog,
+          manualNodes,
+          setDailyLog,
+          setSimulatedLog,
+          syncDatiFirebase,
+          userModel,
+          setUserModel,
+          currentTrackerDate,
+          db,
+          userUid,
+          lastCalibrationWeek,
+        });
+        setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: isSimulationMode ? 'Registrato una stima del sonno (sandbox). Dal diario puoi rifinire i valori.' : 'Perfetto, ho salvato una stima del sonno. Puoi correggere i dettagli dal diario se serve.' }]);
         return;
       }
 
@@ -476,20 +549,24 @@ export function useKentuChatHandler(ctx) {
             remMin: d.remMin,
             hr: d.hr,
           };
-          if (isSimulationMode) {
-            setSimulatedLog(prev => [...(prev || []), sleepEntry]);
-            setPendingAiBatch(null);
-            dismissKentuSleepTrigger();
-            setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno (sandbox).' }]);
-            if (optionalReply == null) setChatInput('');
-            return;
-          }
-          const nuovoLog = [...(dailyLog || []), sleepEntry];
-          setDailyLog(nuovoLog);
-          syncDatiFirebase(nuovoLog, manualNodes);
+          commitSleepEntryWithFourCylinder({
+            sleepEntry,
+            isSimulationMode,
+            dailyLog,
+            manualNodes,
+            setDailyLog,
+            setSimulatedLog,
+            syncDatiFirebase,
+            userModel,
+            setUserModel,
+            currentTrackerDate,
+            db,
+            userUid,
+            lastCalibrationWeek,
+          });
           setPendingAiBatch(null);
           dismissKentuSleepTrigger();
-          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
+          setChatHistory(prev => [...prev, { sender: 'user', text: userMessage }, { sender: 'ai', text: isSimulationMode ? 'Ho registrato i dati del sonno (sandbox).' : 'Ho registrato i dati del sonno nel diario. La curva del cortisolo terrà conto dell\'ora di risveglio.' }]);
           if (optionalReply == null) setChatInput('');
           return;
         }
@@ -1116,13 +1193,21 @@ export function useKentuChatHandler(ctx) {
             sleepHours < 3
               ? `Ho registrato il tuo sonnellino di ${Math.round(sleepHours * 60)} minuti. Body Battery ricalcolata!`
               : `Ho registrato ${hoursDisplay} ore di sonno. Body Battery aggiornata!`;
-          if (isSimulationMode) {
-            setSimulatedLog((prev) => [...(prev || []), sleepEntry]);
-          } else {
-            const nuovoLogSleep = [...(dailyLog || []), sleepEntry];
-            setDailyLog(nuovoLogSleep);
-            syncDatiFirebase(nuovoLogSleep, manualNodes);
-          }
+          commitSleepEntryWithFourCylinder({
+            sleepEntry,
+            isSimulationMode,
+            dailyLog,
+            manualNodes,
+            setDailyLog,
+            setSimulatedLog,
+            syncDatiFirebase,
+            userModel,
+            setUserModel,
+            currentTrackerDate,
+            db,
+            userUid,
+            lastCalibrationWeek,
+          });
           dismissKentuSleepTrigger();
           setChatHistory((prev) => {
             const next = [...prev];

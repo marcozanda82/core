@@ -11,6 +11,7 @@ import {
 import { mapBundleToPillars } from './features/metabolic/pillarsMapperLegacy';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
+import MetabolicDiagnostics from './MetabolicDiagnostics';
 
 const DEFAULT_TIMEFRAME = '1d';
 const DEFAULT_ACTIVE_TOOL = 'COMPASS';
@@ -18,6 +19,7 @@ const TREND_TOOLS = [
   { value: 'COMPASS', label: '🧭 Bussola' },
   { value: 'RADAR', label: '🕸️ Radar' },
   { value: 'MAP', label: '🗺️ Mappa' },
+  { value: 'DIAG', label: '⚡ Diag' },
 ];
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
@@ -268,6 +270,7 @@ export default function MetabolicUnifiedView({
   projectionAnchorDate = null,
   selectedTimeframe: selectedTimeframeProp,
   onTimeframeChange,
+  fourCylinder = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -426,23 +429,25 @@ export default function MetabolicUnifiedView({
   return (
     <div className="trend-unified-root">
       <div className="trend-sticky-controls">
-        <div
-          role="tablist"
-          aria-label="Periodo ago predittivo"
-          className="trend-timeframe-tablist"
-        >
-          {RADAR_TIMEFRAMES.map(({ value, label }) => (
-            <MetabolicTabButton
-              key={value}
-              active={radarTimeframe === value}
-              onClick={() => handleRadarTimeframeChange(value)}
-              variant="timeframe"
-              reducedMotion={reducedMotion}
-            >
-              {label}
-            </MetabolicTabButton>
-          ))}
-        </div>
+        {activeTool !== 'DIAG' ? (
+          <div
+            role="tablist"
+            aria-label="Periodo ago predittivo"
+            className="trend-timeframe-tablist"
+          >
+            {RADAR_TIMEFRAMES.map(({ value, label }) => (
+              <MetabolicTabButton
+                key={value}
+                active={radarTimeframe === value}
+                onClick={() => handleRadarTimeframeChange(value)}
+                variant="timeframe"
+                reducedMotion={reducedMotion}
+              >
+                {label}
+              </MetabolicTabButton>
+            ))}
+          </div>
+        ) : null}
 
         <div
           role="tablist"
@@ -463,7 +468,13 @@ export default function MetabolicUnifiedView({
         </div>
       </div>
 
-      <div className="trend-tool-stage">
+      <div
+        className={
+          activeTool === 'DIAG'
+            ? 'trend-tool-stage relative flex-1 min-h-0 !overflow-visible'
+            : 'trend-tool-stage'
+        }
+      >
         {activeTool === 'COMPASS' ? (
           <>
             <MetabolicCompass
@@ -542,6 +553,10 @@ export default function MetabolicUnifiedView({
               />
             ) : null}
           </>
+        ) : null}
+
+        {activeTool === 'DIAG' ? (
+          <MetabolicDiagnostics fourCylinder={fourCylinder} fullHistory={fullHistory} />
         ) : null}
       </div>
     </div>

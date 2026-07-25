@@ -169,6 +169,11 @@ import {
 import useWorkoutManager from './hooks/salaComandi/useWorkoutManager';
 import useKentuMealHandlers from './hooks/salaComandi/useKentuMealHandlers';
 import useDiaryFirebaseSync from './hooks/salaComandi/useDiaryFirebaseSync';
+import useFourCylinderBootCatchUp from './hooks/salaComandi/useFourCylinderBootCatchUp';
+import {
+  attachFourCylinderSleepSnapshot,
+  persistFourCylinderAfterSleep,
+} from './features/salaComandi/utils/fourCylinderSleepBridge';
 import useTimelineDiaryActions from './hooks/salaComandi/useTimelineDiaryActions';
 import useSleepEngine from './hooks/useSleepEngine';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
@@ -1547,6 +1552,15 @@ export default function SalaComandi() {
     weeklyPlanningRemoteSigRef,
   });
 
+  // --- 4-Cylinder boot: catch-up decadimento al login (physiology_model → stato locale + Firebase) ---
+  useFourCylinderBootCatchUp({
+    userUid,
+    db,
+    isSimulationMode,
+    setUserModel,
+    lastCalibrationWeek,
+  });
+
   const {
     handleCSVUpload,
     calculateSmartTargets,
@@ -2457,6 +2471,9 @@ export default function SalaComandi() {
     setIsPlanActionSheetOpen,
     setShowDiarySheet,
     parseFlexibleTimeToDecimal,
+    userModel,
+    setUserModel,
+    lastCalibrationWeek,
   });
 
   const {
@@ -5418,20 +5435,43 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           ? { qualityScore: Math.round(qualityScore) }
           : {}),
       };
+
+      let finalEntry = entry;
+      let fourCylinderNextState = null;
+      if (userModel && setUserModel) {
+        const attached = attachFourCylinderSleepSnapshot(
+          entry,
+          userModel,
+          currentTrackerDate || getTodayString(),
+        );
+        finalEntry = attached.entry;
+        fourCylinderNextState = attached.nextFourCylinderState;
+      }
+
       if (isSimulationMode) {
         setSimulatedLog((prev) => {
           const base = prev || [];
           const rest = base.filter((e) => e?.type !== 'sleep');
-          return [...rest, entry];
+          return [...rest, finalEntry];
         });
       } else {
         setDailyLog((prev) => {
           const base = prev || [];
           const rest = base.filter((e) => e?.type !== 'sleep');
-          const next = [...rest, entry];
+          const next = [...rest, finalEntry];
           syncDatiFirebase(next, manualNodesRef.current || []);
           return next;
         });
+        if (fourCylinderNextState) {
+          persistFourCylinderAfterSleep({
+            db,
+            userUid,
+            userModel,
+            nextFourCylinderState: fourCylinderNextState,
+            lastCalibrationWeek,
+            setUserModel,
+          });
+        }
       }
       dismissKentuSleepTrigger();
     },
@@ -5441,6 +5481,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       setDailyLog,
       setSimulatedLog,
       syncDatiFirebase,
+      userModel,
+      setUserModel,
+      currentTrackerDate,
+      db,
+      userUid,
+      lastCalibrationWeek,
     ],
   );
 
@@ -5801,18 +5847,41 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       quality: Math.max(1, Math.min(5, Math.round(Number(sleepFormQuality) || 3))),
       ...(existing?.hr != null ? { hr: existing.hr } : {}),
     };
+
+    let finalEntry = entry;
+    let fourCylinderNextState = null;
+    if (userModel && setUserModel) {
+      const attached = attachFourCylinderSleepSnapshot(
+        entry,
+        userModel,
+        currentTrackerDate || getTodayString(),
+      );
+      finalEntry = attached.entry;
+      fourCylinderNextState = attached.nextFourCylinderState;
+    }
+
     if (isSimulationMode) {
       setSimulatedLog((prev) => {
         const base = prev || [];
         const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
-        return [...rest, entry];
+        return [...rest, finalEntry];
       });
     } else {
       const base = dailyLog || [];
       const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
-      const next = [...rest, entry];
+      const next = [...rest, finalEntry];
       setDailyLog(next);
       syncDatiFirebase(next, manualNodes || []);
+      if (fourCylinderNextState) {
+        persistFourCylinderAfterSleep({
+          db,
+          userUid,
+          userModel,
+          nextFourCylinderState: fourCylinderNextState,
+          lastCalibrationWeek,
+          setUserModel,
+        });
+      }
     }
     dismissKentuSleepTrigger();
     setShowSleepPrompt(false);
@@ -5997,20 +6066,55 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       quality,
       ...(existing?.hr != null ? { hr: existing.hr } : {}),
     };
+
+    let finalEntry = entry;
+    let fourCylinderNextState = null;
+    if (userModel && setUserModel) {
+      const attached = attachFourCylinderSleepSnapshot(
+        entry,
+        userModel,
+        currentTrackerDate || getTodayString(),
+      );
+      finalEntry = attached.entry;
+      fourCylinderNextState = attached.nextFourCylinderState;
+    }
+
     if (isSimulationMode) {
       setSimulatedLog((prev) => {
         const base = prev || [];
         const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
-        return [...rest, entry];
+        return [...rest, finalEntry];
       });
       return;
     }
     const base = dailyLog || [];
     const rest = editingId ? base.filter((e) => e.id !== editingId) : base;
-    const next = [...rest, entry];
+    const next = [...rest, finalEntry];
     setDailyLog(next);
     syncDatiFirebase(next, manualNodes || []);
-  }, [isSimulationMode, simulatedLog, dailyLog, manualNodes, syncDatiFirebase]);
+    if (fourCylinderNextState) {
+      persistFourCylinderAfterSleep({
+        db,
+        userUid,
+        userModel,
+        nextFourCylinderState: fourCylinderNextState,
+        lastCalibrationWeek,
+        setUserModel,
+      });
+    }
+  }, [
+    isSimulationMode,
+    simulatedLog,
+    dailyLog,
+    manualNodes,
+    syncDatiFirebase,
+    userModel,
+    setUserModel,
+    currentTrackerDate,
+    db,
+    userUid,
+    lastCalibrationWeek,
+  ]);
 
   const handleStoricoSaveDayEntry = useCallback(async ({ dateStr, entryId, patch, isSynthetic }) => {
     if (isSimulationMode) return;
@@ -7202,6 +7306,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             projectionAnchorDate={currentTrackerDate}
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
+            fourCylinder={userModel?.fourCylinder ?? null}
           />
           </Suspense>
         </div>

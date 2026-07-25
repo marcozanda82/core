@@ -29,6 +29,11 @@ import { getCurrentTimeRoundedTo15Min } from '../../utils/decimalTimeUtils';
 import { mapChatWorkoutToNativePayload } from '../../features/workout/workoutAdapter';
 import { getTodayString, addDays } from '../../coreEngine';
 import { getWeekStartMondayKeyLocal } from '../../weeklyPlanning';
+import {
+  applyWorkoutPipeline,
+  fourCylinderFromPhysiologyModel,
+  physiologyModelWithFourCylinder,
+} from '../../features/salaComandi/engines/fourCylinderEngine';
 
 /**
  * Stato e azioni allenamento (tracker + piano giornaliero + commit da chat).
@@ -55,6 +60,9 @@ export function useWorkoutManager({
   setIsPlanActionSheetOpen,
   setShowDiarySheet,
   parseFlexibleTimeToDecimal,
+  userModel,
+  setUserModel,
+  lastCalibrationWeek,
 }) {
   const [workoutPlanDraft, setWorkoutPlanDraft] = useState(
     /** @type {import('../../drawers/vistas/WorkoutView').WorkoutPlanDraft | null} */ (null),
@@ -334,6 +342,36 @@ export function useWorkoutManager({
       ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
     };
 
+    // --- 4-Cylinder pipeline (pre-save): catch-up decay → stimolo workout ---
+    // Solo allenamenti fisici nuovi: lavoro/cognitivo esclusi; edit escluso (v1, no revert stimolo).
+    const isPhysicalWorkout = !isWork && !isCognitive;
+    const shouldRunFourCylinder = isPhysicalWorkout && !editingWorkoutId;
+    let fourCylinderNextState = null;
+
+    if (shouldRunFourCylinder && userModel && setUserModel) {
+      const todayIso = currentTrackerDate || getTodayString();
+      const currentFourCylinder = fourCylinderFromPhysiologyModel(userModel, todayIso);
+      const { nextState, snapshot } = applyWorkoutPipeline(
+        currentFourCylinder,
+        {
+          workoutId: finalId,
+          workoutType,
+          muscles: musclesCanon,
+          kcal: isCognitive ? cognitiveKcal : workoutKcal,
+          duration,
+          date: todayIso,
+        },
+        todayIso,
+      );
+
+      logData.fourCylinderSnapshot = snapshot;
+      nodeData.fourCylinderRef = {
+        engineVersion: snapshot.engineVersion,
+        capturedAt: snapshot.capturedAt,
+      };
+      fourCylinderNextState = nextState;
+    }
+
     if (isSimulationMode) {
       setSimulatedLog((prev) => {
         const base = prev || [];
@@ -361,6 +399,19 @@ export function useWorkoutManager({
     setManualNodes(newNodes);
     syncDatiFirebase(newLog, newNodes);
 
+    // Persiste fourCylinder aggiornato su physiology_model (silenzioso, post tracker sync).
+    if (fourCylinderNextState && setUserModel) {
+      const updatedPhysiology = physiologyModelWithFourCylinder(userModel, fourCylinderNextState);
+      setUserModel(updatedPhysiology);
+      const uid = user?.uid;
+      if (uid && db) {
+        set(ref(db, `users/${uid}/physiology_model`), {
+          ...updatedPhysiology,
+          ...(lastCalibrationWeek ? { lastCalibrationWeek } : {}),
+        }).catch((err) => console.warn('[fourCylinder] physiology save failed:', err));
+      }
+    }
+
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
@@ -384,6 +435,12 @@ export function useWorkoutManager({
     syncDatiFirebase,
     closeDrawer,
     setIsPlanActionSheetOpen,
+    currentTrackerDate,
+    userModel,
+    setUserModel,
+    user,
+    db,
+    lastCalibrationWeek,
   ]);
 
   const commitAddWorkoutCommand = useCallback(
@@ -432,6 +489,34 @@ export function useWorkoutManager({
       const durationMinutes = Math.max(1, Math.round((Number(logItem.duration) || 0) * 60));
       const label = String(logItem.desc || logItem.name || workoutName).trim();
 
+      // --- 4-Cylinder pipeline (chat path): catch-up decay → stimolo workout ---
+      let fourCylinderNextState = null;
+      if (userModel && setUserModel) {
+        const todayIso = currentTrackerDate || getTodayString();
+        const muscles = Array.isArray(timelineNode.muscles) ? timelineNode.muscles : [];
+        const currentFourCylinder = fourCylinderFromPhysiologyModel(userModel, todayIso);
+        const { nextState, snapshot } = applyWorkoutPipeline(
+          currentFourCylinder,
+          {
+            workoutId: logItem.id,
+            workoutType: logItem.workoutType,
+            muscles,
+            kcal: logItem.kcal,
+            duration: logItem.duration,
+            rpe: logItem.rpe ?? payload?.rpe ?? null,
+            date: todayIso,
+          },
+          todayIso,
+        );
+
+        logItem.fourCylinderSnapshot = snapshot;
+        timelineNode.fourCylinderRef = {
+          engineVersion: snapshot.engineVersion,
+          capturedAt: snapshot.capturedAt,
+        };
+        fourCylinderNextState = nextState;
+      }
+
       if (isSimulationMode) {
         setSimulatedLog((prev) => {
           const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
@@ -451,6 +536,19 @@ export function useWorkoutManager({
           syncDatiFirebase(newLog, newNodes);
           return newLog;
         });
+
+        // Persiste fourCylinder aggiornato su physiology_model (silenzioso, post tracker sync).
+        if (fourCylinderNextState && setUserModel) {
+          const updatedPhysiology = physiologyModelWithFourCylinder(userModel, fourCylinderNextState);
+          setUserModel(updatedPhysiology);
+          const uid = user?.uid;
+          if (uid && db) {
+            set(ref(db, `users/${uid}/physiology_model`), {
+              ...updatedPhysiology,
+              ...(lastCalibrationWeek ? { lastCalibrationWeek } : {}),
+            }).catch((err) => console.warn('[fourCylinder] physiology save failed:', err));
+          }
+        }
       }
       return `✅ Allenamento registrato: ${label} (${durationMinutes} min, ~${logItem.kcal} kcal).`;
     },
@@ -462,6 +560,12 @@ export function useWorkoutManager({
       setSimulatedLog,
       syncDatiFirebase,
       manualNodesRef,
+      currentTrackerDate,
+      userModel,
+      setUserModel,
+      user,
+      db,
+      lastCalibrationWeek,
     ],
   );
 
