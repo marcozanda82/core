@@ -6,6 +6,7 @@ import {
   fourCylinderFromPhysiologyModel,
   physiologyModelWithFourCylinder,
 } from '../engines/fourCylinderEngine';
+import { buildDailyNutritionMap } from './fourCylinderNutritionBridge';
 
 /**
  * Normalizza l'entry sonno e ricava input per applySleepPipeline.
@@ -31,9 +32,15 @@ export function resolveSleepRecoveryInput(entry) {
  * @param {object} entry
  * @param {object | null | undefined} userModel
  * @param {string} [todayIso]
+ * @param {{
+ *   fullHistory?: object | null,
+ *   proteinTarget?: number | null,
+ *   activeLog?: Array | null,
+ *   dailyNutritionMap?: Object.<string, boolean> | null,
+ * }} [options]
  * @returns {{ entry: object, nextFourCylinderState: object | null, snapshot: object | null }}
  */
-export function attachFourCylinderSleepSnapshot(entry, userModel, todayIso) {
+export function attachFourCylinderSleepSnapshot(entry, userModel, todayIso, options = {}) {
   const dateIso = String(todayIso || getTodayString()).slice(0, 10);
   if (!userModel || typeof userModel !== 'object') {
     return { entry, nextFourCylinderState: null, snapshot: null };
@@ -42,6 +49,16 @@ export function attachFourCylinderSleepSnapshot(entry, userModel, todayIso) {
   const normalized = normalizeSleepEntry({ ...entry, type: 'sleep' });
   const { sleepHours, recoveryEfficiency } = resolveSleepRecoveryInput(normalized);
   const currentFourCylinder = fourCylinderFromPhysiologyModel(userModel, dateIso);
+
+  const dailyNutritionMap =
+    options.dailyNutritionMap
+    ?? (options.fullHistory
+      ? buildDailyNutritionMap(options.fullHistory, options.proteinTarget, {
+          activeLog: options.activeLog,
+          anchorDate: dateIso,
+        })
+      : null);
+
   const { nextState, snapshot } = applySleepPipeline(
     currentFourCylinder,
     {
@@ -51,6 +68,7 @@ export function attachFourCylinderSleepSnapshot(entry, userModel, todayIso) {
       date: dateIso,
     },
     dateIso,
+    dailyNutritionMap,
   );
 
   return {

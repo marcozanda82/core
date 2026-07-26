@@ -26,7 +26,25 @@
  * @property {number} maxSystemicBump Incremento massimo fatica sistemica per sessione
  * @property {number} maxSystemicRecoveryPerSleep Quanto può scendere al max la fatica con sonno perfetto
  * @property {number} poorSleepFatiguePenalty Incremento fatica se recoveryEfficiency < 0.4
+ * @property {CognitivePenaltyPerHour} cognitivePenaltyPerHour Penalità systemic per ora di carico cognitivo
+ * @property {number} maxCognitiveBump Cap stress sistemico per singola sessione cognitiva/lavoro
+ * @property {number} proteinShieldMultiplier Fattore atrofia se proteinTargetHit quel giorno (es. 0.5 = dimezza)
+ * @property {number} fastedWorkoutPenalty Fattore stimolo muscolare se allenamento in digiuno profondo
  * @property {FourCylinderDecay} stimulusGain Moltiplicatori v1 (fissi a 1)
+ */
+
+/**
+ * Mappa nutrizione giornaliera per catch-up: ISO date → target proteico raggiunto.
+ * @typedef {Object.<string, boolean>} DailyNutritionMap
+ */
+
+/**
+ * Penalità oraria per workoutType (studio / lavoro_pc / lavoro).
+ * @typedef {object} CognitivePenaltyPerHour
+ * @property {number} studio
+ * @property {number} lavoro_pc
+ * @property {number} lavoro
+ * @property {number} default fallback se workoutType sconosciuto
  */
 
 /**
@@ -59,6 +77,7 @@
  * @property {number} [kcal]
  * @property {number} [duration] ore decimali (es. 1.0 = 60 min)
  * @property {number} [rpe] 1–10 opzionale
+ * @property {boolean} [isFastedState] true se allenamento in digiuno profondo (3° pilastro)
  */
 
 /**
@@ -86,6 +105,31 @@
  * @property {FourCylinderFlatLevels} recovery delta fatica/recupero applicato
  * @property {FourCylinderFlatLevels} after
  * @property {boolean} [optimizedRecovery] true se recoveryEfficiency > 0.7
+ */
+
+/**
+ * Input 4° pilastro — carico cognitivo / stress (cortisolo).
+ *
+ * @typedef {object} CognitiveStressInput
+ * @property {number} duration ore decimali della sessione
+ * @property {string} workoutType es. studio | lavoro_pc | lavoro
+ * @property {string} [sessionId] id voce log
+ * @property {string} [date] ISO YYYY-MM-DD
+ */
+
+/**
+ * Delta stress cognitivo (muscoli a 0; solo systemic).
+ * @typedef {FourCylinderDecay & { systemic: number }} CognitiveStressDelta
+ */
+
+/**
+ * Snapshot flat per voce diario cognitiva (`fourCylinderSnapshot` con chiave `stress`).
+ * @typedef {object} FourCylinderCognitiveLogSnapshot
+ * @property {number} engineVersion
+ * @property {number} capturedAt epoch ms
+ * @property {FourCylinderFlatLevels} before
+ * @property {FourCylinderFlatLevels} stress delta applicato (muscoli 0, systemic = bump)
+ * @property {FourCylinderFlatLevels} after
  */
 
 /**
@@ -120,6 +164,15 @@ export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
   maxSystemicBump: 0.35,
   maxSystemicRecoveryPerSleep: 0.35,
   poorSleepFatiguePenalty: 0.10,
+  cognitivePenaltyPerHour: Object.freeze({
+    studio: 0.04,
+    lavoro_pc: 0.03,
+    lavoro: 0.02,
+    default: 0.02,
+  }),
+  maxCognitiveBump: 0.30,
+  proteinShieldMultiplier: 0.5,
+  fastedWorkoutPenalty: 0.7,
   stimulusGain: Object.freeze({
     push: 1,
     pull: 1,
@@ -252,6 +305,11 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
   const decayPerDaySrc = paramsSrc.decayPerDay && typeof paramsSrc.decayPerDay === 'object'
     ? paramsSrc.decayPerDay
     : {};
+  const cognitivePenaltySrc =
+    paramsSrc.cognitivePenaltyPerHour && typeof paramsSrc.cognitivePenaltyPerHour === 'object'
+      ? paramsSrc.cognitivePenaltyPerHour
+      : {};
+  const defaultCognitivePenalty = DEFAULT_FOUR_CYLINDER_PARAMS.cognitivePenaltyPerHour;
 
   /** @type {FourCylinderParams} */
   const params = {
@@ -270,6 +328,21 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
     ),
     poorSleepFatiguePenalty: clamp01(
       paramsSrc.poorSleepFatiguePenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.poorSleepFatiguePenalty,
+    ),
+    cognitivePenaltyPerHour: {
+      studio: clamp01(cognitivePenaltySrc.studio ?? defaultCognitivePenalty.studio),
+      lavoro_pc: clamp01(cognitivePenaltySrc.lavoro_pc ?? defaultCognitivePenalty.lavoro_pc),
+      lavoro: clamp01(cognitivePenaltySrc.lavoro ?? defaultCognitivePenalty.lavoro),
+      default: clamp01(cognitivePenaltySrc.default ?? defaultCognitivePenalty.default),
+    },
+    maxCognitiveBump: clamp01(
+      paramsSrc.maxCognitiveBump ?? DEFAULT_FOUR_CYLINDER_PARAMS.maxCognitiveBump,
+    ),
+    proteinShieldMultiplier: clamp01(
+      paramsSrc.proteinShieldMultiplier ?? DEFAULT_FOUR_CYLINDER_PARAMS.proteinShieldMultiplier,
+    ),
+    fastedWorkoutPenalty: clamp01(
+      paramsSrc.fastedWorkoutPenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.fastedWorkoutPenalty,
     ),
     stimulusGain: {
       push: clamp01(paramsSrc.stimulusGain?.push ?? 1) || 1,
@@ -360,23 +433,48 @@ export function flattenRecoveryDelta(delta) {
 }
 
 /**
+ * @param {string} iso YYYY-MM-DD
+ * @param {number} deltaDays
+ * @returns {string | null}
+ */
+function addCalendarDaysUtc(iso, deltaDays) {
+  const d = parseIsoDateUtc(iso);
+  if (!d) return null;
+  const n = Math.floor(Number(deltaDays) || 0);
+  d.setUTCDate(d.getUTCDate() + n);
+  return toIsoDateUtc(d);
+}
+
+/**
  * Applica un singolo giorno di riposo virtuale (mezzanotte).
  * I cilindri muscolari scendono; la fatica sistemica si smaltisce.
+ * Con `proteinTargetHit`, l'atrofia muscolare è moltiplicata per `proteinShieldMultiplier`.
  *
  * @param {FourCylinderState} state
+ * @param {{ proteinTargetHit?: boolean, params?: FourCylinderParams | null }} [options]
  * @returns {FourCylinderState}
  */
-export function applySingleDayRecovery(state) {
+export function applySingleDayRecovery(state, options = {}) {
   const safe = sanitizeFourCylinderState(state);
-  const { decayPerDay, systemicRecoveryPerDay } = safe.params;
+  const activeParams = options?.params && typeof options.params === 'object'
+    ? { ...safe.params, ...options.params }
+    : safe.params;
+  const { decayPerDay, systemicRecoveryPerDay } = activeParams;
+  const proteinTargetHit = options?.proteinTargetHit === true;
+  const muscleScale = proteinTargetHit
+    ? clamp01(
+      activeParams.proteinShieldMultiplier
+        ?? DEFAULT_FOUR_CYLINDER_PARAMS.proteinShieldMultiplier,
+    )
+    : 1;
 
   return {
     ...safe,
     updatedAt: Date.now(),
     decay: clampMuscleDecay({
-      push: safe.decay.push - decayPerDay.push,
-      pull: safe.decay.pull - decayPerDay.pull,
-      legs: safe.decay.legs - decayPerDay.legs,
+      push: safe.decay.push - decayPerDay.push * muscleScale,
+      pull: safe.decay.pull - decayPerDay.pull * muscleScale,
+      legs: safe.decay.legs - decayPerDay.legs * muscleScale,
     }),
     systemic_fatigue: clamp01(safe.systemic_fatigue - systemicRecoveryPerDay),
   };
@@ -384,6 +482,7 @@ export function applySingleDayRecovery(state) {
 
 /**
  * Applica N giorni consecutivi di recovery (decadimento stimolo muscolare).
+ * Senza mappa nutrizione: decadimento standard (nessuno scudo proteico).
  *
  * @param {FourCylinderState} state
  * @param {number} days intero ≥ 0
@@ -414,11 +513,16 @@ export function applyDailyDecay(state, days) {
  * Catch-up: applica il decay per ogni notte tra `lastProcessedDate` e `todayIso`.
  * Aggiorna `lastProcessedDate` a `todayIso` se almeno un giorno è stato processato.
  *
+ * Con `dailyNutritionMap[date] === true`, l'atrofia di quel giorno usa
+ * `decayPerDay * proteinShieldMultiplier` (scudo anticatabolico).
+ *
  * @param {FourCylinderState} state
  * @param {string} todayIso YYYY-MM-DD
+ * @param {Partial<FourCylinderParams> | null} [params] override opzionale parametri motore
+ * @param {DailyNutritionMap | null} [dailyNutritionMap] ISO date → proteinTargetHit
  * @returns {{ nextState: FourCylinderState, daysApplied: number }}
  */
-export function catchUpDecayToDate(state, todayIso) {
+export function catchUpDecayToDate(state, todayIso, params = null, dailyNutritionMap = null) {
   const safe = sanitizeFourCylinderState(state, todayIso);
   const today = String(todayIso || '').trim().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
@@ -430,14 +534,27 @@ export function catchUpDecayToDate(state, todayIso) {
     return { nextState: safe, daysApplied: 0 };
   }
 
-  const { nextState, daysApplied } = applyDailyDecay(safe, days);
+  const activeParams = params && typeof params === 'object'
+    ? { ...safe.params, ...params }
+    : safe.params;
+  const nutritionMap =
+    dailyNutritionMap && typeof dailyNutritionMap === 'object' ? dailyNutritionMap : null;
+
+  let current = safe;
+  for (let i = 1; i <= days; i += 1) {
+    const date = addCalendarDaysUtc(safe.lastProcessedDate, i);
+    if (!date) break;
+    const proteinTargetHit = nutritionMap ? nutritionMap[date] === true : false;
+    current = applySingleDayRecovery(current, { proteinTargetHit, params: activeParams });
+  }
+
   return {
     nextState: {
-      ...nextState,
+      ...current,
       lastProcessedDate: today,
       updatedAt: Date.now(),
     },
-    daysApplied,
+    daysApplied: days,
   };
 }
 
@@ -468,6 +585,7 @@ function computeLoadFactor(durationHours, kcal) {
 
 /**
  * Calcola incrementi grezzi prima del clamp (non muta lo state).
+ * Se `workout.isFastedState`, i bump muscolari usano `stimulusGain * fastedWorkoutPenalty`.
  *
  * @param {WorkoutStimulusInput} workout
  * @param {FourCylinderParams} params
@@ -482,6 +600,15 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
   const loadFactor = computeLoadFactor(workout?.duration, workout?.kcal);
   const rpe = Number(workout?.rpe);
   const rpeBoost = Number.isFinite(rpe) && rpe >= 8 ? 1.12 : 1;
+  const isFastedState = workout?.isFastedState === true;
+  const fastedMuscleScale = isFastedState
+    ? clamp01(params.fastedWorkoutPenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.fastedWorkoutPenalty)
+    : 1;
+  const gain = {
+    push: (params.stimulusGain?.push ?? 1) * fastedMuscleScale,
+    pull: (params.stimulusGain?.pull ?? 1) * fastedMuscleScale,
+    legs: (params.stimulusGain?.legs ?? 1) * fastedMuscleScale,
+  };
 
   /** @type {Record<MuscleCylinderId, number>} */
   const weights = { push: 0, pull: 0, legs: 0 };
@@ -514,18 +641,18 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
     muscleDeltas = {
       push: 0,
       pull: 0,
-      legs: clamp01(0.18 * loadFactor * params.stimulusGain.legs),
+      legs: clamp01(0.18 * loadFactor * gain.legs),
     };
   } else if (weightSum > 0) {
     const baseBump = params.maxMuscleBump * loadFactor;
     for (const cyl of /** @type {MuscleCylinderId[]} */ (['push', 'pull', 'legs'])) {
       if (weights[cyl] <= 0) continue;
       const share = weights[cyl] / weightSum;
-      muscleDeltas[cyl] = clamp01(baseBump * share * params.stimulusGain[cyl]);
+      muscleDeltas[cyl] = clamp01(baseBump * share * gain[cyl]);
     }
   } else if (type === 'pesi' || type.includes('strength') || type.includes('peso')) {
     muscleDeltas = {
-      push: clamp01(params.maxMuscleBump * 0.45 * loadFactor),
+      push: clamp01(params.maxMuscleBump * 0.45 * loadFactor * gain.push),
       pull: 0,
       legs: 0,
     };
@@ -608,10 +735,12 @@ export function applyWorkoutStimulus(state, workout) {
 
 /**
  * Pipeline completa pre-save: catch-up decay → stimolo workout.
+ * Propaga `workout.isFastedState` a `computeWorkoutStimulusDeltas` (limitatore ipertrofia).
  *
  * @param {FourCylinderState} state
- * @param {WorkoutStimulusInput} workout
+ * @param {WorkoutStimulusInput} workout — include opzionale `isFastedState`
  * @param {string} todayIso
+ * @param {DailyNutritionMap | null} [dailyNutritionMap] opzionale per catch-up con scudo proteico
  * @returns {{
  *   nextState: FourCylinderState,
  *   decayDaysApplied: number,
@@ -619,8 +748,13 @@ export function applyWorkoutStimulus(state, workout) {
  *   snapshot: FourCylinderLogSnapshot,
  * }}
  */
-export function applyWorkoutPipeline(state, workout, todayIso) {
-  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(state, todayIso);
+export function applyWorkoutPipeline(state, workout, todayIso, dailyNutritionMap = null) {
+  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(
+    state,
+    todayIso,
+    null,
+    dailyNutritionMap,
+  );
   const {
     nextState,
     stimulus,
@@ -729,6 +863,7 @@ export function applySleepRecovery(state, sleepInput) {
  * @param {FourCylinderState} state
  * @param {SleepRecoveryInput} sleepInput
  * @param {string} todayIso
+ * @param {DailyNutritionMap | null} [dailyNutritionMap] scudo proteico in catch-up
  * @returns {{
  *   nextState: FourCylinderState,
  *   decayDaysApplied: number,
@@ -738,8 +873,13 @@ export function applySleepRecovery(state, sleepInput) {
  *   snapshot: FourCylinderSleepLogSnapshot,
  * }}
  */
-export function applySleepPipeline(state, sleepInput, todayIso) {
-  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(state, todayIso);
+export function applySleepPipeline(state, sleepInput, todayIso, dailyNutritionMap = null) {
+  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(
+    state,
+    todayIso,
+    null,
+    dailyNutritionMap,
+  );
   const {
     nextState,
     recovery,
@@ -757,6 +897,143 @@ export function applySleepPipeline(state, sleepInput, todayIso) {
     recovery,
     optimizedRecovery,
     isPoorSleep,
+    snapshot,
+  };
+}
+
+/**
+ * Delta flat (stress cognitivo) per snapshot log — solo systemic_fatigue.
+ * I cilindri muscolari restano 0 (il carico cognitivo non alza lo stimolo in v1).
+ *
+ * @param {CognitiveStressDelta} delta
+ * @returns {FourCylinderFlatLevels}
+ */
+export function flattenStressDelta(delta) {
+  return {
+    decay_push: clamp01(delta?.push),
+    decay_pull: clamp01(delta?.pull),
+    decay_legs: clamp01(delta?.legs),
+    systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
+  };
+}
+
+/**
+ * Risolve la penalità oraria cognitiva da workoutType.
+ *
+ * @param {string | null | undefined} workoutType
+ * @param {FourCylinderParams} [params]
+ * @returns {number}
+ */
+export function resolveCognitivePenaltyPerHour(workoutType, params = DEFAULT_FOUR_CYLINDER_PARAMS) {
+  const table = params?.cognitivePenaltyPerHour || DEFAULT_FOUR_CYLINDER_PARAMS.cognitivePenaltyPerHour;
+  const key = String(workoutType || '').trim();
+  const raw = Object.prototype.hasOwnProperty.call(table, key)
+    ? table[key]
+    : table.default;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : Number(table.default) || 0.02;
+}
+
+/**
+ * Calcola il bump di stress sistemico da input cognitivo (non muta lo state).
+ *
+ * @param {CognitiveStressInput} cognitiveInput
+ * @param {FourCylinderParams} [params]
+ * @returns {{ stress: CognitiveStressDelta, stressBump: number }}
+ */
+export function computeCognitiveStressDeltas(cognitiveInput, params = DEFAULT_FOUR_CYLINDER_PARAMS) {
+  const duration = Math.max(0, Number(cognitiveInput?.duration) || 0);
+  const penaltyPerHour = resolveCognitivePenaltyPerHour(cognitiveInput?.workoutType, params);
+  const maxBump = clamp01(params?.maxCognitiveBump ?? DEFAULT_FOUR_CYLINDER_PARAMS.maxCognitiveBump);
+  const stressBump = Math.min(maxBump, duration * penaltyPerHour);
+
+  /** @type {CognitiveStressDelta} */
+  const stress = { push: 0, pull: 0, legs: 0, systemic: clamp01(stressBump) };
+
+  return { stress, stressBump: stress.systemic };
+}
+
+/**
+ * Applica carico cognitivo: alza solo systemic_fatigue. Non tocca decay muscolare.
+ *
+ * @param {FourCylinderState} state — già catch-uppato fino a oggi
+ * @param {CognitiveStressInput} cognitiveInput
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   stress: CognitiveStressDelta,
+ *   stressBump: number,
+ *   snapshot: FourCylinderCognitiveLogSnapshot,
+ * }}
+ */
+export function applyCognitiveStress(state, cognitiveInput) {
+  const safe = sanitizeFourCylinderState(state);
+  const beforeFlat = flattenFourCylinderLevels(safe.decay, safe.systemic_fatigue);
+
+  const { stress, stressBump } = computeCognitiveStressDeltas(cognitiveInput, safe.params);
+  const nextSystemic = clamp01(safe.systemic_fatigue + stressBump);
+  const nextDecay = clampMuscleDecay(safe.decay);
+  const afterFlat = flattenFourCylinderLevels(nextDecay, nextSystemic);
+  const capturedAt = Date.now();
+
+  /** @type {FourCylinderCognitiveLogSnapshot} */
+  const snapshot = {
+    engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
+    capturedAt,
+    before: beforeFlat,
+    stress: flattenStressDelta(stress),
+    after: afterFlat,
+  };
+
+  return {
+    nextState: {
+      ...safe,
+      updatedAt: capturedAt,
+      decay: nextDecay,
+      systemic_fatigue: nextSystemic,
+    },
+    stress,
+    stressBump,
+    snapshot,
+  };
+}
+
+/**
+ * Pipeline completa pre-save carico cognitivo: catch-up decay → stress sistemico.
+ *
+ * @param {FourCylinderState} state
+ * @param {CognitiveStressInput} cognitiveInput
+ * @param {string} todayIso
+ * @param {DailyNutritionMap | null} [dailyNutritionMap] scudo proteico in catch-up
+ * @returns {{
+ *   nextState: FourCylinderState,
+ *   decayDaysApplied: number,
+ *   stress: CognitiveStressDelta,
+ *   stressBump: number,
+ *   snapshot: FourCylinderCognitiveLogSnapshot,
+ * }}
+ */
+export function applyCognitiveStressPipeline(state, cognitiveInput, todayIso, dailyNutritionMap = null) {
+  const { nextState: afterDecay, daysApplied } = catchUpDecayToDate(
+    state,
+    todayIso,
+    null,
+    dailyNutritionMap,
+  );
+  const {
+    nextState,
+    stress,
+    stressBump,
+    snapshot,
+  } = applyCognitiveStress(afterDecay, {
+    ...cognitiveInput,
+    date: cognitiveInput?.date || todayIso,
+  });
+
+  return {
+    nextState,
+    decayDaysApplied: daysApplied,
+    stress,
+    stressBump,
     snapshot,
   };
 }

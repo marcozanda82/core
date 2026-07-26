@@ -66,6 +66,8 @@ function commitSleepEntryWithFourCylinder({
   userUid,
   lastCalibrationWeek,
   replaceExistingSleep = false,
+  fullHistory = null,
+  proteinTarget = null,
 }) {
   let finalEntry = sleepEntry;
   let fourCylinderNextState = null;
@@ -74,6 +76,11 @@ function commitSleepEntryWithFourCylinder({
       sleepEntry,
       userModel,
       currentTrackerDate || getTodayString(),
+      {
+        fullHistory,
+        proteinTarget,
+        activeLog: dailyLog,
+      },
     );
     finalEntry = attached.entry;
     fourCylinderNextState = attached.nextFourCylinderState;
@@ -348,6 +355,8 @@ export function useKentuChatHandler(ctx) {
           db,
           userUid,
           lastCalibrationWeek,
+          fullHistory,
+          proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
         });
         setChatHistory((prev) => [...prev, { sender: 'user', text: trimQuick }, { sender: 'ai', text: isSimulationMode ? 'Registrato una stima del sonno (sandbox). Dal diario puoi rifinire i valori.' : 'Perfetto, ho salvato una stima del sonno. Puoi correggere i dettagli dal diario se serve.' }]);
         return;
@@ -563,6 +572,8 @@ export function useKentuChatHandler(ctx) {
             db,
             userUid,
             lastCalibrationWeek,
+            fullHistory,
+            proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
           });
           setPendingAiBatch(null);
           dismissKentuSleepTrigger();
@@ -1207,6 +1218,8 @@ export function useKentuChatHandler(ctx) {
             db,
             userUid,
             lastCalibrationWeek,
+            fullHistory,
+            proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
           });
           dismissKentuSleepTrigger();
           setChatHistory((prev) => {

@@ -5,6 +5,7 @@ import {
   DEFAULT_FOUR_CYLINDER_PARAMS,
   POOR_SLEEP_EFFICIENCY_THRESHOLD,
   OPTIMIZED_RECOVERY_EFFICIENCY_THRESHOLD,
+  resolveCognitivePenaltyPerHour,
 } from '../engines/fourCylinderEngine';
 
 /** @typedef {'push' | 'pull' | 'legs'} MuscleCylinderKey */
@@ -12,6 +13,7 @@ import {
 const STIMULUS_SCAN_MAX_DAYS = 365;
 const SLEEP_SCAN_MAX_DAYS = 7;
 const NIGHT_SLEEP_MIN_HOURS = 3;
+const COGNITIVE_WORKOUT_TYPES = new Set(['lavoro', 'studio', 'lavoro_pc']);
 
 /**
  * @typedef {object} FourCylinderTelemetryPoint
@@ -315,5 +317,98 @@ export function getLastSleepSnapshot(fullHistory, options = {}) {
   }
 
   return empty;
+}
+
+/**
+ * @typedef {object} TodayCognitiveSnapshot
+ * @property {string} date ISO YYYY-MM-DD scansionato (oggi)
+ * @property {number} totalHours somma ore lavoro/studio di oggi
+ * @property {number} totalStressBump somma delta systemic (0–∞ grezzo, tipicamente ≤ N×0.30)
+ * @property {number} sessionCount quante sessioni cognitive/lavoro
+ * @property {boolean} hasLoad totalHours > 0
+ * @property {boolean} isElevated carico neurale elevato (ore > 5 o bump > 0.15)
+ */
+
+/**
+ * True se la voce è lavoro/cognitivo (workoutType, type dedicato, o snapshot.stress).
+ * @param {object | null | undefined} entry
+ * @returns {boolean}
+ */
+function isCognitiveOrWorkLogEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const stress = entry.fourCylinderSnapshot?.stress;
+  if (stress && typeof stress === 'object') return true;
+  if (entry.type === 'work' || entry.type === 'cognitive') return true;
+  if (entry.type === 'workout') {
+    const wt = String(entry.workoutType || entry.subType || '').trim();
+    return COGNITIVE_WORKOUT_TYPES.has(wt);
+  }
+  return false;
+}
+
+/**
+ * Ore sessione da entry lavoro/cognitivo.
+ * @param {object} entry
+ * @returns {number}
+ */
+function readCognitiveHoursFromEntry(entry) {
+  const h = Number(entry?.duration ?? entry?.hours ?? entry?.sleepHours);
+  if (!Number.isFinite(h) || h <= 0) return 0;
+  return Math.max(0, Math.min(24, h));
+}
+
+/**
+ * Delta stress di una sessione: da snapshot.stress oppure duration × penalty (cap maxCognitiveBump).
+ * @param {object} entry
+ * @returns {number}
+ */
+function readCognitiveStressBumpFromEntry(entry) {
+  const snapStress = entry?.fourCylinderSnapshot?.stress;
+  const fromSnap = Number(snapStress?.systemic_fatigue ?? snapStress?.systemic);
+  if (Number.isFinite(fromSnap) && fromSnap >= 0) return clamp01(fromSnap);
+
+  const duration = readCognitiveHoursFromEntry(entry);
+  const workoutType = String(entry?.workoutType || entry?.subType || '').trim();
+  const penalty = resolveCognitivePenaltyPerHour(workoutType, DEFAULT_FOUR_CYLINDER_PARAMS);
+  const maxBump = clamp01(DEFAULT_FOUR_CYLINDER_PARAMS.maxCognitiveBump);
+  return Math.min(maxBump, duration * penalty);
+}
+
+/**
+ * Aggrega il carico cognitivo/lavoro **solo di oggi** (non cerca giorni passati).
+ *
+ * @param {object | null | undefined} fullHistory albero tracker_data
+ * @param {{ todayIso?: string }} [options]
+ * @returns {TodayCognitiveSnapshot}
+ */
+export function getTodayCognitiveSnapshot(fullHistory, options = {}) {
+  const today = String(options.todayIso || getTodayString()).slice(0, 10);
+  const tree = fullHistory && typeof fullHistory === 'object' ? fullHistory : {};
+  const log = getLogFromStoricoTree(tree, today);
+
+  let totalHours = 0;
+  let totalStressBump = 0;
+  let sessionCount = 0;
+
+  for (const entry of log) {
+    if (!isCognitiveOrWorkLogEntry(entry)) continue;
+    const hours = readCognitiveHoursFromEntry(entry);
+    const bump = readCognitiveStressBumpFromEntry(entry);
+    totalHours += hours;
+    totalStressBump += bump;
+    sessionCount += 1;
+  }
+
+  const hasLoad = totalHours > 0 || sessionCount > 0;
+  const isElevated = totalHours > 5 || totalStressBump > 0.15;
+
+  return {
+    date: today,
+    totalHours: Math.round(totalHours * 100) / 100,
+    totalStressBump: Math.round(totalStressBump * 1000) / 1000,
+    sessionCount,
+    hasLoad,
+    isElevated,
+  };
 }
 

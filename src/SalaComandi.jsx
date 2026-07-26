@@ -1559,6 +1559,8 @@ export default function SalaComandi() {
     isSimulationMode,
     setUserModel,
     lastCalibrationWeek,
+    fullHistory,
+    proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
   });
 
   const {
@@ -2474,6 +2476,8 @@ export default function SalaComandi() {
     userModel,
     setUserModel,
     lastCalibrationWeek,
+    fullHistory,
+    proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
   });
 
   const {
@@ -5443,6 +5447,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           entry,
           userModel,
           currentTrackerDate || getTodayString(),
+          {
+            fullHistory,
+            proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+            activeLog: dailyLog,
+          },
         );
         finalEntry = attached.entry;
         fourCylinderNextState = attached.nextFourCylinderState;
@@ -5855,6 +5864,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         entry,
         userModel,
         currentTrackerDate || getTodayString(),
+        {
+          fullHistory,
+          proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+          activeLog: dailyLog,
+        },
       );
       finalEntry = attached.entry;
       fourCylinderNextState = attached.nextFourCylinderState;
@@ -6074,6 +6088,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         entry,
         userModel,
         currentTrackerDate || getTodayString(),
+        {
+          fullHistory,
+          proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+          activeLog: dailyLog,
+        },
       );
       finalEntry = attached.entry;
       fourCylinderNextState = attached.nextFourCylinderState;

@@ -1,11 +1,18 @@
 import {
   getWorkoutActivityLogDescription,
   getWorkoutActivityTypeDef,
+  getCognitiveMetForActivity,
+  resolveWorkoutActivityTypeId,
 } from '../../activityCatalog';
 import { workoutActivityRequiresStrengthDetailNote } from '../../drawers/vistas/WorkoutView';
 
 const CARDIO_KEYWORD_PATTERN =
   /\b(corsa|correre|running|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|tapis|walk|cammin|cardio)\b/i;
+
+const LAVORO_PC_KEYWORD_PATTERN =
+  /lavoro\s*(al\s*)?pc|smart\s*working|scrivania|desk|videocal|zoom|programm|coding|deep\s*work/i;
+const STUDIO_KEYWORD_PATTERN = /\bstudio\b|studiare|esame|universit|ripass/i;
+const LAVORO_KEYWORD_PATTERN = /\blavoro\b|meeting|riunione|ufficio\b|turno\b/;
 
 /** Allineato a TRAINING_GOALS del questionario diario. */
 const TRAINING_GOAL_ENTRIES = [
@@ -101,6 +108,11 @@ export function formatExercisesToWorkoutDetailNote(exercises = []) {
  * @returns {string}
  */
 export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
+  const explicit = resolveWorkoutActivityTypeId(
+    chatPayload?.workoutType ?? chatPayload?.activityType ?? chatPayload?.subType,
+  );
+  if (explicit) return explicit;
+
   const haystack = [
     chatPayload?.workoutName,
     ...exercises.map((item) => item.exerciseName),
@@ -116,6 +128,12 @@ export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
       || (item.weightKg != null && item.weightKg > 0),
   );
   if (hasStrengthMetrics) return 'pesi';
+
+  // Carico cognitivo / lavoro prima delle euristiche fisiche.
+  if (LAVORO_PC_KEYWORD_PATTERN.test(haystack)) return 'lavoro_pc';
+  if (STUDIO_KEYWORD_PATTERN.test(haystack)) return 'studio';
+  if (LAVORO_KEYWORD_PATTERN.test(haystack)) return 'lavoro';
+
   if (/\bhiit\b|circuito/i.test(haystack)) return 'hiit';
   if (CARDIO_KEYWORD_PATTERN.test(haystack)) return 'cardio';
   return 'misto';
@@ -154,7 +172,19 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
   }
 
   const def = getWorkoutActivityTypeDef(workoutType);
-  const id = `cmd_workout_${Date.now()}`;
+  const nodeKind = def?.nodeKind ?? 'workout';
+  const isWork = nodeKind === 'work';
+  const isCognitive = nodeKind === 'cognitive';
+  const cognitiveKcal = isCognitive
+    ? Math.round(getCognitiveMetForActivity(workoutType) * 70 * duration)
+    : null;
+  const finalKcal = isCognitive && cognitiveKcal != null ? cognitiveKcal : kcal;
+
+  const id = isWork
+    ? `cmd_work_${Date.now()}`
+    : isCognitive
+      ? `cmd_cognitive_${Date.now()}`
+      : `cmd_workout_${Date.now()}`;
   const time = Number(currentTimeDecimal);
   if (!Number.isFinite(time)) {
     throw new Error('currentTimeDecimal non valido');
@@ -204,9 +234,9 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     type: 'workout',
     workoutType,
     desc,
-    name: desc,
-    kcal,
-    cal: kcal,
+    name: isCognitive ? desc : isWork ? 'Lavoro' : desc,
+    kcal: finalKcal,
+    cal: finalKcal,
     duration,
     ...(workoutDetailNote ? { workoutDetailNote } : {}),
     ...(exercises.length ? { exercises } : {}),
@@ -215,11 +245,11 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
 
   const timelineNode = {
     id,
-    type: 'workout',
+    type: isCognitive ? 'cognitive' : isWork ? 'work' : 'workout',
     time,
     duration,
-    kcal,
-    icon: def?.icon || '🏋️',
+    kcal: finalKcal,
+    icon: isCognitive ? (def?.icon || '📚') : isWork ? '💼' : (def?.icon || '🏋️'),
     subType: workoutType,
     muscles,
     ...(workoutDetailNote ? { workoutDetailNote } : {}),

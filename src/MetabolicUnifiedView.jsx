@@ -556,7 +556,11 @@ export default function MetabolicUnifiedView({
         ) : null}
 
         {activeTool === 'DIAG' ? (
-          <MetabolicDiagnostics fourCylinder={fourCylinder} fullHistory={fullHistory} />
+          <MetabolicDiagnostics
+            fourCylinder={fourCylinder}
+            fullHistory={fullHistory}
+            proteinTarget={userTargets?.prot ?? null}
+          />
         ) : null}
       </div>
     </div>

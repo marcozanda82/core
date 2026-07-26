@@ -7,6 +7,7 @@ import {
   fourCylinderFromPhysiologyModel,
   physiologyModelWithFourCylinder,
 } from '../../features/salaComandi/engines/fourCylinderEngine';
+import { buildDailyNutritionMap } from '../../features/salaComandi/utils/fourCylinderNutritionBridge';
 
 /**
  * Boot catch-up: applica il decadimento virtuale (mezzanotte) tra `lastProcessedDate` e oggi.
@@ -19,6 +20,8 @@ import {
  * @param {boolean} config.isSimulationMode
  * @param {Function} config.setUserModel
  * @param {string | null} [config.lastCalibrationWeek]
+ * @param {object | null} [config.fullHistory]
+ * @param {number | null} [config.proteinTarget]
  */
 export function useFourCylinderBootCatchUp({
   userUid,
@@ -26,6 +29,8 @@ export function useFourCylinderBootCatchUp({
   isSimulationMode,
   setUserModel,
   lastCalibrationWeek,
+  fullHistory = null,
+  proteinTarget = null,
 }) {
   const catchUpInFlightRef = useRef(false);
   const catchUpDoneForUidRef = useRef(null);
@@ -41,6 +46,9 @@ export function useFourCylinderBootCatchUp({
 
     catchUpInFlightRef.current = true;
     const todayIso = getTodayString();
+    const nutritionMap = fullHistory
+      ? buildDailyNutritionMap(fullHistory, proteinTarget)
+      : null;
 
     get(ref(db, `users/${userUid}/physiology_model`))
       .then((physSnap) => {
@@ -56,7 +64,12 @@ export function useFourCylinderBootCatchUp({
           fourCylinder = createDefaultFourCylinderState(todayIso);
         }
 
-        const { nextState, daysApplied } = catchUpDecayToDate(fourCylinder, todayIso);
+        const { nextState, daysApplied } = catchUpDecayToDate(
+          fourCylinder,
+          todayIso,
+          null,
+          nutritionMap,
+        );
         const baseModel = physSnap.exists() ? modelFields : {};
         const mergedModel = physiologyModelWithFourCylinder(baseModel, nextState);
 
@@ -87,7 +100,7 @@ export function useFourCylinderBootCatchUp({
       });
 
     return undefined;
-  }, [userUid, db, isSimulationMode, setUserModel, lastCalibrationWeek]);
+  }, [userUid, db, isSimulationMode, setUserModel, lastCalibrationWeek, fullHistory, proteinTarget]);
 }
 
 export default useFourCylinderBootCatchUp;
