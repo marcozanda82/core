@@ -25,12 +25,14 @@ const COMET_SPRING = { type: 'spring', stiffness: 30, damping: 15, mass: 1.2 };
  *   } | null,
  *   dailyHistory?: Array<Record<string, unknown>>,
  *   selectedTimeframe?: string,
+ *   fourCylinderStrategic?: object | null,
  * }} props
  */
 export default function MetabolicBubbleRadar({
   pillars,
   dailyHistory = [],
   selectedTimeframe = '1d',
+  fourCylinderStrategic = null,
 }) {
   const ghostRailRef = useRef(null);
   const railLengthRef = useRef(0);
@@ -40,8 +42,8 @@ export default function MetabolicBubbleRadar({
   const headKey = SNAKE_ORDER[currentIndex];
 
   const { nodes: macroNodes, svgRail } = useMemo(
-    () => computeMacroTrendNodes(dailyHistory),
-    [dailyHistory],
+    () => computeMacroTrendNodes(dailyHistory, 2000, fourCylinderStrategic),
+    [dailyHistory, fourCylinderStrategic],
   );
 
   const fullPathD = useMemo(() => getSmoothPath(svgRail), [svgRail]);

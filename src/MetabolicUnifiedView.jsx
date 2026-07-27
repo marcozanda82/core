@@ -493,6 +493,7 @@ export default function MetabolicUnifiedView({
               onTimeframeChange={setSelectedTimeframe}
               metabolicMapInputsFromBundle={mapData.metabolicMapInputs}
               mapSignalStrengthFromBundle={mapData.mapSignalStrength}
+              fourCylinderStrategic={mapData?.fourCylinderStrategic ?? null}
               hideGoalControls
             />
             {SHOW_METABOLIC_DEBUG ? (
@@ -513,6 +514,7 @@ export default function MetabolicUnifiedView({
                 pillars={pillarTelemetry}
                 dailyHistory={dailyHistory}
                 selectedTimeframe={selectedTimeframe}
+                fourCylinderStrategic={mapData?.fourCylinderStrategic ?? null}
               />
             </div>
           </div>

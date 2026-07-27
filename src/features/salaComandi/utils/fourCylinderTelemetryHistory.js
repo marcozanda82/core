@@ -101,16 +101,41 @@ function readPositiveStimulusForCylinder(entry, cylinderKey) {
 
 /**
  * Giorni esatti dall'ultimo stimolo positivo per il cilindro (scan a ritroso da oggi).
+ * Usa anche lo stato live `fourCylinder` (decay / lastStimulus) quando lo storico log non ha snapshot.
  *
  * @param {object | null | undefined} fullHistory albero tracker_data
  * @param {MuscleCylinderKey} cylinderKey push | pull | legs
- * @param {{ todayIso?: string, maxScanDays?: number }} [options]
+ * @param {{ todayIso?: string, maxScanDays?: number, fourCylinder?: object | null }} [options]
  * @returns {number | '> 30' | '∞'}
  */
 export function getDaysSinceLastStimulus(fullHistory, cylinderKey, options = {}) {
   const today = String(options.todayIso || getTodayString()).slice(0, 10);
   const key = String(cylinderKey || '').trim();
   if (!['push', 'pull', 'legs'].includes(key)) return '∞';
+
+  const fourCylinder = options.fourCylinder && typeof options.fourCylinder === 'object'
+    ? options.fourCylinder
+    : null;
+
+  if (fourCylinder) {
+    const liveLevel = clamp01(fourCylinder.decay?.[key]);
+    if (liveLevel > 0) {
+      const applied = Number(fourCylinder.lastStimulus?.applied?.[key]) || 0;
+      const stimulusDate = String(fourCylinder.lastStimulus?.date || '').slice(0, 10);
+      if (applied > 0 && /^\d{4}-\d{2}-\d{2}$/.test(stimulusDate)) {
+        const diff = diffCalendarDaysUtc(stimulusDate, today);
+        if (diff != null && diff >= 0) return diff;
+      }
+      const refDate = String(
+        fourCylinder.lastUpdatedIso || fourCylinder.lastProcessedDate || today,
+      ).slice(0, 10);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(refDate)) {
+        const diff = diffCalendarDaysUtc(refDate, today);
+        if (diff != null && diff >= 0) return diff;
+      }
+      return 0;
+    }
+  }
 
   const tree = fullHistory && typeof fullHistory === 'object' ? fullHistory : {};
   const maxScan = Math.max(

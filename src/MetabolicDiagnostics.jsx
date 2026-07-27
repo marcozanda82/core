@@ -79,6 +79,19 @@ function formatPct(value) {
 }
 
 /**
+ * Mostra l'allarme inattività solo se il cilindro è vuoto e non c'è stimolo recente.
+ * @param {number} value livello decay 0–1
+ * @param {number | '> 30' | '∞'} daysSince
+ */
+function shouldShowMuscleInactivityAlarm(value, daysSince) {
+  if (clamp01(value) > 0) return false;
+  if (daysSince === 0) return false;
+  if (daysSince === '∞' || daysSince === '> 30') return true;
+  const n = Number(daysSince);
+  return Number.isFinite(n) && n >= 7;
+}
+
+/**
  * Pagina diagnostica 4 cilindri — triage dinamico fatica sistemica + sismografi muscolari.
  *
  * @param {{
@@ -114,10 +127,13 @@ export default function MetabolicDiagnostics({
         value,
         level: muscleTriageLevel(value),
         rank: value,
-        daysSinceStimulus: getDaysSinceLastStimulus(fullHistory, cyl.id, { todayIso }),
+        daysSinceStimulus: getDaysSinceLastStimulus(fullHistory, cyl.id, {
+          todayIso,
+          fourCylinder: state,
+        }),
       };
     }).sort((a, b) => a.rank - b.rank);
-  }, [state.decay, fullHistory]);
+  }, [state, fullHistory]);
 
   const telemetrySeries = useMemo(
     () => buildFourCylinderTelemetrySeries(fullHistory, {
@@ -487,7 +503,7 @@ export default function MetabolicDiagnostics({
                     ) : null}
                   </div>
                   <p className="mt-0.5 text-[10px] text-slate-500">{cyl.subtitle}</p>
-                  {cyl.value < 0.25 ? (
+                  {shouldShowMuscleInactivityAlarm(cyl.value, cyl.daysSinceStimulus) ? (
                     <p className="mt-1.5">
                       <span className="font-mono text-xs tracking-wider text-red-500">
                         ⚠️ FERMO DA {formatInactivityDaysLabel(cyl.daysSinceStimulus)}{' '}

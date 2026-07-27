@@ -4,6 +4,7 @@ import { NODE_DRAG_ARM_CANCEL_MOVE_PX } from '../../constants/salaComandiConstan
 import { getSlotKey } from '../../coreEngine';
 import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPredictor';
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
+import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -35,6 +36,7 @@ export function useTimelineDiaryActions({
   timelineContainerRef,
   longPressTimerRef,
   longPressMoveCleanupRef,
+  onFourCylinderDiaryRebuild,
 }) {
   const [historyStack, setHistoryStack] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -50,6 +52,14 @@ export function useTimelineDiaryActions({
     historyStackRef.current = historyStack;
     historyIndexRef.current = historyIndex;
   }, [historyStack, historyIndex]);
+
+  const triggerFourCylinderRebuild = useCallback(
+    (removed, newLog, newNodes) => {
+      if (!onFourCylinderDiaryRebuild || !isFourCylinderTimelineTarget(removed)) return;
+      onFourCylinderDiaryRebuild({ dailyLog: newLog, manualNodes: newNodes });
+    },
+    [onFourCylinderDiaryRebuild],
+  );
 
   const pushTimelineUndoSnapshot = useCallback((newDailyLog, newManualNodes) => {
     const newStack = historyStackRef.current.slice(0, historyIndexRef.current + 1);
@@ -189,15 +199,18 @@ export function useTimelineDiaryActions({
         syncDatiFirebase(newLog, mnSnap);
         pushTimelineUndoSnapshot(newLog, mnSnap);
       } else {
+        const removed = dlSnap.find((item) => idMatch(item.id, dragId))
+          ?? mnSnap.find((n) => idMatch(n.id, dragId));
         const newLog = dlSnap.filter((item) => !idMatch(item.id, dragId));
         const newNodes = mnSnap.filter((n) => !idMatch(n.id, dragId));
         setDailyLog(newLog);
         setManualNodes(newNodes);
         syncDatiFirebase(newLog, newNodes);
         pushTimelineUndoSnapshot(newLog, newNodes);
+        triggerFourCylinderRebuild(removed, newLog, newNodes);
       }
     },
-    [isSimulationMode, getFoodItemsForMealSlot, syncDatiFirebase, pushTimelineUndoSnapshot, dailyLogRef, manualNodesRef, setDailyLog, setManualNodes],
+    [isSimulationMode, getFoodItemsForMealSlot, syncDatiFirebase, pushTimelineUndoSnapshot, dailyLogRef, manualNodesRef, setDailyLog, setManualNodes, triggerFourCylinderRebuild],
   );
 
   const handleUndo = useCallback(() => {
@@ -342,13 +355,16 @@ export function useTimelineDiaryActions({
         setSimulatedLog((prev) => (prev || []).filter((item) => item.id !== id));
         return;
       }
+      const removed = dailyLog.find((item) => item.id === id)
+        ?? manualNodes.find((n) => n.id === id);
       const newLog = dailyLog.filter((item) => item.id !== id);
       const newNodes = manualNodes.filter((n) => n.id !== id);
       setDailyLog(newLog);
       setManualNodes(newNodes);
       syncDatiFirebase(newLog, newNodes);
+      triggerFourCylinderRebuild(removed, newLog, newNodes);
     },
-    [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase, setDailyLog, setManualNodes, setSimulatedLog],
+    [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase, setDailyLog, setManualNodes, setSimulatedLog, triggerFourCylinderRebuild],
   );
 
   const handleMiniTimelineDrag = useCallback(
@@ -488,12 +504,14 @@ export function useTimelineDiaryActions({
   const handleDeleteQuickNodeEdit = useCallback(() => {
     if (!editingQuickNode) return;
     if (window.confirm('Vuoi eliminare questa attività?')) {
+      const removed = editingQuickNode;
       const next = manualNodes.filter((n) => n.id !== editingQuickNode.id);
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
       setEditingQuickNode(null);
+      triggerFourCylinderRebuild(removed, dailyLog, next);
     }
-  }, [editingQuickNode, manualNodes, dailyLog, syncDatiFirebase, setManualNodes, setEditingQuickNode]);
+  }, [editingQuickNode, manualNodes, dailyLog, syncDatiFirebase, setManualNodes, setEditingQuickNode, triggerFourCylinderRebuild]);
 
   const handleSaveQuickNodeEdit = useCallback(() => {
     if (!editingQuickNode) return;

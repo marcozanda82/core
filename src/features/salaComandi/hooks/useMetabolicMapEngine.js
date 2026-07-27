@@ -15,6 +15,7 @@ export default function useMetabolicMapEngine({
   projectionAnchorDate,
   selectedTimeframe,
   currentLog,
+  fourCylinder = null,
 }) {
   const compassHistoryKey = useMemo(
     () => historyFingerprint(dailyHistory, selectedTimeframe),
@@ -31,6 +32,7 @@ export default function useMetabolicMapEngine({
         projectionAnchorDate,
         selectedTimeframe,
         currentLog,
+        fourCylinder,
       }),
     [
       compassHistoryKey,
@@ -40,6 +42,7 @@ export default function useMetabolicMapEngine({
       projectionAnchorDate,
       selectedTimeframe,
       currentLog,
+      fourCylinder,
     ]
   );
 }

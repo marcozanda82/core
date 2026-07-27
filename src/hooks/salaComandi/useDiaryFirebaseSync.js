@@ -17,6 +17,7 @@ import {
   clampModelValue,
 } from '../../coreEngine';
 import { createInitialWeeklyPlan } from '../../weeklyPlanning';
+import { mergeFourCylinderStatePreferNewer } from '../../features/salaComandi/engines/fourCylinderEngine';
 
 /**
  * Bootstrap tracker_data (SWR cache), listener live su oggi, sync esplicita su RTDB.
@@ -203,17 +204,25 @@ export function useDiaryFirebaseSync({
       get(ref(db, `users/${user.uid}/physiology_model`)).then((physSnap) => {
         if (cancelled || !physSnap.exists()) return;
         const data = physSnap.val();
-        const { lastCalibrationWeek: savedCalWeek, ...model } = data;
+        const {
+          lastCalibrationWeek: savedCalWeek,
+          fourCylinder: remoteFour,
+          four_cylinder: remoteLegacy,
+          ...coefficients
+        } = data;
         if (savedCalWeek) setLastCalibrationWeek(savedCalWeek);
-        if (model && typeof model === 'object') {
+        if (data && typeof data === 'object') {
+          const remoteFourCylinder = remoteFour ?? remoteLegacy ?? null;
           setUserModel((prev) => ({
             ...DEFAULT_USER_MODEL,
-            ...model,
-            caffeineSensitivity: clampModelValue(model.caffeineSensitivity ?? 1),
-            carbCrashSensitivity: clampModelValue(model.carbCrashSensitivity ?? 1),
-            stressSensitivity: clampModelValue(model.stressSensitivity ?? 1),
-            hydrationSensitivity: clampModelValue(model.hydrationSensitivity ?? 1),
-            recoveryRate: clampModelValue(model.recoveryRate ?? 1),
+            ...prev,
+            ...coefficients,
+            fourCylinder: mergeFourCylinderStatePreferNewer(prev?.fourCylinder, remoteFourCylinder),
+            caffeineSensitivity: clampModelValue(coefficients.caffeineSensitivity ?? prev.caffeineSensitivity ?? 1),
+            carbCrashSensitivity: clampModelValue(coefficients.carbCrashSensitivity ?? prev.carbCrashSensitivity ?? 1),
+            stressSensitivity: clampModelValue(coefficients.stressSensitivity ?? prev.stressSensitivity ?? 1),
+            hydrationSensitivity: clampModelValue(coefficients.hydrationSensitivity ?? prev.hydrationSensitivity ?? 1),
+            recoveryRate: clampModelValue(coefficients.recoveryRate ?? prev.recoveryRate ?? 1),
           }));
         }
       });

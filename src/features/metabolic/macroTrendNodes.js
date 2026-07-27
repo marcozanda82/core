@@ -1,4 +1,5 @@
 import { applyEnergyDeadBandToKcalBalance } from '../../metabolicDirectionEngine';
+import { applyStrategicToBubbleCoords } from '../salaComandi/utils/fourCylinderStrategicBridge';
 import { convertToSvgCoords } from './bubbleRadarCoords';
 import { mapMetricsToPillars, pillarsToBubbleCoords } from './pillarsMapperLegacy';
 
@@ -20,18 +21,25 @@ const GHOST_OPACITIES_BY_COUNT = {
   3: [0.3, 0.45, 0.6],
 };
 
+/** Influenza 4° Pilastro per nodo radar (1d pieno, 7d parziale per fatica/recupero settimanale). */
+const STRATEGIC_TIMEFRAME_INFLUENCE = {
+  '7d': 0.25,
+  '1d': 0.45,
+};
+
 /**
  * Calcola le coordinate bolla (x,y ∈ [-100,100]) per le 4 finestre macro
  * e l'array completo del binario SVG 30d → 1d.
  *
  * @param {Array<{ kcalBalance?: number, trainingLoad?: number, sleepHours?: number | null, date?: string }>} dailyHistory
  * @param {number} [referenceTdee=2000]
+ * @param {import('../../salaComandi/utils/fourCylinderStrategicBridge').FourCylinderStrategicMetrics | null} [fourCylinderStrategic]
  * @returns {{
  *   nodes: Record<'30d' | '14d' | '7d' | '1d', { x: number, y: number, svgX: number, svgY: number }>,
  *   svgRail: Array<{ key: '30d' | '14d' | '7d' | '1d', x: number, y: number, svgX: number, svgY: number }>,
  * }}
  */
-export function computeMacroTrendNodes(dailyHistory, referenceTdee = 2000) {
+export function computeMacroTrendNodes(dailyHistory, referenceTdee = 2000, fourCylinderStrategic = null) {
   const days = Array.isArray(dailyHistory) ? dailyHistory : [];
   /** @type {Record<string, { x: number, y: number, svgX: number, svgY: number }>} */
   const nodes = {};
@@ -41,7 +49,11 @@ export function computeMacroTrendNodes(dailyHistory, referenceTdee = 2000) {
   for (const tf of SNAKE_ORDER) {
     const windowDays = MACRO_WINDOWS[tf];
     const slice = days.length <= windowDays ? days : days.slice(-windowDays);
-    const coords = sliceToBubbleCoords(slice, ABSOLUTE_IMPACT_MULTIPLIER, referenceTdee);
+    let coords = sliceToBubbleCoords(slice, ABSOLUTE_IMPACT_MULTIPLIER, referenceTdee);
+    const strategicInfluence = STRATEGIC_TIMEFRAME_INFLUENCE[tf];
+    if (strategicInfluence > 0 && fourCylinderStrategic?.hasFourCylinder) {
+      coords = applyStrategicToBubbleCoords(coords, fourCylinderStrategic, strategicInfluence);
+    }
     const { svgX, svgY } = convertToSvgCoords(coords.x, coords.y);
     nodes[tf] = { x: coords.x, y: coords.y, svgX, svgY };
     svgRail.push({ key: tf, x: coords.x, y: coords.y, svgX, svgY });

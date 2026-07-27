@@ -27,6 +27,7 @@ export const WORKOUT_MUSCLE_GROUP_DEFS = [
   { id: 'abs', label: 'ABS' },
   { id: 'bicipiti', label: 'Bicipiti' },
   { id: 'tricipiti', label: 'Tricipiti' },
+  { id: 'avambracci', label: 'Avambracci' },
   { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali'] },
   { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
 ];
@@ -105,6 +106,7 @@ export function inferMuscleGroupsFromWorkoutText(workout) {
   if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
   if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
   if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
+  if (/avambracc|forearm/.test(text)) push('avambracci');
   if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
   if (/addominal|abs\b|core/.test(text)) push('Core');
   return found;

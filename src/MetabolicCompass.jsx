@@ -270,6 +270,7 @@ const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
  *   onTimeframeChange?: (t: string) => void,
  *   metabolicMapInputsFromBundle?: { energyBalance: number, trainingLoad: number, sleepHours: number, glycemicInstability: number, realSleepDays: number, totalWindowDays: number } | null,
  *   mapSignalStrengthFromBundle?: 'very_weak' | 'weak' | 'moderate' | 'strong' | null,
+ *   fourCylinderStrategic?: object | null,
  *   expectedFatDeltaKg?: number | null,
  *   expectedLeanDeltaKg?: number | null,
  * }} props
@@ -294,6 +295,7 @@ export default function MetabolicCompass({
   onTimeframeChange,
   metabolicMapInputsFromBundle = null,
   mapSignalStrengthFromBundle = null,
+  fourCylinderStrategic = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -387,9 +389,12 @@ export default function MetabolicCompass({
 
   const finalAngle = useMemo(() => {
     const targetAngle = getMetabolicTargetAngle(goal);
-    const raw = angleDeg - targetAngle;
+    const nudge = fourCylinderStrategic?.hasFourCylinder
+      ? Number(fourCylinderStrategic.compassNeedleNudgeDeg) || 0
+      : 0;
+    const raw = angleDeg - targetAngle + nudge;
     return Math.max(FINAL_ANGLE_MIN, Math.min(FINAL_ANGLE_MAX, raw));
-  }, [angleDeg, goal]);
+  }, [angleDeg, goal, fourCylinderStrategic]);
 
   const { tier } = useMemo(() => alignmentFromFinalAngle(finalAngle), [finalAngle]);
   const tierStyle = ALIGNMENT_TIERS[tier];

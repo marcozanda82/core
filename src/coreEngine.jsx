@@ -2474,7 +2474,7 @@ function denormalizeLogForFirebase(flatLog) {
     if (entry.type === 'workout' || entry.type === 'work') {
       const desc = entry.desc || entry.name || (entry.type === 'work' ? 'Lavoro' : 'Attività');
       const cal = entry.kcal ?? entry.cal ?? 0;
-      workouts.push({
+      const workoutRow = {
         type: 'workout',
         id: entry.id,
         desc,
@@ -2482,8 +2482,18 @@ function denormalizeLogForFirebase(flatLog) {
         cal,
         kcal: cal,
         duration: entry.duration,
-        workoutType: entry.workoutType
-      });
+        workoutType: entry.workoutType,
+      };
+      if (Array.isArray(entry.muscles) && entry.muscles.length > 0) {
+        workoutRow.muscles = entry.muscles;
+      }
+      if (entry.workoutDetailNote) {
+        workoutRow.workoutDetailNote = entry.workoutDetailNote;
+      }
+      if (entry.fourCylinderSnapshot && typeof entry.fourCylinderSnapshot === 'object') {
+        workoutRow.fourCylinderSnapshot = entry.fourCylinderSnapshot;
+      }
+      workouts.push(workoutRow);
       return;
     }
     if (entry.type === 'food' || entry.type === 'recipe' || !entry.type) {

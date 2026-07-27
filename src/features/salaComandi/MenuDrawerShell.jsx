@@ -11,28 +11,20 @@ export default function MenuDrawerShell({ isDrawerOpen, onClose, children }) {
       />
       <div
         className={`drawer-content ${isDrawerOpen ? 'open' : ''}`}
-        style={{ overflow: 'hidden' }}
+        aria-hidden={!isDrawerOpen}
       >
-        <div
-          style={{
-            width: '40px',
-            height: '4px',
-            backgroundColor: '#444',
-            borderRadius: '2px',
-            margin: '0 auto 20px auto',
-            flexShrink: 0,
-          }}
-        />
-        <div
-          style={{
-            position: 'relative',
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-          }}
-        >
+        {isDrawerOpen ? (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Chiudi menu"
+            className="fixed top-4 right-4 z-[100000] flex h-10 w-10 items-center justify-center rounded-full border border-slate-600/80 bg-slate-900/90 text-lg text-slate-300 shadow-lg backdrop-blur-sm transition-colors hover:border-slate-500 hover:text-white"
+            style={{ top: 'max(1rem, env(safe-area-inset-top))', right: 'max(1rem, env(safe-area-inset-right))' }}
+          >
+            ✕
+          </button>
+        ) : null}
+        <div className="min-h-full flex flex-col pt-14 pb-24 px-2">
           {children}
         </div>
       </div>

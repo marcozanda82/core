@@ -25,20 +25,13 @@ import {
   WORKOUT_DURATION_MAX,
 } from '../../utils/durationMinutesInput';
 import { workoutActivityRequiresStrengthDetailNote } from '../../utils/workoutActivityNotes';
-import { getCurrentTimeRoundedTo15Min } from '../../utils/decimalTimeUtils';
+import { getCurrentTimeDecimal, getDefaultWorkoutEndTimeDecimal } from '../../utils/decimalTimeUtils';
 import { mapChatWorkoutToNativePayload } from '../../features/workout/workoutAdapter';
 import { getTodayString, addDays } from '../../coreEngine';
 import { getWeekStartMondayKeyLocal } from '../../weeklyPlanning';
-import {
-  applyWorkoutPipeline,
-  applyCognitiveStressPipeline,
-  fourCylinderFromPhysiologyModel,
-  physiologyModelWithFourCylinder,
-} from '../../features/salaComandi/engines/fourCylinderEngine';
-import {
-  buildDailyNutritionMap,
-  isCurrentlyFasted,
-} from '../../features/salaComandi/utils/fourCylinderNutritionBridge';
+import { resolveFourCylinderForWorkoutSave } from '../../features/salaComandi/utils/fourCylinderRebuild';
+import { persistFourCylinderState } from '../../features/salaComandi/utils/fourCylinderPersist';
+import { physiologyModelWithFourCylinder } from '../../features/salaComandi/engines/fourCylinderEngine';
 
 /**
  * Stato e azioni allenamento (tracker + piano giornaliero + commit da chat).
@@ -120,7 +113,7 @@ export function useWorkoutManager({
     });
     const startT = Number.isFinite(Number(draft.workoutStartTime))
       ? Number(draft.workoutStartTime)
-      : getCurrentTimeRoundedTo15Min();
+      : getCurrentTimeDecimal();
 
     setEditingWorkoutId(null);
     setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
@@ -166,17 +159,27 @@ export function useWorkoutManager({
   );
 
   const handleStartWorkoutSession = useCallback(() => {
-    const startT = getCurrentTimeRoundedTo15Min();
     const durationMin = parseDurationMinutesInput(workoutDurationMin, {
       min: WORKOUT_DURATION_MIN,
       max: WORKOUT_DURATION_MAX,
       fallback: WORKOUT_DURATION_DEFAULT,
     });
-    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+    setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal(new Date(), durationMin));
   }, [workoutDurationMin]);
 
   const clearWorkoutPlanDraft = useCallback(() => {
     setWorkoutPlanDraft(null);
+  }, []);
+
+  /** Reset form per nuova sessione (non edit): evita che editingWorkoutId blocchi il 4-cylinder. */
+  const resetWorkoutFormForNewSession = useCallback(() => {
+    setEditingWorkoutId(null);
+    setWorkoutPlanDraft(null);
+    setWorkoutType('pesi');
+    setWorkoutMuscles([]);
+    setWorkoutStrengthDetail('');
+    setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
+    setWorkoutKcal(300);
   }, []);
 
   const skipTodayPlanSession = useCallback(async () => {
@@ -346,77 +349,92 @@ export function useWorkoutManager({
       kcal: isCognitive ? cognitiveKcal : workoutKcal,
       cal: isCognitive ? cognitiveKcal : workoutKcal,
       duration,
+      muscles: musclesCanon,
       ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
     };
 
-    // --- 4-Cylinder pipeline (pre-save): fisico → stimolo | lavoro/cognitivo → stress ---
-    // Edit escluso in v1 (no revert delta).
-    const shouldRunFourCylinder = !editingWorkoutId;
+    const baseLog = dailyLog || [];
+    const baseNodes = manualNodes || [];
+    const projectedLog = baseLog.some((n) => n.id === finalId)
+      ? baseLog.map((n) => (n.id === finalId ? logData : n))
+      : [logData, ...baseLog];
+    const projectedNodesRaw = baseNodes.some((n) => n.id === finalId)
+      ? baseNodes.map((n) => (n.id === finalId ? nodeData : n))
+      : [...baseNodes, nodeData];
+    const projectedNodes = projectedNodesRaw.filter((n) => n && n.type !== 'ghost_workout');
+
     let fourCylinderNextState = null;
 
-    if (shouldRunFourCylinder && userModel && setUserModel) {
+    if (userModel && setUserModel) {
       const todayIso = currentTrackerDate || getTodayString();
-      const currentFourCylinder = fourCylinderFromPhysiologyModel(userModel, todayIso);
-      const nutritionMap = fullHistory
-        ? buildDailyNutritionMap(fullHistory, proteinTarget, {
-            activeLog: dailyLog,
-            anchorDate: todayIso,
-          })
-        : null;
-      const isFastedState = isCurrentlyFasted(dailyLog, {
-        fullHistory,
-        anchorDate: todayIso,
+      console.log('[DEBUG 4CYL] Input al motore:', {
+        isGhostConversion: !!editingWorkoutId,
+        editingWorkoutId,
+        finalId,
+        musclesRaw: workoutMuscles,
+        muscles: musclesCanon,
+        musclesInLogData: logData.muscles,
+        musclesInNodeData: nodeData.muscles,
+        duration,
+        type: workoutType,
+        isWork,
+        isCognitive,
+        projectedNodesCount: projectedNodes.length,
+        projectedLogWorkouts: projectedLog.filter((e) => e?.type === 'workout').length,
       });
-
-      if (isWork || isCognitive) {
-        const { nextState, snapshot } = applyCognitiveStressPipeline(
-          currentFourCylinder,
-          {
-            duration: Number(logData.duration) || duration,
-            workoutType: String(logData.workoutType || workoutType),
-            sessionId: finalId,
-            date: todayIso,
-          },
-          todayIso,
-          nutritionMap,
-        );
-        logData.fourCylinderSnapshot = snapshot;
+      const resolved = resolveFourCylinderForWorkoutSave({
+        userModel,
+        fullHistory,
+        todayIso,
+        newLog: projectedLog,
+        newNodes: projectedNodes,
+        editingWorkoutId,
+        finalId,
+        isWork,
+        isCognitive,
+        workoutType,
+        musclesCanon,
+        workoutKcal,
+        duration,
+        logData,
+        proteinTarget,
+        dailyLog,
+      });
+      if (resolved) {
+        logData.fourCylinderSnapshot = resolved.snapshot;
         nodeData.fourCylinderRef = {
-          engineVersion: snapshot.engineVersion,
-          capturedAt: snapshot.capturedAt,
+          engineVersion: resolved.snapshot.engineVersion,
+          capturedAt: resolved.snapshot.capturedAt,
         };
-        fourCylinderNextState = nextState;
+        fourCylinderNextState = resolved.nextState;
+        console.log('[DEBUG 4CYL] Output dal motore:', resolved.nextState?.decay);
+        console.log('[DEBUG 4CYL] Snapshot stimulus:', resolved.snapshot?.stimulus);
       } else {
-        const { nextState, snapshot } = applyWorkoutPipeline(
-          currentFourCylinder,
-          {
-            workoutId: finalId,
-            workoutType,
-            muscles: musclesCanon,
-            kcal: workoutKcal,
-            duration,
-            date: todayIso,
-            isFastedState,
-          },
-          todayIso,
-          nutritionMap,
-        );
-        logData.fourCylinderSnapshot = snapshot;
-        nodeData.fourCylinderRef = {
-          engineVersion: snapshot.engineVersion,
-          capturedAt: snapshot.capturedAt,
-        };
-        fourCylinderNextState = nextState;
+        console.warn('[DEBUG 4CYL] resolveFourCylinderForWorkoutSave ha restituito null');
       }
+    } else {
+      console.warn('[DEBUG 4CYL] Pipeline saltata — userModel/setUserModel mancante:', {
+        hasUserModel: Boolean(userModel),
+        hasSetUserModel: Boolean(setUserModel),
+      });
     }
 
+    const newLog = projectedLog.map((entry) => (
+      String(entry?.id) === String(finalId)
+        ? { ...entry, ...logData }
+        : entry
+    ));
+    const newNodes = projectedNodes.map((node) => (
+      String(node?.id) === String(finalId)
+        ? { ...node, ...nodeData }
+        : node
+    ));
+
     if (isSimulationMode) {
-      setSimulatedLog((prev) => {
-        const base = prev || [];
-        return base.some((n) => n.id === finalId)
-          ? base.map((n) => (n.id === finalId ? logData : n))
-          : [logData, ...base];
-      });
+      setSimulatedLog(newLog);
+      if (fourCylinderNextState && setUserModel) {
+        setUserModel((prev) => physiologyModelWithFourCylinder(prev, fourCylinderNextState));
+      }
       setEditingWorkoutId(null);
       setWorkoutMuscles([]);
       setWorkoutStrengthDetail('');
@@ -425,29 +443,21 @@ export function useWorkoutManager({
       closeDrawer();
       return;
     }
-    const baseLog = dailyLog;
-    const newLog = baseLog.some((n) => n.id === finalId)
-      ? baseLog.map((n) => (n.id === finalId ? logData : n))
-      : [logData, ...baseLog];
-    const newNodesRaw = manualNodes.some((n) => n.id === finalId)
-      ? manualNodes.map((n) => (n.id === finalId ? nodeData : n))
-      : [...manualNodes, nodeData];
-    const newNodes = newNodesRaw.filter((n) => n && n.type !== 'ghost_workout');
+
     setDailyLog(newLog);
     setManualNodes(newNodes);
     syncDatiFirebase(newLog, newNodes);
 
-    // Persiste fourCylinder aggiornato su physiology_model (silenzioso, post tracker sync).
     if (fourCylinderNextState && setUserModel) {
-      const updatedPhysiology = physiologyModelWithFourCylinder(userModel, fourCylinderNextState);
-      setUserModel(updatedPhysiology);
-      const uid = user?.uid;
-      if (uid && db) {
-        set(ref(db, `users/${uid}/physiology_model`), {
-          ...updatedPhysiology,
-          ...(lastCalibrationWeek ? { lastCalibrationWeek } : {}),
-        }).catch((err) => console.warn('[fourCylinder] physiology save failed:', err));
-      }
+      console.log('[DEBUG 4CYL] Persist su userModel/Firebase — decay:', fourCylinderNextState?.decay);
+      persistFourCylinderState({
+        db,
+        userUid: user?.uid ?? null,
+        setUserModel,
+        nextFourCylinderState: fourCylinderNextState,
+      });
+    } else {
+      console.warn('[DEBUG 4CYL] Nessuno stato da persistere — fourCylinderNextState null');
     }
 
     setEditingWorkoutId(null);
@@ -534,97 +544,62 @@ export function useWorkoutManager({
       const isWork = chatNodeKind === 'work';
       const isCognitive = chatNodeKind === 'cognitive';
 
-      // --- 4-Cylinder pipeline (chat): fisico → stimolo | lavoro/cognitivo → stress ---
+      const filteredLog = (dailyLog || []).filter((item) => item?.id !== logItem.id);
+      const newLog = [logItem, ...filteredLog];
+      const filteredNodes = (manualNodesRef.current || []).filter(
+        (node) => node?.id !== timelineNode.id,
+      );
+      const newNodes = [...filteredNodes, timelineNode].filter(
+        (node) => node && node.type !== 'ghost_workout',
+      );
+
       let fourCylinderNextState = null;
       if (userModel && setUserModel) {
         const todayIso = currentTrackerDate || getTodayString();
-        const currentFourCylinder = fourCylinderFromPhysiologyModel(userModel, todayIso);
-        const nutritionMap = fullHistory
-          ? buildDailyNutritionMap(fullHistory, proteinTarget, {
-              activeLog: dailyLog,
-              anchorDate: todayIso,
-            })
-          : null;
-        const isFastedState = isCurrentlyFasted(dailyLog, {
+        const musclesCanon = Array.isArray(timelineNode.muscles) ? timelineNode.muscles : [];
+        const resolved = resolveFourCylinderForWorkoutSave({
+          userModel,
           fullHistory,
-          anchorDate: todayIso,
+          todayIso,
+          newLog,
+          newNodes,
+          editingWorkoutId: null,
+          finalId: logItem.id,
+          isWork,
+          isCognitive,
+          workoutType: logItem.workoutType,
+          musclesCanon,
+          workoutKcal: logItem.kcal,
+          duration: logItem.duration,
+          logData: logItem,
+          proteinTarget,
+          dailyLog,
         });
-
-        if (isWork || isCognitive) {
-          const { nextState, snapshot } = applyCognitiveStressPipeline(
-            currentFourCylinder,
-            {
-              duration: Number(logItem.duration) || 0,
-              workoutType: String(logItem.workoutType || ''),
-              sessionId: logItem.id,
-              date: todayIso,
-            },
-            todayIso,
-            nutritionMap,
-          );
-          logItem.fourCylinderSnapshot = snapshot;
+        if (resolved) {
+          logItem.fourCylinderSnapshot = resolved.snapshot;
           timelineNode.fourCylinderRef = {
-            engineVersion: snapshot.engineVersion,
-            capturedAt: snapshot.capturedAt,
+            engineVersion: resolved.snapshot.engineVersion,
+            capturedAt: resolved.snapshot.capturedAt,
           };
-          fourCylinderNextState = nextState;
-        } else {
-          const muscles = Array.isArray(timelineNode.muscles) ? timelineNode.muscles : [];
-          const { nextState, snapshot } = applyWorkoutPipeline(
-            currentFourCylinder,
-            {
-              workoutId: logItem.id,
-              workoutType: logItem.workoutType,
-              muscles,
-              kcal: logItem.kcal,
-              duration: logItem.duration,
-              rpe: logItem.rpe ?? payload?.rpe ?? null,
-              date: todayIso,
-              isFastedState,
-            },
-            todayIso,
-            nutritionMap,
-          );
-          logItem.fourCylinderSnapshot = snapshot;
-          timelineNode.fourCylinderRef = {
-            engineVersion: snapshot.engineVersion,
-            capturedAt: snapshot.capturedAt,
-          };
-          fourCylinderNextState = nextState;
+          fourCylinderNextState = resolved.nextState;
+          newLog[0] = { ...logItem };
         }
       }
 
       if (isSimulationMode) {
-        setSimulatedLog((prev) => {
-          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
-          return [logItem, ...filteredLog];
-        });
+        setSimulatedLog(newLog);
       } else {
-        setDailyLog((prev) => {
-          const filteredLog = (prev || []).filter((item) => item?.id !== logItem.id);
-          const newLog = [logItem, ...filteredLog];
-          const filteredNodes = (manualNodesRef.current || []).filter(
-            (node) => node?.id !== timelineNode.id,
-          );
-          const newNodes = [...filteredNodes, timelineNode].filter(
-            (node) => node && node.type !== 'ghost_workout',
-          );
-          setManualNodes(newNodes);
-          syncDatiFirebase(newLog, newNodes);
-          return newLog;
-        });
+        setDailyLog(newLog);
+        setManualNodes(newNodes);
+        syncDatiFirebase(newLog, newNodes);
 
-        // Persiste fourCylinder aggiornato su physiology_model (silenzioso, post tracker sync).
         if (fourCylinderNextState && setUserModel) {
-          const updatedPhysiology = physiologyModelWithFourCylinder(userModel, fourCylinderNextState);
-          setUserModel(updatedPhysiology);
-          const uid = user?.uid;
-          if (uid && db) {
-            set(ref(db, `users/${uid}/physiology_model`), {
-              ...updatedPhysiology,
-              ...(lastCalibrationWeek ? { lastCalibrationWeek } : {}),
-            }).catch((err) => console.warn('[fourCylinder] physiology save failed:', err));
-          }
+          persistFourCylinderState({
+            db,
+            userUid: user?.uid ?? null,
+            setUserModel,
+            nextFourCylinderState: fourCylinderNextState,
+          });
         }
       }
       return `✅ Allenamento registrato: ${label} (${durationMinutes} min, ~${logItem.kcal} kcal).`;
@@ -672,6 +647,7 @@ export function useWorkoutManager({
     openWorkoutEditorFromLogItem,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,
+    resetWorkoutFormForNewSession,
     skipTodayPlanSession,
     handlePostponeWorkout,
     handleSaveWorkout,

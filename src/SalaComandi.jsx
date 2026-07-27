@@ -105,7 +105,7 @@ import {
   resolveOvernightCarryMeal,
 } from './utils/dayTrackingStatus';
 import { useChatOverlay } from './contexts/ChatOverlayContext';
-import { getCurrentTimeRoundedTo15Min } from './utils/decimalTimeUtils';
+import { getCurrentTimeRoundedTo15Min, getDefaultWorkoutEndTimeDecimal } from './utils/decimalTimeUtils';
 import {
   getStrategyKey,
   mealIdFromCanonical,
@@ -174,6 +174,10 @@ import {
   attachFourCylinderSleepSnapshot,
   persistFourCylinderAfterSleep,
 } from './features/salaComandi/utils/fourCylinderSleepBridge';
+import {
+  persistFourCylinderRebuild,
+  rebuildFourCylinderFromTrackerHistory,
+} from './features/salaComandi/utils/fourCylinderRebuild';
 import useTimelineDiaryActions from './hooks/salaComandi/useTimelineDiaryActions';
 import useSleepEngine from './hooks/useSleepEngine';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
@@ -1483,6 +1487,7 @@ export default function SalaComandi() {
     projectionAnchorDate: currentTrackerDate,
     selectedTimeframe: metabolicCompassTimeframe,
     currentLog: activeLog,
+    fourCylinder: userModel?.fourCylinder ?? null,
   });
 
   // Alias semantico: livello SNC usato in UI / allarmi.
@@ -1773,14 +1778,22 @@ export default function SalaComandi() {
 
     const plannedHourDec = todayPlan?.hour != null ? parseFlexibleTimeToDecimal(String(todayPlan.hour)) : null;
     // Crea il fantasma solo se c'è un piano per oggi, ha un orario, e non ci siamo ancora allenati
+    const plannedFocusMuscles = normalizeMuscleGroupArray(
+      Array.isArray(todayPlan?.focus) ? todayPlan.focus : [],
+    );
     const plannedStrategicNode = (plannedHourDec != null && !hasRealWorkoutToday && todayPlan?.type !== 'REST') ? {
       id: `strategic_ghost_${todayStr}`,
       type: 'ghost_workout',
       isGhost: true,
       time: plannedHourDec,
       title: `Previsto: ${todayPlan.type === 'WORKOUT' ? 'Pesi' : todayPlan.type}`,
-      subtitle: todayPlan.focus ? todayPlan.focus.join(', ') : '',
-      kcal: todayPlan.kcal || 0
+      subtitle: plannedFocusMuscles.length
+        ? plannedFocusMuscles.join(', ')
+        : (todayPlan.focus ? todayPlan.focus.join(', ') : ''),
+      muscles: plannedFocusMuscles,
+      kcal: todayPlan.kcal || 0,
+      cal: todayPlan.kcal || 0,
+      subType: todayPlan.type === 'WORKOUT' ? 'pesi' : String(todayPlan.type || 'pesi').toLowerCase(),
     } : null;
 
     return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodesForTimeline, ...(plannedStrategicNode ? [plannedStrategicNode] : [])]
@@ -2022,10 +2035,22 @@ export default function SalaComandi() {
     if (lastCalibrationWeek === lastWeekMonday) return;
 
     const weeklyData = buildWeeklyDataFromHistory(fullHistory, userModel, idealStrategy, lastWeekMonday);
-    const updatedModel = calibrateUserModel(weeklyData, userModel);
-    setUserModel(updatedModel);
+    const calibrated = calibrateUserModel(weeklyData, userModel);
+
+    setUserModel((prev) => ({ ...prev, ...calibrated }));
     setLastCalibrationWeek(lastWeekMonday);
-    set(ref(db, `users/${userUid}/physiology_model`), { ...updatedModel, lastCalibrationWeek: lastWeekMonday }).catch(err => console.warn('Physiology model save failed', err));
+
+    const updates = {};
+    Object.keys(calibrated).forEach((key) => {
+      if (key !== 'fourCylinder' && key !== 'four_cylinder') {
+        updates[key] = calibrated[key];
+      }
+    });
+    updates.lastCalibrationWeek = lastWeekMonday;
+
+    update(ref(db, `users/${userUid}/physiology_model`), updates).catch((err) => {
+      console.warn('Errore durante il salvataggio della calibrazione:', err);
+    });
   }, [userUid, isAuthenticated, fullHistory, userModel, idealStrategy, lastCalibrationWeek]);
 
   const handleLogin = async (e) => {
@@ -2449,6 +2474,7 @@ export default function SalaComandi() {
     openWorkoutEditorFromLogItem,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,
+    resetWorkoutFormForNewSession,
     skipTodayPlanSession,
     handlePostponeWorkout,
     handleSaveWorkout,
@@ -2479,6 +2505,38 @@ export default function SalaComandi() {
     fullHistory,
     proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
   });
+
+  const handleFourCylinderDiaryRebuild = useCallback(
+    ({ dailyLog: nextLog, manualNodes: nextNodes }) => {
+      if (isSimulationMode || !setUserModel) return;
+      const todayIso = currentTrackerDate || getTodayString();
+      const nextState = rebuildFourCylinderFromTrackerHistory({
+        fullHistory,
+        anchorDateIso: todayIso,
+        activeLog: nextLog,
+        activeManualNodes: nextNodes,
+        proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+        seedState: userModel?.fourCylinder,
+      });
+      persistFourCylinderRebuild({
+        db,
+        userUid: user?.uid ?? null,
+        setUserModel,
+        nextFourCylinderState: nextState,
+      });
+    },
+    [
+      isSimulationMode,
+      setUserModel,
+      currentTrackerDate,
+      fullHistory,
+      userTargets?.prot,
+      userProfile?.proteinTarget,
+      userModel?.fourCylinder,
+      db,
+      user?.uid,
+    ],
+  );
 
   const {
     historyStack,
@@ -2539,6 +2597,7 @@ export default function SalaComandi() {
     timelineContainerRef,
     longPressTimerRef,
     longPressMoveCleanupRef,
+    onFourCylinderDiaryRebuild: handleFourCylinderDiaryRebuild,
   });
 
   const computeTimelineHourFromPointer = useCallback((e) => {
@@ -2711,10 +2770,8 @@ export default function SalaComandi() {
         break;
       }
       case 'workout': {
-        const nowT = getCurrentTimeRoundedTo15Min();
-        setWorkoutEndTime(nowT);
-        setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
-        setWorkoutStrengthDetail('');
+        resetWorkoutFormForNewSession();
+        setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('allenamento');
         setIsDrawerOpen(true);
@@ -3363,6 +3420,16 @@ Ottimo! Diario aggiornato. 🥗`;
     if (node.type === 'ghost_workout') {
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
       const title = String(node.title || 'Allenamento Pianificato').trim();
+      const ghostMuscles = normalizeMuscleGroupArray(
+        Array.isArray(node.muscles) && node.muscles.length > 0
+          ? node.muscles
+          : Array.isArray(node.workoutMuscles) && node.workoutMuscles.length > 0
+            ? node.workoutMuscles
+            : String(node.subtitle || '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean),
+      );
       setSelectedNodeReport({
         type: 'ghost_workout',
         id: node.id,
@@ -3370,12 +3437,12 @@ Ottimo! Diario aggiornato. 🥗`;
         title,
         name: title,
         desc: title,
-        microDesc: String(node.microDesc || '').trim(),
-        subType: 'pesi',
-        kcal: 0,
-        cal: 0,
-        duration: 1,
-        muscles: [],
+        microDesc: String(node.microDesc || node.subtitle || '').trim(),
+        subType: node.subType || 'pesi',
+        kcal: Number(node.kcal || node.cal) || 0,
+        cal: Number(node.cal || node.kcal) || 0,
+        duration: Math.max(0.25, Number(node.duration) || 1),
+        muscles: ghostMuscles,
         isGhost: true,
       });
       return;
@@ -7386,16 +7453,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            WebkitOverflowScrolling: 'touch',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
         <MainMenuDrawer
           activeAction={activeAction}
           setActiveAction={setActiveAction}
@@ -7976,8 +8033,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             </div>
           </div>
         )}
-
-      </div>
 
       </MenuDrawerShell>
 

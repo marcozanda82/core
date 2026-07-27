@@ -1,7 +1,10 @@
 /**
  * Pilastri legacy (ipertrofia / definizione / longevità / energia) per radar e bussola metabolica.
  * Mantenuto separato dal modello ufficiale KentuOS a 4 pilastri fisiologici.
+ * Con `fourCylinderStrategic` nel bundle, ipertrofia ed energia integrano il 4° Pilastro.
  */
+
+import { applyStrategicToPillarMetrics } from '../salaComandi/utils/fourCylinderStrategicBridge';
 
 /**
  * @param {unknown} value
@@ -108,12 +111,15 @@ export function mapBundleToPillars(compassBundle) {
       ? b.metabolicMapRawDetails
       : {};
 
-  return mapMetricsToPillars({
-    energyBalance: num(b.energyBalance ?? inputs.energyBalance, 0),
-    trainingLoadAxis: num(b.trainingLoad ?? inputs.trainingLoad, 0),
-    meanTraining01: num(rawDetails.meanTraining01, NaN),
-    sleepPenalty: num(b.sleepPenalty, 0),
-    longevityScore: num(b.longevityScore, NaN),
-    distance: num(b.mapPositionInertial?.distance ?? b.distance, NaN),
-  });
+  return applyStrategicToPillarMetrics(
+    mapMetricsToPillars({
+      energyBalance: num(b.energyBalance ?? inputs.energyBalance, 0),
+      trainingLoadAxis: num(b.trainingLoad ?? inputs.trainingLoad, 0),
+      meanTraining01: num(rawDetails.meanTraining01, NaN),
+      sleepPenalty: num(b.sleepPenalty, 0),
+      longevityScore: num(b.longevityScore, NaN),
+      distance: num(b.mapPositionInertial?.distance ?? b.distance, NaN),
+    }),
+    b.fourCylinderStrategic,
+  );
 }

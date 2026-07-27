@@ -17,7 +17,13 @@ import {
 } from '../../../metabolicMapEngine';
 import { computeMetabolicMapInputsAndAudit } from '../../../metabolicMapPeriodInputs';
 import { computeWeightProjectionFromInputs, formatWeightProjectionUI } from '../../../weightProjectionEngine';
+import { getTodayString } from '../../../coreEngine';
 import { buildMetabolicStateFromBundle } from './metabolicStateBuilder.js';
+import {
+  applyStrategicToCompassAmbient,
+  applyStrategicToMapInputs,
+  buildFourCylinderStrategicMetrics,
+} from '../utils/fourCylinderStrategicBridge.js';
 
 const METABOLIC_COMPASS_SNAPSHOT_RAD_TO_DEG = 180 / Math.PI;
 
@@ -602,6 +608,8 @@ function resolveBaselineOffset(bodyMetricsHistory, dailyHistory) {
  *   userTargets?: { kcal?: number } | null,
  *   projectionAnchorDate?: string | null,
  *   selectedTimeframe?: string,
+ *   currentLog?: Array,
+ *   fourCylinder?: object | null,
  * }} params
  */
 export function computeMetabolicMapCompassBundle({
@@ -612,6 +620,7 @@ export function computeMetabolicMapCompassBundle({
   projectionAnchorDate = null,
   selectedTimeframe = '7d',
   currentLog = [],
+  fourCylinder = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -625,14 +634,29 @@ export function computeMetabolicMapCompassBundle({
     referenceTdee,
   );
 
+  const fourCylinderStrategic = buildFourCylinderStrategicMetrics(fourCylinder, {
+    todayIso: projectionAnchorDate || getTodayString(),
+    fullHistory,
+  });
+  const mapInputsResolved = applyStrategicToMapInputs(mapInputs, fourCylinderStrategic);
+
+  console.log('[StrategicBridge] Mappa trainingLoad:', {
+    hasFourCylinder: fourCylinderStrategic.hasFourCylinder,
+    legacyTrainingLoad: mapInputs.trainingLoad,
+    resolvedTrainingLoad: mapInputsResolved.trainingLoad,
+    legacyGlycemic: mapInputs.glycemicInstability,
+    resolvedGlycemic: mapInputsResolved.glycemicInstability,
+    fourCylinderTrainingLoad01: mapInputsResolved.fourCylinderTrainingLoad01 ?? null,
+  });
+
   const baselineOffset = resolveBaselineOffset(bodyMetricsHistory, dailyHistory);
   const workoutTotals = deriveWorkoutTotalsFromCurrentLog(currentLog, dailyHistory);
 
   const mapPosition = calculateMetabolicMapPosition({
-    energyBalance: mapInputs.energyBalance,
-    trainingLoad: mapInputs.trainingLoad,
-    sleepHours: mapInputs.sleepHours,
-    glycemicInstability: mapInputs.glycemicInstability,
+    energyBalance: mapInputsResolved.energyBalance,
+    trainingLoad: mapInputsResolved.trainingLoad,
+    sleepHours: mapInputsResolved.sleepHours,
+    glycemicInstability: mapInputsResolved.glycemicInstability,
     baselineOffsetX: baselineOffset.x,
     baselineOffsetY: baselineOffset.y,
     totals: workoutTotals,
@@ -643,14 +667,15 @@ export function computeMetabolicMapCompassBundle({
     '30d',
     referenceTdee,
   );
+  const mapInputs30dResolved = applyStrategicToMapInputs(mapInputs30d, fourCylinderStrategic);
   let mapPositionInertial;
   let mapPositionInertialSource = 'fallback_period';
   if ((mapInputs30d.totalWindowDays ?? 0) > 0) {
     mapPositionInertial = calculateMetabolicMapPosition({
-      energyBalance: mapInputs30d.energyBalance,
-      trainingLoad: mapInputs30d.trainingLoad,
-      sleepHours: mapInputs30d.sleepHours,
-      glycemicInstability: mapInputs30d.glycemicInstability,
+      energyBalance: mapInputs30dResolved.energyBalance,
+      trainingLoad: mapInputs30dResolved.trainingLoad,
+      sleepHours: mapInputs30dResolved.sleepHours,
+      glycemicInstability: mapInputs30dResolved.glycemicInstability,
       baselineOffsetX: baselineOffset.x,
       baselineOffsetY: baselineOffset.y,
       totals: workoutTotals,
@@ -751,9 +776,12 @@ export function computeMetabolicMapCompassBundle({
     mapDistance: mapDistanceSemantic,
   });
 
-  const compassAmbientStyle = buildCompassAmbientStyle(
-    mapPositionInertial.zone,
-    compassSignalStrength
+  const compassAmbientStyle = applyStrategicToCompassAmbient(
+    buildCompassAmbientStyle(
+      mapPositionInertial.zone,
+      compassSignalStrength,
+    ),
+    fourCylinderStrategic,
   );
 
   if (import.meta.env.DEV) {
@@ -761,16 +789,17 @@ export function computeMetabolicMapCompassBundle({
   }
 
   const sleepPenalty =
-    mapInputs.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputs.sleepHours) : 0;
+    mapInputsResolved.sleepHours < 7.5 ? Math.max(0, 7.5 - mapInputsResolved.sleepHours) : 0;
 
   const bundle = {
     selectedTimeframe,
     referenceTdeeKcal: referenceTdee,
     impactMultiplier: rawDetails.impactMultiplier ?? null,
     persistFracOutsideDeadband,
+    fourCylinderStrategic,
     /** Posizione mappa lenta (finestra 30g + baseline); marker principale — non l’ultimo giorno trail. */
     mapPositionInertial,
-    metabolicMapInputs: mapInputs,
+    metabolicMapInputs: mapInputsResolved,
     metabolicMapRawDetails: rawDetails,
     baselineOffset,
     mapZoneColor,
@@ -790,9 +819,9 @@ export function computeMetabolicMapCompassBundle({
     compassDisplayLabel,
     x: mapPosition.x,
     y: mapPosition.y,
-    energyBalance: mapInputs.energyBalance,
-    trainingLoad: mapInputs.trainingLoad,
-    glycemic: mapInputs.glycemicInstability,
+    energyBalance: mapInputsResolved.energyBalance,
+    trainingLoad: mapInputsResolved.trainingLoad,
+    glycemic: mapInputsResolved.glycemicInstability,
     sleepPenalty,
     distance: mapPosition.distance,
     quadrant: mapPosition.quadrant,

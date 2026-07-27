@@ -61,6 +61,7 @@
  * @typedef {object} FourCylinderState
  * @property {number} engineVersion
  * @property {string} lastProcessedDate ISO YYYY-MM-DD — ultimo giorno di decay virtuale applicato
+ * @property {string} [lastUpdatedIso] ISO YYYY-MM-DD — ultimo evento che ha mutato decay/systemic
  * @property {number} updatedAt epoch ms
  * @property {FourCylinderDecay} decay
  * @property {number} systemic_fatigue 0–1
@@ -197,6 +198,8 @@ const MUSCLE_CYLINDER_MAP = Object.freeze({
   schiena: 'pull',
   bicipiti: 'pull',
   bicipite: 'pull',
+  avambracci: 'pull',
+  avambraccio: 'pull',
   gambe: 'legs',
   abs: 'legs',
   addominali: 'legs',
@@ -284,7 +287,7 @@ export function createDefaultFourCylinderState(todayIso) {
   return sanitizeFourCylinderState({
     engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
     lastProcessedDate: today,
-    updatedAt: Date.now(),
+    updatedAt: 0,
     decay: { ...DEFAULT_MUSCLE_LEVELS },
     systemic_fatigue: 0,
     params: DEFAULT_FOUR_CYLINDER_PARAMS,
@@ -352,10 +355,12 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
   };
 
   const lastProcessed = String(src.lastProcessedDate || today).trim().slice(0, 10);
+  const lastUpdatedIsoRaw = String(src.lastUpdatedIso || lastProcessed || today).trim().slice(0, 10);
 
   return {
     engineVersion: Number(src.engineVersion) || FOUR_CYLINDER_ENGINE_VERSION,
     lastProcessedDate: /^\d{4}-\d{2}-\d{2}$/.test(lastProcessed) ? lastProcessed : today,
+    lastUpdatedIso: /^\d{4}-\d{2}-\d{2}$/.test(lastUpdatedIsoRaw) ? lastUpdatedIsoRaw : today,
     updatedAt: Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : Date.now(),
     decay: clampMuscleDecay(src.decay || src.muscleDecay || DEFAULT_MUSCLE_LEVELS),
     systemic_fatigue: clamp01(src.systemic_fatigue ?? src.systemicFatigue ?? 0),
@@ -712,6 +717,7 @@ export function applyWorkoutStimulus(state, workout) {
     nextState: {
       ...safe,
       updatedAt: capturedAt,
+      lastUpdatedIso: date,
       decay: nextDecay,
       systemic_fatigue: nextSystemic,
       lastStimulus: {
@@ -1053,17 +1059,79 @@ export function fourCylinderFromPhysiologyModel(physiologyModelDoc, todayIso) {
 }
 
 /**
+ * Payload sicuro per `set()` su `physiology_model`: coefficienti senza chiavi fourCylinder duplicate,
+ * blocco fourCylinder esplicito e extras (es. lastCalibrationWeek).
+ * @param {unknown} baseModel
+ * @param {FourCylinderState | null | undefined} fourCylinder
+ * @param {Record<string, unknown>} [extras]
+ * @returns {object}
+ */
+export function buildPhysiologyModelPayload(baseModel, fourCylinder, extras = {}) {
+  const { fourCylinder: _fc, four_cylinder: _legacy, ...coefficients } = baseModel && typeof baseModel === 'object' ? baseModel : {};
+  return {
+    ...coefficients,
+    ...extras,
+    fourCylinder: sanitizeFourCylinderState(fourCylinder),
+  };
+}
+
+/**
  * Merge per scrittura su `physiology_model` (preserva campi legacy sibling).
  * @param {unknown} physiologyModelDoc documento esistente
  * @param {FourCylinderState} fourCylinder
  * @returns {object}
  */
 export function physiologyModelWithFourCylinder(physiologyModelDoc, fourCylinder) {
-  const base = physiologyModelDoc && typeof physiologyModelDoc === 'object'
-    ? { ...physiologyModelDoc }
-    : {};
-  return {
-    ...base,
-    fourCylinder: sanitizeFourCylinderState(fourCylinder),
-  };
+  return buildPhysiologyModelPayload(physiologyModelDoc, fourCylinder);
+}
+
+/**
+ * Somma decay muscolare (tie-break merge).
+ * @param {FourCylinderDecay | null | undefined} decay
+ * @returns {number}
+ */
+function muscleDecaySum(decay) {
+  const d = decay && typeof decay === 'object' ? decay : {};
+  return clamp01(d.push) + clamp01(d.pull) + clamp01(d.legs);
+}
+
+/**
+ * Merge anti-race: preferisce il blocco fourCylinder più recente / con stimolo reale.
+ * Usato da boot catch-up e hydration tardiva physiology_model.
+ *
+ * @param {unknown} localRaw stato locale (es. prev.fourCylinder)
+ * @param {unknown} incomingRaw stato remoto o catch-up
+ * @returns {FourCylinderState | null}
+ */
+export function mergeFourCylinderStatePreferNewer(localRaw, incomingRaw) {
+  const local = localRaw ? sanitizeFourCylinderState(localRaw) : null;
+  const incoming = incomingRaw ? sanitizeFourCylinderState(incomingRaw) : null;
+  if (!local) return incoming;
+  if (!incoming) return local;
+
+  const localTs = Number(local.updatedAt) || 0;
+  const incomingTs = Number(incoming.updatedAt) || 0;
+  // Default appena inizializzato (updatedAt === 0) non deve battere un salvataggio reale su Firebase.
+  if (localTs === 0 && incomingTs > 0) return incoming;
+  if (incomingTs === 0 && localTs > 0) return local;
+
+  const localStimulusAt = Number(local.lastStimulus?.at) || 0;
+  const incomingStimulusAt = Number(incoming.lastStimulus?.at) || 0;
+  if (localStimulusAt > incomingStimulusAt) return local;
+  if (incomingStimulusAt > localStimulusAt) return incoming;
+
+  if (localTs > incomingTs) return local;
+  if (incomingTs > localTs) return incoming;
+
+  const localSum = muscleDecaySum(local.decay);
+  const incomingSum = muscleDecaySum(incoming.decay);
+  if (localSum > incomingSum) return local;
+  if (incomingSum > localSum) return incoming;
+
+  const localIso = String(local.lastUpdatedIso || local.lastProcessedDate || '');
+  const incomingIso = String(incoming.lastUpdatedIso || incoming.lastProcessedDate || '');
+  if (localIso > incomingIso) return local;
+  if (incomingIso > localIso) return incoming;
+
+  return incoming;
 }

@@ -1,18 +1,19 @@
 import { useEffect, useRef } from 'react';
-import { ref, get, set } from 'firebase/database';
+import { ref, get } from 'firebase/database';
 import { getTodayString } from '../../coreEngine';
 import {
   catchUpDecayToDate,
   createDefaultFourCylinderState,
   fourCylinderFromPhysiologyModel,
-  physiologyModelWithFourCylinder,
+  mergeFourCylinderStatePreferNewer,
 } from '../../features/salaComandi/engines/fourCylinderEngine';
 import { buildDailyNutritionMap } from '../../features/salaComandi/utils/fourCylinderNutritionBridge';
+import { persistFourCylinderState } from '../../features/salaComandi/utils/fourCylinderPersist';
 
 /**
  * Boot catch-up: applica il decadimento virtuale (mezzanotte) tra `lastProcessedDate` e oggi.
  * Esegue una lettura autorevole di `physiology_model`, aggiorna lo stato locale e persiste
- * silenziosamente su Firebase quando servono giorni di recovery o il blocco fourCylinder manca.
+ * silenziosamente su Firebase solo se il blocco fourCylinder mancava o sono stati applicati giorni di recovery.
  *
  * @param {object} config
  * @param {string | null} config.userUid
@@ -55,7 +56,6 @@ export function useFourCylinderBootCatchUp({
         const existingDoc = physSnap.exists() && physSnap.val() && typeof physSnap.val() === 'object'
           ? physSnap.val()
           : {};
-        const savedCalWeek = existingDoc.lastCalibrationWeek || lastCalibrationWeek || null;
         const { lastCalibrationWeek: _ignored, ...modelFields } = existingDoc;
 
         const hadFourCylinder = Boolean(existingDoc.fourCylinder ?? existingDoc.four_cylinder);
@@ -71,25 +71,32 @@ export function useFourCylinderBootCatchUp({
           nutritionMap,
         );
         const baseModel = physSnap.exists() ? modelFields : {};
-        const mergedModel = physiologyModelWithFourCylinder(baseModel, nextState);
+        const needsSave = !hadFourCylinder || daysApplied > 0;
 
-        setUserModel((prev) => ({
-          ...prev,
-          ...mergedModel,
-        }));
+        let resolvedFourCylinder = nextState;
+        setUserModel((prev) => {
+          resolvedFourCylinder = mergeFourCylinderStatePreferNewer(
+            prev?.fourCylinder,
+            nextState,
+          );
+          return {
+            ...prev,
+            ...baseModel,
+            fourCylinder: resolvedFourCylinder,
+          };
+        });
 
-        const shouldPersist = daysApplied > 0 || !hadFourCylinder;
-        if (!shouldPersist) {
-          catchUpDoneForUidRef.current = userUid;
+        catchUpDoneForUidRef.current = userUid;
+
+        if (!needsSave) {
           return undefined;
         }
 
-        const payload = {
-          ...mergedModel,
-          ...(savedCalWeek ? { lastCalibrationWeek: savedCalWeek } : {}),
-        };
-        return set(ref(db, `users/${userUid}/physiology_model`), payload).then(() => {
-          catchUpDoneForUidRef.current = userUid;
+        return persistFourCylinderState({
+          db,
+          userUid,
+          setUserModel,
+          nextFourCylinderState: resolvedFourCylinder,
         });
       })
       .catch((err) => {
