@@ -38,9 +38,9 @@ export default function GlobalChatOverlay() {
           type="button"
           onClick={openChat}
           aria-label="Apri chat Kentu"
-          className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center rounded-full border border-cyan-400/40 bg-slate-950 text-2xl shadow-[0_8px_28px_rgba(0,0,0,0.45)] transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center rounded-full border border-cyan-400/40 bg-slate-950 text-2xl shadow-none transition-transform hover:scale-105 active:scale-95"
         >
-          <span aria-hidden>🤖</span>
+          <span aria-hidden className="drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]">🤖</span>
         </button>
       ) : null}
 
@@ -62,7 +62,7 @@ export default function GlobalChatOverlay() {
         }`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3">
+        <header className="relative flex shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3 pr-14">
           <div className="flex min-w-0 items-center gap-2">
             <span className="text-lg" aria-hidden>🤖</span>
             <div className="min-w-0">
@@ -76,9 +76,27 @@ export default function GlobalChatOverlay() {
             type="button"
             onClick={closeChat}
             aria-label="Chiudi chat"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-700 bg-slate-900/80 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+            className={[
+              'absolute right-4 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center',
+              'rounded-full border-none bg-red-600 text-white',
+              'shadow-[0_0_15px_rgba(220,38,38,0.8)]',
+              'transition-transform active:scale-95',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80',
+            ].join(' ')}
           >
-            <span aria-hidden className="text-lg leading-none">↓</span>
+            <svg
+              aria-hidden
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
           </button>
         </header>
 

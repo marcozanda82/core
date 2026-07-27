@@ -195,6 +195,22 @@ export function buildPlannerActionObject({
 
 /**
  * @param {PlannerWorkoutInitialData | null | undefined} initialData
+ * @returns {string} chiave stabile per re-idratazione (evita reset muscoli a ogni re-render del parent)
+ */
+function plannerInitialDataSyncKey(initialData) {
+  const next = normalizePlannerInitialData(initialData);
+  return [
+    next.workoutType,
+    next.workoutStartTime,
+    next.workoutDurationMin,
+    next.workoutMuscles.join('|'),
+    next.workoutStrengthDetail,
+    next.workoutKcal,
+  ].join('::');
+}
+
+/**
+ * @param {PlannerWorkoutInitialData | null | undefined} initialData
  * @param {Record<string, PlannerComboHistoryEntry>} [comboHistory]
  */
 function usePlannerWorkoutState(initialData, comboHistory = {}) {
@@ -209,16 +225,23 @@ function usePlannerWorkoutState(initialData, comboHistory = {}) {
     }) / 60
   );
   const [workoutDurationMin, setWorkoutDurationMin] = useState(normalized.workoutDurationMin);
-  const [workoutMuscles, setWorkoutMuscles] = useState(normalized.workoutMuscles);
+  const [workoutMuscles, setWorkoutMuscles] = useState(() =>
+    normalizeMuscleGroupArray(normalized.workoutMuscles),
+  );
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState(normalized.workoutStrengthDetail);
   const [workoutKcal, setWorkoutKcal] = useState(normalized.workoutKcal);
 
+  const initialSyncKey = plannerInitialDataSyncKey(initialData);
+  const lastInitialSyncKeyRef = useRef(initialSyncKey);
+
   useEffect(() => {
+    if (lastInitialSyncKeyRef.current === initialSyncKey) return;
+    lastInitialSyncKeyRef.current = initialSyncKey;
     const next = normalizePlannerInitialData(initialData);
     setWorkoutType(next.workoutType);
     setWorkoutStartTime(next.workoutStartTime);
     setWorkoutDurationMin(next.workoutDurationMin);
-    setWorkoutMuscles(next.workoutMuscles);
+    setWorkoutMuscles(normalizeMuscleGroupArray(next.workoutMuscles));
     setWorkoutStrengthDetail(next.workoutStrengthDetail);
     setWorkoutKcal(next.workoutKcal);
     const durationHours =
@@ -228,7 +251,7 @@ function usePlannerWorkoutState(initialData, comboHistory = {}) {
         fallback: WORKOUT_DURATION_DEFAULT,
       }) / 60;
     setWorkoutEndTime(next.workoutStartTime + durationHours);
-  }, [initialData]);
+  }, [initialSyncKey, initialData]);
 
   const skipComboHistoryEffect = useRef(true);
   const comboHistoryRef = useRef(comboHistory);
@@ -243,7 +266,7 @@ function usePlannerWorkoutState(initialData, comboHistory = {}) {
   useEffect(() => {
     skipComboHistoryEffect.current = true;
     lastAppliedComboSignature.current = null;
-  }, [initialData]);
+  }, [initialSyncKey]);
 
   useEffect(() => {
     if (skipComboHistoryEffect.current) {
@@ -292,6 +315,20 @@ function usePlannerWorkoutState(initialData, comboHistory = {}) {
     [workoutDurationMin]
   );
 
+  /** Toggle multi-select: garantisce sempre un array (anche se prev è stringa legacy). */
+  const toggleWorkoutMuscle = (muscleId) => {
+    const id = String(muscleId || '').trim();
+    if (!id) return;
+    setWorkoutMuscles((prev) => {
+      const base = Array.isArray(prev)
+        ? prev
+        : (prev != null && String(prev).trim() !== '' ? [prev] : []);
+      const p = normalizeMuscleGroupArray(base);
+      if (p.includes(id)) return p.filter((x) => x !== id);
+      return normalizeMuscleGroupArray([...p, id]);
+    });
+  };
+
   return {
     workoutType,
     setWorkoutType,
@@ -304,6 +341,7 @@ function usePlannerWorkoutState(initialData, comboHistory = {}) {
     workoutDurationHours,
     workoutMuscles,
     setWorkoutMuscles,
+    toggleWorkoutMuscle,
     workoutStrengthDetail,
     setWorkoutStrengthDetail,
     workoutKcal,
@@ -322,6 +360,8 @@ export default function WorkoutView({
   planDraft = null,
   onStartWorkoutSession,
   onDraftConsumed,
+  /** Etichetta bottone Salva in modalità planner (default: APPLICA AZIONE). */
+  plannerSaveLabel = null,
   workoutType: workoutTypeProp,
   setWorkoutType: setWorkoutTypeProp,
   workoutStartTime: workoutStartTimeProp,
@@ -361,6 +401,23 @@ export default function WorkoutView({
   const workoutDurationHours = isPlannerMode ? planner.workoutDurationHours : workoutDurationHoursProp;
   const workoutMuscles = isPlannerMode ? planner.workoutMuscles : workoutMusclesProp;
   const setWorkoutMuscles = isPlannerMode ? planner.setWorkoutMuscles : setWorkoutMusclesProp;
+  const toggleWorkoutMuscle = (muscleId) => {
+    if (isPlannerMode && typeof planner.toggleWorkoutMuscle === 'function') {
+      planner.toggleWorkoutMuscle(muscleId);
+      return;
+    }
+    if (typeof setWorkoutMuscles !== 'function') return;
+    const id = String(muscleId || '').trim();
+    if (!id) return;
+    setWorkoutMuscles((prev) => {
+      const base = Array.isArray(prev)
+        ? prev
+        : (prev != null && String(prev).trim() !== '' ? [prev] : []);
+      const p = normalizeMuscleGroupArray(base);
+      if (p.includes(id)) return p.filter((x) => x !== id);
+      return normalizeMuscleGroupArray([...p, id]);
+    });
+  };
   const workoutStrengthDetail = isPlannerMode ? planner.workoutStrengthDetail : workoutStrengthDetailProp;
   const setWorkoutStrengthDetail = isPlannerMode
     ? planner.setWorkoutStrengthDetail
@@ -834,11 +891,18 @@ export default function WorkoutView({
       ) : null}
       {workoutType === 'pesi' &&
         (() => {
-          const pesiMuscleSet = new Set(normalizeMuscleGroupArray(workoutMuscles));
+          const pesiMuscleSet = new Set(normalizeMuscleGroupArray(
+            Array.isArray(workoutMuscles)
+              ? workoutMuscles
+              : (workoutMuscles != null && String(workoutMuscles).trim() !== '' ? [workoutMuscles] : []),
+          ));
           return (
             <div style={{ marginBottom: '20px' }}>
               <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
                 Gruppi muscolari
+                <span style={{ marginLeft: 6, color: '#666', fontWeight: 400 }}>
+                  (selezione multipla)
+                </span>
               </label>
               <div
                 style={{
@@ -853,13 +917,8 @@ export default function WorkoutView({
                     <button
                       key={mId}
                       type="button"
-                      onClick={() => {
-                        setWorkoutMuscles((prev) => {
-                          const p = normalizeMuscleGroupArray(prev);
-                          if (p.includes(mId)) return p.filter((x) => x !== mId);
-                          return [...p, mId];
-                        });
-                      }}
+                      aria-pressed={isActive}
+                      onClick={() => toggleWorkoutMuscle(mId)}
                       style={{
                         padding: '10px 12px',
                         fontSize: '0.75rem',
@@ -987,7 +1046,9 @@ export default function WorkoutView({
           </button>
         ) : (
           <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
-            {isPlannerMode ? 'APPLICA AZIONE' : 'SALVA ATTIVITÀ'}
+            {isPlannerMode
+              ? (plannerSaveLabel || 'APPLICA AZIONE')
+              : 'SALVA ATTIVITÀ'}
           </button>
         )}
       </div>

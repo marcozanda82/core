@@ -9,7 +9,7 @@ export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
   { id: 'bussola', label: 'Trend', icon: '❤️' },
-  { id: 'pianifica', label: 'Pianifica', icon: '🗓️' },
+  { id: 'pianifica', label: 'Piano', icon: '🗓️' },
 ];
 
 export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';

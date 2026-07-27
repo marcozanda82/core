@@ -52,7 +52,8 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import DialMaintenanceMarker from './components/DialMaintenanceMarker';
-import AiTargetWidget from './components/AiTargetWidget';
+import TrainingBlockWidget from './components/TrainingBlockWidget';
+import useTrainingBlock from './hooks/planning/useTrainingBlock';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
@@ -177,7 +178,9 @@ import {
 import {
   persistFourCylinderRebuild,
   rebuildFourCylinderFromTrackerHistory,
+  resolveFourCylinderForWorkoutSave,
 } from './features/salaComandi/utils/fourCylinderRebuild';
+import { persistFourCylinderState } from './features/salaComandi/utils/fourCylinderPersist';
 import useTimelineDiaryActions from './hooks/salaComandi/useTimelineDiaryActions';
 import useSleepEngine from './hooks/useSleepEngine';
 import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
@@ -383,7 +386,6 @@ const LongevityView = lazy(() => import('./LongevityView'));
 const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
-const WavePlannerView = lazy(() => import('./drawers/vistas/WavePlannerView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
 const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
 const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOverlay'));
@@ -428,6 +430,8 @@ export default function SalaComandi() {
     if (activeAction === 'ai_chat') setChatShellMounted(true);
   }, [activeAction]);
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
+  /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
+  const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
@@ -570,8 +574,10 @@ export default function SalaComandi() {
         return;
       }
       if (tabId === 'pianifica') {
-        setActiveAction('wave_planner');
-        setIsDrawerOpen(true);
+        setActiveBottomTab('oggi');
+        setTrainingBlockCreatorOpen(true);
+        setActiveAction(null);
+        setIsDrawerOpen(false);
         return;
       }
       const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
@@ -876,6 +882,19 @@ export default function SalaComandi() {
     db,
     userProfile?.uid || user?.uid
   );
+
+  /** Training Block live — fonte per ghost_workout timeline (indipendente dal widget Home). */
+  const {
+    block: trainingBlockLive,
+    todaySession: trainingBlockTodaySession,
+  } = useTrainingBlock({
+    db,
+    userUid: user?.uid ?? null,
+    todayIso: currentTrackerDate || getTodayString(),
+    userProfile,
+    isSimulationMode,
+  });
+
   const plannedWorkoutKcal = useMemo(
     () => getTodayPlannedKcal(strategicPlan, currentTrackerDate),
     [strategicPlan, currentTrackerDate]
@@ -1287,84 +1306,6 @@ export default function SalaComandi() {
     [currentTrackerDate, getTodayString]
   );
 
-  /** Applica i daily_targets AI al budget del giorno corrente (targetHistory + profile_targets). */
-  const applyAiDailyTargets = useCallback(
-    async (dailyTargets) => {
-      const kcal = Math.round(Number(dailyTargets?.kcal) || 0);
-      const prot = Math.round(Number(dailyTargets?.pro) || 0);
-      const carb = Math.round(Number(dailyTargets?.cho) || 0);
-      const fat = Math.round(Number(dailyTargets?.fat) || 0);
-      if (kcal <= 0 && prot <= 0 && carb <= 0 && fat <= 0) {
-        throw new Error('Target AI non validi.');
-      }
-
-      const effectiveDate = currentTrackerDate || getTodayString();
-      const patch = {
-        kcal,
-        prot,
-        carb,
-        fat,
-        fatTotal: fat,
-      };
-
-      let nextTargetsSnapshot = null;
-      setUserTargets((prev) => {
-        const nextHistory = upsertTargetHistoryEntry({
-          history: prev?.targetHistory,
-          effectiveDate,
-          targets: patch,
-          todayDate: getTodayString(),
-          source: 'ai-wave-targets',
-          seedPreviousTargets: prev,
-        });
-        nextTargetsSnapshot = {
-          ...prev,
-          ...patch,
-          autoCalculated: false,
-          customTargets: {
-            ...(prev?.customTargets && typeof prev.customTargets === 'object' ? prev.customTargets : {}),
-            [effectiveDate]: {
-              ...patch,
-              source: 'ai-wave-targets',
-              appliedAt: Date.now(),
-            },
-          },
-          targetHistory: nextHistory,
-        };
-        return nextTargetsSnapshot;
-      });
-
-      const uid = user?.uid || auth?.currentUser?.uid;
-      if (db && uid && nextTargetsSnapshot) {
-        await update(ref(db, `users/${uid}/profile_targets`), {
-          'targets/kcal': patch.kcal,
-          'targets/prot': patch.prot,
-          'targets/carb': patch.carb,
-          'targets/fat': patch.fat,
-          'targets/fatTotal': patch.fatTotal,
-          'targets/autoCalculated': false,
-          'targets/targetHistory': nextTargetsSnapshot.targetHistory,
-          'targets/customTargets': nextTargetsSnapshot.customTargets,
-        });
-
-        // Copia audit sul nodo giornata (non sostituisce il log pasti/workout).
-        const dateStr = effectiveDate;
-        try {
-          await update(ref(db, `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`), {
-            customTargets: {
-              ...patch,
-              source: 'ai-wave-targets',
-              appliedAt: Date.now(),
-            },
-          });
-        } catch (err) {
-          console.warn('[applyAiDailyTargets] customTargets day node:', err);
-        }
-      }
-    },
-    [auth, currentTrackerDate, db, getTodayString, user?.uid],
-  );
-
   const calendarZoneByDate = useMemo(() => {
     const out = {};
     // Calcolo 60× risk matrix: solo quando il calendario è aperto (evita jank post-storico).
@@ -1556,6 +1497,224 @@ export default function SalaComandi() {
     weeklyPlanningListenerReadyRef,
     weeklyPlanningRemoteSigRef,
   });
+
+  /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
+  const applyTrainingBlockDailyTargets = useCallback(
+    async (dailyTargets, source = 'training-block') => {
+      const kcal = Math.round(Number(dailyTargets?.kcal) || 0);
+      const prot = Math.round(Number(dailyTargets?.prot ?? dailyTargets?.pro) || 0);
+      const carb = Math.round(Number(dailyTargets?.carb ?? dailyTargets?.cho) || 0);
+      const fat = Math.round(Number(dailyTargets?.fat ?? dailyTargets?.fatTotal) || 0);
+      if (kcal <= 0 && prot <= 0 && carb <= 0 && fat <= 0) {
+        throw new Error('Target blocco non validi.');
+      }
+
+      const effectiveDate = currentTrackerDate || getTodayString();
+      const patch = {
+        kcal,
+        prot,
+        carb,
+        fat,
+        fatTotal: fat,
+      };
+
+      let nextTargetsSnapshot = null;
+      setUserTargets((prev) => {
+        const nextHistory = upsertTargetHistoryEntry({
+          history: prev?.targetHistory,
+          effectiveDate,
+          targets: patch,
+          todayDate: getTodayString(),
+          source,
+          seedPreviousTargets: prev,
+        });
+        nextTargetsSnapshot = {
+          ...prev,
+          ...patch,
+          autoCalculated: false,
+          customTargets: {
+            ...(prev?.customTargets && typeof prev.customTargets === 'object' ? prev.customTargets : {}),
+            [effectiveDate]: {
+              ...patch,
+              source,
+              appliedAt: Date.now(),
+            },
+          },
+          targetHistory: nextHistory,
+        };
+        return nextTargetsSnapshot;
+      });
+
+      const uid = user?.uid || auth?.currentUser?.uid;
+      if (db && uid && nextTargetsSnapshot) {
+        await update(ref(db, `users/${uid}/profile_targets`), {
+          'targets/kcal': patch.kcal,
+          'targets/prot': patch.prot,
+          'targets/carb': patch.carb,
+          'targets/fat': patch.fat,
+          'targets/fatTotal': patch.fatTotal,
+          'targets/autoCalculated': false,
+          'targets/targetHistory': nextTargetsSnapshot.targetHistory,
+          'targets/customTargets': nextTargetsSnapshot.customTargets,
+        });
+        try {
+          await update(ref(db, `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(effectiveDate)}`), {
+            customTargets: {
+              ...patch,
+              source,
+              appliedAt: Date.now(),
+            },
+          });
+        } catch (err) {
+          console.warn('[applyTrainingBlockDailyTargets] day node:', err);
+        }
+      }
+    },
+    [auth, currentTrackerDate, db, getTodayString, user?.uid],
+  );
+
+  /**
+   * Conferma sessione Training Block → target metabolici + log workout + 4° Pilastro.
+   */
+  const handleConfirmTrainingBlockSession = useCallback(
+    async (session, context) => {
+      const todayIso = String(context?.todayIso || currentTrackerDate || getTodayString()).slice(0, 10);
+      const targets = context?.metabolicTargets;
+      if (targets) {
+        await applyTrainingBlockDailyTargets(targets, 'training-block');
+      }
+
+      const dayType = String(session?.type || '').toLowerCase();
+      if (dayType === 'rest' || dayType === 'riposo') {
+        return;
+      }
+
+      const workoutType = dayType === 'cardio' || dayType === 'hiit' ? dayType : 'pesi';
+      const musclesCanon = normalizeMuscleGroupArray(session?.muscles || []);
+      const durationMin = Math.max(
+        15,
+        Math.round(Number(session?.durationMin) || 60),
+      );
+      const duration = durationMin / 60;
+      const workoutKcal = Math.max(
+        0,
+        Math.round(Number(session?.plannedKcalBurn) || (workoutType === 'cardio' ? 350 : 320)),
+      );
+      const finalId = `tb_confirm_${Date.now()}`;
+      const desc =
+        getWorkoutActivityLogDescription(workoutType, musclesCanon)
+        || String(session?.title || 'Allenamento').trim()
+        || 'Allenamento';
+      const plannedDec = Number(session?.plannedTime);
+      const startDec = Number.isFinite(plannedDec) && plannedDec >= 0 && plannedDec < 24
+        ? plannedDec
+        : getCurrentTimeRoundedTo15Min();
+
+      const logData = {
+        id: finalId,
+        type: 'workout',
+        workoutType,
+        desc,
+        name: desc,
+        kcal: workoutKcal,
+        cal: workoutKcal,
+        duration,
+        muscles: musclesCanon,
+        time: startDec,
+        mealTime: startDec,
+        source: 'training-block',
+      };
+      const nodeData = {
+        id: finalId,
+        type: 'workout',
+        time: startDec,
+        duration,
+        kcal: workoutKcal,
+        icon: workoutType === 'cardio' ? '🏃' : '🏋️',
+        subType: workoutType,
+        muscles: musclesCanon,
+        source: 'training-block',
+      };
+
+      const baseLog = dailyLogRef.current || [];
+      const baseNodes = (manualNodesRef.current || []).filter((n) => n && n.type !== 'ghost_workout');
+      const projectedLog = [logData, ...baseLog.filter((e) => String(e?.id) !== finalId)];
+      const projectedNodes = [...baseNodes.filter((n) => String(n?.id) !== finalId), nodeData]
+        .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+
+      if (userModel && setUserModel) {
+        const resolved = resolveFourCylinderForWorkoutSave({
+          userModel,
+          fullHistory,
+          todayIso,
+          newLog: projectedLog,
+          newNodes: projectedNodes,
+          editingWorkoutId: null,
+          finalId,
+          isWork: false,
+          isCognitive: false,
+          workoutType,
+          musclesCanon,
+          workoutKcal,
+          duration,
+          logData,
+          proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+          dailyLog: baseLog,
+        });
+        if (resolved) {
+          logData.fourCylinderSnapshot = resolved.snapshot;
+          nodeData.fourCylinderRef = {
+            engineVersion: resolved.snapshot.engineVersion,
+            capturedAt: resolved.snapshot.capturedAt,
+          };
+          projectedLog[0] = { ...logData };
+          const nodeIdx = projectedNodes.findIndex((n) => n.id === finalId);
+          if (nodeIdx >= 0) projectedNodes[nodeIdx] = { ...nodeData };
+
+          if (!isSimulationMode) {
+            persistFourCylinderState({
+              db,
+              userUid: user?.uid ?? null,
+              setUserModel,
+              nextFourCylinderState: resolved.nextState,
+            });
+          } else {
+            setUserModel((prev) => ({
+              ...prev,
+              fourCylinder: resolved.nextState,
+            }));
+          }
+        }
+      }
+
+      if (isSimulationMode) {
+        setSimulatedLog(projectedLog);
+        setManualNodes(projectedNodes);
+        return;
+      }
+
+      setDailyLog(projectedLog);
+      setManualNodes(projectedNodes);
+      syncDatiFirebase(projectedLog, projectedNodes);
+    },
+    [
+      applyTrainingBlockDailyTargets,
+      currentTrackerDate,
+      getTodayString,
+      userModel,
+      setUserModel,
+      fullHistory,
+      userTargets?.prot,
+      userProfile?.proteinTarget,
+      isSimulationMode,
+      db,
+      user?.uid,
+      syncDatiFirebase,
+      setDailyLog,
+      setManualNodes,
+      setSimulatedLog,
+    ],
+  );
 
   // --- 4-Cylinder boot: catch-up decadimento al login (physiology_model → stato locale + Firebase) ---
   useFourCylinderBootCatchUp({
@@ -1776,12 +1935,79 @@ export default function SalaComandi() {
     // Verifica se esiste già un vero allenamento registrato oggi nel log
     const hasRealWorkoutToday = (activeLog || []).some(entry => entry.type === 'workout' && !entry.isGhost);
 
+    // --- Ologramma Training Block in RAM (non scritto sul log finché non Confermi) ---
+    const tbSession = trainingBlockTodaySession;
+    const tbPending = Boolean(
+      trainingBlockLive?.isActive
+      && tbSession
+      && String(tbSession.status || 'pending') !== 'confirmed'
+      && String(currentTrackerDate || '').slice(0, 10) === String(trainingBlockLive?.anchorDate || '').slice(0, 10)
+      && String(tbSession.type || '').toLowerCase() !== 'rest',
+    );
+    const resolveTbHour = () => {
+      if (!tbSession) return null;
+      const raw = tbSession.plannedTime ?? tbSession.startTimeDec ?? tbSession.time ?? tbSession.preferredTimeTag;
+      const asNum = Number(raw);
+      if (Number.isFinite(asNum) && asNum >= 0 && asNum < 24) return asNum;
+      if (raw != null && String(raw).trim() !== '') {
+        const parsed = parseFlexibleTimeToDecimal(String(raw));
+        if (parsed != null && Number.isFinite(parsed)) return parsed;
+      }
+      // Fallback: ologramma comunque visibile all'orario tipico serale
+      return 18;
+    };
+    const tbHour = tbPending ? resolveTbHour() : null;
+    const durationMin = Math.max(15, Math.round(Number(tbSession?.durationMin) || 60));
+    const dayIso = String(currentTrackerDate || '').slice(0, 10);
+    const ghostTitle = String(tbSession?.title || 'Allenamento').trim() || 'Allenamento';
+    const ghostMuscles = normalizeMuscleGroupArray(tbSession?.muscles || []);
+    const ghostType = String(tbSession?.type || 'pesi').toLowerCase() === 'pesi'
+      ? 'pesi'
+      : String(tbSession?.type || 'pesi').toLowerCase();
+    const ghostKcal = Math.max(
+      0,
+      Math.round(Number(tbSession?.plannedKcalBurn) || 300),
+    );
+    const trainingBlockGhostNode = (
+      !hasRealWorkoutToday
+      && tbPending
+      && tbHour != null
+    ) ? {
+      id: 'physio_ghost_today',
+      type: 'ghost_workout',
+      isGhost: true,
+      isSynthetic: true,
+      date: dayIso,
+      time: tbHour,
+      mealTime: tbHour,
+      timeTag: tbHour,
+      hour: tbHour,
+      title: ghostTitle,
+      name: ghostTitle,
+      desc: ghostTitle,
+      subtitle: ghostMuscles.length ? ghostMuscles.join(', ') : '',
+      muscles: ghostMuscles,
+      workoutType: ghostType,
+      subType: ghostType,
+      duration: durationMin / 60,
+      durationMin,
+      kcal: ghostKcal,
+      cal: ghostKcal,
+      icon: ghostType === 'cardio' ? '🏃' : '🏋️',
+      source: 'training-block',
+    } : null;
+
     const plannedHourDec = todayPlan?.hour != null ? parseFlexibleTimeToDecimal(String(todayPlan.hour)) : null;
-    // Crea il fantasma solo se c'è un piano per oggi, ha un orario, e non ci siamo ancora allenati
+    // Fantasma strategico solo se non c'è già il ghost del Training Block
     const plannedFocusMuscles = normalizeMuscleGroupArray(
       Array.isArray(todayPlan?.focus) ? todayPlan.focus : [],
     );
-    const plannedStrategicNode = (plannedHourDec != null && !hasRealWorkoutToday && todayPlan?.type !== 'REST') ? {
+    const plannedStrategicNode = (
+      !trainingBlockGhostNode
+      && plannedHourDec != null
+      && !hasRealWorkoutToday
+      && todayPlan?.type !== 'REST'
+    ) ? {
       id: `strategic_ghost_${todayStr}`,
       type: 'ghost_workout',
       isGhost: true,
@@ -1796,9 +2022,31 @@ export default function SalaComandi() {
       subType: todayPlan.type === 'WORKOUT' ? 'pesi' : String(todayPlan.type || 'pesi').toLowerCase(),
     } : null;
 
-    return [...computedMealNodes, ...ghostMealTimelineNodes, ...computedActivityTimelineNodes, ...manualNodesForTimeline, ...(plannedStrategicNode ? [plannedStrategicNode] : [])]
-      .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
-  }, [computedMealNodes, ghostMealTimelineNodes, computedActivityTimelineNodes, manualNodesForTimeline, strategicPlan, activeLog]);
+    // Assemblaggio fisico: base dal diario + manuali, poi push ologrammi
+    const baseNodes = [
+      ...computedMealNodes,
+      ...ghostMealTimelineNodes,
+      ...computedActivityTimelineNodes,
+      ...manualNodesForTimeline,
+    ];
+    if (trainingBlockGhostNode) {
+      baseNodes.push(trainingBlockGhostNode);
+    }
+    if (plannedStrategicNode) {
+      baseNodes.push(plannedStrategicNode);
+    }
+    return baseNodes.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+  }, [
+    computedMealNodes,
+    ghostMealTimelineNodes,
+    computedActivityTimelineNodes,
+    manualNodesForTimeline,
+    strategicPlan,
+    activeLog,
+    trainingBlockTodaySession,
+    trainingBlockLive,
+    currentTrackerDate,
+  ]);
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
@@ -6382,11 +6630,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
   }, []);
 
-  const toggleChat = useCallback(() => {
-    if (activeAction === 'ai_chat') closeChat();
-    else openChat();
-  }, [activeAction, closeChat, openChat]);
-
   const handleRequestBarcodeScan = useCallback(() => {
     closeChat();
     setFastLoggerAutoOpenScanner(true);
@@ -6425,37 +6668,66 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const kentuEmblemFab =
     authReady && isAuthenticated
     && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
-    && (isChatOpen || !isDrawerOpen) ? (
-      <button
-        type="button"
-        onClick={toggleChat}
-        className={[
-          'fixed left-1/2 z-[100010] flex -translate-x-1/2 items-center justify-center',
-          'border-none bg-transparent p-0 shadow-none focus:outline-none',
-          'transition-all duration-300 ease-in-out active:scale-95',
-          isChatOpen
-            ? 'top-[calc(1rem+env(safe-area-inset-top,0px))] bottom-auto h-14 w-14'
-            : 'bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] top-auto h-[72px] w-[72px]',
-        ].join(' ')}
-        aria-label={isChatOpen ? 'Chiudi chat' : 'Apri chat Kentu'}
-        aria-pressed={isChatOpen}
-      >
-        {kentuChatNotificationBadge && !isChatOpen ? (
-          <span
+    && (isChatOpen || !isDrawerOpen)
+    && !trainingBlockCreatorOpen
+      ? (isChatOpen ? (
+        <button
+          type="button"
+          onClick={closeChat}
+          aria-label="Chiudi chat"
+          className={[
+            'fixed right-4 z-[100010] flex h-10 w-10 items-center justify-center',
+            'top-[calc(1rem+env(safe-area-inset-top,0px))]',
+            'rounded-full border-none bg-red-600 text-white',
+            'shadow-[0_0_15px_rgba(220,38,38,0.8)]',
+            'transition-transform duration-300 ease-in-out active:scale-95',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80',
+          ].join(' ')}
+        >
+          <svg
             aria-hidden
-            className="absolute right-1 top-1 z-10 h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.7)]"
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={openChat}
+          className={[
+            'fixed left-1/2 z-[100010] flex h-[72px] w-[72px] -translate-x-1/2 items-center justify-center',
+            'bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] top-auto',
+            'border-none bg-transparent p-0 shadow-none focus:outline-none',
+            'transition-all duration-300 ease-in-out active:scale-95',
+          ].join(' ')}
+          aria-label="Apri chat Kentu"
+          aria-pressed={false}
+        >
+          {kentuChatNotificationBadge ? (
+            <span
+              aria-hidden
+              className="absolute right-1 top-1 z-10 h-2.5 w-2.5 rounded-full bg-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.85)]"
+            />
+          ) : null}
+          <img
+            src="/EmblemaKbianca.png"
+            alt="Kentu"
+            width={72}
+            height={72}
+            decoding="async"
+            className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
           />
-        ) : null}
-        <img
-          src="/EmblemaKbianca.png"
-          alt="Kentu"
-          width={72}
-          height={72}
-          decoding="async"
-          className="h-full w-full object-contain drop-shadow-xl"
-        />
-      </button>
-    ) : null;
+        </button>
+      ))
+      : null;
 
   let salaContent;
 
@@ -7172,16 +7444,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 onMineralsClick={() => setShowMineralsSheet(true)}
                 onVitaminsClick={() => setShowVitaminsSheet(true)}
               />
-              <AiTargetWidget
-                baseKcal={Number(userProfileKcalBase) || Number(userTargets?.kcal) || 2000}
-                userWeight={Number(userProfile?.weight) || Number(userProfile?.peso) || 75}
+              <TrainingBlockWidget
                 db={db}
                 userUid={user?.uid ?? null}
-                onApplyTargets={applyAiDailyTargets}
-                onOpenWavePlanner={() => {
-                  setActiveAction('wave_planner');
-                  setIsDrawerOpen(true);
-                }}
+                todayIso={currentTrackerDate || getTodayString()}
+                userProfile={userProfile}
+                isSimulationMode={isSimulationMode}
+                onConfirmSession={handleConfirmTrainingBlockSession}
+                creatorOpen={trainingBlockCreatorOpen}
+                onCreatorOpenChange={setTrainingBlockCreatorOpen}
               />
               <MetabolicMonitorCard
                 metabolicSnapshot={metabolicSnapshot}
@@ -7582,30 +7853,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </div>
         )}
 
-        {activeAction === 'wave_planner' && (
-          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-            <WavePlannerView
-              onBack={() => setActiveAction(null)}
-              db={db}
-              userUid={user?.uid ?? null}
-              initialWave={null}
-              initialMacroGoal={userProfile?.macroGoal || 'mantenimento'}
-              getTodayString={getTodayString}
-              onSaved={({ wave, macroGoal }) => {
-                if (macroGoal) {
-                  setUserProfile((prev) => ({
-                    ...prev,
-                    macroGoal,
-                  }));
-                }
-                if (wave) {
-                  setActiveAction(null);
-                  setIsDrawerOpen(false);
-                }
-              }}
-            />
-          </div>
-        )}
         </Suspense>
 
         {/* VISTA ARCHIVIO STORICO */}

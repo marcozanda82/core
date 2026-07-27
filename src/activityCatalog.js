@@ -57,14 +57,16 @@ export function normalizeMuscleGroupLabel(raw) {
 }
 
 /**
- * @param {string[]} muscles
+ * @param {string[] | string | null | undefined} muscles
  * @returns {string[]}
  */
 export function normalizeMuscleGroupArray(muscles) {
-  if (!Array.isArray(muscles)) return [];
+  const list = Array.isArray(muscles)
+    ? muscles
+    : (muscles != null && String(muscles).trim() !== '' ? [muscles] : []);
   const out = [];
   const seen = new Set();
-  for (const m of muscles) {
+  for (const m of list) {
     const c = normalizeMuscleGroupLabel(m);
     if (c && !seen.has(c)) {
       seen.add(c);
