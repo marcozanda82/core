@@ -150,6 +150,12 @@ export function useTrainingBlock({
     && !hasConfirmedToday(block, todayIso),
   );
 
+  const confirmedTodaySession = useMemo(() => {
+    if (!block || !hasConfirmedToday(block, todayIso)) return null;
+    const confirmedIndex = Math.max(0, Number(block.currentDayPointer) - 1);
+    return block.days?.[confirmedIndex] || null;
+  }, [block, todayIso]);
+
   const metabolicTargets = useMemo(() => {
     if (!block) return null;
     const session = todaySession
@@ -281,7 +287,11 @@ export function useTrainingBlock({
       const nextPointer = current.currentDayPointer + 1;
       const nextDays = current.days.map((d, i) => (
         i === current.currentDayPointer
-          ? { ...d, status: /** @type {'confirmed'} */ ('confirmed') }
+          ? {
+            ...d,
+            status: /** @type {'confirmed'} */ ('confirmed'),
+            completedAt: now,
+          }
           : d
       ));
 
@@ -344,6 +354,7 @@ export function useTrainingBlock({
     busy,
     todayIso,
     todaySession,
+    confirmedTodaySession,
     plannedTime,
     metabolicTargets,
     isBlockComplete,

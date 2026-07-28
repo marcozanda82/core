@@ -432,6 +432,8 @@ export default function SalaComandi() {
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
+  /** Tool Trend da aprire al prossimo mount tab bussola (es. da MuscleStimulusWidget Home). */
+  const [metabolicToolRequest, setMetabolicToolRequest] = useState(null);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
@@ -593,6 +595,13 @@ export default function SalaComandi() {
     },
     [activeBottomTab, navigate]
   );
+
+  const handleOpenTrendDiag = useCallback(() => {
+    setMetabolicToolRequest('DIAG');
+    setActiveBottomTab('bussola');
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
 
   const handleMainTabTouchCancel = useCallback((e) => {
     if (mainTabSwipeIgnoreRef.current && typeof e?.stopPropagation === 'function') {
@@ -1600,7 +1609,8 @@ export default function SalaComandi() {
         0,
         Math.round(Number(session?.plannedKcalBurn) || (workoutType === 'cardio' ? 350 : 320)),
       );
-      const finalId = `tb_confirm_${Date.now()}`;
+      const completedAt = Date.now();
+      const finalId = `tb_confirm_${completedAt}`;
       const desc =
         getWorkoutActivityLogDescription(workoutType, musclesCanon)
         || String(session?.title || 'Allenamento').trim()
@@ -1622,6 +1632,7 @@ export default function SalaComandi() {
         muscles: musclesCanon,
         time: startDec,
         mealTime: startDec,
+        completedAt,
         source: 'training-block',
       };
       const nodeData = {
@@ -1633,6 +1644,7 @@ export default function SalaComandi() {
         icon: workoutType === 'cardio' ? '🏃' : '🏋️',
         subType: workoutType,
         muscles: musclesCanon,
+        completedAt,
         source: 'training-block',
       };
 
@@ -1663,16 +1675,15 @@ export default function SalaComandi() {
         });
         if (resolved) {
           logData.fourCylinderSnapshot = resolved.snapshot;
+          logData.completedAt = resolved.snapshot.capturedAt || completedAt;
           nodeData.fourCylinderRef = {
             engineVersion: resolved.snapshot.engineVersion,
             capturedAt: resolved.snapshot.capturedAt,
           };
-          projectedLog[0] = { ...logData };
-          const nodeIdx = projectedNodes.findIndex((n) => n.id === finalId);
-          if (nodeIdx >= 0) projectedNodes[nodeIdx] = { ...nodeData };
+          nodeData.completedAt = logData.completedAt;
 
           if (!isSimulationMode) {
-            persistFourCylinderState({
+            await persistFourCylinderState({
               db,
               userUid: user?.uid ?? null,
               setUserModel,
@@ -1687,15 +1698,26 @@ export default function SalaComandi() {
         }
       }
 
+      const finalLog = projectedLog.map((entry) => (
+        String(entry?.id) === String(finalId)
+          ? { ...entry, ...logData }
+          : entry
+      ));
+      const finalNodes = projectedNodes.map((node) => (
+        String(node?.id) === String(finalId)
+          ? { ...node, ...nodeData }
+          : node
+      ));
+
       if (isSimulationMode) {
-        setSimulatedLog(projectedLog);
-        setManualNodes(projectedNodes);
+        setSimulatedLog(finalLog);
+        setManualNodes(finalNodes);
         return;
       }
 
-      setDailyLog(projectedLog);
-      setManualNodes(projectedNodes);
-      syncDatiFirebase(projectedLog, projectedNodes);
+      setDailyLog(finalLog);
+      setManualNodes(finalNodes);
+      syncDatiFirebase(finalLog, finalNodes);
     },
     [
       applyTrainingBlockDailyTargets,
@@ -7449,8 +7471,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 userUid={user?.uid ?? null}
                 todayIso={currentTrackerDate || getTodayString()}
                 userProfile={userProfile}
+                fourCylinder={userModel?.fourCylinder ?? null}
                 isSimulationMode={isSimulationMode}
                 onConfirmSession={handleConfirmTrainingBlockSession}
+                onOpenTrendDiag={handleOpenTrendDiag}
                 creatorOpen={trainingBlockCreatorOpen}
                 onCreatorOpenChange={setTrainingBlockCreatorOpen}
               />
@@ -7664,6 +7688,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
             fourCylinder={userModel?.fourCylinder ?? null}
+            activeToolRequest={metabolicToolRequest}
+            onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
           />
           </Suspense>
         </div>

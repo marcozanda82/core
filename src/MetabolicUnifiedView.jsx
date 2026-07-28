@@ -271,6 +271,8 @@ export default function MetabolicUnifiedView({
   selectedTimeframe: selectedTimeframeProp,
   onTimeframeChange,
   fourCylinder = null,
+  activeToolRequest = null,
+  onActiveToolRequestHandled = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -290,6 +292,15 @@ export default function MetabolicUnifiedView({
       setRadarTimeframe(engineTimeframeToRadar(selectedTimeframeProp));
     }
   }, [selectedTimeframeProp]);
+
+  useEffect(() => {
+    if (!activeToolRequest || !compassScreenActive) return undefined;
+    setActiveTool(activeToolRequest);
+    if (typeof onActiveToolRequestHandled === 'function') {
+      onActiveToolRequestHandled();
+    }
+    return undefined;
+  }, [activeToolRequest, compassScreenActive, onActiveToolRequestHandled]);
 
   const handleRadarTimeframeChange = useCallback(
     (radarValue) => {

@@ -35,6 +35,7 @@ export const TRAINING_BLOCK_DAY_TYPES = Object.freeze([
  * @property {number | null} [targetCarb]
  * @property {number | null} [targetFat]
  * @property {TrainingBlockDayStatus} status
+ * @property {number | null} [completedAt] — epoch ms conferma sessione
  *
  * @typedef {object} TrainingBlockLastAction
  * @property {'start' | 'postpone' | 'confirm' | 'catch_up'} kind
@@ -188,6 +189,9 @@ export function sanitizeTrainingBlockDay(raw, fallbackIndex = 0) {
     targetCarb: optTarget(src.targetCarb),
     targetFat: optTarget(src.targetFat),
     status,
+    completedAt: Number.isFinite(Number(src.completedAt)) && Number(src.completedAt) > 0
+      ? Math.round(Number(src.completedAt))
+      : null,
   };
 }
 
@@ -322,6 +326,7 @@ export function trainingBlockToFirebasePayload(block) {
       targetCarb: d.targetCarb != null ? d.targetCarb : null,
       targetFat: d.targetFat != null ? d.targetFat : null,
       status: d.status,
+      completedAt: d.completedAt != null ? d.completedAt : null,
     })),
     lastAction: safe.lastAction || null,
   };

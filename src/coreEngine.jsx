@@ -2493,6 +2493,18 @@ function denormalizeLogForFirebase(flatLog) {
       if (entry.fourCylinderSnapshot && typeof entry.fourCylinderSnapshot === 'object') {
         workoutRow.fourCylinderSnapshot = entry.fourCylinderSnapshot;
       }
+      if (Number.isFinite(Number(entry.time))) {
+        workoutRow.time = Number(entry.time);
+      }
+      if (Number.isFinite(Number(entry.mealTime))) {
+        workoutRow.mealTime = Number(entry.mealTime);
+      }
+      if (Number.isFinite(Number(entry.completedAt)) && Number(entry.completedAt) > 0) {
+        workoutRow.completedAt = Math.round(Number(entry.completedAt));
+      }
+      if (entry.source != null) {
+        workoutRow.source = String(entry.source);
+      }
       workouts.push(workoutRow);
       return;
     }

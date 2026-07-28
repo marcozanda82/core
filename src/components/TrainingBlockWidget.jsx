@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import MuscleStimulusWidget from './MuscleStimulusWidget';
 import useTrainingBlock from '../hooks/planning/useTrainingBlock';
 import TrainingBlockCreator from './TrainingBlockCreator';
 import { decimalToTimeStr } from '../coreEngine';
@@ -84,11 +85,13 @@ export default function TrainingBlockWidget({
   userUid = null,
   todayIso = null,
   userProfile = null,
+  fourCylinder = null,
   isSimulationMode = false,
   onConfirmSession = null,
   creatorOpen: creatorOpenProp = undefined,
   onCreatorOpenChange = null,
   onTodaySessionChange = null,
+  onOpenTrendDiag = null,
 }) {
   const {
     block,
@@ -96,6 +99,7 @@ export default function TrainingBlockWidget({
     error,
     busy,
     todaySession,
+    confirmedTodaySession,
     plannedTime,
     isBlockComplete,
     canPostpone,
@@ -269,6 +273,42 @@ export default function TrainingBlockWidget({
   const isRest = String(todaySession?.type || '').toLowerCase() === 'rest';
   const headline = sessionHeadline(todaySession, plannedTime);
   const showActions = Boolean(todaySession && (canPostpone || canConfirm));
+  const workoutCompletedToday = Boolean(confirmedTodaySession && !showActions);
+
+  const handleOpenTrendDiag = () => {
+    if (typeof onOpenTrendDiag === 'function') {
+      onOpenTrendDiag();
+      return;
+    }
+  };
+
+  if (workoutCompletedToday) {
+    return (
+      <>
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Apri diagnostica stimolo muscolare"
+          onClick={handleOpenTrendDiag}
+          onKeyDown={(ev) => {
+            if (ev.key === 'Enter' || ev.key === ' ') {
+              ev.preventDefault();
+              handleOpenTrendDiag();
+            }
+          }}
+          className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)] active:scale-95"
+        >
+          <MuscleStimulusWidget fourCylinder={fourCylinder} />
+        </div>
+        {statusLine ? (
+          <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
+            {statusLine}
+          </p>
+        ) : null}
+        {creator}
+      </>
+    );
+  }
 
   return (
     <>
