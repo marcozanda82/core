@@ -21,6 +21,10 @@ import {
   parseConsumedMealFromNaturalText,
   parseExactTimeFromUserText,
 } from '../conversation/mealLogIntent.js';
+import {
+  inferWorkoutTypeFromText,
+  normalizeChatWorkoutType,
+} from '../conversation/workoutRegistrationSlots.js';
 
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 const CONSULTANT_MODEL = 'gemini-3.6-flash';
@@ -670,19 +674,11 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
       }
     }
   } else {
+    // Sessione generica: exercises=[] e' lecito (es. "allenamento gambe alle 18").
+    payload.exercises = [];
     const workoutName = stripLeadingConjunctions(payload.workoutName);
     if (workoutName) {
-      const attested =
-        isExerciseNameAttestedInUserText(workoutName, combinedText)
-        || isHabitExpandedExerciseName(workoutName, combinedText, habitExercises);
-      if (attested) {
-        payload.workoutName = workoutName;
-      } else {
-        const fallback = resolveGenericExerciseFallback(workoutName, combinedText);
-        if (fallback && isExerciseNameAttestedInUserText(fallback, combinedText)) {
-          payload.workoutName = fallback;
-        }
-      }
+      payload.workoutName = workoutName;
     }
   }
 
@@ -690,7 +686,25 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
   if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
     payload.durationMinutes = Math.round(durationMinutes);
   } else {
+    // Assente o non citata: lascia che normalizeWorkoutPayload applichi il default 45.
     delete payload.durationMinutes;
+  }
+
+  const workoutType =
+    normalizeChatWorkoutType(payload.workoutType)
+    || inferWorkoutTypeFromText(combinedText);
+  if (workoutType) {
+    payload.workoutType = workoutType;
+    if (!asTrimmedString(payload.workoutName)) {
+      const labels = {
+        spinta: 'Allenamento spinta',
+        trazione: 'Allenamento trazione',
+        gambe: 'Allenamento gambe',
+        cardio: 'Cardio',
+        altro: 'Allenamento',
+      };
+      payload.workoutName = labels[workoutType] || 'Allenamento';
+    }
   }
 
   const estimatedKcal = Number(payload.estimatedKcal);
@@ -933,9 +947,11 @@ export class GeminiStructuredClient {
         "ECCEZIONE — SMART RESOLUTION: Se l'utente digita un termine generico (es. 'panca', 'corsa', 'tapis') e nel contesto (es. [USER_WORKOUT_HABITS] o storico allenamenti) esiste una variante specifica o un esercizio abituale, DEVI restituire il nome completo dell'esercizio. Se lo storico contiene serie, ripetizioni o carichi abituali per quell'esercizio, usali come default SOLO se l'utente non li ha specificati.",
         "REGOLA ADD_WORKOUT (multi-esercizio): Se l'utente elenca PIU esercizi, devi estrarre TUTTI in payload.exercises[] — uno oggetto per ciascun esercizio. Non troncare al primo.",
         "PULIZIA CONGIUNZIONI E NO DUPLICATI: I exerciseName estratti NON devono mai iniziare con congiunzioni ('e ', 'ed ', 'con ', 'più ', ', '). Se l'utente scrive 'X e Y', estrai 'X' e 'Y', senza la 'e'. Vietato sdoppiare lo stesso esercizio in due voci diverse.",
-        "REGOLA ADD_WORKOUT (durata): Includi durationMinutes SOLO se l'utente ha indicato esplicitamente minuti o ore (es. '45 min', '1 ora'). NON inventare durate di default.",
+        "REGOLA ADD_WORKOUT (durata): Includi durationMinutes SOLO se l'utente ha indicato esplicitamente minuti o ore (es. '45 min', '1 ora'). NON inventare durate di default — se assente, ometti il campo.",
+        "REGOLA ADD_WORKOUT (workoutType OBBLIGATORIO): Compila sempre payload.workoutType normalizzando: gambe/legs/lower→gambe; spinta/push/petto/spalle→spinta; trazione/pull/dorso→trazione; cardio/corsa/HIIT→cardio; altrimenti altro.",
+        "REGOLA ADD_WORKOUT (sessione generica): Per frasi tipo 'ho fatto allenamento gambe alle 18' senza lista esercizi, exercises=[] e workoutName sintetico sono validi. NON inventare esercizi.",
         "REGOLA ADD_WORKOUT (serie/ripetizioni/carico): Includi sets, reps e weightKg SOLO se l'utente li ha scritti esplicitamente oppure se provieno da SMART RESOLUTION sullo storico abituale per un esercizio gia citato.",
-        "REGOLA ADD_WORKOUT (workoutName): Compila workoutName come etichetta sintetica dell'allenamento (es. 'Pesi — panca e trazioni'). Se citi esercizi in exercises[], workoutName puo riassumerli.",
+        "REGOLA ADD_WORKOUT (workoutName): Compila workoutName come etichetta sintetica dell'allenamento (es. 'Allenamento gambe'). Se citi esercizi in exercises[], workoutName puo riassumerli.",
         "REGOLA ADD_WORKOUT (dati strutturati): Se l'utente registra un allenamento e menziona la fatica da 1 a 10, salvala nel campo rpe. Se menziona l'obiettivo (ipertrofia, forza, resistenza, mantenimento, junk), salvalo in trainingGoal usando uno di: Ipertrofia, Forza, Resistenza, Mantenimento, Junk. Se aggiunge note su carichi, esercizi o variazioni, salvale in progressionNote. Ometti questi campi se non sono citati esplicitamente.",
       );
     }
@@ -969,6 +985,7 @@ export class GeminiStructuredClient {
     temperature = 0,
     images = [],
     chatHistory = [],
+    signal = null,
   }) {
     const responseSchema = getEnvelopeSchemaForIntent(asTrimmedString(commandHint).toUpperCase());
     const imageParts = Array.isArray(images)
@@ -995,7 +1012,7 @@ export class GeminiStructuredClient {
         ? 'Registrazione pasto (ADD_FOOD): payload.items[] = SOLO alimenti citati, conteggio esatto senza duplicati da congiunzioni. foodName = nome puro (NO grammi/parentesi/congiunzioni iniziali); grams separato. Esempio: "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" → 4 voci (Pane integrale..., Tonno al naturale, Pomodoro, Pesca). adviceMessage: solo riepilogo neutro del log o ometti — VIETATI allarmi grassi/budget/What-If in registrazione semplice. SMART RESOLUTION abitudini solo per arricchire nomi gia citati, mai per aggiungere voci.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
-        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.exercises[] = SOLO esercizi citati dall utente. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Serie/ripetizioni/carico solo se espliciti o da storico abituale.'
+        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]
@@ -1014,6 +1031,7 @@ export class GeminiStructuredClient {
       responseSchema,
       generationConfig,
       contents: contents.length > 0 ? contents : undefined,
+      ...(signal ? { signal } : {}),
     });
     console.log('RAW_GEMINI_RESPONSE:', rawText);
     const cleaned = unwrapJsonText(rawText);
@@ -1037,7 +1055,7 @@ export class GeminiStructuredClient {
    * Risposta strutturata consulente (JSON): adviceMessage + suggestedAction opzionale.
    * @param {{ prompt: string, systemInstruction?: string, temperature?: number }} params
    */
-  async generateConsultantResponse({ prompt, systemInstruction, temperature = 0.35, chatHistory = [] } = {}) {
+  async generateConsultantResponse({ prompt, systemInstruction, temperature = 0.35, chatHistory = [], signal = null } = {}) {
     const userPrompt = asTrimmedString(prompt);
     if (!userPrompt) throw new Error('Consultant prompt is empty');
 
@@ -1065,6 +1083,7 @@ export class GeminiStructuredClient {
         responseSchema: consultantResponseSchema,
         generationConfig,
         contents: contents.length > 0 ? contents : undefined,
+        ...(signal ? { signal } : {}),
       },
     );
 

@@ -648,6 +648,24 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
       pull: 0,
       legs: clamp01(0.18 * loadFactor * gain.legs),
     };
+  } else if (type === 'spinta' || type === 'push') {
+    muscleDeltas = {
+      push: clamp01(params.maxMuscleBump * loadFactor * gain.push),
+      pull: 0,
+      legs: 0,
+    };
+  } else if (type === 'trazione' || type === 'pull') {
+    muscleDeltas = {
+      push: 0,
+      pull: clamp01(params.maxMuscleBump * loadFactor * gain.pull),
+      legs: 0,
+    };
+  } else if (type === 'gambe' || type === 'legs') {
+    muscleDeltas = {
+      push: 0,
+      pull: 0,
+      legs: clamp01(params.maxMuscleBump * loadFactor * gain.legs),
+    };
   } else if (weightSum > 0) {
     const baseBump = params.maxMuscleBump * loadFactor;
     for (const cyl of /** @type {MuscleCylinderId[]} */ (['push', 'pull', 'legs'])) {

@@ -53,8 +53,132 @@ function cloneProposals(proposals) {
             : [],
         }))
       : [],
+    resultingItems: Array.isArray(proposal.resultingItems)
+      ? proposal.resultingItems.map((item) => ({ ...item }))
+      : undefined,
+    baselineItems: Array.isArray(proposal.baselineItems)
+      ? proposal.baselineItems.map((item) => ({ ...item }))
+      : undefined,
+    operations: Array.isArray(proposal.operations)
+      ? proposal.operations.map((op) => ({
+          ...op,
+          updatedFood: op?.updatedFood ? { ...op.updatedFood } : op?.updatedFood,
+        }))
+      : undefined,
     totals: proposal.totals ? { ...proposal.totals } : undefined,
   }));
+}
+
+function normalizeMutationOperations(operations) {
+  if (!Array.isArray(operations)) return [];
+  return operations
+    .map((op) => {
+      if (!op || typeof op !== 'object') return null;
+      const action = String(op.action || '').trim().toLowerCase();
+      if (!['add', 'update', 'delete'].includes(action)) return null;
+      return {
+        action,
+        targetItemId: op.targetItemId != null ? String(op.targetItemId).trim() : '',
+        matchHint: op.matchHint != null ? String(op.matchHint).trim() : '',
+        updatedFood: op.updatedFood && typeof op.updatedFood === 'object'
+          ? {
+              foodName: String(op.updatedFood.foodName || '').trim(),
+              grams: Math.round(Number(op.updatedFood.grams) || 0),
+            }
+          : null,
+      };
+    })
+    .filter(Boolean);
+}
+
+function resolveBaselineItem(op, baselineItems = []) {
+  const list = Array.isArray(baselineItems) ? baselineItems : [];
+  const targetId = String(op?.targetItemId || '').trim();
+  if (targetId) {
+    const byId = list.find((item) => String(item?.itemId || '').trim() === targetId);
+    if (byId) return byId;
+  }
+  const hint = String(op?.matchHint || op?.updatedFood?.foodName || '').trim().toLowerCase();
+  if (!hint) return null;
+  return list.find((item) => {
+    const name = String(item?.foodName || item?.name || '').trim().toLowerCase();
+    return name === hint || name.includes(hint) || hint.includes(name);
+  }) || null;
+}
+
+function resolveOperationFoodName(op, baselineItems = []) {
+  const hint = String(op?.matchHint || '').trim();
+  if (hint) return hint;
+  const updatedName = String(op?.updatedFood?.foodName || '').trim();
+  if (updatedName) return updatedName;
+  const baseline = resolveBaselineItem(op, baselineItems);
+  if (baseline?.foodName) return String(baseline.foodName).trim();
+  const targetId = String(op?.targetItemId || '').trim();
+  return targetId || 'Alimento';
+}
+
+function MealMutationOpsList({ operations, baselineItems = [] }) {
+  const ops = normalizeMutationOperations(operations);
+  if (ops.length === 0) return null;
+
+  return (
+    <ul className="kentu-meal-mutation-ops" aria-label="Modifiche proposte">
+      {ops.map((op, index) => {
+        const name = resolveOperationFoodName(op, baselineItems);
+        const baseline = resolveBaselineItem(op, baselineItems);
+        const oldGrams = Math.round(Number(baseline?.grams) || 0);
+        const newGrams = Math.round(Number(op.updatedFood?.grams) || 0);
+        const key = `${op.action}_${op.targetItemId || name}_${index}`;
+
+        if (op.action === 'delete') {
+          return (
+            <li key={key} className="kentu-meal-mutation-ops__row kentu-meal-mutation-ops__row--delete">
+              <span className="kentu-meal-mutation-ops__badge" aria-hidden>−</span>
+              <span className="kentu-meal-mutation-ops__name kentu-meal-mutation-ops__name--delete">
+                {name}
+                {oldGrams > 0 ? ` · ${oldGrams}g` : ''}
+              </span>
+              <span className="kentu-meal-mutation-ops__action">Rimosso</span>
+            </li>
+          );
+        }
+
+        if (op.action === 'update') {
+          return (
+            <li key={key} className="kentu-meal-mutation-ops__row kentu-meal-mutation-ops__row--update">
+              <span className="kentu-meal-mutation-ops__badge" aria-hidden>✎</span>
+              <span className="kentu-meal-mutation-ops__name">
+                {name}
+                {oldGrams > 0 && newGrams > 0 && oldGrams !== newGrams ? (
+                  <>
+                    {' · '}
+                    <span className="kentu-meal-mutation-ops__grams-old">{oldGrams}g</span>
+                    <span className="kentu-meal-mutation-ops__grams-arrow"> → </span>
+                    <span className="kentu-meal-mutation-ops__grams-new">{newGrams}g</span>
+                  </>
+                ) : newGrams > 0 ? (
+                  <span className="kentu-meal-mutation-ops__grams-new">{` · ${newGrams}g`}</span>
+                ) : null}
+              </span>
+              <span className="kentu-meal-mutation-ops__action">Modificato</span>
+            </li>
+          );
+        }
+
+        // add
+        return (
+          <li key={key} className="kentu-meal-mutation-ops__row kentu-meal-mutation-ops__row--add">
+            <span className="kentu-meal-mutation-ops__badge" aria-hidden>+</span>
+            <span className="kentu-meal-mutation-ops__name kentu-meal-mutation-ops__name--add">
+              {name}
+              {newGrams > 0 ? ` · ${newGrams}g` : ''}
+            </span>
+            <span className="kentu-meal-mutation-ops__action">Aggiunto</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 function cloneProposal(proposal) {
@@ -239,16 +363,38 @@ function MealProposalCard({
   const label = String(localProposal?.label || localProposal?.name || `Opzione ${index + 1}`).trim();
   const mealType = String(localProposal?.mealType || 'pranzo').trim();
   const exactTime = String(localProposal?.exactTime || localProposal?.timeString || '').trim();
+  const targetNodeId = String(localProposal?.targetNodeId || '').trim();
+  const mutationOps = useMemo(
+    () => normalizeMutationOperations(localProposal?.operations),
+    [localProposal?.operations],
+  );
+  const isMutationCard = Boolean(targetNodeId) && mutationOps.length > 0;
   const badgeText = exactTime
     ? `${mealLabel(mealType)} • ${exactTime}`
     : mealLabel(mealType);
-  const items = Array.isArray(localProposal?.items) ? localProposal.items : [];
+  const commitItems = useMemo(() => {
+    const resulting = Array.isArray(localProposal?.resultingItems) ? localProposal.resultingItems : [];
+    if (resulting.length > 0) return resulting;
+    return Array.isArray(localProposal?.items) ? localProposal.items : [];
+  }, [localProposal?.resultingItems, localProposal?.items]);
+  const items = isMutationCard && !isEditing ? commitItems : (
+    Array.isArray(localProposal?.items) ? localProposal.items : commitItems
+  );
   const totals = formatMacroTotals(localProposal?.totals || sumItemMacros(items));
-  const canSaveOrConfirm = items.length > 0;
+  const canSaveOrConfirm = commitItems.length > 0;
+  const baselineItems = Array.isArray(localProposal?.baselineItems)
+    ? localProposal.baselineItems
+    : [];
 
   const commitProposal = useCallback((nextProposal) => {
-    setLocalProposal(nextProposal);
-    onDraftChange?.(index, nextProposal);
+    const nextItems = Array.isArray(nextProposal?.items) ? nextProposal.items : [];
+    const synced = {
+      ...nextProposal,
+      items: nextItems,
+      resultingItems: nextItems,
+    };
+    setLocalProposal(synced);
+    onDraftChange?.(index, synced);
   }, [index, onDraftChange]);
 
   const handleSelectAlternative = useCallback((itemIndex, alternative) => {
@@ -327,10 +473,12 @@ function MealProposalCard({
   };
 
   return (
-    <article className={`kentu-meal-proposal-card${isEditing ? ' kentu-meal-proposal-card--editing' : ''}`}>
+    <article className={`kentu-meal-proposal-card${isEditing ? ' kentu-meal-proposal-card--editing' : ''}${isMutationCard ? ' kentu-meal-proposal-card--mutation' : ''}`}>
       <header className="kentu-meal-proposal-card__head">
         <div className="kentu-meal-proposal-card__titles">
-          <span className="kentu-meal-proposal-card__badge">{badgeText}</span>
+          <span className="kentu-meal-proposal-card__badge">
+            {isMutationCard ? `Modifica · ${badgeText}` : badgeText}
+          </span>
           <h4 className="kentu-meal-proposal-card__label">{label}</h4>
         </div>
         <div className="kentu-meal-proposal-card__macros" aria-label="Macronutrienti stimati">
@@ -343,22 +491,34 @@ function MealProposalCard({
         </div>
       </header>
 
+      {isMutationCard && !isEditing ? (
+        <MealMutationOpsList
+          operations={mutationOps}
+          baselineItems={baselineItems}
+        />
+      ) : null}
+
       {items.length > 0 ? (
-        <ul className="kentu-meal-proposal-card__items">
-          {items.map((item, itemIdx) => (
-            <MealProposalItemRow
-              key={`${id}_${itemIdx}_${item.foodDbKey || item.foodName}`}
-              item={item}
-              itemIdx={itemIdx}
-              disabled={isLoaded}
-              isEditing={isEditing}
-              onSelectAlternative={handleSelectAlternative}
-              onEditName={handleEditName}
-              onEditGrams={handleEditGrams}
-              onRemoveItem={handleRemoveItem}
-            />
-          ))}
-        </ul>
+        <>
+          {isMutationCard && !isEditing ? (
+            <p className="kentu-meal-proposal-card__items-caption">Pasto risultante</p>
+          ) : null}
+          <ul className="kentu-meal-proposal-card__items">
+            {items.map((item, itemIdx) => (
+              <MealProposalItemRow
+                key={`${id}_${itemIdx}_${item.foodDbKey || item.foodName}`}
+                item={item}
+                itemIdx={itemIdx}
+                disabled={isLoaded}
+                isEditing={isEditing}
+                onSelectAlternative={handleSelectAlternative}
+                onEditName={handleEditName}
+                onEditGrams={handleEditGrams}
+                onRemoveItem={handleRemoveItem}
+              />
+            ))}
+          </ul>
+        </>
       ) : null}
 
       <footer className="kentu-meal-proposal-card__footer">
@@ -389,10 +549,19 @@ function MealProposalCard({
               disabled={isLoaded || !canSaveOrConfirm}
               onClick={() => {
                 if (isLoaded || !canSaveOrConfirm) return;
-                onConfirm?.(localProposal, index, adviceId);
+                onConfirm?.({
+                  ...localProposal,
+                  targetNodeId: targetNodeId || localProposal?.targetNodeId || null,
+                  items: commitItems,
+                  resultingItems: commitItems,
+                }, index, adviceId);
               }}
             >
-              {isLoaded ? 'Caricato ✓' : 'Conferma e carica'}
+              {isLoaded
+                ? 'Applicato ✓'
+                : isMutationCard
+                  ? 'Applica modifiche'
+                  : 'Conferma e carica'}
             </KentuButton>
             {!isLoaded ? (
               <KentuButton

@@ -24,6 +24,8 @@ import {
   parseRemovedFoodQueryFromSubstituteText,
   resolveSubstituteRemovedItem,
 } from '../conversation/mealLogIntent.js';
+import { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
+import { isWorkoutLogIntent } from '../conversation/workoutRegistrationSlots.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
@@ -57,6 +59,8 @@ function buildDailyBudgetRemaining(currentState = {}) {
   };
 }
 
+export { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
+
 export class ContextComposer {
   detectIntent(userText = '', { hasImages = false, chatHistory = [], pendingMealUpdate = null } = {}) {
     const text = toSafeString(userText).toLowerCase();
@@ -64,8 +68,8 @@ export class ContextComposer {
     if (pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
     const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
-    const workoutKeywords = ['allenamento', 'workout', 'corsa', 'pesi', 'cardio', 'training'];
-    if (workoutKeywords.some((token) => text.includes(token))) return 'ADD_WORKOUT';
+    // Workout PRIMA di meal-advice / food: "allenamento gambe" non deve finire in ASK_MEAL_ADVICE.
+    if (isWorkoutLogIntent(text)) return 'ADD_WORKOUT';
     if (hasImages && isCreateNewFoodIntent(text)) return 'CREATE_NEW_FOOD';
     if (isDayReviewIntent(text)) return 'ASK_DAY_REVIEW';
     if (isSubstituteMealDraftIntent(text, chatHistory)) return 'SUBSTITUTE_MEAL_DRAFT_ITEM';
@@ -78,6 +82,17 @@ export class ContextComposer {
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
     if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
+  }
+
+  /**
+   * @param {object} currentState
+   * @returns {Array<object>}
+   */
+  getTodayDiaryIndex(currentState = {}) {
+    return buildTodayDiaryIndex(currentState?.activeLog || [], {
+      fullHistory: currentState?.fullHistory || {},
+      activeDate: currentState?.activeDate || null,
+    });
   }
 
   getFoodContext(foodDatabase = {}, mealState = {}) {
@@ -202,6 +217,7 @@ export class ContextComposer {
         intent: 'ASK_MEAL_ADVICE',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',
@@ -217,6 +233,7 @@ export class ContextComposer {
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
           dailyBudgetRemaining,
+          TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           CONSULTANT_MEAL_REQUEST: {
             mealType: consultantRequest?.mealType || null,
             anchorFood: consultantRequest?.anchorFood || null,
@@ -368,6 +385,7 @@ export class ContextComposer {
         intent: 'UPDATE_LOGGED_MEAL',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           EXISTING_MEAL_NODE: existingMealNode,
           UPDATE_REQUEST: {
             targetMealType: targetMealType || null,
@@ -377,6 +395,11 @@ export class ContextComposer {
             resolutionMethod: updateContext?.resolution?.resolutionMethod || null,
             source: existingMealNode ? 'active_log' : 'missing',
           },
+          MUTATION_VOCABULARY:
+            'Per UPDATE_LOGGED_MEAL: usa [TODAY_DIARY_INDEX] per scegliere targetNodeId e targetItemId. '
+            + 'Compila mealProposals[0].operations[] con action add|update|delete e mealProposals[0].resultingItems[] '
+            + '(lista FINALE completa del pasto = source of truth). Copia anche resultingItems in items[]. '
+            + 'Per delete/update usa itemId da [TODAY_DIARY_INDEX] o [EXISTING_MEAL_NODE].',
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',
@@ -402,6 +425,7 @@ export class ContextComposer {
         intent: 'ASK_DAY_REVIEW',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           DAILY_TOTALS: totali,
           DAILY_TARGETS: targetMacro,
           WORKOUT_STATUS: {

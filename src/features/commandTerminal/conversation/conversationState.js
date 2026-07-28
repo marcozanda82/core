@@ -1,6 +1,8 @@
 import {
   WORKOUT_CONFLICT_QUICK_REPLIES,
   WORKOUT_TIME_QUICK_REPLIES,
+  inferWorkoutTypeFromText,
+  normalizeChatWorkoutType,
 } from './workoutRegistrationSlots.js';
 
 export const CONVERSATION_STATE = Object.freeze({
@@ -311,7 +313,7 @@ export function expandWorkoutPayloadExercises(payload = {}) {
   return singleName ? [{ exerciseName: singleName }] : [];
 }
 
-export function normalizeWorkoutPayload(payload = {}) {
+export function normalizeWorkoutPayload(payload = {}, userText = '') {
   const next = { ...(payload || {}) };
   const exercises = expandWorkoutPayloadExercises(next);
   if (exercises.length > 0) {
@@ -325,10 +327,39 @@ export function normalizeWorkoutPayload(payload = {}) {
       }
       return row;
     });
+  } else if (Array.isArray(next.exercises)) {
+    next.exercises = [];
   }
 
+  const textHint = [
+    userText,
+    next.workoutName,
+    next.workoutType,
+    exercises.map((item) => item.exerciseName).join(' '),
+  ].filter(Boolean).join(' ');
+
+  const workoutType =
+    normalizeChatWorkoutType(next.workoutType)
+    || inferWorkoutTypeFromText(textHint)
+    || null;
+  if (workoutType) {
+    next.workoutType = workoutType;
+  } else {
+    delete next.workoutType;
+  }
+
+  const typeLabels = {
+    spinta: 'Allenamento spinta',
+    trazione: 'Allenamento trazione',
+    gambe: 'Allenamento gambe',
+    cardio: 'Cardio',
+    altro: 'Allenamento',
+  };
+
   if (!String(next.workoutName || '').trim()) {
-    next.workoutName = exercises.map((item) => item.exerciseName).join(', ') || 'Allenamento';
+    next.workoutName = exercises.map((item) => item.exerciseName).join(', ')
+      || (workoutType ? typeLabels[workoutType] : null)
+      || 'Allenamento';
   }
 
   const mins = Number(next.durationMinutes);

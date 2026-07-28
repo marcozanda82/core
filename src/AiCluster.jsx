@@ -75,6 +75,7 @@ export default function AiCluster({
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
   isProcessing = false,
+  onCancelGeneration = null,
   wipMealItems = [],
   wipMealTotals = null,
   wipMealType = 'pranzo',
@@ -702,15 +703,28 @@ export default function AiCluster({
               paddingBottom: 10,
             }}
           />
-          <KentuButton
-            variant="primary"
-            className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
-            aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
-            disabled={isProcessing && !isNotesMode}
-            onClick={handleSendFromInput}
-          >
-            <KentuIcon name="send" size={18} />
-          </KentuButton>
+          {isProcessing && !isNotesMode ? (
+            <KentuButton
+              variant="secondary"
+              className="kentu-send-btn"
+              aria-label="Interrompi generazione"
+              onClick={() => {
+                if (typeof onCancelGeneration === 'function') onCancelGeneration();
+              }}
+            >
+              <KentuIcon name="stop" size={16} />
+            </KentuButton>
+          ) : (
+            <KentuButton
+              variant="primary"
+              className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
+              aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
+              disabled={isProcessing && !isNotesMode}
+              onClick={handleSendFromInput}
+            >
+              <KentuIcon name="send" size={18} />
+            </KentuButton>
+          )}
           {devToolsToast ? (
             <div className="kentu-devtools-toast" role="status" aria-live="polite">
               {devToolsToast}

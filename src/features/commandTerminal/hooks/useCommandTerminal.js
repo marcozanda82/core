@@ -13,6 +13,7 @@ import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
 import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage } from '../conversation/conversationState.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
+import { isAbortError } from '../../../services/aiService.js';
 
 export function useCommandTerminal({
   chatHistory,
@@ -33,6 +34,8 @@ export function useCommandTerminal({
   const setChatHistoryRef = useRef(setChatHistory);
   const chatHistoryRef = useRef(chatHistory);
   const pendingMealUpdateRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const generationTokenRef = useRef(0);
   useEffect(() => {
     setChatHistoryRef.current = setChatHistory;
   }, [setChatHistory]);
@@ -328,6 +331,15 @@ export function useCommandTerminal({
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
+
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      const generationToken = ++generationTokenRef.current;
+
       setIsLoading(true);
       try {
         const currentState =
@@ -350,7 +362,18 @@ export function useCommandTerminal({
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
           systemInstructionExtra: options?.systemInstructionExtra || null,
+          signal: abortController.signal,
         });
+
+        if (
+          abortController.signal.aborted
+          || generationToken !== generationTokenRef.current
+          || result?.aborted
+        ) {
+          appendAiMessage('Generazione annullata.');
+          return { ok: false, aborted: true, userNotified: true };
+        }
+
         if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
           onWipMealSeedRef.current(result.wipSeed);
         }
@@ -363,6 +386,10 @@ export function useCommandTerminal({
         }
         return result;
       } catch (error) {
+        if (isAbortError(error) || abortController.signal.aborted) {
+          appendAiMessage('Generazione annullata.');
+          return { ok: false, aborted: true, userNotified: true };
+        }
         console.error('[useCommandTerminal] sendMessage error', error);
         appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
           type: 'ERROR',
@@ -370,12 +397,26 @@ export function useCommandTerminal({
         });
         return { ok: false, reason: error?.message || 'send_message_error', userNotified: true };
       } finally {
-        setIsLoading(false);
+        if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+        }
+        if (generationToken === generationTokenRef.current) {
+          setIsLoading(false);
+        }
         syncActiveQuickRepliesFromController();
       }
     },
-    [chatInput, chatImages, controller, syncActiveQuickRepliesFromController],
+    [chatInput, chatImages, controller, syncActiveQuickRepliesFromController, appendAiMessage],
   );
+
+  const cancelGeneration = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    generationTokenRef.current += 1;
+    setIsLoading(false);
+  }, []);
 
   const handleDraftCancel = useCallback(
     (draftId) => {
@@ -613,10 +654,12 @@ export function useCommandTerminal({
     }
 
     const mealType = String(proposal.mealType || 'pranzo').trim().toLowerCase();
-    const items = Array.isArray(proposal.items) ? proposal.items : [];
+    const sourceItems = Array.isArray(proposal.resultingItems) && proposal.resultingItems.length > 0
+      ? proposal.resultingItems
+      : (Array.isArray(proposal.items) ? proposal.items : []);
     const proposalId = String(proposal.id || `proposal_${proposalIndex ?? 0}`);
 
-    const payloadItems = items
+    const payloadItems = sourceItems
       .map((item) => {
         const foodName = String(item?.foodName || item?.name || '').trim();
         const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
@@ -692,6 +735,7 @@ export function useCommandTerminal({
     chatHistory,
     setChatHistory,
     sendMessage,
+    cancelGeneration,
     isLoading,
     isProcessing: isLoading,
     chatInput,

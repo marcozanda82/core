@@ -14,6 +14,7 @@ import {
   sumProposalItemMacros,
 } from '../utils/foodResolver.js';
 import { resolveExactTimeForMeal, isMealProposalQuery, matchDraftItemByFoodQuery, findMostProblematicDraftItem } from '../features/commandTerminal/conversation/mealLogIntent.js';
+import { buildTodayDiaryIndex } from '../features/commandTerminal/conversation/todayDiaryIndex.js';
 import { analyzeTodayFromLog } from '../aiDayCoach';
 import {
   aggregatePredictiveMealCombos,
@@ -766,6 +767,7 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
     const source = Array.isArray(items) ? items : [];
     return source
       .map((item) => ({
+        itemId: item?.itemId != null ? String(item.itemId).trim() : null,
         foodName: String(item?.foodName || item?.name || '').trim(),
         foodDbKey: item?.foodDbKey ?? null,
         grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
@@ -774,10 +776,65 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
         carbo: Number(item?.carbo) || 0,
         fat: Number(item?.fat) || 0,
       }))
-      .filter((item) => item.foodName && item.grams > 0);
+      .filter((item) => item.foodName && item.grams > 0)
+      .map(({ itemId, ...rest }) => (itemId ? { itemId, ...rest } : rest));
+  };
+
+  const sanitizeOperations = (operations) => {
+    if (!Array.isArray(operations)) return [];
+    return operations
+      .map((op) => {
+        if (!op || typeof op !== 'object') return null;
+        const action = String(op.action || '').trim().toLowerCase();
+        if (!['add', 'update', 'delete'].includes(action)) return null;
+        const targetItemId = op.targetItemId != null ? String(op.targetItemId).trim() : '';
+        const matchHint = op.matchHint != null ? String(op.matchHint).trim() : '';
+        const updated = op.updatedFood && typeof op.updatedFood === 'object'
+          ? {
+              foodName: String(op.updatedFood.foodName || '').trim(),
+              grams: Math.round(Number(op.updatedFood.grams) || 0),
+            }
+          : null;
+        return {
+          action,
+          ...(targetItemId ? { targetItemId } : {}),
+          ...(matchHint ? { matchHint } : {}),
+          ...(updated?.foodName && updated.grams > 0 ? { updatedFood: updated } : {}),
+        };
+      })
+      .filter(Boolean);
   };
 
   const sanitized = sanitizeMealProposals(mealProposals, adviceContext).filter(Boolean);
+
+  const diaryMeal = (Array.isArray(adviceContext?.todayDiaryIndex) ? adviceContext.todayDiaryIndex : [])
+    .find((meal) => String(meal?.targetNodeId || meal?.mealId || '') === String(existing.targetNodeId));
+  const diaryItems = Array.isArray(diaryMeal?.items) ? diaryMeal.items : [];
+
+  const baselineItems = existingItems.map((item, index) => {
+    const foodName = String(item?.foodName || item?.name || '').trim();
+    const grams = Math.round(Number(item?.grams ?? item?.qta) || 0);
+    const byId = diaryItems.find((d) => String(d?.itemId || '') === String(item?.itemId || ''));
+    const byNameGrams = diaryItems.find((d) =>
+      String(d?.foodName || '').trim().toLowerCase() === foodName.toLowerCase()
+      && Math.round(Number(d?.grams) || 0) === grams,
+    );
+    const byIndex = diaryItems[index];
+    const itemId = String(
+      item?.itemId
+      || byId?.itemId
+      || byNameGrams?.itemId
+      || byIndex?.itemId
+      || '',
+    ).trim();
+    return {
+      ...item,
+      foodName,
+      grams,
+      ...(itemId ? { itemId } : {}),
+    };
+  });
+
   if (sanitized.length > 0) {
     const proposal = sanitized[0];
     const validItems = pickValidUpdateItems(proposal.items);
@@ -785,6 +842,9 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
     const totals = validItems.length > 0
       ? roundTotals(sumItemMacros(resolvedItems))
       : (proposal.totals || existing.totals);
+    const operations = Array.isArray(proposal.operations)
+      ? proposal.operations
+      : sanitizeOperations(mealProposals?.[0]?.operations);
     return [{
       ...proposal,
       id: proposal.id || `update_${existing.targetNodeId}_${Date.now()}`,
@@ -793,6 +853,9 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
       exactTime: existing.exactTime || proposal.exactTime || null,
       targetNodeId: existing.targetNodeId,
       source: 'logged_meal_update',
+      operations,
+      baselineItems,
+      resultingItems: resolvedItems,
       items: resolvedItems,
       totals,
     }];
@@ -805,6 +868,9 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
     exactTime: existing.exactTime || null,
     targetNodeId: existing.targetNodeId,
     source: 'logged_meal_update_fallback',
+    operations: [],
+    baselineItems,
+    resultingItems: existingItems,
     items: existingItems,
     totals: existing.totals,
   }];
@@ -1640,6 +1706,10 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
       remainingFat: Math.round(Number(remainingBudget?.fat) || 0),
     },
     existingMealNode: existingMealNodeRaw,
+    todayDiaryIndex: buildTodayDiaryIndex(activeLog, {
+      fullHistory: currentAppState?.fullHistory || {},
+      activeDate: currentAppState?.activeDate || null,
+    }),
     upcomingWorkout,
     dailyCalorieStrategy,
     eveningMetabolicContext,
@@ -1688,14 +1758,15 @@ export function generateConsultantSystemInstruction() {
     'STRUTTURA OBBLIGATORIA adviceMessage (FIX_MEAL_DRAFT): breve conferma tipo "Ecco le porzioni esatte per mangiare quello che volevi senza sforare le tue [METABOLIC_BUDGET].kcal kcal. Modifica pure se serve." Nessun semaforo, nessuna Opzione 1/2/3.',
     'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM (SOSTITUZIONE ALIMENTO): quando l intent è SUBSTITUTE_MEAL_DRAFT_ITEM, DEVI generare mealProposals (2-3 opzioni). Mantieni TUTTI gli alimenti in [KEPT_DRAFT_PROJECTION] invariati in ogni proposta. Sostituisci SOLO [REMOVED_DRAFT_ITEM] con un alimento alternativo diverso per opzione. Il totale kcal di ogni proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Gli alimenti sostitutivi di ciascuna opzione DEVONO avere totals.kcal <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal (vincolo assoluto sul buco da riempire).',
     'STRUTTURA OBBLIGATORIA adviceMessage (SUBSTITUTE_MEAL_DRAFT_ITEM): "Ho rimosso [REMOVED_DRAFT_ITEM].foodName. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget." Poi elenca Opzione 1/2/3 allineate a mealProposals. Nessun semaforo.',
-    'INTENTO UPDATE_LOGGED_MEAL (MODIFICA PASTO REGISTRATO): quando l intent è UPDATE_LOGGED_MEAL e nel prompt è presente [EXISTING_MEAL_NODE], DEVI generare UNA SOLA mealProposal. Parti dagli alimenti in [EXISTING_MEAL_NODE].items, applica le aggiunte/rimozioni/modifiche richieste dall utente, e restituisci la lista aggiornata completa. OBBLIGATORIO: imposta targetNodeId uguale a [EXISTING_MEAL_NODE].targetNodeId. Preserva mealType ed exactTime del nodo esistente salvo richiesta esplicita di cambio orario. NON creare un nuovo pasto: stai sovrascrivendo quello esistente. label: "Pasto aggiornato". source: "logged_meal_update".',
+    'INTENTO UPDATE_LOGGED_MEAL (MODIFICA PASTO REGISTRATO): quando l intent è UPDATE_LOGGED_MEAL, usa [TODAY_DIARY_INDEX] per vedere tutti i pasti di oggi (targetNodeId, mealType, time, items[].itemId/foodName/grams) e [EXISTING_MEAL_NODE] come pasto target già risolto se presente. DEVI generare UNA SOLA mealProposal. Compila operations[] con azioni atomiche add|update|delete (per update/delete copia targetItemId da [TODAY_DIARY_INDEX]/[EXISTING_MEAL_NODE]; per add ometti targetItemId e metti updatedFood). Compila SEMPRE resultingItems[] = lista FINALE completa del pasto dopo le mutazioni (SOURCE OF TRUTH) e copia la stessa lista in items[]. OBBLIGATORIO: targetNodeId da [EXISTING_MEAL_NODE].targetNodeId o dal meal scelto in [TODAY_DIARY_INDEX]. Preserva mealType ed exactTime salvo richiesta esplicita. NON creare un nuovo pasto. label: "Pasto aggiornato". source: "logged_meal_update".',
     'INTENTO CONSULTANT_MEAL (MODALITÀ CONSULENTE): quando l intent è CONSULTANT_MEAL e nel prompt è presente [CONSULTANT_MEAL_REQUEST], sei un nutrizionista. L utente ha inserito [CONSULTANT_MEAL_REQUEST].anchorFood come alimento base fisso. DEVI creare ESATTAMENTE 3 opzioni di pasto complete (mealProposals) che includano SEMPRE quell alimento base + altri ingredienti che bilanciano il pasto rispetto a [dailyBudgetRemaining] e [METABOLIC_BUDGET]. Ogni opzione deve avere items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
     'HARD CONSTRAINT CONSULTANT_MEAL: totals.kcal di OGNI opzione deve essere <= [METABOLIC_BUDGET].kcal. Ogni items[] DEVE contenere [CONSULTANT_MEAL_REQUEST].anchorFood. Varia gli accompagnamenti tra le 3 opzioni (es. verdure diverse, carboidrati complementari).',
     'STRUTTURA OBBLIGATORIA adviceMessage (CONSULTANT_MEAL): conferma l alimento base scelto, cita il budget residuo in kcal, presenta Opzione 1/2/3 in sintesi e chiudi con CTA per scegliere e caricare una proposta.',
     'INTENTO WIP_MEAL_BUILD (COSTRUZIONE PASTO IN CORSO): quando l intent è WIP_MEAL_BUILD e nel prompt è presente [WIP_MEAL_ITEMS], sei un nutrizionista. L utente sta costruendo un pasto nel carrello WIP. NON generare mealProposals. DEVI restituire adviceMessage (messaggio breve) + suggestions[] (3-5 Smart Chips) con name, weight (grammi), calories, macros {prot,carb,fat}, reason. Ogni suggestion deve essere un alimento INTEGRATIVO diverso da quelli già in [WIP_MEAL_ITEMS]. Bilancia rispetto a [dailyBudgetRemaining] e [RESIDUAL_BUDGET_AFTER_WIP_MEAL].',
     'HARD CONSTRAINT WIP_MEAL_BUILD: suggestions[].weight > 0. La somma calories di ciascun chip non deve superare [RESIDUAL_BUDGET_AFTER_WIP_MEAL].kcal. Varia carboidrati complessi, verdure e grassi buoni. mealProposals DEVE essere array vuoto o omesso.',
     'STRUTTURA OBBLIGATORIA adviceMessage (WIP_MEAL_BUILD): conferma l ultimo alimento aggiunto, indica cosa manca (carboidrati/grassi/verdure) e invita a usare i pulsanti Smart Chip sotto.',
-    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire l array COMPLETO items[] con foodName e grams compilati per OGNI alimento. Se la richiesta è vaga o non specifica modifiche, restituisci l elenco ESATTO degli alimenti originali da [EXISTING_MEAL_NODE] senza alterazioni. MAI restituire items[] vuoto o con foodName/grams mancanti.',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — MUTAZIONI: operations descrive le modifiche atomiche; resultingItems (e items) e la lista completa post-mutazione usata dal sistema per overwrite Firebase. Mai resultingItems/items vuoti. Se la richiesta e vaga, operations=[] e resultingItems = alimenti originali invariati da [EXISTING_MEAL_NODE]/[TODAY_DIARY_INDEX].',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire resultingItems[] e items[] COMPLETI con foodName e grams per OGNI alimento residuo. MAI array vuoti o foodName/grams mancanti.',
     'STRUTTURA OBBLIGATORIA adviceMessage (UPDATE_LOGGED_MEAL): "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere." Nessun semaforo, nessuna Opzione 2/3.',
     'STRUTTURA OBBLIGATORIA adviceMessage (EVALUATE_MEAL_DRAFT):\n1) Check Matematico: cita il totale kcal della bozza ([DRAFT_TOTAL_KCAL]) vs [METABOLIC_BUDGET].kcal. Se [BUDGET_OVERFLOW_AMOUNT] > 0, dichiara esplicitamente di quanto sfora (es. "sforeresti il budget di 600 kcal"). Se è 0, conferma che rientri.\n2) Intervento (tagli chirurgici): individua quale alimento in [MEAL_DRAFT_PROJECTION] causa l esubero (es. pizza, noci, grassi) e proponi tagli precisi (es. "Dimezza la porzione di pizza e togli le noci").\n3) CTA finale: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"\nTono: diretto, da buttafuori nutrizionale, max ~8 righe. Nessuna Opzione 1/2/3.',
     'STRUTTURA OBBLIGATORIA adviceMessage (ASK_DAY_REVIEW):\n- L Esito: (es. "Ottimo lavoro" / "Giornata discreta") basato sul rispetto di [DAILY_CALORIE_STRATEGY] e scostamento kcal.\n- Cosa ha funzionato: elogia 1-2 target centrati.\n- Cosa migliorare: 1-2 punti su eccessi/carenze, con priorità ai micro-nutrienti in [METABOLIC_BUDGET].micros.\n- Il Consiglio per domani: 1 azione pratica.\nTono: empatico, rassicurante, chiusura serale senza stress. Max ~10 righe.',
@@ -1751,6 +1822,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const removedDraftJson = JSON.stringify(removedDraftItem, null, 0);
   const existingMealNode = ctx.existingMealNode ?? null;
   const existingMealJson = JSON.stringify(existingMealNode, null, 0);
+  const todayDiaryIndex = Array.isArray(ctx.todayDiaryIndex) ? ctx.todayDiaryIndex : [];
+  const todayDiaryJson = JSON.stringify(todayDiaryIndex, null, 0);
   const consultantMealRequest = ctx.consultantMealRequest ?? null;
   const consultantMealJson = JSON.stringify(consultantMealRequest, null, 0);
   const dailyBudgetRemaining = ctx.dailyBudgetRemaining ?? {
@@ -1810,6 +1883,7 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     keptDraftProjection ? `[KEPT_DRAFT_PROJECTION: ${keptDraftJson}]` : '',
     removedDraftItem ? `[REMOVED_DRAFT_ITEM: ${removedDraftJson}]` : '',
     existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
+    todayDiaryIndex.length > 0 ? `[TODAY_DIARY_INDEX: ${todayDiaryJson}]` : '',
     consultantMealRequest ? `[CONSULTANT_MEAL_REQUEST: ${consultantMealJson}]` : '',
     consultantMealRequest ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
     wipMealProjection ? `[WIP_MEAL_ITEMS: ${wipMealJson}]` : '',
@@ -1901,10 +1975,12 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     intent === 'UPDATE_LOGGED_MEAL'
       ? [
         'MODIFICA PASTO REGISTRATO ATTIVA (UPDATE_LOGGED_MEAL).',
-        'Genera UNA SOLA mealProposal con la lista COMPLETA aggiornata degli alimenti.',
-        'Parti da [EXISTING_MEAL_NODE].items, applica aggiunte/rimozioni/modifiche richieste dall utente.',
-        'OBBLIGATORIO: targetNodeId = [EXISTING_MEAL_NODE].targetNodeId. Preserva mealType ed exactTime del nodo esistente.',
-        'HARD CONSTRAINT: items[] DEVE contenere TUTTI gli alimenti con foodName e grams > 0. Se la richiesta è vaga, restituisci gli alimenti originali invariati.',
+        'Usa [TODAY_DIARY_INDEX] per individuare pasti/itemId e [EXISTING_MEAL_NODE] come pasto target se presente.',
+        'Genera UNA SOLA mealProposal.',
+        'Compila operations[] (add|update|delete + targetItemId/updatedFood) e resultingItems[] = lista FINALE completa (SOURCE OF TRUTH).',
+        'Copia resultingItems anche in items[]. targetNodeId obbligatorio da [EXISTING_MEAL_NODE] o [TODAY_DIARY_INDEX].',
+        'Preserva mealType ed exactTime del nodo esistente salvo richiesta esplicita.',
+        'HARD CONSTRAINT: resultingItems/items mai vuoti; se richiesta vaga, operations=[] e resultingItems = originali.',
         'label: "Pasto aggiornato". source: "logged_meal_update". NON generare Opzione 2/3.',
         'adviceMessage: "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere."',
       ].join('\n')
@@ -2053,14 +2129,17 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
       if (!MEAL_TYPES.includes(mealType)) return null;
 
       const habitRef = habitById.get(proposal.id);
+      const resultingItemsRaw = Array.isArray(proposal.resultingItems) ? proposal.resultingItems : [];
       const llmItems = Array.isArray(proposal.items) ? proposal.items : [];
       const rawItems =
-        llmItems.length > 0
-          ? llmItems
-          : (allowHabitExpansion && Array.isArray(habitRef?.items) ? habitRef.items : []);
+        resultingItemsRaw.length > 0
+          ? resultingItemsRaw
+          : llmItems.length > 0
+            ? llmItems
+            : (allowHabitExpansion && Array.isArray(habitRef?.items) ? habitRef.items : []);
 
       const habitItemsByName = new Map(
-        (allowHabitExpansion ? (habitRef?.items || []) : llmItems)
+        (allowHabitExpansion ? (habitRef?.items || []) : rawItems)
           .filter((it) => it?.foodName)
           .map((it) => [String(it.foodName).toLowerCase(), it]),
       );
@@ -2069,7 +2148,10 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
         .map((item) => {
           const normalized = normalizeProposalItem(item, habitItemsByName);
           if (!normalized) return null;
-          return enrichProposalItemWithResolver(normalized, adviceContext, mealType);
+          const enriched = enrichProposalItemWithResolver(normalized, adviceContext, mealType);
+          if (!enriched) return null;
+          const itemId = item?.itemId != null ? String(item.itemId).trim() : '';
+          return itemId ? { ...enriched, itemId } : enriched;
         })
         .filter(Boolean);
 
@@ -2077,6 +2159,32 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
 
       const totals = roundTotals(sumProposalItemMacros(items));
       const exactTime = resolveExactTimeForMeal(proposal, adviceContext?.rawUserQuery || '');
+      const targetNodeId = proposal.targetNodeId != null
+        ? String(proposal.targetNodeId).trim()
+        : '';
+      const operations = Array.isArray(proposal.operations)
+        ? proposal.operations
+          .map((op) => {
+            if (!op || typeof op !== 'object') return null;
+            const action = String(op.action || '').trim().toLowerCase();
+            if (!['add', 'update', 'delete'].includes(action)) return null;
+            const targetItemId = op.targetItemId != null ? String(op.targetItemId).trim() : '';
+            const matchHint = op.matchHint != null ? String(op.matchHint).trim() : '';
+            const updated = op.updatedFood && typeof op.updatedFood === 'object'
+              ? {
+                  foodName: String(op.updatedFood.foodName || '').trim(),
+                  grams: Math.round(Number(op.updatedFood.grams) || 0),
+                }
+              : null;
+            return {
+              action,
+              ...(targetItemId ? { targetItemId } : {}),
+              ...(matchHint ? { matchHint } : {}),
+              ...(updated?.foodName && updated.grams > 0 ? { updatedFood: updated } : {}),
+            };
+          })
+          .filter(Boolean)
+        : [];
 
       return {
         id: String(proposal.id || habitRef?.id || `proposal_${index + 1}`),
@@ -2093,6 +2201,9 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
           || 'llm',
         ).trim(),
         items,
+        resultingItems: items,
+        ...(operations.length > 0 ? { operations } : {}),
+        ...(targetNodeId ? { targetNodeId } : {}),
         totals,
         ...(exactTime ? { exactTime } : {}),
         workoutAdjusted: Boolean(

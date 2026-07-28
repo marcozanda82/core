@@ -12,8 +12,111 @@ export const WORKOUT_TIME_QUICK_REPLIES = Object.freeze([
   '20:00',
 ]);
 
+/** Tipi cilindro/chat per ADD_WORKOUT (normalizzati da Gemini). */
+export const WORKOUT_TYPE_ENUM = Object.freeze([
+  'spinta',
+  'trazione',
+  'gambe',
+  'cardio',
+  'altro',
+]);
+
+const WORKOUT_TYPE_LABELS = Object.freeze({
+  spinta: 'Allenamento spinta',
+  trazione: 'Allenamento trazione',
+  gambe: 'Allenamento gambe',
+  cardio: 'Cardio',
+  altro: 'Allenamento',
+});
+
+const WORKOUT_TYPE_ALIASES = Object.freeze({
+  push: 'spinta',
+  pull: 'trazione',
+  legs: 'gambe',
+  lower: 'gambe',
+  upper: 'spinta',
+  petto: 'spinta',
+  spalle: 'spinta',
+  tricipiti: 'spinta',
+  dorso: 'trazione',
+  schiena: 'trazione',
+  bicipiti: 'trazione',
+  legsday: 'gambe',
+  legday: 'gambe',
+  hiit: 'cardio',
+  corsa: 'cardio',
+  running: 'cardio',
+  bike: 'cardio',
+});
+
 function asTrimmedString(value) {
   return String(value ?? '').trim();
+}
+
+/**
+ * True se il testo sembra una registrazione allenamento (non consiglio pasto).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isWorkoutLogIntent(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  if (/\b(allenamento|workout|training|pesi|cardio|corsa|sessione)\b/.test(t)) return true;
+  if (
+    /\b(spinta|trazione|gambe|push|pull|legs|petto|dorso|upper|lower|leg\s*day)\b/.test(t)
+    && /\b(fatto|fatta|completato|oggi|ieri|alle|ore|ho\s+fatto|session)\b/.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Normalizza un raw LLM/utente verso enum chat workoutType.
+ * @param {unknown} value
+ * @returns {'spinta'|'trazione'|'gambe'|'cardio'|'altro'|null}
+ */
+export function normalizeChatWorkoutType(value) {
+  const raw = asTrimmedString(value).toLowerCase().replace(/\s+/g, '');
+  if (!raw) return null;
+  if (WORKOUT_TYPE_ENUM.includes(raw)) return raw;
+  const aliased = WORKOUT_TYPE_ALIASES[raw];
+  if (aliased) return aliased;
+  return null;
+}
+
+/**
+ * Inferisce workoutType dal testo libero.
+ * @param {string} userText
+ * @returns {'spinta'|'trazione'|'gambe'|'cardio'|'altro'|null}
+ */
+export function inferWorkoutTypeFromText(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return null;
+  if (/\b(gambe|legs|lower|squat|leg\s*day|quadricip|affondi)\b/.test(t)) return 'gambe';
+  if (/\b(spinta|push|petto|spalle|tricipit|panca|shoulder|military)\b/.test(t)) return 'spinta';
+  if (/\b(trazione|pull|dorso|schiena|bicipit|remat|trazioni|chin\s*up|pull\s*up)\b/.test(t)) {
+    return 'trazione';
+  }
+  if (/\b(cardio|corsa|run|bike|hiit|nuoto|swim|tapis|ellittica)\b/.test(t)) return 'cardio';
+  if (/\b(allenamento|workout|pesi|training|sessione)\b/.test(t)) return 'altro';
+  return null;
+}
+
+/**
+ * Payload minimo locale quando Gemini fallisce ma l'intent è chiaro.
+ * @param {string} userText
+ * @returns {object}
+ */
+export function buildLocalWorkoutPayloadFromText(userText) {
+  const workoutType = inferWorkoutTypeFromText(userText) || 'altro';
+  const time = parseExactTimeFromUserText(userText);
+  return {
+    workoutType,
+    workoutName: WORKOUT_TYPE_LABELS[workoutType] || 'Allenamento',
+    exercises: [],
+    ...(time ? { timeString: time, exactTime: time } : {}),
+  };
 }
 
 /** Solo HH:mm valido — evita di interpretare decimalHour (es. 12.13) come orario. */

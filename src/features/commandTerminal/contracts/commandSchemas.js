@@ -18,6 +18,79 @@ export const foodItemSchema = {
   required: ['foodName'],
 };
 
+/** Alimento risultante dopo mutazione (source of truth per overwrite Firebase). */
+export const resultingFoodItemSchema = {
+  type: 'object',
+  properties: {
+    itemId: {
+      type: 'string',
+      nullable: true,
+      description:
+        'ID stabile da [TODAY_DIARY_INDEX]/[EXISTING_MEAL_NODE] se l alimento era gia presente. Ometti per nuovi add.',
+    },
+    foodName: {
+      type: 'string',
+      description: 'Nome PURO ingrediente senza grammi/parentesi/congiunzioni.',
+    },
+    foodDbKey: { type: 'string', nullable: true },
+    grams: {
+      type: 'number',
+      description: 'Grammi finali (> 0) dopo la mutazione.',
+    },
+    kcal: { type: 'number' },
+    pro: { type: 'number' },
+    carbo: { type: 'number' },
+    fat: { type: 'number' },
+  },
+  required: ['foodName', 'grams'],
+};
+
+/**
+ * Operazione atomica su un pasto loggato (superficie LLM).
+ * Il commit reale resta un overwrite completo via resultingItems/items.
+ */
+export const mealMutationOperationSchema = {
+  type: 'object',
+  properties: {
+    action: {
+      type: 'string',
+      enum: ['add', 'update', 'delete'],
+      description:
+        'add = nuovo alimento; update = cambia nome/grammi di un item esistente; delete = rimuovi item esistente.',
+    },
+    targetItemId: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Obbligatorio per update/delete: copia itemId da [TODAY_DIARY_INDEX] o [EXISTING_MEAL_NODE]. Per add: null o ometti.',
+    },
+    matchHint: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Nome grezzo citato dall utente (es. "olio", "pasta") utile se targetItemId e ambiguo.',
+    },
+    updatedFood: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Obbligatorio per add/update: { foodName, grams }. Per delete: null o ometti.',
+      properties: {
+        foodName: {
+          type: 'string',
+          description: 'Nome PURO alimento.',
+        },
+        grams: {
+          type: 'number',
+          description: 'Grammi (> 0).',
+        },
+      },
+      required: ['foodName', 'grams'],
+    },
+  },
+  required: ['action'],
+};
+
 export const addFoodPayloadSchema = {
   type: 'object',
   properties: {
@@ -96,30 +169,57 @@ export const addWorkoutExerciseItemSchema = {
   required: ['exerciseName'],
 };
 
+export const workoutTypeEnum = ['spinta', 'trazione', 'gambe', 'cardio', 'altro'];
+
 export const addWorkoutPayloadSchema = {
   type: 'object',
   properties: {
+    workoutType: {
+      type: 'string',
+      enum: workoutTypeEnum,
+      description:
+        'OBBLIGATORIO. NORMALIZZA sempre il linguaggio utente: '
+        + 'legs/lower/quad/squat/leg day/affondi → gambe; '
+        + 'push/petto/spalle/tricipiti/panca → spinta; '
+        + 'pull/dorso/schiena/bicipiti/trazioni/rematore → trazione; '
+        + 'corsa/bike/HIIT/tapis/nuoto → cardio; '
+        + 'allenamento generico senza gruppo chiaro → altro.',
+    },
     workoutName: {
       type: 'string',
-      description: 'Nome sintetico dell allenamento',
+      nullable: true,
+      description:
+        'Etichetta sintetica (es. "Allenamento gambe"). Se assente, il sistema la deriva da workoutType. '
+        + 'Per "ho fatto gambe" senza lista esercizi: workoutName puo essere "Allenamento gambe" e exercises=[].',
     },
     durationMinutes: {
       type: 'number',
-      description: 'Durata allenamento in minuti',
+      nullable: true,
+      description:
+        'Minuti SOLO se l utente li ha indicati esplicitamente (es. 45 min, 1 ora). '
+        + 'Se assenti: null o ometti — NON inventare. Il sistema applica un default (45).',
     },
     exercises: {
       type: 'array',
       description:
-        'Un oggetto per OGNI esercizio esplicitamente citato. Vietato aggiungere riscaldamento/defaticamento non menzionati.',
+        'Esercizi ESPLICITAMENTE citati. Per sessione generica ("allenamento gambe alle 18") lascia []. '
+        + 'Vietato aggiungere riscaldamento/defaticamento non menzionati.',
       items: addWorkoutExerciseItemSchema,
     },
     estimatedKcal: {
       type: 'number',
-      description: 'Stima kcal opzionale',
+      nullable: true,
+      description: 'Stima kcal solo se citata esplicitamente',
     },
     timeString: {
       type: 'string',
-      description: 'Orario opzionale HH:MM',
+      nullable: true,
+      description: 'Orario HH:mm se citato (es. alle 18.00 → 18:00). Altrimenti ometti.',
+    },
+    exactTime: {
+      type: 'string',
+      nullable: true,
+      description: 'Alias di timeString (HH:mm).',
     },
     notes: {
       type: 'string',
@@ -147,7 +247,7 @@ export const addWorkoutPayloadSchema = {
         'Note su carichi, esercizi, variazioni o sensazioni. Ometti se non citate.',
     },
   },
-  required: ['workoutName', 'durationMinutes'],
+  required: ['workoutType'],
 };
 
 export const logSleepPayloadSchema = {
@@ -271,7 +371,7 @@ export const consultantResponseSchema = {
     mealProposals: {
       type: 'array',
       description:
-        'Proposte pasto complete pronte per conferma rapida. Priorità alle abitudini [USER_HABITS_FOR_CURRENT_MEAL].',
+        'Proposte pasto complete pronte per conferma rapida. Priorità alle abitudini [USER_HABITS_FOR_CURRENT_MEAL]. Per UPDATE_LOGGED_MEAL: UNA sola proposta con targetNodeId + operations + resultingItems.',
       items: {
         type: 'object',
         properties: {
@@ -287,16 +387,33 @@ export const consultantResponseSchema = {
             type: 'string',
             nullable: true,
             description:
-              'ID nodo pasto esistente da sovrascrivere (UPDATE_LOGGED_MEAL). Copia da [EXISTING_MEAL_NODE].targetNodeId.',
+              'ID nodo pasto esistente da sovrascrivere (UPDATE_LOGGED_MEAL). Copia da [EXISTING_MEAL_NODE].targetNodeId o [TODAY_DIARY_INDEX][].targetNodeId.',
           },
           source: { type: 'string' },
+          operations: {
+            type: 'array',
+            description:
+              'UPDATE_LOGGED_MEAL: operazioni atomiche (add|update|delete) derivate dalla richiesta utente e da [TODAY_DIARY_INDEX]. Usate per UI/diff; il salvataggio usa resultingItems.',
+            items: mealMutationOperationSchema,
+          },
+          resultingItems: {
+            type: 'array',
+            description:
+              'UPDATE_LOGGED_MEAL — SOURCE OF TRUTH: lista FINALE completa degli alimenti del pasto DOPO aver applicato operations. Mai vuota. Copia gli stessi oggetti anche in items[].',
+            items: resultingFoodItemSchema,
+          },
           items: {
             type: 'array',
             description:
-              'Lista COMPLETA alimenti del pasto. Ogni voce DEVE avere foodName e grams > 0. Per UPDATE_LOGGED_MEAL: mai array vuoto; se richiesta vaga, ripeti [EXISTING_MEAL_NODE].items.',
+              'Lista COMPLETA alimenti del pasto. Ogni voce DEVE avere foodName e grams > 0. Per UPDATE_LOGGED_MEAL: deve coincidere con resultingItems (lista post-mutazione). Se richiesta vaga, ripeti gli items di [EXISTING_MEAL_NODE]/[TODAY_DIARY_INDEX].',
             items: {
               type: 'object',
               properties: {
+                itemId: {
+                  type: 'string',
+                  nullable: true,
+                  description: 'ID stabile da [TODAY_DIARY_INDEX] se presente.',
+                },
                 foodName: {
                   type: 'string',
                   description:

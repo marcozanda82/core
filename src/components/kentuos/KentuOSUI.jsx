@@ -131,6 +131,12 @@ export function KentuIcon({ name, size = 24, className = '' }) {
           <path d="M22 2L15 22l-4-9-9-4 20-7z" {...o} />
         </svg>
       );
+    case 'stop':
+      return (
+        <svg {...common}>
+          <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none" />
+        </svg>
+      );
     default:
       return (
         <svg {...common}>

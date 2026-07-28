@@ -29,6 +29,7 @@ export default function KentuChatUI({
   onBack,
   introPhrase,
   isProcessing = false,
+  onCancelGeneration = null,
   wipMealItems = [],
   wipMealTotals = null,
   wipMealType = 'pranzo',
@@ -81,6 +82,7 @@ export default function KentuChatUI({
         onBack={onBack}
         introPhrase={introPhrase}
         isProcessing={isProcessing}
+        onCancelGeneration={onCancelGeneration}
         wipMealItems={wipMealItems}
         wipMealTotals={wipMealTotals}
         wipMealType={wipMealType}

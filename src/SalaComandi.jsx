@@ -5838,6 +5838,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const {
     sendMessage,
+    cancelGeneration,
     isLoading: isChatProcessing,
     chatInput: commandChatInput,
     setChatInput: setCommandChatInput,
@@ -5941,6 +5942,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onSaveNewFoodEntry: handleSaveNewFoodEntry,
       introPhrase,
       isProcessing: isChatProcessing,
+      onCancelGeneration: cancelGeneration,
       mealBuilder,
       setMealBuilder,
       cancelMealBuilder,
@@ -5954,6 +5956,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     commandChatImages,
     setCommandChatImages,
     sendMessage,
+    cancelGeneration,
     activeQuickReplies,
     handleQuickReplyClick,
     handleAcceptAdvice,
@@ -8356,6 +8359,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onBack={closeChat}
             introPhrase={introPhrase}
             isProcessing={isChatProcessing}
+            onCancelGeneration={cancelGeneration}
             mealBuilder={mealBuilder}
             cancelMealBuilder={cancelMealBuilder}
             commitMealBuilder={commitMealBuilder}

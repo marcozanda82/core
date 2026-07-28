@@ -108,6 +108,12 @@ export function formatExercisesToWorkoutDetailNote(exercises = []) {
  * @returns {string}
  */
 export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
+  const chatCylinder = String(chatPayload?.workoutType || '').trim().toLowerCase();
+  if (['spinta', 'trazione', 'gambe', 'cardio', 'altro'].includes(chatCylinder)) {
+    if (chatCylinder === 'altro') return 'misto';
+    return chatCylinder;
+  }
+
   const explicit = resolveWorkoutActivityTypeId(
     chatPayload?.workoutType ?? chatPayload?.activityType ?? chatPayload?.subType,
   );
@@ -121,6 +127,10 @@ export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+
+  if (/\b(gambe|legs|lower|squat|leg\s*day)\b/.test(haystack)) return 'gambe';
+  if (/\b(spinta|push|petto|spalle|tricipit|panca)\b/.test(haystack)) return 'spinta';
+  if (/\b(trazione|pull|dorso|schiena|bicipit|trazioni)\b/.test(haystack)) return 'trazione';
 
   const hasStrengthMetrics = exercises.some(
     (item) => (item.sets != null && item.sets > 0)
@@ -161,17 +171,31 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
 
   const workoutType = inferWorkoutTypeFromChatPayload(chatPayload, exercises);
   const workoutDetailNote = formatExercisesToWorkoutDetailNote(exercises);
-  const muscles = [];
-  const baseDesc = getWorkoutActivityLogDescription(workoutType, muscles);
+  const cylinderMuscles = {
+    spinta: ['Petto', 'Spalle', 'Tricipiti'],
+    trazione: ['Dorso', 'Bicipiti'],
+    gambe: ['Gambe'],
+  };
+  const muscles = Array.isArray(cylinderMuscles[workoutType])
+    ? [...cylinderMuscles[workoutType]]
+    : [];
+  const baseDesc = getWorkoutActivityLogDescription(
+    ['spinta', 'trazione', 'gambe'].includes(workoutType) ? 'pesi' : workoutType,
+    muscles,
+  );
   const detailInline = workoutDetailNote.replace(/\n/g, '; ');
   let desc = baseDesc;
-  if (workoutType === 'misto' || workoutType === 'cardio' || workoutType === 'hiit') {
+  if (workoutType === 'spinta' || workoutType === 'trazione' || workoutType === 'gambe') {
+    desc = asTrimmedString(chatPayload?.workoutName) || `Allenamento ${workoutType}`;
+  } else if (workoutType === 'misto' || workoutType === 'cardio' || workoutType === 'hiit') {
     desc = workoutName;
   } else if (workoutDetailNote && workoutActivityRequiresStrengthDetailNote(workoutType)) {
     desc = `${baseDesc} — ${detailInline}`;
   }
 
-  const def = getWorkoutActivityTypeDef(workoutType);
+  const def = getWorkoutActivityTypeDef(
+    ['spinta', 'trazione', 'gambe'].includes(workoutType) ? 'pesi' : workoutType,
+  );
   const nodeKind = def?.nodeKind ?? 'workout';
   const isWork = nodeKind === 'work';
   const isCognitive = nodeKind === 'cognitive';

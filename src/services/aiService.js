@@ -70,14 +70,34 @@ function unwrapCallableError(error) {
   throw new Error(message || code || 'Errore AI sconosciuto');
 }
 
+/** @param {unknown} error */
+export function isAbortError(error) {
+  if (!error || typeof error !== 'object') return false;
+  const name = String(error.name || '');
+  const code = error.code;
+  return name === 'AbortError' || code === 20 || code === 'ABORT_ERR';
+}
+
+export function createAbortError(message = 'Aborted') {
+  const error = new Error(message);
+  error.name = 'AbortError';
+  return error;
+}
+
 /**
  * Chiamata AI centralizzata via Firebase Cloud Function callGemini (Google Gemini nativo).
  * @param {string} prompt
  * @param {string} [systemInstruction]
- * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model
+ * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model, signal
  */
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
+  const signal = opts.signal instanceof AbortSignal ? opts.signal : null;
+
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+
   const payload = {
     prompt: buildPromptWithHistory(prompt, opts),
     systemInstruction: systemInstruction || opts.systemInstruction || '',
@@ -91,13 +111,33 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   if (opts.responseSchema) payload.responseSchema = opts.responseSchema;
   if (opts.generationConfig) payload.generationConfig = opts.generationConfig;
 
+  let abortListener = null;
+  const abortPromise = signal
+    ? new Promise((_, reject) => {
+        abortListener = () => reject(createAbortError());
+        signal.addEventListener('abort', abortListener, { once: true });
+      })
+    : null;
+
   let result;
   try {
-    result = await callAiFunction(payload);
+    // httpsCallable non espone AbortSignal nativo: race client-side per sbloccare l'UI.
+    result = abortPromise
+      ? await Promise.race([callAiFunction(payload), abortPromise])
+      : await callAiFunction(payload);
   } catch (error) {
+    if (isAbortError(error)) throw error;
     console.error('[askAI] callable error', error?.code, error?.message, error?.details);
     void logSystemError(error, 'Gemini API Call');
     unwrapCallableError(error);
+  } finally {
+    if (signal && abortListener) {
+      signal.removeEventListener('abort', abortListener);
+    }
+  }
+
+  if (signal?.aborted) {
+    throw createAbortError();
   }
 
   const data = result.data;

@@ -159,16 +159,49 @@ function isGramsOnlySlotReply(text) {
   return parseGramsFromUserText(raw) != null;
 }
 
+function normalizeFoodNameForOverlap(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/** Preferisce il nome più specifico (es. "Pane Integrale" vs "pane"). */
+function pickPreferredFoodName(existingName, newName) {
+  const existing = String(existingName || '').trim();
+  const incoming = String(newName || '').trim();
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  const normExisting = normalizeFoodNameForOverlap(existing);
+  const normIncoming = normalizeFoodNameForOverlap(incoming);
+  if (normExisting === normIncoming) {
+    return existing.length >= incoming.length ? existing : incoming;
+  }
+  if (normExisting.includes(normIncoming)) return existing;
+  if (normIncoming.includes(normExisting)) return incoming;
+  return existing.length >= incoming.length ? existing : incoming;
+}
+
 function mergeFoodItemIntoList(combined, newItem) {
-  const idx = combined.findIndex(
-    (item) => String(item.foodName || '').trim().toLowerCase()
-      === String(newItem.foodName || '').trim().toLowerCase(),
-  );
+  const newName = normalizeFoodNameForOverlap(newItem?.foodName);
+  if (!newName) return;
+
+  const idx = combined.findIndex((item) => {
+    const existingName = normalizeFoodNameForOverlap(item?.foodName);
+    if (!existingName) return false;
+    return (
+      existingName === newName
+      || existingName.includes(newName)
+      || newName.includes(existingName)
+    );
+  });
+
   if (idx >= 0) {
     const existing = combined[idx];
+    const preferredName = pickPreferredFoodName(existing.foodName, newItem.foodName);
     combined[idx] = {
       ...existing,
-      foodName: newItem.foodName || existing.foodName,
+      foodName: preferredName,
       grams:
         Number.isFinite(newItem.grams) && Number(newItem.grams) > 0
           ? newItem.grams
@@ -176,6 +209,7 @@ function mergeFoodItemIntoList(combined, newItem) {
     };
     return;
   }
+
   combined.push({ ...newItem });
 }
 

@@ -1,6 +1,7 @@
 import { commandBus } from './dispatcher/CommandBus.js';
 import { contextComposer } from './context/ContextComposer.js';
 import { geminiStructuredClient } from './llm/GeminiStructuredClient.js';
+import { isAbortError } from '../../services/aiService.js';
 import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
@@ -96,7 +97,11 @@ import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly } from 
 import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
+  buildLocalWorkoutPayloadFromText,
   hasWorkoutToday,
+  inferWorkoutTypeFromText,
+  isWorkoutLogIntent,
+  normalizeChatWorkoutType,
   parseWorkoutConflictResponse,
 } from './conversation/workoutRegistrationSlots.js';
 
@@ -137,12 +142,19 @@ function validateWorkoutPayload(payload) {
   if (!payload || typeof payload !== 'object') return 'Workout payload must be an object';
   const exercises = expandWorkoutPayloadExercises(payload);
   const workoutName = String(payload.workoutName || '').trim();
-  if (exercises.length === 0 && !workoutName) return 'workoutName is required';
+  const workoutType = normalizeChatWorkoutType(payload.workoutType)
+    || inferWorkoutTypeFromText(`${workoutName} ${exercises.map((e) => e.exerciseName).join(' ')}`);
+  if (exercises.length === 0 && !workoutName && !workoutType) {
+    return 'workoutType or workoutName is required';
+  }
   if (exercises.some((item) => !String(item.exerciseName || '').trim())) {
     return 'exerciseName is required for each exercise';
   }
-  if (!isFiniteNumber(payload.durationMinutes) || Number(payload.durationMinutes) <= 0) {
-    return 'durationMinutes must be > 0';
+  // durationMinutes: se assente, normalizeWorkoutPayload applica default 45 — non bloccare.
+  if (payload.durationMinutes != null) {
+    if (!isFiniteNumber(payload.durationMinutes) || Number(payload.durationMinutes) <= 0) {
+      return 'durationMinutes must be > 0 when provided';
+    }
   }
   if (payload.rpe != null) {
     const rpe = Number(payload.rpe);
@@ -452,6 +464,9 @@ export class CommandTerminalController {
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
+    // Workout PRIMA di meal-advice / food registration.
+    if (isWorkoutLogIntent(userText)) return 'ADD_WORKOUT';
 
     if (options?.hasImages && isCreateNewFoodIntent(userText)) return 'CREATE_NEW_FOOD';
     if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
@@ -974,7 +989,7 @@ export class CommandTerminalController {
 
   beginWorkoutRegistration(payload, currentState = {}, userText = '', options = {}) {
     this.pendingWorkoutOriginUserText = String(userText || '').trim();
-    let normalized = normalizeWorkoutPayload(payload);
+    let normalized = normalizeWorkoutPayload(payload, this.pendingWorkoutOriginUserText);
 
     if (parseExactTimeFromUserText(this.pendingWorkoutOriginUserText)) {
       const fromText = parseExactTimeFromUserText(this.pendingWorkoutOriginUserText);
@@ -1018,7 +1033,7 @@ export class CommandTerminalController {
       this.pendingWorkoutOriginUserText || '',
     );
     payload = applyHistoricalWorkoutKcalDefault(payload, currentState);
-    payload = normalizeWorkoutPayload(payload);
+    payload = normalizeWorkoutPayload(payload, this.pendingWorkoutOriginUserText || '');
     this.pendingCommandPayload = payload;
 
     const validationError = validateWorkoutDraftPayload(payload);
@@ -1513,6 +1528,7 @@ export class CommandTerminalController {
           temperature: 0.35,
           chatHistory,
           ...(consultantSystemInstruction ? { systemInstruction: consultantSystemInstruction } : {}),
+          ...(options?.signal ? { signal: options.signal } : {}),
         });
       const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
       let mealProposals = sanitizeMealProposals(rawProposals, adviceContext);
@@ -1625,6 +1641,7 @@ export class CommandTerminalController {
           : null,
       };
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const reason = `Consultant LLM failure: ${error?.message || 'unknown error'}`;
       console.error('[CommandTerminalController] Meal advice LLM error', error);
       this.publishErrorMessage(USER_FACING_ERROR_MESSAGE);
@@ -1641,6 +1658,9 @@ export class CommandTerminalController {
     try {
       return await this.processUserMessageCore(text, currentState, options);
     } catch (error) {
+      if (isAbortError(error)) {
+        return { ok: false, aborted: true, reason: 'aborted', userNotified: false };
+      }
       console.error('[CommandTerminalController] Unhandled processUserMessage error', error);
       this.publishErrorMessage(USER_FACING_ERROR_MESSAGE);
       this.bus.publish(
@@ -1719,7 +1739,12 @@ export class CommandTerminalController {
       || inferredIntent === 'WIP_MEAL_BUILD'
       || inferredIntent === 'ASK_MEAL_COMPLETION'
       || inferredIntent === 'UPDATE_LOGGED_MEAL'
-      || (isMealAdviceIntent(userText, chatHistory) && !isConsumedMealLogDescription(userText) && !looksLikeComplexMealLog(userText))
+      || (
+        inferredIntent !== 'ADD_WORKOUT'
+        && isMealAdviceIntent(userText, chatHistory)
+        && !isConsumedMealLogDescription(userText)
+        && !looksLikeComplexMealLog(userText)
+      )
     ) {
       return this.processMealAdvice(userText, currentState, options);
     }
@@ -1759,8 +1784,10 @@ export class CommandTerminalController {
         commandHint,
         images,
         chatHistory,
+        ...(options?.signal ? { signal: options.signal } : {}),
       });
     } catch (error) {
+      if (isAbortError(error)) throw error;
       const detail =
         error?.details
         || error?.message
@@ -1768,6 +1795,11 @@ export class CommandTerminalController {
         || 'unknown error';
       const reason = `LLM failure: ${detail}`;
       console.error('[CommandTerminalController] LLM error', error);
+
+      if (commandHint === 'ADD_WORKOUT' || isWorkoutLogIntent(userText)) {
+        const localPayload = buildLocalWorkoutPayloadFromText(userText);
+        return this.beginWorkoutRegistration(localPayload, currentState, userText);
+      }
 
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
         const localResult = this.tryParseAndPublishMealLog(userText, currentState, chatHistory);
@@ -1816,7 +1848,23 @@ export class CommandTerminalController {
     }
 
     if (commandType === 'ADD_WORKOUT') {
-      rawPayload = normalizeWorkoutPayload(rawPayload);
+      rawPayload = normalizeWorkoutPayload({
+        ...rawPayload,
+        workoutType:
+          normalizeChatWorkoutType(rawPayload?.workoutType)
+          || inferWorkoutTypeFromText(userText)
+          || rawPayload?.workoutType,
+        timeString:
+          rawPayload?.timeString
+          || rawPayload?.exactTime
+          || parseExactTimeFromUserText(userText)
+          || undefined,
+        exactTime:
+          rawPayload?.exactTime
+          || rawPayload?.timeString
+          || parseExactTimeFromUserText(userText)
+          || undefined,
+      }, userText);
       commandResponse.command = { ...commandResponse.command, payload: rawPayload };
     }
 
@@ -1871,6 +1919,14 @@ export class CommandTerminalController {
         return this.beginFoodSlotFilling(rawPayload, currentState);
       }
 
+      if (commandType === 'ADD_WORKOUT' || isWorkoutLogIntent(userText)) {
+        const localPayload = normalizeWorkoutPayload({
+          ...rawPayload,
+          ...buildLocalWorkoutPayloadFromText(userText),
+        }, userText);
+        return this.beginWorkoutRegistration(localPayload, currentState, userText);
+      }
+
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
         const localResult = this.tryParseAndPublishMealLog(userText, currentState, chatHistory);
         if (localResult) return localResult;
@@ -1895,7 +1951,7 @@ export class CommandTerminalController {
     let payload = commandType === 'ADD_FOOD'
       ? normalizeFoodPayload(rawPayload, currentState, { inferMealTypeFromContext: true })
       : commandType === 'ADD_WORKOUT'
-        ? normalizeWorkoutPayload(rawPayload)
+        ? normalizeWorkoutPayload(rawPayload, userText)
         : { ...rawPayload };
 
     if (commandType === 'ADD_FOOD' && !payload.mealType) {
