@@ -3031,6 +3031,9 @@ export default function SalaComandi() {
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
+    if (itemId && itemId !== 'menu' && itemId !== 'diary') {
+      trackEventUsage(itemId);
+    }
     switch (itemId) {
       case 'meal': {
         if (fromModal) setShowChoiceModal(false);
@@ -3127,28 +3130,61 @@ export default function SalaComandi() {
     }
   }
 
-  const eventQuickButtonConfigs = useMemo(
-    () => [
-      { id: 'pasto', label: 'Inserisci Pasto', icon: '🍽️', drawerActionId: 'meal' },
-      { id: 'allenamento', label: 'Allenamento', icon: '🏋️', drawerActionId: 'workout' },
-      { id: 'acqua', label: 'Acqua', icon: '💧', drawerActionId: 'water' },
-      { id: 'nap', label: 'Nap', icon: '😴', drawerActionId: 'nap' },
-      { id: 'supplements', label: 'Supplementi', icon: '💊', drawerActionId: 'supplements' },
-    ],
-    []
+  const CHAT_QUICK_STRIP_META = useMemo(
+    () => ({
+      meal: { label: 'Pasto', icon: '🍳' },
+      workout: { label: 'Workout', icon: '🏋️' },
+      sleep: { label: 'Sonno', icon: '😴' },
+      nap: { label: 'Pisolino', icon: '😴' },
+      water: { label: 'Acqua', icon: '💧' },
+      weight: { label: 'Peso', icon: '⚖️' },
+      stimulant: { label: 'Caffè', icon: '☕' },
+      alcohol: { label: 'Alcol', icon: '🍷' },
+      meditation: { label: 'Meditato', icon: '🧘' },
+      supplements: { label: 'Integratori', icon: '💊' },
+      plan: { label: 'Pianifica', icon: '🎯' },
+    }),
+    [],
   );
 
-  const mostUsedEventButtons = useMemo(() => {
-    const orderIndex = new Map(eventQuickButtonConfigs.map((cfg, idx) => [cfg.id, idx]));
-    return [...eventQuickButtonConfigs]
-      .filter((cfg) => cfg.id !== 'pasto')
-      .sort((a, b) => {
-        const diff = (Number(eventUsage?.[b.id]) || 0) - (Number(eventUsage?.[a.id]) || 0);
-        if (diff !== 0) return diff;
-        return (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0);
-      })
-      .slice(0, 2);
-  }, [eventQuickButtonConfigs, eventUsage]);
+  const chatQuickStripItems = useMemo(() => {
+    const eligible = [
+      'meal',
+      'water',
+      'workout',
+      'weight',
+      'stimulant',
+      'nap',
+      'meditation',
+      'alcohol',
+      'supplements',
+      'plan',
+    ];
+    const defaults = ['meal', 'workout', 'sleep', 'water', 'weight'];
+    const totalUsage = eligible.reduce(
+      (sum, id) => sum + (Number(eventUsage?.[id]) || 0),
+      0,
+    );
+    const ids =
+      totalUsage < 5
+        ? defaults
+        : [...eligible]
+          .sort((a, b) => {
+            const diff = (Number(eventUsage?.[b]) || 0) - (Number(eventUsage?.[a]) || 0);
+            if (diff !== 0) return diff;
+            return eligible.indexOf(a) - eligible.indexOf(b);
+          })
+          .slice(0, 5);
+
+    return [
+      ...ids.map((id) => ({
+        id,
+        label: CHAT_QUICK_STRIP_META[id]?.label || id,
+        icon: CHAT_QUICK_STRIP_META[id]?.icon || '•',
+      })),
+      { id: 'menu', label: 'Menu', icon: '☰' },
+    ];
+  }, [CHAT_QUICK_STRIP_META, eventUsage]);
 
   const getDefaultMealTime = (mealTypeKey) => {
     const DEFAULT_SLOT_TIME = {
@@ -6714,8 +6750,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     (actionId) => {
       closeChat();
       if (actionId === 'menu') {
-        setActiveAction('menu_secondary');
-        setIsDrawerOpen(true);
+        setAddChoiceView('main');
+        setShowChoiceModal(true);
         return;
       }
       if (actionId === 'sleep') {
@@ -6723,12 +6759,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         return;
       }
       if (actionId === 'weight') {
+        trackEventUsage('weight');
         setShowWeightModal(true);
         return;
       }
-      handleAddEventMenuItem(actionId === 'pasto' ? 'meal' : actionId, 'chat_shortcut');
+      const canonical =
+        actionId === 'pasto' || actionId === 'meal'
+          ? 'meal'
+          : actionId === 'acqua'
+            ? 'water'
+            : actionId === 'allenamento'
+              ? 'workout'
+              : actionId;
+      handleAddEventMenuItem(canonical, 'chat_shortcut');
     },
-    [closeChat, handleAddEventMenuItem],
+    [closeChat, handleAddEventMenuItem, trackEventUsage],
   );
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
@@ -6750,21 +6795,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onClick={closeChat}
           aria-label="Chiudi chat"
           className={[
-            'fixed right-4 z-[100010] flex h-10 w-10 items-center justify-center',
-            'top-[calc(1rem+env(safe-area-inset-top,0px))]',
-            'rounded-full border-none bg-red-600 text-white',
-            'shadow-[0_0_15px_rgba(220,38,38,0.8)]',
-            'transition-transform duration-300 ease-in-out active:scale-95',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80',
+            'fixed right-4 z-[100010] flex h-8 w-8 items-center justify-center',
+            'top-[calc(0.75rem+env(safe-area-inset-top,0px))]',
+            'border-none bg-transparent p-0 shadow-none',
+            'text-red-500 transition-colors duration-200 hover:text-red-400',
+            'active:scale-95 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500/40',
           ].join(' ')}
         >
           <svg
             aria-hidden
             viewBox="0 0 24 24"
-            className="h-5 w-5"
+            className="h-4 w-4"
             fill="none"
             stroke="currentColor"
-            strokeWidth="2.5"
+            strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
           >
@@ -7812,7 +7856,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           addEventMenuOrder={addEventMenuOrder}
           commitAddEventMenuOrder={commitAddEventMenuOrder}
           handleAddEventMenuItem={handleAddEventMenuItem}
-          processTestoAI={processTestoAI}
           setShowReport={setShowReport}
           closeDrawer={closeDrawer}
           setShowProfile={setShowProfile}
@@ -8419,6 +8462,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onManualShortcut={handleChatManualShortcut}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
+            quickStripItems={chatQuickStripItems}
           />
           </Suspense>
         </div>

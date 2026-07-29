@@ -17,7 +17,7 @@ import {
 const CARD_CLASS =
   'home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-3 py-2.5 shadow-lg shadow-cyan-900/20 backdrop-blur-sm';
 
-const SLIDE_CLASS = 'min-w-0 w-full';
+const SLIDE_CLASS = 'min-w-full shrink-0 snap-center';
 
 const MUSCLE_ID_TO_LABEL = Object.fromEntries(
   WORKOUT_MUSCLE_GROUP_DEFS.map((d) => [d.id, d.label]),
@@ -409,22 +409,20 @@ export default function TrainingBlockWidget({
   return (
     <>
       <div
-        className="home-training-carousel w-full max-h-[9rem] overflow-auto overscroll-contain touch-auto scrollbar-hide"
-        aria-label="Griglia widget allenamento Home"
+        className="home-training-carousel flex w-full touch-pan-x snap-x snap-mandatory overflow-x-auto scrollbar-hide"
+        aria-label="Carosello allenamento Home"
         onTouchStart={(e) => e.stopPropagation()}
         onTouchMove={(e) => e.stopPropagation()}
         onTouchEnd={(e) => e.stopPropagation()}
       >
-        <div className="grid w-[200%] grid-cols-2 auto-rows-[minmax(8.25rem,auto)] gap-4 pb-1 pr-1">
-          {orderedSlideIds.map((id) => {
-            const slide = slideById[id];
-            return (
-              <div key={slide.id} className={SLIDE_CLASS} aria-label={slide.label}>
-                {slide.node}
-              </div>
-            );
-          })}
-        </div>
+        {orderedSlideIds.map((id) => {
+          const slide = slideById[id];
+          return (
+            <div key={slide.id} className={SLIDE_CLASS} aria-label={slide.label}>
+              {slide.node}
+            </div>
+          );
+        })}
       </div>
       {creator}
     </>

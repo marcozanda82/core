@@ -42,6 +42,7 @@ export default function KentuChatUI({
   onManualShortcut,
   onRequestReport,
   onRequestBarcodeScan,
+  quickStripItems = null,
 }) {
   return (
     <div
@@ -95,6 +96,7 @@ export default function KentuChatUI({
         onManualShortcut={onManualShortcut}
         onRequestReport={onRequestReport}
         onRequestBarcodeScan={onRequestBarcodeScan}
+        quickStripItems={quickStripItems}
       />
     </div>
   );

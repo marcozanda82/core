@@ -16,12 +16,25 @@ export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
 export const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
 export const EVENT_USAGE_LS_KEY = 'kentu_event_usage';
 
+/** Contatori uso voci «Aggiungi evento» (chiavi = id menu). */
 export const EVENT_USAGE_DEFAULT = {
-  pasto: 0,
-  allenamento: 0,
-  acqua: 0,
+  meal: 0,
+  water: 0,
+  workout: 0,
+  weight: 0,
+  stimulant: 0,
   nap: 0,
+  meditation: 0,
+  alcohol: 0,
   supplements: 0,
+  plan: 0,
+};
+
+/** Alias legacy → id canoniche (migrazione localStorage). */
+export const EVENT_USAGE_LEGACY_ALIASES = {
+  pasto: 'meal',
+  acqua: 'water',
+  allenamento: 'workout',
 };
 
 export const MANUAL_TARGET_EDIT_EXCLUDED_KEYS = new Set(['autoCalculated', 'targetHistory']);

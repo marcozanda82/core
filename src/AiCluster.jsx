@@ -88,6 +88,7 @@ export default function AiCluster({
   onManualShortcut,
   onRequestReport,
   onRequestBarcodeScan,
+  quickStripItems = null,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -136,6 +137,20 @@ export default function AiCluster({
       (label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()),
     );
   }, [activeQuickReplies, hasActiveWorkoutDraft]);
+
+  const resolvedQuickStrip = useMemo(() => {
+    if (Array.isArray(quickStripItems) && quickStripItems.length > 0) {
+      return quickStripItems;
+    }
+    return [
+      { id: 'pasto', icon: '🍳', label: 'Pasto' },
+      { id: 'workout', icon: '🏋️', label: 'Workout' },
+      { id: 'sleep', icon: '😴', label: 'Sonno' },
+      { id: 'acqua', icon: '💧', label: 'Acqua' },
+      { id: 'weight', icon: '⚖️', label: 'Peso' },
+      { id: 'menu', icon: '☰', label: 'Menu' },
+    ];
+  }, [quickStripItems]);
 
   const [isNotesMode, setIsNotesMode] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
@@ -612,19 +627,12 @@ export default function AiCluster({
         ) : null}
         {!isNotesMode ? (
           <div className="flex w-full shrink-0 flex-nowrap gap-2 overflow-x-auto py-2 scrollbar-hide">
-            {[
-              { id: 'pasto', icon: '🍳', label: 'Pasto' },
-              { id: 'workout', icon: '🏋️', label: 'Workout' },
-              { id: 'sleep', icon: '😴', label: 'Sonno' },
-              { id: 'acqua', icon: '💧', label: 'Acqua' },
-              { id: 'weight', icon: '⚖️', label: 'Peso' },
-              { id: 'menu', icon: '☰', label: 'Menu' },
-            ].map((item) => (
+            {resolvedQuickStrip.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onManualShortcut?.(item.id === 'acqua' ? 'water' : item.id)}
-                className="flex min-w-[72px] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-500/40 hover:bg-zinc-800"
+                className="flex min-w-[72px] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-400/40 hover:bg-zinc-800"
               >
                 <span className="text-xl" aria-hidden>{item.icon}</span>
                 <span className="mt-1 text-[0.65rem] font-medium">{item.label}</span>

@@ -10,7 +10,6 @@ export default function MainMenuDrawer({
   addEventMenuOrder,
   commitAddEventMenuOrder,
   handleAddEventMenuItem,
-  processTestoAI,
   setShowReport,
   closeDrawer,
   setShowProfile,
@@ -30,36 +29,6 @@ export default function MainMenuDrawer({
             onOrderCommit={commitAddEventMenuOrder}
             onItemActivate={(id) => handleAddEventMenuItem(id, 'drawer')}
           />
-          <div style={{ padding: '15px', background: '#1e1e1e', borderRadius: '12px', marginTop: '0' }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '0.8rem' }}>⚡ Inserimento Rapido / Output AI</h4>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <input
-                type="text"
-                id="fast-ai-input"
-                placeholder="Es: [Pollo | 150 | pranzo] oppure incolla qui la risposta AI"
-                style={{ flex: 1, padding: '12px', borderRadius: '8px', border: '1px solid #444', background: '#000', color: '#fff', fontSize: '0.85rem' }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    processTestoAI(e.target.value);
-                    e.target.value = '';
-                  }
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const input = document.getElementById('fast-ai-input');
-                  if (input) {
-                    processTestoAI(input.value);
-                    input.value = '';
-                  }
-                }}
-                style={{ background: '#00e5ff', color: '#000', border: 'none', padding: '0 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                Invia
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
@@ -84,7 +53,7 @@ export default function MainMenuDrawer({
                 <span className="action-label" style={{ color: '#fbbf24' }}>Diario API</span>
               </button>
             ) : null}
-            <button type="button" className="action-btn" onClick={() => { setActiveAction('ai_chat'); setIsDrawerOpen(false); }} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
+            <button type="button" className="action-btn" onClick={() => { setActiveAction('ai_chat'); closeDrawer(); }} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>
               {kentuChatNotificationBadge ? (
                 <span
                   aria-hidden

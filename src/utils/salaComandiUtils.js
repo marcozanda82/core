@@ -4,6 +4,7 @@ import {
   ACTIVE_BOTTOM_TAB_LS_KEY,
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
+  EVENT_USAGE_LEGACY_ALIASES,
   AI_COACH_DISMISSED_INSIGHTS_LS_KEY,
   MEAL_CONFIRM_DEBOUNCE_MS,
 } from '../constants/salaComandiConstants';
@@ -45,13 +46,14 @@ export function readPersistedEventUsage() {
     if (!raw) return { ...EVENT_USAGE_DEFAULT };
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return { ...EVENT_USAGE_DEFAULT };
-    return {
-      pasto: Math.max(0, Number(parsed.pasto) || 0),
-      allenamento: Math.max(0, Number(parsed.allenamento) || 0),
-      acqua: Math.max(0, Number(parsed.acqua) || 0),
-      nap: Math.max(0, Number(parsed.nap) || 0),
-      supplements: Math.max(0, Number(parsed.supplements) || 0),
-    };
+    const next = { ...EVENT_USAGE_DEFAULT };
+    Object.keys(EVENT_USAGE_DEFAULT).forEach((key) => {
+      next[key] = Math.max(0, Number(parsed[key]) || 0);
+    });
+    Object.entries(EVENT_USAGE_LEGACY_ALIASES).forEach(([legacy, canonical]) => {
+      next[canonical] = (Number(next[canonical]) || 0) + Math.max(0, Number(parsed[legacy]) || 0);
+    });
+    return next;
   } catch {
     return { ...EVENT_USAGE_DEFAULT };
   }
