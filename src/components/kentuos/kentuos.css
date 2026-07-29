@@ -1131,6 +1131,51 @@
   color: #86efac;
   font-weight: 600;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.kentu-meal-draft__grams--estimated {
+  color: #fbbf24;
+}
+
+.kentu-meal-draft__estimate-icon {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.kentu-meal-draft__estimate-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #f59e0b;
+  opacity: 0.9;
+}
+
+.kentu-meal-draft__estimate-banner {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.kentu-meal-draft__row--estimated {
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.kentu-meal-draft__grams-input--estimated {
+  border-color: rgba(251, 191, 36, 0.65);
+  color: #fbbf24;
 }
 
 .kentu-meal-draft__actions {

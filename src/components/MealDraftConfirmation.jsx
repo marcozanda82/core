@@ -23,6 +23,7 @@ function normalizeTimeValue(exactTime, timeString) {
 
 /**
  * Bozza interattiva in chat: tipo pasto, orario, alimenti, conferma o annulla.
+ * isEstimated=true → peso ambra + icona avviso (stima AI da unita/pezzi).
  */
 export default function MealDraftConfirmation({
   mealDraft,
@@ -41,6 +42,7 @@ export default function MealDraftConfirmation({
 
   const mealTypeValue = normalizeMealTypeValue(payload.mealType);
   const timeValue = normalizeTimeValue(payload.exactTime, payload.timeString);
+  const hasEstimatedWeights = items.some((item) => item?.isEstimated === true);
 
   if (!items.length) return null;
 
@@ -90,10 +92,17 @@ export default function MealDraftConfirmation({
         </div>
       </div>
 
+      {hasEstimatedWeights ? (
+        <p className="kentu-meal-draft__estimate-banner" role="status">
+          ⚠️ Pesi stimati (valori medi): controlla e correggi prima di confermare.
+        </p>
+      ) : null}
+
       <ul className="kentu-meal-draft__list">
         {items.map((item, index) => {
           const name = String(item.foodName || item.name || 'Alimento').trim();
           const grams = Math.round(Number(item.grams ?? item.qty) || 0);
+          const isEstimated = item?.isEstimated === true;
           const isEditing = editingIndex === index;
           const nameOptions = buildFoodNameSelectOptions(
             name,
@@ -101,7 +110,10 @@ export default function MealDraftConfirmation({
           );
 
           return (
-            <li key={`${draftId}_${index}_${name}`} className="kentu-meal-draft__row">
+            <li
+              key={`${draftId}_${index}_${name}`}
+              className={`kentu-meal-draft__row${isEstimated ? ' kentu-meal-draft__row--estimated' : ''}`}
+            >
               <div className="kentu-meal-draft__row-main">
                 <label className="kentu-meal-draft__food-field">
                   <span className="kentu-meal-draft__meta-label">Alimento</span>
@@ -120,14 +132,23 @@ export default function MealDraftConfirmation({
                 </label>
                 {isEditing ? (
                   <div className="kentu-meal-draft__edit-inline">
+                    {isEstimated ? (
+                      <span
+                        className="kentu-meal-draft__estimate-icon"
+                        title="Peso stimato dall'AI"
+                        aria-label="Peso stimato"
+                      >
+                        ⚠️
+                      </span>
+                    ) : null}
                     <input
                       type="number"
                       min={1}
                       step={1}
                       value={editGrams}
                       onChange={(e) => setEditGrams(e.target.value)}
-                      className="kentu-meal-draft__grams-input"
-                      aria-label={`Grammi ${name}`}
+                      className={`kentu-meal-draft__grams-input${isEstimated ? ' kentu-meal-draft__grams-input--estimated' : ''}`}
+                      aria-label={`Grammi ${name}${isEstimated ? ' (stimati)' : ''}`}
                     />
                     <span className="kentu-meal-draft__grams-suffix">g</span>
                     <button
@@ -148,7 +169,23 @@ export default function MealDraftConfirmation({
                     </button>
                   </div>
                 ) : (
-                  <span className="kentu-meal-draft__grams">{grams}g</span>
+                  <button
+                    type="button"
+                    className={`kentu-meal-draft__grams${isEstimated ? ' kentu-meal-draft__grams--estimated' : ''}`}
+                    onClick={() => startEdit(index, grams)}
+                    title={isEstimated ? 'Peso stimato — tocca per correggere' : 'Modifica quantità'}
+                    aria-label={`Grammi ${name}${isEstimated ? ' stimati' : ''}: ${grams}g. Modifica`}
+                  >
+                    {isEstimated ? (
+                      <span className="kentu-meal-draft__estimate-icon" aria-hidden>
+                        ⚠️
+                      </span>
+                    ) : null}
+                    <span>{grams}g</span>
+                    {isEstimated ? (
+                      <span className="kentu-meal-draft__estimate-label">stima</span>
+                    ) : null}
+                  </button>
                 )}
               </div>
               {!isEditing ? (

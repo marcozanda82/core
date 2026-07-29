@@ -271,6 +271,8 @@ export default function MetabolicUnifiedView({
   selectedTimeframe: selectedTimeframeProp,
   onTimeframeChange,
   fourCylinder = null,
+  activeLog = null,
+  activeDate = null,
   activeToolRequest = null,
   onActiveToolRequestHandled = null,
 } = {}) {
@@ -572,6 +574,8 @@ export default function MetabolicUnifiedView({
           <MetabolicDiagnostics
             fourCylinder={fourCylinder}
             fullHistory={fullHistory}
+            dailyLog={activeLog}
+            activeDate={activeDate || projectionAnchorDate}
             proteinTarget={userTargets?.prot ?? null}
           />
         ) : null}

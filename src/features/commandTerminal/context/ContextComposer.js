@@ -25,8 +25,11 @@ import {
   resolveSubstituteRemovedItem,
 } from '../conversation/mealLogIntent.js';
 import { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
-import { isWorkoutLogIntent } from '../conversation/workoutRegistrationSlots.js';
+import { isWorkoutLogIntent, isConsultativeStateIntent } from '../conversation/workoutRegistrationSlots.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
+import {
+  buildKentuGlobalStateFromAppState,
+} from './kentuGlobalState.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
 
@@ -68,6 +71,12 @@ export class ContextComposer {
     if (pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
     const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
+    // Domande sullo stato (CASO 2) prima di qualsiasi bozza workout/pasto.
+    if (isConsultativeStateIntent(text)) {
+      if (isDayReviewIntent(text)) return 'ASK_DAY_REVIEW';
+      if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
+      return 'CHAT_RESPONSE';
+    }
     // Workout PRIMA di meal-advice / food: "allenamento gambe" non deve finire in ASK_MEAL_ADVICE.
     if (isWorkoutLogIntent(text)) return 'ADD_WORKOUT';
     if (hasImages && isCreateNewFoodIntent(text)) return 'CREATE_NEW_FOOD';
@@ -209,6 +218,22 @@ export class ContextComposer {
         contextSlices: {
           workout: this.getWorkoutContext(currentState.dailyStats),
           USER_WORKOUT_HABITS: this.getWorkoutHabitsFromState(currentState),
+        },
+      };
+    }
+    if (normalizedIntent === 'CHAT_RESPONSE') {
+      return {
+        intent: 'CHAT_RESPONSE',
+        contextSlices: {
+          ...this.buildNutritionContextSlices(currentState),
+          TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
+          INTENT_ROUTING:
+            'CASO 2 CONSULTO: rispondi solo con commandType CHAT_RESPONSE. '
+            + 'Usa ESCLUSIVAMENTE KENTU_GLOBAL_STATE. Vietato ADD_FOOD/ADD_WORKOUT/bozze.',
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
         },
       };
     }
@@ -460,9 +485,28 @@ export class ContextComposer {
     );
     const effectiveIntent = shouldForceUpdateLoggedMeal ? 'UPDATE_LOGGED_MEAL' : intent;
     const bundle = this.composeForIntent(effectiveIntent, currentState, { userText, chatHistory });
+
+    let kentuGlobalStateText = '';
+    let kentuGlobalState = null;
+    try {
+      const global = buildKentuGlobalStateFromAppState(currentState);
+      kentuGlobalState = global.object;
+      kentuGlobalStateText = global.text;
+    } catch (error) {
+      console.warn('[ContextComposer] buildKentuGlobalState failed', error);
+    }
+
     return {
       ...bundle,
-      promptContextText: JSON.stringify(bundle.contextSlices),
+      contextSlices: {
+        ...(bundle.contextSlices || {}),
+        ...(kentuGlobalState ? { KENTU_GLOBAL_STATE: kentuGlobalState } : {}),
+      },
+      kentuGlobalStateText,
+      promptContextText: JSON.stringify({
+        ...(bundle.contextSlices || {}),
+        ...(kentuGlobalState ? { KENTU_GLOBAL_STATE: kentuGlobalState } : {}),
+      }),
     };
   }
 }

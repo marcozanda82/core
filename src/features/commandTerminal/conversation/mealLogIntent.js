@@ -365,6 +365,9 @@ export function parseWipMealDeclaration(userText) {
 
 /**
  * WIP Meal Builder: l'utente dichiara un alimento per un pasto in costruzione.
+ * Funzione piatta: esclusioni solo via regex/pattern locali — NON chiama altri intent checker
+ * (evita ciclo isWip → isDayReview → isFoodRegistration → isWip).
+ *
  * @param {string} userText
  * @param {Array<object>} [chatHistory]
  * @param {Array<object>} [wipMealItems]
@@ -375,12 +378,14 @@ export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = 
   if (!text) return false;
   if (WIP_MEAL_PAST_LOG_RE.test(text)) return false;
   if (isConsumedMealLogDescription(text)) return false;
-  if (isUpdateLoggedMealIntent(text, chatHistory)) return false;
-  if (isConsultantMealIntent(text, chatHistory)) return false;
-  if (isMealAdviceIntent(text, chatHistory)) return false;
-  if (isMealDraftEvaluationIntent(text)) return false;
-  if (isMealCompletionIntent(text)) return false;
-  if (isDayReviewIntent(text)) return false;
+  if (looksLikeUpdateLoggedMealRequest(text)) return false;
+  if (MEAL_DRAFT_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (MEAL_COMPLETION_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (isMealProposalQuery(text) || MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
+  if (DAY_REVIEW_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (CONSULTANT_MEAL_PATTERNS.some((pattern) => pattern.test(text))) return false;
   if (/\?\s*$/.test(text)) return false;
 
   const parsed = parseWipMealDeclaration(text);
@@ -394,7 +399,10 @@ export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = 
 
 /**
  * Richiesta di consiglio nutrizionale — DEVE routare a ASK_MEAL_ADVICE, non ADD_FOOD.
+ * Funzione piatta: solo pattern + leaf helpers (log pasto), senza altri intent checker.
+ *
  * @param {string} userText
+ * @param {Array<object>} [chatHistory]
  * @returns {boolean}
  */
 export function isMealAdviceIntent(userText, chatHistory = []) {
@@ -405,9 +413,12 @@ export function isMealAdviceIntent(userText, chatHistory = []) {
     return false;
   }
 
-  if (isMealDraftEvaluationIntent(text)) return false;
-  if (isSubstituteMealDraftIntent(text, chatHistory)) return false;
-  if (isFixMealDraftIntent(text, chatHistory)) return false;
+  // Esclusioni piatte (niente isMealDraft* / isFix* / isSubstitute* che possono richiamare advice).
+  if (MEAL_DRAFT_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (FIX_MEAL_DRAFT_STRONG_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (wasLastAiMessageMealDraftEvaluation(chatHistory) && /\b(?:s[iì]|ok|calcola|sostitu)/i.test(text)) {
+    return false;
+  }
 
   if (isMealProposalQuery(text)) return true;
   return MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text));
@@ -415,6 +426,8 @@ export function isMealAdviceIntent(userText, chatHistory = []) {
 
 /**
  * Registrazione pasto al diario (alimenti/quantità da aggiungere).
+ * Funzione piatta: NON chiama isWipMealBuildIntent / isDayReviewIntent / isMealAdviceIntent.
+ *
  * @param {string} userText
  * @returns {boolean}
  */
@@ -422,8 +435,22 @@ export function isFoodRegistrationIntent(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
   if (looksLikeUpdateLoggedMealRequest(text)) return false;
-  if (isWipMealBuildIntent(text)) return false;
-  if (isMealAdviceIntent(text)) return false;
+
+  // Esclusione WIP flat (stessa logica core, senza ricorsione intent).
+  if (
+    !WIP_MEAL_PAST_LOG_RE.test(text)
+    && !/\?\s*$/.test(text)
+    && (WIP_MEAL_FUTURE_VERB_RE.test(text) || WIP_MEAL_TIME_RE.test(text))
+  ) {
+    const wipParsed = parseWipMealDeclaration(text);
+    if (wipParsed?.items?.length) return false;
+  }
+
+  // Esclusione advice flat.
+  if (isMealProposalQuery(text) || MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
+
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return true;
   return FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text));
 }
@@ -686,7 +713,10 @@ export function isMealCompletionIntent(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
-  if (isMealAdviceIntent(text)) return false;
+  // Flat: niente isMealAdviceIntent (evita catene verso altri checker).
+  if (isMealProposalQuery(text) || MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
 
   const hasTrigger = MEAL_COMPLETION_PATTERNS.some((pattern) => pattern.test(text));
   if (!hasTrigger) return false;
@@ -701,6 +731,9 @@ export function isMealCompletionIntent(userText) {
 
 /**
  * Debriefing / resoconto giornata.
+ * Funzione piatta: solo pattern — NON chiama isFoodRegistrationIntent / isMealCompletionIntent
+ * (rompeva il ciclo isDayReview → isFoodRegistration → isWip → isDayReview).
+ *
  * @param {string} userText
  * @returns {boolean}
  */
@@ -708,8 +741,8 @@ export function isDayReviewIntent(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
-  if (isFoodRegistrationIntent(text)) return false;
-  if (isMealCompletionIntent(text)) return false;
+  if (FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (MEAL_COMPLETION_PATTERNS.some((pattern) => pattern.test(text))) return false;
   return DAY_REVIEW_PATTERNS.some((pattern) => pattern.test(text));
 }
 

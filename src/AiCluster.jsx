@@ -357,6 +357,21 @@ export default function AiCluster({
                   </div>
                 ) : (
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {msg.local === true || msg.sourceTag === 'local_receptionist' ? (
+                      <div
+                        className="kentu-local-receptionist-badge"
+                        style={{
+                          alignSelf: 'flex-start',
+                          fontSize: 11,
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
+                          opacity: 0.7,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Risposta istantanea · locale
+                      </div>
+                    ) : null}
                     {splitAiMessageSections(msg.text).map((block, si) =>
                       si === 0 ? (
                         <KentuInsightHero key={si} block={block} />

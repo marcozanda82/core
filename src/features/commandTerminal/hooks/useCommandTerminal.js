@@ -265,6 +265,8 @@ export function useCommandTerminal({
       if (!text) return;
       appendAiMessage(text, {
         type: payload.type || null,
+        local: payload.local === true,
+        sourceTag: payload.sourceTag || null,
         suggestedAction: payload.suggestedAction || null,
         mealProposals: Array.isArray(payload.mealProposals) ? payload.mealProposals : null,
         mealDraftProjection: payload.mealDraftProjection && typeof payload.mealDraftProjection === 'object'

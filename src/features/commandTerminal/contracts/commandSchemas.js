@@ -12,7 +12,15 @@ export const foodItemSchema = {
       type: 'number',
       nullable: true,
       description:
-        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente nel testo (es. 160g, 56 g). Se non specificata: null o ometti — NON stimare. MAI includere grammi nel foodName.',
+        'Peso in grammi. PRIORITA: se unita/pezzi e alimento in User_Portions_Dictionary (KENTU_GLOBAL_STATE), usa ESATTAMENTE quel peso con isEstimated=false. '
+        + 'Altrimenti: grammi espliciti utente → isEstimated=false; unita/pezzi senza dizionario → stima media + isEstimated=true; nessuna quantita → null.',
+    },
+    isEstimated: {
+      type: 'boolean',
+      nullable: true,
+      description:
+        'false se grams viene da User_Portions_Dictionary o da grammi espliciti utente. '
+        + 'true SOLO se stima media universale (alimento assente dal dizionario). Ometti/false se grams assente.',
     },
   },
   required: ['foodName'],
@@ -110,7 +118,12 @@ export const addFoodPayloadSchema = {
       type: 'number',
       nullable: true,
       description:
-        'Quantita in grammi SOLO se l utente la ha indicato esplicitamente (es. 200g). Se non specificata: null o ometti il campo — NON stimare.',
+        'Legacy singolo alimento: stessi criteri di items[].grams (esplicito → isEstimated false; unita/pezzi → stima + isEstimated true).',
+    },
+    isEstimated: {
+      type: 'boolean',
+      nullable: true,
+      description: 'Legacy: flag stima per singolo alimento. Preferisci items[].isEstimated.',
     },
     mealType: {
       type: 'string',
@@ -286,22 +299,30 @@ export const terminalCommandEnvelopeSchema = {
   properties: {
     commandType: {
       type: 'string',
-      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP'],
+      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP', 'CHAT_RESPONSE'],
+      description:
+        'ADD_FOOD/ADD_WORKOUT/LOG_SLEEP = inserimento dati (CASO 1). '
+        + 'CHAT_RESPONSE = sola risposta consulenziale in chat senza bozze (CASO 2).',
     },
     payload: {
       type: 'object',
       description:
-        'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, se LOG_SLEEP usa schema sonno.',
+        'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, '
+        + 'se LOG_SLEEP usa schema sonno, se CHAT_RESPONSE usa { message } oppure oggetto vuoto '
+        + '(il testo della risposta va in uiMessage o adviceMessage).',
     },
     uiMessage: {
       type: 'string',
-      description: 'Messaggio utente opzionale separato dal comando',
+      description:
+        'Messaggio utente. Per CHAT_RESPONSE: analisi testuale sintetica basata su KENTU_GLOBAL_STATE.',
     },
     adviceMessage: {
       type: 'string',
       nullable: true,
       description:
-        'Solo per registrazione pasto (ADD_FOOD): riepilogo neutro della corretta estrazione (es. "Ho registrato 4 alimenti per lo snack delle 19:00."). VIETATO in fase di semplice log: allarmi su grassi, budget, semafori o valutazioni What-If non richieste. Compila SOLO se serve confermare il log; altrimenti ometti.',
+        'Per CHAT_RESPONSE: testo consulenziale (alias di uiMessage). '
+        + 'Per ADD_FOOD: riepilogo neutro del log. Se items[].isEstimated=true, spiega le stime. '
+        + 'VIETATO in semplice log: allarmi What-If non richiesti.',
     },
     confidence: {
       type: 'number',
@@ -309,10 +330,24 @@ export const terminalCommandEnvelopeSchema = {
     },
     requiresConfirmation: {
       type: 'boolean',
-      description: 'Se true il comando richiede conferma utente',
+      description: 'Se true il comando richiede conferma utente. Per CHAT_RESPONSE: false.',
     },
   },
   required: ['commandType', 'payload'],
+};
+
+/** Payload minimo per risposte consulenziali senza bozza. */
+export const chatResponsePayloadSchema = {
+  type: 'object',
+  properties: {
+    message: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Analisi testuale basata ESCLUSIVAMENTE su KENTU_GLOBAL_STATE. '
+        + 'Puoi anche mettere il testo in uiMessage/adviceMessage.',
+    },
+  },
 };
 
 export const consultantResponseSchema = {

@@ -27,6 +27,11 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import {
+  fetchUserPortionsDict,
+  learnUserPortionsFromConfirmedMeal,
+  sanitizeUserPortionsDict,
+} from './features/commandTerminal/conversation/userPortionsMemory.js';
 import { getWipMealSnapshotFromBridge, seedWipMealFromBridge } from './features/wipMealBuilder/wipMealBridge.js';
 import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContext.jsx';
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
@@ -487,7 +492,7 @@ export default function SalaComandi() {
   const handleMainTabTouchStart = useCallback((e) => {
     const el = e.target;
     if (el && typeof el.closest === 'function') {
-      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros')) {
+      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros') || el.closest('.home-training-carousel')) {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }
@@ -680,6 +685,10 @@ export default function SalaComandi() {
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
   const [foodDb, setFoodDb] = useState({});
+  /** Memoria porzioni utente: { pomodoro: 150, pane: 30, ... } */
+  const [userPortions, setUserPortions] = useState({});
+  const userPortionsRef = useRef(userPortions);
+  userPortionsRef.current = userPortions;
   const { masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true });
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
@@ -1506,6 +1515,21 @@ export default function SalaComandi() {
     weeklyPlanningListenerReadyRef,
     weeklyPlanningRemoteSigRef,
   });
+
+  // Memoria porzioni (user_portions) — load silente all'avvio.
+  useEffect(() => {
+    if (!userUid || !db || !isAuthenticated) {
+      setUserPortions({});
+      return undefined;
+    }
+    let cancelled = false;
+    fetchUserPortionsDict(db, userUid).then((dict) => {
+      if (!cancelled) setUserPortions(sanitizeUserPortionsDict(dict));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userUid, db, isAuthenticated]);
 
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
   const applyTrainingBlockDailyTargets = useCallback(
@@ -5573,12 +5597,31 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         const dbKey = item?.foodDbKey ?? item?.matchedKey;
         return {
           name,
+          foodName: name,
           qty: grams,
+          grams,
+          isEstimated: item?.isEstimated === true,
+          wasEstimated: item?.wasEstimated === true || item?.isEstimated === true,
           ...(dbKey != null && String(dbKey).trim() !== ''
             ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
             : {}),
         };
       });
+
+      // Memoria porzioni: fire-and-forget (non blocca UI / non fallisce il log).
+      if (userUid && db) {
+        learnUserPortionsFromConfirmedMeal({
+          db,
+          uid: userUid,
+          items,
+          onLocalMerge: (patch) => {
+            setUserPortions((prev) => ({
+              ...sanitizeUserPortionsDict(prev),
+              ...sanitizeUserPortionsDict(patch),
+            }));
+          },
+        });
+      }
 
       const targetNodeId = String(payload?.targetNodeId || '').trim();
       if (targetNodeId) {
@@ -5611,6 +5654,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       getCurrentTimeRoundedTo15Min,
       parseFlexibleTimeToDecimal,
       toCanonicalMealType,
+      userUid,
+      db,
     ],
   );
 
@@ -5903,6 +5948,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           bodyBatteryPercent: Number(bodyBattery?.currentEnergy ?? 0),
           recoveryScore: Number(longevityEngineScore ?? 0),
         },
+        // Cilindri muscolari per Kentu Global State / cardio spillover context.
+        fourCylinder: userModel?.fourCylinder ?? null,
+        // Memoria porzioni a lungo termine (Motore Ibrido Stadio 1).
+        userPortions: sanitizeUserPortionsDict(userPortions),
         todayPlanBlock: todayPlanBlock ?? null,
         hasRealWorkoutToday: hasRealWorkoutInActiveLog,
         isWorkoutDoneToday: hasRealWorkoutInActiveLog,
@@ -7475,6 +7524,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 todayIso={currentTrackerDate || getTodayString()}
                 userProfile={userProfile}
                 fourCylinder={userModel?.fourCylinder ?? null}
+                fullHistory={fullHistory}
+                activeLog={activeLog}
                 isSimulationMode={isSimulationMode}
                 onConfirmSession={handleConfirmTrainingBlockSession}
                 onOpenTrendDiag={handleOpenTrendDiag}
@@ -7691,6 +7742,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
             fourCylinder={userModel?.fourCylinder ?? null}
+            activeLog={activeLog}
+            activeDate={currentTrackerDate}
             activeToolRequest={metabolicToolRequest}
             onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
           />

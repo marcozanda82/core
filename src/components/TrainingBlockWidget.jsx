@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import MuscleStimulusWidget from './MuscleStimulusWidget';
+import CardioProgressBar from './CardioProgressBar';
 import useTrainingBlock from '../hooks/planning/useTrainingBlock';
 import TrainingBlockCreator from './TrainingBlockCreator';
 import { decimalToTimeStr } from '../coreEngine';
@@ -15,6 +16,8 @@ import {
 /** Stesso shell del MetabolicMonitorCard (padding, raggio, bordo). */
 const CARD_CLASS =
   'home-oggi-rigid mb-0 w-full shrink-0 rounded-xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 px-3 py-2.5 shadow-lg shadow-cyan-900/20 backdrop-blur-sm';
+
+const SLIDE_CLASS = 'min-w-0 w-full';
 
 const MUSCLE_ID_TO_LABEL = Object.fromEntries(
   WORKOUT_MUSCLE_GROUP_DEFS.map((d) => [d.id, d.label]),
@@ -59,14 +62,12 @@ function sessionHeadline(session, plannedTime) {
     return withTime('HIIT');
   }
 
-  // pesi (default): solo muscoli + orario
   const muscleLabels = formatMuscleLabels(session.muscles || []);
   if (muscleLabels.length > 0) {
     const list = muscleLabels.join(', ');
     return withTime(list);
   }
 
-  // Fallback se non ci sono muscoli: titolo senza prefissi "Pesi"/"Sollevamento…"
   const rawTitle = String(session.title || '').trim();
   const cleaned = rawTitle
     .replace(/^\s*sollevamento\s+pesi\s*/i, '')
@@ -77,7 +78,25 @@ function sessionHeadline(session, plannedTime) {
 }
 
 /**
- * Card minimale Home: sessione di oggi + Rinvia / Conferma.
+ * Priorità carosello Home:
+ * 1 — allenamento confermato → stimolo
+ * 2 — sessione da fare → programma
+ * 3 — riposo / nessuna sessione → cardio
+ *
+ * @param {{
+ *   workoutCompletedToday: boolean,
+ *   hasWorkoutToDo: boolean,
+ * }} flags
+ * @returns {'stimulus' | 'program' | 'cardio'}
+ */
+function resolveCarouselPriority({ workoutCompletedToday, hasWorkoutToDo }) {
+  if (workoutCompletedToday) return 'stimulus';
+  if (hasWorkoutToDo) return 'program';
+  return 'cardio';
+}
+
+/**
+ * Card minimale Home: carosello Programma / Stimolo / Cardio.
  * Stile allineato a MetabolicMonitorCard.
  */
 export default function TrainingBlockWidget({
@@ -86,6 +105,8 @@ export default function TrainingBlockWidget({
   todayIso = null,
   userProfile = null,
   fourCylinder = null,
+  fullHistory = null,
+  activeLog = null,
   isSimulationMode = false,
   onConfirmSession = null,
   creatorOpen: creatorOpenProp = undefined,
@@ -181,6 +202,12 @@ export default function TrainingBlockWidget({
     showToast(isUpdate ? 'Piano aggiornato' : 'Piano creato');
   };
 
+  const handleOpenTrendDiag = () => {
+    if (typeof onOpenTrendDiag === 'function') {
+      onOpenTrendDiag();
+    }
+  };
+
   const activeBlockForCreator = (
     block?.isActive && !isBlockComplete
       ? block
@@ -216,165 +243,188 @@ export default function TrainingBlockWidget({
     ? 'text-emerald-300'
     : (localError || error ? 'text-rose-300' : '');
 
-  if (isLoading) {
-    return (
-      <>
-        <div className={CARD_CLASS} aria-busy>
-          <p className="text-xs text-slate-400">…</p>
-        </div>
-        {creator}
-      </>
-    );
-  }
+  const hasActivePlan = Boolean(block?.isActive && !isBlockComplete);
+  const sessionType = String(todaySession?.type || '').trim().toLowerCase();
+  const isRest = sessionType === 'rest' || sessionType === 'riposo';
+  const showActions = Boolean(hasActivePlan && todaySession && (canPostpone || canConfirm));
+  const workoutCompletedToday = Boolean(
+    hasActivePlan && confirmedTodaySession && !showActions,
+  );
+  const hasWorkoutToDo = Boolean(
+    hasActivePlan
+    && todaySession
+    && !isRest
+    && !workoutCompletedToday
+    && (canPostpone || canConfirm || showActions),
+  );
 
-  if (!block || isBlockComplete || !block.isActive) {
-    return (
-      <>
-        <div className={CARD_CLASS}>
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                Piano
-              </p>
-              <p className="truncate text-base font-bold leading-tight text-slate-200">
-                {isBlockComplete ? 'Blocco completato' : 'Nessun piano'}
-              </p>
-            </div>
-            {block ? (
-              <button
-                type="button"
-                onClick={handleClearBlock}
-                disabled={busy}
-                className="shrink-0 rounded-lg border border-rose-500/25 bg-transparent px-2 py-1.5 text-[10px] font-medium text-rose-300/80 transition hover:border-rose-400/40 hover:text-rose-200 disabled:opacity-40"
-                aria-label="Elimina piano"
-              >
-                Elimina
-              </button>
-            ) : null}
+  const priorityId = useMemo(
+    () => resolveCarouselPriority({ workoutCompletedToday, hasWorkoutToDo }),
+    [workoutCompletedToday, hasWorkoutToDo],
+  );
+
+  const headline = hasActivePlan
+    ? sessionHeadline(todaySession, plannedTime)
+    : (isBlockComplete ? 'Blocco completato' : 'Nessun piano');
+
+  const programSlide = (
+    <div className={CARD_CLASS}>
+      {hasActivePlan ? (
+        <>
+          <div className="flex items-start gap-2">
             <button
               type="button"
               onClick={() => setCreatorOpen(true)}
-              className="shrink-0 rounded-lg border border-cyan-400/35 bg-cyan-950/50 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-900/60"
+              className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
+              aria-label="Apri piano allenamento"
             >
-              Nuovo
+              <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                {block.name || 'Piano'}
+              </p>
+              <p
+                className={`text-base font-bold leading-snug ${
+                  isRest ? 'text-slate-300' : 'text-cyan-50'
+                }`}
+                style={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {headline}
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={handleClearBlock}
+              disabled={busy}
+              className="mt-0.5 shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] leading-none text-slate-500 transition hover:border-rose-500/30 hover:text-rose-300 disabled:opacity-40"
+              aria-label="Elimina piano"
+              title="Elimina piano"
+            >
+              🗑
             </button>
           </div>
-          {statusLine ? (
-            <p className={`mt-2 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
-              {statusLine}
-            </p>
+
+          {showActions ? (
+            <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-600/45 pt-2">
+              <button
+                type="button"
+                onClick={handlePostpone}
+                disabled={!canPostpone || busy}
+                className="rounded-lg border border-orange-500/40 bg-orange-950/45 py-2.5 text-sm font-bold text-orange-100 transition hover:bg-orange-950/65 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busy ? '…' : 'Rinvia'}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={!canConfirm || busy}
+                className="rounded-lg bg-cyan-600/90 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busy ? '…' : 'Conferma'}
+              </button>
+            </div>
           ) : null}
-        </div>
-        {creator}
-      </>
-    );
-  }
-
-  const isRest = String(todaySession?.type || '').toLowerCase() === 'rest';
-  const headline = sessionHeadline(todaySession, plannedTime);
-  const showActions = Boolean(todaySession && (canPostpone || canConfirm));
-  const workoutCompletedToday = Boolean(confirmedTodaySession && !showActions);
-
-  const handleOpenTrendDiag = () => {
-    if (typeof onOpenTrendDiag === 'function') {
-      onOpenTrendDiag();
-      return;
-    }
-  };
-
-  if (workoutCompletedToday) {
-    return (
-      <>
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label="Apri diagnostica stimolo muscolare"
-          onClick={handleOpenTrendDiag}
-          onKeyDown={(ev) => {
-            if (ev.key === 'Enter' || ev.key === ' ') {
-              ev.preventDefault();
-              handleOpenTrendDiag();
-            }
-          }}
-          className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)] active:scale-95"
-        >
-          <MuscleStimulusWidget fourCylinder={fourCylinder} />
-        </div>
-        {statusLine ? (
-          <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
-            {statusLine}
-          </p>
-        ) : null}
-        {creator}
-      </>
-    );
-  }
-
-  return (
-    <>
-      <div className={CARD_CLASS}>
-        <div className="flex items-start gap-2">
+        </>
+      ) : (
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
+              Piano
+            </p>
+            <p className="truncate text-base font-bold leading-tight text-slate-200">
+              {isLoading ? '…' : headline}
+            </p>
+          </div>
+          {block ? (
+            <button
+              type="button"
+              onClick={handleClearBlock}
+              disabled={busy || isLoading}
+              className="shrink-0 rounded-lg border border-rose-500/25 bg-transparent px-2 py-1.5 text-[10px] font-medium text-rose-300/80 transition hover:border-rose-400/40 hover:text-rose-200 disabled:opacity-40"
+              aria-label="Elimina piano"
+            >
+              Elimina
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setCreatorOpen(true)}
-            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
-            aria-label="Apri piano allenamento"
+            disabled={isLoading}
+            className="shrink-0 rounded-lg border border-cyan-400/35 bg-cyan-950/50 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-900/60 disabled:opacity-40"
           >
-            <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
-              {block.name || 'Piano'}
-            </p>
-            <p
-              className={`text-base font-bold leading-snug ${
-                isRest ? 'text-slate-300' : 'text-cyan-50'
-              }`}
-              style={{
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-              }}
-            >
-              {headline}
-            </p>
-          </button>
-          <button
-            type="button"
-            onClick={handleClearBlock}
-            disabled={busy}
-            className="mt-0.5 shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] leading-none text-slate-500 transition hover:border-rose-500/30 hover:text-rose-300 disabled:opacity-40"
-            aria-label="Elimina piano"
-            title="Elimina piano"
-          >
-            🗑
+            Nuovo
           </button>
         </div>
+      )}
 
-        {showActions ? (
-          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-600/45 pt-2">
-            <button
-              type="button"
-              onClick={handlePostpone}
-              disabled={!canPostpone || busy}
-              className="rounded-lg border border-orange-500/40 bg-orange-950/45 py-2.5 text-sm font-bold text-orange-100 transition hover:bg-orange-950/65 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? '…' : 'Rinvia'}
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={!canConfirm || busy}
-              className="rounded-lg bg-cyan-600/90 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? '…' : 'Conferma'}
-            </button>
-          </div>
-        ) : null}
+      {statusLine ? (
+        <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
+          {statusLine}
+        </p>
+      ) : null}
+    </div>
+  );
 
-        {statusLine ? (
-          <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
-            {statusLine}
-          </p>
-        ) : null}
+  const stimulusSlide = (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label="Apri diagnostica stimolo muscolare"
+      onClick={handleOpenTrendDiag}
+      onKeyDown={(ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          handleOpenTrendDiag();
+        }
+      }}
+      className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)] active:scale-95"
+    >
+      <MuscleStimulusWidget fourCylinder={fourCylinder} />
+    </div>
+  );
+
+  const cardioSlide = (
+    <CardioProgressBar
+      fullHistory={fullHistory}
+      activeLog={activeLog}
+      activeDate={todayIso}
+      compact
+    />
+  );
+
+  const slideById = {
+    program: { id: 'program', label: 'Programma', node: programSlide },
+    stimulus: { id: 'stimulus', label: 'Stimolo', node: stimulusSlide },
+    cardio: { id: 'cardio', label: 'Cardio', node: cardioSlide },
+  };
+
+  const orderedSlideIds = useMemo(() => {
+    const rest = ['program', 'stimulus', 'cardio'].filter((id) => id !== priorityId);
+    return [priorityId, ...rest];
+  }, [priorityId]);
+
+  return (
+    <>
+      <div
+        className="home-training-carousel w-full max-h-[9rem] overflow-auto overscroll-contain touch-auto scrollbar-hide"
+        aria-label="Griglia widget allenamento Home"
+        onTouchStart={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onTouchEnd={(e) => e.stopPropagation()}
+      >
+        <div className="grid w-[200%] grid-cols-2 auto-rows-[minmax(8.25rem,auto)] gap-4 pb-1 pr-1">
+          {orderedSlideIds.map((id) => {
+            const slide = slideById[id];
+            return (
+              <div key={slide.id} className={SLIDE_CLASS} aria-label={slide.label}>
+                {slide.node}
+              </div>
+            );
+          })}
+        </div>
       </div>
       {creator}
     </>

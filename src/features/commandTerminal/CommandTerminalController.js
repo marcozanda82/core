@@ -23,10 +23,12 @@ import {
   getFoodItemsMissingGrams,
   getFoodPayloadMissingFields,
   MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
+  MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE,
   normalizeFoodPayload,
   normalizeWorkoutPayload,
   parseConfirmationFromUserText,
   parseMealTypeFromUserText,
+  payloadHasEstimatedFoodWeights,
   WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES,
 } from './conversation/conversationState.js';
 import {
@@ -103,7 +105,13 @@ import {
   isWorkoutLogIntent,
   normalizeChatWorkoutType,
   parseWorkoutConflictResponse,
+  isConsultativeStateIntent,
 } from './conversation/workoutRegistrationSlots.js';
+import {
+  appendKentuGlobalStateToSystemInstruction,
+  buildKentuGlobalStateFromAppState,
+} from './context/kentuGlobalState.js';
+import { handleLocalQuery } from './context/localReceptionist.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -402,7 +410,10 @@ export class CommandTerminalController {
   }
 
   publishAddFoodContextAdvice(command) {
-    const note = String(command?.adviceMessage || '').trim();
+    let note = String(command?.adviceMessage || '').trim();
+    if (!note && payloadHasEstimatedFoodWeights(command?.payload)) {
+      note = MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE;
+    }
     if (!note) return;
     this.publishSystemMessage(note);
   }
@@ -464,6 +475,13 @@ export class CommandTerminalController {
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
+    // Domande sullo stato → mai forzare bozze pasto/workout (CASO 2).
+    if (isConsultativeStateIntent(userText)) {
+      if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
+      if (isMealAdviceIntent(userText, options?.chatHistory || [])) return 'ASK_MEAL_ADVICE';
+      return 'CHAT_RESPONSE';
+    }
 
     // Workout PRIMA di meal-advice / food registration.
     if (isWorkoutLogIntent(userText)) return 'ADD_WORKOUT';
@@ -557,6 +575,54 @@ export class CommandTerminalController {
       },
       { source: 'CommandTerminalController' },
     );
+  }
+
+  /**
+   * CASO 2 Intent Routing: messaggio chat puro, senza MEAL_DRAFT / WORKOUT_DRAFT.
+   * @param {object} command
+   * @param {string} [userText]
+   * @param {{ local?: boolean }} [options]
+   */
+  publishChatResponse(command = {}, userText = '', options = {}) {
+    const payload = command?.payload && typeof command.payload === 'object'
+      ? command.payload
+      : {};
+    const text = String(
+      command?.uiMessage
+      || command?.adviceMessage
+      || payload?.message
+      || '',
+    ).trim();
+    if (!text) {
+      this.publishSystemMessage(
+        'Ho letto il tuo stato attuale, ma non sono riuscito a formulare una risposta chiara. Riprova riformulando la domanda.',
+      );
+      return { ok: false, reason: 'empty_chat_response', commandType: 'CHAT_RESPONSE' };
+    }
+    const isLocal = options?.local === true;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'CHAT_RESPONSE',
+        text,
+        message: text,
+        local: isLocal,
+        sourceTag: isLocal ? 'local_receptionist' : 'gemini',
+        // Nessuna proposta / bozza: solo bollo AI in chat.
+        mealProposals: null,
+        suggestedAction: null,
+        mealDraftProjection: null,
+        wipSuggestions: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      intent: 'CHAT_RESPONSE',
+      commandType: 'CHAT_RESPONSE',
+      local: isLocal,
+      userText: String(userText || '').trim(),
+    };
   }
 
   publishNewFoodPreview({ entryPer100, donor = null, sourceImageCount = 0 }) {
@@ -825,7 +891,13 @@ export class CommandTerminalController {
     if (!Number.isFinite(index) || index < 0 || index >= items.length || nextGrams <= 0) {
       return null;
     }
-    items[index] = { ...items[index], grams: nextGrams };
+    items[index] = {
+      ...items[index],
+      grams: nextGrams,
+      // Correzione utente: non più stima, ma resta learnable se era stimato.
+      wasEstimated: items[index].isEstimated === true || items[index].wasEstimated === true,
+      isEstimated: false,
+    };
     this.pendingAction.payload = { ...this.pendingAction.payload, items };
     this.pendingCommandPayload = this.pendingAction.payload;
     return this.getMealDraftSnapshot();
@@ -1516,10 +1588,21 @@ export class CommandTerminalController {
 
     const consultantPrompt = generateConsultantPrompt(adviceContext, targetFood);
 
+    let globalStateText = '';
+    try {
+      globalStateText = buildKentuGlobalStateFromAppState(currentState).text;
+    } catch (error) {
+      console.warn('[CommandTerminalController] Kentu Global State failed', error);
+    }
+
     const extraSystem = String(options?.systemInstructionExtra || '').trim();
+    const baseConsultantSystem = appendKentuGlobalStateToSystemInstruction(
+      generateConsultantSystemInstruction(),
+      globalStateText,
+    );
     const consultantSystemInstruction = extraSystem
-      ? `${generateConsultantSystemInstruction()}\n\n${extraSystem}`
-      : undefined;
+      ? `${baseConsultantSystem}\n\n${extraSystem}`
+      : baseConsultantSystem;
 
     try {
       const { adviceMessage, suggestedAction: rawAction, mealProposals: rawProposals, suggestions: rawSuggestions, model } =
@@ -1527,7 +1610,7 @@ export class CommandTerminalController {
           prompt: consultantPrompt,
           temperature: 0.35,
           chatHistory,
-          ...(consultantSystemInstruction ? { systemInstruction: consultantSystemInstruction } : {}),
+          systemInstruction: consultantSystemInstruction,
           ...(options?.signal ? { signal: options.signal } : {}),
         });
       const suggestedAction = sanitizeSuggestedAction(rawAction, adviceContext);
@@ -1711,6 +1794,24 @@ export class CommandTerminalController {
       return { ok: false, reason, userNotified: true };
     }
 
+    // Local Receptionist: priorità massima assoluta su query di sola lettura (zero Gemini).
+    if (userText && images.length === 0) {
+      try {
+        const globalPack = buildKentuGlobalStateFromAppState(currentState).object;
+        const localAnswer = handleLocalQuery(userText, globalPack);
+        if (localAnswer) {
+          console.log('[LocalReceptionist] intercepted → skip Gemini');
+          return this.publishChatResponse(
+            { uiMessage: localAnswer, payload: { message: localAnswer }, requiresConfirmation: false },
+            userText,
+            { local: true },
+          );
+        }
+      } catch (error) {
+        console.warn('[LocalReceptionist] failed, falling through to LLM', error);
+      }
+    }
+
     if (this.pendingMealUpdate?.targetMealType) {
       if (/^(?:annulla|cancel|stop)\b/i.test(userText)) {
         this.clearPendingMealUpdate();
@@ -1797,8 +1898,10 @@ export class CommandTerminalController {
       console.error('[CommandTerminalController] LLM error', error);
 
       if (commandHint === 'ADD_WORKOUT' || isWorkoutLogIntent(userText)) {
-        const localPayload = buildLocalWorkoutPayloadFromText(userText);
-        return this.beginWorkoutRegistration(localPayload, currentState, userText);
+        if (!isConsultativeStateIntent(userText)) {
+          const localPayload = buildLocalWorkoutPayloadFromText(userText);
+          return this.beginWorkoutRegistration(localPayload, currentState, userText);
+        }
       }
 
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
@@ -1836,6 +1939,11 @@ export class CommandTerminalController {
         sourceImageCount: images.length,
       });
       return { ok: true, intent: 'CREATE_NEW_FOOD', commandType: 'CREATE_NEW_FOOD', entryPer100: inherited, donor };
+    }
+
+    // CASO 2 — risposta consulenziale: niente bozze pasto/workout.
+    if (commandType === 'CHAT_RESPONSE') {
+      return this.publishChatResponse(commandResponse.command, userText);
     }
 
     if (
@@ -1920,11 +2028,13 @@ export class CommandTerminalController {
       }
 
       if (commandType === 'ADD_WORKOUT' || isWorkoutLogIntent(userText)) {
-        const localPayload = normalizeWorkoutPayload({
-          ...rawPayload,
-          ...buildLocalWorkoutPayloadFromText(userText),
-        }, userText);
-        return this.beginWorkoutRegistration(localPayload, currentState, userText);
+        if (!isConsultativeStateIntent(userText)) {
+          const localPayload = normalizeWorkoutPayload({
+            ...rawPayload,
+            ...buildLocalWorkoutPayloadFromText(userText),
+          }, userText);
+          return this.beginWorkoutRegistration(localPayload, currentState, userText);
+        }
       }
 
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {

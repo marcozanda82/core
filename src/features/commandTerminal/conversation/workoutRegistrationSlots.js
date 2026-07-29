@@ -54,6 +54,32 @@ function asTrimmedString(value) {
 }
 
 /**
+ * True se il testo è una domanda/consulto sullo stato (non un log azione).
+ * Evita over-triggering di bozze pasto/workout.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isConsultativeStateIntent(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  if (/\?/.test(t)) return true;
+  if (
+    /^(quanto|quante|come|cosa|che|perch[eé]|quando|dove|quale|quali|dovrei|posso|mi\s+consigli|consigliami|secondo\s+te)\b/.test(t)
+  ) {
+    return true;
+  }
+  if (
+    /\b(considerando|riguardo|a\s+proposito|dimmi|spiegami|analizza|valuta|status|stato\s+(?:dei|delle|del|della)?\s*(?:cilindr|macro|cardio|pro|protein))\b/.test(t)
+  ) {
+    return true;
+  }
+  if (/\b(quanto|quante)\b[\s\S]{0,40}\b(manc|riman|fatto|fatti|fatta|pro|protein|cardio|cilindr|kcal|macro)\b/.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * True se il testo sembra una registrazione allenamento (non consiglio pasto).
  * @param {string} userText
  * @returns {boolean}
@@ -61,10 +87,19 @@ function asTrimmedString(value) {
 export function isWorkoutLogIntent(userText) {
   const t = asTrimmedString(userText).toLowerCase();
   if (!t) return false;
-  if (/\b(allenamento|workout|training|pesi|cardio|corsa|sessione)\b/.test(t)) return true;
+  // Domande discorsive sullo stato ≠ inserimento dati.
+  if (isConsultativeStateIntent(t)) return false;
+
+  // Dichiarazione esplicita di azione compiuta.
   if (
-    /\b(spinta|trazione|gambe|push|pull|legs|petto|dorso|upper|lower|leg\s*day)\b/.test(t)
-    && /\b(fatto|fatta|completato|oggi|ieri|alle|ore|ho\s+fatto|session)\b/.test(t)
+    /\b(ho\s+fatto|ho\s+completato|mi\s+sono\s+allenat[oa]|allenat[oa]\s+(?:oggi|ieri)|registra(?:re)?\s+(?:un\s+)?(?:allenamento|workout))\b/.test(t)
+  ) {
+    return true;
+  }
+
+  if (
+    /\b(spinta|trazione|gambe|push|pull|legs|petto|dorso|upper|lower|leg\s*day|allenamento|workout|pesi|cardio|corsa|sessione|training)\b/.test(t)
+    && /\b(ho\s+fatto|fatto|fatta|completato|inserisci|registra)\b/.test(t)
   ) {
     return true;
   }

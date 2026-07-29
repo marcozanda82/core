@@ -4,10 +4,11 @@ import {
   createDefaultFourCylinderState,
   fourCylinderFromPhysiologyModel,
 } from './features/salaComandi/engines/fourCylinderEngine';
-import { buildFourCylinderTelemetrySeries, getDaysSinceLastStimulus, getLastSleepSnapshot, getTodayCognitiveSnapshot, formatInactivityDaysLabel, formatInactivitySuffix } from './features/salaComandi/utils/fourCylinderTelemetryHistory';
+import { buildFourCylinderTelemetrySeries, getDaysSinceLastStimulus, getLastSleepSnapshot, formatInactivityDaysLabel, formatInactivitySuffix } from './features/salaComandi/utils/fourCylinderTelemetryHistory';
 import { getTodayNutritionSnapshot } from './features/salaComandi/utils/fourCylinderNutritionBridge';
 import { getTodayString } from './coreEngine';
 import TelemetryChart from './TelemetryChart';
+import CardioProgressBar from './components/CardioProgressBar';
 
 const SYSTEMIC_CRITICAL_THRESHOLD = 0.7;
 
@@ -98,6 +99,7 @@ function shouldShowMuscleInactivityAlarm(value, daysSince) {
  *   fourCylinder?: object | null,
  *   fullHistory?: object | null,
  *   dailyLog?: Array | null,
+ *   activeDate?: string | null,
  *   proteinTarget?: number | null,
  * }} props
  */
@@ -105,6 +107,7 @@ export default function MetabolicDiagnostics({
   fourCylinder: fourCylinderProp = null,
   fullHistory = null,
   dailyLog = null,
+  activeDate = null,
   proteinTarget = null,
 }) {
   const [historyDays, setHistoryDays] = useState(30);
@@ -148,11 +151,6 @@ export default function MetabolicDiagnostics({
     [fullHistory],
   );
 
-  const todayCognitive = useMemo(
-    () => getTodayCognitiveSnapshot(fullHistory, { todayIso: getTodayString() }),
-    [fullHistory],
-  );
-
   const todayNutrition = useMemo(
     () => getTodayNutritionSnapshot(dailyLog, fullHistory, proteinTarget, {
       todayIso: getTodayString(),
@@ -174,8 +172,7 @@ export default function MetabolicDiagnostics({
         ? 'Manca da 1 giorno'
         : `Manca da ${lastSleep.daysSince} giorni`;
 
-  const cognitiveElevated = todayCognitive.hasLoad && todayCognitive.isElevated;
-  const cognitiveIdle = !todayCognitive.hasLoad;
+  const cardioActiveDate = activeDate || getTodayString();
 
   return (
     <div
@@ -257,136 +254,61 @@ export default function MetabolicDiagnostics({
         </div>
       )}
 
-      {/* Pilastri 2+4 — Sonno | Stress cognitivo (grid 2 col) */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">
-            Centralina recupero · Sonno
-          </p>
-          <article
-            className={[
-              'relative flex min-h-[7.5rem] flex-col overflow-hidden rounded-xl border-2 px-2.5 py-2.5 font-mono',
-              sleepDebtCritical
-                ? 'border-red-500/80 bg-gradient-to-br from-red-950/75 via-red-900/40 to-black/70 shadow-[0_0_20px_rgba(220,38,38,0.3)]'
-                : sleepRecoveryActive
-                  ? 'border-emerald-700/55 bg-gradient-to-br from-emerald-950/40 via-slate-950/70 to-black/60'
-                  : 'border-slate-600/50 bg-slate-900/60',
-            ].join(' ')}
-          >
-            <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_1px,transparent_1px,transparent_4px)]" />
-            <div className="relative flex flex-1 flex-col justify-between gap-2">
-              <div>
-                <p
-                  className={[
-                    'text-[10px] font-bold uppercase leading-snug tracking-[0.1em]',
-                    sleepDebtCritical
-                      ? 'text-red-200'
-                      : sleepRecoveryActive
-                        ? 'text-emerald-200'
-                        : 'text-slate-300',
-                  ].join(' ')}
-                >
-                  {sleepDebtCritical
-                    ? '⚠️ Debito sonno'
+      {/* Centralina recupero — Sonno (full width; Stress cognitivo rimosso: dati non tracciati) */}
+      <div className="mt-3 flex flex-col gap-1.5">
+        <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">
+          Centralina recupero · Sonno
+        </p>
+        <article
+          className={[
+            'relative flex min-h-[5.5rem] flex-col overflow-hidden rounded-xl border px-3 py-2.5 font-mono',
+            sleepDebtCritical
+              ? 'border-red-500/70 bg-gradient-to-br from-red-950/75 via-red-900/40 to-black/70 shadow-[0_0_20px_rgba(220,38,38,0.3)]'
+              : sleepRecoveryActive
+                ? 'border-emerald-700/50 bg-gradient-to-br from-emerald-950/40 via-slate-950/70 to-black/60'
+                : 'border-white/10 bg-slate-900/60',
+          ].join(' ')}
+        >
+          <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_1px,transparent_1px,transparent_4px)]" />
+          <div className="relative flex flex-1 items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p
+                className={[
+                  'text-[10px] font-bold uppercase leading-snug tracking-[0.1em]',
+                  sleepDebtCritical
+                    ? 'text-red-200'
                     : sleepRecoveryActive
-                      ? '✓ Recupero attivo'
-                      : '○ Nominale'}
-                </p>
-                <p className="mt-1 text-[9px] uppercase tracking-wider text-slate-500">
-                  {lastSleep.date || '—'}
-                </p>
-              </div>
-              <div className="flex items-end justify-between gap-1">
-                <p
-                  className={[
-                    'text-xl font-bold tabular-nums',
-                    sleepDebtCritical ? 'text-red-100' : sleepRecoveryActive ? 'text-emerald-100' : 'text-slate-100',
-                  ].join(' ')}
-                >
-                  {lastSleep.found ? lastSleep.hours.toFixed(1) : '—'}
-                  <span className="ml-0.5 text-[10px] font-normal text-slate-500">h</span>
-                </p>
-                <p className={`text-[9px] leading-tight ${sleepDebtCritical ? 'text-red-300/90' : 'text-slate-500'}`}>
-                  {sleepDaysLabel}
-                </p>
-              </div>
-              <p className="border-t border-white/10 pt-1.5 text-[9px] tabular-nums text-slate-500">
+                      ? 'text-emerald-200'
+                      : 'text-slate-300',
+                ].join(' ')}
+              >
+                {sleepDebtCritical
+                  ? '⚠️ Debito sonno'
+                  : sleepRecoveryActive
+                    ? '✓ Recupero attivo'
+                    : '○ Nominale'}
+              </p>
+              <p className="mt-1 text-[9px] uppercase tracking-wider text-slate-500">
+                {lastSleep.date || '—'} · {sleepDaysLabel}
+              </p>
+              <p className="mt-1.5 text-[9px] tabular-nums text-slate-500">
                 EFF {lastSleep.found ? formatPct(lastSleep.efficiency) : '—'}
                 {lastSleep.found && lastSleep.recoverySystemic > 0
                   ? ` · ΔSYS ${formatPct(lastSleep.recoverySystemic)}`
                   : ''}
               </p>
             </div>
-          </article>
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-500">
-            Pressione sistema · Stress
-          </p>
-          <article
-            className={[
-              'relative flex min-h-[7.5rem] flex-col overflow-hidden rounded-xl border-2 px-2.5 py-2.5 font-mono',
-              cognitiveIdle
-                ? 'border-slate-700/40 bg-slate-950/50 opacity-80'
-                : cognitiveElevated
-                  ? 'border-orange-500/75 bg-gradient-to-br from-orange-950/70 via-red-950/40 to-black/70 shadow-[0_0_20px_rgba(249,115,22,0.28)]'
-                  : 'border-slate-600/50 bg-slate-900/60',
-            ].join(' ')}
-          >
-            <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_1px,transparent_1px,transparent_4px)]" />
-            <div className="relative flex flex-1 flex-col justify-between gap-2">
-              <div>
-                <p
-                  className={[
-                    'text-[10px] font-bold uppercase leading-snug tracking-[0.1em]',
-                    cognitiveIdle
-                      ? 'text-slate-500'
-                      : cognitiveElevated
-                        ? 'text-orange-200'
-                        : 'text-slate-300',
-                  ].join(' ')}
-                >
-                  {cognitiveIdle
-                    ? '✓ Nessun carico oggi'
-                    : cognitiveElevated
-                      ? '⚠️ Carico neurale elevato'
-                      : '○ Carico nominale'}
-                </p>
-                <p className="mt-1 text-[9px] uppercase tracking-wider text-slate-500">
-                  {todayCognitive.sessionCount > 0
-                    ? `${todayCognitive.sessionCount} sess.`
-                    : '0 sess.'}
-                </p>
-              </div>
-              <div className="flex items-end justify-between gap-1">
-                <p
-                  className={[
-                    'text-xl font-bold tabular-nums',
-                    cognitiveIdle
-                      ? 'text-slate-600'
-                      : cognitiveElevated
-                        ? 'text-orange-100'
-                        : 'text-slate-100',
-                  ].join(' ')}
-                >
-                  {cognitiveIdle ? '0.0' : todayCognitive.totalHours.toFixed(1)}
-                  <span className="ml-0.5 text-[10px] font-normal text-slate-500">h</span>
-                </p>
-              </div>
-              <p
-                className={[
-                  'border-t border-white/10 pt-1.5 text-[9px] tabular-nums',
-                  cognitiveElevated ? 'text-orange-300/90' : 'text-slate-500',
-                ].join(' ')}
-              >
-                {cognitiveIdle
-                  ? 'ΔSYS +0%'
-                  : `ΔSYS +${formatPct(todayCognitive.totalStressBump)}`}
-              </p>
-            </div>
-          </article>
-        </div>
+            <p
+              className={[
+                'shrink-0 text-2xl font-bold tabular-nums',
+                sleepDebtCritical ? 'text-red-100' : sleepRecoveryActive ? 'text-emerald-100' : 'text-slate-100',
+              ].join(' ')}
+            >
+              {lastSleep.found ? lastSleep.hours.toFixed(1) : '—'}
+              <span className="ml-0.5 text-[10px] font-normal text-slate-500">h</span>
+            </p>
+          </div>
+        </article>
       </div>
 
       {/* 3° pilastro — Carburante e metabolismo */}
@@ -396,12 +318,12 @@ export default function MetabolicDiagnostics({
         </p>
         <article
           className={[
-            'relative overflow-hidden rounded-xl border-2 px-3 py-3 font-mono',
+            'relative overflow-hidden rounded-xl border px-3 py-3 font-mono',
             todayNutrition.shieldActive
-              ? 'border-emerald-700/55 bg-gradient-to-br from-emerald-950/40 via-slate-950/70 to-black/60'
+              ? 'border-emerald-700/50 bg-gradient-to-br from-emerald-950/40 via-slate-950/70 to-black/60'
               : todayNutrition.isFasted
-                ? 'border-orange-500/75 bg-gradient-to-br from-orange-950/70 via-red-950/40 to-black/70 shadow-[0_0_20px_rgba(249,115,22,0.25)]'
-                : 'border-slate-600/50 bg-slate-900/60',
+                ? 'border-orange-500/70 bg-gradient-to-br from-orange-950/70 via-red-950/40 to-black/70 shadow-[0_0_20px_rgba(249,115,22,0.25)]'
+                : 'border-white/10 bg-slate-900/60',
           ].join(' ')}
         >
           <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.03)_0px,rgba(255,255,255,0.03)_1px,transparent_1px,transparent_4px)]" />
@@ -466,6 +388,16 @@ export default function MetabolicDiagnostics({
             />
           </div>
         </article>
+      </div>
+
+      {/* Cardio — secondario, sotto le centraline */}
+      <div className="mt-3">
+        <CardioProgressBar
+          fullHistory={fullHistory}
+          activeLog={dailyLog}
+          activeDate={cardioActiveDate}
+          compact
+        />
       </div>
 
       {/* Sismografi muscolari — ordinati dal più critico (≈0) al più ok (≈1) */}

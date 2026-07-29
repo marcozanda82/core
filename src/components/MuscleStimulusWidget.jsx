@@ -44,7 +44,7 @@ export default function MuscleStimulusWidget({ fourCylinder: fourCylinderProp = 
   );
 
   return (
-    <div className="mt-2 grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 gap-2">
       {cylinders.map((cyl) => {
         const tone = getToneClasses(cyl.percent);
         return (

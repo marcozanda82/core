@@ -5,6 +5,7 @@ import {
   terminalCommandEnvelopeSchema,
   consultantResponseSchema,
   createNewFoodPayloadSchema,
+  chatResponsePayloadSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 import { generateConsultantSystemInstruction } from '../../../conversation/ConsultantEngine.js';
@@ -25,6 +26,7 @@ import {
   inferWorkoutTypeFromText,
   normalizeChatWorkoutType,
 } from '../conversation/workoutRegistrationSlots.js';
+import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
 
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 const CONSULTANT_MODEL = 'gemini-3.6-flash';
@@ -42,15 +44,35 @@ function unwrapJsonText(rawText) {
   return text;
 }
 
-/** True se il testo utente menziona una quantità numerica esplicita. */
+/** True se il testo utente menziona grammi espliciti (non pezzi/unita). */
+function userTextMentionsExplicitGrams(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  return /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/.test(t);
+}
+
+/** True se il testo utente menziona una quantità numerica esplicita (grammi o pezzi). */
 function userTextMentionsExplicitQuantity(userText) {
   const t = asTrimmedString(userText).toLowerCase();
   if (!t) return false;
   return (
-    /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/.test(t)
-    || /\b(\d+(?:[.,]\d+)?)\s*(?:porzioni?|fette?|pezzi|uova?)\b/.test(t)
+    userTextMentionsExplicitGrams(t)
+    || /\b(\d+(?:[.,]\d+)?)\s*(?:porzioni?|fett[ea]|pezzi?|uova?|slice)\b/.test(t)
     || /\b(?:mangiato|mangiata|preso|presa|bevuto|bevuta)\s+(?:circa\s+)?(\d+)/.test(t)
-    || /\b(\d+)\s*(?:grammi|g)\b/.test(t)
+    || /\b(?:un|una|uno|due|tre|quattro|cinque|mezzo|mezza)\s+(?:di\s+)?[\wàèéìòù-]{3,}/.test(t)
+  );
+}
+
+/** Unita/pezzi senza grammi espliciti → stima ammessa con isEstimated. */
+function userTextMentionsUnitQuantity(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  if (userTextMentionsExplicitGrams(t) && !/\b(?:fett|pezz|uov|porzion|slice|un|una|uno|due)\b/.test(t)) {
+    // Solo grammi, nessuna unita: non e "unit quantity only".
+  }
+  return (
+    /\b\d+\s*(?:porzioni?|fett[ea]|pezzi?|uova?|slice|cucchiai(?:ni)?)\b/.test(t)
+    || /\b(?:un|una|uno|due|tre|quattro|cinque|mezzo|mezza)\s+(?:di\s+)?[\wàèéìòù-]{3,}/.test(t)
   );
 }
 
@@ -304,6 +326,12 @@ function mergeOverlappingFoodItems(itemA, itemB) {
   const grams = pickMergedGrams(itemA, itemB);
   if (grams != null) merged.grams = grams;
   else delete merged.grams;
+  // Se uno dei due era stimato, mantieni il flag (l'utente potra correggere in UI).
+  if (itemA?.isEstimated === true || itemB?.isEstimated === true) {
+    merged.isEstimated = true;
+  } else if ('isEstimated' in merged) {
+    merged.isEstimated = false;
+  }
   return merged;
 }
 
@@ -758,12 +786,26 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     next.foodName = foodName;
 
     const gramsNum = Number(next.grams ?? next.qty ?? next.weight);
-    if (!Number.isFinite(gramsNum) || gramsNum <= 0) {
+    const modelSaysEstimated = next.isEstimated === true;
+    const hasGrams = Number.isFinite(gramsNum) && gramsNum > 0;
+    const hasExplicitGrams = userTextMentionsExplicitGrams(combinedText);
+    const hasUnitQty = userTextMentionsUnitQuantity(combinedText);
+    const hasAnyQty = userTextMentionsExplicitQuantity(combinedText);
+
+    if (!hasGrams) {
       delete next.grams;
-    } else if (!userTextMentionsExplicitQuantity(combinedText)) {
-      delete next.grams;
-    } else {
+      delete next.isEstimated;
+    } else if (modelSaysEstimated || (hasUnitQty && !hasExplicitGrams)) {
+      // Unita/pezzi → tieni la stima media e marca isEstimated.
       next.grams = Math.round(gramsNum);
+      next.isEstimated = true;
+    } else if (hasExplicitGrams || hasAnyQty) {
+      next.grams = Math.round(gramsNum);
+      next.isEstimated = false;
+    } else {
+      // Nessuna quantita nel testo: non inventare grammi.
+      delete next.grams;
+      delete next.isEstimated;
     }
     delete next.name;
     delete next.qty;
@@ -831,13 +873,16 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
 }
 
 function getEnvelopeSchemaForIntent(commandHint) {
+  // CHAT_RESPONSE sempre ammesso come escape da over-triggering (CASO 2 Intent Routing).
   if (commandHint === 'ADD_FOOD') {
     return {
       ...terminalCommandEnvelopeSchema,
       properties: {
         ...terminalCommandEnvelopeSchema.properties,
-        commandType: { type: 'string', enum: ['ADD_FOOD'] },
-        payload: addFoodPayloadSchema,
+        commandType: { type: 'string', enum: ['ADD_FOOD', 'CHAT_RESPONSE'] },
+        payload: {
+          anyOf: [addFoodPayloadSchema, chatResponsePayloadSchema],
+        },
       },
     };
   }
@@ -846,8 +891,10 @@ function getEnvelopeSchemaForIntent(commandHint) {
       ...terminalCommandEnvelopeSchema,
       properties: {
         ...terminalCommandEnvelopeSchema.properties,
-        commandType: { type: 'string', enum: ['ADD_WORKOUT'] },
-        payload: addWorkoutPayloadSchema,
+        commandType: { type: 'string', enum: ['ADD_WORKOUT', 'CHAT_RESPONSE'] },
+        payload: {
+          anyOf: [addWorkoutPayloadSchema, chatResponsePayloadSchema],
+        },
       },
     };
   }
@@ -869,6 +916,31 @@ function getEnvelopeSchemaForIntent(commandHint) {
         commandType: { type: 'string', enum: ['CREATE_NEW_FOOD'] },
         payload: createNewFoodPayloadSchema,
       },
+    };
+  }
+  if (commandHint === 'CHAT_RESPONSE') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['CHAT_RESPONSE'] },
+        payload: chatResponsePayloadSchema,
+        uiMessage: {
+          type: 'string',
+          description:
+            'OBBLIGATORIO per CHAT_RESPONSE: analisi sintetica basata su KENTU_GLOBAL_STATE.',
+        },
+        adviceMessage: {
+          type: 'string',
+          nullable: true,
+          description: 'Alias opzionale di uiMessage per CHAT_RESPONSE.',
+        },
+        requiresConfirmation: {
+          type: 'boolean',
+          description: 'Per CHAT_RESPONSE deve essere false.',
+        },
+      },
+      required: ['commandType', 'payload'],
     };
   }
   return terminalCommandEnvelopeSchema;
@@ -894,6 +966,18 @@ function imageDataUrlToInlinePart(imageSrc) {
   };
 }
 
+/** Blocco Intent Routing — massima priorità nel system prompt (anti over-triggering bozze). */
+export const INTENT_ROUTING_SYSTEM_BLOCK = `### REGOLA FONDAMENTALE DI INTENT ROUTING (CLASSIFICAZIONE DELL'INTENZIONE)
+Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente incrociando la sua richiesta con i dati del KENTU_GLOBAL_STATE.
+
+CASO 1: [AZIONE - INSERIMENTO DATI]
+L'utente dichiara esplicitamente un'azione compiuta (es. 'Ho mangiato una mela', 'Ho fatto 45 min di petto').
+-> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato per innescare la UI di inserimento. Quando un valore non è disponibile per la compilazione automatica, fai una stima e usa il valore medio. Non fare domande all'utente per i dati mancanti.
+
+CASO 2: [CONSULTO - DOMANDA SULLO STATO]
+L'utente pone una domanda, chiede un consiglio o fa una riflessione sul suo stato metabolico, sui macro rimanenti o sui cilindri (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?', 'Considerando l'allenamento di ieri...').
+-> COMPORTAMENTO OBBLIGATORIO: È SEVERAMENTE VIETATO creare bozze di inserimento pasto o workout. Devi agire esclusivamente come consulente. Restituisci il formato JSON per la semplice risposta in chat (es. commandType: 'CHAT_RESPONSE'), fornendo un'analisi testuale sintetica basata ESCLUSIVAMENTE sui dati letti nel KENTU_GLOBAL_STATE.`;
+
 export class GeminiStructuredClient {
   constructor({ model = DEFAULT_MODEL } = {}) {
     this.model = model || DEFAULT_MODEL;
@@ -905,11 +989,15 @@ export class GeminiStructuredClient {
     const includeFoodRules = fixedHint === 'ADD_FOOD' || fixedHint === 'UNKNOWN';
     const includeWorkoutRules = fixedHint === 'ADD_WORKOUT' || fixedHint === 'UNKNOWN';
     const includeNewFoodRules = fixedHint === 'CREATE_NEW_FOOD' || (hasImages && fixedHint === 'UNKNOWN');
-    const parts = [
+
+    const lead = [
       'Sei Kentu Command Terminal.',
       'Rispondi SOLO con JSON valido e conforme allo schema fornito.',
       'Non aggiungere markdown, spiegazioni o testo fuori dal JSON.',
-    ];
+      INTENT_ROUTING_SYSTEM_BLOCK,
+    ].join('\n\n');
+
+    const parts = [];
 
     if (includeNewFoodRules) {
       parts.push(
@@ -929,13 +1017,14 @@ export class GeminiStructuredClient {
         "ECCEZIONE ALL ESTRAZIONE LETTERALE — SMART RESOLUTION (PRIORITA SU [USER_HABITS_FOR_CURRENT_MEAL]): Se l utente digita un termine generico (es. 'pasta', 'latte', 'yogurt') e in [USER_HABITS_FOR_CURRENT_MEAL] esiste una variante specifica che usa abitualmente (es. 'pasta integrale la molisana', 'latte parzialmente scremato', 'yogurt greco fage'), DEVI OBBLIGATORIAMENTE restituire in payload.items[].foodName il nome specifico completo dell abitudine corrispondente. Arricchire il nome di un SINGOLO alimento gia citato basandosi sullo storico NON viola Estrazione Esclusiva: non stai aggiungendo voci, stai risolvendo l entita. Se piu abitudini contengono il termine generico, scegli quella piu frequente o piu plausibile per il pasto corrente. Se [USER_HABITS] e vuoto o non contiene match, usa il termine grezzo dell utente (pulito da grammi e congiunzioni).",
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento. Non troncare al primo.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro, vedi SANITIZZAZIONE NOMI) e grams (solo se esplicito nel testo). NON inventare foodDbKey ne macronutrienti: li risolve il codice locale dal DB.",
-        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato con grammature esplicite (es. 'per pranzo ho mangiato 230g di gnocchi, 100g di passato di pomodoro'), estrai OGNI alimento con il suo peso in items[].",
-        "REGOLA ADD_FOOD: Se l'utente dichiara di aver mangiato qualcosa MA NON specifica la quantità in grammi/porzioni, NON DEVI in alcun modo inventare, dedurre o stimare il peso. Devi obbligatoriamente restituire il campo 'grams' vuoto (null/undefined/omesso). Sarà il sistema a richiedere il dato mancante all'utente.",
-        "Includi grams SOLO se l'utente ha scritto un numero esplicito (es. 200g, 150 grammi). Valori tipici come 100g di default sono VIETATI se non detti dall'utente.",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro, vedi SANITIZZAZIONE NOMI) e grams secondo la regola isEstimated. NON inventare foodDbKey ne macronutrienti: li risolve il codice locale dal DB.",
+        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
+        "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE il peso indicato in quel dizionario e imposta isEstimated: false. Usa le medie standard (impostando isEstimated: true) SOLO se l'alimento NON è presente nel dizionario. Esempi: '1 pomodoro' con dizionario pomodoro=150 → grams:150, isEstimated:false; senza dizionario → grams≈120, isEstimated:true; '200g di pasta' → grams:200, isEstimated:false.",
+        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi (es. solo 'ho mangiato pasta'), lascia grams vuoto/null e isEstimated:false — il sistema chiedera i grammi. Non inventare pesi a caso senza unita.",
+        "REGOLA ADD_FOOD (adviceMessage con stime): Se almeno un item ha isEstimated:true, compila adviceMessage esattamente cosi (o equivalente): 'Ho preparato la bozza. Ho stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.'",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
-        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi e ha citato esplicitamente quell alimento. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
-        "HARD CONSTRAINT — adviceMessage IN REGISTRAZIONE PASTO: In fase di semplice log pasto (ADD_FOOD) NON generare allarmi su grassi, budget metabolico, semafori o valutazioni What-If. NON avvisare su eccesso grassi/lipidi se non c e una richiesta esplicita di consiglio o simulazione What-If. Se compili adviceMessage, limitati a un riepilogo neutro che conferma la corretta estrazione (es. 'Snack delle 19:00: 4 alimenti registrati — pane, tonno, pomodoro, pesca.'). In caso di dubbio, ometti adviceMessage.",
+        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi/unita e ha citato esplicitamente quell alimento; in quel caso isEstimated:true. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
+        "HARD CONSTRAINT — adviceMessage IN REGISTRAZIONE PASTO: In fase di semplice log pasto (ADD_FOOD) NON generare allarmi su grassi, budget metabolico, semafori o valutazioni What-If. Eccezione: il messaggio obbligatorio sulle stime isEstimated. Altrimenti, se compili adviceMessage, limitati a un riepilogo neutro del log.",
         "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — il codice applica Smart Defaults da [CURRENT_SYSTEM_TIME].",
         "Questa logica NON si applica a richieste di consiglio pasto (ADVICE): quelle sono gestite dal consulente, non da ADD_FOOD.",
       );
@@ -970,12 +1059,12 @@ export class GeminiStructuredClient {
     }
 
     parts.push(
-      fixedHint
-        ? `Intent target prioritario: ${fixedHint}.`
-        : 'Se l intent non e chiaro, usa il comando piu plausibile e segnala requiresConfirmation=true.',
+      fixedHint && fixedHint !== 'UNKNOWN'
+        ? `Intent target suggerito (NON forzare se CASO 2): ${fixedHint}. Se e CONSULTO usa CHAT_RESPONSE.`
+        : 'Se l intent non e chiaro, classifica CASO 1 vs CASO 2. In dubbio su domanda/stato → CHAT_RESPONSE.',
     );
 
-    return parts.join(' ');
+    return `${lead}\n\n${parts.join(' ')}`;
   }
 
   async generateStructuredCommand({
@@ -1003,16 +1092,25 @@ export class GeminiStructuredClient {
       (imageParts.length > 0
         ? 'Analizza lo screenshot allegato (app fitness/sonno in italiano, es. Xiaomi Fitness) ed estrai durata sonno, fase Profondo e punteggio punti per LOG_SLEEP.'
         : '');
-    const systemInstruction = this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 });
+    const systemInstruction = appendKentuGlobalStateToSystemInstruction(
+      this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 }),
+      contextBundle?.kentuGlobalStateText
+        || (contextBundle?.contextSlices?.KENTU_GLOBAL_STATE
+          ? JSON.stringify(contextBundle.contextSlices.KENTU_GLOBAL_STATE, null, 2)
+          : ''),
+    );
     const userPrompt = [
       systemTimeCtx.header,
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto (ADD_FOOD): payload.items[] = SOLO alimenti citati, conteggio esatto senza duplicati da congiunzioni. foodName = nome puro (NO grammi/parentesi/congiunzioni iniziali); grams separato. Esempio: "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" → 4 voci (Pane integrale..., Tonno al naturale, Pomodoro, Pesca). adviceMessage: solo riepilogo neutro del log o ometti — VIETATI allarmi grassi/budget/What-If in registrazione semplice. SMART RESOLUTION abitudini solo per arricchire nomi gia citati, mai per aggiungere voci.'
+        ? 'Registrazione pasto (ADD_FOOD): payload.items[] = SOLO alimenti citati. Per unita/pezzi: PRIMA leggi User_Portions_Dictionary in KENTU_GLOBAL_STATE — se presente usa quel peso con isEstimated:false; altrimenti stima media con isEstimated:true. foodName = nome puro; grams separato. adviceMessage obbligatorio se ci sono stime.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
-        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati.'
+        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
+        : null,
+      asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
+        ? 'CASO 2 CONSULTO: commandType DEVE essere CHAT_RESPONSE. Compila uiMessage (o adviceMessage/payload.message) con analisi sintetica basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]

@@ -103,9 +103,14 @@ function normalizeFoodItem(item) {
     gramsRaw === null || gramsRaw === undefined || gramsRaw === ''
       ? NaN
       : Number(gramsRaw);
+  const grams = Number.isFinite(gramsNum) && gramsNum > 0 ? Math.round(gramsNum) : null;
+  const isEstimated = grams != null && item?.isEstimated === true;
+  const wasEstimated = item?.wasEstimated === true || isEstimated;
   return {
     foodName,
-    grams: Number.isFinite(gramsNum) && gramsNum > 0 ? Math.round(gramsNum) : null,
+    grams,
+    isEstimated,
+    ...(wasEstimated ? { wasEstimated: true } : {}),
   };
 }
 
@@ -266,11 +271,24 @@ export function buildMealDraftUiMessage(payload = {}) {
   const mealType = String(payload?.mealType || '').trim().toLowerCase();
   const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
   const time = String(payload?.exactTime || payload?.timeString || '').trim() || '--:--';
+  const hasEstimates = items.some((item) => item.isEstimated === true);
   const lines = items.map((item) => {
     const grams = Math.round(Number(item.grams) || 0);
-    return `- ${item.foodName} (${grams}g)`;
+    const mark = item.isEstimated === true ? ' ⚠️ stima' : '';
+    return `- ${item.foodName} (${grams}g${mark})`;
   });
-  return `Riepilogo [${mealLabel}] delle [${time}]:\n${lines.join('\n')}\nConfermi?`;
+  const estimateNote = hasEstimates
+    ? '\nHo stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.'
+    : '';
+  return `Riepilogo [${mealLabel}] delle [${time}]:\n${lines.join('\n')}${estimateNote}\nConfermi?`;
+}
+
+/** Messaggio chat standard quando la bozza contiene pesi stimati. */
+export const MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE =
+  'Ho preparato la bozza. Ho stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.';
+
+export function payloadHasEstimatedFoodWeights(payload = {}) {
+  return expandFoodPayloadItems(payload).some((item) => item.isEstimated === true);
 }
 
 export function buildFoodConfirmationSummary(payload) {
