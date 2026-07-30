@@ -1,12 +1,43 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   calculateCardioStatus,
   CARDIO_WEEKLY_TARGET_MINUTES,
 } from '../features/commandTerminal/context/cardioCylinderStatus.js';
 import { collectRecentWorkoutLogs } from '../features/commandTerminal/context/kentuGlobalState.js';
+import { getTodayString } from '../coreEngine';
+
+/**
+ * Chiave giorno locale YYYY-MM-DD — si aggiorna a mezzanotte (e al ritorno in foreground).
+ * Evita che la finestra rolling 7g resti congelata mentre l'app resta aperta.
+ */
+function useLiveCalendarDayKey() {
+  const [dayKey, setDayKey] = useState(() => getTodayString());
+
+  useEffect(() => {
+    const sync = () => {
+      const next = getTodayString();
+      setDayKey((prev) => (prev === next ? prev : next));
+    };
+    sync();
+    const id = window.setInterval(sync, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sync();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', sync);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', sync);
+    };
+  }, []);
+
+  return dayKey;
+}
 
 /**
  * Barra di progressione Cardio — stile fluido allineato a MuscleStimulusWidget.
+ * Finestra: rolling 168h da Date.now() (non settimana solare).
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -25,17 +56,27 @@ export default function CardioProgressBar({
   className = '',
   compact = false,
 } = {}) {
+  const liveDayKey = useLiveCalendarDayKey();
+
   const status = useMemo(() => {
     if (cardioStatusProp && typeof cardioStatusProp === 'object') {
       return cardioStatusProp;
     }
     try {
+      // Ancora SEMPRE al giorno civile reale (non a una data tracker congelata).
+      const todayIso = liveDayKey || getTodayString();
+      const viewerDate = String(activeDate || '').slice(0, 10);
+      const mergeActiveLog = !viewerDate || viewerDate === todayIso;
+
       const { cardioLogs, workoutLogs } = collectRecentWorkoutLogs(
         fullHistory || {},
-        Array.isArray(activeLog) ? activeLog : [],
-        activeDate || '',
+        mergeActiveLog && Array.isArray(activeLog) ? activeLog : [],
+        todayIso,
       );
-      return calculateCardioStatus(cardioLogs, workoutLogs);
+
+      return calculateCardioStatus(cardioLogs, workoutLogs, {
+        nowMs: Date.now(),
+      });
     } catch (error) {
       console.warn('[CardioProgressBar] calculate failed', error);
       return {
@@ -44,7 +85,7 @@ export default function CardioProgressBar({
         fillPercent: 0,
       };
     }
-  }, [cardioStatusProp, fullHistory, activeLog, activeDate]);
+  }, [cardioStatusProp, fullHistory, activeLog, activeDate, liveDayKey]);
 
   const accumulated = Math.round(Number(status.accumulatedMinutes) || 0);
   const target = Math.max(
@@ -77,7 +118,6 @@ export default function CardioProgressBar({
           </span>
         </div>
 
-        {/* Track + fluido: stessa logica dei cilindri (fill + overlay a tacche) */}
         <div className="relative h-5 w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
           <div
             className="absolute left-0 top-0 h-full bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400 transition-all duration-1000 ease-out"
@@ -89,7 +129,6 @@ export default function CardioProgressBar({
                   : 'none',
             }}
           />
-          {/* Shimmer fluido vivo */}
           {fillPercent > 0 ? (
             <div
               className="pointer-events-none absolute left-0 top-0 h-full overflow-hidden"

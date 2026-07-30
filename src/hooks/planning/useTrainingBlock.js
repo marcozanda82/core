@@ -12,6 +12,7 @@ import {
 import {
   resolveImmutableBaseKcal,
   resolveTargetsFromTrainingBlockDay,
+  computeTrainingBlockDailyTargets,
   TRAINING_BLOCK_FALLBACK_BASE_KCAL,
 } from '../../features/planning/trainingBlockTargets';
 
@@ -29,6 +30,12 @@ import {
  *     todayIso: string,
  *     metabolicTargets: object,
  *   }) => void | Promise<void>,
+ *   onPostponeSession?: (meta: {
+ *     block: object,
+ *     todayIso: string,
+ *     metabolicTargets: object,
+ *     postponedSession: object | null,
+ *   }) => void | Promise<void>,
  * }} [config]
  */
 export function useTrainingBlock({
@@ -38,6 +45,7 @@ export function useTrainingBlock({
   userProfile = null,
   isSimulationMode = false,
   onConfirmSession = null,
+  onPostponeSession = null,
 } = {}) {
   const todayIso = String(todayIsoProp || getLocalTodayIso()).slice(0, 10);
   const [block, setBlock] = useState(/** @type {import('../../features/planning/trainingBlockSchema').TrainingBlock | null} */ (null));
@@ -50,6 +58,8 @@ export function useTrainingBlock({
   const catchUpInFlightRef = useRef(false);
   const onConfirmSessionRef = useRef(onConfirmSession);
   onConfirmSessionRef.current = onConfirmSession;
+  const onPostponeSessionRef = useRef(onPostponeSession);
+  onPostponeSessionRef.current = onPostponeSession;
 
   const blockPath = userUid ? `users/${userUid}/current_training_block` : null;
 
@@ -158,9 +168,6 @@ export function useTrainingBlock({
 
   const metabolicTargets = useMemo(() => {
     if (!block) return null;
-    const session = todaySession
-      || block.days?.[block.currentDayPointer]
-      || null;
     const baseKcal = resolveImmutableBaseKcal({
       userProfile,
       fallback: TRAINING_BLOCK_FALLBACK_BASE_KCAL,
@@ -169,7 +176,18 @@ export function useTrainingBlock({
       Number(userProfile?.weight)
       || Number(userProfile?.peso)
       || 75;
-    return resolveTargetsFromTrainingBlockDay(session, {
+
+    // Nessuna sessione dovuta oggi (es. dopo rinvio) → profilo Riposo, non il workout ancora in pointer.
+    if (!todaySession) {
+      return computeTrainingBlockDailyTargets({
+        baseKcal,
+        weightKg,
+        macroGoal: block.macroGoal,
+        dayType: 'rest',
+      });
+    }
+
+    return resolveTargetsFromTrainingBlockDay(todaySession, {
       baseKcal,
       weightKg,
       macroGoal: block.macroGoal,
@@ -204,6 +222,7 @@ export function useTrainingBlock({
 
   /**
    * Rinvia: se today === anchor, anchor → domani, pointer fermo.
+   * Ricalcola subito i target di OGGI come giorno di riposo (sovrascrive surplus workout).
    */
   const postponeSession = useCallback(async () => {
     const current = blockRef.current;
@@ -219,6 +238,7 @@ export function useTrainingBlock({
     setBusy(true);
     setError(null);
     try {
+      const postponedSession = current.days?.[current.currentDayPointer] || null;
       const tomorrow = addCalendarDaysIso(todayIso, 1);
       if (!tomorrow) throw new Error('Data domani non valida.');
       const now = Date.now();
@@ -229,14 +249,39 @@ export function useTrainingBlock({
         lastAction: { kind: 'postpone', at: now, date: todayIso },
       };
       await persistBlock(next);
-      return next;
+
+      const baseKcal = resolveImmutableBaseKcal({
+        userProfile,
+        fallback: TRAINING_BLOCK_FALLBACK_BASE_KCAL,
+      });
+      const weightKg =
+        Number(userProfile?.weight)
+        || Number(userProfile?.peso)
+        || 75;
+      const restTargets = computeTrainingBlockDailyTargets({
+        baseKcal,
+        weightKg,
+        macroGoal: current.macroGoal,
+        dayType: 'rest',
+      });
+
+      if (typeof onPostponeSessionRef.current === 'function') {
+        await onPostponeSessionRef.current({
+          block: next,
+          todayIso,
+          metabolicTargets: restTargets,
+          postponedSession,
+        });
+      }
+
+      return { block: next, metabolicTargets: restTargets };
     } catch (err) {
       setError(String(err?.message || err));
       throw err;
     } finally {
       setBusy(false);
     }
-  }, [busy, todayIso, persistBlock]);
+  }, [busy, todayIso, persistBlock, userProfile]);
 
   /**
    * Conferma: delega conversione log (callback) → pointer++ → anchor = domani.

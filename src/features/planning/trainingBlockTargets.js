@@ -1,6 +1,11 @@
 /**
  * Target metabolici per Shiftable Training Block.
  * Preferisce Wave Nutrition pre-calcolata sul giorno; altrimenti formule locali.
+ *
+ * Contratto calorico scisso:
+ * - baseKcal  → TDEE di mantenimento (immutabile)
+ * - deltaKcal → modificatore del blocco/giorno (surplus o deficit)
+ * - targetKcal → netto finale (base + delta)
  */
 
 export const TRAINING_BLOCK_FALLBACK_BASE_KCAL = 2400;
@@ -20,6 +25,11 @@ export const DAY_TYPE_MULTIPLIERS = Object.freeze({
   cardio: 1.0,
   hiit: 1.02,
 });
+
+/** Quota del delta spalmeta su CHO vs FAT (il resto sul partner). */
+export const DELTA_CARB_SHARE = 0.5;
+export const TARGET_BAND_KCAL = 80;
+export const SURPLUS_MARGIN_KCAL = 140;
 
 /**
  * @param {{
@@ -97,7 +107,118 @@ export function resolveTrainingBlockMultipliers(macroGoal, dayType) {
 }
 
 /**
+ * Proteine fisse da peso corporeo (g).
+ * @param {number} weightKg
+ * @returns {number}
+ */
+export function resolveFixedProteinGrams(weightKg = 75) {
+  const weight = Number.isFinite(Number(weightKg)) && Number(weightKg) > 0
+    ? Number(weightKg)
+    : 75;
+  return Math.round(Math.max(weight * 2.0, weight * 1.8));
+}
+
+/**
+ * Distribuisce un delta calorico su CHO/FAT (50/50 kcal), proteine invariate.
+ *
+ * @param {{
+ *   baseKcal: number,
+ *   deltaKcal: number,
+ *   protGrams: number,
+ *   weightKg?: number,
+ * }} input
+ * @returns {{ carb: number, fat: number, fatTotal: number }}
+ */
+export function distributeDeltaAcrossCarbFat({
+  baseKcal,
+  deltaKcal,
+  protGrams,
+  weightKg = 75,
+}) {
+  const base = Math.max(1200, Math.round(Number(baseKcal) || TRAINING_BLOCK_FALLBACK_BASE_KCAL));
+  const delta = Math.round(Number(deltaKcal) || 0);
+  const prot = Math.max(40, Math.round(Number(protGrams) || resolveFixedProteinGrams(weightKg)));
+  const weight = Number.isFinite(Number(weightKg)) && Number(weightKg) > 0
+    ? Number(weightKg)
+    : 75;
+
+  const protKcal = prot * 4;
+  const fatBase = Math.round(Math.max(weight * 0.8, (base * 0.25) / 9));
+  const fatBaseKcal = fatBase * 9;
+  const carbBase = Math.max(80, Math.round((base - protKcal - fatBaseKcal) / 4));
+
+  const carbShare = Math.min(1, Math.max(0, DELTA_CARB_SHARE));
+  const deltaCarbGrams = (delta * carbShare) / 4;
+  const deltaFatGrams = (delta * (1 - carbShare)) / 9;
+
+  const carb = Math.max(50, Math.round(carbBase + deltaCarbGrams));
+  const fat = Math.max(30, Math.round(fatBase + deltaFatGrams));
+
+  return { carb, fat, fatTotal: fat };
+}
+
+/**
+ * Soglie Minimal HUD derivate da base/delta/target reali.
+ *
+ * @param {{
+ *   baseKcal: number,
+ *   deltaKcal?: number,
+ *   targetKcal: number,
+ *   targetBandKcal?: number,
+ *   surplusMarginKcal?: number,
+ * }} input
+ */
+export function buildMetabolicMapThresholdsFromSplit({
+  baseKcal,
+  deltaKcal,
+  targetKcal,
+  targetBandKcal = TARGET_BAND_KCAL,
+  surplusMarginKcal = SURPLUS_MARGIN_KCAL,
+}) {
+  const base = Math.max(0, Math.round(Number(baseKcal) || 0));
+  const target = Math.max(0, Math.round(Number(targetKcal) || base));
+  const delta = Math.round(
+    Number.isFinite(Number(deltaKcal)) ? Number(deltaKcal) : (target - base),
+  );
+  const band = Math.max(20, Math.round(Number(targetBandKcal) || TARGET_BAND_KCAL));
+  const margin = Math.max(40, Math.round(Number(surplusMarginKcal) || SURPLUS_MARGIN_KCAL));
+
+  if (delta < 0) {
+    // Cut: viola = obiettivo deficit, rosso = rientro sul TDEE (mantenimento)
+    const targetEnd = target;
+    const targetStart = Math.max(0, targetEnd - band);
+    let deficit = targetEnd;
+    if (deficit <= targetStart) deficit = Math.max(0, targetStart - 20);
+    const surplus = Math.max(base, targetEnd + margin);
+    return {
+      deficitKcal: deficit,
+      targetStartKcal: targetStart,
+      targetEndKcal: targetEnd,
+      surplusKcal: surplus,
+      maxScaleKcal: Math.max(base + 500, targetEnd + 500, surplus + 150, 2000),
+    };
+  }
+
+  // Bulk / maintain: viola = TDEE, fascia verde/arancio intorno al target netto
+  const deficit = base > 0 ? base : Math.max(0, target - band - 40);
+  let targetEnd = target;
+  let targetStart = Math.max(deficit + 20, targetEnd - band);
+  if (targetStart >= targetEnd) {
+    targetStart = Math.max(0, targetEnd - band);
+  }
+  const surplus = targetEnd + margin;
+  return {
+    deficitKcal: deficit,
+    targetStartKcal: targetStart,
+    targetEndKcal: targetEnd,
+    surplusKcal: surplus,
+    maxScaleKcal: Math.max(targetEnd + 500, surplus + 150, 2000),
+  };
+}
+
+/**
  * Calcola i macro giornalieri dal macroGoal del blocco e dal tipo sessione corrente.
+ * Espone baseKcal / deltaKcal / targetKcal distinti (niente fusione opaca).
  *
  * @param {{
  *   baseKcal: number,
@@ -107,13 +228,16 @@ export function resolveTrainingBlockMultipliers(macroGoal, dayType) {
  * }} input
  * @returns {{
  *   kcal: number,
+ *   targetKcal: number,
+ *   baseKcal: number,
+ *   deltaKcal: number,
  *   prot: number,
  *   carb: number,
  *   fat: number,
  *   fatTotal: number,
- *   baseKcal: number,
  *   goalMult: number,
  *   dayMult: number,
+ *   metabolicMapThresholds: object,
  *   source?: string,
  * }}
  */
@@ -131,23 +255,35 @@ export function computeTrainingBlockDailyTargets({
     : 75;
 
   const { goalMult, dayMult } = resolveTrainingBlockMultipliers(macroGoal, dayType);
-  const kcal = Math.max(1200, Math.round(base * goalMult * dayMult));
+  const targetKcal = Math.max(1200, Math.round(base * goalMult * dayMult));
+  const deltaKcal = targetKcal - base;
 
-  const prot = Math.round(Math.max(weight * 2.0, weight * 1.8));
-  const fat = Math.round(Math.max(weight * 0.8, (kcal * 0.25) / 9));
-  const protKcal = prot * 4;
-  const fatKcal = fat * 9;
-  const carb = Math.max(80, Math.round((kcal - protKcal - fatKcal) / 4));
+  const prot = resolveFixedProteinGrams(weight);
+  const { carb, fat, fatTotal } = distributeDeltaAcrossCarbFat({
+    baseKcal: base,
+    deltaKcal,
+    protGrams: prot,
+    weightKg: weight,
+  });
+
+  const metabolicMapThresholds = buildMetabolicMapThresholdsFromSplit({
+    baseKcal: base,
+    deltaKcal,
+    targetKcal,
+  });
 
   return {
-    kcal,
+    kcal: targetKcal,
+    targetKcal,
+    baseKcal: base,
+    deltaKcal,
     prot,
     carb,
     fat,
-    fatTotal: fat,
-    baseKcal: base,
+    fatTotal,
     goalMult,
     dayMult,
+    metabolicMapThresholds,
     source: 'formula',
   };
 }
@@ -176,26 +312,39 @@ export function dayHasWaveNutritionTargets(day) {
  * }} [fallbackCtx]
  */
 export function resolveTargetsFromTrainingBlockDay(session, fallbackCtx = {}) {
+  const baseKcal = Number.isFinite(Number(fallbackCtx.baseKcal)) && Number(fallbackCtx.baseKcal) > 0
+    ? Math.round(Number(fallbackCtx.baseKcal))
+    : TRAINING_BLOCK_FALLBACK_BASE_KCAL;
+
   if (dayHasWaveNutritionTargets(session)) {
-    const kcal = Math.round(Number(session.targetKcal));
+    const targetKcal = Math.round(Number(session.targetKcal));
     const prot = Math.round(Number(session.targetProt));
     const carb = Math.round(Number(session.targetCarb));
     const fat = Math.round(Number(session.targetFat));
+    const deltaKcal = targetKcal - baseKcal;
+    const metabolicMapThresholds = buildMetabolicMapThresholdsFromSplit({
+      baseKcal,
+      deltaKcal,
+      targetKcal,
+    });
     return {
-      kcal,
+      kcal: targetKcal,
+      targetKcal,
+      baseKcal,
+      deltaKcal,
       prot,
       carb,
       fat,
       fatTotal: fat,
-      baseKcal: Number(fallbackCtx.baseKcal) || kcal,
       goalMult: 1,
       dayMult: 1,
+      metabolicMapThresholds,
       source: 'wave-nutrition',
     };
   }
 
   return computeTrainingBlockDailyTargets({
-    baseKcal: fallbackCtx.baseKcal,
+    baseKcal,
     weightKg: fallbackCtx.weightKg,
     macroGoal: fallbackCtx.macroGoal,
     dayType: session?.type || 'rest',
@@ -203,7 +352,7 @@ export function resolveTargetsFromTrainingBlockDay(session, fallbackCtx = {}) {
 }
 
 /**
- * Fallback offline: TDEE piatto (±300 per bulk/cut) + prot 2g/kg, fat ~25%, carbo a riempimento.
+ * Fallback offline: TDEE piatto (±300 per bulk/cut) + prot 2g/kg, delta su CHO/FAT.
  * Stessa forma di generatePeriodizedTargets → nutritionDays.
  *
  * @param {{
@@ -212,7 +361,7 @@ export function resolveTargetsFromTrainingBlockDay(session, fallbackCtx = {}) {
  *   daysArray: Array<object>,
  *   weightKg?: number,
  * }} input
- * @returns {{ nutritionDays: Array<{ dayIndex: number, targetKcal: number, targetCarb: number, targetProt: number, targetFat: number }> }}
+ * @returns {{ nutritionDays: Array<object> }}
  */
 export function buildEmergencyWaveNutritionDays({
   tdee,
@@ -224,17 +373,21 @@ export function buildEmergencyWaveNutritionDays({
     ? Math.round(Number(tdee))
     : TRAINING_BLOCK_FALLBACK_BASE_KCAL;
   const goal = String(macroGoal || 'maintain').trim().toLowerCase();
-  let flatKcal = base;
-  if (goal === 'bulk') flatKcal = base + 300;
-  else if (goal === 'cut') flatKcal = base - 300;
-  flatKcal = Math.min(5000, Math.max(1200, flatKcal));
+  let deltaKcal = 0;
+  if (goal === 'bulk') deltaKcal = 300;
+  else if (goal === 'cut') deltaKcal = -300;
 
+  const targetKcal = Math.min(5000, Math.max(1200, base + deltaKcal));
   const weight = Number.isFinite(Number(weightKg)) && Number(weightKg) > 0
     ? Number(weightKg)
     : 75;
-  const prot = Math.round(weight * 2.0);
-  const fat = Math.round(Math.max(weight * 0.8, (flatKcal * 0.25) / 9));
-  const carb = Math.max(80, Math.round((flatKcal - prot * 4 - fat * 9) / 4));
+  const prot = resolveFixedProteinGrams(weight);
+  const { carb, fat } = distributeDeltaAcrossCarbFat({
+    baseKcal: base,
+    deltaKcal: targetKcal - base,
+    protGrams: prot,
+    weightKg: weight,
+  });
 
   const nutritionDays = (Array.isArray(daysArray) ? daysArray : []).map((d, i) => {
     const dayIndex = Number.isFinite(Number(d?.dayIndex))
@@ -242,10 +395,12 @@ export function buildEmergencyWaveNutritionDays({
       : i;
     return {
       dayIndex,
-      targetKcal: flatKcal,
+      targetKcal,
       targetProt: prot,
       targetCarb: carb,
       targetFat: fat,
+      baseKcal: base,
+      deltaKcal: targetKcal - base,
     };
   });
 

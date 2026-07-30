@@ -179,7 +179,7 @@ export function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activ
     });
   };
 
-  for (let back = 0; back <= 7; back += 1) {
+  for (let back = 0; back <= 8; back += 1) {
     let dateKey = anchor;
     try {
       dateKey = addDays(anchor, -back);

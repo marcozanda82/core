@@ -109,6 +109,7 @@ export default function TrainingBlockWidget({
   activeLog = null,
   isSimulationMode = false,
   onConfirmSession = null,
+  onPostponeSession = null,
   creatorOpen: creatorOpenProp = undefined,
   onCreatorOpenChange = null,
   onTodaySessionChange = null,
@@ -136,6 +137,7 @@ export default function TrainingBlockWidget({
     userProfile,
     isSimulationMode,
     onConfirmSession,
+    onPostponeSession,
   });
 
   const [toast, setToast] = useState('');

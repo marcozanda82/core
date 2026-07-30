@@ -57,6 +57,10 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import DialMaintenanceMarker from './components/DialMaintenanceMarker';
+import KcalMetabolicTelemetryRing from './components/KcalMetabolicTelemetryRing';
+import KcalFuelTelemetryRing from './components/KcalFuelTelemetryRing';
+import { resolveKcalDialTelemetry, resolveKcalZoneHudLabel } from './utils/kcalDialTelemetry';
+import { buildMetabolicMapThresholdsFromSplit } from './features/planning/trainingBlockTargets';
 import TrainingBlockWidget from './components/TrainingBlockWidget';
 import useTrainingBlock from './hooks/planning/useTrainingBlock';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
@@ -905,6 +909,7 @@ export default function SalaComandi() {
   const {
     block: trainingBlockLive,
     todaySession: trainingBlockTodaySession,
+    metabolicTargets: trainingBlockMetabolicTargets,
   } = useTrainingBlock({
     db,
     userUid: user?.uid ?? null,
@@ -1534,22 +1539,40 @@ export default function SalaComandi() {
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
   const applyTrainingBlockDailyTargets = useCallback(
     async (dailyTargets, source = 'training-block') => {
-      const kcal = Math.round(Number(dailyTargets?.kcal) || 0);
+      const targetKcal = Math.round(
+        Number(dailyTargets?.targetKcal ?? dailyTargets?.kcal) || 0,
+      );
+      const baseKcalSplit = Math.round(Number(dailyTargets?.baseKcal) || 0);
+      const deltaKcalSplit = Math.round(
+        Number.isFinite(Number(dailyTargets?.deltaKcal))
+          ? Number(dailyTargets.deltaKcal)
+          : (baseKcalSplit > 0 ? targetKcal - baseKcalSplit : 0),
+      );
       const prot = Math.round(Number(dailyTargets?.prot ?? dailyTargets?.pro) || 0);
       const carb = Math.round(Number(dailyTargets?.carb ?? dailyTargets?.cho) || 0);
       const fat = Math.round(Number(dailyTargets?.fat ?? dailyTargets?.fatTotal) || 0);
-      if (kcal <= 0 && prot <= 0 && carb <= 0 && fat <= 0) {
+      if (targetKcal <= 0 && prot <= 0 && carb <= 0 && fat <= 0) {
         throw new Error('Target blocco non validi.');
       }
 
+      const metabolicMapThresholds =
+        dailyTargets?.metabolicMapThresholds
+        && typeof dailyTargets.metabolicMapThresholds === 'object'
+          ? dailyTargets.metabolicMapThresholds
+          : null;
+
       const effectiveDate = currentTrackerDate || getTodayString();
       const patch = {
-        kcal,
+        kcal: targetKcal,
+        targetKcal,
         prot,
         carb,
         fat,
         fatTotal: fat,
       };
+      if (baseKcalSplit > 0) patch.baseKcal = baseKcalSplit;
+      if (Number.isFinite(deltaKcalSplit)) patch.deltaKcal = deltaKcalSplit;
+      if (metabolicMapThresholds) patch.metabolicMapThresholds = metabolicMapThresholds;
 
       let nextTargetsSnapshot = null;
       setUserTargets((prev) => {
@@ -1580,8 +1603,9 @@ export default function SalaComandi() {
 
       const uid = user?.uid || auth?.currentUser?.uid;
       if (db && uid && nextTargetsSnapshot) {
-        await update(ref(db, `users/${uid}/profile_targets`), {
+        const firebasePatch = {
           'targets/kcal': patch.kcal,
+          'targets/targetKcal': patch.targetKcal,
           'targets/prot': patch.prot,
           'targets/carb': patch.carb,
           'targets/fat': patch.fat,
@@ -1589,7 +1613,13 @@ export default function SalaComandi() {
           'targets/autoCalculated': false,
           'targets/targetHistory': nextTargetsSnapshot.targetHistory,
           'targets/customTargets': nextTargetsSnapshot.customTargets,
-        });
+        };
+        if (patch.baseKcal != null) firebasePatch['targets/baseKcal'] = patch.baseKcal;
+        if (patch.deltaKcal != null) firebasePatch['targets/deltaKcal'] = patch.deltaKcal;
+        if (patch.metabolicMapThresholds) {
+          firebasePatch['targets/metabolicMapThresholds'] = patch.metabolicMapThresholds;
+        }
+        await update(ref(db, `users/${uid}/profile_targets`), firebasePatch);
         try {
           await update(ref(db, `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(effectiveDate)}`), {
             customTargets: {
@@ -1760,6 +1790,18 @@ export default function SalaComandi() {
       setManualNodes,
       setSimulatedLog,
     ],
+  );
+
+  /**
+   * Rinvio sessione Training Block → oggi diventa Riposo (base/delta/macro) e HUD si aggiorna subito.
+   */
+  const handlePostponeTrainingBlockSession = useCallback(
+    async (context) => {
+      const targets = context?.metabolicTargets;
+      if (!targets) return;
+      await applyTrainingBlockDailyTargets(targets, 'training-block-postpone-rest');
+    },
+    [applyTrainingBlockDailyTargets],
   );
 
   // --- 4-Cylinder boot: catch-up decadimento al login (physiology_model → stato locale + Firebase) ---
@@ -4881,6 +4923,120 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ? applyCalorieStrategyToProfileKcal(profileKcalBase, kentuDailyCalorieStrategy) + burnedKcal
       : null;
   const profileTdeeKcal = profileKcalBase != null ? Math.round(profileKcalBase + burnedKcal) : null;
+
+  /**
+   * Split calorico reale per Home dial:
+   * baseKcal (TDEE) / deltaKcal (blocco) / targetKcal (netto).
+   */
+  const homeCalorieSplit = useMemo(() => {
+    const fromTargets = effectiveTargetsForCurrentDate || {};
+    const fromBlock = trainingBlockMetabolicTargets || null;
+
+    const baseFromTargets = Math.round(Number(fromTargets.baseKcal) || 0);
+    const targetFromTargets = Math.round(
+      Number(fromTargets.targetKcal ?? fromTargets.kcal) || 0,
+    );
+    const deltaFromTargets = Number.isFinite(Number(fromTargets.deltaKcal))
+      ? Math.round(Number(fromTargets.deltaKcal))
+      : null;
+
+    const baseFromBlock = Math.round(Number(fromBlock?.baseKcal) || 0);
+    const targetFromBlock = Math.round(
+      Number(fromBlock?.targetKcal ?? fromBlock?.kcal) || 0,
+    );
+    const deltaFromBlock = Number.isFinite(Number(fromBlock?.deltaKcal))
+      ? Math.round(Number(fromBlock.deltaKcal))
+      : null;
+
+    // Preferisci split persistito sui target giornalieri; fallback al blocco live; poi dinamica legacy.
+    let baseKcalSplit = baseFromTargets > 0
+      ? baseFromTargets
+      : (baseFromBlock > 0
+        ? baseFromBlock
+        : Math.round(Number(profileTdeeKcal ?? userProfileKcalBase) || 0));
+
+    let targetKcalSplit = targetFromTargets > 0
+      ? targetFromTargets
+      : (targetFromBlock > 0
+        ? targetFromBlock
+        : Math.round(
+          Number(dynamicDailyKcal)
+          || Number(baseKcal)
+          || Number(userProfileKcalBase)
+          || Number(userTargets?.kcal)
+          || 2500,
+        ));
+
+    let deltaKcalSplit = deltaFromTargets != null
+      ? deltaFromTargets
+      : (deltaFromBlock != null
+        ? deltaFromBlock
+        : (baseKcalSplit > 0 ? targetKcalSplit - baseKcalSplit : 0));
+
+    if (!(baseKcalSplit > 0) && targetKcalSplit > 0) {
+      baseKcalSplit = targetKcalSplit - deltaKcalSplit;
+    }
+
+    const thresholds =
+      fromTargets.metabolicMapThresholds
+      || fromBlock?.metabolicMapThresholds
+      || (baseKcalSplit > 0 && targetKcalSplit > 0
+        ? buildMetabolicMapThresholdsFromSplit({
+          baseKcal: baseKcalSplit,
+          deltaKcal: deltaKcalSplit,
+          targetKcal: targetKcalSplit,
+        })
+        : null);
+
+    return {
+      baseKcal: baseKcalSplit,
+      deltaKcal: deltaKcalSplit,
+      targetKcal: targetKcalSplit,
+      metabolicMapThresholds: thresholds,
+    };
+  }, [
+    effectiveTargetsForCurrentDate,
+    trainingBlockMetabolicTargets,
+    profileTdeeKcal,
+    userProfileKcalBase,
+    dynamicDailyKcal,
+    baseKcal,
+    userTargets?.kcal,
+  ]);
+
+  const homeKcalDialTelemetry = useMemo(() => {
+    const dailyTarget = Math.round(
+      Number(homeCalorieSplit.targetKcal)
+      || Number(dynamicDailyKcal)
+      || Number(baseKcal)
+      || Number(userProfileKcalBase)
+      || Number(userTargets?.kcal)
+      || 2500,
+    );
+    const thresholdOverrides =
+      homeCalorieSplit.metabolicMapThresholds
+      ?? effectiveTargetsForCurrentDate?.metabolicMapThresholds
+      ?? userTargets?.metabolicMapThresholds
+      ?? null;
+    return resolveKcalDialTelemetry({
+      tdeeKcal: homeCalorieSplit.baseKcal || profileTdeeKcal,
+      dailyTargetKcal: dailyTarget,
+      consumedKcal: Number(totali?.kcal) || 0,
+      plannedDelta: homeCalorieSplit.deltaKcal,
+      thresholds: thresholdOverrides,
+    });
+  }, [
+    homeCalorieSplit,
+    dynamicDailyKcal,
+    baseKcal,
+    userProfileKcalBase,
+    userTargets?.kcal,
+    userTargets?.metabolicMapThresholds,
+    effectiveTargetsForCurrentDate?.metabolicMapThresholds,
+    profileTdeeKcal,
+    totali?.kcal,
+  ]);
+
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -5391,11 +5547,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
     const targetKcal =
       Math.round(
-        Number(dynamicDailyKcal) ||
-        Number(baseKcal) ||
-        Number(userProfileKcalBase) ||
-        Number(userTargets?.kcal) ||
-        2000
+        Number(homeKcalDialTelemetry?.maxScaleKcal)
+        || Number(dynamicDailyKcal)
+        || Number(baseKcal)
+        || Number(userProfileKcalBase)
+        || Number(userTargets?.kcal)
+        || 2000
       ) || 2000;
     if (targetKcal > 0 && currentTotal < targetKcal) {
       data = [...data, {
@@ -5425,7 +5582,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return (Number(tA) || 0) - (Number(tB) || 0);
     });
     return sortedPieData;
-  }, [activeLog, userTargets?.kcal, dynamicDailyKcal, baseKcal, userProfileKcalBase]);
+  }, [activeLog, userTargets?.kcal, dynamicDailyKcal, baseKcal, userProfileKcalBase, homeKcalDialTelemetry?.maxScaleKcal]);
 
   const mealPieDisplayData = useMemo(() => {
     if (activeDialMode === 'kcal') return mealPieData;
@@ -7322,15 +7479,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             const dialKcalSurplus =
               dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
-            const dialTdeeKcal = Math.round(Number(profileTdeeKcal ?? userProfileKcalBase ?? 0) || 0);
             const dialKcalRestLabel =
               dialKcalSurplus > 0 ? 'SURPLUS' : 'RESTANTI';
-            const dialKcalGoalLine =
-              dialKcalSurplus > 0
-                ? `Base ${dialTdeeKcal} kcal | Target ${dialDailyTargetKcal} kcal · assunte ${dialConsumedKcal}`
-                : `Base ${dialTdeeKcal} kcal | Target ${dialDailyTargetKcal} kcal`;
+            const showKcalTelemetryRings = activeDialMode === 'kcal' && !selectedMealCenter;
+            const telemetry = homeKcalDialTelemetry;
+            const zoneHud = resolveKcalZoneHudLabel(telemetry);
             const showMaintenanceMarker =
-              activeDialMode === 'kcal' && hasPlannedBlock && dialDailyTargetKcal > 0;
+              activeDialMode === 'kcal'
+              && hasPlannedBlock
+              && dialDailyTargetKcal > 0
+              && !showKcalTelemetryRings;
             const maintenanceMarkerRatio = showMaintenanceMarker && profileTdeeKcal != null
               ? profileTdeeKcal / dialDailyTargetKcal
               : 0;
@@ -7460,17 +7618,51 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
-                          <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
-                            {activeDialMode === 'kcal' && dialKcalGoalLine}
+                          <div
+                            className="kcal-dial-center-sub"
+                            style={{
+                              color: activeDialMode === 'kcal' ? zoneHud.color : '#555',
+                              marginTop: '4px',
+                              fontWeight: activeDialMode === 'kcal' ? 600 : 400,
+                            }}
+                          >
+                            {activeDialMode === 'kcal' && zoneHud.text}
                             {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
                             {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
                             {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
                           </div>
+                          {activeDialMode === 'kcal' && !selectedMealCenter ? (
+                            <button
+                              type="button"
+                              className="kcal-dial-details-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowMetabolicSheet(true);
+                              }}
+                            >
+                              DETTAGLI
+                            </button>
+                          ) : null}
                         </div>
                       )}
                     </div>
-                    {/* Layer 2: Grafico a Torta */}
+                    {/* Layer 2: Telemetria kcal + grafico pasti */}
                     <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
+                      {showKcalTelemetryRings && telemetry ? (
+                        <>
+                          <KcalFuelTelemetryRing
+                            consumedKcal={telemetry.consumedKcal}
+                            maxScaleKcal={telemetry.maxScaleKcal}
+                          />
+                          <KcalMetabolicTelemetryRing
+                            maxScaleKcal={telemetry.maxScaleKcal}
+                            deficitKcal={telemetry.deficitKcal}
+                            targetStartKcal={telemetry.targetStartKcal}
+                            targetEndKcal={telemetry.targetEndKcal}
+                            surplusKcal={telemetry.surplusKcal}
+                          />
+                        </>
+                      ) : null}
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
                           <Pie
@@ -7572,6 +7764,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 activeLog={activeLog}
                 isSimulationMode={isSimulationMode}
                 onConfirmSession={handleConfirmTrainingBlockSession}
+                onPostponeSession={handlePostponeTrainingBlockSession}
                 onOpenTrendDiag={handleOpenTrendDiag}
                 creatorOpen={trainingBlockCreatorOpen}
                 onCreatorOpenChange={setTrainingBlockCreatorOpen}

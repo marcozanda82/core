@@ -631,6 +631,31 @@ html, body, #root {
   font-size: clamp(0.62rem, 5.5cqmin, 0.8rem);
 }
 
+.kcal-dial-details-btn {
+  margin-top: 6px;
+  padding: 3px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: transparent;
+  color: rgba(203, 213, 225, 0.9);
+  font-size: clamp(0.55rem, 4.5cqmin, 0.68rem);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.kcal-dial-details-btn:hover {
+  border-color: rgba(34, 211, 238, 0.55);
+  color: #e0f2fe;
+  background: rgba(8, 47, 73, 0.35);
+}
+
+.kcal-dial-details-btn:active {
+  transform: scale(0.97);
+}
+
 /* Barra chat fissa in basso (non partecipa al flex, ma altezza stabile) */
 .home-bottom-chat {
   flex-shrink: 0;
