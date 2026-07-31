@@ -1222,6 +1222,77 @@ export class GeminiStructuredClient {
       model: CONSULTANT_MODEL,
     };
   }
+
+  /**
+   * Copy AI post-log pasto con budget già proiettato in memoria (anti race store).
+   * @param {{
+   *   projection: object,
+   *   mealLabel?: string,
+   *   signal?: AbortSignal | null,
+   * }} params
+   * @returns {Promise<string>}
+   */
+  async generateMealRegistrationFeedback({ projection, mealLabel = '', signal = null } = {}) {
+    const pack = projection && typeof projection === 'object' ? projection : null;
+    if (!pack?.budgetRimanente || !pack?.nuoviConsumi) {
+      throw new Error('Meal registration feedback missing projection');
+    }
+
+    const label = asTrimmedString(mealLabel);
+    const prompt = [
+      'Hai appena estratto e valorizzato un pasto da linguaggio naturale.',
+      'Lo store React/Firebase NON è ancora aggiornato: usa SOLO i numeri proiettati sotto.',
+      label ? `Pasto: ${label}` : '',
+      `[MEAL_JUST_PROCESSED]: ${JSON.stringify(pack.meal || {})}`,
+      `[CONSUMI_ATTUALI_PRE_PASTO]: ${JSON.stringify(pack.consumiAttuali || {})}`,
+      `[NUOVI_CONSUMI]: ${JSON.stringify(pack.nuoviConsumi)}`,
+      `[TARGET_ODIERNO]: ${JSON.stringify(pack.targetOdierno || {})}`,
+      `[BUDGET_RIMANENTE]: ${JSON.stringify(pack.budgetRimanente)}`,
+      'Scrivi adviceMessage in italiano (max 3 frasi): conferma il log e cita esplicitamente il budget rimanente da [BUDGET_RIMANENTE].',
+      'VIETATO dire che il budget è intatto/invariato se [MEAL_JUST_PROCESSED].kcal > 0.',
+      'VIETATO rileggere o inventare valori diversi da quelli forniti.',
+      'Rispondi SOLO JSON: {"adviceMessage":"..."}',
+    ].filter(Boolean).join('\n');
+
+    const feedbackSchema = {
+      type: 'object',
+      properties: {
+        adviceMessage: { type: 'string' },
+      },
+      required: ['adviceMessage'],
+    };
+
+    const systemTimeCtx = formatCurrentSystemTimeContext();
+    const rawText = await askAI(
+      `${systemTimeCtx.header}\n${prompt}`,
+      'Sei KentuOS. Generi solo il feedback testuale post-registrazione pasto con numeri già calcolati.',
+      {
+        model: CONSULTANT_MODEL,
+        temperature: 0.2,
+        responseSchema: feedbackSchema,
+        generationConfig: {
+          temperature: 0.2,
+          response_mime_type: 'application/json',
+          responseMimeType: 'application/json',
+          response_schema: feedbackSchema,
+          responseSchema: feedbackSchema,
+        },
+        ...(signal ? { signal } : {}),
+      },
+    );
+
+    const cleaned = unwrapJsonText(rawText);
+    if (!cleaned) throw new Error('Meal registration feedback empty');
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new Error('Meal registration feedback malformed JSON');
+    }
+    const adviceMessage = asTrimmedString(parsed?.adviceMessage);
+    if (!adviceMessage) throw new Error('Meal registration feedback missing adviceMessage');
+    return adviceMessage;
+  }
 }
 
 export const geminiStructuredClient = new GeminiStructuredClient();

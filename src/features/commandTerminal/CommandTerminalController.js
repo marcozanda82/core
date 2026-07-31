@@ -40,6 +40,8 @@ import {
   buildUpdateLoggedMealPreviewProposal,
   buildConsultantMealAdviceMessage,
   buildWipMealAdviceMessage,
+  buildDeterministicMealLogFeedback,
+  projectNutritionAfterMeal,
   sanitizeWipSuggestions,
   ensureMealProposalsForAdvice,
   ensureMealProposalsForConsultantMeal,
@@ -410,15 +412,51 @@ export class CommandTerminalController {
   }
 
   publishAddFoodContextAdvice(command) {
-    let note = String(command?.adviceMessage || '').trim();
-    if (!note && payloadHasEstimatedFoodWeights(command?.payload)) {
-      note = MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE;
+    // Solo avviso stime grammi. Niente budget: lo store è ancora pre-pasto (race).
+    if (payloadHasEstimatedFoodWeights(command?.payload)) {
+      this.publishSystemMessage(MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE);
     }
-    if (!note) return;
-    this.publishSystemMessage(note);
   }
 
-  publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = []) {
+  /**
+   * Feedback AI post-estrazione macro con budget proiettato in memoria.
+   * Non alterare il salvataggio DB: solo copy.
+   */
+  async publishProjectedMealLogFeedback(payload, currentState = {}, options = {}) {
+    const proposal = buildMealLogProposalFromPayload(payload, currentState, {
+      userText: options.userText,
+      conversationTexts: options.conversationTexts,
+    });
+    const mealTotals = proposal?.totals;
+    if (!mealTotals || !(Number(mealTotals.kcal) > 0 || Number(mealTotals.pro) > 0)) {
+      return null;
+    }
+
+    const projection = projectNutritionAfterMeal(currentState, mealTotals);
+    const mealLabel = String(proposal?.label || options.mealLabel || '').trim();
+
+    try {
+      const adviceMessage = await this.llmClient.generateMealRegistrationFeedback({
+        projection,
+        mealLabel,
+        ...(options.signal ? { signal: options.signal } : {}),
+      });
+      const note = String(adviceMessage || '').trim();
+      if (note) {
+        this.publishSystemMessage(note);
+        return note;
+      }
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.warn('[CommandTerminalController] projected meal feedback LLM failed, using deterministic copy', error);
+    }
+
+    const fallback = buildDeterministicMealLogFeedback(projection, mealLabel);
+    this.publishSystemMessage(fallback);
+    return fallback;
+  }
+
+  async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
     const conversationTexts = buildConversationTextsFromChatHistory(chatHistory, userText);
     const proposal = buildMealLogProposalFromPayload(payload, currentState, {
       userText,
@@ -434,6 +472,14 @@ export class CommandTerminalController {
       ? `Ho estratto ${itemCount} alimenti dal tuo pasto. Controlla il riepilogo e conferma per caricarlo nel diario.`
       : 'Ho preparato il riepilogo del pasto. Conferma per caricarlo nel diario.';
 
+    // Budget copy con proiezione in memoria (macro già risolti; store ancora stale).
+    await this.publishProjectedMealLogFeedback(payload, currentState, {
+      userText,
+      conversationTexts,
+      mealLabel: proposal.label,
+      ...(options.signal ? { signal: options.signal } : {}),
+    });
+
     this.publishAdviceMessage({
       text: summaryText,
       mealProposals: [proposal],
@@ -448,7 +494,7 @@ export class CommandTerminalController {
     };
   }
 
-  publishMealLogProposalCard(payload, currentState = {}, userText = '', chatHistory = []) {
+  async publishMealLogProposalCard(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
     const check = this.ensureMealRegistrationCompleteOrAsk(
       payload,
       currentState,
@@ -463,6 +509,7 @@ export class CommandTerminalController {
       currentState,
       userText,
       chatHistory,
+      options,
     );
   }
 
@@ -515,7 +562,7 @@ export class CommandTerminalController {
     return detected;
   }
 
-  tryParseAndPublishMealLog(userText, currentState = {}, chatHistory = []) {
+  tryParseAndPublishMealLog(userText, currentState = {}, chatHistory = [], options = {}) {
     const parsed = parseConsumedMealFromNaturalText(userText);
     if (!parsed?.items?.length) {
       return null;
@@ -531,7 +578,7 @@ export class CommandTerminalController {
       { inferMealTypeFromContext: false },
     );
 
-    return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory);
+    return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, options);
   }
 
   shouldUseMealLogProposalCard(userText, payload) {
@@ -1905,7 +1952,9 @@ export class CommandTerminalController {
       }
 
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = this.tryParseAndPublishMealLog(userText, currentState, chatHistory);
+        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        });
         if (localResult) return localResult;
       }
 
@@ -1978,7 +2027,9 @@ export class CommandTerminalController {
 
     if (!COMMAND_TO_EVENT[commandType]) {
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = this.tryParseAndPublishMealLog(userText, currentState, chatHistory);
+        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        });
         if (localResult) return localResult;
       }
       this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
@@ -2007,13 +2058,28 @@ export class CommandTerminalController {
       }
       const missing = getFoodPayloadMissingFields(normalized);
       const hasFood = expandFoodPayloadItems(normalized).length > 0;
+      const feedbackOpts = {
+        ...(options?.signal ? { signal: options.signal } : {}),
+      };
 
       if (this.isMealRegistrationCandidate(userText) && hasFood) {
-        return this.publishMealLogProposalCard(normalized, currentState, userText, chatHistory);
+        return this.publishMealLogProposalCard(
+          normalized,
+          currentState,
+          userText,
+          chatHistory,
+          feedbackOpts,
+        );
       }
 
       if (missing.length === 0 && this.shouldUseMealLogProposalCard(userText, normalized)) {
-        return this.publishMealLogProposalCard(normalized, currentState, userText, chatHistory);
+        return this.publishMealLogProposalCard(
+          normalized,
+          currentState,
+          userText,
+          chatHistory,
+          feedbackOpts,
+        );
       }
 
       if (missing.length > 0 && hasFood) {
@@ -2038,7 +2104,9 @@ export class CommandTerminalController {
       }
 
       if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = this.tryParseAndPublishMealLog(userText, currentState, chatHistory);
+        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        });
         if (localResult) return localResult;
       }
 
@@ -2070,17 +2138,28 @@ export class CommandTerminalController {
     }
 
     if (commandType === 'ADD_FOOD' && this.shouldUseMealLogProposalCard(userText, payload)) {
-      return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory);
+      return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, {
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
     }
 
     if (commandType === 'ADD_WORKOUT') {
       return this.beginWorkoutRegistration(payload, currentState, userText);
     }
 
+    if (commandType === 'ADD_FOOD') {
+      await this.publishProjectedMealLogFeedback(payload, currentState, {
+        userText,
+        conversationTexts: buildConversationTextsFromChatHistory(chatHistory, userText),
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
+    }
+
     return this.stagePendingAction(commandType, payload, {
       confidence: commandResponse.command.confidence ?? null,
       requiresConfirmation: true,
-      uiMessage: commandResponse.command.uiMessage,
+      // ADD_FOOD: niente uiMessage LLM pre-pasto (budget stale); usa draft summary locale.
+      uiMessage: commandType === 'ADD_FOOD' ? undefined : commandResponse.command.uiMessage,
     });
   }
 }

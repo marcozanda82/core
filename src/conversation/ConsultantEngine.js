@@ -1248,6 +1248,88 @@ function computeRemainingBudget(currentAppState) {
   };
 }
 
+function roundSignedMacro(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return 0;
+  return Math.round(v);
+}
+
+/**
+ * Proiezione in memoria post-pasto (anti race React/Firebase).
+ * nuoviConsumi = store attuale + macro del pasto appena risolto;
+ * budgetRimanente = targetOdierno − nuoviConsumi.
+ * Non legge lo state post-setDailyLog (ancora stale).
+ *
+ * @param {object} currentAppState
+ * @param {{ kcal?: number, cal?: number, pro?: number, prot?: number, carbo?: number, carb?: number, fat?: number, fatTotal?: number }} mealTotals
+ * @returns {{
+ *   meal: { kcal: number, pro: number, carbo: number, fat: number },
+ *   consumiAttuali: { kcal: number, pro: number, carbo: number, fat: number },
+ *   nuoviConsumi: { kcal: number, pro: number, carbo: number, fat: number },
+ *   budgetRimanente: { kcal: number, pro: number, carbo: number, fat: number },
+ *   targetOdierno: { kcal: number, pro: number, carbo: number, fat: number },
+ * }}
+ */
+export function projectNutritionAfterMeal(currentAppState = {}, mealTotals = {}) {
+  const log = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
+  const totali = computeTotali(log);
+  const targetOdierno = pickTargets(currentAppState);
+
+  const meal = {
+    kcal: roundMacro(mealTotals?.kcal ?? mealTotals?.cal ?? 0),
+    pro: roundMacro(mealTotals?.pro ?? mealTotals?.prot ?? 0),
+    carbo: roundMacro(mealTotals?.carbo ?? mealTotals?.carb ?? 0),
+    fat: roundMacro(mealTotals?.fat ?? mealTotals?.fatTotal ?? 0),
+  };
+
+  const consumiAttuali = {
+    kcal: roundMacro(totali?.kcal ?? totali?.cal ?? 0),
+    pro: roundMacro(totali?.prot ?? totali?.pro ?? 0),
+    carbo: roundMacro(totali?.carb ?? totali?.carbo ?? totali?.cho ?? 0),
+    fat: roundMacro(totali?.fatTotal ?? totali?.fat ?? 0),
+  };
+
+  const nuoviConsumi = {
+    kcal: roundMacro(consumiAttuali.kcal + meal.kcal),
+    pro: roundMacro(consumiAttuali.pro + meal.pro),
+    carbo: roundMacro(consumiAttuali.carbo + meal.carbo),
+    fat: roundMacro(consumiAttuali.fat + meal.fat),
+  };
+
+  const budgetRimanente = {
+    kcal: roundSignedMacro(targetOdierno.kcal - nuoviConsumi.kcal),
+    pro: roundSignedMacro(targetOdierno.pro - nuoviConsumi.pro),
+    carbo: roundSignedMacro(targetOdierno.carbo - nuoviConsumi.carbo),
+    fat: roundSignedMacro(targetOdierno.fat - nuoviConsumi.fat),
+  };
+
+  return {
+    meal,
+    consumiAttuali,
+    nuoviConsumi,
+    budgetRimanente,
+    targetOdierno,
+  };
+}
+
+/**
+ * Fallback deterministico se l'LLM copy non è disponibile.
+ * @param {ReturnType<typeof projectNutritionAfterMeal>} projection
+ * @param {string} [mealLabel]
+ */
+export function buildDeterministicMealLogFeedback(projection, mealLabel = '') {
+  const meal = projection?.meal || {};
+  const rem = projection?.budgetRimanente || {};
+  const label = String(mealLabel || '').trim();
+  const head = label
+    ? `Ho processato «${label}» (~${meal.kcal || 0} kcal).`
+    : `Ho processato il pasto (~${meal.kcal || 0} kcal).`;
+  return (
+    `${head} Budget rimanente oggi: `
+    + `${rem.kcal ?? 0} kcal · P ${rem.pro ?? 0}g · C ${rem.carbo ?? 0}g · F ${rem.fat ?? 0}g.`
+  );
+}
+
 function resolveCortisolScoreAtHour(currentAppState = {}, decimalHour) {
   const h = Number(decimalHour);
   if (!Number.isFinite(h)) return null;

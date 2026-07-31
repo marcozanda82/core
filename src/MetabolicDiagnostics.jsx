@@ -9,6 +9,7 @@ import { getTodayNutritionSnapshot } from './features/salaComandi/utils/fourCyli
 import { getTodayString } from './coreEngine';
 import TelemetryChart from './TelemetryChart';
 import CardioProgressBar from './components/CardioProgressBar';
+import MetabolicTrendChart from './components/MetabolicTrendChart';
 
 const SYSTEMIC_CRITICAL_THRESHOLD = 0.7;
 
@@ -101,6 +102,7 @@ function shouldShowMuscleInactivityAlarm(value, daysSince) {
  *   dailyLog?: Array | null,
  *   activeDate?: string | null,
  *   proteinTarget?: number | null,
+ *   userTargets?: object | null,
  * }} props
  */
 export default function MetabolicDiagnostics({
@@ -109,6 +111,7 @@ export default function MetabolicDiagnostics({
   dailyLog = null,
   activeDate = null,
   proteinTarget = null,
+  userTargets = null,
 }) {
   const [historyDays, setHistoryDays] = useState(30);
   const state = useMemo(() => {
@@ -309,6 +312,16 @@ export default function MetabolicDiagnostics({
             </p>
           </div>
         </article>
+      </div>
+
+      {/* Curva Ghost Car — solo Diag/Trend, mai in Home */}
+      <div className="mt-3">
+        <MetabolicTrendChart
+          fullHistory={fullHistory}
+          userTargets={userTargets}
+          activeLog={dailyLog}
+          activeDate={activeDate || getTodayString()}
+        />
       </div>
 
       {/* 3° pilastro — Carburante e metabolismo */}

@@ -577,6 +577,7 @@ export default function MetabolicUnifiedView({
             dailyLog={activeLog}
             activeDate={activeDate || projectionAnchorDate}
             proteinTarget={userTargets?.prot ?? null}
+            userTargets={userTargets}
           />
         ) : null}
       </div>
