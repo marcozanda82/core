@@ -14,6 +14,11 @@ import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
 import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage } from '../conversation/conversationState.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
+import {
+  buildDeterministicMealLogFeedback,
+  projectNutritionAfterMeal,
+  sumMealItemsMacros,
+} from '../../../conversation/ConsultantEngine.js';
 
 export function useCommandTerminal({
   chatHistory,
@@ -47,6 +52,12 @@ export function useCommandTerminal({
   const appendAiMessage = useCallback((text, extra = {}) => {
     const line = String(text || '').trim();
     if (!line || typeof setChatHistoryRef.current !== 'function') return;
+    console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
+      text: line,
+      type: extra?.type || null,
+      sourceTag: extra?.sourceTag || null,
+      local: extra?.local === true,
+    });
     setChatHistoryRef.current((prev) => [
       ...(prev || []),
       { sender: 'ai', text: line, ...(extra && typeof extra === 'object' ? extra : {}) },
@@ -679,6 +690,14 @@ export function useCommandTerminal({
       return { ok: false, reason: 'empty_meal_proposal' };
     }
 
+    // Snapshot PRE-commit + macro pasto → budget residuo senza race React/Firebase.
+    const stateBeforeCommit =
+      typeof getCurrentStateRef.current === 'function' ? (getCurrentStateRef.current() ?? {}) : {};
+    const mealTotals = proposal.totals && typeof proposal.totals === 'object'
+      ? proposal.totals
+      : sumMealItemsMacros(sourceItems);
+    const projection = projectNutritionAfterMeal(stateBeforeCommit, mealTotals);
+
     if (typeof setChatHistoryRef.current === 'function' && adviceId) {
       setChatHistoryRef.current((prev) =>
         (prev || []).map((entry) => {
@@ -714,10 +733,11 @@ export function useCommandTerminal({
           ...(targetNodeId ? { targetNodeId } : {}),
         },
       });
+      const label = String(proposal.label || proposal.name || mealType).trim();
       appendAiMessage(
         targetNodeId
-          ? `✅ Pasto aggiornato: ${String(proposal.label || proposal.name || mealType).trim()}.`
-          : `✅ Pasto caricato: ${String(proposal.label || proposal.name || mealType).trim()}.`,
+          ? `✅ Pasto aggiornato: ${label}.`
+          : buildDeterministicMealLogFeedback(projection, label),
       );
       controller.clearPendingMealUpdate();
       pendingMealUpdateRef.current = null;
@@ -731,7 +751,7 @@ export function useCommandTerminal({
       );
       return { ok: false, reason };
     }
-  }, [appendAiMessage]);
+  }, [appendAiMessage, controller]);
 
   return {
     chatHistory,

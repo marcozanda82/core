@@ -11,6 +11,40 @@ function roundMacro(value) {
 }
 
 /**
+ * Pulisce query grezza LLM prima della ricerca DB.
+ * Es: "e 160 g di pane integrale" → "pane integrale"
+ * Il codice NON sporca le stringhe: se arrivano sporche e perche l'LLM le ha lasciate cosi.
+ *
+ * @param {string} rawQuery
+ * @returns {{ cleanQuery: string, gramsFromQuery: number | null }}
+ */
+export function cleanFoodQueryForDbSearch(rawQuery) {
+  let name = String(rawQuery || '').trim();
+  if (!name) return { cleanQuery: '', gramsFromQuery: null };
+
+  const gramsMatch = name.match(/(\d+[.,]?\d*)\s*(?:g|gr|grammi)\b/i);
+  const gramsFromQuery = gramsMatch
+    ? Math.round(Number(String(gramsMatch[1]).replace(',', '.')))
+    : null;
+
+  name = name
+    .replace(/^(?:e|ed|con|più|piu|anche|oppure)\s+/i, '')
+    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)\b/gi, ' ')
+    .replace(/\(\s*\d+[.,]?\d*\s*(?:g|gr|grammi)?\s*\)/gi, ' ')
+    .replace(/\b\d+[.,]?\d*\b/g, ' ')
+    .replace(/^(?:di|del|della|dello|dei|degli|delle|un|una|uno)\s+/i, '')
+    .replace(/\s+(?:di|del|della|dello|dei|degli|delle)\s+/gi, ' ')
+    .replace(/^(?:e|ed|con|più|piu)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return {
+    cleanQuery: name,
+    gramsFromQuery: Number.isFinite(gramsFromQuery) && gramsFromQuery > 0 ? gramsFromQuery : null,
+  };
+}
+
+/**
  * Ricerca approssimativa nel DB alimenti locale.
  *
  * @param {string} rawQuery - Testo grezzo (es. "merluzzo gratinato")
@@ -23,9 +57,10 @@ function roundMacro(value) {
  * }}
  */
 export function resolveFoodEntity(rawQuery, foodDb, options = {}) {
-  const query = String(rawQuery || '').trim();
+  const { cleanQuery } = cleanFoodQueryForDbSearch(rawQuery);
+  const query = cleanQuery || String(rawQuery || '').trim();
   if (!query || !foodDb || typeof foodDb !== 'object') {
-    return { rawQuery: query, bestMatch: null, alternatives: [] };
+    return { rawQuery: String(rawQuery || '').trim(), bestMatch: null, alternatives: [] };
   }
 
   const limit = Number.isFinite(options.limit) && options.limit > 0
@@ -105,9 +140,20 @@ function orderCandidates(candidates, preferredDbKey) {
  * @param {{ foodDb?: object, fullHistory?: object, mealType?: string, preferredDbKey?: string }} context
  */
 export function resolveFoodItemForProposal(rawName, grams, context = {}) {
-  const query = String(rawName || '').trim();
-  const g = Math.max(1, Math.round(Number(grams) || 0));
+  const { cleanQuery, gramsFromQuery } = cleanFoodQueryForDbSearch(rawName);
+  const query = cleanQuery || String(rawName || '').trim();
+  const g = Math.max(1, Math.round(Number(grams) || gramsFromQuery || 0));
   if (!query || !Number.isFinite(g) || g <= 0) return null;
+
+  if (cleanQuery && cleanQuery !== String(rawName || '').trim()) {
+    console.log('🧹 DEBUG - foodResolver clean query:', {
+      raw: String(rawName || '').trim(),
+      clean: cleanQuery,
+      gramsIn: grams,
+      gramsFromQuery,
+      gramsUsed: g,
+    });
+  }
 
   const foodDb = context.foodDb || {};
   const resolution = resolveFoodEntity(query, foodDb, context);

@@ -642,12 +642,10 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
   /** @type {FourCylinderDecay} */
   let muscleDeltas = { push: 0, pull: 0, legs: 0 };
 
+  // Cardio/HIIT/misto senza gruppi muscolari espliciti: SOLO fatica sistemica.
+  // Vietato inferire affaticamento cilindri (es. Gambe da corsa/SUP) — ipertrofia solo se dichiarata.
   if (CARDIO_TYPES.has(type) && weightSum === 0) {
-    muscleDeltas = {
-      push: 0,
-      pull: 0,
-      legs: clamp01(0.18 * loadFactor * gain.legs),
-    };
+    muscleDeltas = { push: 0, pull: 0, legs: 0 };
   } else if (type === 'spinta' || type === 'push') {
     muscleDeltas = {
       push: clamp01(params.maxMuscleBump * loadFactor * gain.push),

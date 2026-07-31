@@ -42,6 +42,7 @@ import {
   buildWipMealAdviceMessage,
   buildDeterministicMealLogFeedback,
   projectNutritionAfterMeal,
+  sumMealItemsMacros,
   sanitizeWipSuggestions,
   ensureMealProposalsForAdvice,
   ensureMealProposalsForConsultantMeal,
@@ -293,6 +294,7 @@ export class CommandTerminalController {
   publishSystemMessage(message) {
     const text = String(message || '').trim();
     if (!text) return;
+    console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishSystemMessage):', text);
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       { message: text, text },
@@ -411,49 +413,55 @@ export class CommandTerminalController {
     });
   }
 
+  /**
+   * Mute & Replace: scarta qualsiasi testo discorsivo Gemini su ADD_FOOD.
+   * Il budget/copy lo decide solo il codice (proposal locale o buildDeterministicMealLogFeedback).
+   */
+  muteAddFoodLlmCopy(command = {}) {
+    const next = command && typeof command === 'object' ? { ...command } : {};
+    const strippedAdvice = String(next.adviceMessage || '').trim();
+    const strippedUi = String(next.uiMessage || '').trim();
+    if (strippedAdvice || strippedUi) {
+      console.log('🔇 DEBUG - MUTE ADD_FOOD LLM COPY (scartato):', {
+        adviceMessage: strippedAdvice.slice(0, 240),
+        uiMessage: strippedUi.slice(0, 240),
+      });
+    }
+    next.adviceMessage = '';
+    next.uiMessage = '';
+    if (next.payload && typeof next.payload === 'object') {
+      next.payload = { ...next.payload };
+      if (typeof next.payload.message === 'string') next.payload.message = '';
+    }
+    return next;
+  }
+
   publishAddFoodContextAdvice(command) {
-    // Solo avviso stime grammi. Niente budget: lo store è ancora pre-pasto (race).
+    // Solo avviso locale su stime grammi — mai adviceMessage/uiMessage LLM.
     if (payloadHasEstimatedFoodWeights(command?.payload)) {
       this.publishSystemMessage(MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE);
     }
   }
 
   /**
-   * Feedback AI post-estrazione macro con budget proiettato in memoria.
-   * Non alterare il salvataggio DB: solo copy.
+   * Feedback deterministico post-macro (proiezione in memoria). Nessun testo Gemini.
    */
-  async publishProjectedMealLogFeedback(payload, currentState = {}, options = {}) {
+  publishProjectedMealLogFeedback(payload, currentState = {}, options = {}) {
     const proposal = buildMealLogProposalFromPayload(payload, currentState, {
       userText: options.userText,
       conversationTexts: options.conversationTexts,
     });
-    const mealTotals = proposal?.totals;
+    const mealTotals = proposal?.totals
+      || (Array.isArray(proposal?.items) ? sumMealItemsMacros(proposal.items) : null);
     if (!mealTotals || !(Number(mealTotals.kcal) > 0 || Number(mealTotals.pro) > 0)) {
       return null;
     }
 
     const projection = projectNutritionAfterMeal(currentState, mealTotals);
     const mealLabel = String(proposal?.label || options.mealLabel || '').trim();
-
-    try {
-      const adviceMessage = await this.llmClient.generateMealRegistrationFeedback({
-        projection,
-        mealLabel,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-      const note = String(adviceMessage || '').trim();
-      if (note) {
-        this.publishSystemMessage(note);
-        return note;
-      }
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      console.warn('[CommandTerminalController] projected meal feedback LLM failed, using deterministic copy', error);
-    }
-
-    const fallback = buildDeterministicMealLogFeedback(projection, mealLabel);
-    this.publishSystemMessage(fallback);
-    return fallback;
+    const message = buildDeterministicMealLogFeedback(projection, mealLabel);
+    this.publishSystemMessage(message);
+    return message;
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
@@ -468,17 +476,10 @@ export class CommandTerminalController {
     }
 
     const itemCount = Array.isArray(proposal.items) ? proposal.items.length : 0;
+    // Solo copy locale di sistema — mai uiMessage/adviceMessage Gemini.
     const summaryText = itemCount > 1
       ? `Ho estratto ${itemCount} alimenti dal tuo pasto. Controlla il riepilogo e conferma per caricarlo nel diario.`
       : 'Ho preparato il riepilogo del pasto. Conferma per caricarlo nel diario.';
-
-    // Budget copy con proiezione in memoria (macro già risolti; store ancora stale).
-    await this.publishProjectedMealLogFeedback(payload, currentState, {
-      userText,
-      conversationTexts,
-      mealLabel: proposal.label,
-      ...(options.signal ? { signal: options.signal } : {}),
-    });
 
     this.publishAdviceMessage({
       text: summaryText,
@@ -523,6 +524,11 @@ export class CommandTerminalController {
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
 
+    // DATA ENTRY pasti PRIMA del consulto (evita "come snack, ho mangiato…" → CHAT_RESPONSE).
+    if (isFoodRegistrationIntent(userText)) {
+      return 'ADD_FOOD';
+    }
+
     // Domande sullo stato → mai forzare bozze pasto/workout (CASO 2).
     if (isConsultativeStateIntent(userText)) {
       if (isDayReviewIntent(userText)) return 'ASK_DAY_REVIEW';
@@ -554,10 +560,6 @@ export class CommandTerminalController {
       pendingMealUpdate: this.getPendingMealUpdate(),
     });
     if (detected !== 'UNKNOWN') return detected;
-
-    if (isFoodRegistrationIntent(userText)) {
-      return 'ADD_FOOD';
-    }
 
     return detected;
   }
@@ -599,6 +601,10 @@ export class CommandTerminalController {
   }) {
     const adviceMessage = String(text || '').trim();
     if (!adviceMessage) return;
+    console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishAdviceMessage/ADVICE):', {
+      text: adviceMessage,
+      hasMealProposals: Array.isArray(mealProposals) && mealProposals.length > 0,
+    });
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
@@ -647,6 +653,12 @@ export class CommandTerminalController {
       return { ok: false, reason: 'empty_chat_response', commandType: 'CHAT_RESPONSE' };
     }
     const isLocal = options?.local === true;
+    console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishChatResponse/CHAT_RESPONSE):', {
+      text,
+      local: isLocal,
+      source: isLocal ? 'local_receptionist' : 'gemini_structured_CHAT_RESPONSE',
+      userText: String(userText || '').trim(),
+    });
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
@@ -1811,6 +1823,12 @@ export class CommandTerminalController {
     const images = Array.isArray(options?.images) ? options.images : [];
     const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
 
+    console.log('🟣 DEBUG - processUserMessageCore START:', {
+      userText,
+      conversationState: this.conversationState,
+      imageCount: images.length,
+    });
+
     if (this.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
       return this.processConfirmationResponse(userText, currentState, options);
     }
@@ -1848,6 +1866,7 @@ export class CommandTerminalController {
         const localAnswer = handleLocalQuery(userText, globalPack);
         if (localAnswer) {
           console.log('[LocalReceptionist] intercepted → skip Gemini');
+          console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (LocalReceptionist):', localAnswer);
           return this.publishChatResponse(
             { uiMessage: localAnswer, payload: { message: localAnswer }, requiresConfirmation: false },
             userText,
@@ -1967,8 +1986,16 @@ export class CommandTerminalController {
       return { ok: false, reason, userNotified: true };
     }
 
-    const commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
+    let commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
     let rawPayload = commandResponse.command?.payload || {};
+
+    console.log('🟡 DEBUG - BRANCH DOPO LLM:', {
+      commandType,
+      commandHint,
+      hasAdviceMessage: Boolean(String(commandResponse.command?.adviceMessage || '').trim()),
+      hasUiMessage: Boolean(String(commandResponse.command?.uiMessage || '').trim()),
+      advicePreview: String(commandResponse.command?.adviceMessage || commandResponse.command?.uiMessage || '').slice(0, 200),
+    });
 
     if (commandType === 'CREATE_NEW_FOOD') {
       const desc = String(rawPayload?.desc || '').trim();
@@ -1991,8 +2018,29 @@ export class CommandTerminalController {
     }
 
     // CASO 2 — risposta consulenziale: niente bozze pasto/workout.
+    // Override: se l'utente stava registrando cibo, NON accettare CHAT_RESPONSE.
     if (commandType === 'CHAT_RESPONSE') {
-      return this.publishChatResponse(commandResponse.command, userText);
+      if (isFoodRegistrationIntent(userText) || isConsumedMealLogDescription(userText) || looksLikeComplexMealLog(userText)) {
+        console.log('🟡 DEBUG - OVERRIDE CHAT_RESPONSE → ADD_FOOD (food registration rilevata)');
+        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+          ...(options?.signal ? { signal: options.signal } : {}),
+        });
+        if (localResult) return localResult;
+        commandResponse.command = {
+          ...commandResponse.command,
+          commandType: 'ADD_FOOD',
+          adviceMessage: '',
+          uiMessage: '',
+          payload: commandResponse.command?.payload && Array.isArray(commandResponse.command.payload.items)
+            ? commandResponse.command.payload
+            : { items: [] },
+        };
+        commandType = 'ADD_FOOD';
+        rawPayload = commandResponse.command.payload || {};
+      } else {
+        console.log('🟡 DEBUG - PATH SCELTO: CHAT_RESPONSE (nessun ADD_FOOD / nessun secondo step tool)');
+        return this.publishChatResponse(commandResponse.command, userText);
+      }
     }
 
     if (
@@ -2047,6 +2095,11 @@ export class CommandTerminalController {
     }
 
     if (commandType === 'ADD_FOOD') {
+      console.log('🟡 DEBUG - PATH SCELTO: ADD_FOOD (estrazione / bozza / proposal — non CHAT_RESPONSE)');
+      // Mute & Replace: scarta subito qualsiasi copy Gemini (uiMessage/adviceMessage).
+      commandResponse.command = this.muteAddFoodLlmCopy(commandResponse.command);
+      rawPayload = commandResponse.command?.payload || rawPayload;
+
       this.publishAddFoodContextAdvice(commandResponse.command);
 
       let normalized = normalizeFoodPayload(rawPayload, currentState, {
@@ -2147,19 +2200,13 @@ export class CommandTerminalController {
       return this.beginWorkoutRegistration(payload, currentState, userText);
     }
 
-    if (commandType === 'ADD_FOOD') {
-      await this.publishProjectedMealLogFeedback(payload, currentState, {
-        userText,
-        conversationTexts: buildConversationTextsFromChatHistory(chatHistory, userText),
-        ...(options?.signal ? { signal: options.signal } : {}),
-      });
-    }
-
+    // ADD_FOOD draft: solo card locale — niente budget Gemini; il residuo esce alla conferma.
     return this.stagePendingAction(commandType, payload, {
       confidence: commandResponse.command.confidence ?? null,
       requiresConfirmation: true,
-      // ADD_FOOD: niente uiMessage LLM pre-pasto (budget stale); usa draft summary locale.
-      uiMessage: commandType === 'ADD_FOOD' ? undefined : commandResponse.command.uiMessage,
+      uiMessage: commandType === 'ADD_FOOD'
+        ? buildMealDraftUiMessage(payload)
+        : commandResponse.command.uiMessage,
     });
   }
 }

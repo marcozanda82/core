@@ -1322,12 +1322,27 @@ export function buildDeterministicMealLogFeedback(projection, mealLabel = '') {
   const rem = projection?.budgetRimanente || {};
   const label = String(mealLabel || '').trim();
   const head = label
-    ? `Ho processato «${label}» (~${meal.kcal || 0} kcal).`
-    : `Ho processato il pasto (~${meal.kcal || 0} kcal).`;
+    ? `Hai registrato «${label}» (~${meal.kcal || 0} kcal · P${meal.pro || 0} C${meal.carbo || 0} F${meal.fat || 0}).`
+    : `Hai registrato il pasto (~${meal.kcal || 0} kcal · P${meal.pro || 0} C${meal.carbo || 0} F${meal.fat || 0}).`;
   return (
-    `${head} Budget rimanente oggi: `
-    + `${rem.kcal ?? 0} kcal · P ${rem.pro ?? 0}g · C ${rem.carbo ?? 0}g · F ${rem.fat ?? 0}g.`
+    `${head} `
+    + `ATTENZIONE — NUOVO budget rimanente aggiornato: `
+    + `${rem.kcal ?? 0} kcal, Proteine ${rem.pro ?? 0}g, Carboidrati ${rem.carbo ?? 0}g, Grassi ${rem.fat ?? 0}g.`
   );
+}
+
+/**
+ * Somma macro da items proposal / resultingItems (per accept senza ripassare dal resolver).
+ * @param {Array<object>} items
+ */
+export function sumMealItemsMacros(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  return {
+    kcal: roundMacro(list.reduce((s, i) => s + (Number(i?.kcal ?? i?.cal) || 0), 0)),
+    pro: roundMacro(list.reduce((s, i) => s + (Number(i?.pro ?? i?.prot) || 0), 0)),
+    carbo: roundMacro(list.reduce((s, i) => s + (Number(i?.carbo ?? i?.carb) || 0), 0)),
+    fat: roundMacro(list.reduce((s, i) => s + (Number(i?.fat ?? i?.fatTotal) || 0), 0)),
+  };
 }
 
 function resolveCortisolScoreAtHour(currentAppState = {}, decimalHour) {

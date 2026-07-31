@@ -71,13 +71,17 @@ export class ContextComposer {
     if (pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
     const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
-    // Domande sullo stato (CASO 2) prima di qualsiasi bozza workout/pasto.
+
+    // DATA ENTRY pasti PRIMA del consulto: "come snack, ho mangiato…" → ADD_FOOD.
+    if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
+
+    // Domande sullo stato (CASO 2) prima di qualsiasi bozza workout.
     if (isConsultativeStateIntent(text)) {
       if (isDayReviewIntent(text)) return 'ASK_DAY_REVIEW';
       if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
       return 'CHAT_RESPONSE';
     }
-    // Workout PRIMA di meal-advice / food: "allenamento gambe" non deve finire in ASK_MEAL_ADVICE.
+    // Workout PRIMA di meal-advice: "allenamento gambe" non deve finire in ASK_MEAL_ADVICE.
     if (isWorkoutLogIntent(text)) return 'ADD_WORKOUT';
     if (hasImages && isCreateNewFoodIntent(text)) return 'CREATE_NEW_FOOD';
     if (isDayReviewIntent(text)) return 'ASK_DAY_REVIEW';
@@ -89,7 +93,6 @@ export class ContextComposer {
     if (isConsultantMealIntent(text, chatHistory)) return 'CONSULTANT_MEAL';
     if (isWipMealBuildIntent(text, chatHistory)) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
-    if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
     return 'UNKNOWN';
   }
 
@@ -126,7 +129,7 @@ export class ContextComposer {
         : [],
       knownFoods,
       slotFillingPolicy:
-        'ADD_FOOD entity extraction (HARD): foodName = solo nome puro alimento (NO grammi, parentesi, "e " iniziale); grams in campo separato; congiunzioni e virgole separano alimenti senza creare voci duplicate. Smart Defaults: se mancano tipo pasto o orario, deduci da CURRENT_SYSTEM_TIME (06:00-10:30 colazione, 12:00-15:00 pranzo, 19:00-22:30 cena, altro snack). Orario assente = ora corrente. Chiedi SOLO grammature mancanti. adviceMessage in registrazione: solo riepilogo neutro, NO allarmi grassi/budget.',
+        'ADD_FOOD few-shot: User "Ho mangiato 90g di sardine all\'olio e 160g di pane integrale" → items [{foodName:"sardine all\'olio",grams:90},{foodName:"pane integrale",grams:160}]. foodName = stringa pulita DB (NO grammi, NO congiunzioni). uiMessage/adviceMessage VUOTI.',
     };
   }
 
@@ -204,10 +207,20 @@ export class ContextComposer {
   composeForIntent(intent, currentState = {}, { userText = '', chatHistory = [] } = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
     if (normalizedIntent === 'ADD_FOOD') {
+      const nutritionSlices = this.buildNutritionContextSlices(currentState);
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
-          ...this.buildNutritionContextSlices(currentState),
+          ...nutritionSlices,
+          // PRE-pasto: non usare Delta/remaining per copy. Feedback budget e post-macro.
+          METABOLIC_BUDGET: {
+            note:
+              'REDACTED_FOR_ADD_FOOD: Se commandType e ADD_FOOD, lascia uiMessage e adviceMessage VUOTI. '
+              + 'I calcoli di budget verranno fatti dal sistema. NON citare kcal rimanenti ne cilindri.',
+            suppressBudgetCommentary: true,
+          },
+          COPY_POLICY:
+            'ADD_FOOD: adviceMessage="" e uiMessage="". Nessun paragrafo di stato metabolico.',
           food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
         },
       };
@@ -218,6 +231,15 @@ export class ContextComposer {
         contextSlices: {
           workout: this.getWorkoutContext(currentState.dailyStats),
           USER_WORKOUT_HABITS: this.getWorkoutHabitsFromState(currentState),
+          CARDIO_VS_HYPERTROPHY:
+            'REGOLA DI COMPILAZIONE TASSATIVA: Quando l\'utente registra un\'attivita puramente CARDIO '
+            + '(es. corsa, camminata, SUP, nuoto, bici, o dichiara "minuti di cardio"), devi aggiornare '
+            + 'ESCLUSIVAMENTE il parametro dei minuti di cardio (durationMinutes + workoutType=cardio). '
+            + 'E SEVERAMENTE VIETATO alterare, incrementare o compilare i parametri di affaticamento dei '
+            + 'cilindri muscolari (Spinta, Trazione, Gambe, Core) in risposta ad attivita cardio. '
+            + 'Non usare workoutType gambe/spinta/trazione e lascia muscles=[]/null/omesso. '
+            + 'I cilindri muscolari devono essere modificati SOLO ED ESCLUSIVAMENTE se l\'utente dichiara '
+            + 'esplicitamente un allenamento di pesistica / ipertrofia mirato a quei gruppi muscolari.',
         },
       };
     }
@@ -492,6 +514,25 @@ export class ContextComposer {
       const global = buildKentuGlobalStateFromAppState(currentState);
       kentuGlobalState = global.object;
       kentuGlobalStateText = global.text;
+      // ADD_FOOD: redige Delta rimanente nel dump stato — altrimenti l'LLM cita i valori PRE-pasto.
+      if (String(effectiveIntent || '').toUpperCase() === 'ADD_FOOD' && kentuGlobalState?.Nutrition_Context) {
+        kentuGlobalState = {
+          ...kentuGlobalState,
+          Nutrition_Context: {
+            ...kentuGlobalState.Nutrition_Context,
+            Delta: {
+              Kcal: null,
+              Pro: null,
+              Cho: null,
+              Fat: null,
+              note:
+                'REDACTED_FOR_ADD_FOOD: NON citare budget rimanente. '
+                + 'Sara ricalcolato dal sistema dopo i macro del pasto.',
+            },
+          },
+        };
+        kentuGlobalStateText = JSON.stringify(kentuGlobalState, null, 2);
+      }
     } catch (error) {
       console.warn('[ContextComposer] buildKentuGlobalState failed', error);
     }

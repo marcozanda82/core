@@ -6,14 +6,20 @@ export const foodItemSchema = {
     foodName: {
       type: 'string',
       description:
-        'Nome PURO dell ingrediente, senza grammature, parentesi, virgole finali o congiunzioni iniziali. Esempi corretti: "Pane integrale con semi e noci", "Tonno al naturale", "Pomodoro", "Pesca". VIETATO: "e pesca", "pesca 100 g", "pomodoro 200 g", "(160g)". La quantita va SOLO in grams, mai nel nome.',
+        'Stringa pulita da cercare nel database, es: "pane integrale", "sardine all\'olio". '
+        + 'NO grammi, NO congiunzioni (e/ed/con), NO articoli quantitativi, NO numeri. '
+        + 'VIETATO: "e 160 g di pane", "90g sardine", "e pane". '
+        + 'La quantita va SOLO in grams.',
     },
     grams: {
       type: 'number',
       nullable: true,
       description:
-        'Peso in grammi. PRIORITA: se unita/pezzi e alimento in User_Portions_Dictionary (KENTU_GLOBAL_STATE), usa ESATTAMENTE quel peso con isEstimated=false. '
-        + 'Altrimenti: grammi espliciti utente → isEstimated=false; unita/pezzi senza dizionario → stima media + isEstimated=true; nessuna quantita → null.',
+        'Peso in grammi ASSOCIATO IN MODO ESCLUSIVO a QUESTO alimento (campo weight negli esempi). '
+        + 'Esempio: "90g sardine e 160g pane" → sardine=90, pane=160. '
+        + 'VIETATO duplicare il peso del primo alimento sui successivi. '
+        + 'Grammi espliciti → isEstimated=false; unita/pezzi da dizionario → isEstimated=false; '
+        + 'unita senza dizionario → stima + isEstimated=true; nessuna quantita → null.',
     },
     isEstimated: {
       type: 'boolean',
@@ -101,11 +107,22 @@ export const mealMutationOperationSchema = {
 
 export const addFoodPayloadSchema = {
   type: 'object',
+  description:
+    'Payload ADD_FOOD — attivare quando l utente dichiara di aver mangiat/o/bevuto qualcosa, '
+    + 'elenca alimenti o ingredienti, cita un pasto (colazione/snack/pranzo/cena) con cibo, '
+    + 'o chiede di registrare calorie. Esempio: "come snack alle 19 ho mangiato sardine".',
   properties: {
     items: {
       type: 'array',
       description:
-        'TUTTI e SOLO gli alimenti menzionati dall utente, uno per voce, senza duplicati da congiunzioni. Es. "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" = 4 voci, NON 5. Le congiunzioni (e, con, più, virgola) separano alimenti ma NON diventano mai un foodName.',
+        'Se l utente elenca piu alimenti, crea UN oggetto SEPARATO per CIASCUN alimento. '
+        + 'Associa a ogni alimento ESATTAMENTE la sua grammatura specifica indicata nel testo. '
+        + 'E severamente vietato duplicare il peso del primo alimento sui successivi. '
+        + 'Le congiunzioni (e, ed, con, piu, virgola) SEPARANO alimenti e NON entrano mai nel foodName. '
+        + 'ONE-SHOT ESEMPIO: input "90g sardine e 160g pane" → '
+        + '[{"foodName":"sardine","grams":90,"isEstimated":false},{"foodName":"pane","grams":160,"isEstimated":false}]. '
+        + 'ESEMPIO 2: "90 g di sardine e 160 g di pane" → stessi due oggetti (foodName senza "di"/numeri). '
+        + 'ESEMPIO 3: "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" = 4 voci, NON 5.',
       items: foodItemSchema,
       minItems: 1,
     },
@@ -192,31 +209,44 @@ export const addWorkoutPayloadSchema = {
       enum: workoutTypeEnum,
       description:
         'OBBLIGATORIO. NORMALIZZA sempre il linguaggio utente: '
-        + 'legs/lower/quad/squat/leg day/affondi → gambe; '
+        + 'legs/lower/quad/squat/leg day/affondi → gambe SOLO se allenamento pesi/ipertrofia esplicito; '
         + 'push/petto/spalle/tricipiti/panca → spinta; '
         + 'pull/dorso/schiena/bicipiti/trazioni/rematore → trazione; '
-        + 'corsa/bike/HIIT/tapis/nuoto → cardio; '
-        + 'allenamento generico senza gruppo chiaro → altro.',
+        + 'corsa/bike/HIIT/tapis/nuoto/SUP/camminata/"minuti di cardio" → cardio; '
+        + 'allenamento generico senza gruppo chiaro → altro. '
+        + 'REGOLA TASSATIVA CARDIO: se attivita puramente cardio, workoutType DEVE essere "cardio". '
+        + 'VIETATO usare gambe/spinta/trazione solo perche il cardio coinvolge quei muscoli.',
     },
     workoutName: {
       type: 'string',
       nullable: true,
       description:
         'Etichetta sintetica (es. "Allenamento gambe"). Se assente, il sistema la deriva da workoutType. '
-        + 'Per "ho fatto gambe" senza lista esercizi: workoutName puo essere "Allenamento gambe" e exercises=[].',
+        + 'Per "ho fatto gambe" senza lista esercizi: workoutName puo essere "Allenamento gambe" e exercises=[]. '
+        + 'Per cardio puro: es. "Cardio", "SUP", "Corsa" — non etichettare come allenamento gambe.',
     },
     durationMinutes: {
       type: 'number',
       nullable: true,
       description:
         'Minuti SOLO se l utente li ha indicati esplicitamente (es. 45 min, 1 ora). '
-        + 'Se assenti: null o ometti — NON inventare. Il sistema applica un default (45).',
+        + 'Se assenti: null o ometti — NON inventare. Il sistema applica un default (45). '
+        + 'Per cardio puro questo e il parametro principale da aggiornare (minuti di cardio).',
+    },
+    muscles: {
+      type: 'array',
+      nullable: true,
+      description:
+        'OPZIONALE. Gruppi muscolari SOLO se l utente dichiara esplicitamente pesistica/ipertrofia '
+        + '(es. "gambe", "petto", "dorso"). Per attivita puramente CARDIO lascia null, ometti, o []. '
+        + 'VIETATO compilare muscles per inferenza da cardio (corsa/SUP/bici/nuoto).',
+      items: { type: 'string' },
     },
     exercises: {
       type: 'array',
       description:
         'Esercizi ESPLICITAMENTE citati. Per sessione generica ("allenamento gambe alle 18") lascia []. '
-        + 'Vietato aggiungere riscaldamento/defaticamento non menzionati.',
+        + 'Per cardio puro lascia []. Vietato aggiungere riscaldamento/defaticamento non menzionati.',
       items: addWorkoutExerciseItemSchema,
     },
     estimatedKcal: {
@@ -301,8 +331,12 @@ export const terminalCommandEnvelopeSchema = {
       type: 'string',
       enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP', 'CHAT_RESPONSE'],
       description:
-        'ADD_FOOD/ADD_WORKOUT/LOG_SLEEP = inserimento dati (CASO 1). '
-        + 'CHAT_RESPONSE = sola risposta consulenziale in chat senza bozze (CASO 2).',
+        'ADD_FOOD = trigger quando l utente dichiara di aver mangiat/o/bevuto qualcosa, elenca alimenti/ingredienti, '
+        + 'cita colazione/snack/pranzo/cena con cibo, o chiede di registrare calorie di un pasto (anche discorsivo: '
+        + '"come snack alle 19 ho mangiato sardine"). '
+        + 'ADD_WORKOUT/LOG_SLEEP = altri inserimenti dati (CASO 1). '
+        + 'CHAT_RESPONSE = SOLO domanda di consulto sullo stato SENZA assunzione di cibo (CASO 2). '
+        + 'VIETATO CHAT_RESPONSE se il messaggio descrive cibo mangiato.',
     },
     payload: {
       type: 'object',
@@ -314,15 +348,14 @@ export const terminalCommandEnvelopeSchema = {
     uiMessage: {
       type: 'string',
       description:
-        'Messaggio utente. Per CHAT_RESPONSE: analisi testuale sintetica basata su KENTU_GLOBAL_STATE.',
+        'Per CHAT_RESPONSE: analisi testuale. Per ADD_FOOD: lascia VUOTO (il sistema genera il testo).',
     },
     adviceMessage: {
       type: 'string',
       nullable: true,
       description:
         'Per CHAT_RESPONSE: testo consulenziale (alias di uiMessage). '
-        + 'Per ADD_FOOD: riepilogo neutro del log. Se items[].isEstimated=true, spiega le stime. '
-        + 'VIETATO in semplice log: allarmi What-If non richiesti.',
+        + 'Per ADD_FOOD: lascia VUOTO. VIETATO allarmi/budget/cilindri in registrazione pasto.',
     },
     confidence: {
       type: 'number',
@@ -505,7 +538,13 @@ export const geminiToolSchemas = Object.freeze({
   ADD_WORKOUT: {
     name: 'dispatch_add_workout',
     description:
-      'Crea un comando tipizzato per aggiungere un allenamento al diario (nome e durata obbligatori).',
+      'Crea un comando tipizzato per aggiungere un allenamento al diario (nome e durata obbligatori). '
+      + 'REGOLA TASSATIVA CARDIO vs IPERTROFIA: quando l utente registra un attivita puramente CARDIO '
+      + '(corsa, camminata, SUP, nuoto, bici, HIIT, o dichiara "minuti di cardio"), aggiorna ESCLUSIVAMENTE '
+      + 'durationMinutes / workoutType=cardio. E SEVERAMENTE VIETATO alterare i cilindri muscolari '
+      + '(Spinta, Trazione, Gambe, Core): non usare workoutType gambe/spinta/trazione e lascia muscles=[]/null. '
+      + 'I cilindri muscolari si modificano SOLO se l utente dichiara esplicitamente pesistica/ipertrofia '
+      + 'mirata a quei gruppi.',
     inputSchema: addWorkoutPayloadSchema,
   },
   LOG_SLEEP: {

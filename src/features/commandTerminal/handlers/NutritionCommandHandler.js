@@ -19,13 +19,20 @@ export function initNutritionHandlers({
 
   const unsubscribeAddFood = bus.subscribe(DISPATCH_ADD_FOOD, async (envelope) => {
     try {
+      console.log('🔵 DEBUG - OUTPUT TOOL ADD_FOOD (dispatch ricevuto):', {
+        payload: envelope?.payload || {},
+        correlationId: envelope?.meta?.correlationId || null,
+        source: envelope?.meta?.source || null,
+      });
       const result = await onAddFoodCommand(envelope?.payload || {}, envelope);
+      console.log('🔵 DEBUG - OUTPUT TOOL ADD_FOOD (result commit):', result);
       if (envelope?.meta?.correlationId === 'advice_accept'
         || envelope?.meta?.correlationId === 'meal_proposal_accept'
         || envelope?.meta?.correlationId === 'meal_proposal_update') {
         return;
       }
       if (typeof result === 'string' && result.trim()) {
+        console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (NutritionHandler→SYSTEM_MESSAGE):', result.trim());
         bus.publish(
           DISPATCH_SYSTEM_MESSAGE,
           { message: result.trim(), text: result.trim() },

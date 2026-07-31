@@ -8,7 +8,7 @@ import {
   chatResponsePayloadSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
-import { generateConsultantSystemInstruction } from '../../../conversation/ConsultantEngine.js';
+import { generateConsultantSystemInstruction, buildDeterministicMealLogFeedback } from '../../../conversation/ConsultantEngine.js';
 import {
   buildCombinedConversationText,
   buildGeminiContentsFromChatHistory,
@@ -24,6 +24,7 @@ import {
 } from '../conversation/mealLogIntent.js';
 import {
   inferWorkoutTypeFromText,
+  isPureCardioRegistrationText,
   normalizeChatWorkoutType,
 } from '../conversation/workoutRegistrationSlots.js';
 import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
@@ -282,6 +283,40 @@ function stripLeadingConjunctions(foodName) {
     name = name.replace(LEADING_CONJUNCTION_PATTERN, '').trim();
   }
   return name;
+}
+
+/**
+ * Rimuove numeri/grammature/congiunzioni dal foodName prima della ricerca DB.
+ * Es: "e 160 g di pane integrale" → { cleanName: "pane integrale", gramsFromName: 160 }
+ * @param {string} foodName
+ * @returns {{ cleanName: string, gramsFromName: number | null }}
+ */
+function scrubFoodNameQuantityTokens(foodName) {
+  let name = stripLeadingConjunctions(foodName);
+  if (!name) return { cleanName: '', gramsFromName: null };
+
+  const gramsMatch = name.match(/(\d+[.,]?\d*)\s*(?:g|gr|grammi)\b/i);
+  const gramsFromName = gramsMatch
+    ? Math.round(Number(String(gramsMatch[1]).replace(',', '.')))
+    : null;
+
+  name = name
+    // Pattern tipico LLM: "e 160 g di pane…" / "160g di pane…"
+    .replace(/^(?:e|ed|con|più|piu)\s+/i, '')
+    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)\b/gi, ' ')
+    .replace(/\(\s*\d+[.,]?\d*\s*(?:g|gr|grammi)?\s*\)/gi, ' ')
+    .replace(/\b\d+[.,]?\d*\b/g, ' ')
+    // Solo articoli quantitativi in testa o dopo rimozione grammi, non "all'olio"
+    .replace(/^(?:di|del|della|dello|dei|degli|delle|un|una|uno)\s+/i, '')
+    .replace(/\s+(?:di|del|della|dello|dei|degli|delle)\s+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  name = stripLeadingConjunctions(name);
+  return {
+    cleanName: name,
+    gramsFromName: Number.isFinite(gramsFromName) && gramsFromName > 0 ? gramsFromName : null,
+  };
 }
 
 function normalizeFoodNameForDedup(name) {
@@ -719,7 +754,10 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
   }
 
   const workoutType =
-    normalizeChatWorkoutType(payload.workoutType)
+    (isPureCardioRegistrationText(combinedText)
+      ? 'cardio'
+      : null)
+    || normalizeChatWorkoutType(payload.workoutType)
     || inferWorkoutTypeFromText(combinedText);
   if (workoutType) {
     payload.workoutType = workoutType;
@@ -733,6 +771,19 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
       };
       payload.workoutName = labels[workoutType] || 'Allenamento';
     }
+  }
+
+  // Cardio puro: nessun gruppo muscolare (cilindri ipertrofia restano intatti).
+  if (workoutType === 'cardio' || isPureCardioRegistrationText(combinedText)) {
+    payload.muscles = [];
+    payload.workoutType = 'cardio';
+  } else if (Array.isArray(payload.muscles)) {
+    payload.muscles = payload.muscles
+      .map((m) => asTrimmedString(m))
+      .filter(Boolean);
+    if (payload.muscles.length === 0) delete payload.muscles;
+  } else {
+    delete payload.muscles;
   }
 
   const estimatedKcal = Number(payload.estimatedKcal);
@@ -781,11 +832,20 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
 
   const sanitizeItem = (item) => {
     const next = { ...(item || {}) };
-    const foodName = asTrimmedString(next.foodName || next.name);
-    if (!foodName) return null;
-    next.foodName = foodName;
+    const rawFoodName = asTrimmedString(next.foodName || next.name);
+    if (!rawFoodName) return null;
 
-    const gramsNum = Number(next.grams ?? next.qty ?? next.weight);
+    const { cleanName, gramsFromName } = scrubFoodNameQuantityTokens(rawFoodName);
+    if (!cleanName) return null;
+    next.foodName = cleanName;
+
+    let gramsNum = Number(next.grams ?? next.qty ?? next.weight);
+    // Se il modello ha infilato la grammatura nel foodName ("e 160 g di pane") e ha
+    // duplicato i grammi del primo item, preferisci i grammi trovati nel nome grezzo.
+    if (gramsFromName != null) {
+      gramsNum = gramsFromName;
+    }
+
     const modelSaysEstimated = next.isEstimated === true;
     const hasGrams = Number.isFinite(gramsNum) && gramsNum > 0;
     const hasExplicitGrams = userTextMentionsExplicitGrams(combinedText);
@@ -795,6 +855,9 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     if (!hasGrams) {
       delete next.grams;
       delete next.isEstimated;
+    } else if (gramsFromName != null) {
+      next.grams = Math.round(gramsNum);
+      next.isEstimated = false;
     } else if (modelSaysEstimated || (hasUnitQty && !hasExplicitGrams)) {
       // Unita/pezzi → tieni la stima media e marca isEstimated.
       next.grams = Math.round(gramsNum);
@@ -869,19 +932,37 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     delete payload.exactTime;
   }
 
-  return { ...command, payload };
+  return {
+    ...command,
+    payload,
+    // Mute & Replace: il controller ignora comunque questi campi; li svuotiamo alla fonte.
+    adviceMessage: '',
+    uiMessage: '',
+  };
 }
 
 function getEnvelopeSchemaForIntent(commandHint) {
-  // CHAT_RESPONSE sempre ammesso come escape da over-triggering (CASO 2 Intent Routing).
+  // Con hint ADD_FOOD: niente escape CHAT_RESPONSE — data entry obbligatorio.
   if (commandHint === 'ADD_FOOD') {
     return {
       ...terminalCommandEnvelopeSchema,
       properties: {
         ...terminalCommandEnvelopeSchema.properties,
-        commandType: { type: 'string', enum: ['ADD_FOOD', 'CHAT_RESPONSE'] },
-        payload: {
-          anyOf: [addFoodPayloadSchema, chatResponsePayloadSchema],
+        commandType: {
+          type: 'string',
+          enum: ['ADD_FOOD'],
+          description:
+            'OBBLIGATORIO ADD_FOOD: l utente sta registrando cibo. Vietato CHAT_RESPONSE.',
+        },
+        payload: addFoodPayloadSchema,
+        uiMessage: {
+          type: 'string',
+          description: 'Lascia VUOTO per ADD_FOOD.',
+        },
+        adviceMessage: {
+          type: 'string',
+          nullable: true,
+          description: 'Lascia VUOTO per ADD_FOOD.',
         },
       },
     };
@@ -968,15 +1049,18 @@ function imageDataUrlToInlinePart(imageSrc) {
 
 /** Blocco Intent Routing — massima priorità nel system prompt (anti over-triggering bozze). */
 export const INTENT_ROUTING_SYSTEM_BLOCK = `### REGOLA FONDAMENTALE DI INTENT ROUTING (CLASSIFICAZIONE DELL'INTENZIONE)
-Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente incrociando la sua richiesta con i dati del KENTU_GLOBAL_STATE.
+Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente.
+
+REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI OBBLIGATORIAMENTE USARE IL COMANDO ADD_FOOD. È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
 
 CASO 1: [AZIONE - INSERIMENTO DATI]
-L'utente dichiara esplicitamente un'azione compiuta (es. 'Ho mangiato una mela', 'Ho fatto 45 min di petto').
--> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato per innescare la UI di inserimento. Quando un valore non è disponibile per la compilazione automatica, fai una stima e usa il valore medio. Non fare domande all'utente per i dati mancanti.
+L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
+-> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
-L'utente pone una domanda, chiede un consiglio o fa una riflessione sul suo stato metabolico, sui macro rimanenti o sui cilindri (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?', 'Considerando l'allenamento di ieri...').
--> COMPORTAMENTO OBBLIGATORIO: È SEVERAMENTE VIETATO creare bozze di inserimento pasto o workout. Devi agire esclusivamente come consulente. Restituisci il formato JSON per la semplice risposta in chat (es. commandType: 'CHAT_RESPONSE'), fornendo un'analisi testuale sintetica basata ESCLUSIVAMENTE sui dati letti nel KENTU_GLOBAL_STATE.`;
+L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
+-> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi sintetica su KENTU_GLOBAL_STATE.
+-> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 (ADD_FOOD).`;
 
 export class GeminiStructuredClient {
   constructor({ model = DEFAULT_MODEL } = {}) {
@@ -1011,22 +1095,31 @@ export class GeminiStructuredClient {
 
     if (includeFoodRules) {
       parts.push(
-        "VINCOLO ADD_FOOD — ESTRAZIONE ESCLUSIVA (CONTEGGIO VOCI): Estrai SOLO gli alimenti ESPLICITAMENTE citati dall utente (e nella cronologia conversazione). E VIETATO aggiungere contorni, condimenti, completamenti, ingredienti impliciti o piatti extra non menzionati. SE l utente cita N alimenti distinti, payload.items[] DEVE contenere ESATTAMENTE N voci — ne piu ne meno. Questo vincolo riguarda il NUMERO e la PRESENZA delle voci, NON il livello di dettaglio del foodName di una voce gia citata.",
-        "HARD CONSTRAINT — SANITIZZAZIONE NOMI (CLEAN STRINGS): foodName deve contenere SOLO il nome puro dell ingrediente o piatto. E SEVERAMENTE VIETATO includere nel foodName: grammature (160g, 100 g), parentesi, porzioni, numeri quantitativi o suffissi tipo '200 g'. La quantita va ESCLUSIVAMENTE in grams. Esempi corretti: 'Pomodoro', 'Pesca', 'Pane integrale con semi e noci', 'Tonno al naturale'. Esempi VIETATI: 'pomodoro 200 g', 'e pesca 100 g', 'pesca (100g)'.",
-        "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: Ignora le congiunzioni ('e', 'ed', 'con', 'più', 'piu', virgola) come separatori tra alimenti, NON come parte del nome. 'pomodoro 200 g e pesca 100 g' produce DUE voci ('Pomodoro' + 'Pesca'), NON tre. Mai creare una voce il cui foodName inizia con 'e ', 'ed ', 'con ', 'più ' o simili. Mai sdoppiare lo stesso alimento (es. 'pesca' E 'e pesca 100 g' e un errore grave: una sola voce 'Pesca').",
+        "VINCOLO ADD_FOOD — ESTRAZIONE ESCLUSIVA (CONTEGGIO VOCI): Estrai SOLO gli alimenti ESPLICITAMENTE citati dall utente (e nella cronologia conversazione). E VIETATO aggiungere contorni, condimenti, completamenti, ingredienti impliciti o piatti extra non menzionati. SE l utente cita N alimenti distinti, payload.items[] DEVE contenere ESATTAMENTE N voci — ne piu ne meno.",
+        `ESEMPI DI ESTRAZIONE PASTI MULTIPLI:
+User: "Ho mangiato 90g di sardine all'olio e 160g di pane integrale"
+Output Corretto per payload.items:
+[
+  { "foodName": "sardine all'olio", "grams": 90, "isEstimated": false },
+  { "foodName": "pane integrale", "grams": 160, "isEstimated": false }
+]
+REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alimento da cercare nel database. Rimuovi le congiunzioni (e, con, ed) e rimuovi le quantità dal nome. VIETATO: "e 160 g di pane integrale".`,
+        "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB (es. \"pane integrale\"). NO grammi, NO congiunzioni.",
+        "HARD CONSTRAINT — MAPPATURA GRAMMI 1:1: ogni alimento ha i PROPRI grammi. Mai copiare i grammi del primo sui successivi.",
+        "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'con' separano alimenti, non entrano nel foodName.",
         "ECCEZIONE ALL ESTRAZIONE LETTERALE — SMART RESOLUTION (PRIORITA SU [USER_HABITS_FOR_CURRENT_MEAL]): Se l utente digita un termine generico (es. 'pasta', 'latte', 'yogurt') e in [USER_HABITS_FOR_CURRENT_MEAL] esiste una variante specifica che usa abitualmente (es. 'pasta integrale la molisana', 'latte parzialmente scremato', 'yogurt greco fage'), DEVI OBBLIGATORIAMENTE restituire in payload.items[].foodName il nome specifico completo dell abitudine corrispondente. Arricchire il nome di un SINGOLO alimento gia citato basandosi sullo storico NON viola Estrazione Esclusiva: non stai aggiungendo voci, stai risolvendo l entita. Se piu abitudini contengono il termine generico, scegli quella piu frequente o piu plausibile per il pasto corrente. Se [USER_HABITS] e vuoto o non contiene match, usa il termine grezzo dell utente (pulito da grammi e congiunzioni).",
-        "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento. Non troncare al primo.",
+        "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento, ciascuno con la PROPRIA grammatura. Non troncare al primo.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro, vedi SANITIZZAZIONE NOMI) e grams secondo la regola isEstimated. NON inventare foodDbKey ne macronutrienti: li risolve il codice locale dal DB.",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro) e grams. NON inventare foodDbKey ne macronutrienti.",
         "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
-        "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE il peso indicato in quel dizionario e imposta isEstimated: false. Usa le medie standard (impostando isEstimated: true) SOLO se l'alimento NON è presente nel dizionario. Esempi: '1 pomodoro' con dizionario pomodoro=150 → grams:150, isEstimated:false; senza dizionario → grams≈120, isEstimated:true; '200g di pasta' → grams:200, isEstimated:false.",
-        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi (es. solo 'ho mangiato pasta'), lascia grams vuoto/null e isEstimated:false — il sistema chiedera i grammi. Non inventare pesi a caso senza unita.",
-        "REGOLA ADD_FOOD (adviceMessage con stime): Se almeno un item ha isEstimated:true, compila adviceMessage esattamente cosi (o equivalente): 'Ho preparato la bozza. Ho stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.'",
+        "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
+        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi, lascia grams null — il sistema chiedera i grammi.",
+        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
         "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi/unita e ha citato esplicitamente quell alimento; in quel caso isEstimated:true. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
-        "HARD CONSTRAINT — adviceMessage IN REGISTRAZIONE PASTO: In fase di semplice log pasto (ADD_FOOD) NON generare allarmi su grassi, budget metabolico, semafori o valutazioni What-If. Eccezione: il messaggio obbligatorio sulle stime isEstimated. Altrimenti, se compili adviceMessage, limitati a un riepilogo neutro del log.",
-        "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — il codice applica Smart Defaults da [CURRENT_SYSTEM_TIME].",
-        "Questa logica NON si applica a richieste di consiglio pasto (ADVICE): quelle sono gestite dal consulente, non da ADD_FOOD.",
+        "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti.",
+        "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — Smart Defaults da [CURRENT_SYSTEM_TIME].",
+        "Questa logica NON si applica a richieste di consiglio pasto (ADVICE).",
       );
     }
 
@@ -1037,7 +1130,8 @@ export class GeminiStructuredClient {
         "REGOLA ADD_WORKOUT (multi-esercizio): Se l'utente elenca PIU esercizi, devi estrarre TUTTI in payload.exercises[] — uno oggetto per ciascun esercizio. Non troncare al primo.",
         "PULIZIA CONGIUNZIONI E NO DUPLICATI: I exerciseName estratti NON devono mai iniziare con congiunzioni ('e ', 'ed ', 'con ', 'più ', ', '). Se l'utente scrive 'X e Y', estrai 'X' e 'Y', senza la 'e'. Vietato sdoppiare lo stesso esercizio in due voci diverse.",
         "REGOLA ADD_WORKOUT (durata): Includi durationMinutes SOLO se l'utente ha indicato esplicitamente minuti o ore (es. '45 min', '1 ora'). NON inventare durate di default — se assente, ometti il campo.",
-        "REGOLA ADD_WORKOUT (workoutType OBBLIGATORIO): Compila sempre payload.workoutType normalizzando: gambe/legs/lower→gambe; spinta/push/petto/spalle→spinta; trazione/pull/dorso→trazione; cardio/corsa/HIIT→cardio; altrimenti altro.",
+        "REGOLA ADD_WORKOUT (workoutType OBBLIGATORIO): Compila sempre payload.workoutType normalizzando: gambe/legs/lower→gambe SOLO se pesistica esplicita; spinta/push/petto/spalle→spinta; trazione/pull/dorso→trazione; cardio/corsa/HIIT/SUP/nuoto/bici/camminata/\"minuti di cardio\"→cardio; altrimenti altro.",
+        "REGOLA TASSATIVA ADD_WORKOUT (CARDIO vs IPERTROFIA): Quando l'utente registra un'attivita puramente CARDIO (corsa, camminata, SUP, nuoto, bici, o dichiara \"minuti di cardio\"), aggiorna ESCLUSIVAMENTE durationMinutes e workoutType=cardio. E SEVERAMENTE VIETATO alterare/incrementare/compilare i cilindri muscolari (Spinta, Trazione, Gambe, Core): lascia muscles=[]/null/omesso e NON usare workoutType gambe/spinta/trazione per inferenza muscolare dal cardio. I cilindri muscolari si modificano SOLO se l'utente dichiara esplicitamente pesistica/ipertrofia mirata a quei gruppi.",
         "REGOLA ADD_WORKOUT (sessione generica): Per frasi tipo 'ho fatto allenamento gambe alle 18' senza lista esercizi, exercises=[] e workoutName sintetico sono validi. NON inventare esercizi.",
         "REGOLA ADD_WORKOUT (serie/ripetizioni/carico): Includi sets, reps e weightKg SOLO se l'utente li ha scritti esplicitamente oppure se provieno da SMART RESOLUTION sullo storico abituale per un esercizio gia citato.",
         "REGOLA ADD_WORKOUT (workoutName): Compila workoutName come etichetta sintetica dell'allenamento (es. 'Allenamento gambe'). Se citi esercizi in exercises[], workoutName puo riassumerli.",
@@ -1060,8 +1154,8 @@ export class GeminiStructuredClient {
 
     parts.push(
       fixedHint && fixedHint !== 'UNKNOWN'
-        ? `Intent target suggerito (NON forzare se CASO 2): ${fixedHint}. Se e CONSULTO usa CHAT_RESPONSE.`
-        : 'Se l intent non e chiaro, classifica CASO 1 vs CASO 2. In dubbio su domanda/stato → CHAT_RESPONSE.',
+        ? `Intent target FORZATO: ${fixedHint}. Per ADD_FOOD e VIETATO rispondere con CHAT_RESPONSE.`
+        : 'Se l intent non e chiaro, classifica CASO 1 vs CASO 2. Se c\'e cibo mangiato → ADD_FOOD. Solo domande pure di stato → CHAT_RESPONSE.',
     );
 
     return `${lead}\n\n${parts.join(' ')}`;
@@ -1104,10 +1198,10 @@ export class GeminiStructuredClient {
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto (ADD_FOOD): payload.items[] = SOLO alimenti citati. Per unita/pezzi: PRIMA leggi User_Portions_Dictionary in KENTU_GLOBAL_STATE — se presente usa quel peso con isEstimated:false; altrimenti stima media con isEstimated:true. foodName = nome puro; grams separato. adviceMessage obbligatorio se ci sono stime.'
+        ? 'Registrazione pasto (ADD_FOOD): items[] = un oggetto per alimento. foodName PURO (no "e 160 g di pane"). grams = SOLO la quantita di QUELL alimento. Esempio: "90g sardine e 160g pane" → [{foodName:"sardine",grams:90},{foodName:"pane",grams:160}]. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
-        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
+        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS] e [CARDIO_VS_HYPERTROPHY]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). CARDIO puro → solo durationMinutes + workoutType=cardio; muscles=[]/null; VIETATO toccare cilindri Spinta/Trazione/Gambe. Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
         ? 'CASO 2 CONSULTO: commandType DEVE essere CHAT_RESPONSE. Compila uiMessage (o adviceMessage/payload.message) con analisi sintetica basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
@@ -1116,6 +1210,16 @@ export class GeminiStructuredClient {
     ]
       .filter(Boolean)
       .join('\n');
+
+    // --- DIAGNOSTIC TRACE (meal log race) ---
+    console.log('🔴 DEBUG - SYSTEM PROMPT INVIATO:', systemInstruction);
+    console.log('🔴 DEBUG - USER PROMPT INVIATO:', userPrompt);
+    console.log('🔴 DEBUG - COMMAND HINT:', asTrimmedString(commandHint).toUpperCase());
+    console.log('🔴 DEBUG - KENTU_GLOBAL_STATE (Nutrition Delta / snapshot):',
+      contextBundle?.contextSlices?.KENTU_GLOBAL_STATE?.Nutrition_Context
+      || contextBundle?.kentuGlobalStateText?.slice?.(0, 800)
+      || '(assente)');
+
     const generationConfig = {
       temperature,
       response_mime_type: 'application/json',
@@ -1142,6 +1246,15 @@ export class GeminiStructuredClient {
     }
     parsed = sanitizeAddFoodCommand(parsed, normalizedUserText, conversationText, contextBundle);
     parsed = sanitizeAddWorkoutCommand(parsed, normalizedUserText, conversationText, contextBundle);
+
+    console.log('🔵 DEBUG - OUTPUT TOOL / STRUCTURED COMMAND:', {
+      commandType: parsed?.commandType,
+      adviceMessage: parsed?.adviceMessage,
+      uiMessage: parsed?.uiMessage,
+      payloadPreview: parsed?.payload,
+      requiresConfirmation: parsed?.requiresConfirmation,
+    });
+
     return {
       command: parsed,
       rawText,
@@ -1163,6 +1276,9 @@ export class GeminiStructuredClient {
 
     const contents = buildGeminiContentsFromChatHistory(chatHistory);
     const systemTimeCtx = formatCurrentSystemTimeContext();
+
+    console.log('🔴 DEBUG - SYSTEM PROMPT INVIATO (generateConsultantResponse):', system);
+    console.log('🔴 DEBUG - USER PROMPT INVIATO (generateConsultantResponse):', userPrompt);
 
     const generationConfig = {
       temperature,
@@ -1224,74 +1340,14 @@ export class GeminiStructuredClient {
   }
 
   /**
-   * Copy AI post-log pasto con budget già proiettato in memoria (anti race store).
-   * @param {{
-   *   projection: object,
-   *   mealLabel?: string,
-   *   signal?: AbortSignal | null,
-   * }} params
-   * @returns {Promise<string>}
+   * Copy post-log: override numerico in memoria (niente Context Snapshot / LLM).
    */
-  async generateMealRegistrationFeedback({ projection, mealLabel = '', signal = null } = {}) {
+  async generateMealRegistrationFeedback({ projection, mealLabel = '' } = {}) {
     const pack = projection && typeof projection === 'object' ? projection : null;
     if (!pack?.budgetRimanente || !pack?.nuoviConsumi) {
       throw new Error('Meal registration feedback missing projection');
     }
-
-    const label = asTrimmedString(mealLabel);
-    const prompt = [
-      'Hai appena estratto e valorizzato un pasto da linguaggio naturale.',
-      'Lo store React/Firebase NON è ancora aggiornato: usa SOLO i numeri proiettati sotto.',
-      label ? `Pasto: ${label}` : '',
-      `[MEAL_JUST_PROCESSED]: ${JSON.stringify(pack.meal || {})}`,
-      `[CONSUMI_ATTUALI_PRE_PASTO]: ${JSON.stringify(pack.consumiAttuali || {})}`,
-      `[NUOVI_CONSUMI]: ${JSON.stringify(pack.nuoviConsumi)}`,
-      `[TARGET_ODIERNO]: ${JSON.stringify(pack.targetOdierno || {})}`,
-      `[BUDGET_RIMANENTE]: ${JSON.stringify(pack.budgetRimanente)}`,
-      'Scrivi adviceMessage in italiano (max 3 frasi): conferma il log e cita esplicitamente il budget rimanente da [BUDGET_RIMANENTE].',
-      'VIETATO dire che il budget è intatto/invariato se [MEAL_JUST_PROCESSED].kcal > 0.',
-      'VIETATO rileggere o inventare valori diversi da quelli forniti.',
-      'Rispondi SOLO JSON: {"adviceMessage":"..."}',
-    ].filter(Boolean).join('\n');
-
-    const feedbackSchema = {
-      type: 'object',
-      properties: {
-        adviceMessage: { type: 'string' },
-      },
-      required: ['adviceMessage'],
-    };
-
-    const systemTimeCtx = formatCurrentSystemTimeContext();
-    const rawText = await askAI(
-      `${systemTimeCtx.header}\n${prompt}`,
-      'Sei KentuOS. Generi solo il feedback testuale post-registrazione pasto con numeri già calcolati.',
-      {
-        model: CONSULTANT_MODEL,
-        temperature: 0.2,
-        responseSchema: feedbackSchema,
-        generationConfig: {
-          temperature: 0.2,
-          response_mime_type: 'application/json',
-          responseMimeType: 'application/json',
-          response_schema: feedbackSchema,
-          responseSchema: feedbackSchema,
-        },
-        ...(signal ? { signal } : {}),
-      },
-    );
-
-    const cleaned = unwrapJsonText(rawText);
-    if (!cleaned) throw new Error('Meal registration feedback empty');
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      throw new Error('Meal registration feedback malformed JSON');
-    }
-    const adviceMessage = asTrimmedString(parsed?.adviceMessage);
-    if (!adviceMessage) throw new Error('Meal registration feedback missing adviceMessage');
-    return adviceMessage;
+    return buildDeterministicMealLogFeedback(pack, mealLabel);
   }
 }
 
