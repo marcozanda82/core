@@ -153,6 +153,7 @@ import MetabolicMonitorCard from './components/MetabolicMonitorCard';
 import EnergyArcWidget from './components/EnergyArcWidget';
 import DiaryDetailsSheet from './components/DiaryDetailsSheet';
 import EnergyBalanceSheet from './components/EnergyBalanceSheet';
+import CalorieDetailsModal from './components/CalorieDetailsModal';
 import FatDetailsSheet from './components/FatDetailsSheet';
 import CarbsDetailsSheet from './components/CarbsDetailsSheet';
 import ProteinDetailsSheet from './components/ProteinDetailsSheet';
@@ -1281,6 +1282,7 @@ export default function SalaComandi() {
   });
   const [showReport, setShowReport] = useState(false);
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
+  const [showCalorieDetailsSheet, setShowCalorieDetailsSheet] = useState(false);
   const [showDiarySheet, setShowDiarySheet] = useState(false);
   const [showEnergySheet, setShowEnergySheet] = useState(false);
   useEffect(() => {
@@ -5545,29 +5547,50 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     let data = calculatedPieData.filter(d => d.value > 0);
     const currentTotal = data.reduce((s, d) => s + d.value, 0);
-    const targetKcal =
+    // Denominatore = target giornaliero (NON maxScale). A target/surplus i macro chiudono al 100%.
+    const dailyTargetKcal =
       Math.round(
-        Number(homeKcalDialTelemetry?.maxScaleKcal)
+        Number(homeCalorieSplit?.targetKcal)
         || Number(dynamicDailyKcal)
         || Number(baseKcal)
         || Number(userProfileKcalBase)
         || Number(userTargets?.kcal)
         || 2000
       ) || 2000;
-    if (targetKcal > 0 && currentTotal < targetKcal) {
+    const surplusKcal = Math.max(0, Math.round(currentTotal - dailyTargetKcal));
+
+    if (dailyTargetKcal > 0 && currentTotal > 0 && currentTotal < dailyTargetKcal) {
       data = [...data, {
         name: 'Rimanenti',
-        value: targetKcal - currentTotal,
+        value: dailyTargetKcal - currentTotal,
         macros: null,
         id: 'rimanenti',
         fill: rimanentiSliceColor,
         color: rimanentiSliceColor,
       }];
+    } else if (surplusKcal > 0 && currentTotal > 0) {
+      // Opzione A: pasti riscalati al target (chiudono la base), + fetta surplus = sforo reale.
+      // Totale pie = dailyTarget + surplus = currentTotal → macro base + overfill senza buchi.
+      const scale = dailyTargetKcal / currentTotal;
+      data = data.map((meal) => ({
+        ...meal,
+        actualKcal: meal.value,
+        value: meal.value * scale,
+      }));
+      data = [...data, {
+        name: 'SURPLUS',
+        value: surplusKcal,
+        actualKcal: surplusKcal,
+        macros: null,
+        id: 'surplus',
+        fill: '#ef4444',
+        color: '#ef4444',
+      }];
     }
     if (data.length === 0) {
       data = [{
         name: 'Rimanenti',
-        value: targetKcal,
+        value: dailyTargetKcal,
         macros: null,
         id: 'rimanenti',
         fill: rimanentiSliceColor,
@@ -5575,14 +5598,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }];
     }
     const sortedPieData = [...data].sort((a, b) => {
-      if (a.id === 'rimanenti') return 1;
-      if (b.id === 'rimanenti') return -1;
+      if (a.id === 'rimanenti' || a.id === 'surplus') return 1;
+      if (b.id === 'rimanenti' || b.id === 'surplus') return -1;
       const tA = a.timeValue ?? a.time ?? 0;
       const tB = b.timeValue ?? b.time ?? 0;
       return (Number(tA) || 0) - (Number(tB) || 0);
     });
     return sortedPieData;
-  }, [activeLog, userTargets?.kcal, dynamicDailyKcal, baseKcal, userProfileKcalBase, homeKcalDialTelemetry?.maxScaleKcal]);
+  }, [
+    activeLog,
+    userTargets?.kcal,
+    dynamicDailyKcal,
+    baseKcal,
+    userProfileKcalBase,
+    homeCalorieSplit?.targetKcal,
+  ]);
 
   const mealPieDisplayData = useMemo(() => {
     if (activeDialMode === 'kcal') return mealPieData;
@@ -5596,7 +5626,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           ? userTargets?.carb ?? 200
           : userTargets?.fatTotal ?? userTargets?.fat ?? 65;
 
-    const mealsOnly = mealPieData.filter((e) => e.id !== 'rimanenti');
+    const mealsOnly = mealPieData.filter((e) => e.id !== 'rimanenti' && e.id !== 'surplus');
     const slices = mealsOnly.map((m) => ({
       ...m,
       value: Math.max(0, Number(m[macroKey]) || 0),
@@ -7480,7 +7510,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
             const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
             const dialKcalRestLabel =
-              dialKcalSurplus > 0 ? 'SURPLUS' : 'RESTANTI';
+              dialKcalSurplus > 0 ? 'OLTRE IL TARGET' : 'RESTANTI';
             const showKcalTelemetryRings = activeDialMode === 'kcal' && !selectedMealCenter;
             const telemetry = homeKcalDialTelemetry;
             const zoneHud = resolveKcalZoneHudLabel(telemetry);
@@ -7553,7 +7583,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                           )}
                           {activeDialMode === 'kcal' && (
                             <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                              {Math.round(selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
+                              {Math.round(selectedMealCenter.actualKcal ?? selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
                             </div>
                           )}
                           {activeDialMode === 'pro' && (
@@ -7601,7 +7631,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                             {activeDialMode === 'kcal' && dialKcalSurplus > 0 && (
                               <span className="kcal-dial-center-surplus" style={{ letterSpacing: '0.02em' }}>
                                 + {dialKcalSurplus}{' '}
-                                <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
+                                <span style={{ fontSize: '0.42em', fontWeight: 700 }}>Kcal</span>
                               </span>
                             )}
                             {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && dialKcalRemaining}
@@ -7611,33 +7641,50 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                           </div>
                           <div
                             className="kcal-dial-center-label"
-                            style={{ color: '#888' }}
+                            style={{
+                              color: activeDialMode === 'kcal' && dialKcalSurplus > 0 ? '#f87171' : '#888',
+                              fontWeight: activeDialMode === 'kcal' && dialKcalSurplus > 0 ? 700 : 400,
+                            }}
                           >
                             {activeDialMode === 'kcal' && dialKcalRestLabel}
                             {activeDialMode === 'pro' && 'g Proteine'}
                             {activeDialMode === 'cho' && 'g Carboidrati'}
                             {activeDialMode === 'fat' && 'g Grassi'}
                           </div>
-                          <div
-                            className="kcal-dial-center-sub"
-                            style={{
-                              color: activeDialMode === 'kcal' ? zoneHud.color : '#555',
-                              marginTop: '4px',
-                              fontWeight: activeDialMode === 'kcal' ? 600 : 400,
-                            }}
-                          >
-                            {activeDialMode === 'kcal' && zoneHud.text}
-                            {activeDialMode === 'pro' && `obiettivo ${Math.round(targetProt)} g`}
-                            {activeDialMode === 'cho' && `obiettivo ${Math.round(targetCarb)} g`}
-                            {activeDialMode === 'fat' && `obiettivo ${Math.round(targetFat)} g`}
-                          </div>
+                          {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && zoneHud.text ? (
+                            <div
+                              className="kcal-dial-center-sub"
+                              style={{
+                                color: zoneHud.color,
+                                marginTop: '4px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              {zoneHud.text}
+                            </div>
+                          ) : null}
+                          {activeDialMode === 'pro' && (
+                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
+                              {`obiettivo ${Math.round(targetProt)} g`}
+                            </div>
+                          )}
+                          {activeDialMode === 'cho' && (
+                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
+                              {`obiettivo ${Math.round(targetCarb)} g`}
+                            </div>
+                          )}
+                          {activeDialMode === 'fat' && (
+                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
+                              {`obiettivo ${Math.round(targetFat)} g`}
+                            </div>
+                          )}
                           {activeDialMode === 'kcal' && !selectedMealCenter ? (
                             <button
                               type="button"
                               className="kcal-dial-details-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setShowMetabolicSheet(true);
+                                setShowCalorieDetailsSheet(true);
                               }}
                             >
                               DETTAGLI
@@ -7652,6 +7699,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                         <>
                           <KcalFuelTelemetryRing
                             consumedKcal={telemetry.consumedKcal}
+                            dailyTargetKcal={dialDailyTargetKcal}
                             maxScaleKcal={telemetry.maxScaleKcal}
                           />
                           <KcalMetabolicTelemetryRing
@@ -7682,7 +7730,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                             activeIndex={selectedMealCenterIndex}
                             onClick={(data, index, e) => {
                               if (e && e.stopPropagation) e.stopPropagation();
-                              if (data.id === 'rimanenti') return;
+                              if (data.id === 'rimanenti' || data.id === 'surplus') return;
                               const pastoCorrente = mealPieDisplayData.find((m) => m?.id === data.id);
                               if (!pastoCorrente) {
                                 console.warn('[SalaComandi] meal pie entry not found', { id: data.id });
@@ -9394,6 +9442,38 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           (sum, wk) => sum + (Number(wk?.kcal ?? wk?.cal) || 0),
           0,
         )}
+      />
+
+      <CalorieDetailsModal
+        isOpen={showCalorieDetailsSheet}
+        onClose={() => setShowCalorieDetailsSheet(false)}
+        tdeeBaseKcal={Math.round(Number(profileKcalBase ?? userProfileKcalBase) || 0)}
+        workoutBurnKcal={Math.round(Number(burnedKcal) || 0)}
+        deltaKcal={
+          hasPlannedBlock
+            ? Math.round(Number(plannedDelta) || 0)
+            : Math.round(
+              (Number(homeCalorieSplit?.targetKcal)
+                || Number(dynamicDailyKcal)
+                || Number(baseKcal)
+                || 0)
+              - (Number(profileKcalBase ?? userProfileKcalBase) || 0)
+              - (Number(burnedKcal) || 0),
+            )
+        }
+        targetKcal={Math.round(
+          Number(homeCalorieSplit?.targetKcal)
+          || Number(dynamicDailyKcal)
+          || Number(baseKcal)
+          || 0,
+        )}
+        consumedKcal={Math.round(Number(totali?.kcal) || 0)}
+        proteinConsumed={Number(totali?.prot) || 0}
+        proteinTarget={
+          effectiveTargetsForCurrentDate?.prot
+          ?? userTargets?.prot
+          ?? 150
+        }
       />
 
       <MetabolicTimelineSheet

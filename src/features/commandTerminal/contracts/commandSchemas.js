@@ -209,44 +209,31 @@ export const addWorkoutPayloadSchema = {
       enum: workoutTypeEnum,
       description:
         'OBBLIGATORIO. NORMALIZZA sempre il linguaggio utente: '
-        + 'legs/lower/quad/squat/leg day/affondi → gambe SOLO se allenamento pesi/ipertrofia esplicito; '
+        + 'legs/lower/quad/squat/leg day/affondi → gambe; '
         + 'push/petto/spalle/tricipiti/panca → spinta; '
         + 'pull/dorso/schiena/bicipiti/trazioni/rematore → trazione; '
-        + 'corsa/bike/HIIT/tapis/nuoto/SUP/camminata/"minuti di cardio" → cardio; '
-        + 'allenamento generico senza gruppo chiaro → altro. '
-        + 'REGOLA TASSATIVA CARDIO: se attivita puramente cardio, workoutType DEVE essere "cardio". '
-        + 'VIETATO usare gambe/spinta/trazione solo perche il cardio coinvolge quei muscoli.',
+        + 'corsa/bike/HIIT/tapis/nuoto → cardio; '
+        + 'allenamento generico senza gruppo chiaro → altro.',
     },
     workoutName: {
       type: 'string',
       nullable: true,
       description:
         'Etichetta sintetica (es. "Allenamento gambe"). Se assente, il sistema la deriva da workoutType. '
-        + 'Per "ho fatto gambe" senza lista esercizi: workoutName puo essere "Allenamento gambe" e exercises=[]. '
-        + 'Per cardio puro: es. "Cardio", "SUP", "Corsa" — non etichettare come allenamento gambe.',
+        + 'Per "ho fatto gambe" senza lista esercizi: workoutName puo essere "Allenamento gambe" e exercises=[].',
     },
     durationMinutes: {
       type: 'number',
       nullable: true,
       description:
         'Minuti SOLO se l utente li ha indicati esplicitamente (es. 45 min, 1 ora). '
-        + 'Se assenti: null o ometti — NON inventare. Il sistema applica un default (45). '
-        + 'Per cardio puro questo e il parametro principale da aggiornare (minuti di cardio).',
-    },
-    muscles: {
-      type: 'array',
-      nullable: true,
-      description:
-        'OPZIONALE. Gruppi muscolari SOLO se l utente dichiara esplicitamente pesistica/ipertrofia '
-        + '(es. "gambe", "petto", "dorso"). Per attivita puramente CARDIO lascia null, ometti, o []. '
-        + 'VIETATO compilare muscles per inferenza da cardio (corsa/SUP/bici/nuoto).',
-      items: { type: 'string' },
+        + 'Se assenti: null o ometti — NON inventare. Il sistema applica un default (45).',
     },
     exercises: {
       type: 'array',
       description:
         'Esercizi ESPLICITAMENTE citati. Per sessione generica ("allenamento gambe alle 18") lascia []. '
-        + 'Per cardio puro lascia []. Vietato aggiungere riscaldamento/defaticamento non menzionati.',
+        + 'Vietato aggiungere riscaldamento/defaticamento non menzionati.',
       items: addWorkoutExerciseItemSchema,
     },
     estimatedKcal: {
@@ -538,13 +525,7 @@ export const geminiToolSchemas = Object.freeze({
   ADD_WORKOUT: {
     name: 'dispatch_add_workout',
     description:
-      'Crea un comando tipizzato per aggiungere un allenamento al diario (nome e durata obbligatori). '
-      + 'REGOLA TASSATIVA CARDIO vs IPERTROFIA: quando l utente registra un attivita puramente CARDIO '
-      + '(corsa, camminata, SUP, nuoto, bici, HIIT, o dichiara "minuti di cardio"), aggiorna ESCLUSIVAMENTE '
-      + 'durationMinutes / workoutType=cardio. E SEVERAMENTE VIETATO alterare i cilindri muscolari '
-      + '(Spinta, Trazione, Gambe, Core): non usare workoutType gambe/spinta/trazione e lascia muscles=[]/null. '
-      + 'I cilindri muscolari si modificano SOLO se l utente dichiara esplicitamente pesistica/ipertrofia '
-      + 'mirata a quei gruppi.',
+      'Crea un comando tipizzato per aggiungere un allenamento al diario (nome e durata obbligatori).',
     inputSchema: addWorkoutPayloadSchema,
   },
   LOG_SLEEP: {

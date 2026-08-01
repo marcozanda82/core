@@ -47,38 +47,8 @@ const WORKOUT_TYPE_ALIASES = Object.freeze({
   corsa: 'cardio',
   running: 'cardio',
   bike: 'cardio',
-  bici: 'cardio',
-  nuoto: 'cardio',
-  swim: 'cardio',
-  sup: 'cardio',
-  paddle: 'cardio',
-  paddleboard: 'cardio',
-  camminata: 'cardio',
-  walking: 'cardio',
-  spinning: 'cardio',
-  tapis: 'cardio',
-  ellittica: 'cardio',
 });
 
-/** Cardio puro (LISS/HIIT/outdoor) — non pesistica. */
-const PURE_CARDIO_TEXT_RE =
-  /\b(cardio|corsa|correre|running|\brun\b|bike|ciclismo|\bbici\b|spinning|nuoto|swim|tapis|ellittica|camminat\w*|walking|sup|paddle(?:\s*board)?|remier|rowing)\b/i;
-
-/** Segnali espliciti di pesi/ipertrofia (vincono i cilindri muscolari). */
-const EXPLICIT_STRENGTH_TEXT_RE =
-  /\b(pesi|ipertrof|squat|panca|remator|military|affondi|leg\s*day|serie\s+\d|ripetiz|\d+\s*kg|spinta|trazione|allenamento\s+gambe|allenamento\s+petto|allenamento\s+dorso)\b/i;
-
-/**
- * True se il testo e una registrazione cardio pura (senza pesistica dichiarata).
- * @param {string} userText
- * @returns {boolean}
- */
-export function isPureCardioRegistrationText(userText) {
-  const t = asTrimmedString(userText).toLowerCase();
-  if (!t) return false;
-  if (!PURE_CARDIO_TEXT_RE.test(t) && !/\bminuti\s+(?:di\s+)?cardio\b/i.test(t)) return false;
-  return !EXPLICIT_STRENGTH_TEXT_RE.test(t);
-}
 function asTrimmedString(value) {
   return String(value ?? '').trim();
 }
@@ -172,14 +142,12 @@ export function normalizeChatWorkoutType(value) {
 export function inferWorkoutTypeFromText(userText) {
   const t = asTrimmedString(userText).toLowerCase();
   if (!t) return null;
-  // Cardio prima dei gruppi muscolari: evita di mappare SUP/corsa → gambe.
-  if (isPureCardioRegistrationText(t)) return 'cardio';
   if (/\b(gambe|legs|lower|squat|leg\s*day|quadricip|affondi)\b/.test(t)) return 'gambe';
   if (/\b(spinta|push|petto|spalle|tricipit|panca|shoulder|military)\b/.test(t)) return 'spinta';
   if (/\b(trazione|pull|dorso|schiena|bicipit|remat|trazioni|chin\s*up|pull\s*up)\b/.test(t)) {
     return 'trazione';
   }
-  if (PURE_CARDIO_TEXT_RE.test(t)) return 'cardio';
+  if (/\b(cardio|corsa|run|bike|hiit|nuoto|swim|tapis|ellittica)\b/.test(t)) return 'cardio';
   if (/\b(allenamento|workout|pesi|training|sessione)\b/.test(t)) return 'altro';
   return null;
 }

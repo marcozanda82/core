@@ -231,15 +231,6 @@ export class ContextComposer {
         contextSlices: {
           workout: this.getWorkoutContext(currentState.dailyStats),
           USER_WORKOUT_HABITS: this.getWorkoutHabitsFromState(currentState),
-          CARDIO_VS_HYPERTROPHY:
-            'REGOLA DI COMPILAZIONE TASSATIVA: Quando l\'utente registra un\'attivita puramente CARDIO '
-            + '(es. corsa, camminata, SUP, nuoto, bici, o dichiara "minuti di cardio"), devi aggiornare '
-            + 'ESCLUSIVAMENTE il parametro dei minuti di cardio (durationMinutes + workoutType=cardio). '
-            + 'E SEVERAMENTE VIETATO alterare, incrementare o compilare i parametri di affaticamento dei '
-            + 'cilindri muscolari (Spinta, Trazione, Gambe, Core) in risposta ad attivita cardio. '
-            + 'Non usare workoutType gambe/spinta/trazione e lascia muscles=[]/null/omesso. '
-            + 'I cilindri muscolari devono essere modificati SOLO ED ESCLUSIVAMENTE se l\'utente dichiara '
-            + 'esplicitamente un allenamento di pesistica / ipertrofia mirato a quei gruppi muscolari.',
         },
       };
     }

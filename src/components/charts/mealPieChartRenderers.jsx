@@ -8,7 +8,7 @@ import { RADIAN } from '../../coreEngine';
 export function createMealPieCustomizedLabel(onSelectMeal) {
   return function MealPieCustomizedLabel(props) {
     const { cx, cy, midAngle, outerRadius, value, name, fill, payload } = props;
-    if (name === 'Rimanenti' || value === 0) return null;
+    if (name === 'Rimanenti' || name === 'SURPLUS' || value === 0) return null;
     const radius = outerRadius + 14;
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
@@ -24,7 +24,7 @@ export function createMealPieCustomizedLabel(onSelectMeal) {
         transform={`translate(${x},${y})`}
         onClick={(e) => {
           e.stopPropagation();
-          if (!fullEntry || fullEntry.id === 'rimanenti') return;
+          if (!fullEntry || fullEntry.id === 'rimanenti' || fullEntry.id === 'surplus') return;
           onSelectMeal?.(fullEntry);
         }}
         style={{ cursor: 'pointer', pointerEvents: 'auto' }}

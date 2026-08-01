@@ -24,7 +24,6 @@ import {
 } from '../conversation/mealLogIntent.js';
 import {
   inferWorkoutTypeFromText,
-  isPureCardioRegistrationText,
   normalizeChatWorkoutType,
 } from '../conversation/workoutRegistrationSlots.js';
 import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
@@ -754,10 +753,7 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
   }
 
   const workoutType =
-    (isPureCardioRegistrationText(combinedText)
-      ? 'cardio'
-      : null)
-    || normalizeChatWorkoutType(payload.workoutType)
+    normalizeChatWorkoutType(payload.workoutType)
     || inferWorkoutTypeFromText(combinedText);
   if (workoutType) {
     payload.workoutType = workoutType;
@@ -771,19 +767,6 @@ function sanitizeAddWorkoutCommand(command, userText, conversationText = '', con
       };
       payload.workoutName = labels[workoutType] || 'Allenamento';
     }
-  }
-
-  // Cardio puro: nessun gruppo muscolare (cilindri ipertrofia restano intatti).
-  if (workoutType === 'cardio' || isPureCardioRegistrationText(combinedText)) {
-    payload.muscles = [];
-    payload.workoutType = 'cardio';
-  } else if (Array.isArray(payload.muscles)) {
-    payload.muscles = payload.muscles
-      .map((m) => asTrimmedString(m))
-      .filter(Boolean);
-    if (payload.muscles.length === 0) delete payload.muscles;
-  } else {
-    delete payload.muscles;
   }
 
   const estimatedKcal = Number(payload.estimatedKcal);
@@ -1130,8 +1113,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         "REGOLA ADD_WORKOUT (multi-esercizio): Se l'utente elenca PIU esercizi, devi estrarre TUTTI in payload.exercises[] — uno oggetto per ciascun esercizio. Non troncare al primo.",
         "PULIZIA CONGIUNZIONI E NO DUPLICATI: I exerciseName estratti NON devono mai iniziare con congiunzioni ('e ', 'ed ', 'con ', 'più ', ', '). Se l'utente scrive 'X e Y', estrai 'X' e 'Y', senza la 'e'. Vietato sdoppiare lo stesso esercizio in due voci diverse.",
         "REGOLA ADD_WORKOUT (durata): Includi durationMinutes SOLO se l'utente ha indicato esplicitamente minuti o ore (es. '45 min', '1 ora'). NON inventare durate di default — se assente, ometti il campo.",
-        "REGOLA ADD_WORKOUT (workoutType OBBLIGATORIO): Compila sempre payload.workoutType normalizzando: gambe/legs/lower→gambe SOLO se pesistica esplicita; spinta/push/petto/spalle→spinta; trazione/pull/dorso→trazione; cardio/corsa/HIIT/SUP/nuoto/bici/camminata/\"minuti di cardio\"→cardio; altrimenti altro.",
-        "REGOLA TASSATIVA ADD_WORKOUT (CARDIO vs IPERTROFIA): Quando l'utente registra un'attivita puramente CARDIO (corsa, camminata, SUP, nuoto, bici, o dichiara \"minuti di cardio\"), aggiorna ESCLUSIVAMENTE durationMinutes e workoutType=cardio. E SEVERAMENTE VIETATO alterare/incrementare/compilare i cilindri muscolari (Spinta, Trazione, Gambe, Core): lascia muscles=[]/null/omesso e NON usare workoutType gambe/spinta/trazione per inferenza muscolare dal cardio. I cilindri muscolari si modificano SOLO se l'utente dichiara esplicitamente pesistica/ipertrofia mirata a quei gruppi.",
+        "REGOLA ADD_WORKOUT (workoutType OBBLIGATORIO): Compila sempre payload.workoutType normalizzando: gambe/legs/lower→gambe; spinta/push/petto/spalle→spinta; trazione/pull/dorso→trazione; cardio/corsa/HIIT→cardio; altrimenti altro.",
         "REGOLA ADD_WORKOUT (sessione generica): Per frasi tipo 'ho fatto allenamento gambe alle 18' senza lista esercizi, exercises=[] e workoutName sintetico sono validi. NON inventare esercizi.",
         "REGOLA ADD_WORKOUT (serie/ripetizioni/carico): Includi sets, reps e weightKg SOLO se l'utente li ha scritti esplicitamente oppure se provieno da SMART RESOLUTION sullo storico abituale per un esercizio gia citato.",
         "REGOLA ADD_WORKOUT (workoutName): Compila workoutName come etichetta sintetica dell'allenamento (es. 'Allenamento gambe'). Se citi esercizi in exercises[], workoutName puo riassumerli.",
@@ -1201,7 +1183,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         ? 'Registrazione pasto (ADD_FOOD): items[] = un oggetto per alimento. foodName PURO (no "e 160 g di pane"). grams = SOLO la quantita di QUELL alimento. Esempio: "90g sardine e 160g pane" → [{foodName:"sardine",grams:90},{foodName:"pane",grams:160}]. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
-        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS] e [CARDIO_VS_HYPERTROPHY]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). CARDIO puro → solo durationMinutes + workoutType=cardio; muscles=[]/null; VIETATO toccare cilindri Spinta/Trazione/Gambe. Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
+        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
         ? 'CASO 2 CONSULTO: commandType DEVE essere CHAT_RESPONSE. Compila uiMessage (o adviceMessage/payload.message) con analisi sintetica basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'

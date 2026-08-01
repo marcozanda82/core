@@ -116,20 +116,20 @@ export function resolveKcalZoneHudLabel(telemetry = {}) {
   if (consumed > end) {
     return {
       zone: 'surplus',
-      text: `🔴 SURPLUS (≥ ${end})`,
+      text: '',
       color: '#f87171',
     };
   }
   if (consumed >= start) {
     return {
       zone: 'target',
-      text: `🟢 ZONA TARGET (${start} – ${end})`,
+      text: 'ZONA TARGET',
       color: '#4ade80',
     };
   }
   return {
     zone: 'under',
-    text: `🟣 Sotto Target (< ${start})`,
+    text: 'SOTTO TARGET',
     color: '#c084fc',
   };
 }

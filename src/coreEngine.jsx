@@ -3550,7 +3550,7 @@ function MealPieTooltip({ active, payload }) {
     return (
       <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: '1px solid rgba(248, 113, 113, 0.55)', padding: '10px', borderRadius: '12px', textAlign: 'center', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
         <p style={{ margin: 0, color: '#f87171', fontSize: '0.85rem', fontWeight: 600 }}>SURPLUS</p>
-        <p style={{ margin: 0, color: '#f87171', fontWeight: 'bold', fontSize: '1.2rem' }}>+{Math.round(data.value)} kcal</p>
+        <p style={{ margin: 0, color: '#f87171', fontWeight: 'bold', fontSize: '1.2rem' }}>+{Math.round(data.actualKcal ?? data.value)} kcal</p>
       </div>
     );
   }
@@ -3575,7 +3575,7 @@ function MealPieTooltip({ active, payload }) {
   return (
     <div style={{ background: 'rgba(17, 17, 17, 0.95)', border: `1px solid ${data.color}`, padding: '12px', borderRadius: '12px', boxShadow: `0 0 15px ${data.color}40`, width: 'max-content', maxWidth: '220px', pointerEvents: 'none' }}>
       <p style={{ margin: '0 0 5px 0', color: data.color, fontWeight: 'bold', borderBottom: '1px solid #333', paddingBottom: '5px' }}>{data.name}</p>
-      <p style={{ margin: '0 0 8px 0', color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.value)} kcal</p>
+      <p style={{ margin: '0 0 8px 0', color: '#fff', fontWeight: 'bold', fontSize: '1.2rem' }}>{Math.round(data.actualKcal ?? data.value)} kcal</p>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
         <span style={{ color: '#ffb74d' }}>C: {Math.round(Number(macros.carb) || 0)}g</span>
         <span style={{ color: '#64b5f6' }}>P: {Math.round(Number(macros.pro) || 0)}g</span>

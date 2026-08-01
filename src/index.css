@@ -1389,6 +1389,346 @@ html, body, #root {
   gap: 20px;
 }
 
+/* CalorieDetailsModal — bottom sheet equazione kcal Home */
+.calorie-details-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100022;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.calorie-details-panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 24px 24px 0 0;
+  border-top: 1px solid rgba(255, 107, 0, 0.28);
+  background: linear-gradient(
+    165deg,
+    rgba(28, 18, 12, 0.94) 0%,
+    rgba(12, 12, 14, 0.96) 45%,
+    rgba(6, 8, 12, 0.98) 100%
+  );
+  box-shadow:
+    0 -16px 56px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.calorie-details-panel__chrome {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px 4px;
+}
+
+.calorie-details-panel__handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.calorie-details-panel__close {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  color: rgba(226, 232, 240, 0.85);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.calorie-details-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 18px max(22px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.calorie-details-header {
+  flex-shrink: 0;
+}
+
+.calorie-details-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 214, 170, 0.96);
+}
+
+.calorie-details-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.calorie-details-section {
+  flex-shrink: 0;
+  padding: 14px 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.calorie-details-section__title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.9);
+}
+
+.calorie-details-section__hint {
+  margin: 4px 0 12px;
+  font-size: 0.75rem;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.calorie-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.calorie-receipt__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.calorie-receipt__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  color: rgba(203, 213, 225, 0.88);
+}
+
+.calorie-receipt__op {
+  display: inline-flex;
+  width: 1rem;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.7);
+  font-weight: 600;
+}
+
+.calorie-receipt__value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.95);
+}
+
+.calorie-receipt__value--deficit {
+  color: #38bdf8;
+}
+
+.calorie-receipt__value--surplus {
+  color: #fb923c;
+}
+
+.calorie-receipt__divider {
+  height: 1px;
+  margin: 4px 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 107, 0, 0.45),
+    transparent
+  );
+}
+
+.calorie-receipt__row--total .calorie-receipt__label {
+  font-weight: 700;
+  color: rgba(255, 214, 170, 0.95);
+}
+
+.calorie-receipt__value--total {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #ff6b00;
+  text-shadow: 0 0 18px rgba(255, 107, 0, 0.35);
+}
+
+.calorie-receipt__unit {
+  margin-left: 4px;
+  font-size: 0.7em;
+  font-weight: 600;
+  color: rgba(255, 183, 120, 0.8);
+}
+
+.calorie-status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.calorie-status-card {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calorie-status-card--accent {
+  border-color: rgba(255, 107, 0, 0.35);
+  background: rgba(255, 107, 0, 0.08);
+}
+
+.calorie-status-card__label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.calorie-status-card__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.calorie-status-card__value--hero {
+  font-size: 1.55rem;
+  color: #ff6b00;
+}
+
+.calorie-status-card__unit {
+  margin-left: 3px;
+  font-size: 0.65em;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.8);
+}
+
+.calorie-protein-bar {
+  margin-top: 14px;
+}
+
+.calorie-protein-bar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.calorie-protein-bar__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #c084fc;
+}
+
+.calorie-protein-bar__value {
+  font-size: 0.82rem;
+  color: rgba(226, 232, 240, 0.85);
+  font-variant-numeric: tabular-nums;
+}
+
+.calorie-protein-bar__track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.calorie-protein-bar__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7e22ce, #c084fc);
+  box-shadow: 0 0 10px rgba(192, 132, 252, 0.45);
+  transition: width 0.25s ease;
+}
+
+.calorie-protein-bar__fill--over {
+  background: linear-gradient(90deg, #f87171, #fb7185);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
+}
+
+.calorie-protein-bar__hint {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.calorie-tactical__eyebrow {
+  margin: 8px 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.calorie-tactical__text {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.calorie-tactical--deficit {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.calorie-tactical--deficit .calorie-tactical__eyebrow {
+  color: #38bdf8;
+}
+
+.calorie-tactical--ideal {
+  border-color: rgba(52, 211, 153, 0.28);
+  background: rgba(6, 78, 59, 0.18);
+}
+
+.calorie-tactical--ideal .calorie-tactical__eyebrow {
+  color: #34d399;
+}
+
+.calorie-tactical--surplus {
+  border-color: rgba(251, 146, 60, 0.35);
+  background: rgba(154, 52, 18, 0.16);
+}
+
+.calorie-tactical--surplus .calorie-tactical__eyebrow {
+  color: #fb923c;
+}
+
 .fat-details-section {
   flex-shrink: 0;
 }

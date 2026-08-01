@@ -7,7 +7,7 @@ import {
 import { workoutActivityRequiresStrengthDetailNote } from '../../drawers/vistas/WorkoutView';
 
 const CARDIO_KEYWORD_PATTERN =
-  /\b(corsa|correre|running|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|tapis|walk|cammin|cardio|sup|paddle)\b/i;
+  /\b(corsa|correre|running|run|bike|cicl|spinning|nuot|swim|remier|rowing|ellitt|tapis|walk|cammin|cardio)\b/i;
 
 const LAVORO_PC_KEYWORD_PATTERN =
   /lavoro\s*(al\s*)?pc|smart\s*working|scrivania|desk|videocal|zoom|programm|coding|deep\s*work/i;
@@ -128,10 +128,6 @@ export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
     .join(' ')
     .toLowerCase();
 
-  // Cardio prima dei gruppi: evita SUP/corsa → gambe.
-  if (/\bhiit\b|circuito/i.test(haystack)) return 'hiit';
-  if (CARDIO_KEYWORD_PATTERN.test(haystack)) return 'cardio';
-
   if (/\b(gambe|legs|lower|squat|leg\s*day)\b/.test(haystack)) return 'gambe';
   if (/\b(spinta|push|petto|spalle|tricipit|panca)\b/.test(haystack)) return 'spinta';
   if (/\b(trazione|pull|dorso|schiena|bicipit|trazioni)\b/.test(haystack)) return 'trazione';
@@ -148,6 +144,8 @@ export function inferWorkoutTypeFromChatPayload(chatPayload, exercises = []) {
   if (STUDIO_KEYWORD_PATTERN.test(haystack)) return 'studio';
   if (LAVORO_KEYWORD_PATTERN.test(haystack)) return 'lavoro';
 
+  if (/\bhiit\b|circuito/i.test(haystack)) return 'hiit';
+  if (CARDIO_KEYWORD_PATTERN.test(haystack)) return 'cardio';
   return 'misto';
 }
 
@@ -178,18 +176,9 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     trazione: ['Dorso', 'Bicipiti'],
     gambe: ['Gambe'],
   };
-  // Cardio/HIIT: mai mappare cilindri muscolari (anche se LLM ha messo muscles per inferenza).
-  const isCardioOnly = workoutType === 'cardio' || workoutType === 'hiit';
-  const explicitMuscles = Array.isArray(chatPayload?.muscles)
-    ? chatPayload.muscles.map((m) => asTrimmedString(m)).filter(Boolean)
+  const muscles = Array.isArray(cylinderMuscles[workoutType])
+    ? [...cylinderMuscles[workoutType]]
     : [];
-  const muscles = isCardioOnly
-    ? []
-    : (explicitMuscles.length > 0
-      ? explicitMuscles
-      : (Array.isArray(cylinderMuscles[workoutType])
-        ? [...cylinderMuscles[workoutType]]
-        : []));
   const baseDesc = getWorkoutActivityLogDescription(
     ['spinta', 'trazione', 'gambe'].includes(workoutType) ? 'pesi' : workoutType,
     muscles,
