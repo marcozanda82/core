@@ -48,6 +48,8 @@ function resolveTacticalCopy(remainingKcal) {
  *   tdeeBaseKcal?: number,
  *   workoutBurnKcal?: number,
  *   deltaKcal?: number | null,
+ *   compensationKcal?: number | null,
+ *   compensationDaysRemaining?: number | null,
  *   targetKcal?: number,
  *   consumedKcal?: number,
  *   proteinConsumed?: number,
@@ -60,6 +62,8 @@ export default function CalorieDetailsModal({
   tdeeBaseKcal = 0,
   workoutBurnKcal = 0,
   deltaKcal = null,
+  compensationKcal = null,
+  compensationDaysRemaining = null,
   targetKcal = 0,
   consumedKcal = 0,
   proteinConsumed = 0,
@@ -77,12 +81,13 @@ export default function CalorieDetailsModal({
   const receipt = useMemo(() => {
     const tdee = roundKcal(tdeeBaseKcal);
     const burn = roundKcal(workoutBurnKcal);
+    const compensation = roundKcal(compensationKcal);
     const target = roundKcal(targetKcal);
     const delta = Number.isFinite(Number(deltaKcal))
       ? roundKcal(deltaKcal)
-      : target - tdee - burn;
-    return { tdee, burn, delta, target };
-  }, [tdeeBaseKcal, workoutBurnKcal, deltaKcal, targetKcal]);
+      : target - tdee - burn - compensation;
+    return { tdee, burn, delta, compensation, target };
+  }, [tdeeBaseKcal, workoutBurnKcal, deltaKcal, compensationKcal, targetKcal]);
 
   const consumed = roundKcal(consumedKcal);
   // Firmato: negativo = surplus rispetto al target (serve alle proiezioni tattiche).
@@ -93,11 +98,14 @@ export default function CalorieDetailsModal({
   const protPct = progressPct(protNow, protTarget);
   const protOver = protTarget > 0 && protNow > protTarget;
   const tactical = resolveTacticalCopy(remainingSigned);
+  const hasCompensation = receipt.compensation !== 0;
 
   if (!isOpen || typeof document === 'undefined') return null;
 
   const deltaLabel = receipt.delta >= 0 ? 'Surplus obiettivo' : 'Deficit obiettivo';
   const deltaOperator = receipt.delta >= 0 ? '+' : '−';
+  const compensationOperator = receipt.compensation >= 0 ? '+' : '−';
+  const daysLeft = Math.round(Number(compensationDaysRemaining) || 0);
 
   return createPortal(
     <div
@@ -170,6 +178,33 @@ export default function CalorieDetailsModal({
                   {Math.abs(receipt.delta)}
                 </span>
               </div>
+              {hasCompensation ? (
+                <div
+                  className="calorie-receipt__row calorie-receipt__row--compensation"
+                  role="listitem"
+                >
+                  <span className="calorie-receipt__label">
+                    <span className="calorie-receipt__op" aria-hidden>{compensationOperator}</span>
+                    Compensazione esplicita
+                    {daysLeft > 0 ? (
+                      <span className="calorie-receipt__hint">
+                        {daysLeft}g rimanent{daysLeft === 1 ? 'e' : 'i'}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={`calorie-receipt__value${
+                      receipt.compensation < 0
+                        ? ' calorie-receipt__value--deficit'
+                        : receipt.compensation > 0
+                          ? ' calorie-receipt__value--surplus'
+                          : ''
+                    }`}
+                  >
+                    {Math.abs(receipt.compensation)}
+                  </span>
+                </div>
+              ) : null}
               <div className="calorie-receipt__divider" aria-hidden />
               <div className="calorie-receipt__row calorie-receipt__row--total" role="listitem">
                 <span className="calorie-receipt__label">Target totale odierno</span>

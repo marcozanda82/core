@@ -443,6 +443,8 @@ export default function WorkoutView({
   );
   const [sessionStartedAt, setSessionStartedAt] = useState(/** @type {number | null} */ (null));
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
     if (isPlanDraftMode) {
@@ -471,7 +473,11 @@ export default function WorkoutView({
     setTrackerPhase('running');
   };
 
-  const handleSaveClick = () => {
+  const handleSaveClick = (e) => {
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
+    if (submitLockRef.current || isSubmitting) return;
+
     if (
       workoutActivityRequiresStrengthDetailNote(workoutType) &&
       !String(workoutStrengthDetail).trim()
@@ -488,22 +494,32 @@ export default function WorkoutView({
           fallback: WORKOUT_DURATION_DEFAULT,
         });
 
-    if (isPlannerMode) {
-      const action = buildPlannerActionObject({
-        workoutType,
-        muscles: isRestDay ? [] : workoutMuscles,
-        burnKcal: isRestDay ? 0 : workoutKcal,
-        durationMin: normalizedDurationMin,
-        startTimeDec: isRestDay ? undefined : workoutStartTime,
-        strengthDetail: workoutStrengthDetail,
-      });
-      if (typeof onSaveAction === 'function') onSaveAction(action);
-      return;
-    }
+    submitLockRef.current = true;
+    setIsSubmitting(true);
+    try {
+      if (isPlannerMode) {
+        const action = buildPlannerActionObject({
+          workoutType,
+          muscles: isRestDay ? [] : workoutMuscles,
+          burnKcal: isRestDay ? 0 : workoutKcal,
+          durationMin: normalizedDurationMin,
+          startTimeDec: isRestDay ? undefined : workoutStartTime,
+          strengthDetail: workoutStrengthDetail,
+        });
+        if (typeof onSaveAction === 'function') onSaveAction(action);
+        return;
+      }
 
-    if (typeof handleSaveWorkout === 'function') {
-      handleSaveWorkout();
-      if (isPlanDraftMode && typeof onDraftConsumed === 'function') onDraftConsumed();
+      if (typeof handleSaveWorkout === 'function') {
+        handleSaveWorkout();
+        if (isPlanDraftMode && typeof onDraftConsumed === 'function') onDraftConsumed();
+      }
+    } finally {
+      // Sblocca dopo un tick: evita doppio tap; il drawer di solito si chiude al salvataggio.
+      window.setTimeout(() => {
+        submitLockRef.current = false;
+        setIsSubmitting(false);
+      }, 800);
     }
   };
 
@@ -524,9 +540,10 @@ export default function WorkoutView({
     fontSize: '0.9rem',
     fontWeight: 'bold',
     letterSpacing: '2px',
-    cursor: 'pointer',
+    cursor: isSubmitting ? 'wait' : 'pointer',
     transition: '0.2s',
     boxShadow: '0 0 20px rgba(255, 109, 0, 0.4)',
+    opacity: isSubmitting ? 0.65 : 1,
   };
 
   const secondaryButtonStyle = {
@@ -1033,22 +1050,24 @@ export default function WorkoutView({
       >
         {isPlanDraftMode && trackerPhase === 'draft' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button type="button" onClick={handleStartSession} style={primaryButtonStyle}>
+            <button type="button" onClick={handleStartSession} style={primaryButtonStyle} disabled={isSubmitting}>
               AVVIA ALLENAMENTO
             </button>
-            <button type="button" onClick={handleSaveClick} style={secondaryButtonStyle}>
-              REGISTRA COMPLETATO
+            <button type="button" onClick={handleSaveClick} style={secondaryButtonStyle} disabled={isSubmitting}>
+              {isSubmitting ? 'SALVATAGGIO…' : 'REGISTRA COMPLETATO'}
             </button>
           </div>
         ) : isPlanDraftMode && trackerPhase === 'running' ? (
-          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
-            TERMINA E REGISTRA
+          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle} disabled={isSubmitting}>
+            {isSubmitting ? 'SALVATAGGIO…' : 'TERMINA E REGISTRA'}
           </button>
         ) : (
-          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle}>
-            {isPlannerMode
-              ? (plannerSaveLabel || 'APPLICA AZIONE')
-              : 'SALVA ATTIVITÀ'}
+          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle} disabled={isSubmitting}>
+            {isSubmitting
+              ? 'SALVATAGGIO…'
+              : isPlannerMode
+                ? (plannerSaveLabel || 'APPLICA AZIONE')
+                : 'SALVA ATTIVITÀ'}
           </button>
         )}
       </div>

@@ -275,6 +275,13 @@ export default function MetabolicUnifiedView({
   activeDate = null,
   activeToolRequest = null,
   onActiveToolRequestHandled = null,
+  settingsBaseKcal = null,
+  committedGhostGoal = 'maintain',
+  committedGhostDeltaKcal = null,
+  onApplyGhostSimGoal = null,
+  activeCompensation = null,
+  onConfirmCompensation = null,
+  onClearCompensation = null,
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -578,6 +585,13 @@ export default function MetabolicUnifiedView({
             activeDate={activeDate || projectionAnchorDate}
             proteinTarget={userTargets?.prot ?? null}
             userTargets={userTargets}
+            settingsBaseKcal={settingsBaseKcal}
+            committedGhostGoal={committedGhostGoal}
+            committedGhostDeltaKcal={committedGhostDeltaKcal}
+            onApplyGhostSimGoal={onApplyGhostSimGoal}
+            activeCompensation={activeCompensation}
+            onConfirmCompensation={onConfirmCompensation}
+            onClearCompensation={onClearCompensation}
           />
         ) : null}
       </div>

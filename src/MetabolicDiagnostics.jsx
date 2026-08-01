@@ -103,6 +103,13 @@ function shouldShowMuscleInactivityAlarm(value, daysSince) {
  *   activeDate?: string | null,
  *   proteinTarget?: number | null,
  *   userTargets?: object | null,
+ *   settingsBaseKcal?: number | null,
+ *   committedGhostGoal?: string | null,
+ *   committedGhostDeltaKcal?: number | null,
+ *   onApplyGhostSimGoal?: (deltaKcal: number) => void | Promise<void>,
+ *   activeCompensation?: object | null,
+ *   onConfirmCompensation?: (plan: object) => void | Promise<void>,
+ *   onClearCompensation?: () => void | Promise<void>,
  * }} props
  */
 export default function MetabolicDiagnostics({
@@ -112,6 +119,13 @@ export default function MetabolicDiagnostics({
   activeDate = null,
   proteinTarget = null,
   userTargets = null,
+  settingsBaseKcal = null,
+  committedGhostGoal = 'maintain',
+  committedGhostDeltaKcal = null,
+  onApplyGhostSimGoal = null,
+  activeCompensation = null,
+  onConfirmCompensation = null,
+  onClearCompensation = null,
 }) {
   const [historyDays, setHistoryDays] = useState(30);
   const state = useMemo(() => {
@@ -314,13 +328,21 @@ export default function MetabolicDiagnostics({
         </article>
       </div>
 
-      {/* Curva Ghost Car — solo Diag/Trend, mai in Home */}
+      {/* Curva Ghost Car — simulatore What-If (solo Diag) */}
       <div className="mt-3">
         <MetabolicTrendChart
           fullHistory={fullHistory}
           userTargets={userTargets}
           activeLog={dailyLog}
           activeDate={activeDate || getTodayString()}
+          settingsBaseKcal={settingsBaseKcal}
+          committedGoal={committedGhostGoal}
+          committedDeltaKcal={committedGhostDeltaKcal}
+          onApplyGoal={onApplyGhostSimGoal}
+          activeCompensation={activeCompensation}
+          compensationDateIso={activeDate || getTodayString()}
+          onConfirmCompensation={onConfirmCompensation}
+          onClearCompensation={onClearCompensation}
         />
       </div>
 

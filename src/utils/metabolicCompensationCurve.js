@@ -1,7 +1,7 @@
 /**
  * Curva di Compensazione Metabolica (Ghost Car) — rolling 7 giorni.
- * Ghost = Σ deltaKcal pianificati (target − base).
- * Reale = Σ (intake − baseTDEE).
+ * Ghost (simulabile) = Σ delta giornaliero fisso da obiettivo What-If.
+ * Reale = Σ (intake − TDEE/base operativa), indipendente dalla simulazione.
  */
 
 import { addDays } from '../calendarDateUtils';
@@ -10,6 +10,8 @@ import {
   getTodayString,
   getYesterdayString,
   TRACKER_STORICO_KEY,
+  CALORIE_STRATEGY_KCAL_DELTA,
+  normalizeCalorieStrategyTarget,
 } from '../coreEngine';
 import { computeDayEnergySnapshot } from '../features/energyBalance/energyBalanceMath';
 import { resolveTargetConfigForDate } from '../features/salaComandi/engines/bodyMetricsEngine';
@@ -18,9 +20,128 @@ import { dayHasFoodLog, isDayIntentionalFast } from './dayTrackingStatus';
 export const METABOLIC_TREND_WINDOW_DAYS = 7;
 export const GHOST_CORRIDOR_HALF_WIDTH_KCAL = 300;
 
+/** Obiettivi simulabili (What-If) — allineati a Kentu strategy. */
+export const GHOST_SIM_GOALS = Object.freeze(['cut', 'maintain', 'bulk']);
+
+/** Range cursore analogico Ghost Car (kcal/giorno). */
+export const GHOST_SIM_DELTA_MIN = -1000;
+export const GHOST_SIM_DELTA_MAX = 1000;
+export const GHOST_SIM_DELTA_STEP = 50;
+/** Soglia smart-label: |Δ| ≤ 100 → Mantenimento. */
+export const GHOST_SIM_GOAL_LABEL_THRESHOLD = 100;
+
+/**
+ * Delta kcal/giorno per obiettivo simulato (stessi valori di CALORIE_STRATEGY_KCAL_DELTA).
+ * @type {Record<'cut'|'maintain'|'bulk', number>}
+ */
+export const GHOST_SIM_GOAL_DAILY_DELTA = Object.freeze({
+  cut: CALORIE_STRATEGY_KCAL_DELTA.deficit,
+  maintain: CALORIE_STRATEGY_KCAL_DELTA.pari,
+  bulk: CALORIE_STRATEGY_KCAL_DELTA.surplus,
+});
+
+/**
+ * Normalizza goal/strategy/profile verso 'cut' | 'maintain' | 'bulk'.
+ * @param {unknown} value
+ * @returns {'cut'|'maintain'|'bulk'}
+ */
+export function normalizeGhostSimGoal(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return 'maintain';
+  if (
+    raw === 'cut'
+    || raw === 'deficit'
+    || raw === 'lose'
+    || raw === 'dimagrimento'
+    || raw === 'perdita_grasso'
+  ) {
+    return 'cut';
+  }
+  if (
+    raw === 'bulk'
+    || raw === 'surplus'
+    || raw === 'gain'
+    || raw === 'massa'
+  ) {
+    return 'bulk';
+  }
+  if (raw === 'pari' || raw === 'maintain' || raw === 'maintenance' || raw === 'mantenimento' || raw === 'recomp') {
+    return 'maintain';
+  }
+  const strat = normalizeCalorieStrategyTarget(raw);
+  if (strat === 'deficit') return 'cut';
+  if (strat === 'surplus') return 'bulk';
+  return 'maintain';
+}
+
+/**
+ * @param {'cut'|'maintain'|'bulk'|string} goal
+ * @returns {number}
+ */
+export function resolveGhostDailyDeltaFromGoal(goal) {
+  const g = normalizeGhostSimGoal(goal);
+  return Math.round(Number(GHOST_SIM_GOAL_DAILY_DELTA[g]) || 0);
+}
+
+/**
+ * Clamp + snap al passo del cursore analogico (−1000…1000, step 50).
+ * @param {unknown} raw
+ * @returns {number}
+ */
+export function clampGhostSimDelta(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  const snapped = Math.round(n / GHOST_SIM_DELTA_STEP) * GHOST_SIM_DELTA_STEP;
+  return Math.max(GHOST_SIM_DELTA_MIN, Math.min(GHOST_SIM_DELTA_MAX, snapped));
+}
+
+/**
+ * Deduce nutritionGoal da delta continuo (smart labels).
+ * @param {unknown} delta
+ * @returns {'cut'|'maintain'|'bulk'}
+ */
+export function ghostSimDeltaToGoal(delta) {
+  const d = Number(delta) || 0;
+  if (d < -GHOST_SIM_GOAL_LABEL_THRESHOLD) return 'cut';
+  if (d > GHOST_SIM_GOAL_LABEL_THRESHOLD) return 'bulk';
+  return 'maintain';
+}
+
+/**
+ * Etichetta UI da delta continuo.
+ * @param {unknown} delta
+ * @returns {'Cut'|'Bulk'|'Mantenimento'}
+ */
+export function ghostSimDeltaSmartLabel(delta) {
+  const g = ghostSimDeltaToGoal(delta);
+  if (g === 'cut') return 'Cut';
+  if (g === 'bulk') return 'Bulk';
+  return 'Mantenimento';
+}
+
+/**
+ * Mappa goal → strategy Kentu persistibile.
+ * @param {'cut'|'maintain'|'bulk'|string} goal
+ * @returns {'deficit'|'pari'|'surplus'}
+ */
+export function ghostSimGoalToKentuStrategy(goal) {
+  const g = normalizeGhostSimGoal(goal);
+  if (g === 'cut') return 'deficit';
+  if (g === 'bulk') return 'surplus';
+  return 'pari';
+}
+
+/**
+ * Mappa delta continuo → strategy Kentu (via smart-label thresholds).
+ * @param {unknown} delta
+ * @returns {'deficit'|'pari'|'surplus'}
+ */
+export function ghostSimDeltaToKentuStrategy(delta) {
+  return ghostSimGoalToKentuStrategy(ghostSimDeltaToGoal(delta));
+}
+
 /**
  * Ancora della finestra Ghost Car: sempre ieri (cicli metabolici chiusi).
- * Oggi è escluso — i log parziali genererebbero un finto deficit.
  * @param {string | null | undefined} requestedEndIso
  * @returns {string} ISO YYYY-MM-DD ≤ ieri
  */
@@ -46,10 +167,10 @@ function shortDayLabel(iso) {
 }
 
 /**
- * Risolve baseKcal (TDEE) e targetKcal per un giorno.
- * @param {object} targetsResolved — da resolveTargetConfigForDate
+ * Risolve baseKcal (TDEE operativo) per la traiettoria REALE.
+ * @param {object} targetsResolved
  * @param {number} fallbackBase
- * @returns {{ baseKcal: number, targetKcal: number, deltaKcal: number }}
+ * @returns {{ baseKcal: number, targetKcal: number }}
  */
 export function resolveDayCalorieSplit(targetsResolved, fallbackBase = 2000) {
   const base = Math.round(
@@ -63,19 +184,14 @@ export function resolveDayCalorieSplit(targetsResolved, fallbackBase = 2000) {
     || Number(targetsResolved?.kcal)
     || base,
   );
-  const delta = Number.isFinite(Number(targetsResolved?.deltaKcal))
-    ? Math.round(Number(targetsResolved.deltaKcal))
-    : target - base;
   return {
     baseKcal: Math.max(800, base),
     targetKcal: Math.max(800, target),
-    deltaKcal: delta,
   };
 }
 
 /**
- * Serie cumulativa Ghost Car / traiettoria reale (più vecchio → più recente).
- * Finestra chiusa su ieri: [ieri − (N−1)] … [ieri]. Oggi escluso del tutto.
+ * Serie cumulativa Ghost (What-If) / traiettoria reale.
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -85,6 +201,9 @@ export function resolveDayCalorieSplit(targetsResolved, fallbackBase = 2000) {
  *   windowDays?: number,
  *   corridorHalfWidth?: number,
  *   endDateIso?: string | null,
+ *   simulatedDeltaKcal?: number | null,
+ *   simulatedGoal?: string | null,
+ *   settingsBaseKcal?: number | null,
  * }} input
  */
 export function buildMetabolicCompensationSeries(input = {}) {
@@ -96,6 +215,11 @@ export function buildMetabolicCompensationSeries(input = {}) {
     50,
     Math.round(Number(input.corridorHalfWidth) || GHOST_CORRIDOR_HALF_WIDTH_KCAL),
   );
+  const ghostDailyDelta = input.simulatedDeltaKcal != null && input.simulatedDeltaKcal !== ''
+    ? clampGhostSimDelta(input.simulatedDeltaKcal)
+    : resolveGhostDailyDeltaFromGoal(input.simulatedGoal);
+  const simulatedGoal = ghostSimDeltaToGoal(ghostDailyDelta);
+
   const todayIso = getTodayString();
   const endIso = resolveMetabolicTrendEndDate(input.endDateIso);
   const tree = input.fullHistory && typeof input.fullHistory === 'object'
@@ -106,7 +230,6 @@ export function buildMetabolicCompensationSeries(input = {}) {
     : {};
   const activeDate = String(input.activeDate || '').slice(0, 10);
   const activeLog = Array.isArray(input.activeLog) ? input.activeLog : [];
-  // Non iniettare mai il log live di oggi nella serie (giornata incompleta).
   const canUseActiveLog = Boolean(
     activeDate
     && activeDate !== todayIso
@@ -114,20 +237,50 @@ export function buildMetabolicCompensationSeries(input = {}) {
     && activeLog.length,
   );
 
-  const profileFallback = Math.round(
-    Number(userTargets.baseKcal)
-    || Number(userTargets.kcal)
-    || 2000,
-  );
+  const settingsBase = Math.round(Number(input.settingsBaseKcal) || 0);
+  const profileFallback = settingsBase > 0
+    ? settingsBase
+    : Math.round(
+      Number(userTargets.baseKcal)
+      || Number(userTargets.kcal)
+      || 2000,
+    );
 
   /** @type {Array<object>} */
   const points = [];
   let cumGhost = 0;
   let cumReal = 0;
 
+  // Punto Zero (Giorno 0): origine comune Ghost + Reale prima della finestra.
+  const windowStartIso = addDays(endIso, -(windowDays - 1));
+  const originIso = addDays(windowStartIso, -1);
+  const originGhostLower = 0 - corridor;
+  points.push({
+    date: originIso,
+    label: shortDayLabel(originIso),
+    dayIndex: 0,
+    isOrigin: true,
+    baseKcal: profileFallback,
+    targetKcal: profileFallback,
+    plannedDelta: 0,
+    actualDelta: 0,
+    intakeKcal: 0,
+    ghost: 0,
+    real: 0,
+    ghostLower: originGhostLower,
+    ghostUpper: 0 + corridor,
+    corridorBase: originGhostLower,
+    corridorWidth: corridor * 2,
+    deviation: 0,
+    inCorridor: true,
+    hasTrackable: false,
+    simulatedGoal,
+    ghostDailyDelta,
+    stroke: '#22d3ee',
+  });
+
   for (let back = windowDays - 1; back >= 0; back -= 1) {
     const dateKey = addDays(endIso, -back);
-    // Hard skip: oggi non entra mai nel cumulativo
     if (dateKey >= todayIso) continue;
 
     const dayNode = tree[TRACKER_STORICO_KEY(dateKey)];
@@ -144,7 +297,11 @@ export function buildMetabolicCompensationSeries(input = {}) {
       date: dateKey,
       todayDate: todayIso,
     });
-    const split = resolveDayCalorieSplit(dayTargets, profileFallback);
+    // Base operativa per la REALE (impostazioni se disponibili, altrimenti history).
+    const split = resolveDayCalorieSplit(
+      settingsBase > 0 ? { ...dayTargets, baseKcal: settingsBase } : dayTargets,
+      profileFallback,
+    );
 
     const snapshot = computeDayEnergySnapshot({
       log,
@@ -153,15 +310,16 @@ export function buildMetabolicCompensationSeries(input = {}) {
       isIntentionalFast: intentional,
     });
 
-    const plannedDelta = split.deltaKcal;
-    // Surplus/deficit reale vs TDEE base (non vs target del giorno).
-    // Giorni Null (senza cibo né digiuno): restano sulla Ghost (neutri).
+    // Ghost What-If: delta fisso dal cursore, MAI da targetHistory.
+    const plannedDelta = ghostDailyDelta;
+
     const hasTrackable = hasFood || intentional || snapshot.hasTrackableData;
+    // Traiettoria reale: solo cronaca. Giorni vuoti = 0 (non agganciati alla Ghost simulata).
     let actualDelta;
     if (hasTrackable) {
       actualDelta = Math.round(Number(snapshot.intakeKcal) || 0) - split.baseKcal;
     } else {
-      actualDelta = plannedDelta;
+      actualDelta = 0;
     }
 
     cumGhost += plannedDelta;
@@ -184,17 +342,18 @@ export function buildMetabolicCompensationSeries(input = {}) {
       real: cumReal,
       ghostLower,
       ghostUpper: cumGhost + corridor,
-      /** Base stacked + ampiezza per Area corridoio Recharts */
       corridorBase: ghostLower,
       corridorWidth: corridor * 2,
       deviation,
       inCorridor,
       hasTrackable,
+      simulatedGoal,
+      ghostDailyDelta,
       stroke: inCorridor ? '#22d3ee' : '#fb923c',
     });
   }
 
-  const latest = points[points.length - 1] || null;
+  const latest = [...points].reverse().find((p) => !p.isOrigin) || points[points.length - 1] || null;
   const adherenceOk = Boolean(latest?.inCorridor);
 
   return {
@@ -204,11 +363,12 @@ export function buildMetabolicCompensationSeries(input = {}) {
     latest,
     adherenceOk,
     endIso,
+    simulatedGoal,
+    ghostDailyDelta,
   };
 }
 
 /**
- * Spezza la serie in campi paralleli ciano/arancio (stesso asse X, null dove non appartiene).
  * @param {Array<object>} points
  * @returns {Array<object>}
  */
@@ -219,7 +379,6 @@ export function withCompensationStrokeFields(points = []) {
     const next = points[i + 1];
     const cyanHere = p.inCorridor;
     const orangeHere = !p.inCorridor;
-    // Bridge: includi il vertice di confine nel segmento successivo per continuità
     const cyanBridge = Boolean(
       (prev && prev.inCorridor !== p.inCorridor && prev.inCorridor)
       || (next && next.inCorridor !== p.inCorridor && next.inCorridor),
@@ -235,4 +394,3 @@ export function withCompensationStrokeFields(points = []) {
     };
   });
 }
-

@@ -924,6 +924,72 @@ html, body, #root {
   }
 }
 
+/* Ghost Car What-If — cursore analogico obiettivo */
+.ghost-sim-slider {
+  width: 100%;
+}
+
+.ghost-sim-slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ghost-sim-slider__input:focus {
+  outline: none;
+}
+
+.ghost-sim-slider__input:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.35);
+}
+
+.ghost-sim-slider__input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.35) 0%,
+    rgba(148, 163, 184, 0.35) 50%,
+    rgba(251, 146, 60, 0.4) 100%
+  );
+}
+
+.ghost-sim-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, 0.9);
+  background: #020617;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8);
+}
+
+.ghost-sim-slider__input::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(56, 189, 248, 0.35) 0%,
+    rgba(148, 163, 184, 0.35) 50%,
+    rgba(251, 146, 60, 0.4) 100%
+  );
+}
+
+.ghost-sim-slider__input::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, 0.9);
+  background: #020617;
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8);
+}
+
 /* MetabolicCompass — griglia SVG */
 .metabolic-compass-dial-grid {
   shape-rendering: geometricPrecision;
@@ -1544,6 +1610,21 @@ html, body, #root {
   font-weight: 600;
 }
 
+.calorie-receipt__row--compensation .calorie-receipt__label {
+  flex-wrap: wrap;
+  color: rgba(196, 181, 253, 0.92);
+}
+
+.calorie-receipt__hint {
+  display: inline-block;
+  margin-left: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(167, 139, 250, 0.75);
+}
+
 .calorie-receipt__value {
   font-size: 0.95rem;
   font-weight: 600;
@@ -1586,6 +1667,86 @@ html, body, #root {
   font-size: 0.7em;
   font-weight: 600;
   color: rgba(255, 183, 120, 0.8);
+}
+
+/* CardioDetailsModal — variante cyan dello scontrino calorie */
+.cardio-details-panel {
+  border-top-color: rgba(34, 211, 238, 0.35);
+  background: linear-gradient(
+    165deg,
+    rgba(12, 28, 36, 0.94) 0%,
+    rgba(10, 14, 20, 0.96) 45%,
+    rgba(6, 8, 12, 0.98) 100%
+  );
+}
+
+.cardio-details-panel .calorie-receipt__row--total .calorie-receipt__label {
+  color: rgba(165, 243, 252, 0.95);
+}
+
+.cardio-details-panel .calorie-receipt__value--total {
+  color: #22d3ee;
+}
+
+.cardio-details-panel .calorie-receipt__unit {
+  color: rgba(125, 211, 252, 0.75);
+}
+
+.cardio-details-fill-hint {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.75);
+}
+
+.cardio-details-row-note {
+  margin: -2px 0 8px 1.35rem;
+  font-size: 0.7rem;
+  color: rgba(125, 211, 252, 0.7);
+}
+
+.cardio-details-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cardio-details-session-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.cardio-details-session-row__title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(241, 245, 249, 0.95);
+}
+
+.cardio-details-session-row__meta {
+  margin: 3px 0 0;
+  font-size: 0.68rem;
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.cardio-details-session-row__values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(165, 243, 252, 0.95);
+  white-space: nowrap;
 }
 
 .calorie-status-grid {

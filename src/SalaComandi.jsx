@@ -64,6 +64,18 @@ import { buildMetabolicMapThresholdsFromSplit } from './features/planning/traini
 import TrainingBlockWidget from './components/TrainingBlockWidget';
 import useTrainingBlock from './hooks/planning/useTrainingBlock';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
+import {
+  normalizeGhostSimGoal,
+  ghostSimDeltaToGoal,
+  ghostSimDeltaToKentuStrategy,
+  clampGhostSimDelta,
+  resolveGhostDailyDeltaFromGoal,
+} from './utils/metabolicCompensationCurve';
+import {
+  normalizeActiveCompensation,
+  resolveActiveCompensationDailyDelta,
+  resolveActiveCompensationOnDate,
+} from './utils/activeCompensation';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
 import CustomDateTick from './components/CustomDateTick';
@@ -352,7 +364,7 @@ import {
   buildSmartMealPhysioContextSnippet,
   parseKentuInvisibleCmd,
   normalizeCalorieStrategyTarget,
-  applyCalorieStrategyToProfileKcal,
+  CALORIE_STRATEGY_KCAL_DELTA,
   generateLocalNutritionalAudit,
   generateLocalTrainingAdvice,
   generateLocalMonthlyAudit,
@@ -1415,6 +1427,101 @@ export default function SalaComandi() {
     }
   }, [currentTrackerDate]);
 
+  /** Commit What-If Ghost Car → strategy Kentu + profilo nutrizionale (da delta continuo). */
+  const applyGhostSimGoal = useCallback(
+    async (deltaRaw) => {
+      const delta = clampGhostSimDelta(deltaRaw);
+      const goal = ghostSimDeltaToGoal(delta);
+      const strategy = ghostSimDeltaToKentuStrategy(delta);
+      const dateKey = currentTrackerDate || getTodayString();
+
+      setKentuDailyCalorieStrategy(strategy);
+      try {
+        localStorage.setItem(`kentu_cal_strategy_${dateKey}`, strategy);
+      } catch {
+        /* ignore */
+      }
+
+      setUserProfile((prev) => {
+        const next = {
+          ...prev,
+          nutritionGoal: goal,
+          goal: goal === 'cut' ? 'lose' : goal === 'bulk' ? 'gain' : 'maintain',
+        };
+        const uid = auth.currentUser?.uid || user?.uid;
+        if (uid && db) {
+          set(ref(db, `users/${uid}/profile_targets`), {
+            profile: next,
+            targets: userTargets,
+          }).catch((err) => console.error('[Ghost What-If] salvataggio profilo fallito', err));
+        }
+        return next;
+      });
+    },
+    [currentTrackerDate, getTodayString, db, user?.uid, userTargets],
+  );
+
+  const committedGhostGoal = useMemo(() => {
+    const fromStrategy = normalizeGhostSimGoal(kentuDailyCalorieStrategy);
+    if (kentuDailyCalorieStrategy && kentuDailyCalorieStrategy !== 'pari') {
+      return fromStrategy;
+    }
+    return normalizeGhostSimGoal(
+      userProfile?.nutritionGoal || userProfile?.goal || fromStrategy,
+    );
+  }, [kentuDailyCalorieStrategy, userProfile?.nutritionGoal, userProfile?.goal]);
+
+  /** Delta Kentu attuale (−500 / 0 / +400) — ancora del cursore analogico. */
+  const committedGhostDeltaKcal = useMemo(() => {
+    const strat = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
+    if (strat && Object.prototype.hasOwnProperty.call(CALORIE_STRATEGY_KCAL_DELTA, strat)) {
+      return Math.round(Number(CALORIE_STRATEGY_KCAL_DELTA[strat]) || 0);
+    }
+    return resolveGhostDailyDeltaFromGoal(committedGhostGoal);
+  }, [kentuDailyCalorieStrategy, committedGhostGoal]);
+
+  /** Persistenza piano Compensazione Esplicita (profilo / Firebase). */
+  const persistProfileWithCompensation = useCallback(
+    (activeCompensationValue) => {
+      setUserProfile((prev) => {
+        const next = {
+          ...prev,
+          activeCompensation: activeCompensationValue || null,
+        };
+        const uid = auth.currentUser?.uid || user?.uid;
+        if (uid && db) {
+          set(ref(db, `users/${uid}/profile_targets`), {
+            profile: next,
+            targets: userTargets,
+          }).catch((err) => console.error('[Compensazione Esplicita] salvataggio fallito', err));
+        }
+        return next;
+      });
+    },
+    [db, user?.uid, userTargets],
+  );
+
+  const applyActiveCompensationPlan = useCallback(
+    async (planRaw) => {
+      const startDate = getTodayString();
+      const plan = normalizeActiveCompensation(
+        {
+          ...(planRaw && typeof planRaw === 'object' ? planRaw : {}),
+          startDate,
+          createdAt: new Date().toISOString(),
+        },
+        startDate,
+      );
+      if (!plan) return;
+      persistProfileWithCompensation(plan);
+    },
+    [getTodayString, persistProfileWithCompensation],
+  );
+
+  const clearActiveCompensationPlan = useCallback(async () => {
+    persistProfileWithCompensation(null);
+  }, [persistProfileWithCompensation]);
+
   const selectedNodeReportPrevRef = useRef(null);
   useEffect(() => {
     setExpandedRecipes({});
@@ -2008,15 +2115,27 @@ export default function SalaComandi() {
     [activeLog]
   );
 
+  /** ID già disegnati da computedActivityTimelineNodes → evita doppio nodo con manualNodes. */
+  const activityTimelineIds = useMemo(() => new Set(
+    (computedActivityTimelineNodes || []).map((n) => String(n?.id || '')).filter(Boolean),
+  ), [computedActivityTimelineNodes]);
+
   /** Esclude ghost_workout senza ora definita o quando un workout reale nel diario li sostituisce. */
   const manualNodesForTimeline = useMemo(() => {
+    const ACTIVITY_NODE_TYPES = new Set(['workout', 'activity', 'work', 'cognitive']);
     return (manualNodes || []).filter((n) => {
       if (!n) return false;
-      if (n.type !== 'ghost_workout') return true;
-      if (hasRealWorkoutInActiveLog) return false;
-      return resolveActivityOrWorkoutTimelineHour(n) != null;
+      if (n.type === 'ghost_workout') {
+        if (hasRealWorkoutInActiveLog) return false;
+        return resolveActivityOrWorkoutTimelineHour(n) != null;
+      }
+      // Dedup: allenamento già nel dailyLog non va ridisegnato da manualNodes.
+      if (ACTIVITY_NODE_TYPES.has(n.type) && activityTimelineIds.has(String(n.id))) {
+        return false;
+      }
+      return true;
     });
-  }, [manualNodes, hasRealWorkoutInActiveLog]);
+  }, [manualNodes, hasRealWorkoutInActiveLog, activityTimelineIds]);
 
   const allNodes = useMemo(() => {
     const todayStr = ['domenica', 'lunedi', 'martedi', 'mercoledi', 'giovedi', 'venerdi', 'sabato'][new Date().getDay()];
@@ -2125,7 +2244,17 @@ export default function SalaComandi() {
     if (plannedStrategicNode) {
       baseNodes.push(plannedStrategicNode);
     }
-    return baseNodes.sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+    // Safety net: un solo nodo per ID (preferisce l'ordine di assemblaggio — diario prima).
+    const seenIds = new Set();
+    return baseNodes
+      .filter((node) => {
+        const id = node?.id != null ? String(node.id) : '';
+        if (!id) return true;
+        if (seenIds.has(id)) return false;
+        seenIds.add(id);
+        return true;
+      })
+      .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
   }, [
     computedMealNodes,
     ghostMealTimelineNodes,
@@ -4919,90 +5048,112 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [activeLog, editingMealId]);
 
   const profileKcalBase = userProfileKcalBase;
-  const dynamicDailyKcal = hasPlannedBlock && profileKcalBase != null
-    ? profileKcalBase + plannedDelta + burnedKcal
-    : profileKcalBase != null
-      ? applyCalorieStrategyToProfileKcal(profileKcalBase, kentuDailyCalorieStrategy) + burnedKcal
-      : null;
-  const profileTdeeKcal = profileKcalBase != null ? Math.round(profileKcalBase + burnedKcal) : null;
 
   /**
-   * Split calorico reale per Home dial:
-   * baseKcal (TDEE) / deltaKcal (blocco) / targetKcal (netto).
+   * Equazione dogmatica Home/modale (unica fonte di verità calorica giornaliera):
+   * Target Totale = Target Base (Impostazioni) + Allenamento/Cardio
+   *   + Delta strategico + Compensazione Esplicita.
+   * Nessuno scaling opaco da Training Block / baseline mobili sulla base.
+   */
+  const dogmaticSettingsBaseKcal = useMemo(() => {
+    const fromSettings = Math.round(Number(userProfile?.targetCalories) || 0);
+    return fromSettings > 0 ? fromSettings : 0;
+  }, [userProfile?.targetCalories]);
+
+  const dogmaticBurnKcal = useMemo(
+    () => Math.max(0, Math.round(Number(burnedKcal) || 0)),
+    [burnedKcal],
+  );
+
+  const dogmaticDeltaKcal = useMemo(() => {
+    const strategy = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
+    const strategyDelta = strategy === 'pari'
+      ? 0
+      : Math.round(Number(CALORIE_STRATEGY_KCAL_DELTA[strategy]) || 0);
+    // Solo delta espliciti (strategy Kentu + plannedDelta se un giorno diverso da 0).
+    // Training Block multipliers NON entrano qui.
+    const planDelta = Math.round(Number(plannedDelta) || 0);
+    return strategyDelta + planDelta;
+  }, [kentuDailyCalorieStrategy, plannedDelta]);
+
+  const dogmaticCompensationDateIso = currentTrackerDate || getTodayString();
+
+  const dogmaticCompensationStatus = useMemo(
+    () => resolveActiveCompensationOnDate(
+      userProfile?.activeCompensation,
+      dogmaticCompensationDateIso,
+    ),
+    [userProfile?.activeCompensation, dogmaticCompensationDateIso],
+  );
+
+  const dogmaticCompensationKcal = useMemo(
+    () => resolveActiveCompensationDailyDelta(
+      userProfile?.activeCompensation,
+      dogmaticCompensationDateIso,
+    ),
+    [userProfile?.activeCompensation, dogmaticCompensationDateIso],
+  );
+
+  const dogmaticTargetKcal = useMemo(
+    () => Math.max(
+      0,
+      dogmaticSettingsBaseKcal
+        + dogmaticBurnKcal
+        + dogmaticDeltaKcal
+        + dogmaticCompensationKcal,
+    ),
+    [
+      dogmaticSettingsBaseKcal,
+      dogmaticBurnKcal,
+      dogmaticDeltaKcal,
+      dogmaticCompensationKcal,
+    ],
+  );
+
+  const dynamicDailyKcal = dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcal > 0
+    ? dogmaticTargetKcal
+    : (profileKcalBase != null
+      ? profileKcalBase + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal
+      : null);
+
+  const profileTdeeKcal = dogmaticSettingsBaseKcal > 0
+    ? Math.round(dogmaticSettingsBaseKcal + dogmaticBurnKcal)
+    : (profileKcalBase != null ? Math.round(profileKcalBase + burnedKcal) : null);
+
+  /**
+   * Split calorico Home = equazione dogmatica (base impostazioni / delta esplicito / totale).
    */
   const homeCalorieSplit = useMemo(() => {
-    const fromTargets = effectiveTargetsForCurrentDate || {};
-    const fromBlock = trainingBlockMetabolicTargets || null;
-
-    const baseFromTargets = Math.round(Number(fromTargets.baseKcal) || 0);
-    const targetFromTargets = Math.round(
-      Number(fromTargets.targetKcal ?? fromTargets.kcal) || 0,
+    const baseKcalSplit = dogmaticSettingsBaseKcal > 0
+      ? dogmaticSettingsBaseKcal
+      : Math.round(Number(profileKcalBase) || Number(userTargets?.kcal) || 0);
+    const deltaKcalSplit = dogmaticDeltaKcal + dogmaticCompensationKcal;
+    const targetKcalSplit = Math.max(
+      0,
+      baseKcalSplit + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal,
     );
-    const deltaFromTargets = Number.isFinite(Number(fromTargets.deltaKcal))
-      ? Math.round(Number(fromTargets.deltaKcal))
-      : null;
 
-    const baseFromBlock = Math.round(Number(fromBlock?.baseKcal) || 0);
-    const targetFromBlock = Math.round(
-      Number(fromBlock?.targetKcal ?? fromBlock?.kcal) || 0,
-    );
-    const deltaFromBlock = Number.isFinite(Number(fromBlock?.deltaKcal))
-      ? Math.round(Number(fromBlock.deltaKcal))
-      : null;
-
-    // Preferisci split persistito sui target giornalieri; fallback al blocco live; poi dinamica legacy.
-    let baseKcalSplit = baseFromTargets > 0
-      ? baseFromTargets
-      : (baseFromBlock > 0
-        ? baseFromBlock
-        : Math.round(Number(profileTdeeKcal ?? userProfileKcalBase) || 0));
-
-    let targetKcalSplit = targetFromTargets > 0
-      ? targetFromTargets
-      : (targetFromBlock > 0
-        ? targetFromBlock
-        : Math.round(
-          Number(dynamicDailyKcal)
-          || Number(baseKcal)
-          || Number(userProfileKcalBase)
-          || Number(userTargets?.kcal)
-          || 2500,
-        ));
-
-    let deltaKcalSplit = deltaFromTargets != null
-      ? deltaFromTargets
-      : (deltaFromBlock != null
-        ? deltaFromBlock
-        : (baseKcalSplit > 0 ? targetKcalSplit - baseKcalSplit : 0));
-
-    if (!(baseKcalSplit > 0) && targetKcalSplit > 0) {
-      baseKcalSplit = targetKcalSplit - deltaKcalSplit;
-    }
-
-    const thresholds =
-      fromTargets.metabolicMapThresholds
-      || fromBlock?.metabolicMapThresholds
-      || (baseKcalSplit > 0 && targetKcalSplit > 0
-        ? buildMetabolicMapThresholdsFromSplit({
-          baseKcal: baseKcalSplit,
-          deltaKcal: deltaKcalSplit,
-          targetKcal: targetKcalSplit,
-        })
-        : null);
+    const thresholds = buildMetabolicMapThresholdsFromSplit({
+      baseKcal: baseKcalSplit,
+      deltaKcal: deltaKcalSplit,
+      targetKcal: targetKcalSplit,
+    });
 
     return {
       baseKcal: baseKcalSplit,
       deltaKcal: deltaKcalSplit,
+      strategyDeltaKcal: dogmaticDeltaKcal,
+      compensationKcal: dogmaticCompensationKcal,
       targetKcal: targetKcalSplit,
+      burnKcal: dogmaticBurnKcal,
       metabolicMapThresholds: thresholds,
     };
   }, [
-    effectiveTargetsForCurrentDate,
-    trainingBlockMetabolicTargets,
-    profileTdeeKcal,
-    userProfileKcalBase,
-    dynamicDailyKcal,
-    baseKcal,
+    dogmaticSettingsBaseKcal,
+    dogmaticDeltaKcal,
+    dogmaticCompensationKcal,
+    dogmaticBurnKcal,
+    profileKcalBase,
     userTargets?.kcal,
   ]);
 
@@ -5010,6 +5161,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const dailyTarget = Math.round(
       Number(homeCalorieSplit.targetKcal)
       || Number(dynamicDailyKcal)
+      || Number(dogmaticTargetKcal)
       || Number(baseKcal)
       || Number(userProfileKcalBase)
       || Number(userTargets?.kcal)
@@ -5017,11 +5169,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     );
     const thresholdOverrides =
       homeCalorieSplit.metabolicMapThresholds
-      ?? effectiveTargetsForCurrentDate?.metabolicMapThresholds
-      ?? userTargets?.metabolicMapThresholds
       ?? null;
     return resolveKcalDialTelemetry({
-      tdeeKcal: homeCalorieSplit.baseKcal || profileTdeeKcal,
+      tdeeKcal: homeCalorieSplit.baseKcal || dogmaticSettingsBaseKcal || profileTdeeKcal,
       dailyTargetKcal: dailyTarget,
       consumedKcal: Number(totali?.kcal) || 0,
       plannedDelta: homeCalorieSplit.deltaKcal,
@@ -5030,11 +5180,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [
     homeCalorieSplit,
     dynamicDailyKcal,
+    dogmaticTargetKcal,
+    dogmaticSettingsBaseKcal,
     baseKcal,
     userProfileKcalBase,
     userTargets?.kcal,
-    userTargets?.metabolicMapThresholds,
-    effectiveTargetsForCurrentDate?.metabolicMapThresholds,
     profileTdeeKcal,
     totali?.kcal,
   ]);
@@ -7499,11 +7649,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             const targetProt = userTargets?.prot ?? 150;
             const targetCarb = userTargets?.carb ?? 200;
             const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
-            const dialPlannedDelta = hasPlannedBlock ? plannedDelta : 0;
+            const dialPlannedDelta = dogmaticDeltaKcal + dogmaticCompensationKcal;
             const dialDailyTargetKcal = Math.round(
-              hasPlannedBlock && profileKcalBase != null
-                ? profileKcalBase + dialPlannedDelta + burnedKcal
-                : Number(dynamicDailyKcal) || Number(baseKcal) || Number(userProfileKcalBase ?? userTargets?.kcal ?? 0) || 0
+              Number(dogmaticTargetKcal)
+              || Number(dynamicDailyKcal)
+              || Number(homeCalorieSplit?.targetKcal)
+              || 0,
             );
             const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
             const dialKcalSurplus =
@@ -8031,6 +8182,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             activeDate={currentTrackerDate}
             activeToolRequest={metabolicToolRequest}
             onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
+            settingsBaseKcal={Math.round(Number(userProfile?.targetCalories) || 0) || null}
+            committedGhostGoal={committedGhostGoal}
+            committedGhostDeltaKcal={committedGhostDeltaKcal}
+            onApplyGhostSimGoal={applyGhostSimGoal}
+            activeCompensation={userProfile?.activeCompensation ?? null}
+            onConfirmCompensation={applyActiveCompensationPlan}
+            onClearCompensation={clearActiveCompensationPlan}
           />
           </Suspense>
         </div>
@@ -9447,26 +9605,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <CalorieDetailsModal
         isOpen={showCalorieDetailsSheet}
         onClose={() => setShowCalorieDetailsSheet(false)}
-        tdeeBaseKcal={Math.round(Number(profileKcalBase ?? userProfileKcalBase) || 0)}
-        workoutBurnKcal={Math.round(Number(burnedKcal) || 0)}
-        deltaKcal={
-          hasPlannedBlock
-            ? Math.round(Number(plannedDelta) || 0)
-            : Math.round(
-              (Number(homeCalorieSplit?.targetKcal)
-                || Number(dynamicDailyKcal)
-                || Number(baseKcal)
-                || 0)
-              - (Number(profileKcalBase ?? userProfileKcalBase) || 0)
-              - (Number(burnedKcal) || 0),
-            )
+        tdeeBaseKcal={dogmaticSettingsBaseKcal}
+        workoutBurnKcal={dogmaticBurnKcal}
+        deltaKcal={dogmaticDeltaKcal}
+        compensationKcal={dogmaticCompensationKcal}
+        compensationDaysRemaining={
+          dogmaticCompensationStatus.isActive
+            ? dogmaticCompensationStatus.daysRemaining
+            : null
         }
-        targetKcal={Math.round(
-          Number(homeCalorieSplit?.targetKcal)
-          || Number(dynamicDailyKcal)
-          || Number(baseKcal)
-          || 0,
-        )}
+        targetKcal={dogmaticTargetKcal}
         consumedKcal={Math.round(Number(totali?.kcal) || 0)}
         proteinConsumed={Number(totali?.prot) || 0}
         proteinTarget={

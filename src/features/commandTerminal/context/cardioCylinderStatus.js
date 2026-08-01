@@ -16,8 +16,25 @@ const PURE_CARDIO_TYPES = new Set([
   'bike',
   'nuoto',
   'swim',
+  'camminata',
+  'walking',
+  'passi',
+  'walk',
+  'passeggio',
 ]);
 
+/** Tipi / keyword trattati come quota «passi / camminate» nello scontrino. */
+const WALKING_OR_STEPS_TYPES = new Set([
+  'liss',
+  'camminata',
+  'walking',
+  'passi',
+  'walk',
+  'passeggio',
+]);
+
+/** Stima kcal da passi se il log non porta kcal (≈0.04 kcal/passo). */
+export const KCAL_PER_STEP_ESTIMATE = 0.04;
 const STRENGTH_TYPES = new Set([
   'pesi',
   'spinta',
@@ -127,6 +144,27 @@ export function isPureCardioWorkoutType(typeId) {
   const t = asTrimmedString(typeId).toLowerCase();
   if (!t || t === 'workout') return false;
   return PURE_CARDIO_TYPES.has(t);
+}
+
+/**
+ * Camminate / passi / LISS leggero — quota distinta nello scontrino cardio.
+ * @param {object} entry
+ * @returns {boolean}
+ */
+export function isWalkingOrStepsWorkout(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  const typeId = resolveWorkoutTypeId(entry);
+  if (WALKING_OR_STEPS_TYPES.has(typeId)) return true;
+  const steps = Number(entry.steps ?? entry.stepCount ?? entry.passi);
+  if (Number.isFinite(steps) && steps > 0) return true;
+  const hay = [
+    entry.desc,
+    entry.name,
+    entry.title,
+    entry.label,
+    entry.activityType,
+  ].map((v) => asTrimmedString(v).toLowerCase()).join(' ');
+  return /\b(cammin|walk|passi|passegg|liss|neat)\b/.test(hay);
 }
 
 /**
@@ -246,5 +284,134 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
     fillRatio,
     fillPercent,
     remainingMinutes: Math.round(remainingMinutes * 10) / 10,
+  };
+}
+
+function resolveEntryLabel(entry) {
+  return (
+    asTrimmedString(entry?.desc || entry?.name || entry?.title || entry?.label)
+    || resolveWorkoutTypeId(entry)
+    || 'Sessione'
+  );
+}
+
+function resolveEntryKcal(entry) {
+  const direct = Number(entry?.kcal ?? entry?.cal ?? entry?.calories);
+  if (Number.isFinite(direct) && direct > 0) return Math.round(direct);
+  const steps = Number(entry?.steps ?? entry?.stepCount ?? entry?.passi);
+  if (Number.isFinite(steps) && steps > 0) {
+    return Math.round(steps * KCAL_PER_STEP_ESTIMATE);
+  }
+  return 0;
+}
+
+function resolveEntrySteps(entry) {
+  const steps = Number(entry?.steps ?? entry?.stepCount ?? entry?.passi);
+  return Number.isFinite(steps) && steps > 0 ? Math.round(steps) : 0;
+}
+
+/**
+ * Estratto conto trasparente del cilindro cardio (finestra 168h).
+ * Adattato al data model: sessioni cardio, camminate/passi, spillover pesi 30%.
+ *
+ * @param {Array<object>} cardioLogs
+ * @param {Array<object>} workoutLogs
+ * @param {{ nowMs?: number, weeklyTargetMinutes?: number, spilloverRatio?: number }} [options]
+ */
+export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], options = {}) {
+  const status = calculateCardioStatus(cardioLogs, workoutLogs, options);
+  const nowMs = status.windowEndMs;
+  const windowStartMs = status.windowStartMs;
+  const spilloverRatio = clamp01(
+    options.spilloverRatio != null ? options.spilloverRatio : STRENGTH_CARDIO_SPILLOVER_RATIO,
+  );
+
+  const pool = mergeWorkoutPools(cardioLogs, workoutLogs);
+  /** @type {Array<object>} */
+  const cardioSessions = [];
+  /** @type {Array<object>} */
+  const walkingSessions = [];
+  /** @type {Array<object>} */
+  const strengthSessions = [];
+
+  let walkingMinutes = 0;
+  let walkingSteps = 0;
+  let walkingKcal = 0;
+  let structuredCardioMinutes = 0;
+  let structuredCardioKcal = 0;
+  let strengthKcal = 0;
+
+  for (const entry of pool) {
+    const eventMs = resolveWorkoutEventMs(entry, entry.__dateKey || null);
+    if (eventMs == null || eventMs < windowStartMs || eventMs > nowMs) continue;
+
+    const typeId = resolveWorkoutTypeId(entry);
+    const minutes = resolveWorkoutDurationMinutes(entry);
+    if (!(minutes > 0) && !(resolveEntrySteps(entry) > 0)) continue;
+
+    const row = {
+      id: asTrimmedString(entry.id || entry.nodeId) || null,
+      label: resolveEntryLabel(entry),
+      typeId,
+      minutes: Math.round(minutes * 10) / 10,
+      kcal: resolveEntryKcal(entry),
+      steps: resolveEntrySteps(entry),
+      dateKey: asTrimmedString(entry.__dateKey || entry.dateISO || entry.date).slice(0, 10) || null,
+    };
+
+    if (isWalkingOrStepsWorkout(entry)) {
+      walkingSessions.push(row);
+      walkingMinutes += minutes;
+      walkingSteps += row.steps;
+      walkingKcal += row.kcal;
+      continue;
+    }
+
+    if (isPureCardioWorkoutType(typeId)) {
+      cardioSessions.push(row);
+      structuredCardioMinutes += minutes;
+      structuredCardioKcal += row.kcal;
+      continue;
+    }
+
+    if (isStrengthWorkoutType(typeId)) {
+      const spill = Math.round(minutes * spilloverRatio * 10) / 10;
+      strengthSessions.push({
+        ...row,
+        spilloverMinutes: spill,
+      });
+      strengthKcal += row.kcal;
+    }
+  }
+
+  const spilloverMinutes = Math.round(status.spilloverMinutes * 10) / 10;
+
+  return {
+    ...status,
+    unit: 'min',
+    totalMinutes: status.accumulatedMinutes,
+    targetMinutes: status.weeklyTargetMinutes,
+    walking: {
+      minutes: Math.round(walkingMinutes * 10) / 10,
+      steps: walkingSteps,
+      kcal: walkingKcal,
+      sessions: walkingSessions,
+      conversionNote: walkingSteps > 0
+        ? `${walkingSteps.toLocaleString('it-IT')} passi`
+        : (walkingMinutes > 0 ? 'Camminate / LISS senza conteggio passi' : 'Nessuna camminata registrata'),
+    },
+    structuredCardio: {
+      minutes: Math.round(structuredCardioMinutes * 10) / 10,
+      kcal: structuredCardioKcal,
+      sessions: cardioSessions,
+    },
+    strengthSpillover: {
+      strengthMinutes: status.strengthMinutes,
+      spilloverMinutes,
+      spilloverRatio,
+      kcal: strengthKcal,
+      sessions: strengthSessions,
+      ruleLabel: `${Math.round(spilloverRatio * 100)}% della durata pesi conta come cardio`,
+    },
   };
 }
