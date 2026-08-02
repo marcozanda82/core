@@ -143,6 +143,11 @@ import {
   sumMealProposalMacroTotals,
 } from './utils/mealProposalBuilders';
 import {
+  findExistingCanonicalMealSlot,
+  normalizeMealUpsertAction,
+  resolveUpsertActionFromPayload,
+} from './features/commandTerminal/meals/mealUpsert';
+import {
   buildDailyPlanGhostLogEntries,
   collectRealMealTitlesFromLog,
   dedupeDailyPlanGhostEntriesById,
@@ -3609,12 +3614,14 @@ export default function SalaComandi() {
         mealDec: mealDecFood,
         items: addFoodItems,
         mealType: targetMealType,
+        forcedMealSlot = null,
       } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
       const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
         addFoodItems,
         mealDecFood,
         targetMealType,
+        forcedMealSlot,
       );
       if (!alimentiProcessatiFood.length) return null;
 
@@ -3657,6 +3664,87 @@ Ottimo! Diario aggiornato. 🥗`;
     ]
   );
 
+  /** Merge items in uno slot esistente senza creare ghost (pranzo_2). */
+  const commitMergeMealChatPayload = useCallback(
+    (payload) => {
+      const {
+        targetNodeId,
+        mealType: mealTypeHint,
+        timeString: oraStringFood,
+        mealDec: mealDecFood,
+        items: addFoodItems,
+      } = payload || {};
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+
+      const logSnap = dailyLogRef.current || [];
+      let slotId = String(targetNodeId || '').trim();
+      let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
+
+      if (!existing.length) {
+        const canonical = toCanonicalMealType(String(mealTypeHint || '').split('_')[0]);
+        const found = findExistingCanonicalMealSlot(logSnap, canonical);
+        if (found) {
+          slotId = found.slotId;
+          existing = getFoodItemsForMealSlot(logSnap, slotId);
+        }
+      }
+      if (!existing.length || !slotId) return null;
+
+      const forcedMealSlot = {
+        mealType: existing[0]?.mealType || slotId,
+        mealTime: typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
+          ? existing[0].mealTime
+          : mealDecFood,
+      };
+      const incomingFoods = mapProposalItemsToDiaryFoods(
+        addFoodItems,
+        forcedMealSlot.mealTime,
+        toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
+        forcedMealSlot,
+      );
+      if (!incomingFoods.length) return null;
+
+      const mergedEntries = [...existing, ...incomingFoods];
+      const totKcal = Math.round(
+        mergedEntries.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0),
+      );
+      const totPro =
+        Math.round(mergedEntries.reduce((s, f) => s + (Number(f.prot) || 0), 0) * 10) / 10;
+      const totCar =
+        Math.round(mergedEntries.reduce((s, f) => s + (Number(f.carb) || 0), 0) * 10) / 10;
+      const totFat =
+        Math.round(mergedEntries.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) / 10;
+      const confirmTime = oraStringFood || decimalToTimeStr(forcedMealSlot.mealTime);
+      const testoRispostaFood = `✅ **Aggiunto al ${String(forcedMealSlot.mealType || 'pasto').split('_')[0]}**
+- **Orario:** ${confirmTime}
+- **Nuovi alimenti:** ${incomingFoods.length}
+- **Kcal Totali pasto:** ${totKcal}
+- **Proteine:** ${totPro}g
+
+Slot esistente aggiornato (nessun ghost).`;
+
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, mergedEntries));
+      } else {
+        setDailyLog((prev) => {
+          const next = replaceMealSlotInLog(prev || [], slotId, mergedEntries);
+          syncDatiFirebase(next, manualNodesRef.current);
+          return next;
+        });
+      }
+      return testoRispostaFood;
+    },
+    [
+      mapProposalItemsToDiaryFoods,
+      getFoodItemsForMealSlot,
+      isSimulationMode,
+      setSimulatedLog,
+      setDailyLog,
+      syncDatiFirebase,
+      decimalToTimeStr,
+      toCanonicalMealType,
+    ],
+  );
   /** Sovrascrive un nodo pasto esistente (UPDATE_LOGGED_MEAL) invece di appendere nuove voci. */
   const commitUpdateMealChatPayload = useCallback(
     (payload) => {
@@ -5935,7 +6023,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [bodyMetricsHistory, fullHistory, userTargets?.kcal]);
 
   const commitAddFoodCommand = useCallback(
-    (payload) => {
+    (payloadRaw = {}) => {
+      const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+      const action = resolveUpsertActionFromPayload(payload);
       const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
       const defaultMealTimeMap = {
         colazione: 8,
@@ -5944,8 +6034,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         cena: 20,
       };
       let mealDec = null;
-      if (payload?.timeString) {
-        mealDec = parseFlexibleTimeToDecimal(String(payload.timeString).trim());
+      const exact = String(payload?.exactTime || payload?.timeString || '').trim();
+      if (exact) {
+        mealDec = parseFlexibleTimeToDecimal(exact);
       }
       if (mealDec == null) {
         mealDec =
@@ -5953,7 +6044,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             ? defaultMealTimeMap[mealTypeCanonical]
             : getCurrentTimeRoundedTo15Min();
       }
-      const timeString = String(payload?.timeString || decimalToTimeStr(mealDec)).trim();
+      const timeString = String(payload?.timeString || exact || decimalToTimeStr(mealDec)).trim();
 
       const rawItems = Array.isArray(payload?.items) && payload.items.length > 0
         ? payload.items
@@ -5981,7 +6072,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         };
       });
 
-      // Memoria porzioni: fire-and-forget (non blocca UI / non fallisce il log).
       if (userUid && db) {
         learnUserPortionsFromConfirmedMeal({
           db,
@@ -5997,15 +6087,40 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
 
       const targetNodeId = String(payload?.targetNodeId || '').trim();
-      if (targetNodeId) {
-        const message = commitUpdateMealChatPayload({
-          targetNodeId,
+      const logSnap = dailyLogRef.current || [];
+      const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
+
+      if (action === 'merge') {
+        const message = commitMergeMealChatPayload({
+          targetNodeId: targetNodeId || existingSlot?.slotId || '',
+          mealType: mealTypeCanonical,
           timeString,
-          mealDec,
+          mealDec: existingSlot?.mealTime ?? mealDec,
           items,
         });
         if (message) return message;
-        throw new Error('Aggiornamento pasto fallito');
+        const appendMsg = commitAddFoodChatPayload({
+          timeString,
+          mealDec,
+          items,
+          mealType: mealTypeCanonical,
+        });
+        if (appendMsg) return appendMsg;
+        throw new Error('Merge pasto fallito');
+      }
+
+      if (action === 'replace' || (targetNodeId && action !== 'append')) {
+        const slot = targetNodeId || existingSlot?.slotId || '';
+        if (slot) {
+          const message = commitUpdateMealChatPayload({
+            targetNodeId: slot,
+            timeString,
+            mealDec,
+            items,
+          });
+          if (message) return message;
+          throw new Error('Aggiornamento pasto fallito');
+        }
       }
 
       const message = commitAddFoodChatPayload({
@@ -6023,6 +6138,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [
       commitAddFoodChatPayload,
       commitUpdateMealChatPayload,
+      commitMergeMealChatPayload,
       decimalToTimeStr,
       getCurrentTimeRoundedTo15Min,
       parseFlexibleTimeToDecimal,

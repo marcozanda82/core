@@ -376,13 +376,15 @@ export const consultantResponseSchema = {
     adviceMessage: {
       type: 'string',
       description:
-        'Risposta coach in italiano (max 4 frasi) con semaforo verde/giallo/rosso e porzione consigliata.',
+        'Messaggio analitico e diretto in italiano (max 5 frasi). Cita sforamenti o residui macro in grammi/kcal '
+        + '(es. "La tua proposta sfora i grassi di 15g. Ecco le grammature calibrate per restare in traiettoria."). '
+        + 'Niente semafori, niente tono motivazionale, niente CTA "Quale opzione preferisci?".',
     },
     suggestedAction: {
       type: 'object',
       nullable: true,
       description:
-        'Azione di inserimento rapido singolo alimento. Compila se semaforo verde o giallo; null se rosso o sconsigliato.',
+        'Azione di inserimento rapido singolo alimento con grams già ottimizzati sul remaining dogmatico; null se non applicabile.',
       properties: {
         foodName: {
           type: 'string',
@@ -390,7 +392,7 @@ export const consultantResponseSchema = {
         },
         grams: {
           type: 'number',
-          description: 'Porzione raccomandata in grammi (> 0).',
+          description: 'Porzione matematicamente calibrata in grammi (> 0) rispetto a [DOGMATIC_RECEIPT].remaining.',
         },
         mealType: {
           type: 'string',
@@ -403,12 +405,12 @@ export const consultantResponseSchema = {
     suggestions: {
       type: 'array',
       description:
-        'WIP Meal Builder: Smart Chips integrativi da aggiungere al carrello pasto in corso. Compila SOLO per intent WIP_MEAL_BUILD. 3-5 suggerimenti con name, weight (grammi), calories, macros {prot,carb,fat}, reason.',
+        'WIP Meal Builder: Smart Chips integrativi da aggiungere al carrello pasto in corso. Compila SOLO per intent WIP_MEAL_BUILD. 3-5 suggerimenti con name, weight (grammi ottimizzati sul residuo), calories, macros {prot,carb,fat}, reason analitica.',
       items: {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Nome alimento puro senza grammature.' },
-          weight: { type: 'number', description: 'Grammi consigliati (> 0).' },
+          weight: { type: 'number', description: 'Grammi calibrati sul remaining (> 0).' },
           calories: { type: 'number', description: 'Kcal stimate per la porzione.' },
           macros: {
             type: 'object',
@@ -418,7 +420,7 @@ export const consultantResponseSchema = {
               fat: { type: 'number' },
             },
           },
-          reason: { type: 'string', description: 'Breve motivazione nutrizionale.' },
+          reason: { type: 'string', description: 'Motivo analitico (macro residui da coprire).' },
         },
         required: ['name', 'weight'],
       },
@@ -426,7 +428,9 @@ export const consultantResponseSchema = {
     mealProposals: {
       type: 'array',
       description:
-        'Proposte pasto complete pronte per conferma rapida. Priorità alle abitudini [USER_HABITS_FOR_CURRENT_MEAL]. Per UPDATE_LOGGED_MEAL: UNA sola proposta con targetNodeId + operations + resultingItems.',
+        'Proposte pasto con grammature OTTIMIZZATE dal Solver (alimentano MealProposalCards). '
+        + 'Scenario aperto: grams calcolati per saturare remaining. Scenario chiuso: grams corretti se la proposta utente sfora. '
+        + 'Per UPDATE_LOGGED_MEAL: UNA sola proposta con targetNodeId + operations + resultingItems.',
       items: {
         type: 'object',
         properties: {
@@ -460,7 +464,8 @@ export const consultantResponseSchema = {
           items: {
             type: 'array',
             description:
-              'Lista COMPLETA alimenti del pasto. Ogni voce DEVE avere foodName e grams > 0. Per UPDATE_LOGGED_MEAL: deve coincidere con resultingItems (lista post-mutazione). Se richiesta vaga, ripeti gli items di [EXISTING_MEAL_NODE]/[TODAY_DIARY_INDEX].',
+              'Lista COMPLETA alimenti del pasto con grams OTTIMIZZATI dal Solver. Ogni voce DEVE avere foodName e grams > 0. '
+              + 'Questi grams alimentano direttamente le MealProposalCards. Per UPDATE_LOGGED_MEAL: deve coincidere con resultingItems.',
             items: {
               type: 'object',
               properties: {
@@ -475,7 +480,11 @@ export const consultantResponseSchema = {
                     'Nome PURO ingrediente: senza grammi, parentesi o congiunzioni iniziali (es. "Pesca", non "e pesca 100 g").',
                 },
                 foodDbKey: { type: 'string', nullable: true },
-                grams: { type: 'number' },
+                grams: {
+                  type: 'number',
+                  description:
+                    'Grammatura ottimizzata (scenario aperto: saturazione remaining; scenario chiuso: correzione anti-sforamento).',
+                },
                 kcal: { type: 'number' },
                 pro: { type: 'number' },
                 carbo: { type: 'number' },

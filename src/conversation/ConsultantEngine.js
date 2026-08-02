@@ -28,6 +28,9 @@ import {
   resolveBlockKcalTarget,
 } from '../features/weeklyBlocks/weeklyBlockSchema';
 import {
+  applyMealOperations,
+} from '../features/commandTerminal/meals/mealUpsert.js';
+import {
   formatDecimalHourIt,
   parseFlexibleTimeToDecimal,
   resolveActivityOrWorkoutTimelineHour,
@@ -487,11 +490,18 @@ export function ensureMealProposalsForFixDraft(mealProposals, adviceContext = {}
 }
 
 export function buildFixMealDraftAdviceMessage(adviceContext = {}) {
-  const budgetKcal = Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0);
-  if (budgetKcal > 0) {
-    return `Ecco le porzioni esatte per mangiare quello che volevi senza sforare le tue ${budgetKcal} kcal. Modifica pure se serve.`;
+  const receipt = adviceContext?.dogmaticMacroReceipt
+    || adviceContext?.remainingBudget?.dogmaticReceipt
+    || null;
+  const rem = receipt?.remaining || adviceContext?.remainingBudget || {};
+  const budgetKcal = Math.round(Number(rem.kcal) || 0);
+  const remP = Math.round(Number(rem.pro) || 0);
+  const remC = Math.round(Number(rem.carbo) || 0);
+  const remF = Math.round(Number(rem.fat) || 0);
+  if (budgetKcal !== 0 || remP || remC || remF) {
+    return `Porzioni ricalibrate sul remaining dogmatico: ${budgetKcal} kcal | P ${remP}g | C ${remC}g | F ${remF}g. Conferma o modifica i grammi nella card.`;
   }
-  return 'Ecco le porzioni esatte per mangiare quello che volevi senza sforare il budget. Modifica pure se serve.';
+  return 'Porzioni ricalibrate per restare entro il remaining dogmatico. Conferma o modifica i grammi nella card.';
 }
 
 function normalizeDraftFoodKey(value) {
@@ -746,6 +756,11 @@ export function buildUpdateLoggedMealPreviewProposal(existingMealNode) {
     exactTime: existingMealNode.exactTime || null,
     targetNodeId: existingMealNode.targetNodeId,
     source: 'logged_meal_update_preview',
+    upsertAction: 'replace',
+    action: 'replace',
+    baselineItems: items,
+    operations: [],
+    resultingItems: items,
     items,
     totals: existingMealNode.totals || roundTotals(sumItemMacros(items)),
   };
@@ -837,22 +852,36 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
 
   if (sanitized.length > 0) {
     const proposal = sanitized[0];
-    const validItems = pickValidUpdateItems(proposal.items);
-    const resolvedItems = validItems.length > 0 ? validItems : existingItems;
-    const totals = validItems.length > 0
-      ? roundTotals(sumItemMacros(resolvedItems))
-      : (proposal.totals || existing.totals);
     const operations = Array.isArray(proposal.operations)
       ? proposal.operations
       : sanitizeOperations(mealProposals?.[0]?.operations);
+    const opsApplied = operations.length > 0
+      ? applyMealOperations(baselineItems, operations)
+      : [];
+    const validItems = pickValidUpdateItems(
+      opsApplied.length > 0
+        ? opsApplied
+        : (proposal.resultingItems || proposal.items),
+    );
+    const resolvedItems = validItems.length > 0 ? validItems : pickValidUpdateItems(existingItems);
+    const totals = resolvedItems.length > 0
+      ? roundTotals(sumItemMacros(resolvedItems))
+      : (proposal.totals || existing.totals);
+    const onlyAdds = operations.length > 0
+      && operations.every((op) => String(op?.action || '').toLowerCase() === 'add');
+    const upsertAction = onlyAdds || String(adviceContext?.forcedUpsertAction || '') === 'merge'
+      ? 'merge'
+      : 'replace';
     return [{
       ...proposal,
       id: proposal.id || `update_${existing.targetNodeId}_${Date.now()}`,
-      label: proposal.label || 'Pasto aggiornato',
+      label: proposal.label || (upsertAction === 'merge' ? 'Aggiunta al pasto' : 'Pasto aggiornato'),
       mealType: existing.mealType || proposal.mealType,
       exactTime: existing.exactTime || proposal.exactTime || null,
       targetNodeId: existing.targetNodeId,
-      source: 'logged_meal_update',
+      source: upsertAction === 'merge' ? 'logged_meal_merge' : 'logged_meal_update',
+      upsertAction,
+      action: upsertAction,
       operations,
       baselineItems,
       resultingItems: resolvedItems,
@@ -868,6 +897,8 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
     exactTime: existing.exactTime || null,
     targetNodeId: existing.targetNodeId,
     source: 'logged_meal_update_fallback',
+    upsertAction: 'replace',
+    action: 'replace',
     operations: [],
     baselineItems,
     resultingItems: existingItems,
@@ -921,6 +952,8 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
     mealType,
     exactTime,
     source: 'user_meal_log',
+    upsertAction: 'append',
+    action: 'append',
     items,
     totals: roundTotals(sumProposalItemMacros(items)),
   };
@@ -1214,10 +1247,50 @@ function pickTargets(currentAppState) {
   };
 }
 
-function computeRemainingBudget(currentAppState) {
+/**
+ * Scontrino dogmatico millimetrico: Target − Consumato = Rimanenti (signed).
+ * Fonte unica per il Solver Consultant (P/C/F/kcal).
+ * @param {object} currentAppState
+ * @returns {{
+ *   target: { kcal: number, pro: number, carbo: number, fat: number },
+ *   consumed: { kcal: number, pro: number, carbo: number, fat: number },
+ *   remaining: { kcal: number, pro: number, carbo: number, fat: number },
+ *   note: string,
+ * }}
+ */
+export function buildDogmaticMacroReceipt(currentAppState = {}) {
   const log = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
   const totali = computeTotali(log);
-  const targets = pickTargets(currentAppState);
+  const target = pickTargets(currentAppState);
+  const consumed = {
+    kcal: roundMacro(totali?.kcal ?? totali?.cal ?? 0),
+    pro: roundMacro(totali?.prot ?? totali?.pro ?? 0),
+    carbo: roundMacro(totali?.carb ?? totali?.carbo ?? totali?.cho ?? 0),
+    fat: roundMacro(totali?.fatTotal ?? totali?.fat ?? 0),
+  };
+  const remaining = {
+    kcal: roundMacro(target.kcal - consumed.kcal),
+    pro: roundMacro(target.pro - consumed.pro),
+    carbo: roundMacro(target.carbo - consumed.carbo),
+    fat: roundMacro(target.fat - consumed.fat),
+  };
+  return {
+    target: {
+      kcal: Math.round(target.kcal),
+      pro: roundMacro(target.pro),
+      carbo: roundMacro(target.carbo),
+      fat: roundMacro(target.fat),
+    },
+    consumed,
+    remaining,
+    note: 'remaining firmato: positivo = ancora da coprire; negativo = sforamento già accumulato. Target kcal = equazione dogmatica (dynamicDailyKcal).',
+  };
+}
+
+function computeRemainingBudget(currentAppState) {
+  const receipt = buildDogmaticMacroReceipt(currentAppState);
+  const log = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
+  const totali = computeTotali(log);
   const userTargets = currentAppState?.userTargets || {};
 
   const micros = {};
@@ -1240,10 +1313,14 @@ function computeRemainingBudget(currentAppState) {
   });
 
   return {
-    kcal: roundMacro(targets.kcal - (Number(totali.kcal) || 0)),
-    pro: roundMacro(targets.pro - (Number(totali.prot) || 0)),
-    carbo: roundMacro(targets.carbo - (Number(totali.carb) || 0)),
-    fat: roundMacro(targets.fat - (Number(totali.fatTotal ?? totali.fat) || 0)),
+    kcal: receipt.remaining.kcal,
+    pro: receipt.remaining.pro,
+    carbo: receipt.remaining.carbo,
+    fat: receipt.remaining.fat,
+    target: receipt.target,
+    consumed: receipt.consumed,
+    remaining: receipt.remaining,
+    dogmaticReceipt: receipt,
     micros,
   };
 }
@@ -1547,7 +1624,7 @@ export function buildNutritionContextForState(currentAppState = {}) {
 }
 
 /**
- * Costruisce il contesto compatto per il consulente nutrizionale (Cameriere).
+ * Costruisce il contesto compatto per Kentu Solver (scontrino dogmatico + proposte).
  * @param {string} targetFood
  * @param {object} currentAppState
  * @returns {Promise<object>}
@@ -1585,15 +1662,16 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const dailyCalorieStrategy = nutrition.dailyCalorieStrategy;
   const eveningMetabolicContext = buildEveningMetabolicContext(currentAppState);
 
-  // Day review payload (local aggregation).
+  // Day review payload (local aggregation) — allineato allo scontrino dogmatico.
   const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
   const dailyTotals = computeTotali(activeLog);
-  const targets = currentAppState?.userTargets || {};
+  const dogmaticMacroReceipt = remainingBudget?.dogmaticReceipt
+    || buildDogmaticMacroReceipt(currentAppState);
   const dailyTargets = {
-    kcal: Math.round(Number(currentAppState?.dynamicDailyKcal) || Number(targets.kcal) || 2000),
-    prot: Math.round(Number(targets.prot ?? targets.pro ?? 150) || 150),
-    carb: Math.round(Number(targets.carb ?? targets.cho ?? 200) || 200),
-    fat: Math.round(Number(targets.fatTotal ?? targets.fat ?? 65) || 65),
+    kcal: dogmaticMacroReceipt.target.kcal,
+    prot: dogmaticMacroReceipt.target.pro,
+    carb: dogmaticMacroReceipt.target.carbo,
+    fat: dogmaticMacroReceipt.target.fat,
   };
 
   const partialMealRaw = options?.partialMeal && typeof options.partialMeal === 'object'
@@ -1688,6 +1766,9 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const removedFoodQuery = String(options?.removedFoodQuery || '').trim() || null;
   const existingMealNodeRaw = options?.existingMealNode && typeof options.existingMealNode === 'object'
     ? options.existingMealNode
+    : null;
+  const forcedUpsertAction = options?.forcedUpsertAction
+    ? String(options.forcedUpsertAction).trim().toLowerCase()
     : null;
 
   let removedDraftItem = null;
@@ -1796,13 +1877,18 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
         }
       : null,
     residualBudgetAfterWipMeal,
+    dogmaticMacroReceipt,
     dailyBudgetRemaining: {
-      remainingCalories: Math.round(Number(remainingBudget?.kcal) || 0),
-      remainingProtein: Math.round(Number(remainingBudget?.pro) || 0),
-      remainingCarbs: Math.round(Number(remainingBudget?.carbo) || 0),
-      remainingFat: Math.round(Number(remainingBudget?.fat) || 0),
+      remainingCalories: Math.round(Number(dogmaticMacroReceipt.remaining.kcal) || 0),
+      remainingProtein: Math.round(Number(dogmaticMacroReceipt.remaining.pro) || 0),
+      remainingCarbs: Math.round(Number(dogmaticMacroReceipt.remaining.carbo) || 0),
+      remainingFat: Math.round(Number(dogmaticMacroReceipt.remaining.fat) || 0),
+      target: dogmaticMacroReceipt.target,
+      consumed: dogmaticMacroReceipt.consumed,
+      remaining: dogmaticMacroReceipt.remaining,
     },
     existingMealNode: existingMealNodeRaw,
+    forcedUpsertAction,
     todayDiaryIndex: buildTodayDiaryIndex(activeLog, {
       fullHistory: currentAppState?.fullHistory || {},
       activeDate: currentAppState?.activeDate || null,
@@ -1816,72 +1902,48 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
 }
 
 /**
- * System instruction condivisa per il consulente Cameriere.
+ * System instruction: Kentu Solver (risolutore matematico macronutrienti).
  * @returns {string}
  */
 export function generateConsultantSystemInstruction() {
   return [
-    'Sei Kentu Cameriere (Meal Advice). Rispondi SOLO con JSON valido conforme allo schema.',
+    'Sei Kentu Solver: un risolutore matematico di equazioni sui macronutrienti. Rispondi SOLO con JSON valido conforme allo schema.',
     'Non aggiungere markdown né testo fuori dal JSON.',
+    'IDENTITÀ: non sei un coach motivazionale né uno chef creativo. Calcoli grammature ottimali rispetto allo scontrino dogmatico [DOGMATIC_RECEIPT] (target − consumato = remaining firmato su kcal/P/C/F).',
+    'VINCOLO INGREDIENTI: lavora SOLO sugli alimenti che l utente propone (o già presenti in [PARTIAL_MEAL]/[MEAL_DRAFT_PROJECTION]/[EXISTING_MEAL_NODE]/[WIP_MEAL_ITEMS]/[CONSULTANT_MEAL_REQUEST].anchorFood). NON inventare ricette, ingredienti fantasia o piatti nuovi non richiesti. Per suggerimenti generici senza ingredienti utente, usa SOLO [USER_HABITS_FOR_CURRENT_MEAL] o [FALLBACK_MEAL_PROPOSALS], poi ottimizza i grammi sul remaining.',
+    'SCENARIO APERTO (ingredienti senza quantità, es. "Ho uova e pane per cena"): calcola matematicamente i grams di ciascun alimento per saturare al meglio [DOGMATIC_RECEIPT].remaining (priorità: proteine → carboidrati → grassi → kcal). Popola mealProposals.items con quelle grammature ottimizzate.',
+    'SCENARIO CHIUSO (quantità precise, es. "Posso aggiungere 120g di pasta e 20g di olio?"): verifica se la proposta sforerebbe remaining (o se remaining è già negativo). Se sfora, proponi in mealProposals la versione corretta con grams ridotti e spiega il taglio in adviceMessage con numeri (es. "La tua proposta sfora i grassi di 15g. Ecco le grammature calibrate: pasta 80g, olio 10g."). Se rientra, conferma i grams proposti e quantifica il residuo post-pasto.',
+    'OUTPUT MAPPING: i grams ottimizzati DEVONO finire in mealProposals[].items[] (foodName + grams > 0) per alimentare le MealProposalCards. totals = somma items. Non lasciare grammature "narrative" solo nel testo.',
+    'TONE OF VOICE adviceMessage: analitico, diretto, senza fronzoli motivazionali, senza semafori verde/giallo/rosso, senza CTA tipo "Quale opzione preferisci?". Esempio: "La tua proposta sfora i grassi di 15g. Ecco le grammature calibrate per restare in traiettoria." Max ~5 frasi. Cita sforamenti o residui in grammi/kcal.',
     'REGOLA ENTITY RESOLUTION: l LLM estrae SOLO nome grezzo alimento e quantità (grams).',
     'HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName (e mealProposals.items[].foodName) deve contenere SOLO il nome puro dell ingrediente. VIETATO includere grammature, parentesi, porzioni o suffissi tipo "200 g" nel nome. La quantità va SOLO in grams.',
     'HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: ignora "e", "con", "più", virgola come separatori tra alimenti, non come parte del nome. Mai creare voci tipo "e pesca" o duplicare lo stesso alimento.',
     'NON inventare foodDbKey, nomi DB esatti né macronutrienti: li calcola il sistema locale dal database.',
     'Per mealProposals.items usa foodName come testo utente/LLM e grams; kcal/pro/carbo/fat possono essere 0 o omessi.',
     'ORARIO ESPLICITO: se l utente indica un orario (es. "ore 14.45", "alle 20:30"), estrailo in HH:mm nel campo exactTime di ogni mealProposal pertinente.',
-    'NON DEVI MAI rispondere chiedendo grammature o alimenti mancanti.',
-    'Fornisci SEMPRE 2 o 3 proposte di pasti completi (più alimenti combinati) estrapolati da [USER_HABITS_FOR_CURRENT_MEAL],',
-    'compilando rigorosamente mealProposals. Se [USER_HABITS] è vuoto, usa [FALLBACK_MEAL_PROPOSALS] dal DB alimenti.',
-    'mealProposals NON deve mai essere un array vuoto per richieste di proposta.',
-    'REGOLA TASSATIVA ABITUDINI: se l utente chiede suggerimenti per il pasto o dichiara un pasto generico',
-    '(es. "mangio pane e pomodoro", "cosa mi proponi per pranzo"), cerca PRIMA in [USER_HABITS_FOR_CURRENT_MEAL].',
-    'Proponi la combinazione e grammatura storica. Non inventare grammature se esistono nello storico.',
-    'STRATEGIA MACROCICLICA GIORNALIERA: leggi [DAILY_CALORIE_STRATEGY] dal Costruttore Settimanale. Se directive è deficit (giorno riposo/recupero), orienta mealProposals verso porzioni coerenti con deficit: evita surplus calorico non necessario, privilegia proteine e fibre, carboidrati moderati. Se directive è surplus (giorno allenamento), favorisci carboidrati e calorie sufficienti per performance e recupero. Il [METABOLIC_BUDGET] riflette già targetKcal e delta della strategia: rispettalo. Se hasWeeklyDayPlan è true, NON ignorare il programma settimanale dell utente.',
-    'RIPOSO PIANIFICATO E PRE-WORKOUT: se [DAILY_CALORIE_STRATEGY].isRestDay è true O [UPCOMING_WORKOUT] è null, NON applicare CORREZIONE PROPORZIONALE PRE-ALLENAMENTO, Digestive Safety Gate pre-workout né semaforo giallo pre-allenamento. Tratta il giorno come recupero metabolico.',
-    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO: SOLO se [UPCOMING_WORKOUT] non è null e [DAILY_CALORIE_STRATEGY].isRestDay non è true, e indica un allenamento entro 2-3 ore,',
-    'adatta le [USER_HABITS] prima di proporle in mealProposals: lieve riduzione di grassi e fibre rispetto',
-    'alla grammatura abituale, o adattamento dei carboidrati per favorire lo svuotamento gastrico.',
-    'Spiega brevemente in adviceMessage come e perche hai modificato la porzione abituale.',
-    'HARD CONSTRAINT — VINCOLO MATEMATICO (INVIOLABILE): il totale calorico (totals.kcal) di OGNI singola mealProposal NON deve MAI, in nessun caso, superare [METABOLIC_BUDGET].kcal. Se una proposta sfora anche di 1 kcal, DEVI correggerla prima di rispondere.',
-    'HARD CONSTRAINT — SCALING OBBLIGATORIO: per far rientrare pasti storici nel budget, DEVI SCALARE I GRAMMI in output. Taglia drasticamente (anche 50-70%) fonti glucidiche (pane, pasta, patate, pizza, gnocchi) e fonti lipidiche (olio, noci, pesto, edamame), preservando invece le grammature delle fonti proteiche (salmone, merluzzo, tonno, pollo, uova).',
-    'HARD CONSTRAINT — PULIZIA ACCAVALLAMENTI STORICI: non proporre combinazioni insensate da log sovrapposti. Se nella stessa proposta compaiono più fonti di carboidrati (es. pizza + pane + patate + pasta), SELEZIONANE SOLO UNA e rimuovi le altre. Stessa logica per grassi aggiunti: non sommare olio + noci + pesto insieme se porta a sforare; scegline uno o riducili.',
-    'HARD CONSTRAINT — STOP AVVISI SENZA TAGLIO: è vietato dire "sfora il budget ma lascio intatto". Se sfora, tagli i grammi e adattI mealProposals. In adviceMessage devi dire esplicitamente che hai ridotto carboidrati e grassi per rispettare il budget (es. "Ho ridotto carboidrati e grassi delle tue abitudini per rispettare le tue 1454 kcal").',
-    'INTENTO ASK_MEAL_COMPLETION (SOUS-CHEF): se nel prompt è presente [PARTIAL_MEAL] con items[], NON devi proporre un pasto da zero. Devi completare il piatto aggiungendo SOLO gli ingredienti mancanti. Calcola il budget residuo sottraendo il pasto parziale e rispetta il VINCOLO MATEMATICO sulle kcal totali.',
-    'HARD CONSTRAINT — OTTIMIZZAZIONE MICRO-NUTRIENTI: quando completi un pasto (ASK_MEAL_COMPLETION), devi dare priorità assoluta a ingredienti che colmano le carenze segnalate in [METABOLIC_BUDGET].micros (alte remaining). Esempio: se fibre e magnesio sono bassi, preferisci legumi/verdure/frutta secca in quantità compatibili col budget; se sodio basso, valuta un aggiustamento controllato. Mantieni sempre il vincolo kcal.',
-    'HARD CONSTRAINT — COMPLETION OUTPUT: quando [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL] è presente, mealProposals DEVONO contenere SOLO alimenti integrativi (NON ripetere gli alimenti già in [PARTIAL_MEAL]). Il totale kcal degli alimenti integrativi di ciascuna opzione deve essere <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal (vincolo assoluto).',
-    'INTENTO ASK_DAY_REVIEW (DEBRIEFING SERALE): quando l intent è ASK_DAY_REVIEW o nel contesto sono presenti [DAILY_TOTALS] e [DAILY_TARGETS], NON devi generare mealProposals. Devi produrre SOLO adviceMessage (reviewMessage) empatico e serale, considerando stress/cortisolo alto.',
-    'INTENTO EVALUATE_MEAL_DRAFT (NAVIGATORE WHAT-IF LIVE): quando l intent è EVALUATE_MEAL_DRAFT o nel prompt sono presenti [MEAL_DRAFT_PROJECTION], [DRAFT_TOTAL_KCAL] e [BUDGET_OVERFLOW_AMOUNT], NON devi generare mealProposals né JSON di registrazione pasto. Produci SOLO adviceMessage di allerta live.',
-    'INTENTO FIX_MEAL_DRAFT (RIPARAZIONE PORZIONI): quando l intent è FIX_MEAL_DRAFT, DEVI generare mealProposals (1 proposta unica) basata su [MEAL_DRAFT_PROJECTION]. Applica SCALING OBBLIGATORIO su carboidrati e grassi finché totals.kcal <= [METABOLIC_BUDGET].kcal. Preserva le proteine. NON generare 3 opzioni: una sola card riparata pronta per conferma.',
-    'STRUTTURA OBBLIGATORIA adviceMessage (FIX_MEAL_DRAFT): breve conferma tipo "Ecco le porzioni esatte per mangiare quello che volevi senza sforare le tue [METABOLIC_BUDGET].kcal kcal. Modifica pure se serve." Nessun semaforo, nessuna Opzione 1/2/3.',
-    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM (SOSTITUZIONE ALIMENTO): quando l intent è SUBSTITUTE_MEAL_DRAFT_ITEM, DEVI generare mealProposals (2-3 opzioni). Mantieni TUTTI gli alimenti in [KEPT_DRAFT_PROJECTION] invariati in ogni proposta. Sostituisci SOLO [REMOVED_DRAFT_ITEM] con un alimento alternativo diverso per opzione. Il totale kcal di ogni proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Gli alimenti sostitutivi di ciascuna opzione DEVONO avere totals.kcal <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal (vincolo assoluto sul buco da riempire).',
-    'STRUTTURA OBBLIGATORIA adviceMessage (SUBSTITUTE_MEAL_DRAFT_ITEM): "Ho rimosso [REMOVED_DRAFT_ITEM].foodName. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget." Poi elenca Opzione 1/2/3 allineate a mealProposals. Nessun semaforo.',
-    'INTENTO UPDATE_LOGGED_MEAL (MODIFICA PASTO REGISTRATO): quando l intent è UPDATE_LOGGED_MEAL, usa [TODAY_DIARY_INDEX] per vedere tutti i pasti di oggi (targetNodeId, mealType, time, items[].itemId/foodName/grams) e [EXISTING_MEAL_NODE] come pasto target già risolto se presente. DEVI generare UNA SOLA mealProposal. Compila operations[] con azioni atomiche add|update|delete (per update/delete copia targetItemId da [TODAY_DIARY_INDEX]/[EXISTING_MEAL_NODE]; per add ometti targetItemId e metti updatedFood). Compila SEMPRE resultingItems[] = lista FINALE completa del pasto dopo le mutazioni (SOURCE OF TRUTH) e copia la stessa lista in items[]. OBBLIGATORIO: targetNodeId da [EXISTING_MEAL_NODE].targetNodeId o dal meal scelto in [TODAY_DIARY_INDEX]. Preserva mealType ed exactTime salvo richiesta esplicita. NON creare un nuovo pasto. label: "Pasto aggiornato". source: "logged_meal_update".',
-    'INTENTO CONSULTANT_MEAL (MODALITÀ CONSULENTE): quando l intent è CONSULTANT_MEAL e nel prompt è presente [CONSULTANT_MEAL_REQUEST], sei un nutrizionista. L utente ha inserito [CONSULTANT_MEAL_REQUEST].anchorFood come alimento base fisso. DEVI creare ESATTAMENTE 3 opzioni di pasto complete (mealProposals) che includano SEMPRE quell alimento base + altri ingredienti che bilanciano il pasto rispetto a [dailyBudgetRemaining] e [METABOLIC_BUDGET]. Ogni opzione deve avere items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
-    'HARD CONSTRAINT CONSULTANT_MEAL: totals.kcal di OGNI opzione deve essere <= [METABOLIC_BUDGET].kcal. Ogni items[] DEVE contenere [CONSULTANT_MEAL_REQUEST].anchorFood. Varia gli accompagnamenti tra le 3 opzioni (es. verdure diverse, carboidrati complementari).',
-    'STRUTTURA OBBLIGATORIA adviceMessage (CONSULTANT_MEAL): conferma l alimento base scelto, cita il budget residuo in kcal, presenta Opzione 1/2/3 in sintesi e chiudi con CTA per scegliere e caricare una proposta.',
-    'INTENTO WIP_MEAL_BUILD (COSTRUZIONE PASTO IN CORSO): quando l intent è WIP_MEAL_BUILD e nel prompt è presente [WIP_MEAL_ITEMS], sei un nutrizionista. L utente sta costruendo un pasto nel carrello WIP. NON generare mealProposals. DEVI restituire adviceMessage (messaggio breve) + suggestions[] (3-5 Smart Chips) con name, weight (grammi), calories, macros {prot,carb,fat}, reason. Ogni suggestion deve essere un alimento INTEGRATIVO diverso da quelli già in [WIP_MEAL_ITEMS]. Bilancia rispetto a [dailyBudgetRemaining] e [RESIDUAL_BUDGET_AFTER_WIP_MEAL].',
-    'HARD CONSTRAINT WIP_MEAL_BUILD: suggestions[].weight > 0. La somma calories di ciascun chip non deve superare [RESIDUAL_BUDGET_AFTER_WIP_MEAL].kcal. Varia carboidrati complessi, verdure e grassi buoni. mealProposals DEVE essere array vuoto o omesso.',
-    'STRUTTURA OBBLIGATORIA adviceMessage (WIP_MEAL_BUILD): conferma l ultimo alimento aggiunto, indica cosa manca (carboidrati/grassi/verdure) e invita a usare i pulsanti Smart Chip sotto.',
-    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — MUTAZIONI: operations descrive le modifiche atomiche; resultingItems (e items) e la lista completa post-mutazione usata dal sistema per overwrite Firebase. Mai resultingItems/items vuoti. Se la richiesta e vaga, operations=[] e resultingItems = alimenti originali invariati da [EXISTING_MEAL_NODE]/[TODAY_DIARY_INDEX].',
-    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: DEVI SEMPRE restituire resultingItems[] e items[] COMPLETI con foodName e grams per OGNI alimento residuo. MAI array vuoti o foodName/grams mancanti.',
-    'STRUTTURA OBBLIGATORIA adviceMessage (UPDATE_LOGGED_MEAL): "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere." Nessun semaforo, nessuna Opzione 2/3.',
-    'STRUTTURA OBBLIGATORIA adviceMessage (EVALUATE_MEAL_DRAFT):\n1) Check Matematico: cita il totale kcal della bozza ([DRAFT_TOTAL_KCAL]) vs [METABOLIC_BUDGET].kcal. Se [BUDGET_OVERFLOW_AMOUNT] > 0, dichiara esplicitamente di quanto sfora (es. "sforeresti il budget di 600 kcal"). Se è 0, conferma che rientri.\n2) Intervento (tagli chirurgici): individua quale alimento in [MEAL_DRAFT_PROJECTION] causa l esubero (es. pizza, noci, grassi) e proponi tagli precisi (es. "Dimezza la porzione di pizza e togli le noci").\n3) CTA finale: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"\nTono: diretto, da buttafuori nutrizionale, max ~8 righe. Nessuna Opzione 1/2/3.',
-    'STRUTTURA OBBLIGATORIA adviceMessage (ASK_DAY_REVIEW):\n- L Esito: (es. "Ottimo lavoro" / "Giornata discreta") basato sul rispetto di [DAILY_CALORIE_STRATEGY] e scostamento kcal.\n- Cosa ha funzionato: elogia 1-2 target centrati.\n- Cosa migliorare: 1-2 punti su eccessi/carenze, con priorità ai micro-nutrienti in [METABOLIC_BUDGET].micros.\n- Il Consiglio per domani: 1 azione pratica.\nTono: empatico, rassicurante, chiusura serale senza stress. Max ~10 righe.',
-    'REGOLA CORTISOLO SERALE E RECUPERO NERVOSO: quando il pasto di contesto è la cena, è orario serale (dopo le 18:00), o [EVENING_STRESS_CONTEXT].eveningStressRisk è "high", analizza il livello di cortisolo stimato in [EVENING_STRESS_CONTEXT].cortisolScore. Se il cortisolo è medio-alto in orario serale, è un segnale di allarme per il sistema nervoso. In adviceMessage e nelle proposte DEVI prioritizzare scelte calmanti: carboidrati complessi (aiutano ad abbassare il cortisolo e favoriscono il sonno), alimenti ricchi di magnesio, omega-3 o triptofano. Evita pasti serali composti solo da proteine magre se lo stress è alto. Tono assertivo e focalizzato sul recupero.',
-    'PASTI ANTI-CORTISOLO (CENA): se l utente chiede consigli per la cena o il tema è serale, orienta mealProposals verso combinazioni anti-stress: privilegia carboidrati complessi e fibre moderate, evita eccessi di grassi saturi, caffeina o pasti troppo proteici-magri se [EVENING_STRESS_CONTEXT].eveningStressRisk è "high". Puoi etichettare le proposte in label (es. "Cena recupero") senza cambiare lo schema JSON.',
-    'DIGESTIVE SAFETY GATE (CENA + ALLENAMENTO SERALE): quando consigli o valuti un allenamento in fascia serale, calcola la somma tra i macro residui in [METABOLIC_BUDGET], il costo calorico stimato della cena proposta in mealProposals e l impatto dell allenamento in [UPCOMING_WORKOUT]. Se il totale calorico risultante per la cena supera circa 900-1000 kcal, oppure se il volume di cibo previsto è eccessivo per l orario serale, DEVI sconsigliare l allenamento intenso in adviceMessage. Spiega che un pasto troppo pesante compromette recupero e gestione del cortisolo serale; suggerisci pasto più bilanciato e rinvio dell attività intensa. Non modificare le grammature storiche in mealProposals per applicare questo gate: usa solo adviceMessage per l avviso.',
-    'ALLENAMENTO SERALE E TRAINING WAVE: se [UPCOMING_WORKOUT] indica una sessione serale o l utente chiede se può allenarsi stasera, incrocia orario attuale [CURRENT_SYSTEM_TIME], finestra in [UPCOMING_WORKOUT] e Digestive Safety Gate. Prima della finestra ideale: sconsiglia l immediato e indica di pianificare dentro la finestra. Dentro la finestra: via libera con sessione ben pianificata e pasto coerente. Dopo la finestra o se non c è finestra utile: evita HIIT intenso, preferisci riposo attivo o ripresa il giorno dopo.',
-    'Se proponi un pasto completo dalle abitudini, compila mealProposals con items (foodName + grams).',
-    'I macronutrienti definitivi li calcola il resolver locale dal DB: puoi ometterli o lasciare 0.',
-    'I totals devono essere la somma degli items. Mantieni id/source delle abitudini quando possibile.',
-    'adviceMessage: italiano, max 5 frasi, include semaforo (verde/giallo/rosso).',
-    'FLUSSO CONVERSAZIONALE (OBBLIGATORIO): nell adviceMessage presenta SEMPRE le proposte numerate esplicitamente come "Opzione 1", "Opzione 2", "Opzione 3" (una riga sintetica ciascuna, allineata a mealProposals[0..2]).',
-    'L adviceMessage DEVE concludersi SEMPRE con questa Call to Action (o equivalente): "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
-    'Imposta mealProposals[].label su "Opzione 1", "Opzione 2", "Opzione 3" (mantieni eventuale sottotitolo descrittivo nel name se serve, ma label numerata è obbligatoria).',
-    'suggestedAction: { foodName, grams, mealType } solo per singolo alimento (fallback rapido).',
-    'mealProposals: array di 2-3 proposte strutturate pronte per [CONFERMA E CARICA] (priorità alle abitudini).',
-    'REGOLA SMART DEFAULTS (registrazione pasto consumato via ADD_FOOD): se mancano tipo pasto o orario, il sistema li deduce da [CURRENT_SYSTEM_TIME] — NON chiedere all utente.',
-    'REGOLA ADVICE (SUGGERIMENTI): per consigli e proposte (es. "cosa mi proponi per pranzo?") procedi subito con mealProposals senza chiedere orari.',
+    'NON DEVI MAI rispondere chiedendo grammature o alimenti mancanti: risolvi tu le equazioni e restituisci grams.',
+    'STRATEGIA MACROCICLICA GIORNALIERA: leggi [DAILY_CALORIE_STRATEGY]. Se directive è deficit, evita surplus non necessario; se surplus, copri carboidrati/kcal per performance. [DOGMATIC_RECEIPT] e [METABOLIC_BUDGET] riflettono già targetKcal: rispettali. Se hasWeeklyDayPlan è true, NON ignorare il programma settimanale.',
+    'RIPOSO PIANIFICATO E PRE-WORKOUT: se [DAILY_CALORIE_STRATEGY].isRestDay è true O [UPCOMING_WORKOUT] è null, NON applicare correzione pre-allenamento né Digestive Safety Gate pre-workout.',
+    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO: SOLO se [UPCOMING_WORKOUT] non è null e isRestDay non è true e allenamento entro 2-3 ore, adatta grassi/fibre/carboidrati per svuotamento gastrico e spiega il delta grammi in adviceMessage.',
+    'HARD CONSTRAINT — VINCOLO MATEMATICO (INVIOLABILE): totals.kcal di OGNI mealProposal NON deve superare [METABOLIC_BUDGET].kcal / [DOGMATIC_RECEIPT].remaining.kcal se remaining.kcal > 0. Se sfora anche di 1 kcal, correggi i grams prima di rispondere. Preferisci anche non sforare remaining.pro/carbo/fat quando possibile.',
+    'HARD CONSTRAINT — SCALING OBBLIGATORIO: per rientrare, SCALA I GRAMMI. Taglia fonti glucidiche e lipidiche; preserva fonti proteiche salvo sforamento proteico esplicito.',
+    'HARD CONSTRAINT — STOP AVVISI SENZA TAGLIO: vietato dire che sfora senza correggere mealProposals. Se sfora, taglia grams e spiega il taglio matematico in adviceMessage.',
+    'INTENTO ASK_MEAL_COMPLETION (SOUS-CHEF): se [PARTIAL_MEAL] ha items[], completa aggiungendo SOLO ingredienti mancanti utili al bilanciamento del remaining; non riproporre quelli già presenti. Rispetta [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].',
+    'HARD CONSTRAINT — OTTIMIZZAZIONE MICRO-NUTRIENTI: in ASK_MEAL_COMPLETION priorità a carenze in [METABOLIC_BUDGET].micros restando nel residuo kcal.',
+    'HARD CONSTRAINT — COMPLETION OUTPUT: mealProposals contengono SOLO alimenti integrativi; totals.kcal integrativi <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal.',
+    'INTENTO ASK_DAY_REVIEW: NON generare mealProposals. Solo adviceMessage analitico su [DAILY_TOTALS] vs [DOGMATIC_RECEIPT]/[DAILY_TARGETS] (esito numerico, eccessi/carenze, 1 azione per domani). Tono diretto, non motivazionale.',
+    'INTENTO EVALUATE_MEAL_DRAFT: NON generare mealProposals. Solo adviceMessage con check matematico (draft vs remaining), sforamento in grammi/kcal, tagli chirurgici proposti, CTA riparazione/sostituzione.',
+    'INTENTO FIX_MEAL_DRAFT: UNA mealProposal con grams scalati da [MEAL_DRAFT_PROJECTION] finché totals.kcal <= remaining. Preserva proteine. adviceMessage: conferma numerica del taglio, senza Opzione 1/2/3.',
+    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM: 2-3 mealProposals; tieni [KEPT_DRAFT_PROJECTION] invariato; sostituisci solo [REMOVED_DRAFT_ITEM]; sostitutivi <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal.',
+    'INTENTO UPDATE_LOGGED_MEAL: UNA mealProposal; operations[] + resultingItems[] = lista finale (copia in items[]); targetNodeId obbligatorio. Ottimizza grams se la modifica rischia di sforare remaining. label: "Pasto aggiornato". source: "logged_meal_update".',
+    'INTENTO CONSULTANT_MEAL: 3 opzioni con [CONSULTANT_MEAL_REQUEST].anchorFood obbligatorio + accompagnamenti da habits/DB; grams calibrati su [DOGMATIC_RECEIPT].remaining. totals.kcal <= remaining kcal.',
+    'INTENTO WIP_MEAL_BUILD: NON mealProposals; adviceMessage + suggestions[] (3-5) con weight calibrato sul residuo macro. mealProposals vuoto.',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — MUTAZIONI: resultingItems/items mai vuoti; se richiesta vaga, operations=[] e resultingItems = originali.',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: resultingItems[] e items[] completi con foodName e grams per ogni alimento residuo.',
+    'REGOLA CORTISOLO SERALE: in cena/sera con eveningStressRisk high, orienta grams verso carboidrati complessi e bilanciamento anti-stress senza inventare alimenti non ammessi. Spiega in termini analitici.',
+    'DIGESTIVE SAFETY GATE (cena + allenamento serale): se volume/kcal serali eccessivi (~900-1000+), sconsiglia intensità in adviceMessage senza alterare grams storici salvo richiesta di riparazione.',
+    'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
+    'REGOLA SMART DEFAULTS: tipo pasto/orario da [CURRENT_SYSTEM_TIME] se mancanti — NON chiedere all utente.',
   ].join(' ');
 }
 
@@ -1895,6 +1957,19 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const ctx = adviceContext && typeof adviceContext === 'object' ? adviceContext : {};
   const food = String(targetFood || ctx.targetFood || ctx.rawUserQuery || 'pasto').trim();
   const budget = ctx.remainingBudget || {};
+  const dogmaticReceipt = ctx.dogmaticMacroReceipt
+    || budget.dogmaticReceipt
+    || {
+      target: budget.target || null,
+      consumed: budget.consumed || null,
+      remaining: budget.remaining || {
+        kcal: budget.kcal,
+        pro: budget.pro,
+        carbo: budget.carbo,
+        fat: budget.fat,
+      },
+      note: 'remaining = target − consumato (firmato).',
+    };
   const meal = String(ctx.currentMealType || 'pasto').trim();
   const candidates = Array.isArray(ctx.foodCandidates) ? ctx.foodCandidates : [];
   const habits = ctx.userHabitsForCurrentMeal || { mealType: meal, proposals: [] };
@@ -1924,12 +1999,16 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const consultantMealRequest = ctx.consultantMealRequest ?? null;
   const consultantMealJson = JSON.stringify(consultantMealRequest, null, 0);
   const dailyBudgetRemaining = ctx.dailyBudgetRemaining ?? {
-    remainingCalories: Math.round(Number(budget?.kcal) || 0),
-    remainingProtein: Math.round(Number(budget?.pro) || 0),
-    remainingCarbs: Math.round(Number(budget?.carbo) || 0),
-    remainingFat: Math.round(Number(budget?.fat) || 0),
+    remainingCalories: Math.round(Number(dogmaticReceipt?.remaining?.kcal ?? budget?.kcal) || 0),
+    remainingProtein: Math.round(Number(dogmaticReceipt?.remaining?.pro ?? budget?.pro) || 0),
+    remainingCarbs: Math.round(Number(dogmaticReceipt?.remaining?.carbo ?? budget?.carbo) || 0),
+    remainingFat: Math.round(Number(dogmaticReceipt?.remaining?.fat ?? budget?.fat) || 0),
+    target: dogmaticReceipt?.target || null,
+    consumed: dogmaticReceipt?.consumed || null,
+    remaining: dogmaticReceipt?.remaining || null,
   };
   const dailyBudgetRemainingJson = JSON.stringify(dailyBudgetRemaining, null, 0);
+  const dogmaticReceiptJson = JSON.stringify(dogmaticReceipt, null, 0);
   const wipMealProjection = ctx.wipMealProjection ?? null;
   const wipMealJson = JSON.stringify(wipMealProjection, null, 0);
   const residualAfterWipMeal = ctx.residualBudgetAfterWipMeal ?? null;
@@ -1959,8 +2038,14 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     : 'nessun match utile nel DB locale';
 
   const genericHint = ctx.isGenericMealSuggestion
-    ? 'Richiesta generica di suggerimento pasto: compila OBBLIGATORIAMENTE mealProposals (2-3 pasti completi). NON chiedere grammature.'
-    : 'Valuta l alimento o il pasto indicato rispetto al budget e alle abitudini.';
+    ? 'Richiesta generica: usa habits/fallback e calibra grams su [DOGMATIC_RECEIPT].remaining. Compila mealProposals.'
+    : 'Risolvi la richiesta rispetto allo scontrino dogmatico (scenario aperto o chiuso).';
+
+  const rem = dogmaticReceipt?.remaining || {};
+  const receiptHint = [
+    `Macro rimanenti (firmato): ${Math.round(Number(rem.kcal) || 0)} kcal | P ${Math.round(Number(rem.pro) || 0)}g | C ${Math.round(Number(rem.carbo) || 0)}g | F ${Math.round(Number(rem.fat) || 0)}g.`,
+    'Positivo = ancora da coprire; negativo = già in sforamento.',
+  ].join(' ');
 
   const systemTime = formatCurrentSystemTimeContext();
 
@@ -1969,7 +2054,10 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `Richiesta utente: ${ctx.rawUserQuery || food}.`,
     genericHint,
     `Pasto di contesto: ${meal}.`,
+    `[DOGMATIC_RECEIPT: ${dogmaticReceiptJson}]`,
+    receiptHint,
     `[METABOLIC_BUDGET: ${JSON.stringify(budget || {}, null, 0)}]`,
+    `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]`,
     `[USER_HABITS_FOR_CURRENT_MEAL: ${habitsJson}]`,
     `[FALLBACK_MEAL_PROPOSALS: ${fallbackJson}]`,
     `[UPCOMING_WORKOUT: ${upcomingJson}]`,
@@ -1982,10 +2070,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
     todayDiaryIndex.length > 0 ? `[TODAY_DIARY_INDEX: ${todayDiaryJson}]` : '',
     consultantMealRequest ? `[CONSULTANT_MEAL_REQUEST: ${consultantMealJson}]` : '',
-    consultantMealRequest ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
     wipMealProjection ? `[WIP_MEAL_ITEMS: ${wipMealJson}]` : '',
     wipMealProjection ? `[RESIDUAL_BUDGET_AFTER_WIP_MEAL: ${residualWipJson}]` : '',
-    intent === 'WIP_MEAL_BUILD' ? `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]` : '',
     mealDraftProjection ? `[MEAL_DRAFT_PROJECTION: ${mealDraftJson}]` : '',
     mealDraftProjection ? `[DRAFT_TOTAL_KCAL: ${draftTotalKcal}]` : '',
     mealDraftProjection ? `[BUDGET_OVERFLOW_AMOUNT: ${budgetOverflowAmount}]` : '',
@@ -1993,137 +2079,93 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     ctx.dailyTotals || ctx.DAILY_TOTALS ? `[DAILY_TOTALS: ${dailyTotalsJson}]` : '',
     ctx.dailyTargets || ctx.DAILY_TARGETS ? `[DAILY_TARGETS: ${dailyTargetsJson}]` : '',
     `[EVENING_STRESS_CONTEXT: ${eveningJson}]`,
-    `Opzioni DB locale (porzione ${STANDARD_PORTION_G}g, solo se serve integrare): ${candidateLines}.`,
+    `Opzioni DB locale (porzione ${STANDARD_PORTION_G}g, solo se serve risolvere nomi): ${candidateLines}.`,
     '',
-    'REGOLA FERREA: Se l utente chiede una proposta (es. "Cosa mi proponi?"), NON DEVI MAI rispondere',
-    'chiedendo grammature o alimenti mancanti. Fornisci direttamente 2 o 3 proposte di pasti completi',
-    '(più alimenti combinati) estrapolati da [USER_HABITS_FOR_CURRENT_MEAL], compilando mealProposals.',
-    'Se [USER_HABITS] è vuoto, usa [FALLBACK_MEAL_PROPOSALS] con porzioni standard dal DB alimenti.',
-    'mealProposals NON deve mai essere vuoto per richieste di proposta.',
-    'FLUSSO CONVERSAZIONALE: in adviceMessage numera Opzione 1, Opzione 2, Opzione 3 e chiudi con: "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
-    'ORARIO ESPLICITO: se la richiesta contiene un orario (es. "ore 14.45"), imposta exactTime in HH:mm nella proposta/card.',
-    '',
-    'REGOLA TASSATIVA: Se l utente chiede suggerimenti per il pasto o dichiara un pasto generico',
-    '(es. "mangio pane e pomodoro"), cerca PRIMA in [USER_HABITS_FOR_CURRENT_MEAL].',
-    'Proponi l esatta combinazione e grammatura storica. Non inventare grammature se esistono nello storico.',
+    'SOLVER MODE — EQUAZIONI MACRO:',
+    '1) Leggi [DOGMATIC_RECEIPT]: remaining = target − consumato (kcal, pro, carbo, fat).',
+    '2) SCENARIO APERTO (solo ingredienti, senza grams): calcola grams per saturare remaining; popola mealProposals.items.',
+    '3) SCENARIO CHIUSO (grams precisi): verifica sforamento vs remaining; se sfora, correggi grams in mealProposals e spiega il delta numerico in adviceMessage.',
+    '4) NON inventare ingredienti non proposti dall utente (salvo habits/fallback per richieste generiche, o accompagnamenti CONSULTANT_MEAL).',
+    '5) adviceMessage analitico e diretto, senza motivazionale, senza semafori, senza CTA "Quale opzione preferisci?".',
+    'ORARIO ESPLICITO: se la richiesta contiene un orario (es. "ore 14.45"), imposta exactTime in HH:mm.',
     '',
     dailyCalorieStrategy.isRestDay
-      ? 'GIORNO DI RIPOSO PIANIFICATO: [UPCOMING_WORKOUT] è disattivato. NON applicare logica pre-allenamento né semaforo giallo pre-workout. Priorità deficit da [DAILY_CALORIE_STRATEGY].'
+      ? 'GIORNO DI RIPOSO PIANIFICATO: NON applicare logica pre-allenamento. Priorità deficit da [DAILY_CALORIE_STRATEGY].'
       : '',
     dailyCalorieStrategy.isTrainingDay
       ? `GIORNO DI ALLENAMENTO PIANIFICATO (${dailyCalorieStrategy.activityLabel || 'sessione'}): priorità surplus da [DAILY_CALORIE_STRATEGY]. Target giornaliero ${dailyCalorieStrategy.targetKcal} kcal.`
       : '',
     '',
-    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO (tassativa SOLO se [UPCOMING_WORKOUT] non è null,',
-    '[DAILY_CALORIE_STRATEGY].isRestDay non è true, e startsInMinutes <= 180): adatta le abitudini in mealProposals prima di proporle.',
-    'Riduci leggermente grassi e fibre rispetto alla grammatura abituale, o adatta i carboidrati',
-    'per favorire lo svuotamento gastrico. In adviceMessage spiega brevemente la modifica.',
-    '',
-    'HARD CONSTRAINT (INVIOLABILE) — VINCOLO MATEMATICO: totals.kcal di OGNI proposta deve essere <= [METABOLIC_BUDGET].kcal. Se sfora, devi scalare i grammi finché rientra.',
-    'SCALING OBBLIGATORIO: taglia carboidrati e grassi (anche 50-70%) e preserva le proteine. Non lasciare porzioni storiche intatte se sforano.',
-    'PULIZIA ACCAVALLAMENTI: se appaiono più fonti di carboidrati nella stessa proposta, selezionane solo una ed elimina le altre.',
-    'In adviceMessage spiega chiaramente che hai ridotto carboidrati e grassi per rispettare il budget kcal.',
+    'HARD CONSTRAINT — VINCOLO MATEMATICO: totals.kcal <= [DOGMATIC_RECEIPT].remaining.kcal se remaining.kcal > 0 (alias [METABOLIC_BUDGET].kcal). Se sfora, scala grams.',
+    'SCALING: taglia carboidrati e grassi; preserva proteine salvo sforamento proteico. Spiega i tagli in grammi in adviceMessage.',
     '',
     residualAfterPartial
       ? [
         'SOUS-CHEF MODE ATTIVO: [PARTIAL_MEAL] è già in preparazione.',
-        'Il tuo UNICO compito è proporre 2-3 opzioni di COMPLETAMENTO con SOLO ingredienti integrativi (non ripetere quelli in PARTIAL_MEAL).',
-        'Vincolo assoluto: il totale kcal degli ingredienti integrativi per ogni opzione deve essere <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal.',
-        'Ottimizza i micro: priorità agli ingredienti che aumentano i nutrienti con remaining più alto in [METABOLIC_BUDGET].micros, restando nel residuo.',
+        'Proponi completamenti con SOLO ingredienti integrativi. totals.kcal integrativi <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal.',
+        'Calibra anche su remaining P/C/F dello scontrino dogmatico.',
       ].join('\n')
       : '',
     intent === 'ASK_DAY_REVIEW'
       ? [
         'DEBRIEFING SERALE ATTIVO (ASK_DAY_REVIEW).',
-        'NON generare mealProposals. NON generare suggestedAction. Produci SOLO adviceMessage con la struttura richiesta (Esito / Cosa ha funzionato / Cosa migliorare / Consiglio per domani).',
-        'Basa il giudizio su [DAILY_CALORIE_STRATEGY] e su [DAILY_TOTALS] vs [DAILY_TARGETS].',
-        'Dai priorità alle carenze micro in [METABOLIC_BUDGET].micros. Tono empatico, senza stress.',
+        'NON generare mealProposals. Solo adviceMessage analitico su [DAILY_TOTALS] vs [DOGMATIC_RECEIPT]/[DAILY_TARGETS].',
+        'Cita scostamenti in kcal/P/C/F. Una azione concreta per domani. Nessun tono motivazionale.',
       ].join('\n')
       : '',
     intent === 'EVALUATE_MEAL_DRAFT'
       ? [
         'NAVIGATORE WHAT-IF LIVE ATTIVO (EVALUATE_MEAL_DRAFT).',
-        'NON generare mealProposals. NON generare suggestedAction. NON preparare JSON di salvataggio pasto.',
-        'Usa i valori precalcolati [DRAFT_TOTAL_KCAL] e [BUDGET_OVERFLOW_AMOUNT] — NON ricalcolarli.',
-        'In adviceMessage segui: Check Matematico → Intervento (tagli chirurgici su [MEAL_DRAFT_PROJECTION]) → CTA finale.',
-        'Chiudi con: "Vuoi che calcoli le porzioni esatte per farti rientrare, o vuoi sostituire [alimento] con qualcos altro?"',
+        'NON generare mealProposals. Usa [DRAFT_TOTAL_KCAL] e [BUDGET_OVERFLOW_AMOUNT].',
+        'adviceMessage: check matematico → tagli chirurgici in grammi → CTA riparazione/sostituzione.',
       ].join('\n')
       : '',
     intent === 'FIX_MEAL_DRAFT'
       ? [
         'RIPARAZIONE PORZIONI ATTIVA (FIX_MEAL_DRAFT).',
-        'Genera UNA SOLA mealProposal con tutti gli alimenti di [MEAL_DRAFT_PROJECTION] e grammature scalate.',
-        'HARD CONSTRAINT: totals.kcal della proposta DEVE essere <= [METABOLIC_BUDGET].kcal. Taglia carboidrati e grassi (anche 50-70%), preserva proteine.',
-        'label: "Porzioni riparate". source: "what_if_fix". NON generare Opzione 2/3.',
-        'adviceMessage breve: conferma porzioni esatte entro budget, invita a modificare se serve.',
+        'UNA mealProposal con grams scalati da [MEAL_DRAFT_PROJECTION] entro remaining.',
+        'adviceMessage: conferma numerica del taglio (es. "Pasta da 120g a 80g per rientrare di 15g di grassi").',
       ].join('\n')
       : '',
     intent === 'SUBSTITUTE_MEAL_DRAFT_ITEM'
       ? [
         'SOSTITUZIONE ALIMENTO ATTIVA (SUBSTITUTE_MEAL_DRAFT_ITEM).',
-        'Genera 2-3 mealProposals distinte. Ogni proposta DEVE includere TUTTI gli alimenti di [KEPT_DRAFT_PROJECTION] senza modificarli.',
-        'Aggiungi SOLO alimenti sostitutivi per colmare il buco lasciato da [REMOVED_DRAFT_ITEM].',
-        'HARD CONSTRAINT: totals.kcal di ogni proposta <= [METABOLIC_BUDGET].kcal.',
-        'HARD CONSTRAINT: kcal totali degli alimenti sostitutivi (esclusi i kept) <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal per ogni opzione.',
-        'label: "Opzione 1", "Opzione 2", "Opzione 3". source: "what_if_substitute".',
-        'adviceMessage: "Ho rimosso [nome alimento rimosso]. Ecco 3 alternative che completano il tuo pasto tenendoti perfettamente nel budget."',
+        '2-3 mealProposals: tieni [KEPT_DRAFT_PROJECTION]; sostituisci [REMOVED_DRAFT_ITEM]; residuo <= [RESIDUAL_BUDGET_AFTER_REMOVAL].',
       ].join('\n')
       : '',
     intent === 'UPDATE_LOGGED_MEAL'
       ? [
         'MODIFICA PASTO REGISTRATO ATTIVA (UPDATE_LOGGED_MEAL).',
-        'Usa [TODAY_DIARY_INDEX] per individuare pasti/itemId e [EXISTING_MEAL_NODE] come pasto target se presente.',
-        'Genera UNA SOLA mealProposal.',
-        'Compila operations[] (add|update|delete + targetItemId/updatedFood) e resultingItems[] = lista FINALE completa (SOURCE OF TRUTH).',
-        'Copia resultingItems anche in items[]. targetNodeId obbligatorio da [EXISTING_MEAL_NODE] o [TODAY_DIARY_INDEX].',
-        'Preserva mealType ed exactTime del nodo esistente salvo richiesta esplicita.',
-        'HARD CONSTRAINT: resultingItems/items mai vuoti; se richiesta vaga, operations=[] e resultingItems = originali.',
-        'label: "Pasto aggiornato". source: "logged_meal_update". NON generare Opzione 2/3.',
-        'adviceMessage: "Ho recuperato il tuo [Pasto]. Ecco la versione aggiornata, conferma per sovrascrivere."',
+        'UNA mealProposal con operations + resultingItems (= items). targetNodeId obbligatorio.',
+        'Se la modifica sforerebbe remaining, correggi grams e spiega il delta.',
       ].join('\n')
       : '',
     intent === 'CONSULTANT_MEAL'
       ? [
         'CONSULTANT MODE ATTIVA (CONSULTANT_MEAL).',
-        'Sei un nutrizionista. L utente ha dichiarato un alimento base fisso in [CONSULTANT_MEAL_REQUEST].anchorFood.',
-        'Crea ESATTAMENTE 3 mealProposals distinte. Ogni proposta DEVE includere l alimento base + ingredienti complementari che bilanciano il pasto.',
-        'Rispetta [dailyBudgetRemaining] e [METABOLIC_BUDGET]: totals.kcal di ogni opzione <= [METABOLIC_BUDGET].kcal.',
-        'Compila items[] completi (foodName + grams > 0) e totals coerenti. label: "Opzione 1", "Opzione 2", "Opzione 3". source: "consultant_meal".',
-        'adviceMessage: conferma alimento base, cita budget residuo, sintetizza le 3 opzioni e invita a sceglierne una da caricare.',
+        '3 mealProposals con anchorFood obbligatorio; grams calibrati su [DOGMATIC_RECEIPT].remaining.',
+        'adviceMessage analitico: residuo macro + sintesi delle 3 soluzioni numeriche.',
       ].join('\n')
       : '',
     intent === 'WIP_MEAL_BUILD'
       ? [
         'WIP MEAL BUILDER ATTIVO (WIP_MEAL_BUILD).',
-        'L utente sta costruendo un pasto nel carrello [WIP_MEAL_ITEMS]. NON generare mealProposals.',
-        'Restituisci adviceMessage breve + suggestions[] (3-5 Smart Chips integrativi).',
-        'Ogni suggestion: { name, weight, calories, macros: { prot, carb, fat }, reason }.',
-        'NON ripetere alimenti già in [WIP_MEAL_ITEMS]. Rispetta [RESIDUAL_BUDGET_AFTER_WIP_MEAL] e [dailyBudgetRemaining].',
-        'mealProposals: array vuoto. suggestedAction: null.',
+        'NON mealProposals. suggestions[] con weight calibrato su remaining / [RESIDUAL_BUDGET_AFTER_WIP_MEAL].',
       ].join('\n')
       : '',
     '',
     eveningContext.isDinnerContext || eveningContext.isEvening
       ? [
-        'CONTESTO SERALE ATTIVO: applica REGOLA CORTISOLO SERALE, PASTI ANTI-CORTISOLO e DIGESTIVE SAFETY GATE.',
-        `Cortisolo stimato: ${eveningContext.cortisolScore ?? 'n/d'}/100. Rischio stress serale: ${eveningContext.eveningStressRisk}.`,
-        eveningContext.eveningStressRisk === 'high'
-          ? 'Priorità: carboidrati complessi, magnesio, omega-3, triptofano; evita cene solo proteiche-magre e grassi saturi in eccesso.'
-          : 'Mantieni equilibrio macro rispetto al [METABOLIC_BUDGET] con attenzione al recupero notturno.',
+        'CONTESTO SERALE ATTIVO: bilancia grams per recupero (carboidrati se stress high) senza inventare ingredienti non ammessi.',
+        `Cortisolo: ${eveningContext.cortisolScore ?? 'n/d'}/100. Rischio: ${eveningContext.eveningStressRisk}.`,
       ].join('\n')
       : '',
     '',
-    'OUTPUT JSON richiesto:',
-    '- adviceMessage: testo conversazionale per l utente (max 5 frasi, italiano, semaforo). Presenta Opzione 1/2/3 nel testo e chiudi con CTA: "Quale di queste 3 opzioni preferisci? Scegline una e, se serve, la modifichiamo insieme."',
-    '- suggestedAction: { foodName, grams, mealType } | null — solo per un singolo alimento rapido.',
-    '- mealProposals: array (2-3) di proposte pasto complete, ciascuna:',
-    '  { id, label ("Opzione 1"|"Opzione 2"|"Opzione 3"), mealType, exactTime (HH:mm opzionale se l utente ha indicato orario), source, items: [...], totals }.',
-    'Ogni grams deve essere > 0. totals DEVE coincidere con la somma degli items.',
-    'Preferisci mealProposals dalle abitudini quando disponibili. Usa id/source dall abitudine corrispondente.',
-    'Alternativa testuale ammessa nel adviceMessage: blocco <MEAL_PROPOSAL>...</MEAL_PROPOSAL> con lo stesso JSON interno.',
-    '',
-    'NOTA: Le richieste di REGISTRAZIONE pasto consumato (ADD_FOOD) usano Smart Defaults lato server.',
-    'Per i CONSIGLI (questo prompt): compila subito mealProposals senza chiedere orari o tipo pasto.',
+    'OUTPUT JSON richiesto (alimenta MealProposalCards):',
+    '- adviceMessage: analitico, diretto, italiano, max 5 frasi; cita sforamenti/residui in g o kcal; nessun semaforo/CTA motivazionale.',
+    '- suggestedAction: { foodName, grams, mealType } | null — solo singolo alimento rapido.',
+    '- mealProposals: proposte con items[].foodName + items[].grams OTTIMIZZATI (grams > 0) e totals coerenti.',
+    'I grams in items[] sono la Source of Truth per le card: non lasciare le correzioni solo nel testo.',
   ].join('\n');
 }
 

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import { resolveFoodItemForProposal } from '../utils/foodResolver.js';
+import {
+  mealUpsertBadgeLabel,
+  resolveUpsertActionFromPayload,
+} from '../features/commandTerminal/meals/mealUpsert.js';
 
 const MEAL_LABELS = {
   colazione: 'Colazione',
@@ -368,10 +372,10 @@ function MealProposalCard({
     () => normalizeMutationOperations(localProposal?.operations),
     [localProposal?.operations],
   );
-  const isMutationCard = Boolean(targetNodeId) && mutationOps.length > 0;
-  const badgeText = exactTime
-    ? `${mealLabel(mealType)} • ${exactTime}`
-    : mealLabel(mealType);
+  const upsertAction = resolveUpsertActionFromPayload(localProposal);
+  const isMutationCard = Boolean(targetNodeId) && (mutationOps.length > 0 || upsertAction !== 'append');
+  const badgeText = mealUpsertBadgeLabel(upsertAction, mealType)
+    + (exactTime ? ` · ${exactTime}` : '');
   const commitItems = useMemo(() => {
     const resulting = Array.isArray(localProposal?.resultingItems) ? localProposal.resultingItems : [];
     if (resulting.length > 0) return resulting;
@@ -477,7 +481,7 @@ function MealProposalCard({
       <header className="kentu-meal-proposal-card__head">
         <div className="kentu-meal-proposal-card__titles">
           <span className="kentu-meal-proposal-card__badge">
-            {isMutationCard ? `Modifica · ${badgeText}` : badgeText}
+            {badgeText}
           </span>
           <h4 className="kentu-meal-proposal-card__label">{label}</h4>
         </div>
@@ -552,6 +556,8 @@ function MealProposalCard({
                 onConfirm?.({
                   ...localProposal,
                   targetNodeId: targetNodeId || localProposal?.targetNodeId || null,
+                  action: upsertAction,
+                  upsertAction,
                   items: commitItems,
                   resultingItems: commitItems,
                 }, index, adviceId);
@@ -559,9 +565,11 @@ function MealProposalCard({
             >
               {isLoaded
                 ? 'Applicato ✓'
-                : isMutationCard
-                  ? 'Applica modifiche'
-                  : 'Conferma e carica'}
+                : upsertAction === 'merge'
+                  ? 'Aggiungi al pasto'
+                  : isMutationCard
+                    ? 'Applica modifiche'
+                    : 'Conferma e carica'}
             </KentuButton>
             {!isLoaded ? (
               <KentuButton
@@ -580,7 +588,7 @@ function MealProposalCard({
 }
 
 /**
- * Card compatte per proposte pasto Cameriere (mealProposals da ADVICE).
+ * Card compatte per proposte pasto Solver (mealProposals da ADVICE).
  */
 export default function MealProposalCards({
   proposals = [],

@@ -71,6 +71,7 @@ import {
   isWipMealBuildIntent,
   parseWipMealDeclaration,
   isUpdateLoggedMealIntent,
+  isMergeIntoExistingMealIntent,
   parseTargetMealTypeFromUpdateText,
   resolveUpdateMealContext,
   findPendingUpdateLoggedMealContext,
@@ -524,6 +525,14 @@ export class CommandTerminalController {
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
 
+    // Merge/update verso slot esistente PRIMA della registrazione (evita ghost pranzo_2).
+    if (
+      isMergeIntoExistingMealIntent(userText)
+      || isUpdateLoggedMealIntent(userText, options?.chatHistory || [])
+    ) {
+      return 'UPDATE_LOGGED_MEAL';
+    }
+
     // DATA ENTRY pasti PRIMA del consulto (evita "come snack, ho mangiato…" → CHAT_RESPONSE).
     if (isFoodRegistrationIntent(userText)) {
       return 'ADD_FOOD';
@@ -545,7 +554,7 @@ export class CommandTerminalController {
     if (isFixMealDraftIntent(userText, options?.chatHistory || [])) return 'FIX_MEAL_DRAFT';
     if (isMealDraftEvaluationIntent(userText)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
-    if (isUpdateLoggedMealIntent(userText, options?.chatHistory || [])) return 'UPDATE_LOGGED_MEAL';
+    // UPDATE già valutato sopra; non ripetere qui.
     if (isConsultantMealIntent(userText, options?.chatHistory || [])) return 'CONSULTANT_MEAL';
     if (isWipMealBuildIntent(
       userText,
@@ -1317,8 +1326,9 @@ export class CommandTerminalController {
     }
 
     const uiMessage = options.uiMessage || buildMealDraftUiMessage(payload);
-    return this.stagePendingAction('ADD_FOOD', payload, {
-      requiresConfirmation: true,
+    // Una sola card di conferma: MealProposalCards invece di MEAL_DRAFT + quick replies.
+    return this.publishMealLogProposalCardDirect(payload, currentState, options.userText || '', [], {
+      upsertAction: 'append',
       uiMessage,
     });
   }
@@ -1578,12 +1588,28 @@ export class CommandTerminalController {
       return { ok: false, reason: 'missing_existing_meal_node' };
     }
 
+    // Niente gate a due turni: se manca l'azione esplicita, pubblica subito
+    // una card editabile (unica conferma) invece di WAITING_FOR_UPDATE_DETAILS.
     if (isUpdateLogged && !hasExplicitUpdateAction(rawQuery)) {
-      return this.publishUpdateMealWaitingWithPreview(
-        targetMealTypeForUpdate,
-        existingMealNode,
-        updateContext?.timeQualifier || null,
-      );
+      const previewProposal = buildUpdateLoggedMealPreviewProposal(existingMealNode);
+      if (previewProposal) {
+        previewProposal.upsertAction = isMergeIntoExistingMealIntent(rawQuery) ? 'merge' : 'replace';
+        previewProposal.action = previewProposal.upsertAction;
+        previewProposal.source = previewProposal.upsertAction === 'merge'
+          ? 'logged_meal_merge'
+          : 'logged_meal_update';
+      }
+      this.publishAdviceMessage({
+        text: `Ho recuperato il tuo ${targetMealTypeForUpdate || 'pasto'}. Modifica gli alimenti sulla card e conferma — nessuna domanda intermedia.`,
+        mealProposals: previewProposal ? [previewProposal] : null,
+      });
+      this.clearPendingMealUpdate();
+      return {
+        ok: true,
+        intent: 'UPDATE_LOGGED_MEAL',
+        mealProposals: previewProposal ? [previewProposal] : [],
+        singleConfirm: true,
+      };
     }
 
     const queryForAdvice = isUpdateLogged && pendingUpdate?.targetMealType
@@ -1632,6 +1658,7 @@ export class CommandTerminalController {
         removedFoodQuery: isSubstituteDraft
           ? parseRemovedFoodQueryFromSubstituteText(rawQuery)
           : null,
+        forcedUpsertAction: isMergeIntoExistingMealIntent(rawQuery) ? 'merge' : null,
       });
     } catch (error) {
       const reason = `Consultant context failure: ${error?.message || 'unknown error'}`;

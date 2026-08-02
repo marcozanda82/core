@@ -10,6 +10,7 @@ import {
   isDayReviewIntent,
   isCreateNewFoodIntent,
   isUpdateLoggedMealIntent,
+  isMergeIntoExistingMealIntent,
   isConsultantMealIntent,
   parseConsultantMealIntent,
   isWipMealBuildIntent,
@@ -72,6 +73,11 @@ export class ContextComposer {
     const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
 
+    // Merge/update verso slot esistente PRIMA della registrazione (evita ghost).
+    if (isMergeIntoExistingMealIntent(text) || isUpdateLoggedMealIntent(text, chatHistory)) {
+      return 'UPDATE_LOGGED_MEAL';
+    }
+
     // DATA ENTRY pasti PRIMA del consulto: "come snack, ho mangiato…" → ADD_FOOD.
     if (isFoodRegistrationIntent(text)) return 'ADD_FOOD';
 
@@ -89,7 +95,6 @@ export class ContextComposer {
     if (isFixMealDraftIntent(text, chatHistory)) return 'FIX_MEAL_DRAFT';
     if (isMealDraftEvaluationIntent(text)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(text)) return 'ASK_MEAL_COMPLETION';
-    if (isUpdateLoggedMealIntent(text, chatHistory)) return 'UPDATE_LOGGED_MEAL';
     if (isConsultantMealIntent(text, chatHistory)) return 'CONSULTANT_MEAL';
     if (isWipMealBuildIntent(text, chatHistory)) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';

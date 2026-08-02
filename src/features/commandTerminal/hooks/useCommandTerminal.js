@@ -5,6 +5,7 @@ import { GeminiStructuredClient } from '../llm/GeminiStructuredClient.js';
 import { CommandTerminalController } from '../CommandTerminalController.js';
 import {
   DISPATCH_ADD_FOOD,
+  DISPATCH_UPSERT_MEAL,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_LOG_SLEEP,
   DISPATCH_SYSTEM_MESSAGE,
@@ -19,6 +20,11 @@ import {
   projectNutritionAfterMeal,
   sumMealItemsMacros,
 } from '../../../conversation/ConsultantEngine.js';
+import {
+  applyMealOperations,
+  mergeMealItems,
+  resolveUpsertActionFromPayload,
+} from '../meals/mealUpsert.js';
 
 export function useCommandTerminal({
   chatHistory,
@@ -667,9 +673,26 @@ export function useCommandTerminal({
     }
 
     const mealType = String(proposal.mealType || 'pranzo').trim().toLowerCase();
-    const sourceItems = Array.isArray(proposal.resultingItems) && proposal.resultingItems.length > 0
-      ? proposal.resultingItems
-      : (Array.isArray(proposal.items) ? proposal.items : []);
+    const upsertAction = resolveUpsertActionFromPayload(proposal);
+    const baselineItems = Array.isArray(proposal.baselineItems) ? proposal.baselineItems : [];
+    const operations = Array.isArray(proposal.operations) ? proposal.operations : [];
+
+    let sourceItems;
+    if (operations.length > 0) {
+      sourceItems = applyMealOperations(baselineItems, operations);
+    } else if (upsertAction === 'merge' && baselineItems.length > 0) {
+      const incoming = Array.isArray(proposal.items) ? proposal.items : [];
+      // Se items già include il baseline (resulting), usali; altrimenti merge.
+      const looksComplete = incoming.length >= baselineItems.length;
+      sourceItems = looksComplete
+        ? incoming
+        : mergeMealItems(baselineItems, incoming);
+    } else if (Array.isArray(proposal.resultingItems) && proposal.resultingItems.length > 0) {
+      sourceItems = proposal.resultingItems;
+    } else {
+      sourceItems = Array.isArray(proposal.items) ? proposal.items : [];
+    }
+
     const proposalId = String(proposal.id || `proposal_${proposalIndex ?? 0}`);
 
     const payloadItems = sourceItems
@@ -690,7 +713,26 @@ export function useCommandTerminal({
       return { ok: false, reason: 'empty_meal_proposal' };
     }
 
-    // Snapshot PRE-commit + macro pasto → budget residuo senza race React/Firebase.
+    // Per merge: invia solo i nuovi items se operations sono solo add.
+    let itemsForCommit = payloadItems;
+    if (upsertAction === 'merge' && operations.length > 0 && operations.every((op) => String(op?.action || '').toLowerCase() === 'add')) {
+      const added = applyMealOperations([], operations.filter((op) => String(op?.action || '').toLowerCase() === 'add'));
+      const mapped = added
+        .map((item) => {
+          const foodName = String(item?.foodName || item?.name || '').trim();
+          const grams = Math.max(1, Math.round(Number(item?.grams) || 0));
+          if (!foodName || grams <= 0) return null;
+          const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
+          return {
+            foodName,
+            grams,
+            ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
+          };
+        })
+        .filter(Boolean);
+      if (mapped.length > 0) itemsForCommit = mapped;
+    }
+
     const stateBeforeCommit =
       typeof getCurrentStateRef.current === 'function' ? (getCurrentStateRef.current() ?? {}) : {};
     const mealTotals = proposal.totals && typeof proposal.totals === 'object'
@@ -716,28 +758,39 @@ export function useCommandTerminal({
     const targetNodeId = String(proposal.targetNodeId || '').trim();
     const payload = {
       mealType,
-      items: payloadItems,
+      items: itemsForCommit,
+      action: upsertAction,
+      upsertAction,
+      source: proposal.source || null,
+      operations,
       ...(exactTime ? { timeString: exactTime, exactTime } : {}),
       ...(targetNodeId ? { targetNodeId } : {}),
     };
 
     try {
-      commandBus.publish(DISPATCH_ADD_FOOD, payload, {
+      commandBus.publish(DISPATCH_UPSERT_MEAL, payload, {
         source: 'useCommandTerminal',
-        correlationId: targetNodeId ? 'meal_proposal_update' : 'meal_proposal_accept',
+        correlationId: upsertAction === 'merge'
+          ? 'meal_proposal_merge'
+          : (targetNodeId || upsertAction === 'replace'
+            ? 'meal_proposal_update'
+            : 'meal_proposal_accept'),
         dedupeKey: {
           adviceId: adviceId || proposalId,
           proposalId,
           mealType,
-          items: payloadItems,
+          action: upsertAction,
+          items: itemsForCommit,
           ...(targetNodeId ? { targetNodeId } : {}),
         },
       });
       const label = String(proposal.label || proposal.name || mealType).trim();
       appendAiMessage(
-        targetNodeId
-          ? `✅ Pasto aggiornato: ${label}.`
-          : buildDeterministicMealLogFeedback(projection, label),
+        upsertAction === 'merge'
+          ? `✅ Aggiunto al ${mealType}: ${label}.`
+          : upsertAction === 'replace' || targetNodeId
+            ? `✅ Pasto aggiornato: ${label}.`
+            : buildDeterministicMealLogFeedback(projection, label),
       );
       controller.clearPendingMealUpdate();
       pendingMealUpdateRef.current = null;

@@ -821,6 +821,24 @@ export function isUpdateLoggedMealIntent(userText, chatHistory = []) {
 }
 
 /**
+ * Intent additivo verso uno slot già esistente («aggiungi lo yogurt al pranzo»).
+ * Deve mappare deterministicamente a merge, non a nuovo ghost slot.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isMergeIntoExistingMealIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  const mealType = parseTargetMealTypeFromUpdateText(text)?.mealType;
+  if (!mealType) return false;
+  const additive = /\b(?:aggiung\w*|metti|inserisc\w*|mancava|mancano|manca|dimenticat\w*)\b/i.test(text);
+  const towardSlot = /\b(?:al|alla|allo|nel|nella|nello|del|della)\s+(?:mio\s+)?(?:colazione|pranzo|cena|snack|spuntino|merenda)\b/i.test(text)
+    || /\b(?:nel|nella|allo|alla)\s+(?:mio\s+)?(?:colazione|pranzo|cena|snack)\b/i.test(text);
+  return additive && towardSlot;
+}
+
+/**
  * True se l'utente ha specificato azioni/alimenti concreti per la modifica.
  * @param {string} userText
  * @returns {boolean}
@@ -828,6 +846,7 @@ export function isUpdateLoggedMealIntent(userText, chatHistory = []) {
 export function hasExplicitUpdateAction(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
+  if (isMergeIntoExistingMealIntent(text)) return true;
   if (UPDATE_EXPLICIT_ACTION_PATTERNS.some((pattern) => pattern.test(text))) return true;
 
   const parsed = parseConsumedMealFromNaturalText(text);
