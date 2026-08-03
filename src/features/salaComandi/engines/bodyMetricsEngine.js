@@ -88,7 +88,13 @@ export function sortBodyMetricsHistoryByDateAsc(history = [], fallbackDate) {
   const safeHistory = Array.isArray(history) ? history : [];
   return safeHistory
     .map((entry) => normalizeBodyMetricsEntryForTimeline({ entry, fallbackDate }))
-    .filter((entry) => Number.isFinite(Number(entry?.weight)) && Number(entry.weight) > 0)
+    .filter((entry) => {
+      const weight = Number(entry?.weight);
+      const waist = Number(entry?.waist ?? entry?.girovita ?? entry?.waistCm);
+      const hasWeight = Number.isFinite(weight) && weight > 0;
+      const hasWaist = Number.isFinite(waist) && waist > 0;
+      return hasWeight || hasWaist;
+    })
     .filter(Boolean)
     .sort((a, b) => {
       const d = String(a.date || '').localeCompare(String(b.date || ''));
@@ -887,6 +893,112 @@ export function mergeHistoryWithLatestWeigh({ bodyMetricsHistory, weighDate, pay
   const filtered = list.filter((e) => metricEntryToIsoDay(e) !== weighDate);
   filtered.push(payload);
   return filtered;
+}
+
+/**
+ * Costruisce il payload RTDB `body_metrics` con weight e/o waist.
+ * Campi omessi vengono forward-fill dallo stesso giorno o dallo storico precedente.
+ *
+ * @param {{
+ *   weight?: unknown,
+ *   waist?: unknown,
+ *   bodyFat?: unknown,
+ *   muscleMass?: unknown,
+ *   bodyWater?: unknown,
+ *   visceralFat?: unknown,
+ *   date: string,
+ *   previousEntry?: Record<string, unknown> | null,
+ *   sameDayEntry?: Record<string, unknown> | null,
+ *   historyCarry?: Array<Record<string, unknown>>,
+ *   requireWeight?: boolean,
+ * }} args
+ * @returns {{ payload: Record<string, unknown> | null, error?: string }}
+ */
+export function buildBodyMetricsSavePayload({
+  weight,
+  waist,
+  bodyFat,
+  muscleMass,
+  bodyWater,
+  visceralFat,
+  date,
+  previousEntry = null,
+  sameDayEntry = null,
+  historyCarry = null,
+  requireWeight = false,
+}) {
+  const parseOpt = (v) => {
+    if (v == null || v === '') return null;
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  const readPrev = (entry, keys) => {
+    if (!entry) return null;
+    for (const key of keys) {
+      const n = Number(entry?.[key]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return null;
+  };
+  const readFromHistory = (keys) => {
+    const list = Array.isArray(historyCarry) ? historyCarry : [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const v = readPrev(list[i], keys);
+      if (v != null) return v;
+    }
+    return null;
+  };
+
+  const weightProvided = weight !== undefined && String(weight ?? '').trim() !== '';
+  const waistProvided = waist !== undefined && String(waist ?? '').trim() !== '';
+  const explicitWeight = parseOpt(weight);
+  const explicitWaist = parseOpt(waist);
+
+  if (weightProvided && explicitWeight == null) {
+    return { payload: null, error: 'Inserisci un peso valido (maggiore di 0).' };
+  }
+  if (waistProvided && explicitWaist == null) {
+    return { payload: null, error: 'Inserisci un girovita valido in cm (maggiore di 0).' };
+  }
+  if (!weightProvided && !waistProvided) {
+    return { payload: null, error: 'Inserisci almeno peso (kg) o girovita (cm).' };
+  }
+
+  const carry = sameDayEntry || previousEntry;
+  const resolvedWeight = explicitWeight
+    ?? readPrev(sameDayEntry, ['weight', 'peso'])
+    ?? readPrev(previousEntry, ['weight', 'peso'])
+    ?? readFromHistory(['weight', 'peso']);
+  const resolvedWaist = explicitWaist
+    ?? readPrev(sameDayEntry, ['waist', 'girovita', 'waistCm', 'waist_cm'])
+    ?? readPrev(previousEntry, ['waist', 'girovita', 'waistCm', 'waist_cm'])
+    ?? readFromHistory(['waist', 'girovita', 'waistCm', 'waist_cm']);
+
+  if (requireWeight && resolvedWeight == null) {
+    return { payload: null, error: 'Inserisci un peso valido (maggiore di 0).' };
+  }
+  if (resolvedWeight == null && resolvedWaist == null) {
+    return { payload: null, error: 'Inserisci almeno peso (kg) o girovita (cm).' };
+  }
+
+  const payload = {
+    timestamp: bodyMetricTimestampFromDate(date),
+    date,
+    bodyFat: parseOpt(bodyFat) ?? readPrev(carry, ['bodyFat']) ?? readFromHistory(['bodyFat']),
+    muscleMass: parseOpt(muscleMass)
+      ?? readPrev(carry, ['muscleMass', 'muscle'])
+      ?? readFromHistory(['muscleMass', 'muscle']),
+    bodyWater: parseOpt(bodyWater)
+      ?? readPrev(carry, ['bodyWater', 'water', 'waterPercentage'])
+      ?? readFromHistory(['bodyWater', 'water', 'waterPercentage']),
+    visceralFat: parseOpt(visceralFat)
+      ?? readPrev(carry, ['visceralFat', 'visceral'])
+      ?? readFromHistory(['visceralFat', 'visceral']),
+  };
+  if (resolvedWeight != null) payload.weight = resolvedWeight;
+  if (resolvedWaist != null) payload.waist = resolvedWaist;
+
+  return { payload };
 }
 
 export function normalizePredictiveCalibrationState(v) {

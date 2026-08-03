@@ -8,6 +8,7 @@ import { calculateBaselineOffset } from './metabolicMapEngine';
  *   date?: string,
  *   timestamp?: number,
  *   weight: number,
+ *   waist?: number | null,
  *   bodyFat?: number | null,
  *   muscleMass?: number | null,
  *   waterPercentage?: number | null,
@@ -108,6 +109,7 @@ export function mergeDuplicateBiometrics(parsedRows) {
       if (pickFirstNumeric(base, ['weight']) == null && pickFirstNumeric(r, ['weight']) != null) {
         base.weight = Number(r.weight);
       }
+      mergeMetricPair(base, r, 'waist', ['waist', 'girovita', 'waistCm', 'waist_cm']);
       mergeMetricPair(base, r, 'bodyFat', ['bodyFat', 'fat', 'fatPercentage']);
       mergeMetricPair(base, r, 'muscle', ['muscleMass', 'muscle', 'leanMass', 'muscle_pct']);
       mergeMetricPair(base, r, 'water', ['bodyWater', 'water', 'waterPercentage', 'water_pct']);
@@ -126,6 +128,11 @@ export function normalizeBiometricEntry(raw) {
   const w = Number(raw.weight);
   if (!Number.isFinite(w) || w <= 0) return null;
   const ts = Number(raw.timestamp);
+  const waistRaw = raw.waist ?? raw.girovita ?? raw.waistCm ?? raw.waist_cm;
+  const waist =
+    waistRaw != null && waistRaw !== ''
+      ? Number(waistRaw)
+      : null;
   const bf =
     raw.bodyFat != null && raw.bodyFat !== ''
       ? Number(raw.bodyFat)
@@ -150,6 +157,7 @@ export function normalizeBiometricEntry(raw) {
     date: typeof raw.date === 'string' ? raw.date : undefined,
     timestamp: Number.isFinite(ts) ? ts : 0,
     weight: w,
+    waist: waist != null && Number.isFinite(waist) && waist > 0 ? waist : null,
     bodyFat: bf != null && Number.isFinite(bf) ? bf : null,
     muscleMass: muscleMass != null && Number.isFinite(muscleMass) ? muscleMass : null,
     waterPercentage: waterPercentage != null && Number.isFinite(waterPercentage) ? waterPercentage : null,
@@ -212,6 +220,9 @@ export function getCompositeLatestBiometrics(history) {
     }
     if (!hasNumericValue(composite.visceralFat) && hasNumericValue(row.visceralFat)) {
       composite.visceralFat = Number(row.visceralFat);
+    }
+    if (!hasNumericValue(composite.waist) && hasNumericValue(row.waist)) {
+      composite.waist = Number(row.waist);
     }
   }
 

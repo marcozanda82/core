@@ -410,7 +410,7 @@ export { calculateAge } from './utils/profileAge';
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const LongevityView = lazy(() => import('./LongevityView'));
-const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
+const TrendHub = lazy(() => import('./features/trendHub/TrendHub'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
@@ -750,6 +750,7 @@ export default function SalaComandi() {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [inputWeightDate, setInputWeightDate] = useState(() => getTodayString());
   const [inputWeight, setInputWeight] = useState('');
+  const [inputWaist, setInputWaist] = useState('');
   const [inputFat, setInputFat] = useState('');
   const [drawerMuscleMass, setDrawerMuscleMass] = useState('');
   const [drawerBodyWater, setDrawerBodyWater] = useState('');
@@ -1265,6 +1266,7 @@ export default function SalaComandi() {
     bodyMetricsSaveToast,
     recalibrationProposal,
     handleSaveBodyMetrics,
+    handleSaveHealthBiometrics,
     handleQuickWeighInFromHistory,
     handleDeleteBodyMetrics,
     applyRecalibrationProposal,
@@ -1285,6 +1287,7 @@ export default function SalaComandi() {
     getTodayString,
     inputWeightDate,
     inputWeight,
+    inputWaist,
     inputFat,
     drawerMuscleMass,
     drawerBodyWater,
@@ -1292,6 +1295,7 @@ export default function SalaComandi() {
     setShowWeightModal,
     setInputWeightDate,
     setInputWeight,
+    setInputWaist,
     setInputFat,
     setDrawerMuscleMass,
     setDrawerBodyWater,
@@ -2573,6 +2577,8 @@ export default function SalaComandi() {
     const p = userProfileRef.current;
     const pw = p?.weight;
     setInputWeight(pw != null && pw !== '' ? String(pw) : '');
+    const pwa = p?.waist ?? p?.girovita;
+    setInputWaist(pwa != null && pwa !== '' ? String(pwa) : '');
     const pbf = p?.bodyFat;
     setInputFat(pbf != null && pbf !== '' ? String(pbf) : '');
     const pm = p?.muscle_pct ?? p?.muscleMass ?? p?.muscle;
@@ -8283,10 +8289,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           }}
         >
           <Suspense fallback={<KentuLazySectionFallback label="Bussola metabolica…" />}>
-          <MetabolicUnifiedView
+          <TrendHub
             mapData={metabolicMapData}
             dailyHistory={metabolicCompassDailyHistory}
             bodyMetricsHistory={bodyMetricsHistory}
+            onSaveHealthBiometrics={handleSaveHealthBiometrics}
+            healthTodayDate={getTodayString()}
+            healthDb={db}
+            healthUid={userUid}
+            foodDatabase={foodDb}
+            setFoodDb={setFoodDb}
             compassScreenActive={activeBottomTab === 'bussola'}
             fullHistory={fullHistory}
             userTargets={userTargets}
@@ -9357,6 +9369,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         setInputWeightDate={setInputWeightDate}
         inputWeight={inputWeight}
         setInputWeight={setInputWeight}
+        inputWaist={inputWaist}
+        setInputWaist={setInputWaist}
         inputFat={inputFat}
         setInputFat={setInputFat}
         drawerMuscleMass={drawerMuscleMass}

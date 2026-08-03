@@ -12,9 +12,9 @@ import { mapBundleToPillars } from './features/metabolic/pillarsMapperLegacy';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 import MetabolicDiagnostics from './MetabolicDiagnostics';
+import { useActiveTrendTool } from './features/trendHub/hooks/useActiveTrendTool';
 
 const DEFAULT_TIMEFRAME = '1d';
-const DEFAULT_ACTIVE_TOOL = 'COMPASS';
 const TREND_TOOLS = [
   { value: 'COMPASS', label: '🧭 Bussola' },
   { value: 'RADAR', label: '🕸️ Radar' },
@@ -286,7 +286,8 @@ export default function MetabolicUnifiedView({
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
-  const [activeTool, setActiveTool] = useState(DEFAULT_ACTIVE_TOOL);
+  // Persistito in LS: sopravvive allo switch emisfero Salute ↔ Progressione.
+  const { activeTool, setActiveTool } = useActiveTrendTool();
   const [radarTimeframe, setRadarTimeframe] = useState('1D');
   const [mapZoom, setMapZoom] = useState(1);
   const metabolicGoal = DEFAULT_METABOLIC_GOAL;
@@ -309,7 +310,7 @@ export default function MetabolicUnifiedView({
       onActiveToolRequestHandled();
     }
     return undefined;
-  }, [activeToolRequest, compassScreenActive, onActiveToolRequestHandled]);
+  }, [activeToolRequest, compassScreenActive, onActiveToolRequestHandled, setActiveTool]);
 
   const handleRadarTimeframeChange = useCallback(
     (radarValue) => {

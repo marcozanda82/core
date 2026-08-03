@@ -510,6 +510,69 @@ export const consultantResponseSchema = {
   required: ['adviceMessage'],
 };
 
+/**
+ * Schema LLM — HealthAnalyzerEngine (lazy labeling NOVA + referto salute giornaliero).
+ */
+export const healthReportSchema = {
+  type: 'object',
+  properties: {
+    newLabels: {
+      type: 'array',
+      description:
+        'Etichette salute SOLO per alimenti in unknownFoods. Array vuoto se non ci sono cibi da classificare. '
+        + 'Copia foodDbKey quando fornito nel prompt.',
+      items: {
+        type: 'object',
+        properties: {
+          foodDbKey: {
+            type: 'string',
+            nullable: true,
+            description: 'Chiave DB personale se nota; altrimenti null.',
+          },
+          foodName: {
+            type: 'string',
+            description: 'Nome alimento classificato.',
+          },
+          novaScore: {
+            type: 'number',
+            description: 'Classificazione NOVA intera 1–4 (1 minimo processamento, 4 ultra-processato).',
+          },
+          inflammationFactor: {
+            type: 'number',
+            description: 'Fattore infiammatorio: -1 anti-infiammatorio, 0 neutro, +1 pro-infiammatorio.',
+          },
+          hasSaturatedFats: {
+            type: 'boolean',
+            description: 'true se l alimento è rilevante fonte di grassi saturi.',
+          },
+        },
+        required: ['foodName', 'novaScore', 'inflammationFactor', 'hasSaturatedFats'],
+      },
+    },
+    dailyScore: {
+      type: 'number',
+      description: 'Score salute giornata 0–100 (qualità cibo + timing).',
+    },
+    inflammationSummary: {
+      type: 'string',
+      description: 'Sintesi analitica del bilancio infiammatorio della giornata (italiano, max 3 frasi).',
+    },
+    timingFeedback: {
+      type: 'string',
+      description:
+        'Feedback sul timing dei pasti (es. carico glicemico serale, digiuno, distribuzione). Italiano, max 3 frasi.',
+    },
+    sleepCorrelationInsight: {
+      type: 'string',
+      nullable: true,
+      description:
+        'Correlazione cena di ieri (orario, macro, carico glicemico) con qualità/ore del sonno registrato stamattina. '
+        + 'Se [MORNING_SLEEP_LOG] è null, spiega brevemente che manca il dato sonno. Italiano, max 3 frasi.',
+    },
+  },
+  required: ['newLabels', 'dailyScore', 'inflammationSummary', 'timingFeedback'],
+};
+
 // Nuovo alimento da etichetta (Vision): solo dati stampati, per 100g.
 export const createNewFoodPayloadSchema = {
   type: 'object',

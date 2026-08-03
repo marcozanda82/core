@@ -13,6 +13,14 @@ export const BOTTOM_NAV_ITEMS = [
 ];
 
 export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
+/** Emisfero attivo nella tab Trend (bussola): progressione | salute. */
+export const TREND_HUB_HEMISPHERE_LS_KEY = 'kentu_trend_hemisphere';
+export const TREND_HUB_HEMISPHERES = Object.freeze(['progressione', 'salute']);
+export const DEFAULT_TREND_HUB_HEMISPHERE = 'progressione';
+/** Ultimo tool Progressione (COMPASS | RADAR | MAP | DIAG). */
+export const TREND_ACTIVE_TOOL_LS_KEY = 'kentu_active_trend_tool';
+export const TREND_PROGRESSIONE_TOOLS = Object.freeze(['COMPASS', 'RADAR', 'MAP', 'DIAG']);
+export const DEFAULT_TREND_PROGRESSIONE_TOOL = 'COMPASS';
 export const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
 export const EVENT_USAGE_LS_KEY = 'kentu_event_usage';
 

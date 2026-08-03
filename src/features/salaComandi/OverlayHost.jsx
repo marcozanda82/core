@@ -11,6 +11,8 @@ export default function OverlayHost({
   setInputWeightDate,
   inputWeight,
   setInputWeight,
+  inputWaist = '',
+  setInputWaist = () => {},
   inputFat,
   setInputFat,
   drawerMuscleMass,
@@ -46,6 +48,8 @@ export default function OverlayHost({
         setInputWeightDate={setInputWeightDate}
         inputWeight={inputWeight}
         setInputWeight={setInputWeight}
+        inputWaist={inputWaist}
+        setInputWaist={setInputWaist}
         inputFat={inputFat}
         setInputFat={setInputFat}
         drawerMuscleMass={drawerMuscleMass}

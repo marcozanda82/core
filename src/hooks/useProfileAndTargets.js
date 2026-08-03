@@ -79,6 +79,7 @@ export function useProfileAndTargets(ctx) {
             weight,
           };
           if (columnMap.fat !== -1) payload.bodyFat = extractNumber(cols[columnMap.fat]);
+          if (columnMap.waist !== -1) payload.waist = extractNumber(cols[columnMap.waist]);
           if (columnMap.muscle !== -1) payload.muscle = extractNumber(cols[columnMap.muscle]);
           if (columnMap.water !== -1) payload.water = extractNumber(cols[columnMap.water]);
           if (columnMap.visceral !== -1) payload.visceral = extractNumber(cols[columnMap.visceral]);

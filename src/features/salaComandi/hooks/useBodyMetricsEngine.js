@@ -11,11 +11,10 @@ import {
 } from '../engines/adaptiveTDEEEngine';
 import {
   analyzeEnergyVsWeightTrend,
-  bodyMetricTimestampFromDate,
+  buildBodyMetricsSavePayload,
   buildTdeeTargetsFromRequest,
   clampBodyMetricDateToToday,
   computeDataDrivenTdeeWithCoach,
-  deriveCurrentBodyMetricsFromHistory,
   goalFromProfile,
   mergeHistoryWithLatestWeigh,
   normalizeBodyMetricDate,
@@ -205,6 +204,7 @@ export default function useBodyMetricsEngine({
   drawerMuscleMass,
   drawerBodyWater,
   drawerVisceralFat,
+  inputWaist = '',
   setShowWeightModal,
   setInputWeightDate,
   setInputWeight,
@@ -212,6 +212,7 @@ export default function useBodyMetricsEngine({
   setDrawerMuscleMass,
   setDrawerBodyWater,
   setDrawerVisceralFat,
+  setInputWaist = null,
 }) {
   const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
   const [predictiveCalibration, setPredictiveCalibration] = useState({ errors: [] });
@@ -267,31 +268,62 @@ export default function useBodyMetricsEngine({
     return null;
   }, []);
 
-  const deriveLatestMetricsFromHistory = useCallback(
-    (history) => {
-      const latestEntry = deriveCurrentBodyMetricsFromHistory(history, getTodayString());
+  const syncCurrentProfileFromHistory = useCallback(
+    async ({ uid, history }) => {
+      const sorted = sortBodyMetricsHistoryByDateAsc(history, getTodayString());
+      const latestEntry = sorted.length ? sorted[sorted.length - 1] : null;
+
+      let nextWeight = null;
+      let nextWaist = null;
+      let nextBodyFat = null;
+      let nextMuscleMass = null;
+      let nextBodyWater = null;
+      let nextVisceralFat = null;
+
+      for (let i = sorted.length - 1; i >= 0; i -= 1) {
+        const entry = sorted[i];
+        if (nextWeight == null) {
+          const w = Number(entry?.weight);
+          if (Number.isFinite(w) && w > 0) nextWeight = w;
+        }
+        if (nextWaist == null) {
+          nextWaist = pickFirstFiniteNumber(entry, ['waist', 'girovita', 'waistCm', 'waist_cm']);
+          if (nextWaist != null && nextWaist <= 0) nextWaist = null;
+        }
+        if (nextBodyFat == null) nextBodyFat = pickFirstFiniteNumber(entry, ['bodyFat']);
+        if (nextMuscleMass == null) {
+          nextMuscleMass = pickFirstFiniteNumber(entry, ['muscleMass', 'muscle', 'leanMass']);
+        }
+        if (nextBodyWater == null) {
+          nextBodyWater = pickFirstFiniteNumber(entry, ['bodyWater', 'water', 'waterPercentage']);
+        }
+        if (nextVisceralFat == null) {
+          nextVisceralFat = pickFirstFiniteNumber(entry, ['visceralFat', 'visceral', 'visceral_fat']);
+        }
+        if (
+          nextWeight != null
+          && nextWaist != null
+          && nextBodyFat != null
+          && nextMuscleMass != null
+          && nextBodyWater != null
+          && nextVisceralFat != null
+        ) {
+          break;
+        }
+      }
+
       if (import.meta.env.DEV) {
         console.log('[BodyMetrics] derived current metrics from history', {
           latestEntry,
-          historyLength: Array.isArray(history) ? history.length : 0,
+          nextWeight,
+          nextWaist,
+          historyLength: sorted.length,
         });
       }
-      return latestEntry;
-    },
-    [getTodayString]
-  );
-
-  const syncCurrentProfileFromHistory = useCallback(
-    async ({ uid, history }) => {
-      const latestEntry = deriveLatestMetricsFromHistory(history);
-      const nextWeight = Number(latestEntry?.weight);
-      const nextBodyFat = pickFirstFiniteNumber(latestEntry, ['bodyFat']);
-      const nextMuscleMass = pickFirstFiniteNumber(latestEntry, ['muscleMass', 'muscle', 'leanMass']);
-      const nextBodyWater = pickFirstFiniteNumber(latestEntry, ['bodyWater', 'water', 'waterPercentage']);
-      const nextVisceralFat = pickFirstFiniteNumber(latestEntry, ['visceralFat', 'visceral', 'visceral_fat']);
 
       await update(ref(db, `users/${uid}/profile_targets`), {
-        'profile/weight': Number.isFinite(nextWeight) && nextWeight > 0 ? nextWeight : null,
+        'profile/weight': nextWeight,
+        'profile/waist': nextWaist,
         'profile/bodyFat': nextBodyFat,
         'profile/muscleMass': nextMuscleMass,
         'profile/bodyWater': nextBodyWater,
@@ -300,14 +332,15 @@ export default function useBodyMetricsEngine({
 
       setUserProfile((prev) => ({
         ...prev,
-        weight: Number.isFinite(nextWeight) && nextWeight > 0 ? nextWeight : null,
+        weight: nextWeight,
+        waist: nextWaist,
         bodyFat: nextBodyFat,
         muscleMass: nextMuscleMass,
         bodyWater: nextBodyWater,
         visceralFat: nextVisceralFat,
       }));
     },
-    [db, deriveLatestMetricsFromHistory, pickFirstFiniteNumber, setUserProfile]
+    [db, getTodayString, pickFirstFiniteNumber, setUserProfile]
   );
 
   const maybeCreateRecalibrationProposal = useCallback(
@@ -673,170 +706,14 @@ export default function useBodyMetricsEngine({
     ]
   );
 
-  const handleSaveBodyMetrics = useCallback(async () => {
-    const w = parseFloat(String(inputWeight).replace(',', '.'));
-    if (!Number.isFinite(w) || w <= 0) {
-      alert('Inserisci un peso valido (maggiore di 0).');
-      return;
-    }
-    const currentUser = auth.currentUser;
-    if (!currentUser?.uid) {
-      alert('Accedi per registrare la pesata.');
-      return;
-    }
-    const uid = currentUser.uid;
-    const fatRaw = String(inputFat ?? '').trim();
-    const parsedFat = fatRaw === '' ? null : parseFloat(fatRaw.replace(',', '.'));
-    const bodyFat = parsedFat != null && Number.isFinite(parsedFat) ? parsedFat : null;
-    const muscleRaw = String(drawerMuscleMass ?? '').trim();
-    const parsedMuscle = muscleRaw === '' ? null : parseFloat(muscleRaw.replace(',', '.'));
-    const muscleMass = parsedMuscle != null && Number.isFinite(parsedMuscle) ? parsedMuscle : null;
-    const waterRaw = String(drawerBodyWater ?? '').trim();
-    const parsedWater = waterRaw === '' ? null : parseFloat(waterRaw.replace(',', '.'));
-    const bodyWater = parsedWater != null && Number.isFinite(parsedWater) ? parsedWater : null;
-    const visceralRaw = String(drawerVisceralFat ?? '').trim();
-    const parsedVisceral = visceralRaw === '' ? null : parseFloat(visceralRaw.replace(',', '.'));
-    const visceralFat = parsedVisceral != null && Number.isFinite(parsedVisceral) ? parsedVisceral : null;
-    const todayDate = getTodayString();
-    const selectedDate = clampBodyMetricDateToToday({
-      date: normalizeBodyMetricDate({
-        date: inputWeightDate,
-        timestamp: null,
-        fallbackDate: todayDate,
-      }),
-      todayDate,
-    });
-    if (selectedDate !== String(inputWeightDate || '').slice(0, 10)) {
-      alert('La data futura non è consentita. Uso la data di oggi.');
-    }
-    const weighDate = selectedDate;
-    const payload = {
-      weight: w,
-      bodyFat,
-      muscleMass,
-      bodyWater,
-      visceralFat,
-      timestamp: bodyMetricTimestampFromDate(weighDate),
-      date: weighDate,
-    };
-    const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
-    const historyWithThisWeigh = mergeHistoryWithLatestWeigh({
-      bodyMetricsHistory: currentHistory,
-      weighDate,
-      payload,
-      metricEntryToIsoDay: metricEntryToIsoDaySafe,
-    });
-    const nextHistory = sortBodyMetricsHistoryByDateAsc(historyWithThisWeigh, getTodayString());
-    const idsToDelete = currentHistory
-      .filter((entry) => metricEntryToIsoDaySafe(entry) === weighDate)
-      .map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
-      .filter(Boolean);
-
-    setBodyMetricsHistory(nextHistory);
-    blockMacroMutationFromWeighInFlowRef.current = true;
-    try {
-      const metricsPatch = {};
-      idsToDelete.forEach((id) => {
-        metricsPatch[id] = null;
-      });
-      const newEntryKey = push(ref(db, `users/${uid}/body_metrics`)).key;
-      if (!newEntryKey) throw new Error('Impossibile creare la nuova entry body_metrics.');
-      metricsPatch[newEntryKey] = payload;
-      await update(ref(db, `users/${uid}/body_metrics`), metricsPatch);
-      await syncCurrentProfileFromHistory({ uid, history: nextHistory });
-      try {
-        await persistPredictiveCalibrationAfterWeighIn({
-          db,
-          uid,
-          newEntryKey,
-          weighDate,
-          newPayload: payload,
-          historyAfterSave: nextHistory.map((entry) =>
-            typeof entry?.id === 'string' ? entry : { id: newEntryKey, ...payload },
-          ),
-          fullHistory,
-          referenceTdeeKcal: userTargets?.kcal,
-          metricEntryToIsoDay: metricEntryToIsoDaySafe,
-        });
-      } catch (calibrationErr) {
-        console.warn('[BodyMetrics] predictive calibration skipped:', calibrationErr);
-      }
-      const proposalDecision = maybeCreateRecalibrationProposal({
-        history: nextHistory,
-        weighDate,
-        daysWindow: 14,
-      });
-      const dailyLogsAvailable = Number(proposalDecision?.dailyLogsAvailable) || 0;
-      console.log('[PostWeighInRecalibrationTrigger]', {
-        savedEntry: payload,
-        bodyMetricsHistoryLength: nextHistory.length,
-        dailyLogsAvailable,
-        userTargets,
-      });
-      setShowWeightModal(false);
-      setInputWeightDate(getTodayString());
-      setInputWeight('');
-      setInputFat('');
-      setDrawerMuscleMass('');
-      setDrawerBodyWater('');
-      setDrawerVisceralFat('');
-      setBodyMetricsSaveToast(true);
-      setTimeout(() => setBodyMetricsSaveToast(false), 3500);
-
-      console.log('[BodyMetrics] save weigh-in without target recalculation', payload);
-    } catch (err) {
-      console.error('Salvataggio composizione corporea:', err);
-      setBodyMetricsHistory(currentHistory);
-      alert('Errore durante il salvataggio. Riprova.');
-    } finally {
-      blockMacroMutationFromWeighInFlowRef.current = false;
-    }
-  }, [
-    auth,
-    db,
-    inputWeight,
-    inputWeightDate,
-    inputFat,
-    drawerMuscleMass,
-    drawerBodyWater,
-    drawerVisceralFat,
-    bodyMetricsHistory,
-    metricEntryToIsoDaySafe,
-    getTodayString,
-    fullHistory,
-    userTargets,
-    maybeCreateRecalibrationProposal,
-    syncCurrentProfileFromHistory,
-    setShowWeightModal,
-    setInputWeightDate,
-    setInputWeight,
-    setInputFat,
-    setDrawerMuscleMass,
-    setDrawerBodyWater,
-    setDrawerVisceralFat,
-  ]);
-
-  const handleQuickWeighInFromHistory = useCallback(
-    async ({ weight, bodyFat, muscle, water, visceral }) => {
-      const w = Number(weight);
-      if (!Number.isFinite(w) || w <= 0) return;
+  const persistBodyMetricsPayload = useCallback(
+    async ({ payload, weighDate, currentHistory }) => {
       const currentUser = auth.currentUser;
       if (!currentUser?.uid) {
         alert('Accedi per registrare la pesata.');
-        return;
+        return false;
       }
       const uid = currentUser.uid;
-      const weighDate = getTodayString();
-      const payload = {
-        weight: w,
-        timestamp: bodyMetricTimestampFromDate(weighDate),
-        date: weighDate,
-      };
-      if (bodyFat != null) payload.bodyFat = bodyFat;
-      if (muscle != null) payload.muscleMass = muscle;
-      if (water != null) payload.bodyWater = water;
-      if (visceral != null) payload.visceralFat = visceral;
-      const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
       const historyWithThisWeigh = mergeHistoryWithLatestWeigh({
         bodyMetricsHistory: currentHistory,
         weighDate,
@@ -878,15 +755,20 @@ export default function useBodyMetricsEngine({
         } catch (calibrationErr) {
           console.warn('[BodyMetrics] predictive calibration skipped:', calibrationErr);
         }
-        maybeCreateRecalibrationProposal({ history: nextHistory, weighDate, daysWindow: 14 });
+        maybeCreateRecalibrationProposal({
+          history: nextHistory,
+          weighDate,
+          daysWindow: 14,
+        });
         setBodyMetricsSaveToast(true);
         setTimeout(() => setBodyMetricsSaveToast(false), 3500);
-
         console.log('[BodyMetrics] save weigh-in without target recalculation', payload);
+        return true;
       } catch (err) {
-        console.error('Salvataggio pesata rapida:', err);
+        console.error('Salvataggio composizione corporea:', err);
         setBodyMetricsHistory(currentHistory);
         alert('Errore durante il salvataggio. Riprova.');
+        return false;
       } finally {
         blockMacroMutationFromWeighInFlowRef.current = false;
       }
@@ -894,13 +776,189 @@ export default function useBodyMetricsEngine({
     [
       auth,
       db,
-      bodyMetricsHistory,
       metricEntryToIsoDaySafe,
       getTodayString,
       fullHistory,
       userTargets?.kcal,
       maybeCreateRecalibrationProposal,
       syncCurrentProfileFromHistory,
+    ]
+  );
+
+  const handleSaveBodyMetrics = useCallback(async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser?.uid) {
+      alert('Accedi per registrare la pesata.');
+      return;
+    }
+    const todayDate = getTodayString();
+    const selectedDate = clampBodyMetricDateToToday({
+      date: normalizeBodyMetricDate({
+        date: inputWeightDate,
+        timestamp: null,
+        fallbackDate: todayDate,
+      }),
+      todayDate,
+    });
+    if (selectedDate !== String(inputWeightDate || '').slice(0, 10)) {
+      alert('La data futura non è consentita. Uso la data di oggi.');
+    }
+    const weighDate = selectedDate;
+    const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+    const sameDayEntry = currentHistory.find((entry) => metricEntryToIsoDaySafe(entry) === weighDate) || null;
+    const historyCarry = sortBodyMetricsHistoryByDateAsc(
+      currentHistory.filter((entry) => metricEntryToIsoDaySafe(entry) !== weighDate),
+      todayDate,
+    );
+    const previousEntry = historyCarry.length ? historyCarry[historyCarry.length - 1] : null;
+
+    const { payload, error } = buildBodyMetricsSavePayload({
+      weight: inputWeight,
+      waist: inputWaist,
+      bodyFat: inputFat,
+      muscleMass: drawerMuscleMass,
+      bodyWater: drawerBodyWater,
+      visceralFat: drawerVisceralFat,
+      date: weighDate,
+      previousEntry,
+      sameDayEntry,
+      historyCarry,
+      requireWeight: true,
+    });
+    if (!payload) {
+      alert(error || 'Inserisci un peso valido (maggiore di 0).');
+      return;
+    }
+
+    const ok = await persistBodyMetricsPayload({
+      payload,
+      weighDate,
+      currentHistory,
+    });
+    if (!ok) return;
+
+    setShowWeightModal(false);
+    setInputWeightDate(getTodayString());
+    setInputWeight('');
+    setInputFat('');
+    setDrawerMuscleMass('');
+    setDrawerBodyWater('');
+    setDrawerVisceralFat('');
+    if (typeof setInputWaist === 'function') setInputWaist('');
+  }, [
+    auth,
+    inputWeight,
+    inputWaist,
+    inputWeightDate,
+    inputFat,
+    drawerMuscleMass,
+    drawerBodyWater,
+    drawerVisceralFat,
+    bodyMetricsHistory,
+    metricEntryToIsoDaySafe,
+    getTodayString,
+    persistBodyMetricsPayload,
+    setShowWeightModal,
+    setInputWeightDate,
+    setInputWeight,
+    setInputFat,
+    setDrawerMuscleMass,
+    setDrawerBodyWater,
+    setDrawerVisceralFat,
+    setInputWaist,
+  ]);
+
+  /**
+   * Salvataggio rapido Salute (peso e/o girovita, contestuale o separato).
+   * @param {{ weight?: unknown, waist?: unknown, date?: string }} metrics
+   * @returns {Promise<boolean>}
+   */
+  const handleSaveHealthBiometrics = useCallback(
+    async (metrics = {}) => {
+      const todayDate = getTodayString();
+      const selectedDate = clampBodyMetricDateToToday({
+        date: normalizeBodyMetricDate({
+          date: metrics?.date ?? todayDate,
+          timestamp: null,
+          fallbackDate: todayDate,
+        }),
+        todayDate,
+      });
+      const weighDate = selectedDate;
+      const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+      const sameDayEntry = currentHistory.find((entry) => metricEntryToIsoDaySafe(entry) === weighDate) || null;
+      const historyCarry = sortBodyMetricsHistoryByDateAsc(
+        currentHistory.filter((entry) => metricEntryToIsoDaySafe(entry) !== weighDate),
+        todayDate,
+      );
+      const previousEntry = historyCarry.length ? historyCarry[historyCarry.length - 1] : null;
+
+      const { payload, error } = buildBodyMetricsSavePayload({
+        weight: metrics?.weight,
+        waist: metrics?.waist,
+        date: weighDate,
+        previousEntry,
+        sameDayEntry,
+        historyCarry,
+        requireWeight: false,
+      });
+      if (!payload) {
+        alert(error || 'Inserisci almeno peso (kg) o girovita (cm).');
+        return false;
+      }
+
+      return persistBodyMetricsPayload({
+        payload,
+        weighDate,
+        currentHistory,
+      });
+    },
+    [
+      bodyMetricsHistory,
+      metricEntryToIsoDaySafe,
+      getTodayString,
+      persistBodyMetricsPayload,
+    ]
+  );
+
+  const handleQuickWeighInFromHistory = useCallback(
+    async ({ weight, bodyFat, muscle, water, visceral, waist }) => {
+      const weighDate = getTodayString();
+      const currentHistory = Array.isArray(bodyMetricsHistory) ? bodyMetricsHistory : [];
+      const sameDayEntry = currentHistory.find((entry) => metricEntryToIsoDaySafe(entry) === weighDate) || null;
+      const historyCarry = sortBodyMetricsHistoryByDateAsc(
+        currentHistory.filter((entry) => metricEntryToIsoDaySafe(entry) !== weighDate),
+        weighDate,
+      );
+      const previousEntry = historyCarry.length ? historyCarry[historyCarry.length - 1] : null;
+      const { payload, error } = buildBodyMetricsSavePayload({
+        weight,
+        waist,
+        bodyFat,
+        muscleMass: muscle,
+        bodyWater: water,
+        visceralFat: visceral,
+        date: weighDate,
+        previousEntry,
+        sameDayEntry,
+        historyCarry,
+        requireWeight: true,
+      });
+      if (!payload) {
+        if (error) alert(error);
+        return;
+      }
+      await persistBodyMetricsPayload({
+        payload,
+        weighDate,
+        currentHistory,
+      });
+    },
+    [
+      bodyMetricsHistory,
+      metricEntryToIsoDaySafe,
+      getTodayString,
+      persistBodyMetricsPayload,
     ]
   );
 
@@ -1104,6 +1162,7 @@ export default function useBodyMetricsEngine({
     bodyMetricsSaveToast,
     recalibrationProposal,
     handleSaveBodyMetrics,
+    handleSaveHealthBiometrics,
     handleQuickWeighInFromHistory,
     handleDeleteBodyMetrics,
     applyRecalibrationProposal,

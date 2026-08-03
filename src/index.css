@@ -1097,6 +1097,910 @@ html, body, #root {
   overflow-y: hidden;
 }
 
+/* Trend Hub — shell a due emisferi (Progressione | Salute) */
+.trend-hub-root {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.trend-hub-hemisphere-segmented {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 12, 16, 0.72);
+  box-sizing: border-box;
+}
+
+.trend-hub-hemisphere-segment {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.55);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.trend-hub-hemisphere-segment--active {
+  border-color: rgba(110, 231, 255, 0.4);
+  background: rgba(34, 211, 238, 0.14);
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.trend-hub-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.trend-hub-stage > .trend-unified-root {
+  max-width: none;
+  margin: 0;
+}
+
+.trend-salute-view {
+  --salute-gap: 16px;
+  --salute-section-gap: 20px;
+  --salute-card-radius: 14px;
+  --salute-card-pad: 14px;
+  --salute-touch: 44px;
+  --salute-accent: rgba(34, 211, 238, 0.9);
+  --salute-accent-soft: rgba(34, 211, 238, 0.12);
+  --salute-accent-border: rgba(110, 231, 255, 0.35);
+  --salute-positive: rgba(52, 211, 153, 0.92);
+  --salute-warn: rgba(251, 191, 36, 0.88);
+  --salute-negative: rgba(248, 113, 113, 0.88);
+  --salute-surface: rgba(10, 12, 16, 0.55);
+  --salute-border: rgba(255, 255, 255, 0.12);
+
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--salute-section-gap);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 2px max(24px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch;
+}
+
+.trend-salute-section {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trend-salute-section--analysis {
+  flex: 1;
+  min-height: 0;
+}
+
+.trend-salute-section__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 2px;
+}
+
+.trend-salute-section__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.trend-salute-section__subtitle {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(226, 232, 240, 0.42);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.trend-salute-section__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--salute-gap);
+}
+
+.trend-salute-section--analysis .trend-salute-section__stack {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Soft quality dots (palette KentuOS, no emoji aggressivi) */
+.sleep-quality-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+
+.sleep-quality-dot--poor {
+  background: var(--salute-negative);
+}
+
+.sleep-quality-dot--ok {
+  background: var(--salute-warn);
+}
+
+.sleep-quality-dot--good {
+  background: var(--salute-positive);
+}
+
+.biometrics-health-card {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: var(--salute-card-pad);
+  border-radius: var(--salute-card-radius);
+  border: 1px solid var(--salute-border);
+  background: var(--salute-surface);
+  box-sizing: border-box;
+}
+
+.biometrics-health-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.biometrics-health-card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: rgba(248, 250, 252, 0.95);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__subtitle {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__update-btn {
+  flex-shrink: 0;
+  margin: 0;
+  min-height: var(--salute-touch);
+  min-width: var(--salute-touch);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--salute-accent-border);
+  background: var(--salute-accent-soft);
+  color: rgba(248, 250, 252, 0.92);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.biometrics-health-card__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.biometrics-health-card__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.biometrics-health-card__label {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.96);
+  font-variant-numeric: tabular-nums;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.1;
+}
+
+.biometrics-health-card__unit {
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 550;
+  color: rgba(226, 232, 240, 0.5);
+}
+
+.biometrics-health-card__trend {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__trend--up {
+  color: var(--salute-warn);
+}
+
+.biometrics-health-card__trend--down {
+  color: var(--salute-positive);
+}
+
+.biometrics-health-card__trend--flat {
+  color: rgba(226, 232, 240, 0.65);
+}
+
+.biometrics-health-card__trend--none {
+  color: rgba(226, 232, 240, 0.35);
+}
+
+.biometrics-health-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.biometrics-health-card__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.6);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: var(--salute-touch);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 16px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(226, 232, 240, 0.45);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.biometrics-health-card__save-btn {
+  margin: 0;
+  min-height: var(--salute-touch);
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: none;
+  background: var(--salute-accent);
+  color: #041016;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.biometrics-health-card__save-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.trend-salute-ai-slot {
+  flex: 1;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 20px 14px;
+  border-radius: var(--salute-card-radius);
+  border: 1.5px dashed rgba(255, 255, 255, 0.22);
+  background: rgba(10, 12, 16, 0.28);
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.trend-salute-ai-slot__label {
+  font-size: 13px;
+  font-weight: 650;
+  color: rgba(248, 250, 252, 0.72);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.trend-salute-ai-slot__hint {
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.42);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  max-width: 28ch;
+}
+
+.health-food-quality-card {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--salute-card-pad);
+  border-radius: var(--salute-card-radius);
+  border: 1px solid var(--salute-border);
+  background: var(--salute-surface);
+  box-sizing: border-box;
+}
+
+.health-food-quality-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.health-food-quality-card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: rgba(248, 250, 252, 0.95);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__subtitle {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__refresh {
+  flex-shrink: 0;
+  margin: 0;
+  min-height: var(--salute-touch);
+  min-width: var(--salute-touch);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--salute-accent-border);
+  background: var(--salute-accent-soft);
+  color: rgba(248, 250, 252, 0.92);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.health-food-quality-card__refresh:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.health-food-quality-card__state-panel {
+  flex: 1;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  box-sizing: border-box;
+}
+
+.health-food-quality-card__state-panel--error {
+  border-color: rgba(248, 113, 113, 0.22);
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.health-food-quality-card__state {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.62);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  max-width: 34ch;
+}
+
+.health-food-quality-card__state--error {
+  color: rgba(252, 165, 165, 0.92);
+}
+
+.health-food-quality-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.health-food-quality-card__score {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.health-food-quality-card__score-value {
+  font-size: 28px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1;
+  color: rgba(226, 232, 240, 0.75);
+}
+
+.health-food-quality-card__score--good .health-food-quality-card__score-value {
+  color: var(--salute-positive);
+}
+
+.health-food-quality-card__score--mid .health-food-quality-card__score-value {
+  color: var(--salute-warn);
+}
+
+.health-food-quality-card__score--low .health-food-quality-card__score-value {
+  color: var(--salute-negative);
+}
+
+.health-food-quality-card__score-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__blocks {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.health-food-quality-card__block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.health-food-quality-card__block-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__block-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(248, 250, 252, 0.88);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__footnote {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.45);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__placeholder-slot {
+  flex: 1;
+  min-height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 1.5px dashed rgba(255, 255, 255, 0.18);
+  color: rgba(226, 232, 240, 0.45);
+  font-size: 12px;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.health-food-quality-card__block--sleep {
+  border-color: rgba(110, 231, 255, 0.22);
+  background: rgba(34, 211, 238, 0.06);
+}
+
+@keyframes salute-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.health-food-quality-card__skeleton {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-sizing: border-box;
+}
+
+.health-food-quality-card__skeleton-score {
+  height: 52px;
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(34, 211, 238, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: salute-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.health-food-quality-card__skeleton-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.health-food-quality-card__skeleton-line {
+  height: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  animation: salute-skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+.health-food-quality-card__skeleton-line--mid {
+  width: 78%;
+  animation-delay: 0.12s;
+}
+
+.health-food-quality-card__skeleton-line--short {
+  width: 52%;
+  animation-delay: 0.24s;
+}
+
+.health-food-quality-card__skeleton-caption {
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.48);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--salute-card-pad);
+  border-radius: var(--salute-card-radius);
+  border: 1px solid var(--salute-border);
+  background: var(--salute-surface);
+  box-sizing: border-box;
+}
+
+.sleep-tracker-widget__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sleep-tracker-widget__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: rgba(248, 250, 252, 0.95);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__subtitle {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__edit {
+  flex-shrink: 0;
+  margin: 0;
+  min-height: var(--salute-touch);
+  min-width: var(--salute-touch);
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--salute-accent-border);
+  background: var(--salute-accent-soft);
+  color: rgba(248, 250, 252, 0.92);
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sleep-tracker-widget__state {
+  margin: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  color: rgba(226, 232, 240, 0.5);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__summary {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.sleep-tracker-widget__summary-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sleep-tracker-widget__summary-hours {
+  font-size: 24px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  color: rgba(248, 250, 252, 0.96);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__summary-quality {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.75);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__summary-quality--poor {
+  color: var(--salute-negative);
+}
+
+.sleep-tracker-widget__summary-quality--ok {
+  color: var(--salute-warn);
+}
+
+.sleep-tracker-widget__summary-quality--good {
+  color: var(--salute-positive);
+}
+
+.sleep-tracker-widget__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sleep-tracker-widget__field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: rgba(226, 232, 240, 0.55);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__hours-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sleep-tracker-widget__step {
+  width: var(--salute-touch);
+  height: var(--salute-touch);
+  margin: 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(248, 250, 252, 0.92);
+  font-size: 20px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sleep-tracker-widget__hours-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--salute-touch);
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 650;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.sleep-tracker-widget__quality-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.sleep-tracker-widget__quality-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  min-height: var(--salute-touch);
+  padding: 12px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(226, 232, 240, 0.7);
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.sleep-tracker-widget__quality-btn--active {
+  color: rgba(248, 250, 252, 0.96);
+}
+
+.sleep-tracker-widget__quality-btn--poor.sleep-tracker-widget__quality-btn--active {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.1);
+}
+
+.sleep-tracker-widget__quality-btn--ok.sleep-tracker-widget__quality-btn--active {
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.sleep-tracker-widget__quality-btn--good.sleep-tracker-widget__quality-btn--active {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.1);
+}
+
+.sleep-tracker-widget__quality-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sleep-tracker-widget__quality-text {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.sleep-tracker-widget__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sleep-tracker-widget__cancel,
+.sleep-tracker-widget__save {
+  flex: 1;
+  margin: 0;
+  min-height: var(--salute-touch);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sleep-tracker-widget__cancel {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.sleep-tracker-widget__save {
+  border: none;
+  background: var(--salute-accent);
+  color: #041016;
+}
+
+.sleep-tracker-widget__save:disabled,
+.sleep-tracker-widget__cancel:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.sleep-tracker-widget__error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--salute-negative);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.trend-salute-placeholder {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 20px 14px;
+  border-radius: var(--salute-card-radius);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 12, 16, 0.45);
+  box-sizing: border-box;
+}
+
+.trend-salute-placeholder__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  color: rgba(248, 250, 252, 0.92);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.trend-salute-placeholder__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.62);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  max-width: 32ch;
+}
+
 .trend-unified-root {
   position: relative;
   flex: 1;

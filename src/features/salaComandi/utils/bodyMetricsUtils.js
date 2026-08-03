@@ -7,13 +7,14 @@ export function formatBodyBatteryValue(v) {
 const COLUMN_ALIASES = {
   date: ['date', 'data', 'giorno'],
   weight: ['weight', 'peso', 'kg'],
+  waist: ['waist', 'girovita', 'vita', 'waistcm'],
   fat: ['grasso', 'fat', 'adipose', 'bf'],
   muscle: ['muscol', 'muscle', 'skeletal'],
   water: ['acqua', 'water', 'hydration', 'eau'],
   visceral: ['viscerale', 'visceral', 'vfr'],
 };
 
-const CSV_BODY_METRIC_FIELDS = ['date', 'weight', 'fat', 'muscle', 'water', 'visceral'];
+const CSV_BODY_METRIC_FIELDS = ['date', 'weight', 'waist', 'fat', 'muscle', 'water', 'visceral'];
 
 export function extractNumber(str) {
   if (str == null) return null;
@@ -124,7 +125,7 @@ export function buildBodyMetricsColumnMap(headerLine) {
     .split(',')
     .map((h) => h.trim());
 
-  const columnMap = { date: -1, weight: -1, fat: -1, muscle: -1, water: -1, visceral: -1 };
+  const columnMap = { date: -1, weight: -1, waist: -1, fat: -1, muscle: -1, water: -1, visceral: -1 };
 
   for (const field of CSV_BODY_METRIC_FIELDS) {
     const aliases = COLUMN_ALIASES[field];

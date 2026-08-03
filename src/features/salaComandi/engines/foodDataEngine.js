@@ -4,6 +4,8 @@ import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits
 const DB_META_KEYS = new Set([
   'id', 'isRecipe', 'type', 'desc', 'name', 'ingredients', 'units', 'defaultUnit',
   'category', 'foodDbKey', 'unitStep', 'defaultQty', 'barcode', 'image', 'row',
+  // Health / NOVA labels (non sono nutrienti /100g)
+  'novaScore', 'inflammationFactor', 'hasSaturatedFats',
 ]);
 
 /**
