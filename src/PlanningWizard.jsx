@@ -7,6 +7,8 @@ import { resolvePlanningWizardDailyKcal } from './weeklyPlanning';
 import {
   PLANNING_DAY_MACRO_OPTIONS,
   WORKOUT_MUSCLE_GROUP_DEFS,
+  WORKOUT_MUSCLE_MACRO_SECTIONS,
+  getMuscleGroupsForMacro,
   inferMuscleGroupsFromWorkoutText,
   normalizeMuscleGroupArray,
 } from './activityCatalog';
@@ -1285,32 +1287,57 @@ export default function PlanningWizard({
 
             {hasTraining ? (
               <div style={{ marginTop: 6 }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>Gruppi muscolari / sessione</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: muscleId, label: muscleLabel }) => {
-                    const on = muscles.has(muscleId);
-                    const locked = lockedMuscles.has(muscleId) && on;
+                <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#c4b5fd', marginBottom: 8 }}>
+                  Gruppi muscolari / sessione
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {WORKOUT_MUSCLE_MACRO_SECTIONS.map((section) => {
+                    const chips = getMuscleGroupsForMacro(section.id);
+                    if (!chips.length) return null;
                     return (
-                      <button
-                        key={muscleId}
-                        type="button"
-                        disabled={locked}
-                        onClick={() => toggleMuscle(muscleId)}
-                        style={{
-                          padding: '12px 14px',
-                          borderRadius: 10,
-                          border: on ? '1px solid rgba(179, 136, 255, 0.55)' : '1px solid rgba(255,248,220,0.12)',
-                          background: on ? 'rgba(179, 136, 255, 0.15)' : 'rgba(255,255,255,0.04)',
-                          color: '#fff8e8',
-                          fontWeight: 700,
-                          fontSize: '0.82rem',
-                          cursor: locked ? 'default' : 'pointer',
-                          opacity: locked ? 0.88 : 1,
-                        }}
-                      >
-                        {muscleLabel}
-                        {locked ? ' 🔒' : ''}
-                      </button>
+                      <div key={section.id}>
+                        <div
+                          style={{
+                            fontSize: '0.65rem',
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            color: 'rgba(196,181,253,0.55)',
+                            marginBottom: 6,
+                          }}
+                        >
+                          {section.label}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {chips.map(({ id: muscleId, label: muscleLabel }) => {
+                            const on = muscles.has(muscleId);
+                            const locked = lockedMuscles.has(muscleId) && on;
+                            return (
+                              <button
+                                key={muscleId}
+                                type="button"
+                                disabled={locked}
+                                onClick={() => toggleMuscle(muscleId)}
+                                style={{
+                                  minHeight: 44,
+                                  padding: '12px 14px',
+                                  borderRadius: 10,
+                                  border: on ? '1px solid rgba(179, 136, 255, 0.55)' : '1px solid rgba(255,248,220,0.12)',
+                                  background: on ? 'rgba(179, 136, 255, 0.15)' : 'rgba(255,255,255,0.04)',
+                                  color: '#fff8e8',
+                                  fontWeight: 700,
+                                  fontSize: '0.82rem',
+                                  cursor: locked ? 'default' : 'pointer',
+                                  opacity: locked ? 0.88 : 1,
+                                }}
+                              >
+                                {muscleLabel}
+                                {locked ? ' 🔒' : ''}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>

@@ -46,7 +46,7 @@ function buildMuscularCylindersBlock(cylindersState = {}, options = {}) {
     cylindersState
     && typeof cylindersState === 'object'
     && cylindersState.hasFourCylinder != null
-    && cylindersState.push01 != null;
+    && (cylindersState.chest01 != null || cylindersState.legs01 != null);
 
   const metrics = looksLikeMetrics
     ? cylindersState
@@ -55,22 +55,32 @@ function buildMuscularCylindersBlock(cylindersState = {}, options = {}) {
       fullHistory: options.fullHistory || null,
     });
 
-  const push01 = Number(metrics?.push01) || 0;
-  const pull01 = Number(metrics?.pull01) || 0;
   const legs01 = Number(metrics?.legs01) || 0;
+  const chest01 = Number(metrics?.chest01) || 0;
+  const backShoulders01 = Number(metrics?.backShoulders01) || 0;
+  const arms01 = Number(metrics?.arms01) || 0;
+  const core01 = Number(metrics?.core01) || 0;
 
   return {
-    Spinta: {
-      fillPercent: Math.round(push01 * 100),
-      recoveryPhase: resolveCylinderRecoveryPhase(push01),
-    },
-    Trazione: {
-      fillPercent: Math.round(pull01 * 100),
-      recoveryPhase: resolveCylinderRecoveryPhase(pull01),
-    },
     Gambe: {
       fillPercent: Math.round(legs01 * 100),
       recoveryPhase: resolveCylinderRecoveryPhase(legs01),
+    },
+    Petto: {
+      fillPercent: Math.round(chest01 * 100),
+      recoveryPhase: resolveCylinderRecoveryPhase(chest01),
+    },
+    SchienaSpalle: {
+      fillPercent: Math.round(backShoulders01 * 100),
+      recoveryPhase: resolveCylinderRecoveryPhase(backShoulders01),
+    },
+    Braccia: {
+      fillPercent: Math.round(arms01 * 100),
+      recoveryPhase: resolveCylinderRecoveryPhase(arms01),
+    },
+    AbsCore: {
+      fillPercent: Math.round(core01 * 100),
+      recoveryPhase: resolveCylinderRecoveryPhase(core01),
     },
     physiologyPhase: metrics?.physiologyPhase || null,
     systemicStressPct: Math.round(Number(metrics?.systemicStressPct) || 0),

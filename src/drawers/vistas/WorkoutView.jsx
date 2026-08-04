@@ -11,7 +11,8 @@ import {
   WORKOUT_ACTIVITY_SELECTOR_IDS,
   generateWorkoutComboSignature,
   getWorkoutActivityTypeDef,
-  WORKOUT_MUSCLE_GROUP_DEFS,
+  WORKOUT_MUSCLE_MACRO_SECTIONS,
+  getMuscleGroupsForMacro,
   normalizeMuscleGroupArray,
   getWorkoutActivityLogDescription,
 } from '../../activityCatalog';
@@ -918,38 +919,61 @@ export default function WorkoutView({
               <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
                 Gruppi muscolari
                 <span style={{ marginLeft: 6, color: '#666', fontWeight: 400 }}>
-                  (selezione multipla)
+                  (5 macro-aree · selezione multipla)
                 </span>
               </label>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
-                  gap: '8px',
-                }}
-              >
-                {WORKOUT_MUSCLE_GROUP_DEFS.map(({ id: mId, label: mLabel }) => {
-                  const isActive = pesiMuscleSet.has(mId);
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {WORKOUT_MUSCLE_MACRO_SECTIONS.map((section) => {
+                  const chips = getMuscleGroupsForMacro(section.id);
+                  if (!chips.length) return null;
                   return (
-                    <button
-                      key={mId}
-                      type="button"
-                      aria-pressed={isActive}
-                      onClick={() => toggleWorkoutMuscle(mId)}
-                      style={{
-                        padding: '10px 12px',
-                        fontSize: '0.75rem',
-                        borderRadius: '20px',
-                        border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
-                        background: isActive ? '#ff6d00' : '#222',
-                        color: isActive ? '#000' : '#aaa',
-                        fontWeight: isActive ? 'bold' : 'normal',
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                      }}
-                    >
-                      {mLabel}
-                    </button>
+                    <div key={section.id}>
+                      <div
+                        style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          color: 'rgba(226,232,240,0.45)',
+                          marginBottom: 6,
+                        }}
+                      >
+                        {section.label}
+                      </div>
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
+                          gap: '8px',
+                        }}
+                      >
+                        {chips.map(({ id: mId, label: mLabel }) => {
+                          const isActive = pesiMuscleSet.has(mId);
+                          return (
+                            <button
+                              key={mId}
+                              type="button"
+                              aria-pressed={isActive}
+                              onClick={() => toggleWorkoutMuscle(mId)}
+                              style={{
+                                minHeight: 44,
+                                padding: '10px 12px',
+                                fontSize: '0.75rem',
+                                borderRadius: '20px',
+                                border: `1px solid ${isActive ? '#ff6d00' : '#444'}`,
+                                background: isActive ? '#ff6d00' : '#222',
+                                color: isActive ? '#000' : '#aaa',
+                                fontWeight: isActive ? 'bold' : 'normal',
+                                cursor: 'pointer',
+                                textAlign: 'center',
+                              }}
+                            >
+                              {mLabel}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

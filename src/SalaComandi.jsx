@@ -1860,6 +1860,9 @@ export default function SalaComandi() {
               userUid: user?.uid ?? null,
               setUserModel,
               nextFourCylinderState: resolved.nextState,
+              fullHistory,
+              anchorDateIso: todayIso || undefined,
+              source: 'SalaComandi:trainingBlock',
             });
           } else {
             setUserModel((prev) => ({
@@ -6356,6 +6359,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             nextFourCylinderState: fourCylinderNextState,
             lastCalibrationWeek,
             setUserModel,
+            fullHistory,
+            anchorDateIso: getTodayString(),
           });
         }
       }
@@ -6778,6 +6783,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           nextFourCylinderState: fourCylinderNextState,
           lastCalibrationWeek,
           setUserModel,
+          fullHistory,
+          anchorDateIso: getTodayString(),
         });
       }
     }
@@ -7003,6 +7010,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         nextFourCylinderState: fourCylinderNextState,
         lastCalibrationWeek,
         setUserModel,
+        fullHistory,
+        anchorDateIso: getTodayString(),
       });
     }
   }, [

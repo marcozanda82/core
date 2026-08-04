@@ -20,17 +20,35 @@ export const PLANNING_DAY_MACRO_OPTIONS = [
 
 /** Gruppi muscolari: unica lista per PlanningWizard e vista Attività / pesi. */
 export const WORKOUT_MUSCLE_GROUP_DEFS = [
-  { id: 'Petto', label: 'Petto' },
-  { id: 'Dorso', label: 'Dorso', aliases: ['Schiena', 'schiena'] },
-  { id: 'Gambe', label: 'Gambe' },
-  { id: 'Spalle', label: 'Spalle' },
-  { id: 'abs', label: 'ABS' },
-  { id: 'bicipiti', label: 'Bicipiti' },
-  { id: 'tricipiti', label: 'Tricipiti' },
-  { id: 'avambracci', label: 'Avambracci' },
-  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali'] },
-  { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'] },
+  { id: 'Petto', label: 'Petto', macroGroup: 'chest' },
+  { id: 'Dorso', label: 'Dorso', aliases: ['Schiena', 'schiena'], macroGroup: 'back_shoulders' },
+  { id: 'Gambe', label: 'Gambe', macroGroup: 'legs' },
+  { id: 'Spalle', label: 'Spalle', macroGroup: 'back_shoulders' },
+  { id: 'abs', label: 'ABS', macroGroup: 'core' },
+  { id: 'bicipiti', label: 'Bicipiti', macroGroup: 'arms' },
+  { id: 'tricipiti', label: 'Tricipiti', macroGroup: 'arms' },
+  { id: 'avambracci', label: 'Avambracci', macroGroup: 'arms' },
+  { id: 'Core', label: 'Core', aliases: ['Addominali', 'addominali'], macroGroup: 'core' },
+  { id: 'Total Body', label: 'Total Body', aliases: ['Full Body', 'full body', 'totalbody'], macroGroup: 'total' },
 ];
+
+/** Sezioni UI per chip muscolari (allineate ai 5 sismografi). */
+export const WORKOUT_MUSCLE_MACRO_SECTIONS = Object.freeze([
+  { id: 'legs', label: 'Gambe' },
+  { id: 'chest', label: 'Petto' },
+  { id: 'back_shoulders', label: 'Schiena e Spalle' },
+  { id: 'arms', label: 'Braccia' },
+  { id: 'core', label: 'Abs e Core' },
+  { id: 'total', label: 'Full body' },
+]);
+
+/**
+ * @param {string} macroId
+ * @returns {typeof WORKOUT_MUSCLE_GROUP_DEFS}
+ */
+export function getMuscleGroupsForMacro(macroId) {
+  return WORKOUT_MUSCLE_GROUP_DEFS.filter((d) => d.macroGroup === macroId);
+}
 
 /** Ordine display selettori muscolo (stesso ordine dei def). */
 export const WORKOUT_MUSCLE_GROUP_IDS = WORKOUT_MUSCLE_GROUP_DEFS.map((d) => d.id);

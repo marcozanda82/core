@@ -372,19 +372,31 @@ export default function TrainingBlockWidget({
 
   const stimulusSlide = (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label="Apri diagnostica stimolo muscolare"
-      onClick={handleOpenTrendDiag}
-      onKeyDown={(ev) => {
-        if (ev.key === 'Enter' || ev.key === ' ') {
-          ev.preventDefault();
-          handleOpenTrendDiag();
-        }
-      }}
-      className="cursor-pointer transition-transform duration-200 hover:scale-[1.02] hover:shadow-[0_0_24px_rgba(34,211,238,0.3)] active:scale-95"
+      role={typeof onOpenTrendDiag === 'function' ? 'button' : undefined}
+      tabIndex={typeof onOpenTrendDiag === 'function' ? 0 : undefined}
+      onClick={typeof onOpenTrendDiag === 'function' ? handleOpenTrendDiag : undefined}
+      onKeyDown={
+        typeof onOpenTrendDiag === 'function'
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleOpenTrendDiag();
+              }
+            }
+          : undefined
+      }
+      className={
+        typeof onOpenTrendDiag === 'function'
+          ? 'w-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50'
+          : 'w-full'
+      }
+      aria-label={typeof onOpenTrendDiag === 'function' ? 'Apri diagnostica allenamento' : 'Stimolo muscolare'}
     >
-      <MuscleStimulusWidget fourCylinder={fourCylinder} />
+      <MuscleStimulusWidget
+        fourCylinder={fourCylinder}
+        fullHistory={fullHistory}
+        todayIso={todayIso || undefined}
+      />
     </div>
   );
 

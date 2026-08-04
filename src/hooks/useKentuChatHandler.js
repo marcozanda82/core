@@ -108,6 +108,8 @@ function commitSleepEntryWithFourCylinder({
       nextFourCylinderState: fourCylinderNextState,
       lastCalibrationWeek,
       setUserModel,
+      fullHistory,
+      anchorDateIso: currentTrackerDate || getTodayString(),
     });
   }
 }

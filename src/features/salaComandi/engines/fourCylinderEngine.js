@@ -1,21 +1,25 @@
 /**
- * Motore puro "4 cilindri" — decadimento muscolare e fatica sistemica.
+ * Motore puro "4 cilindri" — decadimento muscolare (5 macro-aree) e fatica sistemica.
  *
- * Nessuna dipendenza React/Firebase. Consumato da hook e save-path in fasi successive.
+ * Nessuna dipendenza React/Firebase. Consumato da hook e save-path.
  *
- * Semantica approvata:
- * - decay.push | pull | legs : 0 = muscolo atrofizzato/da allenare, 1 = stimolato al massimo.
+ * Semantica approvata (engineVersion ≥ 2):
+ * - decay.legs | chest | back_shoulders | arms | core : 0 = da allenare, 1 = stimolato al massimo.
  *   Decresce con i giorni senza stimolo (mezzanotte virtuale).
  * - systemic_fatigue : 0 = riposato, 1 = sovrallenato. Decresce a riposo, sale con il carico.
+ *
+ * Legacy v1 (push/pull/legs) viene espanso in lettura via `expandLegacyDecay3to5`.
  */
 
-/** @typedef {'push' | 'pull' | 'legs'} MuscleCylinderId */
+/** @typedef {'legs' | 'chest' | 'back_shoulders' | 'arms' | 'core'} MuscleCylinderId */
 
 /**
  * @typedef {object} FourCylinderDecay
- * @property {number} push 0–1 stimolo residuo spinta
- * @property {number} pull 0–1 stimolo residuo trazione
  * @property {number} legs 0–1 stimolo residuo gambe
+ * @property {number} chest 0–1 stimolo residuo petto
+ * @property {number} back_shoulders 0–1 stimolo residuo schiena+spalle
+ * @property {number} arms 0–1 stimolo residuo braccia
+ * @property {number} core 0–1 stimolo residuo abs/core
  */
 
 /**
@@ -30,7 +34,7 @@
  * @property {number} maxCognitiveBump Cap stress sistemico per singola sessione cognitiva/lavoro
  * @property {number} proteinShieldMultiplier Fattore atrofia se proteinTargetHit quel giorno (es. 0.5 = dimezza)
  * @property {number} fastedWorkoutPenalty Fattore stimolo muscolare se allenamento in digiuno profondo
- * @property {FourCylinderDecay} stimulusGain Moltiplicatori v1 (fissi a 1)
+ * @property {FourCylinderDecay} stimulusGain Moltiplicatori (fissi a 1 in v2)
  */
 
 /**
@@ -135,10 +139,15 @@
 
 /**
  * Snapshot flat per voce diario (`fourCylinderSnapshot`).
+ * v2: decay_legs|chest|back_shoulders|arms|core. v1 legacy: decay_push|pull|legs (dual-read).
  * @typedef {object} FourCylinderFlatLevels
- * @property {number} decay_push
- * @property {number} decay_pull
- * @property {number} decay_legs
+ * @property {number} [decay_legs]
+ * @property {number} [decay_chest]
+ * @property {number} [decay_back_shoulders]
+ * @property {number} [decay_arms]
+ * @property {number} [decay_core]
+ * @property {number} [decay_push] legacy v1
+ * @property {number} [decay_pull] legacy v1
  * @property {number} systemic_fatigue
  */
 
@@ -151,14 +160,34 @@
  * @property {FourCylinderFlatLevels} after
  */
 
-export const FOUR_CYLINDER_ENGINE_VERSION = 1;
+export const FOUR_CYLINDER_ENGINE_VERSION = 2;
 
-/** Parametri v1 hardcoded — tuning utente in fase 2. */
+/** @type {readonly MuscleCylinderId[]} */
+export const MUSCLE_CYLINDER_IDS = Object.freeze([
+  'legs',
+  'chest',
+  'back_shoulders',
+  'arms',
+  'core',
+]);
+
+/** Definizioni UI condivise (Home / DIAG / chart). */
+export const MUSCLE_CYLINDER_DEFS = Object.freeze([
+  { id: 'legs', label: 'Gambe', shortLabel: 'GAMBE', subtitle: 'Lower body' },
+  { id: 'chest', label: 'Petto', shortLabel: 'PETTO', subtitle: 'Pettorali' },
+  { id: 'back_shoulders', label: 'Schiena e Spalle', shortLabel: 'SCH+SP', subtitle: 'Dorso · Spalle' },
+  { id: 'arms', label: 'Braccia', shortLabel: 'BRACCIA', subtitle: 'Bi · Tri · Avambracci' },
+  { id: 'core', label: 'Abs e Core', shortLabel: 'CORE', subtitle: 'Addome · Core' },
+]);
+
+/** Parametri v2 hardcoded — tuning utente in fase successiva. */
 export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
   decayPerDay: Object.freeze({
-    push: 0.12,
-    pull: 0.12,
     legs: 0.10,
+    chest: 0.12,
+    back_shoulders: 0.12,
+    arms: 0.13,
+    core: 0.14,
   }),
   systemicRecoveryPerDay: 0.08,
   maxMuscleBump: 0.55,
@@ -175,21 +204,90 @@ export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
   proteinShieldMultiplier: 0.5,
   fastedWorkoutPenalty: 0.7,
   stimulusGain: Object.freeze({
-    push: 1,
-    pull: 1,
     legs: 1,
+    chest: 1,
+    back_shoulders: 1,
+    arms: 1,
+    core: 1,
   }),
 });
 
 /** @type {FourCylinderDecay} */
 export const DEFAULT_MUSCLE_LEVELS = Object.freeze({
-  push: 0,
-  pull: 0,
   legs: 0,
+  chest: 0,
+  back_shoulders: 0,
+  arms: 0,
+  core: 0,
 });
 
-/** Mappa gruppo muscolare → cilindro. */
+/** Mappa gruppo muscolare (chip) → cilindro v2. */
 const MUSCLE_CYLINDER_MAP = Object.freeze({
+  petto: 'chest',
+  spalle: 'back_shoulders',
+  dorso: 'back_shoulders',
+  schiena: 'back_shoulders',
+  tricipiti: 'arms',
+  tricipite: 'arms',
+  bicipiti: 'arms',
+  bicipite: 'arms',
+  avambracci: 'arms',
+  avambraccio: 'arms',
+  gambe: 'legs',
+  abs: 'core',
+  addominali: 'core',
+  core: 'core',
+});
+
+/**
+ * @returns {FourCylinderDecay}
+ */
+export function createEmptyMuscleDecay() {
+  return {
+    legs: 0,
+    chest: 0,
+    back_shoulders: 0,
+    arms: 0,
+    core: 0,
+  };
+}
+
+/**
+ * Espansione deterministica v1 (push/pull/legs) → v2 (5 macro-aree).
+ * @param {{ push?: number, pull?: number, legs?: number } | null | undefined} legacy
+ * @returns {FourCylinderDecay}
+ */
+export function expandLegacyDecay3to5(legacy) {
+  const push = clamp01(legacy?.push);
+  const pull = clamp01(legacy?.pull);
+  const legs = clamp01(legacy?.legs);
+  return {
+    legs: clamp01(legs * 0.85),
+    chest: clamp01(push * 0.55),
+    back_shoulders: clamp01(pull * 0.55 + push * 0.20),
+    arms: clamp01(push * 0.25 + pull * 0.25),
+    core: clamp01(legs * 0.15),
+  };
+}
+
+/**
+ * Cilindri legacy v1 che alimentano una chiave v2 (inverso qualitativo di expandLegacyDecay3to5).
+ * Usato per filtrare workout storici taggati push/pull/legs.
+ * @type {Readonly<Record<MuscleCylinderId, readonly ('push'|'pull'|'legs')[]>>}
+ */
+export const V2_KEY_LEGACY_SOURCES = Object.freeze({
+  legs: Object.freeze(['legs']),
+  chest: Object.freeze(['push']),
+  back_shoulders: Object.freeze(['pull', 'push']),
+  arms: Object.freeze(['push', 'pull']),
+  core: Object.freeze(['legs']),
+});
+
+/**
+ * Mappa chip muscolari → cilindro legacy v1 (pre-migrazione 5 aree).
+ * @type {Readonly<Record<string, 'push'|'pull'|'legs'>>}
+ */
+export const LEGACY_MUSCLE_CYLINDER_MAP = Object.freeze({
   petto: 'push',
   spalle: 'push',
   tricipiti: 'push',
@@ -205,6 +303,34 @@ const MUSCLE_CYLINDER_MAP = Object.freeze({
   addominali: 'legs',
   core: 'legs',
 });
+
+/**
+ * @param {string} muscle
+ * @returns {'push'|'pull'|'legs'|null}
+ */
+export function resolveLegacyMuscleCylinderId(muscle) {
+  const key = String(muscle || '').trim().toLowerCase();
+  if (!key) return null;
+  if (key === 'push' || key === 'spinta') return 'push';
+  if (key === 'pull' || key === 'trazione') return 'pull';
+  if (key === 'legs' || key === 'gambe') return 'legs';
+  return LEGACY_MUSCLE_CYLINDER_MAP[key] || null;
+}
+
+/**
+ * @param {unknown} decay
+ * @returns {boolean}
+ */
+export function isLegacyThreeCylinderDecay(decay) {
+  if (!decay || typeof decay !== 'object') return false;
+  const hasPushPull = Object.prototype.hasOwnProperty.call(decay, 'push')
+    || Object.prototype.hasOwnProperty.call(decay, 'pull');
+  if (!hasPushPull) return false;
+  const hasV2Extra = ['chest', 'back_shoulders', 'arms', 'core'].some(
+    (k) => Object.prototype.hasOwnProperty.call(decay, k),
+  );
+  return !hasV2Extra;
+}
 
 const CARDIO_TYPES = new Set(['cardio', 'hiit', 'misto']);
 const REST_TYPES = new Set(['riposo', 'rest']);
@@ -266,14 +392,106 @@ export function diffCalendarDaysUtc(fromIso, toIso) {
 }
 
 /**
- * @param {FourCylinderDecay} decay
+ * @param {FourCylinderDecay | Record<string, number> | null | undefined} decay
  * @returns {FourCylinderDecay}
  */
 export function clampMuscleDecay(decay) {
+  const src = decay && typeof decay === 'object' ? decay : {};
+  if (isLegacyThreeCylinderDecay(src)) {
+    return expandLegacyDecay3to5(src);
+  }
+  // Mixed/partial: if push/pull present without v2 extras, expand.
+  if (
+    (Object.prototype.hasOwnProperty.call(src, 'push')
+      || Object.prototype.hasOwnProperty.call(src, 'pull'))
+    && !Object.prototype.hasOwnProperty.call(src, 'chest')
+    && !Object.prototype.hasOwnProperty.call(src, 'arms')
+  ) {
+    return expandLegacyDecay3to5(src);
+  }
   return {
-    push: clamp01(decay?.push),
-    pull: clamp01(decay?.pull),
-    legs: clamp01(decay?.legs),
+    legs: clamp01(src.legs),
+    chest: clamp01(src.chest),
+    back_shoulders: clamp01(src.back_shoulders),
+    arms: clamp01(src.arms),
+    core: clamp01(src.core),
+  };
+}
+
+/**
+ * Dual-read: flat snapshot v2 o legacy v1 → decay nested.
+ * @param {FourCylinderFlatLevels | null | undefined} flat
+ * @returns {FourCylinderDecay}
+ */
+export function inflateFlatLevelsToDecay(flat) {
+  if (!flat || typeof flat !== 'object') return createEmptyMuscleDecay();
+  const hasV2 = ['decay_chest', 'decay_back_shoulders', 'decay_arms', 'decay_core']
+    .some((k) => Object.prototype.hasOwnProperty.call(flat, k));
+  if (hasV2) {
+    return clampMuscleDecay({
+      legs: flat.decay_legs,
+      chest: flat.decay_chest,
+      back_shoulders: flat.decay_back_shoulders,
+      arms: flat.decay_arms,
+      core: flat.decay_core,
+    });
+  }
+  return expandLegacyDecay3to5({
+    push: flat.decay_push,
+    pull: flat.decay_pull,
+    legs: flat.decay_legs,
+  });
+}
+
+/**
+ * @param {unknown} paramsDecayPerDay
+ * @returns {FourCylinderDecay}
+ */
+function sanitizeDecayPerDay(paramsDecayPerDay) {
+  const src = paramsDecayPerDay && typeof paramsDecayPerDay === 'object' ? paramsDecayPerDay : {};
+  if (isLegacyThreeCylinderDecay(src) || (src.push != null || src.pull != null) && src.chest == null) {
+    // Map legacy rates onto v2 buckets with sensible defaults.
+    const push = clamp01(src.push ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.chest);
+    const pull = clamp01(src.pull ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.back_shoulders);
+    const legs = clamp01(src.legs ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs);
+    return {
+      legs,
+      chest: push,
+      back_shoulders: pull,
+      arms: clamp01((push + pull) / 2),
+      core: clamp01(legs + 0.04),
+    };
+  }
+  return {
+    legs: clamp01(src.legs ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs),
+    chest: clamp01(src.chest ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.chest),
+    back_shoulders: clamp01(src.back_shoulders ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.back_shoulders),
+    arms: clamp01(src.arms ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.arms),
+    core: clamp01(src.core ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.core),
+  };
+}
+
+/**
+ * @param {unknown} stimulusGain
+ * @returns {FourCylinderDecay}
+ */
+function sanitizeStimulusGain(stimulusGain) {
+  const src = stimulusGain && typeof stimulusGain === 'object' ? stimulusGain : {};
+  if (isLegacyThreeCylinderDecay(src) || ((src.push != null || src.pull != null) && src.chest == null)) {
+    return {
+      legs: clamp01(src.legs ?? 1) || 1,
+      chest: clamp01(src.push ?? 1) || 1,
+      back_shoulders: clamp01(src.pull ?? 1) || 1,
+      arms: 1,
+      core: 1,
+    };
+  }
+  return {
+    legs: clamp01(src.legs ?? 1) || 1,
+    chest: clamp01(src.chest ?? 1) || 1,
+    back_shoulders: clamp01(src.back_shoulders ?? 1) || 1,
+    arms: clamp01(src.arms ?? 1) || 1,
+    core: clamp01(src.core ?? 1) || 1,
   };
 }
 
@@ -316,11 +534,7 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
 
   /** @type {FourCylinderParams} */
   const params = {
-    decayPerDay: {
-      push: clamp01(decayPerDaySrc.push ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.push),
-      pull: clamp01(decayPerDaySrc.pull ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.pull),
-      legs: clamp01(decayPerDaySrc.legs ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs),
-    },
+    decayPerDay: sanitizeDecayPerDay(decayPerDaySrc),
     systemicRecoveryPerDay: clamp01(
       paramsSrc.systemicRecoveryPerDay ?? DEFAULT_FOUR_CYLINDER_PARAMS.systemicRecoveryPerDay,
     ),
@@ -347,22 +561,55 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
     fastedWorkoutPenalty: clamp01(
       paramsSrc.fastedWorkoutPenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.fastedWorkoutPenalty,
     ),
-    stimulusGain: {
-      push: clamp01(paramsSrc.stimulusGain?.push ?? 1) || 1,
-      pull: clamp01(paramsSrc.stimulusGain?.pull ?? 1) || 1,
-      legs: clamp01(paramsSrc.stimulusGain?.legs ?? 1) || 1,
-    },
+    stimulusGain: sanitizeStimulusGain(paramsSrc.stimulusGain),
   };
 
   const lastProcessed = String(src.lastProcessedDate || today).trim().slice(0, 10);
   const lastUpdatedIsoRaw = String(src.lastUpdatedIso || lastProcessed || today).trim().slice(0, 10);
 
+  // Dual-read decay: nested v2 { chest }, flat root { decay_chest }, o flat dentro .decay
+  let rawDecay = DEFAULT_MUSCLE_LEVELS;
+  if (src.decay && typeof src.decay === 'object') {
+    const d = src.decay;
+    const hasNestedV2 = ['chest', 'legs', 'back_shoulders', 'arms', 'core', 'push', 'pull']
+      .some((k) => Object.prototype.hasOwnProperty.call(d, k));
+    const hasFlatInside = ['decay_chest', 'decay_legs', 'decay_back_shoulders', 'decay_arms', 'decay_core']
+      .some((k) => Object.prototype.hasOwnProperty.call(d, k));
+    if (hasNestedV2) {
+      rawDecay = d;
+    } else if (hasFlatInside) {
+      rawDecay = inflateFlatLevelsToDecay(d);
+    } else {
+      rawDecay = d;
+    }
+  } else if (src.muscleDecay && typeof src.muscleDecay === 'object') {
+    rawDecay = src.muscleDecay;
+  } else if (
+    ['decay_chest', 'decay_legs', 'decay_back_shoulders', 'decay_arms', 'decay_core']
+      .some((k) => Object.prototype.hasOwnProperty.call(src, k))
+  ) {
+    rawDecay = inflateFlatLevelsToDecay(src);
+  }
+
+  const wasLegacy = isLegacyThreeCylinderDecay(rawDecay)
+    || (
+      (Object.prototype.hasOwnProperty.call(rawDecay, 'push')
+        || Object.prototype.hasOwnProperty.call(rawDecay, 'pull'))
+      && !Object.prototype.hasOwnProperty.call(rawDecay, 'chest')
+    );
+  const rawVersion = Number(src.engineVersion);
+  // Conserva version < 2 su shape legacy così il boot può triggerare rebuild one-shot.
+  let engineVersion = Number.isFinite(rawVersion) && rawVersion > 0 ? rawVersion : 1;
+  if (!wasLegacy) {
+    engineVersion = Math.max(engineVersion, FOUR_CYLINDER_ENGINE_VERSION);
+  }
+
   return {
-    engineVersion: Number(src.engineVersion) || FOUR_CYLINDER_ENGINE_VERSION,
+    engineVersion,
     lastProcessedDate: /^\d{4}-\d{2}-\d{2}$/.test(lastProcessed) ? lastProcessed : today,
     lastUpdatedIso: /^\d{4}-\d{2}-\d{2}$/.test(lastUpdatedIsoRaw) ? lastUpdatedIsoRaw : today,
     updatedAt: Number.isFinite(Number(src.updatedAt)) ? Number(src.updatedAt) : Date.now(),
-    decay: clampMuscleDecay(src.decay || src.muscleDecay || DEFAULT_MUSCLE_LEVELS),
+    decay: clampMuscleDecay(rawDecay),
     systemic_fatigue: clamp01(src.systemic_fatigue ?? src.systemicFatigue ?? 0),
     params,
     lastStimulus: sanitizeLastStimulus(src.lastStimulus),
@@ -376,6 +623,7 @@ export function sanitizeFourCylinderState(raw, fallbackDate) {
 function sanitizeLastStimulus(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const applied = raw.applied && typeof raw.applied === 'object' ? raw.applied : {};
+  const appliedDecay = clampMuscleDecay(applied);
   return {
     workoutId: String(raw.workoutId || ''),
     date: String(raw.date || '').slice(0, 10),
@@ -383,16 +631,14 @@ function sanitizeLastStimulus(raw) {
     workoutType: String(raw.workoutType || ''),
     muscles: Array.isArray(raw.muscles) ? raw.muscles.map(String) : [],
     applied: {
-      push: clamp01(applied.push),
-      pull: clamp01(applied.pull),
-      legs: clamp01(applied.legs),
+      ...appliedDecay,
       systemic: clamp01(applied.systemic ?? applied.systemic_fatigue),
     },
   };
 }
 
 /**
- * Converte livelli nested → flat per il log diario.
+ * Converte livelli nested → flat per il log diario (sempre shape v2).
  * @param {FourCylinderDecay} decay
  * @param {number} systemicFatigue
  * @returns {FourCylinderFlatLevels}
@@ -400,9 +646,11 @@ function sanitizeLastStimulus(raw) {
 export function flattenFourCylinderLevels(decay, systemicFatigue) {
   const d = clampMuscleDecay(decay);
   return {
-    decay_push: d.push,
-    decay_pull: d.pull,
     decay_legs: d.legs,
+    decay_chest: d.chest,
+    decay_back_shoulders: d.back_shoulders,
+    decay_arms: d.arms,
+    decay_core: d.core,
     systemic_fatigue: clamp01(systemicFatigue),
   };
 }
@@ -413,26 +661,32 @@ export function flattenFourCylinderLevels(decay, systemicFatigue) {
  * @returns {FourCylinderFlatLevels}
  */
 export function flattenStimulusDelta(delta) {
+  const d = clampMuscleDecay(delta);
   return {
-    decay_push: clamp01(delta?.push),
-    decay_pull: clamp01(delta?.pull),
-    decay_legs: clamp01(delta?.legs),
+    decay_legs: d.legs,
+    decay_chest: d.chest,
+    decay_back_shoulders: d.back_shoulders,
+    decay_arms: d.arms,
+    decay_core: d.core,
     systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
   };
 }
 
 /**
  * Delta flat (recovery sonno) per snapshot log — magnitude applicata su systemic_fatigue.
- * I cilindri muscolari restano 0 (il sonno non alza lo stimolo in v1).
+ * I cilindri muscolari restano 0 (il sonno non alza lo stimolo).
  *
  * @param {SleepRecoveryDelta} delta
  * @returns {FourCylinderFlatLevels}
  */
 export function flattenRecoveryDelta(delta) {
+  const d = clampMuscleDecay(delta);
   return {
-    decay_push: clamp01(delta?.push),
-    decay_pull: clamp01(delta?.pull),
-    decay_legs: clamp01(delta?.legs),
+    decay_legs: d.legs,
+    decay_chest: d.chest,
+    decay_back_shoulders: d.back_shoulders,
+    decay_arms: d.arms,
+    decay_core: d.core,
     systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
   };
 }
@@ -477,9 +731,11 @@ export function applySingleDayRecovery(state, options = {}) {
     ...safe,
     updatedAt: Date.now(),
     decay: clampMuscleDecay({
-      push: safe.decay.push - decayPerDay.push * muscleScale,
-      pull: safe.decay.pull - decayPerDay.pull * muscleScale,
       legs: safe.decay.legs - decayPerDay.legs * muscleScale,
+      chest: safe.decay.chest - decayPerDay.chest * muscleScale,
+      back_shoulders: safe.decay.back_shoulders - decayPerDay.back_shoulders * muscleScale,
+      arms: safe.decay.arms - decayPerDay.arms * muscleScale,
+      core: safe.decay.core - decayPerDay.core * muscleScale,
     }),
     systemic_fatigue: clamp01(safe.systemic_fatigue - systemicRecoveryPerDay),
   };
@@ -567,11 +823,19 @@ export function catchUpDecayToDate(state, todayIso, params = null, dailyNutritio
  * @param {string} muscle
  * @returns {MuscleCylinderId | null}
  */
-function muscleToCylinder(muscle) {
+export function resolveMuscleCylinderId(muscle) {
   const key = String(muscle || '').trim().toLowerCase();
   if (!key) return null;
   if (key.includes('total') && key.includes('body')) return null;
   return MUSCLE_CYLINDER_MAP[key] || null;
+}
+
+/**
+ * @param {string} muscle
+ * @returns {MuscleCylinderId | null}
+ */
+function muscleToCylinder(muscle) {
+  return resolveMuscleCylinderId(muscle);
 }
 
 /**
@@ -599,7 +863,7 @@ function computeLoadFactor(durationHours, kcal) {
 export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLINDER_PARAMS) {
   const type = String(workout?.workoutType || 'pesi').trim().toLowerCase();
   if (REST_TYPES.has(type)) {
-    return { push: 0, pull: 0, legs: 0, systemic: 0 };
+    return { ...createEmptyMuscleDecay(), systemic: 0 };
   }
 
   const loadFactor = computeLoadFactor(workout?.duration, workout?.kcal);
@@ -609,14 +873,24 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
   const fastedMuscleScale = isFastedState
     ? clamp01(params.fastedWorkoutPenalty ?? DEFAULT_FOUR_CYLINDER_PARAMS.fastedWorkoutPenalty)
     : 1;
+
+  /** @type {FourCylinderDecay} */
   const gain = {
-    push: (params.stimulusGain?.push ?? 1) * fastedMuscleScale,
-    pull: (params.stimulusGain?.pull ?? 1) * fastedMuscleScale,
     legs: (params.stimulusGain?.legs ?? 1) * fastedMuscleScale,
+    chest: (params.stimulusGain?.chest ?? 1) * fastedMuscleScale,
+    back_shoulders: (params.stimulusGain?.back_shoulders ?? 1) * fastedMuscleScale,
+    arms: (params.stimulusGain?.arms ?? 1) * fastedMuscleScale,
+    core: (params.stimulusGain?.core ?? 1) * fastedMuscleScale,
   };
 
   /** @type {Record<MuscleCylinderId, number>} */
-  const weights = { push: 0, pull: 0, legs: 0 };
+  const weights = {
+    legs: 0,
+    chest: 0,
+    back_shoulders: 0,
+    arms: 0,
+    core: 0,
+  };
   const muscles = Array.isArray(workout?.muscles) ? workout.muscles : [];
   let isTotalBody = false;
 
@@ -632,52 +906,51 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
   }
 
   if (isTotalBody) {
-    weights.push += 1;
-    weights.pull += 1;
-    weights.legs += 1;
+    for (const id of MUSCLE_CYLINDER_IDS) weights[id] += 1;
   }
 
-  const weightSum = weights.push + weights.pull + weights.legs;
+  const weightSum = MUSCLE_CYLINDER_IDS.reduce((sum, id) => sum + weights[id], 0);
 
   /** @type {FourCylinderDecay} */
-  let muscleDeltas = { push: 0, pull: 0, legs: 0 };
+  let muscleDeltas = createEmptyMuscleDecay();
 
   if (CARDIO_TYPES.has(type) && weightSum === 0) {
     muscleDeltas = {
-      push: 0,
-      pull: 0,
+      ...createEmptyMuscleDecay(),
       legs: clamp01(0.18 * loadFactor * gain.legs),
     };
   } else if (type === 'spinta' || type === 'push') {
+    // Legacy workoutType → petto + braccia (quota spalle leggera).
+    const bump = params.maxMuscleBump * loadFactor;
     muscleDeltas = {
-      push: clamp01(params.maxMuscleBump * loadFactor * gain.push),
-      pull: 0,
-      legs: 0,
+      ...createEmptyMuscleDecay(),
+      chest: clamp01(bump * 0.55 * gain.chest),
+      back_shoulders: clamp01(bump * 0.20 * gain.back_shoulders),
+      arms: clamp01(bump * 0.25 * gain.arms),
     };
   } else if (type === 'trazione' || type === 'pull') {
+    const bump = params.maxMuscleBump * loadFactor;
     muscleDeltas = {
-      push: 0,
-      pull: clamp01(params.maxMuscleBump * loadFactor * gain.pull),
-      legs: 0,
+      ...createEmptyMuscleDecay(),
+      back_shoulders: clamp01(bump * 0.65 * gain.back_shoulders),
+      arms: clamp01(bump * 0.35 * gain.arms),
     };
   } else if (type === 'gambe' || type === 'legs') {
     muscleDeltas = {
-      push: 0,
-      pull: 0,
+      ...createEmptyMuscleDecay(),
       legs: clamp01(params.maxMuscleBump * loadFactor * gain.legs),
     };
   } else if (weightSum > 0) {
     const baseBump = params.maxMuscleBump * loadFactor;
-    for (const cyl of /** @type {MuscleCylinderId[]} */ (['push', 'pull', 'legs'])) {
+    for (const cyl of MUSCLE_CYLINDER_IDS) {
       if (weights[cyl] <= 0) continue;
       const share = weights[cyl] / weightSum;
       muscleDeltas[cyl] = clamp01(baseBump * share * gain[cyl]);
     }
   } else if (type === 'pesi' || type.includes('strength') || type.includes('peso')) {
     muscleDeltas = {
-      push: clamp01(params.maxMuscleBump * 0.45 * loadFactor * gain.push),
-      pull: 0,
-      legs: 0,
+      ...createEmptyMuscleDecay(),
+      chest: clamp01(params.maxMuscleBump * 0.45 * loadFactor * gain.chest),
     };
   }
 
@@ -685,9 +958,7 @@ export function computeWorkoutStimulusDeltas(workout, params = DEFAULT_FOUR_CYLI
   const systemic = clamp01(params.maxSystemicBump * systemicBase * loadFactor * rpeBoost);
 
   return {
-    push: muscleDeltas.push,
-    pull: muscleDeltas.pull,
-    legs: muscleDeltas.legs,
+    ...muscleDeltas,
     systemic,
   };
 }
@@ -710,9 +981,11 @@ export function applyWorkoutStimulus(state, workout) {
   const stimulus = computeWorkoutStimulusDeltas(workout, safe.params);
 
   const nextDecay = clampMuscleDecay({
-    push: safe.decay.push + stimulus.push,
-    pull: safe.decay.pull + stimulus.pull,
     legs: safe.decay.legs + stimulus.legs,
+    chest: safe.decay.chest + stimulus.chest,
+    back_shoulders: safe.decay.back_shoulders + stimulus.back_shoulders,
+    arms: safe.decay.arms + stimulus.arms,
+    core: safe.decay.core + stimulus.core,
   });
 
   const nextSystemic = clamp01(safe.systemic_fatigue + stimulus.systemic);
@@ -734,6 +1007,7 @@ export function applyWorkoutStimulus(state, workout) {
   return {
     nextState: {
       ...safe,
+      engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
       updatedAt: capturedAt,
       lastUpdatedIso: date,
       decay: nextDecay,
@@ -745,9 +1019,11 @@ export function applyWorkoutStimulus(state, workout) {
         workoutType: String(workout?.workoutType || 'pesi'),
         muscles: Array.isArray(workout?.muscles) ? [...workout.muscles] : [],
         applied: {
-          push: stimulus.push,
-          pull: stimulus.pull,
           legs: stimulus.legs,
+          chest: stimulus.chest,
+          back_shoulders: stimulus.back_shoulders,
+          arms: stimulus.arms,
+          core: stimulus.core,
           systemic: stimulus.systemic,
         },
       },
@@ -808,7 +1084,7 @@ export function computeSleepRecoveryDeltas(sleepInput, params = DEFAULT_FOUR_CYL
   const isPoorSleep = efficiency < POOR_SLEEP_EFFICIENCY_THRESHOLD;
 
   /** @type {SleepRecoveryDelta} */
-  let recovery = { push: 0, pull: 0, legs: 0, systemic: 0 };
+  let recovery = { ...createEmptyMuscleDecay(), systemic: 0 };
 
   if (isPoorSleep) {
     recovery.systemic = clamp01(params.poorSleepFatiguePenalty);
@@ -933,10 +1209,13 @@ export function applySleepPipeline(state, sleepInput, todayIso, dailyNutritionMa
  * @returns {FourCylinderFlatLevels}
  */
 export function flattenStressDelta(delta) {
+  const d = clampMuscleDecay(delta);
   return {
-    decay_push: clamp01(delta?.push),
-    decay_pull: clamp01(delta?.pull),
-    decay_legs: clamp01(delta?.legs),
+    decay_legs: d.legs,
+    decay_chest: d.chest,
+    decay_back_shoulders: d.back_shoulders,
+    decay_arms: d.arms,
+    decay_core: d.core,
     systemic_fatigue: clamp01(delta?.systemic ?? delta?.systemic_fatigue),
   };
 }
@@ -972,7 +1251,7 @@ export function computeCognitiveStressDeltas(cognitiveInput, params = DEFAULT_FO
   const stressBump = Math.min(maxBump, duration * penaltyPerHour);
 
   /** @type {CognitiveStressDelta} */
-  const stress = { push: 0, pull: 0, legs: 0, systemic: clamp01(stressBump) };
+  const stress = { ...createEmptyMuscleDecay(), systemic: clamp01(stressBump) };
 
   return { stress, stressBump: stress.systemic };
 }
@@ -1104,13 +1383,13 @@ export function physiologyModelWithFourCylinder(physiologyModelDoc, fourCylinder
 }
 
 /**
- * Somma decay muscolare (tie-break merge).
+ * Somma decay muscolare (tie-break merge / heal boot).
  * @param {FourCylinderDecay | null | undefined} decay
  * @returns {number}
  */
-function muscleDecaySum(decay) {
-  const d = decay && typeof decay === 'object' ? decay : {};
-  return clamp01(d.push) + clamp01(d.pull) + clamp01(d.legs);
+export function muscleDecaySum(decay) {
+  const d = clampMuscleDecay(decay);
+  return MUSCLE_CYLINDER_IDS.reduce((sum, id) => sum + clamp01(d[id]), 0);
 }
 
 /**

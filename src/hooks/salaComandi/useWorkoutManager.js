@@ -461,6 +461,9 @@ export function useWorkoutManager({
           userUid: user?.uid ?? null,
           setUserModel,
           nextFourCylinderState: fourCylinderNextState,
+          fullHistory,
+          anchorDateIso: currentTrackerDate || undefined,
+          source: 'useWorkoutManager:save',
         });
       } else {
         console.warn('[DEBUG 4CYL] Nessuno stato da persistere — fourCylinderNextState null');
@@ -610,6 +613,9 @@ export function useWorkoutManager({
             userUid: user?.uid ?? null,
             setUserModel,
             nextFourCylinderState: fourCylinderNextState,
+            fullHistory,
+            anchorDateIso: currentTrackerDate || undefined,
+            source: 'useWorkoutManager:quickLog',
           });
         }
       }

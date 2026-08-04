@@ -151,9 +151,11 @@ function answerMacros(pack, focus = 'all') {
 
 function answerCylinders(pack, query) {
   const cyl = pack?.Muscular_Cylinders || {};
-  const push = cyl.Spinta || {};
-  const pull = cyl.Trazione || {};
   const legs = cyl.Gambe || {};
+  const chest = cyl.Petto || {};
+  const backShoulders = cyl.SchienaSpalle || {};
+  const arms = cyl.Braccia || {};
+  const core = cyl.AbsCore || {};
 
   const wantPush = CYLINDER_PUSH_RE.test(query);
   const wantPull = CYLINDER_PULL_RE.test(query);
@@ -161,14 +163,18 @@ function answerCylinders(pack, query) {
   const specific = wantPush || wantPull || wantLegs;
 
   const lines = [];
-  if (!specific || wantPush) {
-    lines.push(`Spinta ${Math.round(asNumber(push.fillPercent))}% (${phaseLabel(push.recoveryPhase)})`);
-  }
-  if (!specific || wantPull) {
-    lines.push(`Trazione ${Math.round(asNumber(pull.fillPercent))}% (${phaseLabel(pull.recoveryPhase)})`);
-  }
   if (!specific || wantLegs) {
     lines.push(`Gambe ${Math.round(asNumber(legs.fillPercent))}% (${phaseLabel(legs.recoveryPhase)})`);
+  }
+  if (!specific || wantPush) {
+    lines.push(`Petto ${Math.round(asNumber(chest.fillPercent))}% (${phaseLabel(chest.recoveryPhase)})`);
+    lines.push(`Braccia ${Math.round(asNumber(arms.fillPercent))}% (${phaseLabel(arms.recoveryPhase)})`);
+  }
+  if (!specific || wantPull) {
+    lines.push(`Schiena/Spalle ${Math.round(asNumber(backShoulders.fillPercent))}% (${phaseLabel(backShoulders.recoveryPhase)})`);
+  }
+  if (!specific) {
+    lines.push(`Core ${Math.round(asNumber(core.fillPercent))}% (${phaseLabel(core.recoveryPhase)})`);
   }
 
   const systemic = Math.round(asNumber(cyl.systemicStressPct));

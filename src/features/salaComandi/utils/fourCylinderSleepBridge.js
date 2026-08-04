@@ -1,12 +1,11 @@
-import { ref, set } from 'firebase/database';
 import { normalizeSleepEntry, getTodayString } from '../../../coreEngine';
 import { computeSleepEngineSnapshot } from '../../../hooks/useSleepEngine';
 import {
   applySleepPipeline,
   fourCylinderFromPhysiologyModel,
-  physiologyModelWithFourCylinder,
 } from '../engines/fourCylinderEngine';
 import { buildDailyNutritionMap } from './fourCylinderNutritionBridge';
+import { persistFourCylinderState } from './fourCylinderPersist';
 
 /**
  * Normalizza l'entry sonno e ricava input per applySleepPipeline.
@@ -79,30 +78,35 @@ export function attachFourCylinderSleepSnapshot(entry, userModel, todayIso, opti
 }
 
 /**
- * Aggiorna userModel locale e persiste physiology_model.fourCylinder su Firebase.
+ * Aggiorna userModel locale e persiste physiology_model.fourCylinder via Data Guard.
+ * (Prima usava set() sull'intero physiology_model — bypass pericoloso.)
  *
  * @param {object} config
  * @param {import('firebase/database').Database | null} [config.db]
  * @param {string | null} [config.userUid]
- * @param {object} config.userModel
+ * @param {object} [config.userModel] legacy unused (compat)
  * @param {object} config.nextFourCylinderState
- * @param {string | null} [config.lastCalibrationWeek]
+ * @param {string | null} [config.lastCalibrationWeek] legacy unused
  * @param {Function} [config.setUserModel]
+ * @param {object | null} [config.fullHistory]
+ * @param {string | null} [config.anchorDateIso]
  */
 export function persistFourCylinderAfterSleep({
   db,
   userUid,
-  userModel,
   nextFourCylinderState,
-  lastCalibrationWeek,
   setUserModel,
+  fullHistory = null,
+  anchorDateIso = null,
 }) {
   if (!nextFourCylinderState || !setUserModel) return;
-  const updatedPhysiology = physiologyModelWithFourCylinder(userModel, nextFourCylinderState);
-  setUserModel(updatedPhysiology);
-  if (!db || !userUid) return;
-  set(ref(db, `users/${userUid}/physiology_model`), {
-    ...updatedPhysiology,
-    ...(lastCalibrationWeek ? { lastCalibrationWeek } : {}),
-  }).catch((err) => console.warn('[fourCylinder] sleep physiology save failed:', err));
+  persistFourCylinderState({
+    db,
+    userUid,
+    setUserModel,
+    nextFourCylinderState,
+    fullHistory,
+    anchorDateIso,
+    source: 'persistFourCylinderAfterSleep',
+  });
 }

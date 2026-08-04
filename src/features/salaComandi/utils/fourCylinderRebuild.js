@@ -1,10 +1,13 @@
 import { getLogFromStoricoTree, TRACKER_STORICO_KEY } from '../../../coreEngine';
+import { addDays } from '../../../calendarDateUtils';
 import { getWorkoutActivityTypeDef, normalizeMuscleGroupArray } from '../../../activityCatalog';
 import {
   applyCognitiveStressPipeline,
   applySleepPipeline,
   applyWorkoutPipeline,
+  catchUpDecayToDate,
   createDefaultFourCylinderState,
+  FOUR_CYLINDER_ENGINE_VERSION,
   fourCylinderFromPhysiologyModel,
   sanitizeFourCylinderState,
 } from '../engines/fourCylinderEngine';
@@ -14,6 +17,39 @@ import {
 } from './fourCylinderNutritionBridge';
 import { resolveSleepRecoveryInput } from './fourCylinderSleepBridge';
 import { persistFourCylinderState } from './fourCylinderPersist';
+
+/**
+ * True se fullHistory ha almeno un nodo tracker (storico idratato con dati).
+ * @param {object | null | undefined} fullHistory
+ * @returns {boolean}
+ */
+export function isTrackerHistoryHydrated(fullHistory) {
+  return Boolean(fullHistory && typeof fullHistory === 'object' && Object.keys(fullHistory).length > 0);
+}
+
+/**
+ * True se esiste almeno un allenamento (workout) negli ultimi `lookbackDays` giorni.
+ * @param {object | null | undefined} fullHistory
+ * @param {string} anchorDateIso
+ * @param {number} [lookbackDays=7]
+ * @returns {boolean}
+ */
+export function trackerHistoryHasRecentWorkout(fullHistory, anchorDateIso, lookbackDays = 7) {
+  if (!isTrackerHistoryHydrated(fullHistory)) return false;
+  const anchor = String(anchorDateIso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) return false;
+  const days = Math.max(1, Math.floor(Number(lookbackDays) || 7));
+
+  for (let i = 0; i < days; i += 1) {
+    const dateIso = addDays(anchor, -i);
+    const log = getLogFromStoricoTree(fullHistory, dateIso);
+    const treeNode = fullHistory?.[TRACKER_STORICO_KEY(dateIso)];
+    const manualNodes = treeNode?.manualNodes || [];
+    const events = collectFourCylinderDayEvents(dateIso, log, manualNodes);
+    if (events.some((e) => e.kind === 'workout')) return true;
+  }
+  return false;
+}
 
 /**
  * @param {unknown} item
@@ -176,15 +212,17 @@ export function rebuildFourCylinderFromTrackerHistory({
 
   for (const dateIso of sortedDates) {
     const log = dateIso === todayIso
-      ? (activeLog || [])
+      ? (Array.isArray(activeLog) ? activeLog : getLogFromStoricoTree(fullHistory, dateIso))
       : getLogFromStoricoTree(fullHistory, dateIso);
     const treeNode = fullHistory?.[TRACKER_STORICO_KEY(dateIso)];
     const manualNodes = dateIso === todayIso
-      ? (activeManualNodes || [])
+      ? (Array.isArray(activeManualNodes) ? activeManualNodes : (treeNode?.manualNodes || []))
       : (treeNode?.manualNodes || []);
 
     const dayEvents = collectFourCylinderDayEvents(dateIso, log, manualNodes);
-    const dayLogForFasted = dateIso === todayIso ? (activeLog || log) : log;
+    const dayLogForFasted = dateIso === todayIso
+      ? (Array.isArray(activeLog) ? activeLog : log)
+      : log;
 
     for (const event of dayEvents) {
       if (event.kind === 'workout') {
@@ -230,7 +268,17 @@ export function rebuildFourCylinderFromTrackerHistory({
     }
   }
 
-  return sanitizeFourCylinderState(state, todayIso);
+  // Codino residuo: dal lastProcessedDate dell'ultimo evento fino a oggi (1+ notti di decay),
+  // senza forzare lastProcessedDate=today che saltava il decadimento o (in passato) lo moltiplicava.
+  const { nextState: caughtUp } = catchUpDecayToDate(state, todayIso, null, nutritionMap);
+
+  return sanitizeFourCylinderState({
+    ...caughtUp,
+    engineVersion: FOUR_CYLINDER_ENGINE_VERSION,
+    lastProcessedDate: todayIso,
+    lastUpdatedIso: todayIso,
+    updatedAt: Date.now(),
+  }, todayIso);
 }
 
 /**
@@ -379,11 +427,16 @@ export function persistFourCylinderRebuild({
   userUid,
   setUserModel,
   nextFourCylinderState,
+  fullHistory = null,
+  anchorDateIso = null,
 }) {
   persistFourCylinderState({
     db,
     userUid,
     setUserModel,
     nextFourCylinderState,
+    fullHistory,
+    anchorDateIso,
+    source: 'persistFourCylinderRebuild',
   });
 }

@@ -1,21 +1,30 @@
 import {
   clamp01,
   fourCylinderFromPhysiologyModel,
+  MUSCLE_CYLINDER_IDS,
 } from '../engines/fourCylinderEngine';
 import { getLastSleepSnapshot } from './fourCylinderTelemetryHistory';
 import { getTodayString } from '../../../coreEngine';
 
-/** Pesi cilindri muscolari per il carico medio (gambe leggermente più pesate). */
-const MUSCLE_LOAD_WEIGHTS = { push: 0.32, pull: 0.33, legs: 0.35 };
+/** Pesi cilindri muscolari v2 per il carico medio (gambe leggermente più pesate). */
+const MUSCLE_LOAD_WEIGHTS = Object.freeze({
+  legs: 0.26,
+  chest: 0.20,
+  back_shoulders: 0.22,
+  arms: 0.16,
+  core: 0.16,
+});
 
 /**
  * @typedef {object} FourCylinderStrategicMetrics
  * @property {boolean} hasFourCylinder
  * @property {number} systemicFatigue01 0–1
  * @property {number} muscleLoad01 0–1 media ponderata decay
- * @property {number} push01
- * @property {number} pull01
  * @property {number} legs01
+ * @property {number} chest01
+ * @property {number} backShoulders01
+ * @property {number} arms01
+ * @property {number} core01
  * @property {number} recoveryIndex01 0–1 (1 = recuperato)
  * @property {number} muscleTrainingLoad01 0–100 (scala pilastri legacy)
  * @property {number} muscleTrainingLoadAxis -100..100 (asse mappa)
@@ -71,9 +80,11 @@ export function buildFourCylinderStrategicMetrics(fourCylinderRaw, options = {})
     hasFourCylinder: false,
     systemicFatigue01: 0,
     muscleLoad01: 0,
-    push01: 0,
-    pull01: 0,
     legs01: 0,
+    chest01: 0,
+    backShoulders01: 0,
+    arms01: 0,
+    core01: 0,
     recoveryIndex01: 0.5,
     muscleTrainingLoad01: 0,
     muscleTrainingLoadAxis: 0,
@@ -93,15 +104,18 @@ export function buildFourCylinderStrategicMetrics(fourCylinderRaw, options = {})
   const todayIso = String(options.todayIso || getTodayString()).slice(0, 10);
   const state = fourCylinderFromPhysiologyModel({ fourCylinder: fourCylinderRaw }, todayIso);
 
-  const push01 = clamp01(state.decay?.push);
-  const pull01 = clamp01(state.decay?.pull);
   const legs01 = clamp01(state.decay?.legs);
+  const chest01 = clamp01(state.decay?.chest);
+  const backShoulders01 = clamp01(state.decay?.back_shoulders);
+  const arms01 = clamp01(state.decay?.arms);
+  const core01 = clamp01(state.decay?.core);
   const systemicFatigue01 = clamp01(state.systemic_fatigue);
 
   const muscleLoad01 = clamp01(
-    push01 * MUSCLE_LOAD_WEIGHTS.push
-    + pull01 * MUSCLE_LOAD_WEIGHTS.pull
-    + legs01 * MUSCLE_LOAD_WEIGHTS.legs,
+    MUSCLE_CYLINDER_IDS.reduce(
+      (sum, id) => sum + clamp01(state.decay?.[id]) * (MUSCLE_LOAD_WEIGHTS[id] || 0),
+      0,
+    ),
   );
 
   const sleepSnap = options.fullHistory
@@ -148,9 +162,11 @@ export function buildFourCylinderStrategicMetrics(fourCylinderRaw, options = {})
     hasFourCylinder: true,
     systemicFatigue01,
     muscleLoad01,
-    push01,
-    pull01,
     legs01,
+    chest01,
+    backShoulders01,
+    arms01,
+    core01,
     recoveryIndex01,
     muscleTrainingLoad01,
     muscleTrainingLoadAxis,
@@ -161,9 +177,11 @@ export function buildFourCylinderStrategicMetrics(fourCylinderRaw, options = {})
 
   console.log('[StrategicBridge] 4° Pilastro agganciato:', {
     hasFourCylinder: result.hasFourCylinder,
-    push: result.push01,
-    pull: result.pull01,
     legs: result.legs01,
+    chest: result.chest01,
+    back_shoulders: result.backShoulders01,
+    arms: result.arms01,
+    core: result.core01,
     muscleLoad01: result.muscleLoad01,
     muscleTrainingLoad01: result.muscleTrainingLoad01,
     muscleTrainingLoadAxis: result.muscleTrainingLoadAxis,

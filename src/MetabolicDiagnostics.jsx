@@ -3,6 +3,7 @@ import {
   clamp01,
   createDefaultFourCylinderState,
   fourCylinderFromPhysiologyModel,
+  MUSCLE_CYLINDER_DEFS,
 } from './features/salaComandi/engines/fourCylinderEngine';
 import { buildFourCylinderTelemetrySeries, getDaysSinceLastStimulus, getLastSleepSnapshot, formatInactivityDaysLabel, formatInactivitySuffix } from './features/salaComandi/utils/fourCylinderTelemetryHistory';
 import { getTodayNutritionSnapshot } from './features/salaComandi/utils/fourCylinderNutritionBridge';
@@ -13,12 +14,8 @@ import MetabolicTrendChart from './components/MetabolicTrendChart';
 
 const SYSTEMIC_CRITICAL_THRESHOLD = 0.7;
 
-/** @type {Array<{ id: 'push' | 'pull' | 'legs', label: string, subtitle: string }>} */
-const MUSCLE_CYLINDERS = [
-  { id: 'push', label: 'Spinta', subtitle: 'Petto · Spalle · Tricipiti' },
-  { id: 'pull', label: 'Trazione', subtitle: 'Dorso · Bicipiti' },
-  { id: 'legs', label: 'Gambe', subtitle: 'Lower · Core' },
-];
+/** @type {typeof MUSCLE_CYLINDER_DEFS} */
+const MUSCLE_CYLINDERS = MUSCLE_CYLINDER_DEFS;
 
 /**
  * @param {number} value 0–1
@@ -94,7 +91,7 @@ function shouldShowMuscleInactivityAlarm(value, daysSince) {
 }
 
 /**
- * Pagina diagnostica 4 cilindri — triage dinamico fatica sistemica + sismografi muscolari.
+ * Pagina diagnostica cilindri — triage fatica sistemica + 5 sismografi muscolari.
  *
  * @param {{
  *   fourCylinder?: object | null,
@@ -159,8 +156,9 @@ export default function MetabolicDiagnostics({
     () => buildFourCylinderTelemetrySeries(fullHistory, {
       daysBack: historyDays,
       endDate: getTodayString(),
+      fourCylinder: state,
     }),
-    [fullHistory, historyDays],
+    [fullHistory, historyDays, state],
   );
 
   const lastSleep = useMemo(
@@ -193,7 +191,7 @@ export default function MetabolicDiagnostics({
 
   return (
     <div
-      aria-label="Diagnostica 4 cilindri"
+      aria-label="Diagnostica cilindri muscolari"
       className="absolute inset-0 overflow-y-auto pb-40 px-3 pt-2"
     >
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-2">
@@ -438,7 +436,7 @@ export default function MetabolicDiagnostics({
       {/* Sismografi muscolari — ordinati dal più critico (≈0) al più ok (≈1) */}
       <div className="mt-3 flex flex-col gap-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-          Sismografi muscolari · triage
+          Sismografi muscolari · 5 macro-aree · triage
         </p>
 
         {sortedMuscles.map((cyl, index) => {

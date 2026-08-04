@@ -9,14 +9,23 @@ import {
   YAxis,
   Tooltip,
 } from 'recharts';
+import { MUSCLE_CYLINDER_DEFS } from './features/salaComandi/engines/fourCylinderEngine';
 
 const SYNC_ID = 'telemetry';
 
-const MUSCLE_LINES = [
-  { key: 'push', label: 'Spinta', color: '#f472b6' },
-  { key: 'pull', label: 'Trazione', color: '#22d3ee' },
-  { key: 'legs', label: 'Gambe', color: '#a3e635' },
-];
+const MUSCLE_LINE_COLORS = {
+  legs: '#a3e635',
+  chest: '#f472b6',
+  back_shoulders: '#22d3ee',
+  arms: '#fb923c',
+  core: '#c084fc',
+};
+
+const MUSCLE_LINES = MUSCLE_CYLINDER_DEFS.map((def) => ({
+  key: def.id,
+  label: def.label,
+  color: MUSCLE_LINE_COLORS[def.id] || '#94a3b8',
+}));
 
 function formatDateLabel(iso) {
   if (!iso || typeof iso !== 'string') return '—';
@@ -67,9 +76,9 @@ const AXIS_TICK = {
 };
 
 /**
- * Grafici storici impilati 4 cilindri con cursore verticale sincronizzato (Recharts syncId).
+ * Grafici storici: fatica sistemica + 5 macro-aree muscolari (syncId).
  *
- * @param {{ data?: Array<{ date: string, push: number, pull: number, legs: number, fatigue: number }> }} props
+ * @param {{ data?: Array<Record<string, unknown>> }} props
  */
 export default function TelemetryChart({ data = [] }) {
   const series = useMemo(
@@ -94,7 +103,7 @@ export default function TelemetryChart({ data = [] }) {
     return (
       <div className="rounded-lg border border-dashed border-white/10 bg-black/30 px-3 py-6 text-center">
         <p className="text-[11px] text-slate-500">
-          Nessuno snapshot 4 cilindri nel periodo. Salva un allenamento per popolare i grafici.
+          Nessuno snapshot cilindri nel periodo. Salva un allenamento per popolare i grafici.
         </p>
       </div>
     );
@@ -104,11 +113,10 @@ export default function TelemetryChart({ data = [] }) {
     <div className="overflow-hidden rounded-xl border border-white/10 bg-[#080a0e]">
       <div className="border-b border-white/5 px-3 py-2">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-          Storico telemetria · cursore sincronizzato
+          Storico telemetria · 5 macro-aree · cursore sincronizzato
         </p>
       </div>
 
-      {/* Grafico 1 — Fatica sistemica */}
       <div className="h-[108px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
@@ -152,8 +160,7 @@ export default function TelemetryChart({ data = [] }) {
         </p>
       </div>
 
-      {/* Grafico 2 — Stimolo muscolare (push / pull / legs) */}
-      <div className="h-[148px] w-full">
+      <div className="h-[168px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={series}
@@ -188,7 +195,7 @@ export default function TelemetryChart({ data = [] }) {
                 type="monotone"
                 dataKey={key}
                 stroke={color}
-                strokeWidth={2}
+                strokeWidth={1.75}
                 dot={false}
                 isAnimationActive={false}
                 activeDot={{ r: 3, strokeWidth: 1, stroke: '#0f172a' }}
@@ -198,7 +205,7 @@ export default function TelemetryChart({ data = [] }) {
         </ResponsiveContainer>
       </div>
 
-      <div className="flex flex-wrap gap-3 border-t border-white/5 px-3 py-2">
+      <div className="flex flex-wrap gap-2.5 border-t border-white/5 px-3 py-2">
         <span className="inline-flex items-center gap-1.5 text-[9px] uppercase tracking-wider text-red-400/80">
           <span className="h-1.5 w-3 rounded-sm bg-red-400/80" />
           Fatigue
