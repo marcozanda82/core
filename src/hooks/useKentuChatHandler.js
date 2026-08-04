@@ -483,7 +483,7 @@ export function useKentuChatHandler(ctx) {
             { sender: 'user', text: userMessage },
             {
               sender: 'ai',
-              text: 'Nessun problema. Quanti grammi e quale alimento esattamente?',
+              text: 'Nessun problema 💡 Dimmi alimento e grammature — oppure un tetto calorico e calcolo io la porzione.',
             },
           ]);
           if (optionalReply == null) setChatInput('');

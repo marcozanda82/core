@@ -4457,13 +4457,34 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   
   const workoutsLog = activeLog.filter(item => item.type === 'workout');
 
+  /** Diario + pisolini Fast Charge (manualNodes type nap) — SSOT Arco Energetico. */
+  const sleepEngineInputLog = useMemo(
+    () => {
+      const base = Array.isArray(activeLog) ? activeLog : [];
+      const naps = (manualNodes || []).filter((n) => n && n.type === 'nap');
+      if (naps.length === 0) return base;
+      const seen = new Set(
+        base.map((e) => (e?.id != null ? String(e.id) : null)).filter(Boolean),
+      );
+      const toAdd = naps.filter((n) => {
+        if (n?.id == null) return true;
+        const id = String(n.id);
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+      return toAdd.length === 0 ? base : [...base, ...toAdd];
+    },
+    [activeLog, manualNodes],
+  );
+
   const {
     recoveryScore: sleepRecoveryScore,
     metabolicPenalty: sleepMetabolicPenalty,
     mainNightSleep,
     totalSleepHours,
     hasSleepData: hasSleepEngineData,
-  } = useSleepEngine(activeLog);
+  } = useSleepEngine(sleepEngineInputLog);
 
   const sleepWakeTime = mainNightSleep?.wakeTime ?? mainNightSleep?.sleepEnd ?? 7.5;
 
@@ -8348,6 +8369,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             healthUid={userUid}
             foodDatabase={foodDb}
             setFoodDb={setFoodDb}
+            fastingData={fastingData}
             compassScreenActive={activeBottomTab === 'bussola'}
             fullHistory={fullHistory}
             userTargets={userTargets}
@@ -8356,6 +8378,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onTimeframeChange={setMetabolicCompassTimeframe}
             fourCylinder={userModel?.fourCylinder ?? null}
             activeLog={activeLog}
+            sleepEngineLiveLog={sleepEngineInputLog}
             activeDate={currentTrackerDate}
             activeToolRequest={metabolicToolRequest}
             onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
@@ -8366,6 +8389,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             activeCompensation={userProfile?.activeCompensation ?? null}
             onConfirmCompensation={applyActiveCompensationPlan}
             onClearCompensation={clearActiveCompensationPlan}
+            profileHeightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || 174}
           />
           </Suspense>
         </div>

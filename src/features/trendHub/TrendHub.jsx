@@ -32,6 +32,8 @@ export default function TrendHub({
   onTimeframeChange,
   fourCylinder = null,
   activeLog = null,
+  /** Diario + nap Fast Charge — stesso input dell'Arco Energetico */
+  sleepEngineLiveLog = null,
   activeDate = null,
   settingsBaseKcal = null,
   committedGhostGoal = 'maintain',
@@ -50,8 +52,17 @@ export default function TrendHub({
   healthUid = null,
   foodDatabase = null,
   setFoodDb = null,
+  fastingData = null,
+  /** Altezza profilo (cm) — fallback WHtR 174 */
+  profileHeightCm = null,
 } = {}) {
   const { hemisphere, setHemisphere, isProgressione, isSalute } = useTrendHubHemisphere();
+
+  const activeLogIsToday = useMemo(() => {
+    const today = String(healthTodayDate || '').slice(0, 10);
+    const logDate = String(activeDate || '').slice(0, 10);
+    return Boolean(today) && today === logDate;
+  }, [healthTodayDate, activeDate]);
 
   // Selettore snello: memoizzato sul nodo di ieri / chiavi food / history biometrica.
   const healthContext = useHealthContext({
@@ -131,6 +142,14 @@ export default function TrendHub({
       uid: healthUid,
       setFoodDb,
       enabled: isSalute && compassScreenActive,
+      fastingData,
+      fourCylinder,
+      metabolicCompensationDeltaKcal: committedGhostDeltaKcal,
+      activeLog,
+      activeLogIsToday,
+      sleepEngineLiveLog: Array.isArray(sleepEngineLiveLog) ? sleepEngineLiveLog : activeLog,
+      fullHistory,
+      heightCm: Number(profileHeightCm) > 0 ? Number(profileHeightCm) : 174,
     }),
     [
       healthContext,
@@ -141,6 +160,14 @@ export default function TrendHub({
       setFoodDb,
       isSalute,
       compassScreenActive,
+      fastingData,
+      fourCylinder,
+      committedGhostDeltaKcal,
+      activeLog,
+      activeLogIsToday,
+      sleepEngineLiveLog,
+      fullHistory,
+      profileHeightCm,
     ],
   );
 

@@ -131,21 +131,22 @@ export function getFoodItemsMissingGrams(payload = {}) {
   );
 }
 
-/** Prompt per richiedere grammature mancanti (un solo alimento vs più alimenti). */
+/** Prompt coach per grammature mancanti — niente esempi statici inventati. */
 export function buildMissingGramsPrompt(payload = {}) {
   const missing = getFoodItemsMissingGrams(payload);
   if (missing.length === 0) {
-    return 'Cosa hai mangiato e in che quantità? (es. 230g di gnocchi, 100g di passato di pomodoro)';
+    return '🍽️ Dimmi cosa hai mangiato: posso calibrare le porzioni sul tuo budget se mi dai un vincolo (es. «sotto le 150 kcal»).';
   }
   if (missing.length === 1) {
-    return `Quanti grammi di ${missing[0].foodName}?`;
+    const name = String(missing[0].foodName || 'questo alimento').trim();
+    return `⚖️ Quanti grammi di ${name}? Oppure dimmi un tetto calorico e calcolo io la porzione esatta — niente stime a caso.`;
   }
-  const exampleGrams = [100, 150, 200];
-  const examples = missing
-    .slice(0, 3)
-    .map((item, index) => `${item.foodName} ${exampleGrams[index] || 150}g`)
+  const names = missing
+    .slice(0, 4)
+    .map((item) => String(item.foodName || '').trim())
+    .filter(Boolean)
     .join(', ');
-  return `Quanti grammi per ciascuno? (es. ${examples})`;
+  return `🥗 Sto componendo: ${names}. Scrivi le grammature oppure un limite (es. «max 100 kcal») e le calcolo dinamicamente sul residuo.`;
 }
 
 function applyGramsUpdatesToItems(items, updates) {

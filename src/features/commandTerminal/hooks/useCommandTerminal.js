@@ -365,7 +365,7 @@ export function useCommandTerminal({
           typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() : {};
         const wipSnapshot = typeof getWipMealSnapshotRef.current === 'function'
           ? getWipMealSnapshotRef.current()
-          : { wipMealItems: [], mealType: null };
+          : { wipMealItems: [], mealType: null, constraints: null, mealWipActive: false };
         const imageOnly = !resolvedText && attachedImages.length > 0;
         const fallbackText =
           resolvedText ||
@@ -374,12 +374,16 @@ export function useCommandTerminal({
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
+          wipConstraints: wipSnapshot.constraints || null,
+          mealWipActive: Boolean(wipSnapshot.mealWipActive),
         }, {
           images: attachedImages,
           intent: forcedIntent || (imageOnly ? 'LOG_SLEEP' : undefined),
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
+          wipConstraints: wipSnapshot.constraints || null,
+          mealWipActive: Boolean(wipSnapshot.mealWipActive),
           systemInstructionExtra: options?.systemInstructionExtra || null,
           signal: abortController.signal,
         });

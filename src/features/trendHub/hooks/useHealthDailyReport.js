@@ -174,17 +174,27 @@ export function useHealthDailyReport({
       return undefined;
     }
     const cachedForDate = report && String(report.date) === analysisDate;
+    const insightText = String(report?.sleepCorrelationInsight || '');
+    const insightClaimsMissingSleep = /manca|non (è )?disponib|assente|null|senza dato|dato sonno manc/i.test(insightText);
+    const snapshotMissing = !report?.morningSleepSnapshot
+      || !Number.isFinite(Number(report?.morningSleepSnapshot?.hours));
     const needsSleepInsightRefresh = Boolean(
       cachedForDate
       && morningSleepLog
-      && !String(report?.sleepCorrelationInsight || '').trim(),
+      && Number.isFinite(Number(morningSleepLog.hours))
+      && (
+        !insightText.trim()
+        || snapshotMissing
+        || insightClaimsMissingSleep
+      ),
     );
     if (cachedForDate && !needsSleepInsightRefresh) {
       setStatus('ready');
       return undefined;
     }
-    if (lastAutoKeyRef.current === contextKey) return undefined;
-    lastAutoKeyRef.current = contextKey;
+    const autoKey = needsSleepInsightRefresh ? `${contextKey}|sleep-fix` : contextKey;
+    if (lastAutoKeyRef.current === autoKey) return undefined;
+    lastAutoKeyRef.current = autoKey;
     void generateReport({ force: needsSleepInsightRefresh });
     return undefined;
   }, [

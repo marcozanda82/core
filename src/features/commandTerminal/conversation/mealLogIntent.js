@@ -1,6 +1,10 @@
 import { parseMealTypeFromUserText } from './conversationState.js';
 import { buildComputedMealNodes } from '../../../utils/mealNodeAggregation.js';
 import { decimalToTimeStr, toCanonicalMealType } from '../../../coreEngine.jsx';
+import {
+  hasMealWipConstraints,
+  isMealWipSessionStart,
+} from '../../wipMealBuilder/mealWipEngine.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -335,6 +339,7 @@ export function isConsultantMealIntent(userText, chatHistory = []) {
 const WIP_MEAL_FUTURE_VERB_RE = /\b(?:mangio|manger[oò]|prendo|prender[oò]|avr[oò]|user[oò]|voglio\s+mangiare)\b/i;
 const WIP_MEAL_TIME_RE = /\b(?:stasera|questa\s+sera|stanotte|domani|oggi|per\s+(?:la\s+)?(?:colazione|pranzo|cena|snack|spuntino|merenda))\b/i;
 const WIP_MEAL_PAST_LOG_RE = /\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut)\w*\b/i;
+const WIP_MEAL_ADD_RE = /\b(?:aggiung\w*|metti|inserisc\w*|togli|rimuov\w*)\b/i;
 
 function inferWipMealTypeFromText(text) {
   const normalized = String(text || '').trim().toLowerCase();
@@ -364,37 +369,54 @@ export function parseWipMealDeclaration(userText) {
 }
 
 /**
- * WIP Meal Builder: l'utente dichiara un alimento per un pasto in costruzione.
+ * WIP Meal Builder: pasto in costruzione (vincoli + carrello + follow-up QUERY/UPDATE/CONFIRM).
  * Funzione piatta: esclusioni solo via regex/pattern locali — NON chiama altri intent checker
  * (evita ciclo isWip → isDayReview → isFoodRegistration → isWip).
  *
  * @param {string} userText
  * @param {Array<object>} [chatHistory]
  * @param {Array<object>} [wipMealItems]
+ * @param {{ constraints?: object, mealWipActive?: boolean }} [wipMeta]
  * @returns {boolean}
  */
-export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = []) {
+export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = [], wipMeta = {}) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
-  if (WIP_MEAL_PAST_LOG_RE.test(text)) return false;
-  if (isConsumedMealLogDescription(text)) return false;
+  if (WIP_MEAL_PAST_LOG_RE.test(text) && isConsumedMealLogDescription(text)) return false;
   if (looksLikeUpdateLoggedMealRequest(text)) return false;
   if (MEAL_DRAFT_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (DAY_REVIEW_PATTERNS.some((pattern) => pattern.test(text))) return false;
+
+  const hasActiveWip = Boolean(wipMeta?.mealWipActive)
+    || (Array.isArray(wipMealItems) && wipMealItems.length > 0)
+    || hasMealWipConstraints(wipMeta?.constraints);
+
+  // Sessione già aperta: domande, aggiunte senza grammi, conferma → restano in WIP
+  if (hasActiveWip) {
+    if (WIP_MEAL_PAST_LOG_RE.test(text) && isConsumedMealLogDescription(text)) return false;
+    return true;
+  }
+
+  // Avvio sessione: vincolo calorico / "compongo snack da 100 kcal"
+  if (isMealWipSessionStart(text)) return true;
+
+  if (isConsumedMealLogDescription(text)) return false;
   if (MEAL_COMPLETION_PATTERNS.some((pattern) => pattern.test(text))) return false;
   if (isMealProposalQuery(text) || MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) {
     return false;
   }
-  if (DAY_REVIEW_PATTERNS.some((pattern) => pattern.test(text))) return false;
   if (CONSULTANT_MEAL_PATTERNS.some((pattern) => pattern.test(text))) return false;
-  if (/\?\s*$/.test(text)) return false;
 
   const parsed = parseWipMealDeclaration(text);
-  if (!parsed?.items?.length) return false;
+  if (parsed?.items?.length) {
+    const hasFutureCue = WIP_MEAL_FUTURE_VERB_RE.test(text) || WIP_MEAL_TIME_RE.test(text);
+    return hasFutureCue;
+  }
 
-  const hasFutureCue = WIP_MEAL_FUTURE_VERB_RE.test(text) || WIP_MEAL_TIME_RE.test(text);
-  const hasActiveWip = Array.isArray(wipMealItems) && wipMealItems.length > 0;
+  // "aggiungi noci" senza sessione attiva non è WIP (serve carrello o vincolo)
+  if (WIP_MEAL_ADD_RE.test(text) && hasActiveWip) return true;
 
-  return hasFutureCue || hasActiveWip;
+  return false;
 }
 
 /**

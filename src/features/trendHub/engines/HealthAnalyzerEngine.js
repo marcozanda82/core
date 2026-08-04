@@ -137,6 +137,11 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
   const unknownFoods = Array.isArray(ctx.unknownFoods) ? ctx.unknownFoods : [];
   const allFoods = Array.isArray(ctx.allFoods) ? ctx.allFoods : [...knownFoods, ...unknownFoods];
   const morningSleepLog = ctx.morningSleepLog ?? null;
+  const hasSleep = Boolean(
+    morningSleepLog
+    && Number.isFinite(Number(morningSleepLog.hours))
+    && Number(morningSleepLog.hours) > 0,
+  );
 
   return [
     `Analizza la giornata alimentare del ${analysisDate || 'giorno precedente'} (Kentu Health Analyzer).`,
@@ -146,6 +151,9 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
     `[UNKNOWN_FOODS_TO_LABEL: ${JSON.stringify(unknownFoods)}]`,
     `[ALL_CONSUMED_FOODS: ${JSON.stringify(allFoods)}]`,
     `[MORNING_SLEEP_LOG: ${JSON.stringify(morningSleepLog)}]`,
+    hasSleep
+      ? `[SLEEP_STATUS: AVAILABLE — hours=${morningSleepLog.hours}, quality=${morningSleepLog.quality || 'ok'}. NON dire che manca il sonno.]`
+      : '[SLEEP_STATUS: MISSING — morningSleepLog assente o incompleto.]',
     '',
     'COMPITO DUAL-ACTION:',
     '1) Se UNKNOWN_FOODS_TO_LABEL non è vuoto, classifica OGNI alimento sconosciuto in newLabels[] con:',
@@ -162,7 +170,9 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
     '3) Compila sleepCorrelationInsight:',
     '   Analizza i macro e l\'orario della cena di ieri e correlali con la qualità del sonno registrata stamattina.',
     '   Cerca pattern come eccesso di grassi, zuccheri semplici prima di dormire, o un perfetto bilanciamento che ha favorito il riposo.',
-    '   Usa [MORNING_SLEEP_LOG] (hours + quality). Se null, indica che manca il dato sonno.',
+    hasSleep
+      ? '   SLEEP_STATUS=AVAILABLE: usa obbligatoriamente hours+quality da MORNING_SLEEP_LOG. Vietato scrivere che il dato sonno manca, è assente o non disponibile.'
+      : '   SLEEP_STATUS=MISSING: indica brevemente che manca il dato sonno mattutino.',
     '',
     'Tono: analitico, diretto, italiano. Niente motivazionale.',
     'Rispondi SOLO JSON conforme allo schema.',
@@ -179,6 +189,7 @@ export function buildHealthAnalyzerSystemInstruction() {
     'Usa i tag già presenti in KNOWN_FOODS_CACHED senza ricalcolarli.',
     'Per UNKNOWN classifica in modo coerente con la letteratura nutrizionale standard.',
     'Disallineamento temporale: cibo = analysisDate (ieri); sonno = MORNING_SLEEP_LOG di oggi (notte successiva alla cena).',
+    'Se SLEEP_STATUS=AVAILABLE, sleepCorrelationInsight DEVE citare ore/qualità e NON può dire che il sonno manca.',
     'In sleepCorrelationInsight collega esplicitamente cena (orario/macro/carico glicemico) e riposo notturno.',
   ].join(' ');
 }

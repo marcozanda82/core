@@ -119,3 +119,41 @@ export function buildBiometricsHealthSnapshot(history = []) {
     waistDelta,
   };
 }
+
+/**
+ * Serie peso per line chart Salute (Recharts).
+ * @param {Array<Record<string, unknown>>} history
+ * @param {{ maxPoints?: number }} [options]
+ * @returns {Array<{ date: string, weight: number }>}
+ */
+export function buildWeightTrendSeries(history = [], options = {}) {
+  const maxPoints = Math.max(2, Number(options.maxPoints) || 14);
+  const sorted = sortHealthBiometricsAsc(history);
+  const points = [];
+  for (const entry of sorted) {
+    const weight = readWeightKg(entry);
+    if (weight == null) continue;
+    const date = String(entry?.date || '').slice(0, 10);
+    if (!date) continue;
+    const last = points[points.length - 1];
+    if (last && last.date === date) {
+      last.weight = weight;
+    } else {
+      points.push({ date, weight });
+    }
+  }
+  return points.length > maxPoints ? points.slice(-maxPoints) : points;
+}
+
+/**
+ * Qualità sonno → punteggio 0–100 per radial meter (solo UI).
+ * @param {'poor'|'ok'|'good'|string|null|undefined} quality
+ * @returns {number | null}
+ */
+export function sleepQualityToScore(quality) {
+  const q = String(quality || '').toLowerCase();
+  if (q === 'good') return 92;
+  if (q === 'ok') return 65;
+  if (q === 'poor') return 35;
+  return null;
+}

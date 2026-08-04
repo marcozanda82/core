@@ -676,7 +676,21 @@ export function buildWipMealAdviceMessage(adviceContext = {}) {
     : [];
   const lastItem = items[items.length - 1];
   const foodLabel = String(lastItem?.foodName || 'alimento').trim();
-  return `Ottima scelta il ${foodLabel}. Per bilanciare il pasto ti mancano ancora macro: usa i pulsanti qui sotto per aggiungere ingredienti al carrello.`;
+  const maxKcal = Number(
+    adviceContext?.wipConstraints?.maxCalories
+    ?? adviceContext?.mealWip?.constraints?.maxCalories,
+  );
+  const residual = Number(adviceContext?.residualBudgetAfterWipMeal?.kcal);
+  const residualHint = Number.isFinite(residual) && residual >= 0
+    ? ` Residuo ~${Math.round(residual)} kcal.`
+    : '';
+  const limitHint = Number.isFinite(maxKcal) && maxKcal > 0
+    ? ` Vincolo ${Math.round(maxKcal)} kcal.`
+    : '';
+  if (!lastItem) {
+    return `🍽️ Perfetto, apriamo il carrello WIP.${limitHint} Dimmi cosa aggiungere e calcolo io le porzioni.`;
+  }
+  return `✅ Ottima scelta: ${foodLabel}.${limitHint}${residualHint} 💡 Usa i suggerimenti qui sotto o dimmi cosa aggiungere — chiudiamo solo quando mi dici di inserire.`;
 }
 
 /**
@@ -692,16 +706,22 @@ export function sanitizeWipSuggestions(suggestions, adviceContext = {}) {
   const wipNames = new Set(
     wipItems.map((item) => String(item?.foodName || '').trim().toLowerCase()).filter(Boolean),
   );
-  const residualKcal = Math.round(
-    Number(adviceContext?.residualBudgetAfterWipMeal?.kcal)
-    || Number(adviceContext?.remainingBudget?.kcal)
-    || 0,
+  const constraintResidual = Number(adviceContext?.residualBudgetAfterWipMeal?.kcal);
+  const constraintMax = Number(
+    adviceContext?.wipConstraints?.maxCalories
+    ?? adviceContext?.mealWip?.constraints?.maxCalories
+    ?? adviceContext?.wipMealProjection?.constraints?.maxCalories,
   );
+  const residualKcal = Number.isFinite(constraintResidual) && constraintResidual >= 0
+    ? Math.round(constraintResidual)
+    : (Number.isFinite(constraintMax) && constraintMax > 0
+      ? Math.max(0, Math.round(constraintMax - (Number(adviceContext?.wipMealProjection?.totals?.kcal) || 0)))
+      : Math.round(Number(adviceContext?.remainingBudget?.kcal) || 0));
 
   return (Array.isArray(suggestions) ? suggestions : [])
     .map((entry, index) => {
       const name = String(entry?.name || entry?.foodName || '').trim();
-      const weight = Math.round(Number(entry?.weight ?? entry?.grams) || 0);
+      let weight = Math.round(Number(entry?.weight ?? entry?.grams) || 0);
       if (!name || weight <= 0) return null;
 
       const normalizedName = name.toLowerCase();
@@ -709,10 +729,24 @@ export function sanitizeWipSuggestions(suggestions, adviceContext = {}) {
       if (wipNames.has(normalizedName.split(/\s+/)[0])) return null;
 
       const macros = entry?.macros && typeof entry.macros === 'object' ? entry.macros : entry;
-      const calories = Math.round(Number(entry?.calories ?? entry?.kcal) || 0);
-      const prot = Number(macros?.prot ?? macros?.pro) || 0;
-      const carb = Number(macros?.carb ?? macros?.carbo) || 0;
-      const fat = Number(macros?.fat) || 0;
+      let calories = Math.round(Number(entry?.calories ?? entry?.kcal) || 0);
+      let prot = Number(macros?.prot ?? macros?.pro) || 0;
+      let carb = Number(macros?.carb ?? macros?.carbo) || 0;
+      let fat = Number(macros?.fat) || 0;
+
+      // Scala sul residuo WIP se la proposta sforerebbe il vincolo
+      if (residualKcal > 0 && calories > residualKcal && weight > 0 && calories > 0) {
+        const density = (calories / weight) * 100;
+        const scaledGrams = Math.floor((residualKcal / density) * 100);
+        if (scaledGrams > 0) {
+          const ratio = scaledGrams / weight;
+          weight = scaledGrams;
+          calories = Math.round(calories * ratio);
+          prot = Math.round(prot * ratio * 10) / 10;
+          carb = Math.round(carb * ratio * 10) / 10;
+          fat = Math.round(fat * ratio * 10) / 10;
+        }
+      }
 
       if (residualKcal > 0 && calories > residualKcal * 1.15) return null;
 
@@ -1642,6 +1676,11 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     : null;
   const isConsultantMealMode = intent === 'CONSULTANT_MEAL' || Boolean(consultantMealRequest?.anchorFood);
   const isWipMealMode = intent === 'WIP_MEAL_BUILD';
+  const mealWipMeta = options?.mealWip && typeof options.mealWip === 'object'
+    ? options.mealWip
+    : null;
+  const wipConstraints = options?.wipConstraints || mealWipMeta?.constraints || null;
+  const wipSubIntent = String(options?.wipSubIntent || mealWipMeta?.subIntent || '').trim().toUpperCase() || null;
   const foodQuery = isGenericSuggestion ? '' : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
   const foodDb = currentAppState?.foodDatabase || {};
   const nutrition = buildNutritionContextForState(currentAppState);
@@ -1729,9 +1768,19 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     ? roundTotals(sumItemMacros(wipMealResolvedItems))
     : { kcal: 0, pro: 0, carbo: 0, fat: 0 };
 
-  const residualBudgetAfterWipMeal = wipMealResolvedItems.length > 0
+  const residualBudgetAfterWipMealBase = wipMealResolvedItems.length > 0
     ? computeResidualBudgetAfterPartialMeal(remainingBudget, wipMealTotals)
     : remainingBudget;
+
+  // Vincolo WIP (es. snack max 100 kcal): residuo = maxCalories − carrello, non il budget giornaliero
+  const wipMaxKcal = Number(wipConstraints?.maxCalories);
+  const residualBudgetAfterWipMeal = (Number.isFinite(wipMaxKcal) && wipMaxKcal > 0)
+    ? {
+        ...(residualBudgetAfterWipMealBase || {}),
+        kcal: Math.max(0, Math.round(wipMaxKcal - (Number(wipMealTotals.kcal) || 0))),
+        wipConstraintMaxCalories: wipMaxKcal,
+      }
+    : residualBudgetAfterWipMealBase;
 
   const mealDraftRaw = options?.mealDraftProjection && typeof options.mealDraftProjection === 'object'
     ? options.mealDraftProjection
@@ -1862,7 +1911,17 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     consultantMealRequest,
     isConsultantMealMode,
     isWipMealMode,
-    wipMealProjection: wipMealResolvedItems.length > 0
+    wipConstraints: wipConstraints || null,
+    wipSubIntent,
+    mealWip: mealWipMeta || (isWipMealMode
+      ? {
+          constraints: wipConstraints || null,
+          subIntent: wipSubIntent,
+          items: wipMealResolvedItems,
+          totals: wipMealTotals,
+        }
+      : null),
+    wipMealProjection: wipMealResolvedItems.length > 0 || (isWipMealMode && wipConstraints)
       ? {
           items: wipMealResolvedItems.map((item) => ({
             foodName: item.foodName,
@@ -1874,6 +1933,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
           })),
           totals: wipMealTotals,
           mealType: wipMealType,
+          constraints: wipConstraints || null,
         }
       : null,
     residualBudgetAfterWipMeal,
@@ -1902,48 +1962,47 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
 }
 
 /**
- * System instruction: Kentu Solver (risolutore matematico macronutrienti).
+ * System instruction: Coach Nutrizionale Interattivo + solver macro.
  * @returns {string}
  */
 export function generateConsultantSystemInstruction() {
   return [
-    'Sei Kentu Solver: un risolutore matematico di equazioni sui macronutrienti. Rispondi SOLO con JSON valido conforme allo schema.',
-    'Non aggiungere markdown né testo fuori dal JSON.',
-    'IDENTITÀ: non sei un coach motivazionale né uno chef creativo. Calcoli grammature ottimali rispetto allo scontrino dogmatico [DOGMATIC_RECEIPT] (target − consumato = remaining firmato su kcal/P/C/F).',
-    'VINCOLO INGREDIENTI: lavora SOLO sugli alimenti che l utente propone (o già presenti in [PARTIAL_MEAL]/[MEAL_DRAFT_PROJECTION]/[EXISTING_MEAL_NODE]/[WIP_MEAL_ITEMS]/[CONSULTANT_MEAL_REQUEST].anchorFood). NON inventare ricette, ingredienti fantasia o piatti nuovi non richiesti. Per suggerimenti generici senza ingredienti utente, usa SOLO [USER_HABITS_FOR_CURRENT_MEAL] o [FALLBACK_MEAL_PROPOSALS], poi ottimizza i grammi sul remaining.',
-    'SCENARIO APERTO (ingredienti senza quantità, es. "Ho uova e pane per cena"): calcola matematicamente i grams di ciascun alimento per saturare al meglio [DOGMATIC_RECEIPT].remaining (priorità: proteine → carboidrati → grassi → kcal). Popola mealProposals.items con quelle grammature ottimizzate.',
-    'SCENARIO CHIUSO (quantità precise, es. "Posso aggiungere 120g di pasta e 20g di olio?"): verifica se la proposta sforerebbe remaining (o se remaining è già negativo). Se sfora, proponi in mealProposals la versione corretta con grams ridotti e spiega il taglio in adviceMessage con numeri (es. "La tua proposta sfora i grassi di 15g. Ecco le grammature calibrate: pasta 80g, olio 10g."). Se rientra, conferma i grams proposti e quantifica il residuo post-pasto.',
-    'OUTPUT MAPPING: i grams ottimizzati DEVONO finire in mealProposals[].items[] (foodName + grams > 0) per alimentare le MealProposalCards. totals = somma items. Non lasciare grammature "narrative" solo nel testo.',
-    'TONE OF VOICE adviceMessage: analitico, diretto, senza fronzoli motivazionali, senza semafori verde/giallo/rosso, senza CTA tipo "Quale opzione preferisci?". Esempio: "La tua proposta sfora i grassi di 15g. Ecco le grammature calibrate per restare in traiettoria." Max ~5 frasi. Cita sforamenti o residui in grammi/kcal.',
-    'REGOLA ENTITY RESOLUTION: l LLM estrae SOLO nome grezzo alimento e quantità (grams).',
-    'HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName (e mealProposals.items[].foodName) deve contenere SOLO il nome puro dell ingrediente. VIETATO includere grammature, parentesi, porzioni o suffissi tipo "200 g" nel nome. La quantità va SOLO in grams.',
-    'HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: ignora "e", "con", "più", virgola come separatori tra alimenti, non come parte del nome. Mai creare voci tipo "e pesca" o duplicare lo stesso alimento.',
-    'NON inventare foodDbKey, nomi DB esatti né macronutrienti: li calcola il sistema locale dal database.',
-    'Per mealProposals.items usa foodName come testo utente/LLM e grams; kcal/pro/carbo/fat possono essere 0 o omessi.',
-    'ORARIO ESPLICITO: se l utente indica un orario (es. "ore 14.45", "alle 20:30"), estrailo in HH:mm nel campo exactTime di ogni mealProposal pertinente.',
-    'NON DEVI MAI rispondere chiedendo grammature o alimenti mancanti: risolvi tu le equazioni e restituisci grams.',
-    'STRATEGIA MACROCICLICA GIORNALIERA: leggi [DAILY_CALORIE_STRATEGY]. Se directive è deficit, evita surplus non necessario; se surplus, copri carboidrati/kcal per performance. [DOGMATIC_RECEIPT] e [METABOLIC_BUDGET] riflettono già targetKcal: rispettali. Se hasWeeklyDayPlan è true, NON ignorare il programma settimanale.',
-    'RIPOSO PIANIFICATO E PRE-WORKOUT: se [DAILY_CALORIE_STRATEGY].isRestDay è true O [UPCOMING_WORKOUT] è null, NON applicare correzione pre-allenamento né Digestive Safety Gate pre-workout.',
-    'CORREZIONE PROPORZIONALE PRE-ALLENAMENTO: SOLO se [UPCOMING_WORKOUT] non è null e isRestDay non è true e allenamento entro 2-3 ore, adatta grassi/fibre/carboidrati per svuotamento gastrico e spiega il delta grammi in adviceMessage.',
-    'HARD CONSTRAINT — VINCOLO MATEMATICO (INVIOLABILE): totals.kcal di OGNI mealProposal NON deve superare [METABOLIC_BUDGET].kcal / [DOGMATIC_RECEIPT].remaining.kcal se remaining.kcal > 0. Se sfora anche di 1 kcal, correggi i grams prima di rispondere. Preferisci anche non sforare remaining.pro/carbo/fat quando possibile.',
-    'HARD CONSTRAINT — SCALING OBBLIGATORIO: per rientrare, SCALA I GRAMMI. Taglia fonti glucidiche e lipidiche; preserva fonti proteiche salvo sforamento proteico esplicito.',
-    'HARD CONSTRAINT — STOP AVVISI SENZA TAGLIO: vietato dire che sfora senza correggere mealProposals. Se sfora, taglia grams e spiega il taglio matematico in adviceMessage.',
-    'INTENTO ASK_MEAL_COMPLETION (SOUS-CHEF): se [PARTIAL_MEAL] ha items[], completa aggiungendo SOLO ingredienti mancanti utili al bilanciamento del remaining; non riproporre quelli già presenti. Rispetta [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].',
-    'HARD CONSTRAINT — OTTIMIZZAZIONE MICRO-NUTRIENTI: in ASK_MEAL_COMPLETION priorità a carenze in [METABOLIC_BUDGET].micros restando nel residuo kcal.',
-    'HARD CONSTRAINT — COMPLETION OUTPUT: mealProposals contengono SOLO alimenti integrativi; totals.kcal integrativi <= [RESIDUAL_BUDGET_AFTER_PARTIAL_MEAL].kcal.',
-    'INTENTO ASK_DAY_REVIEW: NON generare mealProposals. Solo adviceMessage analitico su [DAILY_TOTALS] vs [DOGMATIC_RECEIPT]/[DAILY_TARGETS] (esito numerico, eccessi/carenze, 1 azione per domani). Tono diretto, non motivazionale.',
-    'INTENTO EVALUATE_MEAL_DRAFT: NON generare mealProposals. Solo adviceMessage con check matematico (draft vs remaining), sforamento in grammi/kcal, tagli chirurgici proposti, CTA riparazione/sostituzione.',
-    'INTENTO FIX_MEAL_DRAFT: UNA mealProposal con grams scalati da [MEAL_DRAFT_PROJECTION] finché totals.kcal <= remaining. Preserva proteine. adviceMessage: conferma numerica del taglio, senza Opzione 1/2/3.',
-    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM: 2-3 mealProposals; tieni [KEPT_DRAFT_PROJECTION] invariato; sostituisci solo [REMOVED_DRAFT_ITEM]; sostitutivi <= [RESIDUAL_BUDGET_AFTER_REMOVAL].kcal.',
-    'INTENTO UPDATE_LOGGED_MEAL: UNA mealProposal; operations[] + resultingItems[] = lista finale (copia in items[]); targetNodeId obbligatorio. Ottimizza grams se la modifica rischia di sforare remaining. label: "Pasto aggiornato". source: "logged_meal_update".',
-    'INTENTO CONSULTANT_MEAL: 3 opzioni con [CONSULTANT_MEAL_REQUEST].anchorFood obbligatorio + accompagnamenti da habits/DB; grams calibrati su [DOGMATIC_RECEIPT].remaining. totals.kcal <= remaining kcal.',
-    'INTENTO WIP_MEAL_BUILD: NON mealProposals; adviceMessage + suggestions[] (3-5) con weight calibrato sul residuo macro. mealProposals vuoto.',
-    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — MUTAZIONI: resultingItems/items mai vuoti; se richiesta vaga, operations=[] e resultingItems = originali.',
-    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — ITEMS COMPLETI: resultingItems[] e items[] completi con foodName e grams per ogni alimento residuo.',
-    'REGOLA CORTISOLO SERALE: in cena/sera con eveningStressRisk high, orienta grams verso carboidrati complessi e bilanciamento anti-stress senza inventare alimenti non ammessi. Spiega in termini analitici.',
-    'DIGESTIVE SAFETY GATE (cena + allenamento serale): se volume/kcal serali eccessivi (~900-1000+), sconsiglia intensità in adviceMessage senza alterare grams storici salvo richiesta di riparazione.',
+    'Sei un assistente nutrizionale empatico, colloquiale e intelligente — un Coach Nutrizionale Interattivo.',
+    'Aiuti l\'utente a comporre pasti tenendo conto di macros e calorie residue. Rispondi SOLO con JSON valido conforme allo schema (niente markdown fuori dal JSON).',
+    'Il testo discorsivo va in adviceMessage: tono incoraggiante, chiaro, amichevole.',
+    'STILE VISIVO (adviceMessage): usa emoji native. Associa un\'emoji coerente a ogni alimento (🥣 yogurt, 🌰 noci, 🍎 mela, 🐟 pesce, 🥖 pane, 🥛 latte, 🥗 verdure, 🥚 uova).',
+    'Usa ✅ quando i vincoli sono rispettati; ⚠️ se si supera un limite (e correggi subito i grammi); 💡 per alternative utili.',
+    'CARRELLO WIP: non finalizzare MAI l\'inserimento se l\'utente fa una domanda o un dubbio (es. «non sono troppe?»). Chiudi/salva SOLO con conferma esplicita (CONFIRM).',
+    'Calcola sempre le calorie prima di proporre una grammatura. VIETATO esempi statici non calcolati (niente yogurt 100g / noci 150g inventati).',
+    'IDENTITÀ SOLVER: risolvi equazioni sui macronutrienti rispetto a [DOGMATIC_RECEIPT] e, in WIP, a [MEAL_WIP].constraints.',
+    'VINCOLO INGREDIENTI: lavora SOLO sugli alimenti che l utente propone (o in [PARTIAL_MEAL]/[MEAL_DRAFT_PROJECTION]/[EXISTING_MEAL_NODE]/[WIP_MEAL_ITEMS]/[CONSULTANT_MEAL_REQUEST].anchorFood). Per suggerimenti generici senza ingredienti utente, usa [USER_HABITS_FOR_CURRENT_MEAL] o [FALLBACK_MEAL_PROPOSALS], poi ottimizza i grammi sul remaining.',
+    'SCENARIO APERTO (senza quantità): calcola grams sul residuo (priorità P→C→F→kcal). Popola mealProposals.items o suggestions[].',
+    'SCENARIO CHIUSO (quantità precise): se sfora, correggi grams e spiega il delta in adviceMessage con emoji.',
+    'OUTPUT MAPPING: grams in mealProposals[].items[] o suggestions[].weight (WIP). totals = somma items.',
+    'REGOLA ENTITY RESOLUTION: estrai SOLO nome grezzo e quantità (grams).',
+    'HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = solo nome puro, senza grammature.',
+    'HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE.',
+    'NON inventare foodDbKey né macronutrienti: li calcola il sistema locale.',
+    'ORARIO ESPLICITO: estrai HH:mm in exactTime se indicato.',
+    'In WIP/coach: se mancano i grammi ma c\'è un vincolo calorico, proponi tu la porzione calcolata.',
+    'STRATEGIA MACROCICLICA: leggi [DAILY_CALORIE_STRATEGY].',
+    'HARD CONSTRAINT — VINCOLO MATEMATICO: totals.kcal di ogni mealProposal ≤ remaining.kcal se remaining.kcal > 0.',
+    'HARD CONSTRAINT — SCALING OBBLIGATORIO: per rientrare, SCALA I GRAMMI.',
+    'INTENTO ASK_MEAL_COMPLETION: solo ingredienti integrativi utili.',
+    'INTENTO ASK_DAY_REVIEW / EVALUATE_MEAL_DRAFT: solo adviceMessage (niente mealProposals).',
+    'INTENTO FIX_MEAL_DRAFT: UNA mealProposal con grams scalati.',
+    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM: 2-3 mealProposals sostitutive.',
+    'INTENTO UPDATE_LOGGED_MEAL: UNA mealProposal con operations[] + resultingItems[].',
+    'INTENTO CONSULTANT_MEAL: 3 opzioni con anchorFood obbligatorio.',
+    'INTENTO WIP_MEAL_BUILD — leggi [MEAL_WIP].subIntent:',
+    '  QUERY: adviceMessage empatico + ricalcolo; suggestions=[] mealProposals=[]. NON chiudere.',
+    '  UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100). mealProposals=[].',
+    '  CONFIRM: mealProposals riepilogo finale; suggestions=[].',
+    'HARD CONSTRAINT WIP: se maxCalories è valorizzato, ogni suggestion.weight → calories ≤ residualKcal.',
+    'HARD CONSTRAINT UPDATE_LOGGED_MEAL — resultingItems/items mai vuoti.',
+    'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',
     'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
-    'REGOLA SMART DEFAULTS: tipo pasto/orario da [CURRENT_SYSTEM_TIME] se mancanti — NON chiedere all utente.',
+    'REGOLA SMART DEFAULTS: mealType/orario da [CURRENT_SYSTEM_TIME] se mancanti.',
   ].join(' ');
 }
 
@@ -2013,6 +2072,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const wipMealJson = JSON.stringify(wipMealProjection, null, 0);
   const residualAfterWipMeal = ctx.residualBudgetAfterWipMeal ?? null;
   const residualWipJson = JSON.stringify(residualAfterWipMeal, null, 0);
+  const mealWipState = ctx.mealWip ?? null;
+  const mealWipJson = JSON.stringify(mealWipState, null, 0);
   const draftTotalKcal = ctx.draftTotalKcal ?? null;
   const budgetOverflowAmount = ctx.budgetOverflowAmount ?? null;
   const intent = String(ctx.intent || '').trim().toUpperCase();
@@ -2070,8 +2131,9 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     existingMealNode ? `[EXISTING_MEAL_NODE: ${existingMealJson}]` : '',
     todayDiaryIndex.length > 0 ? `[TODAY_DIARY_INDEX: ${todayDiaryJson}]` : '',
     consultantMealRequest ? `[CONSULTANT_MEAL_REQUEST: ${consultantMealJson}]` : '',
+    mealWipState ? `[MEAL_WIP: ${mealWipJson}]` : '',
     wipMealProjection ? `[WIP_MEAL_ITEMS: ${wipMealJson}]` : '',
-    wipMealProjection ? `[RESIDUAL_BUDGET_AFTER_WIP_MEAL: ${residualWipJson}]` : '',
+    (wipMealProjection || mealWipState) ? `[RESIDUAL_BUDGET_AFTER_WIP_MEAL: ${residualWipJson}]` : '',
     mealDraftProjection ? `[MEAL_DRAFT_PROJECTION: ${mealDraftJson}]` : '',
     mealDraftProjection ? `[DRAFT_TOTAL_KCAL: ${draftTotalKcal}]` : '',
     mealDraftProjection ? `[BUDGET_OVERFLOW_AMOUNT: ${budgetOverflowAmount}]` : '',
@@ -2079,14 +2141,14 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     ctx.dailyTotals || ctx.DAILY_TOTALS ? `[DAILY_TOTALS: ${dailyTotalsJson}]` : '',
     ctx.dailyTargets || ctx.DAILY_TARGETS ? `[DAILY_TARGETS: ${dailyTargetsJson}]` : '',
     `[EVENING_STRESS_CONTEXT: ${eveningJson}]`,
-    `Opzioni DB locale (porzione ${STANDARD_PORTION_G}g, solo se serve risolvere nomi): ${candidateLines}.`,
+    `Opzioni DB locale (densità per 100g, solo per risolvere nomi — NON usare 100g come default se c'è un vincolo WIP): ${candidateLines}.`,
     '',
     'SOLVER MODE — EQUAZIONI MACRO:',
     '1) Leggi [DOGMATIC_RECEIPT]: remaining = target − consumato (kcal, pro, carbo, fat).',
     '2) SCENARIO APERTO (solo ingredienti, senza grams): calcola grams per saturare remaining; popola mealProposals.items.',
     '3) SCENARIO CHIUSO (grams precisi): verifica sforamento vs remaining; se sfora, correggi grams in mealProposals e spiega il delta numerico in adviceMessage.',
     '4) NON inventare ingredienti non proposti dall utente (salvo habits/fallback per richieste generiche, o accompagnamenti CONSULTANT_MEAL).',
-    '5) adviceMessage analitico e diretto, senza motivazionale, senza semafori, senza CTA "Quale opzione preferisci?".',
+    '5) adviceMessage: coach empatico con emoji (✅ ⚠️ 💡 + emoji alimento); cita residui/sforamenti in g o kcal.',
     'ORARIO ESPLICITO: se la richiesta contiene un orario (es. "ore 14.45"), imposta exactTime in HH:mm.',
     '',
     dailyCalorieStrategy.isRestDay
@@ -2110,7 +2172,7 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
       ? [
         'DEBRIEFING SERALE ATTIVO (ASK_DAY_REVIEW).',
         'NON generare mealProposals. Solo adviceMessage analitico su [DAILY_TOTALS] vs [DOGMATIC_RECEIPT]/[DAILY_TARGETS].',
-        'Cita scostamenti in kcal/P/C/F. Una azione concreta per domani. Nessun tono motivazionale.',
+        'Cita scostamenti in kcal/P/C/F. Una azione concreta per domani.',
       ].join('\n')
       : '',
     intent === 'EVALUATE_MEAL_DRAFT'
@@ -2144,13 +2206,18 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
       ? [
         'CONSULTANT MODE ATTIVA (CONSULTANT_MEAL).',
         '3 mealProposals con anchorFood obbligatorio; grams calibrati su [DOGMATIC_RECEIPT].remaining.',
-        'adviceMessage analitico: residuo macro + sintesi delle 3 soluzioni numeriche.',
+        'adviceMessage coach: residuo macro + sintesi delle 3 soluzioni con emoji.',
       ].join('\n')
       : '',
     intent === 'WIP_MEAL_BUILD'
       ? [
-        'WIP MEAL BUILDER ATTIVO (WIP_MEAL_BUILD).',
-        'NON mealProposals. suggestions[] con weight calibrato su remaining / [RESIDUAL_BUDGET_AFTER_WIP_MEAL].',
+        '🍽️ COACH WIP ATTIVO (WIP_MEAL_BUILD) — STATE MACHINE.',
+        `Sub-intent corrente: ${String(ctx.wipSubIntent || mealWipState?.subIntent || 'UPDATE').toUpperCase()}.`,
+        'QUERY: adviceMessage empatico + ricalcolo macros; suggestions=[] mealProposals=[]. NON finalizzare.',
+        'UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100) su [MEAL_WIP]/[RESIDUAL_BUDGET_AFTER_WIP_MEAL]. mealProposals=[].',
+        'CONFIRM: mealProposals con riepilogo finale per salvataggio; suggestions=[].',
+        'Esempio tono: «Puoi aggiungere 🌰 6g di noci per restare nelle 100 kcal ✅».',
+        'VIETATO grammature statiche non calcolate.',
       ].join('\n')
       : '',
     '',
@@ -2161,11 +2228,11 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
       ].join('\n')
       : '',
     '',
-    'OUTPUT JSON richiesto (alimenta MealProposalCards):',
-    '- adviceMessage: analitico, diretto, italiano, max 5 frasi; cita sforamenti/residui in g o kcal; nessun semaforo/CTA motivazionale.',
+    'OUTPUT JSON richiesto:',
+    '- adviceMessage: coach italiano con emoji, max ~6 frasi; cita sforamenti/residui in g o kcal.',
     '- suggestedAction: { foodName, grams, mealType } | null — solo singolo alimento rapido.',
     '- mealProposals: proposte con items[].foodName + items[].grams OTTIMIZZATI (grams > 0) e totals coerenti.',
-    'I grams in items[] sono la Source of Truth per le card: non lasciare le correzioni solo nel testo.',
+    'I grams in items[] sono la Source of Truth per le card.',
   ].join('\n');
 }
 

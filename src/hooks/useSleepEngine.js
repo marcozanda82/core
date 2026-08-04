@@ -1,14 +1,10 @@
 /**
  * Motore fisiologico del sonno — estrae modificatori metabolici dal dailyLog.
- * Input: nodi `type === 'sleep'`. Output: score di recupero e penalità glicemica/cortisolo.
+ * Input: nodi `type === 'sleep'` (+ eventuali `type === 'nap'` nello stesso array).
+ * Output: score di recupero e penalità glicemica/cortisolo.
  *
- * Campi sleep supportati in KentuOS (vedi handleSaveSleepModal / commitLogSleepCommand / normalizeSleepEntry):
- * - Identità: type, id
- * - Durata (ore decimali, alias): hours, duration, sleepHours, sleepDuration
- * - Finestra temporale (ore 0–24): sleepStart, bedtime, sleepEnd, wakeTime
- * - Fasi (minuti): deepMin, deepMinutes, deep | remMin, remMinutes, rem
- * - Qualità: quality, sleepQuality, rating (testo) | qualityScore, score, scoreTotal (numero)
- * - Wearable: hr
+ * Aggregazione: `totalSleepHours` = somma di TUTTI i blocchi (notte + pisolini).
+ * Qualità / mainNightSleep: solo il blocco più lungo (≥ 3h, o il più lungo in fallback).
  */
 import { useMemo } from 'react';
 
@@ -18,29 +14,60 @@ export const NIGHT_SLEEP_MIN_HOURS = 3;
 const OPTIMAL_SLEEP_HOURS = 8;
 const MIN_RECOVERY_HOURS = 5;
 
-function sleepHoursFromEntry(entry) {
+/** Ore decimali da entry `type === 'sleep'` | `nap`. */
+export function sleepHoursFromEntry(entry) {
   const hours = Number(
     entry?.hours ?? entry?.duration ?? entry?.sleepHours ?? entry?.sleepDuration,
   );
   return Number.isFinite(hours) && hours > 0 ? hours : 0;
 }
 
-function extractSleepEntries(dailyLog) {
-  return (Array.isArray(dailyLog) ? dailyLog : []).filter((entry) => entry?.type === 'sleep');
+/**
+ * Tutti i blocchi riposo: sleep + nap (pisolino Fast Charge / timeline).
+ * I nap sono normalizzati a shape sleep per la somma ore (`isNap: true`).
+ */
+export function extractSleepEntries(dailyLog) {
+  const list = Array.isArray(dailyLog) ? dailyLog : [];
+  const sleeps = list.filter((entry) => entry?.type === 'sleep');
+  const naps = list
+    .filter((entry) => entry?.type === 'nap')
+    .map((nap) => {
+      const hours = sleepHoursFromEntry(nap);
+      return {
+        type: 'sleep',
+        id: nap.id != null ? nap.id : `nap_${nap.time ?? 'x'}`,
+        hours,
+        duration: hours,
+        sleepHours: hours,
+        time: nap.time,
+        isNap: true,
+        quality: nap.quality,
+        sleepQuality: nap.sleepQuality,
+      };
+    })
+    .filter((n) => n.hours > 0);
+  return [...sleeps, ...naps];
 }
 
-function pickMainNightSleepEntry(sleepEntries) {
+/**
+ * Notte principale — per qualità / wake time.
+ * Preferisce il blocco ≥ 3h più lungo (esclude i soli nap se esiste una notte).
+ */
+export function pickMainNightSleepEntry(sleepEntries) {
   if (!sleepEntries.length) return null;
+  const nonNap = sleepEntries.filter((e) => e?.isNap !== true);
+  const pool = nonNap.length > 0 ? nonNap : sleepEntries;
+
   let best = null;
   let bestHours = -1;
-  sleepEntries.forEach((entry) => {
+  pool.forEach((entry) => {
     const hours = sleepHoursFromEntry(entry);
     if (hours < NIGHT_SLEEP_MIN_HOURS || hours <= bestHours) return;
     bestHours = hours;
     best = entry;
   });
   if (best) return best;
-  return sleepEntries.reduce((acc, entry) => {
+  return pool.reduce((acc, entry) => {
     const hours = sleepHoursFromEntry(entry);
     if (hours <= 0) return acc;
     if (!acc || hours > sleepHoursFromEntry(acc)) return entry;
@@ -48,10 +75,6 @@ function pickMainNightSleepEntry(sleepEntries) {
   }, null);
 }
 
-/**
- * Punteggio qualità 0–100 da etichetta testuale o numero esplicito.
- * Allineato a resolveLastNightSleepQuality in metabolicStateEngine.
- */
 function resolveQualityScore(entry, hours) {
   const numericQuality = Number(
     entry?.qualityScore ?? entry?.score ?? entry?.scoreTotal ?? entry?.quality,
@@ -84,9 +107,6 @@ function resolveQualityScore(entry, hours) {
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
-/**
- * Score da durata pura: 8 h → 100, < 5 h → 40 (interpolazione lineare).
- */
 function durationRecoveryScore(hours) {
   if (!Number.isFinite(hours) || hours <= 0) return 0;
   if (hours >= OPTIMAL_SLEEP_HOURS) return 100;
@@ -95,15 +115,34 @@ function durationRecoveryScore(hours) {
   return Math.round(40 + ratio * 60);
 }
 
-/**
- * Penalità metabolica 1.0–1.3: sonno scarso alza resistenza insulinica / cortisolo simulato.
- */
 function computeMetabolicPenalty(recoveryScore, totalSleepHours) {
   if (totalSleepHours <= 0) return 1.15;
   const deficitFactor = Math.max(0, (OPTIMAL_SLEEP_HOURS - totalSleepHours) / OPTIMAL_SLEEP_HOURS);
   const qualityFactor = Math.max(0, (100 - recoveryScore) / 100);
   const raw = 1 + deficitFactor * 0.18 + qualityFactor * 0.12;
   return Math.round(Math.max(1, Math.min(1.3, raw)) * 1000) / 1000;
+}
+
+/**
+ * Unisce dailyLog + pisolini Fast Charge (`manualNodes` type nap) per lo snapshot.
+ * Dedup per id per evitare doppi conteggi se un nap è già nel log.
+ */
+export function mergeSleepEngineInputLog(dayLog, manualNodesOrExtras = []) {
+  const base = Array.isArray(dayLog) ? dayLog : [];
+  const extras = (Array.isArray(manualNodesOrExtras) ? manualNodesOrExtras : [])
+    .filter((n) => n && n.type === 'nap');
+  if (extras.length === 0) return base;
+  const seen = new Set(
+    base.map((e) => (e?.id != null ? String(e.id) : null)).filter(Boolean),
+  );
+  const toAdd = extras.filter((n) => {
+    if (n?.id == null) return true;
+    const id = String(n.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return toAdd.length === 0 ? base : [...base, ...toAdd];
 }
 
 /**
@@ -121,43 +160,38 @@ function computeMetabolicPenalty(recoveryScore, totalSleepHours) {
 export function computeSleepEngineSnapshot(dailyLog) {
   const sleepEntries = extractSleepEntries(dailyLog);
   const mainNightSleep = pickMainNightSleepEntry(sleepEntries);
-  const totalSleepHours = sleepEntries.reduce(
-    (sum, entry) => sum + sleepHoursFromEntry(entry),
-    0,
-  );
 
-  const referenceHours = mainNightSleep
-    ? sleepHoursFromEntry(mainNightSleep)
-    : totalSleepHours;
+  // Totale aggregato: notte + tutti i pisolini / blocchi secondari
+  const totalSleepHours = Math.round(
+    sleepEntries.reduce((sum, entry) => sum + sleepHoursFromEntry(entry), 0) * 100,
+  ) / 100;
 
-  const durationScore = durationRecoveryScore(referenceHours);
+  const mainNightHours = mainNightSleep ? sleepHoursFromEntry(mainNightSleep) : 0;
+
+  // Durata → recovery sul TOTALE (un pisolino aggiorna l'Arco)
+  const durationScore = durationRecoveryScore(totalSleepHours);
+  // Qualità → solo notte principale
   const qualityScore = mainNightSleep
-    ? resolveQualityScore(mainNightSleep, referenceHours)
-    : (referenceHours > 0 ? durationScore : 0);
+    ? resolveQualityScore(mainNightSleep, mainNightHours)
+    : (totalSleepHours > 0 ? durationScore : 0);
 
-  const recoveryScore = referenceHours > 0
+  const recoveryScore = totalSleepHours > 0
     ? Math.round(durationScore * 0.55 + qualityScore * 0.45)
     : 0;
-
-  const recoveryEfficiency = recoveryScore / 100;
-  const metabolicPenalty = computeMetabolicPenalty(recoveryScore, referenceHours || totalSleepHours);
 
   return {
     hasSleepData: sleepEntries.length > 0 && totalSleepHours > 0,
     sleepEntries,
     mainNightSleep,
-    totalSleepHours: Math.round(totalSleepHours * 100) / 100,
+    totalSleepHours,
     recoveryScore,
-    recoveryEfficiency,
-    metabolicPenalty,
+    recoveryEfficiency: recoveryScore / 100,
+    metabolicPenalty: computeMetabolicPenalty(recoveryScore, totalSleepHours),
   };
 }
 
 /**
- * Hook — modificatori fisiologici del sonno per l'Arco Energetico e i motori metabolici.
- *
  * @param {Array<Record<string, unknown>> | null | undefined} dailyLog
- * @returns {ReturnType<typeof computeSleepEngineSnapshot>}
  */
 export default function useSleepEngine(dailyLog) {
   return useMemo(() => computeSleepEngineSnapshot(dailyLog), [dailyLog]);

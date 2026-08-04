@@ -8,6 +8,13 @@ import React, {
 } from 'react';
 
 import {
+  createEmptyMealWipConstraints,
+  hasMealWipConstraints,
+  mergeMealWipConstraints,
+  parseMealConstraintsFromText,
+  serializeMealWipForPrompt,
+} from '../mealWipEngine.js';
+import {
   computeWipMealTotals,
   declarationItemToWipAlimento,
   suggestionToWipAlimento,
@@ -22,6 +29,7 @@ function useWipMealState() {
   const [wipMealItems, setWipMealItems] = useState([]);
   const [mealType, setMealType] = useState(DEFAULT_MEAL_TYPE);
   const [mealTime, setMealTime] = useState(null);
+  const [constraints, setConstraints] = useState(() => createEmptyMealWipConstraints());
 
   const addAlimentoToWip = useCallback((alimento) => {
     const fromSuggestion = alimento?.name && !alimento?.foodName
@@ -77,6 +85,7 @@ function useWipMealState() {
     setWipMealItems([]);
     setMealType(DEFAULT_MEAL_TYPE);
     setMealTime(null);
+    setConstraints(createEmptyMealWipConstraints());
   }, []);
 
   const setWipMealType = useCallback((nextMealType) => {
@@ -85,10 +94,26 @@ function useWipMealState() {
     setMealType(normalized);
   }, []);
 
+  const mergeConstraints = useCallback((nextConstraints) => {
+    setConstraints((prev) => mergeMealWipConstraints(prev, nextConstraints));
+  }, []);
+
+  const mergeConstraintsFromText = useCallback((userText) => {
+    const parsed = parseMealConstraintsFromText(userText);
+    if (!hasMealWipConstraints(parsed)) return parsed;
+    setConstraints((prev) => mergeMealWipConstraints(prev, parsed));
+    return parsed;
+  }, []);
+
   const seedFromDeclaration = useCallback((wipSeed) => {
-    if (!wipSeed || !Array.isArray(wipSeed.items) || wipSeed.items.length === 0) return;
-    addAlimentiToWip(wipSeed.items);
+    if (!wipSeed || typeof wipSeed !== 'object') return;
+    if (Array.isArray(wipSeed.items) && wipSeed.items.length > 0) {
+      addAlimentiToWip(wipSeed.items);
+    }
     if (wipSeed.mealType) setWipMealType(wipSeed.mealType);
+    if (wipSeed.constraints) {
+      setConstraints((prev) => mergeMealWipConstraints(prev, wipSeed.constraints));
+    }
   }, [addAlimentiToWip, setWipMealType]);
 
   const wipTotals = useMemo(
@@ -96,21 +121,33 @@ function useWipMealState() {
     [wipMealItems],
   );
 
+  const mealWipActive = wipMealItems.length > 0 || hasMealWipConstraints(constraints);
+
   const getWipMealSnapshot = useCallback(() => ({
     wipMealItems,
     mealType,
     mealTime,
     wipTotals,
-  }), [wipMealItems, mealType, mealTime, wipTotals]);
+    constraints,
+    mealWipActive,
+    mealWip: serializeMealWipForPrompt({
+      constraints,
+      items: wipMealItems,
+      mealType,
+      totals: wipTotals,
+    }),
+  }), [wipMealItems, mealType, mealTime, wipTotals, constraints, mealWipActive]);
 
   useEffect(() => {
     registerWipMealBridge({
       getWipMealSnapshot,
       seedFromDeclaration,
       addAlimentoToWip,
+      mergeConstraintsFromText,
+      clearWipMeal,
     });
     return () => registerWipMealBridge(null);
-  }, [getWipMealSnapshot, seedFromDeclaration, addAlimentoToWip]);
+  }, [getWipMealSnapshot, seedFromDeclaration, addAlimentoToWip, mergeConstraintsFromText, clearWipMeal]);
 
   return useMemo(
     () => ({
@@ -118,12 +155,16 @@ function useWipMealState() {
       wipTotals,
       mealType,
       mealTime,
+      constraints,
+      mealWipActive,
       addAlimentoToWip,
       addAlimentiToWip,
       removeAlimentoFromWip,
       clearWipMeal,
       setWipMealType,
       setMealTime,
+      mergeConstraints,
+      mergeConstraintsFromText,
       getWipMealSnapshot,
       seedFromDeclaration,
     }),
@@ -132,11 +173,15 @@ function useWipMealState() {
       wipTotals,
       mealType,
       mealTime,
+      constraints,
+      mealWipActive,
       addAlimentoToWip,
       addAlimentiToWip,
       removeAlimentoFromWip,
       clearWipMeal,
       setWipMealType,
+      mergeConstraints,
+      mergeConstraintsFromText,
       getWipMealSnapshot,
       seedFromDeclaration,
     ],

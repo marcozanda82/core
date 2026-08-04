@@ -116,6 +116,17 @@ import {
   buildKentuGlobalStateFromAppState,
 } from './context/kentuGlobalState.js';
 import { handleLocalQuery } from './context/localReceptionist.js';
+import {
+  classifyMealWipSubIntent,
+  hasMealWipConstraints,
+  isMealWipSessionStart,
+  MEAL_WIP_SUB_INTENTS,
+  MEAL_WIP_SYSTEM_PROMPT,
+  parseMealConstraintsFromText,
+  residualCaloriesFromWip,
+  scaleSuggestionToResidualCalories,
+  serializeMealWipForPrompt,
+} from '../wipMealBuilder/mealWipEngine.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -525,6 +536,22 @@ export class CommandTerminalController {
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
 
+    const wipItems = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
+    const wipMeta = {
+      constraints: options?.wipConstraints || null,
+      mealWipActive: Boolean(options?.mealWipActive)
+        || wipItems.length > 0
+        || hasMealWipConstraints(options?.wipConstraints),
+    };
+
+    // Meal WIP ha priorità su ADD_FOOD: domande/aggiunte non devono chiudere il pasto.
+    if (
+      isWipMealBuildIntent(userText, options?.chatHistory || [], wipItems, wipMeta)
+      || isMealWipSessionStart(userText)
+    ) {
+      return 'WIP_MEAL_BUILD';
+    }
+
     // Merge/update verso slot esistente PRIMA della registrazione (evita ghost pranzo_2).
     if (
       isMergeIntoExistingMealIntent(userText)
@@ -554,13 +581,7 @@ export class CommandTerminalController {
     if (isFixMealDraftIntent(userText, options?.chatHistory || [])) return 'FIX_MEAL_DRAFT';
     if (isMealDraftEvaluationIntent(userText)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(userText)) return 'ASK_MEAL_COMPLETION';
-    // UPDATE già valutato sopra; non ripetere qui.
     if (isConsultantMealIntent(userText, options?.chatHistory || [])) return 'CONSULTANT_MEAL';
-    if (isWipMealBuildIntent(
-      userText,
-      options?.chatHistory || [],
-      options?.wipMealItems || [],
-    )) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(userText, options?.chatHistory || [])) return 'ASK_MEAL_ADVICE';
 
     const detected = this.composer.detectIntent(userText, {
@@ -1465,9 +1486,35 @@ export class CommandTerminalController {
       ? parseConsultantMealIntent(rawQuery)
       : null;
     const wipMealSnapshot = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
-    const isWipMealBuild = isWipMealBuildIntent(rawQuery, chatHistory, wipMealSnapshot)
-      || String(options?.forcedIntent || '').toUpperCase() === 'WIP_MEAL_BUILD';
-    const wipMealDeclaration = isWipMealBuild ? parseWipMealDeclaration(rawQuery) : null;
+    const wipConstraintsIncoming = options?.wipConstraints || null;
+    const parsedConstraints = parseMealConstraintsFromText(rawQuery);
+    const wipConstraints = hasMealWipConstraints(parsedConstraints)
+      ? {
+          ...(wipConstraintsIncoming || {}),
+          ...Object.fromEntries(
+            Object.entries(parsedConstraints).filter(([, v]) => v != null),
+          ),
+        }
+      : (wipConstraintsIncoming || null);
+    const mealWipActive = Boolean(options?.mealWipActive)
+      || wipMealSnapshot.length > 0
+      || hasMealWipConstraints(wipConstraints)
+      || isMealWipSessionStart(rawQuery);
+    const wipSubIntent = classifyMealWipSubIntent(rawQuery, {
+      hasActiveWip: mealWipActive,
+      chatHistory,
+    });
+    const isWipMealBuild = isWipMealBuildIntent(
+      rawQuery,
+      chatHistory,
+      wipMealSnapshot,
+      { constraints: wipConstraints, mealWipActive },
+    )
+      || String(options?.forcedIntent || '').toUpperCase() === 'WIP_MEAL_BUILD'
+      || mealWipActive;
+    const wipMealDeclaration = isWipMealBuild && wipSubIntent !== MEAL_WIP_SUB_INTENTS.QUERY
+      ? parseWipMealDeclaration(rawQuery)
+      : null;
     const mergedWipMealItems = (() => {
       const base = [...wipMealSnapshot];
       if (!wipMealDeclaration?.items?.length) return base;
@@ -1655,6 +1702,16 @@ export class CommandTerminalController {
         wipMealItems: mergedWipMealItems,
         wipMealDeclaration,
         wipMealMealType: wipMealDeclaration?.mealType || options?.wipMealMealType || null,
+        wipConstraints,
+        wipSubIntent: isWipMealBuild ? wipSubIntent : null,
+        mealWip: isWipMealBuild
+          ? serializeMealWipForPrompt({
+              constraints: wipConstraints,
+              items: mergedWipMealItems,
+              mealType: wipMealDeclaration?.mealType || options?.wipMealMealType || null,
+              subIntent: wipSubIntent,
+            })
+          : null,
         removedFoodQuery: isSubstituteDraft
           ? parseRemovedFoodQueryFromSubstituteText(rawQuery)
           : null,
@@ -1682,13 +1739,14 @@ export class CommandTerminalController {
     }
 
     const extraSystem = String(options?.systemInstructionExtra || '').trim();
+    const wipSystemExtra = isWipMealBuild ? MEAL_WIP_SYSTEM_PROMPT : '';
     const baseConsultantSystem = appendKentuGlobalStateToSystemInstruction(
       generateConsultantSystemInstruction(),
       globalStateText,
     );
-    const consultantSystemInstruction = extraSystem
-      ? `${baseConsultantSystem}\n\n${extraSystem}`
-      : baseConsultantSystem;
+    const consultantSystemInstruction = [baseConsultantSystem, wipSystemExtra, extraSystem]
+      .filter(Boolean)
+      .join('\n\n');
 
     try {
       const { adviceMessage, suggestedAction: rawAction, mealProposals: rawProposals, suggestions: rawSuggestions, model } =
@@ -1711,8 +1769,24 @@ export class CommandTerminalController {
       } else if (isConsultantMeal) {
         mealProposals = ensureMealProposalsForConsultantMeal(mealProposals, adviceContext);
       } else if (isWipMealBuild) {
-        mealProposals = [];
-        wipSuggestions = sanitizeWipSuggestions(rawSuggestions, adviceContext);
+        // QUERY: niente chips / niente chiusura pasto — solo risposta discorsiva
+        // CONFIRM: riepilogo in mealProposals per salvataggio
+        // UPDATE: chips scalate sul residuo calorico WIP
+        if (wipSubIntent === MEAL_WIP_SUB_INTENTS.CONFIRM) {
+          mealProposals = sanitizeMealProposals(rawProposals, adviceContext);
+          wipSuggestions = [];
+        } else if (wipSubIntent === MEAL_WIP_SUB_INTENTS.QUERY) {
+          mealProposals = [];
+          wipSuggestions = [];
+        } else {
+          mealProposals = [];
+          const residual = residualCaloriesFromWip(
+            wipConstraints,
+            adviceContext?.wipMealProjection?.totals || { kcal: 0 },
+          );
+          wipSuggestions = sanitizeWipSuggestions(rawSuggestions, adviceContext)
+            .map((chip) => scaleSuggestionToResidualCalories(chip, residual));
+        }
       } else if (isGeneric || adviceContext.isGenericMealSuggestion) {
         mealProposals = ensureMealProposalsForAdvice(mealProposals, adviceContext);
       }
@@ -1774,7 +1848,7 @@ export class CommandTerminalController {
           : suggestedAction,
         mealProposals,
         wipSuggestions,
-        wipSeed: isWipMealBuild && wipMealDeclaration?.items?.length
+        wipSeed: isWipMealBuild && wipSubIntent !== MEAL_WIP_SUB_INTENTS.QUERY
           ? (() => {
               const projectionItems = Array.isArray(adviceContext?.wipMealProjection?.items)
                 ? adviceContext.wipMealProjection.items
@@ -1786,28 +1860,54 @@ export class CommandTerminalController {
                   return `${name}_${grams}`;
                 }),
               );
-              const items = projectionItems
-                .map((item) => ({
+              const snapshotKcal = wipMealSnapshot.reduce(
+                (sum, entry) => sum + (Number(entry?.kcal ?? entry?.cal) || 0),
+                0,
+              );
+              let remainingBudget = residualCaloriesFromWip(wipConstraints, { kcal: snapshotKcal });
+
+              const items = [];
+              for (const item of projectionItems) {
+                const key = `${String(item.foodName || '').trim().toLowerCase()}_${Math.round(Number(item.grams) || 0)}`;
+                if (!item.foodName || !(item.grams > 0) || snapshotKeys.has(key)) continue;
+                let grams = Math.round(Number(item.grams) || 0);
+                let kcal = Math.round(Number(item.kcal) || 0);
+                if (remainingBudget != null && kcal > remainingBudget && grams > 0 && kcal > 0) {
+                  const scaled = scaleSuggestionToResidualCalories(
+                    { name: item.foodName, weight: grams, calories: kcal },
+                    remainingBudget,
+                  );
+                  grams = Math.round(Number(scaled.weight) || grams);
+                  kcal = Math.round(Number(scaled.calories) || 0);
+                }
+                if (remainingBudget != null) remainingBudget = Math.max(0, remainingBudget - kcal);
+                items.push({
                   foodName: item.foodName,
-                  grams: item.grams,
-                  kcal: item.kcal,
+                  grams,
+                  kcal,
                   prot: item.pro,
                   carbo: item.carbo,
                   fat: item.fat,
-                }))
-                .filter((item) => {
-                  const key = `${String(item.foodName || '').trim().toLowerCase()}_${item.grams}`;
-                  return item.foodName && item.grams > 0 && !snapshotKeys.has(key);
                 });
-              return items.length > 0
-                ? {
-                    items,
-                    mealType: wipMealDeclaration.mealType || null,
-                    exactTime: wipMealDeclaration.exactTime || null,
-                  }
-                : null;
+              }
+              const seedConstraints = hasMealWipConstraints(wipConstraints) ? wipConstraints : null;
+              if (items.length === 0 && !seedConstraints) return null;
+              return {
+                items,
+                mealType: wipMealDeclaration?.mealType || options?.wipMealMealType || null,
+                exactTime: wipMealDeclaration?.exactTime || null,
+                constraints: seedConstraints,
+                subIntent: wipSubIntent,
+              };
             })()
-          : null,
+          : (isWipMealBuild && hasMealWipConstraints(wipConstraints)
+            ? {
+                items: [],
+                mealType: options?.wipMealMealType || null,
+                constraints: wipConstraints,
+                subIntent: wipSubIntent,
+              }
+            : null),
       };
     } catch (error) {
       if (isAbortError(error)) throw error;

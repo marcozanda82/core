@@ -96,7 +96,10 @@ export class ContextComposer {
     if (isMealDraftEvaluationIntent(text)) return 'EVALUATE_MEAL_DRAFT';
     if (isMealCompletionIntent(text)) return 'ASK_MEAL_COMPLETION';
     if (isConsultantMealIntent(text, chatHistory)) return 'CONSULTANT_MEAL';
-    if (isWipMealBuildIntent(text, chatHistory)) return 'WIP_MEAL_BUILD';
+    if (isWipMealBuildIntent(text, chatHistory, currentState?.wipMealItems || [], {
+      constraints: currentState?.wipConstraints || null,
+      mealWipActive: Boolean(currentState?.mealWipActive),
+    })) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
     return 'UNKNOWN';
   }
@@ -302,6 +305,11 @@ export class ContextComposer {
           dailyBudgetRemaining,
           WIP_MEAL_ITEMS: wipMealItems,
           WIP_MEAL_DECLARATION: wipDeclaration,
+          MEAL_WIP: {
+            constraints: currentState?.wipConstraints || null,
+            active: Boolean(currentState?.mealWipActive) || wipMealItems.length > 0,
+            mealType: currentState?.wipMealMealType || null,
+          },
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',
