@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -138,6 +138,7 @@ export default function MetabolicTrendChart({
       : resolveGhostDailyDeltaFromGoal(normalizeGhostSimGoal(committedGoal)),
   );
   const [simulatedDeltaKcal, setSimulatedDeltaKcal] = useState(committedDelta);
+  const simulatedDeltaRef = useRef(committedDelta);
   const [isApplying, setIsApplying] = useState(false);
   const [showRientroPanel, setShowRientroPanel] = useState(false);
   const [rientroDays, setRientroDays] = useState(3);
@@ -146,8 +147,14 @@ export default function MetabolicTrendChart({
 
   useEffect(() => {
     setSimulatedDeltaKcal(committedDelta);
+    simulatedDeltaRef.current = committedDelta;
   }, [committedDelta]);
 
+  const setSimulatedDelta = (raw) => {
+    const next = clampGhostSimDelta(raw);
+    simulatedDeltaRef.current = next;
+    setSimulatedDeltaKcal(next);
+  };
   const series = useMemo(
     () => buildMetabolicCompensationSeries({
       fullHistory,
@@ -188,17 +195,28 @@ export default function MetabolicTrendChart({
   };
 
   const handleReset = () => {
-    setSimulatedDeltaKcal(committedDelta);
+    setSimulatedDelta(committedDelta);
   };
 
   const handleApply = async () => {
     if (!isDirty || typeof onApplyGoal !== 'function' || isApplying) return;
     setIsApplying(true);
     try {
-      await onApplyGoal(simulatedDeltaKcal);
+      await onApplyGoal(simulatedDeltaRef.current);
     } finally {
       setIsApplying(false);
     }
+  };
+
+  /** Persistenza on-release: una sola scrittura Firebase/LS a fine drag. */
+  const commitSimulatedDelta = () => {
+    if (typeof onApplyGoal !== 'function' || isApplying) return;
+    const next = clampGhostSimDelta(simulatedDeltaRef.current);
+    if (next === committedDelta) return;
+    setIsApplying(true);
+    Promise.resolve(onApplyGoal(next))
+      .catch((err) => console.warn('[Ghost What-If] persist on-release failed', err))
+      .finally(() => setIsApplying(false));
   };
 
   const handleConfirmCompensation = async () => {
@@ -266,66 +284,6 @@ export default function MetabolicTrendChart({
           {adherenceOk ? 'In fascia' : 'Fuori fascia'}
         </span>
       </div>
-
-      {/* Cursore analogico continuo Δ kcal/giorno */}
-      <div className="ghost-sim-slider mb-2.5" role="group" aria-label="Delta calorico giornaliero simulato">
-        <div className="mb-1 flex items-baseline justify-between gap-2 px-0.5">
-          <p className="min-w-0">
-            <span className="font-mono text-sm font-semibold tabular-nums text-cyan-200">
-              {deltaDisplay}
-            </span>
-            <span className="ml-1 text-[10px] text-slate-500">kcal/g</span>
-            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-              {smartLabel}
-            </span>
-          </p>
-          {isDirty ? (
-            <span className="shrink-0 text-[9px] text-amber-400/90">anteprima</span>
-          ) : null}
-        </div>
-        <input
-          type="range"
-          min={GHOST_SIM_DELTA_MIN}
-          max={GHOST_SIM_DELTA_MAX}
-          step={GHOST_SIM_DELTA_STEP}
-          value={simulatedDeltaKcal}
-          onChange={(e) => setSimulatedDeltaKcal(clampGhostSimDelta(e.target.value))}
-          aria-valuemin={GHOST_SIM_DELTA_MIN}
-          aria-valuemax={GHOST_SIM_DELTA_MAX}
-          aria-valuenow={simulatedDeltaKcal}
-          aria-valuetext={`${deltaDisplay} kcal/g · ${smartLabel}`}
-          className="ghost-sim-slider__input"
-        />
-        <div className="mt-0.5 flex justify-between px-0.5 font-mono text-[9px] text-slate-600">
-          <span>−1000</span>
-          <span>0</span>
-          <span>+1000</span>
-        </div>
-      </div>
-
-      {isDirty ? (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-950/25 px-2.5 py-2">
-          <p className="min-w-0 flex-1 text-[10px] leading-snug text-amber-100/90">
-            Delta simulato diverso da quello salvato. Conferma per aggiornare obiettivo e strategy.
-          </p>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={isApplying}
-            className="rounded-md border border-white/15 bg-slate-900/80 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300 hover:bg-slate-800"
-          >
-            Ripristina
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            disabled={isApplying || typeof onApplyGoal !== 'function'}
-            className="rounded-md border border-cyan-400/40 bg-cyan-500/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50"
-          >
-            {isApplying ? 'Applico…' : 'Applica obiettivo'}
-          </button>
-        </div>
-      ) : null}
 
       <div className="h-[180px] w-full min-w-0">
         <ResponsiveContainer width="100%" height="100%">
@@ -421,6 +379,80 @@ export default function MetabolicTrendChart({
           </span>
         ) : null}
       </div>
+
+      {/* Slider sotto il grafico: la mano non copre le curve su mobile */}
+      <div className="ghost-sim-slider mt-3" role="group" aria-label="Delta calorico giornaliero simulato">
+        <div className="mb-1 flex items-baseline justify-between gap-2 px-0.5">
+          <p className="min-w-0">
+            <span className="font-mono text-sm font-semibold tabular-nums text-cyan-200">
+              {deltaDisplay}
+            </span>
+            <span className="ml-1 text-[10px] text-slate-500">kcal/g</span>
+            <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+              {smartLabel}
+            </span>
+          </p>
+          {isDirty ? (
+            <span className="shrink-0 text-[9px] text-amber-400/90">
+              {isApplying ? 'salvo…' : 'rilascia per salvare'}
+            </span>
+          ) : (
+            <span className="shrink-0 text-[9px] text-emerald-500/80">salvato</span>
+          )}
+        </div>
+        <input
+          type="range"
+          min={GHOST_SIM_DELTA_MIN}
+          max={GHOST_SIM_DELTA_MAX}
+          step={GHOST_SIM_DELTA_STEP}
+          value={simulatedDeltaKcal}
+          onChange={(e) => setSimulatedDelta(e.target.value)}
+          onPointerUp={commitSimulatedDelta}
+          onMouseUp={commitSimulatedDelta}
+          onTouchEnd={commitSimulatedDelta}
+          onKeyUp={(e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
+              || e.key === 'ArrowUp' || e.key === 'ArrowDown'
+              || e.key === 'Home' || e.key === 'End') {
+              commitSimulatedDelta();
+            }
+          }}
+          aria-valuemin={GHOST_SIM_DELTA_MIN}
+          aria-valuemax={GHOST_SIM_DELTA_MAX}
+          aria-valuenow={simulatedDeltaKcal}
+          aria-valuetext={`${deltaDisplay} kcal/g · ${smartLabel}`}
+          className="ghost-sim-slider__input"
+        />
+        <div className="mt-0.5 flex justify-between px-0.5 font-mono text-[9px] text-slate-600">
+          <span>−1000</span>
+          <span>0</span>
+          <span>+1000</span>
+        </div>
+      </div>
+
+      {isDirty ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-950/25 px-2.5 py-2">
+          <p className="min-w-0 flex-1 text-[10px] leading-snug text-amber-100/90">
+            Anteprima non ancora salvata. Rilascia lo slider o conferma sotto.
+          </p>
+          <button
+            type="button"
+            onClick={handleReset}
+            disabled={isApplying}
+            className="rounded-md border border-white/15 bg-slate-900/80 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300 hover:bg-slate-800"
+          >
+            Ripristina
+          </button>
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={isApplying || typeof onApplyGoal !== 'function'}
+            className="rounded-md border border-cyan-400/40 bg-cyan-500/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50"
+          >
+            {isApplying ? 'Applico…' : 'Applica obiettivo'}
+          </button>
+        </div>
+      ) : null}
 
       {compensationStatus.isActive ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-950/25 px-2.5 py-2">

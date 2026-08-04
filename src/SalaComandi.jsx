@@ -102,6 +102,7 @@ import {
   getCognitiveMetForActivity,
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
+  resolveWorkoutMusclesForForm,
 } from './activityCatalog';
 import {
   createInitialWeeklyPlan,
@@ -1436,7 +1437,7 @@ export default function SalaComandi() {
     }
   }, [currentTrackerDate]);
 
-  /** Commit What-If Ghost Car → strategy Kentu + profilo nutrizionale (da delta continuo). */
+  /** Commit What-If Ghost Car → strategy Kentu + delta continuo persistito (profilo / LS). */
   const applyGhostSimGoal = useCallback(
     async (deltaRaw) => {
       const delta = clampGhostSimDelta(deltaRaw);
@@ -1447,6 +1448,7 @@ export default function SalaComandi() {
       setKentuDailyCalorieStrategy(strategy);
       try {
         localStorage.setItem(`kentu_cal_strategy_${dateKey}`, strategy);
+        localStorage.setItem(`kentu_ghost_sim_delta_${dateKey}`, String(delta));
       } catch {
         /* ignore */
       }
@@ -1456,6 +1458,7 @@ export default function SalaComandi() {
           ...prev,
           nutritionGoal: goal,
           goal: goal === 'cut' ? 'lose' : goal === 'bulk' ? 'gain' : 'maintain',
+          ghostSimDeltaKcal: delta,
         };
         const uid = auth.currentUser?.uid || user?.uid;
         if (uid && db) {
@@ -1480,14 +1483,33 @@ export default function SalaComandi() {
     );
   }, [kentuDailyCalorieStrategy, userProfile?.nutritionGoal, userProfile?.goal]);
 
-  /** Delta Kentu attuale (−500 / 0 / +400) — ancora del cursore analogico. */
+  /** Delta cursore: preferisci valore continuo persistito, poi strategy discreta. */
   const committedGhostDeltaKcal = useMemo(() => {
+    const fromProfile = Number(userProfile?.ghostSimDeltaKcal);
+    if (Number.isFinite(fromProfile)) {
+      return clampGhostSimDelta(fromProfile);
+    }
+    const dateKey = currentTrackerDate || getTodayString();
+    try {
+      const fromLs = localStorage.getItem(`kentu_ghost_sim_delta_${dateKey}`);
+      if (fromLs != null && fromLs !== '') {
+        return clampGhostSimDelta(fromLs);
+      }
+    } catch {
+      /* ignore */
+    }
     const strat = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
     if (strat && Object.prototype.hasOwnProperty.call(CALORIE_STRATEGY_KCAL_DELTA, strat)) {
       return Math.round(Number(CALORIE_STRATEGY_KCAL_DELTA[strat]) || 0);
     }
     return resolveGhostDailyDeltaFromGoal(committedGhostGoal);
-  }, [kentuDailyCalorieStrategy, committedGhostGoal]);
+  }, [
+    userProfile?.ghostSimDeltaKcal,
+    currentTrackerDate,
+    getTodayString,
+    kentuDailyCalorieStrategy,
+    committedGhostGoal,
+  ]);
 
   /** Persistenza piano Compensazione Esplicita (profilo / Firebase). */
   const persistProfileWithCompensation = useCallback(
@@ -2102,21 +2124,35 @@ export default function SalaComandi() {
       .map((e, idx) => {
         const normalizedTime = resolveActivityOrWorkoutTimelineHour(e);
         if (normalizedTime == null) return null;
-        const isCardio =
-          String(e.workoutType || e.activity || '').toLowerCase() === 'cardio' ||
-          /cardio|corsa|bike|hiit/i.test(String(e.name || e.desc || ''));
+        const resolvedType = resolveWorkoutActivityTypeId(e.subType || e.workoutType);
+        const looksCardio =
+          String(e.workoutType || e.activity || '').toLowerCase() === 'cardio'
+          || /cardio|corsa|bike|hiit/i.test(String(e.name || e.desc || ''));
+        const typeId = resolvedType
+          || (looksCardio
+            ? (/hiit/i.test(String(e.name || e.desc || e.workoutType || '')) ? 'hiit' : 'cardio')
+            : 'pesi');
+        const muscles = resolveWorkoutMusclesForForm(e);
+        const rawDur = Number(e.duration);
+        const durationHours = Number.isFinite(rawDur) && rawDur > 0
+          ? Math.max(0.25, rawDur > 24 ? rawDur / 60 : rawDur)
+          : 1;
         return {
           id: e.id || `wk_tl_${normalizedTime}_${idx}`,
           type: 'workout',
-          subType: isCardio ? 'cardio' : 'pesi',
+          subType: typeId,
+          workoutType: typeId,
           time: normalizedTime,
           mealTime: normalizedTime,
-          duration: Number.isFinite(Number(e.duration)) ? Math.max(0.25, Number(e.duration)) : 1,
+          duration: durationHours,
           kcal: Number.isFinite(Number(e.kcal)) ? Number(e.kcal) : (Number.isFinite(Number(e.cal)) ? Number(e.cal) : 0),
           cal: Number.isFinite(Number(e.cal)) ? Number(e.cal) : (Number.isFinite(Number(e.kcal)) ? Number(e.kcal) : 0),
-          name: e.name || e.desc || (isCardio ? 'Cardio' : 'Allenamento'),
+          name: e.name || e.desc || (typeId === 'cardio' ? 'Cardio' : 'Allenamento'),
           desc: e.desc || e.name || '',
-          icon: isCardio ? '🏃' : '🏋️',
+          muscles,
+          workoutMuscles: muscles,
+          workoutDetailNote: String(e.workoutDetailNote || '').trim(),
+          icon: typeId === 'cardio' || typeId === 'hiit' ? '🏃' : '🏋️',
         };
       })
       .filter(Boolean);
@@ -4020,8 +4056,9 @@ Slot esistente aggiornato (nessun ghost).`;
     if (node.type === 'ghost_workout') {
       const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
       const title = String(node.title || 'Allenamento Pianificato').trim();
-      const ghostMuscles = normalizeMuscleGroupArray(
-        Array.isArray(node.muscles) && node.muscles.length > 0
+      const ghostMuscles = resolveWorkoutMusclesForForm({
+        ...node,
+        muscles: Array.isArray(node.muscles) && node.muscles.length > 0
           ? node.muscles
           : Array.isArray(node.workoutMuscles) && node.workoutMuscles.length > 0
             ? node.workoutMuscles
@@ -4029,7 +4066,7 @@ Slot esistente aggiornato (nessun ghost).`;
               .split(',')
               .map((s) => s.trim())
               .filter(Boolean),
-      );
+      });
       setSelectedNodeReport({
         type: 'ghost_workout',
         id: node.id,
@@ -4038,11 +4075,14 @@ Slot esistente aggiornato (nessun ghost).`;
         name: title,
         desc: title,
         microDesc: String(node.microDesc || node.subtitle || '').trim(),
-        subType: node.subType || 'pesi',
+        subType: node.subType || node.workoutType || 'pesi',
+        workoutType: node.subType || node.workoutType || 'pesi',
         kcal: Number(node.kcal || node.cal) || 0,
         cal: Number(node.cal || node.kcal) || 0,
         duration: Math.max(0.25, Number(node.duration) || 1),
         muscles: ghostMuscles,
+        workoutMuscles: ghostMuscles,
+        workoutDetailNote: String(node.workoutDetailNote || '').trim(),
         isGhost: true,
       });
       return;
@@ -9525,49 +9565,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               loadMealToConstructor(String(node.mealId || node.id));
               return;
             }
-            if (node.type === 'ghost_workout') {
-              const t = typeof node.time === 'number' && !Number.isNaN(node.time) ? node.time : 18;
-              setEditingWorkoutId(node.id);
-              const ghostSt = node.subType || 'pesi';
-              setWorkoutType(resolveWorkoutActivityTypeId(ghostSt) ?? ghostSt);
-              const durH = Math.max(0.25, Number(node.duration) || 1);
-              setWorkoutEndTime(Math.min(24, t + durH));
-              setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
-              setWorkoutKcal(node.kcal || node.cal || 300);
-              setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
-              setWorkoutMuscles(
-                normalizeMuscleGroupArray(
-                  Array.isArray(node.muscles)
-                    ? node.muscles
-                    : Array.isArray(node.workoutMuscles)
-                      ? node.workoutMuscles
-                      : []
-                )
-              );
-              setActiveAction('allenamento');
-              setIsDrawerOpen(true);
-              return;
-            }
-            setEditingWorkoutId(node.id);
-            const editSt = node.subType || (node.type === 'work' ? 'lavoro' : 'pesi');
-            setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
-            const startT = node.time ?? 12;
-            const durH = Math.max(0.25, Number(node.duration) || 1);
-            setWorkoutEndTime(Math.min(24, startT + durH));
-            setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
-            setWorkoutKcal(node.kcal || node.cal || 300);
-            setWorkoutStrengthDetail(String(node.workoutDetailNote || '').trim());
-            setWorkoutMuscles(
-              normalizeMuscleGroupArray(
-                Array.isArray(node.muscles)
-                  ? node.muscles
-                  : Array.isArray(node.workoutMuscles)
-                    ? node.workoutMuscles
-                    : []
-              )
-            );
-            setActiveAction('allenamento');
-            setIsDrawerOpen(true);
+            // ghost_workout / workout / work / cognitive: stesso idratazione form
+            openWorkoutEditorFromLogItem(node);
           }}
         />
       )}

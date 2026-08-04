@@ -385,8 +385,8 @@ export default function WorkoutView({
   workoutKcal: workoutKcalProp,
   setWorkoutKcal: setWorkoutKcalProp,
   handleSaveWorkout,
-  workoutsLog = [],
-  removeLogItem,
+  workoutsLog: _workoutsLog = [],
+  removeLogItem: _removeLogItem,
 }) {
   const internalPlannerRef = useRef(null);
   const planner = usePlannerWorkoutState(isPlannerMode ? initialData : null, comboHistory);
@@ -556,7 +556,7 @@ export default function WorkoutView({
   };
 
   return (
-    <div className="view-animate flex h-full min-h-[85vh] flex-1 flex-col">
+    <div className="view-animate flex h-full min-h-0 max-h-full flex-1 flex-col overflow-hidden">
       <div className="mb-4 flex shrink-0 items-center justify-between">
         <button
           type="button"
@@ -584,7 +584,7 @@ export default function WorkoutView({
         <div style={{ width: '70px' }} />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-24 [-webkit-overflow-scrolling:touch]">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-4 [-webkit-overflow-scrolling:touch]">
       {isPlanDraftMode && trackerPhase === 'draft' ? (
         <div
           style={{
@@ -1035,42 +1035,11 @@ export default function WorkoutView({
           <span>750</span>
         </div>
       </div>
-      {!isPlannerMode && (
-        <div style={{ marginTop: '30px' }}>
-          {workoutsLog.length > 0 && (
-            <h4
-              style={{
-                fontSize: '0.65rem',
-                color: '#666',
-                letterSpacing: '2px',
-                marginBottom: '10px',
-              }}
-            >
-              OUTPUT REGISTRATI OGGI
-            </h4>
-          )}
-          {workoutsLog.map((wk) => (
-            <div key={wk.id} className="food-pill" style={{ borderLeft: '3px solid #ff6d00' }}>
-              <div>
-                <span className="food-pill-name">{wk.desc || wk.name}</span>
-                <span className="food-pill-weight" style={{ color: '#ff6d00' }}>
-                  {Math.round(wk.kcal)} kcal
-                </span>
-              </div>
-              <div className="food-pill-actions">
-                <button type="button" className="food-pill-btn btn-delete" onClick={() => removeLogItem(wk.id)}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
       </div>
 
       <div
-        className="sticky bottom-0 z-10 shrink-0 border-t border-orange-500/25 bg-[#0f0f0f]/95 px-1 pt-3 backdrop-blur-md"
-        style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom, 0px))' }}
+        className="shrink-0 border-t border-orange-500/25 bg-[#0f0f0f]/95 px-1 pt-3 backdrop-blur-md"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
       >
         {isPlanDraftMode && trackerPhase === 'draft' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

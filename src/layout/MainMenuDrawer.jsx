@@ -20,9 +20,15 @@ export default function MainMenuDrawer({
   onOpenProgressi,
   onOpenTacticalCoach,
 }) {
+  // Non montare un flex-1 vuoto quando è aperta un'altra vista: altrimenti ruba
+  // altezza al form (es. PESI) e il body overflow-y-auto collassa a 0px.
+  const showHome = !activeAction || activeAction === 'home';
+  const showSecondary = activeAction === 'menu_secondary';
+  if (!showHome && !showSecondary) return null;
+
   return (
-    <>
-      {(!activeAction || activeAction === 'home') && (
+    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch]">
+      {showHome && (
         <div className="view-animate">
           <AddEventMenuGrid
             menuOrder={addEventMenuOrder}
@@ -32,7 +38,7 @@ export default function MainMenuDrawer({
         </div>
       )}
 
-      {activeAction === 'menu_secondary' && (
+      {showSecondary && (
         <div className="view-animate">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <button type="button" onClick={() => setActiveAction(null)} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
@@ -97,6 +103,6 @@ export default function MainMenuDrawer({
         </div>
       )}
 
-    </>
+    </div>
   );
 }

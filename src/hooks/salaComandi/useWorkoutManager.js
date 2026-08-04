@@ -17,6 +17,7 @@ import {
   getCognitiveMetForActivity,
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
+  resolveWorkoutMusclesForForm,
 } from '../../activityCatalog';
 import {
   parseDurationMinutesInput,
@@ -132,9 +133,27 @@ export function useWorkoutManager({
   const openWorkoutEditorFromLogItem = useCallback(
     (workout) => {
       if (!workout?.id) return;
-      const startT = typeof workout.time === 'number' && !Number.isNaN(workout.time) ? workout.time : 12;
-      const durH = Math.max(0.25, Number(workout.duration) || 1);
-      const editSt = workout.subType || 'pesi';
+
+      const rawTime = Number(workout.time ?? workout.mealTime);
+      let startT = Number.isFinite(rawTime) ? rawTime : null;
+      if (startT == null && typeof parseFlexibleTimeToDecimal === 'function') {
+        const parsed = parseFlexibleTimeToDecimal(String(workout.time ?? workout.mealTime ?? ''));
+        if (parsed != null && Number.isFinite(parsed)) startT = parsed;
+      }
+      if (startT == null) startT = 12;
+
+      const rawDur = Number(workout.duration);
+      // Alcuni record legacy tengono i minuti (> 24); i salvataggi attuali usano ore decimali.
+      let durH = 1;
+      if (Number.isFinite(rawDur) && rawDur > 0) {
+        durH = rawDur > 24 ? rawDur / 60 : rawDur;
+      }
+      durH = Math.max(0.25, Math.min(24, durH));
+
+      const editSt =
+        workout.subType
+        || workout.workoutType
+        || (workout.type === 'work' ? 'lavoro' : workout.type === 'cognitive' ? 'studio' : 'pesi');
 
       setEditingWorkoutId(workout.id);
       setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
@@ -142,21 +161,13 @@ export function useWorkoutManager({
       setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
       setWorkoutKcal(Number(workout.kcal || workout.cal) || 300);
       setWorkoutStrengthDetail(String(workout.workoutDetailNote || '').trim());
-      setWorkoutMuscles(
-        normalizeMuscleGroupArray(
-          Array.isArray(workout.muscles)
-            ? workout.muscles
-            : Array.isArray(workout.workoutMuscles)
-              ? workout.workoutMuscles
-              : [],
-        ),
-      );
+      setWorkoutMuscles(resolveWorkoutMusclesForForm(workout));
       setWorkoutPlanDraft(null);
       setShowDiarySheet(false);
       setActiveAction('allenamento');
       setIsDrawerOpen(true);
     },
-    [setActiveAction, setIsDrawerOpen, setShowDiarySheet],
+    [parseFlexibleTimeToDecimal, setActiveAction, setIsDrawerOpen, setShowDiarySheet],
   );
 
   const handleStartWorkoutSession = useCallback(() => {
@@ -348,6 +359,7 @@ export function useWorkoutManager({
         id: finalId,
         type: 'workout',
         workoutType,
+        subType: workoutType,
         desc,
         name: isCognitive ? desc : isWork ? 'Lavoro' : desc,
         kcal: isCognitive ? cognitiveKcal : workoutKcal,

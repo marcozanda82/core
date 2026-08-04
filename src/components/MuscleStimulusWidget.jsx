@@ -83,11 +83,9 @@ function mapFourCylinderPropToDecay(fourCylinderProp) {
   }
   if (found && muscleDecaySum(mapped) > 0) return mapped;
 
-  // Flat snapshot-style sull'oggetto root
   const fromRootFlat = inflateFlatLevelsToDecay(fourCylinderProp);
   if (muscleDecaySum(fromRootFlat) > 0) return fromRootFlat;
 
-  // Flat keys dentro .decay (es. { decay: { decay_chest: 0.12 } })
   if (fourCylinderProp.decay && typeof fourCylinderProp.decay === 'object') {
     const fromNestedFlat = inflateFlatLevelsToDecay(fourCylinderProp.decay);
     if (muscleDecaySum(fromNestedFlat) > 0) return fromNestedFlat;
@@ -128,25 +126,98 @@ function resolveLiveMuscleDecay(fourCylinderProp, fullHistory, todayIso) {
 }
 
 /**
- * Widget Home: 5 barre da fourCylinder (dual-read nested + flat).
+ * @param {Array<{ id: string, label: string, shortLabel: string, percent: number }>} cylinders
+ * @returns {{ percent: number, peakLabel: string }}
+ */
+function computeGlobalLoad(cylinders) {
+  if (!cylinders.length) return { percent: 0, peakLabel: '—' };
+  let peak = cylinders[0];
+  for (const cyl of cylinders) {
+    if (cyl.percent > peak.percent) peak = cyl;
+  }
+  return {
+    percent: peak.percent,
+    peakLabel: peak.shortLabel,
+  };
+}
+
+function ProgressBarRow({
+  label,
+  percent,
+  tone,
+  ariaLabel,
+  as: Comp = 'div',
+  onClick,
+  hint = null,
+}) {
+  const interactive = Comp === 'button' || typeof onClick === 'function';
+  const sharedClass = `flex w-full items-center gap-2 rounded-xl border ${tone.border} bg-slate-900/80 px-2.5 py-2 shadow-lg backdrop-blur-sm text-left`;
+
+  return (
+    <Comp
+      type={Comp === 'button' ? 'button' : undefined}
+      role={Comp === 'div' ? 'listitem' : undefined}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      className={
+        interactive
+          ? `${sharedClass} cursor-pointer transition-transform outline-none active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-cyan-500/50`
+          : sharedClass
+      }
+      style={interactive ? { WebkitTapHighlightColor: 'transparent' } : undefined}
+    >
+      <span className={`w-[4.5rem] shrink-0 text-[10px] font-bold tracking-wider ${tone.text}`}>
+        {label}
+      </span>
+      <div className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
+        <div
+          className={`absolute left-0 top-0 h-full transition-all duration-1000 ease-out ${tone.bar}`}
+          style={{ width: `${percent}%` }}
+        />
+        <div
+          className="absolute inset-0 opacity-25 mix-blend-overlay"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(to right, transparent, transparent 3px, #000 3px, #000 4px)',
+          }}
+        />
+      </div>
+      <span className="w-8 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-200">
+        {percent}%
+      </span>
+      {hint ? (
+        <span className="sr-only">{hint}</span>
+      ) : null}
+    </Comp>
+  );
+}
+
+/**
+ * Widget sismografi muscolari — progressive disclosure.
+ *
+ * - `compact` (Home): una barra = picco tra i 5 residui; tap → onOpenDetail (DIAG).
+ * - `detailed`: 5 barre indipendenti.
  *
  * @param {{
  *   fourCylinder?: object | null,
  *   fullHistory?: object | null,
  *   todayIso?: string,
+ *   variant?: 'compact' | 'detailed',
+ *   onOpenDetail?: (() => void) | null,
  * }} props
  */
 export default function MuscleStimulusWidget({
   fourCylinder: fourCylinderProp = null,
   fullHistory = null,
   todayIso = '',
+  variant = 'detailed',
+  onOpenDetail = null,
 } = {}) {
   const cylinders = useMemo(
     () => {
       const day = String(todayIso || getTodayString()).slice(0, 10);
       const decay = resolveLiveMuscleDecay(fourCylinderProp, fullHistory, day);
       return MUSCLE_CYLINDER_DEFS.map((cyl) => {
-        // Lettura esplicita — niente `value || 0` sulla chiave sbagliata
         const level = normalizeLevel(decay?.[cyl.id]);
         const ratio = level == null ? 0 : level;
         return {
@@ -158,37 +229,124 @@ export default function MuscleStimulusWidget({
     [fourCylinderProp, fullHistory, todayIso],
   );
 
+  const globalLoad = useMemo(() => computeGlobalLoad(cylinders), [cylinders]);
+
+  if (variant === 'compact') {
+    const tone = getToneClasses(globalLoad.percent);
+    const clickable = typeof onOpenDetail === 'function';
+    const fillPercent = globalLoad.percent;
+    const ariaLabel = clickable
+      ? `Carico muscolare globale ${fillPercent} percento, picco ${globalLoad.peakLabel}. Apri diagnostica.`
+      : `Carico muscolare globale ${fillPercent} percento, picco ${globalLoad.peakLabel}`;
+
+    // Shell DOM/CSS allineata a CardioProgressBar (compact): stessa altezza track, padding, tipografia.
+    return (
+      <div
+        className="w-full"
+        aria-label={ariaLabel}
+        role={clickable ? 'button' : undefined}
+        tabIndex={clickable ? 0 : undefined}
+        onClick={clickable ? onOpenDetail : undefined}
+        onKeyDown={
+          clickable
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenDetail();
+                }
+              }
+            : undefined
+        }
+      >
+        <div
+          className={[
+            'rounded-xl border bg-slate-900/80 shadow-lg backdrop-blur-sm',
+            tone.border,
+            clickable
+              ? [
+                  'cursor-pointer transition-all duration-200',
+                  'hover:border-amber-400/55 hover:bg-slate-900/95 hover:shadow-[0_0_20px_rgba(251,191,36,0.22)]',
+                  'active:scale-[0.99]',
+                ].join(' ')
+              : '',
+            'p-2.5',
+          ].filter(Boolean).join(' ')}
+          style={clickable ? { WebkitTapHighlightColor: 'transparent' } : undefined}
+        >
+          <div className="mb-2.5 flex items-center justify-between gap-2">
+            <span className={`text-[10px] font-bold tracking-wider ${tone.text}`}>
+              CARICO MUSCOLARE
+            </span>
+            <span className="text-[11px] font-bold tabular-nums text-slate-200">
+              {fillPercent}
+              <span className="font-semibold text-slate-500">%</span>
+            </span>
+          </div>
+
+          <div className="relative h-5 w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
+            <div
+              className={`absolute left-0 top-0 h-full bg-gradient-to-r from-amber-600 via-orange-500 to-yellow-400 transition-all duration-1000 ease-out`}
+              style={{
+                width: `${fillPercent}%`,
+                boxShadow:
+                  fillPercent > 0
+                    ? '0 0 14px rgba(251, 191, 36, 0.45), inset 0 1px 0 rgba(255,255,255,0.25)'
+                    : 'none',
+              }}
+            />
+            {fillPercent > 0 ? (
+              <div
+                className="pointer-events-none absolute left-0 top-0 h-full overflow-hidden"
+                style={{ width: `${fillPercent}%` }}
+                aria-hidden
+              >
+                <div
+                  className="h-full w-1/3 opacity-40"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)',
+                    animation: 'muscleFluidShimmer 2.8s ease-in-out infinite',
+                  }}
+                />
+              </div>
+            ) : null}
+            <div
+              className="absolute inset-0 opacity-25 mix-blend-overlay"
+              style={{
+                backgroundImage:
+                  'repeating-linear-gradient(to right, transparent, transparent 3px, #000 3px, #000 4px)',
+              }}
+            />
+          </div>
+
+          <p className="mt-1.5 text-[9px] text-slate-600">
+            Picco {globalLoad.peakLabel}
+            {clickable ? ' · tocca per i dettagli' : ''}
+          </p>
+        </div>
+
+        <style>{`
+          @keyframes muscleFluidShimmer {
+            0% { transform: translateX(-120%); }
+            100% { transform: translateX(320%); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-1.5" role="list" aria-label="Sismografi muscolari">
       {cylinders.map((cyl) => {
         const tone = getToneClasses(cyl.percent);
         return (
-          <div
+          <ProgressBarRow
             key={cyl.id}
-            role="listitem"
-            aria-label={`${cyl.label} ${cyl.percent} percento`}
-            className={`flex items-center gap-2 rounded-xl border ${tone.border} bg-slate-900/80 px-2.5 py-2 shadow-lg backdrop-blur-sm`}
-          >
-            <span className={`w-[4.5rem] shrink-0 text-[10px] font-bold tracking-wider ${tone.text}`}>
-              {cyl.shortLabel}
-            </span>
-            <div className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
-              <div
-                className={`absolute left-0 top-0 h-full transition-all duration-1000 ease-out ${tone.bar}`}
-                style={{ width: `${cyl.percent}%` }}
-              />
-              <div
-                className="absolute inset-0 opacity-25 mix-blend-overlay"
-                style={{
-                  backgroundImage:
-                    'repeating-linear-gradient(to right, transparent, transparent 3px, #000 3px, #000 4px)',
-                }}
-              />
-            </div>
-            <span className="w-8 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-200">
-              {cyl.percent}%
-            </span>
-          </div>
+            label={cyl.shortLabel}
+            percent={cyl.percent}
+            tone={tone}
+            ariaLabel={`${cyl.label} ${cyl.percent} percento`}
+          />
         );
       })}
     </div>

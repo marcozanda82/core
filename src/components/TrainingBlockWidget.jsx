@@ -371,31 +371,13 @@ export default function TrainingBlockWidget({
   );
 
   const stimulusSlide = (
-    <div
-      role={typeof onOpenTrendDiag === 'function' ? 'button' : undefined}
-      tabIndex={typeof onOpenTrendDiag === 'function' ? 0 : undefined}
-      onClick={typeof onOpenTrendDiag === 'function' ? handleOpenTrendDiag : undefined}
-      onKeyDown={
-        typeof onOpenTrendDiag === 'function'
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleOpenTrendDiag();
-              }
-            }
-          : undefined
-      }
-      className={
-        typeof onOpenTrendDiag === 'function'
-          ? 'w-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-cyan-500/50'
-          : 'w-full'
-      }
-      aria-label={typeof onOpenTrendDiag === 'function' ? 'Apri diagnostica allenamento' : 'Stimolo muscolare'}
-    >
+    <div className="w-full" aria-label="Stimolo muscolare">
       <MuscleStimulusWidget
+        variant="compact"
         fourCylinder={fourCylinder}
         fullHistory={fullHistory}
         todayIso={todayIso || undefined}
+        onOpenDetail={typeof onOpenTrendDiag === 'function' ? handleOpenTrendDiag : undefined}
       />
     </div>
   );

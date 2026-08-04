@@ -125,11 +125,63 @@ export function inferMuscleGroupsFromWorkoutText(workout) {
   if (/petto|torace|pectoral|bench|panca/.test(text)) push('Petto');
   if (/dorso|schiena|lat\b|pull|remator|rowing|remata/.test(text)) push('Dorso');
   if (/gambe|quadricip|femorali|leg day|squat|stacco/.test(text)) push('Gambe');
-  if (/bracci|bicipit|tricipit|curl|dip\b/.test(text)) push('Braccia');
+  if (/bicipit/.test(text)) push('bicipiti');
+  if (/tricipit/.test(text)) push('tricipiti');
+  if (/bracci|curl|dip\b/.test(text)) {
+    push('bicipiti');
+    push('tricipiti');
+  }
   if (/avambracc|forearm/.test(text)) push('avambracci');
   if (/spalle|deltoid|shoulder|lateral/.test(text)) push('Spalle');
-  if (/addominal|abs\b|core/.test(text)) push('Core');
+  if (/\babs\b|addominal/.test(text)) push('abs');
+  if (/\bcore\b/.test(text)) push('Core');
   return found;
+}
+
+/**
+ * Muscoli per precompilare i toggle del form Attività.
+ * Accetta id chip (`Gambe`), alias, macro sismografo (`legs` → chip della sezione),
+ * oppure inferenza da `desc`/`name` se l'array manca.
+ * @param {object | null | undefined} workout
+ * @returns {string[]}
+ */
+export function resolveWorkoutMusclesForForm(workout) {
+  const raw = Array.isArray(workout?.muscles) && workout.muscles.length > 0
+    ? workout.muscles
+    : Array.isArray(workout?.workoutMuscles) && workout.workoutMuscles.length > 0
+      ? workout.workoutMuscles
+      : [];
+
+  if (raw.length === 0) {
+    return inferMuscleGroupsFromWorkoutText(workout || {});
+  }
+
+  const out = [];
+  const seen = new Set();
+  const pushId = (id) => {
+    const canon = normalizeMuscleGroupLabel(id) || String(id || '').trim();
+    if (!canon || seen.has(canon)) return;
+    seen.add(canon);
+    out.push(canon);
+  };
+
+  for (const m of raw) {
+    const token = String(m || '').trim();
+    if (!token) continue;
+    const canon = normalizeMuscleGroupLabel(token) || token;
+    if (WORKOUT_MUSCLE_GROUP_IDS.includes(canon)) {
+      pushId(canon);
+      continue;
+    }
+    const macroChips = getMuscleGroupsForMacro(canon);
+    if (macroChips.length > 0) {
+      for (const chip of macroChips) pushId(chip.id);
+      continue;
+    }
+    pushId(canon);
+  }
+
+  return out.length > 0 ? out : inferMuscleGroupsFromWorkoutText(workout || {});
 }
 
 /**
