@@ -2349,18 +2349,14 @@ html, body, #root {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  /* Come Salute: scroll della pagina intera (hero incluso), non header fisso. */
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
 }
 
 .trend-sticky-controls {
   flex-shrink: 0;
-  position: relative;
-  z-index: 1;
+  position: sticky;
+  top: 0;
+  z-index: 10;
   width: 100%;
   padding: 8px 10px;
   border-radius: 14px;
@@ -2427,11 +2423,10 @@ html, body, #root {
 }
 
 .trend-tool-stage {
-  /* Altezza propria (non flex:1) così hero + controlli possono scrollare via come in Salute. */
-  flex: 0 0 auto;
+  flex: 1;
+  flex-grow: 1;
+  min-height: 0;
   width: 100%;
-  min-height: min(62dvh, 480px);
-  height: min(62dvh, 480px);
   display: flex;
   flex-direction: column;
   justify-content: center;

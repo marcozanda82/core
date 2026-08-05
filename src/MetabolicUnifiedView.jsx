@@ -549,7 +549,7 @@ export default function MetabolicUnifiedView({
       <div
         className={
           activeTool === 'DIAG'
-            ? 'trend-tool-stage relative !h-auto !min-h-0 !overflow-visible'
+            ? 'trend-tool-stage relative flex-1 min-h-0 !overflow-visible'
             : 'trend-tool-stage'
         }
       >

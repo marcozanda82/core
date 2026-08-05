@@ -491,7 +491,7 @@ export function useCommandTerminal({
       abortControllerRef.current = null;
     }
     generationTokenRef.current += 1;
-    setIsLoading(false);
+        setIsLoading(false);
   }, []);
 
   const handleDraftCancel = useCallback(
