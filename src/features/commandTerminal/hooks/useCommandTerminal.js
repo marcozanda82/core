@@ -16,10 +16,13 @@ import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiM
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
 import {
-  buildDeterministicMealLogFeedback,
   projectNutritionAfterMeal,
   sumMealItemsMacros,
 } from '../../../conversation/ConsultantEngine.js';
+import {
+  buildMealReceiptPayload,
+  mealReceiptFallbackText,
+} from '../../chat/mealReceiptUtils.js';
 import {
   applyMealOperations,
   mergeMealItems,
@@ -57,16 +60,22 @@ export function useCommandTerminal({
 
   const appendAiMessage = useCallback((text, extra = {}) => {
     const line = String(text || '').trim();
-    if (!line || typeof setChatHistoryRef.current !== 'function') return;
+    const hasReceipt = Boolean(extra?.mealReceipt && typeof extra.mealReceipt === 'object');
+    if ((!line && !hasReceipt) || typeof setChatHistoryRef.current !== 'function') return;
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
-      text: line,
+      text: line || '(mealReceipt)',
       type: extra?.type || null,
       sourceTag: extra?.sourceTag || null,
       local: extra?.local === true,
+      hasMealReceipt: hasReceipt,
     });
     setChatHistoryRef.current((prev) => [
       ...(prev || []),
-      { sender: 'ai', text: line, ...(extra && typeof extra === 'object' ? extra : {}) },
+      {
+        sender: 'ai',
+        text: line || (hasReceipt ? mealReceiptFallbackText(extra.mealReceipt) : ''),
+        ...(extra && typeof extra === 'object' ? extra : {}),
+      },
     ]);
   }, []);
 
@@ -278,6 +287,17 @@ export function useCommandTerminal({
         setActiveQuickReplies(workoutQuickReplies);
         return;
       }
+      if (payload.type === 'MEAL_RECEIPT' || (payload.mealReceipt && typeof payload.mealReceipt === 'object')) {
+        const text = String(payload.text || payload.message || '').trim()
+          || mealReceiptFallbackText(payload.mealReceipt);
+        appendAiMessage(text, {
+          type: 'MEAL_RECEIPT',
+          mealReceipt: payload.mealReceipt,
+          local: payload.local === true,
+          sourceTag: payload.sourceTag || null,
+        });
+        return;
+      }
       const text = String(payload.text || payload.message || '').trim();
       if (!text) return;
       appendAiMessage(text, {
@@ -297,6 +317,9 @@ export function useCommandTerminal({
         adviceId: payload.adviceId || null,
         newFoodDraft: payload.newFoodDraft || null,
         isError: payload.type === 'ERROR',
+        mealReceipt: payload.mealReceipt && typeof payload.mealReceipt === 'object'
+          ? payload.mealReceipt
+          : null,
       });
     });
 
@@ -789,13 +812,23 @@ export function useCommandTerminal({
         },
       });
       const label = String(proposal.label || proposal.name || mealType).trim();
-      appendAiMessage(
-        upsertAction === 'merge'
-          ? `✅ Aggiunto al ${mealType}: ${label}.`
-          : upsertAction === 'replace' || targetNodeId
-            ? `✅ Pasto aggiornato: ${label}.`
-            : buildDeterministicMealLogFeedback(projection, label),
-      );
+      if (upsertAction === 'merge') {
+        appendAiMessage(`✅ Aggiunto al ${mealType}: ${label}.`);
+      } else if (upsertAction === 'replace' || targetNodeId) {
+        appendAiMessage(`✅ Pasto aggiornato: ${label}.`);
+      } else {
+        const mealReceipt = buildMealReceiptPayload({
+          items: Array.isArray(proposal.items) ? proposal.items : itemsForCommit,
+          mealType,
+          timeString: exactTime,
+          mealTotals,
+          projection,
+        });
+        appendAiMessage(mealReceiptFallbackText(mealReceipt), {
+          type: 'MEAL_RECEIPT',
+          mealReceipt,
+        });
+      }
       controller.clearPendingMealUpdate();
       pendingMealUpdateRef.current = null;
       return { ok: true };

@@ -12,24 +12,26 @@ const TONE_STROKE = {
   good: '#34d399',
   mid: '#fbbf24',
   low: '#f87171',
-  neutral: '#22d3ee',
+  neutral: '#a78bfa',
 };
 
 const EMPTY_BREAKDOWN = Object.freeze({
-  cardioScore: 0,
-  weightsScore: 0,
+  nutritionScore: 0,
+  trainingScore: 0,
   sleepScore: 0,
-  whtrMultiplier: 1,
-  cardioMins: 0,
-  uniqueGroups: 0,
+  nutritionTolerancePct: 0,
+  nutritionDaysScored: 0,
+  workoutSessions: 0,
+  workoutTarget: 8,
   sleepAvg: null,
+  sleepTarget: 7.5,
 });
 
 /**
- * Livello 1 — Hero: Punteggio Longevità (radial / donut) + pagella metabolica a scomparsa.
+ * Hero Punteggio Progressione — simmetrico a SaluteLongevityHero + pagella a scomparsa.
  * `compact`: anello ridotto per slide gemella Home (niente pagella).
  */
-export default function SaluteLongevityHero({
+export default function ProgressionScoreWidget({
   score = null,
   breakdown = null,
   size = 200,
@@ -38,7 +40,7 @@ export default function SaluteLongevityHero({
 } = {}) {
   const [showDetails, setShowDetails] = useState(false);
   const uid = useId().replace(/:/g, '');
-  const gradId = `longevity-grad-${uid}`;
+  const gradId = `progression-grad-${uid}`;
   const ringSize = compact ? Math.min(Number(size) || 96, 110) : (Number(size) || 200);
   const value = Number.isFinite(Number(score)) ? Math.max(0, Math.min(100, Math.round(Number(score)))) : null;
   const pct = value ?? 0;
@@ -51,26 +53,27 @@ export default function SaluteLongevityHero({
   const strokeColor = TONE_STROKE[tone] || TONE_STROKE.neutral;
 
   const b = breakdown && typeof breakdown === 'object' ? breakdown : EMPTY_BREAKDOWN;
-  const cardioScore = Number(b.cardioScore) || 0;
-  const weightsScore = Number(b.weightsScore) || 0;
+  const nutritionScore = Number(b.nutritionScore) || 0;
+  const trainingScore = Number(b.trainingScore) || 0;
   const sleepScore = Number(b.sleepScore) || 0;
-  const whtrMultiplier = Number.isFinite(Number(b.whtrMultiplier)) ? Number(b.whtrMultiplier) : 1;
-  const cardioMins = Math.round(Number(b.cardioMins) || 0);
-  const uniqueGroups = Math.max(0, Math.min(5, Math.round(Number(b.uniqueGroups) || 0)));
+  const nutritionTolerancePct = Number.isFinite(Number(b.nutritionTolerancePct))
+    ? Number(b.nutritionTolerancePct)
+    : 0;
+  const workoutSessions = Math.max(0, Math.round(Number(b.workoutSessions) || 0));
+  const workoutTarget = Math.max(1, Math.round(Number(b.workoutTarget) || 8));
   const sleepAvg = Number.isFinite(Number(b.sleepAvg)) && Number(b.sleepAvg) > 0
     ? Number(b.sleepAvg)
     : null;
-  const criticalThreshold = Number.isFinite(Number(b.criticalThreshold))
-    ? Number(b.criticalThreshold)
-    : null;
-  const userHeight = Number.isFinite(Number(b.userHeight)) ? Number(b.userHeight) : null;
+  const sleepTarget = Number.isFinite(Number(b.sleepTarget)) && Number(b.sleepTarget) > 0
+    ? Number(b.sleepTarget)
+    : 7.5;
 
   const aria = useMemo(
     () => (value == null
-      ? 'Punteggio Longevità non disponibile'
+      ? 'Punteggio Progressione non disponibile'
       : compact
-        ? `Punteggio Longevità ${value} su 100`
-        : `Punteggio Longevità ${value} su 100. Tocca per ${showDetails ? 'nascondere' : 'mostrare'} il dettaglio.`),
+        ? `Punteggio Progressione ${value} su 100`
+        : `Punteggio Progressione ${value} su 100. Tocca per ${showDetails ? 'nascondere' : 'mostrare'} il dettaglio.`),
     [value, showDetails, compact],
   );
 
@@ -83,7 +86,7 @@ export default function SaluteLongevityHero({
         <defs>
           <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor={strokeColor} stopOpacity="1" />
-            <stop offset="100%" stopColor="#22d3ee" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#c084fc" stopOpacity="0.85" />
           </linearGradient>
         </defs>
         <circle
@@ -109,7 +112,7 @@ export default function SaluteLongevityHero({
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
         <span className={`font-bold uppercase tracking-[0.14em] text-slate-400 ${compact ? 'text-[0.5rem]' : 'text-[0.65rem]'}`}>
-          Longevità
+          Progressione
         </span>
         <span className={`mt-0.5 font-black tabular-nums leading-none text-slate-50 ${compact ? 'text-2xl' : 'mt-1 text-5xl'}`}>
           {value != null ? value : '—'}
@@ -148,20 +151,20 @@ export default function SaluteLongevityHero({
       <button
         type="button"
         onClick={() => setShowDetails((v) => !v)}
-        className="relative cursor-pointer rounded-full border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400/60 active:scale-[1.02]"
+        className="relative cursor-pointer rounded-full border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400/60 active:scale-[1.02]"
         style={{ width: ringSize, height: ringSize }}
         aria-expanded={showDetails}
-        aria-controls={`longevity-pagella-${uid}`}
+        aria-controls={`progression-pagella-${uid}`}
       >
         {ring}
       </button>
 
       <p className="mt-2 max-w-[18rem] text-center text-[10px] uppercase tracking-wider text-slate-500">
-        {showDetails ? 'Tocca per chiudere' : 'Tocca per la pagella · Media 14gg'}
+        {showDetails ? 'Tocca per chiudere' : 'Tocca per il breakdown · Aderenza 14gg'}
       </p>
 
       <div
-        id={`longevity-pagella-${uid}`}
+        id={`progression-pagella-${uid}`}
         className={`w-full max-w-sm overflow-hidden transition-[max-height,opacity,margin] duration-300 ease-out ${
           showDetails
             ? 'mt-3 max-h-56 opacity-100'
@@ -171,42 +174,34 @@ export default function SaluteLongevityHero({
       >
         <div className="rounded-2xl border border-white/10 bg-slate-900/70 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-md">
           <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-            Pagella metabolica
+            Pagella aderenza
           </p>
           <ul className="space-y-1.5 text-[12px] leading-snug text-slate-200">
             <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🏃‍♂️ Cardio</span>
+              <span className="min-w-0 shrink text-slate-300">🍏 Nutrizione</span>
               <span className="tabular-nums text-right text-slate-100">
-                {cardioScore.toFixed(1)} / 33.3 pt
-                <span className="ml-1 text-slate-500">({cardioMins} min)</span>
-              </span>
-            </li>
-            <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🏋️ Pesi</span>
-              <span className="tabular-nums text-right text-slate-100">
-                {weightsScore.toFixed(1)} / 33.3 pt
-                <span className="ml-1 text-slate-500">({uniqueGroups}/5 ≥50% spillover)</span>
-              </span>
-            </li>
-            <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🛌 Sonno</span>
-              <span className="tabular-nums text-right text-slate-100">
-                {sleepScore.toFixed(1)} / 33.3 pt
+                {nutritionScore.toFixed(1)} / 33.3 pt
                 <span className="ml-1 text-slate-500">
-                  ({sleepAvg != null ? `${sleepAvg.toFixed(1)} h` : 'n/d'})
+                  (tolleranza media {nutritionTolerancePct.toFixed(0)}%)
                 </span>
               </span>
             </li>
-            <li className="flex items-baseline justify-between gap-2 border-t border-white/5 pt-1.5">
-              <span className="min-w-0 shrink text-slate-300">⚖️ Filtro Strutturale</span>
-              <span className="tabular-nums text-right font-semibold text-cyan-300/90">
-                {whtrMultiplier}x
-                {criticalThreshold != null && (
-                  <span className="ml-1 font-normal text-slate-500">
-                    (soglia {criticalThreshold.toFixed(0)} cm
-                    {userHeight != null ? ` · h ${userHeight.toFixed(0)}` : ''})
-                  </span>
-                )}
+            <li className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 shrink text-slate-300">🏋️ Allenamento</span>
+              <span className="tabular-nums text-right text-slate-100">
+                {trainingScore.toFixed(1)} / 33.3 pt
+                <span className="ml-1 text-slate-500">
+                  ({workoutSessions} / {workoutTarget} completate)
+                </span>
+              </span>
+            </li>
+            <li className="flex items-baseline justify-between gap-2">
+              <span className="min-w-0 shrink text-slate-300">🛌 Recupero</span>
+              <span className="tabular-nums text-right text-slate-100">
+                {sleepScore.toFixed(1)} / 33.3 pt
+                <span className="ml-1 text-slate-500">
+                  (Media {sleepAvg != null ? `${sleepAvg.toFixed(1)}h` : 'n/d'} / Target {sleepTarget.toFixed(1)}h)
+                </span>
               </span>
             </li>
           </ul>

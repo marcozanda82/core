@@ -8,6 +8,15 @@ import {
   resolveMuscleCylinderId,
 } from '../../salaComandi/engines/fourCylinderEngine';
 import {
+  applySpilloverSession,
+  countSufficientlyStimulatedPillars,
+  createEmptyMuscleSpilloverStimulus,
+  finalizeMuscleSpilloverTotals,
+  foldSpilloverStimulusToPillars,
+  resolveSpilloverMuscleKey,
+} from './muscleSpillover.js';
+import { computeTotali } from '../../../useBiochimico';
+import {
   computeSleepEngineSnapshot,
   mergeSleepEngineInputLog,
 } from '../../../hooks/useSleepEngine';
@@ -261,6 +270,48 @@ export function longevityMusclePillarsFromWorkout(workout) {
 }
 
 /**
+ * Chiavi spillover IT allenate in un workout (primari).
+ * @param {Record<string, unknown>} workout
+ * @returns {string[]}
+ */
+export function longevitySpilloverPrimariesFromWorkout(workout) {
+  if (!workout || !isPesiWorkoutEntry(workout)) return [];
+
+  const rawMuscles = workout.muscles ?? workout.muscleGroups ?? workout.groups ?? [];
+  const labels = [...normalizeMuscleGroupArray(rawMuscles)];
+  if (labels.length === 0) {
+    const typeHint = String(
+      workout.workoutType || workout.subType || workout.activity || workout.name || '',
+    ).trim();
+    if (typeHint) {
+      for (const l of normalizeMuscleGroupArray([typeHint])) labels.push(l);
+    }
+  }
+
+  const primaries = [];
+  for (const label of labels) {
+    const key = String(label).toLowerCase();
+    const def = MUSCLE_DEF_BY_ID.get(key);
+    if (def?.macroGroup === 'total' || (key.includes('total') && key.includes('body'))) {
+      return ['total'];
+    }
+    const spilloverKey = resolveSpilloverMuscleKey(label)
+      || resolveSpilloverMuscleKey(def?.id)
+      || (def?.macroGroup === 'chest' ? 'petto'
+        : def?.macroGroup === 'legs' ? 'gambe'
+          : def?.macroGroup === 'arms' ? 'braccia'
+            : def?.macroGroup === 'core' ? 'core'
+              : def?.macroGroup === 'back_shoulders'
+                ? (key.includes('spall') ? 'spalle' : 'schiena')
+                : null);
+    if (spilloverKey && spilloverKey !== 'total') {
+      primaries.push(spilloverKey);
+    }
+  }
+  return primaries;
+}
+
+/**
  * Finestra longevità 14gg — sonno da diario (SSOT), cardio/pesi da workout log.
  */
 export function buildSaluteLongevityWindow({
@@ -272,6 +323,8 @@ export function buildSaluteLongevityWindow({
 } = {}) {
   const today = String(todayDate || '').slice(0, 10);
   const windowDays = Math.max(1, Number(days) || LONGEVITY_WINDOW_DAYS);
+  const emptyStimulus = createEmptyMuscleSpilloverStimulus();
+  const emptyPillars = foldSpilloverStimulusToPillars(emptyStimulus);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
     return {
       daysSampled: 0,
@@ -281,6 +334,8 @@ export function buildSaluteLongevityWindow({
       pesiDays: 0,
       uniqueMuscleGroups: 0,
       uniqueMuscleGroupIds: [],
+      muscleStimulus: emptyStimulus,
+      muscleStimulusPillars: emptyPillars,
       sleepAvgHours: null,
       sleepNights: 0,
       waistCm: null,
@@ -300,7 +355,7 @@ export function buildSaluteLongevityWindow({
   let pesiSessionCount = 0;
   let pesiDays = 0;
   let daysWithActivity = 0;
-  const uniqueMuscles = new Set();
+  const muscleStimulus = createEmptyMuscleSpilloverStimulus();
 
   for (let i = 0; i < windowDays; i += 1) {
     const dateStr = addDays(today, -i);
@@ -315,7 +370,10 @@ export function buildSaluteLongevityWindow({
         dayCardio += workoutDurationMinutes(entry);
       } else if (isPesiWorkoutEntry(entry)) {
         dayPesi += 1;
-        longevityMusclePillarsFromWorkout(entry).forEach((id) => uniqueMuscles.add(id));
+        const primaries = longevitySpilloverPrimariesFromWorkout(entry);
+        if (primaries.length > 0) {
+          applySpilloverSession(muscleStimulus, primaries);
+        }
       }
     }
     if (dayCardio > 0) {
@@ -328,6 +386,10 @@ export function buildSaluteLongevityWindow({
     }
     if (dayCardio > 0 || dayPesi > 0) daysWithActivity += 1;
   }
+
+  finalizeMuscleSpilloverTotals(muscleStimulus);
+  const muscleStimulusPillars = foldSpilloverStimulusToPillars(muscleStimulus);
+  const stimulated = countSufficientlyStimulatedPillars(muscleStimulusPillars);
 
   // Media sonno sulle notti disponibili (storico incompleto OK)
   const sleepHoursList = sleepSeries.map((s) => s.hours).filter((h) => Number.isFinite(h) && h > 0);
@@ -351,7 +413,7 @@ export function buildSaluteLongevityWindow({
     waistCm != null ? 1 : 0,
   );
 
-  const uniqueMuscleGroupIds = LONGEVITY_MUSCLE_PILLARS.filter((id) => uniqueMuscles.has(id));
+  const uniqueMuscleGroupIds = stimulated.ids;
 
   return {
     daysSampled,
@@ -359,12 +421,113 @@ export function buildSaluteLongevityWindow({
     cardioDays,
     pesiSessionCount,
     pesiDays,
-    uniqueMuscleGroups: uniqueMuscleGroupIds.length,
+    uniqueMuscleGroups: stimulated.count,
     uniqueMuscleGroupIds,
+    muscleStimulus,
+    muscleStimulusPillars,
     sleepAvgHours,
     sleepNights: sleepHoursList.length,
     waistCm,
     sleepSeries,
+  };
+}
+
+/**
+ * Finestra 14gg per Punteggio Progressione — macro giornalieri + sessioni + sonno.
+ *
+ * @param {{
+ *   fullHistory?: object | null,
+ *   todayDate?: string,
+ *   days?: number,
+ *   todayLiveLog?: Array | null,
+ *   sleepSeries?: Array<{ date: string, hours: number }> | null,
+ * }} args
+ */
+export function buildProgressionLogsWindow({
+  fullHistory = null,
+  todayDate = '',
+  days = LONGEVITY_WINDOW_DAYS,
+  todayLiveLog = null,
+  sleepSeries: sleepSeriesIn = null,
+} = {}) {
+  const today = String(todayDate || '').slice(0, 10);
+  const windowDays = Math.max(1, Number(days) || LONGEVITY_WINDOW_DAYS);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
+    return {
+      days: [],
+      workoutSessionsTotal: 0,
+      sleepAvgHours: null,
+      windowDays,
+    };
+  }
+
+  const sleepSeries = Array.isArray(sleepSeriesIn) && sleepSeriesIn.length > 0
+    ? sleepSeriesIn
+    : buildUnifiedSleepSeries({
+      fullHistory,
+      todayDate: today,
+      lookbackDays: windowDays,
+      todayLiveLog,
+    });
+
+  const sleepByDate = new Map();
+  for (const entry of sleepSeries) {
+    const key = String(entry?.date || '').slice(0, 10);
+    const hours = Number(entry?.hours);
+    if (key && Number.isFinite(hours) && hours > 0) {
+      sleepByDate.set(key, hours);
+    }
+  }
+
+  const dayRows = [];
+  let workoutSessionsTotal = 0;
+
+  for (let i = 0; i < windowDays; i += 1) {
+    const dateStr = addDays(today, -i);
+    const dayLog = dateStr === today && Array.isArray(todayLiveLog) && todayLiveLog.length > 0
+      ? todayLiveLog
+      : selectDayLogFromStoricoNode(selectStoricoDayNode(fullHistory, dateStr));
+
+    const totals = computeTotali(Array.isArray(dayLog) ? dayLog : []);
+    const kcal = Math.max(0, Math.round(Number(totals.kcal) || 0));
+    const prot = Math.max(0, Math.round(Number(totals.prot) || 0));
+    const carb = Math.max(0, Math.round(Number(totals.carb) || 0));
+    const fat = Math.max(0, Math.round(Number(totals.fatTotal) || 0));
+    const hasNutrition = (Array.isArray(dayLog) ? dayLog : []).some(
+      (e) => e && (e.type === 'food' || e.type === 'recipe' || e.type === 'meal'),
+    ) || kcal > 0;
+
+    let workoutSessions = 0;
+    for (const entry of (Array.isArray(dayLog) ? dayLog : [])) {
+      if (!entry || entry.type !== 'workout') continue;
+      if (isCardioWorkoutEntry(entry) || isPesiWorkoutEntry(entry)) {
+        workoutSessions += 1;
+      }
+    }
+    workoutSessionsTotal += workoutSessions;
+
+    dayRows.push({
+      date: dateStr,
+      kcal,
+      prot,
+      carb,
+      fat,
+      hasNutrition,
+      workoutSessions,
+      sleepHours: sleepByDate.has(dateStr) ? sleepByDate.get(dateStr) : null,
+    });
+  }
+
+  const sleepHoursList = [...sleepByDate.values()];
+  const sleepAvgHours = sleepHoursList.length > 0
+    ? Math.round((sleepHoursList.reduce((a, b) => a + b, 0) / sleepHoursList.length) * 10) / 10
+    : null;
+
+  return {
+    days: dayRows,
+    workoutSessionsTotal,
+    sleepAvgHours,
+    windowDays,
   };
 }
 

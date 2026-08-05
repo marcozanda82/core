@@ -15,9 +15,12 @@ import {
   serializeMealWipForPrompt,
 } from '../mealWipEngine.js';
 import {
+  coerceWipItemForDedup,
   computeWipMealTotals,
   declarationItemToWipAlimento,
+  deduplicateWipItems,
   suggestionToWipAlimento,
+  upsertWipMealItem,
 } from '../utils/wipMealItemUtils.js';
 import { registerWipMealBridge } from '../wipMealBridge.js';
 
@@ -31,55 +34,51 @@ function useWipMealState() {
   const [mealTime, setMealTime] = useState(null);
   const [constraints, setConstraints] = useState(() => createEmptyMealWipConstraints());
 
+  /** Setter unico: ogni scrittura passa dal buttafuori di dedup. */
+  const commitWipMealItems = useCallback((updater) => {
+    setWipMealItems((prev) => {
+      const safePrev = deduplicateWipItems(prev);
+      const next = typeof updater === 'function' ? updater(safePrev) : updater;
+      return deduplicateWipItems(next);
+    });
+  }, []);
+
   const addAlimentoToWip = useCallback((alimento) => {
     const fromSuggestion = alimento?.name && !alimento?.foodName
       ? suggestionToWipAlimento(alimento)
-      : declarationItemToWipAlimento(alimento);
+      : declarationItemToWipAlimento(alimento) || coerceWipItemForDedup(alimento);
     if (!fromSuggestion) return null;
 
-    setWipMealItems((prev) => {
-      const duplicate = prev.some((item) => {
-        const sameName = String(item?.foodName || item?.name || '').trim().toLowerCase()
-          === fromSuggestion.foodName.toLowerCase();
-        const sameGrams = Math.round(Number(item?.grams) || 0) === fromSuggestion.grams;
-        return sameName && sameGrams;
-      });
-      if (duplicate) return prev;
-      return [...prev, fromSuggestion];
-    });
+    // replace: aggiorna qty dello stesso nome; i duplicati nell'array LLM sono già fusi a monte
+    commitWipMealItems((prev) => upsertWipMealItem(prev, fromSuggestion, { mode: 'replace' }));
     return fromSuggestion;
-  }, []);
+  }, [commitWipMealItems]);
 
   const addAlimentiToWip = useCallback((items = []) => {
     if (!Array.isArray(items) || items.length === 0) return [];
 
-    const normalizedBatch = items
-      .map((raw) => declarationItemToWipAlimento(raw))
-      .filter(Boolean);
+    // Hard reduce: fonda doppioni LLM (es. 2× Cioccolato) sommando i grammi, poi upsert nel carrello
+    const normalizedBatch = deduplicateWipItems(
+      items.map((raw) => coerceWipItemForDedup(raw)).filter(Boolean),
+    );
 
     if (normalizedBatch.length === 0) return [];
 
-    setWipMealItems((prev) => {
-      const next = [...prev];
+    commitWipMealItems((prev) => {
+      let next = prev;
       normalizedBatch.forEach((candidate) => {
-        const duplicate = next.some((item) => {
-          const sameName = String(item?.foodName || item?.name || '').trim().toLowerCase()
-            === candidate.foodName.toLowerCase();
-          const sameGrams = Math.round(Number(item?.grams) || 0) === candidate.grams;
-          return sameName && sameGrams;
-        });
-        if (!duplicate) next.push(candidate);
+        next = upsertWipMealItem(next, candidate, { mode: 'replace' });
       });
       return next;
     });
 
     return normalizedBatch;
-  }, []);
+  }, [commitWipMealItems]);
 
   const removeAlimentoFromWip = useCallback((itemId) => {
     if (itemId == null) return;
-    setWipMealItems((prev) => prev.filter((item) => String(item.id) !== String(itemId)));
-  }, []);
+    commitWipMealItems((prev) => prev.filter((item) => String(item.id) !== String(itemId)));
+  }, [commitWipMealItems]);
 
   const clearWipMeal = useCallback(() => {
     setWipMealItems([]);

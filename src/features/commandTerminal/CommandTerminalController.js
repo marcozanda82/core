@@ -40,7 +40,6 @@ import {
   buildUpdateLoggedMealPreviewProposal,
   buildConsultantMealAdviceMessage,
   buildWipMealAdviceMessage,
-  buildDeterministicMealLogFeedback,
   projectNutritionAfterMeal,
   sumMealItemsMacros,
   sanitizeWipSuggestions,
@@ -127,6 +126,16 @@ import {
   scaleSuggestionToResidualCalories,
   serializeMealWipForPrompt,
 } from '../wipMealBuilder/mealWipEngine.js';
+import {
+  buildWipConfirmAdviceMessage,
+  deduplicateWipItems,
+  mergeWipMealItemsByName,
+  normalizeWipFoodNameKey,
+} from '../wipMealBuilder/utils/wipMealItemUtils.js';
+import {
+  buildMealReceiptPayload,
+  mealReceiptFallbackText,
+} from '../chat/mealReceiptUtils.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -427,7 +436,7 @@ export class CommandTerminalController {
 
   /**
    * Mute & Replace: scarta qualsiasi testo discorsivo Gemini su ADD_FOOD.
-   * Il budget/copy lo decide solo il codice (proposal locale o buildDeterministicMealLogFeedback).
+   * Il budget/copy lo decide solo il codice (MealReceiptMessage / buildMealReceiptPayload).
    */
   muteAddFoodLlmCopy(command = {}) {
     const next = command && typeof command === 'object' ? { ...command } : {};
@@ -470,10 +479,25 @@ export class CommandTerminalController {
     }
 
     const projection = projectNutritionAfterMeal(currentState, mealTotals);
-    const mealLabel = String(proposal?.label || options.mealLabel || '').trim();
-    const message = buildDeterministicMealLogFeedback(projection, mealLabel);
-    this.publishSystemMessage(message);
-    return message;
+    const mealReceipt = buildMealReceiptPayload({
+      items: Array.isArray(proposal?.items) ? proposal.items : expandFoodPayloadItems(payload),
+      mealType: proposal?.mealType || payload?.mealType || '',
+      timeString: proposal?.exactTime || payload?.exactTime || payload?.timeString || '',
+      mealTotals,
+      projection,
+    });
+    const text = mealReceiptFallbackText(mealReceipt);
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'MEAL_RECEIPT',
+        message: text,
+        text,
+        mealReceipt,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return mealReceipt;
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
@@ -1516,28 +1540,10 @@ export class CommandTerminalController {
       ? parseWipMealDeclaration(rawQuery)
       : null;
     const mergedWipMealItems = (() => {
-      const base = [...wipMealSnapshot];
+      const base = deduplicateWipItems(wipMealSnapshot);
       if (!wipMealDeclaration?.items?.length) return base;
-      wipMealDeclaration.items.forEach((item) => {
-        const name = String(item?.foodName || '').trim().toLowerCase();
-        const grams = Math.round(Number(item?.grams) || 0);
-        if (!name || grams <= 0) return;
-        const duplicate = base.some((entry) => {
-          const entryName = String(entry?.foodName || entry?.name || '').trim().toLowerCase();
-          const entryGrams = Math.round(Number(entry?.grams ?? entry?.weight) || 0);
-          return entryName === name && entryGrams === grams;
-        });
-        if (!duplicate) {
-          base.push({
-            foodName: item.foodName,
-            name: item.foodName,
-            grams,
-            weight: grams,
-            qta: grams,
-          });
-        }
-      });
-      return base;
+      // Within-batch: somma grammi; verso carrello: replace qty (no doppio conteggio se LLM rilista)
+      return mergeWipMealItemsByName(base, wipMealDeclaration.items, { mode: 'replace' });
     })();
 
     if ((isFixDraft || isSubstituteDraft) && !mealDraftProjection?.items?.length) {
@@ -1802,6 +1808,14 @@ export class CommandTerminalController {
           ? buildUpdateLoggedMealAdviceMessage(adviceContext)
         : isConsultantMeal
           ? (String(adviceMessage || '').trim() || buildConsultantMealAdviceMessage(adviceContext))
+        : isWipMealBuild && wipSubIntent === MEAL_WIP_SUB_INTENTS.CONFIRM
+          ? (() => {
+              const cartItems = Array.isArray(adviceContext?.wipMealProjection?.items)
+                && adviceContext.wipMealProjection.items.length > 0
+                ? adviceContext.wipMealProjection.items
+                : mergedWipMealItems;
+              return buildWipConfirmAdviceMessage(deduplicateWipItems(cartItems));
+            })()
         : isWipMealBuild
           ? (String(adviceMessage || '').trim() || buildWipMealAdviceMessage(adviceContext))
         : adviceMessage;
@@ -1853,12 +1867,12 @@ export class CommandTerminalController {
               const projectionItems = Array.isArray(adviceContext?.wipMealProjection?.items)
                 ? adviceContext.wipMealProjection.items
                 : [];
-              const snapshotKeys = new Set(
+              const snapshotByName = new Map(
                 wipMealSnapshot.map((entry) => {
-                  const name = String(entry?.foodName || entry?.name || '').trim().toLowerCase();
+                  const name = normalizeWipFoodNameKey(entry?.foodName || entry?.name);
                   const grams = Math.round(Number(entry?.grams ?? entry?.weight) || 0);
-                  return `${name}_${grams}`;
-                }),
+                  return [name, grams];
+                }).filter(([name]) => Boolean(name)),
               );
               const snapshotKcal = wipMealSnapshot.reduce(
                 (sum, entry) => sum + (Number(entry?.kcal ?? entry?.cal) || 0),
@@ -1868,8 +1882,13 @@ export class CommandTerminalController {
 
               const items = [];
               for (const item of projectionItems) {
-                const key = `${String(item.foodName || '').trim().toLowerCase()}_${Math.round(Number(item.grams) || 0)}`;
-                if (!item.foodName || !(item.grams > 0) || snapshotKeys.has(key)) continue;
+                const nameKey = normalizeWipFoodNameKey(item.foodName);
+                if (!nameKey || !(item.grams > 0)) continue;
+                const existingGrams = snapshotByName.get(nameKey);
+                // Stesso alimento già in carrello con stessi grammi → skip; altrimenti upsert (update qty)
+                if (existingGrams != null && existingGrams === Math.round(Number(item.grams) || 0)) {
+                  continue;
+                }
                 let grams = Math.round(Number(item.grams) || 0);
                 let kcal = Math.round(Number(item.kcal) || 0);
                 if (remainingBudget != null && kcal > remainingBudget && grams > 0 && kcal > 0) {
@@ -1891,9 +1910,10 @@ export class CommandTerminalController {
                 });
               }
               const seedConstraints = hasMealWipConstraints(wipConstraints) ? wipConstraints : null;
-              if (items.length === 0 && !seedConstraints) return null;
+              const dedupedSeedItems = deduplicateWipItems(items);
+              if (dedupedSeedItems.length === 0 && !seedConstraints) return null;
               return {
-                items,
+                items: dedupedSeedItems,
                 mealType: wipMealDeclaration?.mealType || options?.wipMealMealType || null,
                 exactTime: wipMealDeclaration?.exactTime || null,
                 constraints: seedConstraints,

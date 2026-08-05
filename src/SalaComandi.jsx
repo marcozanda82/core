@@ -27,6 +27,12 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
+import {
+  buildMealReceiptPayload,
+  mealReceiptFallbackText,
+  sanitizeFoodIcon,
+} from './features/chat/mealReceiptUtils';
 import {
   fetchUserPortionsDict,
   learnUserPortionsFromConfirmedMeal,
@@ -95,6 +101,7 @@ import {
   AI_COACH_EVAL_INACTIVE,
   AI_COACH_EMPTY_HISTORY,
 } from './constants/salaComandiConstants';
+import { persistTrendHubHemisphere } from './features/trendHub/hooks/useTrendHubHemisphere';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
   getWorkoutActivityTypeDef,
@@ -626,6 +633,22 @@ export default function SalaComandi() {
 
   const handleOpenTrendDiag = useCallback(() => {
     setMetabolicToolRequest('DIAG');
+    setActiveBottomTab('bussola');
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  /** Home twin widget → emisfero Salute (tab Trend). */
+  const handleOpenTrendSalute = useCallback(() => {
+    persistTrendHubHemisphere('salute');
+    setActiveBottomTab('bussola');
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  /** Home twin widget → emisfero Progressione (tab Trend). */
+  const handleOpenTrendProgressione = useCallback(() => {
+    persistTrendHubHemisphere('progressione');
     setActiveBottomTab('bussola');
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -3553,6 +3576,7 @@ export default function SalaComandi() {
               batchId: batchIdFood,
               isEstimated: false,
               type: isRecipe ? 'recipe' : 'food',
+              ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
             };
           }
           const qSafe = Math.max(5, qty);
@@ -3591,6 +3615,7 @@ export default function SalaComandi() {
             mealTime: mealDec,
             batchId: batchIdFood,
             isEstimated: true,
+            ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
           };
         })
         .filter(Boolean);
@@ -3682,14 +3707,33 @@ export default function SalaComandi() {
       const totFat =
         Math.round(alimentiProcessatiFood.reduce((s, f) => s + (Number(f.fatTotal ?? f.fat) || 0), 0) * 10) /
         10;
-      const testoRispostaFood = `🎯 **Pasto Registrato**
-- **Orario:** ${oraStringFood}
-- **Kcal Totali:** ${totKcal}
-- **Proteine:** ${totPro}g
-- **Carboidrati:** ${totCar}g
-- **Grassi:** ${totFat}g
-
-Ottimo! Diario aggiornato. 🥗`;
+      const mealTotals = { kcal: totKcal, pro: totPro, carbo: totCar, fat: totFat };
+      const logBefore = isSimulationMode
+        ? (Array.isArray(simulatedLog) ? simulatedLog : [])
+        : (dailyLogRef.current || []);
+      const projection = projectNutritionAfterMeal(
+        {
+          activeLog: logBefore,
+          userTargets: effectiveTargetsForCurrentDate || userTargets,
+        },
+        mealTotals,
+      );
+      const mealReceipt = buildMealReceiptPayload({
+        items: alimentiProcessatiFood.map((food, index) => ({
+          foodName: food.desc || food.name,
+          name: food.desc || food.name,
+          grams: food.qta ?? food.weight,
+          kcal: food.kcal ?? food.cal,
+          prot: food.prot,
+          carb: food.carb,
+          fat: food.fatTotal ?? food.fat,
+          icon: food.icon || addFoodItems[index]?.icon,
+        })),
+        mealType: targetMealType || alimentiProcessatiFood[0]?.mealType || '',
+        timeString: oraStringFood,
+        mealTotals,
+        projection,
+      });
 
       if (isSimulationMode) {
         setSimulatedLog((prev) => [...(prev || []), ...alimentiProcessatiFood]);
@@ -3700,14 +3744,20 @@ Ottimo! Diario aggiornato. 🥗`;
           return nuovoLogFood;
         });
       }
-      return testoRispostaFood;
+      return {
+        mealReceipt,
+        text: mealReceiptFallbackText(mealReceipt),
+      };
     },
     [
       mapProposalItemsToDiaryFoods,
       isSimulationMode,
+      simulatedLog,
       setSimulatedLog,
       setDailyLog,
       syncDatiFirebase,
+      effectiveTargetsForCurrentDate,
+      userTargets,
     ]
   );
 
@@ -6131,6 +6181,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         if (!name) throw new Error('foodName mancante');
         if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
         const dbKey = item?.foodDbKey ?? item?.matchedKey;
+        const icon = sanitizeFoodIcon(item?.icon);
         return {
           name,
           foodName: name,
@@ -6138,6 +6189,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           grams,
           isEstimated: item?.isEstimated === true,
           wasEstimated: item?.wasEstimated === true || item?.isEstimated === true,
+          ...(icon ? { icon } : {}),
           ...(dbKey != null && String(dbKey).trim() !== ''
             ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
             : {}),
@@ -6300,6 +6352,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           items,
         });
         cancelMealBuilder();
+        if (savedMessage?.mealReceipt) {
+          if (announce) {
+            setChatHistory((prev) => [
+              ...(prev || []),
+              {
+                sender: 'ai',
+                type: 'MEAL_RECEIPT',
+                text: savedMessage.text || mealReceiptFallbackText(savedMessage.mealReceipt),
+                mealReceipt: savedMessage.mealReceipt,
+              },
+            ]);
+          }
+          return savedMessage;
+        }
         const macroHint =
           totals.kcal > 0
             ? ` (bozza ~${Math.round(totals.kcal)} kcal · P${Math.round(totals.prot)} C${Math.round(totals.carb)} F${Math.round(totals.fat)})`
@@ -8155,10 +8221,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 fourCylinder={userModel?.fourCylinder ?? null}
                 fullHistory={fullHistory}
                 activeLog={activeLog}
+                userTargets={userTargets}
+                bodyMetricsHistory={bodyMetricsHistory}
+                heightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || null}
                 isSimulationMode={isSimulationMode}
                 onConfirmSession={handleConfirmTrainingBlockSession}
                 onPostponeSession={handlePostponeTrainingBlockSession}
                 onOpenTrendDiag={handleOpenTrendDiag}
+                onOpenLongevity={handleOpenTrendSalute}
+                onOpenProgressione={handleOpenTrendProgressione}
                 creatorOpen={trainingBlockCreatorOpen}
                 onCreatorOpenChange={setTrainingBlockCreatorOpen}
               />

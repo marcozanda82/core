@@ -13,6 +13,14 @@ import MetabolicPillarsTelemetry from './features/metabolic/components/Metabolic
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 import MetabolicDiagnostics from './MetabolicDiagnostics';
 import { useActiveTrendTool } from './features/trendHub/hooks/useActiveTrendTool';
+import ProgressionScoreWidget from './features/trendHub/components/ProgressionScoreWidget';
+import { calculateProgressionScore } from './features/trendHub/utils/saluteDashboardMetrics';
+import {
+  buildProgressionLogsWindow,
+  LONGEVITY_WINDOW_DAYS,
+  selectTodayLog,
+} from './features/trendHub/utils/saluteHistorySeries';
+import { getTodayString } from './coreEngine';
 
 const DEFAULT_TIMEFRAME = '1d';
 const TREND_TOOLS = [
@@ -282,6 +290,8 @@ export default function MetabolicUnifiedView({
   activeCompensation = null,
   onConfirmCompensation = null,
   onClearCompensation = null,
+  sleepEngineLiveLog = null,
+  todayDate = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
@@ -447,8 +457,55 @@ export default function MetabolicUnifiedView({
 
   const compassVisible = compassScreenActive && activeTool === 'COMPASS';
 
+  const progressionTodayIso = String(todayDate || activeDate || getTodayString()).slice(0, 10);
+  const progressionActiveLogIsToday = Boolean(progressionTodayIso)
+    && progressionTodayIso === String(activeDate || '').slice(0, 10);
+
+  const progressionTodayLiveLog = useMemo(() => {
+    if (progressionActiveLogIsToday && Array.isArray(sleepEngineLiveLog) && sleepEngineLiveLog.length > 0) {
+      return sleepEngineLiveLog;
+    }
+    return selectTodayLog(
+      fullHistory,
+      progressionTodayIso,
+      Array.isArray(activeLog) ? activeLog : [],
+      progressionActiveLogIsToday,
+    );
+  }, [
+    progressionActiveLogIsToday,
+    sleepEngineLiveLog,
+    fullHistory,
+    progressionTodayIso,
+    activeLog,
+  ]);
+
+  const progressionResult = useMemo(() => {
+    const logs = buildProgressionLogsWindow({
+      fullHistory,
+      todayDate: progressionTodayIso,
+      days: LONGEVITY_WINDOW_DAYS,
+      todayLiveLog: progressionTodayLiveLog,
+    });
+    return calculateProgressionScore(
+      {
+        days: logs.days,
+        sleepAvgHours: logs.sleepAvgHours,
+        workoutSessionsTotal: logs.workoutSessionsTotal,
+      },
+      userTargets || {},
+    );
+  }, [fullHistory, progressionTodayIso, progressionTodayLiveLog, userTargets]);
+
   return (
     <div className="trend-unified-root">
+      <div className="w-full shrink-0 px-1 pb-1 pt-1">
+        <ProgressionScoreWidget
+          score={progressionResult.finalScore}
+          breakdown={progressionResult.breakdown}
+          size={200}
+        />
+      </div>
+
       <div className="trend-sticky-controls">
         {activeTool !== 'DIAG' ? (
           <div

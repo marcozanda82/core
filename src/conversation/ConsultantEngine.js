@@ -15,6 +15,7 @@ import {
 } from '../utils/foodResolver.js';
 import { resolveExactTimeForMeal, isMealProposalQuery, matchDraftItemByFoodQuery, findMostProblematicDraftItem } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import { buildTodayDiaryIndex } from '../features/commandTerminal/conversation/todayDiaryIndex.js';
+import { deduplicateWipItems, normalizeWipFoodNameKey } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
 import { analyzeTodayFromLog } from '../aiDayCoach';
 import {
   aggregatePredictiveMealCombos,
@@ -704,7 +705,9 @@ export function sanitizeWipSuggestions(suggestions, adviceContext = {}) {
     ? adviceContext.wipMealProjection.items
     : [];
   const wipNames = new Set(
-    wipItems.map((item) => String(item?.foodName || '').trim().toLowerCase()).filter(Boolean),
+    wipItems
+      .map((item) => normalizeWipFoodNameKey(item?.foodName || item?.name))
+      .filter(Boolean),
   );
   const constraintResidual = Number(adviceContext?.residualBudgetAfterWipMeal?.kcal);
   const constraintMax = Number(
@@ -724,9 +727,10 @@ export function sanitizeWipSuggestions(suggestions, adviceContext = {}) {
       let weight = Math.round(Number(entry?.weight ?? entry?.grams) || 0);
       if (!name || weight <= 0) return null;
 
-      const normalizedName = name.toLowerCase();
+      const normalizedName = normalizeWipFoodNameKey(name);
       if (wipNames.has(normalizedName)) return null;
-      if (wipNames.has(normalizedName.split(/\s+/)[0])) return null;
+      const firstToken = normalizeWipFoodNameKey(name.split(/\s+/)[0]);
+      if (firstToken && wipNames.has(firstToken)) return null;
 
       const macros = entry?.macros && typeof entry.macros === 'object' ? entry.macros : entry;
       let calories = Math.round(Number(entry?.calories ?? entry?.kcal) || 0);
@@ -1425,6 +1429,7 @@ export function projectNutritionAfterMeal(currentAppState = {}, mealTotals = {})
 
 /**
  * Fallback deterministico se l'LLM copy non è disponibile.
+ * @deprecated Preferire buildMealReceiptPayload + MealReceiptMessage.
  * @param {ReturnType<typeof projectNutritionAfterMeal>} projection
  * @param {string} [mealLabel]
  */
@@ -1740,7 +1745,9 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
       ? computeResidualBudgetAfterPartialMeal(remainingBudget, partialMealTotals)
       : null;
 
-  const wipMealItemsRaw = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
+  const wipMealItemsRaw = deduplicateWipItems(
+    Array.isArray(options?.wipMealItems) ? options.wipMealItems : [],
+  );
   const wipMealType = String(
     options?.wipMealDeclaration?.mealType
     || options?.wipMealMealType
@@ -1997,7 +2004,9 @@ export function generateConsultantSystemInstruction() {
     'INTENTO WIP_MEAL_BUILD — leggi [MEAL_WIP].subIntent:',
     '  QUERY: adviceMessage empatico + ricalcolo; suggestions=[] mealProposals=[]. NON chiudere.',
     '  UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100). mealProposals=[].',
+    '  UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
     '  CONFIRM: mealProposals riepilogo finale; suggestions=[].',
+    '  CONFIRM adviceMessage: SOLO Markdown elenco puntato, formato «- [Emoji] Nome (Grammi)». Niente JSON in chat.',
     'HARD CONSTRAINT WIP: se maxCalories è valorizzato, ogni suggestion.weight → calories ≤ residualKcal.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — resultingItems/items mai vuoti.',
     'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',
@@ -2215,8 +2224,15 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
         `Sub-intent corrente: ${String(ctx.wipSubIntent || mealWipState?.subIntent || 'UPDATE').toUpperCase()}.`,
         'QUERY: adviceMessage empatico + ricalcolo macros; suggestions=[] mealProposals=[]. NON finalizzare.',
         'UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100) su [MEAL_WIP]/[RESIDUAL_BUDGET_AFTER_WIP_MEAL]. mealProposals=[].',
+        'UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
         'CONFIRM: mealProposals con riepilogo finale per salvataggio; suggestions=[].',
-        'Esempio tono: «Puoi aggiungere 🌰 6g di noci per restare nelle 100 kcal ✅».',
+        'CONFIRM adviceMessage — SOLO Markdown pulito (niente JSON grezzo). Una riga intro + elenco:',
+        '  Ecco il riepilogo del tuo pasto pronto per il salvataggio:',
+        '  - 🥣 Yogurt greco 0% (100g)',
+        '  - 🌰 Noci sgusciate (6g)',
+        '  - 🍎 Mela (120g)',
+        'Formato riga obbligatorio: - [Emoji] Nome Alimento (Grammi)',
+        'Esempio tono UPDATE: «Puoi aggiungere 🌰 6g di noci per restare nelle 100 kcal ✅».',
         'VIETATO grammature statiche non calcolate.',
       ].join('\n')
       : '',

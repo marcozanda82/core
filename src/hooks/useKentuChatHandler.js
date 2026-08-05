@@ -1389,13 +1389,18 @@ export function useKentuChatHandler(ctx) {
         }
 
         if (addFoodPayload != null) {
-          const testoRispostaFood = commitAddFoodChatPayload(addFoodPayload);
+          const foodResult = commitAddFoodChatPayload(addFoodPayload);
+          const receipt = foodResult?.mealReceipt;
+          const testoRispostaFood = typeof foodResult === 'string'
+            ? foodResult
+            : (foodResult?.text || '');
           setChatHistory((prev) => {
             const next = [...prev];
             next.pop();
             next.push({
               sender: 'ai',
               text: testoRispostaFood || 'Pasto registrato. 🥗',
+              ...(receipt ? { type: 'MEAL_RECEIPT', mealReceipt: receipt } : {}),
             });
             return next;
           });

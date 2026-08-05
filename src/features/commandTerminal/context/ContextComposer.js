@@ -137,7 +137,7 @@ export class ContextComposer {
         : [],
       knownFoods,
       slotFillingPolicy:
-        'ADD_FOOD few-shot: User "Ho mangiato 90g di sardine all\'olio e 160g di pane integrale" → items [{foodName:"sardine all\'olio",grams:90},{foodName:"pane integrale",grams:160}]. foodName = stringa pulita DB (NO grammi, NO congiunzioni). uiMessage/adviceMessage VUOTI.',
+        'ADD_FOOD few-shot: User "Ho mangiato 90g di sardine all\'olio e 160g di pane integrale" → items [{foodName:"sardine all\'olio",icon:"🐟",grams:90},{foodName:"pane integrale",icon:"🥖",grams:160}]. foodName = stringa pulita DB (NO grammi, NO congiunzioni). icon = emoji precisa. uiMessage/adviceMessage VUOTI.',
     };
   }
 

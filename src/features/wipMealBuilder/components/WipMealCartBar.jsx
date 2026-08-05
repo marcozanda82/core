@@ -1,5 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
+import { normalizeWipFoodNameKey } from '../utils/wipMealItemUtils.js';
 
 const MEAL_LABELS = {
   colazione: 'Colazione',
@@ -48,8 +49,9 @@ export default function WipMealCartBar({
           const name = String(item?.foodName || item?.name || 'Alimento').trim();
           const grams = Math.round(Number(item?.grams ?? item?.weight) || 0);
           const kcal = Math.round(Number(item?.kcal ?? item?.cal) || 0);
+          const nameKey = normalizeWipFoodNameKey(name) || item.id || name;
           return (
-            <div key={item.id || `${name}_${grams}`} className="wip-meal-cart-bar__chip">
+            <div key={nameKey} className="wip-meal-cart-bar__chip">
               <span className="wip-meal-cart-bar__chip-name">{name}</span>
               <span className="wip-meal-cart-bar__chip-meta">
                 {grams}

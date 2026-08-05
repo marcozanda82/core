@@ -156,6 +156,7 @@ export default function SaluteView({
     const computed = calculateLongevityScore({
       cardioMinutesTotal: longevityWindow.cardioMinutesTotal,
       uniqueMuscleGroups: longevityWindow.uniqueMuscleGroups,
+      muscleStimulusPillars: longevityWindow.muscleStimulusPillars,
       pesiSessionCount: longevityWindow.pesiSessionCount,
       sleepAvgHours: longevityWindow.sleepAvgHours ?? tonightHours,
       waistCm: longevityWindow.waistCm ?? biometrics.waistCm,

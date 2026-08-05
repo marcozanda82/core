@@ -11,6 +11,13 @@ export const foodItemSchema = {
         + 'VIETATO: "e 160 g di pane", "90g sardine", "e pane". '
         + 'La quantita va SOLO in grams.',
     },
+    icon: {
+      type: 'string',
+      description:
+        'EMOJI PRECISA OBBLIGATORIA: la singola emoji piu accurata basata sulla lavorazione del cibo. '
+        + 'Es: pomodoro→🍅, passata di pomodoro→🥫, salmone→🐟, piadina→🫓, pasta→🍝, pane→🥖, yogurt→🥣. '
+        + 'VIETATO testo o piu emoji: solo 1 pittogramma.',
+    },
     grams: {
       type: 'number',
       nullable: true,
@@ -29,7 +36,7 @@ export const foodItemSchema = {
         + 'true SOLO se stima media universale (alimento assente dal dizionario). Ometti/false se grams assente.',
     },
   },
-  required: ['foodName'],
+  required: ['foodName', 'icon'],
 };
 
 /** Alimento risultante dopo mutazione (source of truth per overwrite Firebase). */

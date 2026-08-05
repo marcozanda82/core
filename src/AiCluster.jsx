@@ -8,6 +8,7 @@ import MealDraftConfirmation from './components/MealDraftConfirmation';
 import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
 import NewFoodPreviewCard from './components/NewFoodPreviewCard';
+import MealReceiptMessage from './features/chat/MealReceiptMessage';
 import WipMealCartBar from './features/wipMealBuilder/components/WipMealCartBar';
 import WipMealSmartChips from './features/wipMealBuilder/components/WipMealSmartChips';
 import {
@@ -369,6 +370,10 @@ export default function AiCluster({
                       <div className="dot" />
                       <div className="dot" />
                     </div>
+                  </div>
+                ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
+                  <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                    <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
                 ) : (
                   <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>

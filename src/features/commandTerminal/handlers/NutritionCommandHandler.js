@@ -51,6 +51,21 @@ export function initNutritionHandlers({
           { message: result.trim(), text: result.trim() },
           { source: 'NutritionCommandHandler' },
         );
+        return;
+      }
+      if (result && typeof result === 'object' && result.mealReceipt) {
+        const text = String(result.text || '').trim() || '✅ Pasto registrato';
+        console.log(`🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (NutritionHandler→MEAL_RECEIPT):`, text);
+        bus.publish(
+          DISPATCH_SYSTEM_MESSAGE,
+          {
+            type: 'MEAL_RECEIPT',
+            message: text,
+            text,
+            mealReceipt: result.mealReceipt,
+          },
+          { source: 'NutritionCommandHandler' },
+        );
       }
     } catch (error) {
       bus.publish(

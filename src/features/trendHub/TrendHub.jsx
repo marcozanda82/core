@@ -104,6 +104,8 @@ export default function TrendHub({
       activeToolRequest,
       onActiveToolRequestHandled,
       compassScreenActive,
+      sleepEngineLiveLog: Array.isArray(sleepEngineLiveLog) ? sleepEngineLiveLog : activeLog,
+      todayDate: healthTodayDate,
     }),
     [
       mapData,
@@ -127,6 +129,8 @@ export default function TrendHub({
       activeToolRequest,
       onActiveToolRequestHandled,
       compassScreenActive,
+      sleepEngineLiveLog,
+      healthTodayDate,
     ],
   );
 

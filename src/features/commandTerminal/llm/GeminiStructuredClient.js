@@ -357,6 +357,9 @@ function pickMergedGrams(itemA, itemB) {
 function mergeOverlappingFoodItems(itemA, itemB) {
   const foodName = pickMergedFoodName(itemA?.foodName, itemB?.foodName);
   const merged = { ...itemA, ...itemB, foodName };
+  const iconA = asTrimmedString(itemA?.icon);
+  const iconB = asTrimmedString(itemB?.icon);
+  if (iconA || iconB) merged.icon = iconA || iconB;
   const grams = pickMergedGrams(itemA, itemB);
   if (grams != null) merged.grams = grams;
   else delete merged.grams;
@@ -822,6 +825,18 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     if (!cleanName) return null;
     next.foodName = cleanName;
 
+    const icon = asTrimmedString(next.icon);
+    if (icon) {
+      try {
+        const match = icon.match(/\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*/u);
+        next.icon = match ? match[0] : icon.slice(0, 4);
+      } catch {
+        next.icon = icon.slice(0, 4);
+      }
+    } else {
+      delete next.icon;
+    }
+
     let gramsNum = Number(next.grams ?? next.qty ?? next.weight);
     // Se il modello ha infilato la grammatura nel foodName ("e 160 g di pane") e ha
     // duplicato i grammi del primo item, preferisci i grammi trovati nel nome grezzo.
@@ -1180,7 +1195,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto (ADD_FOOD): items[] = un oggetto per alimento. foodName PURO (no "e 160 g di pane"). grams = SOLO la quantita di QUELL alimento. Esempio: "90g sardine e 160g pane" → [{foodName:"sardine",grams:90},{foodName:"pane",grams:160}]. adviceMessage/uiMessage VUOTI.'
+        ? 'Registrazione pasto (ADD_FOOD): items[] = un oggetto per alimento. foodName PURO (no "e 160 g di pane"). icon = singola emoji precisa (pomodoro→🍅, passata→🥫, pasta→🍝). grams = SOLO la quantita di QUELL alimento. Esempio: "90g sardine e 160g pane" → [{foodName:"sardine",icon:"🐟",grams:90},{foodName:"pane",icon:"🥖",grams:160}]. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'

@@ -13,6 +13,7 @@ import {
   REFERENCE_HEIGHT_CM,
   resolveMorningSleepForInsight as resolveMorningSleepFromHistory,
 } from './saluteHistorySeries';
+import { countSufficientlyStimulatedPillars } from './muscleSpillover.js';
 
 export const SLEEP_TARGET_HOURS = DEFAULT_SLEEP_HOURS;
 export { REFERENCE_HEIGHT_CM };
@@ -20,6 +21,19 @@ export { resolveMorningSleepFromHistory as resolveMorningSleepForInsight };
 
 /** Soglia clinica WHtR: girovita critico = altezza × 0.5 (multi-utente). */
 export const WHTR_LIMIT_RATIO = 0.5;
+
+export {
+  MUSCLE_STIMULUS_SUFFICIENT_TOTAL,
+  muscleSpilloverMatrix,
+  SPILLOVER_MUSCLE_KEYS,
+  createEmptyMuscleSpilloverStimulus,
+  resolveSpilloverMuscleKey,
+  applySpilloverSession,
+  finalizeMuscleSpilloverTotals,
+  foldSpilloverStimulusToPillars,
+  countSufficientlyStimulatedPillars,
+  muscleStimulusBarSegments,
+} from './muscleSpillover.js';
 
 /**
  * Limite girovita (cm) personalizzato: altezza × 0.5.
@@ -290,6 +304,7 @@ export function buildGlycemicRiskBreakdown(args = {}) {
  * @param {{
  *   cardioMinutesTotal?: number,
  *   uniqueMuscleGroups?: number,
+ *   muscleStimulusPillars?: Record<string, { direct?: number, indirect?: number, total?: number }> | null,
  *   pesiSessionCount?: number,
  *   sleepAvgHours?: number | null,
  *   waistCm?: number | null,
@@ -314,6 +329,7 @@ export function buildGlycemicRiskBreakdown(args = {}) {
  *     sleepAvg: number | null,
  *     userHeight: number,
  *     criticalThreshold: number,
+ *     muscleStimulusPillars?: Record<string, { direct: number, indirect: number, total: number }>,
  *   },
  * }}
  */
@@ -321,6 +337,7 @@ export function calculateLongevityScore(input = {}) {
   const {
     cardioMinutesTotal = 0,
     uniqueMuscleGroups = null,
+    muscleStimulusPillars = null,
     pesiSessionCount = 0,
     sleepAvgHours = null,
     waistCm = null,
@@ -340,8 +357,13 @@ export function calculateLongevityScore(input = {}) {
   const cardioScoreRaw = Math.min((cardioMins / 150) * pillarMax, pillarMax);
   const cardioScore = Number.isFinite(cardioScoreRaw) ? cardioScoreRaw : 0;
 
-  // —— Pesi: 5 gruppi unici (petto, schiena, gambe, braccia, core) ——
-  let uniqueGroups = Number(uniqueMuscleGroups);
+  // —— Pesi: pilastri con total (direct+spillover) >= 50 ——
+  const fromSpillover = muscleStimulusPillars
+    ? countSufficientlyStimulatedPillars(muscleStimulusPillars)
+    : null;
+  let uniqueGroups = fromSpillover != null
+    ? fromSpillover.count
+    : Number(uniqueMuscleGroups);
   if (!Number.isFinite(uniqueGroups) || uniqueGroups < 0) {
     uniqueGroups = Math.min(5, Math.max(0, Number(pesiSessionCount) || 0));
   }
@@ -389,6 +411,7 @@ export function calculateLongevityScore(input = {}) {
       sleepAvg,
       userHeight: Math.round(userHeight * 10) / 10,
       criticalThreshold: Math.round(criticalThreshold * 10) / 10,
+      ...(muscleStimulusPillars ? { muscleStimulusPillars } : {}),
     },
   };
 }
@@ -432,6 +455,182 @@ export function formatCompensationDelta(deltaKcal) {
   if (rounded === 0) return '0 kcal';
   const sign = rounded > 0 ? '+' : '';
   return `${sign}${rounded} kcal`;
+}
+
+/** Max punti per pilastro Progressione (Nutrizione / Allenamento / Riposo). */
+export const PROGRESSION_PILLAR_MAX = 100 / 3;
+
+/** Target sessioni training in 14 giorni (≈ 4/settimana). */
+export const PROGRESSION_SESSION_TARGET_14D = 8;
+
+/** Target ore sonno per pilastro Riposo. */
+export const PROGRESSION_SLEEP_TARGET_HOURS = 7.5;
+
+/**
+ * Normalizza target nutrizionali da userTargets / profilo.
+ * @param {object | null | undefined} userTargets
+ */
+export function resolveProgressionNutritionTargets(userTargets = {}) {
+  const t = userTargets && typeof userTargets === 'object' ? userTargets : {};
+  const kcal = Number(t.kcal ?? t.targetCalories ?? t.calories);
+  const prot = Number(t.prot ?? t.protein ?? t.proteinTarget);
+  const carb = Number(t.carb ?? t.carbo ?? t.carbs);
+  const fat = Number(t.fatTotal ?? t.fat ?? t.fats);
+  return {
+    kcal: Number.isFinite(kcal) && kcal > 0 ? Math.round(kcal) : 2000,
+    prot: Number.isFinite(prot) && prot > 0 ? Math.round(prot) : 150,
+    carb: Number.isFinite(carb) && carb > 0 ? Math.round(carb) : 200,
+    fat: Number.isFinite(fat) && fat > 0 ? Math.round(fat) : 60,
+  };
+}
+
+/**
+ * Score giornaliero nutrizione 0–1 (calorie 0.5 + prot 0.3 + carbo/grassi 0.2).
+ * @param {{ kcal?: number, prot?: number, carb?: number, fat?: number }} intake
+ * @param {{ kcal: number, prot: number, carb: number, fat: number }} targets
+ * @returns {number}
+ */
+export function scoreProgressionNutritionDay(intake, targets) {
+  const kcal = Math.max(0, Number(intake?.kcal) || 0);
+  const prot = Math.max(0, Number(intake?.prot) || 0);
+  const carb = Math.max(0, Number(intake?.carb ?? intake?.carbo) || 0);
+  const fat = Math.max(0, Number(intake?.fat ?? intake?.fatTotal) || 0);
+  const t = targets || resolveProgressionNutritionTargets();
+
+  let score = 0;
+  if (t.kcal > 0 && Math.abs(kcal - t.kcal) / t.kcal <= 0.05) {
+    score += 0.5;
+  }
+  if (Math.abs(prot - t.prot) <= 10) {
+    score += 0.3;
+  }
+  if (Math.abs(carb - t.carb) <= 15 && Math.abs(fat - t.fat) <= 5) {
+    score += 0.2;
+  }
+  return Math.max(0, Math.min(1, score));
+}
+
+/**
+ * Punteggio Progressione 0–100 — aderenza 14gg su Nutrizione, Allenamento, Sonno.
+ *
+ * @param {Array<{
+ *   date?: string,
+ *   kcal?: number,
+ *   prot?: number,
+ *   carb?: number,
+ *   fat?: number,
+ *   hasNutrition?: boolean,
+ *   workoutSessions?: number,
+ *   sleepHours?: number | null,
+ * }> | object} logs — array di giorni, oppure `{ days, sleepAvgHours, workoutSessionsTotal }`
+ * @param {object} [userTargets]
+ * @returns {{
+ *   finalScore: number,
+ *   breakdown: {
+ *     nutritionScore: number,
+ *     trainingScore: number,
+ *     sleepScore: number,
+ *     nutritionTolerancePct: number,
+ *     nutritionDaysScored: number,
+ *     workoutSessions: number,
+ *     workoutTarget: number,
+ *     sleepAvg: number | null,
+ *     sleepTarget: number,
+ *   },
+ * }}
+ */
+export function calculateProgressionScore(logs, userTargets = {}) {
+  const targets = resolveProgressionNutritionTargets(userTargets);
+  const sleepTarget = Number(userTargets?.sleepHours ?? userTargets?.sleepTarget)
+    > 0
+    ? Number(userTargets.sleepHours ?? userTargets.sleepTarget)
+    : PROGRESSION_SLEEP_TARGET_HOURS;
+  const sessionTarget = Number(userTargets?.sessionTarget14d ?? userTargets?.workoutSessionsTarget)
+    > 0
+    ? Math.round(Number(userTargets.sessionTarget14d ?? userTargets.workoutSessionsTarget))
+    : PROGRESSION_SESSION_TARGET_14D;
+
+  let days = [];
+  let precomputedSleepAvg = null;
+  let precomputedSessions = null;
+
+  if (Array.isArray(logs)) {
+    days = logs;
+  } else if (logs && typeof logs === 'object') {
+    days = Array.isArray(logs.days) ? logs.days : [];
+    if (Number.isFinite(Number(logs.sleepAvgHours)) && Number(logs.sleepAvgHours) > 0) {
+      precomputedSleepAvg = Number(logs.sleepAvgHours);
+    }
+    if (Number.isFinite(Number(logs.workoutSessionsTotal))) {
+      precomputedSessions = Math.max(0, Math.round(Number(logs.workoutSessionsTotal)));
+    }
+  }
+
+  // —— Nutrizione: media sui soli giorni con log alimentare ——
+  const nutritionDayScores = [];
+  for (const day of days) {
+    const hasNutrition = day?.hasNutrition === true
+      || (Number(day?.kcal) || 0) > 0
+      || (Number(day?.prot) || 0) > 0;
+    if (!hasNutrition) continue;
+    nutritionDayScores.push(scoreProgressionNutritionDay(day, targets));
+  }
+  const nutritionAvg = nutritionDayScores.length > 0
+    ? nutritionDayScores.reduce((a, b) => a + b, 0) / nutritionDayScores.length
+    : 0;
+  const nutritionScore = Math.min(
+    PROGRESSION_PILLAR_MAX,
+    nutritionAvg * PROGRESSION_PILLAR_MAX,
+  );
+  const nutritionTolerancePct = Math.round(nutritionAvg * 1000) / 10;
+
+  // —— Allenamento ——
+  const workoutSessions = precomputedSessions != null
+    ? precomputedSessions
+    : days.reduce((sum, day) => sum + (Math.max(0, Math.round(Number(day?.workoutSessions) || 0))), 0);
+  const trainingRatio = sessionTarget > 0 ? workoutSessions / sessionTarget : 0;
+  const trainingScore = Math.min(
+    PROGRESSION_PILLAR_MAX,
+    Math.max(0, trainingRatio) * PROGRESSION_PILLAR_MAX,
+  );
+
+  // —— Riposo ——
+  let sleepAvg = precomputedSleepAvg;
+  if (sleepAvg == null) {
+    const sleepList = days
+      .map((d) => Number(d?.sleepHours))
+      .filter((h) => Number.isFinite(h) && h > 0);
+    sleepAvg = sleepList.length > 0
+      ? sleepList.reduce((a, b) => a + b, 0) / sleepList.length
+      : null;
+  }
+  const sleepRatio = sleepAvg != null && sleepTarget > 0
+    ? sleepAvg / sleepTarget
+    : 0;
+  const sleepScore = Math.min(
+    PROGRESSION_PILLAR_MAX,
+    Math.max(0, sleepRatio) * PROGRESSION_PILLAR_MAX,
+  );
+
+  const finalScore = Math.max(
+    0,
+    Math.min(100, Math.round(nutritionScore + trainingScore + sleepScore)),
+  );
+
+  return {
+    finalScore,
+    breakdown: {
+      nutritionScore: Math.round(nutritionScore * 10) / 10,
+      trainingScore: Math.round(trainingScore * 10) / 10,
+      sleepScore: Math.round(sleepScore * 10) / 10,
+      nutritionTolerancePct,
+      nutritionDaysScored: nutritionDayScores.length,
+      workoutSessions,
+      workoutTarget: sessionTarget,
+      sleepAvg: sleepAvg != null ? Math.round(sleepAvg * 10) / 10 : null,
+      sleepTarget: Math.round(sleepTarget * 10) / 10,
+    },
+  };
 }
 
 /**
