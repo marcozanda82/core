@@ -2996,6 +2996,8 @@ export default function SalaComandi() {
     handlePostponeWorkout,
     handleSaveWorkout,
     commitAddWorkoutCommand,
+    postWorkoutReviewActive,
+    dismissPostWorkoutReview,
   } = useWorkoutManager({
     user,
     db,
@@ -8449,7 +8451,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
-      <MenuDrawerShell isDrawerOpen={isDrawerOpen} onClose={closeDrawer}>
+      <MenuDrawerShell
+        isDrawerOpen={isDrawerOpen}
+        onClose={() => {
+          if (postWorkoutReviewActive) {
+            dismissPostWorkoutReview();
+            return;
+          }
+          closeDrawer();
+        }}
+      >
         <MainMenuDrawer
           activeAction={activeAction}
           setActiveAction={setActiveAction}
@@ -8543,9 +8554,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <WorkoutView
             onBack={() => {
+              if (postWorkoutReviewActive) {
+                dismissPostWorkoutReview();
+                return;
+              }
               clearWorkoutPlanDraft();
               setActiveAction(null);
             }}
+            postWorkoutReview={postWorkoutReviewActive}
+            onDismissPostWorkoutReview={dismissPostWorkoutReview}
             draftFromPlan={workoutPlanDraft != null}
             planDraft={workoutPlanDraft}
             onStartWorkoutSession={handleStartWorkoutSession}

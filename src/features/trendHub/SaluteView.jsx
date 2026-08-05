@@ -13,6 +13,7 @@ import { buildBiometricsHealthSnapshot } from './utils/healthBiometrics';
 import {
   averageMuscleResidual,
   calculateLongevityScore,
+  buildGlycemicRiskBreakdown,
   computeGlycemicRiskPercent,
   formatCompensationDelta,
   formatFastingHoursLabel,
@@ -193,6 +194,29 @@ export default function SaluteView({
     [hoursFasted, fourCylinder, biometrics.waistCm, longevityWindow.waistCm, heightCm],
   );
 
+  const glycemicBreakdown = useMemo(
+    () => buildGlycemicRiskBreakdown({
+      sleepAvgHours: longevityWindow.sleepAvgHours,
+      cardioMinutesTotal: longevityWindow.cardioMinutesTotal,
+      hoursFasted,
+      activeLog,
+      activeLogIsToday,
+      todayDate,
+      fullHistory,
+      whtr: glycemic.whtr,
+    }),
+    [
+      longevityWindow.sleepAvgHours,
+      longevityWindow.cardioMinutesTotal,
+      hoursFasted,
+      activeLog,
+      activeLogIsToday,
+      todayDate,
+      fullHistory,
+      glycemic.whtr,
+    ],
+  );
+
   const muscleAvg = averageMuscleResidual(fourCylinder);
   const muscleLabel = muscleAvg == null ? 'n/d' : `${Math.round(muscleAvg * 100)}%`;
   const fastingLabel = fastingData?.timeString
@@ -223,6 +247,7 @@ export default function SaluteView({
         hoursFastedLabel={fastingLabel}
         muscleLabel={muscleLabel}
         whtr={glycemic.whtr}
+        breakdown={glycemicBreakdown}
       />
 
       <div className="grid w-full min-w-0 grid-cols-2 gap-2.5">

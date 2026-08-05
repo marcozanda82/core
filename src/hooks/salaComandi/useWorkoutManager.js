@@ -75,6 +75,8 @@ export function useWorkoutManager({
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
   const [workoutMuscles, setWorkoutMuscles] = useState([]);
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
+  /** Dopo conferma sessione: scheda revisione carichi/ripetizioni senza chiudere il drawer. */
+  const [postWorkoutReviewActive, setPostWorkoutReviewActive] = useState(false);
 
   const lastWorkoutCommitRef = useRef({ key: '', at: 0 });
   const saveInFlightRef = useRef(false);
@@ -118,6 +120,7 @@ export function useWorkoutManager({
       : getCurrentTimeDecimal();
 
     setEditingWorkoutId(null);
+    setPostWorkoutReviewActive(false);
     setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
     setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
     setWorkoutKcal(Number(draft.workoutKcal) || 300);
@@ -156,6 +159,7 @@ export function useWorkoutManager({
         || (workout.type === 'work' ? 'lavoro' : workout.type === 'cognitive' ? 'studio' : 'pesi');
 
       setEditingWorkoutId(workout.id);
+      setPostWorkoutReviewActive(false);
       setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
       setWorkoutEndTime(Math.min(24, startT + durH));
       setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
@@ -186,6 +190,7 @@ export function useWorkoutManager({
   /** Reset form per nuova sessione (non edit): evita che editingWorkoutId blocchi il 4-cylinder. */
   const resetWorkoutFormForNewSession = useCallback(() => {
     setEditingWorkoutId(null);
+    setPostWorkoutReviewActive(false);
     setWorkoutPlanDraft(null);
     setWorkoutType('pesi');
     setWorkoutMuscles([]);
@@ -193,6 +198,15 @@ export function useWorkoutManager({
     setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
     setWorkoutKcal(300);
   }, []);
+
+  const dismissPostWorkoutReview = useCallback(() => {
+    setPostWorkoutReviewActive(false);
+    setEditingWorkoutId(null);
+    setWorkoutMuscles([]);
+    setWorkoutStrengthDetail('');
+    setWorkoutPlanDraft(null);
+    closeDrawer();
+  }, [closeDrawer]);
 
   const skipTodayPlanSession = useCallback(async () => {
     const uid = user?.uid;
@@ -310,13 +324,15 @@ export function useWorkoutManager({
     setIsPlanActionSheetOpen,
   ]);
 
-  const handleSaveWorkout = useCallback(() => {
+  const handleSaveWorkout = useCallback((_options = {}) => {
     if (saveInFlightRef.current) return;
     if (workoutActivityRequiresStrengthDetailNote(workoutType) && !String(workoutStrengthDetail).trim()) {
       window.alert('Compila «Dettaglio workout» per salvare questo tipo di attività.');
       return;
     }
     saveInFlightRef.current = true;
+    const editingAtStart = editingWorkoutId;
+    const inReviewAtStart = postWorkoutReviewActive;
     try {
       const normalizedDurationMin = parseDurationMinutesInput(workoutDurationMin, {
         min: WORKOUT_DURATION_MIN,
@@ -453,11 +469,24 @@ export function useWorkoutManager({
         if (fourCylinderNextState && setUserModel) {
           setUserModel((prev) => physiologyModelWithFourCylinder(prev, fourCylinderNextState));
         }
+        setWorkoutPlanDraft(null);
+        setIsPlanActionSheetOpen(false);
+        if (inReviewAtStart) {
+          setPostWorkoutReviewActive(false);
+          setEditingWorkoutId(null);
+          setWorkoutMuscles([]);
+          setWorkoutStrengthDetail('');
+          closeDrawer();
+          return;
+        }
+        if (!editingAtStart) {
+          setEditingWorkoutId(finalId);
+          setPostWorkoutReviewActive(true);
+          return;
+        }
         setEditingWorkoutId(null);
         setWorkoutMuscles([]);
         setWorkoutStrengthDetail('');
-        setWorkoutPlanDraft(null);
-        setIsPlanActionSheetOpen(false);
         closeDrawer();
         return;
       }
@@ -481,11 +510,27 @@ export function useWorkoutManager({
         console.warn('[DEBUG 4CYL] Nessuno stato da persistere — fourCylinderNextState null');
       }
 
+      setWorkoutPlanDraft(null);
+      setIsPlanActionSheetOpen(false);
+
+      if (inReviewAtStart) {
+        setPostWorkoutReviewActive(false);
+        setEditingWorkoutId(null);
+        setWorkoutMuscles([]);
+        setWorkoutStrengthDetail('');
+        closeDrawer();
+        return;
+      }
+
+      if (!editingAtStart) {
+        setEditingWorkoutId(finalId);
+        setPostWorkoutReviewActive(true);
+        return;
+      }
+
       setEditingWorkoutId(null);
       setWorkoutMuscles([]);
       setWorkoutStrengthDetail('');
-      setWorkoutPlanDraft(null);
-      setIsPlanActionSheetOpen(false);
       closeDrawer();
     } finally {
       window.setTimeout(() => {
@@ -498,6 +543,7 @@ export function useWorkoutManager({
     workoutDurationMin,
     workoutStartTime,
     editingWorkoutId,
+    postWorkoutReviewActive,
     workoutMuscles,
     workoutKcal,
     isSimulationMode,
@@ -681,6 +727,8 @@ export function useWorkoutManager({
     handlePostponeWorkout,
     handleSaveWorkout,
     commitAddWorkoutCommand,
+    postWorkoutReviewActive,
+    dismissPostWorkoutReview,
   };
 }
 

@@ -387,6 +387,8 @@ export default function WorkoutView({
   handleSaveWorkout,
   workoutsLog: _workoutsLog = [],
   removeLogItem: _removeLogItem,
+  postWorkoutReview = false,
+  onDismissPostWorkoutReview,
 }) {
   const internalPlannerRef = useRef(null);
   const planner = usePlannerWorkoutState(isPlannerMode ? initialData : null, comboHistory);
@@ -573,18 +575,38 @@ export default function WorkoutView({
           &lt; INDIETRO
         </button>
         <h2 style={{ fontSize: '0.8rem', color: '#ff6d00', letterSpacing: '2px', margin: 0 }}>
-          {isPlannerMode
-            ? '⚡ PIANIFICA AZIONE'
-            : isPlanDraftMode && trackerPhase === 'draft'
-              ? '⚡ BOZZA DAL PIANO'
-              : isPlanDraftMode && trackerPhase === 'running'
-                ? '⚡ SESSIONE ATTIVA'
-                : '⚡ ATTIVITÀ'}
+          {postWorkoutReview
+            ? '📋 SCHEDA ALLENAMENTO'
+            : isPlannerMode
+              ? '⚡ PIANIFICA AZIONE'
+              : isPlanDraftMode && trackerPhase === 'draft'
+                ? '⚡ BOZZA DAL PIANO'
+                : isPlanDraftMode && trackerPhase === 'running'
+                  ? '⚡ SESSIONE ATTIVA'
+                  : editingWorkoutId
+                    ? '✏️ MODIFICA ATTIVITÀ'
+                    : '⚡ ATTIVITÀ'}
         </h2>
         <div style={{ width: '70px' }} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-4 [-webkit-overflow-scrolling:touch]">
+      {postWorkoutReview ? (
+        <div
+          style={{
+            marginBottom: '16px',
+            padding: '10px 12px',
+            borderRadius: '12px',
+            border: '1px solid rgba(34, 211, 238, 0.28)',
+            background: 'rgba(34, 211, 238, 0.08)',
+            fontSize: '0.78rem',
+            lineHeight: 1.45,
+            color: 'rgba(226, 232, 240, 0.85)',
+          }}
+        >
+          Sessione registrata. Correggi qui carichi, ripetizioni o note prima di tornare alla dashboard.
+        </div>
+      ) : null}
       {isPlanDraftMode && trackerPhase === 'draft' ? (
         <div
           style={{
@@ -980,6 +1002,31 @@ export default function WorkoutView({
             </div>
           );
         })()}
+      {postWorkoutReview && workoutType === 'pesi' && (
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
+            Carichi, serie e ripetizioni
+          </label>
+          <textarea
+            value={workoutStrengthDetail}
+            onChange={(e) => setWorkoutStrengthDetail(e.target.value)}
+            rows={4}
+            placeholder="Es. Panchest 80kg × 4×8; Squat 100kg × 3×5…"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '10px 12px',
+              background: '#1a1a1a',
+              border: '1px solid #444',
+              borderRadius: '10px',
+              color: '#e8e8e8',
+              fontSize: '0.85rem',
+              resize: 'vertical',
+              minHeight: '88px',
+            }}
+          />
+        </div>
+      )}
       {workoutActivityRequiresStrengthDetailNote(workoutType) && (
         <div style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '8px' }}>
@@ -1041,7 +1088,23 @@ export default function WorkoutView({
         className="shrink-0 border-t border-orange-500/25 bg-[#0f0f0f]/95 px-1 pt-3 backdrop-blur-md"
         style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
       >
-        {isPlanDraftMode && trackerPhase === 'draft' ? (
+        {postWorkoutReview ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button type="button" onClick={handleSaveClick} style={primaryButtonStyle} disabled={isSubmitting}>
+              {isSubmitting ? 'SALVATAGGIO…' : 'SALVA CORREZIONI'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof onDismissPostWorkoutReview === 'function') onDismissPostWorkoutReview();
+              }}
+              style={secondaryButtonStyle}
+              disabled={isSubmitting}
+            >
+              CHIUDI E TORNA ALLA DASHBOARD
+            </button>
+          </div>
+        ) : isPlanDraftMode && trackerPhase === 'draft' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button type="button" onClick={handleStartSession} style={primaryButtonStyle} disabled={isSubmitting}>
               AVVIA ALLENAMENTO
