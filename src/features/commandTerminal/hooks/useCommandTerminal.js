@@ -298,8 +298,29 @@ export function useCommandTerminal({
         });
         return;
       }
+      if (payload.type === 'ASK_CLARIFICATION' || payload.clarification === true) {
+        const text = String(payload.text || payload.message || '').trim();
+        const quickReplies = Array.isArray(payload.quickReplies)
+          ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+          : [];
+        if (!text) return;
+        appendAiMessage(text, {
+          type: 'ASK_CLARIFICATION',
+          clarification: true,
+          quickReplies,
+          local: payload.local === true,
+          sourceTag: payload.sourceTag || null,
+        });
+        if (quickReplies.length > 0) {
+          setActiveQuickReplies(quickReplies);
+        }
+        return;
+      }
       const text = String(payload.text || payload.message || '').trim();
       if (!text) return;
+      const lightQuickReplies = Array.isArray(payload.quickReplies)
+        ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+        : [];
       appendAiMessage(text, {
         type: payload.type || null,
         local: payload.local === true,
@@ -320,7 +341,13 @@ export function useCommandTerminal({
         mealReceipt: payload.mealReceipt && typeof payload.mealReceipt === 'object'
           ? payload.mealReceipt
           : null,
+        ...(lightQuickReplies.length > 0
+          ? { quickReplies: lightQuickReplies, clarification: payload.clarification === true }
+          : {}),
       });
+      if (lightQuickReplies.length > 0) {
+        setActiveQuickReplies(lightQuickReplies);
+      }
     });
 
     const unsubscribeRejected = commandBus.subscribe(DISPATCH_COMMAND_REJECTED, (envelope) => {
@@ -373,6 +400,9 @@ export function useCommandTerminal({
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
       setChatInput('');
       setChatImages([]);
+      if (options?.fromQuickReply || options?.clarificationReply || options?.fromSlotQuickReply) {
+        setActiveQuickReplies([]);
+      }
 
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();

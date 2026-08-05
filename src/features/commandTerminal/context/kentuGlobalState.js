@@ -281,6 +281,16 @@ export function buildKentuGlobalStateObject(
   );
 
   return {
+    User_Profile: {
+      displayName: asTrimmedString(
+        options.userDisplayName
+        || nutritionState?.userDisplayName
+        || nutritionState?.userProfile?.displayName
+        || nutritionState?.userProfile?.name
+        || diaryState?.userDisplayName
+        || '',
+      ) || null,
+    },
     Nutrition_Context: buildNutritionContextBlock(nutritionState, activeLog),
     Muscular_Cylinders: buildMuscularCylindersBlock(cylindersState, {
       fullHistory: diaryState?.fullHistory || nutritionState?.fullHistory,
@@ -368,6 +378,8 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       activeDate,
       remainingBudget: buildNutritionContextForState(state)?.remainingBudget,
       userPortions: state.userPortions,
+      userProfile: state.userProfile,
+      userDisplayName: state.userDisplayName,
     },
     cylindersState,
     cardioLogs,
@@ -377,10 +389,15 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       fullHistory,
       activeDate,
       userPortions: state.userPortions,
+      userDisplayName: state.userDisplayName,
     },
     {
       ...options,
       userPortions: state.userPortions,
+      userDisplayName: state.userDisplayName
+        || state.userProfile?.displayName
+        || state.userProfile?.name
+        || '',
     },
   );
 

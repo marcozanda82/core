@@ -94,6 +94,7 @@ export default function AiCluster({
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
   const chatTextareaRef = useRef(null);
+  const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
 
   const handleInputResize = useCallback((e) => {
     const el = e?.target || chatTextareaRef.current;
@@ -462,16 +463,30 @@ export default function AiCluster({
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
-              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !suppressQuickReplies && (
-                <div className="kentu-quick-row" style={{ justifyContent: msg.sender === 'ai' ? 'flex-start' : 'flex-end' }}>
+              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !suppressQuickReplies && (() => {
+                const clarificationKey = `clr-${idx}`;
+                const isClarification = msg.clarification === true || msg.type === 'ASK_CLARIFICATION';
+                if (isClarification && consumedClarificationKeys.has(clarificationKey)) return null;
+                return (
+                <div
+                  className={`kentu-quick-row${isClarification ? ' kentu-quick-row--clarification' : ''}`}
+                  style={{ justifyContent: msg.sender === 'ai' ? 'flex-start' : 'flex-end' }}
+                >
                   {msg.quickReplies.map((reply, rIdx) => {
                     const morningActivityIds = ['weights', 'cardio', 'rest'];
                     return (
                       <KentuButton
                         key={rIdx}
                         variant="secondary"
-                        className="kentu-btn--sm"
+                        className={isClarification ? 'kentu-btn--clarification' : 'kentu-btn--sm'}
                         onClick={() => {
+                          if (isClarification) {
+                            setConsumedClarificationKeys((prev) => {
+                              const next = new Set(prev);
+                              next.add(clarificationKey);
+                              return next;
+                            });
+                          }
                           if (msg.workoutTimeConfirm) {
                             onSendMessage(reply, {
                               fromQuickReply: true,
@@ -495,7 +510,7 @@ export default function AiCluster({
                               },
                             });
                           } else {
-                            onSendMessage(reply, { fromQuickReply: true });
+                            onSendMessage(reply, { fromQuickReply: true, clarificationReply: isClarification });
                           }
                           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                         }}
@@ -505,7 +520,8 @@ export default function AiCluster({
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
               {msg.dinnerOptions && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
                 <div className="kentu-quick-row" style={{ justifyContent: 'flex-end' }}>
                   {msg.dinnerOptions.map((opt, oIdx) => (

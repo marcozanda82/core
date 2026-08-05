@@ -869,6 +869,27 @@
   margin-top: 10px;
 }
 
+.kentu-quick-row--clarification {
+  gap: 10px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.kentu-btn--clarification {
+  min-height: 44px;
+  padding: 12px 16px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.25;
+  border-radius: 14px;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: linear-gradient(145deg, rgba(14, 40, 52, 0.95), rgba(12, 24, 36, 0.98));
+  color: #e2e8f0;
+  text-align: left;
+  max-width: 100%;
+  white-space: normal;
+}
+
 /* —— WIP Meal Builder (carrello + Smart Chips) —— */
 .wip-meal-cart-bar {
   margin: 0 0 12px;

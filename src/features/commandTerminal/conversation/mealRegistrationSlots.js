@@ -101,6 +101,12 @@ export function buildChatEntryTextForLlm(entry) {
   const baseText = String(entry?.text || '').trim();
   const memoryLines = [];
 
+  if (entry?.clarification === true || entry?.type === 'ASK_CLARIFICATION') {
+    memoryLines.push(
+      '[MEMORIA DI SISTEMA - CHIARIMENTO IN CORSO: la prossima risposta utente completa i dettagli mancanti (grammi/tipo). Procedi con ADD_FOOD / carrello senza nuove domande inutili.]',
+    );
+  }
+
   if (Array.isArray(entry?.mealProposals) && entry.mealProposals.length > 0) {
     const tag = serializeMealProposalsMemoryTag(entry.mealProposals);
     if (tag) memoryLines.push(tag);
@@ -214,6 +220,7 @@ function mergeFoodItemIntoList(combined, newItem) {
 }
 
 export function buildGeminiContentsFromChatHistory(chatHistory = []) {
+  // Ultimi ~4 scambi (8 messaggi) + buffer: il thread serve ai follow-up di chiarimento.
   return (chatHistory || [])
     .filter((entry) => entry && !entry.isTyping)
     .map((entry) => {
@@ -225,7 +232,34 @@ export function buildGeminiContentsFromChatHistory(chatHistory = []) {
       return { role, parts: [{ text }] };
     })
     .filter(Boolean)
-    .slice(-20);
+    .slice(-8);
+}
+
+/**
+ * Snippet testuale degli ultimi scambi da iniettare nel prompt utente (anti-amnesia LLM).
+ * @param {Array<object>} [chatHistory]
+ * @param {number} [maxTurns=4]
+ * @returns {string}
+ */
+export function buildRecentThreadSnippetForPrompt(chatHistory = [], maxTurns = 4) {
+  const lines = [];
+  const maxMessages = Math.max(2, Number(maxTurns) || 4) * 2;
+  const recent = (chatHistory || [])
+    .filter((entry) => entry && !entry.isTyping)
+    .slice(-maxMessages);
+  recent.forEach((entry) => {
+    const role = entry.sender === 'user' ? 'Utente' : 'Assistente';
+    const text = entry.sender === 'user'
+      ? String(entry.text || '').trim()
+      : String(entry.text || '').trim();
+    if (!text) return;
+    lines.push(`${role}: ${text.slice(0, 280)}`);
+  });
+  if (lines.length === 0) return '';
+  return [
+    '[THREAD_RECENTE — usa questo contesto: se l\'utente risponde a un chiarimento, completa la registrazione]',
+    ...lines,
+  ].join('\n');
 }
 
 function resolveMealTypeFromPayloadAndTexts(payload = {}, conversationTexts = []) {

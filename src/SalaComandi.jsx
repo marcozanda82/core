@@ -913,6 +913,7 @@ export default function SalaComandi() {
   const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
   const [userProfile, setUserProfile] = useState({
+    displayName: '',
     gender: 'M',
     age: 30,
     weight: 75,
@@ -6587,6 +6588,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         scheduledWorkout: scheduledWorkoutContextRef.current,
         timelineNodes: allNodes,
         manualNodes: manualNodesForTimeline,
+        userProfile,
+        userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
       };
     },
   });

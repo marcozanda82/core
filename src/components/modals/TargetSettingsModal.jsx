@@ -33,6 +33,21 @@ export default function TargetSettingsModal({
         <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
           <h3 style={{ margin: '0 0 15px 0' }}>1. Dati Biometrici</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+            <label style={{ display: 'block', gridColumn: '1 / -1' }}>
+              Nome (come ti chiama Kentu in chat)
+              <input
+                type="text"
+                autoComplete="given-name"
+                placeholder="es. Marco"
+                value={userProfile.displayName ?? userProfile.name ?? ''}
+                onChange={(e) => setUserProfile({
+                  ...userProfile,
+                  displayName: e.target.value,
+                  name: e.target.value,
+                })}
+                style={{ width: '100%', marginTop: '4px', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px', boxSizing: 'border-box' }}
+              />
+            </label>
             <label style={{ display: 'block' }}>Sesso: <select value={userProfile.gender} onChange={e => setUserProfile({ ...userProfile, gender: e.target.value })} style={{ width: '100%', padding: '8px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}><option value="M">Uomo</option><option value="F">Donna</option></select></label>
             <label style={{ display: 'block' }}>Data di Nascita
               <input

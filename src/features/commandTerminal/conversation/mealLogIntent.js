@@ -50,6 +50,8 @@ const FOOD_REGISTRATION_PATTERNS = [
   /\bregistr/i,
   /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\s+(?:ho\s+)?(?:mangiat|preso|bevut)/i,
   /\d+\s*(?:g|grammi|gr)\s+(?:di\s+)?\w+/i,
+  // Follow-up chiarimento: "Pane integrale 80g", "mortadella 50g e pane 80g"
+  /[a-zàèéìòù][\wàèéìòù\s.'-]{1,40}\s+\d+(?:[.,]\d+)?\s*(?:g|grammi|gr)\b/i,
 ];
 
 /** Intent "Sous-Chef": utente ha già iniziato il piatto e chiede cosa aggiungere. */
@@ -1305,9 +1307,170 @@ export function looksLikeComplexMealLog(userText) {
   const hasTime = TIME_PATTERN.test(text);
   const hasMultipleSegments =
     (text.match(/,/g) || []).length >= 1
-    || /\d+\s*(?:g|grammi|gr)\b[^,]*(?:,|\s+e\s+)\s*\d+\s*(?:g|grammi|gr)\b/.test(text);
+    || /\d+\s*(?:g|grammi|gr)\b[^,]*(?:,|\s+e\s+)\s*\d+\s*(?:g|grammi|gr)\b/.test(text)
+    // "pane 80g e mortadella 50g" (nome prima dei grammi)
+    || /(?:[a-zàèéìòù][\wàèéìòù\s.'-]{0,40}\s+\d+(?:[.,]\d+)?\s*(?:g|grammi|gr)\b.*){2,}/i.test(text);
 
-  return hasFoodVerb || hasMealSlot || hasTime || hasMultipleSegments;
+  if (hasFoodVerb || hasMealSlot || hasTime || hasMultipleSegments) return true;
+
+  // Singolo alimento con grammi (follow-up chiarimento): "pane integrale 80g"
+  return parseConsumedMealFromNaturalText(text)?.items?.length > 0;
+}
+
+/**
+ * Ultimo messaggio AI era un chiarimento (pulsanti / domanda grammi-tipo).
+ * @param {Array<object>} [chatHistory]
+ * @returns {boolean}
+ */
+export function wasLastAiMessageClarification(chatHistory = []) {
+  for (let i = (chatHistory || []).length - 1; i >= 0; i -= 1) {
+    const entry = chatHistory[i];
+    if (!entry || entry.isTyping) continue;
+    if (entry.sender === 'user') return false;
+    if (entry.sender !== 'ai') continue;
+    if (entry.clarification === true || entry.type === 'ASK_CLARIFICATION') return true;
+    if (Array.isArray(entry.quickReplies) && entry.quickReplies.length >= 2) {
+      const t = String(entry.text || '');
+      if (/\b(?:gramm|quantit|quanto|quale|che\s+tipo|che\s+pasta|precis|dettagl|opzion)/i.test(t)) {
+        return true;
+      }
+    }
+    if (/\b(?:quanti\s+gramm|che\s+(?:tipo|pasta|variante)|dimmi\s+(?:quanto|cosa)|precisami)\b/i.test(String(entry.text || ''))) {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/**
+ * L'utente sta rispondendo a un chiarimento precedente (dettagli/grammi/tipo).
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @returns {boolean}
+ */
+export function isClarificationFollowUpReply(userText, chatHistory = []) {
+  if (!wasLastAiMessageClarification(chatHistory)) return false;
+  const text = String(userText || '').trim();
+  if (!text) return false;
+  if (parseConsumedMealFromNaturalText(text)?.items?.length) return true;
+  if (WEIGHT_PATTERN.test(text)) return true;
+  if (FOOD_REGISTRATION_PATTERNS.some((pattern) => pattern.test(text))) return true;
+  // Scelta breve da pulsante / nome alimento senza verbo
+  if (text.length <= 80 && !/\?/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Unisce gli ultimi messaggi utente del thread e prova a estrarre un pasto (follow-up chiarimenti).
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @returns {{ mealType: string|null, items: Array<{foodName:string, grams:number}>, exactTime: string|null } | null}
+ */
+export function parseMealLogFromChatThread(userText, chatHistory = []) {
+  const direct = parseConsumedMealFromNaturalText(userText);
+  if (direct?.items?.length) return direct;
+
+  const recentUser = [];
+  (chatHistory || []).forEach((entry) => {
+    if (!entry || entry.isTyping || entry.sender !== 'user') return;
+    const line = String(entry.text || '').trim();
+    if (line) recentUser.push(line);
+  });
+  const current = String(userText || '').trim();
+  if (current && recentUser[recentUser.length - 1] !== current) {
+    recentUser.push(current);
+  }
+  const window = recentUser.slice(-4);
+  if (window.length === 0) return null;
+
+  const combined = window.join('. ');
+  const fromCombined = parseConsumedMealFromNaturalText(combined);
+  if (fromCombined?.items?.length) return fromCombined;
+
+  // Grammi-only sul messaggio corrente + nomi dal messaggio utente precedente
+  const gramsOnly = String(userText || '').trim().match(
+    /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/gi,
+  );
+  if (gramsOnly?.length && window.length >= 2) {
+    const prior = window[window.length - 2];
+    const priorFoods = extractBareFoodNamesFromText(prior);
+    const grams = gramsOnly
+      .map((g) => Math.round(Number(String(g).replace(/[^\d.,]/g, '').replace(',', '.'))))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (priorFoods.length > 0 && grams.length > 0) {
+      const items = priorFoods.map((foodName, idx) => ({
+        foodName,
+        grams: grams[Math.min(idx, grams.length - 1)],
+      }));
+      return {
+        mealType: parseMealTypeFromUserText(combined) || parseMealTypeFromUserText(prior),
+        items,
+        exactTime: parseExactTimeFromUserText(combined),
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Nomi alimento grezzi senza grammi (es. "ho mangiato pane e mortadella").
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function extractBareFoodNamesFromText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  if (parseConsumedMealFromNaturalText(raw)?.items?.length) {
+    return parseConsumedMealFromNaturalText(raw).items.map((i) => i.foodName);
+  }
+  let body = raw
+    .replace(/\b(?:ho\s+)?(?:mangiat[oa]|consumat[oa]|assunt[oa]|preso|presa|bevut[oa])\b/gi, ' ')
+    .replace(/\b(?:per\s+)?(?:colazione|pranzo|cena|snack|pasto)\b/gi, ' ')
+    .replace(/\b(?:alle|ore|h)\s*\d{1,2}[:h.,]?\d{0,2}\b/gi, ' ')
+    .replace(/[?!.]/g, ' ')
+    .trim();
+  if (!body) return [];
+  const parts = body
+    .split(/\s*(?:,|;|\be\b|\bed\b|\bcon\b)\s*/i)
+    .map((p) => p.trim().replace(/^(?:di|un|una|il|lo|la|i|gli|le)\s+/i, '').trim())
+    .filter((p) => p.length >= 2 && p.length <= 40 && !/^\d+$/.test(p));
+  return parts.slice(0, 6);
+}
+
+/**
+ * Heuristica soft: nomi cibo + grammi approssimativi (100g) per conferma utente.
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @returns {{ mealType: string|null, items: Array<{foodName:string, grams:number, isEstimated?: boolean}>, exactTime: string|null } | null}
+ */
+export function buildApproximateMealLogForRecovery(userText, chatHistory = []) {
+  const parsed = parseMealLogFromChatThread(userText, chatHistory);
+  if (parsed?.items?.length) {
+    return {
+      ...parsed,
+      items: parsed.items.map((item) => ({
+        ...item,
+        isEstimated: !Number.isFinite(Number(item.grams)) || Number(item.grams) <= 0,
+        grams: Number.isFinite(Number(item.grams)) && Number(item.grams) > 0
+          ? Math.round(Number(item.grams))
+          : 100,
+      })),
+    };
+  }
+
+  const names = extractBareFoodNamesFromText(
+    [userText, ...((chatHistory || []).filter((e) => e?.sender === 'user').slice(-3).map((e) => e.text))]
+      .filter(Boolean)
+      .join('. '),
+  );
+  if (names.length === 0) return null;
+  return {
+    mealType: parseMealTypeFromUserText(String(userText || '')) || null,
+    items: names.map((foodName) => ({ foodName, grams: 100, isEstimated: true })),
+    exactTime: null,
+  };
 }
 
 /**

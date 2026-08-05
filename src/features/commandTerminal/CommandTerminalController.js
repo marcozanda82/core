@@ -88,6 +88,9 @@ import {
   findLatestMealDraftProjectionFromChatHistory,
   parseRemovedFoodQueryFromSubstituteText,
   parseExactTimeFromUserText,
+  isClarificationFollowUpReply,
+  parseMealLogFromChatThread,
+  buildApproximateMealLogForRecovery,
 } from './conversation/mealLogIntent.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
@@ -136,6 +139,7 @@ import {
   buildMealReceiptPayload,
   mealReceiptFallbackText,
 } from '../chat/mealReceiptUtils.js';
+import { buildChatPersonaSystemBlock, resolveUserDisplayName } from '../chat/chatPersona.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -267,6 +271,8 @@ export class CommandTerminalController {
     this.isExecutingAction = false;
     /** @type {object | null} Stato multi-turno UPDATE_LOGGED_MEAL (indipendente da chatHistory). */
     this.pendingMealUpdate = null;
+    /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
+    this.pendingSoftMealRecovery = null;
   }
 
   setPendingMealUpdate(ctx) {
@@ -310,6 +316,7 @@ export class CommandTerminalController {
     this.pendingWorkoutOriginUserText = '';
     this.isExecutingAction = false;
     this.pendingMealUpdate = null;
+    this.pendingSoftMealRecovery = null;
   }
 
   publishSystemMessage(message) {
@@ -585,7 +592,11 @@ export class CommandTerminalController {
     }
 
     // DATA ENTRY pasti PRIMA del consulto (evita "come snack, ho mangiato…" → CHAT_RESPONSE).
-    if (isFoodRegistrationIntent(userText)) {
+    // Follow-up a chiarimento (grammi/tipo) → sempre ADD_FOOD, anche senza "ho mangiato".
+    if (
+      isClarificationFollowUpReply(userText, options?.chatHistory || [])
+      || isFoodRegistrationIntent(userText)
+    ) {
       return 'ADD_FOOD';
     }
 
@@ -619,7 +630,8 @@ export class CommandTerminalController {
   }
 
   tryParseAndPublishMealLog(userText, currentState = {}, chatHistory = [], options = {}) {
-    const parsed = parseConsumedMealFromNaturalText(userText);
+    const parsed = parseMealLogFromChatThread(userText, chatHistory)
+      || parseConsumedMealFromNaturalText(userText);
     if (!parsed?.items?.length) {
       return null;
     }
@@ -635,6 +647,113 @@ export class CommandTerminalController {
     );
 
     return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, options);
+  }
+
+  /**
+   * Fallback tollerante: niente errore generico bloccante dopo fallimento LLM/parse.
+   * Prova parser thread → altrimenti recovery soft con pulsanti di conferma.
+   */
+  async recoverAfterMealCommandFailure(userText, currentState = {}, chatHistory = [], options = {}) {
+    const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, options);
+    if (localResult) return localResult;
+
+    const hint = String(options?.commandHint || '').trim().toUpperCase();
+    const looksFood = Boolean(
+      hint === 'ADD_FOOD'
+      || isFoodRegistrationIntent(userText)
+      || isClarificationFollowUpReply(userText, chatHistory)
+      || looksLikeComplexMealLog(userText)
+      || isConsumedMealLogDescription(userText)
+      || parseMealLogFromChatThread(userText, chatHistory)?.items?.length
+    );
+
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const namePrefix = displayName ? `${displayName}, ` : '';
+
+    if (!looksFood) {
+      this.publishClarification(
+        {
+          uiMessage: `${namePrefix}ho quasi capito — puoi riformulare in una frase più corta? Oppure scegli:`,
+          payload: {
+            message: `${namePrefix}ho quasi capito — puoi riformulare in una frase più corta? Oppure scegli:`,
+            options: [
+              'Riprovo con altre parole',
+              'Annulla',
+            ],
+          },
+        },
+        userText,
+      );
+      return {
+        ok: true,
+        recovered: true,
+        intent: 'ASK_CLARIFICATION',
+        commandType: 'ASK_CLARIFICATION',
+        softRecovery: true,
+      };
+    }
+
+    const approx = buildApproximateMealLogForRecovery(userText, chatHistory);
+
+    if (approx?.items?.length) {
+      const summary = approx.items
+        .map((item) => `${item.foodName} ~${Math.round(Number(item.grams) || 100)}g`)
+        .join(', ');
+      const confirmLabel = `Sì, registra: ${summary}`.slice(0, 90);
+      this.publishClarification(
+        {
+          uiMessage: `${namePrefix}ho quasi capito — intendevi registrare questo come pasto? Conferma i grammi approssimativi oppure riscrivilo tipo «pane 80g, mortadella 50g».`,
+          payload: {
+            message: `${namePrefix}ho quasi capito — intendevi registrare questo come pasto? Conferma i grammi approssimativi oppure riscrivilo tipo «pane 80g, mortadella 50g».`,
+            options: [
+              confirmLabel,
+              'No, te lo riscrivo meglio',
+            ],
+          },
+        },
+        userText,
+      );
+      this.pendingSoftMealRecovery = {
+        confirmLabel,
+        payload: normalizeFoodPayload(
+          {
+            items: approx.items,
+            mealType: approx.mealType,
+          },
+          currentState,
+          { inferMealTypeFromContext: true },
+        ),
+      };
+      return {
+        ok: true,
+        recovered: true,
+        intent: 'ASK_CLARIFICATION',
+        commandType: 'ASK_CLARIFICATION',
+        softRecovery: true,
+      };
+    }
+
+    this.publishClarification(
+      {
+        uiMessage: `${namePrefix}ho quasi capito, ma mi manca un dettaglio. Scrivi tipo «pane 80g e mortadella 50g» oppure scegli:`,
+        payload: {
+          message: `${namePrefix}ho quasi capito, ma mi manca un dettaglio. Scrivi tipo «pane 80g e mortadella 50g» oppure scegli:`,
+          options: [
+            'Riprovo con alimento + grammi',
+            'Annulla',
+          ],
+        },
+      },
+      userText,
+    );
+    return {
+      ok: true,
+      recovered: true,
+      intent: 'ASK_CLARIFICATION',
+      commandType: 'ASK_CLARIFICATION',
+      softRecovery: true,
+    };
   }
 
   shouldUseMealLogProposalCard(userText, payload) {
@@ -706,12 +825,16 @@ export class CommandTerminalController {
       );
       return { ok: false, reason: 'empty_chat_response', commandType: 'CHAT_RESPONSE' };
     }
+    const quickReplies = Array.isArray(payload?.options)
+      ? payload.options.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
     const isLocal = options?.local === true;
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishChatResponse/CHAT_RESPONSE):', {
       text,
       local: isLocal,
       source: isLocal ? 'local_receptionist' : 'gemini_structured_CHAT_RESPONSE',
       userText: String(userText || '').trim(),
+      quickRepliesCount: quickReplies.length,
     });
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
@@ -721,6 +844,7 @@ export class CommandTerminalController {
         message: text,
         local: isLocal,
         sourceTag: isLocal ? 'local_receptionist' : 'gemini',
+        ...(quickReplies.length > 0 ? { quickReplies, clarification: true } : {}),
         // Nessuna proposta / bozza: solo bollo AI in chat.
         mealProposals: null,
         suggestedAction: null,
@@ -735,6 +859,59 @@ export class CommandTerminalController {
       commandType: 'CHAT_RESPONSE',
       local: isLocal,
       userText: String(userText || '').trim(),
+    };
+  }
+
+  /**
+   * Chiarimento interattivo (VUI): domanda breve + pulsanti options[].
+   * @param {object} command
+   * @param {string} [userText]
+   */
+  publishClarification(command = {}, userText = '') {
+    const payload = command?.payload && typeof command.payload === 'object'
+      ? command.payload
+      : {};
+    const text = String(
+      command?.uiMessage
+      || command?.adviceMessage
+      || payload?.message
+      || '',
+    ).trim();
+    const options = Array.isArray(payload?.options)
+      ? payload.options.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
+    if (!text || options.length < 2) {
+      this.publishSystemMessage(
+        text || 'Dimmi un po\' di più così chiudo il cerchio senza indovinare.',
+      );
+      return { ok: false, reason: 'invalid_clarification', commandType: 'ASK_CLARIFICATION' };
+    }
+    console.log('🟢 DEBUG - ASK_CLARIFICATION:', {
+      text,
+      options,
+      userText: String(userText || '').trim(),
+    });
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ASK_CLARIFICATION',
+        text,
+        message: text,
+        quickReplies: options,
+        clarification: true,
+        mealProposals: null,
+        suggestedAction: null,
+        mealDraftProjection: null,
+        wipSuggestions: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      intent: 'ASK_CLARIFICATION',
+      commandType: 'ASK_CLARIFICATION',
+      userText: String(userText || '').trim(),
+      options,
     };
   }
 
@@ -1745,9 +1922,13 @@ export class CommandTerminalController {
     }
 
     const extraSystem = String(options?.systemInstructionExtra || '').trim();
-    const wipSystemExtra = isWipMealBuild ? MEAL_WIP_SYSTEM_PROMPT : '';
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const wipSystemExtra = isWipMealBuild
+      ? [MEAL_WIP_SYSTEM_PROMPT, buildChatPersonaSystemBlock({ displayName })].join('\n\n')
+      : '';
     const baseConsultantSystem = appendKentuGlobalStateToSystemInstruction(
-      generateConsultantSystemInstruction(),
+      generateConsultantSystemInstruction({ displayName }),
       globalStateText,
     );
     const consultantSystemInstruction = [baseConsultantSystem, wipSystemExtra, extraSystem]
@@ -1951,12 +2132,25 @@ export class CommandTerminalController {
         return { ok: false, aborted: true, reason: 'aborted', userNotified: false };
       }
       console.error('[CommandTerminalController] Unhandled processUserMessage error', error);
+      const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+      const userText = String(text || '').trim();
+      try {
+        const recovered = await this.recoverAfterMealCommandFailure(
+          userText,
+          currentState,
+          chatHistory,
+          options,
+        );
+        if (recovered) return recovered;
+      } catch (recoveryError) {
+        console.warn('[CommandTerminalController] soft recovery failed', recoveryError);
+      }
       this.publishErrorMessage(USER_FACING_ERROR_MESSAGE);
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         {
           reason: error?.message || 'unhandled_error',
-          userText: String(text || '').trim(),
+          userText,
           silent: true,
         },
         { source: 'CommandTerminalController' },
@@ -1976,6 +2170,25 @@ export class CommandTerminalController {
       imageCount: images.length,
     });
 
+    // Conferma recovery soft (grammi approssimativi proposti dopo fallimento LLM).
+    if (this.pendingSoftMealRecovery?.payload) {
+      const confirmLabel = String(this.pendingSoftMealRecovery.confirmLabel || '').trim();
+      const normalizedReply = userText.toLowerCase();
+      if (
+        (confirmLabel && userText === confirmLabel)
+        || /^s[iì]\b/i.test(userText)
+        || (confirmLabel && normalizedReply.includes('registra'))
+      ) {
+        const payload = this.pendingSoftMealRecovery.payload;
+        this.pendingSoftMealRecovery = null;
+        return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, options);
+      }
+      if (/^(?:no|annulla|cancel)\b/i.test(userText) || /riscrivo|meglio/i.test(userText)) {
+        this.pendingSoftMealRecovery = null;
+        this.publishSystemMessage('Ok, riscrivimi il pasto quando vuoi — tipo «pane 80g e mortadella 50g».');
+        return { ok: true, cancelled: true, softRecovery: true };
+      }
+    }
     if (this.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
       return this.processConfirmationResponse(userText, currentState, options);
     }
@@ -2117,14 +2330,17 @@ export class CommandTerminalController {
         }
       }
 
-      if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+      const soft = await this.recoverAfterMealCommandFailure(
+        userText,
+        currentState,
+        chatHistory,
+        {
           ...(options?.signal ? { signal: options.signal } : {}),
-        });
-        if (localResult) return localResult;
-      }
+          commandHint,
+        },
+      );
+      if (soft) return soft;
 
-      this.publishErrorMessage(USER_FACING_ERROR_MESSAGE);
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         { reason, userText, intent: commandHint, silent: true },
@@ -2164,10 +2380,21 @@ export class CommandTerminalController {
       return { ok: true, intent: 'CREATE_NEW_FOOD', commandType: 'CREATE_NEW_FOOD', entryPer100: inherited, donor };
     }
 
+    // CASO 1b — chiarimento interattivo (prima di override cibo / dispatch).
+    if (commandType === 'ASK_CLARIFICATION') {
+      console.log('🟡 DEBUG - PATH SCELTO: ASK_CLARIFICATION');
+      return this.publishClarification(commandResponse.command, userText);
+    }
+
     // CASO 2 — risposta consulenziale: niente bozze pasto/workout.
     // Override: se l'utente stava registrando cibo, NON accettare CHAT_RESPONSE.
     if (commandType === 'CHAT_RESPONSE') {
-      if (isFoodRegistrationIntent(userText) || isConsumedMealLogDescription(userText) || looksLikeComplexMealLog(userText)) {
+      if (
+        isClarificationFollowUpReply(userText, chatHistory)
+        || isFoodRegistrationIntent(userText)
+        || isConsumedMealLogDescription(userText)
+        || looksLikeComplexMealLog(userText)
+      ) {
         console.log('🟡 DEBUG - OVERRIDE CHAT_RESPONSE → ADD_FOOD (food registration rilevata)');
         const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
           ...(options?.signal ? { signal: options.signal } : {}),
@@ -2221,13 +2448,16 @@ export class CommandTerminalController {
     }
 
     if (!COMMAND_TO_EVENT[commandType]) {
-      if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+      const soft = await this.recoverAfterMealCommandFailure(
+        userText,
+        currentState,
+        chatHistory,
+        {
           ...(options?.signal ? { signal: options.signal } : {}),
-        });
-        if (localResult) return localResult;
-      }
-      this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
+          commandHint,
+        },
+      );
+      if (soft) return soft;
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         {
@@ -2303,14 +2533,17 @@ export class CommandTerminalController {
         }
       }
 
-      if (looksLikeComplexMealLog(userText) || isConsumedMealLogDescription(userText)) {
-        const localResult = await this.tryParseAndPublishMealLog(userText, currentState, chatHistory, {
+      const soft = await this.recoverAfterMealCommandFailure(
+        userText,
+        currentState,
+        chatHistory,
+        {
           ...(options?.signal ? { signal: options.signal } : {}),
-        });
-        if (localResult) return localResult;
-      }
+          commandHint,
+        },
+      );
+      if (soft) return soft;
 
-      this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
       this.bus.publish(
         DISPATCH_COMMAND_REJECTED,
         {

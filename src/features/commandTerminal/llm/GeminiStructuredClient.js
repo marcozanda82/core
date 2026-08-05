@@ -6,12 +6,14 @@ import {
   consultantResponseSchema,
   createNewFoodPayloadSchema,
   chatResponsePayloadSchema,
+  askClarificationPayloadSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 import { generateConsultantSystemInstruction, buildDeterministicMealLogFeedback } from '../../../conversation/ConsultantEngine.js';
 import {
   buildCombinedConversationText,
   buildGeminiContentsFromChatHistory,
+  buildRecentThreadSnippetForPrompt,
 } from '../conversation/mealRegistrationSlots.js';
 import {
   formatCurrentSystemTimeContext,
@@ -27,6 +29,7 @@ import {
   normalizeChatWorkoutType,
 } from '../conversation/workoutRegistrationSlots.js';
 import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
+import { buildChatPersonaSystemBlock } from '../../chat/chatPersona.js';
 
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 const CONSULTANT_MODEL = 'gemini-3.6-flash';
@@ -940,7 +943,7 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
 }
 
 function getEnvelopeSchemaForIntent(commandHint) {
-  // Con hint ADD_FOOD: niente escape CHAT_RESPONSE — data entry obbligatorio.
+  // Con hint ADD_FOOD: data entry obbligatorio, ma ASK_CLARIFICATION se ambiguità (no guess).
   if (commandHint === 'ADD_FOOD') {
     return {
       ...terminalCommandEnvelopeSchema,
@@ -948,14 +951,17 @@ function getEnvelopeSchemaForIntent(commandHint) {
         ...terminalCommandEnvelopeSchema.properties,
         commandType: {
           type: 'string',
-          enum: ['ADD_FOOD'],
+          enum: ['ADD_FOOD', 'ASK_CLARIFICATION'],
           description:
-            'OBBLIGATORIO ADD_FOOD: l utente sta registrando cibo. Vietato CHAT_RESPONSE.',
+            'ADD_FOOD se cibo chiaro (nome + quantita o abitudine). '
+            + 'ASK_CLARIFICATION se ambigua (es. «pasta» senza tipo/quantita): NON indovinare. Vietato CHAT_RESPONSE.',
         },
-        payload: addFoodPayloadSchema,
+        payload: {
+          anyOf: [addFoodPayloadSchema, askClarificationPayloadSchema],
+        },
         uiMessage: {
           type: 'string',
-          description: 'Lascia VUOTO per ADD_FOOD.',
+          description: 'Lascia VUOTO per ADD_FOOD. Per ASK_CLARIFICATION: domanda breve (o usa payload.message).',
         },
         adviceMessage: {
           type: 'string',
@@ -970,9 +976,9 @@ function getEnvelopeSchemaForIntent(commandHint) {
       ...terminalCommandEnvelopeSchema,
       properties: {
         ...terminalCommandEnvelopeSchema.properties,
-        commandType: { type: 'string', enum: ['ADD_WORKOUT', 'CHAT_RESPONSE'] },
+        commandType: { type: 'string', enum: ['ADD_WORKOUT', 'CHAT_RESPONSE', 'ASK_CLARIFICATION'] },
         payload: {
-          anyOf: [addWorkoutPayloadSchema, chatResponsePayloadSchema],
+          anyOf: [addWorkoutPayloadSchema, chatResponsePayloadSchema, askClarificationPayloadSchema],
         },
       },
     };
@@ -1002,12 +1008,14 @@ function getEnvelopeSchemaForIntent(commandHint) {
       ...terminalCommandEnvelopeSchema,
       properties: {
         ...terminalCommandEnvelopeSchema.properties,
-        commandType: { type: 'string', enum: ['CHAT_RESPONSE'] },
-        payload: chatResponsePayloadSchema,
+        commandType: { type: 'string', enum: ['CHAT_RESPONSE', 'ASK_CLARIFICATION'] },
+        payload: {
+          anyOf: [chatResponsePayloadSchema, askClarificationPayloadSchema],
+        },
         uiMessage: {
           type: 'string',
           description:
-            'OBBLIGATORIO per CHAT_RESPONSE: analisi sintetica basata su KENTU_GLOBAL_STATE.',
+            'OBBLIGATORIO per CHAT_RESPONSE: analisi BREVE (TTS) basata su KENTU_GLOBAL_STATE.',
         },
         adviceMessage: {
           type: 'string',
@@ -1016,13 +1024,42 @@ function getEnvelopeSchemaForIntent(commandHint) {
         },
         requiresConfirmation: {
           type: 'boolean',
-          description: 'Per CHAT_RESPONSE deve essere false.',
+          description: 'Per CHAT_RESPONSE / ASK_CLARIFICATION deve essere false.',
         },
       },
       required: ['commandType', 'payload'],
     };
   }
-  return terminalCommandEnvelopeSchema;
+  if (commandHint === 'ASK_CLARIFICATION') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['ASK_CLARIFICATION'] },
+        payload: askClarificationPayloadSchema,
+        requiresConfirmation: {
+          type: 'boolean',
+          description: 'Per ASK_CLARIFICATION deve essere false.',
+        },
+      },
+      required: ['commandType', 'payload'],
+    };
+  }
+  return {
+    ...terminalCommandEnvelopeSchema,
+    properties: {
+      ...terminalCommandEnvelopeSchema.properties,
+      payload: {
+        anyOf: [
+          addFoodPayloadSchema,
+          addWorkoutPayloadSchema,
+          logSleepPayloadSchema,
+          chatResponsePayloadSchema,
+          askClarificationPayloadSchema,
+        ],
+      },
+    },
+  };
 }
 
 function imageDataUrlToInlinePart(imageSrc) {
@@ -1049,23 +1086,31 @@ function imageDataUrlToInlinePart(imageSrc) {
 export const INTENT_ROUTING_SYSTEM_BLOCK = `### REGOLA FONDAMENTALE DI INTENT ROUTING (CLASSIFICAZIONE DELL'INTENZIONE)
 Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente.
 
-REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI OBBLIGATORIAMENTE USARE IL COMANDO ADD_FOOD. È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
+REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI USARE ADD_FOOD (se chiaro) OPPURE ASK_CLARIFICATION (se ambiguo). È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
 
 CASO 1: [AZIONE - INSERIMENTO DATI]
 L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
 -> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
+CASO 1b: [AZIONE AMBIGUA — CHIARIMENTO]
+L'utente dichiara cibo/azione ma manca tipo, variante o quantità (es. 'Ho mangiato la pasta', 'ho preso uno yogurt' senza grammi e senza abitudine chiara in User_Portions / habits).
+-> COMPORTAMENTO OBBLIGATORIO: commandType ASK_CLARIFICATION con payload { message: domanda breve TTS, options: [2-4 scelte cliccabili] }. VIETATO indovinare grammi/varianti a caso. VIETATO errore generico. requiresConfirmation=false.
+
+CASO 1c: [FOLLOW-UP A CHIARIMENTO]
+Se nel THREAD_RECENTE l'assistente ha chiesto un chiarimento e l'utente risponde con dettagli (es. 'Pane integrale 80g e mortadella 50g', 'pasta al pomodoro ~300g', oppure una delle options):
+-> COMPORTAMENTO OBBLIGATORIO: commandType ADD_FOOD, estrai TUTTI gli alimenti+grammi, lascia uiMessage/adviceMessage VUOTI. VIETATO nuove ASK_CLARIFICATION, VIETATO CHAT_RESPONSE, VIETATO errori di parsing. Completa subito il carrello / bozza pasto.
+
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
 L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
--> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi sintetica su KENTU_GLOBAL_STATE.
--> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 (ADD_FOOD).`;
+-> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE.
+-> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b (ADD_FOOD o ASK_CLARIFICATION).`;
 
 export class GeminiStructuredClient {
   constructor({ model = DEFAULT_MODEL } = {}) {
     this.model = model || DEFAULT_MODEL;
   }
 
-  buildSystemInstruction(commandHint, { hasImages = false } = {}) {
+  buildSystemInstruction(commandHint, { hasImages = false, displayName = '' } = {}) {
     const fixedHint = asTrimmedString(commandHint).toUpperCase();
     const includeSleepRules = fixedHint === 'LOG_SLEEP' || hasImages;
     const includeFoodRules = fixedHint === 'ADD_FOOD' || fixedHint === 'UNKNOWN';
@@ -1077,6 +1122,7 @@ export class GeminiStructuredClient {
       'Rispondi SOLO con JSON valido e conforme allo schema fornito.',
       'Non aggiungere markdown, spiegazioni o testo fuori dal JSON.',
       INTENT_ROUTING_SYSTEM_BLOCK,
+      buildChatPersonaSystemBlock({ displayName }),
     ].join('\n\n');
 
     const parts = [];
@@ -1111,7 +1157,8 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro) e grams. NON inventare foodDbKey ne macronutrienti.",
         "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
         "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
-        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi, lascia grams null — il sistema chiedera i grammi.",
+        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi, lascia grams null — il sistema chiedera i grammi. Se anche il TIPO di alimento e ambiguo (es. solo «pasta»), preferisci ASK_CLARIFICATION con options tipiche invece di inventare.",
+        "REGOLA ADD_FOOD (FOLLOW-UP CHIARIMENTO): Se THREAD_RECENTE mostra che hai appena chiesto un chiarimento e l'utente risponde con dettagli (grammi/tipo/scelta), DEVI usare ADD_FOOD subito ed estrarre il carrello. Vietato nuove domande e vietato fallire il parsing.",
         "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
         "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi/unita e ha citato esplicitamente quell alimento; in quel caso isEstimated:true. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
@@ -1151,8 +1198,8 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
 
     parts.push(
       fixedHint && fixedHint !== 'UNKNOWN'
-        ? `Intent target FORZATO: ${fixedHint}. Per ADD_FOOD e VIETATO rispondere con CHAT_RESPONSE.`
-        : 'Se l intent non e chiaro, classifica CASO 1 vs CASO 2. Se c\'e cibo mangiato → ADD_FOOD. Solo domande pure di stato → CHAT_RESPONSE.',
+        ? `Intent target FORZATO: ${fixedHint}. Per ADD_FOOD e VIETATO rispondere con CHAT_RESPONSE (usa ASK_CLARIFICATION se ambigua).`
+        : 'Se l intent non e chiaro, classifica CASO 1 / 1b / 2. Cibo chiaro → ADD_FOOD. Cibo ambiguo → ASK_CLARIFICATION. Solo domande pure di stato → CHAT_RESPONSE.',
     );
 
     return `${lead}\n\n${parts.join(' ')}`;
@@ -1177,14 +1224,23 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
     const normalizedUserText = asTrimmedString(userText);
     const contents = buildGeminiContentsFromChatHistory(chatHistory);
     const conversationText = buildCombinedConversationText(normalizedUserText, chatHistory);
+    const threadSnippet = buildRecentThreadSnippetForPrompt(chatHistory, 4);
     const systemTimeCtx = formatCurrentSystemTimeContext();
     const userPromptText =
       normalizedUserText ||
       (imageParts.length > 0
         ? 'Analizza lo screenshot allegato (app fitness/sonno in italiano, es. Xiaomi Fitness) ed estrai durata sonno, fase Profondo e punteggio punti per LOG_SLEEP.'
         : '');
+    const displayName = asTrimmedString(
+      contextBundle?.contextSlices?.KENTU_GLOBAL_STATE?.User_Profile?.displayName
+      || contextBundle?.userDisplayName
+      || '',
+    );
     const systemInstruction = appendKentuGlobalStateToSystemInstruction(
-      this.buildSystemInstruction(commandHint, { hasImages: imageParts.length > 0 }),
+      this.buildSystemInstruction(commandHint, {
+        hasImages: imageParts.length > 0,
+        displayName,
+      }),
       contextBundle?.kentuGlobalStateText
         || (contextBundle?.contextSlices?.KENTU_GLOBAL_STATE
           ? JSON.stringify(contextBundle.contextSlices.KENTU_GLOBAL_STATE, null, 2)
@@ -1192,16 +1248,17 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
     );
     const userPrompt = [
       systemTimeCtx.header,
+      threadSnippet || null,
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto (ADD_FOOD): items[] = un oggetto per alimento. foodName PURO (no "e 160 g di pane"). icon = singola emoji precisa (pomodoro→🍅, passata→🥫, pasta→🍝). grams = SOLO la quantita di QUELL alimento. Esempio: "90g sardine e 160g pane" → [{foodName:"sardine",icon:"🐟",grams:90},{foodName:"pane",icon:"🥖",grams:160}]. adviceMessage/uiMessage VUOTI.'
+        ? 'Registrazione pasto: se chiaro → ADD_FOOD (items[], foodName PURO, icon emoji, grams). Se ambiguo (es. solo «pasta») → ASK_CLARIFICATION {message, options[2-4]}. Se è un FOLLOW-UP a un chiarimento nel THREAD_RECENTE → ADD_FOOD subito (niente altre domande). Esempio chiaro: "90g sardine e 160g pane" → [{foodName:"sardine",icon:"🐟",grams:90},{foodName:"pane",icon:"🥖",grams:160}]. Per ADD_FOOD: adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
-        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT.'
+        ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
-        ? 'CASO 2 CONSULTO: commandType DEVE essere CHAT_RESPONSE. Compila uiMessage (o adviceMessage/payload.message) con analisi sintetica basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
+        ? 'CASO 2 CONSULTO: commandType CHAT_RESPONSE (o ASK_CLARIFICATION se serve una scelta). Compila uiMessage breve TTS (1-3 frasi) basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]

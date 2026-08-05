@@ -28,6 +28,7 @@ import {
   isUserAssignedDayBlock,
   resolveBlockKcalTarget,
 } from '../features/weeklyBlocks/weeklyBlockSchema';
+import { buildChatPersonaSystemBlock, resolveUserDisplayName } from '../features/chat/chatPersona.js';
 import {
   applyMealOperations,
 } from '../features/commandTerminal/meals/mealUpsert.js';
@@ -1970,13 +1971,15 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
 
 /**
  * System instruction: Coach Nutrizionale Interattivo + solver macro.
+ * @param {{ displayName?: string, userProfile?: object }} [opts]
  * @returns {string}
  */
-export function generateConsultantSystemInstruction() {
+export function generateConsultantSystemInstruction(opts = {}) {
+  const displayName = resolveUserDisplayName(opts.userProfile) || String(opts.displayName || '').trim();
   return [
     'Sei un assistente nutrizionale empatico, colloquiale e intelligente — un Coach Nutrizionale Interattivo.',
     'Aiuti l\'utente a comporre pasti tenendo conto di macros e calorie residue. Rispondi SOLO con JSON valido conforme allo schema (niente markdown fuori dal JSON).',
-    'Il testo discorsivo va in adviceMessage: tono incoraggiante, chiaro, amichevole.',
+    'Il testo discorsivo va in adviceMessage: tono incoraggiante, chiaro, amichevole, BREVE (adatto a TTS: preferisci 1–4 frasi corte).',
     'STILE VISIVO (adviceMessage): usa emoji native. Associa un\'emoji coerente a ogni alimento (🥣 yogurt, 🌰 noci, 🍎 mela, 🐟 pesce, 🥖 pane, 🥛 latte, 🥗 verdure, 🥚 uova).',
     'Usa ✅ quando i vincoli sono rispettati; ⚠️ se si supera un limite (e correggi subito i grammi); 💡 per alternative utili.',
     'CARRELLO WIP: non finalizzare MAI l\'inserimento se l\'utente fa una domanda o un dubbio (es. «non sono troppe?»). Chiudi/salva SOLO con conferma esplicita (CONFIRM).',
@@ -2012,6 +2015,7 @@ export function generateConsultantSystemInstruction() {
     'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',
     'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
     'REGOLA SMART DEFAULTS: mealType/orario da [CURRENT_SYSTEM_TIME] se mancanti.',
+    buildChatPersonaSystemBlock({ displayName }),
   ].join(' ');
 }
 

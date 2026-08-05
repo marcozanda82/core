@@ -323,32 +323,34 @@ export const terminalCommandEnvelopeSchema = {
   properties: {
     commandType: {
       type: 'string',
-      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP', 'CHAT_RESPONSE'],
+      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP', 'CHAT_RESPONSE', 'ASK_CLARIFICATION'],
       description:
         'ADD_FOOD = trigger quando l utente dichiara di aver mangiat/o/bevuto qualcosa, elenca alimenti/ingredienti, '
         + 'cita colazione/snack/pranzo/cena con cibo, o chiede di registrare calorie di un pasto (anche discorsivo: '
         + '"come snack alle 19 ho mangiato sardine"). '
         + 'ADD_WORKOUT/LOG_SLEEP = altri inserimenti dati (CASO 1). '
+        + 'ASK_CLARIFICATION = richiesta ambigua: domanda breve + options[] cliccabili (NON indovinare). '
         + 'CHAT_RESPONSE = SOLO domanda di consulto sullo stato SENZA assunzione di cibo (CASO 2). '
-        + 'VIETATO CHAT_RESPONSE se il messaggio descrive cibo mangiato.',
+        + 'VIETATO CHAT_RESPONSE se il messaggio descrive cibo mangiato (usa ADD_FOOD o ASK_CLARIFICATION).',
     },
     payload: {
       type: 'object',
       description:
         'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, '
-        + 'se LOG_SLEEP usa schema sonno, se CHAT_RESPONSE usa { message } oppure oggetto vuoto '
+        + 'se LOG_SLEEP usa schema sonno, se ASK_CLARIFICATION usa { message, options[] }, '
+        + 'se CHAT_RESPONSE usa { message } oppure oggetto vuoto '
         + '(il testo della risposta va in uiMessage o adviceMessage).',
     },
     uiMessage: {
       type: 'string',
       description:
-        'Per CHAT_RESPONSE: analisi testuale. Per ADD_FOOD: lascia VUOTO (il sistema genera il testo).',
+        'Per CHAT_RESPONSE / ASK_CLARIFICATION: testo breve (TTS). Per ADD_FOOD: lascia VUOTO (il sistema genera il testo).',
     },
     adviceMessage: {
       type: 'string',
       nullable: true,
       description:
-        'Per CHAT_RESPONSE: testo consulenziale (alias di uiMessage). '
+        'Per CHAT_RESPONSE: testo consulenziale breve (alias di uiMessage). '
         + 'Per ADD_FOOD: lascia VUOTO. VIETATO allarmi/budget/cilindri in registrazione pasto.',
     },
     confidence: {
@@ -363,7 +365,6 @@ export const terminalCommandEnvelopeSchema = {
   required: ['commandType', 'payload'],
 };
 
-/** Payload minimo per risposte consulenziali senza bozza. */
 export const chatResponsePayloadSchema = {
   type: 'object',
   properties: {
@@ -371,10 +372,39 @@ export const chatResponsePayloadSchema = {
       type: 'string',
       nullable: true,
       description:
-        'Analisi testuale basata ESCLUSIVAMENTE su KENTU_GLOBAL_STATE. '
+        'Analisi testuale BREVE (1-3 frasi, tono coach, adatta a TTS) basata ESCLUSIVAMENTE su KENTU_GLOBAL_STATE. '
         + 'Puoi anche mettere il testo in uiMessage/adviceMessage.',
     },
+    options: {
+      type: 'array',
+      nullable: true,
+      description:
+        'Opzionale: 2-4 scelte rapide se serve un chiarimento leggero. Preferisci ASK_CLARIFICATION per ambiguita forti.',
+      items: { type: 'string' },
+    },
   },
+};
+
+/** Chiarimento interattivo: domanda breve + pulsanti (VUI-ready). */
+export const askClarificationPayloadSchema = {
+  type: 'object',
+  properties: {
+    message: {
+      type: 'string',
+      description:
+        'Domanda breve e calda (1 frase, chiama l utente per nome se noto). Es: «Marco, che pasta hai mangiato?»',
+    },
+    options: {
+      type: 'array',
+      description:
+        '2-4 opzioni cliccabili. Ogni stringa sara inviata come risposta utente. '
+        + 'Esempi: «Pasta al pomodoro ~300g», «Pasta in bianco ~200g», «Altro (te lo dico io)»',
+      items: { type: 'string' },
+      minItems: 2,
+      maxItems: 4,
+    },
+  },
+  required: ['message', 'options'],
 };
 
 export const consultantResponseSchema = {
