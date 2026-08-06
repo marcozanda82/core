@@ -1446,6 +1446,7 @@
 
 .kentu-meal-proposal-card__receipt {
   margin: 0 0 10px;
+  overflow: visible;
 }
 
 .kentu-meal-proposal-card__receipt > article {

@@ -85,6 +85,7 @@ export function buildMealReceiptPayload({
       const icon = sanitizeFoodIcon(item?.icon)
         || foodEmojiForWipName(foodName);
       const kcal = Math.round(Number(item?.kcal ?? item?.cal) || 0);
+      const status = String(item?.status || '').trim() || null;
       return {
         foodName,
         grams,
@@ -93,6 +94,10 @@ export function buildMealReceiptPayload({
         pro: roundMacro(item?.pro ?? item?.prot),
         carbo: roundMacro(item?.carbo ?? item?.carb),
         fat: roundMacro(item?.fat ?? item?.fatTotal),
+        foodDbKey: item?.foodDbKey != null ? String(item.foodDbKey) : null,
+        alternatives: Array.isArray(item?.alternatives) ? item.alternatives : [],
+        ...(status ? { status } : {}),
+        ...(item?.resolutionSource ? { resolutionSource: item.resolutionSource } : {}),
       };
     })
     .filter(Boolean);
@@ -147,7 +152,16 @@ export function buildMealReceiptPayload({
       || (preview ? resolveMealPreviewTitle(mealKey) : resolveMealReceiptTitle(mealKey)),
     mealType: mealKey,
     timeString: String(timeString || '').trim(),
-    items: list.map(({ foodName, grams, icon, kcal }) => ({ foodName, grams, icon, kcal })),
+    items: list.map(({ foodName, grams, icon, kcal, foodDbKey, alternatives, status, resolutionSource }) => ({
+      foodName,
+      grams,
+      icon,
+      kcal,
+      ...(foodDbKey ? { foodDbKey } : {}),
+      ...(Array.isArray(alternatives) && alternatives.length > 0 ? { alternatives } : {}),
+      ...(status ? { status } : {}),
+      ...(resolutionSource ? { resolutionSource } : {}),
+    })),
     totals,
     budgetRemaining: preview ? null : budgetRemaining,
   };

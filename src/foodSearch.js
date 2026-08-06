@@ -1,4 +1,8 @@
-function normalizeSearchText(value) {
+/**
+ * Normalizza testo ricerca: trim, lower-case, senza accenti/punteggiatura.
+ * Es. " Anguria " / "ANGURIA" → "anguria".
+ */
+export function normalizeSearchText(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -126,13 +130,19 @@ function scoreQueryToken(normalizedName, itemWords, queryWord) {
       continue;
     }
 
-    if (normalizedName.startsWith(qw)) {
+    // Prefisso sull'intero nome: leggermente sotto uguaglianza esatta.
+    if (normalizedName.startsWith(qw) && normalizedName !== qw) {
+      best = Math.max(best, SCORE_EXACT_OR_PREFIX - 1);
+      continue;
+    }
+
+    if (itemWords.some((word) => word === qw)) {
       best = Math.max(best, SCORE_EXACT_OR_PREFIX);
       continue;
     }
 
-    if (itemWords.some((word) => word === qw || word.startsWith(qw))) {
-      best = Math.max(best, SCORE_EXACT_OR_PREFIX);
+    if (itemWords.some((word) => word.startsWith(qw) && word !== qw)) {
+      best = Math.max(best, SCORE_EXACT_OR_PREFIX - 1);
       continue;
     }
 
@@ -159,8 +169,13 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
 
   const fullQuery = queryWords.join(' ');
 
-  if (normalizedName === fullQuery || normalizedName.startsWith(fullQuery)) {
+  // Uguaglianza esatta (case-insensitive) batte il prefix: "anguria" → "Anguria" > "Anguria gialla".
+  if (normalizedName === fullQuery) {
     return { strictScore: SCORE_EXACT_OR_PREFIX, matchTier: 'exact', allTokensMatch: true };
+  }
+
+  if (normalizedName.startsWith(fullQuery)) {
+    return { strictScore: SCORE_EXACT_OR_PREFIX - 1, matchTier: 'prefix', allTokensMatch: true };
   }
 
   if (hasWordBoundaryMatch(normalizedName, fullQuery)) {
@@ -187,7 +202,7 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
   let minTokenScore = SCORE_EXACT_OR_PREFIX;
   let maxTokenScore = 0;
   let bestTier = 'none';
-  const tierRank = { exact: 3, word_boundary: 2, substring: 1, none: 0 };
+  const tierRank = { exact: 3, word_boundary: 2, substring: 1, none: 0, prefix: 2.5 };
 
   for (let i = 0; i < queryWords.length; i += 1) {
     const tokenScore = scoreQueryToken(normalizedName, itemWords, queryWords[i]);
@@ -217,12 +232,14 @@ function isAutocompletePrefix(normalizedName, itemWords, normalizedQuery) {
 }
 
 /**
- * Ricerca case-insensitive con substring match contiguo; fuzzy/sparse lettere disabilitato.
+ * Ricerca case-insensitive (trim + lower-case via normalizeSearchText).
+ * Match esatto "anguria" ↔ "Anguria" = score 100. Fuzzy/sparse lettere disabilitato.
  */
 export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
 
-  const normalizedQuery = normalizeSearchText(query);
+  const trimmedQuery = String(query ?? '').trim();
+  const normalizedQuery = normalizeSearchText(trimmedQuery);
   if (!normalizedQuery) return [];
 
   const includeUserHistory = options.includeUserHistory !== false;
@@ -240,29 +257,51 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
 
   for (let i = 0; i < entries.length; i += 1) {
     const [id, food] = entries[i];
-    const name = String(food?.desc || food?.name || '').trim();
+    const descName = String(food?.desc || '').trim();
+    const altName = String(food?.name || '').trim();
+    const name = descName || altName;
     if (!name) continue;
 
     const normalizedName = normalizeSearchText(name);
-    if (!normalizedName) continue;
+    const normalizedAlt = altName && altName !== name ? normalizeSearchText(altName) : '';
+    if (!normalizedName && !normalizedAlt) continue;
 
-    const itemWords = normalizedName.split(' ').filter(Boolean);
+    const primaryNorm = normalizedName || normalizedAlt;
+    const itemWords = primaryNorm.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
 
-    if (mode === 'autocomplete' && !isAutocompletePrefix(normalizedName, itemWords, normalizedQuery)) {
+    if (mode === 'autocomplete' && !isAutocompletePrefix(primaryNorm, itemWords, normalizedQuery)) {
       continue;
     }
 
-    const { strictScore, matchTier, allTokensMatch } = calculateMatchScore(
-      normalizedName,
+    let { strictScore, matchTier, allTokensMatch } = calculateMatchScore(
+      primaryNorm,
       itemWords,
       queryWords,
     );
 
+    // Secondo passaggio su `name` se diverso da `desc` (es. alias).
+    if (normalizedAlt && normalizedAlt !== primaryNorm) {
+      const altWords = normalizedAlt.split(' ').filter(Boolean);
+      const altMatch = calculateMatchScore(normalizedAlt, altWords, queryWords);
+      if (altMatch.strictScore > strictScore) {
+        strictScore = altMatch.strictScore;
+        matchTier = altMatch.matchTier;
+        allTokensMatch = altMatch.allTokensMatch;
+      }
+    }
+
+    // Boost esplicito uguaglianza esatta (case-insensitive) su desc o name.
+    if (primaryNorm === normalizedQuery || normalizedAlt === normalizedQuery) {
+      strictScore = SCORE_EXACT_OR_PREFIX;
+      matchTier = 'exact';
+      allTokensMatch = true;
+    }
+
     if (strictScore < MIN_MATCH_SCORE) continue;
 
     const historyScores = includeUserHistory
-      ? recentFoodScores.get(String(id).trim()) || recentFoodScores.get(normalizedName) || null
+      ? recentFoodScores.get(String(id).trim()) || recentFoodScores.get(primaryNorm) || null
       : null;
     const recencyScore = historyScores?.recencyScore ?? 0;
     const frequencyScore = historyScores?.frequencyScore ?? 0;
@@ -270,7 +309,12 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       ? (recencyScore * 0.6 + frequencyScore * 0.4) * 100 * HISTORY_SCORE_WEIGHT
       : 0;
 
-    const score = strictScore + historyBoost;
+    // Exact match batte sempre i boost storici / prefix su altri alimenti.
+    const score = matchTier === 'exact'
+      ? SCORE_EXACT_OR_PREFIX + 50 + historyBoost
+      : matchTier === 'prefix'
+        ? SCORE_EXACT_OR_PREFIX + 10 + historyBoost
+        : strictScore + historyBoost;
     const matchScore = strictScore / 100;
 
     results.push({

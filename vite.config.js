@@ -10,6 +10,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // Web/Capacitor: stub finché il bundle principale resta Vite. App Expo: rimuovere alias.
+      'expo-image-picker': path.resolve(__dirname, 'src/platform/stubs/expoImagePicker.stub.js'),
+      'expo-file-system': path.resolve(__dirname, 'src/platform/stubs/expoFileSystem.stub.js'),
     },
   },
 });

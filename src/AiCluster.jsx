@@ -58,6 +58,7 @@ export default function AiCluster({
   onSlotQuickReplyClick,
   onAcceptAdvice,
   onAcceptMealProposal,
+  onLearnUnresolvedFood = null,
   foodDatabase = {},
   fullHistory = {},
   onDraftConfirm,
@@ -434,6 +435,7 @@ export default function AiCluster({
                           foodDatabase={foodDatabase}
                           fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
+                          onLearnUnresolvedFood={onLearnUnresolvedFood}
                         />
                       ) : null}
                     {Array.isArray(msg.wipSuggestions)

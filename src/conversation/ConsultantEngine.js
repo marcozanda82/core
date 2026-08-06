@@ -2320,6 +2320,39 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
   const grams = Math.round(Number(item.grams ?? item.qta) || 0);
   if (!rawName || !Number.isFinite(grams) || grams <= 0) return null;
 
+  // Già risolto / appreso: se c'è foodDbKey, ricalcola dal DB locale.
+  if (
+    item.status === 'RESOLVED'
+    && item.foodDbKey
+    && (item.resolutionSource === 'learned_db' || item.resolutionSource === 'manual')
+  ) {
+    const fromDb = resolveFoodItemForProposal(rawName, grams, {
+      foodDb,
+      fullHistory,
+      mealType,
+      preferredDbKey: item.foodDbKey,
+    });
+    if (fromDb && fromDb.status !== 'NEEDS_RESOLUTION') {
+      return { ...fromDb, rawQuery: rawName, icon: item.icon || fromDb.icon };
+    }
+  }
+
+  // Già risolto manualmente senza chiave DB (legacy).
+  if (
+    item.status === 'RESOLVED'
+    && item.resolutionSource === 'manual'
+    && ['kcal', 'pro', 'carbo', 'fat'].some((key) => Number(item[key]) > 0)
+  ) {
+    return {
+      ...item,
+      foodName: rawName,
+      grams,
+      rawQuery: rawName,
+      status: 'RESOLVED',
+      resolutionSource: 'manual',
+    };
+  }
+
   const resolved = resolveFoodItemForProposal(rawName, grams, {
     foodDb,
     fullHistory,
@@ -2327,11 +2360,26 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
     preferredDbKey: item.foodDbKey ?? null,
   });
 
-  if (!resolved) return item;
+  // Tolleranza zero: senza match DB non si conservano macro LLM/abitudine.
+  if (!resolved) {
+    return {
+      foodName: rawName,
+      foodDbKey: null,
+      grams,
+      kcal: 0,
+      pro: 0,
+      carbo: 0,
+      fat: 0,
+      rawQuery: rawName,
+      status: 'NEEDS_RESOLUTION',
+      alternatives: [],
+    };
+  }
 
   return {
     ...resolved,
     rawQuery: rawName,
+    icon: item.icon || resolved.icon,
   };
 }
 

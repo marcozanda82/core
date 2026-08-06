@@ -42,7 +42,6 @@ export function buildMealProposalLogEntries(selectedItems, options = {}) {
     foodDb = {},
     findBestFoodMatch,
     resolveFoodFromDb,
-    getAverageEstimate,
   } = options;
 
   if (!Array.isArray(selectedItems) || selectedItems.length === 0) return [];
@@ -78,18 +77,11 @@ export function buildMealProposalLogEntries(selectedItems, options = {}) {
     let prot = Number(it.estPro);
     let carb = Number(it.estCar);
     let fat = Number(it.estFat);
-    if (!Number.isFinite(kcal) || kcal <= 0) {
-      kcal = Math.max(10, Math.round(((getAverageEstimate?.('kcal', name) || 0) / 100) * qSafe));
-    }
-    if (!Number.isFinite(prot) || prot < 0) {
-      prot = ((getAverageEstimate?.('prot', name) || 0) / 100) * qSafe;
-    }
-    if (!Number.isFinite(carb) || carb < 0) {
-      carb = ((getAverageEstimate?.('carb', name) || 0) / 100) * qSafe;
-    }
-    if (!Number.isFinite(fat) || fat < 0) {
-      fat = ((getAverageEstimate?.('fatTotal', name) || 0) / 100) * qSafe;
-    }
+    // Tolleranza zero: niente stime medie automatiche se i valori non sono già noti.
+    if (!Number.isFinite(kcal) || kcal < 0) kcal = 0;
+    if (!Number.isFinite(prot) || prot < 0) prot = 0;
+    if (!Number.isFinite(carb) || carb < 0) carb = 0;
+    if (!Number.isFinite(fat) || fat < 0) fat = 0;
     prot = Math.round(prot * 10) / 10;
     carb = Math.round(carb * 10) / 10;
     fat = Math.round(fat * 10) / 10;
@@ -111,6 +103,7 @@ export function buildMealProposalLogEntries(selectedItems, options = {}) {
       mealTime: mealDec,
       batchId,
       isEstimated: true,
+      status: 'NEEDS_RESOLUTION',
     };
   });
 }

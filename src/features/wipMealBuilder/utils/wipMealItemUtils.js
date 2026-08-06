@@ -120,8 +120,9 @@ export function pickPreferredWipDisplayName(nameA, nameB) {
 }
 
 /**
- * Hard dedup: fonda voci con lo stesso nome (case-insensitive / refusi) **sommando** grammi e macro.
- * Buttafuori obbligatorio contro allucinazioni LLM (es. due «Cioccolato 85%»).
+ * Hard dedup: fonda voci con lo stesso nome (case-insensitive / refusi).
+ * - Stesso nome + **stesso peso** → allucinazione LLM: tienine uno (NON sommare).
+ * - Stesso nome + **pesi diversi** → somma grammi e macro (es. 50g + 30g di pane).
  * Matematica pura — mai affidarsi all'AI per togliere i doppioni.
  *
  * @param {Array<object>} items
@@ -142,7 +143,7 @@ export function deduplicateWipItems(items = [], opts = {}) {
     const gramsRaw = current.grams ?? current.weight ?? current.qta;
     const gramsNum = Number(gramsRaw);
     const hasGrams = Number.isFinite(gramsNum) && gramsNum > 0;
-    const grams = hasGrams ? gramsNum : 0;
+    const grams = hasGrams ? Math.round(gramsNum) : 0;
     const kcal = Number(current.kcal ?? current.cal ?? current.calories) || 0;
     const prot = Number(current.prot ?? current.pro ?? current.protein) || 0;
     const carbo = Number(current.carbo ?? current.carb ?? current.carbs) || 0;
@@ -158,8 +159,25 @@ export function deduplicateWipItems(items = [], opts = {}) {
         existing.foodName || existing.name,
         name,
       );
-      const existingGrams = Number(existing.grams);
-      const existingHasGrams = Number.isFinite(existingGrams) && existingGrams > 0;
+      const existingGramsRaw = Number(existing.grams);
+      const existingHasGrams = Number.isFinite(existingGramsRaw) && existingGramsRaw > 0;
+      const existingGrams = existingHasGrams ? Math.round(existingGramsRaw) : 0;
+
+      // Stesso nome + stesso peso → doppione LLM: tieni una sola voce.
+      if (existingHasGrams && hasGrams && existingGrams === grams) {
+        acc[existingIndex] = {
+          ...existing,
+          name: displayName,
+          foodName: displayName,
+          desc: displayName,
+          icon: existing.icon || current.icon || null,
+          foodDbKey: existing.foodDbKey || current.foodDbKey || null,
+          alternatives: existing.alternatives || current.alternatives,
+          isEstimated: existing.isEstimated === true || current.isEstimated === true,
+        };
+        return acc;
+      }
+
       let nextGrams;
       if (existingHasGrams || hasGrams) {
         nextGrams = (existingHasGrams ? existingGrams : 0) + (hasGrams ? grams : 0);

@@ -34,6 +34,12 @@ import {
   sanitizeFoodIcon,
 } from './features/chat/mealReceiptUtils';
 import {
+  buildLearnedFoodEntryPer100,
+  persistLearnedFoodToDatabase,
+  resolveLearnedPortionAfterSave,
+} from './services/userFoodLearning.js';
+import { resolveFoodItemForProposal } from './utils/foodResolver.js';
+import {
   fetchUserPortionsDict,
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
@@ -3981,8 +3987,9 @@ Slot esistente aggiornato (nessun ghost).`;
     return dbKey;
   }, [userUid, db, fullHistory]);
 
-  const saveFoodEntryPer100ToFoodDb = useCallback(async (entry) => {
+  const saveFoodEntryPer100ToFoodDb = useCallback(async (entry, options = {}) => {
     if (!userUid || !entry?.desc) return;
+    const strictLearned = options?.strictLearned === true;
     const basePath = `users/${userUid}/tracker_data`;
     const name = String(entry.desc).trim();
     const slug = name.replace(/[.$#[\]/\\\s]/g, '_').replace(/[^\w\-]/g, '_').slice(0, 40);
@@ -3990,11 +3997,20 @@ Slot esistente aggiornato (nessun ghost).`;
     const payload = { ...entry, desc: name, isRecipe: false };
     delete payload.ingredients;
     delete payload.type;
-    Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
-      if (payload[k] == null) payload[k] = getDefaultNutrientValue(k, fullHistory);
-    }));
-    if (payload.kcal == null || Number(payload.kcal) === 0) {
-      payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
+    if (strictLearned) {
+      payload.kcal = Math.round(Number(payload.kcal) || 0);
+      payload.prot = Math.round((Number(payload.prot) || 0) * 10) / 10;
+      payload.carb = Math.round((Number(payload.carb) || 0) * 10) / 10;
+      const fatVal = Math.round((Number(payload.fatTotal ?? payload.fat) || 0) * 10) / 10;
+      payload.fat = fatVal;
+      payload.fatTotal = fatVal;
+    } else {
+      Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
+        if (payload[k] == null) payload[k] = getDefaultNutrientValue(k, fullHistory);
+      }));
+      if (payload.kcal == null || Number(payload.kcal) === 0) {
+        payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
+      }
     }
     if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
     const payloadWithUnits = enrichDbRowWithFoodUnits(withDefaultUsageStats(payload), newKey);
@@ -4002,6 +4018,61 @@ Slot esistente aggiornato (nessun ghost).`;
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
     return { key: newKey, row: payloadWithUnits };
   }, [userUid, db, fullHistory]);
+
+  const learnUnresolvedFoodEntry = useCallback(async ({
+    foodName,
+    grams,
+    kcal,
+    pro,
+    carbo,
+    fat,
+    mealType = 'pranzo',
+    source = 'manual_resolution',
+    labelImageUri = null,
+  }) => {
+    const entryPer100 = buildLearnedFoodEntryPer100({
+      foodName,
+      grams,
+      kcal,
+      pro,
+      carbo,
+      fat,
+      source,
+      labelImageUri,
+    });
+    if (!entryPer100) throw new Error('invalid_food_entry');
+
+    const { foodDbKey, row } = await persistLearnedFoodToDatabase(
+      async (entry) => {
+        const saved = await saveFoodEntryPer100ToFoodDb(entry, { strictLearned: true });
+        return saved;
+      },
+      entryPer100,
+    );
+
+    const dbWithNewRow = row
+      ? { ...(foodDb || {}), [foodDbKey]: row }
+      : foodDb;
+
+    const portion = resolveLearnedPortionAfterSave(
+      resolveFoodItemForProposal,
+      foodName,
+      grams,
+      foodDbKey,
+      { foodDb: dbWithNewRow, fullHistory, mealType },
+    );
+
+    return {
+      foodDbKey,
+      foodName: portion?.foodName || String(foodName || '').trim(),
+      kcal: Math.round(Number(portion?.kcal) || Number(kcal) || 0),
+      pro: Number(portion?.pro) || Number(pro) || 0,
+      carbo: Number(portion?.carbo) || Number(carbo) || 0,
+      fat: Number(portion?.fat) || Number(fat) || 0,
+      status: 'RESOLVED',
+      resolutionSource: 'learned_db',
+    };
+  }, [saveFoodEntryPer100ToFoodDb, foodDb, fullHistory]);
 
   /** Aggiorna parzialmente una voce del database personale (es. customImage, macro per100). */
   const patchFoodDbEntry = useCallback(async (foodDbKey, patch) => {
@@ -6652,6 +6723,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onSlotQuickReplyClick: handleQuickReplyClick,
       onAcceptAdvice: handleAcceptAdvice,
       onAcceptMealProposal: handleAcceptMealProposal,
+      onLearnUnresolvedFood: learnUnresolvedFoodEntry,
       foodDatabase: foodDb,
       fullHistory,
       dailyLog: activeLog,
@@ -6686,6 +6758,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
+    learnUnresolvedFoodEntry,
     foodDb,
     fullHistory,
     activeLog,
@@ -9214,6 +9287,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             handleQuickReplyClick={handleQuickReplyClick}
             handleAcceptAdvice={handleAcceptAdvice}
             onAcceptMealProposal={handleAcceptMealProposal}
+            onLearnUnresolvedFood={learnUnresolvedFoodEntry}
             foodDatabase={foodDb}
             fullHistory={fullHistory}
             onDraftConfirm={handleDraftConfirm}

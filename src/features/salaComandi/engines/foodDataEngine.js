@@ -1,5 +1,11 @@
-import { TARGETS, getDefaultNutrientValue } from '../../../useBiochimico';
+import { TARGETS } from '../../../useBiochimico';
 import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits';
+import { normalizeSearchText, searchFoodsDetailed } from '../../../foodSearch.js';
+
+export const FOOD_RESOLUTION_STATUS = Object.freeze({
+  RESOLVED: 'RESOLVED',
+  NEEDS_RESOLUTION: 'NEEDS_RESOLUTION',
+});
 
 const DB_META_KEYS = new Set([
   'id', 'isRecipe', 'type', 'desc', 'name', 'ingredients', 'units', 'defaultUnit',
@@ -60,8 +66,8 @@ export function applyDbNutrientsToPortionItem(item, dbRow, qta) {
 }
 
 /**
- * Stima euristica per 100g quando il nutriente manca nel DB.
- * NON usa getDefaultNutrientValue: quella funzione restituisce quote-pasto (es. fibre 30/4 = 7.5g).
+ * Stima euristica per 100g — SOLO per flussi espliciti di stima utente (form manuale / provisional).
+ * NON usata da estraiDatiFoodDb / resolver automatico (tolleranza zero).
  */
 export function getAverageEstimate({ nutrientKey, foodDesc = '', fullHistory }) {
   void fullHistory;
@@ -86,30 +92,83 @@ export function getAverageEstimate({ nutrientKey, foodDesc = '', fullHistory }) 
   return 0;
 }
 
-/** Stima scalata sulla porzione (sempre da valori per 100g). */
-function scaledNutrientEstimate(nutrientKey, foodDesc, qta, fullHistory) {
-  return (getAverageEstimate({ nutrientKey, foodDesc, fullHistory }) / 100) * qta;
+/**
+ * Chiavi TARGETS mancanti → 0 (niente stime automatiche).
+ */
+function zeroFillMissingNutrients(item, dbProvidedKeys) {
+  if (!item) return;
+  Object.keys(TARGETS).forEach((g) => {
+    Object.keys(TARGETS[g] || {}).forEach((k) => {
+      if (dbProvidedKeys?.has(k)) return;
+      if (item[k] !== undefined && item[k] !== null) return;
+      item[k] = 0;
+    });
+  });
+  if (item.kcal == null) item.kcal = item.cal ?? 0;
+  if (item.cal == null) item.cal = item.kcal ?? 0;
+  if (item.fat == null && item.fatTotal != null) item.fat = item.fatTotal;
+  if (item.fatTotal == null && item.fat != null) item.fatTotal = item.fat;
 }
 
 /**
- * Fallback solo se il DB non ha fornito la chiave (null/undefined). Mai sovrascrivere 0.
+ * Match DB: preferredKey → uguaglianza case-insensitive su desc/name → top hit search.
+ * Niente `.includes` lasco (evita match spurî).
  */
-function fillMissingNutrientOnItem(item, k, nome, qta, fullHistory, macroKeys, dbProvidedKeys) {
-  if (dbProvidedKeys?.has(k)) return;
-  if (item[k] !== undefined && item[k] !== null) return;
-
-  if (macroKeys.includes(k)) {
-    const scaled = scaledNutrientEstimate(k, nome, qta, fullHistory);
-    item[k] = Number.isFinite(scaled) ? scaled : 0;
-    return;
+export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
+  if (preferredDbKey != null && foodDb?.[preferredDbKey] != null) {
+    return preferredDbKey;
   }
 
-  const micro = getDefaultNutrientValue(k, fullHistory);
-  item[k] = micro ?? 0;
+  const needle = normalizeSearchText(nome);
+  if (!needle || !foodDb || typeof foodDb !== 'object') return null;
+
+  const entries = Object.entries(foodDb);
+  for (let i = 0; i < entries.length; i += 1) {
+    const [key, food] = entries[i];
+    const descNorm = normalizeSearchText(food?.desc);
+    const nameNorm = normalizeSearchText(food?.name);
+    if (descNorm === needle || nameNorm === needle) return key;
+  }
+
+  const hits = searchFoodsDetailed(foodDb, nome, {
+    limit: 1,
+    includeUserHistory: false,
+  });
+  const top = hits[0];
+  if (!top) return null;
+  // Accetta solo match forti (exact/prefix 100 o word-boundary 75+)
+  if (Number(top.strictScore) >= 75) return top.id;
+  return null;
+}
+
+function buildUnresolvedFoodItem({ nome, qta, pastoType }) {
+  const foodItem = Object.assign(
+    {
+      id: Date.now() + Math.random(),
+      type: 'food',
+      mealType: pastoType,
+      desc: nome,
+      name: nome,
+      qta,
+      weight: qta,
+      kcal: 0,
+      cal: 0,
+      prot: 0,
+      carb: 0,
+      fat: 0,
+      fatTotal: 0,
+      foodDbKey: null,
+      status: FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
+    },
+    ...Object.keys(TARGETS).flatMap((g) => Object.keys(TARGETS[g]).map((k) => ({ [k]: 0 }))),
+  );
+  const { units, defaultUnit, category } = buildFoodUnits({ desc: nome }, '');
+  return { ...foodItem, units, defaultUnit, category };
 }
 
 /**
- * Estrazione dati alimento da DB con fallback stime e unità.
+ * Estrazione dati alimento da DB. Tolleranza zero: niente stime medie automatiche.
+ * Match assente → macronutrienti 0 + status NEEDS_RESOLUTION.
  */
 export function estraiDatiFoodDb({
   nome,
@@ -119,80 +178,69 @@ export function estraiDatiFoodDb({
   foodDb,
   fullHistory,
 }) {
-  const foodItem = Object.assign(
-    { id: Date.now() + Math.random(), type: 'food', mealType: pastoType, desc: nome, qta, weight: qta, kcal: 0, cal: 0 },
-    ...Object.keys(TARGETS).flatMap((g) => Object.keys(TARGETS[g]).map((k) => ({ [k]: undefined })))
-  );
-  const dbKey =
-    preferredDbKey != null && foodDb?.[preferredDbKey] != null
-      ? preferredDbKey
-      : Object.keys(foodDb || {}).find((k) => foodDb?.[k]?.desc?.toLowerCase()?.includes(String(nome || '').toLowerCase()));
-  if (dbKey) {
-    const dbF = foodDb[dbKey];
-    if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
-      const factor = qta / 100;
-      const ingredients = dbF.ingredients.map((ing) => {
-        const w0 = Number(ing.weight) || 0;
-        const wf = w0 > 0 ? Math.max(5, Math.round(w0 * factor)) / w0 : factor;
-        return {
-          ...ing,
-          weight: Math.max(5, Math.round(w0 * factor)),
-          kcal: Math.max(0, Math.round((Number(ing.kcal) || 0) * wf)),
-          prot: Math.max(0, Math.round((Number(ing.prot) || 0) * wf * 10) / 10),
-          carb: Math.max(0, Math.round((Number(ing.carb) || 0) * wf * 10) / 10),
-          fat: Math.max(0, Math.round((Number(ing.fat) || 0) * wf * 10) / 10),
-        };
-      });
-      const recipeItem = {
-        id: `recipe_${Date.now()}`,
-        type: 'recipe',
-        mealType: pastoType,
-        desc: dbF.desc || nome,
-        name: dbF.desc || nome,
-        qta,
-        weight: qta,
-        unitStep: 50,
-        kcal: ((Number(dbF.kcal) || 0) * qta) / 100,
-        cal: ((Number(dbF.kcal) || 0) * qta) / 100,
-        prot: ((Number(dbF.prot) || 0) * qta) / 100,
-        carb: ((Number(dbF.carb) || 0) * qta) / 100,
-        fat: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
-        fatTotal: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
-        ingredients,
-      };
-      const dbProvided = applyDbNutrientsToPortionItem(recipeItem, dbF, qta);
-      const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
-      Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-        fillMissingNutrientOnItem(recipeItem, k, nome, qta, fullHistory, macroKeys, dbProvided);
-      }));
-      recipeItem.kcal = recipeItem.kcal ?? recipeItem.cal ?? 0;
-      recipeItem.cal = recipeItem.cal ?? recipeItem.kcal;
-      return recipeItem;
-    }
-    foodItem.foodDbKey = dbKey;
-    const dbProvided = applyDbNutrientsToPortionItem(foodItem, dbF, qta);
-    foodItem.kcal = foodItem.kcal ?? foodItem.cal ?? 0;
-    foodItem.cal = foodItem.cal ?? foodItem.kcal;
-    const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
-    Object.keys(TARGETS).forEach((g) => Object.keys(TARGETS[g]).forEach((k) => {
-      fillMissingNutrientOnItem(foodItem, k, nome, qta, fullHistory, macroKeys, dbProvided);
-    }));
-    if (foodItem.kcal == null) {
-      const scaledKcal = scaledNutrientEstimate('kcal', nome, qta, fullHistory);
-      foodItem.kcal = scaledKcal ?? getDefaultNutrientValue('kcal', fullHistory);
-    }
-    return enrichPortionItemWithDbUnits(foodItem, dbF, dbKey);
+  void fullHistory;
+  const dbKey = findFoodDbKey(foodDb, nome, preferredDbKey);
+  if (!dbKey) {
+    return buildUnresolvedFoodItem({ nome, qta, pastoType });
   }
 
-  const macroKeys = ['kcal', 'cal', 'prot', 'carb', 'fatTotal', 'fibre'];
-  foodItem.kcal = scaledNutrientEstimate('kcal', nome, qta, fullHistory) ?? getDefaultNutrientValue('kcal', fullHistory);
-  foodItem.cal = foodItem.kcal;
-  foodItem.prot = scaledNutrientEstimate('prot', nome, qta, fullHistory) ?? getDefaultNutrientValue('prot', fullHistory);
-  foodItem.carb = scaledNutrientEstimate('carb', nome, qta, fullHistory) ?? getDefaultNutrientValue('carb', fullHistory);
-  foodItem.fatTotal = scaledNutrientEstimate('fatTotal', nome, qta, fullHistory) ?? getDefaultNutrientValue('fatTotal', fullHistory);
-  Object.values(TARGETS).forEach((g) => Object.keys(g || {}).forEach((k) => {
-    fillMissingNutrientOnItem(foodItem, k, nome, qta, fullHistory, macroKeys, new Set());
-  }));
-  const { units, defaultUnit, category } = buildFoodUnits({ desc: nome }, '');
-  return { ...foodItem, units, defaultUnit, category };
+  const dbF = foodDb[dbKey];
+  if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
+    const factor = qta / 100;
+    const ingredients = dbF.ingredients.map((ing) => {
+      const w0 = Number(ing.weight) || 0;
+      const wf = w0 > 0 ? Math.max(5, Math.round(w0 * factor)) / w0 : factor;
+      return {
+        ...ing,
+        weight: Math.max(5, Math.round(w0 * factor)),
+        kcal: Math.max(0, Math.round((Number(ing.kcal) || 0) * wf)),
+        prot: Math.max(0, Math.round((Number(ing.prot) || 0) * wf * 10) / 10),
+        carb: Math.max(0, Math.round((Number(ing.carb) || 0) * wf * 10) / 10),
+        fat: Math.max(0, Math.round((Number(ing.fat) || 0) * wf * 10) / 10),
+      };
+    });
+    const recipeItem = {
+      id: `recipe_${Date.now()}`,
+      type: 'recipe',
+      mealType: pastoType,
+      desc: dbF.desc || nome,
+      name: dbF.desc || nome,
+      qta,
+      weight: qta,
+      unitStep: 50,
+      kcal: ((Number(dbF.kcal) || 0) * qta) / 100,
+      cal: ((Number(dbF.kcal) || 0) * qta) / 100,
+      prot: ((Number(dbF.prot) || 0) * qta) / 100,
+      carb: ((Number(dbF.carb) || 0) * qta) / 100,
+      fat: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
+      fatTotal: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
+      ingredients,
+      foodDbKey: dbKey,
+      status: FOOD_RESOLUTION_STATUS.RESOLVED,
+    };
+    const dbProvided = applyDbNutrientsToPortionItem(recipeItem, dbF, qta);
+    zeroFillMissingNutrients(recipeItem, dbProvided);
+    return recipeItem;
+  }
+
+  const foodItem = Object.assign(
+    {
+      id: Date.now() + Math.random(),
+      type: 'food',
+      mealType: pastoType,
+      desc: nome,
+      qta,
+      weight: qta,
+      kcal: 0,
+      cal: 0,
+      foodDbKey: dbKey,
+      status: FOOD_RESOLUTION_STATUS.RESOLVED,
+    },
+    ...Object.keys(TARGETS).flatMap((g) => Object.keys(TARGETS[g]).map((k) => ({ [k]: undefined }))),
+  );
+  const dbProvided = applyDbNutrientsToPortionItem(foodItem, dbF, qta);
+  zeroFillMissingNutrients(foodItem, dbProvided);
+  foodItem.desc = dbF.desc || foodItem.desc || nome;
+  foodItem.name = dbF.desc || dbF.name || nome;
+  return enrichPortionItemWithDbUnits(foodItem, dbF, dbKey);
 }

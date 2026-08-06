@@ -1,8 +1,13 @@
 import { searchFoodsDetailed } from '../foodSearch.js';
-import { estraiDatiFoodDb } from '../features/salaComandi/engines/foodDataEngine.js';
+import {
+  estraiDatiFoodDb,
+  FOOD_RESOLUTION_STATUS,
+} from '../features/salaComandi/engines/foodDataEngine.js';
 
 const DEFAULT_RESOLVE_LIMIT = 8;
 const MIN_ALTERNATIVES_FOR_UI = 2;
+/** Sotto questa soglia (0–100) il match non è affidabile → NEEDS_RESOLUTION. */
+const MIN_ACCEPTABLE_STRICT_SCORE = 50;
 
 function roundMacro(value) {
   const n = Number(value);
@@ -72,12 +77,14 @@ export function resolveFoodEntity(rawQuery, foodDb, options = {}) {
     includeUserHistory: options.includeUserHistory !== false,
   });
 
-  const alternatives = hits.map((hit) => ({
-    foodDbKey: String(hit.id),
-    foodName: String(hit.name).trim(),
-    matchScore: Number(hit.matchScore) || 0,
-    strictScore: Number(hit.strictScore) || 0,
-  }));
+  const alternatives = hits
+    .filter((hit) => Number(hit.strictScore) >= MIN_ACCEPTABLE_STRICT_SCORE)
+    .map((hit) => ({
+      foodDbKey: String(hit.id),
+      foodName: String(hit.name).trim(),
+      matchScore: Number(hit.matchScore) || 0,
+      strictScore: Number(hit.strictScore) || 0,
+    }));
 
   return {
     rawQuery: query,
@@ -101,6 +108,10 @@ export function buildPortionFromDbMatch(match, grams, context = {}) {
   const mealType = context.mealType || 'pranzo';
   const g = Math.max(1, Math.round(Number(grams) || 0));
 
+  if (match.foodDbKey != null && foodDb[match.foodDbKey] == null) {
+    return null;
+  }
+
   const portion = estraiDatiFoodDb({
     nome: match.foodName,
     qta: g,
@@ -109,6 +120,10 @@ export function buildPortionFromDbMatch(match, grams, context = {}) {
     foodDb,
     fullHistory,
   });
+
+  if (portion?.status === FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION) {
+    return null;
+  }
 
   return {
     foodDbKey: portion.foodDbKey ?? match.foodDbKey,
@@ -119,6 +134,7 @@ export function buildPortionFromDbMatch(match, grams, context = {}) {
     carbo: roundMacro(portion.carb),
     fat: roundMacro(portion.fatTotal ?? portion.fat),
     matchScore: Number(match.matchScore) || 0,
+    status: FOOD_RESOLUTION_STATUS.RESOLVED,
   };
 }
 
@@ -132,8 +148,26 @@ function orderCandidates(candidates, preferredDbKey) {
   return [preferred, ...rest];
 }
 
+function buildUnresolvedPortion(query, grams) {
+  const g = Math.max(1, Math.round(Number(grams) || 0));
+  return {
+    foodDbKey: null,
+    foodName: query,
+    grams: g,
+    kcal: 0,
+    pro: 0,
+    carbo: 0,
+    fat: 0,
+    matchScore: 0,
+    status: FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
+    rawQuery: query,
+    alternatives: [],
+  };
+}
+
 /**
  * Risolve un item pasto (nome grezzo + grammi) con bestMatch e alternative dal DB.
+ * Nessun fallback a stime inventate: senza match → NEEDS_RESOLUTION + macro a 0.
  *
  * @param {string} rawName
  * @param {number} grams
@@ -156,6 +190,29 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
   }
 
   const foodDb = context.foodDb || {};
+
+  // preferredDbKey valido nel DB → usa direttamente senza search.
+  if (context.preferredDbKey != null && foodDb[context.preferredDbKey] != null) {
+    const preferredPortion = buildPortionFromDbMatch(
+      {
+        foodDbKey: context.preferredDbKey,
+        foodName: foodDb[context.preferredDbKey]?.desc
+          || foodDb[context.preferredDbKey]?.name
+          || query,
+        matchScore: 1,
+      },
+      g,
+      context,
+    );
+    if (preferredPortion) {
+      return {
+        ...preferredPortion,
+        rawQuery: query,
+        alternatives: [],
+      };
+    }
+  }
+
   const resolution = resolveFoodEntity(query, foodDb, context);
   const orderedCandidates = orderCandidates(
     resolution.alternatives,
@@ -166,17 +223,10 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
     .map((candidate) => buildPortionFromDbMatch(candidate, g, context))
     .filter(Boolean);
 
-  let best = portionAlternatives[0] || null;
-
+  const best = portionAlternatives[0] || null;
   if (!best) {
-    best = buildPortionFromDbMatch(
-      { foodDbKey: context.preferredDbKey || query, foodName: query, matchScore: 0 },
-      g,
-      context,
-    );
+    return buildUnresolvedPortion(query, g);
   }
-
-  if (!best) return null;
 
   return {
     ...best,
@@ -219,3 +269,5 @@ export function sumProposalItemMacros(items) {
     { kcal: 0, pro: 0, carbo: 0, fat: 0 },
   );
 }
+
+export { FOOD_RESOLUTION_STATUS };

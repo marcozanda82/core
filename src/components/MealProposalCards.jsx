@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
-import { resolveFoodItemForProposal } from '../utils/foodResolver.js';
+import {
+  FOOD_RESOLUTION_STATUS,
+  resolveFoodItemForProposal,
+} from '../utils/foodResolver.js';
 import {
   mealUpsertBadgeLabel,
   resolveUpsertActionFromPayload,
@@ -8,6 +11,8 @@ import {
 import MealReceiptMessage from '../features/chat/MealReceiptMessage';
 import { buildMealReceiptPayload } from '../features/chat/mealReceiptUtils.js';
 import { deduplicateMealProposalItems } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
+import { requestCameraPermissionsAsync, launchCameraAsync } from '../platform/expoNativeCamera.js';
+import { processFoodImage } from '../features/foodResolution/processFoodImage.js';
 
 const MEAL_LABELS = {
   colazione: 'Colazione',
@@ -212,6 +217,13 @@ function recalcItemMacros(item, foodDatabase, fullHistory, mealType) {
   const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
   if (!foodName) return { ...item, grams };
 
+  if (
+    item?.status === FOOD_RESOLUTION_STATUS.RESOLVED
+    && item?.resolutionSource === 'manual'
+  ) {
+    return scaleItemMacros({ ...item, grams }, grams);
+  }
+
   const resolved = resolveFoodItemForProposal(foodName, grams, {
     foodDb: foodDatabase || {},
     fullHistory: fullHistory || {},
@@ -220,19 +232,30 @@ function recalcItemMacros(item, foodDatabase, fullHistory, mealType) {
   });
 
   if (!resolved) {
-    return scaleItemMacros({ ...item, grams }, grams);
+    return {
+      ...item,
+      grams,
+      kcal: 0,
+      pro: 0,
+      carbo: 0,
+      fat: 0,
+      foodDbKey: null,
+      status: FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
+    };
   }
 
   return {
     ...item,
     foodName: resolved.foodName || foodName,
-    foodDbKey: resolved.foodDbKey ?? item.foodDbKey,
+    foodDbKey: resolved.foodDbKey ?? null,
     grams: resolved.grams ?? grams,
     kcal: resolved.kcal,
     pro: resolved.pro,
     carbo: resolved.carbo,
     fat: resolved.fat,
     alternatives: resolved.alternatives ?? item.alternatives,
+    status: resolved.status || FOOD_RESOLUTION_STATUS.RESOLVED,
+    resolutionSource: undefined,
   };
 }
 
@@ -355,11 +378,18 @@ function MealProposalCard({
   fullHistory,
   onConfirm,
   onDraftChange,
+  onLearnUnresolvedFood = null,
 }) {
   const id = String(proposal?.id || `proposal_${index}`);
   const [localProposal, setLocalProposal] = useState(() => cloneProposal(proposal));
   const [isEditing, setIsEditing] = useState(false);
   const [editSnapshot, setEditSnapshot] = useState(null);
+  const [processingItemIdx, setProcessingItemIdx] = useState(null);
+  const [manualOpenForIdx, setManualOpenForIdx] = useState(null);
+  const [cameraHint, setCameraHint] = useState('');
+  const [cameraHintForIdx, setCameraHintForIdx] = useState(null);
+  const [pendingImageUriByIdx, setPendingImageUriByIdx] = useState({});
+  const [prefilledMacrosByIdx, setPrefilledMacrosByIdx] = useState({});
 
   useEffect(() => {
     setLocalProposal(cloneProposal(proposal));
@@ -390,7 +420,10 @@ function MealProposalCard({
     : (Array.isArray(localProposal?.items) ? localProposal.items : commitItems);
   const items = deduplicateMealProposalItems(rawItems);
   const totals = formatMacroTotals(localProposal?.totals || sumItemMacros(items));
-  const canSaveOrConfirm = commitItems.length > 0;
+  const hasUnresolvedItems = items.some(
+    (it) => String(it?.status || '') === FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
+  );
+  const canSaveOrConfirm = commitItems.length > 0 && !hasUnresolvedItems;
   const baselineItems = Array.isArray(localProposal?.baselineItems)
     ? localProposal.baselineItems
     : [];
@@ -426,6 +459,8 @@ function MealProposalCard({
         carbo: alternative.carbo,
         fat: alternative.fat,
         alternatives: item.alternatives,
+        status: FOOD_RESOLUTION_STATUS.RESOLVED,
+        resolutionSource: undefined,
       };
     });
     commitProposal({
@@ -434,6 +469,133 @@ function MealProposalCard({
       totals: sumItemMacros(nextItems),
     });
   }, [commitProposal, items, localProposal]);
+
+  const showCameraHint = useCallback((itemIndex, message) => {
+    setCameraHintForIdx(itemIndex);
+    setCameraHint(String(message || '').trim());
+  }, []);
+
+  const captureForFoodResolution = useCallback(async (itemIndex, mode) => {
+    if (isLoaded || processingItemIdx != null) return;
+    setProcessingItemIdx(itemIndex);
+    setCameraHint('');
+    setCameraHintForIdx(null);
+    try {
+      const perm = await requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showCameraHint(itemIndex, 'Permesso fotocamera negato.');
+        return;
+      }
+      const shot = await launchCameraAsync({ quality: 0.85 });
+      if (shot.canceled || !shot.uri) {
+        if (shot.reason === 'native_camera_unavailable') {
+          showCameraHint(
+            itemIndex,
+            'Fotocamera nativa non disponibile (build Expo/Capacitor richiesto).',
+          );
+        }
+        return;
+      }
+      setPendingImageUriByIdx((prev) => ({ ...prev, [itemIndex]: shot.uri }));
+      const itemGrams = Math.round(Number(items[itemIndex]?.grams) || 0);
+      const result = await processFoodImage(shot.uri, mode, { grams: itemGrams });
+      if (result?.prefilledMacros) {
+        setPrefilledMacrosByIdx((prev) => ({
+          ...prev,
+          [itemIndex]: result.prefilledMacros,
+        }));
+      } else {
+        setPrefilledMacrosByIdx((prev) => {
+          const next = { ...prev };
+          delete next[itemIndex];
+          return next;
+        });
+      }
+      if (result?.errorToast) {
+        showCameraHint(itemIndex, result.errorToast);
+      }
+      setManualOpenForIdx(itemIndex);
+    } catch (error) {
+      showCameraHint(itemIndex, error?.message || 'Errore fotocamera');
+      setManualOpenForIdx(itemIndex);
+    } finally {
+      setProcessingItemIdx(null);
+    }
+  }, [isLoaded, items, processingItemIdx, showCameraHint]);
+
+  const handleScanBarcode = useCallback((itemIndex) => {
+    void captureForFoodResolution(itemIndex, 'barcode');
+  }, [captureForFoodResolution]);
+
+  const handleUseLabelPhoto = useCallback((itemIndex) => {
+    void captureForFoodResolution(itemIndex, 'label');
+  }, [captureForFoodResolution]);
+
+  const handleManualResolve = useCallback(async (itemIndex, macros) => {
+    const item = items[itemIndex];
+    if (!item) return;
+    setProcessingItemIdx(itemIndex);
+    try {
+      const labelImageUri = pendingImageUriByIdx[itemIndex] || null;
+      let patch = {
+        kcal: Math.round(Number(macros?.kcal) || 0),
+        pro: roundMacro(macros?.pro),
+        carbo: roundMacro(macros?.carbo),
+        fat: roundMacro(macros?.fat),
+        foodDbKey: null,
+        status: FOOD_RESOLUTION_STATUS.RESOLVED,
+        resolutionSource: 'manual',
+      };
+      if (typeof onLearnUnresolvedFood === 'function') {
+        const learned = await onLearnUnresolvedFood({
+          foodName: item.foodName,
+          grams: item.grams,
+          mealType,
+          kcal: patch.kcal,
+          pro: patch.pro,
+          carbo: patch.carbo,
+          fat: patch.fat,
+          source: labelImageUri ? 'label_vision' : 'manual_resolution',
+          labelImageUri,
+        });
+        patch = {
+          ...patch,
+          ...learned,
+          status: FOOD_RESOLUTION_STATUS.RESOLVED,
+          resolutionSource: learned?.resolutionSource || 'learned_db',
+        };
+      }
+      const nextItems = items.map((it, ii) => (ii === itemIndex ? { ...it, ...patch } : it));
+      commitProposal({
+        ...localProposal,
+        items: nextItems,
+        totals: sumItemMacros(nextItems),
+      });
+      setManualOpenForIdx(null);
+      setPendingImageUriByIdx((prev) => {
+        const next = { ...prev };
+        delete next[itemIndex];
+        return next;
+      });
+      setPrefilledMacrosByIdx((prev) => {
+        const next = { ...prev };
+        delete next[itemIndex];
+        return next;
+      });
+    } catch (error) {
+      showCameraHint(itemIndex, error?.message || 'Salvataggio alimento fallito');
+    } finally {
+      setProcessingItemIdx(null);
+    }
+  }, [
+    commitProposal,
+    items,
+    localProposal,
+    mealType,
+    onLearnUnresolvedFood,
+    pendingImageUriByIdx,
+    showCameraHint,
+  ]);
 
   const handleEditName = useCallback((itemIndex, value) => {
     const nextItems = items.map((item, ii) => (
@@ -518,29 +680,22 @@ function MealProposalCard({
 
       {!isEditing && items.length > 0 ? (
         <div className="kentu-meal-proposal-card__receipt">
-          <MealReceiptMessage receipt={previewReceipt} />
+          <MealReceiptMessage
+            receipt={previewReceipt}
+            disabled={isLoaded || processingItemIdx != null}
+            onSelectAlternative={handleSelectAlternative}
+            onScanBarcode={handleScanBarcode}
+            onUseLabelPhoto={handleUseLabelPhoto}
+            onManualResolve={handleManualResolve}
+            processingItemIdx={processingItemIdx}
+            manualOpenForIdx={manualOpenForIdx}
+            onManualOpenForIdx={setManualOpenForIdx}
+            statusHint={cameraHint}
+            statusHintForIdx={cameraHintForIdx}
+            pendingImageUriByIdx={pendingImageUriByIdx}
+            prefilledMacrosByIdx={prefilledMacrosByIdx}
+          />
         </div>
-      ) : null}
-
-      {!isEditing && items.some((item) => Array.isArray(item.alternatives) && item.alternatives.length > 1) ? (
-        <ul className="kentu-meal-proposal-card__items kentu-meal-proposal-card__items--ambiguous-only">
-          {items.map((item, itemIdx) => {
-            if (!(Array.isArray(item.alternatives) && item.alternatives.length > 1)) return null;
-            return (
-              <MealProposalItemRow
-                key={`${id}_amb_${itemIdx}_${item.foodDbKey || item.foodName}`}
-                item={item}
-                itemIdx={itemIdx}
-                disabled={isLoaded}
-                isEditing={false}
-                onSelectAlternative={handleSelectAlternative}
-                onEditName={handleEditName}
-                onEditGrams={handleEditGrams}
-                onRemoveItem={handleRemoveItem}
-              />
-            );
-          })}
-        </ul>
       ) : null}
 
       {isEditing && items.length > 0 ? (
@@ -587,6 +742,7 @@ function MealProposalCard({
               variant="primary"
               className={`kentu-meal-proposal-card__confirm${isLoaded ? ' kentu-meal-proposal-card__confirm--loaded' : ''}`}
               disabled={isLoaded || !canSaveOrConfirm}
+              title={hasUnresolvedItems ? 'Risolvi tutti gli alimenti non trovati nel DB prima di salvare' : undefined}
               onClick={() => {
                 if (isLoaded || !canSaveOrConfirm) return;
                 onConfirm?.({
@@ -601,11 +757,13 @@ function MealProposalCard({
             >
               {isLoaded
                 ? 'Applicato ✓'
-                : upsertAction === 'merge'
-                  ? 'Aggiungi al pasto'
-                  : isMutationCard
-                    ? 'Applica modifiche'
-                    : 'Conferma e carica'}
+                : hasUnresolvedItems
+                  ? 'Risolvi alimenti…'
+                  : upsertAction === 'merge'
+                    ? 'Aggiungi al pasto'
+                    : isMutationCard
+                      ? 'Applica modifiche'
+                      : 'Conferma e carica'}
             </KentuButton>
             {!isLoaded ? (
               <KentuButton
@@ -633,6 +791,7 @@ export default function MealProposalCards({
   foodDatabase = {},
   fullHistory = {},
   onConfirm,
+  onLearnUnresolvedFood = null,
 }) {
   const [draftProposals, setDraftProposals] = useState(() => cloneProposals(proposals));
 
@@ -670,6 +829,7 @@ export default function MealProposalCards({
             fullHistory={fullHistory}
             onConfirm={onConfirm}
             onDraftChange={handleDraftChange}
+            onLearnUnresolvedFood={onLearnUnresolvedFood}
           />
         );
       })}
