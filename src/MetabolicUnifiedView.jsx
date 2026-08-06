@@ -11,23 +11,13 @@ import {
 import { mapBundleToPillars } from './features/metabolic/pillarsMapperLegacy';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
-import MetabolicDiagnostics from './MetabolicDiagnostics';
 import { useActiveTrendTool } from './features/trendHub/hooks/useActiveTrendTool';
-import ProgressionScoreWidget from './features/trendHub/components/ProgressionScoreWidget';
-import { calculateProgressionScore } from './features/trendHub/utils/saluteDashboardMetrics';
-import {
-  buildProgressionLogsWindow,
-  LONGEVITY_WINDOW_DAYS,
-  selectTodayLog,
-} from './features/trendHub/utils/saluteHistorySeries';
-import { getTodayString } from './coreEngine';
 
 const DEFAULT_TIMEFRAME = '1d';
 const TREND_TOOLS = [
   { value: 'COMPASS', label: '🧭 Bussola' },
   { value: 'RADAR', label: '🕸️ Radar' },
   { value: 'MAP', label: '🗺️ Mappa' },
-  { value: 'DIAG', label: '⚡ Diag' },
 ];
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
@@ -262,8 +252,8 @@ function CompassDebugPanel({ selectedTimeframe, mapData, compassDebugByTimeframe
 }
 
 /**
- * Bussola + mappa metabolica in un unico flusso: traiettoria storica, mini-freccia allineata alla bussola,
- * alone bezel dalla zona dell’ultimo giorno della finestra.
+ * Storico metabolico a tutto schermo: Bussola, Radar, Mappa (grafici a lungo termine).
+ * La fotografia Progressione/Salute vive in SnapshotHub.
  *
  * @param {object} props
  * @param {object} props.mapData — risultato di {@link computeMetabolicMapCompassBundle} (hook `useMetabolicMapEngine`).
@@ -278,25 +268,13 @@ export default function MetabolicUnifiedView({
   projectionAnchorDate = null,
   selectedTimeframe: selectedTimeframeProp,
   onTimeframeChange,
-  fourCylinder = null,
-  activeLog = null,
-  activeDate = null,
   activeToolRequest = null,
   onActiveToolRequestHandled = null,
-  settingsBaseKcal = null,
-  committedGhostGoal = 'maintain',
-  committedGhostDeltaKcal = null,
-  onApplyGhostSimGoal = null,
-  activeCompensation = null,
-  onConfirmCompensation = null,
-  onClearCompensation = null,
-  sleepEngineLiveLog = null,
-  todayDate = '',
 } = {}) {
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
-  // Persistito in LS: sopravvive allo switch emisfero Salute ↔ Progressione.
+  // Persistito in LS: sopravvive all'unmount della tab Storico.
   const { activeTool, setActiveTool } = useActiveTrendTool();
   const [radarTimeframe, setRadarTimeframe] = useState('1D');
   const [mapZoom, setMapZoom] = useState(1);
@@ -457,81 +435,30 @@ export default function MetabolicUnifiedView({
 
   const compassVisible = compassScreenActive && activeTool === 'COMPASS';
 
-  const progressionTodayIso = String(todayDate || activeDate || getTodayString()).slice(0, 10);
-  const progressionActiveLogIsToday = Boolean(progressionTodayIso)
-    && progressionTodayIso === String(activeDate || '').slice(0, 10);
-
-  const progressionTodayLiveLog = useMemo(() => {
-    if (progressionActiveLogIsToday && Array.isArray(sleepEngineLiveLog) && sleepEngineLiveLog.length > 0) {
-      return sleepEngineLiveLog;
-    }
-    return selectTodayLog(
-      fullHistory,
-      progressionTodayIso,
-      Array.isArray(activeLog) ? activeLog : [],
-      progressionActiveLogIsToday,
-    );
-  }, [
-    progressionActiveLogIsToday,
-    sleepEngineLiveLog,
-    fullHistory,
-    progressionTodayIso,
-    activeLog,
-  ]);
-
-  const progressionResult = useMemo(() => {
-    const logs = buildProgressionLogsWindow({
-      fullHistory,
-      todayDate: progressionTodayIso,
-      days: LONGEVITY_WINDOW_DAYS,
-      todayLiveLog: progressionTodayLiveLog,
-    });
-    return calculateProgressionScore(
-      {
-        days: logs.days,
-        sleepAvgHours: logs.sleepAvgHours,
-        workoutSessionsTotal: logs.workoutSessionsTotal,
-      },
-      userTargets || {},
-    );
-  }, [fullHistory, progressionTodayIso, progressionTodayLiveLog, userTargets]);
-
   return (
     <div className="trend-unified-root">
-      {activeTool === 'DIAG' ? (
-        <div className="w-full shrink-0 px-1 pb-1 pt-1">
-          <ProgressionScoreWidget
-            score={progressionResult.finalScore}
-            breakdown={progressionResult.breakdown}
-            size={200}
-          />
-        </div>
-      ) : null}
-
       <div className="trend-sticky-controls">
-        {activeTool !== 'DIAG' ? (
-          <div
-            role="tablist"
-            aria-label="Periodo ago predittivo"
-            className="trend-timeframe-tablist"
-          >
-            {RADAR_TIMEFRAMES.map(({ value, label }) => (
-              <MetabolicTabButton
-                key={value}
-                active={radarTimeframe === value}
-                onClick={() => handleRadarTimeframeChange(value)}
-                variant="timeframe"
-                reducedMotion={reducedMotion}
-              >
-                {label}
-              </MetabolicTabButton>
-            ))}
-          </div>
-        ) : null}
+        <div
+          role="tablist"
+          aria-label="Periodo ago predittivo"
+          className="trend-timeframe-tablist"
+        >
+          {RADAR_TIMEFRAMES.map(({ value, label }) => (
+            <MetabolicTabButton
+              key={value}
+              active={radarTimeframe === value}
+              onClick={() => handleRadarTimeframeChange(value)}
+              variant="timeframe"
+              reducedMotion={reducedMotion}
+            >
+              {label}
+            </MetabolicTabButton>
+          ))}
+        </div>
 
         <div
           role="tablist"
-          aria-label="Strumento metabolico"
+          aria-label="Strumento storico metabolico"
           className="trend-tool-segmented"
         >
           {TREND_TOOLS.map(({ value, label }) => (
@@ -548,13 +475,7 @@ export default function MetabolicUnifiedView({
         </div>
       </div>
 
-      <div
-        className={
-          activeTool === 'DIAG'
-            ? 'trend-tool-stage relative flex-1 min-h-0 !overflow-visible'
-            : 'trend-tool-stage'
-        }
-      >
+      <div className="trend-tool-stage">
         {activeTool === 'COMPASS' ? (
           <>
             <MetabolicCompass
@@ -635,24 +556,6 @@ export default function MetabolicUnifiedView({
               />
             ) : null}
           </>
-        ) : null}
-
-        {activeTool === 'DIAG' ? (
-          <MetabolicDiagnostics
-            fourCylinder={fourCylinder}
-            fullHistory={fullHistory}
-            dailyLog={activeLog}
-            activeDate={activeDate || projectionAnchorDate}
-            proteinTarget={userTargets?.prot ?? null}
-            userTargets={userTargets}
-            settingsBaseKcal={settingsBaseKcal}
-            committedGhostGoal={committedGhostGoal}
-            committedGhostDeltaKcal={committedGhostDeltaKcal}
-            onApplyGhostSimGoal={onApplyGhostSimGoal}
-            activeCompensation={activeCompensation}
-            onConfirmCompensation={onConfirmCompensation}
-            onClearCompensation={onClearCompensation}
-          />
         ) : null}
       </div>
     </div>

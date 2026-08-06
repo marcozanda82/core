@@ -192,7 +192,7 @@ export default function MetabolicDiagnostics({
   return (
     <div
       aria-label="Diagnostica cilindri muscolari"
-      className="absolute inset-0 overflow-y-auto pb-40 px-3 pt-2"
+      className="relative w-full px-3 pb-10 pt-2"
     >
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-2">
         <div>

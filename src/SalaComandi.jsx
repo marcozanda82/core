@@ -418,7 +418,8 @@ export { calculateAge } from './utils/profileAge';
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const LongevityView = lazy(() => import('./LongevityView'));
-const TrendHub = lazy(() => import('./features/trendHub/TrendHub'));
+const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
+const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
@@ -467,7 +468,9 @@ export default function SalaComandi() {
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
-  /** Tool Trend da aprire al prossimo mount tab bussola (es. da MuscleStimulusWidget Home). */
+  /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
+  const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
+  /** Tool Storico da aprire al prossimo mount tab bussola (COMPASS | RADAR | MAP). */
   const [metabolicToolRequest, setMetabolicToolRequest] = useState(null);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
@@ -611,6 +614,7 @@ export default function SalaComandi() {
         return;
       }
       if (tabId === 'pianifica') {
+        setSnapshotOverlayOpen(false);
         setActiveBottomTab('oggi');
         setTrainingBlockCreatorOpen(true);
         setActiveAction(null);
@@ -626,32 +630,38 @@ export default function SalaComandi() {
         if (toIdx > fromIdx) setSlideDirection('slide-left');
         else if (toIdx < fromIdx) setSlideDirection('slide-right');
       }
+      setSnapshotOverlayOpen(false);
       setActiveBottomTab(tabId);
     },
     [activeBottomTab, navigate]
   );
 
+  /** Home / deep-link → Fotografia Progressione (diagnostica). */
   const handleOpenTrendDiag = useCallback(() => {
-    setMetabolicToolRequest('DIAG');
-    setActiveBottomTab('bussola');
+    persistTrendHubHemisphere('progressione');
+    setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
   }, []);
 
-  /** Home twin widget → emisfero Salute (tab Trend). */
+  /** Home twin widget → Fotografia emisfero Salute. */
   const handleOpenTrendSalute = useCallback(() => {
     persistTrendHubHemisphere('salute');
-    setActiveBottomTab('bussola');
+    setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
   }, []);
 
-  /** Home twin widget → emisfero Progressione (tab Trend). */
+  /** Home twin widget → Fotografia emisfero Progressione. */
   const handleOpenTrendProgressione = useCallback(() => {
     persistTrendHubHemisphere('progressione');
-    setActiveBottomTab('bussola');
+    setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
+  }, []);
+
+  const handleCloseSnapshotOverlay = useCallback(() => {
+    setSnapshotOverlayOpen(false);
   }, []);
 
   const handleMainTabTouchCancel = useCallback((e) => {
@@ -7690,14 +7700,69 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
       <div
-        key={activeBottomTab}
+        key={snapshotOverlayOpen ? 'snapshot' : activeBottomTab}
         className={`main-tab-swipe-area ${slideDirection}`}
         style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', width: '100%' }}
-        onTouchStart={handleMainTabTouchStart}
-        onTouchMove={handleMainTabTouchMove}
-        onTouchEnd={handleMainTabTouchEnd}
-        onTouchCancel={handleMainTabTouchCancel}
+        onTouchStart={snapshotOverlayOpen ? undefined : handleMainTabTouchStart}
+        onTouchMove={snapshotOverlayOpen ? undefined : handleMainTabTouchMove}
+        onTouchEnd={snapshotOverlayOpen ? undefined : handleMainTabTouchEnd}
+        onTouchCancel={snapshotOverlayOpen ? undefined : handleMainTabTouchCancel}
       >
+      {snapshotOverlayOpen ? (
+        <div
+          className="snapshot-overlay-shell"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            padding: '8px 12px 0',
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div className="snapshot-overlay-chrome">
+            <button
+              type="button"
+              className="snapshot-overlay-back"
+              onClick={handleCloseSnapshotOverlay}
+            >
+              ← Home
+            </button>
+            <span className="snapshot-overlay-title">Fotografia</span>
+            <span className="snapshot-overlay-chrome-spacer" aria-hidden />
+          </div>
+          <Suspense fallback={<KentuLazySectionFallback label="Fotografia…" />}>
+            <SnapshotHub
+              fourCylinder={userModel?.fourCylinder ?? null}
+              fullHistory={fullHistory}
+              activeLog={activeLog}
+              sleepEngineLiveLog={sleepEngineInputLog}
+              activeDate={currentTrackerDate}
+              userTargets={userTargets}
+              settingsBaseKcal={Math.round(Number(userProfile?.targetCalories) || 0) || null}
+              committedGhostGoal={committedGhostGoal}
+              committedGhostDeltaKcal={committedGhostDeltaKcal}
+              onApplyGhostSimGoal={applyGhostSimGoal}
+              activeCompensation={userProfile?.activeCompensation ?? null}
+              onConfirmCompensation={applyActiveCompensationPlan}
+              onClearCompensation={clearActiveCompensationPlan}
+              onSaveHealthBiometrics={handleSaveHealthBiometrics}
+              healthTodayDate={getTodayString()}
+              healthDb={db}
+              healthUid={userUid}
+              foodDatabase={foodDb}
+              setFoodDb={setFoodDb}
+              fastingData={fastingData}
+              bodyMetricsHistory={bodyMetricsHistory}
+              profileHeightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || 174}
+              enabled={snapshotOverlayOpen}
+            />
+          </Suspense>
+        </div>
+      ) : (
+      <>
       {activeBottomTab === 'analisi' && (
       <div
         style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}
@@ -8469,43 +8534,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             boxSizing: 'border-box',
           }}
         >
-          <Suspense fallback={<KentuLazySectionFallback label="Bussola metabolica…" />}>
-          <TrendHub
+          <Suspense fallback={<KentuLazySectionFallback label="Storico metabolico…" />}>
+          <MetabolicUnifiedView
             mapData={metabolicMapData}
             dailyHistory={metabolicCompassDailyHistory}
             bodyMetricsHistory={bodyMetricsHistory}
-            onSaveHealthBiometrics={handleSaveHealthBiometrics}
-            healthTodayDate={getTodayString()}
-            healthDb={db}
-            healthUid={userUid}
-            foodDatabase={foodDb}
-            setFoodDb={setFoodDb}
-            fastingData={fastingData}
-            compassScreenActive={activeBottomTab === 'bussola'}
+            compassScreenActive={activeBottomTab === 'bussola' && !snapshotOverlayOpen}
             fullHistory={fullHistory}
             userTargets={userTargets}
             projectionAnchorDate={currentTrackerDate}
             selectedTimeframe={metabolicCompassTimeframe}
             onTimeframeChange={setMetabolicCompassTimeframe}
-            fourCylinder={userModel?.fourCylinder ?? null}
-            activeLog={activeLog}
-            sleepEngineLiveLog={sleepEngineInputLog}
-            activeDate={currentTrackerDate}
             activeToolRequest={metabolicToolRequest}
             onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
-            settingsBaseKcal={Math.round(Number(userProfile?.targetCalories) || 0) || null}
-            committedGhostGoal={committedGhostGoal}
-            committedGhostDeltaKcal={committedGhostDeltaKcal}
-            onApplyGhostSimGoal={applyGhostSimGoal}
-            activeCompensation={userProfile?.activeCompensation ?? null}
-            onConfirmCompensation={applyActiveCompensationPlan}
-            onClearCompensation={clearActiveCompensationPlan}
-            profileHeightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || 174}
           />
           </Suspense>
         </div>
       )}
-        </div>
+      </>
+      )}
+      </div>
       )}
       {activeBottomTab === 'longevita' && (
         <div
