@@ -15,7 +15,7 @@ import {
 } from '../utils/foodResolver.js';
 import { resolveExactTimeForMeal, isMealProposalQuery, matchDraftItemByFoodQuery, findMostProblematicDraftItem } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import { buildTodayDiaryIndex } from '../features/commandTerminal/conversation/todayDiaryIndex.js';
-import { deduplicateWipItems, normalizeWipFoodNameKey } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
+import { deduplicateWipItems, normalizeWipFoodNameKey, deduplicateMealProposalItems } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
 import { analyzeTodayFromLog } from '../aiDayCoach';
 import {
   aggregatePredictiveMealCombos,
@@ -970,14 +970,22 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
   const exactTime = withDefaults.exactTime;
 
   const resolveContext = { foodDb, fullHistory, mealType };
-  const items = resolveMealProposalItems(
+  const resolvedItems = resolveMealProposalItems(
     rawItems.map((item) => ({
       rawQuery: item.foodName,
       foodName: item.foodName,
       grams: item.grams,
     })),
     resolveContext,
-  );
+  ).map((resolved, idx) => {
+    // Preferisci emoji LLM sull'item grezzo corrispondente (stesso ordine / nome).
+    const src = rawItems[idx] || rawItems.find(
+      (r) => String(r.foodName || '').toLowerCase() === String(resolved?.foodName || '').toLowerCase(),
+    );
+    const srcIcon = String(src?.icon || '').trim();
+    return srcIcon ? { ...resolved, icon: srcIcon } : resolved;
+  });
+  const items = deduplicateMealProposalItems(resolvedItems);
 
   if (items.length === 0) return null;
 
@@ -2009,7 +2017,7 @@ export function generateConsultantSystemInstruction(opts = {}) {
     '  UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100). mealProposals=[].',
     '  UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
     '  CONFIRM: mealProposals riepilogo finale; suggestions=[].',
-    '  CONFIRM adviceMessage: SOLO Markdown elenco puntato, formato «- [Emoji] Nome (Grammi)». Niente JSON in chat.',
+    '  CONFIRM adviceMessage: frase informale con displayName (es. «Marco, ecco il tuo snack pronto da confermare.») + elenco «- [Emoji] Nome (Grammi)». Niente JSON, niente tono da referto.',
     'HARD CONSTRAINT WIP: se maxCalories è valorizzato, ogni suggestion.weight → calories ≤ residualKcal.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — resultingItems/items mai vuoti.',
     'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',
@@ -2229,7 +2237,7 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
         'QUERY: adviceMessage empatico + ricalcolo macros; suggestions=[] mealProposals=[]. NON finalizzare.',
         'UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100) su [MEAL_WIP]/[RESIDUAL_BUDGET_AFTER_WIP_MEAL]. mealProposals=[].',
         'UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
-        'CONFIRM: mealProposals con riepilogo finale per salvataggio; suggestions=[].',
+        'CONFIRM: mealProposals con riepilogo finale per salvataggio; suggestions=[]. adviceMessage informale con displayName.',
         'CONFIRM adviceMessage — SOLO Markdown pulito (niente JSON grezzo). Una riga intro + elenco:',
         '  Ecco il riepilogo del tuo pasto pronto per il salvataggio:',
         '  - 🥣 Yogurt greco 0% (100g)',
@@ -2370,16 +2378,18 @@ export function sanitizeMealProposals(raw, adviceContext = {}) {
           .map((it) => [String(it.foodName).toLowerCase(), it]),
       );
 
-      const items = rawItems
-        .map((item) => {
-          const normalized = normalizeProposalItem(item, habitItemsByName);
-          if (!normalized) return null;
-          const enriched = enrichProposalItemWithResolver(normalized, adviceContext, mealType);
-          if (!enriched) return null;
-          const itemId = item?.itemId != null ? String(item.itemId).trim() : '';
-          return itemId ? { ...enriched, itemId } : enriched;
-        })
-        .filter(Boolean);
+      const items = deduplicateMealProposalItems(
+        rawItems
+          .map((item) => {
+            const normalized = normalizeProposalItem(item, habitItemsByName);
+            if (!normalized) return null;
+            const enriched = enrichProposalItemWithResolver(normalized, adviceContext, mealType);
+            if (!enriched) return null;
+            const itemId = item?.itemId != null ? String(item.itemId).trim() : '';
+            return itemId ? { ...enriched, itemId } : enriched;
+          })
+          .filter(Boolean),
+      );
 
       if (items.length === 0) return null;
 

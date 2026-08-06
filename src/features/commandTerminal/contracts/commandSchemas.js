@@ -172,6 +172,14 @@ export const addFoodPayloadSchema = {
       type: 'string',
       description: 'Note aggiuntive opzionali',
     },
+    message: {
+      type: 'string',
+      description:
+        'UNA sola frase informale e diretta che usa il displayName dell utente '
+        + '(es. "Marco, ecco il tuo snack pronto da confermare."). '
+        + 'VIETATO tono da referto, frasi standard, budget, cilindri o macro. '
+        + 'Se non conosci il nome, ometti il vocativo ma resta colloquiale.',
+    },
   },
 };
 

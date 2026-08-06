@@ -35,6 +35,12 @@ function resolveMealReceiptTitle(mealType) {
   return `✅ ${label} Registrat${feminine ? 'a' : 'o'}`;
 }
 
+function resolveMealPreviewTitle(mealType) {
+  const key = String(mealType || '').trim().toLowerCase().split('_')[0];
+  const label = MEAL_TYPE_LABELS[key] || 'Pasto';
+  return `🍽️ ${label} · da confermare`;
+}
+
 function roundMacro(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -50,6 +56,8 @@ function roundMacro(value) {
  *   timeString?: string,
  *   mealTotals?: { kcal?: number, pro?: number, carbo?: number, fat?: number } | null,
  *   projection?: { budgetRimanente?: object } | null,
+ *   title?: string | null,
+ *   preview?: boolean,
  * }} args
  * @returns {{
  *   title: string,
@@ -66,6 +74,8 @@ export function buildMealReceiptPayload({
   timeString = '',
   mealTotals = null,
   projection = null,
+  title = null,
+  preview = false,
 } = {}) {
   const list = (Array.isArray(items) ? items : [])
     .map((item) => {
@@ -133,12 +143,13 @@ export function buildMealReceiptPayload({
   const mealKey = String(mealType || '').trim().toLowerCase().split('_')[0];
 
   return {
-    title: resolveMealReceiptTitle(mealKey),
+    title: String(title || '').trim()
+      || (preview ? resolveMealPreviewTitle(mealKey) : resolveMealReceiptTitle(mealKey)),
     mealType: mealKey,
     timeString: String(timeString || '').trim(),
     items: list.map(({ foodName, grams, icon, kcal }) => ({ foodName, grams, icon, kcal })),
     totals,
-    budgetRemaining,
+    budgetRemaining: preview ? null : budgetRemaining,
   };
 }
 

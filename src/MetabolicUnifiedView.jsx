@@ -498,13 +498,15 @@ export default function MetabolicUnifiedView({
 
   return (
     <div className="trend-unified-root">
-      <div className="w-full shrink-0 px-1 pb-1 pt-1">
-        <ProgressionScoreWidget
-          score={progressionResult.finalScore}
-          breakdown={progressionResult.breakdown}
-          size={200}
-        />
-      </div>
+      {activeTool === 'DIAG' ? (
+        <div className="w-full shrink-0 px-1 pb-1 pt-1">
+          <ProgressionScoreWidget
+            score={progressionResult.finalScore}
+            breakdown={progressionResult.breakdown}
+            size={200}
+          />
+        </div>
+      ) : null}
 
       <div className="trend-sticky-controls">
         {activeTool !== 'DIAG' ? (

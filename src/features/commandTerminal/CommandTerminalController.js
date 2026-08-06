@@ -15,6 +15,7 @@ import {
   applyGramsSlotResponse,
   buildFoodConfirmationSummary,
   buildMealDraftUiMessage,
+  buildMealPreviewReadyMessage,
   buildSleepConfirmationSummary,
   buildWorkoutConfirmationSummary,
   buildWorkoutDraftUiMessage,
@@ -442,8 +443,8 @@ export class CommandTerminalController {
   }
 
   /**
-   * Mute & Replace: scarta qualsiasi testo discorsivo Gemini su ADD_FOOD.
-   * Il budget/copy lo decide solo il codice (MealReceiptMessage / buildMealReceiptPayload).
+   * Mute & Replace: scarta testo discorsivo Gemini su budget/cilindri (adviceMessage/uiMessage).
+   * Conserva payload.message se breve e informale (nome utente + conferma pasto).
    */
   muteAddFoodLlmCopy(command = {}) {
     const next = command && typeof command === 'object' ? { ...command } : {};
@@ -459,7 +460,15 @@ export class CommandTerminalController {
     next.uiMessage = '';
     if (next.payload && typeof next.payload === 'object') {
       next.payload = { ...next.payload };
-      if (typeof next.payload.message === 'string') next.payload.message = '';
+      const msg = String(next.payload.message || '').trim();
+      // Tieni solo messaggi corti informali (no referto / budget / cilindri).
+      const looksFormalOrBudget = /budget|cilindr|rimanente|delta|metabol/i.test(msg)
+        || msg.length > 160;
+      if (!msg || looksFormalOrBudget) {
+        delete next.payload.message;
+      } else {
+        next.payload.message = msg;
+      }
     }
     return next;
   }
@@ -519,10 +528,16 @@ export class CommandTerminalController {
     }
 
     const itemCount = Array.isArray(proposal.items) ? proposal.items.length : 0;
-    // Solo copy locale di sistema — mai uiMessage/adviceMessage Gemini.
-    const summaryText = itemCount > 1
-      ? `Ho estratto ${itemCount} alimenti dal tuo pasto. Controlla il riepilogo e conferma per caricarlo nel diario.`
-      : 'Ho preparato il riepilogo del pasto. Conferma per caricarlo nel diario.';
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const fromPayload = String(payload?.message || options.uiMessage || '').trim();
+    const summaryText = fromPayload
+      || buildMealPreviewReadyMessage({
+        displayName,
+        userProfile: currentState?.userProfile,
+        mealType: proposal.mealType || payload?.mealType,
+        itemCount,
+      });
 
     this.publishAdviceMessage({
       text: summaryText,
@@ -1995,7 +2010,12 @@ export class CommandTerminalController {
                 && adviceContext.wipMealProjection.items.length > 0
                 ? adviceContext.wipMealProjection.items
                 : mergedWipMealItems;
-              return buildWipConfirmAdviceMessage(deduplicateWipItems(cartItems));
+              return buildWipConfirmAdviceMessage(deduplicateWipItems(cartItems), {
+                displayName,
+                mealType: adviceContext?.wipMealProjection?.mealType
+                  || adviceContext?.currentMealType
+                  || options?.wipMealMealType,
+              });
             })()
         : isWipMealBuild
           ? (String(adviceMessage || '').trim() || buildWipMealAdviceMessage(adviceContext))

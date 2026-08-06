@@ -1444,6 +1444,15 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+.kentu-meal-proposal-card__receipt {
+  margin: 0 0 10px;
+}
+
+.kentu-meal-proposal-card__receipt > article {
+  /* Lo scontrino è già self-contained: evita doppio bordo “tabella legacy”. */
+  box-shadow: none;
+}
+
 .kentu-meal-proposal-card__head {
   display: flex;
   flex-direction: column;

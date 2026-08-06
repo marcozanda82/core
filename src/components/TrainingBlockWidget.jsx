@@ -197,10 +197,7 @@ function resolveHomeDayTrainingStatus({
     if (ct === 'rest' || ct === 'riposo') {
       return { status: DAY_STATUS.REST, workoutName: null };
     }
-    return {
-      status: DAY_STATUS.COMPLETED,
-      workoutName: workoutNameFromLog(null, confirmedTodaySession),
-    };
+    // Non mostrare COMPLETED finché il workout non è nel diario (salvataggio scheda attività).
   }
 
   return { status: DAY_STATUS.PENDING, workoutName: null };
@@ -223,6 +220,8 @@ export default function TrainingBlockWidget({
   isSimulationMode = false,
   onConfirmSession = null,
   onPostponeSession = null,
+  /** Apre scheda attività precompilata (Home «Esegui») — niente COMPLETED finché non salvi. */
+  onExecuteSession = null,
   creatorOpen: creatorOpenProp = undefined,
   onCreatorOpenChange = null,
   onTodaySessionChange = null,
@@ -242,7 +241,6 @@ export default function TrainingBlockWidget({
     canPostpone,
     canConfirm,
     postponeSession,
-    confirmSession,
     startNewBlock,
     clearBlock,
   } = useTrainingBlock({
@@ -341,14 +339,18 @@ export default function TrainingBlockWidget({
     }
   };
 
-  const handleConfirm = async () => {
+  const handleExecute = () => {
     setLocalError('');
-    try {
-      await confirmSession();
-      showToast('Confermato');
-    } catch (err) {
-      setLocalError(String(err?.message || err || 'Conferma fallita'));
+    if (!todaySession) return;
+    if (typeof onExecuteSession === 'function') {
+      try {
+        onExecuteSession(todaySession);
+      } catch (err) {
+        setLocalError(String(err?.message || err || 'Apertura scheda fallita'));
+      }
+      return;
     }
+    setLocalError('Scheda attività non disponibile.');
   };
 
   const handleClearBlock = async () => {
@@ -508,7 +510,7 @@ export default function TrainingBlockWidget({
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirm}
+                  onClick={handleExecute}
                   disabled={!canConfirm || busy}
                   className="rounded-lg bg-cyan-600/90 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >

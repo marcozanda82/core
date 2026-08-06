@@ -120,13 +120,16 @@ export function pickPreferredWipDisplayName(nameA, nameB) {
 }
 
 /**
- * Hard dedup: fonda voci con lo stesso nome (case-insensitive / refusi) sommando i grammi.
+ * Hard dedup: fonda voci con lo stesso nome (case-insensitive / refusi) **sommando** grammi e macro.
  * Buttafuori obbligatorio contro allucinazioni LLM (es. due «Cioccolato 85%»).
+ * Matematica pura — mai affidarsi all'AI per togliere i doppioni.
  *
  * @param {Array<object>} items
+ * @param {{ keepZeroGrams?: boolean }} [opts] — true durante slot-filling (grams ancora null)
  * @returns {Array<object>}
  */
-export function deduplicateWipItems(items = []) {
+export function deduplicateWipItems(items = [], opts = {}) {
+  const keepZeroGrams = opts?.keepZeroGrams === true;
   const merged = (Array.isArray(items) ? items : []).reduce((acc, current) => {
     if (!current || typeof current !== 'object') return acc;
 
@@ -136,7 +139,10 @@ export function deduplicateWipItems(items = []) {
     const name = sanitizeWipFoodDisplayName(rawName);
     if (!name) return acc;
 
-    const grams = Number(current.grams ?? current.weight ?? current.qta) || 0;
+    const gramsRaw = current.grams ?? current.weight ?? current.qta;
+    const gramsNum = Number(gramsRaw);
+    const hasGrams = Number.isFinite(gramsNum) && gramsNum > 0;
+    const grams = hasGrams ? gramsNum : 0;
     const kcal = Number(current.kcal ?? current.cal ?? current.calories) || 0;
     const prot = Number(current.prot ?? current.pro ?? current.protein) || 0;
     const carbo = Number(current.carbo ?? current.carb ?? current.carbs) || 0;
@@ -152,47 +158,96 @@ export function deduplicateWipItems(items = []) {
         existing.foodName || existing.name,
         name,
       );
-      const nextGrams = (Number(existing.grams) || 0) + grams;
+      const existingGrams = Number(existing.grams);
+      const existingHasGrams = Number.isFinite(existingGrams) && existingGrams > 0;
+      let nextGrams;
+      if (existingHasGrams || hasGrams) {
+        nextGrams = (existingHasGrams ? existingGrams : 0) + (hasGrams ? grams : 0);
+      } else if (keepZeroGrams) {
+        nextGrams = null;
+      } else {
+        nextGrams = 0;
+      }
       const nextKcal = (Number(existing.kcal ?? existing.cal) || 0) + kcal;
+      const nextProt = (Number(existing.prot ?? existing.pro) || 0) + prot;
+      const nextCarbo = (Number(existing.carbo ?? existing.carb) || 0) + carbo;
+      const nextFat = (Number(existing.fat) || 0) + fat;
+      const estimated = existing.isEstimated === true || current.isEstimated === true;
       acc[existingIndex] = {
         ...existing,
+        ...current,
         name: displayName,
         foodName: displayName,
         desc: displayName,
         grams: nextGrams,
         weight: nextGrams,
         qta: nextGrams,
-        multiplier: nextGrams,
+        multiplier: nextGrams == null ? null : nextGrams,
         kcal: nextKcal,
         cal: nextKcal,
-        prot: (Number(existing.prot) || 0) + prot,
-        carbo: (Number(existing.carbo) || 0) + carbo,
-        fat: (Number(existing.fat) || 0) + fat,
+        prot: nextProt,
+        pro: nextProt,
+        carbo: nextCarbo,
+        fat: nextFat,
         id: existing.id || current.id,
+        foodDbKey: existing.foodDbKey || current.foodDbKey || null,
+        icon: existing.icon || current.icon || null,
+        alternatives: existing.alternatives || current.alternatives,
+        ...(estimated ? { isEstimated: true } : { isEstimated: false }),
       };
       return acc;
     }
 
+    const storedGrams = hasGrams ? grams : (keepZeroGrams ? null : 0);
     acc.push({
       ...current,
       name,
       foodName: name,
       desc: name,
-      grams,
-      weight: grams,
-      qta: grams,
-      multiplier: grams,
+      grams: storedGrams,
+      weight: storedGrams,
+      qta: storedGrams,
+      multiplier: storedGrams,
       kcal,
       cal: kcal,
       prot,
+      pro: prot,
       carbo,
       fat,
     });
     return acc;
   }, []);
 
+  if (keepZeroGrams) return merged;
   // Dopo la fusione scarta sole voci a 0g (es. LLM ha emesso un doppione vuoto)
   return merged.filter((item) => Number(item?.grams) > 0);
+}
+
+/**
+ * Dedup per mealProposals / anteprima UI (shape foodName + pro/carbo/fat).
+ * @param {Array<object>} items
+ * @returns {Array<object>}
+ */
+export function deduplicateMealProposalItems(items = []) {
+  return deduplicateWipItems(items).map((item) => {
+    const foodName = String(item.foodName || item.name || '').trim();
+    const grams = Math.round(Number(item.grams) || 0);
+    const prot = Math.round((Number(item.pro ?? item.prot) || 0) * 10) / 10;
+    const carbo = Math.round((Number(item.carbo ?? item.carb) || 0) * 10) / 10;
+    const fat = Math.round((Number(item.fat) || 0) * 10) / 10;
+    return {
+      ...item,
+      foodName,
+      name: foodName,
+      grams,
+      kcal: Math.round(Number(item.kcal ?? item.cal) || 0),
+      cal: Math.round(Number(item.kcal ?? item.cal) || 0),
+      pro: prot,
+      prot,
+      carbo,
+      fat,
+    };
+  });
 }
 
 /**
@@ -371,11 +426,12 @@ export function mergeWipMealItemsByName(baseItems = [], incomingItems = [], opts
 }
 
 /**
- * Resoconto CONFIRM: elenco Markdown pulito (niente JSON).
+ * Resoconto CONFIRM: elenco Markdown pulito (niente JSON), tono informale.
  * @param {Array<object>} items
+ * @param {{ displayName?: string, mealType?: string }} [opts]
  * @returns {string}
  */
-export function buildWipConfirmAdviceMessage(items = []) {
+export function buildWipConfirmAdviceMessage(items = [], opts = {}) {
   const list = (Array.isArray(items) ? items : [])
     .map((item) => {
       const name = String(item?.foodName || item?.name || '').trim();
@@ -385,15 +441,22 @@ export function buildWipConfirmAdviceMessage(items = []) {
     })
     .filter(Boolean);
 
+  const displayName = String(opts.displayName || '').trim();
+  const mealKey = String(opts.mealType || '').trim().toLowerCase().split('_')[0];
+  const mealWord = ({
+    colazione: 'colazione',
+    snack: 'snack',
+    pranzo: 'pranzo',
+    cena: 'cena',
+  })[mealKey] || 'pasto';
+  const prefix = displayName ? `${displayName}, ` : '';
+  const lead = `${prefix}ecco il tuo ${mealWord} pronto da confermare.`;
+
   if (list.length === 0) {
-    return 'Ecco il riepilogo del tuo pasto pronto per il salvataggio:\n\n(nessun alimento nel carrello)';
+    return `${lead}\n\n(nessun alimento nel carrello)`;
   }
 
-  return [
-    'Ecco il riepilogo del tuo pasto pronto per il salvataggio:',
-    '',
-    ...list,
-  ].join('\n');
+  return [lead, '', ...list].join('\n');
 }
 
 /**

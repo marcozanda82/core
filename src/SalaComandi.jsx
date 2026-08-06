@@ -950,16 +950,28 @@ export default function SalaComandi() {
   );
 
   /** Training Block live — fonte per ghost_workout timeline (indipendente dal widget Home). */
+  const handleConfirmTrainingBlockSessionRef = useRef(
+    /** @type {((session: object, context: object) => void | Promise<void>) | null} */ (null),
+  );
+  const invokeTrainingBlockOnConfirm = useCallback(async (session, context) => {
+    const fn = handleConfirmTrainingBlockSessionRef.current;
+    if (typeof fn === 'function') {
+      await fn(session, context);
+    }
+  }, []);
+
   const {
     block: trainingBlockLive,
     todaySession: trainingBlockTodaySession,
     metabolicTargets: trainingBlockMetabolicTargets,
+    confirmSession: confirmTrainingBlockSession,
   } = useTrainingBlock({
     db,
     userUid: user?.uid ?? null,
     todayIso: currentTrackerDate || getTodayString(),
     userProfile,
     isSimulationMode,
+    onConfirmSession: invokeTrainingBlockOnConfirm,
   });
 
   const plannedWorkoutKcal = useMemo(
@@ -1816,6 +1828,10 @@ export default function SalaComandi() {
         return;
       }
 
+      if (context?.skipWorkoutLog === true) {
+        return;
+      }
+
       const workoutType = dayType === 'cardio' || dayType === 'hiit' ? dayType : 'pesi';
       const musclesCanon = normalizeMuscleGroupArray(session?.muscles || []);
       const durationMin = Math.max(
@@ -1958,6 +1974,10 @@ export default function SalaComandi() {
       setSimulatedLog,
     ],
   );
+
+  useEffect(() => {
+    handleConfirmTrainingBlockSessionRef.current = handleConfirmTrainingBlockSession;
+  }, [handleConfirmTrainingBlockSession]);
 
   /**
    * Rinvio sessione Training Block → oggi diventa Riposo (base/delta/macro) e HUD si aggiorna subito.
@@ -3012,6 +3032,7 @@ export default function SalaComandi() {
     workoutDurationHours,
     workoutStartTime,
     openWorkoutFromTodayPlan,
+    openWorkoutFromTrainingBlockSession,
     openWorkoutEditorFromLogItem,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,
@@ -3048,6 +3069,19 @@ export default function SalaComandi() {
     fullHistory,
     proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
   });
+
+  const handleExecuteTrainingBlockSession = useCallback(
+    (session) => {
+      openWorkoutFromTrainingBlockSession(session, async () => {
+        try {
+          await confirmTrainingBlockSession({ skipWorkoutLog: true });
+        } catch (err) {
+          console.warn('[SalaComandi] training block confirm after workout save:', err);
+        }
+      });
+    },
+    [openWorkoutFromTrainingBlockSession, confirmTrainingBlockSession],
+  );
 
   const handleFourCylinderDiaryRebuild = useCallback(
     ({ dailyLog: nextLog, manualNodes: nextNodes }) => {
@@ -8230,6 +8264,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 isSimulationMode={isSimulationMode}
                 onConfirmSession={handleConfirmTrainingBlockSession}
                 onPostponeSession={handlePostponeTrainingBlockSession}
+                onExecuteSession={handleExecuteTrainingBlockSession}
                 onOpenTrendDiag={handleOpenTrendDiag}
                 onOpenLongevity={handleOpenTrendSalute}
                 onOpenProgressione={handleOpenTrendProgressione}

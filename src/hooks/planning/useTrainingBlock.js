@@ -287,7 +287,7 @@ export function useTrainingBlock({
    * Conferma: delega conversione log (callback) → pointer++ → anchor = domani.
    * Blocca doppie conferme sullo stesso todayIso.
    */
-  const confirmSession = useCallback(async () => {
+  const confirmSession = useCallback(async (options = {}) => {
     const current = blockRef.current;
     if (!current?.isActive) throw new Error('Nessun blocco attivo.');
     if (todayIso !== current.anchorDate) {
@@ -323,6 +323,7 @@ export function useTrainingBlock({
           block: current,
           todayIso,
           metabolicTargets: targets,
+          skipWorkoutLog: options.skipWorkoutLog === true,
         });
       }
 

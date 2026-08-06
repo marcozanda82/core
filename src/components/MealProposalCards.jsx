@@ -5,6 +5,9 @@ import {
   mealUpsertBadgeLabel,
   resolveUpsertActionFromPayload,
 } from '../features/commandTerminal/meals/mealUpsert.js';
+import MealReceiptMessage from '../features/chat/MealReceiptMessage';
+import { buildMealReceiptPayload } from '../features/chat/mealReceiptUtils.js';
+import { deduplicateMealProposalItems } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
 
 const MEAL_LABELS = {
   colazione: 'Colazione',
@@ -376,19 +379,28 @@ function MealProposalCard({
   const isMutationCard = Boolean(targetNodeId) && (mutationOps.length > 0 || upsertAction !== 'append');
   const badgeText = mealUpsertBadgeLabel(upsertAction, mealType)
     + (exactTime ? ` · ${exactTime}` : '');
-  const commitItems = useMemo(() => {
-    const resulting = Array.isArray(localProposal?.resultingItems) ? localProposal.resultingItems : [];
-    if (resulting.length > 0) return resulting;
-    return Array.isArray(localProposal?.items) ? localProposal.items : [];
-  }, [localProposal?.resultingItems, localProposal?.items]);
-  const items = isMutationCard && !isEditing ? commitItems : (
-    Array.isArray(localProposal?.items) ? localProposal.items : commitItems
+  const resulting = Array.isArray(localProposal?.resultingItems) ? localProposal.resultingItems : [];
+  const commitItems = deduplicateMealProposalItems(
+    resulting.length > 0
+      ? resulting
+      : (Array.isArray(localProposal?.items) ? localProposal.items : []),
   );
+  const rawItems = isMutationCard && !isEditing
+    ? commitItems
+    : (Array.isArray(localProposal?.items) ? localProposal.items : commitItems);
+  const items = deduplicateMealProposalItems(rawItems);
   const totals = formatMacroTotals(localProposal?.totals || sumItemMacros(items));
   const canSaveOrConfirm = commitItems.length > 0;
   const baselineItems = Array.isArray(localProposal?.baselineItems)
     ? localProposal.baselineItems
     : [];
+  const previewReceipt = buildMealReceiptPayload({
+    items,
+    mealType,
+    timeString: exactTime,
+    mealTotals: totals,
+    preview: true,
+  });
 
   const commitProposal = useCallback((nextProposal) => {
     const nextItems = Array.isArray(nextProposal?.items) ? nextProposal.items : [];
@@ -478,22 +490,24 @@ function MealProposalCard({
 
   return (
     <article className={`kentu-meal-proposal-card${isEditing ? ' kentu-meal-proposal-card--editing' : ''}${isMutationCard ? ' kentu-meal-proposal-card--mutation' : ''}`}>
-      <header className="kentu-meal-proposal-card__head">
-        <div className="kentu-meal-proposal-card__titles">
-          <span className="kentu-meal-proposal-card__badge">
-            {badgeText}
-          </span>
-          <h4 className="kentu-meal-proposal-card__label">{label}</h4>
-        </div>
-        <div className="kentu-meal-proposal-card__macros" aria-label="Macronutrienti stimati">
-          <span className="kentu-meal-proposal-card__macro kentu-meal-proposal-card__macro--kcal">
-            {totals.kcal} kcal
-          </span>
-          <span className="kentu-meal-proposal-card__macro">P {totals.pro}g</span>
-          <span className="kentu-meal-proposal-card__macro">C {totals.carbo}g</span>
-          <span className="kentu-meal-proposal-card__macro">G {totals.fat}g</span>
-        </div>
-      </header>
+      {isEditing ? (
+        <header className="kentu-meal-proposal-card__head">
+          <div className="kentu-meal-proposal-card__titles">
+            <span className="kentu-meal-proposal-card__badge">
+              {badgeText}
+            </span>
+            <h4 className="kentu-meal-proposal-card__label">{label}</h4>
+          </div>
+          <div className="kentu-meal-proposal-card__macros" aria-label="Macronutrienti stimati">
+            <span className="kentu-meal-proposal-card__macro kentu-meal-proposal-card__macro--kcal">
+              {totals.kcal} kcal
+            </span>
+            <span className="kentu-meal-proposal-card__macro">P {totals.pro}g</span>
+            <span className="kentu-meal-proposal-card__macro">C {totals.carbo}g</span>
+            <span className="kentu-meal-proposal-card__macro">G {totals.fat}g</span>
+          </div>
+        </header>
+      ) : null}
 
       {isMutationCard && !isEditing ? (
         <MealMutationOpsList
@@ -502,27 +516,49 @@ function MealProposalCard({
         />
       ) : null}
 
-      {items.length > 0 ? (
-        <>
-          {isMutationCard && !isEditing ? (
-            <p className="kentu-meal-proposal-card__items-caption">Pasto risultante</p>
-          ) : null}
-          <ul className="kentu-meal-proposal-card__items">
-            {items.map((item, itemIdx) => (
+      {!isEditing && items.length > 0 ? (
+        <div className="kentu-meal-proposal-card__receipt">
+          <MealReceiptMessage receipt={previewReceipt} />
+        </div>
+      ) : null}
+
+      {!isEditing && items.some((item) => Array.isArray(item.alternatives) && item.alternatives.length > 1) ? (
+        <ul className="kentu-meal-proposal-card__items kentu-meal-proposal-card__items--ambiguous-only">
+          {items.map((item, itemIdx) => {
+            if (!(Array.isArray(item.alternatives) && item.alternatives.length > 1)) return null;
+            return (
               <MealProposalItemRow
-                key={`${id}_${itemIdx}_${item.foodDbKey || item.foodName}`}
+                key={`${id}_amb_${itemIdx}_${item.foodDbKey || item.foodName}`}
                 item={item}
                 itemIdx={itemIdx}
                 disabled={isLoaded}
-                isEditing={isEditing}
+                isEditing={false}
                 onSelectAlternative={handleSelectAlternative}
                 onEditName={handleEditName}
                 onEditGrams={handleEditGrams}
                 onRemoveItem={handleRemoveItem}
               />
-            ))}
-          </ul>
-        </>
+            );
+          })}
+        </ul>
+      ) : null}
+
+      {isEditing && items.length > 0 ? (
+        <ul className="kentu-meal-proposal-card__items">
+          {items.map((item, itemIdx) => (
+            <MealProposalItemRow
+              key={`${id}_${itemIdx}_${item.foodDbKey || item.foodName}`}
+              item={item}
+              itemIdx={itemIdx}
+              disabled={isLoaded}
+              isEditing={isEditing}
+              onSelectAlternative={handleSelectAlternative}
+              onEditName={handleEditName}
+              onEditGrams={handleEditGrams}
+              onRemoveItem={handleRemoveItem}
+            />
+          ))}
+        </ul>
       ) : null}
 
       <footer className="kentu-meal-proposal-card__footer">

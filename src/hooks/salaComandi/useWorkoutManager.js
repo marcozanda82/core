@@ -33,6 +33,7 @@ import { getWeekStartMondayKeyLocal } from '../../weeklyPlanning';
 import { resolveFourCylinderForWorkoutSave } from '../../features/salaComandi/utils/fourCylinderRebuild';
 import { persistFourCylinderState } from '../../features/salaComandi/utils/fourCylinderPersist';
 import { physiologyModelWithFourCylinder } from '../../features/salaComandi/engines/fourCylinderEngine';
+import { plannerInitialDataFromBlockDay } from '../../components/TrainingBlockCreator';
 
 /**
  * Stato e azioni allenamento (tracker + piano giornaliero + commit da chat).
@@ -80,6 +81,9 @@ export function useWorkoutManager({
 
   const lastWorkoutCommitRef = useRef({ key: '', at: 0 });
   const saveInFlightRef = useRef(false);
+  /** Home Training Block «Esegui»: salva reale in scheda, poi commit blocco in background. */
+  const trainingBlockExecuteRef = useRef(false);
+  const onTrainingBlockWorkoutCommittedRef = useRef(/** @type {(() => void | Promise<void>) | null} */ (null));
 
   const workoutDurationHours = useMemo(
     () =>
@@ -132,6 +136,49 @@ export function useWorkoutManager({
     setActiveAction('allenamento');
     setIsDrawerOpen(true);
   }, [todayPlanBlock, setActiveAction, setIsDrawerOpen, setIsPlanActionSheetOpen]);
+
+  /**
+   * Home Training Block — «Esegui»: apre la scheda attività precompilata (nessun COMPLETED finché non salvi).
+   * @param {object} session — giorno corrente dal blocco
+   * @param {() => void | Promise<void>} [onCommitted] — dopo salvataggio riuscito (es. avanza pointer blocco)
+   */
+  const openWorkoutFromTrainingBlockSession = useCallback(
+    (session, onCommitted = null) => {
+      const draft = plannerInitialDataFromBlockDay(session);
+      const typeVal = draft.workoutType || 'pesi';
+      const isRest = String(typeVal).toLowerCase() === 'riposo' || String(typeVal).toLowerCase() === 'rest';
+      if (isRest) {
+        window.alert('Oggi è previsto riposo — usa «Rimanda» se vuoi spostare la sessione.');
+        return;
+      }
+      const durationMin = parseDurationMinutesInput(draft.workoutDurationMin, {
+        min: WORKOUT_DURATION_MIN,
+        max: WORKOUT_DURATION_MAX,
+        fallback: WORKOUT_DURATION_DEFAULT,
+      });
+      const startT = Number.isFinite(Number(draft.workoutStartTime))
+        ? Number(draft.workoutStartTime)
+        : getCurrentTimeDecimal();
+
+      trainingBlockExecuteRef.current = true;
+      onTrainingBlockWorkoutCommittedRef.current =
+        typeof onCommitted === 'function' ? onCommitted : null;
+
+      setEditingWorkoutId(null);
+      setPostWorkoutReviewActive(false);
+      setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
+      setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
+      setWorkoutKcal(Number(draft.workoutKcal) || 300);
+      setWorkoutDurationMin(String(durationMin));
+      setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
+      setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+      setWorkoutPlanDraft({ trainingBlockExecute: true, sessionTitle: session?.title || null });
+      setIsPlanActionSheetOpen(false);
+      setActiveAction('allenamento');
+      setIsDrawerOpen(true);
+    },
+    [setActiveAction, setIsDrawerOpen, setIsPlanActionSheetOpen],
+  );
 
   const openWorkoutEditorFromLogItem = useCallback(
     (workout) => {
@@ -397,62 +444,6 @@ export function useWorkoutManager({
         : [...baseNodes, nodeData];
       const projectedNodes = projectedNodesRaw.filter((n) => n && n.type !== 'ghost_workout');
 
-      let fourCylinderNextState = null;
-
-      if (userModel && setUserModel) {
-        const todayIso = currentTrackerDate || getTodayString();
-        console.log('[DEBUG 4CYL] Input al motore:', {
-          isGhostConversion: !!editingWorkoutId,
-          editingWorkoutId,
-          finalId,
-          musclesRaw: workoutMuscles,
-          muscles: musclesCanon,
-          musclesInLogData: logData.muscles,
-          musclesInNodeData: nodeData.muscles,
-          duration,
-          type: workoutType,
-          isWork,
-          isCognitive,
-          projectedNodesCount: projectedNodes.length,
-          projectedLogWorkouts: projectedLog.filter((e) => e?.type === 'workout').length,
-        });
-        const resolved = resolveFourCylinderForWorkoutSave({
-          userModel,
-          fullHistory,
-          todayIso,
-          newLog: projectedLog,
-          newNodes: projectedNodes,
-          editingWorkoutId,
-          finalId,
-          isWork,
-          isCognitive,
-          workoutType,
-          musclesCanon,
-          workoutKcal,
-          duration,
-          logData,
-          proteinTarget,
-          dailyLog,
-        });
-        if (resolved) {
-          logData.fourCylinderSnapshot = resolved.snapshot;
-          nodeData.fourCylinderRef = {
-            engineVersion: resolved.snapshot.engineVersion,
-            capturedAt: resolved.snapshot.capturedAt,
-          };
-          fourCylinderNextState = resolved.nextState;
-          console.log('[DEBUG 4CYL] Output dal motore:', resolved.nextState?.decay);
-          console.log('[DEBUG 4CYL] Snapshot stimulus:', resolved.snapshot?.stimulus);
-        } else {
-          console.warn('[DEBUG 4CYL] resolveFourCylinderForWorkoutSave ha restituito null');
-        }
-      } else {
-        console.warn('[DEBUG 4CYL] Pipeline saltata — userModel/setUserModel mancante:', {
-          hasUserModel: Boolean(userModel),
-          hasSetUserModel: Boolean(setUserModel),
-        });
-      }
-
       const newLog = projectedLog.map((entry) => (
         String(entry?.id) === String(finalId)
           ? { ...entry, ...logData }
@@ -463,14 +454,20 @@ export function useWorkoutManager({
           ? { ...node, ...nodeData }
           : node
       ));
+      const fromTrainingBlockExecute = trainingBlockExecuteRef.current;
 
-      if (isSimulationMode) {
-        setSimulatedLog(newLog);
-        if (fourCylinderNextState && setUserModel) {
-          setUserModel((prev) => physiologyModelWithFourCylinder(prev, fourCylinderNextState));
-        }
+      const finishPostSaveUi = () => {
         setWorkoutPlanDraft(null);
         setIsPlanActionSheetOpen(false);
+        if (fromTrainingBlockExecute) {
+          trainingBlockExecuteRef.current = false;
+          setPostWorkoutReviewActive(false);
+          setEditingWorkoutId(null);
+          setWorkoutMuscles([]);
+          setWorkoutStrengthDetail('');
+          closeDrawer();
+          return;
+        }
         if (inReviewAtStart) {
           setPostWorkoutReviewActive(false);
           setEditingWorkoutId(null);
@@ -488,50 +485,94 @@ export function useWorkoutManager({
         setWorkoutMuscles([]);
         setWorkoutStrengthDetail('');
         closeDrawer();
+      };
+
+      const runHeavyPersist = () => {
+        let persistedLog = newLog;
+        let persistedNodes = newNodes;
+        let fourCylinderNextState = null;
+
+        if (userModel && setUserModel) {
+          const todayIso = currentTrackerDate || getTodayString();
+          const resolved = resolveFourCylinderForWorkoutSave({
+            userModel,
+            fullHistory,
+            todayIso,
+            newLog: persistedLog,
+            newNodes: persistedNodes,
+            editingWorkoutId,
+            finalId,
+            isWork,
+            isCognitive,
+            workoutType,
+            musclesCanon,
+            workoutKcal,
+            duration,
+            logData,
+            proteinTarget,
+            dailyLog,
+          });
+          if (resolved) {
+            logData.fourCylinderSnapshot = resolved.snapshot;
+            nodeData.fourCylinderRef = {
+              engineVersion: resolved.snapshot.engineVersion,
+              capturedAt: resolved.snapshot.capturedAt,
+            };
+            fourCylinderNextState = resolved.nextState;
+            persistedLog = persistedLog.map((entry) => (
+              String(entry?.id) === String(finalId)
+                ? { ...entry, ...logData }
+                : entry
+            ));
+            persistedNodes = persistedNodes.map((node) => (
+              String(node?.id) === String(finalId)
+                ? { ...node, ...nodeData }
+                : node
+            ));
+            setDailyLog(persistedLog);
+            setManualNodes(persistedNodes);
+          }
+        }
+
+        if (!isSimulationMode) {
+          syncDatiFirebase(persistedLog, persistedNodes);
+        } else if (fourCylinderNextState && setUserModel) {
+          setUserModel((prev) => physiologyModelWithFourCylinder(prev, fourCylinderNextState));
+        }
+        if (fourCylinderNextState && setUserModel) {
+          persistFourCylinderState({
+            db,
+            userUid: user?.uid ?? null,
+            setUserModel,
+            nextFourCylinderState: fourCylinderNextState,
+            fullHistory,
+            anchorDateIso: currentTrackerDate || undefined,
+            source: 'useWorkoutManager:save',
+          });
+        }
+
+        const commitCb = fromTrainingBlockExecute
+          ? onTrainingBlockWorkoutCommittedRef.current
+          : null;
+        onTrainingBlockWorkoutCommittedRef.current = null;
+        if (commitCb) {
+          void Promise.resolve(commitCb()).catch((err) => {
+            console.warn('[useWorkoutManager] training block commit after save failed', err);
+          });
+        }
+      };
+
+      if (isSimulationMode) {
+        setSimulatedLog(newLog);
+        finishPostSaveUi();
+        window.setTimeout(runHeavyPersist, 0);
         return;
       }
 
       setDailyLog(newLog);
       setManualNodes(newNodes);
-      syncDatiFirebase(newLog, newNodes);
-
-      if (fourCylinderNextState && setUserModel) {
-        console.log('[DEBUG 4CYL] Persist su userModel/Firebase — decay:', fourCylinderNextState?.decay);
-        persistFourCylinderState({
-          db,
-          userUid: user?.uid ?? null,
-          setUserModel,
-          nextFourCylinderState: fourCylinderNextState,
-          fullHistory,
-          anchorDateIso: currentTrackerDate || undefined,
-          source: 'useWorkoutManager:save',
-        });
-      } else {
-        console.warn('[DEBUG 4CYL] Nessuno stato da persistere — fourCylinderNextState null');
-      }
-
-      setWorkoutPlanDraft(null);
-      setIsPlanActionSheetOpen(false);
-
-      if (inReviewAtStart) {
-        setPostWorkoutReviewActive(false);
-        setEditingWorkoutId(null);
-        setWorkoutMuscles([]);
-        setWorkoutStrengthDetail('');
-        closeDrawer();
-        return;
-      }
-
-      if (!editingAtStart) {
-        setEditingWorkoutId(finalId);
-        setPostWorkoutReviewActive(true);
-        return;
-      }
-
-      setEditingWorkoutId(null);
-      setWorkoutMuscles([]);
-      setWorkoutStrengthDetail('');
-      closeDrawer();
+      finishPostSaveUi();
+      window.setTimeout(runHeavyPersist, 0);
     } finally {
       window.setTimeout(() => {
         saveInFlightRef.current = false;
@@ -719,6 +760,7 @@ export function useWorkoutManager({
     workoutDurationHours,
     workoutStartTime,
     openWorkoutFromTodayPlan,
+    openWorkoutFromTrainingBlockSession,
     openWorkoutEditorFromLogItem,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,

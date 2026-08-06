@@ -4,6 +4,8 @@ import {
   inferWorkoutTypeFromText,
   normalizeChatWorkoutType,
 } from './workoutRegistrationSlots.js';
+import { deduplicateWipItems } from '../../wipMealBuilder/utils/wipMealItemUtils.js';
+import { resolveUserDisplayName } from '../../chat/chatPersona.js';
 
 export const CONVERSATION_STATE = Object.freeze({
   IDLE: 'IDLE',
@@ -106,11 +108,13 @@ function normalizeFoodItem(item) {
   const grams = Number.isFinite(gramsNum) && gramsNum > 0 ? Math.round(gramsNum) : null;
   const isEstimated = grams != null && item?.isEstimated === true;
   const wasEstimated = item?.wasEstimated === true || isEstimated;
+  const icon = String(item?.icon || '').trim();
   return {
     foodName,
     grams,
     isEstimated,
     ...(wasEstimated ? { wasEstimated: true } : {}),
+    ...(icon ? { icon } : {}),
   };
 }
 
@@ -225,7 +229,18 @@ export function getFoodPayloadMissingFields(payload) {
 
 export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
   const { inferMealTypeFromContext = true } = options;
-  const items = expandFoodPayloadItems(payload);
+  // Dedup matematico PRIMA di qualsiasi UI/WIP: stesso nome → somma grammi (mai doppioni).
+  const items = deduplicateWipItems(expandFoodPayloadItems(payload), { keepZeroGrams: true })
+    .map((item) => ({
+      foodName: String(item.foodName || item.name || '').trim(),
+      grams: Number.isFinite(Number(item.grams)) && Number(item.grams) > 0
+        ? Math.round(Number(item.grams))
+        : null,
+      isEstimated: item.isEstimated === true,
+      ...(item.wasEstimated === true || item.isEstimated === true ? { wasEstimated: true } : {}),
+      ...(item.icon ? { icon: item.icon } : {}),
+    }))
+    .filter((item) => item.foodName);
   const explicitMeal =
     parseMealTypeFromUserText(payload?.mealType)
     || (MEAL_TYPES.includes(String(payload?.mealType || '').trim().toLowerCase())
@@ -237,12 +252,14 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
     || null;
   const exactTimeRaw = payload?.exactTime ?? payload?.timeString;
   const exactTime = exactTimeRaw != null ? String(exactTimeRaw).trim() : '';
+  const message = String(payload?.message || '').trim();
 
   return {
     items,
     mealType: MEAL_TYPES.includes(mealType) ? mealType : null,
     ...(exactTime ? { exactTime, timeString: exactTime } : {}),
     ...(payload?.notes ? { notes: String(payload.notes) } : {}),
+    ...(message ? { message } : {}),
   };
 }
 
@@ -259,34 +276,40 @@ export function slotPromptForState(state, pendingPayload = {}) {
   return '';
 }
 
-const MEAL_TYPE_LABELS = Object.freeze({
-  colazione: 'Colazione',
-  pranzo: 'Pranzo',
-  cena: 'Cena',
-  snack: 'Snack',
-});
+/**
+ * Messaggio informale anteprima pasto (usa displayName — niente tono da referto).
+ * @param {{ displayName?: string, mealType?: string, userProfile?: object, itemCount?: number }} [opts]
+ * @returns {string}
+ */
+export function buildMealPreviewReadyMessage(opts = {}) {
+  const displayName = resolveUserDisplayName(opts.userProfile)
+    || String(opts.displayName || '').trim();
+  const mealKey = String(opts.mealType || '').trim().toLowerCase().split('_')[0];
+  const mealWord = ({
+    colazione: 'colazione',
+    snack: 'snack',
+    pranzo: 'pranzo',
+    cena: 'cena',
+  })[mealKey] || 'pasto';
+  const prefix = displayName ? `${displayName}, ` : '';
+  return `${prefix}ecco il tuo ${mealWord} pronto da confermare.`;
+}
 
 /** Riepilogo esplicito stile McDrive per la bozza pasto. */
-export function buildMealDraftUiMessage(payload = {}) {
-  const items = expandFoodPayloadItems(payload);
-  const mealType = String(payload?.mealType || '').trim().toLowerCase();
-  const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
-  const time = String(payload?.exactTime || payload?.timeString || '').trim() || '--:--';
-  const hasEstimates = items.some((item) => item.isEstimated === true);
-  const lines = items.map((item) => {
-    const grams = Math.round(Number(item.grams) || 0);
-    const mark = item.isEstimated === true ? ' ⚠️ stima' : '';
-    return `- ${item.foodName} (${grams}g${mark})`;
+export function buildMealDraftUiMessage(payload = {}, opts = {}) {
+  const fromPayload = String(payload?.message || '').trim();
+  if (fromPayload) return fromPayload;
+  return buildMealPreviewReadyMessage({
+    displayName: opts.displayName,
+    userProfile: opts.userProfile,
+    mealType: payload?.mealType,
+    itemCount: expandFoodPayloadItems(payload).length,
   });
-  const estimateNote = hasEstimates
-    ? '\nHo stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.'
-    : '';
-  return `Riepilogo [${mealLabel}] delle [${time}]:\n${lines.join('\n')}${estimateNote}\nConfermi?`;
 }
 
 /** Messaggio chat standard quando la bozza contiene pesi stimati. */
 export const MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE =
-  'Ho preparato la bozza. Ho stimato i pesi di alcuni alimenti in base ai valori medi, controllali prima di confermare.';
+  'Ho stimato qualche peso sui valori medi — dai un\'occhiata prima di confermare.';
 
 export function payloadHasEstimatedFoodWeights(payload = {}) {
   return expandFoodPayloadItems(payload).some((item) => item.isEstimated === true);

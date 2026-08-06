@@ -104,7 +104,7 @@ function daysFromActiveBlock(activeBlock) {
  * @param {object | null | undefined} day
  * @returns {object} initialData per WorkoutView planner
  */
-function plannerInitialDataFromBlockDay(day) {
+export function plannerInitialDataFromBlockDay(day) {
   if (!day) {
     return {
       workoutType: 'pesi',
@@ -295,66 +295,85 @@ export default function TrainingBlockCreator({
         ? Number(weightKg)
         : 75;
 
-      setIsGeneratingTargets(true);
-      let nutritionPack = null;
-      try {
-        nutritionPack = await generatePeriodizedTargets(
-          resolvedTdee,
-          macroGoal,
-          baseDays,
-          { weightKg: resolvedWeight },
-        );
-      } catch {
-        nutritionPack = null;
-      }
-
-      // Fallback emergenza: TDEE piatto (±300) se AI offline / null
-      if (!nutritionPack?.nutritionDays?.length) {
-        nutritionPack = buildEmergencyWaveNutritionDays({
-          tdee: resolvedTdee,
-          macroGoal,
-          daysArray: baseDays,
-          weightKg: resolvedWeight,
-        });
-      }
-
-      const byIndex = new Map(
-        (nutritionPack.nutritionDays || []).map((row) => [Number(row.dayIndex), row]),
-      );
-
-      const enrichedDays = baseDays.map((d, i) => {
-        const row = byIndex.get(d.dayIndex) || byIndex.get(i) || null;
-        if (!row) return d;
-        return {
-          ...d,
-          targetKcal: Math.round(Number(row.targetKcal)),
-          targetProt: Math.round(Number(row.targetProt)),
-          targetCarb: Math.round(Number(row.targetCarb)),
-          targetFat: Math.round(Number(row.targetFat)),
-        };
+      // Target emergenza subito → chiudi il drawer senza attendere l'AI (10–15s).
+      let nutritionPack = buildEmergencyWaveNutritionDays({
+        tdee: resolvedTdee,
+        macroGoal,
+        daysArray: baseDays,
+        weightKg: resolvedWeight,
       });
 
+      const buildPayload = (pack) => {
+        const byIndex = new Map(
+          (pack.nutritionDays || []).map((row) => [Number(row.dayIndex), row]),
+        );
+        const enrichedDays = baseDays.map((d, i) => {
+          const row = byIndex.get(d.dayIndex) || byIndex.get(i) || null;
+          if (!row) return d;
+          return {
+            ...d,
+            targetKcal: Math.round(Number(row.targetKcal)),
+            targetProt: Math.round(Number(row.targetProt)),
+            targetCarb: Math.round(Number(row.targetCarb)),
+            targetFat: Math.round(Number(row.targetFat)),
+          };
+        });
+        const payload = {
+          name: String(name).trim(),
+          macroGoal,
+          days: enrichedDays,
+        };
+        if (isEditMode && activeBlock) {
+          payload.blockId = activeBlock.blockId;
+          payload.currentDayPointer = activeBlock.currentDayPointer;
+          payload.anchorDate = activeBlock.anchorDate;
+          payload.createdAt = activeBlock.createdAt;
+          payload.lastAction = activeBlock.lastAction || null;
+        }
+        return payload;
+      };
+
+      onClose();
+      setSaving(false);
       setIsGeneratingTargets(false);
 
-      const payload = {
-        name: String(name).trim(),
-        macroGoal,
-        days: enrichedDays,
-      };
-      if (isEditMode && activeBlock) {
-        payload.blockId = activeBlock.blockId;
-        payload.currentDayPointer = activeBlock.currentDayPointer;
-        payload.anchorDate = activeBlock.anchorDate;
-        payload.createdAt = activeBlock.createdAt;
-        payload.lastAction = activeBlock.lastAction || null;
-      }
-      await onSave(payload);
-      onClose();
+      void (async () => {
+        try {
+          await onSave(buildPayload(nutritionPack));
+        } catch (err) {
+          setError(String(err?.message || err || 'Salvataggio fallito'));
+          return;
+        }
+        setIsGeneratingTargets(true);
+        let aiPackApplied = false;
+        try {
+          const aiPack = await generatePeriodizedTargets(
+            resolvedTdee,
+            macroGoal,
+            baseDays,
+            { weightKg: resolvedWeight },
+          );
+          if (aiPack?.nutritionDays?.length) {
+            nutritionPack = aiPack;
+            aiPackApplied = true;
+          }
+        } catch {
+          // resta emergency pack
+        } finally {
+          setIsGeneratingTargets(false);
+        }
+        if (aiPackApplied) {
+          try {
+            await onSave(buildPayload(nutritionPack));
+          } catch (err) {
+            setError(String(err?.message || err || 'Aggiornamento target AI fallito'));
+          }
+        }
+      })();
     } catch (err) {
       setError(String(err?.message || err || 'Salvataggio fallito'));
-    } finally {
-      setIsGeneratingTargets(false);
       setSaving(false);
+      setIsGeneratingTargets(false);
     }
   };
 

@@ -30,6 +30,7 @@ import {
 } from '../conversation/workoutRegistrationSlots.js';
 import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
 import { buildChatPersonaSystemBlock } from '../../chat/chatPersona.js';
+import { deduplicateWipItems } from '../../wipMealBuilder/utils/wipMealItemUtils.js';
 
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 const CONSULTANT_MODEL = 'gemini-3.6-flash';
@@ -346,36 +347,7 @@ function pickMergedFoodName(nameA, nameB) {
   return cleanA.length >= cleanB.length ? cleanA : cleanB;
 }
 
-function pickMergedGrams(itemA, itemB) {
-  const gramsA = Number(itemA?.grams);
-  const gramsB = Number(itemB?.grams);
-  const hasA = Number.isFinite(gramsA) && gramsA > 0;
-  const hasB = Number.isFinite(gramsB) && gramsB > 0;
-  if (hasA && !hasB) return Math.round(gramsA);
-  if (hasB && !hasA) return Math.round(gramsB);
-  if (hasA && hasB) return Math.round(Math.max(gramsA, gramsB));
-  return null;
-}
-
-function mergeOverlappingFoodItems(itemA, itemB) {
-  const foodName = pickMergedFoodName(itemA?.foodName, itemB?.foodName);
-  const merged = { ...itemA, ...itemB, foodName };
-  const iconA = asTrimmedString(itemA?.icon);
-  const iconB = asTrimmedString(itemB?.icon);
-  if (iconA || iconB) merged.icon = iconA || iconB;
-  const grams = pickMergedGrams(itemA, itemB);
-  if (grams != null) merged.grams = grams;
-  else delete merged.grams;
-  // Se uno dei due era stimato, mantieni il flag (l'utente potra correggere in UI).
-  if (itemA?.isEstimated === true || itemB?.isEstimated === true) {
-    merged.isEstimated = true;
-  } else if ('isEstimated' in merged) {
-    merged.isEstimated = false;
-  }
-  return merged;
-}
-
-/** Pulisce congiunzioni iniziali e fonde duplicati / voci fantasma da sdoppiamento LLM. */
+/** Pulisce congiunzioni iniziali e fonde duplicati sommando grammi (mai max). */
 function deduplicateAndCleanFoodItems(items) {
   const safeItems = Array.isArray(items)
     ? items.filter((item) => item && typeof item === 'object')
@@ -390,19 +362,19 @@ function deduplicateAndCleanFoodItems(items) {
     })
     .filter(Boolean);
 
-  const merged = [];
-  cleaned.forEach((item) => {
-    const duplicateIndex = merged.findIndex((existing) =>
-      foodNamesOverlap(existing.foodName, item.foodName),
-    );
-    if (duplicateIndex >= 0) {
-      merged[duplicateIndex] = mergeOverlappingFoodItems(merged[duplicateIndex], item);
-      return;
+  // Dedup matematico condiviso con WIP: stesso nome / molto simile → somma grammi.
+  return deduplicateWipItems(cleaned, { keepZeroGrams: true }).map((item) => {
+    const foodName = String(item.foodName || item.name || '').trim();
+    const grams = Number(item.grams);
+    const next = { ...item, foodName };
+    if (!(Number.isFinite(grams) && grams > 0)) {
+      delete next.grams;
+      delete next.isEstimated;
+    } else {
+      next.grams = Math.round(grams);
     }
-    merged.push(item);
+    return next;
   });
-
-  return merged;
 }
 
 function normalizeExerciseToken(value) {
@@ -936,7 +908,7 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
   return {
     ...command,
     payload,
-    // Mute & Replace: il controller ignora comunque questi campi; li svuotiamo alla fonte.
+    // Mute advice/ui: il messaggio informale vive in payload.message (displayName).
     adviceMessage: '',
     uiMessage: '',
   };
@@ -1159,10 +1131,12 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
         "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi, lascia grams null — il sistema chiedera i grammi. Se anche il TIPO di alimento e ambiguo (es. solo «pasta»), preferisci ASK_CLARIFICATION con options tipiche invece di inventare.",
         "REGOLA ADD_FOOD (FOLLOW-UP CHIARIMENTO): Se THREAD_RECENTE mostra che hai appena chiesto un chiarimento e l'utente risponde con dettagli (grammi/tipo/scelta), DEVI usare ADD_FOOD subito ed estrarre il carrello. Vietato nuove domande e vietato fallire il parsing.",
-        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI.",
+        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo utente va SOLO in payload.message.",
+        "REGOLA ADD_FOOD (payload.message — OBBLIGATORIO): UNA frase informale, diretta, TTS-friendly. DEVI usare il displayName iniettato nella persona (es. «Marco, ecco il tuo snack pronto da confermare.»). VIETATO frasi standard da referto («Ho estratto N alimenti…», «Controlla il riepilogo…»). VIETATO budget/cilindri/macro nel message.",
+        "HARD CONSTRAINT — NO DUPLICATI IN items[]: se lo stesso alimento compare due volte (o con nome quasi identico), fondili in UNA sola voce sommando i grammi. Mai due righe uguali.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
         "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi/unita e ha citato esplicitamente quell alimento; in quel caso isEstimated:true. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
-        "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti.",
+        "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti. Solo payload.message informale con il nome utente.",
         "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — Smart Defaults da [CURRENT_SYSTEM_TIME].",
         "Questa logica NON si applica a richieste di consiglio pasto (ADVICE).",
       );
