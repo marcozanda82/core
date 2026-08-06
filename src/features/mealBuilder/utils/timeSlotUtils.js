@@ -61,8 +61,14 @@ export function normalizeUsageStats(raw) {
 export function buildUsageStatsIncrementPatch(existingEntry, timeSlot = getCurrentTimeSlot()) {
   const current = normalizeUsageStats(existingEntry?.usageStats);
   const safeSlot = TIME_SLOTS.includes(timeSlot) ? timeSlot : getCurrentTimeSlot();
+  const prevUsageCount = Math.max(
+    0,
+    Number(existingEntry?.usageCount) || 0,
+    current.morning + current.afternoon + current.evening + current.night,
+  );
 
   return {
+    usageCount: prevUsageCount + 1,
     usageStats: {
       ...current,
       [safeSlot]: current[safeSlot] + 1,
@@ -134,9 +140,13 @@ export function recordDraftFoodsUsageStats(draftFoods, personalDb, onPatchFoodDb
 
 export function withDefaultUsageStats(entry) {
   if (!entry || typeof entry !== 'object') return entry;
+  const usageStats = normalizeUsageStats(entry.usageStats);
+  const fromStats = usageStats.morning + usageStats.afternoon + usageStats.evening + usageStats.night;
+  const usageCount = Math.max(0, Number(entry.usageCount) || 0, fromStats);
   return {
     ...entry,
-    usageStats: normalizeUsageStats(entry.usageStats),
+    usageCount,
+    usageStats,
   };
 }
 

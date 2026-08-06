@@ -1,6 +1,10 @@
 import { TARGETS } from '../../../useBiochimico';
 import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits';
-import { normalizeSearchText, searchFoodsDetailed } from '../../../foodSearch.js';
+import {
+  getFoodUsageCount,
+  normalizeSearchText,
+  searchFoodsDetailed,
+} from '../../../foodSearch.js';
 
 export const FOOD_RESOLUTION_STATUS = Object.freeze({
   RESOLVED: 'RESOLVED',
@@ -111,8 +115,31 @@ function zeroFillMissingNutrients(item, dbProvidedKeys) {
 }
 
 /**
- * Match DB: preferredKey → uguaglianza case-insensitive su desc/name → top hit search.
- * Niente `.includes` lasco (evita match spurî).
+ * Tra più chiavi candidate sceglie quella con usageCount più alto.
+ * @param {object} foodDb
+ * @param {string[]} keys
+ * @returns {string | null}
+ */
+function pickKeyByUsageCount(foodDb, keys) {
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  if (keys.length === 1) return keys[0];
+  let bestKey = keys[0];
+  let bestCount = getFoodUsageCount(foodDb?.[bestKey]);
+  for (let i = 1; i < keys.length; i += 1) {
+    const key = keys[i];
+    const count = getFoodUsageCount(foodDb?.[key]);
+    if (count > bestCount) {
+      bestCount = count;
+      bestKey = key;
+    }
+  }
+  return bestKey;
+}
+
+/**
+ * Match DB: preferredKey → search ranked (exact/includes/fuzzy) → max usageCount.
+ * Tra più risultati per la stessa parola chiave vince sempre usageCount (abitudini).
+ * @returns {string | null}
  */
 export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
   if (preferredDbKey != null && foodDb?.[preferredDbKey] != null) {
@@ -122,22 +149,68 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
   const needle = normalizeSearchText(nome);
   if (!needle || !foodDb || typeof foodDb !== 'object') return null;
 
-  const entries = Object.entries(foodDb);
-  for (let i = 0; i < entries.length; i += 1) {
-    const [key, food] = entries[i];
-    const descNorm = normalizeSearchText(food?.desc);
-    const nameNorm = normalizeSearchText(food?.name);
-    if (descNorm === needle || nameNorm === needle) return key;
+  const hits = searchFoodsDetailed(foodDb, nome, {
+    limit: 24,
+    includeUserHistory: false,
+    enableFuzzy: true,
+  });
+  if (!hits.length) return null;
+
+  // Accetta match forti (exact/prefix/word ≥75) oppure fuzzy (Levenshtein 1–2 → 85–90).
+  const acceptable = hits.filter((hit) => {
+    const tier = String(hit.matchTier || '');
+    const score = Number(hit.strictScore) || 0;
+    if (tier === 'fuzzy') return score >= 85;
+    return score >= 75;
+  });
+  if (acceptable.length === 0) return null;
+
+  // Exact/parziali: best match = quello mangiato più spesso.
+  const topKeys = acceptable.map((hit) => hit.id);
+  return pickKeyByUsageCount(foodDb, topKeys) || acceptable[0].id;
+}
+
+/**
+ * Cascata allineata alla ricerca manuale UniversalSearch:
+ * 1) DB personale (trackerFoodDatabase)
+ * 2) Kentu DB IT (CREA)
+ * 3) Kentu DB 🌐 globale
+ *
+ * @returns {{ key: string, foodDb: object, source: 'personal' | 'kentu_it' | 'global' } | null}
+ */
+export function findFoodDbMatchCascading({
+  personalDb = null,
+  kentuItDb = null,
+  globalDb = null,
+  nome,
+  preferredDbKey = null,
+} = {}) {
+  const layers = [
+    { db: personalDb, source: 'personal' },
+    { db: kentuItDb, source: 'kentu_it' },
+    { db: globalDb, source: 'global' },
+  ].filter((layer) => layer.db && typeof layer.db === 'object');
+
+  if (preferredDbKey != null) {
+    for (let i = 0; i < layers.length; i += 1) {
+      const layer = layers[i];
+      if (layer.db[preferredDbKey] != null) {
+        return { key: preferredDbKey, foodDb: layer.db, source: layer.source };
+      }
+    }
   }
 
-  const hits = searchFoodsDetailed(foodDb, nome, {
-    limit: 1,
-    includeUserHistory: false,
-  });
-  const top = hits[0];
-  if (!top) return null;
-  // Accetta solo match forti (exact/prefix 100 o word-boundary 75+)
-  if (Number(top.strictScore) >= 75) return top.id;
+  const query = String(nome || '').trim();
+  if (!query) return null;
+
+  for (let i = 0; i < layers.length; i += 1) {
+    const layer = layers[i];
+    const key = findFoodDbKey(layer.db, query, null);
+    if (key != null && layer.db[key] != null) {
+      return { key, foodDb: layer.db, source: layer.source };
+    }
+  }
+
   return null;
 }
 
@@ -168,7 +241,7 @@ function buildUnresolvedFoodItem({ nome, qta, pastoType }) {
 
 /**
  * Estrazione dati alimento da DB. Tolleranza zero: niente stime medie automatiche.
- * Match assente → macronutrienti 0 + status NEEDS_RESOLUTION.
+ * Cascata: personale → Kentu IT → Kentu globale. Match assente → NEEDS_RESOLUTION.
  */
 export function estraiDatiFoodDb({
   nome,
@@ -176,15 +249,25 @@ export function estraiDatiFoodDb({
   pastoType,
   preferredDbKey,
   foodDb,
+  kentuItDb = null,
+  globalDb = null,
   fullHistory,
 }) {
   void fullHistory;
-  const dbKey = findFoodDbKey(foodDb, nome, preferredDbKey);
-  if (!dbKey) {
+  const match = findFoodDbMatchCascading({
+    personalDb: foodDb,
+    kentuItDb,
+    globalDb,
+    nome,
+    preferredDbKey,
+  });
+  if (!match) {
     return buildUnresolvedFoodItem({ nome, qta, pastoType });
   }
 
-  const dbF = foodDb[dbKey];
+  const dbKey = match.key;
+  const resolvedFoodDb = match.foodDb;
+  const dbF = resolvedFoodDb[dbKey];
   if (dbF.isRecipe && Array.isArray(dbF.ingredients) && dbF.ingredients.length > 0) {
     const factor = qta / 100;
     const ingredients = dbF.ingredients.map((ing) => {
@@ -216,6 +299,7 @@ export function estraiDatiFoodDb({
       fatTotal: ((Number(dbF.fatTotal) || Number(dbF.fat) || 0) * qta) / 100,
       ingredients,
       foodDbKey: dbKey,
+      dbSource: match.source,
       status: FOOD_RESOLUTION_STATUS.RESOLVED,
     };
     const dbProvided = applyDbNutrientsToPortionItem(recipeItem, dbF, qta);
@@ -234,6 +318,7 @@ export function estraiDatiFoodDb({
       kcal: 0,
       cal: 0,
       foodDbKey: dbKey,
+      dbSource: match.source,
       status: FOOD_RESOLUTION_STATUS.RESOLVED,
     },
     ...Object.keys(TARGETS).flatMap((g) => Object.keys(TARGETS[g]).map((k) => ({ [k]: undefined }))),

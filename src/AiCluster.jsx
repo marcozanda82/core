@@ -60,6 +60,8 @@ export default function AiCluster({
   onAcceptMealProposal,
   onLearnUnresolvedFood = null,
   foodDatabase = {},
+  kentuItDatabase = {},
+  globalFoodDatabase = {},
   fullHistory = {},
   onDraftConfirm,
   onDraftCancel,
@@ -433,6 +435,8 @@ export default function AiCluster({
                           adviceId={msg.adviceId}
                           loadedProposalIds={msg.mealProposalsLoadedIds || []}
                           foodDatabase={foodDatabase}
+                          kentuItDatabase={kentuItDatabase}
+                          globalFoodDatabase={globalFoodDatabase}
                           fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
                           onLearnUnresolvedFood={onLearnUnresolvedFood}

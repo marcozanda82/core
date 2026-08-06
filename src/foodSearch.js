@@ -19,13 +19,110 @@ const SEARCH_SYNONYMS = {
   pollo: ['chicken'],
 };
 
-/** Punteggi ranking (0–100). Sotto MIN_MATCH_SCORE → escluso. Fuzzy disabilitato. */
+/** Punteggi ranking (0–100). */
 const SCORE_EXACT_OR_PREFIX = 100;
 const SCORE_WORD_BOUNDARY = 75;
 const SCORE_SUBSTRING = 50;
+const SCORE_FUZZY_DIST_1 = 90;
+const SCORE_FUZZY_DIST_2 = 85;
 const MIN_MATCH_SCORE = SCORE_SUBSTRING;
 const DEFAULT_SEARCH_LIMIT = 30;
 const HISTORY_SCORE_WEIGHT = 0.08;
+/** Peso usageCount sul ranking (DB personale). */
+const USAGE_COUNT_SCORE_WEIGHT = 0.35;
+
+/**
+ * Conta usi da usageCount esplicito o somma usageStats (morning…night).
+ * @param {object | null | undefined} food
+ * @returns {number}
+ */
+export function getFoodUsageCount(food) {
+  if (!food || typeof food !== 'object') return 0;
+  const explicit = Number(food.usageCount ?? food.count);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+
+  const stats = food.usageStats;
+  if (stats && typeof stats === 'object') {
+    const sum = ['morning', 'afternoon', 'evening', 'night']
+      .reduce((acc, key) => acc + (Math.max(0, Number(stats[key]) || 0)), 0);
+    if (sum > 0) return sum;
+  }
+  return 0;
+}
+
+/**
+ * Distanza di Levenshtein (edit distance).
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+export function levenshteinDistance(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  if (s === t) return 0;
+  if (!s.length) return t.length;
+  if (!t.length) return s.length;
+
+  // Early exit se differenza lunghezza già > max utile (2).
+  if (Math.abs(s.length - t.length) > 2) return Math.abs(s.length - t.length);
+
+  const prev = new Array(t.length + 1);
+  const curr = new Array(t.length + 1);
+  for (let j = 0; j <= t.length; j += 1) prev[j] = j;
+
+  for (let i = 1; i <= s.length; i += 1) {
+    curr[0] = i;
+    for (let j = 1; j <= t.length; j += 1) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + cost,
+      );
+    }
+    for (let j = 0; j <= t.length; j += 1) prev[j] = curr[j];
+  }
+  return prev[t.length];
+}
+
+/**
+ * Max distanza fuzzy: 1 per stringhe corte, 2 altrimenti.
+ * @param {string} query
+ * @returns {number}
+ */
+export function maxFuzzyDistanceForQuery(query) {
+  const len = String(query || '').length;
+  if (len <= 0) return 0;
+  if (len <= 5) return 1;
+  return 2;
+}
+
+/**
+ * Miglior distanza fuzzy tra query e nome (intero o singole parole).
+ * @returns {{ distance: number, score: number } | null}
+ */
+export function bestFuzzyMatch(normalizedQuery, normalizedName, itemWords = []) {
+  const q = String(normalizedQuery || '');
+  const name = String(normalizedName || '');
+  if (!q || !name) return null;
+
+  const maxDist = maxFuzzyDistanceForQuery(q);
+  let best = levenshteinDistance(q, name);
+
+  for (let i = 0; i < itemWords.length; i += 1) {
+    const w = itemWords[i];
+    if (!w) continue;
+    // Solo parole di lunghezza simile (evita match spurî su token corti).
+    if (Math.abs(w.length - q.length) > maxDist) continue;
+    best = Math.min(best, levenshteinDistance(q, w));
+  }
+
+  if (best <= 0 || best > maxDist) return null;
+  return {
+    distance: best,
+    score: best === 1 ? SCORE_FUZZY_DIST_1 : SCORE_FUZZY_DIST_2,
+  };
+}
 
 function loadRecentFoodEntries() {
   if (typeof localStorage === 'undefined') return [];
@@ -231,9 +328,17 @@ function isAutocompletePrefix(normalizedName, itemWords, normalizedQuery) {
   return itemWords.some((word) => word.startsWith(normalizedQuery));
 }
 
+function usageBoostFromCount(usageCount, maxUsageInDb) {
+  const count = Math.max(0, Number(usageCount) || 0);
+  if (count <= 0) return 0;
+  const maxU = Math.max(1, Number(maxUsageInDb) || 1);
+  return (count / maxU) * 100 * USAGE_COUNT_SCORE_WEIGHT;
+}
+
 /**
- * Ricerca case-insensitive (trim + lower-case via normalizeSearchText).
- * Match esatto "anguria" ↔ "Anguria" = score 100. Fuzzy/sparse lettere disabilitato.
+ * Ricerca case-insensitive (trim + lower-case).
+ * Cascata qualità: exact → prefix → includes → fuzzy Levenshtein (max 1–2 char).
+ * Tra match equivalenti vince usageCount più alto (abitudini utente).
  */
 export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
@@ -244,6 +349,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
 
   const includeUserHistory = options.includeUserHistory !== false;
   const mode = options.mode || 'search';
+  const enableFuzzy = options.enableFuzzy !== false && mode !== 'autocomplete';
   const limit = Number.isFinite(options.limit) && options.limit > 0
     ? Math.floor(options.limit)
     : DEFAULT_SEARCH_LIMIT;
@@ -254,6 +360,11 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   const results = [];
   const entries = Object.entries(foodDb);
   const recentFoodScores = includeUserHistory ? buildRecentFoodScoreMap() : new Map();
+
+  let maxUsageInDb = 1;
+  for (let i = 0; i < entries.length; i += 1) {
+    maxUsageInDb = Math.max(maxUsageInDb, getFoodUsageCount(entries[i][1]));
+  }
 
   for (let i = 0; i < entries.length; i += 1) {
     const [id, food] = entries[i];
@@ -300,6 +411,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
 
     if (strictScore < MIN_MATCH_SCORE) continue;
 
+    const usageCount = getFoodUsageCount(food);
     const historyScores = includeUserHistory
       ? recentFoodScores.get(String(id).trim()) || recentFoodScores.get(primaryNorm) || null
       : null;
@@ -308,13 +420,15 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     const historyBoost = includeUserHistory
       ? (recencyScore * 0.6 + frequencyScore * 0.4) * 100 * HISTORY_SCORE_WEIGHT
       : 0;
+    const usageBoost = usageBoostFromCount(usageCount, maxUsageInDb);
 
     // Exact match batte sempre i boost storici / prefix su altri alimenti.
+    // Tra exact multipli (es. due "minestrone") decide usageCount.
     const score = matchTier === 'exact'
-      ? SCORE_EXACT_OR_PREFIX + 50 + historyBoost
+      ? SCORE_EXACT_OR_PREFIX + 50 + usageBoost + historyBoost
       : matchTier === 'prefix'
-        ? SCORE_EXACT_OR_PREFIX + 10 + historyBoost
-        : strictScore + historyBoost;
+        ? SCORE_EXACT_OR_PREFIX + 10 + usageBoost + historyBoost
+        : strictScore + usageBoost + historyBoost;
     const matchScore = strictScore / 100;
 
     results.push({
@@ -323,6 +437,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       matchScore,
       recencyScore,
       frequencyScore,
+      usageCount,
       score,
       strictScore,
       matchTier,
@@ -330,7 +445,60 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     });
   }
 
+  // Fuzzy fallback: solo se exact/includes non hanno prodotto risultati.
+  if (results.length === 0 && enableFuzzy && queryWords.length === 1) {
+    for (let i = 0; i < entries.length; i += 1) {
+      const [id, food] = entries[i];
+      const descName = String(food?.desc || '').trim();
+      const altName = String(food?.name || '').trim();
+      const name = descName || altName;
+      if (!name) continue;
+
+      const normalizedName = normalizeSearchText(name);
+      const normalizedAlt = altName && altName !== name ? normalizeSearchText(altName) : '';
+      const primaryNorm = normalizedName || normalizedAlt;
+      if (!primaryNorm) continue;
+      const itemWords = primaryNorm.split(' ').filter(Boolean);
+
+      let fuzzy = bestFuzzyMatch(normalizedQuery, primaryNorm, itemWords);
+      if (normalizedAlt && normalizedAlt !== primaryNorm) {
+        const altFuzzy = bestFuzzyMatch(
+          normalizedQuery,
+          normalizedAlt,
+          normalizedAlt.split(' ').filter(Boolean),
+        );
+        if (altFuzzy && (!fuzzy || altFuzzy.distance < fuzzy.distance)) {
+          fuzzy = altFuzzy;
+        }
+      }
+      if (!fuzzy) continue;
+
+      const usageCount = getFoodUsageCount(food);
+      const usageBoost = usageBoostFromCount(usageCount, maxUsageInDb);
+
+      results.push({
+        id,
+        name,
+        matchScore: fuzzy.score / 100,
+        recencyScore: 0,
+        frequencyScore: 0,
+        usageCount,
+        score: fuzzy.score + usageBoost,
+        strictScore: fuzzy.score,
+        matchTier: 'fuzzy',
+        allTokensMatch: true,
+        fuzzyDistance: fuzzy.distance,
+      });
+    }
+  }
+
   results.sort((a, b) => {
+    // Fuzzy solo come fallback: resta sotto i match exact/includes.
+    const aFuzzy = a.matchTier === 'fuzzy' ? 1 : 0;
+    const bFuzzy = b.matchTier === 'fuzzy' ? 1 : 0;
+    if (aFuzzy !== bFuzzy) return aFuzzy - bFuzzy;
+    // Stessa parola chiave (exact o parziale): abitudini utente prima di tutto.
+    if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
     if (b.score !== a.score) return b.score - a.score;
     if (b.strictScore !== a.strictScore) return b.strictScore - a.strictScore;
     if (b.allTokensMatch !== a.allTokensMatch) return Number(b.allTokensMatch) - Number(a.allTokensMatch);
@@ -338,14 +506,16 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   });
 
   return results.slice(0, limit).map(
-    ({ id, name, matchScore, recencyScore, frequencyScore, score, strictScore }) => ({
+    ({ id, name, matchScore, recencyScore, frequencyScore, usageCount, score, strictScore, matchTier }) => ({
       id,
       name,
       matchScore,
       recencyScore,
       frequencyScore,
+      usageCount,
       textScore: score / 100,
       strictScore,
+      matchTier,
     }),
   );
 }

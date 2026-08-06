@@ -52,7 +52,7 @@ import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
-import { withDefaultUsageStats } from './features/mealBuilder/utils/timeSlotUtils';
+import { withDefaultUsageStats, recordDraftFoodsUsageStats, getCurrentTimeSlot } from './features/mealBuilder/utils/timeSlotUtils';
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
@@ -751,7 +751,11 @@ export default function SalaComandi() {
   const [userPortions, setUserPortions] = useState({});
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
-  const { masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true });
+  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true });
+  const kentuCatalogItDbRef = useRef(kentuCatalogItDb);
+  const csvFoodDbRef = useRef(csvFoodDb);
+  kentuCatalogItDbRef.current = kentuCatalogItDb;
+  csvFoodDbRef.current = csvFoodDb;
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -3532,6 +3536,7 @@ export default function SalaComandi() {
   }, [fullHistory]);
 
   // Estrazione dati da DB (preferredDbKey: da findBestFoodMatch nel flusso add_food)
+  // Cascata: personale → Kentu IT → Kentu globale (allineata alla ricerca manuale).
   const estraiDatiFoodDb = useCallback((nome, qta, pastoType, preferredDbKey) => {
     return resolveFoodDataFromEngine({
       nome,
@@ -3539,6 +3544,8 @@ export default function SalaComandi() {
       pastoType,
       preferredDbKey,
       foodDb,
+      kentuItDb: kentuCatalogItDbRef.current || {},
+      globalDb: csvFoodDbRef.current || {},
       fullHistory,
     });
   }, [foodDb, fullHistory]);
@@ -6326,6 +6333,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         });
       }
 
+      // Abitudini: incrementa usageCount sul DB personale per ranking "minestrone più mangiato".
+      recordDraftFoodsUsageStats(
+        items.map((it) => ({ foodDbKey: it.foodDbKey || it.matchedKey || null })),
+        foodDb,
+        patchFoodDbEntry,
+        getCurrentTimeSlot(),
+      );
+
       const targetNodeId = String(payload?.targetNodeId || '').trim();
       const logSnap = dailyLogRef.current || [];
       const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
@@ -6385,6 +6400,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       toCanonicalMealType,
       userUid,
       db,
+      foodDb,
+      patchFoodDbEntry,
     ],
   );
 
@@ -6676,6 +6693,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         activeDate: currentTrackerDate || getTodayString(),
         locale: 'it-IT',
         foodDatabase: foodDb,
+        kentuItDatabase: kentuCatalogItDbRef.current || {},
+        globalFoodDatabase: csvFoodDbRef.current || {},
         activeLog: activeLog || [],
         userTargets: effectiveTargetsForCurrentDate,
         dynamicDailyKcal:
@@ -6725,6 +6744,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onAcceptMealProposal: handleAcceptMealProposal,
       onLearnUnresolvedFood: learnUnresolvedFoodEntry,
       foodDatabase: foodDb,
+      kentuItDatabase: kentuCatalogItDb,
+      globalFoodDatabase: csvFoodDb,
       fullHistory,
       dailyLog: activeLog,
       onDraftConfirm: handleDraftConfirm,
@@ -6760,6 +6781,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleAcceptMealProposal,
     learnUnresolvedFoodEntry,
     foodDb,
+    kentuCatalogItDb,
+    csvFoodDb,
     fullHistory,
     activeLog,
     handleDraftConfirm,
@@ -9289,6 +9312,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onAcceptMealProposal={handleAcceptMealProposal}
             onLearnUnresolvedFood={learnUnresolvedFoodEntry}
             foodDatabase={foodDb}
+            kentuItDatabase={kentuCatalogItDb}
+            globalFoodDatabase={csvFoodDb}
             fullHistory={fullHistory}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}

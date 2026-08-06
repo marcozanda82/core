@@ -1,6 +1,7 @@
 import { searchFoodsDetailed } from '../foodSearch.js';
 import {
   estraiDatiFoodDb,
+  findFoodDbMatchCascading,
   FOOD_RESOLUTION_STATUS,
 } from '../features/salaComandi/engines/foodDataEngine.js';
 
@@ -13,6 +14,14 @@ function roundMacro(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 10) / 10;
+}
+
+function resolveCatalogDbs(context = {}) {
+  return {
+    personalDb: context.foodDb || context.personalDb || {},
+    kentuItDb: context.kentuItDb || context.kentuItDatabase || null,
+    globalDb: context.globalDb || context.globalFoodDatabase || context.masterDb || null,
+  };
 }
 
 /**
@@ -49,22 +58,44 @@ export function cleanFoodQueryForDbSearch(rawQuery) {
   };
 }
 
+function hitsFromDb(foodDb, query, options = {}) {
+  if (!foodDb || typeof foodDb !== 'object' || Object.keys(foodDb).length === 0) return [];
+  return searchFoodsDetailed(foodDb, query, {
+    limit: options.limit || DEFAULT_RESOLVE_LIMIT,
+    includeUserHistory: options.includeUserHistory === true,
+  })
+    .filter((hit) => Number(hit.strictScore) >= MIN_ACCEPTABLE_STRICT_SCORE)
+    .map((hit) => ({
+      foodDbKey: String(hit.id),
+      foodName: String(hit.name).trim(),
+      matchScore: Number(hit.matchScore) || 0,
+      strictScore: Number(hit.strictScore) || 0,
+      dbSource: options.dbSource || 'personal',
+      _lookupDb: foodDb,
+    }));
+}
+
 /**
- * Ricerca approssimativa nel DB alimenti locale.
+ * Ricerca a cascata (stesso ordine della ricerca manuale UniversalSearch):
+ * personale → Kentu IT → Kentu globale 🌐.
  *
- * @param {string} rawQuery - Testo grezzo (es. "merluzzo gratinato")
- * @param {object} foodDb
- * @param {{ limit?: number, includeUserHistory?: boolean }} [options]
- * @returns {{
- *   rawQuery: string,
- *   bestMatch: { foodDbKey: string, foodName: string, matchScore: number } | null,
- *   alternatives: Array<{ foodDbKey: string, foodName: string, matchScore: number, strictScore: number }>,
- * }}
+ * @param {string} rawQuery
+ * @param {object} foodDb — DB personale (trackerFoodDatabase)
+ * @param {{ limit?: number, includeUserHistory?: boolean, kentuItDb?: object, globalDb?: object }} [options]
  */
 export function resolveFoodEntity(rawQuery, foodDb, options = {}) {
   const { cleanQuery } = cleanFoodQueryForDbSearch(rawQuery);
   const query = cleanQuery || String(rawQuery || '').trim();
-  if (!query || !foodDb || typeof foodDb !== 'object') {
+  const catalogs = resolveCatalogDbs({
+    foodDb,
+    kentuItDb: options.kentuItDb,
+    globalDb: options.globalDb,
+    kentuItDatabase: options.kentuItDatabase,
+    globalFoodDatabase: options.globalFoodDatabase,
+    masterDb: options.masterDb,
+  });
+
+  if (!query) {
     return { rawQuery: String(rawQuery || '').trim(), bestMatch: null, alternatives: [] };
   }
 
@@ -72,19 +103,30 @@ export function resolveFoodEntity(rawQuery, foodDb, options = {}) {
     ? Math.floor(options.limit)
     : DEFAULT_RESOLVE_LIMIT;
 
-  const hits = searchFoodsDetailed(foodDb, query, {
+  // Cascata: personal first, then Kentu catalogs (same engines as manual search).
+  const personalHits = hitsFromDb(catalogs.personalDb, query, {
     limit,
     includeUserHistory: options.includeUserHistory !== false,
+    dbSource: 'personal',
   });
 
-  const alternatives = hits
-    .filter((hit) => Number(hit.strictScore) >= MIN_ACCEPTABLE_STRICT_SCORE)
-    .map((hit) => ({
-      foodDbKey: String(hit.id),
-      foodName: String(hit.name).trim(),
-      matchScore: Number(hit.matchScore) || 0,
-      strictScore: Number(hit.strictScore) || 0,
-    }));
+  let alternatives = personalHits;
+  if (alternatives.length === 0) {
+    const kentuItHits = hitsFromDb(catalogs.kentuItDb, query, {
+      limit,
+      includeUserHistory: false,
+      dbSource: 'kentu_it',
+    });
+    alternatives = kentuItHits;
+  }
+  if (alternatives.length === 0) {
+    const globalHits = hitsFromDb(catalogs.globalDb, query, {
+      limit,
+      includeUserHistory: false,
+      dbSource: 'global',
+    });
+    alternatives = globalHits;
+  }
 
   return {
     rawQuery: query,
@@ -96,19 +138,32 @@ export function resolveFoodEntity(rawQuery, foodDb, options = {}) {
 /**
  * Calcola porzione e macro da una corrispondenza DB.
  *
- * @param {{ foodDbKey: string, foodName: string, matchScore?: number }} match
+ * @param {{ foodDbKey: string, foodName: string, matchScore?: number, _lookupDb?: object, dbSource?: string }} match
  * @param {number} grams
- * @param {{ foodDb?: object, fullHistory?: object, mealType?: string }} context
+ * @param {{ foodDb?: object, kentuItDb?: object, globalDb?: object, fullHistory?: object, mealType?: string }} context
  */
 export function buildPortionFromDbMatch(match, grams, context = {}) {
   if (!match) return null;
 
-  const foodDb = context.foodDb || {};
+  const catalogs = resolveCatalogDbs(context);
+  const lookupDb = match._lookupDb
+    || (match.foodDbKey != null && catalogs.personalDb?.[match.foodDbKey] != null
+      ? catalogs.personalDb
+      : null)
+    || (match.foodDbKey != null && catalogs.kentuItDb?.[match.foodDbKey] != null
+      ? catalogs.kentuItDb
+      : null)
+    || (match.foodDbKey != null && catalogs.globalDb?.[match.foodDbKey] != null
+      ? catalogs.globalDb
+      : null)
+    || catalogs.personalDb
+    || {};
+
   const fullHistory = context.fullHistory || {};
   const mealType = context.mealType || 'pranzo';
   const g = Math.max(1, Math.round(Number(grams) || 0));
 
-  if (match.foodDbKey != null && foodDb[match.foodDbKey] == null) {
+  if (match.foodDbKey != null && lookupDb[match.foodDbKey] == null) {
     return null;
   }
 
@@ -117,7 +172,10 @@ export function buildPortionFromDbMatch(match, grams, context = {}) {
     qta: g,
     pastoType: mealType,
     preferredDbKey: match.foodDbKey,
-    foodDb,
+    foodDb: lookupDb,
+    // Se preferred è già nel lookupDb, la cascata interna non serve; resta come safety net.
+    kentuItDb: lookupDb === catalogs.personalDb ? catalogs.kentuItDb : null,
+    globalDb: lookupDb === catalogs.personalDb ? catalogs.globalDb : null,
     fullHistory,
   });
 
@@ -134,6 +192,7 @@ export function buildPortionFromDbMatch(match, grams, context = {}) {
     carbo: roundMacro(portion.carb),
     fat: roundMacro(portion.fatTotal ?? portion.fat),
     matchScore: Number(match.matchScore) || 0,
+    dbSource: portion.dbSource || match.dbSource || null,
     status: FOOD_RESOLUTION_STATUS.RESOLVED,
   };
 }
@@ -166,12 +225,12 @@ function buildUnresolvedPortion(query, grams) {
 }
 
 /**
- * Risolve un item pasto (nome grezzo + grammi) con bestMatch e alternative dal DB.
+ * Risolve un item pasto (nome grezzo + grammi) con cascata personale → Kentu IT → globale.
  * Nessun fallback a stime inventate: senza match → NEEDS_RESOLUTION + macro a 0.
  *
  * @param {string} rawName
  * @param {number} grams
- * @param {{ foodDb?: object, fullHistory?: object, mealType?: string, preferredDbKey?: string }} context
+ * @param {{ foodDb?: object, kentuItDb?: object, globalDb?: object, fullHistory?: object, mealType?: string, preferredDbKey?: string }} context
  */
 export function resolveFoodItemForProposal(rawName, grams, context = {}) {
   const { cleanQuery, gramsFromQuery } = cleanFoodQueryForDbSearch(rawName);
@@ -189,57 +248,90 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
     });
   }
 
-  const foodDb = context.foodDb || {};
+  const catalogs = resolveCatalogDbs(context);
 
-  // preferredDbKey valido nel DB → usa direttamente senza search.
-  if (context.preferredDbKey != null && foodDb[context.preferredDbKey] != null) {
-    const preferredPortion = buildPortionFromDbMatch(
+  // preferredDbKey in qualsiasi layer → usa direttamente.
+  if (context.preferredDbKey != null) {
+    const preferredMatch = findFoodDbMatchCascading({
+      ...catalogs,
+      nome: query,
+      preferredDbKey: context.preferredDbKey,
+    });
+    if (preferredMatch) {
+      const preferredPortion = buildPortionFromDbMatch(
+        {
+          foodDbKey: preferredMatch.key,
+          foodName: preferredMatch.foodDb[preferredMatch.key]?.desc
+            || preferredMatch.foodDb[preferredMatch.key]?.name
+            || query,
+          matchScore: 1,
+          dbSource: preferredMatch.source,
+          _lookupDb: preferredMatch.foodDb,
+        },
+        g,
+        context,
+      );
+      if (preferredPortion) {
+        return {
+          ...preferredPortion,
+          rawQuery: query,
+          alternatives: [],
+        };
+      }
+    }
+  }
+
+  // Cascata esatta/forte (stesso findFoodDbKey della ricerca manuale).
+  const cascadeMatch = findFoodDbMatchCascading({
+    ...catalogs,
+    nome: query,
+    preferredDbKey: null,
+  });
+  if (cascadeMatch) {
+    const portion = buildPortionFromDbMatch(
       {
-        foodDbKey: context.preferredDbKey,
-        foodName: foodDb[context.preferredDbKey]?.desc
-          || foodDb[context.preferredDbKey]?.name
+        foodDbKey: cascadeMatch.key,
+        foodName: cascadeMatch.foodDb[cascadeMatch.key]?.desc
+          || cascadeMatch.foodDb[cascadeMatch.key]?.name
           || query,
         matchScore: 1,
+        dbSource: cascadeMatch.source,
+        _lookupDb: cascadeMatch.foodDb,
       },
       g,
       context,
     );
-    if (preferredPortion) {
+    if (portion) {
+      const resolution = resolveFoodEntity(query, catalogs.personalDb, {
+        ...context,
+        kentuItDb: catalogs.kentuItDb,
+        globalDb: catalogs.globalDb,
+        includeUserHistory: false,
+      });
+      const orderedCandidates = orderCandidates(
+        resolution.alternatives,
+        cascadeMatch.key,
+      );
+      const portionAlternatives = orderedCandidates
+        .map((candidate) => buildPortionFromDbMatch(candidate, g, context))
+        .filter(Boolean);
+
       return {
-        ...preferredPortion,
+        ...portion,
         rawQuery: query,
-        alternatives: [],
+        alternatives: portionAlternatives.length >= MIN_ALTERNATIVES_FOR_UI
+          ? portionAlternatives
+          : [],
       };
     }
   }
 
-  const resolution = resolveFoodEntity(query, foodDb, context);
-  const orderedCandidates = orderCandidates(
-    resolution.alternatives,
-    context.preferredDbKey,
-  );
-
-  const portionAlternatives = orderedCandidates
-    .map((candidate) => buildPortionFromDbMatch(candidate, g, context))
-    .filter(Boolean);
-
-  const best = portionAlternatives[0] || null;
-  if (!best) {
-    return buildUnresolvedPortion(query, g);
-  }
-
-  return {
-    ...best,
-    rawQuery: query,
-    alternatives: portionAlternatives.length >= MIN_ALTERNATIVES_FOR_UI
-      ? portionAlternatives
-      : [],
-  };
+  return buildUnresolvedPortion(query, g);
 }
 
 /**
  * @param {Array<object>} rawItems
- * @param {{ foodDb?: object, fullHistory?: object, mealType?: string }} context
+ * @param {{ foodDb?: object, kentuItDb?: object, globalDb?: object, fullHistory?: object, mealType?: string }} context
  */
 export function resolveMealProposalItems(rawItems, context = {}) {
   if (!Array.isArray(rawItems)) return [];

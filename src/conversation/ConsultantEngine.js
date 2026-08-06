@@ -1,7 +1,7 @@
 import { computeTotali } from '../useBiochimico';
 import { getTargetForNutrient } from '../useBiochimico';
 import { searchFoodsDetailed } from '../foodSearch';
-import { estraiDatiFoodDb } from '../features/salaComandi/engines/foodDataEngine';
+import { estraiDatiFoodDb, findFoodDbMatchCascading } from '../features/salaComandi/engines/foodDataEngine';
 import { toCanonicalMealType, generateCortisolCurve } from '../coreEngine';
 import { inferDefaultMealType, expandFoodPayloadItems } from '../features/commandTerminal/conversation/conversationState';
 import {
@@ -956,6 +956,8 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
  */
 export function buildMealLogProposalFromPayload(payload, currentAppState = {}, options = {}) {
   const foodDb = currentAppState?.foodDatabase || {};
+  const kentuItDb = currentAppState?.kentuItDatabase || currentAppState?.kentuItDb || {};
+  const globalDb = currentAppState?.globalFoodDatabase || currentAppState?.globalDb || currentAppState?.masterDb || {};
   const fullHistory = currentAppState?.fullHistory || {};
   const userText = String(options.userText || '').trim();
   const conversationTexts = Array.isArray(options.conversationTexts)
@@ -969,7 +971,13 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
   const mealType = withDefaults.mealType;
   const exactTime = withDefaults.exactTime;
 
-  const resolveContext = { foodDb, fullHistory, mealType };
+  const resolveContext = {
+    foodDb,
+    kentuItDb,
+    globalDb,
+    fullHistory,
+    mealType,
+  };
   const resolvedItems = resolveMealProposalItems(
     rawItems.map((item) => ({
       rawQuery: item.foodName,
@@ -1605,8 +1613,27 @@ function mapCandidateToPortion(row, foodDb, fullHistory, mealType) {
 
 function buildFoodCandidates(targetFood, currentAppState, mealType) {
   const foodDb = currentAppState?.foodDatabase || {};
+  const kentuItDb = currentAppState?.kentuItDatabase || {};
+  const globalDb = currentAppState?.globalFoodDatabase || {};
+  const fullHistory = currentAppState?.fullHistory || {};
   const query = String(targetFood || '').trim();
   if (!query) return [];
+
+  const cascadeMatch = findFoodDbMatchCascading({
+    personalDb: foodDb,
+    kentuItDb,
+    globalDb,
+    nome: query,
+  });
+  if (cascadeMatch) {
+    const portion = mapCandidateToPortion(
+      { id: cascadeMatch.key, name: cascadeMatch.foodDb[cascadeMatch.key]?.desc },
+      cascadeMatch.foodDb,
+      fullHistory,
+      mealType,
+    );
+    return portion ? [portion] : [];
+  }
 
   const hits = searchFoodsDetailed(foodDb, query, {
     limit: 3,
@@ -1614,9 +1641,7 @@ function buildFoodCandidates(targetFood, currentAppState, mealType) {
     includeUserHistory: true,
   });
 
-  const fullHistory = currentAppState?.fullHistory || {};
   return hits
-    .slice(0, 3)
     .map((row) => mapCandidateToPortion(row, foodDb, fullHistory, mealType))
     .filter(Boolean);
 }
@@ -1697,6 +1722,8 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
   const wipSubIntent = String(options?.wipSubIntent || mealWipMeta?.subIntent || '').trim().toUpperCase() || null;
   const foodQuery = isGenericSuggestion ? '' : (extractTargetFoodFromQuery(rawQuery) || rawQuery);
   const foodDb = currentAppState?.foodDatabase || {};
+  const kentuItDb = currentAppState?.kentuItDatabase || currentAppState?.kentuItDb || {};
+  const globalDb = currentAppState?.globalFoodDatabase || currentAppState?.globalDb || currentAppState?.masterDb || {};
   const nutrition = buildNutritionContextForState(currentAppState);
   let currentMealType = nutrition.currentMealType;
   if (isConsultantMealMode && consultantMealRequest?.mealType) {
@@ -1740,7 +1767,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
         grams: Math.round(Number(it?.grams ?? it?.qta) || 0),
         rawQuery: String(it?.foodName || it?.name || '').trim(),
       },
-      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      { foodDatabase: foodDb, kentuItDatabase: kentuItDb, globalFoodDatabase: globalDb, fullHistory: currentAppState?.fullHistory || {} },
       partialMealType,
     ))
     .filter(Boolean);
@@ -1775,7 +1802,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
         carbo: Number(it?.carbo) || 0,
         fat: Number(it?.fat) || 0,
       },
-      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      { foodDatabase: foodDb, kentuItDatabase: kentuItDb, globalFoodDatabase: globalDb, fullHistory: currentAppState?.fullHistory || {} },
       wipMealType,
     ))
     .filter(Boolean);
@@ -1811,7 +1838,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
         grams: Math.round(Number(it?.grams ?? it?.qta) || 0),
         rawQuery: String(it?.foodName || it?.name || '').trim(),
       },
-      { foodDatabase: foodDb, fullHistory: currentAppState?.fullHistory || {} },
+      { foodDatabase: foodDb, kentuItDatabase: kentuItDb, globalFoodDatabase: globalDb, fullHistory: currentAppState?.fullHistory || {} },
       mealDraftType,
     ))
     .filter(Boolean)
@@ -1973,6 +2000,8 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     dailyCalorieStrategy,
     eveningMetabolicContext,
     foodDatabase: foodDb,
+    kentuItDatabase: kentuItDb,
+    globalFoodDatabase: globalDb,
     fullHistory: currentAppState?.fullHistory || {},
   };
 }
@@ -2315,10 +2344,20 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
   if (!item) return null;
 
   const foodDb = adviceContext?.foodDatabase || {};
+  const kentuItDb = adviceContext?.kentuItDatabase || adviceContext?.kentuItDb || {};
+  const globalDb = adviceContext?.globalFoodDatabase || adviceContext?.globalDb || {};
   const fullHistory = adviceContext?.fullHistory || {};
   const rawName = String(item.rawQuery || item.foodName || '').trim();
   const grams = Math.round(Number(item.grams ?? item.qta) || 0);
   if (!rawName || !Number.isFinite(grams) || grams <= 0) return null;
+
+  const resolveCtx = {
+    foodDb,
+    kentuItDb,
+    globalDb,
+    fullHistory,
+    mealType,
+  };
 
   // Già risolto / appreso: se c'è foodDbKey, ricalcola dal DB locale.
   if (
@@ -2327,9 +2366,7 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
     && (item.resolutionSource === 'learned_db' || item.resolutionSource === 'manual')
   ) {
     const fromDb = resolveFoodItemForProposal(rawName, grams, {
-      foodDb,
-      fullHistory,
-      mealType,
+      ...resolveCtx,
       preferredDbKey: item.foodDbKey,
     });
     if (fromDb && fromDb.status !== 'NEEDS_RESOLUTION') {
@@ -2354,9 +2391,7 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
   }
 
   const resolved = resolveFoodItemForProposal(rawName, grams, {
-    foodDb,
-    fullHistory,
-    mealType,
+    ...resolveCtx,
     preferredDbKey: item.foodDbKey ?? null,
   });
 

@@ -16,6 +16,8 @@ export default function KentuChatUI({
   onAcceptMealProposal,
   onLearnUnresolvedFood = null,
   foodDatabase = {},
+  kentuItDatabase = {},
+  globalFoodDatabase = {},
   fullHistory = {},
   onDraftConfirm,
   onDraftCancel,
@@ -71,6 +73,8 @@ export default function KentuChatUI({
         onAcceptMealProposal={onAcceptMealProposal}
         onLearnUnresolvedFood={onLearnUnresolvedFood}
         foodDatabase={foodDatabase}
+        kentuItDatabase={kentuItDatabase}
+        globalFoodDatabase={globalFoodDatabase}
         fullHistory={fullHistory}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}

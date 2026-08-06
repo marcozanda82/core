@@ -144,6 +144,7 @@ function ResolutionActions({
   onScanBarcode = null,
   onUseLabelPhoto = null,
   onOpenManual = null,
+  onCorrectName = null,
 }) {
   const btnClass =
     'inline-flex items-center gap-1 rounded-lg border border-slate-600/70 bg-slate-900/90 px-2 py-1.5 text-[11px] font-medium text-slate-100 transition hover:border-cyan-500/50 hover:bg-slate-800 disabled:opacity-40';
@@ -160,6 +161,14 @@ function ResolutionActions({
         </p>
       ) : (
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Risolvi alimento">
+        <button
+          type="button"
+          className={btnClass}
+          disabled={disabled}
+          onClick={() => onCorrectName?.(itemIdx)}
+        >
+          ✏️ Correggi Nome
+        </button>
         <button
           type="button"
           className={btnClass}
@@ -208,9 +217,13 @@ function ReceiptItemRow({
   onUseLabelPhoto = null,
   onManualResolve = null,
   onManualOpen = null,
+  onCorrectNameSubmit = null,
   statusHint = '',
 }) {
   const [open, setOpen] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(() => String(item?.foodName || item?.name || '').trim());
+  const nameInputRef = useRef(null);
   const rootRef = useRef(null);
   const listId = useId();
   const name = String(item?.foodName || item?.name || 'Alimento').trim();
@@ -219,6 +232,19 @@ function ReceiptItemRow({
   const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
   const canSwap = typeof onSelectAlternative === 'function' && alternatives.length > 1;
   const needsResolution = String(item?.status || '') === NEEDS_RESOLUTION;
+
+  useEffect(() => {
+    setDraftName(String(item?.foodName || item?.name || '').trim());
+  }, [item?.foodName, item?.name]);
+
+  useEffect(() => {
+    if (!editingName) return undefined;
+    const t = window.setTimeout(() => {
+      nameInputRef.current?.focus?.();
+      nameInputRef.current?.select?.();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [editingName]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -238,6 +264,13 @@ function ReceiptItemRow({
     };
   }, [open]);
 
+  const submitNameCorrection = () => {
+    const next = String(draftName || '').trim();
+    if (!next) return;
+    setEditingName(false);
+    void onCorrectNameSubmit?.(itemIdx, next);
+  };
+
   return (
     <li
       ref={rootRef}
@@ -246,7 +279,33 @@ function ReceiptItemRow({
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] leading-snug text-slate-100">
           <span className="mr-1.5 inline-block" aria-hidden>{icon}</span>
-          {name}
+          {editingName && needsResolution ? (
+            <input
+              ref={nameInputRef}
+              type="text"
+              value={draftName}
+              disabled={disabled || isProcessing}
+              aria-label="Correggi nome alimento"
+              className="ml-0.5 inline-block max-w-[min(100%,14rem)] rounded-md border border-cyan-500/50 bg-slate-900 px-2 py-1 text-[13px] text-slate-100 outline-none focus:border-cyan-400"
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submitNameCorrection();
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setDraftName(name);
+                  setEditingName(false);
+                }
+              }}
+              onBlur={() => {
+                // Non chiudere subito: lascia Invio/Annulla gestiti da keydown.
+              }}
+            />
+          ) : (
+            name
+          )}
           {canSwap && !needsResolution ? (
             <button
               type="button"
@@ -269,7 +328,31 @@ function ReceiptItemRow({
         </span>
       </div>
 
-      {needsResolution && !manualOpen ? (
+      {needsResolution && editingName ? (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            disabled={disabled || isProcessing}
+            className="rounded-lg bg-cyan-600/90 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-cyan-500 disabled:opacity-40"
+            onClick={submitNameCorrection}
+          >
+            Riprova ricerca
+          </button>
+          <button
+            type="button"
+            disabled={disabled || isProcessing}
+            className="rounded-lg border border-slate-600/70 bg-slate-800/80 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 transition hover:bg-slate-700 disabled:opacity-40"
+            onClick={() => {
+              setDraftName(name);
+              setEditingName(false);
+            }}
+          >
+            Annulla
+          </button>
+        </div>
+      ) : null}
+
+      {needsResolution && !manualOpen && !editingName ? (
         <ResolutionActions
           itemIdx={itemIdx}
           disabled={disabled}
@@ -278,6 +361,7 @@ function ReceiptItemRow({
           onScanBarcode={onScanBarcode}
           onUseLabelPhoto={onUseLabelPhoto}
           onOpenManual={onManualOpen}
+          onCorrectName={() => setEditingName(true)}
         />
       ) : null}
 
@@ -349,7 +433,7 @@ function ReceiptItemRow({
  *   onSelectAlternative?: ((itemIndex: number, alternative: object) => void) | null,
  *   onScanBarcode?: ((itemIndex: number) => void) | null,
  *   onUseLabelPhoto?: ((itemIndex: number) => void) | null,
- *   onManualResolve?: ((itemIndex: number, macros: object) => void | Promise<void>) | null,
+ *   onCorrectNameSubmit?: ((itemIndex: number, newName: string) => void | Promise<void>) | null,
  *   processingItemIdx?: number | null,
  *   manualOpenForIdx?: number | null,
  *   onManualOpenForIdx?: ((idx: number | null) => void) | null,
@@ -366,6 +450,7 @@ export default function MealReceiptMessage({
   onScanBarcode = null,
   onUseLabelPhoto = null,
   onManualResolve = null,
+  onCorrectNameSubmit = null,
   processingItemIdx = null,
   manualOpenForIdx = null,
   onManualOpenForIdx = null,
@@ -435,6 +520,7 @@ export default function MealReceiptMessage({
             onUseLabelPhoto={onUseLabelPhoto}
             onManualResolve={onManualResolve}
             onManualOpen={(itemIndex) => onManualOpenForIdx?.(itemIndex)}
+            onCorrectNameSubmit={onCorrectNameSubmit}
             statusHint={statusHintForIdx === idx ? statusHint : ''}
           />
         ))}

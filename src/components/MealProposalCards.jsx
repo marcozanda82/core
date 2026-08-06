@@ -212,7 +212,7 @@ function scaleItemMacros(item, newGrams) {
   };
 }
 
-function recalcItemMacros(item, foodDatabase, fullHistory, mealType) {
+function recalcItemMacros(item, foodDatabase, fullHistory, mealType, catalogDbs = {}) {
   const foodName = String(item?.foodName || item?.name || '').trim();
   const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
   if (!foodName) return { ...item, grams };
@@ -226,6 +226,8 @@ function recalcItemMacros(item, foodDatabase, fullHistory, mealType) {
 
   const resolved = resolveFoodItemForProposal(foodName, grams, {
     foodDb: foodDatabase || {},
+    kentuItDb: catalogDbs.kentuItDb || {},
+    globalDb: catalogDbs.globalDb || {},
     fullHistory: fullHistory || {},
     mealType,
     preferredDbKey: item?.foodDbKey,
@@ -375,6 +377,8 @@ function MealProposalCard({
   adviceId,
   isLoaded,
   foodDatabase,
+  kentuItDatabase = {},
+  globalFoodDatabase = {},
   fullHistory,
   onConfirm,
   onDraftChange,
@@ -446,6 +450,11 @@ function MealProposalCard({
     onDraftChange?.(index, synced);
   }, [index, onDraftChange]);
 
+  const showCameraHint = useCallback((itemIndex, message) => {
+    setCameraHintForIdx(itemIndex);
+    setCameraHint(String(message || '').trim());
+  }, []);
+
   const handleSelectAlternative = useCallback((itemIndex, alternative) => {
     if (!alternative) return;
     const nextItems = items.map((item, ii) => {
@@ -470,10 +479,82 @@ function MealProposalCard({
     });
   }, [commitProposal, items, localProposal]);
 
-  const showCameraHint = useCallback((itemIndex, message) => {
-    setCameraHintForIdx(itemIndex);
-    setCameraHint(String(message || '').trim());
-  }, []);
+  const handleCorrectNameSubmit = useCallback((itemIndex, newName) => {
+    const item = items[itemIndex];
+    if (!item) return;
+    const cleaned = String(newName || '').trim();
+    if (!cleaned) return;
+
+    const grams = Math.max(1, Math.round(Number(item.grams) || 0));
+    const resolved = resolveFoodItemForProposal(cleaned, grams, {
+      foodDb: foodDatabase || {},
+      kentuItDb: kentuItDatabase || {},
+      globalDb: globalFoodDatabase || {},
+      fullHistory: fullHistory || {},
+      mealType,
+    });
+
+    if (resolved && resolved.status !== FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION) {
+      const nextItems = items.map((it, ii) => {
+        if (ii !== itemIndex) return it;
+        return {
+          ...it,
+          foodName: resolved.foodName || cleaned,
+          foodDbKey: resolved.foodDbKey ?? null,
+          grams: resolved.grams ?? grams,
+          kcal: resolved.kcal,
+          pro: resolved.pro,
+          carbo: resolved.carbo,
+          fat: resolved.fat,
+          alternatives: resolved.alternatives ?? [],
+          status: FOOD_RESOLUTION_STATUS.RESOLVED,
+          resolutionSource: undefined,
+          rawQuery: cleaned,
+        };
+      });
+      commitProposal({
+        ...localProposal,
+        items: nextItems,
+        totals: sumItemMacros(nextItems),
+      });
+      setCameraHint('');
+      setCameraHintForIdx(null);
+      return;
+    }
+
+    // Nome aggiornato ma ancora non trovato: resta NEEDS_RESOLUTION.
+    const nextItems = items.map((it, ii) => {
+      if (ii !== itemIndex) return it;
+      return {
+        ...it,
+        foodName: cleaned,
+        foodDbKey: null,
+        kcal: 0,
+        pro: 0,
+        carbo: 0,
+        fat: 0,
+        status: FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
+        alternatives: [],
+        rawQuery: cleaned,
+      };
+    });
+    commitProposal({
+      ...localProposal,
+      items: nextItems,
+      totals: sumItemMacros(nextItems),
+    });
+    showCameraHint(itemIndex, 'Nome aggiornato ma non trovato nel DB — riprova o inserisci manualmente');
+  }, [
+    commitProposal,
+    foodDatabase,
+    fullHistory,
+    globalFoodDatabase,
+    items,
+    kentuItDatabase,
+    localProposal,
+    mealType,
+    showCameraHint,
+  ]);
 
   const captureForFoodResolution = useCallback(async (itemIndex, mode) => {
     if (isLoaded || processingItemIdx != null) return;
@@ -640,6 +721,7 @@ function MealProposalCard({
       foodDatabase,
       fullHistory,
       mealType,
+      { kentuItDb: kentuItDatabase, globalDb: globalFoodDatabase },
     ));
     commitProposal({
       ...localProposal,
@@ -687,6 +769,7 @@ function MealProposalCard({
             onScanBarcode={handleScanBarcode}
             onUseLabelPhoto={handleUseLabelPhoto}
             onManualResolve={handleManualResolve}
+            onCorrectNameSubmit={handleCorrectNameSubmit}
             processingItemIdx={processingItemIdx}
             manualOpenForIdx={manualOpenForIdx}
             onManualOpenForIdx={setManualOpenForIdx}
@@ -789,6 +872,8 @@ export default function MealProposalCards({
   adviceId,
   loadedProposalIds = [],
   foodDatabase = {},
+  kentuItDatabase = {},
+  globalFoodDatabase = {},
   fullHistory = {},
   onConfirm,
   onLearnUnresolvedFood = null,
@@ -826,6 +911,8 @@ export default function MealProposalCards({
             adviceId={adviceId}
             isLoaded={isLoaded}
             foodDatabase={foodDatabase}
+            kentuItDatabase={kentuItDatabase}
+            globalFoodDatabase={globalFoodDatabase}
             fullHistory={fullHistory}
             onConfirm={onConfirm}
             onDraftChange={handleDraftChange}
