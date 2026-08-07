@@ -435,6 +435,11 @@ export function useCommandTerminal({
         const diabetesMode = isHealthDiabetesChatMode(currentState?.userProfile, healthUid);
         let diabetesSplitAck = '';
         let classified = null;
+        const mealQuickReply = Boolean(
+          options?.fromQuickReply
+          || options?.clarificationReply
+          || options?.fromSlotQuickReply,
+        );
 
         if (diabetesMode) {
           if (!resolvedText) {
@@ -445,13 +450,30 @@ export function useCommandTerminal({
             return { ok: true, healthMode: true, reason: 'text_required' };
           }
 
+          // History PRIMA del messaggio corrente: altrimenti i detector di chiarimento
+          // vedono subito lo user e falliscono (es. tap su «100g»).
           classified = classifyDiabetesChatIntent(resolvedText, {
-            chatHistory: historyForLlm,
+            chatHistory: priorHistory,
             wipMealItems: wipSnapshot.wipMealItems || [],
           });
 
+          // Pulsanti grammi / chiarimento pasto: stesso percorso della versione standard.
+          if (mealQuickReply && !classified.isGlycemia && !classified.isTherapy) {
+            classified = {
+              ...classified,
+              route: 'NUTRITION',
+              isMeal: true,
+              isClarificationFollowUp: true,
+            };
+          }
+
           // Solo glicemia/farmaci puri → health. Tutto il cibo (anche follow-up) → nutrizione.
-          if (classified.route === 'HEALTH' && !classified.isMeal && !classified.isClarificationFollowUp) {
+          if (
+            classified.route === 'HEALTH'
+            && !classified.isMeal
+            && !classified.isClarificationFollowUp
+            && !mealQuickReply
+          ) {
             try {
               const healthResult = await processHealthChatMessage(resolvedText, {
                 uid: healthUid || undefined,
@@ -526,15 +548,16 @@ export function useCommandTerminal({
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
         let forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
         if (!forcedIntent && diabetesMode) {
-          // Continuity pasti: elenco alimenti / follow-up → ADD_FOOD sul motore nutrizione.
+          // Continuity pasti: elenco alimenti / follow-up / tap grammi → ADD_FOOD standard.
           const mealRoute = classified && typeof classified === 'object'
             ? classified
             : classifyDiabetesChatIntent(resolvedText, {
-              chatHistory: historyForLlm,
+              chatHistory: priorHistory,
               wipMealItems: wipSnapshot.wipMealItems || [],
             });
           if (
-            mealRoute.isMeal
+            mealQuickReply
+            || mealRoute.isMeal
             || mealRoute.isClarificationFollowUp
             || mealRoute.route === 'NUTRITION'
             || mealRoute.route === 'SPLIT'

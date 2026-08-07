@@ -88,20 +88,42 @@ export function wasLastAiMessageMealPrompt(chatHistory = []) {
   for (let i = (chatHistory || []).length - 1; i >= 0; i -= 1) {
     const entry = chatHistory[i];
     if (!entry || entry.isTyping) continue;
-    if (entry.sender === 'user') return false;
+    // Ignora turni utente in coda (stesso motivo di wasLastAiMessageClarification).
+    if (entry.sender === 'user') continue;
     if (entry.sender !== 'ai') continue;
 
     const text = String(entry.text || '');
     if (MEAL_CONTEXT_ASK_RE.test(text)) return true;
     if (/\b(?:pasto|colazione|pranzo|cena|snack|alimenti|cibo|mangiat)\b/i.test(text)
-      && /\b(?:dimmi|specie|precis|dettagl|quale|quanto|cosa|tipo|quantit)\b/i.test(text)) {
+      && /\b(?:dimmi|specie|precis|dettagl|quale|quanto|cosa|tipo|quantit|gramm)\b/i.test(text)) {
       return true;
     }
-    // Meal draft / proposal cards = contesto nutrizione attivo
     if (entry.mealProposal || entry.mealDraft || entry.mealProposals || entry.type === 'MEAL_RECEIPT') {
       return true;
     }
+    if (Array.isArray(entry.quickReplies) && entry.quickReplies.some((r) =>
+      /\d+\s*(?:g|gr|grammi)\b/i.test(String(r?.label || r?.text || r || '')),
+    )) {
+      return true;
+    }
     return false;
+  }
+  return false;
+}
+
+/**
+ * Risposta solo grammature / porzioni (es. «100g», «80 gr», «una porzione»).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function looksLikeGramsOnlyReply(userText) {
+  const text = String(userText || '').trim();
+  if (!text || text.length > 40) return false;
+  if (looksLikeGlycemiaLog(text) || looksLikeTherapyException(text)) return false;
+  if (/^(\d+(?:[.,]\d+)?)\s*(?:g|gr|grammi)\b\.?$/i.test(text)) return true;
+  if (/^(?:una?\s+)?(?:mezza\s+)?porzion[ei]?\b/i.test(text)) return true;
+  if (/^\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b/i.test(text) && text.split(/\s+/).length <= 4) {
+    return true;
   }
   return false;
 }
@@ -145,9 +167,9 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
   // Continuity: risposta a chiarimento / domanda pasto → sempre nutrizione.
   if (isClarificationFollowUpReply(text, history) || wasLastAiMessageMealPrompt(history)) {
     if (!looksLikeGlycemiaLog(text) && !looksLikeTherapyException(text, opts.terapiaBase || null)) {
-      // Anche senza verbali tipici: “pomodoro e pane…”
       if (
-        looksLikeFoodListReply(text)
+        looksLikeGramsOnlyReply(text)
+        || looksLikeFoodListReply(text)
         || FOOD_SIGNAL_RE.test(text)
         || isFoodRegistrationIntent(text)
         || text.length <= 120
@@ -155,6 +177,11 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
         return true;
       }
     }
+  }
+
+  // Grammature da pulsante anche senza history tipizzata → nutrizione se non clinico.
+  if (looksLikeGramsOnlyReply(text) && !looksLikeGlycemiaLog(text) && !looksLikeTherapyException(text)) {
+    return true;
   }
 
   const therapyOnly =
@@ -217,12 +244,19 @@ export function classifyDiabetesChatIntent(userText, opts = {}) {
       wasLastAiMessageMealPrompt(opts.chatHistory || [])
       && !isGlycemia
       && !isTherapy
+    )
+    || (
+      looksLikeGramsOnlyReply(userText)
+      && wasLastAiMessageMealPrompt(opts.chatHistory || [])
+      && !isGlycemia
+      && !isTherapy
     );
   const isMeal = looksLikeNutritionIntent(userText, {
     chatHistory: opts.chatHistory,
     wipMealItems: opts.wipMealItems,
     terapiaBase: opts.terapiaBase,
-  }) || (isClarificationFollowUp && !isGlycemia && !isTherapy);
+  }) || (isClarificationFollowUp && !isGlycemia && !isTherapy)
+    || (looksLikeGramsOnlyReply(userText) && !isGlycemia && !isTherapy);
 
   /** @type {DiabetesChatRoute} */
   let route = 'HEALTH';

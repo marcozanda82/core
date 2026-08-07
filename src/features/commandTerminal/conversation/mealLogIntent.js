@@ -1319,6 +1319,7 @@ export function looksLikeComplexMealLog(userText) {
 
 /**
  * Ultimo messaggio AI era un chiarimento (pulsanti / domanda grammi-tipo).
+ * Ignora i turni utente in coda (serve quando history include già la risposta corrente).
  * @param {Array<object>} [chatHistory]
  * @returns {boolean}
  */
@@ -1326,12 +1327,19 @@ export function wasLastAiMessageClarification(chatHistory = []) {
   for (let i = (chatHistory || []).length - 1; i >= 0; i -= 1) {
     const entry = chatHistory[i];
     if (!entry || entry.isTyping) continue;
-    if (entry.sender === 'user') return false;
+    // Salta messaggi utente in coda (es. la risposta ai grammi appena aggiunta).
+    if (entry.sender === 'user') continue;
     if (entry.sender !== 'ai') continue;
     if (entry.clarification === true || entry.type === 'ASK_CLARIFICATION') return true;
     if (Array.isArray(entry.quickReplies) && entry.quickReplies.length >= 2) {
       const t = String(entry.text || '');
-      if (/\b(?:gramm|quantit|quanto|quale|che\s+tipo|che\s+pasta|precis|dettagl|opzion)/i.test(t)) {
+      const repliesLookLikeGrams = entry.quickReplies.some((r) =>
+        /\d+\s*(?:g|gr|grammi)?\b/i.test(String(r?.label || r?.text || r || '')),
+      );
+      if (
+        repliesLookLikeGrams
+        || /\b(?:gramm|quantit|quanto|quale|che\s+tipo|che\s+pasta|precis|dettagl|opzion)\b/i.test(t)
+      ) {
         return true;
       }
     }
