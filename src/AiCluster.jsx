@@ -189,9 +189,21 @@ export default function AiCluster({
   );
 
   const visibleQuickReplies = useMemo(() => {
-    if (!hasActiveWorkoutDraft) return activeQuickReplies;
-    return activeQuickReplies.filter(
-      (label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()),
+    const normalized = (activeQuickReplies || []).map((entry) => {
+      if (entry && typeof entry === 'object') {
+        return {
+          label: String(entry.label || entry.text || '').trim(),
+          foodDbKey: entry.foodDbKey ?? entry.id ?? null,
+          foodName: entry.foodName || entry.name || null,
+          grams: entry.grams ?? null,
+          action: entry.action || null,
+        };
+      }
+      return { label: String(entry ?? '').trim(), foodDbKey: null, foodName: null, grams: null, action: null };
+    }).filter((e) => e.label);
+    if (!hasActiveWorkoutDraft) return normalized;
+    return normalized.filter(
+      (entry) => !/^s[iì]\s*,\s*salva\b/i.test(entry.label),
     );
   }, [activeQuickReplies, hasActiveWorkoutDraft]);
 
@@ -592,7 +604,10 @@ export default function AiCluster({
                 if (isClarification && consumedClarificationKeys.has(clarificationKey)) return null;
                 // Evita doppio pulsante camera se già mostrato sopra per REQUEST_FOOD_PHOTO.
                 const replies = (msg.type === 'REQUEST_FOOD_PHOTO' || msg.requestFoodPhoto)
-                  ? msg.quickReplies.filter((r) => !isFoodPhotoQuickReply(r))
+                  ? msg.quickReplies.filter((r) => {
+                    const label = typeof r === 'object' ? r.label : r;
+                    return !isFoodPhotoQuickReply(label) && !(r && typeof r === 'object' && r.action === 'photo');
+                  })
                   : msg.quickReplies;
                 if (replies.length === 0) return null;
                 return (
@@ -602,6 +617,11 @@ export default function AiCluster({
                 >
                   {replies.map((reply, rIdx) => {
                     const morningActivityIds = ['weights', 'cardio', 'rest'];
+                    const replyObj = reply && typeof reply === 'object' ? reply : null;
+                    const replyLabel = replyObj
+                      ? String(replyObj.label || replyObj.text || '').trim()
+                      : String(reply || '').trim();
+                    if (!replyLabel) return null;
                     return (
                       <KentuButton
                         key={rIdx}
@@ -615,20 +635,20 @@ export default function AiCluster({
                               return next;
                             });
                           }
-                          if (isFoodPhotoQuickReply(reply) || msg.requestFoodPhoto) {
-                            if (isFoodPhotoQuickReply(reply)) {
+                          if (isFoodPhotoQuickReply(replyLabel) || replyObj?.action === 'photo' || msg.requestFoodPhoto) {
+                            if (isFoodPhotoQuickReply(replyLabel) || replyObj?.action === 'photo') {
                               openFoodPhotoCapture();
                               setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                               return;
                             }
                           }
                           if (msg.workoutTimeConfirm) {
-                            onSendMessage(reply, {
+                            onSendMessage(replyLabel, {
                               fromQuickReply: true,
                               workoutTimeReply: rIdx === 0 ? 'accept' : 'reject',
                             });
                           } else if (msg.eveningBriefing && (rIdx === 0 || rIdx === 1)) {
-                            onSendMessage(reply, {
+                            onSendMessage(replyLabel, {
                               fromQuickReply: true,
                               eveningBriefingReply: {
                                 action: rIdx === 0 ? 'yes' : 'no',
@@ -637,7 +657,7 @@ export default function AiCluster({
                               },
                             });
                           } else if (msg.morningBriefing?.status && morningActivityIds[rIdx]) {
-                            onSendMessage(reply, {
+                            onSendMessage(replyLabel, {
                               fromQuickReply: true,
                               morningBriefingReply: {
                                 status: msg.morningBriefing.status,
@@ -645,12 +665,24 @@ export default function AiCluster({
                               },
                             });
                           } else {
-                            onSendMessage(reply, { fromQuickReply: true, clarificationReply: isClarification });
+                            const wizardSelection = replyObj && (replyObj.foodDbKey || replyObj.foodName)
+                              ? {
+                                  foodDbKey: replyObj.foodDbKey ?? null,
+                                  foodName: replyObj.foodName || null,
+                                  grams: replyObj.grams ?? null,
+                                  action: replyObj.action || null,
+                                }
+                              : null;
+                            onSendMessage(replyLabel, {
+                              fromQuickReply: true,
+                              clarificationReply: isClarification,
+                              wizardSelection,
+                            });
                           }
                           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                         }}
                       >
-                        {reply}
+                        {replyLabel}
                       </KentuButton>
                     );
                   })}
@@ -740,21 +772,29 @@ export default function AiCluster({
         )}
         {visibleQuickReplies.length > 0 ? (
           <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
-            {visibleQuickReplies.map((label) => (
+            {visibleQuickReplies.map((entry) => (
               <button
-                key={label}
+                key={entry.label}
                 type="button"
                 onClick={() => {
-                  if (isFoodPhotoQuickReply(label)) {
+                  if (isFoodPhotoQuickReply(entry.label) || entry.action === 'photo') {
                     openFoodPhotoCapture();
                   } else {
-                    onSlotQuickReplyClick?.(label);
+                    const wizardSelection = (entry.foodDbKey || entry.foodName)
+                      ? {
+                          foodDbKey: entry.foodDbKey,
+                          foodName: entry.foodName,
+                          grams: entry.grams,
+                          action: entry.action,
+                        }
+                      : null;
+                    onSlotQuickReplyClick?.(entry.label, { wizardSelection });
                   }
                   setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 }}
                 className="shrink-0 rounded-full border border-cyan-500/30 bg-slate-900/70 px-3.5 py-1.5 text-sm font-medium text-cyan-200 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 hover:text-cyan-50"
               >
-                {label}
+                {entry.label}
               </button>
             ))}
           </div>

@@ -137,8 +137,10 @@ import {
   buildFoodPayloadFromWizard,
   classifyWizardFinalReply,
   resolveWizardPendingQueue,
+  mergeExplicitGramsIntoQueue,
   shouldForceSequentialFoodWizard,
   sanitizeWizardFoodName,
+  resolveWizardSelection,
 } from './conversation/sequentialFoodWizard.js';
 import {
   applyHistoricalWorkoutKcalDefault,
@@ -556,7 +558,12 @@ export class CommandTerminalController {
     const fallbackItems = items.length > 0
       ? items
       : [{ foodName: String(payload?.foodName || '').trim(), grams: payload?.grams }];
-    const pendingItems = resolveWizardPendingQueue(fallbackItems, bareNames);
+    let pendingItems = resolveWizardPendingQueue(fallbackItems, bareNames);
+    // Grammi espliciti dal testo utente (anche se LLM li ha droppati).
+    const natural = parseConsumedMealFromNaturalText(userText);
+    if (natural?.items?.length) {
+      pendingItems = mergeExplicitGramsIntoQueue(pendingItems, natural.items);
+    }
     if (pendingItems.length === 0) {
       return { ok: false, reason: 'empty_wizard_queue' };
     }
@@ -646,7 +653,23 @@ export class CommandTerminalController {
       return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
     }
 
-    const parsed = parseWizardItemReply(state, text);
+    // Click bottone strutturato: accetta foodDbKey/foodName ESATTI — zero fuzzy re-search.
+    let parsed;
+    const selection = options?.wizardSelection && typeof options.wizardSelection === 'object'
+      ? options.wizardSelection
+      : null;
+    if (selection && (selection.foodDbKey || selection.foodName || selection.action === 'photo')) {
+      parsed = resolveWizardSelection(state, selection);
+      console.log('🧙 DEBUG - WIZARD SELECTION (exact click):', {
+        foodDbKey: selection.foodDbKey,
+        foodName: selection.foodName,
+        grams: selection.grams,
+        resolved: parsed.resolved?.foodName,
+      });
+    } else {
+      parsed = parseWizardItemReply(state, text);
+    }
+
     if (parsed.requestPhoto) {
       return this.publishRequestFoodPhoto(
         {

@@ -323,7 +323,10 @@ export function useCommandTerminal({
         const text = String(payload.displayText || payload.text || payload.message || '').trim();
         const spokenText = String(payload.spokenText || text).trim();
         const quickReplies = Array.isArray(payload.quickReplies)
-          ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+          ? payload.quickReplies
+            .map((o) => (o && typeof o === 'object' ? o : String(o || '').trim()))
+            .filter((o) => (typeof o === 'object' ? String(o.label || '').trim() : o))
+            .slice(0, 5)
           : [];
         if (!text) return;
         appendAiMessage(text, {
@@ -608,6 +611,11 @@ export function useCommandTerminal({
           mealWipActive: Boolean(wipSnapshot.mealWipActive),
           systemInstructionExtra: options?.systemInstructionExtra || null,
           signal: abortController.signal,
+          fromQuickReply: Boolean(options?.fromQuickReply),
+          clarificationReply: Boolean(options?.clarificationReply),
+          wizardSelection: options?.wizardSelection && typeof options.wizardSelection === 'object'
+            ? options.wizardSelection
+            : null,
         });
 
         if (
@@ -683,9 +691,12 @@ export function useCommandTerminal({
   );
 
   const handleQuickReplyClick = useCallback(
-    (text) => {
+    (text, extra = {}) => {
       const label = String(text ?? '').trim();
       if (!label) return Promise.resolve({ ok: false, reason: 'empty_quick_reply' });
+      const wizardSelection = extra?.wizardSelection && typeof extra.wizardSelection === 'object'
+        ? extra.wizardSelection
+        : null;
 
       const snap = controller.getConversationSnapshot();
 
@@ -696,11 +707,11 @@ export function useCommandTerminal({
           appendAiMessage('Inserimento annullato.');
           return Promise.resolve({ ok: true, cancelled: true });
         }
-        return sendMessage(label, { fromSlotQuickReply: true });
+        return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
       }
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_TIME) {
-        return sendMessage(label, { fromSlotQuickReply: true });
+        return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
       }
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
@@ -730,11 +741,15 @@ export function useCommandTerminal({
             appendAiMessage('Modifica i dati nella card qui sopra, poi conferma.');
             return Promise.resolve({ ok: true, awaiting: true, reason: 'inline_workout_edit' });
           }
-          return sendMessage(label, { fromSlotQuickReply: true });
+          return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
         }
       }
 
-      return sendMessage(label, { fromSlotQuickReply: true });
+      return sendMessage(label, {
+        fromSlotQuickReply: true,
+        clarificationReply: Boolean(wizardSelection),
+        wizardSelection,
+      });
     },
     [controller, handleDraftCancel, resolveDraftMessage, sendMessage, appendAiMessage, hasActiveWorkoutDraftInChat],
   );

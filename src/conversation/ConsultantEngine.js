@@ -983,6 +983,8 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
       rawQuery: item.foodName,
       foodName: item.foodName,
       grams: item.grams,
+      // Chiave esatta dal wizard/click: evita re-fuzzy (es. «noci» → pane con noci).
+      foodDbKey: item.foodDbKey ?? item.foodId ?? null,
     })),
     resolveContext,
   ).map((resolved, idx) => {

@@ -144,6 +144,26 @@ export function resolveWizardPendingQueue(items = [], bareNames = []) {
 }
 
 /**
+ * Unisce grammi espliciti dal testo naturale (es. «21 g di noci») nella coda wizard.
+ * @param {WizardPendingItem[]} pendingItems
+ * @param {Array<{foodName?: string, name?: string, grams?: number}>} naturalItems
+ * @returns {WizardPendingItem[]}
+ */
+export function mergeExplicitGramsIntoQueue(pendingItems = [], naturalItems = []) {
+  const naturals = buildPendingQueueFromFoodItems(naturalItems);
+  if (naturals.length === 0) return pendingItems;
+  return (Array.isArray(pendingItems) ? pendingItems : []).map((pending) => {
+    if (pending.gramsHint != null && pending.gramsHint > 0) return pending;
+    const key = normalizeSearchText(pending.spokenName);
+    const hit = naturals.find((n) => {
+      const nk = normalizeSearchText(n.spokenName);
+      return nk === key || nk.includes(key) || key.includes(nk);
+    });
+    return hit?.gramsHint ? { ...pending, gramsHint: hit.gramsHint } : pending;
+  });
+}
+
+/**
  * True se ADD_FOOD deve entrare nel SequentialFoodWizard (vietata bozza globale).
  * @param {Array<object>|number} itemsOrCount
  * @param {string} [userText]
@@ -252,6 +272,21 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
 }
 
 /**
+ * Applica grammi espliciti utente a tutti i candidati (niente override storico).
+ * @param {WizardCandidate[]} candidates
+ * @param {number|null} explicitGrams
+ * @returns {WizardCandidate[]}
+ */
+function withExplicitGramsOnCandidates(candidates, explicitGrams) {
+  const g = Math.round(Number(explicitGrams) || 0);
+  if (!(g > 0)) return candidates;
+  return (Array.isArray(candidates) ? candidates : []).map((c) => ({
+    ...c,
+    proposedGrams: g,
+  }));
+}
+
+/**
  * Prompt item corrente — voce breve + testo schermo (opzioni solo nei bottoni).
  * @param {{ spokenName: string, candidates: WizardCandidate[], proposedGrams: number }} current
  * @param {{ allSpokenNames?: string[] }} [meta]
@@ -261,6 +296,7 @@ export function buildWizardItemPrompt(current, meta = {}) {
   const spoken = String(current?.spokenName || 'alimento').trim();
   const candidates = Array.isArray(current?.candidates) ? current.candidates : [];
   const grams = Math.round(Number(current?.proposedGrams) || DEFAULT_GRAMS);
+  const explicit = current?.explicitGrams === true;
   const allNames = Array.isArray(meta.allSpokenNames)
     ? meta.allSpokenNames.map((n) => String(n || '').trim()).filter(Boolean)
     : [];
@@ -270,21 +306,27 @@ export function buildWizardItemPrompt(current, meta = {}) {
     : '';
 
   if (candidates.length === 0) {
-    const text = `${intro}Per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure una foto all'etichetta.`;
+    const text = explicit
+      ? `${intro}Per ${spoken} non trovo corrispondenze chiare. Segno ${grams}g come hai indicato? Dimmi il nome esatto, oppure una foto all'etichetta.`
+      : `${intro}Per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure una foto all'etichetta.`;
     return { spokenText: text, displayText: text };
   }
 
   const preferred = candidates.find((c) => c.isLastUsed) || candidates[0];
   const preferredName = sanitizeWizardFoodName(preferred?.name) || spoken;
-  const preferredGrams = Math.round(Number(preferred?.proposedGrams) || grams);
+  // Grammi espliciti utente: mai sovrascrivere con porzione storica del candidato.
+  const preferredGrams = explicit
+    ? grams
+    : Math.round(Number(preferred?.proposedGrams) || grams);
   const hasVariants = candidates.length > 1;
+  const gramsPhrase = explicit
+    ? `da ${preferredGrams}g come hai richiesto`
+    : `da ${preferredGrams}g`;
 
-  // VOCE: solo la proposta principale — mai l'elenco delle varianti (restano sui bottoni).
   const spokenText = hasVariants
-    ? `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} da ${preferredGrams}g. Confermi o scegli una delle varianti a schermo?`
-    : `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} da ${preferredGrams}g. Confermi?`;
+    ? `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} ${gramsPhrase}. Confermi o scegli una delle varianti a schermo?`
+    : `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} ${gramsPhrase}. Confermi?`;
 
-  // SCHERMO: stesso testo breve; le opzioni sono nei quickReplies / bottoni.
   return { spokenText, displayText: spokenText };
 }
 
@@ -297,9 +339,10 @@ export function buildWizardItemSpokenText(current, meta = {}) {
 }
 
 /**
- * Quick replies cliccabili per l'item corrente (solo UI, mai TTS).
- * @param {{ candidates: WizardCandidate[], proposedGrams: number }} current
- * @returns {string[]}
+ * Quick replies strutturati: label a schermo + riferimento esatto al cibo.
+ * Il click NON deve rifare fuzzy matching — usa foodDbKey/foodName.
+ * @param {{ candidates: WizardCandidate[], proposedGrams: number, explicitGrams?: boolean }} current
+ * @returns {Array<{ label: string, foodDbKey: string|null, foodName: string, grams: number, action?: string }>}
  */
 export function buildWizardItemQuickReplies(current) {
   const candidates = Array.isArray(current?.candidates) ? current.candidates : [];
@@ -307,14 +350,49 @@ export function buildWizardItemQuickReplies(current) {
   const replies = candidates.slice(0, MAX_OPTIONS).map((c) => {
     const cleanName = sanitizeWizardFoodName(c.name) || c.name;
     const g = Math.round(Number(c.proposedGrams) || grams);
-    return c.isLastUsed
-      ? `${cleanName} ${g}g (solito)`
-      : `${cleanName} ${g}g`;
+    return {
+      label: c.isLastUsed ? `${cleanName} ${g}g (solito)` : `${cleanName} ${g}g`,
+      foodDbKey: c.id != null ? String(c.id) : null,
+      foodName: cleanName,
+      grams: g,
+    };
   });
   if (replies.length > 0) {
-    replies.push('Altro / foto etichetta');
+    replies.push({
+      label: 'Altro / foto etichetta',
+      foodDbKey: null,
+      foodName: '',
+      grams: null,
+      action: 'photo',
+    });
   }
   return replies.slice(0, 5);
+}
+
+/**
+ * Normalizza una quick reply (stringa legacy o oggetto strutturato).
+ * @param {string|object} entry
+ * @returns {{ label: string, foodDbKey: string|null, foodName: string|null, grams: number|null, action: string|null }}
+ */
+export function normalizeWizardQuickReply(entry) {
+  if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+    const label = String(entry.label || entry.text || entry.value || '').trim();
+    const grams = Number(entry.grams);
+    return {
+      label,
+      foodDbKey: entry.foodDbKey != null ? String(entry.foodDbKey) : (entry.id != null ? String(entry.id) : null),
+      foodName: String(entry.foodName || entry.name || '').trim() || null,
+      grams: Number.isFinite(grams) && grams > 0 ? Math.round(grams) : null,
+      action: entry.action ? String(entry.action) : null,
+    };
+  }
+  return {
+    label: String(entry || '').trim(),
+    foodDbKey: null,
+    foodName: null,
+    grams: null,
+    action: null,
+  };
 }
 
 /**
@@ -408,6 +486,8 @@ function parseGramsFromText(text) {
 }
 
 /**
+ * Match candidato da testo libero (voce). Preferisce uguaglianza esatta sul nome,
+ * mai usageCount sopra un match lessicale migliore.
  * @param {WizardCandidate[]} candidates
  * @param {string} userText
  * @returns {WizardCandidate|null}
@@ -415,32 +495,114 @@ function parseGramsFromText(text) {
 export function matchCandidateFromUserText(candidates, userText) {
   const list = Array.isArray(candidates) ? candidates : [];
   if (list.length === 0) return null;
-  const text = normalizeSearchText(userText);
-  if (!text) return null;
+  const raw = String(userText || '').trim();
+  if (!raw) return null;
 
-  // Conferma del proposto / primo (ultimo usato)
-  if (/^(?:s[iì]|ok|okay|va bene|quello|il solito|solito|confermo)\b/i.test(String(userText || '').trim())
-    || /ultimo\s+usato|il\s+primo|quello\s+l[aà]/i.test(text)) {
+  // Conferma del proposto / primo
+  if (/^(?:s[iì]|ok|okay|va bene|quello|il solito|solito|confermo)\b/i.test(raw)
+    || /ultimo\s+usato|il\s+primo|quello\s+l[aà]/i.test(normalizeSearchText(raw))) {
     return list.find((c) => c.isLastUsed) || list[0];
   }
 
+  // Estrai nome dal label bottone: "Noci 21g (solito)" → "noci"
+  const cleaned = normalizeSearchText(
+    cleanFoodPhrase(
+      raw
+        .replace(/\(\s*solito\s*\)/gi, ' ')
+        .replace(/\d+\s*(?:g|gr|grammi)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    ),
+  );
+  if (!cleaned) return null;
+
+  // 1) Uguaglianza esatta sul nome candidato
+  for (let i = 0; i < list.length; i += 1) {
+    const nameNorm = normalizeSearchText(sanitizeWizardFoodName(list[i].name) || list[i].name);
+    if (nameNorm && nameNorm === cleaned) return list[i];
+  }
+
+  // 2) Il testo inizia con il nome completo del candidato (più lungo prima)
+  const byLen = [...list].sort(
+    (a, b) => normalizeSearchText(b.name).length - normalizeSearchText(a.name).length,
+  );
+  for (let i = 0; i < byLen.length; i += 1) {
+    const nameNorm = normalizeSearchText(sanitizeWizardFoodName(byLen[i].name) || byLen[i].name);
+    if (nameNorm && (cleaned === nameNorm || cleaned.startsWith(`${nameNorm} `))) {
+      return byLen[i];
+    }
+  }
+
+  // 3) Token overlap: preferisci nome PIÙ CORTO a parità (exact "noci" > "pane … noci")
   let best = null;
-  let bestScore = 0;
+  let bestScore = -Infinity;
   for (let i = 0; i < list.length; i += 1) {
     const c = list[i];
-    const nameNorm = normalizeSearchText(c.name);
+    const nameNorm = normalizeSearchText(sanitizeWizardFoodName(c.name) || c.name);
+    if (!nameNorm) continue;
     const tokens = nameNorm.split(' ').filter((t) => t.length >= 3);
-    if (nameNorm && text.includes(nameNorm)) {
-      return c;
+    const hitTokens = tokens.filter((t) => cleaned.includes(t) || t === cleaned).length;
+    if (hitTokens <= 0 && !nameNorm.includes(cleaned) && !cleaned.includes(nameNorm.split(' ')[0])) {
+      continue;
     }
-    const hitTokens = tokens.filter((t) => text.includes(t)).length;
-    const score = hitTokens * 10 + (c.isLastUsed ? 1 : 0) + (c.usageCount || 0) * 0.01;
-    if (hitTokens > 0 && score > bestScore) {
+    const exactToken = tokens.some((t) => t === cleaned) || nameNorm === cleaned;
+    // Lessicale dominante: exact token + preferenza nomi corti. Usage solo spareggio minimo.
+    const score = (exactToken ? 1000 : 0)
+      + hitTokens * 10
+      - nameNorm.length
+      + (c.isLastUsed ? 0.5 : 0)
+      + (Number(c.usageCount) || 0) * 0.001;
+    if (score > bestScore) {
       bestScore = score;
       best = c;
     }
   }
   return best;
+}
+
+/**
+ * Risolve un click strutturato sul bottone: NESSUNA ricerca fuzzy.
+ * @param {object} state
+ * @param {{ foodDbKey?: string|null, foodName?: string|null, grams?: number|null }} selection
+ * @returns {{ ok: boolean, resolved?: WizardResolvedItem, reason?: string, requestPhoto?: boolean }}
+ */
+export function resolveWizardSelection(state, selection = {}) {
+  const current = state?.current;
+  if (!current) return { ok: false, reason: 'no_current' };
+
+  if (selection?.action === 'photo') {
+    return { ok: false, reason: 'request_photo', requestPhoto: true };
+  }
+
+  const candidates = Array.isArray(current.candidates) ? current.candidates : [];
+  const key = selection?.foodDbKey != null ? String(selection.foodDbKey) : '';
+  const byId = key ? candidates.find((c) => String(c.id) === key) : null;
+  const nameSel = sanitizeWizardFoodName(selection?.foodName || '') || String(selection?.foodName || '').trim();
+  const byName = !byId && nameSel
+    ? candidates.find((c) => normalizeSearchText(sanitizeWizardFoodName(c.name) || c.name) === normalizeSearchText(nameSel))
+    : null;
+  const pick = byId || byName;
+
+  if (!pick && !nameSel) {
+    return { ok: false, reason: 'empty_selection' };
+  }
+
+  const foodName = sanitizeWizardFoodName(pick?.name || nameSel) || nameSel;
+  const gramsFromSel = Number(selection?.grams);
+  const grams = Number.isFinite(gramsFromSel) && gramsFromSel > 0
+    ? Math.round(gramsFromSel)
+    : Math.round(Number(current.proposedGrams) || pick?.proposedGrams || DEFAULT_GRAMS);
+
+  return {
+    ok: true,
+    resolved: {
+      foodName,
+      grams,
+      foodDbKey: pick?.id != null ? pick.id : (key || null),
+      spokenName: current.spokenName,
+      isEstimated: !(Number.isFinite(gramsFromSel) && gramsFromSel > 0) && !current.explicitGrams,
+    },
+  };
 }
 
 /**
@@ -468,6 +630,12 @@ export function parseWizardItemReply(state, userText) {
   const candidates = Array.isArray(current.candidates) ? current.candidates : [];
   const gramsFromUser = parseGramsFromText(text);
   const matched = matchCandidateFromUserText(candidates, text);
+  const grams = gramsFromUser
+    || (current.explicitGrams ? current.proposedGrams : null)
+    || matched?.proposedGrams
+    || current.proposedGrams
+    || DEFAULT_GRAMS;
+  const isEstimated = !gramsFromUser && !current.explicitGrams;
 
   // Nome libero se nessun match ma testo senza solo grammi
   if (!matched && candidates.length === 0) {
@@ -477,9 +645,9 @@ export function parseWizardItemReply(state, userText) {
         ok: true,
         resolved: {
           foodName: cleaned,
-          grams: gramsFromUser || current.proposedGrams || DEFAULT_GRAMS,
+          grams: Math.round(grams),
           spokenName: current.spokenName,
-          isEstimated: !gramsFromUser,
+          isEstimated,
           foodDbKey: null,
         },
       };
@@ -488,7 +656,7 @@ export function parseWizardItemReply(state, userText) {
   }
 
   if (!matched && gramsFromUser && candidates.length >= 1) {
-    // Solo grammi → conferma candidato proposto (ultimo usato)
+    // Solo grammi → conferma candidato proposto (ultimo usato / primo lessicale)
     const pick = candidates.find((c) => c.isLastUsed) || candidates[0];
     return {
       ok: true,
@@ -503,16 +671,15 @@ export function parseWizardItemReply(state, userText) {
   }
 
   if (!matched) {
-    // Prova nome libero che contiene il termine parlato
     const cleaned = cleanFoodPhrase(text.replace(/\d+\s*(?:g|gr|grammi)?/gi, ' '));
     if (cleaned.length >= 2) {
       return {
         ok: true,
         resolved: {
           foodName: cleaned,
-          grams: gramsFromUser || current.proposedGrams || DEFAULT_GRAMS,
+          grams: Math.round(grams),
           spokenName: current.spokenName,
-          isEstimated: !gramsFromUser,
+          isEstimated,
           foodDbKey: null,
         },
       };
@@ -524,10 +691,10 @@ export function parseWizardItemReply(state, userText) {
     ok: true,
     resolved: {
       foodName: sanitizeWizardFoodName(matched.name) || matched.name,
-      grams: gramsFromUser || matched.proposedGrams || current.proposedGrams || DEFAULT_GRAMS,
+      grams: Math.round(grams),
       foodDbKey: matched.id,
       spokenName: current.spokenName,
-      isEstimated: !gramsFromUser,
+      isEstimated,
     },
   };
 }
@@ -581,12 +748,17 @@ export function advanceWizardToNextItem(state, ctx = {}) {
   }
 
   const head = next.pendingItems[0];
-  const candidates = findWizardCandidates(
+  const explicitGrams = Number.isFinite(Number(head.gramsHint)) && Number(head.gramsHint) > 0
+    ? Math.round(Number(head.gramsHint))
+    : null;
+  let candidates = findWizardCandidates(
     ctx.personalDb || null,
     head.spokenName,
     ctx.userPortions || {},
   );
-  const proposedGrams = head.gramsHint
+  candidates = withExplicitGramsOnCandidates(candidates, explicitGrams);
+
+  const proposedGrams = explicitGrams
     || candidates[0]?.proposedGrams
     || lookupHabitualGrams(head.spokenName, ctx.userPortions || {}, [])
     || DEFAULT_GRAMS;
@@ -596,6 +768,7 @@ export function advanceWizardToNextItem(state, ctx = {}) {
     candidates,
     proposedGrams: Math.round(proposedGrams),
     proposedCandidateId: candidates[0]?.id || null,
+    explicitGrams: explicitGrams != null,
   };
   next.phase = 'item';
   return next;
