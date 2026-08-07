@@ -6828,6 +6828,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       cancelMealBuilder,
       commitMealBuilder,
       preferVoiceChat: isDiabetesAppMode,
+      userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
     });
   }, [
     registerHandlers,
@@ -6864,6 +6865,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     cancelMealBuilder,
     commitMealBuilder,
     isDiabetesAppMode,
+    userProfile,
   ]);
 
   const generateDailySnapshot = useCallback(() => {
@@ -9434,6 +9436,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onRequestBarcodeScan={handleRequestBarcodeScan}
             quickStripItems={chatQuickStripItems}
             preferVoiceChat={isDiabetesAppMode}
+            userDisplayName={String(userProfile?.displayName || userProfile?.name || '').trim()}
           />
           </Suspense>
         </div>

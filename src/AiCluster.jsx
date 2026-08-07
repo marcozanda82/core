@@ -97,6 +97,8 @@ export default function AiCluster({
   quickStripItems = null,
   /** Preferenza TTS iniziale (es. true in modalità diabete se mai salvata). */
   preferVoiceChat = false,
+  /** Nome utente (solo per strip TTS — non pronunciato). */
+  userDisplayName = '',
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -121,6 +123,7 @@ export default function AiCluster({
     isProcessing,
     defaultTtsEnabled: preferVoiceChat === true,
     autoSubmitOnSpeechEnd: true,
+    userDisplayName,
     onVoiceSubmit: (text) => {
       voiceSubmitRef.current?.(text);
     },

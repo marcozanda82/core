@@ -22,6 +22,7 @@ import {
  *   defaultTtsEnabled?: boolean,
  *   onVoiceSubmit?: ((text: string) => void) | null,
  *   autoSubmitOnSpeechEnd?: boolean,
+ *   userDisplayName?: string,
  * }} opts
  */
 export function useVoiceChat({
@@ -32,6 +33,7 @@ export function useVoiceChat({
   defaultTtsEnabled = false,
   onVoiceSubmit = null,
   autoSubmitOnSpeechEnd = true,
+  userDisplayName = '',
 } = {}) {
   const [ttsEnabled, setTtsEnabled] = useState(() => readTtsEnabled(defaultTtsEnabled));
   const [isListening, setIsListening] = useState(false);
@@ -49,6 +51,7 @@ export function useVoiceChat({
   const autoSubmitRef = useRef(autoSubmitOnSpeechEnd);
   const suppressSubmitRef = useRef(false);
   const didSubmitTurnRef = useRef(false);
+  const userDisplayNameRef = useRef(userDisplayName);
 
   useEffect(() => {
     ttsEnabledRef.current = ttsEnabled;
@@ -61,6 +64,10 @@ export function useVoiceChat({
   useEffect(() => {
     autoSubmitRef.current = autoSubmitOnSpeechEnd;
   }, [autoSubmitOnSpeechEnd]);
+
+  useEffect(() => {
+    userDisplayNameRef.current = userDisplayName;
+  }, [userDisplayName]);
 
   useEffect(() => {
     writeTtsEnabled(ttsEnabled);
@@ -281,7 +288,7 @@ export function useVoiceChat({
     if (key === lastSpokenKeyRef.current) return;
     lastSpokenKeyRef.current = key;
 
-    void speakText(text);
+    void speakText(text, { userName: userDisplayNameRef.current || null });
   }, [chatHistory, isListening, ttsSupported]);
 
   // Non ascoltare durante processing AI (senza auto-submit: l’invio è già partito).

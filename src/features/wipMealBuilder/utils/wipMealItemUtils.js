@@ -460,6 +460,7 @@ export function buildWipConfirmAdviceMessage(items = [], opts = {}) {
     .filter(Boolean);
 
   const displayName = String(opts.displayName || '').trim();
+  void displayName;
   const mealKey = String(opts.mealType || '').trim().toLowerCase().split('_')[0];
   const mealWord = ({
     colazione: 'colazione',
@@ -467,8 +468,7 @@ export function buildWipConfirmAdviceMessage(items = [], opts = {}) {
     pranzo: 'pranzo',
     cena: 'cena',
   })[mealKey] || 'pasto';
-  const prefix = displayName ? `${displayName}, ` : '';
-  const lead = `${prefix}ecco il tuo ${mealWord} pronto da confermare.`;
+  const lead = `Ecco il tuo ${mealWord} pronto da confermare.`;
 
   if (list.length === 0) {
     return `${lead}\n\n(nessun alimento nel carrello)`;

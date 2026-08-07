@@ -2046,7 +2046,7 @@ export function generateConsultantSystemInstruction(opts = {}) {
     '  UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100). mealProposals=[].',
     '  UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
     '  CONFIRM: mealProposals riepilogo finale; suggestions=[].',
-    '  CONFIRM adviceMessage: frase informale con displayName (es. «Marco, ecco il tuo snack pronto da confermare.») + elenco «- [Emoji] Nome (Grammi)». Niente JSON, niente tono da referto.',
+    '  CONFIRM adviceMessage: frase informale SENZA nome utente (es. «Ecco il tuo snack pronto da confermare.») + elenco «- [Emoji] Nome (Grammi)». Niente JSON, niente tono da referto.',
     'HARD CONSTRAINT WIP: se maxCalories è valorizzato, ogni suggestion.weight → calories ≤ residualKcal.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — resultingItems/items mai vuoti.',
     'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',

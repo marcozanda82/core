@@ -277,13 +277,13 @@ export function slotPromptForState(state, pendingPayload = {}) {
 }
 
 /**
- * Messaggio informale anteprima pasto (usa displayName — niente tono da referto).
+ * Messaggio informale anteprima pasto (senza nome utente — adatto a TTS).
  * @param {{ displayName?: string, mealType?: string, userProfile?: object, itemCount?: number }} [opts]
  * @returns {string}
  */
 export function buildMealPreviewReadyMessage(opts = {}) {
-  const displayName = resolveUserDisplayName(opts.userProfile)
-    || String(opts.displayName || '').trim();
+  void opts.displayName;
+  void opts.userProfile;
   const mealKey = String(opts.mealType || '').trim().toLowerCase().split('_')[0];
   const mealWord = ({
     colazione: 'colazione',
@@ -291,8 +291,7 @@ export function buildMealPreviewReadyMessage(opts = {}) {
     pranzo: 'pranzo',
     cena: 'cena',
   })[mealKey] || 'pasto';
-  const prefix = displayName ? `${displayName}, ` : '';
-  return `${prefix}ecco il tuo ${mealWord} pronto da confermare.`;
+  return `Ecco il tuo ${mealWord} pronto da confermare.`;
 }
 
 /** Riepilogo esplicito stile McDrive per la bozza pasto. */

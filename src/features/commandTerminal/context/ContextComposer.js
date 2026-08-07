@@ -224,13 +224,13 @@ export class ContextComposer {
           METABOLIC_BUDGET: {
             note:
               'REDACTED_FOR_ADD_FOOD: Se commandType e ADD_FOOD, lascia uiMessage e adviceMessage VUOTI. '
-              + 'Il testo utente va SOLO in payload.message (informale + displayName). '
+              + 'Il testo utente va SOLO in payload.message (informale, senza nome). '
               + 'I calcoli di budget verranno fatti dal sistema. NON citare kcal rimanenti ne cilindri.',
             suppressBudgetCommentary: true,
           },
           COPY_POLICY:
-            'ADD_FOOD: adviceMessage="" e uiMessage="". Compila payload.message con UNA frase informale che usa il displayName '
-            + '(es. "Marco, ecco il tuo snack pronto da confermare."). Nessun paragrafo di stato metabolico.',
+            'ADD_FOOD: adviceMessage="" e uiMessage="". Compila payload.message con UNA frase informale SENZA nome utente '
+            + '(es. "Ecco il tuo snack pronto da confermare."). Nessun paragrafo di stato metabolico.',
           food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
         },
       };

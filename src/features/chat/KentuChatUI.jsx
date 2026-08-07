@@ -47,6 +47,7 @@ export default function KentuChatUI({
   onRequestBarcodeScan,
   quickStripItems = null,
   preferVoiceChat = false,
+  userDisplayName = '',
 }) {
   return (
     <div
@@ -105,6 +106,7 @@ export default function KentuChatUI({
         onRequestBarcodeScan={onRequestBarcodeScan}
         quickStripItems={quickStripItems}
         preferVoiceChat={preferVoiceChat}
+        userDisplayName={userDisplayName}
       />
     </div>
   );

@@ -79,6 +79,7 @@ export const HEALTH_CHAT_SYSTEM_PROMPT_BASE = [
   'Esempi tipici: "ho saltato la metformina", "preso il farmaco in ritardo", "dose doppia per sbaglio".',
   'Se non c’è alcuna anomalia farmaci, eccezione_terapia = null.',
   "Fornisci sempre una 'risposta_utente' empatica e rassicurante dando del tu.",
+  'NON usare mai il nome proprio dell’utente (né all’inizio né nel testo). Parti direttamente dal contenuto (es. «Ho registrato la glicemia…»).',
   'Rispondi SOLO con JSON valido conforme allo schema; nessun markdown né testo fuori dal JSON.',
 ].join(' ');
 
