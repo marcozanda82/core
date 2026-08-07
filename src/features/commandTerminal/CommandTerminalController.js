@@ -93,6 +93,7 @@ import {
   isClarificationFollowUpReply,
   parseMealLogFromChatThread,
   buildApproximateMealLogForRecovery,
+  extractBareFoodNamesFromText,
 } from './conversation/mealLogIntent.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
@@ -133,7 +134,8 @@ import {
   buildWizardFinalQuickReplies,
   buildFoodPayloadFromWizard,
   classifyWizardFinalReply,
-  buildPendingQueueFromFoodItems,
+  resolveWizardPendingQueue,
+  shouldForceSequentialFoodWizard,
 } from './conversation/sequentialFoodWizard.js';
 import {
   applyHistoricalWorkoutKcalDefault,
@@ -419,9 +421,19 @@ export class CommandTerminalController {
     };
   }
 
-  publishWizardItemPrompt(state) {
+  publishWizardItemPrompt(state, options = {}) {
     if (!state?.current) return;
-    const text = buildWizardItemPrompt(state.current);
+    const allSpokenNames = Array.isArray(options.allSpokenNames) && options.allSpokenNames.length > 0
+      ? options.allSpokenNames
+      : [
+          state.current.spokenName,
+          ...(state.pendingItems || []).slice(1).map((p) => p.spokenName),
+        ].filter(Boolean);
+    // Intro multi-item solo al primo step (resolved vuoto): mai grammi/varianti dei successivi.
+    const showBatchIntro = (state.resolvedItems || []).length === 0 && allSpokenNames.length > 1;
+    const text = buildWizardItemPrompt(state.current, {
+      allSpokenNames: showBatchIntro ? allSpokenNames : [],
+    });
     const quickReplies = buildWizardItemQuickReplies(state.current);
     this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM;
     this.bus.publish(
@@ -468,22 +480,31 @@ export class CommandTerminalController {
   }
 
   /**
+   * Multi-item ADD_FOOD → SequentialFoodWizard obbligatorio (niente bozza globale).
+   */
+  mustUseSequentialFoodWizard(payload, userText = '') {
+    const items = expandFoodPayloadItems(payload);
+    return shouldForceSequentialFoodWizard(items, userText, extractBareFoodNamesFromText);
+  }
+
+  /**
    * Avvia SequentialFoodWizard al posto della proposta batch.
+   * Blocca pendingMealDraft / MEAL_DRAFT finché ogni item non è in resolvedItems.
    */
   startSequentialFoodWizard(payload, currentState = {}, userText = '') {
     const items = expandFoodPayloadItems(payload);
-    const pendingItems = buildPendingQueueFromFoodItems(
-      items.length > 0
-        ? items
-        : [{ foodName: String(payload?.foodName || '').trim(), grams: payload?.grams }],
-    );
+    const bareNames = extractBareFoodNamesFromText(userText);
+    const fallbackItems = items.length > 0
+      ? items
+      : [{ foodName: String(payload?.foodName || '').trim(), grams: payload?.grams }];
+    const pendingItems = resolveWizardPendingQueue(fallbackItems, bareNames);
     if (pendingItems.length === 0) {
       return { ok: false, reason: 'empty_wizard_queue' };
     }
 
     const ctx = this.getWizardContext(currentState);
     const withTiming = applyMealTimingDefaultsOnly(payload || {});
-    let state = createMealWizardState({
+    const state = createMealWizardState({
       pendingItems,
       mealType: withTiming.mealType || payload?.mealType || null,
       exactTime: withTiming.exactTime || payload?.exactTime || null,
@@ -491,8 +512,11 @@ export class CommandTerminalController {
       userPortions: ctx.userPortions,
     });
     this.mealWizardState = state;
+    // Vietato bozza globale mentre il wizard è attivo.
     this.pendingMealDraft = null;
     this.pendingAction = null;
+    this.pendingCommandType = null;
+    this.pendingCommandPayload = null;
 
     console.log('🧙 DEBUG - START SEQUENTIAL FOOD WIZARD:', {
       pending: pendingItems.map((p) => p.spokenName),
@@ -509,7 +533,9 @@ export class CommandTerminalController {
       };
     }
 
-    this.publishWizardItemPrompt(state);
+    this.publishWizardItemPrompt(state, {
+      allSpokenNames: pendingItems.map((p) => p.spokenName),
+    });
     return {
       ok: true,
       intent: 'MEAL_WIZARD',
@@ -758,8 +784,9 @@ export class CommandTerminalController {
   /**
    * Applica Smart Defaults (solo mealType + exactTime) e pubblica la card MEAL_DRAFT.
    * Gli items provengono ESCLUSIVAMENTE da pendingCommandPayload (post applyGramsSlotResponse).
+   * Multi-item → SequentialFoodWizard (niente bozza globale).
    */
-  publishFoodDraftAfterGrams(currentState = {}) {
+  publishFoodDraftAfterGrams(currentState = {}, options = {}) {
     const lockedItems = lockPendingFoodItems(this.pendingCommandPayload || {});
     const withTiming = applyMealTimingDefaultsOnly({
       ...(this.pendingCommandPayload || {}),
@@ -771,6 +798,12 @@ export class CommandTerminalController {
     payload.items = lockedItems;
     this.pendingCommandPayload = payload;
     this.pendingMealRegistration = false;
+
+    const userText = String(options.userText || '').trim();
+    if (this.mustUseSequentialFoodWizard(payload, userText)) {
+      console.log('🧙 DEBUG - publishFoodDraftAfterGrams → FORCE SEQUENTIAL WIZARD (multi-item)');
+      return this.startSequentialFoodWizard(payload, currentState, userText);
+    }
 
     const missingGrams = getFoodItemsMissingGrams(payload);
     if (missingGrams.length > 0) {
@@ -801,6 +834,8 @@ export class CommandTerminalController {
     return this.stagePendingAction('ADD_FOOD', payload, {
       requiresConfirmation: true,
       uiMessage,
+      userText,
+      currentState,
     });
   }
 
@@ -822,6 +857,12 @@ export class CommandTerminalController {
     next.uiMessage = '';
     if (next.payload && typeof next.payload === 'object') {
       next.payload = { ...next.payload };
+      const items = expandFoodPayloadItems(next.payload);
+      // Multi-item: il wizard genera la voce — scarta copy maggiordomo batch dal LLM.
+      if (items.length > 1) {
+        delete next.payload.message;
+        return next;
+      }
       const msg = String(next.payload.message || '').trim();
       // Tieni messaggi informali / maggiordomo (conferma solito + grammi). Scarta referti/budget.
       const looksFormalOrBudget = /budget|cilindr|rimanente|delta|metabol|sforamento|traiettoria/i.test(msg);
@@ -881,10 +922,9 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
-    // SequentialFoodWizard: item-per-item al posto della proposta batch (salvo correzioni McDrive su bozza già chiusa).
+    // Multi-item: SequentialFoodWizard obbligatorio — vietata bozza batch / butler globale.
     if (!options?.fromVoiceCorrection && !options?.skipWizard) {
-      const items = expandFoodPayloadItems(payload);
-      if (items.length > 0) {
+      if (this.mustUseSequentialFoodWizard(payload, userText)) {
         const wizardResult = this.startSequentialFoodWizard(payload, currentState, userText);
         if (wizardResult?.ok) return wizardResult;
       }
@@ -974,6 +1014,12 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCard(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
+    // Multi-item: salta slot-filling / bozza — wizard item-per-item subito.
+    if (!options?.fromVoiceCorrection && !options?.skipWizard
+      && this.mustUseSequentialFoodWizard(payload, userText)) {
+      return this.startSequentialFoodWizard(payload, currentState, userText);
+    }
+
     const check = this.ensureMealRegistrationCompleteOrAsk(
       payload,
       currentState,
@@ -1813,6 +1859,21 @@ export class CommandTerminalController {
 
   stagePendingAction(commandType, payload, meta = {}) {
     const normalizedType = String(commandType || '').trim().toUpperCase();
+
+    // Defense-in-depth: multi-item ADD_FOOD non può diventare MEAL_DRAFT globale.
+    if (
+      normalizedType === 'ADD_FOOD'
+      && !meta?.allowMultiItemDraft
+      && this.mustUseSequentialFoodWizard(payload, meta.userText || '')
+    ) {
+      console.log('🧙 DEBUG - stagePendingAction → FORCE SEQUENTIAL WIZARD (blocked global draft)');
+      return this.startSequentialFoodWizard(
+        payload,
+        meta.currentState || {},
+        meta.userText || '',
+      );
+    }
+
     this.pendingAction = {
       commandType: normalizedType,
       payload: { ...payload },
@@ -2176,6 +2237,13 @@ export class CommandTerminalController {
   }
 
   beginFoodSlotFilling(partialPayload, currentState = {}, options = {}) {
+    const userText = String(options.userText || '').trim();
+    // Multi-item: mai bozza globale / butler batch — solo SequentialFoodWizard.
+    if (this.mustUseSequentialFoodWizard(partialPayload, userText)) {
+      console.log('🧙 DEBUG - beginFoodSlotFilling → FORCE SEQUENTIAL WIZARD (multi-item)');
+      return this.startSequentialFoodWizard(partialPayload, currentState, userText);
+    }
+
     const normalized = normalizeFoodPayload(partialPayload, currentState, {
       inferMealTypeFromContext: false,
       ...options,
@@ -2192,7 +2260,7 @@ export class CommandTerminalController {
             options: [...REQUEST_FOOD_PHOTO_QUICK_REPLIES],
           },
         },
-        options.userText || '',
+        userText,
       );
     }
 
@@ -2201,7 +2269,7 @@ export class CommandTerminalController {
 
     const missingGrams = getFoodItemsMissingGrams(this.pendingCommandPayload);
     if (missingGrams.length === 0) {
-      return this.publishFoodDraftAfterGrams(currentState);
+      return this.publishFoodDraftAfterGrams(currentState, { userText });
     }
 
     // Ultima spiaggia: ancora senza grammi → proposta con default e conferma, non domanda aperta.
@@ -2223,7 +2291,7 @@ export class CommandTerminalController {
         habitProposals: forced.habitProposals,
       }),
     };
-    return this.publishFoodDraftAfterGrams(currentState);
+    return this.publishFoodDraftAfterGrams(currentState, { userText });
   }
 
   completePendingFoodCommand(currentState = {}, options = {}) {
@@ -3224,6 +3292,13 @@ export class CommandTerminalController {
         ...(options?.signal ? { signal: options.signal } : {}),
       };
 
+      // HARD RULE: multi-alimento → SequentialFoodWizard (blocca bozza globale / butler batch).
+      if (this.mustUseSequentialFoodWizard(normalized, userText) || this.mustUseSequentialFoodWizard(rawPayload, userText)) {
+        console.log('🧙 DEBUG - ADD_FOOD ROUTER → FORCE SEQUENTIAL WIZARD (items > 1)');
+        const wizardPayload = hasFood ? normalized : (expandFoodPayloadItems(rawPayload).length > 0 ? rawPayload : normalized);
+        return this.startSequentialFoodWizard(wizardPayload, currentState, userText);
+      }
+
       if (this.isMealRegistrationCandidate(userText) && hasFood) {
         return this.publishMealLogProposalCard(
           normalized,
@@ -3245,14 +3320,17 @@ export class CommandTerminalController {
       }
 
       if (missing.length > 0 && hasFood) {
-        return this.beginFoodSlotFilling(normalized, currentState);
+        return this.beginFoodSlotFilling(normalized, currentState, { userText });
       }
     }
 
     const validationError = validateEnvelope(commandResponse.command);
     if (validationError) {
       if (commandType === 'ADD_FOOD' && expandFoodPayloadItems(rawPayload).length > 0) {
-        return this.beginFoodSlotFilling(rawPayload, currentState);
+        if (this.mustUseSequentialFoodWizard(rawPayload, userText)) {
+          return this.startSequentialFoodWizard(rawPayload, currentState, userText);
+        }
+        return this.beginFoodSlotFilling(rawPayload, currentState, { userText });
       }
 
       if (commandType === 'ADD_WORKOUT' || isWorkoutLogIntent(userText)) {
@@ -3313,14 +3391,16 @@ export class CommandTerminalController {
     }
 
     // ADD_FOOD draft: solo card locale — niente budget Gemini; il residuo esce alla conferma.
+    // Multi-item viene intercettato dentro stagePendingAction → wizard.
     return this.stagePendingAction(commandType, payload, {
       confidence: commandResponse.command.confidence ?? null,
       requiresConfirmation: true,
       uiMessage: commandType === 'ADD_FOOD'
         ? buildMealDraftUiMessage(payload)
         : commandResponse.command.uiMessage,
+      userText,
+      currentState,
     });
   }
 }
-
 export const commandTerminalController = new CommandTerminalController();

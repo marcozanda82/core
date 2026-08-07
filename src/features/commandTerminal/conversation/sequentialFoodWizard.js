@@ -120,6 +120,49 @@ export function buildPendingQueueFromFoodItems(items = []) {
 }
 
 /**
+ * Unisce item LLM + nomi grezzi dal testo utente (se il modello ne perde uno).
+ * Preferisce la coda più lunga; i grammi hint restano dagli item strutturati.
+ * @param {Array<object>} items
+ * @param {string[]} bareNames
+ * @returns {WizardPendingItem[]}
+ */
+export function resolveWizardPendingQueue(items = [], bareNames = []) {
+  const fromItems = buildPendingQueueFromFoodItems(items);
+  const fromNames = buildPendingQueueFromNames(bareNames);
+  if (fromNames.length > fromItems.length) {
+    return fromNames.map((pending) => {
+      const key = normalizeSearchText(pending.spokenName);
+      const hit = fromItems.find((i) => {
+        const ik = normalizeSearchText(i.spokenName);
+        return ik === key || ik.includes(key) || key.includes(ik);
+      });
+      return hit?.gramsHint ? { ...pending, gramsHint: hit.gramsHint } : pending;
+    });
+  }
+  if (fromItems.length === 0) return fromNames;
+  return fromItems;
+}
+
+/**
+ * True se ADD_FOOD deve entrare nel SequentialFoodWizard (vietata bozza globale).
+ * @param {Array<object>|number} itemsOrCount
+ * @param {string} [userText]
+ * @param {(text: string) => string[]} [extractBareNames]
+ * @returns {boolean}
+ */
+export function shouldForceSequentialFoodWizard(itemsOrCount, userText = '', extractBareNames = null) {
+  const itemCount = Array.isArray(itemsOrCount)
+    ? itemsOrCount.filter((i) => String(i?.foodName || i?.name || '').trim()).length
+    : Math.max(0, Number(itemsOrCount) || 0);
+  if (itemCount > 1) return true;
+  if (typeof extractBareNames === 'function') {
+    const bare = extractBareNames(userText) || [];
+    if (bare.length > 1) return true;
+  }
+  return false;
+}
+
+/**
  * Candidati dal DB personale per un termine (es. «pane»).
  * @param {object|null} personalDb
  * @param {string} spokenName
@@ -210,33 +253,46 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
 }
 
 /**
- * Prompt vocale per l'item corrente.
+ * Prompt vocale per l'item corrente — ESCLUSIVAMENTE pendingItems[0].
+ * Vietato menzionare grammi/varianti degli item successivi in coda.
  * @param {{ spokenName: string, candidates: WizardCandidate[], proposedGrams: number }} current
+ * @param {{ allSpokenNames?: string[] }} [meta]
  * @returns {string}
  */
-export function buildWizardItemPrompt(current) {
+export function buildWizardItemPrompt(current, meta = {}) {
   const spoken = String(current?.spokenName || 'alimento').trim();
   const candidates = Array.isArray(current?.candidates) ? current.candidates : [];
   const grams = Math.round(Number(current?.proposedGrams) || DEFAULT_GRAMS);
+  const allNames = Array.isArray(meta.allSpokenNames)
+    ? meta.allSpokenNames.map((n) => String(n || '').trim()).filter(Boolean)
+    : [];
+
+  const intro = allNames.length > 1
+    ? `Ho annotato ${allNames.join(' e ')}. Iniziamo dal ${spoken}: `
+    : '';
 
   if (candidates.length === 0) {
-    return `Per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure chiedimi di fare una foto all'etichetta.`;
+    return `${intro}per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure una foto all'etichetta.`;
   }
+
+  const preferred = candidates.find((c) => c.isLastUsed) || candidates[0];
+  const preferredName = preferred?.name || spoken;
+  const preferredGrams = Math.round(Number(preferred?.proposedGrams) || grams);
 
   if (candidates.length === 1) {
-    const only = candidates[0];
-    return `Per ${spoken} ho «${only.name}». Ti propongo ${grams} grammi. Va bene, o vuoi cambiare nome o quantità?`;
+    return `${intro}inserisco il tuo solito «${preferredName}» (${preferredGrams}g)? Oppure dimmi un altro nome o una quantità diversa.`;
   }
 
-  const parts = candidates.map((c) => {
-    if (c.isLastUsed) return `${c.name} (che è l'ultimo usato)`;
-    return c.name;
-  });
-  const list = parts.length === 2
-    ? `${parts[0]} e ${parts[1]}`
-    : `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+  const alternatives = candidates
+    .filter((c) => c.id !== preferred.id)
+    .map((c) => c.name);
+  const altPhrase = alternatives.length === 0
+    ? ''
+    : alternatives.length === 1
+      ? ` Altrimenti ho anche ${alternatives[0]}.`
+      : ` Altrimenti ho anche ${alternatives.slice(0, -1).join(', ')} e ${alternatives[alternatives.length - 1]}.`;
 
-  return `Per ${spoken}, nel tuo database ho: ${list}. Quale scegli? Ti propongo ${grams} grammi.`;
+  return `${intro}inserisco il tuo solito «${preferredName}» (${preferredGrams}g)?${altPhrase}`;
 }
 
 /**
@@ -528,9 +584,7 @@ export function commitWizardItemAndAdvance(state, resolved, ctx = {}) {
 
 /**
  * Messaggio di passaggio dopo aver salvato un item.
- * @param {WizardResolvedItem} resolved
- * @param {MealWizardState} nextState
- * @returns {string}
+ * Solo il PROSSIMO item: mai grammi/varianti di quelli ancora oltre current.
  */
 export function buildWizardAdvanceMessage(resolved, nextState) {
   const savedName = String(resolved?.foodName || '').trim().toLowerCase();
