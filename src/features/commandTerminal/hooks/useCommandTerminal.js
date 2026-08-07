@@ -1031,6 +1031,9 @@ export function useCommandTerminal({
       if (typeof controller.clearPendingMealDraft === 'function') {
         controller.clearPendingMealDraft();
       }
+      if (typeof controller.clearMealWizardState === 'function') {
+        controller.clearMealWizardState();
+      }
       if (typeof controller.resetConversationState === 'function'
         && controller.getConversationSnapshot?.()?.conversationState === 'AWAITING_CONFIRMATION') {
         controller.resetConversationState();

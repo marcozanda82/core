@@ -1330,7 +1330,7 @@ export function wasLastAiMessageClarification(chatHistory = []) {
     // Salta messaggi utente in coda (es. la risposta ai grammi appena aggiunta).
     if (entry.sender === 'user') continue;
     if (entry.sender !== 'ai') continue;
-    if (entry.clarification === true || entry.type === 'ASK_CLARIFICATION' || entry.type === 'REQUEST_FOOD_PHOTO' || entry.requestFoodPhoto === true) return true;
+    if (entry.clarification === true || entry.type === 'ASK_CLARIFICATION' || entry.type === 'REQUEST_FOOD_PHOTO' || entry.requestFoodPhoto === true || entry.mealWizard === true) return true;
     if (Array.isArray(entry.quickReplies) && entry.quickReplies.length >= 2) {
       const t = String(entry.text || '');
       const repliesLookLikeGrams = entry.quickReplies.some((r) =>

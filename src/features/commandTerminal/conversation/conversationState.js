@@ -15,6 +15,10 @@ export const CONVERSATION_STATE = Object.freeze({
   AWAITING_WORKOUT_CONFLICT_RESOLUTION: 'AWAITING_WORKOUT_CONFLICT_RESOLUTION',
   AWAITING_WORKOUT_TIME: 'AWAITING_WORKOUT_TIME',
   AWAITING_CONFIRMATION: 'AWAITING_CONFIRMATION',
+  /** SequentialFoodWizard: in attesa risposta sull'item corrente della coda. */
+  AWAITING_MEAL_WIZARD_ITEM: 'AWAITING_MEAL_WIZARD_ITEM',
+  /** SequentialFoodWizard: riepilogo finale, attesa conferma salvataggio. */
+  AWAITING_MEAL_WIZARD_CONFIRM: 'AWAITING_MEAL_WIZARD_CONFIRM',
 });
 
 const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];

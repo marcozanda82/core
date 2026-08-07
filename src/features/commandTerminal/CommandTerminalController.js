@@ -123,6 +123,19 @@ import {
   isUpdateMealDraftIntent,
 } from './conversation/mealDraftVoiceEdit.js';
 import {
+  createMealWizardState,
+  parseWizardItemReply,
+  commitWizardItemAndAdvance,
+  buildWizardItemPrompt,
+  buildWizardItemQuickReplies,
+  buildWizardAdvanceMessage,
+  buildWizardFinalSummary,
+  buildWizardFinalQuickReplies,
+  buildFoodPayloadFromWizard,
+  classifyWizardFinalReply,
+  buildPendingQueueFromFoodItems,
+} from './conversation/sequentialFoodWizard.js';
+import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
   buildLocalWorkoutPayloadFromText,
@@ -293,6 +306,8 @@ export class CommandTerminalController {
     this.pendingMealUpdate = null;
     /** @type {object | null} Bozza pasto McDrive in sospeso (proposta → correzioni → conferma). */
     this.pendingMealDraft = null;
+    /** @type {import('./conversation/sequentialFoodWizard.js').MealWizardState | null} */
+    this.mealWizardState = null;
     /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
     this.pendingSoftMealRecovery = null;
   }
@@ -326,6 +341,7 @@ export class CommandTerminalController {
         : null,
       pendingMealUpdate: this.getPendingMealUpdate(),
       pendingMealDraft: this.getPendingMealDraft(),
+      mealWizardState: this.getMealWizardState(),
     };
   }
 
@@ -340,6 +356,7 @@ export class CommandTerminalController {
     this.isExecutingAction = false;
     this.pendingMealUpdate = null;
     this.pendingMealDraft = null;
+    this.mealWizardState = null;
     this.pendingSoftMealRecovery = null;
   }
 
@@ -366,6 +383,275 @@ export class CommandTerminalController {
           items: expandFoodPayloadItems(this.pendingMealDraft).map((item) => ({ ...item })),
         }
       : null;
+  }
+
+  getMealWizardState() {
+    return this.mealWizardState
+      ? {
+          ...this.mealWizardState,
+          pendingItems: [...(this.mealWizardState.pendingItems || [])],
+          resolvedItems: (this.mealWizardState.resolvedItems || []).map((i) => ({ ...i })),
+          current: this.mealWizardState.current
+            ? {
+                ...this.mealWizardState.current,
+                candidates: [...(this.mealWizardState.current.candidates || [])],
+              }
+            : null,
+        }
+      : null;
+  }
+
+  clearMealWizardState() {
+    this.mealWizardState = null;
+  }
+
+  getWizardContext(currentState = {}) {
+    return {
+      personalDb: currentState?.foodDatabase
+        || currentState?.trackerFoodDatabase
+        || currentState?.personalFoodDb
+        || null,
+      userPortions: sanitizeUserPortionsDict(
+        currentState?.userPortions
+        || currentState?.nutrition?.userPortions
+        || {},
+      ),
+    };
+  }
+
+  publishWizardItemPrompt(state) {
+    if (!state?.current) return;
+    const text = buildWizardItemPrompt(state.current);
+    const quickReplies = buildWizardItemQuickReplies(state.current);
+    this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ASK_CLARIFICATION',
+        text,
+        message: text,
+        quickReplies,
+        clarification: true,
+        mealWizard: true,
+        mealWizardPhase: 'item',
+        mealProposals: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+  }
+
+  publishWizardConfirmPrompt(state) {
+    const text = buildWizardFinalSummary(state.resolvedItems || []);
+    const quickReplies = buildWizardFinalQuickReplies();
+    // Prepara bozza in sospeso per salvataggio, poi ripristina fase wizard confirm.
+    const payload = normalizeFoodPayload(
+      buildFoodPayloadFromWizard(state),
+      {},
+      { inferMealTypeFromContext: false },
+    );
+    this.stagePendingMealDraft({ ...payload, message: text }, { uiMessage: text });
+    this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ASK_CLARIFICATION',
+        text,
+        message: text,
+        quickReplies,
+        clarification: true,
+        mealWizard: true,
+        mealWizardPhase: 'confirm',
+        mealProposals: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+  }
+
+  /**
+   * Avvia SequentialFoodWizard al posto della proposta batch.
+   */
+  startSequentialFoodWizard(payload, currentState = {}, userText = '') {
+    const items = expandFoodPayloadItems(payload);
+    const pendingItems = buildPendingQueueFromFoodItems(
+      items.length > 0
+        ? items
+        : [{ foodName: String(payload?.foodName || '').trim(), grams: payload?.grams }],
+    );
+    if (pendingItems.length === 0) {
+      return { ok: false, reason: 'empty_wizard_queue' };
+    }
+
+    const ctx = this.getWizardContext(currentState);
+    const withTiming = applyMealTimingDefaultsOnly(payload || {});
+    let state = createMealWizardState({
+      pendingItems,
+      mealType: withTiming.mealType || payload?.mealType || null,
+      exactTime: withTiming.exactTime || payload?.exactTime || null,
+      personalDb: ctx.personalDb,
+      userPortions: ctx.userPortions,
+    });
+    this.mealWizardState = state;
+    this.pendingMealDraft = null;
+    this.pendingAction = null;
+
+    console.log('🧙 DEBUG - START SEQUENTIAL FOOD WIZARD:', {
+      pending: pendingItems.map((p) => p.spokenName),
+      userText: String(userText || '').slice(0, 80),
+    });
+
+    if (state.phase === 'confirm') {
+      this.publishWizardConfirmPrompt(state);
+      return {
+        ok: true,
+        intent: 'MEAL_WIZARD',
+        phase: 'confirm',
+        mealWizardState: this.getMealWizardState(),
+      };
+    }
+
+    this.publishWizardItemPrompt(state);
+    return {
+      ok: true,
+      intent: 'MEAL_WIZARD',
+      phase: 'item',
+      mealWizardState: this.getMealWizardState(),
+    };
+  }
+
+  async processMealWizardResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const state = this.getMealWizardState();
+    if (!state) {
+      this.resetConversationState();
+      return this.processUserMessage(text, currentState, options);
+    }
+
+    const ctx = this.getWizardContext(currentState);
+
+    if (
+      this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM
+      || state.phase === 'confirm'
+    ) {
+      const final = classifyWizardFinalReply(text);
+      if (final === 'confirm') {
+        console.log('🟡 DEBUG - PATH SCELTO: MEAL_WIZARD CONFIRM → SAVE');
+        const payload = normalizeFoodPayload(
+          buildFoodPayloadFromWizard(state),
+          currentState,
+          { inferMealTypeFromContext: false },
+        );
+        this.clearMealWizardState();
+        this.stagePendingMealDraft(payload, { uiMessage: 'Pasto pronto.' });
+        if (this.pendingAction?.commandType === 'ADD_FOOD') {
+          this.pendingAction.payload = { ...payload };
+        }
+        this.pendingCommandPayload = { ...payload };
+        const result = this.executePendingAction();
+        if (result?.ok) {
+          this.publishSystemMessage('Perfetto, pasto salvato.');
+        }
+        return { ...result, intent: 'MEAL_WIZARD_CONFIRM' };
+      }
+      if (final === 'cancel') {
+        this.resetConversationState();
+        this.publishSystemMessage('Ok, bozza annullata.');
+        return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
+      }
+      this.publishWizardConfirmPrompt(state);
+      return { ok: true, awaiting: true, intent: 'MEAL_WIZARD', phase: 'confirm' };
+    }
+
+    // Fase item
+    if (/^(?:annulla|cancel|stop)\b/i.test(text)) {
+      this.resetConversationState();
+      this.publishSystemMessage('Ok, wizard annullato.');
+      return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
+    }
+
+    const parsed = parseWizardItemReply(state, text);
+    if (parsed.requestPhoto) {
+      return this.publishRequestFoodPhoto(
+        {
+          payload: {
+            message: buildRequestFoodPhotoMessage(state.current?.spokenName || ''),
+            foodName: state.current?.spokenName || '',
+            options: [...REQUEST_FOOD_PHOTO_QUICK_REPLIES],
+          },
+        },
+        text,
+      );
+    }
+
+    if (!parsed.ok || !parsed.resolved) {
+      this.publishWizardItemPrompt(state);
+      this.publishSystemMessage(
+        'Non ho colto. Scegli una delle opzioni, oppure dimmi nome e grammi (es. «rosetta 80 grammi»).',
+      );
+      return { ok: true, awaiting: true, intent: 'MEAL_WIZARD', reason: parsed.reason };
+    }
+
+    const nextState = commitWizardItemAndAdvance(state, parsed.resolved, ctx);
+    this.mealWizardState = nextState;
+
+    const advanceText = buildWizardAdvanceMessage(parsed.resolved, nextState);
+    console.log('🧙 DEBUG - WIZARD ITEM RESOLVED:', {
+      resolved: parsed.resolved,
+      remaining: nextState.pendingItems.map((p) => p.spokenName),
+      phase: nextState.phase,
+    });
+
+    if (nextState.phase === 'confirm' || !nextState.current) {
+      // Messaggio unico: salvataggio item + riepilogo finale
+      this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
+      const payload = normalizeFoodPayload(
+        buildFoodPayloadFromWizard(nextState),
+        currentState,
+        { inferMealTypeFromContext: false },
+      );
+      this.stagePendingMealDraft({ ...payload, message: advanceText }, { uiMessage: advanceText });
+      this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
+      this.bus.publish(
+        DISPATCH_SYSTEM_MESSAGE,
+        {
+          type: 'ASK_CLARIFICATION',
+          text: advanceText,
+          message: advanceText,
+          quickReplies: buildWizardFinalQuickReplies(),
+          clarification: true,
+          mealWizard: true,
+          mealWizardPhase: 'confirm',
+        },
+        { source: 'CommandTerminalController' },
+      );
+      return {
+        ok: true,
+        intent: 'MEAL_WIZARD',
+        phase: 'confirm',
+        mealWizardState: this.getMealWizardState(),
+      };
+    }
+
+    // Item successivo: messaggio di avanzamento già include il prompt del prossimo
+    this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ASK_CLARIFICATION',
+        text: advanceText,
+        message: advanceText,
+        quickReplies: buildWizardItemQuickReplies(nextState.current),
+        clarification: true,
+        mealWizard: true,
+        mealWizardPhase: 'item',
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      intent: 'MEAL_WIZARD',
+      phase: 'item',
+      mealWizardState: this.getMealWizardState(),
+    };
   }
 
   /**
@@ -595,6 +881,15 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
+    // SequentialFoodWizard: item-per-item al posto della proposta batch (salvo correzioni McDrive su bozza già chiusa).
+    if (!options?.fromVoiceCorrection && !options?.skipWizard) {
+      const items = expandFoodPayloadItems(payload);
+      if (items.length > 0) {
+        const wizardResult = this.startSequentialFoodWizard(payload, currentState, userText);
+        if (wizardResult?.ok) return wizardResult;
+      }
+    }
+
     const fromVoiceCorrection = options?.fromVoiceCorrection === true;
     // Dopo correzione vocale: non ri-espandere abitudini (rispetta «era rosetta»).
     const butler = fromVoiceCorrection
@@ -2613,6 +2908,14 @@ export class CommandTerminalController {
         return { ok: true, cancelled: true, softRecovery: true };
       }
     }
+    if (
+      this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM
+      || this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM
+      || this.mealWizardState
+    ) {
+      return this.processMealWizardResponse(userText, currentState, options);
+    }
+
     if (this.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
       return await this.processConfirmationResponse(userText, currentState, options);
     }

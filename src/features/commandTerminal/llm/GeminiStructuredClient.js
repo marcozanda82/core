@@ -1119,16 +1119,12 @@ CASO 1: [AZIONE - INSERIMENTO DATI]
 L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
 -> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
-CASO 1b: [MAGGIORDOMO — PROPOSTA DEL SOLITO + CONFERMA]
-L'utente dichiara cibo con termini generici e/o senza grammi (es. 'Ho mangiato la pasta', 'ho mangiato pane e pomodoro').
--> COMPORTAMENTO OBBLIGATORIO: commandType ADD_FOOD con items[] (foodName = termine utente O variante abituale da [USER_HABITS] se chiaramente la più frequente; grams da storico/User_Portions o stima; isEstimated:true se stimati).
-Il sistema mostrerà una bozza da confermare: NON registrare in silenzio.
-In payload.message scrivi una proposta esplicita stile maggiordomo, es:
-«Ho annotato pane e pomodoro. Per il pane, inserisco il tuo solito Pane bauletto integrale, o oggi hai mangiato un tipo diverso? Posso segnare 50g per il pane e 100g per il pomodoro come al solito, o vuoi cambiare le quantità?»
-VIETATO domande aperte tipo «Che tipo di pane?». VIETATO inventare marchi assenti da [USER_HABITS]/DB. Se non c'è abitudine forte, usa ADD_FOOD col nome generico + grammi stimati e chiedi conferma nella stessa frase.
-
-In alternativa (solo se preferisci i pulsanti senza bozza items): ASK_CLARIFICATION con lo stesso message maggiordomo e options ["Sì, va bene", "Oggi è diverso", …alternative abituali].
-
+CASO 1b: [WIZARD SEQUENZIALE — ITEM PER ITEM]
+L'utente elenca uno o più alimenti (es. 'pane e pomodoro', 'ho mangiato yogurt').
+-> COMPORTAMENTO: commandType ADD_FOOD con items[] (un foodName per alimento citato; grams se noti, altrimenti null).
+Il sistema avvierà un wizard vocale: per ogni alimento chiederà quale variante del DB personale e i grammi, poi un riepilogo finale «Salvo nel diario?».
+VIETATO proporre tutto il pasto risolto in un unico messaggio. VIETATO «Che tipo di pane?» generico senza elencare le voci del DB.
+In payload.message puoi lasciare vuoto o una frase breve: il wizard genera i prompt item-by-item.
 CASO 1c: [FOLLOW-UP A CONFERMA / CORREZIONE — McDRIVE]
 Se nel THREAD_RECENTE c'è una proposta maggiordomo / bozza da confermare e l'utente risponde:
 - conferma («Sì», «Va bene», «Confermo») → il sistema usa CONFIRM_MEAL_DRAFT (non inventare un pasto nuovo).
