@@ -1,9 +1,13 @@
 /**
  * Router modalità diabete: separa pasti (motore nutrizione RTDB)
  * da dati clinici (Firestore diario_salute / eccezioni_terapia).
+ *
+ * Regola critica: i follow-up a chiarimenti pasto e gli elenchi alimenti
+ * NON devono mai finire nel motore salute (che li rifiuterebbe).
  */
 
 import {
+  isClarificationFollowUpReply,
   isConsumedMealLogDescription,
   isFoodRegistrationIntent,
   isMealAdviceIntent,
@@ -12,6 +16,7 @@ import {
   isMealProposalQuery,
   isWipMealBuildIntent,
   looksLikeComplexMealLog,
+  wasLastAiMessageClarification,
 } from '../commandTerminal/conversation/mealLogIntent.js';
 import { inferTherapyExceptionFromText } from '../health/utils/therapyPlanStore.js';
 
@@ -23,6 +28,7 @@ import { inferTherapyExceptionFromText } from '../health/utils/therapyPlanStore.
  * @property {boolean} isMeal
  * @property {boolean} isGlycemia
  * @property {boolean} isTherapy
+ * @property {boolean} [isClarificationFollowUp]
  */
 
 const GLYCEMIA_HINT_RE =
@@ -35,7 +41,14 @@ const THERAPY_HINT_RE =
   /farmac|terap|pillol|compres|metformin|insulina|gliflozin|ozempic|jardiance|januvia|medicinale|farmaco|sglt|dpp.?4/i;
 
 const FOOD_SIGNAL_RE =
-  /\b(?:mangiat|consumat|bevut|yogurt|pane|pasta|riso|uova|frutta|carne|pesce|latte|formaggio|fette\s+biscott|biscott|cereali|insalata|pizza|pane|mela|banana|prosciutto|tonno|olio|zucchero|cioccolat)\w*\b/i;
+  /\b(?:mangiat|consumat|bevut|yogurt|pane|pasta|riso|uov[ao]|frutta|carne|pesce|latte|formaggio|fette\s+biscott|biscott|cereali|insalat|pizza|mela|banana|prosciutto|tonno|olio|zucchero|cioccolat|pomodor|bauletto|integrale|fresco|cotto|crudo|mozzarella|bresaola|fesa|petto|pollo|tacchin|salame|mortadella|crackers|gallette|avena|muesli|fiocchi|burro|marmellat|miele|confettur|minestrone|zuppa|passata|sugo|patat|carot|zucchin|peperon|cetriol|lattug|spinac|fagiol|ceci|lenticch|tofu|seitan|hamburger|piadina|focaccia|cornetto|brioche|succo|spremuta|acqua|caff[eè]|th[eè]|t[eè])\w*\b/i;
+
+/** Elenco alimenti senza verbo (es. «pomodoro fresco e pane bauletto»). */
+const FOOD_LIST_RE =
+  /\b[\p{L}][\p{L}\s.'-]{1,40}\s+(?:e|ed|,)\s+[\p{L}][\p{L}\s.'-]{1,40}\b/u;
+
+const MEAL_CONTEXT_ASK_RE =
+  /\b(?:cosa\s+hai\s+mangiat|che\s+hai\s+mangiat|dimmi\s+(?:cosa|gli\s+alimenti|il\s+pasto)|quali\s+alimenti|tipo\s+e\s+quantit|dettagli\s+(?:del\s+)?pasto|elenca(?:mi)?\s+(?:gli\s+)?alimenti|grammature|quantit[aà])\b/i;
 
 /**
  * @param {string} userText
@@ -65,8 +78,57 @@ export function looksLikeTherapyException(userText, plan = null) {
 }
 
 /**
+ * Ultimo messaggio AI chiedeva dettagli sul pasto (anche se non tipizzato ASK_CLARIFICATION).
+ * @param {unknown[]} [chatHistory]
+ * @returns {boolean}
+ */
+export function wasLastAiMessageMealPrompt(chatHistory = []) {
+  if (wasLastAiMessageClarification(chatHistory)) return true;
+
+  for (let i = (chatHistory || []).length - 1; i >= 0; i -= 1) {
+    const entry = chatHistory[i];
+    if (!entry || entry.isTyping) continue;
+    if (entry.sender === 'user') return false;
+    if (entry.sender !== 'ai') continue;
+
+    const text = String(entry.text || '');
+    if (MEAL_CONTEXT_ASK_RE.test(text)) return true;
+    if (/\b(?:pasto|colazione|pranzo|cena|snack|alimenti|cibo|mangiat)\b/i.test(text)
+      && /\b(?:dimmi|specie|precis|dettagl|quale|quanto|cosa|tipo|quantit)\b/i.test(text)) {
+      return true;
+    }
+    // Meal draft / proposal cards = contesto nutrizione attivo
+    if (entry.mealProposal || entry.mealDraft || entry.mealProposals || entry.type === 'MEAL_RECEIPT') {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/**
+ * True se il messaggio elenca alimenti (anche senza “ho mangiato”).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function looksLikeFoodListReply(userText) {
+  const text = String(userText || '').trim();
+  if (!text || text.length > 220) return false;
+  if (/\?/.test(text)) return false;
+  if (looksLikeGlycemiaLog(text) || looksLikeTherapyException(text)) return false;
+
+  if (FOOD_SIGNAL_RE.test(text) && FOOD_LIST_RE.test(text)) return true;
+  if (FOOD_SIGNAL_RE.test(text) && text.split(/\s+/).length <= 12) return true;
+  // Due o più token cibo-like separati da “e”/virgola
+  if (FOOD_LIST_RE.test(text) && /[\p{L}]{3,}/u.test(text) && !THERAPY_HINT_RE.test(text)) {
+    // Evita frasi cliniche generiche
+    if (!/\b(?:glicem|farmac|dose|terap)\b/i.test(text)) return true;
+  }
+  return false;
+}
+
+/**
  * True se il messaggio parla di cibo/pasto da gestire col motore nutrizione.
- * Esclude “ho preso la metformina” e simili.
  *
  * @param {string} userText
  * @param {object} [opts]
@@ -78,6 +140,23 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
   const text = String(userText || '').trim();
   if (!text) return false;
 
+  const history = opts.chatHistory || [];
+
+  // Continuity: risposta a chiarimento / domanda pasto → sempre nutrizione.
+  if (isClarificationFollowUpReply(text, history) || wasLastAiMessageMealPrompt(history)) {
+    if (!looksLikeGlycemiaLog(text) && !looksLikeTherapyException(text, opts.terapiaBase || null)) {
+      // Anche senza verbali tipici: “pomodoro e pane…”
+      if (
+        looksLikeFoodListReply(text)
+        || FOOD_SIGNAL_RE.test(text)
+        || isFoodRegistrationIntent(text)
+        || text.length <= 120
+      ) {
+        return true;
+      }
+    }
+  }
+
   const therapyOnly =
     THERAPY_HINT_RE.test(text)
     && !FOOD_SIGNAL_RE.test(text)
@@ -85,7 +164,6 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
 
   if (therapyOnly) return false;
 
-  // “ho preso X” senza cibo → spesso farmaco
   if (
     /\bho\s+preso\b/i.test(text)
     && THERAPY_HINT_RE.test(text)
@@ -97,16 +175,20 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
   if (isFoodRegistrationIntent(text) || isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) {
     return true;
   }
-  if (isMealProposalQuery(text) || isMealAdviceIntent(text, opts.chatHistory || [])) {
+  if (isMealProposalQuery(text) || isMealAdviceIntent(text, history)) {
     return true;
   }
   if (isMealCompletionIntent(text) || isMealDraftEvaluationIntent(text)) {
     return true;
   }
-  if (isWipMealBuildIntent(text, opts.chatHistory || [], opts.wipMealItems || [])) {
+  if (isWipMealBuildIntent(text, history, opts.wipMealItems || [])) {
     return true;
   }
   if (FOOD_SIGNAL_RE.test(text) && /\b(?:colazione|pranzo|cena|snack|pasto)\b/i.test(text)) {
+    return true;
+  }
+  // Elenco alimenti nudo → diario alimentare, non salute.
+  if (looksLikeFoodListReply(text)) {
     return true;
   }
   return false;
@@ -130,10 +212,17 @@ export function looksLikeNutritionIntent(userText, opts = {}) {
 export function classifyDiabetesChatIntent(userText, opts = {}) {
   const isGlycemia = looksLikeGlycemiaLog(userText);
   const isTherapy = looksLikeTherapyException(userText, opts.terapiaBase || null);
+  const isClarificationFollowUp = isClarificationFollowUpReply(userText, opts.chatHistory || [])
+    || (
+      wasLastAiMessageMealPrompt(opts.chatHistory || [])
+      && !isGlycemia
+      && !isTherapy
+    );
   const isMeal = looksLikeNutritionIntent(userText, {
     chatHistory: opts.chatHistory,
     wipMealItems: opts.wipMealItems,
-  });
+    terapiaBase: opts.terapiaBase,
+  }) || (isClarificationFollowUp && !isGlycemia && !isTherapy);
 
   /** @type {DiabetesChatRoute} */
   let route = 'HEALTH';
@@ -146,5 +235,6 @@ export function classifyDiabetesChatIntent(userText, opts = {}) {
     isMeal,
     isGlycemia,
     isTherapy,
+    isClarificationFollowUp: Boolean(isClarificationFollowUp),
   };
 }

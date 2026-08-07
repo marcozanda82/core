@@ -434,6 +434,7 @@ export function useCommandTerminal({
         ).trim();
         const diabetesMode = isHealthDiabetesChatMode(currentState?.userProfile, healthUid);
         let diabetesSplitAck = '';
+        let classified = null;
 
         if (diabetesMode) {
           if (!resolvedText) {
@@ -444,12 +445,13 @@ export function useCommandTerminal({
             return { ok: true, healthMode: true, reason: 'text_required' };
           }
 
-          const classified = classifyDiabetesChatIntent(resolvedText, {
+          classified = classifyDiabetesChatIntent(resolvedText, {
             chatHistory: historyForLlm,
             wipMealItems: wipSnapshot.wipMealItems || [],
           });
 
-          if (classified.route === 'HEALTH') {
+          // Solo glicemia/farmaci puri → health. Tutto il cibo (anche follow-up) → nutrizione.
+          if (classified.route === 'HEALTH' && !classified.isMeal && !classified.isClarificationFollowUp) {
             try {
               const healthResult = await processHealthChatMessage(resolvedText, {
                 uid: healthUid || undefined,
@@ -515,14 +517,33 @@ export function useCommandTerminal({
             }
             // fall-through → NUTRITION
           }
-          // NUTRITION (e SPLIT dopo il clinico): fall-through al controller pasti
+          // NUTRITION / follow-up pasti / SPLIT: fall-through al controller pasti (RTDB + macro)
         }
 
         const imageOnly = !resolvedText && attachedImages.length > 0;
         const fallbackText =
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
-        const forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
+        let forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
+        if (!forcedIntent && diabetesMode) {
+          // Continuity pasti: elenco alimenti / follow-up → ADD_FOOD sul motore nutrizione.
+          const mealRoute = classified && typeof classified === 'object'
+            ? classified
+            : classifyDiabetesChatIntent(resolvedText, {
+              chatHistory: historyForLlm,
+              wipMealItems: wipSnapshot.wipMealItems || [],
+            });
+          if (
+            mealRoute.isMeal
+            || mealRoute.isClarificationFollowUp
+            || mealRoute.route === 'NUTRITION'
+            || mealRoute.route === 'SPLIT'
+          ) {
+            forcedIntent = 'ADD_FOOD';
+          }
+        }
+        if (!forcedIntent && imageOnly) forcedIntent = 'LOG_SLEEP';
+
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
@@ -530,7 +551,7 @@ export function useCommandTerminal({
           mealWipActive: Boolean(wipSnapshot.mealWipActive),
         }, {
           images: attachedImages,
-          intent: forcedIntent || (imageOnly ? 'LOG_SLEEP' : undefined),
+          intent: forcedIntent,
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
