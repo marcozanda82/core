@@ -35,6 +35,17 @@ export const foodItemSchema = {
         'false se grams viene da User_Portions_Dictionary o da grammi espliciti utente. '
         + 'true SOLO se stima media universale (alimento assente dal dizionario). Ometti/false se grams assente.',
     },
+    searchKeywords: {
+      type: 'array',
+      nullable: true,
+      description:
+        'Espansione semantica per la ricerca DB. DEVE contenere: '
+        + '(1) il termine esatto detto dall utente, '
+        + '(2) l opposto singolare/plurale (noci→noce, mela→mele), '
+        + '(3) i sinonimi italiani piu comuni (cocomero→anguria, arachidi→noccioline, brioche→cornetto). '
+        + 'Max 8 stringhe brevi. foodName resta il termine primario; searchKeywords amplia il matching.',
+      items: { type: 'string' },
+    },
   },
   required: ['foodName', 'icon'],
 };

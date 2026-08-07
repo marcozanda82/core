@@ -21,6 +21,13 @@ const SEARCH_SYNONYMS = {
   pomodori: ['pomodoro', 'pomodorini'],
   uovo: ['uova'],
   uova: ['uovo'],
+  // Fallback lessicale IT (l'LLM può espandere ulteriormente via searchKeywords).
+  cocomero: ['anguria'],
+  anguria: ['cocomero'],
+  arachidi: ['noccioline'],
+  noccioline: ['arachidi'],
+  brioche: ['cornetto'],
+  cornetto: ['brioche'],
 };
 
 /** Punteggi ranking lessicale (0–100). Lo storico NON entra in questi valori. */
@@ -751,6 +758,131 @@ export function compareFoodSearchHits(a, b) {
 
 export function searchFoods(foodDb, query, options = {}) {
   return searchFoodsDetailed(foodDb, query, options).map(({ id, name }) => ({ id, name }));
+}
+
+/**
+ * Normalizza searchKeywords LLM + foodName + flessioni IT locali.
+ * @param {string} foodName
+ * @param {string[]|null|undefined} searchKeywords
+ * @returns {string[]}
+ */
+export function normalizeSearchKeywords(foodName, searchKeywords) {
+  const out = [];
+  const seen = new Set();
+  const push = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw || raw.length > 64) return;
+    const key = normalizeSearchText(raw);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(raw);
+  };
+
+  push(foodName);
+  (Array.isArray(searchKeywords) ? searchKeywords : []).forEach(push);
+
+  const primaryNorm = normalizeSearchText(foodName);
+  const firstToken = primaryNorm.split(' ').filter(Boolean)[0] || '';
+  if (firstToken) {
+    italianSingularPluralForms(firstToken).forEach(push);
+    for (const syn of SEARCH_SYNONYMS[firstToken] || []) push(syn);
+  }
+
+  return out.slice(0, 12);
+}
+
+/**
+ * Two-tier semantico: cicla searchKeywords; match esatto su QUALSIASI keyword = Livello 1.
+ * Altrimenti vince lo score fuzzy/lessicale più alto tra le keyword.
+ * @param {object} foodDb
+ * @param {string|string[]} keywordsOrQuery
+ * @param {object} [options]
+ * @returns {Array<object>}
+ */
+export function searchFoodsWithKeywords(foodDb, keywordsOrQuery, options = {}) {
+  const keywords = Array.isArray(keywordsOrQuery)
+    ? keywordsOrQuery.map((k) => String(k || '').trim()).filter(Boolean)
+    : normalizeSearchKeywords(keywordsOrQuery, options.searchKeywords);
+
+  if (keywords.length === 0) return [];
+  if (keywords.length === 1) {
+    return searchFoodsDetailed(foodDb, keywords[0], options);
+  }
+
+  const limit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.floor(options.limit)
+    : DEFAULT_SEARCH_LIMIT;
+  const perQueryLimit = Math.max(limit, 12);
+  const byId = new Map();
+
+  for (let i = 0; i < keywords.length; i += 1) {
+    const kw = keywords[i];
+    const hits = searchFoodsDetailed(foodDb, kw, {
+      ...options,
+      limit: perQueryLimit,
+    });
+    for (let h = 0; h < hits.length; h += 1) {
+      const hit = hits[h];
+      const id = String(hit.id);
+      const isExact = String(hit.matchTier || '') === 'exact'
+        || Number(hit.strictScore) >= SCORE_EXACT_OR_PREFIX;
+      const next = {
+        ...hit,
+        matchedKeyword: kw,
+        keywordExact: isExact,
+        // Exact su qualsiasi keyword → priorità assoluta Livello 1.
+        strictScore: isExact ? SCORE_EXACT_OR_PREFIX : Number(hit.strictScore) || 0,
+        matchTier: isExact ? 'exact' : hit.matchTier,
+      };
+      const prev = byId.get(id);
+      if (!prev) {
+        byId.set(id, next);
+        continue;
+      }
+      if (next.keywordExact && !prev.keywordExact) {
+        byId.set(id, next);
+        continue;
+      }
+      if (!next.keywordExact && prev.keywordExact) continue;
+      if ((Number(next.strictScore) || 0) > (Number(prev.strictScore) || 0)) {
+        byId.set(id, {
+          ...next,
+          keywordExact: prev.keywordExact || next.keywordExact,
+        });
+      } else if (next.keywordExact) {
+        byId.set(id, { ...prev, keywordExact: true, matchTier: 'exact', strictScore: SCORE_EXACT_OR_PREFIX });
+      }
+    }
+  }
+
+  return [...byId.values()]
+    .sort(compareFoodSearchHits)
+    .slice(0, limit);
+}
+
+/**
+ * True se il nome DB non è una flessione/variante ovvia del termine parlato
+ * (es. cocomero → Anguria) e va dichiarato a voce.
+ * @param {string} spokenName
+ * @param {string} dbName
+ * @returns {boolean}
+ */
+export function shouldDiscloseSynonymMapping(spokenName, dbName) {
+  const s = normalizeSearchText(spokenName);
+  const d = normalizeSearchText(dbName);
+  if (!s || !d) return false;
+  if (s === d) return false;
+  if (d.includes(s) || s.includes(d)) return false;
+
+  const sTok = s.split(' ').filter(Boolean)[0] || '';
+  const dTok = d.split(' ').filter(Boolean)[0] || '';
+  const sForms = new Set(italianSingularPluralForms(sTok));
+  const dForms = italianSingularPluralForms(dTok);
+  if (dForms.some((f) => sForms.has(f))) return false;
+  if ([...sForms].some((f) => d.includes(f))) return false;
+
+  // Sinonimo statico noto: ancora disclosure (cocomero ≠ anguria).
+  return true;
 }
 
 export default searchFoods;

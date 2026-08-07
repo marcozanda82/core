@@ -1342,6 +1342,7 @@ export class CommandTerminalController {
         globalDb: currentState?.globalFoodDb || currentState?.kentuGlobalDb || null,
         nome: name,
         preferredDbKey: item.foodDbKey ?? null,
+        searchKeywords: item.searchKeywords || null,
       });
       if (!match && butlerMeta.unresolvedNames.includes(String(item.spokenFoodName || name).trim())) {
         requestPhotoFor = name;

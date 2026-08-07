@@ -256,6 +256,7 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
       ...catalogs,
       nome: query,
       preferredDbKey: context.preferredDbKey,
+      searchKeywords: context.searchKeywords || null,
     });
     if (preferredMatch) {
       const preferredPortion = buildPortionFromDbMatch(
@@ -286,6 +287,7 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
     ...catalogs,
     nome: query,
     preferredDbKey: null,
+    searchKeywords: context.searchKeywords || null,
   });
   if (cascadeMatch) {
     const portion = buildPortionFromDbMatch(
@@ -345,6 +347,7 @@ export function resolveMealProposalItems(rawItems, context = {}) {
       return resolveFoodItemForProposal(rawName, grams, {
         ...context,
         preferredDbKey: item?.foodDbKey ?? context.preferredDbKey ?? null,
+        searchKeywords: item?.searchKeywords || context.searchKeywords || null,
       });
     })
     .filter(Boolean);

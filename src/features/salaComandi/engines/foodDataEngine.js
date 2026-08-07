@@ -3,7 +3,9 @@ import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits
 import {
   getFoodUsageCount,
   normalizeSearchText,
+  normalizeSearchKeywords,
   searchFoodsDetailed,
+  searchFoodsWithKeywords,
 } from '../../../foodSearch.js';
 
 export const FOOD_RESOLUTION_STATUS = Object.freeze({
@@ -141,7 +143,7 @@ function pickKeyByUsageCount(foodDb, keys) {
  * Tra più risultati per la stessa parola chiave vince sempre usageCount (abitudini).
  * @returns {string | null}
  */
-export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
+export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeywords = null) {
   if (preferredDbKey != null && foodDb?.[preferredDbKey] != null) {
     return preferredDbKey;
   }
@@ -149,11 +151,18 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
   const needle = normalizeSearchText(nome);
   if (!needle || !foodDb || typeof foodDb !== 'object') return null;
 
-  const hits = searchFoodsDetailed(foodDb, nome, {
-    limit: 24,
-    includeUserHistory: false,
-    enableFuzzy: true,
-  });
+  const keywords = normalizeSearchKeywords(nome, searchKeywords);
+  const hits = keywords.length > 1
+    ? searchFoodsWithKeywords(foodDb, keywords, {
+      limit: 24,
+      includeUserHistory: false,
+      enableFuzzy: true,
+    })
+    : searchFoodsDetailed(foodDb, nome, {
+      limit: 24,
+      includeUserHistory: false,
+      enableFuzzy: true,
+    });
   if (!hits.length) return null;
 
   // Accetta match forti (exact/prefix/word ≥75) oppure fuzzy (Levenshtein 1–2 → 85–90).
@@ -197,6 +206,7 @@ export function findFoodDbMatchCascading({
   globalDb = null,
   nome,
   preferredDbKey = null,
+  searchKeywords = null,
 } = {}) {
   const layers = [
     { db: personalDb, source: 'personal' },
@@ -218,7 +228,7 @@ export function findFoodDbMatchCascading({
 
   for (let i = 0; i < layers.length; i += 1) {
     const layer = layers[i];
-    const key = findFoodDbKey(layer.db, query, null);
+    const key = findFoodDbKey(layer.db, query, null, searchKeywords);
     if (key != null && layer.db[key] != null) {
       return { key, foodDb: layer.db, source: layer.source };
     }

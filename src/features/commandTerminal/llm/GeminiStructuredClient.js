@@ -880,6 +880,27 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     delete next.name;
     delete next.qty;
     delete next.weight;
+
+    // Espansione semantica: termine detto + flessioni/sinonimi LLM.
+    const rawKeywords = Array.isArray(next.searchKeywords) ? next.searchKeywords : [];
+    const keywordSeen = new Set();
+    const cleanedKeywords = [];
+    const pushKeyword = (value) => {
+      const t = asTrimmedString(value);
+      if (!t || t.length > 64) return;
+      const key = t.toLowerCase();
+      if (keywordSeen.has(key)) return;
+      keywordSeen.add(key);
+      cleanedKeywords.push(t);
+    };
+    pushKeyword(cleanName);
+    rawKeywords.forEach(pushKeyword);
+    if (cleanedKeywords.length > 0) {
+      next.searchKeywords = cleanedKeywords.slice(0, 8);
+    } else {
+      delete next.searchKeywords;
+    }
+
     return next;
   };
 
@@ -906,6 +927,9 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     const single = sanitizeItem({
       foodName: payload.foodName,
       grams: payload.grams,
+      icon: payload.icon,
+      isEstimated: payload.isEstimated,
+      searchKeywords: payload.searchKeywords,
     });
     if (single) {
       payload.items = applyItemFilter([single]);
@@ -914,6 +938,7 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     }
     delete payload.foodName;
     delete payload.grams;
+    delete payload.searchKeywords;
   }
 
   const mealRaw = asTrimmedString(payload.mealType).toLowerCase();
@@ -1181,17 +1206,18 @@ export class GeminiStructuredClient {
 User: "Ho mangiato 90g di sardine all'olio e 160g di pane integrale"
 Output Corretto per payload.items:
 [
-  { "foodName": "sardine all'olio", "grams": 90, "isEstimated": false },
-  { "foodName": "pane integrale", "grams": 160, "isEstimated": false }
+  { "foodName": "sardine all'olio", "grams": 90, "isEstimated": false, "searchKeywords": ["sardine all'olio", "sardina all'olio", "sardine"] },
+  { "foodName": "pane integrale", "grams": 160, "isEstimated": false, "searchKeywords": ["pane integrale", "pane"] }
 ]
 REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alimento da cercare nel database. Rimuovi le congiunzioni (e, con, ed) e rimuovi le quantità dal nome. VIETATO: "e 160 g di pane integrale".`,
         "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB (es. \"pane integrale\"). NO grammi, NO congiunzioni.",
         "HARD CONSTRAINT — MAPPATURA GRAMMI 1:1: ogni alimento ha i PROPRI grammi. Mai copiare i grammi del primo sui successivi.",
         "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'con' separano alimenti, non entrano nel foodName.",
+        "REGOLA ADD_FOOD (searchKeywords — ESPANSIONE SEMANTICA): Per ogni alimento estratto, genera searchKeywords[] con: (1) il termine esatto detto dall utente; (2) l opposto singolare/plurale (noci→noce, mela→mele); (3) i sinonimi italiani piu comuni (cocomero→anguria, arachidi→noccioline, brioche→cornetto). Max 8 voci. foodName resta il termine primario parlato.",
         "MAGGIORDOMO — PROPOSTA DEL SOLITO (SOLO mono-alimento): se l'utente cita UN solo termine generico (es. «pane») e in [USER_HABITS] / DB personale c'è una variante frequente, puoi metterla in foodName SOLO come proposta — mai come fatto compiuto. Scrivi in payload.message la conferma («Per il pane, inserisco il tuo solito …?»). VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico.",
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, estrai TUTTI in payload.items[] (uno per alimento). payload.message DEVE essere VUOTO: il SequentialFoodWizard gestisce la voce item-per-item. VIETATO menzionare grammi/varianti di piu alimenti in un unico messaggio.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName e grams. NON inventare foodDbKey ne macronutrienti. Con UN solo alimento puoi dichiarare la variante abituale in payload.message; con PIU alimenti lascia message vuoto.",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName, searchKeywords e grams. NON inventare foodDbKey ne macronutrienti. Con UN solo alimento puoi dichiarare la variante abituale in payload.message; con PIU alimenti lascia message vuoto.",
         "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
         "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
         "REGOLA ADD_FOOD (nessuna quantita — mono): Se l'utente dichiara UN alimento SENZA grammi, proponi la porzione storica con isEstimated:true in payload.message. Con PIU alimenti: grams stimati negli items, message VUOTO. Se il prodotto è sconosciuto → REQUEST_FOOD_PHOTO.",
@@ -1292,7 +1318,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto: ADD_FOOD con items[] (tutti gli alimenti citati). MONO → payload.message maggiordomo (solito+grammi). MULTI (es. "pane e pomodoro") → message VUOTO (wizard sequenziale). Mai «Che tipo di…?». Sconosciuto → REQUEST_FOOD_PHOTO. adviceMessage/uiMessage VUOTI.'
+        ? 'Registrazione pasto: ADD_FOOD con items[] (tutti gli alimenti citati). Per ogni item: foodName + searchKeywords (termine detto, singolare/plurale, sinonimi IT es. cocomero→anguria). MONO → payload.message maggiordomo. MULTI → message VUOTO (wizard). Mai «Che tipo di…?». Sconosciuto → REQUEST_FOOD_PHOTO. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'

@@ -2395,6 +2395,7 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
   const resolved = resolveFoodItemForProposal(rawName, grams, {
     ...resolveCtx,
     preferredDbKey: item.foodDbKey ?? null,
+    searchKeywords: item.searchKeywords || null,
   });
 
   // Tolleranza zero: senza match DB non si conservano macro LLM/abitudine.

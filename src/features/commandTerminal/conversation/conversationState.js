@@ -113,6 +113,9 @@ function normalizeFoodItem(item) {
   const isEstimated = grams != null && item?.isEstimated === true;
   const wasEstimated = item?.wasEstimated === true || isEstimated;
   const icon = String(item?.icon || '').trim();
+  const searchKeywords = Array.isArray(item?.searchKeywords)
+    ? item.searchKeywords.map((k) => String(k || '').trim()).filter(Boolean).slice(0, 12)
+    : null;
   return {
     foodName,
     grams,
@@ -122,6 +125,7 @@ function normalizeFoodItem(item) {
     ...(item?.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
     ...(item?.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
     ...(item?.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
+    ...(searchKeywords && searchKeywords.length > 0 ? { searchKeywords } : {}),
   };
 }
 

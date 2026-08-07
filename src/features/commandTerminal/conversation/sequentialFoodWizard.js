@@ -4,7 +4,15 @@
  * mealWizardState: { pendingItems, resolvedItems, current, mealType, exactTime }
  */
 
-import { searchFoodsDetailed, normalizeSearchText, getFoodUsageCount, compareFoodSearchHits } from '../../../foodSearch.js';
+import {
+  searchFoodsWithKeywords,
+  normalizeSearchText,
+  normalizeSearchKeywords,
+  getFoodUsageCount,
+  compareFoodSearchHits,
+  shouldDiscloseSynonymMapping,
+  italianSingularPluralForms,
+} from '../../../foodSearch.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 
 export const MEAL_WIZARD_STATE = 'AWAITING_MEAL_WIZARD_ITEM';
@@ -25,17 +33,25 @@ const FOOD_FAMILY_SYNONYMS = Object.freeze({
   pollo: ['pollo', 'petti', 'petto'],
 });
 
-function expandSearchQueries(spokenName) {
+/**
+ * Query di ricerca: searchKeywords LLM + famiglie locali + flessioni.
+ * @param {string} spokenName
+ * @param {string[]|null|undefined} searchKeywords
+ * @returns {string[]}
+ */
+function expandSearchQueries(spokenName, searchKeywords = null) {
+  const keywords = normalizeSearchKeywords(spokenName, searchKeywords);
   const needle = normalizeSearchText(spokenName);
-  if (!needle) return [];
   const token = needle.split(' ').filter(Boolean)[0];
-  const family = FOOD_FAMILY_SYNONYMS[token];
-  if (family) return [...new Set([needle, ...family])];
-  return [needle];
+  const family = token ? FOOD_FAMILY_SYNONYMS[token] : null;
+  if (family) {
+    return [...new Set([...keywords, ...family])];
+  }
+  return keywords.length > 0 ? keywords : (needle ? [needle] : []);
 }
 
 /**
- * @typedef {{ spokenName: string, gramsHint?: number|null }} WizardPendingItem
+ * @typedef {{ spokenName: string, gramsHint?: number|null, searchKeywords?: string[] }} WizardPendingItem
  * @typedef {{
  *   foodName: string,
  *   grams: number,
@@ -98,7 +114,7 @@ export function buildPendingQueueFromNames(names = []) {
 }
 
 /**
- * @param {Array<{foodName?: string, name?: string, grams?: number}>} items
+ * @param {Array<{foodName?: string, name?: string, grams?: number, searchKeywords?: string[]}>} items
  * @returns {WizardPendingItem[]}
  */
 export function buildPendingQueueFromFoodItems(items = []) {
@@ -111,9 +127,11 @@ export function buildPendingQueueFromFoodItems(items = []) {
     if (!key || seen.has(key)) return;
     seen.add(key);
     const grams = Number(item?.grams);
+    const searchKeywords = normalizeSearchKeywords(spokenName, item?.searchKeywords);
     out.push({
       spokenName,
       gramsHint: Number.isFinite(grams) && grams > 0 ? Math.round(grams) : null,
+      ...(searchKeywords.length > 0 ? { searchKeywords } : {}),
     });
   });
   return out;
@@ -136,7 +154,12 @@ export function resolveWizardPendingQueue(items = [], bareNames = []) {
         const ik = normalizeSearchText(i.spokenName);
         return ik === key || ik.includes(key) || key.includes(ik);
       });
-      return hit?.gramsHint ? { ...pending, gramsHint: hit.gramsHint } : pending;
+      if (!hit) return pending;
+      return {
+        ...pending,
+        ...(hit.gramsHint ? { gramsHint: hit.gramsHint } : {}),
+        ...(hit.searchKeywords?.length ? { searchKeywords: hit.searchKeywords } : {}),
+      };
     });
   }
   if (fromItems.length === 0) return fromNames;
@@ -183,51 +206,52 @@ export function shouldForceSequentialFoodWizard(itemsOrCount, userText = '', ext
 }
 
 /**
- * Candidati dal DB personale per un termine (es. «pane»).
+ * Candidati dal DB personale per un termine (es. «pane» / «cocomero»).
+ * Cicla searchKeywords: match esatto su qualsiasi keyword = Livello 1.
  * @param {object|null} personalDb
  * @param {string} spokenName
  * @param {Record<string, number>} [userPortions]
+ * @param {string[]|null} [searchKeywords]
  * @returns {WizardCandidate[]}
  */
-export function findWizardCandidates(personalDb, spokenName, userPortions = {}) {
+export function findWizardCandidates(personalDb, spokenName, userPortions = {}, searchKeywords = null) {
   const needle = String(spokenName || '').trim();
   if (!needle || !personalDb || typeof personalDb !== 'object') return [];
 
-  const queries = expandSearchQueries(needle);
-  const byId = new Map();
-
-  queries.forEach((q) => {
-    const hits = searchFoodsDetailed(personalDb, q, {
-      limit: 12,
-      includeUserHistory: false,
-      enableFuzzy: true,
-    });
-    hits.forEach((hit) => {
-      const id = String(hit.id);
-      const prev = byId.get(id);
-      if (!prev || (Number(hit.strictScore) || 0) > (Number(prev.strictScore) || 0)) {
-        byId.set(id, hit);
-      }
-    });
+  const queries = expandSearchQueries(needle, searchKeywords);
+  // Una sola passata multi-keyword: exact su qualsiasi termine = Livello 1.
+  const hits = searchFoodsWithKeywords(personalDb, queries, {
+    limit: 24,
+    includeUserHistory: false,
+    enableFuzzy: true,
   });
 
   const needleNorm = normalizeSearchText(needle);
   const needleTokens = needleNorm.split(' ').filter(Boolean);
   const family = FOOD_FAMILY_SYNONYMS[needleTokens[0]] || [];
+  const keywordNorms = new Set(
+    queries.map((q) => normalizeSearchText(q)).filter(Boolean),
+  );
 
-  const ranked = [...byId.values()]
+  const ranked = hits
     .map((hit) => {
       const food = personalDb[hit.id];
       const name = String(hit.name || food?.desc || food?.name || '').trim();
       const nameNorm = normalizeSearchText(name);
       const contains = needleTokens.every((t) => nameNorm.includes(t));
       const familyHit = family.some((syn) => nameNorm.includes(syn));
+      const synonymExact = keywordNorms.has(nameNorm)
+        || [...keywordNorms].some((kw) => kw && (nameNorm === kw || italianSingularPluralForms(kw).includes(nameNorm)));
       const usageCount = Number(hit.usageCount) || getFoodUsageCount(food) || 0;
       const lastUsedAt = getFoodLastUsedAt(food);
-      const strict = Number(hit.strictScore) || 0;
-      const matchTier = String(hit.matchTier || 'none');
-      // Exact full-name (100) > token in multi-word (80) > family synonym.
-      const familyBoost = familyHit && !contains ? 5 : 0;
+      let strict = Number(hit.strictScore) || 0;
+      let matchTier = String(hit.matchTier || 'none');
+      // Exact full-name su foodName O su qualsiasi searchKeyword → Livello 1.
+      if (synonymExact || hit.keywordExact || matchTier === 'exact') {
+        strict = Math.max(strict, 100);
+        matchTier = 'exact';
+      }
+      const familyBoost = familyHit && !contains && matchTier !== 'exact' ? 5 : 0;
       return {
         id: String(hit.id),
         name,
@@ -322,6 +346,14 @@ export function buildWizardItemPrompt(current, meta = {}) {
   const gramsPhrase = explicit
     ? `da ${preferredGrams}g come hai richiesto`
     : `da ${preferredGrams}g`;
+
+  // Sinonimo risolto (cocomero → Anguria): voce trasparente.
+  if (shouldDiscloseSynonymMapping(spoken, preferredName)) {
+    const spokenText = hasVariants
+      ? `${intro}Per ${spoken}, nel database ho ${preferredName}. Ti propongo ${preferredGrams} grammi. Confermi o scegli una delle varianti a schermo?`
+      : `${intro}Per ${spoken}, nel database ho ${preferredName}. Ti propongo ${preferredGrams} grammi. Va bene?`;
+    return { spokenText, displayText: spokenText };
+  }
 
   const spokenText = hasVariants
     ? `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} ${gramsPhrase}. Confermi o scegli una delle varianti a schermo?`
@@ -755,6 +787,7 @@ export function advanceWizardToNextItem(state, ctx = {}) {
     ctx.personalDb || null,
     head.spokenName,
     ctx.userPortions || {},
+    head.searchKeywords || null,
   );
   candidates = withExplicitGramsOnCandidates(candidates, explicitGrams);
 

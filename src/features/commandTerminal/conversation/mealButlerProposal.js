@@ -3,7 +3,12 @@
  * chiede sempre conferma esplicita (mai deduzione silenziosa, mai «Che tipo di…?»).
  */
 
-import { searchFoodsDetailed, normalizeSearchText } from '../../../foodSearch.js';
+import {
+  searchFoodsWithKeywords,
+  normalizeSearchText,
+  normalizeSearchKeywords,
+  shouldDiscloseSynonymMapping,
+} from '../../../foodSearch.js';
 import { normalizePortionFoodKey } from './userPortionsMemory.js';
 
 export const BUTLER_MEAL_QUICK_REPLIES = Object.freeze([
@@ -49,11 +54,12 @@ export function isGenericFoodName(foodName) {
  * @param {string} genericName
  * @returns {{ id: string, name: string, usageCount: number } | null}
  */
-export function findMostFrequentPersonalFood(personalDb, genericName) {
+export function findMostFrequentPersonalFood(personalDb, genericName, searchKeywords = null) {
   const needle = String(genericName || '').trim();
   if (!needle || !personalDb || typeof personalDb !== 'object') return null;
 
-  const hits = searchFoodsDetailed(personalDb, needle, {
+  const keywords = normalizeSearchKeywords(needle, searchKeywords);
+  const hits = searchFoodsWithKeywords(personalDb, keywords, {
     limit: 12,
     includeUserHistory: false,
     enableFuzzy: true,
@@ -178,17 +184,42 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
     let foodName = originalName;
     let foodDbKey = item.foodDbKey ?? null;
     let proposedFromHabit = false;
+    let synonymMapped = false;
 
     const generic = isGenericFoodName(originalName)
       || normalizeSearchText(originalName).split(' ').filter(Boolean).length === 1;
+    const keywords = normalizeSearchKeywords(originalName, item.searchKeywords);
 
-    if (generic && personalDb) {
-      const habit = findMostFrequentPersonalFood(personalDb, originalName);
+    // Exact su searchKeywords (es. cocomero → Anguria) prima dell'habit «solito».
+    if (personalDb) {
+      const hits = searchFoodsWithKeywords(personalDb, keywords, {
+        limit: 8,
+        includeUserHistory: false,
+        enableFuzzy: true,
+      });
+      const exactHit = hits.find((h) => (
+        String(h.matchTier || '') === 'exact'
+        || h.keywordExact === true
+        || Number(h.strictScore) >= 100
+      ));
+      if (exactHit?.name && shouldDiscloseSynonymMapping(originalName, exactHit.name)) {
+        foodName = String(exactHit.name).trim();
+        foodDbKey = exactHit.id;
+        synonymMapped = true;
+      }
+    }
+
+    if (!synonymMapped && generic && personalDb) {
+      const habit = findMostFrequentPersonalFood(personalDb, originalName, item.searchKeywords);
       if (habit && normalizeSearchText(habit.name) !== normalizeSearchText(originalName)) {
         foodName = habit.name;
         foodDbKey = habit.id;
-        proposedFromHabit = true;
-        anyHabitApplied = true;
+        if (shouldDiscloseSynonymMapping(originalName, habit.name)) {
+          synonymMapped = true;
+        } else {
+          proposedFromHabit = true;
+          anyHabitApplied = true;
+        }
       }
     }
 
@@ -211,7 +242,7 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
       }
     }
 
-    if (proposedFromHabit || isEstimated) {
+    if (proposedFromHabit || (isEstimated && !synonymMapped)) {
       habitProposals.push({
         originalName,
         proposedName: foodName,
@@ -220,8 +251,8 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
     }
 
     // Se dopo enrich il nome è ancora generico e non c'è match DB utile → unresolved
-    if (!proposedFromHabit && personalDb) {
-      const hits = searchFoodsDetailed(personalDb, foodName, {
+    if (!proposedFromHabit && !synonymMapped && personalDb) {
+      const hits = searchFoodsWithKeywords(personalDb, keywords, {
         limit: 3,
         includeUserHistory: false,
         enableFuzzy: true,
@@ -244,6 +275,9 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
       isEstimated,
       ...(proposedFromHabit
         ? { proposedFromHabit: true, spokenFoodName: originalName }
+        : {}),
+      ...(synonymMapped
+        ? { synonymMapped: true, spokenFoodName: originalName }
         : {}),
     };
   });
@@ -269,6 +303,15 @@ export function buildButlerConfirmationMessage(items = [], meta = {}) {
     return 'Ho preparato il pasto. Confermi, o vuoi cambiare qualcosa?';
   }
 
+  // Mono: disclosure sinonimo (cocomero → Anguria).
+  if (list.length === 1 && list[0].synonymMapped) {
+    const spoken = String(list[0].spokenFoodName || list[0].foodName || '').trim();
+    const dbName = String(list[0].foodName || '').trim();
+    const g = Math.round(Number(list[0].grams) || 0);
+    const gramsBit = g > 0 ? ` Ti propongo ${g} grammi.` : '';
+    return `Per ${spoken}, nel database ho ${dbName}.${gramsBit} Va bene?`.replace(/\s+/g, ' ').trim();
+  }
+
   const spokenList = list
     .map((i) => String(i.spokenFoodName || i.foodName || '').trim())
     .filter(Boolean);
@@ -276,19 +319,45 @@ export function buildButlerConfirmationMessage(items = [], meta = {}) {
     ? spokenList.join(' e ')
     : list.map((i) => i.foodName).join(' e ');
 
+  const synonymLines = list
+    .filter((i) => i.synonymMapped && shouldDiscloseSynonymMapping(
+      i.spokenFoodName || i.foodName,
+      i.foodName,
+    ))
+    .map((i) => {
+      const spoken = String(i.spokenFoodName || '').trim();
+      const dbName = String(i.foodName || '').trim();
+      const g = Math.round(Number(i.grams) || 0);
+      const gramsBit = g > 0 ? ` Ti propongo ${g} grammi` : '';
+      return `Per ${spoken}, nel database ho ${dbName}.${gramsBit}`;
+    });
+
   const habitLines = (Array.isArray(meta.habitProposals) ? meta.habitProposals : [])
     .filter((p) => p && normalizeSearchText(p.originalName) !== normalizeSearchText(p.proposedName))
+    .filter((p) => !list.some((i) => (
+      i.synonymMapped
+      && normalizeSearchText(i.spokenFoodName || '') === normalizeSearchText(p.originalName)
+    )))
     .map((p) => {
       const g = Number(p.grams) > 0 ? ` (${Math.round(Number(p.grams))}g)` : '';
       return `Per il ${p.originalName}, inserisco il tuo solito «${p.proposedName}»${g}`;
     });
 
   const gramsBits = list
-    .filter((i) => Number(i.grams) > 0)
+    .filter((i) => Number(i.grams) > 0 && !i.synonymMapped)
     .map((i) => `${Math.round(Number(i.grams))}g per ${String(i.spokenFoodName || i.foodName).toLowerCase()}`);
 
   const parts = [];
+  if (synonymLines.length > 0 && list.length === synonymLines.length) {
+    parts.push(`${synonymLines.join('. ')}. Va bene?`);
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
   parts.push(`Ho annotato ${annotated}.`);
+
+  if (synonymLines.length > 0) {
+    parts.push(`${synonymLines.join('. ')}.`);
+  }
 
   if (habitLines.length > 0) {
     parts.push(`${habitLines.join('. ')}, o oggi hai mangiato un tipo diverso?`);
@@ -299,8 +368,10 @@ export function buildButlerConfirmationMessage(items = [], meta = {}) {
       ? gramsBits[0]
       : `${gramsBits.slice(0, -1).join(', ')} e ${gramsBits[gramsBits.length - 1]}`;
     parts.push(`Posso segnare ${gramsPhrase} come al solito, o vuoi cambiare le quantità?`);
-  } else if (habitLines.length === 0) {
+  } else if (habitLines.length === 0 && synonymLines.length === 0) {
     parts.push('Va bene così, o vuoi cambiare qualcosa?');
+  } else if (synonymLines.length > 0 && habitLines.length === 0) {
+    parts.push('Va bene?');
   }
 
   return parts.join(' ').replace(/\s+/g, ' ').trim();
