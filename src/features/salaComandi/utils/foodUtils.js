@@ -1,37 +1,15 @@
 import { normalizeMealFoodItem, normalizeMealFoodsArray } from '../../../coreEngine';
+import { findFoodDbKey } from '../engines/foodDataEngine.js';
 
 /**
- * Match migliore sul database alimenti: esatto > bidirezionale (includes) con score da differenza di lunghezza.
+ * Match migliore sul database alimenti (stesso motore della ricerca chat):
+ * exact / prefix / word / fuzzy + usageCount.
  * @param {string} searchQuery
  * @param {Record<string, { desc?: string, name?: string }>} db
  * @returns {string|null} chiave dell'entry nel db o null
  */
 export function findBestFoodMatch(searchQuery, db) {
-  if (!searchQuery || !db) return null;
-  const query = searchQuery.toLowerCase().trim();
-  if (!query) return null;
-  let bestMatchKey = null;
-  let bestScore = -1;
-
-  for (const key in db) {
-    if (!Object.prototype.hasOwnProperty.call(db, key)) continue;
-    const item = db[key];
-    const dbName = (item.desc || item.name || '').toLowerCase().trim();
-    if (!dbName) continue;
-
-    if (dbName === query) return key;
-
-    if (dbName.includes(query) || query.includes(dbName)) {
-      const lengthDiff = Math.abs(dbName.length - query.length);
-      const score = 1000 - lengthDiff;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatchKey = key;
-      }
-    }
-  }
-  return bestMatchKey;
+  return findFoodDbKey(db, searchQuery, null);
 }
 
 /**

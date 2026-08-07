@@ -157,12 +157,25 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null) {
   if (!hits.length) return null;
 
   // Accetta match forti (exact/prefix/word ≥75) oppure fuzzy (Levenshtein 1–2 → 85–90).
+  // Accetta anche substring “forte” (≥50) se è l’unico candidato e la query è una parola intera nel nome.
   const acceptable = hits.filter((hit) => {
     const tier = String(hit.matchTier || '');
     const score = Number(hit.strictScore) || 0;
+    if (tier === 'exact' || tier === 'prefix') return true;
     if (tier === 'fuzzy') return score >= 85;
+    if (tier === 'word_boundary') return score >= 75;
     return score >= 75;
   });
+  if (acceptable.length === 0 && hits.length > 0) {
+    // Ultimo fallback: miglior hit se ≥ SCORE_SUBSTRING e query corta (es. pomodoro in “salsa…”).
+    const needle = normalizeSearchText(nome);
+    const best = hits[0];
+    const bestScore = Number(best?.strictScore) || 0;
+    if (best && needle.length >= 4 && bestScore >= 50) {
+      return pickKeyByUsageCount(foodDb, hits.slice(0, 5).map((h) => h.id)) || best.id;
+    }
+    return null;
+  }
   if (acceptable.length === 0) return null;
 
   // Exact/parziali: best match = quello mangiato più spesso.

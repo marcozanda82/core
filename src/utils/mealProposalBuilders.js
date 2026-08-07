@@ -47,29 +47,39 @@ export function buildMealProposalLogEntries(selectedItems, options = {}) {
   if (!Array.isArray(selectedItems) || selectedItems.length === 0) return [];
 
   return selectedItems.map((it, index) => {
-    const name = String(it.name || '').trim() || 'Alimento';
-    const qty = Math.max(1, Math.round(Number(it.qty) || 100));
-    const matchedKey =
-      it.dbKey != null && foodDb[it.dbKey] != null
-        ? it.dbKey
-        : (typeof findBestFoodMatch === 'function' ? findBestFoodMatch(name, foodDb) : null);
+    const name = String(it.name || it.foodName || it.desc || '').trim() || 'Alimento';
+    const qty = Math.max(1, Math.round(Number(it.qty ?? it.grams ?? it.qta) || 100));
+    const preferredKey = it.foodDbKey ?? it.matchedKey ?? it.dbKey ?? null;
 
-    if (matchedKey != null && typeof resolveFoodFromDb === 'function') {
-      const dati = resolveFoodFromDb(name, qty, mealSlot, matchedKey);
-      const isRecipe = dati?.type === 'recipe';
-      return {
-        ...dati,
-        id: dati.id || `${batchId}_${index}`,
-        type: isRecipe ? 'recipe' : 'food',
-        name: dati.name ?? dati.desc ?? name,
-        desc: dati.desc ?? name,
-        qta: dati.qta ?? dati.weight ?? qty,
-        weight: dati.weight ?? dati.qta ?? qty,
-        mealType: mealTypeCanonical,
-        mealTime: mealDec,
-        batchId,
-        isEstimated: false,
-      };
+    // Cascata personale → Kentu: resolveFoodFromDb (estraiDatiFoodDb) gestisce i layer.
+    // Non richiedere match solo sul DB personale prima della risoluzione.
+    if (typeof resolveFoodFromDb === 'function') {
+      let preferred = preferredKey;
+      if (preferred != null && foodDb && foodDb[preferred] == null) {
+        // Chiave Kentu / altro layer: passa comunque come preferred alla cascata.
+        preferred = preferredKey;
+      } else if (preferred == null && typeof findBestFoodMatch === 'function') {
+        preferred = findBestFoodMatch(name, foodDb);
+      }
+
+      const dati = resolveFoodFromDb(name, qty, mealSlot, preferred || null);
+      if (dati && String(dati.status || '') !== 'NEEDS_RESOLUTION') {
+        const isRecipe = dati?.type === 'recipe';
+        return {
+          ...dati,
+          id: dati.id || `${batchId}_${index}`,
+          type: isRecipe ? 'recipe' : 'food',
+          name: dati.name ?? dati.desc ?? name,
+          desc: dati.desc ?? name,
+          qta: dati.qta ?? dati.weight ?? qty,
+          weight: dati.weight ?? dati.qta ?? qty,
+          mealType: mealTypeCanonical,
+          mealTime: mealDec,
+          batchId,
+          isEstimated: false,
+          status: 'RESOLVED',
+        };
+      }
     }
 
     const qSafe = Math.max(5, qty);

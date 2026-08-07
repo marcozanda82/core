@@ -3682,12 +3682,10 @@ export default function SalaComandi() {
         .map((item, index) => {
           const name = item.name;
           const qty = Math.max(1, Number(item.qty));
-          const matchedKey =
-            item.matchedKey != null && foodDb[item.matchedKey] != null
-              ? item.matchedKey
-              : findBestFoodMatch(name, foodDb);
-          if (matchedKey != null) {
-            const dati = estraiDatiFoodDb(name, qty, batchMealType, matchedKey);
+          const preferredKey = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
+          // Sempre cascata personale → Kentu (anche senza preferredKey sul solo DB personale).
+          const dati = estraiDatiFoodDb(name, qty, batchMealType, preferredKey || null);
+          if (dati && String(dati.status || '') !== 'NEEDS_RESOLUTION') {
             const isRecipe = dati.type === 'recipe';
             return {
               ...dati,

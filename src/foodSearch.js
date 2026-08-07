@@ -17,6 +17,10 @@ const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SEARCH_SYNONYMS = {
   arrosto: ['cotto'],
   pollo: ['chicken'],
+  pomodoro: ['pomodori', 'pomodorini'],
+  pomodori: ['pomodoro', 'pomodorini'],
+  uovo: ['uova'],
+  uova: ['uovo'],
 };
 
 /** Punteggi ranking (0–100). */
@@ -202,7 +206,40 @@ function escapeRegex(str) {
 }
 
 function expandQueryWords(queryWord) {
-  return [queryWord, ...(SEARCH_SYNONYMS[queryWord] || [])];
+  const base = String(queryWord || '');
+  const out = new Set([base, ...(SEARCH_SYNONYMS[base] || [])]);
+  // Stemming leggero IT: pomodori↔pomodoro, mele↔mela, ecc.
+  for (const stem of italianSingularPluralForms(base)) {
+    out.add(stem);
+    for (const syn of SEARCH_SYNONYMS[stem] || []) out.add(syn);
+  }
+  return [...out].filter(Boolean);
+}
+
+/**
+ * Varianti singolare/plurale italiane comuni per match alimenti.
+ * @param {string} word
+ * @returns {string[]}
+ */
+export function italianSingularPluralForms(word) {
+  const w = String(word || '').trim().toLowerCase();
+  if (w.length < 3) return w ? [w] : [];
+  const forms = new Set([w]);
+  if (w.endsWith('i') && w.length > 3) {
+    forms.add(`${w.slice(0, -1)}o`); // pomodori → pomodoro
+    forms.add(`${w.slice(0, -1)}e`); // pesci → pesce (approssimato)
+  }
+  if (w.endsWith('o') && w.length > 3) forms.add(`${w.slice(0, -1)}i`);
+  if (w.endsWith('a') && w.length > 3) forms.add(`${w.slice(0, -1)}e`);
+  if (w.endsWith('e') && w.length > 3) {
+    forms.add(`${w.slice(0, -1)}a`);
+    forms.add(`${w.slice(0, -1)}i`);
+  }
+  if (w.endsWith('chi')) forms.add(`${w.slice(0, -3)}co`);
+  if (w.endsWith('co')) forms.add(`${w.slice(0, -2)}chi`);
+  if (w.endsWith('ghi')) forms.add(`${w.slice(0, -3)}go`);
+  if (w.endsWith('go')) forms.add(`${w.slice(0, -2)}ghi`);
+  return [...forms];
 }
 
 function hasWordBoundaryMatch(normalizedText, queryWord) {
@@ -370,14 +407,23 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     const [id, food] = entries[i];
     const descName = String(food?.desc || '').trim();
     const altName = String(food?.name || '').trim();
-    const name = descName || altName;
+    // Fallback chiave DB: spesso il personale ha solo la key ("pomodoro") senza desc.
+    const keyAsName = String(id || '').trim();
+    const keyLooksLikeName = keyAsName.length >= 2
+      && !/^\d+$/.test(keyAsName)
+      && !/^food[_-]?\d+/i.test(keyAsName)
+      && /[\p{L}]/u.test(keyAsName);
+    const name = descName || altName || (keyLooksLikeName ? keyAsName.replace(/[_-]+/g, ' ') : '');
     if (!name) continue;
 
     const normalizedName = normalizeSearchText(name);
     const normalizedAlt = altName && altName !== name ? normalizeSearchText(altName) : '';
-    if (!normalizedName && !normalizedAlt) continue;
+    const normalizedKey = keyLooksLikeName && keyAsName !== name
+      ? normalizeSearchText(keyAsName.replace(/[_-]+/g, ' '))
+      : '';
+    if (!normalizedName && !normalizedAlt && !normalizedKey) continue;
 
-    const primaryNorm = normalizedName || normalizedAlt;
+    const primaryNorm = normalizedName || normalizedAlt || normalizedKey;
     const itemWords = primaryNorm.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
 
@@ -391,10 +437,18 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       queryWords,
     );
 
-    // Secondo passaggio su `name` se diverso da `desc` (es. alias).
-    if (normalizedAlt && normalizedAlt !== primaryNorm) {
-      const altWords = normalizedAlt.split(' ').filter(Boolean);
-      const altMatch = calculateMatchScore(normalizedAlt, altWords, queryWords);
+    // Secondo passaggio su `name` / key se diversi da `desc`.
+    const altCandidates = [
+      normalizedAlt && normalizedAlt !== primaryNorm
+        ? { norm: normalizedAlt, words: normalizedAlt.split(' ').filter(Boolean) }
+        : null,
+      normalizedKey && normalizedKey !== primaryNorm && normalizedKey !== normalizedAlt
+        ? { norm: normalizedKey, words: normalizedKey.split(' ').filter(Boolean) }
+        : null,
+    ].filter(Boolean);
+
+    for (let a = 0; a < altCandidates.length; a += 1) {
+      const altMatch = calculateMatchScore(altCandidates[a].norm, altCandidates[a].words, queryWords);
       if (altMatch.strictScore > strictScore) {
         strictScore = altMatch.strictScore;
         matchTier = altMatch.matchTier;
@@ -402,11 +456,32 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       }
     }
 
-    // Boost esplicito uguaglianza esatta (case-insensitive) su desc o name.
-    if (primaryNorm === normalizedQuery || normalizedAlt === normalizedQuery) {
+    // Boost esplicito uguaglianza esatta (case-insensitive) su desc, name o key.
+    if (
+      primaryNorm === normalizedQuery
+      || normalizedAlt === normalizedQuery
+      || normalizedKey === normalizedQuery
+    ) {
       strictScore = SCORE_EXACT_OR_PREFIX;
       matchTier = 'exact';
       allTokensMatch = true;
+    }
+
+    // Stem IT: query "pomodoro" ↔ nome "pomodori" (e viceversa) = exact.
+    if (matchTier !== 'exact' && queryWords.length === 1) {
+      const qForms = new Set(italianSingularPluralForms(queryWords[0]));
+      const nameForms = italianSingularPluralForms(primaryNorm);
+      if (nameForms.some((f) => qForms.has(f))) {
+        strictScore = SCORE_EXACT_OR_PREFIX;
+        matchTier = 'exact';
+        allTokensMatch = true;
+      } else if (itemWords.some((w) => italianSingularPluralForms(w).some((f) => qForms.has(f)))) {
+        strictScore = Math.max(strictScore, SCORE_WORD_BOUNDARY + 10);
+        if (strictScore >= SCORE_WORD_BOUNDARY) {
+          matchTier = matchTier === 'none' ? 'word_boundary' : matchTier;
+          allTokensMatch = true;
+        }
+      }
     }
 
     if (strictScore < MIN_MATCH_SCORE) continue;
@@ -445,13 +520,25 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     });
   }
 
-  // Fuzzy fallback: solo se exact/includes non hanno prodotto risultati.
-  if (results.length === 0 && enableFuzzy && queryWords.length === 1) {
+  // Fuzzy fallback: se non ci sono match forti (≥75), anche in presenza di substring deboli.
+  const hasStrongMatch = results.some((r) => {
+    const tier = String(r.matchTier || '');
+    return tier === 'exact' || tier === 'prefix' || tier === 'word_boundary'
+      || Number(r.strictScore) >= 75;
+  });
+  if (!hasStrongMatch && enableFuzzy && queryWords.length === 1) {
+    const existingIds = new Set(results.map((r) => String(r.id)));
     for (let i = 0; i < entries.length; i += 1) {
       const [id, food] = entries[i];
+      if (existingIds.has(String(id))) continue;
       const descName = String(food?.desc || '').trim();
       const altName = String(food?.name || '').trim();
-      const name = descName || altName;
+      const keyAsName = String(id || '').trim();
+      const keyLooksLikeName = keyAsName.length >= 2
+        && !/^\d+$/.test(keyAsName)
+        && !/^food[_-]?\d+/i.test(keyAsName)
+        && /[\p{L}]/u.test(keyAsName);
+      const name = descName || altName || (keyLooksLikeName ? keyAsName.replace(/[_-]+/g, ' ') : '');
       if (!name) continue;
 
       const normalizedName = normalizeSearchText(name);
@@ -471,6 +558,13 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
           fuzzy = altFuzzy;
         }
       }
+      // Stem IT come fuzzy-0.
+      if (!fuzzy) {
+        const qForms = italianSingularPluralForms(normalizedQuery);
+        if (qForms.includes(primaryNorm) || itemWords.some((w) => qForms.includes(w))) {
+          fuzzy = { distance: 0, score: SCORE_EXACT_OR_PREFIX };
+        }
+      }
       if (!fuzzy) continue;
 
       const usageCount = getFoodUsageCount(food);
@@ -485,7 +579,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         usageCount,
         score: fuzzy.score + usageBoost,
         strictScore: fuzzy.score,
-        matchTier: 'fuzzy',
+        matchTier: fuzzy.distance === 0 ? 'exact' : 'fuzzy',
         allTokensMatch: true,
         fuzzyDistance: fuzzy.distance,
       });
