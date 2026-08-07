@@ -1,6 +1,10 @@
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { MANUAL_TARGET_EDIT_EXCLUDED_KEYS } from '../../constants/salaComandiConstants';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
+import {
+  APP_MODE_OPTIONS,
+  resolveSelectableAppMode,
+} from '../../features/chat/healthChatMode.js';
 
 /**
  * Modale "Impostazioni universali": biometrici, target manuali, CSV bilancia, logout.
@@ -22,13 +26,125 @@ export default function TargetSettingsModal({
   onOpenLongevityStats,
   auth,
   saveProfileToFirebase,
+  onAppModeChange = null,
 }) {
+  const [appModeSaving, setAppModeSaving] = useState(false);
+  const [appModeFeedback, setAppModeFeedback] = useState('');
+
+  const selectedAppMode = useMemo(
+    () => resolveSelectableAppMode(userProfile),
+    [userProfile],
+  );
+
+  const selectedModeHint = useMemo(() => {
+    const opt = APP_MODE_OPTIONS.find((o) => o.value === selectedAppMode);
+    return opt?.hint || '';
+  }, [selectedAppMode]);
+
+  const handleAppModeSelect = useCallback(async (nextMode) => {
+    const mode = String(nextMode || '').trim().toLowerCase();
+    if (!mode || mode === selectedAppMode) return;
+
+    const nextProfile = { ...userProfile, appMode: mode };
+    setUserProfile(nextProfile);
+    setAppModeFeedback('');
+
+    if (typeof onAppModeChange !== 'function') return;
+
+    setAppModeSaving(true);
+    try {
+      await onAppModeChange(mode, nextProfile);
+      setAppModeFeedback(mode === 'diabete'
+        ? 'Modalità Diabete attiva — chat e Report Medico aggiornati.'
+        : 'Modalità Standard attiva — nutrizione e ipertrofia.');
+    } catch (err) {
+      console.error('[TargetSettingsModal] appMode save failed', err);
+      setAppModeFeedback('Salvataggio modalità non riuscito. Riprova.');
+    } finally {
+      setAppModeSaving(false);
+    }
+  }, [onAppModeChange, selectedAppMode, setUserProfile, userProfile]);
+
   if (!open) return null;
 
   return (
     <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.9)', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
       <div style={{ background: '#1e1e1e', padding: '30px', borderRadius: '16px', maxWidth: '600px', margin: '0 auto', color: '#fff' }}>
         <h2 style={{ color: '#00e5ff', borderBottom: '1px solid #333', paddingBottom: '10px' }}>⚙️ Impostazioni Universali</h2>
+
+        <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px', border: '1px solid rgba(0, 229, 255, 0.22)' }}>
+          <h3 style={{ margin: '0 0 8px 0', color: '#00e5ff' }}>Profilo Operativo</h3>
+          <p style={{ margin: '0 0 14px 0', fontSize: '0.8rem', color: '#aaa', lineHeight: 1.45 }}>
+            Scegli come KentuOS deve lavorare per questo account. Il cambio si salva subito su Firebase.
+          </p>
+          <label style={{ display: 'block' }}>
+            Modalità App
+            <select
+              value={selectedAppMode}
+              disabled={appModeSaving}
+              onChange={(e) => {
+                void handleAppModeSelect(e.target.value);
+              }}
+              style={{
+                width: '100%',
+                marginTop: '6px',
+                padding: '10px',
+                background: '#111',
+                border: '1px solid #00e5ff55',
+                color: '#fff',
+                borderRadius: '6px',
+                fontWeight: 600,
+              }}
+            >
+              {APP_MODE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div
+            role="radiogroup"
+            aria-label="Profilo operativo"
+            style={{ display: 'grid', gap: '8px', marginTop: '12px' }}
+          >
+            {APP_MODE_OPTIONS.map((opt) => {
+              const active = selectedAppMode === opt.value;
+              return (
+                <button
+                  key={`radio_${opt.value}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={appModeSaving}
+                  onClick={() => {
+                    void handleAppModeSelect(opt.value);
+                  }}
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    cursor: appModeSaving ? 'wait' : 'pointer',
+                    border: active ? '1px solid #00e5ff' : '1px solid #444',
+                    background: active ? 'rgba(0, 229, 255, 0.12)' : '#111',
+                    color: '#fff',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {active ? '● ' : '○ '}
+                    {opt.label}
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: '0.75rem', color: '#9ca3af', lineHeight: 1.4 }}>
+                    {opt.hint}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ margin: '10px 0 0', fontSize: '0.78rem', color: appModeFeedback.includes('non riuscito') ? '#f87171' : '#6ee7b7' }}>
+            {appModeSaving ? 'Salvataggio modalità…' : (appModeFeedback || selectedModeHint)}
+          </p>
+        </div>
 
         <div style={{ background: '#2c2c2c', padding: '15px', borderRadius: '8px', marginBottom: '20px' }}>
           <h3 style={{ margin: '0 0 15px 0' }}>1. Dati Biometrici</h3>
@@ -230,6 +346,9 @@ export default function TargetSettingsModal({
               if (computedAge != null) profilePayload.age = computedAge;
               if (profilePayload.targetCalories == null && userTargets.kcal != null) {
                 profilePayload.targetCalories = Math.round(Number(userTargets.kcal));
+              }
+              if (!profilePayload.appMode) {
+                profilePayload.appMode = selectedAppMode;
               }
               profilePayload = mergeProfileNutritionFromServer(profilePayload);
               setUserProfile(profilePayload);

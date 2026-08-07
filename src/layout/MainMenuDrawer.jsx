@@ -11,6 +11,10 @@ export default function MainMenuDrawer({
   commitAddEventMenuOrder,
   handleAddEventMenuItem,
   setShowReport,
+  onOpenHealthReport = null,
+  onOpenTherapyPlan = null,
+  onOpenTrainingPlan = null,
+  isDiabetesAppMode = false,
   closeDrawer,
   setShowProfile,
   kentuChatNotificationBadge,
@@ -47,7 +51,46 @@ export default function MainMenuDrawer({
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <button type="button" className="action-btn" onClick={() => setActiveAction('storico')}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))' }}>📚</span><span className="action-label" style={{ color: '#b0bec5' }}>Archivio Storico</span></button>
-            <button type="button" className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
+            {isDiabetesAppMode ? (
+              <button
+                type="button"
+                className="action-btn"
+                onClick={() => {
+                  onOpenHealthReport?.();
+                  setActiveAction(null);
+                  closeDrawer();
+                }}
+              >
+                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(16, 185, 129, 0.5))' }}>🩺</span>
+                <span className="action-label" style={{ color: '#6ee7b7' }}>Report Medico</span>
+              </button>
+            ) : (
+              <button type="button" className="action-btn" onClick={() => { setShowReport(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">📊</span><span className="action-label">Report</span></button>
+            )}
+            <button
+              type="button"
+              className="action-btn"
+              onClick={() => {
+                onOpenTrainingPlan?.();
+                setActiveAction(null);
+                closeDrawer();
+              }}
+            >
+              <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 146, 60, 0.5))' }}>🏋️</span>
+              <span className="action-label" style={{ color: '#fdba74' }}>Piano Allenamento</span>
+            </button>
+            <button
+              type="button"
+              className="action-btn"
+              onClick={() => {
+                onOpenTherapyPlan?.();
+                setActiveAction(null);
+                closeDrawer();
+              }}
+            >
+              <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(34, 211, 238, 0.5))' }}>💊</span>
+              <span className="action-label" style={{ color: '#67e8f9' }}>Piano Terapia</span>
+            </button>
             <button type="button" className="action-btn" onClick={() => { setShowProfile(true); setActiveAction(null); closeDrawer(); }}><span className="action-icon">⚙️</span><span className="action-label">Profilo & Target</span></button>
             <button type="button" className="action-btn" onClick={() => { onOpenStrategicPlanner?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))' }}>🎯</span><span className="action-label" style={{ color: '#00e5ff' }}>Protocollo</span></button>
             <button type="button" className="action-btn" onClick={() => { onOpenProgressi?.(); setActiveAction(null); closeDrawer(); }}><span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(34, 197, 94, 0.45))' }}>📈</span><span className="action-label" style={{ color: '#86efac' }}>Progressi</span></button>

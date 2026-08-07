@@ -56,6 +56,7 @@ import { withDefaultUsageStats, recordDraftFoodsUsageStats, getCurrentTimeSlot }
 import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
+import { isHealthDiabetesChatMode } from './features/chat/healthChatMode.js';
 import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
@@ -437,6 +438,8 @@ const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'
 const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
 const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
 const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
+const HealthReportView = lazy(() => import('./features/health/HealthReportView'));
+const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -610,36 +613,6 @@ export default function SalaComandi() {
       }
     },
     [activeBottomTab]
-  );
-
-  const handleBottomNavTabSelect = useCallback(
-    (tabId) => {
-      if (tabId === 'menu') {
-        setActiveAction('menu_secondary');
-        setIsDrawerOpen(true);
-        return;
-      }
-      if (tabId === 'pianifica') {
-        setSnapshotOverlayOpen(false);
-        setActiveBottomTab('oggi');
-        setTrainingBlockCreatorOpen(true);
-        setActiveAction(null);
-        setIsDrawerOpen(false);
-        return;
-      }
-      const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
-      const toIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(tabId);
-      if (tabId !== activeBottomTab && toIdx >= 0 && fromIdx >= 0) {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate(15);
-        }
-        if (toIdx > fromIdx) setSlideDirection('slide-left');
-        else if (toIdx < fromIdx) setSlideDirection('slide-right');
-      }
-      setSnapshotOverlayOpen(false);
-      setActiveBottomTab(tabId);
-    },
-    [activeBottomTab, navigate]
   );
 
   /** Home / deep-link → Fotografia Progressione (diagnostica). */
@@ -932,6 +905,8 @@ export default function SalaComandi() {
   const [timelineInsertUI, setTimelineInsertUI] = useState(null);
   const [editingQuickNode, setEditingQuickNode] = useState(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showHealthReport, setShowHealthReport] = useState(false);
+  const [showTherapyPlan, setShowTherapyPlan] = useState(false);
   const [userProfile, setUserProfile] = useState({
     displayName: '',
     gender: 'M',
@@ -943,7 +918,9 @@ export default function SalaComandi() {
     nutritionGoal: 'maintain',
     targetCalories: 2000,
     proteinTarget: null,
-    level: 'base'
+    level: 'base',
+    /** 'diabete' | 'salute' → chat health; assente/kentu → macro standard */
+    appMode: null,
   });
   const [userTargets, setUserTargets] = useState({
     ...DEFAULT_TARGETS,
@@ -963,6 +940,92 @@ export default function SalaComandi() {
     () => buildNutritionGoalsSnapshot(userProfile, userTargets),
     [userProfile, userTargets]
   );
+
+  const isDiabetesAppMode = useMemo(
+    () => isHealthDiabetesChatMode(userProfile, userUid),
+    [userProfile, userUid],
+  );
+
+  const openHealthReport = useCallback(() => {
+    setShowHealthReport(true);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  const openTherapyPlan = useCallback(() => {
+    setShowTherapyPlan(true);
+    setTrainingBlockCreatorOpen(false);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  const openTrainingPlan = useCallback(() => {
+    setShowTherapyPlan(false);
+    setSnapshotOverlayOpen(false);
+    setActiveBottomTab('oggi');
+    setTrainingBlockCreatorOpen(true);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  const bottomNavItems = useMemo(() => (
+    BOTTOM_NAV_ITEMS.map((item) => {
+      if (item.id !== 'pianifica') return item;
+      if (isDiabetesAppMode) {
+        return { ...item, label: 'Terapia', icon: '💊' };
+      }
+      return { ...item, label: 'Piano', icon: '🗓️' };
+    })
+  ), [isDiabetesAppMode]);
+
+  const handleBottomNavTabSelect = useCallback(
+    (tabId) => {
+      if (tabId === 'menu') {
+        setActiveAction('menu_secondary');
+        setIsDrawerOpen(true);
+        return;
+      }
+      if (tabId === 'pianifica') {
+        // Diabete/salute → Piano Terapeutico; standard → Piano Allenamento.
+        if (isDiabetesAppMode) {
+          openTherapyPlan();
+          return;
+        }
+        openTrainingPlan();
+        return;
+      }
+      const fromIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
+      const toIdx = MAIN_BOTTOM_TAB_ORDER.indexOf(tabId);
+      if (tabId !== activeBottomTab && toIdx >= 0 && fromIdx >= 0) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+        if (toIdx > fromIdx) setSlideDirection('slide-left');
+        else if (toIdx < fromIdx) setSlideDirection('slide-right');
+      }
+      setSnapshotOverlayOpen(false);
+      setActiveBottomTab(tabId);
+    },
+    [activeBottomTab, isDiabetesAppMode, openTherapyPlan, openTrainingPlan],
+  );
+
+  const handleAppModeChange = useCallback(async (appMode, profileSnapshot = null) => {
+    const uid = auth.currentUser?.uid || userUid;
+    if (!uid || !db) {
+      throw new Error('Utente non autenticato');
+    }
+    const mode = String(appMode || '').trim().toLowerCase() || 'standard';
+    const nextProfile = {
+      ...(profileSnapshot && typeof profileSnapshot === 'object' ? profileSnapshot : userProfile),
+      appMode: mode,
+    };
+    setUserProfile(nextProfile);
+    if (mode !== 'diabete' && mode !== 'salute' && mode !== 'health' && mode !== 'diabetes') {
+      setShowHealthReport(false);
+      setShowTherapyPlan(false);
+    }
+    await update(ref(db, `users/${uid}/profile_targets/profile`), { appMode: mode });
+  }, [auth, db, userProfile, userUid]);
 
   const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory, shiftPlanForward } = useStrategicPlanner(
     db,
@@ -6723,6 +6786,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         timelineNodes: allNodes,
         manualNodes: manualNodesForTimeline,
         userProfile,
+        userUid,
         userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
       };
     },
@@ -6765,6 +6829,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       setMealBuilder,
       cancelMealBuilder,
       commitMealBuilder,
+      preferVoiceChat: isDiabetesAppMode,
     });
   }, [
     registerHandlers,
@@ -6800,6 +6865,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     mealBuilder,
     cancelMealBuilder,
     commitMealBuilder,
+    isDiabetesAppMode,
   ]);
 
   const generateDailySnapshot = useCallback(() => {
@@ -6898,6 +6964,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   ]);
 
   const handleRequestDailyReport = useCallback(() => {
+    if (isDiabetesAppMode) {
+      openHealthReport();
+      return;
+    }
+
     const payload = generateDailySnapshot();
     const systemInstructionExtra =
       'Sei un coach esperto. Modalità Report Serale. '
@@ -6916,7 +6987,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         systemInstructionExtra,
       },
     );
-  }, [generateDailySnapshot, sendMessage]);
+  }, [generateDailySnapshot, isDiabetesAppMode, openHealthReport, sendMessage]);
 
   const renderCustomizedLabel = useMemo(
     () => createMealPieCustomizedLabel(setSelectedMealCenter),
@@ -7518,7 +7589,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
     <AppBottomNavigation
-      BOTTOM_NAV_ITEMS={BOTTOM_NAV_ITEMS}
+      BOTTOM_NAV_ITEMS={bottomNavItems}
       handleBottomNavTabSelect={handleBottomNavTabSelect}
       activeBottomTab={activeBottomTab}
     />
@@ -7529,6 +7600,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
     && (isChatOpen || !isDrawerOpen)
     && !trainingBlockCreatorOpen
+    && !showTherapyPlan
       ? (isChatOpen ? (
         <button
           type="button"
@@ -7745,6 +7817,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setIsDrawerOpen(false);
           setShowChoiceModal(false);
           setShowReport(false);
+          setShowHealthReport(false);
+          setShowTherapyPlan(false);
           setShowProfile(false);
           setSelectedNodeReport(null);
           setShowReportModal(false);
@@ -8554,6 +8628,27 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </div>
       </div>
       )}
+
+      {showHealthReport ? (
+        <Suspense fallback={<KentuLazySectionFallback label="Apertura report medico…" />}>
+          <HealthReportView
+            uid={userUid}
+            patientName={String(userProfile?.displayName || userProfile?.name || '').trim()}
+            onClose={() => setShowHealthReport(false)}
+          />
+        </Suspense>
+      ) : null}
+
+      {showTherapyPlan ? (
+        <Suspense fallback={<KentuLazySectionFallback label="Apertura piano terapeutico…" />}>
+          <TherapyPlanView
+            uid={userUid}
+            patientName={String(userProfile?.displayName || userProfile?.name || '').trim()}
+            onClose={() => setShowTherapyPlan(false)}
+          />
+        </Suspense>
+      ) : null}
+
       {activeBottomTab === 'planning' && (
         <div
           style={{
@@ -8721,6 +8816,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           commitAddEventMenuOrder={commitAddEventMenuOrder}
           handleAddEventMenuItem={handleAddEventMenuItem}
           setShowReport={setShowReport}
+          onOpenHealthReport={isDiabetesAppMode ? openHealthReport : null}
+          onOpenTherapyPlan={openTherapyPlan}
+          onOpenTrainingPlan={openTrainingPlan}
+          isDiabetesAppMode={isDiabetesAppMode}
           closeDrawer={closeDrawer}
           setShowProfile={setShowProfile}
           kentuChatNotificationBadge={kentuChatNotificationBadge}
@@ -9336,6 +9435,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
             quickStripItems={chatQuickStripItems}
+            preferVoiceChat={isDiabetesAppMode}
           />
           </Suspense>
         </div>
@@ -9681,6 +9781,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onOpenLongevityStats={() => { setShowProfile(false); setShowLongevityModal(true); }}
         auth={auth}
         saveProfileToFirebase={saveProfileToFirebase}
+        onAppModeChange={handleAppModeChange}
       />
       <DateCalendarOverlay
         showDateCalendarModal={showDateCalendarModal}

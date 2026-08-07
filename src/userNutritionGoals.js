@@ -36,6 +36,14 @@ export function mergeProfileNutritionFromServer(profile) {
   } else {
     p.proteinTarget = null;
   }
+  // Preserva appMode (es. "diabete") dal profilo Firebase senza alterarlo.
+  if (p.appMode != null && p.appMode !== '') {
+    p.appMode = String(p.appMode).trim();
+  } else if (p.chatMode != null && p.chatMode !== '') {
+    p.appMode = String(p.chatMode).trim();
+  } else {
+    p.appMode = p.appMode ?? null;
+  }
   return p;
 }
 

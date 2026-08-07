@@ -1,6 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
+import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
 const firebaseConfig = {
@@ -18,5 +19,7 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 export { app, firebaseConfig };
 export const auth = getAuth(app);
 export const db = getDatabase(app);
+/** Firestore — diario salute / eccezioni terapia (motore diabete). */
+export const firestore = getFirestore(app);
 /** Cloud Functions (BFF AI) — stessa region del backend legacy. */
 export const functions = getFunctions(app, 'europe-west1');

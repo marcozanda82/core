@@ -21,6 +21,8 @@ import {
   saveAiFeedback,
   saveDevNote,
 } from './utils/devToolsPersistence';
+import { useVoiceChat } from './features/chat/useVoiceChat.js';
+import { stopSpeaking } from './features/chat/voiceChat.js';
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
 function stripInvisibleContextFromBubble(text) {
@@ -93,11 +95,30 @@ export default function AiCluster({
   onRequestReport,
   onRequestBarcodeScan,
   quickStripItems = null,
+  /** Preferenza TTS iniziale (es. true in modalità diabete se mai salvata). */
+  preferVoiceChat = false,
 }) {
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
   const chatTextareaRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
+
+  const {
+    ttsEnabled,
+    toggleTts,
+    isListening,
+    toggleListening,
+    sttSupported,
+    ttsSupported,
+    voiceError,
+    clearVoiceError,
+  } = useVoiceChat({
+    chatInput,
+    setChatInput,
+    chatHistory,
+    isProcessing,
+    defaultTtsEnabled: preferVoiceChat === true,
+  });
 
   const handleInputResize = useCallback((e) => {
     const el = e?.target || chatTextareaRef.current;
@@ -230,6 +251,11 @@ export default function AiCluster({
   const handleSendFromInput = useCallback(async () => {
     if (isProcessing) return;
 
+    if (isListening) {
+      toggleListening();
+    }
+    stopSpeaking();
+
     if (isNotesMode) {
       const noteText = String(chatInput || '').trim();
       if (!noteText) return;
@@ -248,7 +274,17 @@ export default function AiCluster({
     onSendMessage(undefined, { fromInput: true });
     resetInputHeight();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  }, [isProcessing, isNotesMode, chatInput, setChatInput, showDevToast, onSendMessage, resetInputHeight]);
+  }, [
+    isProcessing,
+    isListening,
+    toggleListening,
+    isNotesMode,
+    chatInput,
+    setChatInput,
+    showDevToast,
+    onSendMessage,
+    resetInputHeight,
+  ]);
 
   const handleChatKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -264,7 +300,7 @@ export default function AiCluster({
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
       <header className="flex shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-14">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-2">
           <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
             Kentu AI Workspace
           </span>
@@ -274,6 +310,23 @@ export default function AiCluster({
             </span>
           ) : null}
         </div>
+        {ttsSupported ? (
+          <button
+            type="button"
+            onClick={toggleTts}
+            aria-pressed={ttsEnabled}
+            aria-label={ttsEnabled ? 'Disattiva lettura vocale' : 'Attiva lettura vocale'}
+            title={ttsEnabled ? 'Voce AI: ON' : 'Voce AI: OFF'}
+            className={[
+              'ml-2 shrink-0 rounded-lg border px-2.5 py-1.5 text-[13px] transition',
+              ttsEnabled
+                ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
+                : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500',
+            ].join(' ')}
+          >
+            {ttsEnabled ? '🔊' : '🔇'}
+          </button>
+        ) : null}
       </header>
 
       <div
@@ -696,6 +749,27 @@ export default function AiCluster({
           <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
             <KentuIcon name="camera" size={22} />
           </KentuButton>
+          {sttSupported ? (
+            <button
+              type="button"
+              className={[
+                'kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[16px] transition',
+                isListening
+                  ? 'border-rose-500/60 bg-rose-500/20 text-rose-200 animate-pulse'
+                  : 'border-zinc-700 bg-transparent text-zinc-300 hover:border-cyan-500/40 hover:text-cyan-200',
+              ].join(' ')}
+              aria-label={isListening ? 'Ferma ascolto' : 'Parla'}
+              aria-pressed={isListening}
+              disabled={isProcessing && !isNotesMode}
+              onClick={() => {
+                clearVoiceError();
+                toggleListening();
+              }}
+              title={isListening ? 'Sto ascoltando… tocca per fermare' : 'Detta con il microfono'}
+            >
+              {isListening ? '⏺' : '🎤'}
+            </button>
+          ) : null}
           <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
             <button
               type="button"
@@ -730,9 +804,11 @@ export default function AiCluster({
             placeholder={
               isNotesMode
                 ? 'Nota di sviluppo…'
-                : chatImages.length > 0
-                  ? 'Commento immagini…'
-                  : 'Query sistema…'
+                : isListening
+                  ? 'Sto ascoltando…'
+                  : chatImages.length > 0
+                    ? 'Commento immagini…'
+                    : 'Query sistema…'
             }
             value={chatInput}
             disabled={isProcessing && !isNotesMode}
@@ -781,6 +857,15 @@ export default function AiCluster({
             </div>
           ) : null}
         </div>
+        {voiceError ? (
+          <p
+            role="alert"
+            className="px-3 pb-2 text-[11px] text-rose-300/90"
+            onClick={clearVoiceError}
+          >
+            {voiceError}
+          </p>
+        ) : null}
         </div>
       </div>
     </div>
