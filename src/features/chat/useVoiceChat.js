@@ -281,7 +281,7 @@ export function useVoiceChat({
     if (last.local === true) return;
     if (last.isTyping === true) return;
 
-    const text = String(last.text || '').trim();
+    const text = String(last.spokenText || last.text || '').trim();
     if (!text) return;
 
     const key = `${list.length}:${text.slice(0, 80)}`;

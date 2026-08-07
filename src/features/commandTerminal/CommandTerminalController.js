@@ -130,12 +130,12 @@ import {
   buildWizardItemPrompt,
   buildWizardItemQuickReplies,
   buildWizardAdvanceMessage,
-  buildWizardFinalSummary,
-  buildWizardFinalQuickReplies,
+  buildWizardFinalSpokenText,
   buildFoodPayloadFromWizard,
   classifyWizardFinalReply,
   resolveWizardPendingQueue,
   shouldForceSequentialFoodWizard,
+  sanitizeWizardFoodName,
 } from './conversation/sequentialFoodWizard.js';
 import {
   applyHistoricalWorkoutKcalDefault,
@@ -431,7 +431,7 @@ export class CommandTerminalController {
         ].filter(Boolean);
     // Intro multi-item solo al primo step (resolved vuoto): mai grammi/varianti dei successivi.
     const showBatchIntro = (state.resolvedItems || []).length === 0 && allSpokenNames.length > 1;
-    const text = buildWizardItemPrompt(state.current, {
+    const { spokenText, displayText } = buildWizardItemPrompt(state.current, {
       allSpokenNames: showBatchIntro ? allSpokenNames : [],
     });
     const quickReplies = buildWizardItemQuickReplies(state.current);
@@ -440,8 +440,10 @@ export class CommandTerminalController {
       DISPATCH_SYSTEM_MESSAGE,
       {
         type: 'ASK_CLARIFICATION',
-        text,
-        message: text,
+        text: displayText,
+        message: displayText,
+        spokenText,
+        displayText,
         quickReplies,
         clarification: true,
         mealWizard: true,
@@ -452,31 +454,36 @@ export class CommandTerminalController {
     );
   }
 
-  publishWizardConfirmPrompt(state) {
-    const text = buildWizardFinalSummary(state.resolvedItems || []);
-    const quickReplies = buildWizardFinalQuickReplies();
-    // Prepara bozza in sospeso per salvataggio, poi ripristina fase wizard confirm.
+  /**
+   * Fine coda wizard → card proposal amichevole (macro/emoji) + TTS breve.
+   * Non pubblica testo grezzo di riepilogo.
+   */
+  async publishWizardFinalProposalCard(state, currentState = {}) {
+    const spokenText = buildWizardFinalSpokenText();
     const payload = normalizeFoodPayload(
       buildFoodPayloadFromWizard(state),
-      {},
+      currentState,
       { inferMealTypeFromContext: false },
     );
-    this.stagePendingMealDraft({ ...payload, message: text }, { uiMessage: text });
-    this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
-    this.bus.publish(
-      DISPATCH_SYSTEM_MESSAGE,
+    // Chiudi il wizard: da qui conferma = McDrive / meal proposal, non AWAITING_MEAL_WIZARD_CONFIRM.
+    this.clearMealWizardState();
+    return this.publishMealLogProposalCardDirect(
+      payload,
+      currentState,
+      '',
+      [],
       {
-        type: 'ASK_CLARIFICATION',
-        text,
-        message: text,
-        quickReplies,
-        clarification: true,
-        mealWizard: true,
-        mealWizardPhase: 'confirm',
-        mealProposals: null,
+        skipWizard: true,
+        fromVoiceCorrection: true,
+        uiMessage: spokenText,
+        spokenText,
       },
-      { source: 'CommandTerminalController' },
     );
+  }
+
+  publishWizardConfirmPrompt(state, currentState = {}) {
+    // Preferisci sempre la card riepilogo invece del testo grezzo.
+    return this.publishWizardFinalProposalCard(state, currentState);
   }
 
   /**
@@ -524,13 +531,7 @@ export class CommandTerminalController {
     });
 
     if (state.phase === 'confirm') {
-      this.publishWizardConfirmPrompt(state);
-      return {
-        ok: true,
-        intent: 'MEAL_WIZARD',
-        phase: 'confirm',
-        mealWizardState: this.getMealWizardState(),
-      };
+      return this.publishWizardFinalProposalCard(state, currentState);
     }
 
     this.publishWizardItemPrompt(state, {
@@ -583,8 +584,7 @@ export class CommandTerminalController {
         this.publishSystemMessage('Ok, bozza annullata.');
         return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
       }
-      this.publishWizardConfirmPrompt(state);
-      return { ok: true, awaiting: true, intent: 'MEAL_WIZARD', phase: 'confirm' };
+      return this.publishWizardFinalProposalCard(state, currentState);
     }
 
     // Fase item
@@ -619,52 +619,31 @@ export class CommandTerminalController {
     const nextState = commitWizardItemAndAdvance(state, parsed.resolved, ctx);
     this.mealWizardState = nextState;
 
-    const advanceText = buildWizardAdvanceMessage(parsed.resolved, nextState);
+    const advance = buildWizardAdvanceMessage(parsed.resolved, nextState);
     console.log('🧙 DEBUG - WIZARD ITEM RESOLVED:', {
-      resolved: parsed.resolved,
+      resolved: {
+        foodName: sanitizeWizardFoodName(parsed.resolved?.foodName) || parsed.resolved?.foodName,
+        grams: parsed.resolved?.grams,
+      },
       remaining: nextState.pendingItems.map((p) => p.spokenName),
       phase: nextState.phase,
     });
 
     if (nextState.phase === 'confirm' || !nextState.current) {
-      // Messaggio unico: salvataggio item + riepilogo finale
-      this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
-      const payload = normalizeFoodPayload(
-        buildFoodPayloadFromWizard(nextState),
-        currentState,
-        { inferMealTypeFromContext: false },
-      );
-      this.stagePendingMealDraft({ ...payload, message: advanceText }, { uiMessage: advanceText });
-      this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM;
-      this.bus.publish(
-        DISPATCH_SYSTEM_MESSAGE,
-        {
-          type: 'ASK_CLARIFICATION',
-          text: advanceText,
-          message: advanceText,
-          quickReplies: buildWizardFinalQuickReplies(),
-          clarification: true,
-          mealWizard: true,
-          mealWizardPhase: 'confirm',
-        },
-        { source: 'CommandTerminalController' },
-      );
-      return {
-        ok: true,
-        intent: 'MEAL_WIZARD',
-        phase: 'confirm',
-        mealWizardState: this.getMealWizardState(),
-      };
+      // Ultimo item: card riepilogo amichevole (macro/emoji), non testo grezzo.
+      return this.publishWizardFinalProposalCard(nextState, currentState);
     }
 
-    // Item successivo: messaggio di avanzamento già include il prompt del prossimo
+    // Item successivo: voce breve + bottoni varianti (mai elenco in TTS).
     this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM;
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
         type: 'ASK_CLARIFICATION',
-        text: advanceText,
-        message: advanceText,
+        text: advance.displayText,
+        message: advance.displayText,
+        spokenText: advance.spokenText,
+        displayText: advance.displayText,
         quickReplies: buildWizardItemQuickReplies(nextState.current),
         clarification: true,
         mealWizard: true,
@@ -980,6 +959,7 @@ export class CommandTerminalController {
         mealType: proposal.mealType || enrichedPayload?.mealType,
         itemCount,
       });
+    const spokenText = String(options.spokenText || summaryText).trim();
 
     const useButlerReplies = Boolean(
       butler.butlerMeta?.anyHabitApplied
@@ -995,6 +975,7 @@ export class CommandTerminalController {
 
     this.publishAdviceMessage({
       text: summaryText,
+      spokenText,
       mealProposals: [proposal],
       quickReplies: useButlerReplies
         ? [...BUTLER_MEAL_QUICK_REPLIES]
@@ -1358,6 +1339,8 @@ export class CommandTerminalController {
 
   publishAdviceMessage({
     text,
+    spokenText = null,
+    displayText = null,
     suggestedAction = null,
     mealProposals = null,
     mealDraftProjection = null,
@@ -1365,10 +1348,12 @@ export class CommandTerminalController {
     pendingMealUpdate = null,
     quickReplies = null,
   }) {
-    const adviceMessage = String(text || '').trim();
+    const adviceMessage = String(displayText || text || '').trim();
     if (!adviceMessage) return;
+    const voice = String(spokenText || adviceMessage).trim();
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishAdviceMessage/ADVICE):', {
       text: adviceMessage,
+      spokenText: voice,
       hasMealProposals: Array.isArray(mealProposals) && mealProposals.length > 0,
     });
     const replies = Array.isArray(quickReplies)
@@ -1380,6 +1365,8 @@ export class CommandTerminalController {
         type: 'ADVICE',
         text: adviceMessage,
         message: adviceMessage,
+        spokenText: voice,
+        displayText: adviceMessage,
         suggestedAction: suggestedAction || null,
         mealProposals: Array.isArray(mealProposals) && mealProposals.length > 0
           ? mealProposals

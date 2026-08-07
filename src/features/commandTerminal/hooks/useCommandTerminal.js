@@ -320,7 +320,8 @@ export function useCommandTerminal({
         return;
       }
       if (payload.type === 'ASK_CLARIFICATION' || payload.clarification === true) {
-        const text = String(payload.text || payload.message || '').trim();
+        const text = String(payload.displayText || payload.text || payload.message || '').trim();
+        const spokenText = String(payload.spokenText || text).trim();
         const quickReplies = Array.isArray(payload.quickReplies)
           ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
           : [];
@@ -328,22 +329,29 @@ export function useCommandTerminal({
         appendAiMessage(text, {
           type: 'ASK_CLARIFICATION',
           clarification: true,
+          spokenText,
+          displayText: text,
           quickReplies,
           local: payload.local === true,
           sourceTag: payload.sourceTag || null,
+          mealWizard: payload.mealWizard === true,
+          mealWizardPhase: payload.mealWizardPhase || null,
         });
         if (quickReplies.length > 0) {
           setActiveQuickReplies(quickReplies);
         }
         return;
       }
-      const text = String(payload.text || payload.message || '').trim();
+      const text = String(payload.displayText || payload.text || payload.message || '').trim();
       if (!text) return;
+      const spokenText = String(payload.spokenText || text).trim();
       const lightQuickReplies = Array.isArray(payload.quickReplies)
         ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
         : [];
       appendAiMessage(text, {
         type: payload.type || null,
+        spokenText,
+        displayText: text,
         local: payload.local === true,
         sourceTag: payload.sourceTag || null,
         suggestedAction: payload.suggestedAction || null,

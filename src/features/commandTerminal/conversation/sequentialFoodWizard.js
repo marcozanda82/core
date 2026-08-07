@@ -243,7 +243,7 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
     const proposedGrams = habitual || DEFAULT_GRAMS;
     return {
       id: row.id,
-      name: row.name,
+      name: sanitizeWizardFoodName(row.name) || row.name,
       usageCount: row.usageCount,
       lastUsedAt: row.lastUsedAt,
       isLastUsed: index === 0 && lastUsedId === row.id,
@@ -253,11 +253,10 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
 }
 
 /**
- * Prompt vocale per l'item corrente — ESCLUSIVAMENTE pendingItems[0].
- * Vietato menzionare grammi/varianti degli item successivi in coda.
+ * Prompt item corrente — voce breve + testo schermo (opzioni solo nei bottoni).
  * @param {{ spokenName: string, candidates: WizardCandidate[], proposedGrams: number }} current
  * @param {{ allSpokenNames?: string[] }} [meta]
- * @returns {string}
+ * @returns {{ spokenText: string, displayText: string }}
  */
 export function buildWizardItemPrompt(current, meta = {}) {
   const spoken = String(current?.spokenName || 'alimento').trim();
@@ -268,35 +267,38 @@ export function buildWizardItemPrompt(current, meta = {}) {
     : [];
 
   const intro = allNames.length > 1
-    ? `Ho annotato ${allNames.join(' e ')}. Iniziamo dal ${spoken}: `
+    ? `Ho annotato ${allNames.join(' e ')}. `
     : '';
 
   if (candidates.length === 0) {
-    return `${intro}per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure una foto all'etichetta.`;
+    const text = `${intro}Per ${spoken} non trovo corrispondenze chiare nel tuo database. Dimmi il nome esatto e i grammi, oppure una foto all'etichetta.`;
+    return { spokenText: text, displayText: text };
   }
 
   const preferred = candidates.find((c) => c.isLastUsed) || candidates[0];
-  const preferredName = preferred?.name || spoken;
+  const preferredName = sanitizeWizardFoodName(preferred?.name) || spoken;
   const preferredGrams = Math.round(Number(preferred?.proposedGrams) || grams);
+  const hasVariants = candidates.length > 1;
 
-  if (candidates.length === 1) {
-    return `${intro}inserisco il tuo solito «${preferredName}» (${preferredGrams}g)? Oppure dimmi un altro nome o una quantità diversa.`;
-  }
+  // VOCE: solo la proposta principale — mai l'elenco delle varianti (restano sui bottoni).
+  const spokenText = hasVariants
+    ? `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} da ${preferredGrams}g. Confermi o scegli una delle varianti a schermo?`
+    : `${intro}Per ${spoken}, ti propongo il tuo solito ${preferredName} da ${preferredGrams}g. Confermi?`;
 
-  const alternatives = candidates
-    .filter((c) => c.id !== preferred.id)
-    .map((c) => c.name);
-  const altPhrase = alternatives.length === 0
-    ? ''
-    : alternatives.length === 1
-      ? ` Altrimenti ho anche ${alternatives[0]}.`
-      : ` Altrimenti ho anche ${alternatives.slice(0, -1).join(', ')} e ${alternatives[alternatives.length - 1]}.`;
-
-  return `${intro}inserisco il tuo solito «${preferredName}» (${preferredGrams}g)?${altPhrase}`;
+  // SCHERMO: stesso testo breve; le opzioni sono nei quickReplies / bottoni.
+  return { spokenText, displayText: spokenText };
 }
 
 /**
- * Quick replies cliccabili / TTS-friendly per l'item corrente.
+ * @deprecated Usa buildWizardItemPrompt(...).spokenText
+ * @returns {string}
+ */
+export function buildWizardItemSpokenText(current, meta = {}) {
+  return buildWizardItemPrompt(current, meta).spokenText;
+}
+
+/**
+ * Quick replies cliccabili per l'item corrente (solo UI, mai TTS).
  * @param {{ candidates: WizardCandidate[], proposedGrams: number }} current
  * @returns {string[]}
  */
@@ -304,10 +306,11 @@ export function buildWizardItemQuickReplies(current) {
   const candidates = Array.isArray(current?.candidates) ? current.candidates : [];
   const grams = Math.round(Number(current?.proposedGrams) || DEFAULT_GRAMS);
   const replies = candidates.slice(0, MAX_OPTIONS).map((c) => {
+    const cleanName = sanitizeWizardFoodName(c.name) || c.name;
     const g = Math.round(Number(c.proposedGrams) || grams);
     return c.isLastUsed
-      ? `${c.name} ${g}g (solito)`
-      : `${c.name} ${g}g`;
+      ? `${cleanName} ${g}g (solito)`
+      : `${cleanName} ${g}g`;
   });
   if (replies.length > 0) {
     replies.push('Altro / foto etichetta');
@@ -316,7 +319,7 @@ export function buildWizardItemQuickReplies(current) {
 }
 
 /**
- * Riepilogo finale wizard.
+ * Riepilogo finale wizard (testo grezzo — preferire card proposal).
  * @param {WizardResolvedItem[]} resolvedItems
  * @returns {string}
  */
@@ -327,7 +330,7 @@ export function buildWizardFinalSummary(resolvedItems = []) {
   }
   const bits = list.map((item) => {
     const g = Math.round(Number(item.grams) || 0);
-    const name = String(item.foodName || '').trim();
+    const name = sanitizeWizardFoodName(item.foodName) || String(item.foodName || '').trim();
     return g > 0 ? `${name} ${g}g` : name;
   });
   const summary = bits.length === 1
@@ -336,16 +339,66 @@ export function buildWizardFinalSummary(resolvedItems = []) {
   return `Perfetto, ho registrato ${summary}. Salvo nel diario?`;
 }
 
+/** TTS breve alla chiusura coda → card riepilogo. */
+export function buildWizardFinalSpokenText() {
+  return 'Perfetto, ho preparato il riepilogo. Confermi il salvataggio?';
+}
+
 export function buildWizardFinalQuickReplies() {
   return ['Sì, salva', 'Annulla'];
 }
 
+/**
+ * Nome alimento pulito: niente etichette porzione concatenate.
+ * Es. "pomodoro (1 porzione (~10 g)) (1 100 g) 1g" → "pomodoro"
+ * @param {string} raw
+ * @returns {string}
+ */
+export function sanitizeWizardFoodName(raw) {
+  let name = String(raw || '').trim();
+  if (!name) return '';
+
+  name = name.replace(/\(\s*solito\s*\)/gi, ' ');
+
+  // Taglia alla prima parentesi di serving-size (anche nested).
+  const cut = name.search(/\(\s*(?:\d+\s*)?(?:porzion|[~]?\s*\d)/i);
+  if (cut > 0) {
+    name = name.slice(0, cut).trim();
+  }
+
+  let prev = '';
+  let guard = 0;
+  while (prev !== name && guard < 16) {
+    prev = name;
+    guard += 1;
+    // Innermost (...) che sembrano porzioni / grammi
+    name = name.replace(/\(([^()]*)\)/g, (full, inner) => {
+      const body = String(inner || '');
+      if (/\bporzion[ei]\b/i.test(body)) return ' ';
+      if (/~\s*\d/i.test(body)) return ' ';
+      if (/\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b/i.test(body)) return ' ';
+      if (/^\s*\d+\s+\d+(?:[.,]\d+)?\s*g?\s*$/i.test(body)) return ' ';
+      return full;
+    });
+    name = name
+      .replace(/\s+\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b(?:\s*\(.*\))?/gi, ' ')
+      .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b\s*$/gi, ' ')
+      // Residui tipo "1 porzione" / "2 porzioni" fuori da parentesi
+      .replace(/\b\d+\s*porzion[ei]\b/gi, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  return name.replace(/^[,;\-–—\s]+|[,;\-–—\s]+$/g, '').trim();
+}
 function cleanFoodPhrase(raw) {
-  return String(raw || '')
-    .replace(/^(?:la|il|lo|l'|un|una|uno|di|del|della|dello|dei|degli|delle)\s+/i, '')
-    .replace(/\b(?:per\s+favore|grazie|prego|va\s+bene|ok|okay)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return sanitizeWizardFoodName(
+    String(raw || '')
+      .replace(/^(?:la|il|lo|l'|un|una|uno|di|del|della|dello|dei|degli|delle)\s+/i, '')
+      .replace(/\b(?:per\s+favore|grazie|prego|va\s+bene|ok|okay)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  );
 }
 
 function parseGramsFromText(text) {
@@ -441,7 +494,7 @@ export function parseWizardItemReply(state, userText) {
     return {
       ok: true,
       resolved: {
-        foodName: pick.name,
+        foodName: sanitizeWizardFoodName(pick.name) || pick.name,
         grams: gramsFromUser,
         foodDbKey: pick.id,
         spokenName: current.spokenName,
@@ -471,7 +524,7 @@ export function parseWizardItemReply(state, userText) {
   return {
     ok: true,
     resolved: {
-      foodName: matched.name,
+      foodName: sanitizeWizardFoodName(matched.name) || matched.name,
       grams: gramsFromUser || matched.proposedGrams || current.proposedGrams || DEFAULT_GRAMS,
       foodDbKey: matched.id,
       spokenName: current.spokenName,
@@ -560,14 +613,20 @@ export function commitWizardItemAndAdvance(state, resolved, ctx = {}) {
   const pendingItems = [...(state.pendingItems || [])];
   if (pendingItems.length > 0) pendingItems.shift();
 
+  const cleanName = sanitizeWizardFoodName(resolved?.foodName)
+    || sanitizeWizardFoodName(resolved?.spokenName)
+    || String(resolved?.foodName || '').trim();
+  const grams = Math.round(Number(resolved?.grams) || DEFAULT_GRAMS);
+
   const resolvedItems = [
     ...(state.resolvedItems || []),
     {
-      foodName: String(resolved.foodName || '').trim(),
-      grams: Math.round(Number(resolved.grams) || DEFAULT_GRAMS),
-      foodDbKey: resolved.foodDbKey ?? null,
-      spokenName: resolved.spokenName || state.current?.spokenName || '',
-      isEstimated: resolved.isEstimated === true,
+      // Solo nome pulito + grammi finali — mai etichette porzione concatenate.
+      foodName: cleanName,
+      grams: Number.isFinite(grams) && grams > 0 ? grams : DEFAULT_GRAMS,
+      foodDbKey: resolved?.foodDbKey ?? null,
+      spokenName: String(resolved?.spokenName || state.current?.spokenName || '').trim(),
+      isEstimated: resolved?.isEstimated === true,
     },
   ];
 
@@ -584,17 +643,28 @@ export function commitWizardItemAndAdvance(state, resolved, ctx = {}) {
 
 /**
  * Messaggio di passaggio dopo aver salvato un item.
- * Solo il PROSSIMO item: mai grammi/varianti di quelli ancora oltre current.
+ * Voce breve: solo ack + proposta del PROSSIMO item (mai elenco varianti).
+ * @returns {{ spokenText: string, displayText: string, isFinal: boolean }}
  */
 export function buildWizardAdvanceMessage(resolved, nextState) {
-  const savedName = String(resolved?.foodName || '').trim().toLowerCase();
-  const prefix = `Va bene, ${savedName} salvata.`;
+  const savedName = (
+    sanitizeWizardFoodName(resolved?.foodName)
+    || String(resolved?.spokenName || 'alimento').trim()
+  ).toLowerCase();
+  const prefix = `Va bene, ${savedName} registrato.`;
 
   if (nextState.phase === 'confirm' || !nextState.current) {
-    return `${prefix} ${buildWizardFinalSummary(nextState.resolvedItems)}`;
+    const spokenText = buildWizardFinalSpokenText();
+    return { spokenText, displayText: spokenText, isFinal: true };
   }
 
-  return `${prefix} Passiamo a ${nextState.current.spokenName}. ${buildWizardItemPrompt(nextState.current)}`;
+  const nextPrompt = buildWizardItemPrompt(nextState.current);
+  const spokenText = `${prefix} Passiamo a ${nextState.current.spokenName}. ${nextPrompt.spokenText}`;
+  return {
+    spokenText,
+    displayText: spokenText,
+    isFinal: false,
+  };
 }
 
 /**
@@ -608,8 +678,8 @@ export function buildFoodPayloadFromWizard(state) {
     exactTime: state.exactTime || null,
     timeString: state.timeString || state.exactTime || null,
     items: (state.resolvedItems || []).map((item) => ({
-      foodName: item.foodName,
-      grams: item.grams,
+      foodName: sanitizeWizardFoodName(item.foodName) || String(item.foodName || '').trim(),
+      grams: Math.round(Number(item.grams) || DEFAULT_GRAMS),
       isEstimated: item.isEstimated === true,
       ...(item.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
       ...(item.spokenName ? { spokenFoodName: item.spokenName } : {}),
