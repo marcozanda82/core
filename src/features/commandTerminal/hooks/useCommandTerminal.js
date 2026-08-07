@@ -1028,6 +1028,13 @@ export function useCommandTerminal({
       }
       controller.clearPendingMealUpdate();
       pendingMealUpdateRef.current = null;
+      if (typeof controller.clearPendingMealDraft === 'function') {
+        controller.clearPendingMealDraft();
+      }
+      if (typeof controller.resetConversationState === 'function'
+        && controller.getConversationSnapshot?.()?.conversationState === 'AWAITING_CONFIRMATION') {
+        controller.resetConversationState();
+      }
       return { ok: true };
     } catch (error) {
       const reason = `Meal proposal accept failure: ${error?.message || 'unknown error'}`;

@@ -114,6 +114,15 @@ import {
 import { sanitizeUserPortionsDict } from './conversation/userPortionsMemory.js';
 import { findFoodDbMatchCascading } from '../salaComandi/engines/foodDataEngine.js';
 import {
+  CONFIRM_MEAL_DRAFT,
+  UPDATE_MEAL_DRAFT,
+  CANCEL_MEAL_DRAFT,
+  classifyMealDraftVoiceReply,
+  applyVoiceCorrectionToMealDraft,
+  buildMcDriveUpdatedConfirmationMessage,
+  isUpdateMealDraftIntent,
+} from './conversation/mealDraftVoiceEdit.js';
+import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
   buildLocalWorkoutPayloadFromText,
@@ -282,6 +291,8 @@ export class CommandTerminalController {
     this.isExecutingAction = false;
     /** @type {object | null} Stato multi-turno UPDATE_LOGGED_MEAL (indipendente da chatHistory). */
     this.pendingMealUpdate = null;
+    /** @type {object | null} Bozza pasto McDrive in sospeso (proposta → correzioni → conferma). */
+    this.pendingMealDraft = null;
     /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
     this.pendingSoftMealRecovery = null;
   }
@@ -314,6 +325,7 @@ export class CommandTerminalController {
         ? { ...this.pendingAction, payload: { ...(this.pendingAction.payload || {}) } }
         : null,
       pendingMealUpdate: this.getPendingMealUpdate(),
+      pendingMealDraft: this.getPendingMealDraft(),
     };
   }
 
@@ -327,7 +339,61 @@ export class CommandTerminalController {
     this.pendingWorkoutOriginUserText = '';
     this.isExecutingAction = false;
     this.pendingMealUpdate = null;
+    this.pendingMealDraft = null;
     this.pendingSoftMealRecovery = null;
+  }
+
+  setPendingMealDraft(draft) {
+    if (!draft || typeof draft !== 'object') {
+      this.pendingMealDraft = null;
+      return;
+    }
+    this.pendingMealDraft = {
+      ...draft,
+      items: expandFoodPayloadItems(draft).map((item) => ({ ...item })),
+      updatedAt: Date.now(),
+    };
+  }
+
+  clearPendingMealDraft() {
+    this.pendingMealDraft = null;
+  }
+
+  getPendingMealDraft() {
+    return this.pendingMealDraft
+      ? {
+          ...this.pendingMealDraft,
+          items: expandFoodPayloadItems(this.pendingMealDraft).map((item) => ({ ...item })),
+        }
+      : null;
+  }
+
+  /**
+   * Mette in sospeso la bozza pasto senza duplicare UI (la card proposal è già pubblicata).
+   */
+  stagePendingMealDraft(payload, meta = {}) {
+    const normalized = normalizeFoodPayload(payload, {}, { inferMealTypeFromContext: false });
+    const items = expandFoodPayloadItems(payload).length > 0
+      ? expandFoodPayloadItems(payload)
+      : expandFoodPayloadItems(normalized);
+    const draftPayload = {
+      ...normalized,
+      items,
+      mealType: payload?.mealType || normalized.mealType,
+      exactTime: payload?.exactTime || normalized.exactTime,
+      timeString: payload?.timeString || normalized.timeString,
+      ...(payload?.message ? { message: payload.message } : {}),
+    };
+    this.setPendingMealDraft(draftPayload);
+    this.pendingAction = {
+      commandType: 'ADD_FOOD',
+      payload: { ...draftPayload },
+      meta: { ...meta, requiresConfirmation: true },
+    };
+    this.pendingCommandType = 'ADD_FOOD';
+    this.pendingCommandPayload = { ...draftPayload };
+    this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+    return this.getPendingMealDraft();
   }
 
   publishSystemMessage(message) {
@@ -529,7 +595,16 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
-    const butler = this.applyButlerMealEnrichment(payload, currentState);
+    const fromVoiceCorrection = options?.fromVoiceCorrection === true;
+    // Dopo correzione vocale: non ri-espandere abitudini (rispetta «era rosetta»).
+    const butler = fromVoiceCorrection
+      ? {
+          payload,
+          butlerMeta: null,
+          requestPhotoFor: null,
+          butlerMessage: String(options.uiMessage || payload?.message || '').trim(),
+        }
+      : this.applyButlerMealEnrichment(payload, currentState);
     if (butler.requestPhotoFor) {
       return this.publishRequestFoodPhoto(
         {
@@ -574,13 +649,21 @@ export class CommandTerminalController {
     const useButlerReplies = Boolean(
       butler.butlerMeta?.anyHabitApplied
       || butler.butlerMeta?.anyGramsEstimated
-      || /solito|come al solito|tipo diverso|cambiare le quantit/i.test(summaryText),
+      || /solito|come al solito|tipo diverso|cambiare le quantit|posso salvare/i.test(summaryText),
     );
+
+    // McDrive: bozza in sospeso — correzioni vocali → UPDATE_MEAL_DRAFT, «Sì» → CONFIRM.
+    this.stagePendingMealDraft(enrichedPayload, {
+      uiMessage: summaryText,
+      sourceText: String(userText || '').trim() || null,
+    });
 
     this.publishAdviceMessage({
       text: summaryText,
       mealProposals: [proposal],
-      quickReplies: useButlerReplies ? [...BUTLER_MEAL_QUICK_REPLIES] : null,
+      quickReplies: useButlerReplies
+        ? [...BUTLER_MEAL_QUICK_REPLIES]
+        : ['Sì, va bene', 'Oggi è diverso'],
     });
 
     return {
@@ -590,6 +673,8 @@ export class CommandTerminalController {
       userNotified: true,
       sourceText: String(userText || '').trim() || null,
       butler: Boolean(useButlerReplies),
+      awaitingConfirmation: true,
+      pendingMealDraft: this.getPendingMealDraft(),
     };
   }
 
@@ -1443,6 +1528,7 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
 
     if (normalizedType === 'ADD_FOOD') {
+      this.setPendingMealDraft(payload);
       this.publishMealDraftMessage(payload, {
         summaryText: meta.uiMessage || buildMealDraftUiMessage(payload),
         quickReplies: MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
@@ -1638,6 +1724,18 @@ export class CommandTerminalController {
 
   processConfirmationResponse(userText, currentState = {}, options = {}) {
     const text = String(userText || '').trim();
+    const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+
+    // Solo workout draft: mantieni flusso legacy se non c'è bozza pasto.
+    const hasMealDraft = Boolean(
+      this.pendingMealDraft
+      || (this.pendingAction?.commandType === 'ADD_FOOD' && expandFoodPayloadItems(this.pendingAction.payload).length > 0),
+    );
+
+    if (hasMealDraft) {
+      return this.processMealDraftVoiceLoop(text, currentState, { ...options, chatHistory });
+    }
+
     const confirmation = parseConfirmationFromUserText(text);
 
     if (confirmation === 'yes') {
@@ -1651,13 +1749,135 @@ export class CommandTerminalController {
     }
 
     if (confirmation === 'modify') {
-      this.publishSystemMessage('Modifica i dati nella card qui sopra, poi conferma.');
+      this.publishSystemMessage('Dimmi pure cosa cambiare: grammi, tipo di alimento, aggiungi o togli. Ti ascolto.');
       return { ok: true, awaiting: true, conversationState: this.conversationState };
     }
 
-    // Nuovo messaggio: annulla bozza e riprocessa come nuova richiesta.
+    // Nuovo messaggio senza bozza pasto: annulla e riprocessa.
     this.resetConversationState();
     return this.processUserMessage(text, currentState, options);
+  }
+
+  /**
+   * Loop McDrive: CONFIRM_MEAL_DRAFT | UPDATE_MEAL_DRAFT | CANCEL_MEAL_DRAFT.
+   */
+  async processMealDraftVoiceLoop(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const draft = this.getPendingMealDraft()
+      || (this.pendingAction?.commandType === 'ADD_FOOD' ? this.pendingAction.payload : null);
+
+    if (!draft || expandFoodPayloadItems(draft).length === 0) {
+      this.resetConversationState();
+      return this.processUserMessage(text, currentState, options);
+    }
+
+    const voiceIntent = classifyMealDraftVoiceReply(text);
+    console.log('🎙️ DEBUG - MEAL DRAFT VOICE LOOP:', { voiceIntent, text: text.slice(0, 120) });
+
+    if (voiceIntent === CONFIRM_MEAL_DRAFT) {
+      console.log('🟡 DEBUG - PATH SCELTO: CONFIRM_MEAL_DRAFT');
+      if (this.pendingAction?.commandType === 'ADD_FOOD') {
+        this.pendingAction.payload = { ...draft };
+      } else {
+        this.pendingAction = {
+          commandType: 'ADD_FOOD',
+          payload: { ...draft },
+          meta: { requiresConfirmation: false },
+        };
+      }
+      this.pendingCommandPayload = { ...draft };
+      const result = this.executePendingAction();
+      if (result?.ok) {
+        this.publishSystemMessage('Perfetto, pasto salvato.');
+      }
+      return { ...result, intent: CONFIRM_MEAL_DRAFT, commandType: CONFIRM_MEAL_DRAFT };
+    }
+
+    if (voiceIntent === CANCEL_MEAL_DRAFT) {
+      console.log('🟡 DEBUG - PATH SCELTO: CANCEL_MEAL_DRAFT');
+      this.resetConversationState();
+      this.publishSystemMessage('Ok, bozza annullata. Dimmi pure quando vuoi registrare di nuovo.');
+      return { ok: true, cancelled: true, intent: CANCEL_MEAL_DRAFT };
+    }
+
+    if (voiceIntent === 'UNKNOWN') {
+      // Nuova registrazione indipendente mentre la bozza è aperta → riparti pulito.
+      if (
+        (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text))
+        && !isUpdateMealDraftIntent(text)
+      ) {
+        this.resetConversationState();
+        return this.processUserMessage(text, currentState, options);
+      }
+      this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+      this.publishSystemMessage(
+        "Dimmi la correzione (es. «metti 80 grammi», «era rosetta») oppure «sì» per salvare, «annulla» per chiudere.",
+      );
+      return {
+        ok: true,
+        awaiting: true,
+        intent: UPDATE_MEAL_DRAFT,
+        reason: 'unknown_voice_reply',
+        conversationState: this.conversationState,
+      };
+    }
+
+    // «Oggi è diverso» senza dettagli → invita correzione vocale
+    const strippedDiverso = text.replace(/^oggi\s+[eè]\s+diverso[.,!]?\s*/i, '').trim();
+    if (/^oggi\s+[eè]\s+diverso\b/i.test(text) && !strippedDiverso) {
+      this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+      this.publishAdviceMessage({
+        text: 'Nessun problema. Dimmi cosa cambia: tipo di alimento, grammi, oppure cosa togliere o aggiungere.',
+        mealProposals: null,
+        quickReplies: ['Sì, va bene', 'Annulla'],
+      });
+      return {
+        ok: true,
+        awaiting: true,
+        intent: UPDATE_MEAL_DRAFT,
+        conversationState: this.conversationState,
+      };
+    }
+
+    console.log('🟡 DEBUG - PATH SCELTO: UPDATE_MEAL_DRAFT');
+    const correctionText = strippedDiverso && /^oggi\s+[eè]\s+diverso\b/i.test(text)
+      ? strippedDiverso
+      : text;
+    const applied = applyVoiceCorrectionToMealDraft(draft, correctionText);
+    if (!applied.ok) {
+      this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+      this.publishSystemMessage(
+        "Non ho colto la correzione. Prova tipo «metti 80 grammi», «togli il pomodoro», «era rosetta», oppure «sì» per salvare.",
+      );
+      return {
+        ok: true,
+        awaiting: true,
+        intent: UPDATE_MEAL_DRAFT,
+        reason: applied.reason,
+        conversationState: this.conversationState,
+      };
+    }
+
+    const voiceMessage = buildMcDriveUpdatedConfirmationMessage(
+      expandFoodPayloadItems(applied.payload),
+    );
+    const nextPayload = {
+      ...applied.payload,
+      message: voiceMessage,
+    };
+
+    const published = await this.publishMealLogProposalCardDirect(
+      nextPayload,
+      currentState,
+      correctionText,
+      options?.chatHistory || [],
+      { uiMessage: voiceMessage, fromVoiceCorrection: true },
+    );
+    return {
+      ...published,
+      intent: UPDATE_MEAL_DRAFT,
+      commandType: UPDATE_MEAL_DRAFT,
+    };
   }
 
   beginFoodSlotFilling(partialPayload, currentState = {}, options = {}) {
@@ -2394,7 +2614,7 @@ export class CommandTerminalController {
       }
     }
     if (this.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
-      return this.processConfirmationResponse(userText, currentState, options);
+      return await this.processConfirmationResponse(userText, currentState, options);
     }
 
     if (
