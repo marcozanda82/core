@@ -980,11 +980,12 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
   };
   const resolvedItems = resolveMealProposalItems(
     rawItems.map((item) => ({
-      rawQuery: item.foodName,
+      rawQuery: item.spokenFoodName || item.foodName,
       foodName: item.foodName,
       grams: item.grams,
-      // Chiave esatta dal wizard/click: evita re-fuzzy (es. «noci» → pane con noci).
+      // Chiave esatta dal wizard/click/fast-path: evita re-fuzzy.
       foodDbKey: item.foodDbKey ?? item.foodId ?? null,
+      searchKeywords: item.searchKeywords || null,
     })),
     resolveContext,
   ).map((resolved, idx) => {
@@ -993,7 +994,13 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
       (r) => String(r.foodName || '').toLowerCase() === String(resolved?.foodName || '').toLowerCase(),
     );
     const srcIcon = String(src?.icon || '').trim();
-    return srcIcon ? { ...resolved, icon: srcIcon } : resolved;
+    const spoken = String(src?.spokenFoodName || '').trim();
+    return {
+      ...resolved,
+      ...(srcIcon ? { icon: srcIcon } : {}),
+      ...(spoken ? { spokenFoodName: spoken } : {}),
+      ...(Array.isArray(src?.searchKeywords) ? { searchKeywords: src.searchKeywords } : {}),
+    };
   });
   const items = deduplicateMealProposalItems(resolvedItems);
 

@@ -266,15 +266,20 @@ function MealProposalItemRow({
   itemIdx,
   disabled,
   isEditing,
+  interactiveEdit = false,
   onSelectAlternative,
   onEditName,
   onEditGrams,
   onRemoveItem,
+  onRequestItemEdit,
 }) {
   const [open, setOpen] = useState(false);
-  const hasAlternatives = !isEditing && Array.isArray(item.alternatives) && item.alternatives.length > 1;
+  const hasAlternatives = !isEditing && !interactiveEdit
+    && Array.isArray(item.alternatives) && item.alternatives.length > 1;
   const grams = Math.round(Number(item?.grams ?? item?.qta) || 0);
   const name = String(item?.foodName || item?.name || 'Alimento').trim();
+  const icon = String(item?.icon || '').trim();
+  const label = `${icon ? `${icon} ` : ''}${name} ${grams}g`;
 
   const handleSelect = (alternative) => {
     onSelectAlternative?.(itemIdx, alternative);
@@ -319,6 +324,24 @@ function MealProposalItemRow({
     );
   }
 
+  if (interactiveEdit) {
+    return (
+      <li className="kentu-meal-proposal-card__item kentu-meal-proposal-card__item--interactive">
+        <button
+          type="button"
+          className="kentu-meal-proposal-card__item-edit-btn"
+          disabled={disabled}
+          aria-label={`Modifica ${name}`}
+          title="Tocca per correggere questo alimento"
+          onClick={() => onRequestItemEdit?.(itemIdx, item)}
+        >
+          <span className="kentu-meal-proposal-card__item-name">{label}</span>
+          <span className="kentu-meal-proposal-card__item-edit-hint" aria-hidden>✎</span>
+        </button>
+      </li>
+    );
+  }
+
   return (
     <li className={`kentu-meal-proposal-card__item${hasAlternatives ? ' kentu-meal-proposal-card__item--ambiguous' : ''}`}>
       <div className="kentu-meal-proposal-card__item-main">
@@ -333,7 +356,7 @@ function MealProposalItemRow({
               onClick={() => setOpen((prev) => !prev)}
             >
               <span className="kentu-meal-proposal-card__item-picker-icon" aria-hidden>🔄</span>
-              <span className="kentu-meal-proposal-card__item-name">{name}</span>
+              <span className="kentu-meal-proposal-card__item-name">{icon ? `${icon} ${name}` : name}</span>
               <span className="kentu-meal-proposal-card__item-chevron" aria-hidden>{open ? '▴' : '▾'}</span>
             </button>
             {open ? (
@@ -363,7 +386,7 @@ function MealProposalItemRow({
             ) : null}
           </>
         ) : (
-          <span className="kentu-meal-proposal-card__item-name">{name}</span>
+          <span className="kentu-meal-proposal-card__item-name">{icon ? `${icon} ${name}` : name}</span>
         )}
       </div>
       <span className="kentu-meal-proposal-card__item-grams">{grams}g</span>
@@ -383,10 +406,15 @@ function MealProposalCard({
   onConfirm,
   onDraftChange,
   onLearnUnresolvedFood = null,
+  interactiveEdit = false,
+  onRequestItemEdit = null,
+  onCancelDraft = null,
+  onEnableInteractiveEdit = null,
 }) {
   const id = String(proposal?.id || `proposal_${index}`);
   const [localProposal, setLocalProposal] = useState(() => cloneProposal(proposal));
   const [isEditing, setIsEditing] = useState(false);
+  const [isInteractiveEdit, setIsInteractiveEdit] = useState(Boolean(interactiveEdit));
   const [editSnapshot, setEditSnapshot] = useState(null);
   const [processingItemIdx, setProcessingItemIdx] = useState(null);
   const [manualOpenForIdx, setManualOpenForIdx] = useState(null);
@@ -400,6 +428,10 @@ function MealProposalCard({
     setIsEditing(false);
     setEditSnapshot(null);
   }, [proposal]);
+
+  useEffect(() => {
+    setIsInteractiveEdit(Boolean(interactiveEdit));
+  }, [interactiveEdit]);
 
   const label = String(localProposal?.label || localProposal?.name || `Opzione ${index + 1}`).trim();
   const mealType = String(localProposal?.mealType || 'pranzo').trim();
@@ -703,8 +735,9 @@ function MealProposalCard({
   }, [items]);
 
   const handleStartEdit = () => {
-    setEditSnapshot(cloneProposal(localProposal));
-    setIsEditing(true);
+    // Bozza interattiva: righe cliccabili → wizard isolato (non campi testo).
+    setIsInteractiveEdit(true);
+    onEnableInteractiveEdit?.();
   };
 
   const handleCancelEdit = () => {
@@ -713,6 +746,15 @@ function MealProposalCard({
     }
     setEditSnapshot(null);
     setIsEditing(false);
+    setIsInteractiveEdit(false);
+  };
+
+  const handleRequestItemEdit = (itemIndex, item) => {
+    onRequestItemEdit?.(itemIndex, item, {
+      proposal: localProposal,
+      proposalIndex: index,
+      adviceId,
+    });
   };
 
   const handleSaveEdit = () => {
@@ -760,7 +802,7 @@ function MealProposalCard({
         />
       ) : null}
 
-      {!isEditing && items.length > 0 ? (
+      {!isEditing && !isInteractiveEdit && items.length > 0 ? (
         <div className="kentu-meal-proposal-card__receipt">
           <MealReceiptMessage
             receipt={previewReceipt}
@@ -781,8 +823,13 @@ function MealProposalCard({
         </div>
       ) : null}
 
-      {isEditing && items.length > 0 ? (
-        <ul className="kentu-meal-proposal-card__items">
+      {(isEditing || isInteractiveEdit) && items.length > 0 ? (
+        <ul className="kentu-meal-proposal-card__items" aria-label={isInteractiveEdit ? 'Tocca un alimento da correggere' : 'Modifica alimenti'}>
+          {isInteractiveEdit ? (
+            <li className="kentu-meal-proposal-card__interactive-hint">
+              Tocca l&apos;alimento da correggere
+            </li>
+          ) : null}
           {items.map((item, itemIdx) => (
             <MealProposalItemRow
               key={`${id}_${itemIdx}_${item.foodDbKey || item.foodName}`}
@@ -790,10 +837,12 @@ function MealProposalCard({
               itemIdx={itemIdx}
               disabled={isLoaded}
               isEditing={isEditing}
+              interactiveEdit={isInteractiveEdit && !isEditing}
               onSelectAlternative={handleSelectAlternative}
               onEditName={handleEditName}
               onEditGrams={handleEditGrams}
               onRemoveItem={handleRemoveItem}
+              onRequestItemEdit={handleRequestItemEdit}
             />
           ))}
         </ul>
@@ -817,6 +866,36 @@ function MealProposalCard({
               onClick={handleCancelEdit}
             >
               Annulla
+            </KentuButton>
+          </>
+        ) : isInteractiveEdit ? (
+          <>
+            <KentuButton
+              variant="primary"
+              className="kentu-meal-proposal-card__confirm"
+              disabled={isLoaded || !canSaveOrConfirm}
+              onClick={() => {
+                if (isLoaded || !canSaveOrConfirm) return;
+                setIsInteractiveEdit(false);
+                onConfirm?.({
+                  ...localProposal,
+                  targetNodeId: targetNodeId || localProposal?.targetNodeId || null,
+                  action: upsertAction,
+                  upsertAction,
+                  items: commitItems,
+                  resultingItems: commitItems,
+                }, index, adviceId);
+              }}
+            >
+              Sì, Salva
+            </KentuButton>
+            <KentuButton
+              variant="secondary"
+              className="kentu-meal-proposal-card__cancel"
+              disabled={isLoaded}
+              onClick={() => setIsInteractiveEdit(false)}
+            >
+              Chiudi edit
             </KentuButton>
           </>
         ) : (
@@ -846,7 +925,7 @@ function MealProposalCard({
                     ? 'Aggiungi al pasto'
                     : isMutationCard
                       ? 'Applica modifiche'
-                      : 'Conferma e carica'}
+                      : 'Sì, Salva'}
             </KentuButton>
             {!isLoaded ? (
               <KentuButton
@@ -855,6 +934,15 @@ function MealProposalCard({
                 onClick={handleStartEdit}
               >
                 Modifica
+              </KentuButton>
+            ) : null}
+            {!isLoaded && typeof onCancelDraft === 'function' ? (
+              <KentuButton
+                variant="secondary"
+                className="kentu-meal-proposal-card__cancel"
+                onClick={() => onCancelDraft(localProposal, index, adviceId)}
+              >
+                Annulla
               </KentuButton>
             ) : null}
           </>
@@ -877,6 +965,10 @@ export default function MealProposalCards({
   fullHistory = {},
   onConfirm,
   onLearnUnresolvedFood = null,
+  interactiveEdit = false,
+  onRequestItemEdit = null,
+  onCancelDraft = null,
+  onEnableInteractiveEdit = null,
 }) {
   const [draftProposals, setDraftProposals] = useState(() => cloneProposals(proposals));
 
@@ -917,6 +1009,10 @@ export default function MealProposalCards({
             onConfirm={onConfirm}
             onDraftChange={handleDraftChange}
             onLearnUnresolvedFood={onLearnUnresolvedFood}
+            interactiveEdit={interactiveEdit}
+            onRequestItemEdit={onRequestItemEdit}
+            onCancelDraft={onCancelDraft}
+            onEnableInteractiveEdit={onEnableInteractiveEdit}
           />
         );
       })}

@@ -14,6 +14,9 @@ export default function KentuChatUI({
   handleQuickReplyClick,
   handleAcceptAdvice,
   onAcceptMealProposal,
+  onEnableMealDraftInteractiveEdit = null,
+  onRequestMealItemEdit = null,
+  onCancelMealDraftProposal = null,
   onLearnUnresolvedFood = null,
   foodDatabase = {},
   kentuItDatabase = {},
@@ -73,6 +76,9 @@ export default function KentuChatUI({
         onSlotQuickReplyClick={handleQuickReplyClick}
         onAcceptAdvice={handleAcceptAdvice}
         onAcceptMealProposal={onAcceptMealProposal}
+        onEnableMealDraftInteractiveEdit={onEnableMealDraftInteractiveEdit}
+        onRequestMealItemEdit={onRequestMealItemEdit}
+        onCancelMealDraftProposal={onCancelMealDraftProposal}
         onLearnUnresolvedFood={onLearnUnresolvedFood}
         foodDatabase={foodDatabase}
         kentuItDatabase={kentuItDatabase}

@@ -138,10 +138,13 @@ import {
   classifyWizardFinalReply,
   resolveWizardPendingQueue,
   mergeExplicitGramsIntoQueue,
-  shouldForceSequentialFoodWizard,
   sanitizeWizardFoodName,
   resolveWizardSelection,
 } from './conversation/sequentialFoodWizard.js';
+import {
+  buildFastPathSummarySpokenText,
+  fastPathResolveMealPayload,
+} from './conversation/fastPathMealResolve.js';
 import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
@@ -320,6 +323,8 @@ export class CommandTerminalController {
     this.pendingMealDraftClarification = null;
     /** @type {import('./conversation/sequentialFoodWizard.js').MealWizardState | null} */
     this.mealWizardState = null;
+    /** Editing chirurgico: le righe della card sono cliccabili. */
+    this.mealDraftInteractiveEdit = false;
     /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
     this.pendingSoftMealRecovery = null;
   }
@@ -354,6 +359,7 @@ export class CommandTerminalController {
       pendingMealUpdate: this.getPendingMealUpdate(),
       pendingMealDraft: this.getPendingMealDraft(),
       mealWizardState: this.getMealWizardState(),
+      mealDraftInteractiveEdit: this.mealDraftInteractiveEdit === true,
     };
   }
 
@@ -370,6 +376,7 @@ export class CommandTerminalController {
     this.pendingMealDraft = null;
     this.pendingMealDraftClarification = null;
     this.mealWizardState = null;
+    this.mealDraftInteractiveEdit = false;
     this.pendingSoftMealRecovery = null;
   }
 
@@ -453,6 +460,9 @@ export class CommandTerminalController {
                 candidates: [...(this.mealWizardState.current.candidates || [])],
               }
             : null,
+          ...(this.mealWizardState.isolatedEdit
+            ? { isolatedEdit: { ...this.mealWizardState.isolatedEdit } }
+            : {}),
         }
       : null;
   }
@@ -541,67 +551,177 @@ export class CommandTerminalController {
   }
 
   /**
-   * Multi-item ADD_FOOD → SequentialFoodWizard obbligatorio (niente bozza globale).
+   * Fast-Path: non forza più il wizard sequenziale su multi-item.
+   * Il wizard resta solo per editing chirurgico isolato (singola riga).
    */
-  mustUseSequentialFoodWizard(payload, userText = '') {
-    const items = expandFoodPayloadItems(payload);
-    return shouldForceSequentialFoodWizard(items, userText, extractBareFoodNamesFromText);
+  mustUseSequentialFoodWizard(_payload, _userText = '') {
+    return false;
+  }
+
+  getFastPathContext(currentState = {}) {
+    return {
+      personalDb: currentState?.foodDatabase
+        || currentState?.trackerFoodDatabase
+        || currentState?.personalFoodDb
+        || null,
+      kentuItDb: currentState?.kentuFoodDb
+        || currentState?.kentuItDb
+        || currentState?.kentuItDatabase
+        || null,
+      globalDb: currentState?.globalFoodDb
+        || currentState?.kentuGlobalDb
+        || currentState?.globalFoodDatabase
+        || null,
+      userPortions: sanitizeUserPortionsDict(
+        currentState?.userPortions
+        || currentState?.nutrition?.userPortions
+        || {},
+      ),
+    };
   }
 
   /**
-   * Avvia SequentialFoodWizard al posto della proposta batch.
-   * Blocca pendingMealDraft / MEAL_DRAFT finché ogni item non è in resolvedItems.
+   * Attiva bozza interattiva: le righe della card diventano cliccabili.
    */
-  startSequentialFoodWizard(payload, currentState = {}, userText = '') {
-    const items = expandFoodPayloadItems(payload);
-    const bareNames = extractBareFoodNamesFromText(userText);
-    const fallbackItems = items.length > 0
-      ? items
-      : [{ foodName: String(payload?.foodName || '').trim(), grams: payload?.grams }];
-    let pendingItems = resolveWizardPendingQueue(fallbackItems, bareNames);
-    // Grammi espliciti dal testo utente (anche se LLM li ha droppati).
-    const natural = parseConsumedMealFromNaturalText(userText);
-    if (natural?.items?.length) {
-      pendingItems = mergeExplicitGramsIntoQueue(pendingItems, natural.items);
+  enableMealDraftInteractiveEdit() {
+    if (!this.getPendingMealDraft() && this.pendingAction?.commandType !== 'ADD_FOOD') {
+      return { ok: false, reason: 'no_pending_draft' };
     }
-    if (pendingItems.length === 0) {
-      return { ok: false, reason: 'empty_wizard_queue' };
-    }
-
-    const ctx = this.getWizardContext(currentState);
-    const withTiming = applyMealTimingDefaultsOnly(payload || {});
-    const state = createMealWizardState({
-      pendingItems,
-      mealType: withTiming.mealType || payload?.mealType || null,
-      exactTime: withTiming.exactTime || payload?.exactTime || null,
-      personalDb: ctx.personalDb,
-      userPortions: ctx.userPortions,
-    });
-    this.mealWizardState = state;
-    // Vietato bozza globale mentre il wizard è attivo.
-    this.pendingMealDraft = null;
-    this.pendingAction = null;
-    this.pendingCommandType = null;
-    this.pendingCommandPayload = null;
-
-    console.log('🧙 DEBUG - START SEQUENTIAL FOOD WIZARD:', {
-      pending: pendingItems.map((p) => p.spokenName),
-      userText: String(userText || '').slice(0, 80),
-    });
-
-    if (state.phase === 'confirm') {
-      return this.publishWizardFinalProposalCard(state, currentState);
-    }
-
-    this.publishWizardItemPrompt(state, {
-      allSpokenNames: pendingItems.map((p) => p.spokenName),
+    this.mealDraftInteractiveEdit = true;
+    this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+    const text = 'Tocca sulla card l\'alimento che vuoi correggere.';
+    this.publishAdviceMessage({
+      text,
+      spokenText: text,
+      mealProposals: null,
+      quickReplies: ['Annulla'],
+      mealDraftInteractiveEdit: true,
     });
     return {
       ok: true,
-      intent: 'MEAL_WIZARD',
+      awaiting: true,
+      intent: 'MEAL_DRAFT_INTERACTIVE_EDIT',
+      mealDraftInteractiveEdit: true,
+      conversationState: this.conversationState,
+    };
+  }
+
+  /**
+   * Wizard isolato su UN solo alimento della bozza (dopo click riga).
+   * @param {number} itemIndex
+   * @param {object} [currentState]
+   */
+  startIsolatedFoodItemWizard(itemIndex, currentState = {}) {
+    const draft = this.getPendingMealDraft()
+      || (this.pendingAction?.commandType === 'ADD_FOOD' ? this.pendingAction.payload : null);
+    const items = expandFoodPayloadItems(draft || {});
+    const idx = Math.round(Number(itemIndex));
+    if (!draft || !Number.isFinite(idx) || idx < 0 || idx >= items.length) {
+      return { ok: false, reason: 'invalid_item_index' };
+    }
+
+    const target = items[idx];
+    const spokenName = String(target.spokenFoodName || target.foodName || '').trim();
+    if (!spokenName) return { ok: false, reason: 'empty_item' };
+
+    const ctx = this.getWizardContext(currentState);
+    const grams = Number(target.grams);
+    const state = createMealWizardState({
+      pendingItems: [{
+        spokenName,
+        gramsHint: Number.isFinite(grams) && grams > 0 ? Math.round(grams) : null,
+        searchKeywords: target.searchKeywords || null,
+      }],
+      mealType: draft.mealType || null,
+      exactTime: draft.exactTime || draft.timeString || null,
+      personalDb: ctx.personalDb,
+      userPortions: ctx.userPortions,
+      isolatedEdit: {
+        itemIndex: idx,
+        draftBefore: {
+          ...draft,
+          items: items.map((i) => ({ ...i })),
+        },
+      },
+    });
+
+    this.mealWizardState = state;
+    this.mealDraftInteractiveEdit = false;
+    // Mantieni pendingMealDraft: il wizard isolato non cancella la bozza globale.
+    console.log('🧙 DEBUG - START ISOLATED FOOD WIZARD:', {
+      itemIndex: idx,
+      spokenName,
+    });
+
+    if (state.phase === 'confirm') {
+      return this.finishIsolatedFoodItemEdit(state, currentState);
+    }
+
+    this.publishWizardItemPrompt(state, { allSpokenNames: [] });
+    return {
+      ok: true,
+      intent: 'MEAL_WIZARD_ISOLATED',
       phase: 'item',
       mealWizardState: this.getMealWizardState(),
     };
+  }
+
+  /**
+   * Dopo risoluzione isolata: aggiorna la riga nella bozza e ripubblica la card.
+   */
+  async finishIsolatedFoodItemEdit(wizardState, currentState = {}) {
+    const isolated = wizardState?.isolatedEdit;
+    const resolved = (wizardState?.resolvedItems || [])[0];
+    const draftBefore = isolated?.draftBefore || this.getPendingMealDraft();
+    const items = expandFoodPayloadItems(draftBefore || {});
+    const idx = Number(isolated?.itemIndex);
+
+    if (resolved && Number.isFinite(idx) && idx >= 0 && idx < items.length) {
+      items[idx] = {
+        ...items[idx],
+        foodName: sanitizeWizardFoodName(resolved.foodName) || resolved.foodName,
+        grams: Math.round(Number(resolved.grams) || items[idx].grams || 100),
+        foodDbKey: resolved.foodDbKey ?? items[idx].foodDbKey ?? null,
+        spokenFoodName: resolved.spokenName || items[idx].spokenFoodName || items[idx].foodName,
+        isEstimated: resolved.isEstimated === true,
+      };
+    }
+
+    const nextPayload = {
+      ...(draftBefore || {}),
+      items,
+    };
+    this.clearMealWizardState();
+    this.mealDraftInteractiveEdit = false;
+
+    const label = String(resolved?.foodName || items[idx]?.foodName || 'alimento').trim();
+    const spokenText = `Ho aggiornato ${label}. Confermi il salvataggio o vuoi modificare qualcosa?`;
+
+    return this.publishMealLogProposalCardDirect(
+      nextPayload,
+      currentState,
+      '',
+      [],
+      {
+        skipWizard: true,
+        fromVoiceCorrection: true,
+        uiMessage: spokenText,
+        spokenText,
+      },
+    );
+  }
+
+  /**
+   * @deprecated Fast-Path: non avviare più il wizard batch. Usa publishMealLogProposalCardDirect.
+   */
+  startSequentialFoodWizard(payload, currentState = {}, userText = '') {
+    console.log('🚀 DEBUG - FAST-PATH (skip sequential wizard batch):', {
+      items: expandFoodPayloadItems(payload).map((i) => i.foodName),
+      userText: String(userText || '').slice(0, 80),
+    });
+    return this.publishMealLogProposalCardDirect(payload, currentState, userText, [], {
+      skipWizard: true,
+    });
   }
 
   async processMealWizardResponse(userText, currentState = {}, options = {}) {
@@ -618,6 +738,9 @@ export class CommandTerminalController {
       this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM
       || state.phase === 'confirm'
     ) {
+      if (state.isolatedEdit) {
+        return this.finishIsolatedFoodItemEdit(state, currentState);
+      }
       const final = classifyWizardFinalReply(text);
       if (final === 'confirm') {
         console.log('🟡 DEBUG - PATH SCELTO: MEAL_WIZARD CONFIRM → SAVE');
@@ -648,6 +771,23 @@ export class CommandTerminalController {
 
     // Fase item
     if (/^(?:annulla|cancel|stop)\b/i.test(text)) {
+      if (state.isolatedEdit?.draftBefore) {
+        this.clearMealWizardState();
+        this.mealDraftInteractiveEdit = true;
+        const spokenText = 'Ok, nessuna modifica. Tocca un altro alimento oppure conferma il salvataggio.';
+        return this.publishMealLogProposalCardDirect(
+          state.isolatedEdit.draftBefore,
+          currentState,
+          '',
+          [],
+          {
+            skipWizard: true,
+            fromVoiceCorrection: true,
+            uiMessage: spokenText,
+            spokenText,
+          },
+        );
+      }
       this.resetConversationState();
       this.publishSystemMessage('Ok, wizard annullato.');
       return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
@@ -705,6 +845,12 @@ export class CommandTerminalController {
     });
 
     if (nextState.phase === 'confirm' || !nextState.current) {
+      if (nextState.isolatedEdit || state.isolatedEdit) {
+        return this.finishIsolatedFoodItemEdit(
+          { ...nextState, isolatedEdit: nextState.isolatedEdit || state.isolatedEdit },
+          currentState,
+        );
+      }
       // Ultimo item: card riepilogo amichevole (macro/emoji), non testo grezzo.
       return this.publishWizardFinalProposalCard(nextState, currentState);
     }
@@ -854,42 +1000,11 @@ export class CommandTerminalController {
     this.pendingMealRegistration = false;
 
     const userText = String(options.userText || '').trim();
-    if (this.mustUseSequentialFoodWizard(payload, userText)) {
-      console.log('🧙 DEBUG - publishFoodDraftAfterGrams → FORCE SEQUENTIAL WIZARD (multi-item)');
-      return this.startSequentialFoodWizard(payload, currentState, userText);
-    }
-
-    const missingGrams = getFoodItemsMissingGrams(payload);
-    if (missingGrams.length > 0) {
-      this.pendingCommandType = 'ADD_FOOD';
-      this.conversationState = CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
-      this.publishSystemMessage(promptForMissingMealRegistrationSlot('foods', payload));
-      return {
-        ok: true,
-        awaiting: true,
-        conversationState: this.conversationState,
-        pendingCommandPayload: { ...payload },
-      };
-    }
-
-    const validationError = validateFoodPayload(payload);
-    if (validationError) {
-      console.error(
-        '[CommandTerminalController] Payload non valido dopo smart defaults',
-        validationError,
-        payload,
-      );
-      this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
-      this.resetConversationState();
-      return { ok: false, reason: validationError, userNotified: true };
-    }
-
-    const uiMessage = buildMealDraftUiMessage(payload);
-    return this.stagePendingAction('ADD_FOOD', payload, {
-      requiresConfirmation: true,
-      uiMessage,
-      userText,
-      currentState,
+    // Fast-Path: vai diretto alla card (wizard solo su edit isolato).
+    return this.publishMealLogProposalCardDirect(payload, currentState, userText, [], {
+      skipWizard: true,
+      upsertAction: 'append',
+      uiMessage: options.uiMessage,
     });
   }
 
@@ -976,24 +1091,35 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
-    // Multi-item: SequentialFoodWizard obbligatorio — vietata bozza batch / butler globale.
-    if (!options?.fromVoiceCorrection && !options?.skipWizard) {
-      if (this.mustUseSequentialFoodWizard(payload, userText)) {
-        const wizardResult = this.startSequentialFoodWizard(payload, currentState, userText);
-        if (wizardResult?.ok) return wizardResult;
-      }
-    }
+    // Fast-Path: mai più wizard batch — solo card riepilogo (wizard solo su edit isolato).
+    void options?.skipWizard;
 
     const fromVoiceCorrection = options?.fromVoiceCorrection === true;
-    // Dopo correzione vocale: non ri-espandere abitudini (rispetta «era rosetta»).
-    const butler = fromVoiceCorrection
+    let workingPayload = payload;
+
+    if (!fromVoiceCorrection) {
+      // Auto-risoluzione silenziosa: Top Hit per ogni alimento + grammi espliciti/storici.
+      const fast = fastPathResolveMealPayload(workingPayload, this.getFastPathContext(currentState));
+      workingPayload = fast.payload;
+      console.log('🚀 DEBUG - FAST-PATH RESOLVED:', {
+        items: fast.items.map((i) => ({
+          spoken: i.spokenFoodName,
+          food: i.foodName,
+          grams: i.grams,
+          key: i.foodDbKey,
+        })),
+      });
+    }
+
+    // Dopo fast-path / correzione: non ri-mappare abitudini (rispetta Top Hit / edit).
+    const butler = fromVoiceCorrection || workingPayload?.items?.some?.((i) => i?.fastPath)
       ? {
-          payload,
+          payload: workingPayload,
           butlerMeta: null,
           requestPhotoFor: null,
-          butlerMessage: String(options.uiMessage || payload?.message || '').trim(),
+          butlerMessage: String(options.uiMessage || workingPayload?.message || '').trim(),
         }
-      : this.applyButlerMealEnrichment(payload, currentState);
+      : this.applyButlerMealEnrichment(workingPayload, currentState);
     if (butler.requestPhotoFor) {
       return this.publishRequestFoodPhoto(
         {
@@ -1007,7 +1133,7 @@ export class CommandTerminalController {
       );
     }
 
-    const enrichedPayload = butler.payload || payload;
+    const enrichedPayload = butler.payload || workingPayload;
     const conversationTexts = buildConversationTextsFromChatHistory(chatHistory, userText);
     const proposal = buildMealLogProposalFromPayload(enrichedPayload, currentState, {
       userText,
@@ -1018,30 +1144,15 @@ export class CommandTerminalController {
       return { ok: false, reason: 'meal_log_proposal_build_failed', userNotified: true };
     }
 
-    const itemCount = Array.isArray(proposal.items) ? proposal.items.length : 0;
-    const displayName = resolveUserDisplayName(currentState?.userProfile)
-      || String(currentState?.userDisplayName || '').trim();
-    const fromPayload = String(enrichedPayload?.message || options.uiMessage || '').trim();
-    const butlerMessage = butler.butlerMessage
-      || buildButlerConfirmationMessage(expandFoodPayloadItems(enrichedPayload), {
-        habitProposals: butler.butlerMeta?.habitProposals,
-      });
+    const items = expandFoodPayloadItems(enrichedPayload);
+    const fastSpoken = buildFastPathSummarySpokenText(items);
+    const fromPayload = String(options.uiMessage || enrichedPayload?.message || '').trim();
     const summaryText = fromPayload
-      || butlerMessage
-      || buildMealPreviewReadyMessage({
-        displayName,
-        userProfile: currentState?.userProfile,
-        mealType: proposal.mealType || enrichedPayload?.mealType,
-        itemCount,
-      });
+      || butler.butlerMessage
+      || fastSpoken;
     const spokenText = String(options.spokenText || summaryText).trim();
 
-    const useButlerReplies = Boolean(
-      butler.butlerMeta?.anyHabitApplied
-      || butler.butlerMeta?.anyGramsEstimated
-      || /solito|come al solito|tipo diverso|cambiare le quantit|posso salvare/i.test(summaryText),
-    );
-
+    this.mealDraftInteractiveEdit = false;
     // McDrive: bozza in sospeso — correzioni vocali → UPDATE_MEAL_DRAFT, «Sì» → CONFIRM.
     this.stagePendingMealDraft(enrichedPayload, {
       uiMessage: summaryText,
@@ -1052,9 +1163,8 @@ export class CommandTerminalController {
       text: summaryText,
       spokenText,
       mealProposals: [proposal],
-      quickReplies: useButlerReplies
-        ? [...BUTLER_MEAL_QUICK_REPLIES]
-        : ['Sì, va bene', 'Oggi è diverso'],
+      quickReplies: [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES],
+      mealDraftInteractiveEdit: false,
     });
 
     return {
@@ -1063,19 +1173,13 @@ export class CommandTerminalController {
       mealProposals: [proposal],
       userNotified: true,
       sourceText: String(userText || '').trim() || null,
-      butler: Boolean(useButlerReplies),
+      fastPath: true,
       awaitingConfirmation: true,
       pendingMealDraft: this.getPendingMealDraft(),
     };
   }
 
   async publishMealLogProposalCard(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
-    // Multi-item: salta slot-filling / bozza — wizard item-per-item subito.
-    if (!options?.fromVoiceCorrection && !options?.skipWizard
-      && this.mustUseSequentialFoodWizard(payload, userText)) {
-      return this.startSequentialFoodWizard(payload, currentState, userText);
-    }
-
     const check = this.ensureMealRegistrationCompleteOrAsk(
       payload,
       currentState,
@@ -1923,20 +2027,6 @@ export class CommandTerminalController {
   stagePendingAction(commandType, payload, meta = {}) {
     const normalizedType = String(commandType || '').trim().toUpperCase();
 
-    // Defense-in-depth: multi-item ADD_FOOD non può diventare MEAL_DRAFT globale.
-    if (
-      normalizedType === 'ADD_FOOD'
-      && !meta?.allowMultiItemDraft
-      && this.mustUseSequentialFoodWizard(payload, meta.userText || '')
-    ) {
-      console.log('🧙 DEBUG - stagePendingAction → FORCE SEQUENTIAL WIZARD (blocked global draft)');
-      return this.startSequentialFoodWizard(
-        payload,
-        meta.currentState || {},
-        meta.userText || '',
-      );
-    }
-
     this.pendingAction = {
       commandType: normalizedType,
       payload: { ...payload },
@@ -2237,6 +2327,11 @@ export class CommandTerminalController {
     const voiceIntent = classifyMealDraftVoiceReply(text);
     console.log('🎙️ DEBUG - MEAL DRAFT VOICE LOOP:', { voiceIntent, text: text.slice(0, 120) });
 
+    // «Modifica» nudo → attiva bozza interattiva (righe cliccabili), non UPDATE vocale.
+    if (/^modifica\b/i.test(text) && !/\d/.test(text) && text.length <= 24) {
+      return this.enableMealDraftInteractiveEdit();
+    }
+
     if (voiceIntent === CONFIRM_MEAL_DRAFT) {
       console.log('🟡 DEBUG - PATH SCELTO: CONFIRM_MEAL_DRAFT');
       this.pendingMealDraftClarification = null;
@@ -2372,60 +2467,14 @@ export class CommandTerminalController {
 
   beginFoodSlotFilling(partialPayload, currentState = {}, options = {}) {
     const userText = String(options.userText || '').trim();
-    // Multi-item: mai bozza globale / butler batch — solo SequentialFoodWizard.
-    if (this.mustUseSequentialFoodWizard(partialPayload, userText)) {
-      console.log('🧙 DEBUG - beginFoodSlotFilling → FORCE SEQUENTIAL WIZARD (multi-item)');
-      return this.startSequentialFoodWizard(partialPayload, currentState, userText);
-    }
-
+    // Fast-Path: bozza interattiva diretta (niente wizard batch).
     const normalized = normalizeFoodPayload(partialPayload, currentState, {
       inferMealTypeFromContext: false,
       ...options,
     });
-
-    // Maggiordomo: riempi grammi/varianti dallo storico invece di chiedere «quanti grammi?».
-    const butler = this.applyButlerMealEnrichment(normalized, currentState);
-    if (butler.requestPhotoFor) {
-      return this.publishRequestFoodPhoto(
-        {
-          payload: {
-            message: buildRequestFoodPhotoMessage(butler.requestPhotoFor),
-            foodName: butler.requestPhotoFor,
-            options: [...REQUEST_FOOD_PHOTO_QUICK_REPLIES],
-          },
-        },
-        userText,
-      );
-    }
-
-    this.pendingCommandType = 'ADD_FOOD';
-    this.pendingCommandPayload = { ...(butler.payload || normalized) };
-
-    const missingGrams = getFoodItemsMissingGrams(this.pendingCommandPayload);
-    if (missingGrams.length === 0) {
-      return this.publishFoodDraftAfterGrams(currentState, { userText });
-    }
-
-    // Ultima spiaggia: ancora senza grammi → proposta con default e conferma, non domanda aperta.
-    const forced = enrichFoodItemsAsButlerProposal(
-      expandFoodPayloadItems(this.pendingCommandPayload),
-      {
-        personalDb: currentState?.foodDatabase || null,
-        userPortions: sanitizeUserPortionsDict(currentState?.userPortions || {}),
-        userHabitsForCurrentMeal: buildUserHabitsForCurrentMeal(
-          currentState,
-          this.pendingCommandPayload?.mealType,
-        ),
-      },
-    );
-    this.pendingCommandPayload = {
-      ...this.pendingCommandPayload,
-      items: forced.items,
-      message: buildButlerConfirmationMessage(forced.items, {
-        habitProposals: forced.habitProposals,
-      }),
-    };
-    return this.publishFoodDraftAfterGrams(currentState, { userText });
+    return this.publishMealLogProposalCardDirect(normalized, currentState, userText, [], {
+      skipWizard: true,
+    });
   }
 
   completePendingFoodCommand(currentState = {}, options = {}) {
@@ -3426,13 +3475,7 @@ export class CommandTerminalController {
         ...(options?.signal ? { signal: options.signal } : {}),
       };
 
-      // HARD RULE: multi-alimento → SequentialFoodWizard (blocca bozza globale / butler batch).
-      if (this.mustUseSequentialFoodWizard(normalized, userText) || this.mustUseSequentialFoodWizard(rawPayload, userText)) {
-        console.log('🧙 DEBUG - ADD_FOOD ROUTER → FORCE SEQUENTIAL WIZARD (items > 1)');
-        const wizardPayload = hasFood ? normalized : (expandFoodPayloadItems(rawPayload).length > 0 ? rawPayload : normalized);
-        return this.startSequentialFoodWizard(wizardPayload, currentState, userText);
-      }
-
+      // Fast-Path: card riepilogo immediata (wizard solo su edit chirurgico).
       if (this.isMealRegistrationCandidate(userText) && hasFood) {
         return this.publishMealLogProposalCard(
           normalized,
@@ -3461,9 +3504,6 @@ export class CommandTerminalController {
     const validationError = validateEnvelope(commandResponse.command);
     if (validationError) {
       if (commandType === 'ADD_FOOD' && expandFoodPayloadItems(rawPayload).length > 0) {
-        if (this.mustUseSequentialFoodWizard(rawPayload, userText)) {
-          return this.startSequentialFoodWizard(rawPayload, currentState, userText);
-        }
         return this.beginFoodSlotFilling(rawPayload, currentState, { userText });
       }
 

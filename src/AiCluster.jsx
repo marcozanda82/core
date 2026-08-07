@@ -66,6 +66,9 @@ export default function AiCluster({
   onSlotQuickReplyClick,
   onAcceptAdvice,
   onAcceptMealProposal,
+  onEnableMealDraftInteractiveEdit = null,
+  onRequestMealItemEdit = null,
+  onCancelMealDraftProposal = null,
   onLearnUnresolvedFood = null,
   foodDatabase = {},
   kentuItDatabase = {},
@@ -551,6 +554,10 @@ export default function AiCluster({
                           fullHistory={fullHistory}
                           onConfirm={onAcceptMealProposal}
                           onLearnUnresolvedFood={onLearnUnresolvedFood}
+                          interactiveEdit={msg.mealDraftInteractiveEdit === true}
+                          onRequestItemEdit={onRequestMealItemEdit}
+                          onCancelDraft={onCancelMealDraftProposal}
+                          onEnableInteractiveEdit={onEnableMealDraftInteractiveEdit}
                         />
                       ) : null}
                     {Array.isArray(msg.wipSuggestions)

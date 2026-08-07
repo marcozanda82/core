@@ -524,9 +524,9 @@ export const MEAL_SLOT_QUICK_REPLIES = Object.freeze([
 ]);
 
 export const MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES = Object.freeze([
-  'Sì, salva',
-  'No, annulla',
+  'Sì, Salva',
   'Modifica',
+  'Annulla',
 ]);
 
 export const WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES = MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES;

@@ -6716,6 +6716,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
+    handleEnableMealDraftInteractiveEdit,
+    handleRequestMealItemEdit,
+    handleCancelMealDraftProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,
@@ -6804,6 +6807,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onSlotQuickReplyClick: handleQuickReplyClick,
       onAcceptAdvice: handleAcceptAdvice,
       onAcceptMealProposal: handleAcceptMealProposal,
+      onEnableMealDraftInteractiveEdit: handleEnableMealDraftInteractiveEdit,
+      onRequestMealItemEdit: handleRequestMealItemEdit,
+      onCancelMealDraftProposal: handleCancelMealDraftProposal,
       onLearnUnresolvedFood: learnUnresolvedFoodEntry,
       foodDatabase: foodDb,
       kentuItDatabase: kentuCatalogItDb,
@@ -6843,6 +6849,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
+    handleEnableMealDraftInteractiveEdit,
+    handleRequestMealItemEdit,
+    handleCancelMealDraftProposal,
     learnUnresolvedFoodEntry,
     foodDb,
     kentuCatalogItDb,
@@ -9409,6 +9418,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             handleQuickReplyClick={handleQuickReplyClick}
             handleAcceptAdvice={handleAcceptAdvice}
             onAcceptMealProposal={handleAcceptMealProposal}
+            onEnableMealDraftInteractiveEdit={handleEnableMealDraftInteractiveEdit}
+            onRequestMealItemEdit={handleRequestMealItemEdit}
+            onCancelMealDraftProposal={handleCancelMealDraftProposal}
             onLearnUnresolvedFood={learnUnresolvedFoodEntry}
             foodDatabase={foodDb}
             kentuItDatabase={kentuCatalogItDb}

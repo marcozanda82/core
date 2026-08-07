@@ -753,6 +753,7 @@ export function createMealWizardState(opts = {}) {
     exactTime: opts.exactTime || null,
     timeString: opts.exactTime || null,
     phase: 'item',
+    ...(opts.isolatedEdit ? { isolatedEdit: opts.isolatedEdit } : {}),
   };
   return advanceWizardToNextItem(state, {
     personalDb: opts.personalDb,
@@ -771,6 +772,7 @@ export function advanceWizardToNextItem(state, ctx = {}) {
     ...state,
     pendingItems: [...(state.pendingItems || [])],
     resolvedItems: [...(state.resolvedItems || [])],
+    ...(state.isolatedEdit ? { isolatedEdit: state.isolatedEdit } : {}),
   };
 
   if (next.pendingItems.length === 0) {

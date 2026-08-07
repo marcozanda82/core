@@ -719,9 +719,24 @@ export function useCommandTerminal({
         const hasActiveWorkoutDraft = (chatHistoryRef.current || []).some(
           (m) => m.workoutDraft && !m.draftResolved,
         );
-        if (/^s[iì]\s*,\s*salva\b/i.test(label) || /^s[iì]\s*,\s*confermo\b/i.test(label)) {
+        if (
+          /^s[iì]\s*,?\s*salva\b/i.test(label)
+          || /^s[iì]\s*,\s*confermo\b/i.test(label)
+          || /^s[iì]\s*,?\s*va\s+bene\b/i.test(label)
+        ) {
           if (hasActiveWorkoutDraft && snap.pendingAction?.commandType === 'ADD_WORKOUT') {
             return Promise.resolve({ ok: false, reason: 'use_workout_card_confirm' });
+          }
+          // Preferisci conferma card meal proposal se presente.
+          if (snap.pendingMealDraft || snap.pendingAction?.commandType === 'ADD_FOOD') {
+            if (confirmingDraftRef.current) {
+              return Promise.resolve({ ok: false, reason: 'confirm_in_flight' });
+            }
+            confirmingDraftRef.current = true;
+            setActiveQuickReplies([]);
+            return Promise.resolve(controller.confirmPendingAction()).finally(() => {
+              confirmingDraftRef.current = false;
+            });
           }
           if (confirmingDraftRef.current) {
             return Promise.resolve({ ok: false, reason: 'confirm_in_flight' });
@@ -733,7 +748,7 @@ export function useCommandTerminal({
             confirmingDraftRef.current = false;
           });
         }
-        if (/^no\s*,\s*annulla\b/i.test(label)) {
+        if (/^(?:no\s*,\s*)?annulla\b/i.test(label)) {
           return Promise.resolve(handleDraftCancel(draftId));
         }
         if (/^modifica\b/i.test(label)) {
@@ -741,7 +756,20 @@ export function useCommandTerminal({
             appendAiMessage('Modifica i dati nella card qui sopra, poi conferma.');
             return Promise.resolve({ ok: true, awaiting: true, reason: 'inline_workout_edit' });
           }
-          return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
+          // Bozza interattiva: righe cliccabili sulla card.
+          if (typeof setChatHistoryRef.current === 'function') {
+            setChatHistoryRef.current((prev) => {
+              const list = Array.isArray(prev) ? [...prev] : [];
+              for (let i = list.length - 1; i >= 0; i -= 1) {
+                if (Array.isArray(list[i]?.mealProposals) && list[i].mealProposals.length > 0) {
+                  list[i] = { ...list[i], mealDraftInteractiveEdit: true };
+                  break;
+                }
+              }
+              return list;
+            });
+          }
+          return Promise.resolve(controller.enableMealDraftInteractiveEdit());
         }
       }
 
@@ -1073,6 +1101,54 @@ export function useCommandTerminal({
     }
   }, [appendAiMessage, controller]);
 
+  const handleEnableMealDraftInteractiveEdit = useCallback(() => {
+    if (typeof setChatHistoryRef.current === 'function') {
+      setChatHistoryRef.current((prev) => {
+        const list = Array.isArray(prev) ? [...prev] : [];
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          if (Array.isArray(list[i]?.mealProposals) && list[i].mealProposals.length > 0) {
+            list[i] = { ...list[i], mealDraftInteractiveEdit: true };
+            break;
+          }
+        }
+        return list;
+      });
+    }
+    return controller.enableMealDraftInteractiveEdit();
+  }, [controller]);
+
+  const handleRequestMealItemEdit = useCallback((itemIndex, _item, _meta = {}) => {
+    const state =
+      typeof getCurrentStateRef.current === 'function' ? (getCurrentStateRef.current() ?? {}) : {};
+    if (typeof setChatHistoryRef.current === 'function') {
+      setChatHistoryRef.current((prev) =>
+        (prev || []).map((entry) => (
+          entry?.mealDraftInteractiveEdit
+            ? { ...entry, mealDraftInteractiveEdit: false }
+            : entry
+        )),
+      );
+    }
+    setActiveQuickReplies([]);
+    return controller.startIsolatedFoodItemWizard(itemIndex, state);
+  }, [controller]);
+
+  const handleCancelMealDraftProposal = useCallback(() => {
+    controller.resetConversationState();
+    setActiveQuickReplies([]);
+    if (typeof setChatHistoryRef.current === 'function') {
+      setChatHistoryRef.current((prev) =>
+        (prev || []).map((entry) => (
+          Array.isArray(entry?.mealProposals) && entry.mealProposals.length > 0
+            ? { ...entry, mealProposalsLoadedIds: (entry.mealProposals || []).map((p) => String(p.id || '')), mealDraftInteractiveEdit: false }
+            : entry
+        )),
+      );
+    }
+    appendAiMessage('Ok, bozza annullata.');
+    return { ok: true, cancelled: true };
+  }, [appendAiMessage, controller]);
+
   return {
     chatHistory,
     setChatHistory,
@@ -1088,6 +1164,9 @@ export function useCommandTerminal({
     handleQuickReplyClick,
     handleAcceptAdvice,
     handleAcceptMealProposal,
+    handleEnableMealDraftInteractiveEdit,
+    handleRequestMealItemEdit,
+    handleCancelMealDraftProposal,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,
