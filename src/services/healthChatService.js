@@ -1,8 +1,10 @@
 /**
- * Motore AI chat diabete tipo 2 — estrazione strutturata + persistenza Firestore.
+ * Motore AI chat diabete tipo 2 — estrazione clinica + persistenza Firestore.
  *
- * Flusso: messaggio utente → Gemini (JSON) → salvataggio condizionale → risposta_utente.
- * Confronta le variazioni farmaci rispetto a `terapia_base`.
+ * Separazione rigida:
+ * - diario_salute → SOLO glicemia + contesto misurazione (mai pasti/alimenti)
+ * - eccezioni_terapia → variazioni farmaci vs terapia_base
+ * - pasti/macro → motore nutrizione Kentu (RTDB), fuori da questo service
  */
 
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
@@ -14,7 +16,7 @@ import {
   inferTherapyExceptionFromText,
 } from '../features/health/utils/therapyPlanStore.js';
 
-// ─── Tipi (equivalenti alle interfacce TypeScript richieste) ─────────────────
+// ─── Tipi ────────────────────────────────────────────────────────────────────
 
 /**
  * @typedef {'colazione' | 'pranzo' | 'cena' | null} MomentoGiornata
@@ -26,8 +28,7 @@ import {
 
 /**
  * @typedef {object} DiarioSalutePayload
- * @property {MomentoGiornata} momento_giornata
- * @property {string | null} alimenti_consumati
+ * @property {MomentoGiornata} momento_giornata — contesto temporale della misurazione
  * @property {number | null} valore_glicemia  — intero mg/dL
  * @property {ContestoGlicemia} contesto_glicemia
  */
@@ -64,9 +65,14 @@ import {
 
 export const HEALTH_CHAT_SYSTEM_PROMPT_BASE = [
   'Sei un assistente virtuale per il diabete di tipo 2.',
-  "Analizza il messaggio dell'utente ed estrai i dati.",
-  "Regole: 'momento_giornata' (colazione/pranzo/cena), 'alimenti_consumati' (testo o null),",
-  "'valore_glicemia' (numero intero o null), 'contesto_glicemia' (pre-prandiale/post-prandiale o null).",
+  "Analizza il messaggio dell'utente ed estrai SOLO dati clinici.",
+  'IMPORTANTE — SEPARAZIONE DATABASE:',
+  "- I PASTI e gli alimenti NON vanno in diario_salute. Non compilare mai campi cibo/alimenti.",
+  "- diario_salute raccoglie solo: valore_glicemia (mg/dL intero o null),",
+  "  contesto_glicemia (pre-prandiale/post-prandiale o null),",
+  '  momento_giornata (colazione/pranzo/cena o null) come contesto della misurazione.',
+  'Se l’utente parla solo di cibo/pasti senza glicemia né farmaci, lascia diario_salute tutto null',
+  'e in risposta_utente invita a usare il flusso pasti (i macro li gestisce un altro motore).',
   "Se l'utente segnala omissione, ritardo, dose doppia/ridotta o qualsiasi variazione rispetto al piano terapeutico,",
   "compila 'eccezione_terapia' con: tipo_eccezione (omissione|ritardo|dose_doppia|dose_ridotta|variazione),",
   'farmaco_nome (se citato o riconoscibile dal piano), momento_previsto (se noto), nota_originale (testo utente).',
@@ -90,24 +96,20 @@ const TIPI_ECCEZIONE = new Set([
   'non_specificata',
 ]);
 
-/** Schema Gemini per output strutturato. */
+/** Schema Gemini — solo campi clinici (niente alimenti). */
 export const HEALTH_CHAT_RESPONSE_SCHEMA = {
   type: 'object',
   properties: {
     diario_salute: {
       type: 'object',
-      description: 'Dati diario salute estratti dal messaggio (null nei campi assenti).',
+      description:
+        'Solo glicemia e contesto misurazione. MAI alimenti/pasti (gestiti altrove).',
       properties: {
         momento_giornata: {
           type: 'string',
           nullable: true,
           enum: ['colazione', 'pranzo', 'cena', null],
-          description: 'Pasto di riferimento, oppure null se non citato.',
-        },
-        alimenti_consumati: {
-          type: 'string',
-          nullable: true,
-          description: 'Descrizione alimenti consumati, oppure null.',
+          description: 'Momento della misurazione, oppure null.',
         },
         valore_glicemia: {
           type: 'integer',
@@ -123,7 +125,6 @@ export const HEALTH_CHAT_RESPONSE_SCHEMA = {
       },
       required: [
         'momento_giornata',
-        'alimenti_consumati',
         'valore_glicemia',
         'contesto_glicemia',
       ],
@@ -167,7 +168,7 @@ const COLLECTION_ECCEZIONI_TERAPIA = 'eccezioni_terapia';
 
 const FALLBACK_RISPOSTA =
   'Grazie per il messaggio. Al momento non sono riuscito a interpretare i dettagli, '
-  + 'ma sono qui con te: riprova tra un attimo o dimmi pure glicemia, pasto o farmaci.';
+  + 'ma sono qui con te: riprova tra un attimo o dimmi pure glicemia o variazioni sui farmaci.';
 
 /**
  * @param {string} [therapyPlanBlock]
@@ -272,7 +273,6 @@ export function normalizeHealthChatAiResponse(raw) {
   /** @type {DiarioSalutePayload} */
   const diario_salute = {
     momento_giornata: normalizeMomento(diarioRaw.momento_giornata),
-    alimenti_consumati: normalizeNullableText(diarioRaw.alimenti_consumati),
     valore_glicemia: normalizeGlicemia(diarioRaw.valore_glicemia),
     contesto_glicemia: normalizeContesto(diarioRaw.contesto_glicemia),
   };
@@ -331,17 +331,13 @@ export function parseHealthChatAiJson(rawText) {
 }
 
 /**
- * True se almeno un campo del diario è valorizzato.
+ * Persistiamo diario_salute solo se c’è una glicemia numerica.
+ * momento/contesto da soli non bastano (evita “pasti spuri”).
  * @param {DiarioSalutePayload | null | undefined} diario
  */
 export function hasDiarioSaluteValues(diario) {
   if (!diario || typeof diario !== 'object') return false;
-  return (
-    diario.momento_giornata != null
-    || diario.alimenti_consumati != null
-    || diario.valore_glicemia != null
-    || diario.contesto_glicemia != null
-  );
+  return diario.valore_glicemia != null && Number.isFinite(Number(diario.valore_glicemia));
 }
 
 // ─── Persistenza Firestore ───────────────────────────────────────────────────
@@ -354,10 +350,11 @@ export function hasDiarioSaluteValues(diario) {
 export async function saveDiarioSaluteDoc(uid, diario) {
   const docRef = await addDoc(collection(firestore, COLLECTION_DIARIO_SALUTE), {
     uid,
-    momento_giornata: diario.momento_giornata,
-    alimenti_consumati: diario.alimenti_consumati,
+    momento_giornata: diario.momento_giornata ?? null,
+    // Legacy field: sempre null — i pasti non appartengono a diario_salute.
+    alimenti_consumati: null,
     valore_glicemia: diario.valore_glicemia,
-    contesto_glicemia: diario.contesto_glicemia,
+    contesto_glicemia: diario.contesto_glicemia ?? null,
     timestamp: serverTimestamp(),
     createdAt: Date.now(),
   });
@@ -437,15 +434,39 @@ export function enrichHealthChatWithTherapyPlan(data, userMessage, plan) {
     const drug = inferred.farmaco_nome ? ` (${inferred.farmaco_nome})` : '';
     next.risposta_utente =
       `Ok, ho registrato la variazione sulla terapia${drug}. `
-      + 'Se vuoi, dimmi anche glicemia o cosa hai mangiato.';
+      + 'Se vuoi, dimmi anche la glicemia.';
   }
   return next;
+}
+
+/**
+ * Formatta conferma breve dopo salvataggio clinico (es. flusso SPLIT con pasti).
+ * @param {HealthChatPersistResult | null | undefined} saved
+ * @param {HealthChatAiResponse | null | undefined} data
+ * @returns {string}
+ */
+export function formatClinicalSaveAck(saved, data) {
+  const parts = [];
+  const g = data?.diario_salute?.valore_glicemia;
+  if (saved?.diarioSaluteId && g != null) {
+    const ctx = data?.diario_salute?.contesto_glicemia
+      ? ` (${data.diario_salute.contesto_glicemia})`
+      : '';
+    parts.push(`Glicemia ${g} mg/dL${ctx} salvata nel diario salute.`);
+  }
+  if (saved?.eccezioneTerapiaId) {
+    const drug = data?.eccezione_terapia?.farmaco_nome
+      ? ` (${data.eccezione_terapia.farmaco_nome})`
+      : '';
+    parts.push(`Variazione terapia${drug} registrata.`);
+  }
+  return parts.join(' ');
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 /**
- * Analizza un messaggio utente sul diabete, salva su Firestore se necessario,
+ * Analizza un messaggio utente sul diabete (solo clinico), salva su Firestore se necessario,
  * e restituisce la risposta empatica da mostrare in chat.
  *
  * @param {string} userMessage
@@ -454,6 +475,7 @@ export function enrichHealthChatWithTherapyPlan(data, userMessage, plan) {
  *   signal?: AbortSignal | null,
  *   temperature?: number,
  *   terapiaBase?: import('../features/health/utils/therapyPlanStore.js').TherapyPlanDoc | null,
+ *   replyMode?: 'full' | 'silent_ack',
  * } } [options]
  * @returns {Promise<HealthChatResult>}
  */
@@ -492,8 +514,14 @@ export async function processHealthChatMessage(userMessage, options = {}) {
   data = enrichHealthChatWithTherapyPlan(data, message, plan);
   const saved = await persistHealthChatExtractions(uid, data);
 
+  let risposta = data.risposta_utente;
+  if (options.replyMode === 'silent_ack') {
+    const ack = formatClinicalSaveAck(saved, data);
+    risposta = ack || '';
+  }
+
   return {
-    risposta_utente: data.risposta_utente,
+    risposta_utente: risposta,
     data,
     saved,
   };

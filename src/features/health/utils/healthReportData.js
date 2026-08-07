@@ -227,7 +227,6 @@ export function formatHealthReportForWhatsApp(rows, opts = {}) {
       if (row.notaTerapia) lines.push(`• Nota: ${row.notaTerapia}`);
     } else {
       lines.push(`• Momento: ${labelMomento(row.momento)}`);
-      lines.push(`• Alimenti: ${row.alimenti?.trim() || '—'}`);
       if (row.glicemia != null) {
         const ctx = labelContesto(row.contestoGlicemia);
         lines.push(`• Glicemia: *${row.glicemia} mg/dL*${ctx ? ` (${ctx})` : ''}`);

@@ -15,8 +15,9 @@ import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
 import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage } from '../conversation/conversationState.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
-import { processHealthChatMessage } from '../../../services/healthChatService.js';
+import { processHealthChatMessage, formatClinicalSaveAck } from '../../../services/healthChatService.js';
 import { isHealthDiabetesChatMode } from '../../chat/healthChatMode.js';
+import { classifyDiabetesChatIntent } from '../../chat/diabetesChatRouter.js';
 import {
   projectNutritionAfterMeal,
   sumMealItemsMacros,
@@ -422,65 +423,99 @@ export function useCommandTerminal({
           ? getWipMealSnapshotRef.current()
           : { wipMealItems: [], mealType: null, constraints: null, mealWipActive: false };
 
-        // Modalità salute/diabete: bypass motore macronutrienti → healthChatService.
+        // Modalità salute/diabete: router rigidamente separato
+        // NUTRITION → motore pasti/macro (RTDB)
+        // HEALTH → glicemia/farmaci (Firestore)
+        // SPLIT → entrambi (pasto RTDB + clinico Firestore)
         const healthUid = String(
           currentState?.userUid
           || currentState?.userProfile?.uid
           || '',
         ).trim();
-        if (isHealthDiabetesChatMode(currentState?.userProfile, healthUid)) {
+        const diabetesMode = isHealthDiabetesChatMode(currentState?.userProfile, healthUid);
+        let diabetesSplitAck = '';
+
+        if (diabetesMode) {
           if (!resolvedText) {
             appendAiMessage(
-              'Per il diario salute, descrivimi a parole glicemia, pasti o variazioni sui farmaci (es. “ho saltato la metformina”).',
+              'In modalità diabete puoi dirmi la glicemia, variazioni sui farmaci, oppure registrare un pasto come al solito (es. “a colazione ho mangiato yogurt”).',
               { type: 'HEALTH_CHAT', sourceTag: 'healthChatService' },
             );
             return { ok: true, healthMode: true, reason: 'text_required' };
           }
 
-          try {
-            const healthResult = await processHealthChatMessage(resolvedText, {
-              uid: healthUid || undefined,
-              signal: abortController.signal,
-            });
+          const classified = classifyDiabetesChatIntent(resolvedText, {
+            chatHistory: historyForLlm,
+            wipMealItems: wipSnapshot.wipMealItems || [],
+          });
 
-            if (
-              abortController.signal.aborted
-              || generationToken !== generationTokenRef.current
-            ) {
-              appendAiMessage('Generazione annullata.');
-              return { ok: false, aborted: true, userNotified: true };
-            }
+          if (classified.route === 'HEALTH') {
+            try {
+              const healthResult = await processHealthChatMessage(resolvedText, {
+                uid: healthUid || undefined,
+                signal: abortController.signal,
+              });
 
-            const reply = String(healthResult?.risposta_utente || '').trim()
-              || 'Messaggio ricevuto. Se vuoi, dimmi pure glicemia, pasto o farmaci.';
-            appendAiMessage(reply, {
-              type: 'HEALTH_CHAT',
-              sourceTag: 'healthChatService',
-              healthSaved: healthResult?.saved || null,
-            });
-            return {
-              ok: true,
-              healthMode: true,
-              saved: healthResult?.saved || null,
-              data: healthResult?.data || null,
-            };
-          } catch (healthError) {
-            if (isAbortError(healthError) || abortController.signal.aborted) {
-              appendAiMessage('Generazione annullata.');
-              return { ok: false, aborted: true, userNotified: true };
+              if (
+                abortController.signal.aborted
+                || generationToken !== generationTokenRef.current
+              ) {
+                appendAiMessage('Generazione annullata.');
+                return { ok: false, aborted: true, userNotified: true };
+              }
+
+              const reply = String(healthResult?.risposta_utente || '').trim()
+                || 'Messaggio ricevuto. Se vuoi, dimmi pure glicemia o variazioni sui farmaci.';
+              appendAiMessage(reply, {
+                type: 'HEALTH_CHAT',
+                sourceTag: 'healthChatService',
+                healthSaved: healthResult?.saved || null,
+              });
+              return {
+                ok: true,
+                healthMode: true,
+                saved: healthResult?.saved || null,
+                data: healthResult?.data || null,
+              };
+            } catch (healthError) {
+              if (isAbortError(healthError) || abortController.signal.aborted) {
+                appendAiMessage('Generazione annullata.');
+                return { ok: false, aborted: true, userNotified: true };
+              }
+              console.error('[useCommandTerminal] healthChat error', healthError);
+              appendAiMessage(
+                'Non sono riuscito a salvare il dato salute in questo momento. Riprova tra poco: la chat resta attiva.',
+                { type: 'ERROR', isError: true, sourceTag: 'healthChatService' },
+              );
+              return {
+                ok: false,
+                healthMode: true,
+                reason: healthError?.message || 'health_chat_error',
+                userNotified: true,
+              };
             }
-            console.error('[useCommandTerminal] healthChat error', healthError);
-            appendAiMessage(
-              'Non sono riuscito a salvare il dato salute in questo momento. Riprova tra poco: la chat resta attiva.',
-              { type: 'ERROR', isError: true, sourceTag: 'healthChatService' },
-            );
-            return {
-              ok: false,
-              healthMode: true,
-              reason: healthError?.message || 'health_chat_error',
-              userNotified: true,
-            };
           }
+
+          if (classified.route === 'SPLIT') {
+            // Clinico in parallelo silenzioso; il pasto passa al motore nutrizione sotto.
+            try {
+              const healthResult = await processHealthChatMessage(resolvedText, {
+                uid: healthUid || undefined,
+                signal: abortController.signal,
+                replyMode: 'silent_ack',
+              });
+              diabetesSplitAck = formatClinicalSaveAck(
+                healthResult?.saved,
+                healthResult?.data,
+              ) || String(healthResult?.risposta_utente || '').trim();
+            } catch (splitErr) {
+              if (!(isAbortError(splitErr) || abortController.signal.aborted)) {
+                console.warn('[useCommandTerminal] SPLIT clinical save failed', splitErr);
+              }
+            }
+            // fall-through → NUTRITION
+          }
+          // NUTRITION (e SPLIT dopo il clinico): fall-through al controller pasti
         }
 
         const imageOnly = !resolvedText && attachedImages.length > 0;
@@ -522,6 +557,12 @@ export function useCommandTerminal({
           appendAiMessage('Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?', {
             type: 'ERROR',
             isError: true,
+          });
+        }
+        if (diabetesSplitAck) {
+          appendAiMessage(diabetesSplitAck, {
+            type: 'HEALTH_CHAT',
+            sourceTag: 'healthChatService',
           });
         }
         return result;

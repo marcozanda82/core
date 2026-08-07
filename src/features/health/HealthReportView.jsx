@@ -128,7 +128,7 @@ export default function HealthReportView({
               Quaderno ordinato
             </p>
             <p className="m-0 mt-1 text-[13px] text-stone-600">
-              Glicemie, pasti ed eccezioni terapia in ordine cronologico.
+              Glicemie ed eccezioni terapia in ordine cronologico.
             </p>
           </div>
 
@@ -153,7 +153,7 @@ export default function HealthReportView({
 
           {!loading && !error && rows.length === 0 ? (
             <p className="m-0 px-5 py-10 text-center text-sm text-stone-500">
-              Nessuna registrazione ancora. Usa la chat per salvare glicemie, pasti o eccezioni terapia.
+              Nessuna registrazione ancora. Usa la chat per salvare glicemie o eccezioni terapia (i pasti restano nel diario alimentare).
             </p>
           ) : null}
 
@@ -164,7 +164,7 @@ export default function HealthReportView({
                   <tr className="border-b border-amber-900/20 bg-amber-100/50 text-[11px] uppercase tracking-wide text-stone-600">
                     <th className="px-3 py-3 font-semibold sm:px-4">Data e ora</th>
                     <th className="px-3 py-3 font-semibold sm:px-4">Momento</th>
-                    <th className="px-3 py-3 font-semibold sm:px-4">Alimenti consumati</th>
+                    <th className="px-3 py-3 font-semibold sm:px-4">Contesto</th>
                     <th className="px-3 py-3 font-semibold sm:px-4">Glicemia</th>
                     <th className="px-3 py-3 font-semibold sm:px-4">Note terapia / eccezioni</th>
                   </tr>
@@ -189,16 +189,13 @@ export default function HealthReportView({
                           {isEcc ? '—' : labelMomento(row.momento)}
                         </td>
                         <td className="max-w-[220px] px-3 py-3 text-stone-700 sm:px-4">
-                          {isEcc ? '—' : (row.alimenti?.trim() || '—')}
+                          {isEcc ? '—' : (contesto || '—')}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-stone-800 sm:px-4">
                           {row.glicemia != null ? (
                             <>
                               <span className="font-semibold tabular-nums">{row.glicemia}</span>
                               <span className="text-stone-500"> mg/dL</span>
-                              {contesto ? (
-                                <div className="text-[11px] font-medium text-teal-800/80">{contesto}</div>
-                              ) : null}
                             </>
                           ) : (
                             '—'

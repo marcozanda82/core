@@ -6,11 +6,13 @@ import {
   readTtsEnabled,
   speakText,
   stopSpeaking,
+  unlockSpeechSynthesis,
   writeTtsEnabled,
 } from './voiceChat.js';
 
 /**
  * Hook chat vocale: microfono (STT) + lettura risposte (TTS) + preferenza ON/OFF.
+ * True voice-to-voice: a fine frase il testo viene inviato automaticamente.
  *
  * @param {{
  *   chatInput: string,
@@ -18,6 +20,8 @@ import {
  *   chatHistory?: Array<{ sender?: string, text?: string, type?: string, local?: boolean }>,
  *   isProcessing?: boolean,
  *   defaultTtsEnabled?: boolean,
+ *   onVoiceSubmit?: ((text: string) => void) | null,
+ *   autoSubmitOnSpeechEnd?: boolean,
  * }} opts
  */
 export function useVoiceChat({
@@ -26,6 +30,8 @@ export function useVoiceChat({
   chatHistory = [],
   isProcessing = false,
   defaultTtsEnabled = false,
+  onVoiceSubmit = null,
+  autoSubmitOnSpeechEnd = true,
 } = {}) {
   const [ttsEnabled, setTtsEnabled] = useState(() => readTtsEnabled(defaultTtsEnabled));
   const [isListening, setIsListening] = useState(false);
@@ -35,13 +41,26 @@ export function useVoiceChat({
 
   const recognitionRef = useRef(null);
   const baseInputRef = useRef('');
+  const finalTranscriptRef = useRef('');
   const lastSpokenKeyRef = useRef('');
   const skipInitialHistoryRef = useRef(true);
   const ttsEnabledRef = useRef(ttsEnabled);
+  const onVoiceSubmitRef = useRef(onVoiceSubmit);
+  const autoSubmitRef = useRef(autoSubmitOnSpeechEnd);
+  const suppressSubmitRef = useRef(false);
+  const didSubmitTurnRef = useRef(false);
 
   useEffect(() => {
     ttsEnabledRef.current = ttsEnabled;
   }, [ttsEnabled]);
+
+  useEffect(() => {
+    onVoiceSubmitRef.current = onVoiceSubmit;
+  }, [onVoiceSubmit]);
+
+  useEffect(() => {
+    autoSubmitRef.current = autoSubmitOnSpeechEnd;
+  }, [autoSubmitOnSpeechEnd]);
 
   useEffect(() => {
     writeTtsEnabled(ttsEnabled);
@@ -62,6 +81,7 @@ export function useVoiceChat({
     return () => {
       window.speechSynthesis?.removeEventListener?.('voiceschanged', warm);
       stopSpeaking();
+      suppressSubmitRef.current = true;
       try {
         recognitionRef.current?.abort?.();
       } catch {
@@ -70,27 +90,73 @@ export function useVoiceChat({
     };
   }, [ttsSupported]);
 
-  const stopListening = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (!rec) {
-      setIsListening(false);
+  const buildSubmitText = useCallback(() => {
+    const finalPart = String(finalTranscriptRef.current || '').trim();
+    const base = String(baseInputRef.current || '').trim();
+    if (finalPart && base) {
+      // finalPart già include l’accumulo su base durante onresult
+      return finalPart;
+    }
+    return finalPart || base || String(chatInput || '').trim();
+  }, [chatInput]);
+
+  const maybeAutoSubmit = useCallback(() => {
+    if (suppressSubmitRef.current) {
+      suppressSubmitRef.current = false;
       return;
     }
+    if (didSubmitTurnRef.current) return;
+    if (!autoSubmitRef.current) return;
+    const submit = onVoiceSubmitRef.current;
+    if (typeof submit !== 'function') return;
+    const text = buildSubmitText();
+    if (!text) return;
+    didSubmitTurnRef.current = true;
+    setChatInput(text);
+    submit(text);
+  }, [buildSubmitText, setChatInput]);
+
+  const stopListening = useCallback((opts = {}) => {
+    const { submit = false } = opts;
+    const rec = recognitionRef.current;
+
+    if (!rec) {
+      setIsListening(false);
+      if (submit) maybeAutoSubmit();
+      return;
+    }
+
     try {
-      rec.onresult = null;
-      rec.onerror = null;
-      rec.onend = null;
-      rec.stop();
+      if (submit) {
+        // Lascia onend + backup timer (dedupe via didSubmitTurnRef).
+        rec.stop();
+      } else {
+        // Stop silenzioso: nessun auto-invio.
+        suppressSubmitRef.current = true;
+        rec.onresult = null;
+        rec.onerror = null;
+        rec.onend = null;
+        try {
+          rec.abort();
+        } catch {
+          rec.stop();
+        }
+        suppressSubmitRef.current = false;
+      }
     } catch {
       try {
         rec.abort();
       } catch {
         // ignore
       }
+      suppressSubmitRef.current = false;
     }
     recognitionRef.current = null;
     setIsListening(false);
-  }, []);
+    if (submit) {
+      window.setTimeout(() => maybeAutoSubmit(), 30);
+    }
+  }, [maybeAutoSubmit]);
 
   const startListening = useCallback(() => {
     setVoiceError('');
@@ -100,8 +166,9 @@ export function useVoiceChat({
     }
     if (isProcessing) return;
 
+    unlockSpeechSynthesis();
     stopSpeaking();
-    stopListening();
+    stopListening({ submit: false });
 
     const recognition = createSpeechRecognition();
     if (!recognition) {
@@ -109,7 +176,11 @@ export function useVoiceChat({
       return;
     }
 
-    baseInputRef.current = String(chatInput || '').trim();
+    // Turno vocale pulito: il messaggio parlato sostituisce l’input.
+    baseInputRef.current = '';
+    finalTranscriptRef.current = '';
+    didSubmitTurnRef.current = false;
+    setChatInput('');
     recognitionRef.current = recognition;
 
     recognition.onresult = (event) => {
@@ -121,18 +192,17 @@ export function useVoiceChat({
         if (result.isFinal) finalChunk += piece;
         else interim += piece;
       }
-      const base = baseInputRef.current;
-      const combined = [base, finalChunk || interim]
-        .map((p) => String(p || '').trim())
-        .filter(Boolean)
-        .join(' ');
-      setChatInput(combined);
       if (finalChunk.trim()) {
-        baseInputRef.current = [base, finalChunk.trim()]
+        finalTranscriptRef.current = [finalTranscriptRef.current, finalChunk.trim()]
           .filter(Boolean)
           .join(' ')
           .trim();
       }
+      const display = [finalTranscriptRef.current, interim.trim()]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      setChatInput(display);
     };
 
     recognition.onerror = (event) => {
@@ -153,6 +223,7 @@ export function useVoiceChat({
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
+      maybeAutoSubmit();
     };
 
     try {
@@ -164,11 +235,12 @@ export function useVoiceChat({
       setIsListening(false);
       recognitionRef.current = null;
     }
-  }, [chatInput, isProcessing, setChatInput, sttSupported, stopListening]);
+  }, [isProcessing, maybeAutoSubmit, setChatInput, sttSupported, stopListening]);
 
   const toggleListening = useCallback(() => {
     if (isListening) {
-      stopListening();
+      // Stop manuale → invia comunque quanto trascritto (voice-to-voice).
+      stopListening({ submit: true });
       return;
     }
     startListening();
@@ -178,6 +250,7 @@ export function useVoiceChat({
     setTtsEnabled((prev) => {
       const next = !prev;
       if (!next) stopSpeaking();
+      else unlockSpeechSynthesis();
       return next;
     });
   }, []);
@@ -211,9 +284,11 @@ export function useVoiceChat({
     void speakText(text);
   }, [chatHistory, isListening, ttsSupported]);
 
-  // Non ascoltare durante processing AI.
+  // Non ascoltare durante processing AI (senza auto-submit: l’invio è già partito).
   useEffect(() => {
-    if (isProcessing && isListening) stopListening();
+    if (isProcessing && isListening) {
+      stopListening({ submit: false });
+    }
   }, [isProcessing, isListening, stopListening]);
 
   return {

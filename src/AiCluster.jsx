@@ -102,12 +102,14 @@ export default function AiCluster({
   const chatFileInputRef = useRef(null);
   const chatTextareaRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
+  const voiceSubmitRef = useRef(null);
 
   const {
     ttsEnabled,
     toggleTts,
     isListening,
     toggleListening,
+    stopListening,
     sttSupported,
     ttsSupported,
     voiceError,
@@ -118,6 +120,10 @@ export default function AiCluster({
     chatHistory,
     isProcessing,
     defaultTtsEnabled: preferVoiceChat === true,
+    autoSubmitOnSpeechEnd: true,
+    onVoiceSubmit: (text) => {
+      voiceSubmitRef.current?.(text);
+    },
   });
 
   const handleInputResize = useCallback((e) => {
@@ -252,7 +258,8 @@ export default function AiCluster({
     if (isProcessing) return;
 
     if (isListening) {
-      toggleListening();
+      // Ferma mic senza doppio invio: inviamo sotto dal testo già in input.
+      stopListening({ submit: false });
     }
     stopSpeaking();
 
@@ -277,7 +284,7 @@ export default function AiCluster({
   }, [
     isProcessing,
     isListening,
-    toggleListening,
+    stopListening,
     isNotesMode,
     chatInput,
     setChatInput,
@@ -285,6 +292,20 @@ export default function AiCluster({
     onSendMessage,
     resetInputHeight,
   ]);
+
+  // Voice-to-voice: fine frase → invio automatico (stesso percorso dell’input).
+  voiceSubmitRef.current = (text) => {
+    const trimmed = String(text || '').trim();
+    if (!trimmed || isProcessing) return;
+    stopSpeaking();
+    if (isNotesMode) {
+      setChatInput(trimmed);
+      return;
+    }
+    onSendMessage(trimmed, { fromInput: true, fromVoice: true });
+    resetInputHeight();
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
 
   const handleChatKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

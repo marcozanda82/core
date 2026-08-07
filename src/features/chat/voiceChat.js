@@ -90,6 +90,24 @@ export function stopSpeaking() {
 }
 
 /**
+ * Sblocca speechSynthesis dopo gesto utente (necessario su alcuni browser
+ * per far parlare le risposte AI asincrone).
+ */
+export function unlockSpeechSynthesis() {
+  if (!isSpeechSynthesisSupported()) return;
+  try {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(' ');
+    utter.volume = 0;
+    utter.rate = 10;
+    window.speechSynthesis.speak(utter);
+    window.speechSynthesis.cancel();
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Legge ad alta voce (it-IT se disponibile).
  * @param {string} text
  * @param {{ rate?: number, pitch?: number, lang?: string }} [opts]
