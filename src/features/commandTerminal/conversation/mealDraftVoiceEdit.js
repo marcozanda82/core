@@ -38,6 +38,24 @@ const REPLACE_ERA_RE =
 const REPLACE_CAMBIA_RE =
   /\b(?:cambia|sostituisci|rimpiazza)\s+(?:la\s+|il\s+|lo\s+|l')?([^,;.]+?)\s+(?:con|a)\s+(?:la\s+|il\s+|lo\s+|l')?([^,;.]+?)(?:\s*$|[.!])/i;
 
+/** Correzione parziale: quantità/grammi senza nuovo valore. */
+const PARTIAL_QUANTITY_RE =
+  /(?:(?:voglio|vorrei)\s+)?(?:cambi(?:are|a)|modific(?:are|a)|aggiorn(?:are|a)|corregg(?:ere|i)|metti|porta)\s+(?:la\s+|il\s+|lo\s+)?(?:quantit[aà]|grammatura|grammi|peso|porzione)\s+(?:del|della|di|del\s+l'|per\s+(?:il|la|lo)\s+|sul(?:l[' ](?:il|la|lo)\s+)?)?([^,;.]+?)(?:\s*$|[.!])/i;
+
+const PARTIAL_QUANTITY_OF_RE =
+  /(?:(?:la\s+)?(?:quantit[aà]|grammatura)|(?:i\s+)?grammi|(?:il\s+)?peso)\s+(?:del|della|di|per\s+(?:il|la|lo)\s+)([^,;.]+?)(?:\s*$|[.!])/i;
+
+/** Correzione parziale: tipo/variante senza nuovo nome. */
+const PARTIAL_TYPE_RE =
+  /(?:(?:voglio|vorrei)\s+)?(?:cambi(?:are|a)|modific(?:are|a)|sostituisci|rimpiazza)\s+(?:il\s+|la\s+)?(?:tipo|variante|genere)\s+(?:del|della|di|di\s+l'|di\s+)?([^,;.]+?)(?:\s*$|[.!])/i;
+
+/** "cambia il pane" / "voglio cambiare il pane" senza "con X" e senza grammi. */
+const PARTIAL_CHANGE_FOOD_RE =
+  /(?:(?:voglio|vorrei)\s+)?(?:cambi(?:are|a)|modific(?:are|a)|sostituisci)\s+(?:la\s+|il\s+|lo\s+|l')?([^,;.]+?)(?:\s*$|[.!])/i;
+
+const PARTIAL_SKIP_VALUE_RE =
+  /\b(?:con|a)\s+(?:la\s+|il\s+|lo\s+|l')?[a-zàèéìòù]/i;
+
 function expandDraftItems(payload) {
   if (Array.isArray(payload?.items) && payload.items.length > 0) {
     return payload.items
@@ -151,6 +169,15 @@ export function isUpdateMealDraftIntent(userText) {
   if (GRAMS_ONLY_RE.test(t) && /\d/.test(t)) return true;
   if (/\b(?:metti|fai|segna)\s+\d+/i.test(t)) return true;
   if (/\bcorregg|\baggiorn\s+la\s+bozza|\bmodifica\b/i.test(t)) return true;
+  // Correzioni parziali (target senza valore) → loop McDrive, non UNKNOWN.
+  if (PARTIAL_QUANTITY_RE.test(t) || PARTIAL_QUANTITY_OF_RE.test(t) || PARTIAL_TYPE_RE.test(t)) return true;
+  if (
+    PARTIAL_CHANGE_FOOD_RE.test(t)
+    && !PARTIAL_SKIP_VALUE_RE.test(t)
+    && !/\d+\s*(?:g|gr|grammi)\b/i.test(t)
+  ) {
+    return true;
+  }
   if (parseNaturalMealItems(t)?.items?.length) return true;
 
   return false;
@@ -190,6 +217,204 @@ function parseGramsNumber(raw) {
   return Number.isFinite(n) && n > 0 && n <= 5000 ? n : null;
 }
 
+function resolvePartialTarget(items, rawTarget) {
+  const cleaned = cleanFoodPhrase(rawTarget)
+    .replace(/\b(?:quantit[aà]|grammi|peso|tipo|variante|genere|alimento)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) {
+    return items.length === 1
+      ? { index: 0, label: String(items[0].spokenFoodName || items[0].foodName || '').trim() }
+      : null;
+  }
+  const idx = findItemIndex(items, cleaned);
+  if (idx < 0) {
+    // Fallback: primo token del target matcha un item
+    const token = normalizeSearchText(cleaned).split(' ')[0];
+    if (token) {
+      for (let i = 0; i < items.length; i += 1) {
+        const name = normalizeSearchText(items[i]?.foodName || '');
+        const spoken = normalizeSearchText(items[i]?.spokenFoodName || '');
+        if (name.includes(token) || spoken.includes(token)) {
+          return {
+            index: i,
+            label: String(items[i].spokenFoodName || items[i].foodName || cleaned).trim(),
+          };
+        }
+      }
+    }
+    return items.length === 1
+      ? { index: 0, label: String(items[0].spokenFoodName || items[0].foodName || cleaned).trim() }
+      : null;
+  }
+  return {
+    index: idx,
+    label: String(items[idx].spokenFoodName || items[idx].foodName || cleaned).trim(),
+  };
+}
+
+function shortFoodLabel(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return 'alimento';
+  const spokenish = raw.split(/\s+/).slice(0, 3).join(' ');
+  // Preferisci il generico se il nome è lungo (es. "Pane integrale…" → pane se presente)
+  const lower = spokenish.toLowerCase();
+  const generics = ['pane', 'pasta', 'riso', 'yogurt', 'pomodoro', 'uova', 'pollo', 'latte'];
+  for (const g of generics) {
+    if (lower.includes(g)) return g;
+  }
+  return spokenish;
+}
+
+/**
+ * Rileva correzione incompleta: target noto, valore mancante.
+ * @returns {{
+ *   field: 'grams'|'type',
+ *   targetIndex: number,
+ *   targetLabel: string,
+ *   spokenPrompt: string,
+ * } | null}
+ */
+export function detectPartialMealDraftCorrection(userText, draftPayload) {
+  const text = String(userText || '').trim();
+  if (!text) return null;
+  // Se c'è già un valore concreto, non è parziale.
+  if (REPLACE_CAMBIA_RE.test(text) || REPLACE_NON_ERA_RE.test(text) || REPLACE_INVECE_RE.test(text)) {
+    return null;
+  }
+  if (/\d+\s*(?:g|gr|grammi)\b/i.test(text)) return null;
+  if (/\b(?:metti|fai|segna|porta)\s+\d{1,4}\b/i.test(text)) return null;
+  if (REMOVE_FOOD_RE.test(text) || ADD_FOOD_RE.test(text)) return null;
+
+  const items = expandDraftItems(draftPayload);
+  if (items.length === 0) return null;
+
+  let field = null;
+  let rawTarget = '';
+
+  const qty = text.match(PARTIAL_QUANTITY_RE) || text.match(PARTIAL_QUANTITY_OF_RE);
+  if (qty) {
+    field = 'grams';
+    rawTarget = qty[1] || '';
+  } else {
+    const typ = text.match(PARTIAL_TYPE_RE);
+    if (typ) {
+      field = 'type';
+      rawTarget = typ[1] || '';
+    } else {
+      const change = text.match(PARTIAL_CHANGE_FOOD_RE);
+      if (
+        change
+        && !PARTIAL_SKIP_VALUE_RE.test(text)
+        && !/\d+\s*(?:g|gr|grammi)\b/i.test(text)
+        && !/\b(?:quantit[aà]|grammi|peso)\b/i.test(text)
+      ) {
+        field = 'type';
+        rawTarget = change[1] || '';
+      }
+    }
+  }
+
+  if (!field) return null;
+
+  const target = resolvePartialTarget(items, rawTarget);
+  if (!target) return null;
+
+  const label = shortFoodLabel(target.label);
+  const spokenPrompt = field === 'grams'
+    ? `Che quantità vorresti indicare per ${label}?`
+    : `Che tipo di ${label} vuoi inserire?`;
+
+  return {
+    field,
+    targetIndex: target.index,
+    targetLabel: label,
+    spokenPrompt,
+  };
+}
+
+/**
+ * Applica la risposta alla domanda mirata (es. «80 grammi» / «rosetta»).
+ * @param {object} draftPayload
+ * @param {{ field: 'grams'|'type', targetIndex: number, targetLabel?: string }} clarification
+ * @param {string} userText
+ */
+export function applyPartialClarificationReply(draftPayload, clarification, userText) {
+  const text = String(userText || '').trim();
+  if (!text || !clarification || typeof clarification !== 'object') {
+    return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'empty_clarification' };
+  }
+
+  const items = expandDraftItems(draftPayload).map((item) => ({ ...item }));
+  const idx = Number(clarification.targetIndex);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= items.length) {
+    return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'invalid_target' };
+  }
+
+  const field = clarification.field === 'type' ? 'type' : 'grams';
+  let summaryBits = null;
+
+  if (field === 'grams') {
+    const gramsMatch = text.match(/(\d{1,4})\s*(?:g|gr|grammi)?\b/i);
+    const grams = gramsMatch ? parseGramsNumber(gramsMatch[1]) : null;
+    if (!grams) {
+      return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'need_grams', awaitingClarification: true };
+    }
+    items[idx] = { ...items[idx], grams, isEstimated: false };
+    const label = shortFoodLabel(clarification.targetLabel || items[idx].spokenFoodName || items[idx].foodName);
+    summaryBits = { field: 'grams', label, grams };
+  } else {
+    const cleaned = cleanFoodPhrase(
+      text
+        .replace(/^(?:metti|usa|segna|vorrei|voglio|il|la|lo|l'|un|una)\s+/i, '')
+        .replace(/\d+\s*(?:g|gr|grammi)\b/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    );
+    if (!cleaned || cleaned.length < 2 || /^(?:s[iì]|no|ok|okay)$/i.test(cleaned)) {
+      return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'need_type', awaitingClarification: true };
+    }
+    const prevLabel = shortFoodLabel(clarification.targetLabel || items[idx].spokenFoodName || items[idx].foodName);
+    items[idx] = {
+      ...items[idx],
+      foodName: cleaned,
+      spokenFoodName: cleaned,
+      proposedFromHabit: false,
+      foodDbKey: null,
+    };
+    summaryBits = { field: 'type', label: prevLabel, newName: cleaned };
+  }
+
+  return {
+    ok: true,
+    intent: UPDATE_MEAL_DRAFT,
+    summaryBits,
+    payload: {
+      ...draftPayload,
+      items,
+      mealType: draftPayload?.mealType || null,
+      exactTime: draftPayload?.exactTime || null,
+      timeString: draftPayload?.timeString || draftPayload?.exactTime || null,
+    },
+  };
+}
+
+/**
+ * TTS post-chiarimento mirato: «Fatto, ho aggiornato il pane a 80g. Salvo?»
+ * @param {{ field?: string, label?: string, grams?: number, newName?: string }|null} summaryBits
+ * @param {Array} items
+ */
+export function buildMcDriveClarificationDoneMessage(summaryBits, items = []) {
+  if (summaryBits?.field === 'grams' && summaryBits.label && summaryBits.grams) {
+    return `Fatto, ho aggiornato ${summaryBits.label} a ${Math.round(summaryBits.grams)}g. Salvo?`;
+  }
+  if (summaryBits?.field === 'type' && summaryBits.newName) {
+    const label = summaryBits.label || 'alimento';
+    return `Fatto, ho aggiornato ${label} con ${summaryBits.newName}. Salvo?`;
+  }
+  return buildMcDriveUpdatedConfirmationMessage(items);
+}
+
 /**
  * Applica una correzione vocale alla bozza in sospeso.
  * @returns {{ ok: boolean, payload?: object, intent: string, reason?: string }}
@@ -198,6 +423,17 @@ export function applyVoiceCorrectionToMealDraft(draftPayload, userText) {
   const text = String(userText || '').trim();
   if (!text) {
     return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'empty' };
+  }
+
+  // Correzione parziale → non applicare, lascia che il controller chieda il valore.
+  const partial = detectPartialMealDraftCorrection(text, draftPayload);
+  if (partial) {
+    return {
+      ok: false,
+      intent: UPDATE_MEAL_DRAFT,
+      reason: 'partial_correction',
+      partial,
+    };
   }
 
   let items = expandDraftItems(draftPayload).map((item) => ({ ...item }));

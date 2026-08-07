@@ -121,6 +121,9 @@ import {
   classifyMealDraftVoiceReply,
   applyVoiceCorrectionToMealDraft,
   buildMcDriveUpdatedConfirmationMessage,
+  buildMcDriveClarificationDoneMessage,
+  detectPartialMealDraftCorrection,
+  applyPartialClarificationReply,
   isUpdateMealDraftIntent,
 } from './conversation/mealDraftVoiceEdit.js';
 import {
@@ -308,6 +311,11 @@ export class CommandTerminalController {
     this.pendingMealUpdate = null;
     /** @type {object | null} Bozza pasto McDrive in sospeso (proposta → correzioni → conferma). */
     this.pendingMealDraft = null;
+    /**
+     * Chiarimento mirato su correzione incompleta (es. quantità del pane senza grammi).
+     * @type {{ field: 'grams'|'type', targetIndex: number, targetLabel: string, spokenPrompt?: string } | null}
+     */
+    this.pendingMealDraftClarification = null;
     /** @type {import('./conversation/sequentialFoodWizard.js').MealWizardState | null} */
     this.mealWizardState = null;
     /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
@@ -358,6 +366,7 @@ export class CommandTerminalController {
     this.isExecutingAction = false;
     this.pendingMealUpdate = null;
     this.pendingMealDraft = null;
+    this.pendingMealDraftClarification = null;
     this.mealWizardState = null;
     this.pendingSoftMealRecovery = null;
   }
@@ -365,6 +374,7 @@ export class CommandTerminalController {
   setPendingMealDraft(draft) {
     if (!draft || typeof draft !== 'object') {
       this.pendingMealDraft = null;
+      this.pendingMealDraftClarification = null;
       return;
     }
     this.pendingMealDraft = {
@@ -376,6 +386,48 @@ export class CommandTerminalController {
 
   clearPendingMealDraft() {
     this.pendingMealDraft = null;
+    this.pendingMealDraftClarification = null;
+  }
+
+  /**
+   * Domanda mirata per correzione incompleta (niente prompt generici).
+   */
+  askMealDraftClarification(partial) {
+    if (!partial?.spokenPrompt) return;
+    this.pendingMealDraftClarification = {
+      field: partial.field,
+      targetIndex: partial.targetIndex,
+      targetLabel: partial.targetLabel,
+      spokenPrompt: partial.spokenPrompt,
+    };
+    this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+    this.publishSystemMessage(partial.spokenPrompt);
+  }
+
+  /**
+   * Dopo correzione: ripubblica card amichevole + TTS breve.
+   */
+  async republishMealDraftAfterVoiceEdit(nextPayload, currentState, options = {}) {
+    const items = expandFoodPayloadItems(nextPayload);
+    const voiceMessage = String(options.spokenText || '').trim()
+      || buildMcDriveUpdatedConfirmationMessage(items);
+    const payload = {
+      ...nextPayload,
+      message: voiceMessage,
+    };
+    this.pendingMealDraftClarification = null;
+    return this.publishMealLogProposalCardDirect(
+      payload,
+      currentState,
+      options.userText || '',
+      options.chatHistory || [],
+      {
+        uiMessage: voiceMessage,
+        spokenText: voiceMessage,
+        fromVoiceCorrection: true,
+        skipWizard: true,
+      },
+    );
   }
 
   getPendingMealDraft() {
@@ -2103,6 +2155,7 @@ export class CommandTerminalController {
 
   /**
    * Loop McDrive: CONFIRM_MEAL_DRAFT | UPDATE_MEAL_DRAFT | CANCEL_MEAL_DRAFT.
+   * Supporta chiarimenti mirati su correzioni incomplete (es. quantità senza grammi).
    */
   async processMealDraftVoiceLoop(userText, currentState = {}, options = {}) {
     const text = String(userText || '').trim();
@@ -2114,11 +2167,55 @@ export class CommandTerminalController {
       return this.processUserMessage(text, currentState, options);
     }
 
+    // Follow-up a domanda mirata (es. «80 grammi» dopo «Che quantità… per il pane?»).
+    if (this.pendingMealDraftClarification) {
+      const clarified = applyPartialClarificationReply(
+        draft,
+        this.pendingMealDraftClarification,
+        text,
+      );
+      if (clarified.ok) {
+        console.log('🎙️ DEBUG - MEAL DRAFT CLARIFICATION RESOLVED:', clarified.summaryBits);
+        const spokenText = buildMcDriveClarificationDoneMessage(
+          clarified.summaryBits,
+          expandFoodPayloadItems(clarified.payload),
+        );
+        const published = await this.republishMealDraftAfterVoiceEdit(
+          clarified.payload,
+          currentState,
+          { spokenText, userText: text, chatHistory: options?.chatHistory || [] },
+        );
+        return {
+          ...published,
+          intent: UPDATE_MEAL_DRAFT,
+          commandType: UPDATE_MEAL_DRAFT,
+          clarified: true,
+        };
+      }
+      if (clarified.awaitingClarification) {
+        const prompt = this.pendingMealDraftClarification.spokenPrompt
+          || (this.pendingMealDraftClarification.field === 'grams'
+            ? `Che quantità vorresti indicare per ${this.pendingMealDraftClarification.targetLabel || 'questo alimento'}?`
+            : `Che tipo di ${this.pendingMealDraftClarification.targetLabel || 'alimento'} vuoi inserire?`);
+        this.publishSystemMessage(prompt);
+        return {
+          ok: true,
+          awaiting: true,
+          intent: UPDATE_MEAL_DRAFT,
+          reason: clarified.reason,
+          conversationState: this.conversationState,
+        };
+      }
+      // Risposta non applicabile al chiarimento → riprova come correzione completa sotto.
+      this.pendingMealDraftClarification = null;
+    }
+
     const voiceIntent = classifyMealDraftVoiceReply(text);
     console.log('🎙️ DEBUG - MEAL DRAFT VOICE LOOP:', { voiceIntent, text: text.slice(0, 120) });
 
     if (voiceIntent === CONFIRM_MEAL_DRAFT) {
       console.log('🟡 DEBUG - PATH SCELTO: CONFIRM_MEAL_DRAFT');
+      this.pendingMealDraftClarification = null;
       if (this.pendingAction?.commandType === 'ADD_FOOD') {
         this.pendingAction.payload = { ...draft };
       } else {
@@ -2141,6 +2238,21 @@ export class CommandTerminalController {
       this.resetConversationState();
       this.publishSystemMessage('Ok, bozza annullata. Dimmi pure quando vuoi registrare di nuovo.');
       return { ok: true, cancelled: true, intent: CANCEL_MEAL_DRAFT };
+    }
+
+    // Correzione parziale → domanda mirata (mai prompt generico).
+    const partialEarly = detectPartialMealDraftCorrection(text, draft);
+    if (partialEarly) {
+      console.log('🎙️ DEBUG - PARTIAL MEAL DRAFT CORRECTION:', partialEarly);
+      this.askMealDraftClarification(partialEarly);
+      return {
+        ok: true,
+        awaiting: true,
+        intent: UPDATE_MEAL_DRAFT,
+        reason: 'partial_correction',
+        partial: partialEarly,
+        conversationState: this.conversationState,
+      };
     }
 
     if (voiceIntent === 'UNKNOWN') {
@@ -2188,6 +2300,20 @@ export class CommandTerminalController {
       : text;
     const applied = applyVoiceCorrectionToMealDraft(draft, correctionText);
     if (!applied.ok) {
+      if (applied.partial || applied.reason === 'partial_correction') {
+        const partial = applied.partial || detectPartialMealDraftCorrection(correctionText, draft);
+        if (partial) {
+          this.askMealDraftClarification(partial);
+          return {
+            ok: true,
+            awaiting: true,
+            intent: UPDATE_MEAL_DRAFT,
+            reason: 'partial_correction',
+            partial,
+            conversationState: this.conversationState,
+          };
+        }
+      }
       this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
       this.publishSystemMessage(
         "Non ho colto la correzione. Prova tipo «metti 80 grammi», «togli il pomodoro», «era rosetta», oppure «sì» per salvare.",
@@ -2204,17 +2330,14 @@ export class CommandTerminalController {
     const voiceMessage = buildMcDriveUpdatedConfirmationMessage(
       expandFoodPayloadItems(applied.payload),
     );
-    const nextPayload = {
-      ...applied.payload,
-      message: voiceMessage,
-    };
-
-    const published = await this.publishMealLogProposalCardDirect(
-      nextPayload,
+    const published = await this.republishMealDraftAfterVoiceEdit(
+      applied.payload,
       currentState,
-      correctionText,
-      options?.chatHistory || [],
-      { uiMessage: voiceMessage, fromVoiceCorrection: true },
+      {
+        spokenText: voiceMessage,
+        userText: correctionText,
+        chatHistory: options?.chatHistory || [],
+      },
     );
     return {
       ...published,

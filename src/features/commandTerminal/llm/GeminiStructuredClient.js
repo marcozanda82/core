@@ -1128,7 +1128,8 @@ In payload.message puoi lasciare vuoto o una frase breve: il wizard genera i pro
 CASO 1c: [FOLLOW-UP A CONFERMA / CORREZIONE — McDRIVE]
 Se nel THREAD_RECENTE c'è una proposta maggiordomo / bozza da confermare e l'utente risponde:
 - conferma («Sì», «Va bene», «Confermo») → il sistema usa CONFIRM_MEAL_DRAFT (non inventare un pasto nuovo).
-- correzione («metti 80 grammi», «togli il pomodoro», «non era bauletto era rosetta», «aggiungi una mela») → UPDATE_MEAL_DRAFT sulla bozza esistente.
+- correzione completa («metti 80 grammi», «togli il pomodoro», «non era bauletto era rosetta», «aggiungi una mela») → UPDATE_MEAL_DRAFT sulla bozza esistente.
+- correzione PARZIALE (target senza valore: «voglio cambiare la quantità del pane», «cambia il tipo di pane») → il sistema chiederà una domanda mirata; NON generare istruzioni generiche tipo «Dimmi la correzione (es. metti 80g…)».
 -> Se sei costretto a produrre JSON: preferisci ASK_CLARIFICATION solo se manca tutto; altrimenti ADD_FOOD con items[] già corretti rispetto alla bozza precedente. VIETATO ricominciare da zero ignorando la bozza.
 
 CASO 1d: [ALIMENTO SCONOSCIUTO — FOTO]
