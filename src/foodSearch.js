@@ -23,17 +23,31 @@ const SEARCH_SYNONYMS = {
   uova: ['uovo'],
 };
 
-/** Punteggi ranking (0–100). */
+/** Punteggi ranking lessicale (0–100). Lo storico NON entra in questi valori. */
 const SCORE_EXACT_OR_PREFIX = 100;
+/** Nome inizia con la query intera ma non è uguale (es. «noci» → «noci tostate»). */
+const SCORE_PREFIX = 99;
+/** Query = una parola intera dentro un nome multi-parola (es. «noci» in «pane … noci»). */
+const SCORE_TOKEN_EXACT = 80;
 const SCORE_WORD_BOUNDARY = 75;
 const SCORE_SUBSTRING = 50;
-const SCORE_FUZZY_DIST_1 = 90;
-const SCORE_FUZZY_DIST_2 = 85;
+const SCORE_FUZZY_DIST_1 = 70;
+const SCORE_FUZZY_DIST_2 = 65;
 const MIN_MATCH_SCORE = SCORE_SUBSTRING;
 const DEFAULT_SEARCH_LIMIT = 30;
 const HISTORY_SCORE_WEIGHT = 0.08;
-/** Peso usageCount sul ranking (DB personale). */
+/** Peso usageCount solo come tie-breaker (mai sopra il lexical). */
 const USAGE_COUNT_SCORE_WEIGHT = 0.35;
+
+const MATCH_TIER_RANK = Object.freeze({
+  exact: 100,
+  prefix: 90,
+  token_exact: 80,
+  word_boundary: 70,
+  substring: 50,
+  fuzzy: 30,
+  none: 0,
+});
 
 /**
  * Conta usi da usageCount esplicito o somma usageStats (morning…night).
@@ -327,6 +341,7 @@ function hasWordBoundaryMatch(normalizedText, queryWord) {
 
 /**
  * Score per una singola parola della query (testo già normalizzato lowercase).
+ * Uguaglianza sull'INTERO nome = 100. Token interno (parziale) ≤ SCORE_TOKEN_EXACT.
  */
 function scoreQueryToken(normalizedName, itemWords, queryWord) {
   const candidates = expandQueryWords(queryWord);
@@ -336,24 +351,26 @@ function scoreQueryToken(normalizedName, itemWords, queryWord) {
     const qw = candidates[c];
     if (!qw) continue;
 
+    // Match esatto sull'intero nome alimento.
     if (normalizedName === qw) {
       best = Math.max(best, SCORE_EXACT_OR_PREFIX);
       continue;
     }
 
-    // Prefisso sull'intero nome: leggermente sotto uguaglianza esatta.
+    // Prefisso sull'intero nome: sotto l'uguaglianza esatta.
     if (normalizedName.startsWith(qw) && normalizedName !== qw) {
-      best = Math.max(best, SCORE_EXACT_OR_PREFIX - 1);
+      best = Math.max(best, SCORE_PREFIX);
       continue;
     }
 
+    // Token esatto dentro un nome multi-parola — MAI al livello del match full-name.
     if (itemWords.some((word) => word === qw)) {
-      best = Math.max(best, SCORE_EXACT_OR_PREFIX);
+      best = Math.max(best, SCORE_TOKEN_EXACT);
       continue;
     }
 
     if (itemWords.some((word) => word.startsWith(qw) && word !== qw)) {
-      best = Math.max(best, SCORE_EXACT_OR_PREFIX - 1);
+      best = Math.max(best, SCORE_WORD_BOUNDARY);
       continue;
     }
 
@@ -370,6 +387,15 @@ function scoreQueryToken(normalizedName, itemWords, queryWord) {
   return best;
 }
 
+function tierFromTokenScore(tokenScore, isFullNameExact) {
+  if (isFullNameExact || tokenScore >= SCORE_EXACT_OR_PREFIX) return 'exact';
+  if (tokenScore >= SCORE_PREFIX) return 'prefix';
+  if (tokenScore >= SCORE_TOKEN_EXACT) return 'token_exact';
+  if (tokenScore >= SCORE_WORD_BOUNDARY) return 'word_boundary';
+  if (tokenScore >= SCORE_SUBSTRING) return 'substring';
+  return 'none';
+}
+
 /**
  * @returns {{ strictScore: number, matchTier: string, allTokensMatch: boolean }}
  */
@@ -380,20 +406,21 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
 
   const fullQuery = queryWords.join(' ');
 
-  // Uguaglianza esatta (case-insensitive) batte il prefix: "anguria" → "Anguria" > "Anguria gialla".
+  // Uguaglianza esatta (case-insensitive) batte tutto: "noci" → "Noci" > "pane … noci".
   if (normalizedName === fullQuery) {
     return { strictScore: SCORE_EXACT_OR_PREFIX, matchTier: 'exact', allTokensMatch: true };
   }
 
   if (normalizedName.startsWith(fullQuery)) {
-    return { strictScore: SCORE_EXACT_OR_PREFIX - 1, matchTier: 'prefix', allTokensMatch: true };
+    return { strictScore: SCORE_PREFIX, matchTier: 'prefix', allTokensMatch: true };
   }
 
-  if (hasWordBoundaryMatch(normalizedName, fullQuery)) {
+  if (hasWordBoundaryMatch(normalizedName, fullQuery) && fullQuery.includes(' ')) {
     return { strictScore: SCORE_WORD_BOUNDARY, matchTier: 'word_boundary', allTokensMatch: true };
   }
 
-  if (normalizedName.includes(fullQuery)) {
+  if (normalizedName.includes(fullQuery) && fullQuery.length >= 3) {
+    // Query multi-parola o frase contenuta: non è exact full-name.
     return { strictScore: SCORE_SUBSTRING, matchTier: 'substring', allTokensMatch: true };
   }
 
@@ -402,18 +429,16 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
     if (tokenScore < MIN_MATCH_SCORE) {
       return { strictScore: 0, matchTier: 'none', allTokensMatch: false };
     }
-    const tier = tokenScore >= SCORE_EXACT_OR_PREFIX
-      ? 'exact'
-      : tokenScore >= SCORE_WORD_BOUNDARY
-        ? 'word_boundary'
-        : 'substring';
-    return { strictScore: tokenScore, matchTier: tier, allTokensMatch: true };
+    return {
+      strictScore: tokenScore,
+      matchTier: tierFromTokenScore(tokenScore, false),
+      allTokensMatch: true,
+    };
   }
 
   let minTokenScore = SCORE_EXACT_OR_PREFIX;
   let maxTokenScore = 0;
   let bestTier = 'none';
-  const tierRank = { exact: 3, word_boundary: 2, substring: 1, none: 0, prefix: 2.5 };
 
   for (let i = 0; i < queryWords.length; i += 1) {
     const tokenScore = scoreQueryToken(normalizedName, itemWords, queryWords[i]);
@@ -424,12 +449,8 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
     minTokenScore = Math.min(minTokenScore, tokenScore);
     maxTokenScore = Math.max(maxTokenScore, tokenScore);
 
-    const tier = tokenScore >= SCORE_EXACT_OR_PREFIX
-      ? 'exact'
-      : tokenScore >= SCORE_WORD_BOUNDARY
-        ? 'word_boundary'
-        : 'substring';
-    if (tierRank[tier] > tierRank[bestTier]) bestTier = tier;
+    const tier = tierFromTokenScore(tokenScore, false);
+    if ((MATCH_TIER_RANK[tier] || 0) > (MATCH_TIER_RANK[bestTier] || 0)) bestTier = tier;
   }
 
   const strictScore = Math.round(minTokenScore * 0.7 + maxTokenScore * 0.3);
@@ -451,8 +472,8 @@ function usageBoostFromCount(usageCount, maxUsageInDb) {
 
 /**
  * Ricerca case-insensitive (trim + lower-case).
- * Cascata qualità: exact → prefix → includes → fuzzy Levenshtein (max 1–2 char).
- * Tra match equivalenti vince usageCount più alto (abitudini utente).
+ * Two-tier: 1) similarità testuale (exact > prefix > token > fuzzy)
+ * 2) a parità lessicale, usageCount / lastUsed come spareggio.
  */
 export function searchFoodsDetailed(foodDb, query, options = {}) {
   if (!foodDb || typeof foodDb !== 'object') return [];
@@ -544,7 +565,8 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       allTokensMatch = true;
     }
 
-    // Stem IT: query "pomodoro" ↔ nome "pomodori" (e viceversa) = exact.
+    // Stem IT: query "pomodoro" ↔ nome INTERO "pomodori" = exact.
+    // Token stem dentro multi-parola = token_exact, mai exact full-name.
     if (matchTier !== 'exact' && queryWords.length === 1) {
       const qForms = new Set(italianSingularPluralForms(queryWords[0]));
       const nameForms = italianSingularPluralForms(primaryNorm);
@@ -553,11 +575,11 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         matchTier = 'exact';
         allTokensMatch = true;
       } else if (itemWords.some((w) => italianSingularPluralForms(w).some((f) => qForms.has(f)))) {
-        strictScore = Math.max(strictScore, SCORE_WORD_BOUNDARY + 10);
-        if (strictScore >= SCORE_WORD_BOUNDARY) {
-          matchTier = matchTier === 'none' ? 'word_boundary' : matchTier;
-          allTokensMatch = true;
+        strictScore = Math.max(strictScore, SCORE_TOKEN_EXACT);
+        if ((MATCH_TIER_RANK[matchTier] || 0) < MATCH_TIER_RANK.token_exact) {
+          matchTier = 'token_exact';
         }
+        allTokensMatch = true;
       }
     }
 
@@ -569,18 +591,14 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       : null;
     const recencyScore = historyScores?.recencyScore ?? 0;
     const frequencyScore = historyScores?.frequencyScore ?? 0;
+    // Boost storico solo per tie-break / display — il sort usa strictScore prima.
     const historyBoost = includeUserHistory
       ? (recencyScore * 0.6 + frequencyScore * 0.4) * 100 * HISTORY_SCORE_WEIGHT
       : 0;
     const usageBoost = usageBoostFromCount(usageCount, maxUsageInDb);
 
-    // Exact match batte sempre i boost storici / prefix su altri alimenti.
-    // Tra exact multipli (es. due "minestrone") decide usageCount.
-    const score = matchTier === 'exact'
-      ? SCORE_EXACT_OR_PREFIX + 50 + usageBoost + historyBoost
-      : matchTier === 'prefix'
-        ? SCORE_EXACT_OR_PREFIX + 10 + usageBoost + historyBoost
-        : strictScore + usageBoost + historyBoost;
+    // score composito (legacy UI): lexical dominante, storia in frazione.
+    const score = strictScore + (usageBoost + historyBoost) * 0.01;
     const matchScore = strictScore / 100;
 
     results.push({
@@ -594,13 +612,14 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       strictScore,
       matchTier,
       allTokensMatch,
+      lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
     });
   }
 
   // Fuzzy fallback: se non ci sono match forti (≥75), anche in presenza di substring deboli.
   const hasStrongMatch = results.some((r) => {
     const tier = String(r.matchTier || '');
-    return tier === 'exact' || tier === 'prefix' || tier === 'word_boundary'
+    return tier === 'exact' || tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary'
       || Number(r.strictScore) >= 75;
   });
   if (!hasStrongMatch && enableFuzzy) {
@@ -635,11 +654,29 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
           fuzzy = altFuzzy;
         }
       }
-      // Stem IT come fuzzy-0.
+      // Stem IT full-name come fuzzy-0 → exact; token stem → token_exact.
+      let fuzzyTier = 'fuzzy';
+      let fuzzyStrict = fuzzy?.score ?? 0;
       if (!fuzzy && queryWords.length === 1) {
         const qForms = italianSingularPluralForms(normalizedQuery);
-        if (qForms.includes(primaryNorm) || itemWords.some((w) => qForms.includes(w))) {
+        if (qForms.includes(primaryNorm)) {
           fuzzy = { distance: 0, score: SCORE_EXACT_OR_PREFIX };
+          fuzzyTier = 'exact';
+          fuzzyStrict = SCORE_EXACT_OR_PREFIX;
+        } else if (itemWords.some((w) => qForms.includes(w))) {
+          fuzzy = { distance: 0, score: SCORE_TOKEN_EXACT };
+          fuzzyTier = 'token_exact';
+          fuzzyStrict = SCORE_TOKEN_EXACT;
+        }
+      } else if (fuzzy) {
+        if (fuzzy.distance === 0 && primaryNorm === normalizedQuery) {
+          fuzzyTier = 'exact';
+          fuzzyStrict = SCORE_EXACT_OR_PREFIX;
+        } else if (fuzzy.distance === 0) {
+          fuzzyTier = 'token_exact';
+          fuzzyStrict = SCORE_TOKEN_EXACT;
+        } else {
+          fuzzyStrict = fuzzy.score;
         }
       }
       if (!fuzzy) continue;
@@ -650,31 +687,21 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       results.push({
         id,
         name,
-        matchScore: fuzzy.score / 100,
+        matchScore: fuzzyStrict / 100,
         recencyScore: 0,
         frequencyScore: 0,
         usageCount,
-        score: fuzzy.score + usageBoost,
-        strictScore: fuzzy.score,
-        matchTier: fuzzy.distance === 0 ? 'exact' : 'fuzzy',
+        score: fuzzyStrict + usageBoost * 0.01,
+        strictScore: fuzzyStrict,
+        matchTier: fuzzyTier,
         allTokensMatch: true,
         fuzzyDistance: fuzzy.distance,
+        lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
       });
     }
   }
 
-  results.sort((a, b) => {
-    // Fuzzy solo come fallback: resta sotto i match exact/includes.
-    const aFuzzy = a.matchTier === 'fuzzy' ? 1 : 0;
-    const bFuzzy = b.matchTier === 'fuzzy' ? 1 : 0;
-    if (aFuzzy !== bFuzzy) return aFuzzy - bFuzzy;
-    // Stessa parola chiave (exact o parziale): abitudini utente prima di tutto.
-    if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
-    if (b.score !== a.score) return b.score - a.score;
-    if (b.strictScore !== a.strictScore) return b.strictScore - a.strictScore;
-    if (b.allTokensMatch !== a.allTokensMatch) return Number(b.allTokensMatch) - Number(a.allTokensMatch);
-    return a.name.localeCompare(b.name, 'it');
-  });
+  results.sort(compareFoodSearchHits);
 
   return results.slice(0, limit).map(
     ({ id, name, matchScore, recencyScore, frequencyScore, usageCount, score, strictScore, matchTier }) => ({
@@ -689,6 +716,37 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       matchTier,
     }),
   );
+}
+
+/**
+ * Two-tier sort: 1) similarità testuale (strictScore / tier) 2) storico (usage / recency).
+ * @param {object} a
+ * @param {object} b
+ * @returns {number}
+ */
+export function compareFoodSearchHits(a, b) {
+  const aStrict = Number(a?.strictScore) || 0;
+  const bStrict = Number(b?.strictScore) || 0;
+  if (bStrict !== aStrict) return bStrict - aStrict;
+
+  const aTier = MATCH_TIER_RANK[String(a?.matchTier || 'none')] || 0;
+  const bTier = MATCH_TIER_RANK[String(b?.matchTier || 'none')] || 0;
+  if (bTier !== aTier) return bTier - aTier;
+
+  // Tie-breaker: frequenza e recency.
+  const aUsage = Number(a?.usageCount) || 0;
+  const bUsage = Number(b?.usageCount) || 0;
+  if (bUsage !== aUsage) return bUsage - aUsage;
+
+  const aRecency = Number(a?.recencyScore) || 0;
+  const bRecency = Number(b?.recencyScore) || 0;
+  if (bRecency !== aRecency) return bRecency - aRecency;
+
+  const aLast = Number(a?.lastUsedAt) || 0;
+  const bLast = Number(b?.lastUsedAt) || 0;
+  if (bLast !== aLast) return bLast - aLast;
+
+  return String(a?.name || '').localeCompare(String(b?.name || ''), 'it');
 }
 
 export function searchFoods(foodDb, query, options = {}) {

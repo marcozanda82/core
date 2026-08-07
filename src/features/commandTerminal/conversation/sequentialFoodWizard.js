@@ -4,7 +4,7 @@
  * mealWizardState: { pendingItems, resolvedItems, current, mealType, exactTime }
  */
 
-import { searchFoodsDetailed, normalizeSearchText, getFoodUsageCount } from '../../../foodSearch.js';
+import { searchFoodsDetailed, normalizeSearchText, getFoodUsageCount, compareFoodSearchHits } from '../../../foodSearch.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 
 export const MEAL_WIZARD_STATE = 'AWAITING_MEAL_WIZARD_ITEM';
@@ -205,7 +205,9 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
       const usageCount = Number(hit.usageCount) || getFoodUsageCount(food) || 0;
       const lastUsedAt = getFoodLastUsedAt(food);
       const strict = Number(hit.strictScore) || 0;
-      const tierBoost = hit.matchTier === 'exact' || hit.matchTier === 'prefix' ? 25 : 0;
+      const matchTier = String(hit.matchTier || 'none');
+      // Exact full-name (100) > token in multi-word (80) > family synonym.
+      const familyBoost = familyHit && !contains ? 5 : 0;
       return {
         id: String(hit.id),
         name,
@@ -213,16 +215,13 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}) 
         lastUsedAt,
         contains,
         familyHit,
-        score: usageCount * 8 + lastUsedAt / 1e10 + strict + tierBoost
-          + (contains ? 40 : 0) + (familyHit ? 30 : 0),
+        strictScore: strict + familyBoost,
+        matchTier,
+        score: strict + familyBoost,
       };
     })
-    .filter((row) => row.name && (row.contains || row.familyHit || row.score >= 70))
-    .sort((a, b) => {
-      if (b.lastUsedAt !== a.lastUsedAt) return b.lastUsedAt - a.lastUsedAt;
-      if (b.usageCount !== a.usageCount) return b.usageCount - a.usageCount;
-      return b.score - a.score;
-    });
+    .filter((row) => row.name && (row.contains || row.familyHit || row.strictScore >= 50))
+    .sort((a, b) => compareFoodSearchHits(a, b));
 
   // Dedup per nome normalizzato
   const seenNames = new Set();
