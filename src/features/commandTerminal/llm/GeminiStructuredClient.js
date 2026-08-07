@@ -7,6 +7,7 @@ import {
   createNewFoodPayloadSchema,
   chatResponsePayloadSchema,
   askClarificationPayloadSchema,
+  requestFoodPhotoPayloadSchema,
 } from '../contracts/commandSchemas.js';
 import { askAI } from '../../../services/aiService.js';
 import { generateConsultantSystemInstruction, buildDeterministicMealLogFeedback } from '../../../conversation/ConsultantEngine.js';
@@ -31,6 +32,11 @@ import {
 import { appendKentuGlobalStateToSystemInstruction } from '../context/kentuGlobalState.js';
 import { buildChatPersonaSystemBlock } from '../../chat/chatPersona.js';
 import { deduplicateWipItems } from '../../wipMealBuilder/utils/wipMealItemUtils.js';
+import {
+  foldItalianSttConfusables,
+  levenshteinDistance,
+  maxFuzzyDistanceForQuery,
+} from '../../../foodSearch.js';
 
 const DEFAULT_MODEL = 'gemini-3.6-flash';
 const CONSULTANT_MODEL = 'gemini-3.6-flash';
@@ -206,30 +212,49 @@ function resolveGenericFoodFallback(foodName, combinedText) {
   return firstToken || specific;
 }
 
-/**
- * Deroga guardrails: nome specifico da abitudine se l'utente ha usato un termine generico
- * contenuto nel nome abituale (es. utente "pasta" → "pasta integrale la molisana").
- */
-function isHabitExpandedFoodName(foodName, combinedText, habitNames) {
-  try {
-    const name = normalizeFoodToken(foodName);
-    const text = normalizeFoodToken(combinedText);
-    const habits = normalizeHabitNamesCollection(habitNames);
-    if (!name || !text || habits.length === 0) return false;
+/** True se foodName ha token significativi assenti dal testo utente (es. bauletto su «pane»). */
+function foodNameHasUnspokenExtraTokens(foodName, combinedText) {
+  const nameNorm = normalizeFoodToken(foodName);
+  const textNorm = normalizeFoodToken(combinedText);
+  if (!nameNorm || !textNorm) return false;
 
-    const matchedHabit = habits.find(
-      (habit) => habit === name || name.includes(habit) || habit.includes(name),
-    );
-    if (!matchedHabit) return false;
+  const nameTokens = nameNorm.split(/\s+/).filter((t) => t.length >= 3);
+  if (nameTokens.length < 2) return false;
 
-    const userWords = text.split(/\s+/).filter((word) => word.length >= 3);
-    return userWords.some((word) => matchedHabit.includes(word));
-  } catch {
-    return false;
-  }
+  const textTokens = textNorm.split(/\s+/).filter((t) => t.length >= 3);
+  const textFold = foldItalianSttConfusables(textNorm);
+
+  const tokenSpokenInUserText = (token) => {
+    if (textNorm.includes(token)) return true;
+    const tokenFold = foldItalianSttConfusables(token);
+    if (tokenFold && textFold.includes(tokenFold)) return true;
+    const maxDist = maxFuzzyDistanceForQuery(token);
+    return textTokens.some((ut) => {
+      if (Math.abs(ut.length - token.length) > maxDist + 1) return false;
+      if (levenshteinDistance(token, ut) <= maxDist) return true;
+      return (
+        levenshteinDistance(
+          foldItalianSttConfusables(token),
+          foldItalianSttConfusables(ut),
+        ) <= maxDist
+      );
+    });
+  };
+
+  const unspoken = nameTokens.filter((t) => !tokenSpokenInUserText(t));
+  return unspoken.length > 0;
 }
 
-/** Rimuove voci items[] non citate dall'utente, con deroga per risoluzione abitudini. */
+/**
+ * Deroga guardrails: l'espansione «pane»→variante abituale avviene SOLO via proposta
+ * maggiordomo (conferma esplicita), mai come registrazione silenziosa.
+ * Qui non espandiamo: il controller arricchisce dopo con mealButlerProposal.
+ */
+function isHabitExpandedFoodName(_foodName, _combinedText, _habitNames) {
+  return false;
+}
+
+/** Rimuove voci items[] non citate dall'utente. Niente arricchimenti da abitudini. */
 function filterItemsToUserMentions(items, combinedText, habitNames = []) {
   const safeItems = Array.isArray(items)
     ? items.filter((item) => item && typeof item === 'object')
@@ -239,7 +264,7 @@ function filterItemsToUserMentions(items, combinedText, habitNames = []) {
   const text = asTrimmedString(combinedText);
   if (!text) return safeItems;
 
-  const safeHabitNames = normalizeHabitNamesCollection(habitNames);
+  void habitNames;
   let attested;
   try {
     attested = foodNamesAttestedInUserText(text);
@@ -247,21 +272,30 @@ function filterItemsToUserMentions(items, combinedText, habitNames = []) {
     attested = new Set();
   }
 
+  const stripOverSpecific = (item) => {
+    const originalName = asTrimmedString(item?.foodName || item?.name);
+    if (!originalName) return item;
+    if (!foodNameHasUnspokenExtraTokens(originalName, text)) return item;
+    const fallbackName = resolveGenericFoodFallback(originalName, text) || originalName;
+    if (fallbackName && fallbackName !== originalName) {
+      return { ...item, foodName: fallbackName };
+    }
+    return item;
+  };
+
   const filtered = safeItems.filter((item) => {
     const foodName = asTrimmedString(item?.foodName || item?.name);
     if (!foodName) return false;
     try {
-      if (isFoodNameAttestedInUserText(foodName, text, attested)) return true;
-      if (safeHabitNames.length > 0 && isHabitExpandedFoodName(foodName, text, safeHabitNames)) {
-        return true;
-      }
+      return isFoodNameAttestedInUserText(foodName, text, attested);
     } catch {
       return false;
     }
-    return false;
   });
 
-  if (filtered.length > 0) return filtered;
+  if (filtered.length > 0) {
+    return filtered.map(stripOverSpecific);
+  }
 
   const fallbackItems = safeItems
     .map((item) => {
@@ -272,7 +306,7 @@ function filterItemsToUserMentions(items, combinedText, habitNames = []) {
     })
     .filter(Boolean);
 
-  return fallbackItems.length > 0 ? fallbackItems : safeItems;
+  return fallbackItems.length > 0 ? fallbackItems.map(stripOverSpecific) : safeItems.map(stripOverSpecific);
 }
 
 const LEADING_CONJUNCTION_PATTERN = /^(?:(?:e|ed|con|più|piu|anche|oppure)\s+|,\s*)+/i;
@@ -915,7 +949,7 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
 }
 
 function getEnvelopeSchemaForIntent(commandHint) {
-  // Con hint ADD_FOOD: data entry obbligatorio, ma ASK_CLARIFICATION se ambiguità (no guess).
+  // Con hint ADD_FOOD: data entry obbligatorio, ma proposta maggiordomo / foto se serve.
   if (commandHint === 'ADD_FOOD') {
     return {
       ...terminalCommandEnvelopeSchema,
@@ -923,17 +957,22 @@ function getEnvelopeSchemaForIntent(commandHint) {
         ...terminalCommandEnvelopeSchema.properties,
         commandType: {
           type: 'string',
-          enum: ['ADD_FOOD', 'ASK_CLARIFICATION'],
+          enum: ['ADD_FOOD', 'ASK_CLARIFICATION', 'REQUEST_FOOD_PHOTO'],
           description:
-            'ADD_FOOD se cibo chiaro (nome + quantita o abitudine). '
-            + 'ASK_CLARIFICATION se ambigua (es. «pasta» senza tipo/quantita): NON indovinare. Vietato CHAT_RESPONSE.',
+            'ADD_FOOD se cibo chiaro (nome + quantita o abitudine da proporre in bozza). '
+            + 'ASK_CLARIFICATION = proposta maggiordomo del «solito» + grammi (mai «Che tipo di…?»). '
+            + 'REQUEST_FOOD_PHOTO se alimento sconosciuto. Vietato CHAT_RESPONSE.',
         },
         payload: {
-          anyOf: [addFoodPayloadSchema, askClarificationPayloadSchema],
+          anyOf: [
+            addFoodPayloadSchema,
+            askClarificationPayloadSchema,
+            requestFoodPhotoPayloadSchema,
+          ],
         },
         uiMessage: {
           type: 'string',
-          description: 'Lascia VUOTO per ADD_FOOD. Per ASK_CLARIFICATION: domanda breve (o usa payload.message).',
+          description: 'Lascia VUOTO per ADD_FOOD. Per ASK_CLARIFICATION / REQUEST_FOOD_PHOTO: domanda/proposta breve (o usa payload.message).',
         },
         adviceMessage: {
           type: 'string',
@@ -1017,6 +1056,21 @@ function getEnvelopeSchemaForIntent(commandHint) {
       required: ['commandType', 'payload'],
     };
   }
+  if (commandHint === 'REQUEST_FOOD_PHOTO') {
+    return {
+      ...terminalCommandEnvelopeSchema,
+      properties: {
+        ...terminalCommandEnvelopeSchema.properties,
+        commandType: { type: 'string', enum: ['REQUEST_FOOD_PHOTO'] },
+        payload: requestFoodPhotoPayloadSchema,
+        requiresConfirmation: {
+          type: 'boolean',
+          description: 'Per REQUEST_FOOD_PHOTO deve essere false.',
+        },
+      },
+      required: ['commandType', 'payload'],
+    };
+  }
   return {
     ...terminalCommandEnvelopeSchema,
     properties: {
@@ -1028,6 +1082,7 @@ function getEnvelopeSchemaForIntent(commandHint) {
           logSleepPayloadSchema,
           chatResponsePayloadSchema,
           askClarificationPayloadSchema,
+          requestFoodPhotoPayloadSchema,
         ],
       },
     },
@@ -1058,24 +1113,35 @@ function imageDataUrlToInlinePart(imageSrc) {
 export const INTENT_ROUTING_SYSTEM_BLOCK = `### REGOLA FONDAMENTALE DI INTENT ROUTING (CLASSIFICAZIONE DELL'INTENZIONE)
 Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente.
 
-REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI USARE ADD_FOOD (se chiaro) OPPURE ASK_CLARIFICATION (se ambiguo). È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
+REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI USARE ADD_FOOD (se chiaro) OPPURE ASK_CLARIFICATION (proposta maggiordomo) OPPURE REQUEST_FOOD_PHOTO (sconosciuto). È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
 
 CASO 1: [AZIONE - INSERIMENTO DATI]
 L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
 -> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
-CASO 1b: [AZIONE AMBIGUA — CHIARIMENTO]
-L'utente dichiara cibo/azione ma manca tipo, variante o quantità (es. 'Ho mangiato la pasta', 'ho preso uno yogurt' senza grammi e senza abitudine chiara in User_Portions / habits).
--> COMPORTAMENTO OBBLIGATORIO: commandType ASK_CLARIFICATION con payload { message: domanda breve TTS, options: [2-4 scelte cliccabili] }. VIETATO indovinare grammi/varianti a caso. VIETATO errore generico. requiresConfirmation=false.
+CASO 1b: [MAGGIORDOMO — PROPOSTA DEL SOLITO + CONFERMA]
+L'utente dichiara cibo con termini generici e/o senza grammi (es. 'Ho mangiato la pasta', 'ho mangiato pane e pomodoro').
+-> COMPORTAMENTO OBBLIGATORIO: commandType ADD_FOOD con items[] (foodName = termine utente O variante abituale da [USER_HABITS] se chiaramente la più frequente; grams da storico/User_Portions o stima; isEstimated:true se stimati).
+Il sistema mostrerà una bozza da confermare: NON registrare in silenzio.
+In payload.message scrivi una proposta esplicita stile maggiordomo, es:
+«Ho annotato pane e pomodoro. Per il pane, inserisco il tuo solito Pane bauletto integrale, o oggi hai mangiato un tipo diverso? Posso segnare 50g per il pane e 100g per il pomodoro come al solito, o vuoi cambiare le quantità?»
+VIETATO domande aperte tipo «Che tipo di pane?». VIETATO inventare marchi assenti da [USER_HABITS]/DB. Se non c'è abitudine forte, usa ADD_FOOD col nome generico + grammi stimati e chiedi conferma nella stessa frase.
 
-CASO 1c: [FOLLOW-UP A CHIARIMENTO]
-Se nel THREAD_RECENTE l'assistente ha chiesto un chiarimento e l'utente risponde con dettagli (es. 'Pane integrale 80g e mortadella 50g', 'pasta al pomodoro ~300g', oppure una delle options):
--> COMPORTAMENTO OBBLIGATORIO: commandType ADD_FOOD, estrai TUTTI gli alimenti+grammi, lascia uiMessage/adviceMessage VUOTI. VIETATO nuove ASK_CLARIFICATION, VIETATO CHAT_RESPONSE, VIETATO errori di parsing. Completa subito il carrello / bozza pasto.
+In alternativa (solo se preferisci i pulsanti senza bozza items): ASK_CLARIFICATION con lo stesso message maggiordomo e options ["Sì, va bene", "Oggi è diverso", …alternative abituali].
+
+CASO 1c: [FOLLOW-UP A CONFERMA / CORREZIONE]
+Se nel THREAD_RECENTE c'è una proposta maggiordomo e l'utente risponde «Sì, va bene» / conferma, oppure corregge («No, oggi ho preso la rosetta», «80g»):
+-> COMPORTAMENTO OBBLIGATORIO: commandType ADD_FOOD, estrai TUTTI gli alimenti+grammi aggiornati, lascia uiMessage/adviceMessage VUOTI. VIETATO nuove domande aperte, VIETATO CHAT_RESPONSE.
+
+CASO 1d: [ALIMENTO SCONOSCIUTO — FOTO]
+Se l'utente nomina un prodotto che non riconosci / non è in [USER_HABITS] né nel contesto DB e la confidenza è bassa (es. marchio nuovo, snack commerciale mai visto):
+-> COMPORTAMENTO OBBLIGATORIO: commandType REQUEST_FOOD_PHOTO con payload { message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?», foodName, options: ["📷 Scatta foto etichetta", "Te lo descrivo a parole"] }.
+VIETATO forzare ricerche complesse o inventare schede nutrizionali.
 
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
 L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
 -> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE.
--> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b (ADD_FOOD o ASK_CLARIFICATION).`;
+-> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
 
 export class GeminiStructuredClient {
   constructor({ model = DEFAULT_MODEL } = {}) {
@@ -1123,20 +1189,21 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB (es. \"pane integrale\"). NO grammi, NO congiunzioni.",
         "HARD CONSTRAINT — MAPPATURA GRAMMI 1:1: ogni alimento ha i PROPRI grammi. Mai copiare i grammi del primo sui successivi.",
         "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'con' separano alimenti, non entrano nel foodName.",
-        "ECCEZIONE ALL ESTRAZIONE LETTERALE — SMART RESOLUTION (PRIORITA SU [USER_HABITS_FOR_CURRENT_MEAL]): Se l utente digita un termine generico (es. 'pasta', 'latte', 'yogurt') e in [USER_HABITS_FOR_CURRENT_MEAL] esiste una variante specifica che usa abitualmente (es. 'pasta integrale la molisana', 'latte parzialmente scremato', 'yogurt greco fage'), DEVI OBBLIGATORIAMENTE restituire in payload.items[].foodName il nome specifico completo dell abitudine corrispondente. Arricchire il nome di un SINGOLO alimento gia citato basandosi sullo storico NON viola Estrazione Esclusiva: non stai aggiungendo voci, stai risolvendo l entita. Se piu abitudini contengono il termine generico, scegli quella piu frequente o piu plausibile per il pasto corrente. Se [USER_HABITS] e vuoto o non contiene match, usa il termine grezzo dell utente (pulito da grammi e congiunzioni).",
+        "MAGGIORDOMO — PROPOSTA DEL SOLITO: se l'utente usa un termine generico (es. «pane», «pasta», «yogurt») e in [USER_HABITS] / DB personale c'è una variante frequente, puoi metterla in foodName (es. «Pane bauletto integrale») SOLO come proposta in bozza ADD_FOOD — mai come fatto compiuto. Scrivi in payload.message la conferma esplicita («Per il pane, inserisco il tuo solito …, o oggi hai mangiato un tipo diverso?»). VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico.",
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, devi estrarre TUTTI in payload.items[] — uno oggetto per ciascun alimento, ciascuno con la PROPRIA grammatura. Non troncare al primo.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName (nome puro) e grams. NON inventare foodDbKey ne macronutrienti.",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName e grams. NON inventare foodDbKey ne macronutrienti. Se proponi la variante abituale, dichiaralo in payload.message.",
         "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
         "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
-        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi E SENZA unita/pezzi, lascia grams null — il sistema chiedera i grammi. Se anche il TIPO di alimento e ambiguo (es. solo «pasta»), preferisci ASK_CLARIFICATION con options tipiche invece di inventare.",
-        "REGOLA ADD_FOOD (FOLLOW-UP CHIARIMENTO): Se THREAD_RECENTE mostra che hai appena chiesto un chiarimento e l'utente risponde con dettagli (grammi/tipo/scelta), DEVI usare ADD_FOOD subito ed estrarre il carrello. Vietato nuove domande e vietato fallire il parsing.",
-        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo utente va SOLO in payload.message.",
-        "REGOLA ADD_FOOD (payload.message — OBBLIGATORIO): UNA frase informale, diretta, TTS-friendly. VIETATO usare il nome proprio dell'utente (niente «Marco,…»). Esempio corretto: «Ecco il tuo snack pronto da confermare.» VIETATO frasi standard da referto («Ho estratto N alimenti…», «Controlla il riepilogo…»). VIETATO budget/cilindri/macro nel message.",
+        "REGOLA ADD_FOOD (nessuna quantita): Se l'utente dichiara un alimento SENZA grammi, proponi la porzione storica (User_Portions / USER_HABITS) con isEstimated:true e menzionala in payload.message («Posso segnare 50g … come al solito, o vuoi cambiare?»). VIETATO lasciare grams null per poi chiedere «quanti grammi?» in modo aperto. Se il prodotto è sconosciuto → REQUEST_FOOD_PHOTO.",
+        "REGOLA ADD_FOOD (FOLLOW-UP CONFERMA): Se THREAD_RECENTE mostra una proposta maggiordomo e l'utente conferma («Sì, va bene») o corregge, DEVI usare ADD_FOOD subito ed estrarre il carrello. Vietato nuove domande aperte e vietato fallire il parsing.",
+        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo maggiordomo va SOLO in payload.message.",
+        "REGOLA ADD_FOOD (payload.message — OBBLIGATORIO stile maggiordomo): 1-3 frasi TTS. Proponi il solito + grammi e chiedi conferma. Es: «Ho annotato pane e pomodoro. Per il pane, inserisco il tuo solito Pane bauletto integrale, o oggi hai mangiato un tipo diverso? Posso segnare 50g per il pane e 100g per il pomodoro come al solito, o vuoi cambiare le quantità?». VIETATO nome proprio utente. VIETATO «Che tipo di…?». VIETATO budget/cilindri/macro.",
+        "REGOLA REQUEST_FOOD_PHOTO: se un alimento non è associabile (confidenza bassa, prodotto commerciale nuovo), usa REQUEST_FOOD_PHOTO invece di inventare. Message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?»",
         "HARD CONSTRAINT — NO DUPLICATI IN items[]: se lo stesso alimento compare due volte (o con nome quasi identico), fondili in UNA sola voce sommando i grammi. Mai due righe uguali.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
-        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI: Usa lo storico per grammatura abituale SOLO se l utente non ha indicato grammi/unita e ha citato esplicitamente quell alimento; in quel caso isEstimated:true. NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
-        "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti. Solo payload.message informale con il nome utente.",
+        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI E VARIANTI: Usa lo storico per proporre variante + grammatura abituale quando l utente non le ha specificate (isEstimated:true). NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
+        "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti. Solo payload.message maggiordomo.",
         "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — Smart Defaults da [CURRENT_SYSTEM_TIME].",
         "Questa logica NON si applica a richieste di consiglio pasto (ADVICE).",
       );
@@ -1226,7 +1293,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto: se chiaro → ADD_FOOD (items[], foodName PURO, icon emoji, grams). Se ambiguo (es. solo «pasta») → ASK_CLARIFICATION {message, options[2-4]}. Se è un FOLLOW-UP a un chiarimento nel THREAD_RECENTE → ADD_FOOD subito (niente altre domande). Esempio chiaro: "90g sardine e 160g pane" → [{foodName:"sardine",icon:"🐟",grams:90},{foodName:"pane",icon:"🥖",grams:160}]. Per ADD_FOOD: adviceMessage/uiMessage VUOTI.'
+        ? 'Registrazione pasto (maggiordomo): ADD_FOOD con items[] + payload.message che propone il solito e i grammi storici, chiedendo conferma. Mai «Che tipo di…?». Se prodotto sconosciuto → REQUEST_FOOD_PHOTO. Follow-up «Sì, va bene» / correzione → ADD_FOOD subito. Esempio: "pane e pomodoro" → items con variante abituale + grams stimati + message maggiordomo. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'

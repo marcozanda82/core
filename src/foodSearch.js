@@ -90,19 +90,36 @@ export function levenshteinDistance(a, b) {
 }
 
 /**
- * Max distanza fuzzy: 1 per stringhe corte, 2 altrimenti.
+ * Max distanza fuzzy: più tollerante su parole lunghe (errori STT).
  * @param {string} query
  * @returns {number}
  */
 export function maxFuzzyDistanceForQuery(query) {
   const len = String(query || '').length;
   if (len <= 0) return 0;
-  if (len <= 5) return 1;
-  return 2;
+  if (len <= 4) return 1;
+  if (len <= 8) return 2;
+  return 3;
 }
 
 /**
- * Miglior distanza fuzzy tra query e nome (intero o singole parole).
+ * Normalizza confondimenti tipici STT italiano (v↔b, …) per il confronto.
+ * @param {string} value
+ * @returns {string}
+ */
+export function foldItalianSttConfusables(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ph/g, 'f')
+    .replace(/v/g, 'b')
+    .replace(/w/g, 'b')
+    .replace(/y/g, 'i')
+    .replace(/k/g, 'c')
+    .replace(/j/g, 'g');
+}
+
+/**
+ * Miglior distanza fuzzy tra query e nome (intero, parole, o dopo fold STT).
  * @returns {{ distance: number, score: number } | null}
  */
 export function bestFuzzyMatch(normalizedQuery, normalizedName, itemWords = []) {
@@ -113,15 +130,75 @@ export function bestFuzzyMatch(normalizedQuery, normalizedName, itemWords = []) 
   const maxDist = maxFuzzyDistanceForQuery(q);
   let best = levenshteinDistance(q, name);
 
-  for (let i = 0; i < itemWords.length; i += 1) {
-    const w = itemWords[i];
-    if (!w) continue;
-    // Solo parole di lunghezza simile (evita match spurî su token corti).
-    if (Math.abs(w.length - q.length) > maxDist) continue;
-    best = Math.min(best, levenshteinDistance(q, w));
+  // Fold STT: «vauletto» vs «bauletto» → distanza 0 dopo fold.
+  const qFold = foldItalianSttConfusables(q);
+  const nameFold = foldItalianSttConfusables(name);
+  if (qFold && nameFold) {
+    best = Math.min(best, levenshteinDistance(qFold, nameFold));
   }
 
-  if (best <= 0 || best > maxDist) return null;
+  // Match multi-parola allineato: ogni token query fuzzy-matcha un token nome.
+  const qWords = q.split(' ').filter(Boolean);
+  const nWords = itemWords.length ? itemWords : name.split(' ').filter(Boolean);
+
+  // Confronto query intera vs singola parola SOLO se la query è monotoken
+  // (es. «vauletto» → parola in «pane bauletto»). Evita falsi positivi tipo
+  // «pane bauleto» vs parola «integrale» (Levenshtein basso per coincidenza).
+  if (qWords.length === 1) {
+    for (let i = 0; i < itemWords.length; i += 1) {
+      const w = itemWords[i];
+      if (!w) continue;
+      if (Math.abs(w.length - q.length) > maxDist + 1) continue;
+      best = Math.min(best, levenshteinDistance(q, w));
+      const wFold = foldItalianSttConfusables(w);
+      if (qFold && wFold) {
+        best = Math.min(best, levenshteinDistance(qFold, wFold));
+      }
+    }
+  }
+
+  if (qWords.length > 1 && nWords.length > 0) {
+    let tokenDistSum = 0;
+    let tokensOk = true;
+    const used = new Set();
+    for (let qi = 0; qi < qWords.length; qi += 1) {
+      const qw = qWords[qi];
+      const qwMax = maxFuzzyDistanceForQuery(qw);
+      let localBest = Infinity;
+      let localIdx = -1;
+      for (let ni = 0; ni < nWords.length; ni += 1) {
+        if (used.has(ni)) continue;
+        const nw = nWords[ni];
+        if (Math.abs(nw.length - qw.length) > qwMax + 1) continue;
+        let d = levenshteinDistance(qw, nw);
+        d = Math.min(
+          d,
+          levenshteinDistance(foldItalianSttConfusables(qw), foldItalianSttConfusables(nw)),
+        );
+        if (d < localBest) {
+          localBest = d;
+          localIdx = ni;
+        }
+      }
+      if (!(localBest <= qwMax)) {
+        tokensOk = false;
+        break;
+      }
+      if (localIdx >= 0) used.add(localIdx);
+      tokenDistSum += localBest;
+    }
+    if (tokensOk) {
+      best = Math.min(best, tokenDistSum);
+    }
+  }
+
+  if (!Number.isFinite(best) || best < 0) return null;
+  // Distanza 0 dopo fold STT = match utilizzabile (tier fuzzy alto).
+  if (best === 0) {
+    if (q === name) return null;
+    return { distance: 1, score: SCORE_FUZZY_DIST_1 };
+  }
+  if (best > maxDist) return null;
   return {
     distance: best,
     score: best === 1 ? SCORE_FUZZY_DIST_1 : SCORE_FUZZY_DIST_2,
@@ -526,7 +603,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     return tier === 'exact' || tier === 'prefix' || tier === 'word_boundary'
       || Number(r.strictScore) >= 75;
   });
-  if (!hasStrongMatch && enableFuzzy && queryWords.length === 1) {
+  if (!hasStrongMatch && enableFuzzy) {
     const existingIds = new Set(results.map((r) => String(r.id)));
     for (let i = 0; i < entries.length; i += 1) {
       const [id, food] = entries[i];
@@ -559,7 +636,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         }
       }
       // Stem IT come fuzzy-0.
-      if (!fuzzy) {
+      if (!fuzzy && queryWords.length === 1) {
         const qForms = italianSingularPluralForms(normalizedQuery);
         if (qForms.includes(primaryNorm) || itemWords.some((w) => qForms.includes(w))) {
           fuzzy = { distance: 0, score: SCORE_EXACT_OR_PREFIX };

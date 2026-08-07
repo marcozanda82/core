@@ -115,6 +115,9 @@ function normalizeFoodItem(item) {
     isEstimated,
     ...(wasEstimated ? { wasEstimated: true } : {}),
     ...(icon ? { icon } : {}),
+    ...(item?.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
+    ...(item?.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
+    ...(item?.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
   };
 }
 
@@ -239,6 +242,9 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
       isEstimated: item.isEstimated === true,
       ...(item.wasEstimated === true || item.isEstimated === true ? { wasEstimated: true } : {}),
       ...(item.icon ? { icon: item.icon } : {}),
+      ...(item.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
+      ...(item.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
+      ...(item.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
     }))
     .filter((item) => item.foodName);
   const explicitMeal =

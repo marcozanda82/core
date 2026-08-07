@@ -23,6 +23,12 @@ import {
 } from './utils/devToolsPersistence';
 import { useVoiceChat } from './features/chat/useVoiceChat.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
+import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
+
+function isFoodPhotoQuickReply(label) {
+  const t = String(label || '').trim().toLowerCase();
+  return /scatta\s+foto|foto\s+etichett|📷|fotocamera|camera/.test(t);
+}
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
 function stripInvisibleContextFromBubble(text) {
@@ -105,6 +111,22 @@ export default function AiCluster({
   const chatTextareaRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
   const voiceSubmitRef = useRef(null);
+
+  const openFoodPhotoCapture = useCallback(async () => {
+    try {
+      const perm = await requestCameraPermissionsAsync();
+      if (perm?.granted) {
+        const shot = await launchCameraAsync({ quality: 0.85 });
+        if (shot?.uri && !shot.canceled) {
+          setChatImages((prev) => [...prev, shot.uri]);
+          return;
+        }
+      }
+    } catch {
+      // fallback file input
+    }
+    chatFileInputRef.current?.click();
+  }, [setChatImages]);
 
   const {
     ttsEnabled,
@@ -538,6 +560,21 @@ export default function AiCluster({
                           onSave={onSaveNewFoodEntry}
                         />
                       ) : null}
+                    {(msg.type === 'REQUEST_FOOD_PHOTO' || msg.requestFoodPhoto === true) && !msg.isTyping ? (
+                      <div className="kentu-quick-row kentu-quick-row--clarification" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
+                        <KentuButton
+                          variant="secondary"
+                          className="kentu-btn--clarification"
+                          type="button"
+                          onClick={() => {
+                            openFoodPhotoCapture();
+                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                          }}
+                        >
+                          📷 Scatta foto etichetta
+                        </KentuButton>
+                      </div>
+                    ) : null}
                   </div>
                 )
               ) : (
@@ -546,16 +583,24 @@ export default function AiCluster({
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
-              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !suppressQuickReplies && (() => {
+              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && (() => {
                 const clarificationKey = `clr-${idx}`;
-                const isClarification = msg.clarification === true || msg.type === 'ASK_CLARIFICATION';
+                const isClarification = msg.clarification === true
+                  || msg.type === 'ASK_CLARIFICATION'
+                  || msg.type === 'REQUEST_FOOD_PHOTO'
+                  || msg.requestFoodPhoto === true;
                 if (isClarification && consumedClarificationKeys.has(clarificationKey)) return null;
+                // Evita doppio pulsante camera se già mostrato sopra per REQUEST_FOOD_PHOTO.
+                const replies = (msg.type === 'REQUEST_FOOD_PHOTO' || msg.requestFoodPhoto)
+                  ? msg.quickReplies.filter((r) => !isFoodPhotoQuickReply(r))
+                  : msg.quickReplies;
+                if (replies.length === 0) return null;
                 return (
                 <div
                   className={`kentu-quick-row${isClarification ? ' kentu-quick-row--clarification' : ''}`}
                   style={{ justifyContent: msg.sender === 'ai' ? 'flex-start' : 'flex-end' }}
                 >
-                  {msg.quickReplies.map((reply, rIdx) => {
+                  {replies.map((reply, rIdx) => {
                     const morningActivityIds = ['weights', 'cardio', 'rest'];
                     return (
                       <KentuButton
@@ -569,6 +614,13 @@ export default function AiCluster({
                               next.add(clarificationKey);
                               return next;
                             });
+                          }
+                          if (isFoodPhotoQuickReply(reply) || msg.requestFoodPhoto) {
+                            if (isFoodPhotoQuickReply(reply)) {
+                              openFoodPhotoCapture();
+                              setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                              return;
+                            }
                           }
                           if (msg.workoutTimeConfirm) {
                             onSendMessage(reply, {
@@ -693,7 +745,11 @@ export default function AiCluster({
                 key={label}
                 type="button"
                 onClick={() => {
-                  onSlotQuickReplyClick?.(label);
+                  if (isFoodPhotoQuickReply(label)) {
+                    openFoodPhotoCapture();
+                  } else {
+                    onSlotQuickReplyClick?.(label);
+                  }
                   setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 }}
                 className="shrink-0 rounded-full border border-cyan-500/30 bg-slate-900/70 px-3.5 py-1.5 text-sm font-medium text-cyan-200 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 hover:text-cyan-50"

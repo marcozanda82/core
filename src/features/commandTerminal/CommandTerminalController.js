@@ -55,6 +55,7 @@ import {
   isGenericMealSuggestionQuery,
   sanitizeMealProposals,
   sanitizeSuggestedAction,
+  buildUserHabitsForCurrentMeal,
 } from '../../conversation/ConsultantEngine.js';
 import {
   isConsumedMealLogDescription,
@@ -103,6 +104,15 @@ import {
   registrationSlotToConversationState,
 } from './conversation/mealRegistrationSlots.js';
 import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly } from './conversation/mealSmartDefaults.js';
+import {
+  BUTLER_MEAL_QUICK_REPLIES,
+  REQUEST_FOOD_PHOTO_QUICK_REPLIES,
+  enrichFoodItemsAsButlerProposal,
+  buildButlerConfirmationMessage,
+  buildRequestFoodPhotoMessage,
+} from './conversation/mealButlerProposal.js';
+import { sanitizeUserPortionsDict } from './conversation/userPortionsMemory.js';
+import { findFoodDbMatchCascading } from '../salaComandi/engines/foodDataEngine.js';
 import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
@@ -461,10 +471,10 @@ export class CommandTerminalController {
     if (next.payload && typeof next.payload === 'object') {
       next.payload = { ...next.payload };
       const msg = String(next.payload.message || '').trim();
-      // Tieni solo messaggi corti informali (no referto / budget / cilindri).
-      const looksFormalOrBudget = /budget|cilindr|rimanente|delta|metabol/i.test(msg)
-        || msg.length > 160;
-      if (!msg || looksFormalOrBudget) {
+      // Tieni messaggi informali / maggiordomo (conferma solito + grammi). Scarta referti/budget.
+      const looksFormalOrBudget = /budget|cilindr|rimanente|delta|metabol|sforamento|traiettoria/i.test(msg);
+      const tooLongForChat = msg.length > 420;
+      if (!msg || looksFormalOrBudget || tooLongForChat) {
         delete next.payload.message;
       } else {
         next.payload.message = msg;
@@ -474,7 +484,9 @@ export class CommandTerminalController {
   }
 
   publishAddFoodContextAdvice(command) {
-    // Solo avviso locale su stime grammi — mai adviceMessage/uiMessage LLM.
+    // Solo se non c'è già un messaggio maggiordomo che cita le stime.
+    const msg = String(command?.payload?.message || '').trim();
+    if (/solito|come al solito|posso segnare|stimat/i.test(msg)) return;
     if (payloadHasEstimatedFoodWeights(command?.payload)) {
       this.publishSystemMessage(MEAL_DRAFT_ESTIMATED_WEIGHTS_ADVICE);
     }
@@ -517,8 +529,23 @@ export class CommandTerminalController {
   }
 
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
+    const butler = this.applyButlerMealEnrichment(payload, currentState);
+    if (butler.requestPhotoFor) {
+      return this.publishRequestFoodPhoto(
+        {
+          payload: {
+            message: buildRequestFoodPhotoMessage(butler.requestPhotoFor),
+            foodName: butler.requestPhotoFor,
+            options: [...REQUEST_FOOD_PHOTO_QUICK_REPLIES],
+          },
+        },
+        userText,
+      );
+    }
+
+    const enrichedPayload = butler.payload || payload;
     const conversationTexts = buildConversationTextsFromChatHistory(chatHistory, userText);
-    const proposal = buildMealLogProposalFromPayload(payload, currentState, {
+    const proposal = buildMealLogProposalFromPayload(enrichedPayload, currentState, {
       userText,
       conversationTexts,
     });
@@ -530,18 +557,30 @@ export class CommandTerminalController {
     const itemCount = Array.isArray(proposal.items) ? proposal.items.length : 0;
     const displayName = resolveUserDisplayName(currentState?.userProfile)
       || String(currentState?.userDisplayName || '').trim();
-    const fromPayload = String(payload?.message || options.uiMessage || '').trim();
+    const fromPayload = String(enrichedPayload?.message || options.uiMessage || '').trim();
+    const butlerMessage = butler.butlerMessage
+      || buildButlerConfirmationMessage(expandFoodPayloadItems(enrichedPayload), {
+        habitProposals: butler.butlerMeta?.habitProposals,
+      });
     const summaryText = fromPayload
+      || butlerMessage
       || buildMealPreviewReadyMessage({
         displayName,
         userProfile: currentState?.userProfile,
-        mealType: proposal.mealType || payload?.mealType,
+        mealType: proposal.mealType || enrichedPayload?.mealType,
         itemCount,
       });
+
+    const useButlerReplies = Boolean(
+      butler.butlerMeta?.anyHabitApplied
+      || butler.butlerMeta?.anyGramsEstimated
+      || /solito|come al solito|tipo diverso|cambiare le quantit/i.test(summaryText),
+    );
 
     this.publishAdviceMessage({
       text: summaryText,
       mealProposals: [proposal],
+      quickReplies: useButlerReplies ? [...BUTLER_MEAL_QUICK_REPLIES] : null,
     });
 
     return {
@@ -550,6 +589,7 @@ export class CommandTerminalController {
       mealProposals: [proposal],
       userNotified: true,
       sourceText: String(userText || '').trim() || null,
+      butler: Boolean(useButlerReplies),
     };
   }
 
@@ -779,6 +819,117 @@ export class CommandTerminalController {
     return expandFoodPayloadItems(normalized).length > 0;
   }
 
+  /**
+   * Maggiordomo: espande generici → solito DB personale + grammi storici.
+   * Se un alimento specifico resta irrisolvibile → REQUEST_FOOD_PHOTO.
+   */
+  applyButlerMealEnrichment(payload, currentState = {}) {
+    const items = expandFoodPayloadItems(payload);
+    if (items.length === 0) {
+      return { payload, butlerMeta: null, requestPhotoFor: null };
+    }
+
+    const personalDb = currentState?.foodDatabase
+      || currentState?.trackerFoodDatabase
+      || currentState?.personalFoodDb
+      || null;
+    const userPortions = sanitizeUserPortionsDict(
+      currentState?.userPortions
+      || currentState?.nutrition?.userPortions
+      || {},
+    );
+    const mealType = String(payload?.mealType || '').trim().toLowerCase() || null;
+    const userHabitsForCurrentMeal = currentState?.userHabitsForCurrentMeal
+      || buildUserHabitsForCurrentMeal(currentState, mealType);
+
+    const butlerMeta = enrichFoodItemsAsButlerProposal(items, {
+      personalDb,
+      userPortions,
+      userHabitsForCurrentMeal,
+    });
+
+    // Alimento specifico non associabile in cascata → foto etichetta.
+    let requestPhotoFor = null;
+    for (let i = 0; i < butlerMeta.items.length; i += 1) {
+      const item = butlerMeta.items[i];
+      const name = String(item.foodName || '').trim();
+      if (!name || item.proposedFromHabit) continue;
+      const match = findFoodDbMatchCascading({
+        personalDb,
+        kentuItDb: currentState?.kentuFoodDb || currentState?.kentuItDb || null,
+        globalDb: currentState?.globalFoodDb || currentState?.kentuGlobalDb || null,
+        nome: name,
+        preferredDbKey: item.foodDbKey ?? null,
+      });
+      if (!match && butlerMeta.unresolvedNames.includes(String(item.spokenFoodName || name).trim())) {
+        requestPhotoFor = name;
+        break;
+      }
+      if (!match && !item.proposedFromHabit) {
+        // Solo se il nome sembra specifico (2+ token o non generico mono-token senza hit).
+        const tokens = name.split(/\s+/).filter(Boolean);
+        if (tokens.length >= 2) {
+          requestPhotoFor = name;
+          break;
+        }
+      }
+    }
+
+    const butlerMessage = buildButlerConfirmationMessage(butlerMeta.items, {
+      habitProposals: butlerMeta.habitProposals,
+    });
+
+    const nextPayload = {
+      ...payload,
+      items: butlerMeta.items,
+      message: String(payload?.message || '').trim() || butlerMessage,
+    };
+
+    return { payload: nextPayload, butlerMeta, requestPhotoFor, butlerMessage };
+  }
+
+  publishRequestFoodPhoto(command = {}, userText = '') {
+    const payload = command?.payload && typeof command.payload === 'object'
+      ? command.payload
+      : {};
+    const foodName = String(payload?.foodName || '').trim();
+    const text = String(
+      command?.uiMessage
+      || command?.adviceMessage
+      || payload?.message
+      || buildRequestFoodPhotoMessage(foodName),
+    ).trim();
+    const options = Array.isArray(payload?.options) && payload.options.length > 0
+      ? payload.options.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+      : [...REQUEST_FOOD_PHOTO_QUICK_REPLIES];
+
+    console.log('🟢 DEBUG - REQUEST_FOOD_PHOTO:', { text, foodName, userText: String(userText || '').trim() });
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'REQUEST_FOOD_PHOTO',
+        text,
+        message: text,
+        foodName: foodName || null,
+        quickReplies: options,
+        requestFoodPhoto: true,
+        clarification: true,
+        mealProposals: null,
+        suggestedAction: null,
+        mealDraftProjection: null,
+        wipSuggestions: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      intent: 'REQUEST_FOOD_PHOTO',
+      commandType: 'REQUEST_FOOD_PHOTO',
+      userText: String(userText || '').trim(),
+      foodName: foodName || null,
+    };
+  }
+
   publishAdviceMessage({
     text,
     suggestedAction = null,
@@ -786,6 +937,7 @@ export class CommandTerminalController {
     mealDraftProjection = null,
     wipSuggestions = null,
     pendingMealUpdate = null,
+    quickReplies = null,
   }) {
     const adviceMessage = String(text || '').trim();
     if (!adviceMessage) return;
@@ -793,6 +945,9 @@ export class CommandTerminalController {
       text: adviceMessage,
       hasMealProposals: Array.isArray(mealProposals) && mealProposals.length > 0,
     });
+    const replies = Array.isArray(quickReplies)
+      ? quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+      : [];
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
@@ -813,6 +968,9 @@ export class CommandTerminalController {
           ? pendingMealUpdate
           : null,
         adviceId: `advice_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        ...(replies.length > 0
+          ? { quickReplies: replies }
+          : {}),
       },
       { source: 'CommandTerminalController' },
     );
@@ -1507,24 +1665,50 @@ export class CommandTerminalController {
       inferMealTypeFromContext: false,
       ...options,
     });
+
+    // Maggiordomo: riempi grammi/varianti dallo storico invece di chiedere «quanti grammi?».
+    const butler = this.applyButlerMealEnrichment(normalized, currentState);
+    if (butler.requestPhotoFor) {
+      return this.publishRequestFoodPhoto(
+        {
+          payload: {
+            message: buildRequestFoodPhotoMessage(butler.requestPhotoFor),
+            foodName: butler.requestPhotoFor,
+            options: [...REQUEST_FOOD_PHOTO_QUICK_REPLIES],
+          },
+        },
+        options.userText || '',
+      );
+    }
+
     this.pendingCommandType = 'ADD_FOOD';
-    this.pendingCommandPayload = { ...normalized };
+    this.pendingCommandPayload = { ...(butler.payload || normalized) };
 
     const missingGrams = getFoodItemsMissingGrams(this.pendingCommandPayload);
     if (missingGrams.length === 0) {
       return this.publishFoodDraftAfterGrams(currentState);
     }
 
-    this.conversationState = CONVERSATION_STATE.AWAITING_FOOD_GRAMS;
-    this.publishSystemMessage(
-      promptForMissingMealRegistrationSlot('foods', this.pendingCommandPayload),
+    // Ultima spiaggia: ancora senza grammi → proposta con default e conferma, non domanda aperta.
+    const forced = enrichFoodItemsAsButlerProposal(
+      expandFoodPayloadItems(this.pendingCommandPayload),
+      {
+        personalDb: currentState?.foodDatabase || null,
+        userPortions: sanitizeUserPortionsDict(currentState?.userPortions || {}),
+        userHabitsForCurrentMeal: buildUserHabitsForCurrentMeal(
+          currentState,
+          this.pendingCommandPayload?.mealType,
+        ),
+      },
     );
-    return {
-      ok: true,
-      awaiting: true,
-      conversationState: this.conversationState,
-      pendingCommandPayload: { ...this.pendingCommandPayload },
+    this.pendingCommandPayload = {
+      ...this.pendingCommandPayload,
+      items: forced.items,
+      message: buildButlerConfirmationMessage(forced.items, {
+        habitProposals: forced.habitProposals,
+      }),
     };
+    return this.publishFoodDraftAfterGrams(currentState);
   }
 
   completePendingFoodCommand(currentState = {}, options = {}) {
@@ -2400,10 +2584,15 @@ export class CommandTerminalController {
       return { ok: true, intent: 'CREATE_NEW_FOOD', commandType: 'CREATE_NEW_FOOD', entryPer100: inherited, donor };
     }
 
-    // CASO 1b — chiarimento interattivo (prima di override cibo / dispatch).
+    // CASO 1b — chiarimento / proposta maggiordomo (prima di override cibo / dispatch).
     if (commandType === 'ASK_CLARIFICATION') {
       console.log('🟡 DEBUG - PATH SCELTO: ASK_CLARIFICATION');
       return this.publishClarification(commandResponse.command, userText);
+    }
+
+    if (commandType === 'REQUEST_FOOD_PHOTO') {
+      console.log('🟡 DEBUG - PATH SCELTO: REQUEST_FOOD_PHOTO');
+      return this.publishRequestFoodPhoto(commandResponse.command, userText);
     }
 
     // CASO 2 — risposta consulenziale: niente bozze pasto/workout.

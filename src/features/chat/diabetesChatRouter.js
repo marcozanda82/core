@@ -101,6 +101,9 @@ export function wasLastAiMessageMealPrompt(chatHistory = []) {
     if (entry.mealProposal || entry.mealDraft || entry.mealProposals || entry.type === 'MEAL_RECEIPT') {
       return true;
     }
+    if (entry.type === 'REQUEST_FOOD_PHOTO' || entry.requestFoodPhoto === true) {
+      return true;
+    }
     if (Array.isArray(entry.quickReplies) && entry.quickReplies.some((r) =>
       /\d+\s*(?:g|gr|grammi)\b/i.test(String(r?.label || r?.text || r || '')),
     )) {

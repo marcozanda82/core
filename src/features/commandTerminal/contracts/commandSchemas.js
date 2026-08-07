@@ -331,28 +331,37 @@ export const terminalCommandEnvelopeSchema = {
   properties: {
     commandType: {
       type: 'string',
-      enum: ['ADD_FOOD', 'ADD_WORKOUT', 'LOG_SLEEP', 'CHAT_RESPONSE', 'ASK_CLARIFICATION'],
+      enum: [
+        'ADD_FOOD',
+        'ADD_WORKOUT',
+        'LOG_SLEEP',
+        'CHAT_RESPONSE',
+        'ASK_CLARIFICATION',
+        'REQUEST_FOOD_PHOTO',
+      ],
       description:
         'ADD_FOOD = trigger quando l utente dichiara di aver mangiat/o/bevuto qualcosa, elenca alimenti/ingredienti, '
         + 'cita colazione/snack/pranzo/cena con cibo, o chiede di registrare calorie di un pasto (anche discorsivo: '
         + '"come snack alle 19 ho mangiato sardine"). '
         + 'ADD_WORKOUT/LOG_SLEEP = altri inserimenti dati (CASO 1). '
-        + 'ASK_CLARIFICATION = richiesta ambigua: domanda breve + options[] cliccabili (NON indovinare). '
+        + 'ASK_CLARIFICATION = proposta maggiordomo / conferma rapida: message con il «solito» + options[] (Sì va bene / oggi diverso). '
+        + 'REQUEST_FOOD_PHOTO = alimento sconosciuto: chiedi foto etichetta/confezione (niente ricerche forzate). '
         + 'CHAT_RESPONSE = SOLO domanda di consulto sullo stato SENZA assunzione di cibo (CASO 2). '
-        + 'VIETATO CHAT_RESPONSE se il messaggio descrive cibo mangiato (usa ADD_FOOD o ASK_CLARIFICATION).',
+        + 'VIETATO CHAT_RESPONSE se il messaggio descrive cibo mangiato (usa ADD_FOOD, ASK_CLARIFICATION o REQUEST_FOOD_PHOTO).',
     },
     payload: {
       type: 'object',
       description:
         'Payload del comando. Se commandType e ADD_FOOD usa schema cibo, se ADD_WORKOUT usa schema allenamento, '
         + 'se LOG_SLEEP usa schema sonno, se ASK_CLARIFICATION usa { message, options[] }, '
+        + 'se REQUEST_FOOD_PHOTO usa { message, foodName? }, '
         + 'se CHAT_RESPONSE usa { message } oppure oggetto vuoto '
         + '(il testo della risposta va in uiMessage o adviceMessage).',
     },
     uiMessage: {
       type: 'string',
       description:
-        'Per CHAT_RESPONSE / ASK_CLARIFICATION: testo breve (TTS). Per ADD_FOOD: lascia VUOTO (il sistema genera il testo).',
+        'Per CHAT_RESPONSE / ASK_CLARIFICATION / REQUEST_FOOD_PHOTO: testo breve (TTS). Per ADD_FOOD: lascia VUOTO (il sistema genera il testo).',
     },
     adviceMessage: {
       type: 'string',
@@ -393,26 +402,54 @@ export const chatResponsePayloadSchema = {
   },
 };
 
-/** Chiarimento interattivo: domanda breve + pulsanti (VUI-ready). */
+/** Chiarimento interattivo: proposta maggiordomo + pulsanti (VUI-ready). */
 export const askClarificationPayloadSchema = {
   type: 'object',
   properties: {
     message: {
       type: 'string',
       description:
-        'Domanda breve e calda (1 frase, chiama l utente per nome se noto). Es: «Marco, che pasta hai mangiato?»',
+        'Proposta esplicita stile maggiordomo (1-3 frasi TTS). Es: «Ho annotato pane e pomodoro. '
+        + 'Per il pane, inserisco il tuo solito Pane bauletto integrale, o oggi hai mangiato un tipo diverso? '
+        + 'Posso segnare 50g per il pane e 100g per il pomodoro come al solito, o vuoi cambiare le quantità?». '
+        + 'VIETATO domande aperte tipo «Che tipo di pane?».',
     },
     options: {
       type: 'array',
       description:
-        '2-4 opzioni cliccabili. Ogni stringa sara inviata come risposta utente. '
-        + 'Esempi: «Pasta al pomodoro ~300g», «Pasta in bianco ~200g», «Altro (te lo dico io)»',
+        '2-4 opzioni cliccabili. Preferisci: «Sì, va bene», «Oggi è diverso», eventuali alternative abituali. '
+        + 'Ogni stringa sara inviata come risposta utente.',
       items: { type: 'string' },
       minItems: 2,
       maxItems: 4,
     },
   },
   required: ['message', 'options'],
+};
+
+/** Alimento sconosciuto: chiedi foto etichetta (fallback visivo). */
+export const requestFoodPhotoPayloadSchema = {
+  type: 'object',
+  properties: {
+    message: {
+      type: 'string',
+      description:
+        'Messaggio TTS: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all\'etichetta o alla confezione?»',
+    },
+    foodName: {
+      type: 'string',
+      nullable: true,
+      description: 'Nome alimento non risolto, se noto.',
+    },
+    options: {
+      type: 'array',
+      nullable: true,
+      description: 'Opzionale: es. «📷 Scatta foto etichetta», «Te lo descrivo a parole».',
+      items: { type: 'string' },
+      maxItems: 4,
+    },
+  },
+  required: ['message'],
 };
 
 export const consultantResponseSchema = {

@@ -301,6 +301,24 @@ export function useCommandTerminal({
         });
         return;
       }
+      if (payload.type === 'REQUEST_FOOD_PHOTO' || payload.requestFoodPhoto === true) {
+        const text = String(payload.text || payload.message || '').trim();
+        const quickReplies = Array.isArray(payload.quickReplies)
+          ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
+          : ['📷 Scatta foto etichetta', 'Te lo descrivo a parole'];
+        if (!text) return;
+        appendAiMessage(text, {
+          type: 'REQUEST_FOOD_PHOTO',
+          clarification: true,
+          requestFoodPhoto: true,
+          foodName: payload.foodName || null,
+          quickReplies,
+          local: payload.local === true,
+          sourceTag: payload.sourceTag || null,
+        });
+        setActiveQuickReplies(quickReplies);
+        return;
+      }
       if (payload.type === 'ASK_CLARIFICATION' || payload.clarification === true) {
         const text = String(payload.text || payload.message || '').trim();
         const quickReplies = Array.isArray(payload.quickReplies)
