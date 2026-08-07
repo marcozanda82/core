@@ -9,7 +9,7 @@
   "scripts": {
     "postinstall": "echo 'Build environment ready.'",
     "dev": "vite",
-    "build": "node node_modules/vite/bin/vite.js build",
+    "build": "npx update-browserslist-db@latest && node node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "lint": "eslint ."
   },
