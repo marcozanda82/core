@@ -254,6 +254,19 @@ function isHabitExpandedFoodName(_foodName, _combinedText, _habitNames) {
   return false;
 }
 
+/** True se il payload sembra una scomposizione ricetta (bozza stimata multi-ingrediente). */
+function looksLikeRecipeMeanValueDecomposition(items, combinedText) {
+  const list = Array.isArray(items) ? items.filter((i) => i && typeof i === 'object') : [];
+  if (list.length < 2) return false;
+  const estimatedCount = list.filter((i) => i.isEstimated === true).length;
+  if (estimatedCount < Math.ceil(list.length * 0.75)) return false;
+  // Input analitico (grammi/unità esplicite) → filtra come prima; niente bypass.
+  if (userTextMentionsExplicitGrams(combinedText) || userTextMentionsUnitQuantity(combinedText)) {
+    return false;
+  }
+  return true;
+}
+
 /** Rimuove voci items[] non citate dall'utente. Niente arricchimenti da abitudini. */
 function filterItemsToUserMentions(items, combinedText, habitNames = []) {
   const safeItems = Array.isArray(items)
@@ -263,6 +276,11 @@ function filterItemsToUserMentions(items, combinedText, habitNames = []) {
 
   const text = asTrimmedString(combinedText);
   if (!text) return safeItems;
+
+  // Scomposizione ricetta: tieni tutti gli ingredienti stimati (non sono nel testo utente).
+  if (looksLikeRecipeMeanValueDecomposition(safeItems, text)) {
+    return safeItems;
+  }
 
   void habitNames;
   let attested;
@@ -866,14 +884,14 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
       next.grams = Math.round(gramsNum);
       next.isEstimated = false;
     } else if (modelSaysEstimated || (hasUnitQty && !hasExplicitGrams)) {
-      // Unita/pezzi → tieni la stima media e marca isEstimated.
+      // Unita/pezzi OPPURE scomposizione ricetta / porzione media → tieni stima.
       next.grams = Math.round(gramsNum);
       next.isEstimated = true;
     } else if (hasExplicitGrams || hasAnyQty) {
       next.grams = Math.round(gramsNum);
       next.isEstimated = false;
     } else {
-      // Nessuna quantita nel testo: non inventare grammi.
+      // Nessuna quantita nel testo e modello non ha marcato stima: non inventare grammi.
       delete next.grams;
       delete next.isEstimated;
     }
@@ -1144,12 +1162,15 @@ CASO 1: [AZIONE - INSERIMENTO DATI]
 L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
 -> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
-CASO 1b: [WIZARD SEQUENZIALE — ITEM PER ITEM]
-L'utente elenca uno o più alimenti (es. 'pane e pomodoro', 'ho mangiato yogurt').
--> COMPORTAMENTO: commandType ADD_FOOD con items[] (un foodName per alimento citato; grams se noti, altrimenti null).
-Il sistema avvierà un wizard vocale: per ogni alimento chiederà quale variante del DB personale e i grammi, poi un riepilogo finale «Salvo nel diario?».
-VIETATO proporre tutto il pasto risolto in un unico messaggio. VIETATO «Che tipo di pane?» generico senza elencare le voci del DB.
-In payload.message puoi lasciare vuoto o una frase breve: il wizard genera i prompt item-by-item.
+CASO 1b: [WIZARD SEQUENZIALE — RISOLUZIONE DB-FIRST]
+L'utente elenca uno o più alimenti OPPURE nomina un piatto (es. 'pane e pomodoro', 'ho mangiato yogurt', 'cotoletta', 'pasta al pomodoro').
+-> COMPORTAMENTO: commandType ADD_FOOD con items[] già valorizzati seguendo la GERARCHIA DI RISOLUZIONE (vedi blocco dedicato):
+1) PRIMA match esatto/semantico nel database Kentu ([USER_HABITS], DB personale, elenchi alimenti nel contesto) → UNA sola voce così com'è, SENZA scomporre.
+2) SOLO se nessun match DB → fallback scomposizione 2-4 ingredienti base con grams medi (isEstimated:true).
+- Input Analitico (ingredienti + grammi): mappa 1:1, isEstimated:false.
+VIETATO domande di disambiguazione («Che tipo…?», «Quanti grammi?», «Quali ingredienti?»).
+VIETATO scomporre un piatto che esiste nel database (es. «Cotoletta» presente nel DB → items[{foodName:"Cotoletta", …}], NON inventare pane/carne/olio).
+In payload.message: VUOTO se items.length > 1.
 CASO 1c: [FOLLOW-UP A CONFERMA / CORREZIONE — McDRIVE]
 Se nel THREAD_RECENTE c'è una proposta maggiordomo / bozza da confermare e l'utente risponde:
 - conferma («Sì», «Va bene», «Confermo») → il sistema usa CONFIRM_MEAL_DRAFT (non inventare un pasto nuovo).
@@ -1166,6 +1187,32 @@ CASO 2: [CONSULTO - DOMANDA SULLO STATO]
 L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
 -> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE.
 -> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
+
+/**
+ * Food Wizard — Gerarchia di risoluzione (DB-first) + scomposizione solo come fallback.
+ * Precompila items[] senza domande di disambiguazione.
+ */
+export const FOOD_WIZARD_MEAN_VALUE_DECOMPOSITION_BLOCK = `### FOOD WIZARD — GERARCHIA DI RISOLUZIONE (CHAIN OF THOUGHT, OBBLIGATORIA)
+Prima di compilare payload.items[] esegui SEMPRE questo ragionamento in ordine. Non saltare i passi. Non fare domande di disambiguazione.
+
+Priorità 1 — Match nel Database (db Kentu):
+Quando l'utente detta un alimento o un piatto (es. 'Cotoletta', 'Pasta al pomodoro', 'Carbonara'), il tuo PRIMO obbligo è cercare una corrispondenza esatta o semantica nel database fornito nel contesto ([USER_HABITS], [USER_HABITS_FOR_CURRENT_MEAL], DB personale / elenchi alimenti Kentu nel prompt, porzioni abituali).
+Se l'elemento esiste nel database (match esatto, sinonimo, o nome molto vicino), DEVI utilizzare quello.
+→ Inseriscilo nel Wizard così com'è: UNA sola voce in items[] con foodName = nome DB (o termine parlato allineato al DB).
+→ VIETATO scomporlo. VIETATO inventare ingredienti. VIETATO bypassare il DB per "arricchire" la ricetta.
+
+Priorità 2 — Scomposizione (SOLO come Fallback):
+SOLO SE la ricerca nel database non produce risultati credibili per il piatto/alimento nominato, allora consideralo un piatto generico sconosciuto.
+→ Solo in quel caso scomponilo nei suoi 2-4 ingredienti fondamentali base (es. piatto sconosciuto tipo ricetta generica → ingredienti base).
+→ Ogni ingrediente scomposto va in items[] separato. payload.message VUOTO se items.length > 1.
+
+Dicotomia input (dopo / insieme alla gerarchia DB):
+- Input Analitico: ingredienti + grammature esplicite (es. '50g di pasta e 50g di passata') → mappa 1:1, grams esatti, isEstimated:false. Non inventare voci extra.
+- Input Generico: nome singolo di alimento/piatto → applica Priorità 1; solo se fallisce → Priorità 2.
+
+Gestione Grammature: Se mancano le grammature per la compilazione automatica, fai una stima e usa il valore medio di una porzione standard (es. 80-100g carboidrati, 10-15g condimenti grassi, 100-150g proteine animali, 80-120g sughi/passate; oppure la porzione storica in User_Portions_Dictionary / abitudini se presente). Marca isEstimated: true sulle stime; isEstimated: false sui grammi espliciti dell'utente o sul peso esatto dal dizionario porzioni.
+
+Formato di Output: Restituisci items[] valorizzati (match DB integro OPPURE, solo in fallback, ingredienti scomposti stimati) per precompilare il form del Wizard senza bloccare l'utente.`;
 
 export class GeminiStructuredClient {
   constructor({ model = DEFAULT_MODEL } = {}) {
@@ -1201,33 +1248,44 @@ export class GeminiStructuredClient {
 
     if (includeFoodRules) {
       parts.push(
-        "VINCOLO ADD_FOOD — ESTRAZIONE ESCLUSIVA (CONTEGGIO VOCI): Estrai SOLO gli alimenti ESPLICITAMENTE citati dall utente (e nella cronologia conversazione). E VIETATO aggiungere contorni, condimenti, completamenti, ingredienti impliciti o piatti extra non menzionati. SE l utente cita N alimenti distinti, payload.items[] DEVE contenere ESATTAMENTE N voci — ne piu ne meno.",
-        `ESEMPI DI ESTRAZIONE PASTI MULTIPLI:
+        FOOD_WIZARD_MEAN_VALUE_DECOMPOSITION_BLOCK,
+        "VINCOLO ADD_FOOD — ESTRAZIONE (CONTEGGIO VOCI): Per Input Analitico estrai SOLO gli alimenti ESPLICITAMENTE citati (N citati → ESATTAMENTE N voci). VIETATO aggiungere contorni/condimenti non menzionati. Per un singolo alimento/piatto nominato: Priorità 1 DB Kentu → UNA voce così com'è se c'è match. Priorità 2 scomposizione 2-4 ingredienti SOLO se nessun match DB. VIETATO scomporre bypassando il database.",
+        `ESEMPI DI ESTRAZIONE PASTI MULTIPLI (Input Analitico):
 User: "Ho mangiato 90g di sardine all'olio e 160g di pane integrale"
 Output Corretto per payload.items:
 [
   { "foodName": "sardine all'olio", "grams": 90, "isEstimated": false, "searchKeywords": ["sardine all'olio", "sardina all'olio", "sardine"] },
   { "foodName": "pane integrale", "grams": 160, "isEstimated": false, "searchKeywords": ["pane integrale", "pane"] }
 ]
+ESEMPIO PRIORITÀ 1 — MATCH DB (NON scomporre):
+User: "Ho mangiato una cotoletta"  (e nel DB Kentu esiste «Cotoletta» / ricetta omonima)
+Output Corretto:
+[
+  { "foodName": "Cotoletta", "grams": 150, "isEstimated": true, "searchKeywords": ["cotoletta", "cotoletta di pollo", "cotoletta di vitello"] }
+]
+VIETATO inventare pane+carne+olio se il DB ha già Cotoletta.
+ESEMPIO PRIORITÀ 2 — FALLBACK SCOMPOSIZIONE (solo se assente dal DB):
+User: "Ho mangiato xyz-ricetta-sconosciuta" (nessun match nel DB)
+Output: 2-4 ingredienti base con grams medi e isEstimated:true.
 REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alimento da cercare nel database. Rimuovi le congiunzioni (e, con, ed) e rimuovi le quantità dal nome. VIETATO: "e 160 g di pane integrale".`,
         "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB (es. \"pane integrale\"). NO grammi, NO congiunzioni.",
         "HARD CONSTRAINT — MAPPATURA GRAMMI 1:1: ogni alimento ha i PROPRI grammi. Mai copiare i grammi del primo sui successivi.",
         "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'con' separano alimenti, non entrano nel foodName.",
-        "REGOLA ADD_FOOD (searchKeywords — ESPANSIONE SEMANTICA): Per ogni alimento estratto, genera searchKeywords[] con: (1) il termine esatto detto dall utente; (2) l opposto singolare/plurale (noci→noce, mela→mele); (3) i sinonimi italiani piu comuni (cocomero→anguria, arachidi→noccioline, brioche→cornetto). Max 8 voci. foodName resta il termine primario parlato.",
-        "MAGGIORDOMO — PROPOSTA DEL SOLITO (SOLO mono-alimento): se l'utente cita UN solo termine generico (es. «pane») e in [USER_HABITS] / DB personale c'è una variante frequente, puoi metterla in foodName SOLO come proposta — mai come fatto compiuto. Scrivi in payload.message la conferma («Per il pane, inserisco il tuo solito …?»). VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico.",
-        "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti, estrai TUTTI in payload.items[] (uno per alimento). payload.message DEVE essere VUOTO: il SequentialFoodWizard gestisce la voce item-per-item. VIETATO menzionare grammi/varianti di piu alimenti in un unico messaggio.",
+        "REGOLA ADD_FOOD (searchKeywords — ESPANSIONE SEMANTICA): Per ogni alimento estratto, genera searchKeywords[] con: (1) il termine esatto detto dall utente (o l'ingrediente scomposto in fallback); (2) l opposto singolare/plurale (noci→noce, mela→mele); (3) i sinonimi italiani piu comuni (cocomero→anguria, arachidi→noccioline, brioche→cornetto). Max 8 voci. foodName resta il termine primario / nome DB.",
+        "MAGGIORDOMO — PROPOSTA DEL SOLITO (SOLO mono-alimento): se l'utente cita UN solo termine (es. «pane», «cotoletta») e in [USER_HABITS] / DB personale c'è una variante frequente, usa quella in foodName. Preferisci il match DB integro alla scomposizione. Scrivi in payload.message la conferma solo se serve («Per il pane, inserisco il tuo solito …?»). VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico. VIETATO scomporre se esiste match DB.",
+        "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti O hai applicato il fallback scomposizione (nessun match DB), estrai TUTTI in payload.items[] (uno per alimento). payload.message DEVE essere VUOTO. VIETATO menzionare grammi/varianti di piu alimenti in un unico messaggio di chat.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento citato, compila foodName, searchKeywords e grams. NON inventare foodDbKey ne macronutrienti. Con UN solo alimento puoi dichiarare la variante abituale in payload.message; con PIU alimenti lascia message vuoto.",
-        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, estrai OGNI alimento in items[].",
-        "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) SOLO se assente dal dizionario.",
-        "REGOLA ADD_FOOD (nessuna quantita — mono): Se l'utente dichiara UN alimento SENZA grammi, proponi la porzione storica con isEstimated:true in payload.message. Con PIU alimenti: grams stimati negli items, message VUOTO. Se il prodotto è sconosciuto → REQUEST_FOOD_PHOTO.",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento, compila foodName, searchKeywords e grams. NON inventare foodDbKey ne macronutrienti. Preferisci sempre il nome presente nel DB contesto. Con UN solo alimento da match DB puoi dichiarare la variante abituale in payload.message; con PIU alimenti / fallback scomposizione lascia message vuoto.",
+        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, risolvi OGNI alimento/piatto citato con la gerarchia DB-first (poi fallback scomposizione solo se necessario).",
+        "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI/GRAMMI MANCANTI): Quando l'utente inserisce quantità unitarie (pezzi, fette, ecc.), DEVI PRIMA controllare il User_Portions_Dictionary nel KENTU_GLOBAL_STATE. Se l'alimento è presente, USA ESATTAMENTE quel peso con isEstimated: false. Usa le medie standard (isEstimated: true) se assente dal dizionario OPPURE se i grammi mancano (anche su match DB integro o su ingredienti del fallback scomposizione).",
+        "REGOLA ADD_FOOD (nessuna quantita): Senza grammi → stima porzione storica/media (isEstimated:true) sul match DB se esiste; altrimenti, solo in assenza di match, fallback scomposizione con medie. Solo prodotti commerciali sconosciuti (marchio mai visto, non una ricetta/alimento DB) → REQUEST_FOOD_PHOTO.",
         "REGOLA ADD_FOOD (FOLLOW-UP CONFERMA): Se THREAD_RECENTE mostra una proposta maggiordomo e l'utente conferma («Sì, va bene») o corregge, DEVI usare ADD_FOOD subito ed estrarre il carrello. Vietato nuove domande aperte e vietato fallire il parsing.",
-        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo maggiordomo (solo mono) va in payload.message; multi → message vuoto.",
-        "REGOLA ADD_FOOD (payload.message): MONO-alimento: 1-2 frasi TTS con solito + grammi. MULTI-alimento (length>1): message VUOTO — VIETATO «Posso segnare 80g per il pane e 100g per il pomodoro». Il wizard parlerà SOLO del primo item. VIETATO nome proprio utente. VIETATO «Che tipo di…?». VIETATO budget/cilindri/macro.",
-        "REGOLA REQUEST_FOOD_PHOTO: se un alimento non è associabile (confidenza bassa, prodotto commerciale nuovo), usa REQUEST_FOOD_PHOTO invece di inventare. Message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?»",
+        "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo maggiordomo (solo mono) va in payload.message; multi / scomposizione fallback → message vuoto.",
+        "REGOLA ADD_FOOD (payload.message): MONO-alimento (match DB): 1-2 frasi TTS con solito + grammi se utile. MULTI-alimento o scomposizione fallback (length>1): message VUOTO. VIETATO nome proprio utente. VIETATO «Che tipo di…?». VIETATO budget/cilindri/macro.",
+        "REGOLA REQUEST_FOOD_PHOTO: se un prodotto commerciale non è associabile (confidenza bassa, marchio nuovo) e non è risolvibile né come match DB né come ricetta scomponibile, usa REQUEST_FOOD_PHOTO. Message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?»",
         "HARD CONSTRAINT — NO DUPLICATI IN items[]: se lo stesso alimento compare due volte (o con nome quasi identico), fondili in UNA sola voce sommando i grammi. Mai due righe uguali.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
-        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI E VARIANTI: Usa lo storico per proporre variante + grammatura abituale quando l utente non le ha specificate (isEstimated:true). NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati.",
+        "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI E VARIANTI: Usa lo storico per match DB + grammatura abituale quando l utente non le ha specificate (isEstimated:true). NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati. Se l utente nomina un piatto presente nello storico/DB, usalo integro (Priorità 1), non scomporlo.",
         "HARD CONSTRAINT — SILENZIO COPY SU ADD_FOOD: adviceMessage e uiMessage DEVONO essere vuoti. Solo payload.message maggiordomo.",
         "Se l'utente indica esplicitamente tipo pasto o orario, estraili nel payload. Se omette tipo pasto o orario, ometti i campi — Smart Defaults da [CURRENT_SYSTEM_TIME].",
         "Questa logica NON si applica a richieste di consiglio pasto (ADVICE).",
@@ -1318,7 +1376,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
       `Richiesta utente: ${userPromptText}`,
       `Contesto modulare: ${JSON.stringify(contextBundle?.contextSlices || {})}`,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_FOOD'
-        ? 'Registrazione pasto: ADD_FOOD con items[] (tutti gli alimenti citati). Per ogni item: foodName + searchKeywords (termine detto, singolare/plurale, sinonimi IT es. cocomero→anguria). MONO → payload.message maggiordomo. MULTI → message VUOTO (wizard). Mai «Che tipo di…?». Sconosciuto → REQUEST_FOOD_PHOTO. adviceMessage/uiMessage VUOTI.'
+        ? 'Registrazione pasto: ADD_FOOD. Chain of Thought: (1) match DB Kentu → voce unica senza scomporre; (2) solo se nessun match → fallback scomposizione 2-4 ingredienti. Grammi mancanti → porzione media (isEstimated:true). Mai domande di disambiguazione. MULTI → message VUOTO. adviceMessage/uiMessage VUOTI.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'ADD_WORKOUT'
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'
