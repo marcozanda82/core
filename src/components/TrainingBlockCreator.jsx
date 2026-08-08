@@ -2,7 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   TRAINING_BLOCK_MACRO_GOALS,
+  addCalendarDaysIso,
+  buildTrainingBlockCalendarWeeks,
+  computeMesocycleWeek,
+  formatMesocycleWeekLabel,
+  formatScheduledDateLabelIt,
+  getLocalTodayIso,
+  isTrainingSessionCompleted,
+  normalizeIsoDate,
+  normalizeLastCompletedDate,
   normalizeMacroGoal,
+  normalizeMesocycleWeek,
 } from '../features/planning/trainingBlockSchema';
 import {
   buildEmergencyWaveNutritionDays,
@@ -20,13 +30,11 @@ function nextDayKey() {
 }
 
 /**
- * Converte l'azione di WorkoutView (isPlannerMode) in un giorno del Training Block.
- * Non scrive sul log/timeline: solo payload per days[].
- *
- * @param {object} action — PlannerActionObject da WorkoutView
+ * @param {object} action
+ * @param {{ scheduledDate?: string, mesocycleWeek?: number }} [opts]
  * @returns {object}
  */
-export function trainingBlockDayFromPlannerAction(action) {
+export function trainingBlockDayFromPlannerAction(action, opts = {}) {
   const rawType = String(action?.workoutType || 'pesi').trim().toLowerCase();
   const type = rawType === 'riposo' || rawType === 'rest' ? 'rest' : (
     rawType === 'cardio' || rawType === 'hiit' ? rawType : 'pesi'
@@ -48,8 +56,17 @@ export function trainingBlockDayFromPlannerAction(action) {
     || (isRest ? 'Riposo' : 'Allenamento'),
   ).trim() || (isRest ? 'Riposo' : 'Allenamento');
 
+  const scheduledDate = normalizeIsoDate(opts.scheduledDate)
+    || normalizeIsoDate(action?.scheduledDate)
+    || getLocalTodayIso();
+  const mesocycleWeek = normalizeMesocycleWeek(opts.mesocycleWeek)
+    || normalizeMesocycleWeek(action?.mesocycleWeek)
+    || 1;
+
   return {
     key: nextDayKey(),
+    scheduledDate,
+    mesocycleWeek,
     type,
     title,
     muscles,
@@ -58,51 +75,62 @@ export function trainingBlockDayFromPlannerAction(action) {
     plannedKcalBurn,
     strengthDetail: String(action?.strengthDetail || '').trim() || null,
     status: 'pending',
+    lastCompletedDate: null,
   };
 }
 
 /**
- * Idrata i giorni UI dal blocco Firebase già salvato.
  * @param {object | null | undefined} activeBlock
  * @returns {object[]}
  */
 function daysFromActiveBlock(activeBlock) {
   const rawDays = Array.isArray(activeBlock?.days) ? activeBlock.days : [];
-  return rawDays.map((d, i) => {
-    const type = String(d?.type || 'pesi').toLowerCase() === 'rest'
-      ? 'rest'
-      : (d?.type === 'cardio' || d?.type === 'hiit' ? d.type : 'pesi');
-    const isRest = type === 'rest';
-    const plannedTimeRaw = Number(d?.plannedTime);
-    return {
-      key: `existing_${activeBlock?.blockId || 'block'}_${i}`,
-      type,
-      title: String(d?.title || (isRest ? 'Riposo' : 'Allenamento')).trim(),
-      muscles: isRest ? [] : normalizeMuscleGroupArray(d?.muscles || []),
-      plannedTime: !isRest && Number.isFinite(plannedTimeRaw) && plannedTimeRaw >= 0 && plannedTimeRaw < 24
-        ? plannedTimeRaw
-        : null,
-      durationMin: isRest
-        ? 0
-        : Math.max(0, Math.round(Number(d?.durationMin) || 60)),
-      plannedKcalBurn: isRest
-        ? 0
-        : Math.max(0, Math.round(Number(d?.plannedKcalBurn) || 300)),
-      strengthDetail: d?.strengthDetail != null ? String(d.strengthDetail).trim() || null : null,
-      targetKcal: Number.isFinite(Number(d?.targetKcal)) ? Math.round(Number(d.targetKcal)) : null,
-      targetProt: Number.isFinite(Number(d?.targetProt)) ? Math.round(Number(d.targetProt)) : null,
-      targetCarb: Number.isFinite(Number(d?.targetCarb)) ? Math.round(Number(d.targetCarb)) : null,
-      targetFat: Number.isFinite(Number(d?.targetFat)) ? Math.round(Number(d.targetFat)) : null,
-      status: String(d?.status || 'pending').toLowerCase() === 'confirmed'
-        ? 'confirmed'
-        : (String(d?.status || '').toLowerCase() === 'skipped' ? 'skipped' : 'pending'),
-    };
-  });
+  const today = getLocalTodayIso();
+  const anchor = normalizeIsoDate(activeBlock?.anchorDate) || today;
+  return rawDays
+    .map((d, i) => {
+      const type = String(d?.type || 'pesi').toLowerCase() === 'rest'
+        ? 'rest'
+        : (d?.type === 'cardio' || d?.type === 'hiit' ? d.type : 'pesi');
+      if (type === 'rest') return null;
+      const plannedTimeRaw = Number(d?.plannedTime);
+      const scheduledDate = normalizeIsoDate(d?.scheduledDate)
+        || normalizeIsoDate(d?.date)
+        || addCalendarDaysIso(anchor, i)
+        || today;
+      const mesocycleWeek = normalizeMesocycleWeek(d?.mesocycleWeek ?? d?.weekNumber)
+        || computeMesocycleWeek(scheduledDate, anchor);
+      return {
+        key: `existing_${activeBlock?.blockId || 'block'}_${i}`,
+        dayIndex: Number.isFinite(Number(d?.dayIndex)) ? Math.floor(Number(d.dayIndex)) : i,
+        scheduledDate,
+        mesocycleWeek,
+        type,
+        title: String(d?.title || 'Allenamento').trim(),
+        muscles: normalizeMuscleGroupArray(d?.muscles || []),
+        plannedTime: Number.isFinite(plannedTimeRaw) && plannedTimeRaw >= 0 && plannedTimeRaw < 24
+          ? plannedTimeRaw
+          : null,
+        durationMin: Math.max(0, Math.round(Number(d?.durationMin) || 60)),
+        plannedKcalBurn: Math.max(0, Math.round(Number(d?.plannedKcalBurn) || 300)),
+        strengthDetail: d?.strengthDetail != null ? String(d.strengthDetail).trim() || null : null,
+        targetKcal: Number.isFinite(Number(d?.targetKcal)) ? Math.round(Number(d.targetKcal)) : null,
+        targetProt: Number.isFinite(Number(d?.targetProt)) ? Math.round(Number(d.targetProt)) : null,
+        targetCarb: Number.isFinite(Number(d?.targetCarb)) ? Math.round(Number(d.targetCarb)) : null,
+        targetFat: Number.isFinite(Number(d?.targetFat)) ? Math.round(Number(d.targetFat)) : null,
+        status: String(d?.status || 'pending').toLowerCase() === 'confirmed'
+          ? 'confirmed'
+          : (String(d?.status || '').toLowerCase() === 'skipped' ? 'skipped' : 'pending'),
+        lastCompletedDate: normalizeLastCompletedDate(d?.lastCompletedDate),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
 }
 
 /**
  * @param {object | null | undefined} day
- * @returns {object} initialData per WorkoutView planner
+ * @returns {object}
  */
 export function plannerInitialDataFromBlockDay(day) {
   if (!day) {
@@ -146,17 +174,7 @@ function dayTypeLabel(type) {
 }
 
 /**
- * Drawer: crea o aggiorna un Training Block riusando WorkoutView in modalità pianificazione.
- *
- * @param {{
- *   isOpen: boolean,
- *   onClose: () => void,
- *   onSave: (definition: object) => void | Promise<void>,
- *   busy?: boolean,
- *   activeBlock?: object | null,
- *   tdee?: number | null,
- *   weightKg?: number | null,
- * }} props
+ * Drawer: calendario assoluto raggruppato per settimane di mesociclo.
  */
 export default function TrainingBlockCreator({
   isOpen,
@@ -166,7 +184,10 @@ export default function TrainingBlockCreator({
   activeBlock = null,
   tdee = null,
   weightKg = null,
+  onToggleSessionComplete = null,
+  todayIso: todayIsoProp = null,
 }) {
+  const todayIso = String(todayIsoProp || getLocalTodayIso()).slice(0, 10);
   const isEditMode = Boolean(
     activeBlock
     && activeBlock.isActive !== false
@@ -182,8 +203,9 @@ export default function TrainingBlockCreator({
   const [isGeneratingTargets, setIsGeneratingTargets] = useState(false);
   /** @type {[string | 'new' | null, Function]} */
   const [editingKey, setEditingKey] = useState(null);
+  const [draftScheduledDate, setDraftScheduledDate] = useState(todayIso);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Idrata (o reset) all'apertura del drawer
   useEffect(() => {
     if (!isOpen) return undefined;
     if (
@@ -202,10 +224,29 @@ export default function TrainingBlockCreator({
     }
     setError('');
     setEditingKey(null);
+    setShowDatePicker(false);
+    setDraftScheduledDate(todayIso);
     setSaving(false);
     setIsGeneratingTargets(false);
     return undefined;
-  }, [isOpen, activeBlock?.blockId, activeBlock?.updatedAt]);
+  }, [isOpen, activeBlock?.blockId, activeBlock?.updatedAt, todayIso]);
+
+  const blockStartIso = useMemo(() => {
+    const sorted = days
+      .map((d) => d.scheduledDate)
+      .filter(Boolean)
+      .sort();
+    return sorted[0] || todayIso;
+  }, [days, todayIso]);
+
+  const calendarWeeks = useMemo(
+    () => buildTrainingBlockCalendarWeeks({
+      sessions: days,
+      todayIso,
+      blockStartIso,
+    }),
+    [days, todayIso, blockStartIso],
+  );
 
   const dayCount = days.length;
   const editingDay = editingKey && editingKey !== 'new'
@@ -229,37 +270,124 @@ export default function TrainingBlockCreator({
   const canSave = useMemo(() => {
     if (!String(name || '').trim()) return false;
     if (days.length < 1) return false;
-    return days.every((d) => String(d.title || '').trim());
+    return days.every((d) => (
+      String(d.title || '').trim()
+      && d.type !== 'rest'
+      && Boolean(normalizeIsoDate(d.scheduledDate))
+    ));
   }, [name, days]);
 
   if (!isOpen) return null;
 
-  const openNewSession = () => {
-    if (days.length >= 14) {
-      setError('Massimo 14 giorni per blocco.');
+  const openNewSessionFlow = () => {
+    if (days.length >= 28) {
+      setError('Massimo 28 sessioni per blocco.');
       return;
     }
     setError('');
+    const lastDate = days
+      .map((d) => d.scheduledDate)
+      .filter(Boolean)
+      .sort()
+      .at(-1);
+    const nextDate = lastDate
+      ? (addCalendarDaysIso(lastDate, 1) || todayIso)
+      : todayIso;
+    setDraftScheduledDate(nextDate);
+    setShowDatePicker(true);
+  };
+
+  /** Aggiungi sessione direttamente su una data della griglia (salta date picker). */
+  const openNewSessionOnDate = (dateIso) => {
+    if (days.length >= 28) {
+      setError('Massimo 28 sessioni per blocco.');
+      return;
+    }
+    const date = normalizeIsoDate(dateIso);
+    if (!date) {
+      setError('Data non valida.');
+      return;
+    }
+    if (days.some((d) => d.scheduledDate === date && d.type !== 'rest')) {
+      setError('Esiste già una sessione in quella data.');
+      return;
+    }
+    setError('');
+    setShowDatePicker(false);
+    setDraftScheduledDate(date);
+    setEditingKey('new');
+  };
+
+  const confirmNewSessionDate = () => {
+    const date = normalizeIsoDate(draftScheduledDate);
+    if (!date) {
+      setError('Seleziona una data valida.');
+      return;
+    }
+    if (days.some((d) => d.scheduledDate === date && d.type !== 'rest')) {
+      setError('Esiste già una sessione in quella data.');
+      return;
+    }
+    setShowDatePicker(false);
     setEditingKey('new');
   };
 
   const openEditSession = (key) => {
     setError('');
+    setShowDatePicker(false);
     setEditingKey(key);
   };
 
   const closeWorkoutForm = () => setEditingKey(null);
 
   const handlePlannerSave = (action) => {
-    const mapped = trainingBlockDayFromPlannerAction(action);
+    const scheduledDate = editingKey === 'new'
+      ? (normalizeIsoDate(draftScheduledDate) || todayIso)
+      : (normalizeIsoDate(editingDay?.scheduledDate) || todayIso);
+    const mesocycleWeek = computeMesocycleWeek(
+      scheduledDate,
+      blockStartIso === scheduledDate && days.length === 0
+        ? scheduledDate
+        : blockStartIso,
+    );
+
+    const mapped = trainingBlockDayFromPlannerAction(action, {
+      scheduledDate,
+      mesocycleWeek,
+    });
+    if (mapped.type === 'rest') {
+      setError('Il riposo non si pianifica: lascia i giorni senza sessioni.');
+      setEditingKey(null);
+      return;
+    }
+
     setDays((prev) => {
       if (editingKey === 'new' || !editingKey) {
-        if (prev.length >= 14) return prev;
-        return [...prev, mapped];
+        if (prev.length >= 28) return prev;
+        const dayIndex = prev.reduce(
+          (max, d) => Math.max(max, Number.isFinite(Number(d.dayIndex)) ? Number(d.dayIndex) : -1),
+          -1,
+        ) + 1;
+        const start = prev.length === 0
+          ? scheduledDate
+          : ([...prev.map((d) => d.scheduledDate), scheduledDate].filter(Boolean).sort()[0] || scheduledDate);
+        return [...prev, {
+          ...mapped,
+          dayIndex,
+          mesocycleWeek: computeMesocycleWeek(scheduledDate, start),
+        }].sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate)));
       }
       return prev.map((d) => (
         d.key === editingKey
-          ? { ...mapped, key: d.key, status: d.status || 'pending' }
+          ? {
+            ...mapped,
+            key: d.key,
+            dayIndex: Number.isFinite(Number(d.dayIndex)) ? Number(d.dayIndex) : d.dayIndex,
+            scheduledDate: d.scheduledDate || mapped.scheduledDate,
+            mesocycleWeek: d.mesocycleWeek || mapped.mesocycleWeek,
+            status: d.status || 'pending',
+            lastCompletedDate: d.lastCompletedDate || null,
+          }
           : d
       ));
     });
@@ -271,22 +399,66 @@ export default function TrainingBlockCreator({
     setDays((prev) => prev.filter((d) => d.key !== key));
   };
 
+  const handleToggleComplete = async (day) => {
+    const done = isTrainingSessionCompleted(day);
+    const nextCompleted = !done;
+
+    setDays((prev) => prev.map((d) => (
+      d.key === day.key
+        ? {
+          ...d,
+          lastCompletedDate: nextCompleted ? todayIso : null,
+          status: nextCompleted ? 'confirmed' : 'pending',
+        }
+        : d
+    )));
+
+    if (typeof onToggleSessionComplete === 'function' && Number.isFinite(Number(day.dayIndex))) {
+      try {
+        await onToggleSessionComplete(Number(day.dayIndex), nextCompleted);
+      } catch (err) {
+        setError(String(err?.message || err || 'Spunta non salvata'));
+        setDays((prev) => prev.map((d) => (
+          d.key === day.key
+            ? {
+              ...d,
+              lastCompletedDate: day.lastCompletedDate || null,
+              status: day.status || 'pending',
+            }
+            : d
+        )));
+      }
+    }
+  };
+
   const handleSave = async () => {
     if (!canSave || saving || busy || isGeneratingTargets) return;
     setSaving(true);
     setError('');
     try {
-      const baseDays = days.map((d, i) => ({
-        dayIndex: i,
-        type: d.type,
-        title: String(d.title || '').trim(),
-        muscles: d.type === 'pesi' ? normalizeMuscleGroupArray(d.muscles || []) : [],
-        plannedTime: d.type === 'rest' ? null : (Number.isFinite(Number(d.plannedTime)) ? Number(d.plannedTime) : null),
-        durationMin: d.type === 'rest' ? 0 : Math.max(0, Math.round(Number(d.durationMin) || 60)),
-        plannedKcalBurn: d.type === 'rest' ? 0 : Math.max(0, Math.round(Number(d.plannedKcalBurn) || 300)),
-        strengthDetail: d.strengthDetail || null,
-        status: d.status || 'pending',
-      }));
+      const start = days
+        .map((d) => d.scheduledDate)
+        .filter(Boolean)
+        .sort()[0] || todayIso;
+
+      const baseDays = days.map((d, i) => {
+        const scheduledDate = normalizeIsoDate(d.scheduledDate) || addCalendarDaysIso(start, i) || todayIso;
+        return {
+          dayIndex: Number.isFinite(Number(d.dayIndex)) ? Number(d.dayIndex) : i,
+          scheduledDate,
+          mesocycleWeek: normalizeMesocycleWeek(d.mesocycleWeek)
+            || computeMesocycleWeek(scheduledDate, start),
+          type: d.type,
+          title: String(d.title || '').trim(),
+          muscles: d.type === 'pesi' ? normalizeMuscleGroupArray(d.muscles || []) : [],
+          plannedTime: Number.isFinite(Number(d.plannedTime)) ? Number(d.plannedTime) : null,
+          durationMin: Math.max(0, Math.round(Number(d.durationMin) || 60)),
+          plannedKcalBurn: Math.max(0, Math.round(Number(d.plannedKcalBurn) || 300)),
+          strengthDetail: d.strengthDetail || null,
+          status: d.lastCompletedDate ? 'confirmed' : (d.status || 'pending'),
+          lastCompletedDate: normalizeLastCompletedDate(d.lastCompletedDate),
+        };
+      });
 
       const resolvedTdee = Number.isFinite(Number(tdee)) && Number(tdee) > 0
         ? Math.round(Number(tdee))
@@ -295,7 +467,6 @@ export default function TrainingBlockCreator({
         ? Number(weightKg)
         : 75;
 
-      // Target emergenza subito → chiudi il drawer senza attendere l'AI (10–15s).
       let nutritionPack = buildEmergencyWaveNutritionDays({
         tdee: resolvedTdee,
         macroGoal,
@@ -322,11 +493,11 @@ export default function TrainingBlockCreator({
           name: String(name).trim(),
           macroGoal,
           days: enrichedDays,
+          anchorDate: start,
         };
         if (isEditMode && activeBlock) {
           payload.blockId = activeBlock.blockId;
           payload.currentDayPointer = activeBlock.currentDayPointer;
-          payload.anchorDate = activeBlock.anchorDate;
           payload.createdAt = activeBlock.createdAt;
           payload.lastAction = activeBlock.lastAction || null;
         }
@@ -382,7 +553,7 @@ export default function TrainingBlockCreator({
       <div className="fixed inset-0 z-[13000] flex flex-col bg-[#0f0f0f]">
         <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden">
           <WorkoutView
-            key={editingKey === 'new' ? `new_${days.length}` : editingKey}
+            key={editingKey === 'new' ? `new_${draftScheduledDate}_${days.length}` : editingKey}
             isPlannerMode
             plannerSaveLabel={editingKey === 'new' ? 'AGGIUNGI AL PIANO' : 'AGGIORNA SESSIONE'}
             initialData={plannerInitialData}
@@ -413,7 +584,7 @@ export default function TrainingBlockCreator({
               {isEditMode ? 'Modifica Training Block' : 'Nuovo Training Block'}
             </h2>
             <p className="m-0 text-[10px] uppercase tracking-wider text-slate-400">
-              Sequenza {dayCount} giorn{dayCount === 1 ? 'o' : 'i'} · form attività standard
+              Griglia Lun–Dom · {dayCount} session{dayCount === 1 ? 'e' : 'i'} · riposo = assenza
             </p>
           </div>
           <button
@@ -456,82 +627,178 @@ export default function TrainingBlockCreator({
             </select>
           </label>
 
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between gap-2">
             <p className="m-0 text-[10px] uppercase tracking-wider text-orange-300/80">
-              Sequenza giorni
+              Calendario settimanale
             </p>
             <button
               type="button"
-              onClick={openNewSession}
+              onClick={openNewSessionFlow}
               className="rounded-lg border border-cyan-400/40 bg-cyan-950/50 px-2.5 py-1 text-[11px] font-semibold text-cyan-100"
             >
               + Aggiungi sessione
             </button>
           </div>
 
-          {days.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-white/15 bg-black/25 px-4 py-8 text-center">
-              <p className="m-0 text-sm text-slate-300">Nessuna sessione ancora</p>
-              <p className="mt-1 text-[11px] text-slate-500">
-                Usa il form allenamenti per pianificare orario, muscoli e tipo
+          {showDatePicker ? (
+            <div className="mb-3 rounded-xl border border-cyan-500/30 bg-cyan-950/25 p-3">
+              <p className="m-0 mb-2 text-[11px] font-semibold text-cyan-100">
+                Data della sessione
               </p>
-              <button
-                type="button"
-                onClick={openNewSession}
-                className="mt-4 rounded-xl border border-cyan-400/40 bg-cyan-600/80 px-4 py-2.5 text-xs font-bold text-white"
+              <input
+                type="date"
+                value={draftScheduledDate}
+                onChange={(e) => setDraftScheduledDate(e.target.value)}
+                className="mb-2 w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-cyan-400/60"
+              />
+              <p className="m-0 mb-3 text-[10px] text-slate-400">
+                {formatScheduledDateLabelIt(draftScheduledDate)}
+                {' · '}
+                {formatMesocycleWeekLabel(
+                  computeMesocycleWeek(
+                    normalizeIsoDate(draftScheduledDate) || todayIso,
+                    blockStartIso,
+                  ),
+                )}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDatePicker(false)}
+                  className="flex-1 rounded-lg border border-white/15 py-2 text-xs text-slate-300"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmNewSessionDate}
+                  className="flex-1 rounded-lg bg-cyan-600 py-2 text-xs font-bold text-white"
+                >
+                  Continua
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-3">
+            {calendarWeeks.map((group) => (
+              <section
+                key={group.monday}
+                className="rounded-xl border border-white/10 bg-black/30 p-2.5"
+                aria-label={group.label}
               >
-                Apri form attività
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {days.map((day, index) => {
-                const isRest = day.type === 'rest';
-                return (
-                  <div
-                    key={day.key}
-                    className="rounded-xl border border-white/10 bg-black/35 p-3"
-                  >
-                    <div className="mb-1.5 flex items-start gap-2">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-900/60 text-[11px] font-bold text-cyan-100">
-                        {index + 1}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => openEditSession(day.key)}
-                        className="min-w-0 flex-1 border-none bg-transparent p-0 text-left"
+                <h3 className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-cyan-100">
+                  {group.label}
+                </h3>
+                <div className="flex flex-col gap-1.5">
+                  {group.days.map((slot) => {
+                    const day = slot.session;
+                    if (day) {
+                      const done = isTrainingSessionCompleted(day);
+                      return (
+                        <div
+                          key={slot.date}
+                          className={[
+                            'flex items-start gap-2 rounded-lg border p-2.5',
+                            slot.isToday
+                              ? 'border-cyan-400/45 bg-cyan-950/35'
+                              : 'border-white/10 bg-black/40',
+                          ].join(' ')}
+                        >
+                          <label
+                            className="mt-0.5 flex shrink-0 cursor-pointer items-center"
+                            title={done ? 'Eseguito' : 'Segna come eseguito'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={done}
+                              onChange={() => { void handleToggleComplete(day); }}
+                              disabled={busy}
+                              className="h-4 w-4 accent-emerald-500"
+                              aria-label={`Eseguito: ${day.title}`}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => openEditSession(day.key)}
+                            className="min-w-0 flex-1 border-none bg-transparent p-0 text-left"
+                          >
+                            <p className={[
+                              'm-0 text-[10px] font-medium uppercase tracking-wide',
+                              slot.isToday ? 'text-cyan-300' : 'text-slate-500',
+                            ].join(' ')}
+                            >
+                              {slot.label}
+                              {slot.isToday ? ' · Oggi' : ''}
+                            </p>
+                            <p className="m-0 truncate text-sm font-semibold text-white">
+                              {day.title}
+                            </p>
+                            <p className="m-0 text-[11px] text-slate-400">
+                              {dayTypeLabel(day.type)}
+                              {` · ${formatDayTime(day.plannedTime)}`}
+                              {day.durationMin ? ` · ${Math.round(Number(day.durationMin))}′` : ''}
+                              {done ? ' · Eseguito' : ''}
+                            </p>
+                            {(day.muscles || []).length > 0 ? (
+                              <p className="mt-1 m-0 text-[10px] text-cyan-200/70">
+                                {day.muscles.join(', ')}
+                              </p>
+                            ) : null}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeDay(day.key)}
+                            className="shrink-0 rounded-lg border border-rose-500/30 px-2 py-1.5 text-[11px] text-rose-300"
+                            aria-label={`Rimuovi ${day.title}`}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // Giorno senza sessione → Riposo (non salvato in DB)
+                    return (
+                      <div
+                        key={slot.date}
+                        className={[
+                          'flex items-center gap-2 rounded-lg border border-dashed px-2.5 py-2',
+                          slot.isToday
+                            ? 'border-cyan-400/40 bg-cyan-950/20'
+                            : 'border-white/10 bg-black/20',
+                        ].join(' ')}
                       >
-                        <p className="m-0 truncate text-sm font-semibold text-white">
-                          {day.title}
-                        </p>
-                        <p className="m-0 text-[11px] text-slate-400">
-                          {dayTypeLabel(day.type)}
-                          {!isRest ? ` · ${formatDayTime(day.plannedTime)}` : ''}
-                          {!isRest && day.durationMin
-                            ? ` · ${Math.round(Number(day.durationMin))}′`
-                            : ''}
-                          {day.status === 'confirmed' ? ' · ✓' : ''}
-                        </p>
-                        {!isRest && (day.muscles || []).length > 0 ? (
-                          <p className="mt-1 m-0 text-[10px] text-cyan-200/70">
-                            {day.muscles.join(', ')}
+                        <div className="min-w-0 flex-1">
+                          <p className={[
+                            'm-0 text-[10px] font-medium uppercase tracking-wide',
+                            slot.isToday ? 'text-cyan-300' : 'text-slate-500',
+                          ].join(' ')}
+                          >
+                            {slot.label}
+                            {slot.isToday ? ' · Oggi' : ''}
                           </p>
-                        ) : null}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => removeDay(day.key)}
-                        className="shrink-0 rounded-lg border border-rose-500/30 px-2 py-1.5 text-[11px] text-rose-300"
-                        aria-label={`Rimuovi giorno ${index + 1}`}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                          <p className="m-0 text-sm font-semibold text-slate-400">
+                            🛋️ Riposo
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openNewSessionOnDate(slot.date)}
+                          disabled={busy || days.length >= 28}
+                          className="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-950/50 px-2.5 py-1.5 text-[11px] font-bold text-cyan-100 transition hover:bg-cyan-900/60 disabled:opacity-40"
+                          aria-label={`Aggiungi allenamento il ${slot.label}`}
+                          title="Aggiungi allenamento"
+                        >
+                          +
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
 
           {error ? (
             <p className="mt-3 text-center text-xs text-rose-300">{error}</p>

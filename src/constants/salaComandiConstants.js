@@ -21,7 +21,6 @@ export const DEFAULT_TREND_HUB_HEMISPHERE = 'progressione';
 export const TREND_ACTIVE_TOOL_LS_KEY = 'kentu_active_trend_tool';
 export const TREND_PROGRESSIONE_TOOLS = Object.freeze(['COMPASS', 'RADAR', 'MAP']);
 export const DEFAULT_TREND_PROGRESSIONE_TOOL = 'COMPASS';
-export const AI_COACH_DISMISSED_INSIGHTS_LS_KEY = 'kentu_ai_coach_dismissed_insights_v1';
 export const EVENT_USAGE_LS_KEY = 'kentu_event_usage';
 
 /** Contatori uso voci «Aggiungi evento» (chiavi = id menu). */
@@ -70,9 +69,6 @@ export const ADD_MENU_ORDER_LS_KEY = 'kentu_add_menu_order';
 
 /** Debounce conferma pasti (wizard / piano giornaliero): evita doppio insert su click rapidi. */
 export const MEAL_CONFIRM_DEBOUNCE_MS = 900;
-
-export const AI_COACH_EVAL_INACTIVE = Object.freeze({ suggestion: null, state: null, period: null });
-export const AI_COACH_EMPTY_HISTORY = Object.freeze([]);
 
 /** Chiavi nutrienti tabella report carenze (allineate a `userTargets` / `getTargetForNutrient`). */
 export const REPORT_NUTRIENT_KEYS = [

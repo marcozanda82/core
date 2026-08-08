@@ -8,7 +8,6 @@ export function useDailyCoach({
   totali,
   energyAt20Percent,
   kentuDailyCalorieStrategy,
-  aiDayCoach,
 }) {
   return useMemo(() => {
     const input = {
@@ -20,7 +19,6 @@ export function useDailyCoach({
       },
       calorieStrategy: kentuDailyCalorieStrategy ?? null,
       nutritionTotals: totali ?? null,
-      aiDayCoach: aiDayCoach ?? null,
     };
 
     return analyzeDailyCoach(input);
@@ -30,7 +28,5 @@ export function useDailyCoach({
     totali?.omega3,
     energyAt20Percent,
     kentuDailyCalorieStrategy,
-    aiDayCoach,
   ]);
 }
-

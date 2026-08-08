@@ -11,6 +11,11 @@ import {
   OPTIMIZED_RECOVERY_EFFICIENCY_THRESHOLD,
   resolveCognitivePenaltyPerHour,
 } from '../engines/fourCylinderEngine';
+import {
+  computeHypertrophyLevels01,
+  HYPERTROPHY_DECAY_HORIZON_DAYS,
+} from '../../../utils/hypertrophyMath.js';
+import { longevitySpilloverPrimariesFromWorkout } from '../../trendHub/utils/saluteHistorySeries.js';
 
 /** @typedef {import('../engines/fourCylinderEngine').MuscleCylinderId} MuscleCylinderKey */
 
@@ -23,16 +28,58 @@ const VALID_CYLINDER_KEYS = new Set(MUSCLE_CYLINDER_IDS);
 /**
  * @typedef {object} FourCylinderTelemetryPoint
  * @property {string} date ISO YYYY-MM-DD (asse X)
- * @property {number} legs
+ * @property {number} legs stimolo accumulo dinamico 0–1 (SSOT hypertrophyMath)
  * @property {number} chest
  * @property {number} back_shoulders
  * @property {number} arms
  * @property {number} core
  * @property {number} fatigue systemic_fatigue 0–1
- * @property {boolean} hasSnapshot true se snapshot significativo (energia > 0)
- * @property {boolean} [isLive] true se il punto usa lo stato live del motore
- * @property {boolean} [isCarry] true se sintetico (carry/decadimento a ore)
+ * @property {boolean} hasSnapshot true se snapshot significativo (energia > 0) o stimolo > 0
+ * @property {boolean} [isLive] true se il punto usa lo stato live del motore (fatica)
+ * @property {boolean} [isCarry] true se sintetico (carry/decadimento a ore) — solo fatica
  */
+
+/**
+ * Sessioni pesi (liste primari spillover) in un giorno di log.
+ * @param {object} tree
+ * @param {string} dateIso
+ * @param {Array | null | undefined} [overrideLog] se presente, usa questo log al posto dello storico
+ * @returns {string[][]}
+ */
+function collectSpilloverSessionPrimariesForDate(tree, dateIso, overrideLog = null) {
+  const log = Array.isArray(overrideLog) ? overrideLog : getLogFromStoricoTree(tree, dateIso);
+  /** @type {string[][]} */
+  const sessions = [];
+  for (const entry of log || []) {
+    if (!entry || entry.type !== 'workout') continue;
+    const primaries = longevitySpilloverPrimariesFromWorkout(entry);
+    if (primaries.length > 0) sessions.push(primaries);
+  }
+  return sessions;
+}
+
+/**
+ * Precompute sessioni per giorno su [fromIso .. toIso] inclusivo.
+ * @param {object} tree
+ * @param {string} fromIso
+ * @param {string} toIso
+ * @param {{ todayIso?: string, todayLiveLog?: Array | null }} [live]
+ * @returns {Map<string, string[][]>}
+ */
+function buildSessionPrimariesByDate(tree, fromIso, toIso, live = {}) {
+  /** @type {Map<string, string[][]>} */
+  const map = new Map();
+  const span = diffCalendarDaysUtc(fromIso, toIso);
+  const days = span == null ? 0 : Math.max(0, span);
+  const todayIso = String(live.todayIso || '').slice(0, 10);
+  const todayLiveLog = Array.isArray(live.todayLiveLog) ? live.todayLiveLog : null;
+  for (let i = 0; i <= days; i += 1) {
+    const date = addDays(fromIso, i);
+    const override = todayLiveLog && date === todayIso ? todayLiveLog : null;
+    map.set(date, collectSpilloverSessionPrimariesForDate(tree, date, override));
+  }
+  return map;
+}
 
 /**
  * @param {{ legs?: number, chest?: number, back_shoulders?: number, arms?: number, core?: number, fatigue?: number } | null | undefined} levels
@@ -141,33 +188,12 @@ function readDecayLevelsFromAfter(after) {
 }
 
 /**
- * Per-cilindro: non lasciare che uno snapshot/live a chest=0 azzeri un residuo ancora vivo.
- * @param {object} base
- * @param {object} incoming
- */
-function mergeCylinderLevelsPreferResidual(base, incoming) {
-  /** @type {Record<string, number>} */
-  const out = {};
-  for (const id of MUSCLE_CYLINDER_IDS) {
-    out[id] = Math.max(clamp01(base?.[id]), clamp01(incoming?.[id]));
-  }
-  return {
-    legs: out.legs,
-    chest: out.chest,
-    back_shoulders: out.back_shoulders,
-    arms: out.arms,
-    core: out.core,
-    fatigue: Math.max(clamp01(base?.fatigue), clamp01(incoming?.fatigue)),
-  };
-}
-
-/**
- * Estrae la serie storica cilindri da `fullHistory` (dual-read snapshot v1/v2).
- * Snapshot a energia 0 non spezzano la curva. Ultimo punto: residuo a ore reali.
- * Merge per-cilindro: evita cliff isolati (es. chest=0 su uno snap gambe mentre il petto ha ancora residuo).
+ * Serie storica cilindri da `fullHistory`.
+ * Muscoli = Accumulo Dinamico (hypertrophyMath: +65/sessione, curva 7gg) — SSOT barre + grafico.
+ * Fatica sistemica = snapshot + decadimento a ore (invariato).
  *
  * @param {object | null | undefined} fullHistory albero tracker_data
- * @param {{ daysBack?: number, endDate?: string, fourCylinder?: object | null }} [options]
+ * @param {{ daysBack?: number, endDate?: string, fourCylinder?: object | null, todayLiveLog?: Array | null }} [options]
  * @returns {FourCylinderTelemetryPoint[]}
  */
 export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
@@ -178,13 +204,19 @@ export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
     ? options.fourCylinder
     : null;
 
+  // Preload sessioni: serie + orizzonte decadimento (hit oltre horizon = residuo 0).
+  const preloadFrom = addDays(endDate, -(daysBack + HYPERTROPHY_DECAY_HORIZON_DAYS - 1));
+  const sessionByDate = buildSessionPrimariesByDate(tree, preloadFrom, endDate, {
+    todayIso: endDate,
+    todayLiveLog: options.todayLiveLog,
+  });
+
   /** @type {FourCylinderTelemetryPoint[]} */
   const rows = [];
-  /** @type {(FourCylinderTelemetryPoint & { capturedAt?: number | null }) | null} */
-  let carry = null;
-  /** Ultimo picco per cilindro (ancora temporale del residuo a ore). */
-  /** @type {(FourCylinderTelemetryPoint & { capturedAt?: number | null }) | null} */
-  let lastPeak = null;
+  /** @type {{ date: string, fatigue: number, capturedAt?: number | null } | null} */
+  let fatigueCarry = null;
+  /** @type {{ date: string, fatigue: number, capturedAt?: number | null } | null} */
+  let fatiguePeak = null;
 
   for (let offset = daysBack - 1; offset >= 0; offset -= 1) {
     const date = addDays(endDate, -offset);
@@ -192,109 +224,117 @@ export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
     const log = getLogFromStoricoTree(tree, date);
     const snap = readMeaningfulSnapshotFromLog(log);
 
-    /** @type {FourCylinderTelemetryPoint & { capturedAt?: number | null }} */
-    let point;
+    let fatigue = 0;
+    /** @type {number | null} */
+    let capturedAt = null;
+    let hasFatigueSnapshot = false;
+    let isCarry = false;
 
     if (snap) {
-      let merged = {
-        legs: snap.legs,
-        chest: snap.chest,
-        back_shoulders: snap.back_shoulders,
-        arms: snap.arms,
-        core: snap.core,
-        fatigue: snap.fatigue,
-      };
-      // Se lo snap azzera un distretto (es. petto) ma il carry ha ancora residuo, conserva il decadimento.
-      if (carry) {
+      fatigue = clamp01(snap.fatigue);
+      capturedAt = snap.capturedAt;
+      hasFatigueSnapshot = true;
+      // Conserva residuo fatica se lo snap azzera ma il carry ha ancora carico.
+      if (fatigueCarry && fatigue < fatigueCarry.fatigue) {
         const hoursFromCarry = isLast
-          ? hoursElapsedSince(lastPeak?.capturedAt ?? lastPeak?.date ?? carry.date)
+          ? hoursElapsedSince(fatiguePeak?.capturedAt ?? fatiguePeak?.date ?? fatigueCarry.date)
           : 24;
-        const decayedCarry = applyTelemetryDecayByHours(carry, hoursFromCarry);
-        merged = mergeCylinderLevelsPreferResidual(decayedCarry, merged);
+        const decayed = applyTelemetryDecayByHours(
+          {
+            legs: 0,
+            chest: 0,
+            back_shoulders: 0,
+            arms: 0,
+            core: 0,
+            fatigue: fatigueCarry.fatigue,
+          },
+          hoursFromCarry,
+        );
+        fatigue = Math.max(fatigue, decayed.fatigue);
       }
-      point = {
-        date,
-        ...merged,
-        hasSnapshot: true,
-        capturedAt: snap.capturedAt,
-      };
-      // lastPeak: aggiorna cilindri stimolati; gli altri restano dal picco precedente decaduto fino a `date`
-      if (lastPeak) {
-        const peakDate = String(lastPeak.date || '').slice(0, 10);
+      if (fatiguePeak) {
+        const peakDate = String(fatiguePeak.date || '').slice(0, 10);
         const daysFromPeak = diffCalendarDaysUtc(peakDate, date);
         const hoursFromPeak = isLast
-          ? hoursElapsedSince(lastPeak.capturedAt ?? lastPeak.date)
+          ? hoursElapsedSince(fatiguePeak.capturedAt ?? fatiguePeak.date)
           : Math.max(0, daysFromPeak == null ? 1 : daysFromPeak) * 24;
-        const decayedPeak = applyTelemetryDecayByHours(lastPeak, hoursFromPeak);
-        const peakMerged = mergeCylinderLevelsPreferResidual(decayedPeak, snap);
-        lastPeak = {
+        const decayedPeak = applyTelemetryDecayByHours(
+          {
+            legs: 0,
+            chest: 0,
+            back_shoulders: 0,
+            arms: 0,
+            core: 0,
+            fatigue: fatiguePeak.fatigue,
+          },
+          hoursFromPeak,
+        );
+        const peakFatigue = Math.max(clamp01(snap.fatigue), decayedPeak.fatigue);
+        fatiguePeak = {
           date,
-          ...peakMerged,
-          hasSnapshot: true,
-          // Timestamp: se lo snap ha alzato un cilindro usa capturedAt snap, senno conserva il vecchio
-          capturedAt: telemetryEnergySum(snap) > telemetryEnergySum(decayedPeak)
-            ? (snap.capturedAt || lastPeak.capturedAt)
-            : (lastPeak.capturedAt || snap.capturedAt),
+          fatigue: peakFatigue,
+          capturedAt: snap.fatigue > decayedPeak.fatigue
+            ? (snap.capturedAt || fatiguePeak.capturedAt)
+            : (fatiguePeak.capturedAt || snap.capturedAt),
         };
       } else {
-        lastPeak = point;
+        fatiguePeak = { date, fatigue, capturedAt };
       }
-    } else if (carry) {
+    } else if (fatigueCarry) {
       let hours = 24;
-      let source = carry;
-      if (isLast && lastPeak) {
-        hours = hoursElapsedSince(lastPeak.capturedAt ?? lastPeak.date);
-        source = lastPeak;
+      let sourceFatigue = fatigueCarry.fatigue;
+      if (isLast && fatiguePeak) {
+        hours = hoursElapsedSince(fatiguePeak.capturedAt ?? fatiguePeak.date);
+        sourceFatigue = fatiguePeak.fatigue;
       }
-      const decayed = applyTelemetryDecayByHours(source, hours);
-      point = {
-        date,
-        ...decayed,
-        hasSnapshot: false,
-        isCarry: true,
-        capturedAt: null,
-      };
-    } else {
-      point = {
-        date,
-        legs: 0,
-        chest: 0,
-        back_shoulders: 0,
-        arms: 0,
-        core: 0,
-        fatigue: 0,
-        hasSnapshot: false,
-        capturedAt: null,
-      };
+      const decayed = applyTelemetryDecayByHours(
+        {
+          legs: 0,
+          chest: 0,
+          back_shoulders: 0,
+          arms: 0,
+          core: 0,
+          fatigue: sourceFatigue,
+        },
+        hours,
+      );
+      fatigue = decayed.fatigue;
+      isCarry = true;
+      capturedAt = null;
     }
 
-    // Live: merge per-cilindro (live.chest===0 non deve precipitare la curva petto).
+    // Muscoli: Accumulo Dinamico (SSOT hypertrophyMath — stesso valore di barre e linee).
+    const hypertrophy = computeHypertrophyLevels01(sessionByDate, date);
+    const hypertrophyEnergy = muscleDecaySum(hypertrophy);
+
+    /** @type {FourCylinderTelemetryPoint & { capturedAt?: number | null }} */
+    let point = {
+      date,
+      legs: hypertrophy.legs,
+      chest: hypertrophy.chest,
+      back_shoulders: hypertrophy.back_shoulders,
+      arms: hypertrophy.arms,
+      core: hypertrophy.core,
+      fatigue,
+      hasSnapshot: hasFatigueSnapshot || hypertrophyEnergy > 0,
+      isCarry: isCarry || undefined,
+      capturedAt,
+    };
+
+    // Live: aggiorna solo la fatica sistemica — i muscoli restano sullo SSOT settimanale.
     if (isLast && liveRaw) {
       const live = fourCylinderFromPhysiologyModel({ fourCylinder: liveRaw }, endDate);
-      const liveLevels = {
-        legs: clamp01(live.decay.legs),
-        chest: clamp01(live.decay.chest),
-        back_shoulders: clamp01(live.decay.back_shoulders),
-        arms: clamp01(live.decay.arms),
-        core: clamp01(live.decay.core),
+      point = {
+        ...point,
         fatigue: clamp01(live.systemic_fatigue),
+        isLive: true,
+        capturedAt: Number(live.updatedAt) || point.capturedAt || null,
       };
-      const mergedLive = mergeCylinderLevelsPreferResidual(point, liveLevels);
-      if (telemetryEnergySum(mergedLive) > 0) {
-        point = {
-          date,
-          ...mergedLive,
-          hasSnapshot: Boolean(snap) || point.hasSnapshot,
-          isLive: true,
-          isCarry: point.isCarry,
-          capturedAt: Number(live.updatedAt) || point.capturedAt || null,
-        };
-      }
     }
 
     rows.push(point);
-    if (telemetryEnergySum(point) > 0) {
-      carry = point;
+    if (point.fatigue > 0 || hasFatigueSnapshot) {
+      fatigueCarry = { date, fatigue: point.fatigue, capturedAt: point.capturedAt };
     }
   }
 

@@ -19,12 +19,6 @@ export default function EssentialTodayCruscotto({
   selectedMealCenterIndex,
   loadMealToConstructor,
   setDailyMacroSheetOpen,
-  handleOpenAiCoachSuggestionModal,
-  setIsAiCoachBulbHovered,
-  isAiCoachSuggestionActive,
-  isAiCoachInsightArmed,
-  isAiCoachBulbHovered,
-  aiCoachBulbPulseCycles,
 }) {
   const dial = useMemo(() => {
     const targetProt = userTargets?.prot ?? 150;
@@ -69,46 +63,6 @@ export default function EssentialTodayCruscotto({
           }}
         >
           <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'visible' }}>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleOpenAiCoachSuggestionModal();
-              }}
-              onMouseEnter={() => setIsAiCoachBulbHovered(true)}
-              onMouseLeave={() => setIsAiCoachBulbHovered(false)}
-              disabled={!isAiCoachSuggestionActive || !isAiCoachInsightArmed}
-              aria-label={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Apri suggerimento metabolico' : 'Nessun suggerimento metabolico attivo'}
-              title={isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'Suggerimento attivo' : 'Nessun suggerimento attivo'}
-              style={{
-                position: 'absolute',
-                top: 6,
-                right: 6,
-                zIndex: 2,
-                background: 'transparent',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 999,
-                width: 32,
-                height: 32,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1rem',
-                lineHeight: 1,
-                padding: 0,
-                cursor: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'pointer' : 'default',
-                color: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '#facc15' : '#64748b',
-                opacity: isAiCoachSuggestionActive && isAiCoachInsightArmed ? 0.85 : 0.55,
-                transform: isAiCoachBulbHovered && isAiCoachSuggestionActive && isAiCoachInsightArmed ? 'scale(1.1)' : 'scale(1)',
-                transition: 'transform 140ms ease, opacity 180ms ease, box-shadow 180ms ease',
-                animation: isAiCoachSuggestionActive && isAiCoachInsightArmed && aiCoachBulbPulseCycles > 0
-                  ? `pulseDot 460ms ease-in-out ${aiCoachBulbPulseCycles}`
-                  : 'none',
-                boxShadow: isAiCoachSuggestionActive && isAiCoachInsightArmed ? '0 0 5px rgba(250,204,21,0.12)' : 'none',
-              }}
-            >
-              💡
-            </button>
             <div
               className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
               onClick={(e) => {

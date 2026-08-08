@@ -97,7 +97,6 @@ import {
   PERSISTED_BOTTOM_TAB_IDS,
   BOTTOM_NAV_ITEMS,
   ACTIVE_BOTTOM_TAB_LS_KEY,
-  AI_COACH_DISMISSED_INSIGHTS_LS_KEY,
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
   NODE_DRAG_ARM_CANCEL_MOVE_PX,
@@ -105,8 +104,6 @@ import {
   EMPTY_ENERGY_CHART_DATA,
   LONGEVITY_NIGHT_PENDING_ENERGY_SIM,
   ADD_MENU_ORDER_LS_KEY,
-  AI_COACH_EVAL_INACTIVE,
-  AI_COACH_EMPTY_HISTORY,
 } from './constants/salaComandiConstants';
 import { persistTrendHubHemisphere } from './features/trendHub/hooks/useTrendHubHemisphere';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
@@ -306,13 +303,6 @@ import { buildMetabolicCompassDailyHistory } from './metabolicCompassDailyHistor
 import { computeMetabolicNotification } from './notificationEngine';
 import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
-  evaluateAiDayCoach,
-  getCoachPeriod,
-  consumeCoachPeriod,
-  recordCoachIgnore,
-  recordCoachAccept,
-} from './aiDayCoach';
-import {
   useSmartKentuTriggers,
   checkMorningBriefing,
   checkEveningBriefing,
@@ -401,13 +391,11 @@ import {
   buildLast7DaysMealLinesForDraftPrompt,
   buildRecentActivitiesContext,
   buildKentuAgendaSecretPrompt,
-  buildAiCoachFoodLogFingerprint,
 } from './features/chat/aiPromptBuilders';
 import {
   migrateIdealStrategy,
   readPersistedActiveBottomTab,
   readPersistedEventUsage,
-  readDismissedAiCoachInsights,
   computeSleepDurationHours,
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
@@ -417,7 +405,6 @@ import {
   getNowDecimalHourForPlanMerge,
   tryAcquireMealConfirmGuard,
   releaseMealConfirmGuard,
-  coachEvalSemanticEqual,
 } from './utils/salaComandiUtils';
 
 export { calculateAge } from './utils/profileAge';
@@ -740,19 +727,6 @@ export default function SalaComandi() {
   const mealBuilderRef = useRef(mealBuilder);
   mealBuilderRef.current = mealBuilder;
   const [mealPlannerGhostNote, setMealPlannerGhostNote] = useState('');
-  const [coachPrefsTick, setCoachPrefsTick] = useState(0);
-  const [hasNewInsight, setHasNewInsight] = useState(false);
-  const [aiCoachBulbPulseCycles, setAiCoachBulbPulseCycles] = useState(0);
-  const [isAiCoachInsightArmed, setIsAiCoachInsightArmed] = useState(false);
-  const [dismissedAiCoachInsights, setDismissedAiCoachInsights] = useState(() => readDismissedAiCoachInsights());
-  const [isAiCoachSuggestionModalOpen, setIsAiCoachSuggestionModalOpen] = useState(false);
-  const hasNewInsightRef = useRef(false);
-  const isAiCoachSuggestionActiveRef = useRef(false);
-  const isUserActivelyEditingRef = useRef(false);
-  const aiCoachInsightReminderTimeoutRef = useRef(null);
-  const aiCoachInsightActivateTimeoutRef = useRef(null);
-  const aiCoachCooldownUntilRef = useRef(0);
-  const aiCoachLastInsightKeyRef = useRef(null);
   const [selectedFoodForCard, setSelectedFoodForCard] = useState(null);
   const [inspectedFood, setInspectedFood] = useState(null);
   const [editFoodData, setEditFoodData] = useState(null);
@@ -5589,32 +5563,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const targetMacros = { prot: userTargets?.prot ?? 150, carb: userTargets?.carb ?? 200, fat: userTargets?.fatTotal ?? userTargets?.fat ?? 65 };
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
 
-  const aiCoachFoodLogFingerprint = useMemo(
-    () => buildAiCoachFoodLogFingerprint(activeLog),
-    [activeLog],
-  );
-
-  const todayLogForCoachRef = useRef([]);
-  const activeLogForCoachSyncRef = useRef(activeLog);
-  activeLogForCoachSyncRef.current = activeLog;
-  useEffect(() => {
-    const a = activeLogForCoachSyncRef.current;
-    todayLogForCoachRef.current = a == null ? [] : a;
-  }, [aiCoachFoodLogFingerprint]);
-  todayLogForCoachRef.current =
-    activeLogForCoachSyncRef.current == null ? [] : activeLogForCoachSyncRef.current;
-
-  const aiCoachCurrentTimeRef = useRef(currentTime);
-  aiCoachCurrentTimeRef.current = currentTime;
-
-  const aiCoachDecimalHour = isAuthenticated ? currentTime : getWallClockDecimalHour();
-  const aiCoachPeriodKey = useMemo(() => getCoachPeriod(aiCoachDecimalHour), [aiCoachDecimalHour]);
-
-  const aiCoachTargetKcalKey = useMemo(
-    () => Math.round(Number(dynamicDailyKcal) || Number(targetKcalForAlerts) || 0),
-    [dynamicDailyKcal, targetKcalForAlerts],
-  );
-
   const physiologySnapshot = useMemo(
     () => evaluateDailyPillars(activeLog, fullHistory, {
       userTargets,
@@ -5624,264 +5572,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }),
     [activeLog, fullHistory, userTargets, dynamicDailyKcal, currentTrackerDate, metabolicBiometrics],
   );
-
-  const aiCoachEvalCacheRef = useRef({
-    key: '',
-    value: AI_COACH_EVAL_INACTIVE,
-  });
-
-  const aiCoachEvalKey = useMemo(
-    () =>
-      [
-        aiCoachFoodLogFingerprint,
-        aiCoachTargetKcalKey,
-        coachPrefsTick,
-        aiCoachPeriodKey,
-        currentTrackerDate,
-        isAuthenticated ? 'auth' : 'guest',
-        isSimulationMode ? 'sim' : 'real',
-      ].join('|'),
-    [
-      aiCoachFoodLogFingerprint,
-      aiCoachTargetKcalKey,
-      coachPrefsTick,
-      aiCoachPeriodKey,
-      currentTrackerDate,
-      isAuthenticated,
-      isSimulationMode,
-    ],
-  );
-
-  const aiCoachEvalComputed = useMemo(() => {
-    const cache = aiCoachEvalCacheRef.current;
-    if (cache.key === aiCoachEvalKey) {
-      return cache.value;
-    }
-
-    const log = activeLogForCoachSyncRef.current;
-    if (log == null || currentTrackerDate !== getTodayString() || isSimulationMode) {
-      aiCoachEvalCacheRef.current = { key: aiCoachEvalKey, value: AI_COACH_EVAL_INACTIVE };
-      return AI_COACH_EVAL_INACTIVE;
-    }
-    const decimalHour = isAuthenticated ? aiCoachCurrentTimeRef.current : getWallClockDecimalHour();
-    const result = evaluateAiDayCoach({
-      todayLog: log,
-      userHistory: AI_COACH_EMPTY_HISTORY,
-      targetCalories: aiCoachTargetKcalKey,
-      decimalHour,
-      todayStr: getTodayString(),
-      toCanonicalMealType,
-    });
-    aiCoachEvalCacheRef.current = { key: aiCoachEvalKey, value: result };
-    return result;
-  }, [aiCoachEvalKey]);
-
-  const aiCoachEvalStableRef = useRef(AI_COACH_EVAL_INACTIVE);
-  if (!coachEvalSemanticEqual(aiCoachEvalStableRef.current, aiCoachEvalComputed)) {
-    aiCoachEvalStableRef.current = aiCoachEvalComputed;
-  }
-  const aiCoachEval = aiCoachEvalStableRef.current;
-
-  const isAiCoachSuggestionEligible =
-    activeBottomTab === 'oggi'
-    && currentTrackerDate === getTodayString()
-    && !isSimulationMode;
-
-  const aiCoachSuggestion = isAiCoachSuggestionEligible ? aiCoachEval?.suggestion ?? null : null;
-  const aiCoachSuggestionDismissKey = useMemo(() => {
-    if (!aiCoachSuggestion?.ruleId || !aiCoachEval?.period) return null;
-    return `${getTodayString()}::${aiCoachEval.period}::${aiCoachSuggestion.ruleId}`;
-  }, [aiCoachEval?.period, aiCoachSuggestion?.ruleId]);
-
-  const aiCoachSuggestionTitle = useMemo(() => {
-    if (!aiCoachSuggestion?.ruleId) return 'Suggerimento metabolico';
-    if (aiCoachSuggestion.ruleId === 'cal_low') return 'Catabolismo in corso';
-    if (aiCoachSuggestion.ruleId === 'low_prot') return 'Sintesi proteica da supportare';
-    if (aiCoachSuggestion.ruleId === 'no_food') return 'Finestra energetica vuota';
-    if (aiCoachSuggestion.ruleId === 'light_breakfast') return 'Energia da consolidare';
-    return 'Suggerimento metabolico';
-  }, [aiCoachSuggestion?.ruleId]);
-
-  const isAiCoachSuggestionActive = !!(
-    aiCoachSuggestion
-    && aiCoachSuggestionDismissKey
-    && !dismissedAiCoachInsights[aiCoachSuggestionDismissKey]
-  );
-  const isAiCoachInsightCritical = (Number(aiCoachSuggestion?.priority) || 0) >= 80;
-  const isUserActivelyEditing = !!(showFastLogger);
-  const shouldDelayAiCoachInsight = isUserActivelyEditing && !isAiCoachInsightCritical;
-
-  useEffect(() => {
-    hasNewInsightRef.current = hasNewInsight;
-  }, [hasNewInsight]);
-
-  useEffect(() => {
-    isAiCoachSuggestionActiveRef.current = isAiCoachSuggestionActive;
-  }, [isAiCoachSuggestionActive]);
-
-  useEffect(() => {
-    isUserActivelyEditingRef.current = isUserActivelyEditing;
-  }, [isUserActivelyEditing]);
-
-  const beginAiCoachCooldown = useCallback((ms = 180000) => {
-    aiCoachCooldownUntilRef.current = Date.now() + ms;
-    setHasNewInsight(false);
-    setAiCoachBulbPulseCycles(0);
-    setIsAiCoachSuggestionModalOpen(false);
-    setIsAiCoachInsightArmed(false);
-    if (aiCoachInsightReminderTimeoutRef.current) {
-      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-      aiCoachInsightReminderTimeoutRef.current = null;
-    }
-    if (aiCoachInsightActivateTimeoutRef.current) {
-      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
-      aiCoachInsightActivateTimeoutRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (aiCoachInsightReminderTimeoutRef.current) {
-      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-      aiCoachInsightReminderTimeoutRef.current = null;
-    }
-    if (aiCoachInsightActivateTimeoutRef.current) {
-      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
-      aiCoachInsightActivateTimeoutRef.current = null;
-    }
-
-    if (!isAiCoachSuggestionActive || !aiCoachSuggestionDismissKey) {
-      setHasNewInsight((v) => (v ? false : v));
-      setAiCoachBulbPulseCycles((c) => (c !== 0 ? 0 : c));
-      setIsAiCoachInsightArmed((v) => (v ? false : v));
-      aiCoachLastInsightKeyRef.current = null;
-      return;
-    }
-
-    const inCooldown = Date.now() < aiCoachCooldownUntilRef.current;
-    if (inCooldown) {
-      setHasNewInsight((v) => (v ? false : v));
-      setAiCoachBulbPulseCycles((c) => (c !== 0 ? 0 : c));
-      setIsAiCoachInsightArmed((v) => (v ? false : v));
-      return;
-    }
-
-    const activateInsight = () => {
-      setIsAiCoachInsightArmed(true);
-      setHasNewInsight(true);
-      if (!isUserActivelyEditing) {
-        setAiCoachBulbPulseCycles(3);
-      } else {
-        setAiCoachBulbPulseCycles(0);
-      }
-      if (!shouldDelayAiCoachInsight) {
-        setIsAiCoachSuggestionModalOpen(true);
-      }
-      aiCoachInsightReminderTimeoutRef.current = setTimeout(() => {
-        if (isAiCoachSuggestionActiveRef.current && hasNewInsightRef.current && !isUserActivelyEditingRef.current) {
-          setAiCoachBulbPulseCycles(1);
-        }
-      }, 25000);
-    };
-
-    if (aiCoachLastInsightKeyRef.current !== aiCoachSuggestionDismissKey) {
-      aiCoachLastInsightKeyRef.current = aiCoachSuggestionDismissKey;
-      if (shouldDelayAiCoachInsight) {
-        setIsAiCoachInsightArmed(false);
-        aiCoachInsightActivateTimeoutRef.current = setTimeout(() => {
-          if (isAiCoachSuggestionActiveRef.current && Date.now() >= aiCoachCooldownUntilRef.current) {
-            activateInsight();
-          }
-        }, 7000);
-      } else {
-        activateInsight();
-      }
-    } else if (!isAiCoachInsightArmed && !shouldDelayAiCoachInsight) {
-      activateInsight();
-    } else if (isAiCoachInsightArmed && isUserActivelyEditing) {
-      setAiCoachBulbPulseCycles(0);
-    }
-
-    return () => {
-      if (aiCoachInsightReminderTimeoutRef.current) {
-        clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-        aiCoachInsightReminderTimeoutRef.current = null;
-      }
-      if (aiCoachInsightActivateTimeoutRef.current) {
-        clearTimeout(aiCoachInsightActivateTimeoutRef.current);
-        aiCoachInsightActivateTimeoutRef.current = null;
-      }
-    };
-  }, [
-    isAiCoachSuggestionActive,
-    aiCoachSuggestionDismissKey,
-    isAiCoachInsightArmed,
-    isUserActivelyEditing,
-    shouldDelayAiCoachInsight,
-  ]);
-
-  const handleAiCoachClose = useCallback(() => {
-    beginAiCoachCooldown(180000);
-  }, [beginAiCoachCooldown]);
-
-  useEffect(() => {
-    if (!aiCoachSuggestion || !aiCoachSuggestionDismissKey || !isAiCoachInsightArmed) {
-      setIsAiCoachSuggestionModalOpen((open) => (open ? false : open));
-      return;
-    }
-    if (dismissedAiCoachInsights[aiCoachSuggestionDismissKey]) {
-      setIsAiCoachSuggestionModalOpen((open) => (open ? false : open));
-      return;
-    }
-  }, [aiCoachSuggestion, aiCoachSuggestionDismissKey, dismissedAiCoachInsights, isAiCoachInsightArmed]);
-
-  const handleAiCoachIgnore = useCallback(() => {
-    const s = aiCoachEval?.suggestion;
-    const period = aiCoachEval?.period;
-    if (!s?.ruleId || !period) return;
-    if (aiCoachSuggestionDismissKey) {
-      setDismissedAiCoachInsights((prev) => {
-        const next = { ...(prev || {}), [aiCoachSuggestionDismissKey]: true };
-        try {
-          if (typeof window !== 'undefined') {
-            window.localStorage.setItem(AI_COACH_DISMISSED_INSIGHTS_LS_KEY, JSON.stringify(next));
-          }
-        } catch {
-          // ignore localStorage quota/availability issues
-        }
-        return next;
-      });
-    }
-    recordCoachIgnore(s.ruleId);
-    consumeCoachPeriod(getTodayString(), period);
-    setCoachPrefsTick((x) => x + 1);
-    beginAiCoachCooldown(180000);
-  }, [aiCoachEval, aiCoachSuggestionDismissKey, beginAiCoachCooldown]);
-
-  const handleAiCoachCreateMeal = useCallback(() => {
-    const s = aiCoachEval?.suggestion;
-    const period = aiCoachEval?.period;
-    if (!s?.action?.mealType || !period) return;
-    recordCoachAccept(s.ruleId);
-    consumeCoachPeriod(getTodayString(), period);
-    setCoachPrefsTick((x) => x + 1);
-    const canon = s.action.mealType;
-    setMealType(mealIdFromCanonical(canon));
-    setSelectedMealCenter(null);
-    setEditingMealId(null);
-    setMealToEdit(null);
-    openFastLoggerNew();
-    setHasNewInsight(false);
-    setAiCoachBulbPulseCycles(0);
-    if (aiCoachInsightReminderTimeoutRef.current) {
-      clearTimeout(aiCoachInsightReminderTimeoutRef.current);
-      aiCoachInsightReminderTimeoutRef.current = null;
-    }
-    if (aiCoachInsightActivateTimeoutRef.current) {
-      clearTimeout(aiCoachInsightActivateTimeoutRef.current);
-      aiCoachInsightActivateTimeoutRef.current = null;
-    }
-    setIsAiCoachSuggestionModalOpen(false);
-  }, [aiCoachEval, mealIdFromCanonical, openFastLoggerNew]);
 
   useEffect(() => {
     if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
@@ -7610,34 +7300,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     && (isChatOpen || !isDrawerOpen)
     && !trainingBlockCreatorOpen
     && !showTherapyPlan
-      ? (isChatOpen ? (
-        <button
-          type="button"
-          onClick={closeChat}
-          aria-label="Chiudi chat"
-          className={[
-            'fixed right-4 z-[100010] flex h-8 w-8 items-center justify-center',
-            'top-[calc(0.75rem+env(safe-area-inset-top,0px))]',
-            'border-none bg-transparent p-0 shadow-none',
-            'text-red-500 transition-colors duration-200 hover:text-red-400',
-            'active:scale-95 focus:outline-none focus-visible:ring-1 focus-visible:ring-red-500/40',
-          ].join(' ')}
-        >
-          <svg
-            aria-hidden
-            viewBox="0 0 24 24"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </button>
-      ) : (
+      ? (isChatOpen ? null : (
         <button
           type="button"
           onClick={openChat}
@@ -9454,102 +9117,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
       </div>
       ) : null}
-
-      {isAiCoachSuggestionModalOpen && aiCoachSuggestion
-        ? createPortal(
-          <div
-            role="presentation"
-            onClick={handleAiCoachClose}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(2, 6, 23, 0.72)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '18px',
-              zIndex: 100070,
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="Suggerimento metabolico"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                width: '100%',
-                maxWidth: 380,
-                borderRadius: 16,
-                border: '1px solid rgba(250, 204, 21, 0.35)',
-                background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98))',
-                boxShadow: '0 24px 52px rgba(0,0,0,0.5)',
-                padding: '16px 16px 14px',
-              }}
-            >
-              <div style={{ fontSize: '0.72rem', color: '#fde68a', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>
-                Suggerimento metabolico
-              </div>
-              <h3 style={{ margin: '0 0 8px', fontSize: '1rem', color: '#fef9c3' }}>
-                {aiCoachSuggestionTitle}
-              </h3>
-              <p style={{ margin: '0 0 14px', fontSize: '0.9rem', color: '#fefce8', lineHeight: 1.45 }}>
-                {aiCoachSuggestion.message}
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleAiCoachCreateMeal}
-                  disabled={!aiCoachSuggestion.action}
-                  style={{
-                    padding: '8px 14px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: aiCoachSuggestion.action ? '#facc15' : 'rgba(148,163,184,0.35)',
-                    color: aiCoachSuggestion.action ? '#422006' : '#cbd5e1',
-                    fontWeight: 800,
-                    fontSize: '0.78rem',
-                    cursor: aiCoachSuggestion.action ? 'pointer' : 'not-allowed',
-                    opacity: aiCoachSuggestion.action ? 1 : 0.8,
-                  }}
-                >
-                  Crea pasto
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAiCoachIgnore}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(255,255,255,0.22)',
-                    background: 'transparent',
-                    color: '#cbd5e1',
-                    fontSize: '0.78rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Ignora
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAiCoachClose}
-                  style={{
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(148,163,184,0.35)',
-                    background: 'rgba(15,23,42,0.65)',
-                    color: '#94a3b8',
-                    fontSize: '0.78rem',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Chiudi
-                </button>
-              </div>
-            </div>
-          </div>,
-          document.body
-        )
-        : null}
 
       {showBiochemicalDiagnostics ? (
         <Suspense fallback={<KentuLazySectionFallback label="Diagnostica…" />}>

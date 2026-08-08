@@ -135,19 +135,21 @@ export default function AiCluster({
     ttsEnabled,
     toggleTts,
     isListening,
-    toggleListening,
-    stopListening,
+    voiceSessionActive,
+    voiceTranscript,
+    beginVoiceSession,
+    cancelVoiceSession,
+    restartVoiceSession,
+    confirmVoiceSubmit,
+    noteTextInteraction,
     sttSupported,
     ttsSupported,
     voiceError,
     clearVoiceError,
   } = useVoiceChat({
-    chatInput,
-    setChatInput,
     chatHistory,
     isProcessing,
     defaultTtsEnabled: preferVoiceChat === true,
-    autoSubmitOnSpeechEnd: true,
     userDisplayName,
     onVoiceSubmit: (text) => {
       voiceSubmitRef.current?.(text);
@@ -297,11 +299,10 @@ export default function AiCluster({
   const handleSendFromInput = useCallback(async () => {
     if (isProcessing) return;
 
-    if (isListening) {
-      // Ferma mic senza doppio invio: inviamo sotto dal testo già in input.
-      stopListening({ submit: false });
+    if (voiceSessionActive) {
+      cancelVoiceSession();
     }
-    stopSpeaking();
+    noteTextInteraction();
 
     if (isNotesMode) {
       const noteText = String(chatInput || '').trim();
@@ -323,8 +324,9 @@ export default function AiCluster({
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [
     isProcessing,
-    isListening,
-    stopListening,
+    voiceSessionActive,
+    cancelVoiceSession,
+    noteTextInteraction,
     isNotesMode,
     chatInput,
     setChatInput,
@@ -333,7 +335,7 @@ export default function AiCluster({
     resetInputHeight,
   ]);
 
-  // Voice-to-voice: fine frase → invio automatico (stesso percorso dell’input).
+  // Invio da sessione vocale (stesso percorso dell’input, con TTS abilitato per la risposta).
   voiceSubmitRef.current = (text) => {
     const trimmed = String(text || '').trim();
     if (!trimmed || isProcessing) return;
@@ -360,8 +362,8 @@ export default function AiCluster({
       className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="flex shrink-0 items-center border-b border-zinc-800 bg-zinc-950 px-4 py-3">
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5 pr-2">
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
             Kentu AI Workspace
           </span>
@@ -371,23 +373,61 @@ export default function AiCluster({
             </span>
           ) : null}
         </div>
-        {ttsSupported ? (
-          <button
-            type="button"
-            onClick={toggleTts}
-            aria-pressed={ttsEnabled}
-            aria-label={ttsEnabled ? 'Disattiva lettura vocale' : 'Attiva lettura vocale'}
-            title={ttsEnabled ? 'Voce AI: ON' : 'Voce AI: OFF'}
-            className={[
-              'ml-2 shrink-0 rounded-lg border px-2.5 py-1.5 text-[13px] transition',
-              ttsEnabled
-                ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
-                : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500',
-            ].join(' ')}
-          >
-            {ttsEnabled ? '🔊' : '🔇'}
-          </button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {ttsSupported ? (
+            <button
+              type="button"
+              onClick={toggleTts}
+              aria-pressed={ttsEnabled}
+              aria-label={ttsEnabled ? 'Disattiva lettura vocale' : 'Attiva lettura vocale'}
+              title={
+                ttsEnabled
+                  ? 'Voce AI: ON (solo dopo messaggi vocali)'
+                  : 'Voce AI: OFF'
+              }
+              className={[
+                'inline-flex h-10 w-10 items-center justify-center rounded-full border text-[15px] transition',
+                ttsEnabled
+                  ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
+                  : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500',
+              ].join(' ')}
+            >
+              {ttsEnabled ? '🔊' : '🔇'}
+            </button>
+          ) : null}
+          {typeof onBack === 'function' ? (
+            <button
+              type="button"
+              onClick={() => {
+                cancelVoiceSession();
+                stopSpeaking();
+                onBack();
+              }}
+              aria-label="Chiudi chat"
+              title="Chiudi chat"
+              className={[
+                'inline-flex h-10 w-10 items-center justify-center rounded-full border',
+                'border-zinc-700 bg-zinc-900 text-red-400 transition',
+                'hover:border-red-500/50 hover:text-red-300',
+                'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40',
+              ].join(' ')}
+            >
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div
@@ -847,6 +887,63 @@ export default function AiCluster({
             ))}
           </div>
         ) : null}
+        {voiceSessionActive ? (
+          <div className="kentu-voice-vetrina" role="region" aria-label="Trascrizione vocale">
+            <div className="kentu-voice-vetrina__status">
+              <span
+                className={`kentu-voice-vetrina__dot${isListening ? ' kentu-voice-vetrina__dot--live' : ''}`}
+                aria-hidden
+              />
+              <span className="kentu-voice-vetrina__status-text">
+                {isListening ? 'In ascolto… parla liberamente' : 'Microfono in pausa breve — riprende da solo'}
+              </span>
+            </div>
+            <div className="kentu-voice-vetrina__glass" aria-live="polite">
+              {voiceTranscript ? (
+                <p className="kentu-voice-vetrina__text">{voiceTranscript}</p>
+              ) : (
+                <p className="kentu-voice-vetrina__placeholder">
+                  La trascrizione compare qui mentre parli. Invia solo quando sei pronto.
+                </p>
+              )}
+            </div>
+            <div className="kentu-voice-vetrina__actions">
+              <button
+                type="button"
+                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--primary"
+                disabled={!String(voiceTranscript || '').trim() || isProcessing}
+                onClick={() => {
+                  clearVoiceError();
+                  confirmVoiceSubmit();
+                }}
+              >
+                Invia richiesta
+              </button>
+              <button
+                type="button"
+                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--secondary"
+                disabled={isProcessing}
+                onClick={() => {
+                  clearVoiceError();
+                  restartVoiceSession();
+                }}
+              >
+                Ricomincia
+              </button>
+              <button
+                type="button"
+                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--ghost"
+                disabled={isProcessing}
+                onClick={() => {
+                  clearVoiceError();
+                  cancelVoiceSession();
+                }}
+              >
+                Annulla
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>
           <input
             type="file"
@@ -879,22 +976,16 @@ export default function AiCluster({
           {sttSupported ? (
             <button
               type="button"
-              className={[
-                'kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border text-[16px] transition',
-                isListening
-                  ? 'border-rose-500/60 bg-rose-500/20 text-rose-200 animate-pulse'
-                  : 'border-zinc-700 bg-transparent text-zinc-300 hover:border-cyan-500/40 hover:text-cyan-200',
-              ].join(' ')}
-              aria-label={isListening ? 'Ferma ascolto' : 'Parla'}
-              aria-pressed={isListening}
+              className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+              aria-label="Parla"
               disabled={isProcessing && !isNotesMode}
               onClick={() => {
                 clearVoiceError();
-                toggleListening();
+                beginVoiceSession();
               }}
-              title={isListening ? 'Sto ascoltando… tocca per fermare' : 'Detta con il microfono'}
+              title="Detta con il microfono"
             >
-              {isListening ? '⏺' : '🎤'}
+              🎤
             </button>
           ) : null}
           <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
@@ -931,11 +1022,9 @@ export default function AiCluster({
             placeholder={
               isNotesMode
                 ? 'Nota di sviluppo…'
-                : isListening
-                  ? 'Sto ascoltando…'
-                  : chatImages.length > 0
-                    ? 'Commento immagini…'
-                    : 'Query sistema…'
+                : chatImages.length > 0
+                  ? 'Commento immagini…'
+                  : 'Query sistema…'
             }
             value={chatInput}
             disabled={isProcessing && !isNotesMode}
@@ -984,6 +1073,7 @@ export default function AiCluster({
             </div>
           ) : null}
         </div>
+        )}
         {voiceError ? (
           <p
             role="alert"

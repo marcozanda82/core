@@ -371,19 +371,3 @@ DIRETTIVE:
 Formato esatto dell'ultima riga (solo JSON valido, senza markdown):
 {"agenda_options":[{"name":"etichetta breve","duration":90,"kcal":300}]}`;
 }
-
-/** Snapshot stabile delle voci food/recipe per il coach (stesso contenuto → stessa stringa anche con array nuovo). */
-export function buildAiCoachFoodLogFingerprint(log) {
-  const arr = log || [];
-  const parts = [];
-  for (let i = 0; i < arr.length; i += 1) {
-    const e = arr[i];
-    if (!e || (e.type !== 'food' && e.type !== 'recipe' && e.type !== 'ghost_meal')) continue;
-    const id = e.id ?? e.entryId ?? e.logId ?? `idx${i}`;
-    const mtRaw = String(e.mealType || 'snack').split('_')[0];
-    const kcal = Number(e.kcal ?? e.cal) || 0;
-    const prot = Number(e.prot ?? e.proteine) || 0;
-    parts.push(`${id}:${e.type}:${mtRaw}:${kcal}:${prot}`);
-  }
-  return parts.join('|');
-}

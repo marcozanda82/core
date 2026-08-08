@@ -1,11 +1,12 @@
 /**
- * Motore puro "4 cilindri" — decadimento muscolare (5 macro-aree) e fatica sistemica.
+ * Motore puro "4 cilindri" — stimolo muscolare settimanale (5 macro-aree) e fatica sistemica.
  *
  * Nessuna dipendenza React/Firebase. Consumato da hook e save-path.
  *
- * Semantica approvata (engineVersion ≥ 2):
- * - decay.legs | chest | back_shoulders | arms | core : 0 = da allenare, 1 = stimolato al massimo.
- *   Decresce con i giorni senza stimolo (mezzanotte virtuale).
+ * Semantica (engineVersion ≥ 2) — Tracker Stimolo Settimanale:
+ * - decay.legs | chest | back_shoulders | arms | core : 0 = da stimolare, 1 = target settimanale
+ *   (≈ 2 sessioni sul gruppo). Una sessione ≈ +0.5. Niente atrofia giornaliera: decadimento
+ *   muscolare disabilitato (0/giorno); la UI sismografi usa finestra mobile 7gg dallo storico.
  * - systemic_fatigue : 0 = riposato, 1 = sovrallenato. Decresce a riposo, sale con il carico.
  *
  * Legacy v1 (push/pull/legs) viene espanso in lettura via `expandLegacyDecay3to5`.
@@ -180,17 +181,17 @@ export const MUSCLE_CYLINDER_DEFS = Object.freeze([
   { id: 'core', label: 'Abs e Core', shortLabel: 'CORE', subtitle: 'Addome · Core' },
 ]);
 
-/** Parametri v2 hardcoded — tuning utente in fase successiva. */
+/** Parametri v2 — stimolo settimanale (1 sessione ≈ 50%, 2 ≈ 100%). Nessuna atrofia giornaliera. */
 export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
   decayPerDay: Object.freeze({
-    legs: 0.10,
-    chest: 0.12,
-    back_shoulders: 0.12,
-    arms: 0.13,
-    core: 0.14,
+    legs: 0,
+    chest: 0,
+    back_shoulders: 0,
+    arms: 0,
+    core: 0,
   }),
   systemicRecoveryPerDay: 0.08,
-  maxMuscleBump: 0.55,
+  maxMuscleBump: 0.50,
   maxSystemicBump: 0.35,
   maxSystemicRecoveryPerSleep: 0.35,
   poorSleepFatiguePenalty: 0.10,
@@ -706,8 +707,8 @@ function addCalendarDaysUtc(iso, deltaDays) {
 
 /**
  * Applica un singolo giorno di riposo virtuale (mezzanotte).
- * I cilindri muscolari scendono; la fatica sistemica si smaltisce.
- * Con `proteinTargetHit`, l'atrofia muscolare è moltiplicata per `proteinShieldMultiplier`.
+ * I cilindri muscolari NON decadono più giornalmente (stimolo settimanale / finestra 7gg).
+ * La fatica sistemica continua a smaltirsi.
  *
  * @param {FourCylinderState} state
  * @param {{ proteinTargetHit?: boolean, params?: FourCylinderParams | null }} [options]

@@ -17,6 +17,7 @@ import {
 } from './fourCylinderNutritionBridge';
 import { resolveSleepRecoveryInput } from './fourCylinderSleepBridge';
 import { persistFourCylinderState } from './fourCylinderPersist';
+import { MUSCLE_STIMULUS_WINDOW_DAYS } from '../../trendHub/utils/muscleSpillover.js';
 
 /**
  * True se fullHistory ha almeno un nodo tracker (storico idratato con dati).
@@ -194,7 +195,10 @@ export function rebuildFourCylinderFromTrackerHistory({
   seedState = null,
 }) {
   const todayIso = String(anchorDateIso).slice(0, 10);
-  const sortedDates = collectTrackerDateKeys(fullHistory, todayIso);
+  const allDates = collectTrackerDateKeys(fullHistory, todayIso);
+  // Finestra mobile 7gg: solo sessioni recenti alimentano lo stimolo ipertrofico settimanale.
+  const windowStart = addDays(todayIso, -(MUSCLE_STIMULUS_WINDOW_DAYS - 1));
+  const sortedDates = allDates.filter((d) => d >= windowStart && d <= todayIso);
   const firstDate = sortedDates[0] || todayIso;
 
   let state = createDefaultFourCylinderState(firstDate);

@@ -8,6 +8,13 @@ import {
 import { buildFourCylinderTelemetrySeries, getDaysSinceLastStimulus, getLastSleepSnapshot, formatInactivityDaysLabel, formatInactivitySuffix } from './features/salaComandi/utils/fourCylinderTelemetryHistory';
 import { getTodayNutritionSnapshot } from './features/salaComandi/utils/fourCylinderNutritionBridge';
 import { getTodayString } from './coreEngine';
+import {
+  hypertrophyTriageLabel,
+  hypertrophyTriageTone,
+  HYPERTROPHY_DECAY_HORIZON_DAYS,
+  HYPERTROPHY_TRIAGE_STIMULATE_MAX,
+  HYPERTROPHY_TRIAGE_RECOVERY_MAX,
+} from './utils/hypertrophyMath';
 import TelemetryChart from './TelemetryChart';
 import CardioProgressBar from './components/CardioProgressBar';
 import MetabolicTrendChart from './components/MetabolicTrendChart';
@@ -18,15 +25,15 @@ const SYSTEMIC_CRITICAL_THRESHOLD = 0.7;
 const MUSCLE_CYLINDERS = MUSCLE_CYLINDER_DEFS;
 
 /**
+ * Triage colori: 0–15 DA STIMOLARE · 16–80 IN RECUPERO · >80 OTTIMALE.
  * @param {number} value 0–1
  * @returns {'critical' | 'warning' | 'stable' | 'good'}
  */
 function muscleTriageLevel(value) {
-  const v = clamp01(value);
-  if (v < 0.25) return 'critical';
-  if (v < 0.5) return 'warning';
-  if (v < 0.75) return 'stable';
-  return 'good';
+  const tone = hypertrophyTriageTone(clamp01(value) * 100);
+  if (tone === 'good') return 'good';
+  if (tone === 'warning') return 'warning';
+  return 'critical';
 }
 
 /**
@@ -135,13 +142,28 @@ export default function MetabolicDiagnostics({
   const systemic = clamp01(state.systemic_fatigue);
   const isSystemicCritical = systemic >= SYSTEMIC_CRITICAL_THRESHOLD;
 
+  const telemetrySeries = useMemo(() => {
+    const todayIso = getTodayString();
+    const activeIso = String(activeDate || todayIso).slice(0, 10);
+    const todayLiveLog = activeIso === todayIso && Array.isArray(dailyLog) ? dailyLog : null;
+    return buildFourCylinderTelemetrySeries(fullHistory, {
+      daysBack: historyDays,
+      endDate: todayIso,
+      fourCylinder: state,
+      todayLiveLog,
+    });
+  }, [fullHistory, historyDays, state, dailyLog, activeDate]);
+
+  /** SSOT barre = tip odierno della stessa serie del grafico (hypertrophyMath). */
   const sortedMuscles = useMemo(() => {
     const todayIso = getTodayString();
+    const tip = telemetrySeries.length > 0 ? telemetrySeries[telemetrySeries.length - 1] : null;
     return MUSCLE_CYLINDERS.map((cyl) => {
-      const value = clamp01(state.decay?.[cyl.id]);
+      const value = tip ? clamp01(tip[cyl.id]) : 0;
       return {
         ...cyl,
         value,
+        triageLabel: hypertrophyTriageLabel(value * 100),
         level: muscleTriageLevel(value),
         rank: value,
         daysSinceStimulus: getDaysSinceLastStimulus(fullHistory, cyl.id, {
@@ -150,16 +172,7 @@ export default function MetabolicDiagnostics({
         }),
       };
     }).sort((a, b) => a.rank - b.rank);
-  }, [state, fullHistory]);
-
-  const telemetrySeries = useMemo(
-    () => buildFourCylinderTelemetrySeries(fullHistory, {
-      daysBack: historyDays,
-      endDate: getTodayString(),
-      fourCylinder: state,
-    }),
-    [fullHistory, historyDays, state],
-  );
+  }, [telemetrySeries, state, fullHistory]);
 
   const lastSleep = useMemo(
     () => getLastSleepSnapshot(fullHistory, { todayIso: getTodayString() }),
@@ -433,15 +446,16 @@ export default function MetabolicDiagnostics({
         />
       </div>
 
-      {/* Sismografi muscolari — ordinati dal più critico (≈0) al più ok (≈1) */}
+      {/* Sismografi muscolari — stesso SSOT del grafico (hypertrophyMath) */}
       <div className="mt-3 flex flex-col gap-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-          Sismografi muscolari · 5 macro-aree · triage
+          Sismografi muscolari · accumulo dinamico {HYPERTROPHY_DECAY_HORIZON_DAYS}gg · triage
         </p>
 
         {sortedMuscles.map((cyl, index) => {
           const styles = muscleLevelClasses(cyl.level);
-          const isTopPriority = index === 0 && cyl.value < 0.75;
+          const isTopPriority = index === 0
+            && Math.round(cyl.value * 100) <= HYPERTROPHY_TRIAGE_STIMULATE_MAX;
 
           return (
             <article
@@ -477,21 +491,25 @@ export default function MetabolicDiagnostics({
                     </p>
                   ) : null}
                 </div>
-                <span className={`font-mono text-lg font-bold tabular-nums ${styles.text}`}>
-                  {formatPct(cyl.value)}
-                </span>
+                <div className="shrink-0 text-right">
+                  <span className={`block font-mono text-lg font-bold tabular-nums ${styles.text}`}>
+                    {formatPct(cyl.value)}
+                  </span>
+                  <span className={`mt-0.5 block text-[9px] font-bold uppercase tracking-wider ${styles.text}`}>
+                    {cyl.triageLabel}
+                  </span>
+                </div>
               </div>
 
-              {/* Barra sismografo */}
+              {/* Barra = tip grafico linee (hypertrophyMath) */}
               <div className="relative h-8 overflow-hidden rounded-md border border-white/5 bg-black/50">
                 <div
                   className={`absolute inset-y-0 left-0 ${styles.bar} opacity-90 transition-all duration-500`}
-                  style={{ width: `${Math.max(cyl.value * 100, 2)}%` }}
+                  style={{ width: `${Math.max(cyl.value * 100, cyl.value > 0 ? 2 : 0)}%` }}
                 />
                 <div className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.04)_0px,rgba(255,255,255,0.04)_1px,transparent_1px,transparent_6px)]" />
-                {/* Tick marks */}
                 <div className="pointer-events-none absolute inset-0 flex justify-between px-1">
-                  {[0, 25, 50, 75, 100].map((tick) => (
+                  {[0, HYPERTROPHY_TRIAGE_STIMULATE_MAX, HYPERTROPHY_TRIAGE_RECOVERY_MAX, 100].map((tick) => (
                     <span
                       key={tick}
                       className="w-px self-stretch bg-white/10"
@@ -502,8 +520,9 @@ export default function MetabolicDiagnostics({
               </div>
 
               <div className="mt-1.5 flex justify-between text-[9px] uppercase tracking-wider text-slate-600">
-                <span>0 · Atrofia</span>
-                <span>1 · Stimolo max</span>
+                <span>≤{HYPERTROPHY_TRIAGE_STIMULATE_MAX}% · Da stimolare</span>
+                <span>Recupero</span>
+                <span>&gt;{HYPERTROPHY_TRIAGE_RECOVERY_MAX}% · Ottimale</span>
               </div>
             </article>
           );
@@ -542,7 +561,7 @@ export default function MetabolicDiagnostics({
           Ultimo processamento:{' '}
           <span className="font-mono text-slate-400">{state.lastProcessedDate || '—'}</span>
           {' · '}
-          Decadimento virtuale applicato a mezzanotte locale.
+          Stimolo muscolare: accumulo dinamico (+65/sessione, curva {HYPERTROPHY_DECAY_HORIZON_DAYS}gg) · barre = tip grafico.
         </p>
       </footer>
     </div>

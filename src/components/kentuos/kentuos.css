@@ -666,6 +666,157 @@
   box-shadow: 0 4px 28px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(250, 204, 21, 0.12);
 }
 
+/* —— Voice vetrina (controllo manuale) —— */
+.kentu-voice-vetrina {
+  flex-shrink: 0;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 16px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.94));
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.kentu-voice-vetrina__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kentu-voice-vetrina__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #64748b;
+  flex-shrink: 0;
+}
+
+.kentu-voice-vetrina__dot--live {
+  background: #f43f5e;
+  box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55);
+  animation: kentu-voice-pulse 1.4s ease-out infinite;
+}
+
+@keyframes kentu-voice-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 63, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+  }
+}
+
+.kentu-voice-vetrina__status-text {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.kentu-voice-vetrina__glass {
+  min-height: 88px;
+  max-height: 160px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.kentu-voice-vetrina__text {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: #f8fafc;
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.kentu-voice-vetrina__placeholder {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.kentu-voice-vetrina__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kentu-voice-vetrina__btn {
+  appearance: none;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.kentu-voice-vetrina__btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.kentu-voice-vetrina__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kentu-voice-vetrina__btn--primary {
+  border: none;
+  background: linear-gradient(135deg, #22d3ee, #38bdf8);
+  color: #0f172a;
+}
+
+.kentu-voice-vetrina__btn--secondary {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(30, 41, 59, 0.85);
+  color: #e2e8f0;
+}
+
+.kentu-voice-vetrina__btn--ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  font-weight: 600;
+  min-height: 42px;
+}
+
+.kentu-voice-vetrina__btn--ghost:hover:not(:disabled) {
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+@media (min-width: 480px) {
+  .kentu-voice-vetrina__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .kentu-voice-vetrina__btn--primary {
+    flex: 1 1 100%;
+  }
+
+  .kentu-voice-vetrina__btn--secondary,
+  .kentu-voice-vetrina__btn--ghost {
+    flex: 1 1 calc(50% - 4px);
+  }
+}
+
 .kentu-devtools-wrap {
   position: relative;
   flex-shrink: 0;

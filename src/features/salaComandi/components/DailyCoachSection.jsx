@@ -15,7 +15,6 @@ import { useDailyCoach } from '@/features/salaComandi/hooks/useDailyCoach';
  *   metabolicCompassDailyHistory?: unknown[],
  *   energyAt20Percent?: number | null,
  *   kentuDailyCalorieStrategy?: string | null,
- *   aiDayCoach?: object | null,
  * }} props
  */
 export default function DailyCoachSection({
@@ -29,7 +28,6 @@ export default function DailyCoachSection({
   metabolicCompassDailyHistory,
   energyAt20Percent,
   kentuDailyCalorieStrategy,
-  aiDayCoach,
 }) {
   const sleepCoach = useSleepCoach({
     activeLog,
@@ -51,7 +49,6 @@ export default function DailyCoachSection({
     totali,
     energyAt20Percent,
     kentuDailyCalorieStrategy,
-    aiDayCoach,
   });
 
   return <DailyCoachCard data={dailyCoach} />;

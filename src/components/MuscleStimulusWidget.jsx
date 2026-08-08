@@ -10,19 +10,25 @@ import {
 import { buildFourCylinderTelemetrySeries } from '../features/salaComandi/utils/fourCylinderTelemetryHistory';
 import { getTodayString } from '../coreEngine';
 import {
-  buildSaluteLongevityWindow,
-  LONGEVITY_WINDOW_DAYS,
-} from '../features/trendHub/utils/saluteHistorySeries';
-import {
-  muscleStimulusBarSegments,
-  MUSCLE_STIMULUS_SUFFICIENT_TOTAL,
-} from '../features/trendHub/utils/muscleSpillover';
+  hypertrophyTriageLabel,
+  hypertrophyTriageTone,
+  HYPERTROPHY_DECAY_HORIZON_DAYS,
+  HYPERTROPHY_SESSION_BOOST,
+  HYPERTROPHY_TRIAGE_STIMULATE_MAX,
+  HYPERTROPHY_TRIAGE_RECOVERY_MAX,
+} from '../utils/hypertrophyMath';
 
 function getToneClasses(percent) {
-  if (percent >= 75) return { bar: 'bg-emerald-400', border: 'border-emerald-500/40', text: 'text-emerald-400' };
-  if (percent >= 40) return { bar: 'bg-yellow-500', border: 'border-yellow-500/40', text: 'text-yellow-400' };
-  if (percent >= 25) return { bar: 'bg-orange-500', border: 'border-orange-500/40', text: 'text-orange-400' };
-  if (percent > 0) return { bar: 'bg-red-500', border: 'border-red-500/40', text: 'text-red-400' };
+  const tone = hypertrophyTriageTone(percent);
+  if (tone === 'good') {
+    return { bar: 'bg-emerald-400', border: 'border-emerald-500/40', text: 'text-emerald-400' };
+  }
+  if (tone === 'warning') {
+    return { bar: 'bg-cyan-400', border: 'border-cyan-500/40', text: 'text-cyan-300' };
+  }
+  if (percent > 0) {
+    return { bar: 'bg-amber-500', border: 'border-amber-500/40', text: 'text-amber-400' };
+  }
   return { bar: 'bg-slate-600', border: 'border-slate-700/50', text: 'text-slate-400' };
 }
 
@@ -103,23 +109,21 @@ function mapFourCylinderPropToDecay(fourCylinderProp) {
 }
 
 /**
+ * SSOT: tip della serie telemetria (hypertrophyMath via buildFourCylinderTelemetrySeries).
  * @param {object | null | undefined} fourCylinderProp
  * @param {object | null | undefined} fullHistory
  * @param {string} todayIso
  * @returns {Record<string, number>}
  */
-function resolveLiveMuscleDecay(fourCylinderProp, fullHistory, todayIso) {
-  const mapped = mapFourCylinderPropToDecay(fourCylinderProp);
-  if (mapped && muscleDecaySum(mapped) > 0) return mapped;
-
+function resolveHypertrophyLevels01(fourCylinderProp, fullHistory, todayIso) {
   if (fullHistory && typeof fullHistory === 'object' && Object.keys(fullHistory).length > 0) {
     const series = buildFourCylinderTelemetrySeries(fullHistory, {
-      daysBack: 14,
+      daysBack: Math.max(14, HYPERTROPHY_DECAY_HORIZON_DAYS + 1),
       endDate: todayIso,
       fourCylinder: fourCylinderProp,
     });
     const last = series[series.length - 1];
-    if (last && muscleDecaySum(last) > 0) {
+    if (last) {
       return {
         legs: clamp01(last.legs),
         chest: clamp01(last.chest),
@@ -130,6 +134,7 @@ function resolveLiveMuscleDecay(fourCylinderProp, fullHistory, todayIso) {
     }
   }
 
+  const mapped = mapFourCylinderPropToDecay(fourCylinderProp);
   return mapped || createDefaultFourCylinderState().decay;
 }
 
@@ -152,26 +157,23 @@ function computeGlobalLoad(cylinders) {
 function ProgressBarRow({
   label,
   percent,
-  directPercent = null,
-  indirectPercent = null,
   tone,
   ariaLabel,
   as: Comp = 'div',
   onClick,
   hint = null,
+  triageLabel = null,
 }) {
   const interactive = Comp === 'button' || typeof onClick === 'function';
   const sharedClass = `flex w-full items-center gap-2 rounded-xl border ${tone.border} bg-slate-900/80 px-2.5 py-2 shadow-lg backdrop-blur-sm text-left`;
-  const hasSpillover = Number.isFinite(Number(directPercent)) || Number.isFinite(Number(indirectPercent));
-  const dPct = Math.max(0, Math.min(100, Math.round(Number(directPercent) || 0)));
-  const iPct = Math.max(0, Math.min(100 - dPct, Math.round(Number(indirectPercent) || 0)));
-  const totalPct = hasSpillover ? Math.min(100, dPct + iPct) : percent;
+  const totalPct = percent;
+  const triage = triageLabel || hypertrophyTriageLabel(totalPct);
 
   return (
     <Comp
       type={Comp === 'button' ? 'button' : undefined}
       role={Comp === 'div' ? 'listitem' : undefined}
-      aria-label={ariaLabel}
+      aria-label={ariaLabel || `${label} ${totalPct} percento, ${triage}`}
       onClick={onClick}
       className={
         interactive
@@ -184,32 +186,10 @@ function ProgressBarRow({
         {label}
       </span>
       <div className="relative h-4 min-w-0 flex-1 overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
-        {hasSpillover ? (
-          <>
-            {/* Direct: pieno / vivace */}
-            <div
-              className="absolute left-0 top-0 h-full bg-emerald-400 transition-all duration-1000 ease-out"
-              style={{ width: `${dPct}%` }}
-              title={`Diretto ${dPct}%`}
-            />
-            {/* Indirect: opaco / tratteggiato */}
-            <div
-              className="absolute top-0 h-full bg-emerald-400/35 transition-all duration-1000 ease-out"
-              style={{
-                left: `${dPct}%`,
-                width: `${iPct}%`,
-                backgroundImage:
-                  'repeating-linear-gradient(135deg, rgba(52,211,153,0.55) 0 3px, transparent 3px 6px)',
-              }}
-              title={`Spillover ${iPct}%`}
-            />
-          </>
-        ) : (
-          <div
-            className={`absolute left-0 top-0 h-full transition-all duration-1000 ease-out ${tone.bar}`}
-            style={{ width: `${percent}%` }}
-          />
-        )}
+        <div
+          className={`absolute left-0 top-0 h-full transition-all duration-1000 ease-out ${tone.bar}`}
+          style={{ width: `${totalPct}%` }}
+        />
         <div
           className="absolute inset-0 opacity-25 mix-blend-overlay"
           style={{
@@ -218,9 +198,14 @@ function ProgressBarRow({
           }}
         />
       </div>
-      <span className="w-8 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-200">
-        {totalPct}%
-      </span>
+      <div className="flex w-[5.5rem] shrink-0 flex-col items-end leading-tight">
+        <span className="text-[11px] font-bold tabular-nums text-slate-200">
+          {totalPct}%
+        </span>
+        <span className={`max-w-full truncate text-[8px] font-semibold tracking-wide ${tone.text}`}>
+          {triage}
+        </span>
+      </div>
       {hint ? (
         <span className="sr-only">{hint}</span>
       ) : null}
@@ -229,18 +214,18 @@ function ProgressBarRow({
 }
 
 /**
- * Widget sismografi muscolari — progressive disclosure + spillover 14gg.
+ * Widget sismografi muscolari — Accumulo Dinamico (hypertrophyMath SSOT).
  *
  * - `compact` (Home): una barra = picco; tap → onOpenDetail (DIAG).
- * - `detailed`: 5 barre con scomposizione direct (pieno) / indirect (opaco).
+ * - `detailed`: 5 barre con triage DA STIMOLARE / IN RECUPERO / STIMOLO OTTIMALE.
  *
+ * Scala: +65%/sessione, decadimento non-lineare 7gg, cap 100%.
  * @param {{
  *   fourCylinder?: object | null,
  *   fullHistory?: object | null,
  *   todayIso?: string,
  *   variant?: 'compact' | 'detailed',
  *   onOpenDetail?: (() => void) | null,
- *   muscleStimulusPillars?: Record<string, { direct?: number, indirect?: number, total?: number }> | null,
  * }} props
  */
 export default function MuscleStimulusWidget({
@@ -249,69 +234,30 @@ export default function MuscleStimulusWidget({
   todayIso = '',
   variant = 'detailed',
   onOpenDetail = null,
-  muscleStimulusPillars: muscleStimulusPillarsProp = null,
 } = {}) {
   const day = String(todayIso || getTodayString()).slice(0, 10);
 
-  const spilloverPillars = useMemo(() => {
-    if (muscleStimulusPillarsProp && typeof muscleStimulusPillarsProp === 'object') {
-      return muscleStimulusPillarsProp;
-    }
-    if (!fullHistory || typeof fullHistory !== 'object') return null;
-    const window = buildSaluteLongevityWindow({
-      fullHistory,
-      todayDate: day,
-      days: LONGEVITY_WINDOW_DAYS,
+  const cylinders = useMemo(() => {
+    const levels = resolveHypertrophyLevels01(fourCylinderProp, fullHistory, day);
+    return MUSCLE_CYLINDER_DEFS.map((cyl) => {
+      const level = normalizeLevel(levels?.[cyl.id]);
+      const ratio = level == null ? 0 : level;
+      const percent = Math.round(ratio * 100);
+      return {
+        ...cyl,
+        percent,
+        sufficient: percent > HYPERTROPHY_TRIAGE_STIMULATE_MAX,
+        optimal: percent > HYPERTROPHY_TRIAGE_RECOVERY_MAX,
+        triageLabel: hypertrophyTriageLabel(percent),
+      };
     });
-    return window.muscleStimulusPillars || null;
-  }, [muscleStimulusPillarsProp, fullHistory, day]);
-
-  const cylinders = useMemo(
-    () => {
-      const hasSpillover = spilloverPillars
-        && Object.values(spilloverPillars).some((b) => (Number(b?.total) || 0) > 0);
-
-      if (hasSpillover) {
-        return MUSCLE_CYLINDER_DEFS.map((cyl) => {
-          const bucket = spilloverPillars[cyl.id] || { direct: 0, indirect: 0, total: 0 };
-          const segments = muscleStimulusBarSegments(bucket);
-          return {
-            ...cyl,
-            percent: segments.totalPercent,
-            directPercent: segments.directPercent,
-            indirectPercent: segments.indirectPercent,
-            sufficient: segments.totalPercent >= MUSCLE_STIMULUS_SUFFICIENT_TOTAL,
-            mode: 'spillover',
-          };
-        });
-      }
-
-      const decay = resolveLiveMuscleDecay(fourCylinderProp, fullHistory, day);
-      return MUSCLE_CYLINDER_DEFS.map((cyl) => {
-        const level = normalizeLevel(decay?.[cyl.id]);
-        const ratio = level == null ? 0 : level;
-        return {
-          ...cyl,
-          percent: Math.round(ratio * 100),
-          directPercent: null,
-          indirectPercent: null,
-          sufficient: false,
-          mode: 'decay',
-        };
-      });
-    },
-    [fourCylinderProp, fullHistory, day, spilloverPillars],
-  );
+  }, [fourCylinderProp, fullHistory, day]);
 
   const globalLoad = useMemo(() => computeGlobalLoad(cylinders), [cylinders]);
-  const usingSpillover = cylinders.some((c) => c.mode === 'spillover');
 
   if (variant === 'compact') {
     const tone = getToneClasses(globalLoad.percent);
     const clickable = typeof onOpenDetail === 'function';
-    const peak = cylinders.find((c) => c.shortLabel === globalLoad.peakLabel) || cylinders[0];
-    const dPct = Math.max(0, Math.round(Number(peak?.directPercent) || 0));
-    const iPct = Math.max(0, Math.min(100 - dPct, Math.round(Number(peak?.indirectPercent) || 0)));
     const fillPercent = globalLoad.percent;
     const ariaLabel = clickable
       ? `Carico muscolare globale ${fillPercent} percento, picco ${globalLoad.peakLabel}. Apri diagnostica.`
@@ -352,7 +298,7 @@ export default function MuscleStimulusWidget({
         >
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <span className={`text-[10px] font-bold tracking-wider ${tone.text}`}>
-              {usingSpillover ? 'STIMOLO 14GG' : 'CARICO MUSCOLARE'}
+              ACCUMULO {HYPERTROPHY_DECAY_HORIZON_DAYS}GG
             </span>
             <span className="text-[11px] font-bold tabular-nums text-slate-200">
               {fillPercent}
@@ -361,35 +307,16 @@ export default function MuscleStimulusWidget({
           </div>
 
           <div className="relative h-5 w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
-            {usingSpillover ? (
-              <>
-                <div
-                  className="absolute left-0 top-0 h-full bg-emerald-400 transition-all duration-1000 ease-out"
-                  style={{ width: `${dPct}%` }}
-                />
-                <div
-                  className="absolute top-0 h-full transition-all duration-1000 ease-out"
-                  style={{
-                    left: `${dPct}%`,
-                    width: `${iPct}%`,
-                    backgroundImage:
-                      'repeating-linear-gradient(135deg, rgba(52,211,153,0.55) 0 3px, transparent 3px 6px)',
-                    backgroundColor: 'rgba(52,211,153,0.28)',
-                  }}
-                />
-              </>
-            ) : (
-              <div
-                className="absolute left-0 top-0 h-full bg-gradient-to-r from-amber-600 via-orange-500 to-yellow-400 transition-all duration-1000 ease-out"
-                style={{
-                  width: `${fillPercent}%`,
-                  boxShadow:
-                    fillPercent > 0
-                      ? '0 0 14px rgba(251, 191, 36, 0.45), inset 0 1px 0 rgba(255,255,255,0.25)'
-                      : 'none',
-                }}
-              />
-            )}
+            <div
+              className="absolute left-0 top-0 h-full bg-gradient-to-r from-amber-600 via-orange-500 to-yellow-400 transition-all duration-1000 ease-out"
+              style={{
+                width: `${fillPercent}%`,
+                boxShadow:
+                  fillPercent > 0
+                    ? '0 0 14px rgba(251, 191, 36, 0.45), inset 0 1px 0 rgba(255,255,255,0.25)'
+                    : 'none',
+              }}
+            />
             <div
               className="absolute inset-0 opacity-25 mix-blend-overlay"
               style={{
@@ -401,7 +328,7 @@ export default function MuscleStimulusWidget({
 
           <p className="mt-1.5 text-[9px] text-slate-600">
             Picco {globalLoad.peakLabel}
-            {usingSpillover ? ' · pieno=diretto · tratteggio=spillover' : ''}
+            {` · +${HYPERTROPHY_SESSION_BOOST}%/sessione · curva ${HYPERTROPHY_DECAY_HORIZON_DAYS}gg`}
             {clickable ? ' · tocca per i dettagli' : ''}
           </p>
         </div>
@@ -411,13 +338,9 @@ export default function MuscleStimulusWidget({
 
   return (
     <div className="flex flex-col gap-1.5" role="list" aria-label="Sismografi muscolari">
-      {usingSpillover ? (
-        <p className="mb-0.5 px-0.5 text-[9px] text-slate-500">
-          <span className="inline-block h-2 w-3 rounded-sm bg-emerald-400 align-middle" /> diretto
-          <span className="ml-2 inline-block h-2 w-3 rounded-sm align-middle" style={{ backgroundImage: 'repeating-linear-gradient(135deg, rgba(52,211,153,0.55) 0 2px, transparent 2px 4px)', backgroundColor: 'rgba(52,211,153,0.28)' }} /> spillover
-          <span className="ml-2 text-slate-600">· soglia {MUSCLE_STIMULUS_SUFFICIENT_TOTAL}%</span>
-        </p>
-      ) : null}
+      <p className="mb-0.5 px-0.5 text-[9px] text-slate-500">
+        Accumulo dinamico · +{HYPERTROPHY_SESSION_BOOST}%/sessione · decadimento {HYPERTROPHY_DECAY_HORIZON_DAYS}gg
+      </p>
       {cylinders.map((cyl) => {
         const tone = getToneClasses(cyl.percent);
         return (
@@ -425,10 +348,9 @@ export default function MuscleStimulusWidget({
             key={cyl.id}
             label={cyl.shortLabel}
             percent={cyl.percent}
-            directPercent={cyl.directPercent}
-            indirectPercent={cyl.indirectPercent}
             tone={tone}
-            ariaLabel={`${cyl.label} ${cyl.percent} percento${cyl.mode === 'spillover' ? `, diretto ${cyl.directPercent}, spillover ${cyl.indirectPercent}` : ''}`}
+            triageLabel={cyl.triageLabel}
+            ariaLabel={`${cyl.label} ${cyl.percent} percento, ${cyl.triageLabel}`}
           />
         );
       })}

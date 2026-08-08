@@ -14,6 +14,7 @@ import {
   finalizeMuscleSpilloverTotals,
   foldSpilloverStimulusToPillars,
   resolveSpilloverMuscleKey,
+  MUSCLE_STIMULUS_WINDOW_DAYS,
 } from './muscleSpillover.js';
 import { computeTotali } from '../../../useBiochimico';
 import {
@@ -356,6 +357,8 @@ export function buildSaluteLongevityWindow({
   let pesiDays = 0;
   let daysWithActivity = 0;
   const muscleStimulus = createEmptyMuscleSpilloverStimulus();
+  // Stimolo muscolare: finestra mobile 7gg (frequenza ipertrofica), indipendente dai 14gg longevità.
+  const muscleWindowDays = Math.min(windowDays, MUSCLE_STIMULUS_WINDOW_DAYS);
 
   for (let i = 0; i < windowDays; i += 1) {
     const dateStr = addDays(today, -i);
@@ -370,9 +373,11 @@ export function buildSaluteLongevityWindow({
         dayCardio += workoutDurationMinutes(entry);
       } else if (isPesiWorkoutEntry(entry)) {
         dayPesi += 1;
-        const primaries = longevitySpilloverPrimariesFromWorkout(entry);
-        if (primaries.length > 0) {
-          applySpilloverSession(muscleStimulus, primaries);
+        if (i < muscleWindowDays) {
+          const primaries = longevitySpilloverPrimariesFromWorkout(entry);
+          if (primaries.length > 0) {
+            applySpilloverSession(muscleStimulus, primaries);
+          }
         }
       }
     }

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { onValue, ref, set, update } from 'firebase/database';
+import { onValue, ref, set } from 'firebase/database';
 import {
-  addCalendarDaysIso,
   createTrainingBlockFromDefinition,
   getLocalTodayIso,
   getTodaysTrainingBlockSession,
   hasConfirmedToday,
+  isTrainingSessionDoneOn,
   sanitizeTrainingBlock,
   trainingBlockToFirebasePayload,
 } from '../../features/planning/trainingBlockSchema';
@@ -17,7 +17,8 @@ import {
 } from '../../features/planning/trainingBlockTargets';
 
 /**
- * Shiftable Training Block — Firebase `users/{uid}/current_training_block`.
+ * Training Block a calendario assoluto — Firebase `users/{uid}/current_training_block`.
+ * Sessioni per scheduledDate + lastCompletedDate (SSOT Home + Pianifica).
  *
  * @param {{
  *   db?: import('firebase/database').Database | null,
@@ -55,7 +56,6 @@ export function useTrainingBlock({
 
   const blockRef = useRef(block);
   blockRef.current = block;
-  const catchUpInFlightRef = useRef(false);
   const onConfirmSessionRef = useRef(onConfirmSession);
   onConfirmSessionRef.current = onConfirmSession;
   const onPostponeSessionRef = useRef(onPostponeSession);
@@ -74,7 +74,6 @@ export function useTrainingBlock({
     [db, blockPath, isSimulationMode, todayIso],
   );
 
-  // Live sync Firebase
   useEffect(() => {
     if (!db || !userUid || isSimulationMode) {
       setIsLoading(false);
@@ -101,70 +100,31 @@ export function useTrainingBlock({
     return () => unsub();
   }, [db, userUid, isSimulationMode, todayIso]);
 
-  // Catch-up silenzioso: todayIso > anchorDate → allinea anchor a oggi, pointer fermo
-  useEffect(() => {
-    if (!block?.isActive || !db || !userUid || isSimulationMode) return undefined;
-    if (catchUpInFlightRef.current) return undefined;
-
-    const anchor = String(block.anchorDate || '').slice(0, 10);
-    if (!anchor || todayIso <= anchor) return undefined;
-
-    catchUpInFlightRef.current = true;
-    const now = Date.now();
-    const next = {
-      ...block,
-      anchorDate: todayIso,
-      updatedAt: now,
-      lastAction: { kind: 'catch_up', at: now, date: todayIso },
-    };
-
-    const payload = trainingBlockToFirebasePayload(next);
-    update(ref(db, `users/${userUid}/current_training_block`), {
-      anchorDate: payload.anchorDate,
-      updatedAt: payload.updatedAt,
-      lastAction: payload.lastAction,
-    })
-      .then(() => {
-        setBlock(sanitizeTrainingBlock({ ...block, ...payload }, todayIso));
-      })
-      .catch((err) => {
-        console.warn('[useTrainingBlock] catch-up failed:', err);
-      })
-      .finally(() => {
-        catchUpInFlightRef.current = false;
-      });
-
-    return undefined;
-  }, [block, db, userUid, todayIso, isSimulationMode]);
-
   const todaySession = useMemo(
     () => getTodaysTrainingBlockSession(block, todayIso),
     [block, todayIso],
   );
 
-  const isBlockComplete = Boolean(
-    block?.isActive && block.currentDayPointer >= (block.days?.length || 0),
-  );
+  /** Piano settimanale ricorrente: attivo finché isActive. */
+  const isBlockComplete = Boolean(block && block.isActive === false);
 
   const canPostpone = Boolean(
     block?.isActive
     && todaySession
-    && todayIso === block.anchorDate
     && !hasConfirmedToday(block, todayIso),
   );
 
   const canConfirm = Boolean(
     block?.isActive
     && todaySession
-    && todayIso === block.anchorDate
     && !hasConfirmedToday(block, todayIso),
   );
 
   const confirmedTodaySession = useMemo(() => {
-    if (!block || !hasConfirmedToday(block, todayIso)) return null;
-    const confirmedIndex = Math.max(0, Number(block.currentDayPointer) - 1);
-    return block.days?.[confirmedIndex] || null;
-  }, [block, todayIso]);
+    if (!todaySession) return null;
+    if (!isTrainingSessionDoneOn(todaySession, todayIso)) return null;
+    return todaySession;
+  }, [todaySession, todayIso]);
 
   const metabolicTargets = useMemo(() => {
     if (!block) return null;
@@ -177,7 +137,6 @@ export function useTrainingBlock({
       || Number(userProfile?.peso)
       || 75;
 
-    // Nessuna sessione dovuta oggi (es. dopo rinvio) → profilo Riposo, non il workout ancora in pointer.
     if (!todaySession) {
       return computeTrainingBlockDailyTargets({
         baseKcal,
@@ -194,10 +153,6 @@ export function useTrainingBlock({
     });
   }, [block, todaySession, userProfile]);
 
-  /**
-   * Crea un nuovo blocco: pointer=0, anchorDate=today.
-   * @param {{ name?: string, macroGoal?: string, days: Array<object>, blockId?: string }} blockDefinition
-   */
   const startNewBlock = useCallback(
     async (blockDefinition) => {
       if (busy) return null;
@@ -221,15 +176,61 @@ export function useTrainingBlock({
   );
 
   /**
-   * Rinvia: se today === anchor, anchor → domani, pointer fermo.
-   * Ricalcola subito i target di OGGI come giorno di riposo (sovrascrive surplus workout).
+   * Spunta / togli spunta: lastCompletedDate = oggi | null.
+   * @param {number} dayIndex
+   * @param {boolean} completed
    */
+  const setSessionCompleted = useCallback(async (dayIndex, completed) => {
+    const current = blockRef.current;
+    if (!current?.isActive) throw new Error('Nessun blocco attivo.');
+    const idx = Math.floor(Number(dayIndex));
+    if (!Number.isFinite(idx) || idx < 0) throw new Error('Sessione non valida.');
+    if (busy) return null;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const now = Date.now();
+      const nextDays = current.days.map((d) => {
+        if (d.dayIndex !== idx) return d;
+        if (completed) {
+          return {
+            ...d,
+            lastCompletedDate: todayIso,
+            status: /** @type {'confirmed'} */ ('confirmed'),
+            completedAt: now,
+          };
+        }
+        return {
+          ...d,
+          lastCompletedDate: null,
+          status: /** @type {'pending'} */ ('pending'),
+          completedAt: null,
+        };
+      });
+      const next = {
+        ...current,
+        days: nextDays,
+        updatedAt: now,
+        lastAction: completed
+          ? { kind: 'confirm', at: now, date: todayIso }
+          : (current.lastAction || null),
+      };
+      await persistBlock(next);
+      return next;
+    } catch (err) {
+      setError(String(err?.message || err));
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, todayIso, persistBlock]);
+
   const postponeSession = useCallback(async () => {
     const current = blockRef.current;
     if (!current?.isActive) throw new Error('Nessun blocco attivo.');
-    if (todayIso !== current.anchorDate) {
-      throw new Error('Nessuna sessione dovuta oggi da rinviare.');
-    }
+    const session = getTodaysTrainingBlockSession(current, todayIso);
+    if (!session) throw new Error('Nessuna sessione dovuta oggi da rinviare.');
     if (hasConfirmedToday(current, todayIso)) {
       throw new Error('Sessione già confermata oggi.');
     }
@@ -238,13 +239,9 @@ export function useTrainingBlock({
     setBusy(true);
     setError(null);
     try {
-      const postponedSession = current.days?.[current.currentDayPointer] || null;
-      const tomorrow = addCalendarDaysIso(todayIso, 1);
-      if (!tomorrow) throw new Error('Data domani non valida.');
       const now = Date.now();
       const next = {
         ...current,
-        anchorDate: tomorrow,
         updatedAt: now,
         lastAction: { kind: 'postpone', at: now, date: todayIso },
       };
@@ -270,7 +267,7 @@ export function useTrainingBlock({
           block: next,
           todayIso,
           metabolicTargets: restTargets,
-          postponedSession,
+          postponedSession: session,
         });
       }
 
@@ -283,21 +280,14 @@ export function useTrainingBlock({
     }
   }, [busy, todayIso, persistBlock, userProfile]);
 
-  /**
-   * Conferma: delega conversione log (callback) → pointer++ → anchor = domani.
-   * Blocca doppie conferme sullo stesso todayIso.
-   */
   const confirmSession = useCallback(async (options = {}) => {
     const current = blockRef.current;
     if (!current?.isActive) throw new Error('Nessun blocco attivo.');
-    if (todayIso !== current.anchorDate) {
-      throw new Error('Nessuna sessione dovuta oggi da confermare.');
-    }
-    if (hasConfirmedToday(current, todayIso)) {
+    const session = getTodaysTrainingBlockSession(current, todayIso);
+    if (!session) throw new Error('Nessuna sessione dovuta oggi da confermare.');
+    if (isTrainingSessionDoneOn(session, todayIso)) {
       throw new Error('Sessione già confermata oggi.');
     }
-    const session = current.days[current.currentDayPointer];
-    if (!session) throw new Error('Blocco completato: nessuna sessione rimanente.');
     if (busy) return null;
 
     setBusy(true);
@@ -311,7 +301,6 @@ export function useTrainingBlock({
         Number(userProfile?.weight)
         || Number(userProfile?.peso)
         || 75;
-      // Wave Nutrition pre-calcolata sul giorno (AI) ha priorità sulle formule
       const targets = resolveTargetsFromTrainingBlockDay(session, {
         baseKcal,
         weightKg,
@@ -327,15 +316,13 @@ export function useTrainingBlock({
         });
       }
 
-      const tomorrow = addCalendarDaysIso(todayIso, 1);
-      if (!tomorrow) throw new Error('Data domani non valida.');
       const now = Date.now();
-      const nextPointer = current.currentDayPointer + 1;
-      const nextDays = current.days.map((d, i) => (
-        i === current.currentDayPointer
+      const nextDays = current.days.map((d) => (
+        d.dayIndex === session.dayIndex
           ? {
             ...d,
             status: /** @type {'confirmed'} */ ('confirmed'),
+            lastCompletedDate: todayIso,
             completedAt: now,
           }
           : d
@@ -344,9 +331,6 @@ export function useTrainingBlock({
       const next = {
         ...current,
         days: nextDays,
-        currentDayPointer: nextPointer,
-        anchorDate: tomorrow,
-        isActive: nextPointer < nextDays.length,
         updatedAt: now,
         lastAction: { kind: 'confirm', at: now, date: todayIso },
       };
@@ -360,10 +344,6 @@ export function useTrainingBlock({
     }
   }, [busy, todayIso, persistBlock, userProfile]);
 
-  /**
-   * Elimina il blocco attivo da Firebase (`current_training_block` → null)
-   * e azzera lo stato locale → Home torna a "Nessun piano".
-   */
   const clearBlock = useCallback(async () => {
     if (busy) return null;
     setBusy(true);
@@ -382,10 +362,8 @@ export function useTrainingBlock({
     }
   }, [busy, db, blockPath, isSimulationMode]);
 
-  /** Alias esplicito per reset/eliminazione piano. */
   const resetBlock = clearBlock;
 
-  /** Ora pianificata (ore decimali) della sessione dovuta oggi — per ghost_workout timeline. */
   const plannedTime = useMemo(() => {
     const t = Number(todaySession?.plannedTime);
     if (!Number.isFinite(t) || t < 0 || t >= 24) return null;
@@ -409,6 +387,7 @@ export function useTrainingBlock({
     startNewBlock,
     postponeSession,
     confirmSession,
+    setSessionCompleted,
     clearBlock,
     resetBlock,
   };

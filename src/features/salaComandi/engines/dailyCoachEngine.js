@@ -5,11 +5,6 @@
 
 import { analyzeDailyCoachTrends } from '@/features/salaComandi/engines/dailyCoachTrendsEngine';
 
-const COACH_RULE_IDS = {
-  NO_FOOD: 'no_food',
-  CAL_LOW: 'cal_low',
-};
-
 const EVENING_SLEEP_RISK_IDS = new Set([
   'late_caffeine',
   'late_intense_workout',
@@ -71,12 +66,6 @@ function aggressiveDailyDeficit(nutritionTotals) {
   return target - eaten > 600;
 }
 
-function pickAiSuggestion(aiDayCoach) {
-  if (!isNonEmptyObj(aiDayCoach)) return null;
-  const s = aiDayCoach.suggestion;
-  return s && typeof s === 'object' ? s : null;
-}
-
 function metabolismWarning(metabolicCoach) {
   if (!isNonEmptyObj(metabolicCoach)) return false;
   return String(metabolicCoach.severity || '') === 'warning';
@@ -90,12 +79,6 @@ function lowProteinSignals(nutritionTotals) {
   if (prot == null || targetProt == null || targetProt <= 0) return false;
   if (kcal != null && kcal < 200) return false;
   return prot / targetProt < 0.62;
-}
-
-function strategySuggestsAggressiveDeficit(strategyLabel) {
-  const s = String(strategyLabel || '').toLowerCase();
-  if (!s) return false;
-  return s.includes('dimag') || s.includes('negat') || s.includes('deficit') || s.includes('cut');
 }
 
 /**
@@ -201,7 +184,6 @@ function enrichDailyCoachWithTrends(result, trends, ctx, patches) {
  * @param {object} [input.dailyIndicators]
  * @param {string} [input.calorieStrategy]
  * @param {object} [input.nutritionTotals]
- * @param {object} [input.aiDayCoach]
  * @param {unknown[]} [input.dailyHistory]
  * @param {unknown[]} [input.sleepHistory]
  * @param {unknown[]} [input.nutritionHistory]
@@ -218,7 +200,6 @@ export function analyzeDailyCoach(input = {}) {
   const metabolicCoach = isNonEmptyObj(input.metabolicCoach) ? input.metabolicCoach : null;
   const dailyIndicators = isNonEmptyObj(input.dailyIndicators) ? input.dailyIndicators : null;
   const nutritionTotals = isNonEmptyObj(input.nutritionTotals) ? input.nutritionTotals : null;
-  const aiDayCoach = isNonEmptyObj(input.aiDayCoach) ? input.aiDayCoach : null;
 
   const strategyLabel =
     input.calorieStrategy != null ? String(input.calorieStrategy).trim() : '';
@@ -239,12 +220,6 @@ export function analyzeDailyCoach(input = {}) {
   if (causesStrong) debug.push('sleepCoach.likelyCauses_strongConfidence');
   if (eveningStressCause) debug.push('sleepCoach.eveningLinkedCause_ids');
   if (deficitStress) debug.push('nutritionTotals.aggressive_deficit_estimate');
-
-  const aiSugg = pickAiSuggestion(aiDayCoach);
-  const ruleId = aiSugg?.ruleId != null ? String(aiSugg.ruleId) : '';
-  const catabLike =
-    aiSugg && (ruleId === COACH_RULE_IDS.CAL_LOW || ruleId === COACH_RULE_IDS.NO_FOOD);
-  if (catabLike) debug.push(`aiDayCoach.${ruleId}`);
 
   const energyLow = eveningEnergyRisk(
     dailyIndicators?.energyAt20Percent ?? dailyIndicators?.energyAtEveningPercent,
@@ -356,26 +331,13 @@ export function analyzeDailyCoach(input = {}) {
     );
   }
 
-  /** ------- 2 · Performance (energia / digiuno) ------- */
-  if (catabLike || (energyLow && metaWarn) || (energyLow && aiSugg)) {
-    let summary = aiSugg?.message != null ? String(aiSugg.message).trim().slice(0, 380) : '';
-    if (!summary && energyLow) {
-      summary =
-        'Alle ~20 vedi ancora pochissima riserva sul modello: valuta nutriente prima dello sforzo se devi caricare dopo.';
-    }
-    if (!summary)
-      summary =
-        'Dopo una fascia lunga senza pasto la riserva scende veloce: aggiungi un supporto calorie vicino allo sforzo.';
-
-    const overridesGoal = catabLike && strategySuggestsAggressiveDeficit(strategyLabel);
+  /** ------- 2 · Performance (energia serale) ------- */
+  if (energyLow && metaWarn) {
+    const summary =
+      'Alle ~20 vedi ancora pochissima riserva sul modello: conviene ridurre carichi impegnativi se l’energia resta bassa.';
 
     /** @type {{ label: string, value: string, source: string }[]} */
     const details = [
-      {
-        label: 'Regola giornaliero',
-        value: ruleId || '—',
-        source: 'aiDayCoach.suggestion.ruleId',
-      },
       {
         label: '% energia h≈20',
         value:
@@ -392,10 +354,6 @@ export function analyzeDailyCoach(input = {}) {
       },
     ];
 
-    let src = 'merged';
-    if (aiSugg) src = 'aiDayCoach';
-    else if (energyLow) src = 'dailyIndicators_energy';
-
     return enrichDailyCoachWithTrends(
       {
         status: 'performance_focus',
@@ -403,12 +361,12 @@ export function analyzeDailyCoach(input = {}) {
         title: 'Gestisci l’energia oggi',
         summary,
         action:
-          'Metti uno spuntino o un pasto leggero con proteine e carboidrati poco prima della parte più impegnativa della giornata.',
+          'Riduci carichi serali e privilegia recupero finché l’energia del modello non torna più stabile.',
         reason:
-          'Emergono sia i flag di energia serale giornaliero sia suggerimenti del coach AI o del metabolismo nei dati attuali.',
+          'Emergono sia i flag di energia serale giornaliero sia segnali di attenzione dal metabolismo nei dati attuali.',
         severity: 'warning',
-        overridesGoal,
-        source: src,
+        overridesGoal: false,
+        source: 'dailyIndicators_energy',
         details,
         debug,
       },

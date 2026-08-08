@@ -50,15 +50,17 @@ export function writeTtsEnabled(enabled) {
 }
 
 /**
+ * @param {{ continuous?: boolean }} [opts]
  * @returns {SpeechRecognition | null}
  */
-export function createSpeechRecognition() {
+export function createSpeechRecognition(opts = {}) {
   if (typeof window === 'undefined') return null;
   const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Ctor) return null;
   const recognition = new Ctor();
   recognition.lang = 'it-IT';
-  recognition.continuous = false;
+  // continuous: true → niente stop automatico dopo una pausa breve (controllo manuale).
+  recognition.continuous = opts.continuous !== false;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;
   return recognition;

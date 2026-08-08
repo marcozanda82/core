@@ -7,6 +7,9 @@ import {
   TRAINING_BLOCK_FALLBACK_BASE_KCAL,
 } from '../features/planning/trainingBlockTargets';
 import {
+  resolveTrainingBlockHomeStatus,
+} from '../features/planning/trainingBlockSchema';
+import {
   WORKOUT_MUSCLE_GROUP_DEFS,
   normalizeMuscleGroupArray,
 } from '../activityCatalog';
@@ -57,16 +60,14 @@ function formatMuscleLabels(muscles) {
 }
 
 /**
- * Headline minimale piano (PENDING):
- * - pesi → muscoli + orario
- * - cardio / hiit / rest → dicitura chiara + orario se utile
+ * Headline minimale piano (PENDING): muscoli / tipo + orario.
  *
  * @param {object | null | undefined} session
  * @param {number | null | undefined} plannedTime
  * @returns {string}
  */
 function sessionHeadline(session, plannedTime) {
-  if (!session) return 'Piano del giorno';
+  if (!session) return 'Da eseguire';
 
   const type = String(session.type || '').trim().toLowerCase();
   const timeStr = Number.isFinite(Number(plannedTime))
@@ -74,9 +75,6 @@ function sessionHeadline(session, plannedTime) {
     : null;
   const withTime = (label) => (timeStr ? `${label} · ${timeStr}` : label);
 
-  if (type === 'rest' || type === 'riposo') {
-    return 'Recupero';
-  }
   if (type === 'cardio') {
     return withTime('Cardio');
   }
@@ -100,111 +98,8 @@ function sessionHeadline(session, plannedTime) {
 }
 
 /**
- * Nome scheda pulito per UI (niente «Sollevamento Pesi» / «Allenamento» ridondanti).
- * Preferisce i muscoli della scheda (es. Petto+ABS).
- * @param {string} raw
- * @param {string[]} [muscleLabels]
- * @returns {string}
- */
-function cleanWorkoutDisplayName(raw, muscleLabels = []) {
-  const muscles = (Array.isArray(muscleLabels) ? muscleLabels : []).filter(Boolean);
-  if (muscles.length > 0) return muscles.join('+');
-
-  let s = String(raw || '').trim();
-  if (!s) return '';
-
-  // Estrai muscoli da «Sollevamento Pesi (petto + abs)»
-  const paren = s.match(/\(([^)]+)\)\s*$/);
-  if (paren) {
-    const inner = paren[1]
-      .split(/\s*[+,/·]\s*/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-    if (inner.length > 0) return inner.join('+');
-  }
-
-  s = s
-    .replace(/^\s*allenamento\s+/i, '')
-    .replace(/^\s*sollevamento\s+pesi\s*/i, '')
-    .replace(/^\s*pesi\s*[·\-–:]?\s*/i, '')
-    .replace(/^\s*[·\-–:]\s*/, '')
-    .trim();
-
-  return s;
-}
-
-/**
- * Nome leggibile da log workout (senza «Nessuna sessione oggi»).
- * @param {object} entry
- * @param {object | null} [fallbackSession]
- * @returns {string}
- */
-function workoutNameFromLog(entry, fallbackSession = null) {
-  const musclesFromEntry = formatMuscleLabels(entry?.muscles || []);
-  const musclesFromSession = formatMuscleLabels(fallbackSession?.muscles || []);
-  const cleaned = cleanWorkoutDisplayName(
-    entry?.desc || entry?.name || entry?.title || fallbackSession?.title || '',
-    musclesFromEntry.length > 0 ? musclesFromEntry : musclesFromSession,
-  );
-  return cleaned || 'Allenamento';
-}
-
-function isRestLogEntry(entry) {
-  if (!entry || entry.isGhost) return false;
-  const type = String(entry.type || '').toLowerCase();
-  const wt = String(entry.workoutType || entry.subType || entry.activityId || '').toLowerCase();
-  return type === 'rest' || wt === 'riposo' || wt === 'rest';
-}
-
-function isWorkoutLogEntry(entry) {
-  if (!entry || entry.isGhost) return false;
-  if (isRestLogEntry(entry)) return false;
-  return String(entry.type || '').toLowerCase() === 'workout';
-}
-
-/**
- * Stato odierno dal diario + conferma training block.
- * PENDING | COMPLETED | REST
- *
- * @param {{
- *   activeLog?: Array | null,
- *   confirmedTodaySession?: object | null,
- * }} args
- */
-function resolveHomeDayTrainingStatus({
-  activeLog = null,
-  confirmedTodaySession = null,
-} = {}) {
-  const log = Array.isArray(activeLog) ? activeLog : [];
-  const workouts = log.filter(isWorkoutLogEntry);
-  if (workouts.length > 0) {
-    const sorted = [...workouts].sort((a, b) => (
-      (Number(b.completedAt) || 0) - (Number(a.completedAt) || 0)
-      || (Number(b.time) || 0) - (Number(a.time) || 0)
-    ));
-    return {
-      status: DAY_STATUS.COMPLETED,
-      workoutName: workoutNameFromLog(sorted[0], confirmedTodaySession),
-    };
-  }
-
-  if (log.some(isRestLogEntry)) {
-    return { status: DAY_STATUS.REST, workoutName: null };
-  }
-
-  if (confirmedTodaySession) {
-    const ct = String(confirmedTodaySession.type || '').toLowerCase();
-    if (ct === 'rest' || ct === 'riposo') {
-      return { status: DAY_STATUS.REST, workoutName: null };
-    }
-    // Non mostrare COMPLETED finché il workout non è nel diario (salvataggio scheda attività).
-  }
-
-  return { status: DAY_STATUS.PENDING, workoutName: null };
-}
-
-/**
  * Card minimale Home: carosello Context-Aware Programma ↔ Punteggi gemelli.
+ * Lo stato allenamento legge SOLO current_training_block (SSOT col pannello Pianifica).
  */
 export default function TrainingBlockWidget({
   db = null,
@@ -220,7 +115,7 @@ export default function TrainingBlockWidget({
   isSimulationMode = false,
   onConfirmSession = null,
   onPostponeSession = null,
-  /** Apre scheda attività precompilata (Home «Esegui») — niente COMPLETED finché non salvi. */
+  /** Apre scheda attività precompilata (Home «Esegui»). */
   onExecuteSession = null,
   creatorOpen: creatorOpenProp = undefined,
   onCreatorOpenChange = null,
@@ -234,14 +129,15 @@ export default function TrainingBlockWidget({
     isLoading,
     error,
     busy,
+    todayIso: hookTodayIso,
     todaySession,
-    confirmedTodaySession,
     plannedTime,
     isBlockComplete,
     canPostpone,
     canConfirm,
     postponeSession,
     startNewBlock,
+    setSessionCompleted,
     clearBlock,
   } = useTrainingBlock({
     db,
@@ -253,6 +149,7 @@ export default function TrainingBlockWidget({
     onPostponeSession,
   });
 
+  const dayKey = String(todayIso || hookTodayIso || '').slice(0, 10);
   const [toast, setToast] = useState('');
   const [localError, setLocalError] = useState('');
   const [creatorOpenInternal, setCreatorOpenInternal] = useState(false);
@@ -272,12 +169,20 @@ export default function TrainingBlockWidget({
     return undefined;
   }, [todaySession, plannedTime, block, onTodaySessionChange]);
 
-  const dayKey = String(todayIso || '').slice(0, 10);
-
-  const dayStatusInfo = useMemo(
-    () => resolveHomeDayTrainingStatus({ activeLog, confirmedTodaySession }),
-    [activeLog, confirmedTodaySession],
-  );
+  /** SSOT: sessione con scheduledDate === oggi (calendario assoluto). */
+  const dayStatusInfo = useMemo(() => {
+    if (!block?.isActive) {
+      return { status: DAY_STATUS.REST, workoutName: null, noPlan: true };
+    }
+    const resolved = resolveTrainingBlockHomeStatus(block, dayKey);
+    return {
+      status: resolved.status === 'COMPLETED'
+        ? DAY_STATUS.COMPLETED
+        : (resolved.status === 'PENDING' ? DAY_STATUS.PENDING : DAY_STATUS.REST),
+      workoutName: resolved.workoutName,
+      noPlan: false,
+    };
+  }, [block, dayKey]);
   const dayStatus = dayStatusInfo.status;
 
   const longevityResult = useMemo(() => {
@@ -333,7 +238,7 @@ export default function TrainingBlockWidget({
     setLocalError('');
     try {
       await postponeSession();
-      showToast('Slittato a domani');
+      showToast('Rimandato');
     } catch (err) {
       setLocalError(String(err?.message || err || 'Rinvio fallito'));
     }
@@ -368,13 +273,13 @@ export default function TrainingBlockWidget({
   };
 
   const handleSaveNewBlock = async (definition) => {
-    const isUpdate = Boolean(block?.isActive && !isBlockComplete && definition?.blockId);
+    const isUpdate = Boolean(block?.isActive && definition?.blockId);
     await startNewBlock(definition);
     showToast(isUpdate ? 'Piano aggiornato' : 'Piano creato');
   };
 
   const activeBlockForCreator = (
-    block?.isActive && !isBlockComplete
+    block?.isActive
       ? block
       : null
   );
@@ -400,6 +305,8 @@ export default function TrainingBlockWidget({
       activeBlock={activeBlockForCreator}
       tdee={creatorTdee}
       weightKg={creatorWeightKg}
+      todayIso={dayKey}
+      onToggleSessionComplete={setSessionCompleted}
     />
   );
 
@@ -418,115 +325,19 @@ export default function TrainingBlockWidget({
 
   const pendingHeadline = hasActivePlan
     ? sessionHeadline(todaySession, plannedTime)
-    : (isBlockComplete ? 'Blocco completato' : 'Nessun piano');
+    : (isLoading ? '…' : 'Nessun piano');
 
   const programSlide = (() => {
-    if (dayStatus === DAY_STATUS.COMPLETED) {
-      const name = dayStatusInfo.workoutName || 'Allenamento';
+    if (!hasActivePlan) {
       return (
-        <div className={CARD_COMPLETED_CLASS} aria-label="Allenamento completato">
-          <div className="flex min-w-0 items-start gap-2">
-            <span className="mt-0.5 inline-flex shrink-0 items-center rounded-md border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
-              Completato
-            </span>
-            <p className="min-w-0 flex-1 whitespace-normal break-words text-wrap text-base font-bold leading-snug text-emerald-50">
-              {`✅ ${name} completato`}
-            </p>
-          </div>
-          {statusLine ? (
-            <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
-              {statusLine}
-            </p>
-          ) : null}
-        </div>
-      );
-    }
-
-    if (dayStatus === DAY_STATUS.REST) {
-      return (
-        <div className={CARD_REST_CLASS} aria-label="Giorno di riposo">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
-            Oggi
-          </p>
-          <p className="text-base font-bold leading-snug text-slate-200">
-            🛋️ Riposo
-          </p>
-          {statusLine ? (
-            <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
-              {statusLine}
-            </p>
-          ) : null}
-        </div>
-      );
-    }
-
-    return (
-      <div className={CARD_CLASS}>
-        {hasActivePlan ? (
-          <>
-            <div className="flex items-start gap-2">
-              <button
-                type="button"
-                onClick={() => setCreatorOpen(true)}
-                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
-                aria-label="Apri piano allenamento"
-              >
-                <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
-                  {block.name || 'Piano'}
-                </p>
-                <p
-                  className="text-base font-bold leading-snug text-cyan-50"
-                  style={{
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {pendingHeadline}
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={handleClearBlock}
-                disabled={busy}
-                className="mt-0.5 shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] leading-none text-slate-500 transition hover:border-rose-500/30 hover:text-rose-300 disabled:opacity-40"
-                aria-label="Elimina piano"
-                title="Elimina piano"
-              >
-                🗑
-              </button>
-            </div>
-
-            {showActions ? (
-              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-600/45 pt-2">
-                <button
-                  type="button"
-                  onClick={handlePostpone}
-                  disabled={!canPostpone || busy}
-                  className="rounded-lg border border-orange-500/40 bg-orange-950/45 py-2.5 text-sm font-bold text-orange-100 transition hover:bg-orange-950/65 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {busy ? '…' : 'Rimanda'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExecute}
-                  disabled={!canConfirm || busy}
-                  className="rounded-lg bg-cyan-600/90 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {busy ? '…' : 'Esegui'}
-                </button>
-              </div>
-            ) : null}
-          </>
-        ) : (
+        <div className={CARD_CLASS}>
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-[10px] font-medium uppercase tracking-wider text-slate-500">
                 Piano
               </p>
               <p className="truncate text-base font-bold leading-tight text-slate-200">
-                {isLoading ? '…' : pendingHeadline}
+                {isLoading ? '…' : 'Nessun piano'}
               </p>
             </div>
             {block ? (
@@ -549,7 +360,130 @@ export default function TrainingBlockWidget({
               Nuovo
             </button>
           </div>
-        )}
+          {statusLine ? (
+            <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
+              {statusLine}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (dayStatus === DAY_STATUS.COMPLETED) {
+      const name = dayStatusInfo.workoutName || 'Allenamento';
+      return (
+        <div className={CARD_COMPLETED_CLASS} aria-label="Allenamento eseguito">
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="mt-0.5 inline-flex shrink-0 items-center rounded-md border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+              Eseguito
+            </span>
+            <p className="min-w-0 flex-1 whitespace-normal break-words text-wrap text-base font-bold leading-snug text-emerald-50">
+              {`✅ ${name}`}
+            </p>
+            <button
+              type="button"
+              onClick={() => setCreatorOpen(true)}
+              className="shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] text-slate-500 hover:text-cyan-200"
+              aria-label="Apri piano"
+            >
+              ☰
+            </button>
+          </div>
+          {statusLine ? (
+            <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
+              {statusLine}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (dayStatus === DAY_STATUS.REST) {
+      return (
+        <div className={CARD_REST_CLASS} aria-label="Giorno di riposo">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">
+                Oggi
+              </p>
+              <p className="text-base font-bold leading-snug text-slate-200">
+                🛋️ Riposo
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCreatorOpen(true)}
+              className="shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] text-slate-500 hover:text-cyan-200"
+              aria-label="Apri piano"
+            >
+              ☰
+            </button>
+          </div>
+          {statusLine ? (
+            <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">
+              {statusLine}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className={CARD_CLASS}>
+        <div className="flex items-start gap-2">
+          <button
+            type="button"
+            onClick={() => setCreatorOpen(true)}
+            className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
+            aria-label="Apri piano allenamento"
+          >
+            <p className="truncate text-[10px] font-medium uppercase tracking-wider text-amber-300/80">
+              Da eseguire
+            </p>
+            <p
+              className="text-base font-bold leading-snug text-cyan-50"
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }}
+            >
+              {pendingHeadline}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={handleClearBlock}
+            disabled={busy}
+            className="mt-0.5 shrink-0 rounded-md border border-transparent px-1.5 py-1 text-[11px] leading-none text-slate-500 transition hover:border-rose-500/30 hover:text-rose-300 disabled:opacity-40"
+            aria-label="Elimina piano"
+            title="Elimina piano"
+          >
+            🗑
+          </button>
+        </div>
+
+        {showActions ? (
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-600/45 pt-2">
+            <button
+              type="button"
+              onClick={handlePostpone}
+              disabled={!canPostpone || busy}
+              className="rounded-lg border border-orange-500/40 bg-orange-950/45 py-2.5 text-sm font-bold text-orange-100 transition hover:bg-orange-950/65 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busy ? '…' : 'Rimanda'}
+            </button>
+            <button
+              type="button"
+              onClick={handleExecute}
+              disabled={!canConfirm || busy}
+              className="rounded-lg bg-cyan-600/90 py-2.5 text-sm font-bold text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busy ? '…' : 'Esegui'}
+            </button>
+          </div>
+        ) : null}
 
         {statusLine ? (
           <p className={`mt-1.5 text-center text-[0.68rem] font-medium ${statusTone}`} role="status">

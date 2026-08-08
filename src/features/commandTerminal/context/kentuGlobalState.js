@@ -26,15 +26,15 @@ function roundMacro(value) {
 }
 
 /**
- * Fase di recupero per singolo cilindro (0–1 = decay / stimolo residuo).
+ * Fase stimolo settimanale per singolo cilindro (0–1).
  * @param {number} level01
- * @returns {'pronto'|'recupero_attivo'|'stimolo_alto'}
+ * @returns {'inattivo'|'parziale'|'ottimale'}
  */
 function resolveCylinderRecoveryPhase(level01) {
   const pct = Math.round(Number(level01) * 100) || 0;
-  if (pct >= 70) return 'stimolo_alto';
-  if (pct >= 35) return 'recupero_attivo';
-  return 'pronto';
+  if (pct >= 100) return 'ottimale';
+  if (pct >= 50) return 'parziale';
+  return 'inattivo';
 }
 
 /**

@@ -62,8 +62,8 @@ export default function GlobalChatOverlay() {
         }`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
-        <header className="relative flex shrink-0 items-center justify-between gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3 pr-14">
-          <div className="flex min-w-0 items-center gap-2">
+        <header className="relative flex shrink-0 items-center gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="text-lg" aria-hidden>🤖</span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-wide text-slate-100">Kentu Chat</p>
@@ -72,32 +72,6 @@ export default function GlobalChatOverlay() {
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={closeChat}
-            aria-label="Chiudi chat"
-            className={[
-              'absolute right-4 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center',
-              'rounded-full border-none bg-red-600 text-white',
-              'shadow-[0_0_15px_rgba(220,38,38,0.8)]',
-              'transition-transform active:scale-95',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/80',
-            ].join(' ')}
-          >
-            <svg
-              aria-hidden
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 6 6 18" />
-              <path d="m6 6 12 12" />
-            </svg>
-          </button>
         </header>
 
         <div className="kentu-os flex min-h-0 flex-1 flex-col overflow-hidden">

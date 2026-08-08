@@ -5,7 +5,6 @@ import {
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
   EVENT_USAGE_LEGACY_ALIASES,
-  AI_COACH_DISMISSED_INSIGHTS_LS_KEY,
   MEAL_CONFIRM_DEBOUNCE_MS,
 } from '../constants/salaComandiConstants';
 
@@ -56,18 +55,6 @@ export function readPersistedEventUsage() {
     return next;
   } catch {
     return { ...EVENT_USAGE_DEFAULT };
-  }
-}
-
-export function readDismissedAiCoachInsights() {
-  if (typeof localStorage === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(AI_COACH_DISMISSED_INSIGHTS_LS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
   }
 }
 
@@ -153,38 +140,4 @@ export function tryAcquireMealConfirmGuard(guardRef) {
 
 export function releaseMealConfirmGuard(guardRef) {
   guardRef.current.busy = false;
-}
-
-export function coachEvalSemanticEqual(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  if (a.period !== b.period) return false;
-  const sa = a.suggestion;
-  const sb = b.suggestion;
-  if ((sa == null) !== (sb == null)) return false;
-  if (sa && sb) {
-    if (sa.ruleId !== sb.ruleId || sa.message !== sb.message || Number(sa.priority) !== Number(sb.priority)) {
-      return false;
-    }
-    const am = sa.action?.mealType ?? null;
-    const bm = sb.action?.mealType ?? null;
-    if (am !== bm) return false;
-  }
-  const xa = a.state;
-  const xb = b.state;
-  if ((xa == null) !== (xb == null)) return false;
-  if (xa && xb) {
-    if (
-      Number(xa.totalCalories) !== Number(xb.totalCalories)
-      || Number(xa.mealCount) !== Number(xb.mealCount)
-      || Number(xa.totalProt ?? 0) !== Number(xb.totalProt ?? 0)
-      || Number(xa.foodCount ?? 0) !== Number(xb.foodCount ?? 0)
-      || Number(xa.targetCalories ?? -1) !== Number(xb.targetCalories ?? -1)
-      || Number(xa.breakfastShare ?? -1) !== Number(xb.breakfastShare ?? -1)
-      || Number(xa.protPerKcal ?? -1) !== Number(xb.protPerKcal ?? -1)
-    ) {
-      return false;
-    }
-  }
-  return true;
 }

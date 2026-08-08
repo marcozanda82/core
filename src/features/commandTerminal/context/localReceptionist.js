@@ -98,9 +98,9 @@ function formatDeltaMacro(delta, unitLabel) {
 
 function phaseLabel(phase) {
   const p = asTrimmedString(phase).toLowerCase();
-  if (p === 'stimolo_alto') return 'stimolo alto';
-  if (p === 'recupero_attivo') return 'recupero attivo';
-  if (p === 'pronto') return 'pronto';
+  if (p === 'ottimale' || p === 'stimolo_alto') return 'stimolo ottimale';
+  if (p === 'parziale' || p === 'recupero_attivo') return 'stimolo parziale';
+  if (p === 'inattivo' || p === 'pronto') return 'da stimolare';
   return p || 'n/d';
 }
 
