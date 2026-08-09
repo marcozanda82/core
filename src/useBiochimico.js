@@ -74,7 +74,8 @@ export function computeTotali(dailyLog) {
     if (item.type === 'food' || item.type === 'recipe') {
       totali.kcal += Number(item.kcal || item.cal || 0) || 0;
       ALL_NUTRIENT_KEYS.forEach(k => {
-        if (item[k] != null && typeof item[k] === 'number') totali[k] += item[k];
+        const raw = k === 'fatTotal' ? (item.fatTotal ?? item.fat) : item[k];
+        if (raw != null && typeof raw === 'number') totali[k] += raw;
       });
     } else if (item.type === 'workout') {
       workoutKcal += Number(item.kcal || item.cal || 0) || 0;
@@ -155,7 +156,8 @@ function computeConsumedPerMeal(dailyLog) {
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;
     ALL_NUTRIENT_KEYS.forEach(k => {
-      if (item[k] != null && typeof item[k] === 'number') consumed[meal][k] += item[k];
+      const raw = k === 'fatTotal' ? (item.fatTotal ?? item.fat) : item[k];
+      if (raw != null && typeof raw === 'number') consumed[meal][k] += raw;
     });
   });
   return consumed;

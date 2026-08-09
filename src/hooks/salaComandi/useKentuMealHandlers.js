@@ -118,6 +118,7 @@ export function useKentuMealHandlers({
         carb,
         fatTotal: fat,
         fat,
+        entrySource: 'other',
       };
       Object.keys(TARGETS).forEach((g) => {
         Object.keys(TARGETS[g] || {}).forEach((k) => {

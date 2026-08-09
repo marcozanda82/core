@@ -324,6 +324,7 @@ export function estraiDatiFoodDb({
       foodDbKey: dbKey,
       dbSource: match.source,
       status: FOOD_RESOLUTION_STATUS.RESOLVED,
+      isRecipe: true,
     };
     const dbProvided = applyDbNutrientsToPortionItem(recipeItem, dbF, qta);
     zeroFillMissingNutrients(recipeItem, dbProvided);

@@ -84,7 +84,7 @@ export default function TelemetryPanel({
             <NutrientProgressBar label="Calorie" current={totali.kcal || 0} target={dynamicDailyKcal} unit="kcal" nutrientKey="kcal" {...barProps} />
             <NutrientProgressBar label="PROTEINE" current={totali.prot} target={userTargets.prot ?? TARGETS.macro.prot} unit="g" nutrientKey="prot" {...barProps} />
             <NutrientProgressBar label="CARBOIDRATI" current={totali.carb} target={userTargets.carb ?? TARGETS.macro.carb} unit="g" nutrientKey="carb" {...barProps} />
-            <NutrientProgressBar label="GRASSI TOTALI" current={totali.fatTotal} target={userTargets.fatTotal ?? TARGETS.macro.fatTotal} unit="g" nutrientKey="fatTotal" {...barProps} />
+            <NutrientProgressBar label="GRASSI TOTALI" current={totali.fatTotal || totali.fat || 0} target={userTargets.fatTotal ?? TARGETS.macro.fatTotal} unit="g" nutrientKey="fatTotal" {...barProps} />
           </div>
         </div>
         <div className="telemetry-carousel-slide" style={{ padding: '0 2px' }}>

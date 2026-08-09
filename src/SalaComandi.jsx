@@ -39,6 +39,7 @@ import {
   resolveLearnedPortionAfterSave,
 } from './services/userFoodLearning.js';
 import { resolveFoodItemForProposal } from './utils/foodResolver.js';
+import { ensureRecipeDiaryFields } from './utils/recipeDiaryFields.js';
 import {
   fetchUserPortionsDict,
   learnUserPortionsFromConfirmedMeal,
@@ -472,10 +473,15 @@ export default function SalaComandi() {
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
   const [fastLoggerAutoOpenScanner, setFastLoggerAutoOpenScanner] = useState(false);
+  const [fastLoggerRemountKey, setFastLoggerRemountKey] = useState(0);
   const [mealToEdit, setMealToEdit] = useState(null);
   const [fastLoggerInitialSlot, setFastLoggerInitialSlot] = useState(null);
   /** Ghost meal in conferma: salvataggio = pasto reale + rimozione ghost dal log. */
   const [pendingGhostMealId, setPendingGhostMealId] = useState(null);
+  const showFastLoggerRef = useRef(false);
+  useEffect(() => {
+    showFastLoggerRef.current = showFastLogger;
+  }, [showFastLogger]);
   const [slideDirection, setSlideDirection] = useState('slide-none');
 
   const trackEventUsage = useCallback((id) => {
@@ -3661,7 +3667,7 @@ export default function SalaComandi() {
           const dati = estraiDatiFoodDb(name, qty, batchMealType, preferredKey || null);
           if (dati && String(dati.status || '') !== 'NEEDS_RESOLUTION') {
             const isRecipe = dati.type === 'recipe';
-            return {
+            return ensureRecipeDiaryFields({
               ...dati,
               id: dati.id || `ai_${batchIdFood}_${index}`,
               mealType: batchMealType,
@@ -3670,7 +3676,8 @@ export default function SalaComandi() {
               isEstimated: false,
               type: isRecipe ? 'recipe' : 'food',
               ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
-            };
+              entrySource: 'chat',
+            });
           }
           const qSafe = Math.max(5, qty);
           let kcal = Number(item.estKcal ?? item.kcal);
@@ -3709,6 +3716,7 @@ export default function SalaComandi() {
             batchId: batchIdFood,
             isEstimated: true,
             ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
+            entrySource: 'chat',
           };
         })
         .filter(Boolean);
@@ -3768,6 +3776,74 @@ export default function SalaComandi() {
       dailyLog,
       buildDraftPrefillItems,
       toCanonicalMealType,
+    ]
+  );
+
+  /**
+   * Adaptive UI — lavagna aperta: items chat/voce → draft FastMealLogger.
+   * Nessun write Firebase: solo form a schermo (Salva esplicito).
+   */
+  const populateMealLavagnaFromChatItems = useCallback(
+    (payload = {}) => {
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      if (!items.length) return false;
+
+      const exactRaw = payload?.exactTime ?? payload?.timeString ?? null;
+      let mealDec = typeof exactRaw === 'number' && Number.isFinite(exactRaw)
+        ? exactRaw
+        : parseFlexibleTimeToDecimal(String(exactRaw || '').trim());
+      if (mealDec == null || !Number.isFinite(mealDec)) {
+        mealDec = getCurrentTimeRoundedTo15Min();
+      }
+      const mealSlot =
+        toCanonicalMealType(String(payload?.mealType || '').split('_')[0])
+        || predictMealType(mealDec)
+        || 'pranzo';
+
+      const addFoodItems = items.map((item) => ({
+        name: String(item?.foodName || item?.name || item?.spokenFoodName || '').trim(),
+        qty: Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 100)),
+        foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+        matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+        type: item?.type === 'recipe' ? 'recipe' : undefined,
+      })).filter((i) => i.name);
+
+      if (!addFoodItems.length) return false;
+
+      const diaryFoods = mapProposalItemsToDiaryFoods(addFoodItems, mealDec, mealSlot);
+      const draftItems = buildDraftPrefillItems(
+        diaryFoods.length > 0
+          ? diaryFoods
+          : addFoodItems.map((i) => ({
+              name: i.name,
+              desc: i.name,
+              qta: i.qty,
+              weight: i.qty,
+              foodDbKey: i.foodDbKey,
+              mealType: mealSlot,
+              mealTime: mealDec,
+            })),
+        mealSlot,
+      );
+      if (!draftItems.length) return false;
+
+      setMealToEdit((prev) => {
+        const appending = showFastLoggerRef.current && Array.isArray(prev) && prev.length > 0;
+        return appending ? [...prev, ...draftItems] : draftItems;
+      });
+      setEditingMealId(null);
+      setPendingGhostMealId(null);
+      setFastLoggerInitialSlot(mealSlot);
+      setFastLoggerRemountKey((k) => k + 1);
+      setShowFastLogger(true);
+      // Non chiudere la chat: FastMealLogger è overlay; la risposta Adaptive resta per TTS.
+      return true;
+    },
+    [
+      mapProposalItemsToDiaryFoods,
+      buildDraftPrefillItems,
+      toCanonicalMealType,
+      predictMealType,
     ]
   );
 
@@ -4503,11 +4579,12 @@ Slot esistente aggiornato (nessun ghost).`;
       }
       const finalMealType = ghostTypesCache[pastoStorage];
       const item = estraiDatiFoodDb(nome, qta, finalMealType);
-      nuoviAlimenti.push({
+      nuoviAlimenti.push(ensureRecipeDiaryFields({
         ...item,
         id: `f_${batchId}_${trovati}`,
-        mealTime: getDefaultMealTime(pastoStorage)
-      });
+        mealTime: getDefaultMealTime(pastoStorage),
+        entrySource: 'other',
+      }));
       ghostTypesCache[pastoStorage] = getGhostMealType(pastoStorage, [...(dailyLog || []), ...nuoviAlimenti]);
     }
 
@@ -4801,7 +4878,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     last7.forEach(day => {
       (day.log || []).forEach(entry => {
         const sumItem = (item) => {
-          totals.fatTotal += (Number(item.fatTotal) || 0);
+          totals.fatTotal += (Number(item.fatTotal ?? item.fat) || 0);
           totals.omega3 += (Number(item.omega3) || 0);
           totals.omega6 += (Number(item.omega6) || 0);
           totals.vitA += (Number(item.vitA) || 0);
@@ -6430,6 +6507,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     getMealBuilderState: () => mealBuilderRef.current,
     onDraftMealItems: handleDraftMealItems,
     onCommitMealBuilder: () => commitMealBuilder({ announce: false }),
+    onPopulateMealLavagna: populateMealLavagnaFromChatItems,
     onSaveFoodDbEntry: async (entryPer100, donorMeta = null) => {
       const safe = entryPer100 && typeof entryPer100 === 'object' ? entryPer100 : null;
       if (!safe?.desc) throw new Error('missing_desc');
@@ -7082,14 +7160,29 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
     if (isSynthetic) {
       const { isSynthetic: _drop, ...cleanPatch } = patch || {};
-      nextLog = [...currentLog, { ...cleanPatch, id: cleanPatch.id || `log_${dateStr}_${Date.now()}` }];
+      nextLog = [...currentLog, {
+        ...cleanPatch,
+        id: cleanPatch.id || `log_${dateStr}_${Date.now()}`,
+        entrySource: cleanPatch.entrySource || 'other',
+      }];
     } else if (id) {
       const hasMatch = currentLog.some((entry) => String(entry?.id) === id);
       nextLog = hasMatch
-        ? currentLog.map((entry) => (String(entry?.id) === id ? { ...entry, ...patch } : entry))
-        : [...currentLog, { ...patch, id }];
+        ? currentLog.map((entry) => (String(entry?.id) === id
+          ? {
+              ...entry,
+              ...patch,
+              // Update storico: preserva origine se presente; altrimenti 'other'
+              entrySource: patch?.entrySource ?? entry.entrySource ?? 'other',
+            }
+          : entry))
+        : [...currentLog, { ...patch, id, entrySource: patch?.entrySource ?? 'other' }];
     } else {
-      nextLog = [...currentLog, { ...patch, id: patch?.id || `log_${Date.now()}` }];
+      nextLog = [...currentLog, {
+        ...patch,
+        id: patch?.id || `log_${Date.now()}`,
+        entrySource: patch?.entrySource ?? 'other',
+      }];
     }
 
     const dayKey = TRACKER_STORICO_KEY(dateStr);
@@ -9024,7 +9117,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                   const qta = parseFloat(editQuantityValue);
                   if (!Number.isFinite(qta) || qta <= 0) return;
                   const { food, source } = selectedFoodForEdit;
-                  const newItem = { ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType), id: food.id, locked: true };
+                  const newItem = ensureRecipeDiaryFields({
+                    ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType),
+                    id: food.id,
+                    locked: true,
+                    entrySource: 'ui',
+                  });
                   if (source === 'diary') {
                     if (isSimulationMode) {
                       setSimulatedLog(prev => (prev || []).map(f => {
@@ -9563,7 +9661,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
             const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
             const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
-            const updated = {
+            const updated = ensureRecipeDiaryFields({
               ...inspectedFood,
               weight: qty,
               qta: qty,
@@ -9575,8 +9673,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               fatTotal: fat,
               fibre: editFoodData.fibre,
               name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
-              desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome
-            };
+              desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome,
+              entrySource: 'ui',
+            });
             if (isSimulationMode) {
               setSimulatedLog(prev => (prev || []).map(item => item.id === inspectedFood.id ? updated : item));
               setInspectedFood(null);
@@ -9884,7 +9983,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       {showFastLogger ? (
         <Suspense fallback={<KentuLazySectionFallback label="Logger pasti…" />}>
         <FastMealLogger
-          key={editingMealId ?? pendingGhostMealId ?? 'new-meal'}
+          key={`${editingMealId ?? pendingGhostMealId ?? 'new-meal'}-${fastLoggerRemountKey}`}
           fullHistory={fullHistory}
           todayLog={activeLog}
           personalDb={foodDb}

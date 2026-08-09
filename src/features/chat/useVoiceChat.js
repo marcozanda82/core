@@ -125,7 +125,7 @@ export function useVoiceChat({
     if (!sttSupported) return false;
     if (recognitionRef.current) return true;
 
-    const recognition = createSpeechRecognition({ continuous: true });
+    const recognition = createSpeechRecognition({ continuous: false });
     if (!recognition) {
       setVoiceError('Microfono non disponibile.');
       return false;
@@ -179,13 +179,8 @@ export function useVoiceChat({
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
-      if (!voiceSessionActiveRef.current || intentionalStopRef.current) return;
-      clearRestartTimer();
-      restartTimerRef.current = window.setTimeout(() => {
-        restartTimerRef.current = null;
-        if (!voiceSessionActiveRef.current || intentionalStopRef.current) return;
-        startRecognitionEngineRef.current();
-      }, 180);
+      // Nota vocale: fine frase/pausa → stop. Niente auto-restart ciclico.
+      // L'utente riattiva il microfono manualmente se vuole aggiungere altro.
     };
 
     try {

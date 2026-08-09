@@ -5,6 +5,7 @@ import { getSlotKey } from '../../coreEngine';
 import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPredictor';
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
+import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -284,9 +285,9 @@ export function useTimelineDiaryActions({
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
         const weight = Number(f.weight ?? f.qta) || 100;
-        return {
+        return ensureRecipeDiaryFields({
           ...f,
-          type: 'food',
+          type: f.type === 'recipe' ? 'recipe' : 'food',
           mealType: mealTypeToUse,
           mealTime: mealTimeToUse,
           id: `f_${batchId}_${index}`,
@@ -294,7 +295,8 @@ export function useTimelineDiaryActions({
           weight,
           kcal: Number(f.kcal ?? f.cal) || 0,
           cal: Number(f.cal ?? f.kcal) || 0,
-        };
+          entrySource: 'ui',
+        });
       });
 
       let nuovoLog;

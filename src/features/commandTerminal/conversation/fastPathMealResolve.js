@@ -32,6 +32,24 @@ export function buildFastPathSummarySpokenText(items = []) {
 }
 
 /**
+ * Adaptive UI — Nota vocale / lavagna aperta.
+ * Speed (≥2): chiusura breve. Step-by-Step (1): conferma + invito a continuare.
+ * @param {Array<{foodName?: string, spokenFoodName?: string, name?: string}>} items
+ * @returns {string}
+ */
+export function buildAdaptiveLavagnaSpokenText(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length >= 2) return 'Aggiunti al carrello.';
+  const raw = String(
+    list[0]?.spokenFoodName || list[0]?.foodName || list[0]?.name || '',
+  ).trim();
+  const short = raw.split(/\s+/).slice(0, 4).join(' ');
+  if (!short) return 'Aggiunto al carrello. Cos\'altro hai mangiato?';
+  const cap = short.charAt(0).toUpperCase() + short.slice(1);
+  return `${cap} aggiunto. Cos'altro hai mangiato?`;
+}
+
+/**
  * Cascata personale → Kentu IT → globale: Top Hit Two-Tier.
  * @param {string} spokenName
  * @param {string[]} keywords

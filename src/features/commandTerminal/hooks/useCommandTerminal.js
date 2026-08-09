@@ -42,6 +42,7 @@ export function useCommandTerminal({
   onAddWorkoutCommand = null,
   onLogSleepCommand = null,
   onSaveFoodDbEntry = null,
+  onPopulateMealLavagna = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -106,11 +107,15 @@ export function useCommandTerminal({
   const getCurrentStateRef = useRef(getCurrentState);
   const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const onWipMealSeedRef = useRef(onWipMealSeed);
+  const onPopulateMealLavagnaRef = useRef(onPopulateMealLavagna);
   useEffect(() => {
     getCurrentStateRef.current = getCurrentState;
     getWipMealSnapshotRef.current = getWipMealSnapshot;
     onWipMealSeedRef.current = onWipMealSeed;
   }, [getCurrentState, getWipMealSnapshot, onWipMealSeed]);
+  useEffect(() => {
+    onPopulateMealLavagnaRef.current = onPopulateMealLavagna;
+  }, [onPopulateMealLavagna]);
 
   const controller = useMemo(() => {
     const llmClient = new GeminiStructuredClient();
@@ -118,6 +123,10 @@ export function useCommandTerminal({
       bus: commandBus,
       llmClient,
       composer: new ContextComposer(),
+      onPopulateMealLavagna: (payload) => {
+        const fn = onPopulateMealLavagnaRef.current;
+        return typeof fn === 'function' ? fn(payload) : false;
+      },
     });
   }, []);
 
@@ -613,6 +622,7 @@ export function useCommandTerminal({
           signal: abortController.signal,
           fromQuickReply: Boolean(options?.fromQuickReply),
           clarificationReply: Boolean(options?.clarificationReply),
+          fromVoice: Boolean(options?.fromVoice),
           wizardSelection: options?.wizardSelection && typeof options.wizardSelection === 'object'
             ? options.wizardSelection
             : null,

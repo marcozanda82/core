@@ -31,6 +31,7 @@ import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefault
 import {
   buildKentuGlobalStateFromAppState,
 } from './kentuGlobalState.js';
+import { buildUserRecentFoods } from '../conversation/userRecentFoods.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
 
@@ -115,7 +116,7 @@ export class ContextComposer {
     });
   }
 
-  getFoodContext(foodDatabase = {}, mealState = {}) {
+  getFoodContext(foodDatabase = {}, mealState = {}, userRecentFoods = []) {
     const knownFoods = Object.values(foodDatabase || {})
       .filter((row) => row && typeof row === 'object')
       .slice(0, MAX_FOOD_CONTEXT_ITEMS)
@@ -130,11 +131,18 @@ export class ContextComposer {
       }))
       .filter((row) => row.name);
 
+    const recentFromMemory = (Array.isArray(userRecentFoods) ? userRecentFoods : [])
+      .map((row) => toSafeString(row?.foodName || row))
+      .filter(Boolean)
+      .slice(0, 20);
+
+    const recentFromState = Array.isArray(mealState?.recentFoods)
+      ? mealState.recentFoods.slice(0, 10).map((name) => toSafeString(name)).filter(Boolean)
+      : [];
+
     return {
       mealType: normalizeMealType(mealState?.mealType),
-      recentFoods: Array.isArray(mealState?.recentFoods)
-        ? mealState.recentFoods.slice(0, 10).map((name) => toSafeString(name)).filter(Boolean)
-        : [],
+      recentFoods: recentFromMemory.length > 0 ? recentFromMemory : recentFromState,
       knownFoods,
       slotFillingPolicy:
         'ADD_FOOD few-shot: User "Ho mangiato 90g di sardine all\'olio e 160g di pane integrale" → items [{foodName:"sardine all\'olio",icon:"🐟",grams:90},{foodName:"pane integrale",icon:"🥖",grams:160}]. foodName = stringa pulita DB (NO grammi, NO congiunzioni). icon = emoji precisa. uiMessage/adviceMessage VUOTI.',
@@ -216,6 +224,13 @@ export class ContextComposer {
     const normalizedIntent = toSafeString(intent).toUpperCase();
     if (normalizedIntent === 'ADD_FOOD') {
       const nutritionSlices = this.buildNutritionContextSlices(currentState);
+      let userRecentFoods = [];
+      try {
+        userRecentFoods = buildUserRecentFoods(currentState, { limit: 20 });
+      } catch (error) {
+        console.warn('[ContextComposer] buildUserRecentFoods failed', error);
+        userRecentFoods = [];
+      }
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
@@ -231,7 +246,13 @@ export class ContextComposer {
           COPY_POLICY:
             'ADD_FOOD: adviceMessage="" e uiMessage="". Compila payload.message con UNA frase informale SENZA nome utente '
             + '(es. "Ecco il tuo snack pronto da confermare."). Nessun paragrafo di stato metabolico.',
-          food: this.getFoodContext(currentState.foodDatabase, currentState.mealState),
+          userRecentFoods,
+          USER_RECENT_FOODS: userRecentFoods,
+          food: this.getFoodContext(
+            currentState.foodDatabase,
+            currentState.mealState,
+            userRecentFoods,
+          ),
         },
       };
     }

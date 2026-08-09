@@ -143,6 +143,7 @@ import {
 } from './conversation/sequentialFoodWizard.js';
 import {
   buildFastPathSummarySpokenText,
+  buildAdaptiveLavagnaSpokenText,
   fastPathResolveMealPayload,
 } from './conversation/fastPathMealResolve.js';
 import {
@@ -300,10 +301,17 @@ function buildConfirmationSummary(commandType, payload) {
 }
 
 export class CommandTerminalController {
-  constructor({ bus = commandBus, llmClient = geminiStructuredClient, composer = contextComposer } = {}) {
+  constructor({
+    bus = commandBus,
+    llmClient = geminiStructuredClient,
+    composer = contextComposer,
+    onPopulateMealLavagna = null,
+  } = {}) {
     this.bus = bus;
     this.llmClient = llmClient;
     this.composer = composer;
+    /** @type {((payload: object) => boolean|void)|null} Voice → FastMealLogger draft (no diary save). */
+    this.onPopulateMealLavagna = typeof onPopulateMealLavagna === 'function' ? onPopulateMealLavagna : null;
     this.conversationState = CONVERSATION_STATE.IDLE;
     this.pendingCommandPayload = null;
     this.pendingCommandType = null;
@@ -1026,16 +1034,10 @@ export class CommandTerminalController {
     next.uiMessage = '';
     if (next.payload && typeof next.payload === 'object') {
       next.payload = { ...next.payload };
-      const items = expandFoodPayloadItems(next.payload);
-      // Multi-item: il wizard genera la voce — scarta copy maggiordomo batch dal LLM.
-      if (items.length > 1) {
-        delete next.payload.message;
-        return next;
-      }
       const msg = String(next.payload.message || '').trim();
-      // Tieni messaggi informali / maggiordomo (conferma solito + grammi). Scarta referti/budget.
+      // Adaptive UI: tieni Speed / Step-by-Step brevi; scarta referti/budget.
       const looksFormalOrBudget = /budget|cilindr|rimanente|delta|metabol|sforamento|traiettoria/i.test(msg);
-      const tooLongForChat = msg.length > 420;
+      const tooLongForChat = msg.length > 160;
       if (!msg || looksFormalOrBudget || tooLongForChat) {
         delete next.payload.message;
       } else {
@@ -1145,14 +1147,52 @@ export class CommandTerminalController {
     }
 
     const items = expandFoodPayloadItems(enrichedPayload);
-    const fastSpoken = buildFastPathSummarySpokenText(items);
+    const fromVoice = options?.fromVoice === true;
+    const adaptiveFallback = buildAdaptiveLavagnaSpokenText(items);
     const fromPayload = String(options.uiMessage || enrichedPayload?.message || '').trim();
-    const summaryText = fromPayload
-      || butler.butlerMessage
-      || fastSpoken;
+    // Voce / Adaptive: preferisci copy LLM Adaptive o fallback Speed/Step-by-Step.
+    // Chat testuale: resta il riepilogo McDrive se manca il messaggio Adaptive.
+    const summaryText = fromVoice
+      ? (fromPayload || butler.butlerMessage || adaptiveFallback)
+      : (fromPayload
+        || butler.butlerMessage
+        || buildFastPathSummarySpokenText(items));
     const spokenText = String(options.spokenText || summaryText).trim();
 
     this.mealDraftInteractiveEdit = false;
+
+    // Nota vocale + lavagna aperta: popola FastMealLogger, NESSUN auto-save / pending confirm.
+    if (fromVoice && typeof this.onPopulateMealLavagna === 'function') {
+      const lavagnaOk = this.onPopulateMealLavagna({
+        items,
+        mealType: enrichedPayload?.mealType || null,
+        exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || null,
+        message: summaryText,
+      });
+      if (lavagnaOk !== false) {
+        if (typeof this.clearPendingMealDraft === 'function') {
+          this.clearPendingMealDraft();
+        }
+        this.conversationState = CONVERSATION_STATE.IDLE;
+        this.publishAdviceMessage({
+          text: summaryText,
+          spokenText,
+          mealProposals: null,
+          quickReplies: [],
+        });
+        return {
+          ok: true,
+          intent: 'ADD_FOOD',
+          mealLavagna: true,
+          userNotified: true,
+          sourceText: String(userText || '').trim() || null,
+          fastPath: true,
+          awaitingConfirmation: false,
+          fromVoice: true,
+        };
+      }
+    }
+
     // McDrive: bozza in sospeso — correzioni vocali → UPDATE_MEAL_DRAFT, «Sì» → CONFIRM.
     this.stagePendingMealDraft(enrichedPayload, {
       uiMessage: summaryText,
@@ -3473,7 +3513,19 @@ export class CommandTerminalController {
       const hasFood = expandFoodPayloadItems(normalized).length > 0;
       const feedbackOpts = {
         ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.fromVoice === true ? { fromVoice: true } : {}),
       };
+
+      // Nota vocale → lavagna FastMealLogger (nessun auto-save), se ci sono alimenti.
+      if (options?.fromVoice === true && hasFood) {
+        return this.publishMealLogProposalCard(
+          normalized,
+          currentState,
+          userText,
+          chatHistory,
+          feedbackOpts,
+        );
+      }
 
       // Fast-Path: card riepilogo immediata (wizard solo su edit chirurgico).
       if (this.isMealRegistrationCandidate(userText) && hasFood) {
@@ -3557,6 +3609,7 @@ export class CommandTerminalController {
     if (commandType === 'ADD_FOOD' && this.shouldUseMealLogProposalCard(userText, payload)) {
       return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, {
         ...(options?.signal ? { signal: options.signal } : {}),
+        ...(options?.fromVoice === true ? { fromVoice: true } : {}),
       });
     }
 
