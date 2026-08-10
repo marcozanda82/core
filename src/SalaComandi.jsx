@@ -159,6 +159,7 @@ import {
   findExistingCanonicalMealSlot,
   normalizeMealUpsertAction,
   resolveUpsertActionFromPayload,
+  buildMealCommitFingerprint,
 } from './features/commandTerminal/meals/mealUpsert';
 import {
   buildDailyPlanGhostLogEntries,
@@ -725,6 +726,9 @@ export default function SalaComandi() {
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
+  /** Idempotenza commit pasti chat (ADD_FOOD + UPSERT_MEAL entro finestra breve). */
+  const mealCommitGuardRef = useRef({ fingerprint: null, at: 0 });
+  const MEAL_COMMIT_DEDUPE_MS = 5000;
   const activeLog = isSimulationMode && simulatedLog != null ? simulatedLog : dailyLog;
 
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
@@ -6098,8 +6102,41 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const commitAddFoodCommand = useCallback(
     (payloadRaw = {}) => {
       const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
-      const action = resolveUpsertActionFromPayload(payload);
       const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
+      const logSnap = dailyLogRef.current || [];
+      let action = resolveUpsertActionFromPayload(payload);
+      const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
+      const forceNewSlot = payload?.forceNewMealSlot === true;
+
+      // Slot canonico già presente → merge (evita cena_2 / doppio nodo pasto).
+      if (action === 'append' && existingSlot?.slotId && !forceNewSlot) {
+        action = 'merge';
+      }
+
+      const commitPayload = {
+        ...payload,
+        mealType: mealTypeCanonical,
+        action,
+        upsertAction: action,
+        ...(action === 'merge' && existingSlot?.slotId && !String(payload?.targetNodeId || '').trim()
+          ? { targetNodeId: existingSlot.slotId }
+          : {}),
+      };
+
+      const fingerprint = buildMealCommitFingerprint(commitPayload, currentTrackerDateRef.current || '');
+      const now = Date.now();
+      if (
+        fingerprint
+        && mealCommitGuardRef.current.fingerprint === fingerprint
+        && now - mealCommitGuardRef.current.at < MEAL_COMMIT_DEDUPE_MS
+      ) {
+        return {
+          text: 'Pasto già registrato.',
+          deduped: true,
+        };
+      }
+      mealCommitGuardRef.current = { fingerprint, at: now };
+
       const defaultMealTimeMap = {
         colazione: 8,
         snack: 16,
@@ -6169,16 +6206,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         getCurrentTimeSlot(),
       );
 
-      const targetNodeId = String(payload?.targetNodeId || '').trim();
-      const logSnap = dailyLogRef.current || [];
-      const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
+      const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
+      const existingSlotResolved = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
 
       if (action === 'merge') {
         const message = commitMergeMealChatPayload({
-          targetNodeId: targetNodeId || existingSlot?.slotId || '',
+          targetNodeId: targetNodeId || existingSlotResolved?.slotId || '',
           mealType: mealTypeCanonical,
           timeString,
-          mealDec: existingSlot?.mealTime ?? mealDec,
+          mealDec: existingSlotResolved?.mealTime ?? mealDec,
           items,
         });
         if (message) return message;
@@ -6193,7 +6229,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
 
       if (action === 'replace' || (targetNodeId && action !== 'append')) {
-        const slot = targetNodeId || existingSlot?.slotId || '';
+        const slot = targetNodeId || existingSlotResolved?.slotId || '';
         if (slot) {
           const message = commitUpdateMealChatPayload({
             targetNodeId: slot,

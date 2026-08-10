@@ -166,6 +166,34 @@ export function resolveUpsertActionFromPayload(payload = {}) {
 }
 
 /**
+ * Impronta stabile per idempotenza commit pasto (stesso giorno + slot + items → un solo write).
+ * @param {object} payload
+ * @param {string} [trackerDate] YYYY-MM-DD
+ * @returns {string}
+ */
+export function buildMealCommitFingerprint(payload = {}, trackerDate = '') {
+  const day = String(trackerDate || '').trim();
+  const mealType = String(payload?.mealType || '').trim().toLowerCase().split('_')[0];
+  const target = String(payload?.targetNodeId || '').trim();
+  const rawItems = Array.isArray(payload?.items) && payload.items.length > 0
+    ? payload.items
+    : payload?.foodName
+      ? [{ foodName: payload.foodName, grams: payload.grams }]
+      : [];
+  const itemKey = rawItems
+    .map((item) => {
+      const name = String(item?.foodName || item?.name || '').trim().toLowerCase();
+      const grams = Math.max(0, Math.round(Number(item?.grams ?? item?.qty) || 0));
+      return name ? `${name}:${grams}` : '';
+    })
+    .filter(Boolean)
+    .sort()
+    .join('|');
+  // Action omessa: stesso pasto via card (UPSERT) e quick reply (ADD_FOOD) → stessa impronta.
+  return `${day}|${mealType}|${target}|${itemKey}`;
+}
+
+/**
  * Label badge UI per l'operazione in corso.
  * @param {'append'|'replace'|'merge'} action
  * @param {string} mealType

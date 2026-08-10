@@ -2120,17 +2120,22 @@ export class CommandTerminalController {
       this.resetConversationState();
 
       const { uiMessage: _uiMessage, ...execMeta } = snapshot.meta;
+      const cmd = snapshot.commandType;
+      const isFood = cmd === 'ADD_FOOD';
+      const correlationId = snapshot.draftId
+        ? (isFood ? `meal_draft_confirm_${snapshot.draftId}` : `workout_draft_confirm_${snapshot.draftId}`)
+        : (isFood ? `meal_confirm_${Date.now()}` : `workout_confirm_${Date.now()}`);
       const result = this.dispatchCommand(snapshot.commandType, snapshot.payload, {
         ...execMeta,
         requiresConfirmation: false,
-        correlationId: snapshot.draftId
-          ? `workout_draft_confirm_${snapshot.draftId}`
-          : `workout_confirm_${Date.now()}`,
+        correlationId,
         dedupeKey: {
           commandType: snapshot.commandType,
           draftId: snapshot.draftId,
+          mealCommit: isFood ? 'pending_food_draft' : null,
           payload: snapshot.payload,
         },
+        dedupeWindowMs: isFood ? 5000 : 1200,
       });
       return { ok: true, ...result };
     } finally {

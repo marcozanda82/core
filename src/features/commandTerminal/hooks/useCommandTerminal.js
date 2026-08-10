@@ -30,6 +30,7 @@ import {
   applyMealOperations,
   mergeMealItems,
   resolveUpsertActionFromPayload,
+  buildMealCommitFingerprint,
 } from '../meals/mealUpsert.js';
 
 export function useCommandTerminal({
@@ -87,6 +88,7 @@ export function useCommandTerminal({
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
   const onLogSleepRef = useRef(onLogSleepCommand);
   const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
+  const handleAcceptMealProposalRef = useRef(null);
 
   useEffect(() => {
     onAddFoodRef.current = onAddFoodCommand;
@@ -729,6 +731,40 @@ export function useCommandTerminal({
         const hasActiveWorkoutDraft = (chatHistoryRef.current || []).some(
           (m) => m.workoutDraft && !m.draftResolved,
         );
+
+        const lastProposalEntry = [...(chatHistoryRef.current || [])]
+          .reverse()
+          .find((m) => Array.isArray(m?.mealProposals) && m.mealProposals.length > 0);
+        const pendingProposal = lastProposalEntry
+          ? (lastProposalEntry.mealProposals || []).find((p) => {
+              const pid = String(p?.id || '');
+              const loaded = new Set(lastProposalEntry.mealProposalsLoadedIds || []);
+              return pid && !loaded.has(pid);
+            })
+          : null;
+
+        if (
+          pendingProposal
+          && (/^s[iì]\s*,?\s*salva\b/i.test(label)
+            || /^s[iì]\s*,\s*confermo\b/i.test(label)
+            || /^s[iì]\s*,?\s*va\s+bene\b/i.test(label))
+        ) {
+          if (confirmingDraftRef.current) {
+            return Promise.resolve({ ok: false, reason: 'confirm_in_flight' });
+          }
+          confirmingDraftRef.current = true;
+          setActiveQuickReplies([]);
+          return Promise.resolve(
+            handleAcceptMealProposalRef.current?.(
+              pendingProposal,
+              0,
+              lastProposalEntry.adviceId,
+            ) ?? { ok: false, reason: 'accept_handler_missing' },
+          ).finally(() => {
+            confirmingDraftRef.current = false;
+          });
+        }
+
         if (
           /^s[iì]\s*,?\s*salva\b/i.test(label)
           || /^s[iì]\s*,\s*confermo\b/i.test(label)
@@ -1025,6 +1061,23 @@ export function useCommandTerminal({
       : sumMealItemsMacros(sourceItems);
     const projection = projectNutritionAfterMeal(stateBeforeCommit, mealTotals);
 
+    const exactTime = String(proposal.exactTime || proposal.timeString || '').trim();
+    const targetNodeId = String(proposal.targetNodeId || '').trim();
+
+    const payload = {
+      mealType,
+      items: itemsForCommit,
+      action: upsertAction,
+      upsertAction,
+      source: proposal.source || null,
+      operations,
+      ...(exactTime ? { timeString: exactTime, exactTime } : {}),
+      ...(targetNodeId ? { targetNodeId } : {}),
+    };
+
+    const trackerDate = String(stateBeforeCommit?.activeDate || '').trim();
+    const mealCommitFingerprint = buildMealCommitFingerprint(payload, trackerDate);
+
     if (typeof setChatHistoryRef.current === 'function' && adviceId) {
       setChatHistoryRef.current((prev) =>
         (prev || []).map((entry) => {
@@ -1039,18 +1092,18 @@ export function useCommandTerminal({
       );
     }
 
-    const exactTime = String(proposal.exactTime || proposal.timeString || '').trim();
-    const targetNodeId = String(proposal.targetNodeId || '').trim();
-    const payload = {
-      mealType,
-      items: itemsForCommit,
-      action: upsertAction,
-      upsertAction,
-      source: proposal.source || null,
-      operations,
-      ...(exactTime ? { timeString: exactTime, exactTime } : {}),
-      ...(targetNodeId ? { targetNodeId } : {}),
-    };
+    controller.clearPendingMealUpdate();
+    pendingMealUpdateRef.current = null;
+    if (typeof controller.clearPendingMealDraft === 'function') {
+      controller.clearPendingMealDraft();
+    }
+    if (typeof controller.clearMealWizardState === 'function') {
+      controller.clearMealWizardState();
+    }
+    if (typeof controller.resetConversationState === 'function') {
+      controller.resetConversationState();
+    }
+    setActiveQuickReplies([]);
 
     try {
       commandBus.publish(DISPATCH_UPSERT_MEAL, payload, {
@@ -1060,7 +1113,7 @@ export function useCommandTerminal({
           : (targetNodeId || upsertAction === 'replace'
             ? 'meal_proposal_update'
             : 'meal_proposal_accept'),
-        dedupeKey: {
+        dedupeKey: mealCommitFingerprint || {
           adviceId: adviceId || proposalId,
           proposalId,
           mealType,
@@ -1068,6 +1121,7 @@ export function useCommandTerminal({
           items: itemsForCommit,
           ...(targetNodeId ? { targetNodeId } : {}),
         },
+        dedupeWindowMs: 5000,
       });
       const label = String(proposal.label || proposal.name || mealType).trim();
       if (upsertAction === 'merge') {
@@ -1087,18 +1141,6 @@ export function useCommandTerminal({
           mealReceipt,
         });
       }
-      controller.clearPendingMealUpdate();
-      pendingMealUpdateRef.current = null;
-      if (typeof controller.clearPendingMealDraft === 'function') {
-        controller.clearPendingMealDraft();
-      }
-      if (typeof controller.clearMealWizardState === 'function') {
-        controller.clearMealWizardState();
-      }
-      if (typeof controller.resetConversationState === 'function'
-        && controller.getConversationSnapshot?.()?.conversationState === 'AWAITING_CONFIRMATION') {
-        controller.resetConversationState();
-      }
       return { ok: true };
     } catch (error) {
       const reason = `Meal proposal accept failure: ${error?.message || 'unknown error'}`;
@@ -1110,6 +1152,10 @@ export function useCommandTerminal({
       return { ok: false, reason };
     }
   }, [appendAiMessage, controller]);
+
+  useEffect(() => {
+    handleAcceptMealProposalRef.current = handleAcceptMealProposal;
+  }, [handleAcceptMealProposal]);
 
   const handleEnableMealDraftInteractiveEdit = useCallback(() => {
     if (typeof setChatHistoryRef.current === 'function') {

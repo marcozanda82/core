@@ -31,6 +31,7 @@ import {
 import { buildChatPersonaSystemBlock, resolveUserDisplayName } from '../features/chat/chatPersona.js';
 import {
   applyMealOperations,
+  findExistingCanonicalMealSlot,
 } from '../features/commandTerminal/meals/mealUpsert.js';
 import {
   formatDecimalHourIt,
@@ -1010,14 +1011,26 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
     ? `${items[0].foodName} (${items[0].grams}g)`
     : items.map((item) => item.foodName).join(' + ');
 
+  let upsertAction = 'append';
+  let targetNodeId = null;
+  const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
+  if (mealType && activeLog.length > 0 && payload?.forceNewMealSlot !== true) {
+    const existing = findExistingCanonicalMealSlot(activeLog, mealType);
+    if (existing?.slotId) {
+      upsertAction = 'merge';
+      targetNodeId = existing.slotId;
+    }
+  }
+
   return {
     id: `meal_log_${Date.now()}_${items.map((i) => i.foodDbKey || i.foodName).join('_')}`,
     label: String(options.label || `Riepilogo: ${defaultLabel}`).trim(),
     mealType,
     exactTime,
     source: 'user_meal_log',
-    upsertAction: 'append',
-    action: 'append',
+    upsertAction,
+    action: upsertAction,
+    ...(targetNodeId ? { targetNodeId } : {}),
     items,
     totals: roundTotals(sumProposalItemMacros(items)),
   };
