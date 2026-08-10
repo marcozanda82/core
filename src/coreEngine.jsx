@@ -3277,7 +3277,7 @@ export function buildTrainingWaveContextSnippet(waveResult) {
  */
 export function computeDayEvaluations(log, userTargets) {
   const L = log || [];
-  const foods = L.filter(e => e.type === 'food');
+  const foods = L.filter(e => e.type === 'food' || e.type === 'recipe');
   const hasStrengthWorkout = L.some(t => {
     if (t.type !== 'workout') return false;
     const sub = (t.subType ?? t.workoutType ?? '').toLowerCase();
