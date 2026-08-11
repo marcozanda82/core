@@ -220,7 +220,12 @@ export class ContextComposer {
     };
   }
 
-  composeForIntent(intent, currentState = {}, { userText = '', chatHistory = [] } = {}) {
+  composeForIntent(intent, currentState = {}, {
+    userText = '',
+    chatHistory = [],
+    pendingMealDraft = null,
+    pendingMealUpdate = null,
+  } = {}) {
     const normalizedIntent = toSafeString(intent).toUpperCase();
     if (normalizedIntent === 'ADD_FOOD') {
       const nutritionSlices = this.buildNutritionContextSlices(currentState);
@@ -231,6 +236,10 @@ export class ContextComposer {
         console.warn('[ContextComposer] buildUserRecentFoods failed', error);
         userRecentFoods = [];
       }
+      const activeDraft = pendingMealDraft && typeof pendingMealDraft === 'object'
+        ? pendingMealDraft
+        : null;
+      const activeDraftItems = Array.isArray(activeDraft?.items) ? activeDraft.items : [];
       return {
         intent: 'ADD_FOOD',
         contextSlices: {
@@ -246,6 +255,22 @@ export class ContextComposer {
           COPY_POLICY:
             'ADD_FOOD: adviceMessage="" e uiMessage="". Compila payload.message con UNA frase informale SENZA nome utente '
             + '(es. "Ecco il tuo snack pronto da confermare."). Nessun paragrafo di stato metabolico.',
+          ...(activeDraftItems.length > 0
+            ? {
+                ACTIVE_PENDING_MEAL_DRAFT: {
+                  mealType: activeDraft.mealType || null,
+                  targetNodeId: activeDraft.targetNodeId || null,
+                  items: activeDraftItems.map((item) => ({
+                    foodName: String(item?.foodName || item?.name || '').trim(),
+                    grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+                    foodDbKey: item?.foodDbKey ?? null,
+                  })).filter((item) => item.foodName),
+                },
+                DRAFT_MUTATION_POLICY:
+                  'Bozza attiva presente: preserva [ACTIVE_PENDING_MEAL_DRAFT].items e applica SOLO la modifica utente. '
+                  + 'VIETATO rigenerare il pasto da THREAD_RECENTE / chatHistory.',
+              }
+            : {}),
           userRecentFoods,
           USER_RECENT_FOODS: userRecentFoods,
           food: this.getFoodContext(
@@ -437,7 +462,7 @@ export class ContextComposer {
       };
     }
     if (normalizedIntent === 'UPDATE_LOGGED_MEAL') {
-      const pendingUpdate = findPendingUpdateLoggedMealContext(chatHistory);
+      const pendingUpdate = pendingMealUpdate || findPendingUpdateLoggedMealContext(chatHistory);
       const parsedTarget = parseTargetMealTypeFromUpdateText(userText);
       const targetMealType =
         parsedTarget?.mealType
@@ -454,13 +479,40 @@ export class ContextComposer {
         currentState?.activeDate || null,
         pendingUpdate,
       );
-      const existingMealNode = updateContext?.existingMealNode || null;
+      const existingMealNode = updateContext?.existingMealNode
+        || pendingMealUpdate?.existingMealNode
+        || null;
+      const activeDraft = pendingMealDraft && typeof pendingMealDraft === 'object'
+        ? pendingMealDraft
+        : null;
+      const activeDraftItems = Array.isArray(activeDraft?.items) ? activeDraft.items : [];
       return {
         intent: 'UPDATE_LOGGED_MEAL',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
           TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           EXISTING_MEAL_NODE: existingMealNode,
+          ACTIVE_PENDING_MEAL_DRAFT: activeDraftItems.length > 0
+            ? {
+                mealType: activeDraft.mealType || existingMealNode?.mealType || null,
+                targetNodeId: activeDraft.targetNodeId || existingMealNode?.targetNodeId || null,
+                items: activeDraftItems.map((item) => ({
+                  foodName: String(item?.foodName || item?.name || '').trim(),
+                  grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+                  foodDbKey: item?.foodDbKey ?? null,
+                })).filter((item) => item.foodName),
+              }
+            : (existingMealNode
+              ? {
+                  mealType: existingMealNode.mealType || null,
+                  targetNodeId: existingMealNode.targetNodeId || null,
+                  items: (existingMealNode.items || []).map((item) => ({
+                    foodName: String(item?.foodName || item?.name || '').trim(),
+                    grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+                    foodDbKey: item?.foodDbKey ?? null,
+                  })).filter((item) => item.foodName),
+                }
+              : null),
           UPDATE_REQUEST: {
             targetMealType: targetMealType || null,
             timeQualifier: updateContext?.timeQualifier || parsedTarget?.timeQualifier || null,
@@ -470,10 +522,12 @@ export class ContextComposer {
             source: existingMealNode ? 'active_log' : 'missing',
           },
           MUTATION_VOCABULARY:
-            'Per UPDATE_LOGGED_MEAL: usa [TODAY_DIARY_INDEX] per scegliere targetNodeId e targetItemId. '
-            + 'Compila mealProposals[0].operations[] con action add|update|delete e mealProposals[0].resultingItems[] '
-            + '(lista FINALE completa del pasto = source of truth). Copia anche resultingItems in items[]. '
-            + 'Per delete/update usa itemId da [TODAY_DIARY_INDEX] o [EXISTING_MEAL_NODE].',
+            'SOURCE OF TRUTH: [ACTIVE_PENDING_MEAL_DRAFT].items (o [EXISTING_MEAL_NODE].items). '
+            + 'Preserva TUTTI quegli alimenti e applica SOLO la modifica utente (add/update/delete). '
+            + 'VIETATO sostituire la bozza con alimenti da THREAD_RECENTE / chatHistory. '
+            + 'Per UPDATE_LOGGED_MEAL: usa [TODAY_DIARY_INDEX] per targetNodeId/targetItemId. '
+            + 'Compila mealProposals[0].operations[] e mealProposals[0].resultingItems[] '
+            + '(lista FINALE = bozza attiva + mutazione). Copia anche resultingItems in items[].',
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',
@@ -533,7 +587,12 @@ export class ContextComposer {
       || (normalizedIntent === 'ADD_FOOD' && isUpdateLoggedMealIntent(userText, chatHistory)),
     );
     const effectiveIntent = shouldForceUpdateLoggedMeal ? 'UPDATE_LOGGED_MEAL' : intent;
-    const bundle = this.composeForIntent(effectiveIntent, currentState, { userText, chatHistory });
+    const bundle = this.composeForIntent(effectiveIntent, currentState, {
+      userText,
+      chatHistory,
+      pendingMealDraft: options?.pendingMealDraft ?? null,
+      pendingMealUpdate: pendingMealUpdate || options?.pendingMealUpdate || null,
+    });
 
     let kentuGlobalStateText = '';
     let kentuGlobalState = null;

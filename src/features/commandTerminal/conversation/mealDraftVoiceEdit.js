@@ -702,6 +702,15 @@ export function applyVoiceCorrectionToMealDraft(draftPayload, userText) {
       mealType: draftPayload?.mealType || null,
       exactTime: draftPayload?.exactTime || null,
       timeString: draftPayload?.timeString || draftPayload?.exactTime || null,
+      ...(draftPayload?.targetNodeId != null
+        ? { targetNodeId: draftPayload.targetNodeId }
+        : {}),
+      ...(draftPayload?.upsertAction || draftPayload?.action
+        ? {
+            upsertAction: draftPayload.upsertAction || draftPayload.action,
+            action: draftPayload.action || draftPayload.upsertAction,
+          }
+        : {}),
     },
   };
 }

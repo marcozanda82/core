@@ -408,6 +408,69 @@ export class CommandTerminalController {
   }
 
   /**
+   * Fonte di verità unica: allinea pendingMealDraft al pasto recuperato dal diario
+   * (evita desync UI card vs bozza McDrive / chatHistory precedente).
+   */
+  stageRecoveredMealDraft(existingMealNode, options = {}) {
+    if (!existingMealNode || typeof existingMealNode !== 'object') return null;
+    const items = Array.isArray(existingMealNode.items)
+      ? existingMealNode.items
+        .map((item) => ({
+          foodName: String(item?.foodName || item?.name || '').trim(),
+          foodDbKey: item?.foodDbKey ?? null,
+          grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+          kcal: Math.round(Number(item?.kcal) || 0),
+          pro: Number(item?.pro) || 0,
+          carbo: Number(item?.carbo) || 0,
+          fat: Number(item?.fat) || 0,
+          ...(item?.itemId != null ? { itemId: String(item.itemId) } : {}),
+        }))
+        .filter((item) => item.foodName && item.grams > 0)
+      : [];
+    if (!items.length) return null;
+
+    const upsertAction = String(options.upsertAction || 'replace').trim() || 'replace';
+    const draftPayload = {
+      mealType: existingMealNode.mealType || null,
+      exactTime: existingMealNode.exactTime || null,
+      timeString: existingMealNode.exactTime || existingMealNode.timeString || null,
+      items,
+      targetNodeId: existingMealNode.targetNodeId || null,
+      upsertAction,
+      action: upsertAction,
+      source: options.source || 'logged_meal_recovered',
+    };
+    return this.stagePendingMealDraft(draftPayload, {
+      uiMessage: options.uiMessage || 'Pasto recuperato.',
+      recoveredFromDiary: true,
+    });
+  }
+
+  /**
+   * Risolve la bozza attiva: pendingMealDraft, altrimenti nodo diario in pendingMealUpdate.
+   * Mai affidarsi alla sola chatHistory.
+   */
+  resolveActiveMealDraftPayload() {
+    const staged = this.getPendingMealDraft();
+    if (staged && expandFoodPayloadItems(staged).length > 0) {
+      return staged;
+    }
+    const node = this.pendingMealUpdate?.existingMealNode;
+    if (node && Array.isArray(node.items) && node.items.length > 0) {
+      this.stageRecoveredMealDraft(node, {
+        upsertAction: 'replace',
+        source: 'logged_meal_resync',
+      });
+      return this.getPendingMealDraft();
+    }
+    if (this.pendingAction?.commandType === 'ADD_FOOD') {
+      const fromAction = this.pendingAction.payload;
+      if (expandFoodPayloadItems(fromAction).length > 0) return { ...fromAction };
+    }
+    return null;
+  }
+
+  /**
    * Domanda mirata per correzione incompleta (niente prompt generici).
    */
   askMealDraftClarification(partial) {
@@ -434,6 +497,22 @@ export class CommandTerminalController {
       message: voiceMessage,
     };
     this.pendingMealDraftClarification = null;
+
+    // Mantieni pendingMealUpdate allineato alla bozza mutata (source of truth).
+    if (this.pendingMealUpdate?.existingMealNode && items.length > 0) {
+      this.setPendingMealUpdate({
+        ...this.pendingMealUpdate,
+        existingMealNode: {
+          ...this.pendingMealUpdate.existingMealNode,
+          items,
+          mealType: payload.mealType || this.pendingMealUpdate.existingMealNode.mealType,
+          exactTime: payload.exactTime || this.pendingMealUpdate.existingMealNode.exactTime,
+          targetNodeId: payload.targetNodeId || this.pendingMealUpdate.existingMealNode.targetNodeId,
+        },
+        targetNodeId: payload.targetNodeId || this.pendingMealUpdate.targetNodeId,
+      });
+    }
+
     return this.publishMealLogProposalCardDirect(
       payload,
       currentState,
@@ -2329,8 +2408,7 @@ export class CommandTerminalController {
    */
   async processMealDraftVoiceLoop(userText, currentState = {}, options = {}) {
     const text = String(userText || '').trim();
-    const draft = this.getPendingMealDraft()
-      || (this.pendingAction?.commandType === 'ADD_FOOD' ? this.pendingAction.payload : null);
+    const draft = this.resolveActiveMealDraftPayload();
 
     if (!draft || expandFoodPayloadItems(draft).length === 0) {
       this.resetConversationState();
@@ -2712,6 +2790,12 @@ export class CommandTerminalController {
       timeQualifier,
     });
     const previewProposal = buildUpdateLoggedMealPreviewProposal(existingMealNode);
+    // Allinea McDrive draft al nodo diario (source of truth), non alla chatHistory.
+    this.stageRecoveredMealDraft(existingMealNode, {
+      upsertAction: 'replace',
+      source: 'logged_meal_update_preview',
+      uiMessage: buildUpdateWaitingPromptMessage(targetMealType),
+    });
     this.publishAdviceMessage({
       text: buildUpdateWaitingPromptMessage(targetMealType),
       mealProposals: previewProposal ? [previewProposal] : null,
@@ -2895,17 +2979,50 @@ export class CommandTerminalController {
           ? 'logged_meal_merge'
           : 'logged_meal_update';
       }
+      // Critico: bozza McDrive = items del diario, non residui chat (Pollo/Riso).
+      this.stageRecoveredMealDraft(existingMealNode, {
+        upsertAction: previewProposal?.upsertAction || 'replace',
+        source: previewProposal?.source || 'logged_meal_recovered',
+        uiMessage: `Ho recuperato il tuo ${targetMealTypeForUpdate || 'pasto'}.`,
+      });
+      this.setPendingMealUpdate({
+        state: MEAL_UPDATE_WAITING_STATE,
+        targetMealType: targetMealTypeForUpdate || existingMealNode.mealType,
+        targetNodeId: existingMealNode.targetNodeId,
+        existingMealNode,
+        timeQualifier: updateContext?.timeQualifier || null,
+      });
       this.publishAdviceMessage({
         text: `Ho recuperato il tuo ${targetMealTypeForUpdate || 'pasto'}. Modifica gli alimenti sulla card e conferma — nessuna domanda intermedia.`,
         mealProposals: previewProposal ? [previewProposal] : null,
+        pendingMealUpdate: this.getPendingMealUpdate(),
       });
-      this.clearPendingMealUpdate();
       return {
         ok: true,
         intent: 'UPDATE_LOGGED_MEAL',
         mealProposals: previewProposal ? [previewProposal] : [],
         singleConfirm: true,
+        awaitingConfirmation: true,
+        pendingMealDraft: this.getPendingMealDraft(),
       };
+    }
+
+    // Follow-up UPDATE con mutazione chiara: merge locale su existingMealNode / draft attivo.
+    if (isUpdateLogged && existingMealNode?.targetNodeId && hasExplicitUpdateAction(rawQuery)) {
+      const active = this.getPendingMealDraft();
+      const activeTarget = String(active?.targetNodeId || '').trim();
+      const nodeTarget = String(existingMealNode.targetNodeId || '').trim();
+      if (!active || !expandFoodPayloadItems(active).length
+        || (nodeTarget && activeTarget && activeTarget !== nodeTarget)) {
+        this.stageRecoveredMealDraft(existingMealNode, {
+          upsertAction: isMergeIntoExistingMealIntent(rawQuery) ? 'merge' : 'replace',
+          source: 'logged_meal_before_explicit_mutate',
+        });
+      }
+      if (looksLikeClearMealDraftMutation(rawQuery) || isUpdateMealDraftIntent(rawQuery)) {
+        const local = await this.processMealDraftVoiceLoop(rawQuery, currentState, options);
+        if (local?.ok) return local;
+      }
     }
 
     const queryForAdvice = isUpdateLogged && pendingUpdate?.targetMealType
@@ -3320,9 +3437,30 @@ export class CommandTerminalController {
     if (this.pendingMealUpdate?.targetMealType) {
       if (/^(?:annulla|cancel|stop)\b/i.test(userText)) {
         this.clearPendingMealUpdate();
+        this.clearPendingMealDraft();
         this.publishSystemMessage('Modifica pasto annullata.');
         return { ok: true, cancelled: true, intent: 'UPDATE_LOGGED_MEAL' };
       }
+
+      // Append/remove chiaro → merge locale sulla bozza attiva (source of truth), non chatHistory.
+      const node = this.pendingMealUpdate.existingMealNode;
+      if (
+        node
+        && (looksLikeClearMealDraftMutation(userText) || isUpdateMealDraftIntent(userText))
+      ) {
+        const active = this.getPendingMealDraft();
+        const activeTarget = String(active?.targetNodeId || '').trim();
+        const nodeTarget = String(node.targetNodeId || '').trim();
+        if (!active || !expandFoodPayloadItems(active).length
+          || (nodeTarget && activeTarget && activeTarget !== nodeTarget)) {
+          this.stageRecoveredMealDraft(node, {
+            upsertAction: isMergeIntoExistingMealIntent(userText) ? 'merge' : 'replace',
+            source: 'logged_meal_before_local_mutate',
+          });
+        }
+        return this.processMealDraftVoiceLoop(userText, currentState, options);
+      }
+
       return this.processMealAdvice(userText, currentState, {
         ...options,
         forcedIntent: 'UPDATE_LOGGED_MEAL',
@@ -3379,7 +3517,10 @@ export class CommandTerminalController {
       currentState,
       userText,
       chatHistory,
-      { pendingMealUpdate: this.getPendingMealUpdate() },
+      {
+        pendingMealUpdate: this.getPendingMealUpdate(),
+        pendingMealDraft: this.resolveActiveMealDraftPayload(),
+      },
     );
 
     let commandResponse;
