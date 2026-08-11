@@ -125,6 +125,7 @@ import {
   detectPartialMealDraftCorrection,
   applyPartialClarificationReply,
   isUpdateMealDraftIntent,
+  looksLikeClearMealDraftMutation,
 } from './conversation/mealDraftVoiceEdit.js';
 import {
   createMealWizardState,
@@ -2434,10 +2435,49 @@ export class CommandTerminalController {
       if (
         (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text))
         && !isUpdateMealDraftIntent(text)
+        && !looksLikeClearMealDraftMutation(text)
       ) {
         this.resetConversationState();
         return this.processUserMessage(text, currentState, options);
       }
+
+      // Ultimo tentativo merge locale (varianti soft / filler) prima del fallback.
+      const looseApply = applyVoiceCorrectionToMealDraft(draft, text);
+      if (looseApply.ok) {
+        const voiceMessage = buildMcDriveUpdatedConfirmationMessage(
+          expandFoodPayloadItems(looseApply.payload),
+        );
+        const published = await this.republishMealDraftAfterVoiceEdit(
+          looseApply.payload,
+          currentState,
+          {
+            spokenText: voiceMessage,
+            userText: text,
+            chatHistory: options?.chatHistory || [],
+          },
+        );
+        return {
+          ...published,
+          intent: UPDATE_MEAL_DRAFT,
+          commandType: UPDATE_MEAL_DRAFT,
+        };
+      }
+
+      // Entità già presenti (aggiungi/togli/olio/…) → MAI prompt generico «Dimmi la correzione».
+      if (looksLikeClearMealDraftMutation(text)) {
+        this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+        this.publishSystemMessage(
+          'Non sono riuscito ad aggiornare la bozza con quella richiesta. Ripeti tipo «aggiungi 10g di olio» o «togli il riso».',
+        );
+        return {
+          ok: true,
+          awaiting: true,
+          intent: UPDATE_MEAL_DRAFT,
+          reason: 'clear_mutation_unparsed',
+          conversationState: this.conversationState,
+        };
+      }
+
       this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
       this.publishSystemMessage(
         "Dimmi la correzione (es. «metti 80 grammi», «era rosetta») oppure «sì» per salvare, «annulla» per chiudere.",
@@ -2489,9 +2529,15 @@ export class CommandTerminalController {
         }
       }
       this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
-      this.publishSystemMessage(
-        "Non ho colto la correzione. Prova tipo «metti 80 grammi», «togli il pomodoro», «era rosetta», oppure «sì» per salvare.",
-      );
+      if (looksLikeClearMealDraftMutation(correctionText)) {
+        this.publishSystemMessage(
+          'Non sono riuscito ad aggiornare la bozza con quella richiesta. Ripeti tipo «aggiungi 10g di olio» o «togli il riso».',
+        );
+      } else {
+        this.publishSystemMessage(
+          "Non ho colto la correzione. Prova tipo «metti 80 grammi», «togli il pomodoro», «era rosetta», oppure «sì» per salvare.",
+        );
+      }
       return {
         ok: true,
         awaiting: true,

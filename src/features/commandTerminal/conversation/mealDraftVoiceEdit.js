@@ -21,10 +21,15 @@ const FOOD_THEN_GRAMS_RE =
   /(?:(?:del|della|di|il|la|lo|l')\s+)?([^,;.]+?)\s+(?:a\s+|di\s+)?(\d{1,4})\s*(?:g|gr|grammi)\b/i;
 
 const REMOVE_FOOD_RE =
-  /\b(?:togli|rimuovi|elimina|leva|cancella)\s+(?:anche\s+)?(?:la\s+|il\s+|lo\s+|l'|i\s+|gli\s+|le\s+)?([^,;.]+?)(?:\s*$|\s*,|\s+e\s+metti|\s+per\s+favore)/i;
+  /\b(?:togli|rimuov[ie]?|elimina|leva|cancella)\s+(?:anche\s+|pure\s+)?(?:la\s+|il\s+|lo\s+|l'|i\s+|gli\s+|le\s+)?([^,;.]+?)(?:\s*$|\s*,|\s+e\s+metti|\s+per\s+favore)/i;
 
+/** Aggiungi / aggiungere / metti anche / mettici / in più … */
 const ADD_FOOD_RE =
-  /\b(?:aggiungi|metti\s+anche|aggiungici|in\s+pi[uù])\s+(?:anche\s+)?(?:una?\s+|un\s+|della?\s+|del\s+|di\s+)?([^,;.]+?)(?:\s*$|\s*,|\s+e\s+)/i;
+  /\b(?:aggiung(?:i|ere|ici|iamo)|metti(?:ci)?|in\s+pi[uù])\s+(?:(?:anche|pure)\s+)?(?:una?\s+|un\s+|della?\s+|del\s+|di\s+|un\s+po['']?\s+(?:di\s+)?)?([^,;.]+?)(?:\s*$|\s*,|\s+e\s+)/i;
+
+/** Soft-add senza verbo esplicito: «anche un cucchiaio d'olio», «e un po' di olio». */
+const SOFT_ADD_FOOD_RE =
+  /^(?:ah[,!]?\s*|eh[,!]?\s*|allora[,!]?\s*)?(?:anche|e)\s+(?:una?\s+|un\s+|un\s+po['']?\s+(?:di\s+)?|della?\s+|del\s+|di\s+)?([^,;.]+?)(?:\s*$|[.!])/i;
 
 const REPLACE_NON_ERA_RE =
   /\bnon\s+(?:era|è|e)\s+(?:la\s+|il\s+|lo\s+|l')?([^,;.]+?)[,.]?\s*(?:era|ma\s+(?:era|è)|invece|bens[iì])\s+(?:la\s+|il\s+|lo\s+|l')?([^,;.]+?)(?:\s*$|[.!])/i;
@@ -162,7 +167,7 @@ export function isUpdateMealDraftIntent(userText) {
 
   if (SOFT_NO_THEN_CORRECT_RE.test(t)) return true;
   if (REMOVE_FOOD_RE.test(t)) return true;
-  if (ADD_FOOD_RE.test(t)) return true;
+  if (ADD_FOOD_RE.test(t) || SOFT_ADD_FOOD_RE.test(t)) return true;
   if (REPLACE_NON_ERA_RE.test(t) || REPLACE_INVECE_RE.test(t) || REPLACE_CAMBIA_RE.test(t)) return true;
   if (REPLACE_ERA_RE.test(t) && !/\bho\s+mangiato\b/i.test(t)) return true;
   if (GRAMS_FOR_FOOD_RE.test(t) || FOOD_THEN_GRAMS_RE.test(t)) return true;
@@ -185,10 +190,47 @@ export function isUpdateMealDraftIntent(userText) {
 
 function cleanFoodPhrase(raw) {
   return String(raw || '')
-    .replace(/^(?:la|il|lo|l'|un|una|uno|di|del|della|dello|dei|degli|delle)\s+/i, '')
-    .replace(/\b(?:per\s+favore|grazie|oggi|prego)\b/gi, '')
+    .replace(/^(?:la|il|lo|l'|un|una|uno|di|del|della|dello|dei|degli|delle|anche|pure|d')\s*/i, '')
+    .replace(/\b(?:per\s+favore|grazie|oggi|prego|pure|anche)\b/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Porzioni naturali → { foodName, grams }.
+ * Es. «cucchiaio d'olio» → olio 10g; «cucchiaino di olio» → 5g.
+ */
+function parsePortionBasedAdd(namePart) {
+  const raw = cleanFoodPhrase(namePart);
+  if (!raw) return null;
+
+  const spoon = raw.match(
+    /^(?:(?:un|una|uno)\s+)?(cucchiai(?:no|ni)?|cucchiai[oa]?)\s+(?:d['']|di\s+|del\s+|della\s+)?(.+)$/i,
+  );
+  if (spoon) {
+    const utensil = String(spoon[1] || '').toLowerCase();
+    const foodName = cleanFoodPhrase(spoon[2]);
+    if (!foodName) return null;
+    const grams = /cucchiain/i.test(utensil) ? 5 : 10;
+    return { foodName, grams, isEstimated: true };
+  }
+
+  const drizzle = raw.match(
+    /^(?:un\s+)?po['']?\s+(?:di\s+|d[''])?(.+)$/i,
+  );
+  if (drizzle) {
+    const foodName = cleanFoodPhrase(drizzle[1]);
+    if (!foodName) return null;
+    const grams = /\bolio\b/i.test(foodName) ? 10 : 30;
+    return { foodName, grams, isEstimated: true };
+  }
+
+  // Solo «d'olio» / «olio» dopo stripping articolo.
+  if (/^olio\b/i.test(raw)) {
+    return { foodName: 'olio', grams: 10, isEstimated: true };
+  }
+
+  return null;
 }
 
 function findItemIndex(items, query) {
@@ -284,7 +326,7 @@ export function detectPartialMealDraftCorrection(userText, draftPayload) {
   }
   if (/\d+\s*(?:g|gr|grammi)\b/i.test(text)) return null;
   if (/\b(?:metti|fai|segna|porta)\s+\d{1,4}\b/i.test(text)) return null;
-  if (REMOVE_FOOD_RE.test(text) || ADD_FOOD_RE.test(text)) return null;
+  if (REMOVE_FOOD_RE.test(text) || ADD_FOOD_RE.test(text) || SOFT_ADD_FOOD_RE.test(text)) return null;
 
   const items = expandDraftItems(draftPayload);
   if (items.length === 0) return null;
@@ -420,7 +462,7 @@ export function buildMcDriveClarificationDoneMessage(summaryBits, items = []) {
  * @returns {{ ok: boolean, payload?: object, intent: string, reason?: string }}
  */
 export function applyVoiceCorrectionToMealDraft(draftPayload, userText) {
-  const text = String(userText || '').trim();
+  const text = stripDraftVoiceFillers(String(userText || '').trim());
   if (!text) {
     return { ok: false, intent: UPDATE_MEAL_DRAFT, reason: 'empty' };
   }
@@ -530,23 +572,45 @@ export function applyVoiceCorrectionToMealDraft(draftPayload, userText) {
     }
   }
 
-  const add = text.match(ADD_FOOD_RE);
+  const add = text.match(ADD_FOOD_RE) || (!changed ? text.match(SOFT_ADD_FOOD_RE) : null);
   if (add) {
     const namePart = cleanFoodPhrase(add[1]);
-    const gramsInAdd = namePart.match(/(\d{1,4})\s*(?:g|gr|grammi)?$/i);
     let foodName = namePart;
     let grams = 100;
-    if (gramsInAdd) {
-      grams = parseGramsNumber(gramsInAdd[1]) || 100;
-      foodName = cleanFoodPhrase(namePart.replace(gramsInAdd[0], ''));
+    let isEstimated = true;
+
+    const portion = parsePortionBasedAdd(namePart);
+    if (portion) {
+      foodName = portion.foodName;
+      grams = portion.grams;
+      isEstimated = portion.isEstimated !== false;
+    } else {
+      const gramsInAdd = namePart.match(/(\d{1,4})\s*(?:g|gr|grammi)?$/i);
+      if (gramsInAdd) {
+        grams = parseGramsNumber(gramsInAdd[1]) || 100;
+        foodName = cleanFoodPhrase(namePart.replace(gramsInAdd[0], ''));
+        isEstimated = false;
+      }
+      const parsedAdd = parseNaturalMealItems(add[0]);
+      if (parsedAdd?.items?.[0]) {
+        foodName = parsedAdd.items[0].foodName || foodName;
+        grams = parsedAdd.items[0].grams || grams;
+        isEstimated = false;
+      }
     }
-    const parsedAdd = parseNaturalMealItems(add[0]);
-    if (parsedAdd?.items?.[0]) {
-      foodName = parsedAdd.items[0].foodName || foodName;
-      grams = parsedAdd.items[0].grams || grams;
-    }
+
     if (foodName) {
-      items.push({ foodName, grams, isEstimated: true });
+      const existingIdx = findItemIndex(items, foodName);
+      if (existingIdx >= 0) {
+        const prev = Math.round(Number(items[existingIdx].grams) || 0);
+        items[existingIdx] = {
+          ...items[existingIdx],
+          grams: Math.max(1, prev + Math.round(Number(grams) || 0)),
+          isEstimated: items[existingIdx].isEstimated === true || isEstimated,
+        };
+      } else {
+        items.push({ foodName, grams, isEstimated });
+      }
       changed = true;
     }
   }
@@ -601,9 +665,17 @@ export function applyVoiceCorrectionToMealDraft(draftPayload, userText) {
   }
 
   const restated = parseNaturalMealItems(text);
-  if (restated?.items?.length && (
+  // Mai sostituire l'intera bozza quando l'utente sta aggiungendo/togliendo/correggendo.
+  const isAppendOrEditOp = ADD_FOOD_RE.test(text)
+    || SOFT_ADD_FOOD_RE.test(text)
+    || REMOVE_FOOD_RE.test(text)
+    || REPLACE_NON_ERA_RE.test(text)
+    || REPLACE_INVECE_RE.test(text)
+    || REPLACE_CAMBIA_RE.test(text);
+  if (!isAppendOrEditOp && restated?.items?.length && (
     restated.items.length >= items.length
-    || /(?:e|,)\s*\d+\s*(?:g|gr|grammi)/i.test(text)
+    // Evita falso positivo «anche 10g» (match di «e 10» dentro «anche»).
+    || /(?:^|[,;]|\be\s+)\d+\s*(?:g|gr|grammi)/i.test(text)
   )) {
     items = restated.items.map((item) => ({
       foodName: item.foodName,
@@ -655,12 +727,37 @@ export function buildMcDriveUpdatedConfirmationMessage(items = []) {
   return `D'accordo, ho corretto. Ti segno ${summary}. Posso salvare?`;
 }
 
+/**
+ * True se il testo ha già entità chiare da aggiungere/togliere/correggere:
+ * non va mostrato il fallback generico «Dimmi la correzione…».
+ */
+export function looksLikeClearMealDraftMutation(userText) {
+  const t = String(userText || '').trim();
+  if (!t) return false;
+  if (ADD_FOOD_RE.test(t) || SOFT_ADD_FOOD_RE.test(t) || REMOVE_FOOD_RE.test(t)) return true;
+  if (REPLACE_NON_ERA_RE.test(t) || REPLACE_INVECE_RE.test(t) || REPLACE_CAMBIA_RE.test(t)) return true;
+  if (GRAMS_FOR_FOOD_RE.test(t) || FOOD_THEN_GRAMS_RE.test(t)) return true;
+  if (/\b(?:aggiung|togli|rimuov|metti(?:ci)?|in\s+pi[uù])\b/i.test(t)
+    && /[a-zàèéìòù]{3,}/i.test(t.replace(/\b(?:aggiung\w*|togli\w*|rimuov\w*|metti\w*|anche|pure|un|una|di|del|della|il|la|lo)\b/gi, ' '))) {
+    return true;
+  }
+  return false;
+}
+
+function stripDraftVoiceFillers(userText) {
+  return String(userText || '')
+    .trim()
+    .replace(/^(?:ah|eh|oh|uhm|allora|ascolta|senti)[,!.]?\s+/i, '')
+    .trim();
+}
+
 /** Classifica la risposta utente mentre c'è una bozza in sospeso. */
 export function classifyMealDraftVoiceReply(userText) {
-  if (isConfirmMealDraftIntent(userText)) return CONFIRM_MEAL_DRAFT;
-  if (isCancelMealDraftIntent(userText)) return CANCEL_MEAL_DRAFT;
-  if (isUpdateMealDraftIntent(userText)) return UPDATE_MEAL_DRAFT;
-  if (/^oggi\s+[eè]\s+diverso\b/i.test(String(userText || '').trim())) {
+  const text = stripDraftVoiceFillers(userText);
+  if (isConfirmMealDraftIntent(text) || isConfirmMealDraftIntent(userText)) return CONFIRM_MEAL_DRAFT;
+  if (isCancelMealDraftIntent(text) || isCancelMealDraftIntent(userText)) return CANCEL_MEAL_DRAFT;
+  if (isUpdateMealDraftIntent(text) || isUpdateMealDraftIntent(userText)) return UPDATE_MEAL_DRAFT;
+  if (/^oggi\s+[eè]\s+diverso\b/i.test(text)) {
     return UPDATE_MEAL_DRAFT;
   }
   return 'UNKNOWN';
