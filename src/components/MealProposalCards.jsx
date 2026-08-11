@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
+import AmountStepper from '../features/mealBuilder/components/AmountStepper';
 import {
   FOOD_RESOLUTION_STATUS,
   resolveFoodItemForProposal,
@@ -270,6 +271,7 @@ function MealProposalItemRow({
   onSelectAlternative,
   onEditName,
   onEditGrams,
+  onUpdateGrams,
   onRemoveItem,
   onRequestItemEdit,
 }) {
@@ -389,7 +391,24 @@ function MealProposalItemRow({
           <span className="kentu-meal-proposal-card__item-name">{icon ? `${icon} ${name}` : name}</span>
         )}
       </div>
-      <span className="kentu-meal-proposal-card__item-grams">{grams}g</span>
+      {typeof onUpdateGrams === 'function' ? (
+        <AmountStepper
+          variant="kentu"
+          size="sm"
+          unitLabel="g"
+          step={5}
+          min={1}
+          value={grams}
+          disabled={disabled}
+          className="kentu-meal-proposal-card__stepper"
+          onChange={(nextGrams) => {
+            const parsed = Math.max(1, Math.round(Number(nextGrams) || 0));
+            onUpdateGrams(itemIdx, parsed);
+          }}
+        />
+      ) : (
+        <span className="kentu-meal-proposal-card__item-grams">{grams}g</span>
+      )}
     </li>
   );
 }
@@ -725,6 +744,35 @@ function MealProposalCard({
     setLocalProposal((prev) => ({ ...prev, items: nextItems }));
   }, [items]);
 
+  const handleUpdateProposalItemGrams = useCallback((itemIndex, newGrams) => {
+    const parsed = Math.max(1, Math.round(Number(newGrams) || 0));
+    const item = items[itemIndex];
+    if (!item) return;
+    const scaled = scaleItemMacros(item, parsed);
+    const updated = recalcItemMacros(
+      scaled,
+      foodDatabase,
+      fullHistory,
+      mealType,
+      { kentuItDb: kentuItDatabase, globalDb: globalFoodDatabase },
+    );
+    const nextItems = items.map((it, ii) => (ii === itemIndex ? updated : it));
+    commitProposal({
+      ...localProposal,
+      items: nextItems,
+      totals: sumItemMacros(nextItems),
+    });
+  }, [
+    commitProposal,
+    foodDatabase,
+    fullHistory,
+    globalFoodDatabase,
+    items,
+    kentuItDatabase,
+    localProposal,
+    mealType,
+  ]);
+
   const handleRemoveItem = useCallback((itemIndex) => {
     const nextItems = items.filter((_, ii) => ii !== itemIndex);
     setLocalProposal((prev) => ({
@@ -808,6 +856,7 @@ function MealProposalCard({
             receipt={previewReceipt}
             disabled={isLoaded || processingItemIdx != null}
             onSelectAlternative={handleSelectAlternative}
+            onUpdateItemGrams={isLoaded ? null : handleUpdateProposalItemGrams}
             onScanBarcode={handleScanBarcode}
             onUseLabelPhoto={handleUseLabelPhoto}
             onManualResolve={handleManualResolve}
@@ -841,6 +890,7 @@ function MealProposalCard({
               onSelectAlternative={handleSelectAlternative}
               onEditName={handleEditName}
               onEditGrams={handleEditGrams}
+              onUpdateGrams={handleUpdateProposalItemGrams}
               onRemoveItem={handleRemoveItem}
               onRequestItemEdit={handleRequestItemEdit}
             />

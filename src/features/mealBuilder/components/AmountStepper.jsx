@@ -15,6 +15,8 @@ export default function AmountStepper({
   min = 0,
   unitLabel = '',
   size = 'md',
+  variant = 'tailwind',
+  disabled = false,
   onConfirm = null,
   confirmLabel = null,
   justConfirmed = false,
@@ -74,11 +76,68 @@ export default function AmountStepper({
       ? String(rounded)
       : '';
 
+  if (variant === 'kentu') {
+    const sizeClass = size === 'lg' ? 'kentu-amount-stepper--lg' : size === 'sm' ? 'kentu-amount-stepper--sm' : '';
+    return (
+      <div className={`kentu-amount-stepper ${sizeClass} ${className}`.trim()}>
+        <button
+          type="button"
+          className="kentu-amount-stepper__btn"
+          disabled={disabled}
+          onClick={() => handleStep(-1)}
+          aria-label="Diminuisci quantità"
+        >
+          <Minus className="kentu-amount-stepper__icon" strokeWidth={2.5} />
+        </button>
+        <div className="kentu-amount-stepper__value-wrap">
+          <input
+            ref={inputRef}
+            type="number"
+            inputMode="decimal"
+            step="any"
+            min={min}
+            value={displayValue}
+            onFocus={handleFocus}
+            onChange={handleInputChange}
+            onBlur={handleBlur}
+            autoFocus={autoFocusInput}
+            disabled={disabled}
+            aria-label={`Quantità${unitLabel ? ` in ${unitLabel}` : ''}`}
+            className="kentu-amount-stepper__input"
+          />
+          {unitLabel ? (
+            <span className="kentu-amount-stepper__unit">{unitLabel}</span>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="kentu-amount-stepper__btn"
+          disabled={disabled}
+          onClick={() => handleStep(1)}
+          aria-label="Aumenta quantità"
+        >
+          <Plus className="kentu-amount-stepper__icon" strokeWidth={2.5} />
+        </button>
+        {onConfirm ? (
+          <button
+            type="button"
+            className={`kentu-amount-stepper__confirm${justConfirmed ? ' kentu-amount-stepper__confirm--done' : ''}`}
+            onClick={onConfirm}
+            aria-label={confirmLabel || 'Conferma'}
+          >
+            {confirmLabel || 'OK'}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <div className={`flex items-center justify-center ${sizeConfig.gap} ${className}`}>
       <button
         type="button"
         onClick={() => handleStep(-1)}
+        disabled={disabled}
         aria-label="Diminuisci quantità"
         className={`${btnBase} ${sizeConfig.btn}`}
       >
@@ -93,6 +152,7 @@ export default function AmountStepper({
           step="any"
           min={min}
           value={displayValue}
+          disabled={disabled}
           onFocus={handleFocus}
           onChange={handleInputChange}
           onBlur={handleBlur}
@@ -110,6 +170,7 @@ export default function AmountStepper({
       <button
         type="button"
         onClick={() => handleStep(1)}
+        disabled={disabled}
         aria-label="Aumenta quantità"
         className={`${btnBase} ${sizeConfig.btn}`}
       >

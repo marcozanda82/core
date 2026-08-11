@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
+import AmountStepper from '../mealBuilder/components/AmountStepper';
 
 const NEEDS_RESOLUTION = 'NEEDS_RESOLUTION';
 
@@ -213,6 +214,7 @@ function ReceiptItemRow({
   labelImageUri = null,
   initialValues = null,
   onSelectAlternative = null,
+  onUpdateItemGrams = null,
   onScanBarcode = null,
   onUseLabelPhoto = null,
   onManualResolve = null,
@@ -322,10 +324,27 @@ function ReceiptItemRow({
             </button>
           ) : null}
         </span>
-        <span className="shrink-0 pt-0.5 text-[12px] font-semibold tabular-nums text-slate-400">
-          {grams}
-          g
-        </span>
+        {typeof onUpdateItemGrams === 'function' && !needsResolution ? (
+          <AmountStepper
+            variant="kentu"
+            size="sm"
+            unitLabel="g"
+            step={5}
+            min={1}
+            value={grams}
+            disabled={disabled || isProcessing}
+            className="kentu-meal-receipt__stepper shrink-0"
+            onChange={(nextGrams) => {
+              const parsed = Math.max(1, Math.round(Number(nextGrams) || 0));
+              onUpdateItemGrams(itemIdx, parsed);
+            }}
+          />
+        ) : (
+          <span className="shrink-0 pt-0.5 text-[12px] font-semibold tabular-nums text-slate-400">
+            {grams}
+            g
+          </span>
+        )}
       </div>
 
       {needsResolution && editingName ? (
@@ -447,6 +466,7 @@ export default function MealReceiptMessage({
   receipt = null,
   disabled = false,
   onSelectAlternative = null,
+  onUpdateItemGrams = null,
   onScanBarcode = null,
   onUseLabelPhoto = null,
   onManualResolve = null,
@@ -516,6 +536,7 @@ export default function MealReceiptMessage({
             labelImageUri={pendingImageUriByIdx?.[idx] || null}
             initialValues={prefilledMacrosByIdx?.[idx] || null}
             onSelectAlternative={onSelectAlternative}
+            onUpdateItemGrams={onUpdateItemGrams}
             onScanBarcode={onScanBarcode}
             onUseLabelPhoto={onUseLabelPhoto}
             onManualResolve={onManualResolve}

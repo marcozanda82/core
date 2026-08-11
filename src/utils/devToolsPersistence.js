@@ -71,18 +71,18 @@ export function subscribeDevNotes(uid, onData, onError) {
  * @param {(err: Error) => void} [onError]
  * @returns {() => void} unsubscribe
  */
-export function subscribeAiErrorLogs(uid, onData, onError) {
+export function subscribeSavedChats(uid, onData, onError) {
   const userId = resolveUid(uid);
   if (!userId) {
     onData([]);
     return () => {};
   }
-  const logsRef = ref(db, `users/${userId}/ai_error_logs`);
+  const chatsRef = ref(db, `users/${userId}/saved_chats`);
   return onValue(
-    logsRef,
+    chatsRef,
     (snap) => onData(snapshotToSortedList(snap)),
     (err) => {
-      console.error('[DevTools] subscribeAiErrorLogs', err);
+      console.error('[DevTools] subscribeSavedChats', err);
       onError?.(err);
       onData([]);
     },
@@ -96,11 +96,11 @@ export async function deleteDevNote(noteId, uid) {
   await remove(ref(db, `users/${userId}/dev_notes/${id}`));
 }
 
-export async function deleteAiErrorLog(logId, uid) {
+export async function deleteSavedChat(chatId, uid) {
   const userId = resolveUid(uid);
-  const id = String(logId || '').trim();
-  if (!userId || !id) throw new Error('deleteAiErrorLog: uid o id mancante');
-  await remove(ref(db, `users/${userId}/ai_error_logs/${id}`));
+  const id = String(chatId || '').trim();
+  if (!userId || !id) throw new Error('deleteSavedChat: uid o id mancante');
+  await remove(ref(db, `users/${userId}/saved_chats/${id}`));
 }
 
 export function buildDevNoteAiPrompt({ text, route } = {}) {
@@ -109,10 +109,37 @@ export function buildDevNoteAiPrompt({ text, route } = {}) {
   return `Devo implementare questa nota di sviluppo in KentuOS. Contesto: rotta "${safeRoute}". Nota: "${safeText}". Come procediamo a livello di codice?`;
 }
 
-export function buildAiErrorAiPrompt({ userPrompt, aiResponse } = {}) {
-  const safeUser = String(userPrompt || '').trim();
-  const safeAi = String(aiResponse || '').trim();
-  return `Ho un errore nel parser NLP di KentuOS. L'utente ha scritto: "${safeUser}". L'AI ha risposto/eseguito: "${safeAi}". Come correggiamo la logica o il prompt di sistema per gestire correttamente questo intento?`;
+const MAX_SAVED_CHAT_MESSAGES = 200;
+const MAX_SAVED_CHAT_TEXT = 8000;
+
+/**
+ * Normalizza la cronologia chat per il salvataggio contestuale.
+ * @param {Array} chatHistory
+ */
+export function serializeChatMessagesForSave(chatHistory) {
+  const list = Array.isArray(chatHistory) ? chatHistory : [];
+  return list.slice(-MAX_SAVED_CHAT_MESSAGES).map((entry) => {
+    const senderRaw = String(entry?.sender || '').toLowerCase();
+    const sender =
+      senderRaw === 'ai' || senderRaw === 'assistant'
+        ? 'ai'
+        : senderRaw === 'user' || senderRaw === 'human'
+          ? 'user'
+          : (senderRaw || 'unknown');
+    return {
+      sender,
+      text: String(entry?.text || '').slice(0, MAX_SAVED_CHAT_TEXT),
+      type: entry?.type != null ? String(entry.type) : null,
+      at: entry?.timestamp ?? entry?.createdAt ?? entry?.at ?? null,
+    };
+  });
+}
+
+function buildSavedChatPreview(messages) {
+  const firstUser = (messages || []).find((m) => m?.sender === 'user' && String(m?.text || '').trim());
+  if (firstUser) return String(firstUser.text).slice(0, 160);
+  const firstAny = (messages || []).find((m) => String(m?.text || '').trim());
+  return firstAny ? String(firstAny.text).slice(0, 160) : 'Chat vuota';
 }
 
 /**
@@ -139,25 +166,38 @@ export async function saveDevNote({ text, route, uid } = {}) {
 }
 
 /**
- * Salva l'ultimo scambio utente/AI come log errore.
- * RTDB: users/{uid}/ai_error_logs/{pushId}
+ * Salva l'intera conversazione chat (utente + AI) per revisione in Dev Console.
+ * RTDB: users/{uid}/saved_chats/{pushId}
  *
- * @param {{ userPrompt: string, aiResponse: string, uid?: string | null }} params
+ * @param {{
+ *   messages?: Array,
+ *   sessionId?: string | null,
+ *   uid?: string | null,
+ *   note?: string,
+ * }} params
  */
-export async function saveAiErrorLog({ userPrompt, aiResponse, uid } = {}) {
+export async function saveChatConversation({ messages, sessionId, uid, note } = {}) {
   const userId = resolveUid(uid);
   if (!userId) {
-    throw new Error('saveAiErrorLog: uid mancante');
+    throw new Error('saveChatConversation: uid mancante');
+  }
+
+  const serialized = serializeChatMessagesForSave(messages);
+  if (!serialized.length) {
+    throw new Error('saveChatConversation: nessun messaggio da salvare');
   }
 
   const payload = {
-    userPrompt: String(userPrompt || '').trim(),
-    aiResponse: String(aiResponse || '').trim(),
     timestamp: serverTimestamp(),
+    sessionId: String(sessionId || '').trim() || null,
     route: typeof window !== 'undefined' ? window.location.pathname : '',
+    messageCount: serialized.length,
+    preview: buildSavedChatPreview(serialized),
+    note: String(note || '').trim() || null,
+    messages: serialized,
   };
 
-  await push(ref(db, `users/${userId}/ai_error_logs`), payload);
+  await push(ref(db, `users/${userId}/saved_chats`), payload);
   return payload;
 }
 
@@ -211,27 +251,3 @@ export async function saveAiFeedback({ messages, note, uid } = {}) {
   return payload;
 }
 
-/**
- * Estrae ultimo messaggio user e ultima risposta AI dalla cronologia chat.
- * @param {Array<{ sender?: string, text?: string }>} chatHistory
- */
-export function extractLastUserAiPair(chatHistory) {
-  const list = Array.isArray(chatHistory) ? chatHistory : [];
-  let userPrompt = '';
-  let aiResponse = '';
-
-  for (let i = list.length - 1; i >= 0; i -= 1) {
-    const entry = list[i];
-    const sender = String(entry?.sender || '').toLowerCase();
-    if (!aiResponse && (sender === 'ai' || sender === 'assistant')) {
-      aiResponse = String(entry?.text || '');
-      continue;
-    }
-    if (aiResponse && !userPrompt && (sender === 'user' || sender === 'human')) {
-      userPrompt = String(entry?.text || '');
-      break;
-    }
-  }
-
-  return { userPrompt, aiResponse };
-}

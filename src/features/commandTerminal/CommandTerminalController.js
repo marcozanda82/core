@@ -1800,9 +1800,7 @@ export class CommandTerminalController {
         draftId,
         mealDraft,
         text: summaryText,
-        quickReplies: Array.isArray(options.quickReplies) && options.quickReplies.length > 0
-          ? options.quickReplies
-          : [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES],
+        quickReplies: Array.isArray(options.quickReplies) ? options.quickReplies : [],
       },
       { source: 'CommandTerminalController' },
     );
@@ -1987,11 +1985,23 @@ export class CommandTerminalController {
     if (!Number.isFinite(index) || index < 0 || index >= items.length || nextGrams <= 0) {
       return null;
     }
+    const current = items[index];
+    const oldGrams = Math.round(Number(current?.grams ?? current?.qty) || 0);
+    let scaled = { ...current, grams: nextGrams };
+    if (oldGrams > 0 && oldGrams !== nextGrams) {
+      const ratio = nextGrams / oldGrams;
+      const scaleMacro = (value) => Math.round((Number(value) || 0) * ratio * 10) / 10;
+      scaled = {
+        ...scaled,
+        kcal: scaleMacro(current.kcal),
+        pro: scaleMacro(current.pro),
+        carbo: scaleMacro(current.carbo),
+        fat: scaleMacro(current.fat),
+      };
+    }
     items[index] = {
-      ...items[index],
-      grams: nextGrams,
-      // Correzione utente: non più stima, ma resta learnable se era stimato.
-      wasEstimated: items[index].isEstimated === true || items[index].wasEstimated === true,
+      ...scaled,
+      wasEstimated: current.isEstimated === true || current.wasEstimated === true,
       isEstimated: false,
     };
     this.pendingAction.payload = { ...this.pendingAction.payload, items };

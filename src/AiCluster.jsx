@@ -4,7 +4,7 @@
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
-import MealDraftConfirmation from './components/MealDraftConfirmation';
+import MealDraftTrayBubble from './components/MealDraftTrayBubble';
 import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
 import NewFoodPreviewCard from './components/NewFoodPreviewCard';
@@ -19,6 +19,7 @@ import {
 } from './components/kentuos/KentuOSUI';
 import {
   saveAiFeedback,
+  saveChatConversation,
   saveDevNote,
 } from './utils/devToolsPersistence';
 import { useVoiceChat } from './features/chat/useVoiceChat.js';
@@ -28,6 +29,15 @@ import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/exp
 function isFoodPhotoQuickReply(label) {
   const t = String(label || '').trim().toLowerCase();
   return /scatta\s+foto|foto\s+etichett|📷|fotocamera|camera/.test(t);
+}
+
+/** Messaggio con widget draft interattivo (vassoio/card): nasconde quick reply duplicate. */
+function messageHasInteractiveDraftWidget(msg) {
+  if (!msg || msg.isTyping) return false;
+  if (msg.mealDraft && !msg.draftResolved) return true;
+  if (msg.workoutDraft && !msg.draftResolved) return true;
+  if (Array.isArray(msg.mealProposals) && msg.mealProposals.length > 0) return true;
+  return false;
 }
 
 /** Allinea a stripInvisibleContextFromVisibleUserText in SalaComandi (contesto API non visibile). */
@@ -230,6 +240,11 @@ export default function AiCluster({
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [devToolsToast, setDevToolsToast] = useState('');
   const toolsMenuRef = useRef(null);
+  const chatSessionIdRef = useRef(
+    (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+      ? crypto.randomUUID()
+      : `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+  );
 
   const showDevToast = useCallback((message) => {
     setDevToolsToast(message);
@@ -279,6 +294,27 @@ export default function AiCluster({
     } catch (err) {
       console.error('[DevTools] saveAiFeedback failed', err);
       showDevToast('Segnalazione fallita');
+    } finally {
+      setShowToolsMenu(false);
+    }
+  }, [chatHistory, showDevToast]);
+
+  const handleSaveChat = useCallback(async () => {
+    try {
+      const messages = Array.isArray(chatHistory) ? chatHistory : [];
+      if (!messages.length) {
+        showDevToast('Nessuna chat da salvare');
+        setShowToolsMenu(false);
+        return;
+      }
+      await saveChatConversation({
+        messages,
+        sessionId: chatSessionIdRef.current,
+      });
+      showDevToast('Chat salvata');
+    } catch (err) {
+      console.error('[DevTools] saveChatConversation failed', err);
+      showDevToast('Salvataggio chat fallito');
     } finally {
       setShowToolsMenu(false);
     }
@@ -488,15 +524,16 @@ export default function AiCluster({
                       )
                     )
                   ) : null}
-                  <MealDraftConfirmation
+                  <MealDraftTrayBubble
                     mealDraft={msg.mealDraft}
                     draftId={msg.draftId}
                     onConfirm={onDraftConfirm}
                     onCancel={onDraftCancel}
                     onRemoveItem={onDraftRemoveItem}
-                    onUpdateItemGrams={onDraftUpdateItemGrams}
+                    onUpdateGrams={(itemIndex, grams) => {
+                      onDraftUpdateItemGrams?.(msg.draftId, itemIndex, grams);
+                    }}
                     onUpdateMealMeta={onDraftUpdateMealMeta}
-                    onUpdateFoodItemName={onDraftUpdateFoodItemName}
                   />
                 </div>
               ) : msg.sender === 'ai' && msg.workoutDraft && !msg.draftResolved && !msg.isTyping ? (
@@ -642,7 +679,7 @@ export default function AiCluster({
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
-              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && (() => {
+              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !messageHasInteractiveDraftWidget(msg) && (() => {
                 const clarificationKey = `clr-${idx}`;
                 const isClarification = msg.clarification === true
                   || msg.type === 'ASK_CLARIFICATION'
@@ -817,7 +854,7 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {visibleQuickReplies.length > 0 ? (
+        {visibleQuickReplies.length > 0 && !suppressQuickReplies ? (
           <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
             {visibleQuickReplies.map((entry) => (
               <button
@@ -1008,6 +1045,9 @@ export default function AiCluster({
                 </button>
                 <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
                   📝 Modalità Note
+                </button>
+                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
+                  💬 Salva Chat
                 </button>
                 <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
                   ⚠️ Segnala Anomalia

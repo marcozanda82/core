@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  buildAiErrorAiPrompt,
   buildDevNoteAiPrompt,
-  deleteAiErrorLog,
   deleteDevNote,
+  deleteSavedChat,
   formatDevToolsTimestamp,
-  subscribeAiErrorLogs,
   subscribeDevNotes,
+  subscribeSavedChats,
 } from '../utils/devToolsPersistence';
 
 const STYLES = {
@@ -170,6 +169,29 @@ const STYLES = {
     pointerEvents: 'none',
     whiteSpace: 'nowrap',
   },
+  thread: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+    maxHeight: 360,
+    overflowY: 'auto',
+  },
+  bubble: (isUser) => ({
+    alignSelf: isUser ? 'flex-end' : 'flex-start',
+    maxWidth: '92%',
+    padding: '8px 10px',
+    borderRadius: 10,
+    background: isUser ? 'rgba(37, 99, 235, 0.25)' : 'rgba(30, 41, 59, 0.85)',
+    border: `1px solid ${isUser ? 'rgba(59, 130, 246, 0.35)' : '#1f2937'}`,
+  }),
+  bubbleMeta: {
+    display: 'block',
+    fontSize: '0.65rem',
+    letterSpacing: '0.8px',
+    color: '#64748b',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
 };
 
 function useIsDesktop(minWidth = 900) {
@@ -224,27 +246,43 @@ function NoteCard({ item, onResolve, onCopy }) {
   );
 }
 
-function ErrorCard({ item, onResolve, onCopy }) {
+function SavedChatCard({ item, expanded, onToggle, onResolve }) {
+  const messages = Array.isArray(item.messages) ? item.messages : [];
   return (
     <article style={STYLES.card}>
       <div style={STYLES.meta}>
         <span>{formatDevToolsTimestamp(item.timestamp)}</span>
+        {item.sessionId ? <span>session: {item.sessionId}</span> : null}
+        <span>{item.messageCount ?? messages.length} msg</span>
         {item.route ? <span>route: {item.route}</span> : null}
       </div>
-      <div style={STYLES.block}>
-        <span style={STYLES.blockLabel}>Prompt utente</span>
-        <div style={STYLES.body}>{item.userPrompt || '—'}</div>
-      </div>
-      <div style={STYLES.block}>
-        <span style={STYLES.blockLabel}>Risposta AI</span>
-        <div style={STYLES.body}>{item.aiResponse || '—'}</div>
-      </div>
+      <div style={STYLES.body}>{item.preview || 'Chat salvata'}</div>
+      {expanded ? (
+        <div style={STYLES.block}>
+          <span style={STYLES.blockLabel}>Conversazione</span>
+          <div style={STYLES.thread}>
+            {messages.length === 0 ? (
+              <div style={STYLES.body}>Nessun messaggio</div>
+            ) : (
+              messages.map((msg, idx) => {
+                const isUser = String(msg?.sender || '').toLowerCase() === 'user';
+                return (
+                  <div key={`${item.id}-${idx}`} style={STYLES.bubble(isUser)}>
+                    <span style={STYLES.bubbleMeta}>{isUser ? 'Utente' : 'AI'}</span>
+                    <div style={STYLES.body}>{msg?.text || '—'}</div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
       <div style={STYLES.actions}>
-        <button type="button" style={STYLES.actionBtn('copy')} onClick={() => onCopy(item)}>
-          📋 Copia Prompt per AI
+        <button type="button" style={STYLES.actionBtn('copy')} onClick={() => onToggle(item.id)}>
+          {expanded ? '▴ Chiudi' : '▾ Espandi chat'}
         </button>
         <button type="button" style={STYLES.actionBtn('danger')} onClick={() => onResolve(item)}>
-          🗑️ Risolvi/Elimina
+          🗑️ Elimina
         </button>
       </div>
     </article>
@@ -270,9 +308,10 @@ export default function DevConsoleView({ onBack, uid = null }) {
   const isDesktop = useIsDesktop(900);
   const [activeTab, setActiveTab] = useState('notes');
   const [notes, setNotes] = useState([]);
-  const [errors, setErrors] = useState([]);
+  const [savedChats, setSavedChats] = useState([]);
   const [notesLoading, setNotesLoading] = useState(true);
-  const [errorsLoading, setErrorsLoading] = useState(true);
+  const [chatsLoading, setChatsLoading] = useState(true);
+  const [expandedChatIds, setExpandedChatIds] = useState(() => new Set());
   const [toast, setToast] = useState('');
 
   const showToast = useCallback((message) => {
@@ -290,10 +329,10 @@ export default function DevConsoleView({ onBack, uid = null }) {
   }, [uid]);
 
   useEffect(() => {
-    setErrorsLoading(true);
-    const unsub = subscribeAiErrorLogs(uid, (items) => {
-      setErrors(items);
-      setErrorsLoading(false);
+    setChatsLoading(true);
+    const unsub = subscribeSavedChats(uid, (items) => {
+      setSavedChats(items);
+      setChatsLoading(false);
     });
     return unsub;
   }, [uid]);
@@ -304,16 +343,6 @@ export default function DevConsoleView({ onBack, uid = null }) {
       showToast('Prompt copiato negli appunti!');
     } catch (err) {
       console.error('[DevConsole] copy note prompt', err);
-      showToast('Copia fallita');
-    }
-  }, [showToast]);
-
-  const handleCopyError = useCallback(async (item) => {
-    try {
-      await copyText(buildAiErrorAiPrompt(item));
-      showToast('Prompt copiato negli appunti!');
-    } catch (err) {
-      console.error('[DevConsole] copy error prompt', err);
       showToast('Copia fallita');
     }
   }, [showToast]);
@@ -329,13 +358,27 @@ export default function DevConsoleView({ onBack, uid = null }) {
     }
   }, [uid, showToast]);
 
-  const handleResolveError = useCallback(async (item) => {
-    if (!window.confirm('Eliminare questo log errore AI?')) return;
+  const handleToggleChat = useCallback((chatId) => {
+    setExpandedChatIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chatId)) next.delete(chatId);
+      else next.add(chatId);
+      return next;
+    });
+  }, []);
+
+  const handleResolveChat = useCallback(async (item) => {
+    if (!window.confirm('Eliminare questa chat salvata?')) return;
     try {
-      await deleteAiErrorLog(item.id, uid);
-      showToast('Log eliminato');
+      await deleteSavedChat(item.id, uid);
+      setExpandedChatIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      showToast('Chat eliminata');
     } catch (err) {
-      console.error('[DevConsole] delete error log', err);
+      console.error('[DevConsole] delete saved chat', err);
       showToast('Eliminazione fallita');
     }
   }, [uid, showToast]);
@@ -357,18 +400,19 @@ export default function DevConsoleView({ onBack, uid = null }) {
     />
   );
 
-  const errorsPanel = (
+  const chatsPanel = (
     <ItemsPanel
-      title={isDesktop ? '⚠️ AI Error Logs' : null}
-      loading={errorsLoading}
-      items={errors}
-      emptyLabel="Nessun dato"
+      title={isDesktop ? '💬 Storico Chat' : null}
+      loading={chatsLoading}
+      items={savedChats}
+      emptyLabel="Nessuna chat salvata"
       renderItem={(item) => (
-        <ErrorCard
+        <SavedChatCard
           key={item.id}
           item={item}
-          onCopy={handleCopyError}
-          onResolve={handleResolveError}
+          expanded={expandedChatIds.has(item.id)}
+          onToggle={handleToggleChat}
+          onResolve={handleResolveChat}
         />
       )}
     />
@@ -398,11 +442,11 @@ export default function DevConsoleView({ onBack, uid = null }) {
           <button
             type="button"
             role="tab"
-            aria-selected={activeTab === 'errors'}
-            style={STYLES.tab(activeTab === 'errors', 'rgba(248, 113, 113, 0.55)')}
-            onClick={() => setActiveTab('errors')}
+            aria-selected={activeTab === 'chats'}
+            style={STYLES.tab(activeTab === 'chats', 'rgba(96, 165, 250, 0.55)')}
+            onClick={() => setActiveTab('chats')}
           >
-            ⚠️ AI Error Logs
+            💬 Storico Chat
           </button>
         </div>
       ) : null}
@@ -410,10 +454,10 @@ export default function DevConsoleView({ onBack, uid = null }) {
       {isDesktop ? (
         <div style={STYLES.desktopGrid}>
           {notesPanel}
-          {errorsPanel}
+          {chatsPanel}
         </div>
       ) : (
-        activeTab === 'notes' ? notesPanel : errorsPanel
+        activeTab === 'notes' ? notesPanel : chatsPanel
       )}
 
       {toast ? (

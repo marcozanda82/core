@@ -1418,6 +1418,345 @@
   width: 100%;
 }
 
+/* —— Meal draft tray bubble (CUI vassoio dinamico) —— */
+.kentu-meal-tray {
+  width: 100%;
+  max-width: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: linear-gradient(160deg, rgba(30, 41, 59, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%);
+  padding: 14px 14px 12px;
+  box-shadow:
+    0 10px 32px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.kentu-meal-tray__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.kentu-meal-tray__badge {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(14, 116, 144, 0.18);
+}
+
+.kentu-meal-tray__meta {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kentu-meal-tray__meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 110px;
+}
+
+.kentu-meal-tray__meta-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.kentu-meal-tray__select,
+.kentu-meal-tray__time-input {
+  appearance: none;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(15, 23, 42, 0.85);
+  color: #e2e8f0;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+
+.kentu-meal-tray__select:focus,
+.kentu-meal-tray__time-input:focus {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.12);
+}
+
+.kentu-meal-tray__time-input {
+  min-width: 110px;
+}
+
+.kentu-meal-tray__estimate-banner {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.kentu-meal-tray__list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kentu-meal-tray__row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.kentu-meal-tray__row--estimated {
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.kentu-meal-tray__row-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kentu-meal-tray__icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.kentu-meal-tray__row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kentu-meal-tray__name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f8fafc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kentu-meal-tray__kcal {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kentu-meal-tray__estimate-tag {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #f59e0b;
+}
+
+.kentu-meal-tray__row-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kentu-meal-tray__stepper {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Stepper Kentu — visibile in chat (non dipende da Tailwind) */
+.kentu-amount-stepper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.kentu-amount-stepper--sm {
+  gap: 6px;
+}
+
+.kentu-amount-stepper__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(15, 23, 42, 0.95);
+  color: #bae6fd;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.kentu-amount-stepper--sm .kentu-amount-stepper__btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.kentu-amount-stepper__btn:hover {
+  border-color: rgba(56, 189, 248, 0.65);
+  background: rgba(30, 41, 59, 0.95);
+}
+
+.kentu-amount-stepper__btn:active {
+  transform: scale(0.92);
+}
+
+.kentu-amount-stepper__icon {
+  width: 14px;
+  height: 14px;
+}
+
+.kentu-amount-stepper__value-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 3.5rem;
+}
+
+.kentu-amount-stepper__input {
+  width: 100%;
+  border: none;
+  border-bottom: 2px solid rgba(56, 189, 248, 0.35);
+  background: transparent;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-align: center;
+  padding: 2px 0;
+  outline: none;
+}
+
+.kentu-amount-stepper__input:focus {
+  border-bottom-color: rgba(56, 189, 248, 0.75);
+}
+
+.kentu-amount-stepper__unit {
+  margin-top: 2px;
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.kentu-amount-stepper__confirm {
+  margin-left: 4px;
+  border-radius: 10px;
+  border: none;
+  background: #06b6d4;
+  color: #0f172a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.kentu-amount-stepper__confirm--done {
+  background: #10b981;
+  color: #fff;
+}
+
+.kentu-amount-stepper__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.kentu-amount-stepper__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.kentu-meal-proposal-card__stepper,
+.kentu-meal-receipt__stepper {
+  flex-shrink: 0;
+}
+
+.kentu-meal-tray__remove {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #d1d5db;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.kentu-meal-tray__remove:hover {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fca5a5;
+}
+
+.kentu-meal-tray__totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #bae6fd;
+  letter-spacing: 0.02em;
+}
+
+.kentu-meal-tray__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kentu-meal-tray__confirm {
+  width: 100%;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.kentu-meal-tray__cancel {
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .kentu-meal-tray__row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .kentu-meal-tray__row-controls {
+    flex-shrink: 0;
+  }
+}
+
 .kentu-workout-draft {
   width: 100%;
   border-radius: 14px;

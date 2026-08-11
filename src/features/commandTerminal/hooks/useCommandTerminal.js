@@ -195,6 +195,15 @@ export function useCommandTerminal({
   ), []);
 
   const syncActiveQuickRepliesFromController = useCallback(() => {
+    const hasActiveDraftWidget = (chatHistoryRef.current || []).some(
+      (m) => (m?.mealDraft && !m?.draftResolved)
+        || (m?.workoutDraft && !m?.draftResolved)
+        || (Array.isArray(m?.mealProposals) && m.mealProposals.length > 0),
+    );
+    if (hasActiveDraftWidget) {
+      setActiveQuickReplies([]);
+      return;
+    }
     const { conversationState } = controller.getConversationSnapshot();
     const replies = quickRepliesForConversationState(conversationState);
     const hasActiveWorkoutDraft = (chatHistoryRef.current || []).some(
@@ -279,11 +288,7 @@ export function useCommandTerminal({
           mealDraft: enrichedMealDraft,
           draftId: payload.draftId || null,
         });
-        setActiveQuickReplies(
-          Array.isArray(payload.quickReplies) && payload.quickReplies.length > 0
-            ? payload.quickReplies
-            : quickRepliesForConversationState(CONVERSATION_STATE.AWAITING_CONFIRMATION),
-        );
+        setActiveQuickReplies([]);
         return;
       }
       if (payload.type === 'WORKOUT_DRAFT') {
@@ -296,7 +301,7 @@ export function useCommandTerminal({
         const workoutQuickReplies = (
           Array.isArray(payload.quickReplies) && payload.quickReplies.length > 0
             ? payload.quickReplies
-            : quickRepliesForConversationState(CONVERSATION_STATE.AWAITING_CONFIRMATION)
+            : []
         ).filter((label) => !/^s[iì]\s*,\s*salva\b/i.test(String(label ?? '').trim()));
         setActiveQuickReplies(workoutQuickReplies);
         return;
