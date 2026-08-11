@@ -6107,6 +6107,17 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       let action = resolveUpsertActionFromPayload(payload);
       const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
       const forceNewSlot = payload?.forceNewMealSlot === true;
+      const targetNodeIdEarly = String(payload?.targetNodeId || '').trim();
+      const ops = Array.isArray(payload?.operations) ? payload.operations : [];
+      const isDeltaOnlyMerge =
+        action === 'merge'
+        && ops.length > 0
+        && ops.every((op) => String(op?.action || '').toLowerCase() === 'add');
+
+      // Bozza con targetNodeId esplicito (Vassoio / recover) = pasto intero → replace, mai merge-append.
+      if (targetNodeIdEarly && action !== 'append' && !isDeltaOnlyMerge) {
+        action = 'replace';
+      }
 
       // Slot canonico già presente → merge (evita cena_2 / doppio nodo pasto).
       if (action === 'append' && existingSlot?.slotId && !forceNewSlot) {
@@ -6118,7 +6129,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         mealType: mealTypeCanonical,
         action,
         upsertAction: action,
-        ...(action === 'merge' && existingSlot?.slotId && !String(payload?.targetNodeId || '').trim()
+        ...(action === 'merge' && existingSlot?.slotId && !targetNodeIdEarly
+          ? { targetNodeId: existingSlot.slotId }
+          : {}),
+        ...(action === 'replace' && !targetNodeIdEarly && existingSlot?.slotId
           ? { targetNodeId: existingSlot.slotId }
           : {}),
       };
@@ -6209,6 +6223,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
       const existingSlotResolved = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
 
+      // Replace / targetNodeId: sovrascrivi lo slot (niente [...existing, ...incoming]).
+      if (action === 'replace' || (targetNodeId && action !== 'merge')) {
+        const slot = targetNodeId || existingSlotResolved?.slotId || '';
+        if (slot) {
+          const message = commitUpdateMealChatPayload({
+            targetNodeId: slot,
+            timeString,
+            mealDec,
+            items,
+          });
+          if (message) return message;
+          throw new Error('Aggiornamento pasto fallito');
+        }
+      }
+
       if (action === 'merge') {
         const message = commitMergeMealChatPayload({
           targetNodeId: targetNodeId || existingSlotResolved?.slotId || '',
@@ -6226,20 +6255,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         });
         if (appendMsg) return appendMsg;
         throw new Error('Merge pasto fallito');
-      }
-
-      if (action === 'replace' || (targetNodeId && action !== 'append')) {
-        const slot = targetNodeId || existingSlotResolved?.slotId || '';
-        if (slot) {
-          const message = commitUpdateMealChatPayload({
-            targetNodeId: slot,
-            timeString,
-            mealDec,
-            items,
-          });
-          if (message) return message;
-          throw new Error('Aggiornamento pasto fallito');
-        }
       }
 
       const message = commitAddFoodChatPayload({

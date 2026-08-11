@@ -836,6 +836,8 @@ export function isUpdateLoggedMealIntent(userText, chatHistory = []) {
 
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
+  // «Aggiungi X alla cena» ha priorità sulle euristiche di nuovo log consumato.
+  if (isMergeIntoExistingMealIntent(text)) return true;
   if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
   if (isMealDraftEvaluationIntent(text)) return false;
   if (isMealCompletionIntent(text)) return false;
@@ -846,20 +848,21 @@ export function isUpdateLoggedMealIntent(userText, chatHistory = []) {
 
 /**
  * Intent additivo verso uno slot già esistente («aggiungi lo yogurt al pranzo»).
- * Deve mappare deterministicamente a merge, non a nuovo ghost slot.
+ * Deve mappare deterministicamente a merge/update dello slot, non a nuovo ghost slot.
+ * Priorità su isConsumedMealLogDescription / looksLikeComplexMealLog.
  * @param {string} userText
  * @returns {boolean}
  */
 export function isMergeIntoExistingMealIntent(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
-  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
   const mealType = parseTargetMealTypeFromUpdateText(text)?.mealType;
   if (!mealType) return false;
   const additive = /\b(?:aggiung\w*|metti|inserisc\w*|mancava|mancano|manca|dimenticat\w*)\b/i.test(text);
   const towardSlot = /\b(?:al|alla|allo|nel|nella|nello|del|della)\s+(?:mio\s+)?(?:colazione|pranzo|cena|snack|spuntino|merenda)\b/i.test(text)
     || /\b(?:nel|nella|allo|alla)\s+(?:mio\s+)?(?:colazione|pranzo|cena|snack)\b/i.test(text);
-  return additive && towardSlot;
+  // Explicit slot-targeted add wins even if the phrase also looks like a consumed-meal log.
+  return Boolean(additive && towardSlot);
 }
 
 /**

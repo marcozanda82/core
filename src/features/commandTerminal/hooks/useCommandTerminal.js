@@ -33,6 +33,17 @@ import {
   buildMealCommitFingerprint,
 } from '../meals/mealUpsert.js';
 
+/**
+ * Salvagente conferma bozza: existingMealNode attivo → replace + targetNodeId
+ * (il Vassoio porta già il pasto intero aggiornato).
+ */
+function applyDraftConfirmReplaceGuard(controller) {
+  if (!controller || typeof controller.applyExistingMealReplaceConfirmGuard !== 'function') {
+    return null;
+  }
+  return controller.applyExistingMealReplaceConfirmGuard();
+}
+
 export function useCommandTerminal({
   chatHistory,
   setChatHistory,
@@ -785,6 +796,7 @@ export function useCommandTerminal({
             }
             confirmingDraftRef.current = true;
             setActiveQuickReplies([]);
+            applyDraftConfirmReplaceGuard(controller);
             return Promise.resolve(controller.confirmPendingAction()).finally(() => {
               confirmingDraftRef.current = false;
             });
@@ -795,6 +807,7 @@ export function useCommandTerminal({
           confirmingDraftRef.current = true;
           if (draftId) resolveDraftMessage(draftId);
           setActiveQuickReplies([]);
+          applyDraftConfirmReplaceGuard(controller);
           return Promise.resolve(controller.confirmPendingAction()).finally(() => {
             confirmingDraftRef.current = false;
           });
@@ -850,6 +863,7 @@ export function useCommandTerminal({
       try {
         resolveDraftMessage(draftId);
         setActiveQuickReplies([]);
+        applyDraftConfirmReplaceGuard(controller);
         return controller.confirmPendingAction();
       } finally {
         confirmingDraftRef.current = false;
@@ -999,9 +1013,23 @@ export function useCommandTerminal({
     }
 
     const mealType = String(proposal.mealType || 'pranzo').trim().toLowerCase();
-    const upsertAction = resolveUpsertActionFromPayload(proposal);
+    let upsertAction = resolveUpsertActionFromPayload(proposal);
     const baselineItems = Array.isArray(proposal.baselineItems) ? proposal.baselineItems : [];
     const operations = Array.isArray(proposal.operations) ? proposal.operations : [];
+
+    // Salvagente: existingMealNode → la proposal/bozza è il pasto intero → replace.
+    const pendingUpdate = typeof controller.getPendingMealUpdate === 'function'
+      ? controller.getPendingMealUpdate()
+      : pendingMealUpdateRef.current;
+    const existingTarget = String(
+      pendingUpdate?.existingMealNode?.targetNodeId
+      || pendingUpdate?.targetNodeId
+      || proposal.targetNodeId
+      || '',
+    ).trim();
+    if (pendingUpdate?.existingMealNode && existingTarget) {
+      upsertAction = 'replace';
+    }
 
     let sourceItems;
     if (operations.length > 0) {
@@ -1067,7 +1095,7 @@ export function useCommandTerminal({
     const projection = projectNutritionAfterMeal(stateBeforeCommit, mealTotals);
 
     const exactTime = String(proposal.exactTime || proposal.timeString || '').trim();
-    const targetNodeId = String(proposal.targetNodeId || '').trim();
+    const targetNodeId = existingTarget || String(proposal.targetNodeId || '').trim();
 
     const payload = {
       mealType,

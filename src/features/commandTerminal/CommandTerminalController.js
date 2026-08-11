@@ -976,6 +976,9 @@ export class CommandTerminalController {
     const items = expandFoodPayloadItems(payload).length > 0
       ? expandFoodPayloadItems(payload)
       : expandFoodPayloadItems(normalized);
+    const targetNodeId = String(payload?.targetNodeId || '').trim();
+    const upsertActionRaw = String(payload?.upsertAction || payload?.action || '').trim();
+    const source = String(payload?.source || '').trim();
     const draftPayload = {
       ...normalized,
       items,
@@ -983,6 +986,12 @@ export class CommandTerminalController {
       exactTime: payload?.exactTime || normalized.exactTime,
       timeString: payload?.timeString || normalized.timeString,
       ...(payload?.message ? { message: payload.message } : {}),
+      // Critico: normalizeFoodPayload strippa i metadati upsert — re-iniettali.
+      ...(targetNodeId ? { targetNodeId } : {}),
+      ...(upsertActionRaw
+        ? { upsertAction: upsertActionRaw, action: upsertActionRaw }
+        : {}),
+      ...(source ? { source } : {}),
     };
     this.setPendingMealDraft(draftPayload);
     this.pendingAction = {
@@ -994,6 +1003,41 @@ export class CommandTerminalController {
     this.pendingCommandPayload = { ...draftPayload };
     this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
     return this.getPendingMealDraft();
+  }
+
+  /**
+   * Prima del confirm: se esiste un existingMealNode, la bozza (Vassoio) è il pasto intero
+   * aggiornato → forza replace + targetNodeId (niente addMeal / merge-append).
+   */
+  applyExistingMealReplaceConfirmGuard() {
+    const update = this.getPendingMealUpdate();
+    const node = update?.existingMealNode;
+    const targetNodeId = String(
+      node?.targetNodeId || update?.targetNodeId || this.pendingAction?.payload?.targetNodeId || '',
+    ).trim();
+    if (!targetNodeId) return null;
+
+    const patch = {
+      targetNodeId,
+      action: 'replace',
+      upsertAction: 'replace',
+      source: String(this.pendingAction?.payload?.source || node?.source || 'logged_meal_update').trim()
+        || 'logged_meal_update',
+    };
+
+    if (this.pendingAction?.commandType === 'ADD_FOOD' && this.pendingAction.payload) {
+      this.pendingAction = {
+        ...this.pendingAction,
+        payload: { ...this.pendingAction.payload, ...patch },
+      };
+    }
+    if (this.pendingCommandPayload && this.pendingCommandType === 'ADD_FOOD') {
+      this.pendingCommandPayload = { ...this.pendingCommandPayload, ...patch };
+    }
+    if (this.pendingMealDraft) {
+      this.setPendingMealDraft({ ...this.pendingMealDraft, ...patch });
+    }
+    return patch;
   }
 
   publishSystemMessage(message) {
@@ -2151,6 +2195,7 @@ export class CommandTerminalController {
   }
 
   confirmPendingAction() {
+    this.applyExistingMealReplaceConfirmGuard();
     return this.executePendingAction();
   }
 
@@ -2821,6 +2866,7 @@ export class CommandTerminalController {
       || findPendingUpdateLoggedMealContext(chatHistory);
     const isUpdateFollowUp = Boolean(pendingUpdate?.targetMealType);
     const isUpdateLogged = isUpdateFollowUp
+      || isMergeIntoExistingMealIntent(rawQuery)
       || isUpdateLoggedMealIntent(rawQuery, chatHistory)
       || String(options?.forcedIntent || '').toUpperCase() === 'UPDATE_LOGGED_MEAL';
     const partialMeal = isCompletion ? parseConsumedMealFromNaturalText(rawQuery) : null;
@@ -3009,14 +3055,33 @@ export class CommandTerminalController {
 
     // Follow-up UPDATE con mutazione chiara: merge locale su existingMealNode / draft attivo.
     if (isUpdateLogged && existingMealNode?.targetNodeId && hasExplicitUpdateAction(rawQuery)) {
+      this.setPendingMealUpdate({
+        state: MEAL_UPDATE_WAITING_STATE,
+        targetMealType: targetMealTypeForUpdate || existingMealNode.mealType,
+        targetNodeId: existingMealNode.targetNodeId,
+        existingMealNode,
+        timeQualifier: updateContext?.timeQualifier || null,
+      });
       const active = this.getPendingMealDraft();
       const activeTarget = String(active?.targetNodeId || '').trim();
       const nodeTarget = String(existingMealNode.targetNodeId || '').trim();
       if (!active || !expandFoodPayloadItems(active).length
-        || (nodeTarget && activeTarget && activeTarget !== nodeTarget)) {
+        || (nodeTarget && activeTarget && activeTarget !== nodeTarget)
+        || !activeTarget) {
+        // Seed bozza = pasto intero + targetNodeId (confirm → replace, non nuovo slot).
         this.stageRecoveredMealDraft(existingMealNode, {
-          upsertAction: isMergeIntoExistingMealIntent(rawQuery) ? 'merge' : 'replace',
-          source: 'logged_meal_before_explicit_mutate',
+          upsertAction: 'replace',
+          source: isMergeIntoExistingMealIntent(rawQuery)
+            ? 'logged_meal_merge'
+            : 'logged_meal_before_explicit_mutate',
+        });
+      } else if (!String(active?.targetNodeId || '').trim()) {
+        this.stagePendingMealDraft({
+          ...active,
+          targetNodeId: nodeTarget,
+          upsertAction: 'replace',
+          action: 'replace',
+          source: active?.source || 'logged_meal_resync',
         });
       }
       if (looksLikeClearMealDraftMutation(rawQuery) || isUpdateMealDraftIntent(rawQuery)) {
@@ -3454,8 +3519,10 @@ export class CommandTerminalController {
         if (!active || !expandFoodPayloadItems(active).length
           || (nodeTarget && activeTarget && activeTarget !== nodeTarget)) {
           this.stageRecoveredMealDraft(node, {
-            upsertAction: isMergeIntoExistingMealIntent(userText) ? 'merge' : 'replace',
-            source: 'logged_meal_before_local_mutate',
+            upsertAction: 'replace',
+            source: isMergeIntoExistingMealIntent(userText)
+              ? 'logged_meal_merge'
+              : 'logged_meal_before_local_mutate',
           });
         }
         return this.processMealDraftVoiceLoop(userText, currentState, options);
@@ -3490,7 +3557,12 @@ export class CommandTerminalController {
         && !looksLikeComplexMealLog(userText)
       )
     ) {
-      return this.processMealAdvice(userText, currentState, options);
+      return this.processMealAdvice(userText, currentState, {
+        ...options,
+        ...(inferredIntent === 'UPDATE_LOGGED_MEAL'
+          ? { forcedIntent: 'UPDATE_LOGGED_MEAL' }
+          : {}),
+      });
     }
 
     const commandHint =

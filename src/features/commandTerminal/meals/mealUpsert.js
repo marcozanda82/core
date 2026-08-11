@@ -146,22 +146,32 @@ export function mergeMealItems(baselineItems = [], incomingItems = []) {
  * @returns {'append'|'replace'|'merge'}
  */
 export function resolveUpsertActionFromPayload(payload = {}) {
+  const targetNodeId = String(payload?.targetNodeId || '').trim();
+  const ops = Array.isArray(payload?.operations) ? payload.operations : [];
+  const isDeltaOnlyMerge =
+    ops.length > 0
+    && ops.every((op) => String(op?.action || '').toLowerCase() === 'add');
+
   if (payload?.action != null && String(payload.action).trim()) {
-    return normalizeMealUpsertAction(payload.action);
+    const a = normalizeMealUpsertAction(payload.action);
+    // targetNodeId + bozza pasto intero (non delta-only) → replace
+    if (targetNodeId && a === 'merge' && !isDeltaOnlyMerge) return 'replace';
+    return a;
   }
   if (payload?.upsertAction != null && String(payload.upsertAction).trim()) {
-    return normalizeMealUpsertAction(payload.upsertAction);
+    const a = normalizeMealUpsertAction(payload.upsertAction);
+    if (targetNodeId && a === 'merge' && !isDeltaOnlyMerge) return 'replace';
+    return a;
   }
   const source = String(payload?.source || '').trim().toLowerCase();
-  if (source === 'logged_meal_merge' || source === 'meal_merge') return 'merge';
+  if (source === 'logged_meal_merge' || source === 'meal_merge') {
+    return isDeltaOnlyMerge || !targetNodeId ? 'merge' : 'replace';
+  }
   if (source === 'logged_meal_update') {
-    const ops = Array.isArray(payload?.operations) ? payload.operations : [];
-    if (ops.length > 0 && ops.every((op) => String(op?.action || '').toLowerCase() === 'add')) {
-      return 'merge';
-    }
+    if (isDeltaOnlyMerge) return 'merge';
     return 'replace';
   }
-  if (String(payload?.targetNodeId || '').trim()) return 'replace';
+  if (targetNodeId) return 'replace';
   return 'append';
 }
 
