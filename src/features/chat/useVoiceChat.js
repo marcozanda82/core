@@ -373,6 +373,10 @@ export function useVoiceChat({
     }
   }, [isProcessing, isListening, voiceSessionActive, abortRecognition, clearRestartTimer]);
 
+  const markVoiceSubmitForTts = useCallback(() => {
+    speakNextAiReplyRef.current = true;
+  }, []);
+
   return {
     ttsEnabled,
     toggleTts,
@@ -384,6 +388,7 @@ export function useVoiceChat({
     restartVoiceSession,
     confirmVoiceSubmit,
     noteTextInteraction,
+    markVoiceSubmitForTts,
     sttSupported,
     ttsSupported,
     voiceError,

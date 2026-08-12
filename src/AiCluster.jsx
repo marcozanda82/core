@@ -23,6 +23,9 @@ import {
   saveDevNote,
 } from './utils/devToolsPersistence';
 import { useVoiceChat } from './features/chat/useVoiceChat.js';
+import { useVoiceNote } from './features/chat/useVoiceNote.js';
+import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
+import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
 
@@ -141,21 +144,13 @@ export default function AiCluster({
     chatFileInputRef.current?.click();
   }, [setChatImages]);
 
+  // TTS risposta AI (invariato). STT disabilitato — input vocale via useVoiceNote (MediaRecorder).
   const {
     ttsEnabled,
     toggleTts,
-    isListening,
-    voiceSessionActive,
-    voiceTranscript,
-    beginVoiceSession,
-    cancelVoiceSession,
-    restartVoiceSession,
-    confirmVoiceSubmit,
-    noteTextInteraction,
-    sttSupported,
     ttsSupported,
-    voiceError,
-    clearVoiceError,
+    noteTextInteraction,
+    markVoiceSubmitForTts,
   } = useVoiceChat({
     chatHistory,
     isProcessing,
@@ -165,6 +160,22 @@ export default function AiCluster({
       voiceSubmitRef.current?.(text);
     },
   });
+
+  const {
+    status: voiceNoteStatus,
+    formattedDuration: voiceNoteDuration,
+    audioBlob: voiceNoteBlob,
+    startRecording,
+    stopRecording,
+    discardNote,
+    isSupported: voiceNoteSupported,
+    isVoiceNoteActive,
+    voiceError,
+    clearVoiceError,
+    setVoiceErrorMessage,
+  } = useVoiceNote({ isProcessing });
+
+  const [isTranscribingVoiceNote, setIsTranscribingVoiceNote] = useState(false);
 
   const handleInputResize = useCallback((e) => {
     const el = e?.target || chatTextareaRef.current;
@@ -335,8 +346,8 @@ export default function AiCluster({
   const handleSendFromInput = useCallback(async () => {
     if (isProcessing) return;
 
-    if (voiceSessionActive) {
-      cancelVoiceSession();
+    if (isVoiceNoteActive) {
+      discardNote();
     }
     noteTextInteraction();
 
@@ -360,8 +371,8 @@ export default function AiCluster({
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [
     isProcessing,
-    voiceSessionActive,
-    cancelVoiceSession,
+    isVoiceNoteActive,
+    discardNote,
     noteTextInteraction,
     isNotesMode,
     chatInput,
@@ -371,7 +382,58 @@ export default function AiCluster({
     resetInputHeight,
   ]);
 
-  // Invio da sessione vocale (stesso percorso dell’input, con TTS abilitato per la risposta).
+  const handleSendVoiceNote = useCallback(async () => {
+    if (!voiceNoteBlob || isProcessing || isTranscribingVoiceNote) return;
+
+    clearVoiceError();
+    setIsTranscribingVoiceNote(true);
+
+    try {
+      const base64 = await audioBlobToBase64(voiceNoteBlob);
+      const mimeType = voiceNoteBlob.type || 'audio/webm';
+      const transcription = await transcribeVoiceNote(base64, mimeType);
+
+      discardNote();
+      markVoiceSubmitForTts();
+      stopSpeaking();
+
+      if (isNotesMode) {
+        setChatInput(transcription);
+        resetInputHeight();
+        return;
+      }
+
+      onSendMessage(transcription, { fromInput: true, fromVoice: true });
+      resetInputHeight();
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    } catch (error) {
+      console.error('[AiCluster] voice note transcription failed', error);
+      const message = String(error?.message || '').trim();
+      if (message === 'empty_transcription') {
+        setVoiceErrorMessage('Non ho capito nulla nell\'audio. Riprova parlando più vicino al microfono.');
+      } else if (message === 'missing_audio_data' || message === 'missing_blob') {
+        setVoiceErrorMessage('Registrazione audio non valida. Riprova.');
+      } else {
+        setVoiceErrorMessage('Trascrizione non riuscita. Riprova tra poco.');
+      }
+    } finally {
+      setIsTranscribingVoiceNote(false);
+    }
+  }, [
+    voiceNoteBlob,
+    isProcessing,
+    isTranscribingVoiceNote,
+    clearVoiceError,
+    discardNote,
+    markVoiceSubmitForTts,
+    isNotesMode,
+    setChatInput,
+    onSendMessage,
+    resetInputHeight,
+    setVoiceErrorMessage,
+  ]);
+
+  // Invio da sessione vocale (stesso percorso dell'input, con TTS abilitato per la risposta).
   voiceSubmitRef.current = (text) => {
     const trimmed = String(text || '').trim();
     if (!trimmed || isProcessing) return;
@@ -435,7 +497,7 @@ export default function AiCluster({
             <button
               type="button"
               onClick={() => {
-                cancelVoiceSession();
+                discardNote();
                 stopSpeaking();
                 onBack();
               }}
@@ -924,61 +986,84 @@ export default function AiCluster({
             ))}
           </div>
         ) : null}
-        {voiceSessionActive ? (
-          <div className="kentu-voice-vetrina" role="region" aria-label="Trascrizione vocale">
+        {isVoiceNoteActive ? (
+          <div className="kentu-voice-vetrina" role="region" aria-label="Nota vocale">
             <div className="kentu-voice-vetrina__status">
               <span
-                className={`kentu-voice-vetrina__dot${isListening ? ' kentu-voice-vetrina__dot--live' : ''}`}
+                className={`kentu-voice-vetrina__dot${voiceNoteStatus === 'recording' ? ' kentu-voice-vetrina__dot--live' : ''}`}
                 aria-hidden
               />
               <span className="kentu-voice-vetrina__status-text">
-                {isListening ? 'In ascolto… parla liberamente' : 'Microfono in pausa breve — riprende da solo'}
+                {voiceNoteStatus === 'recording'
+                  ? 'Registrazione in corso'
+                  : 'Nota vocale pronta'}
               </span>
             </div>
-            <div className="kentu-voice-vetrina__glass" aria-live="polite">
-              {voiceTranscript ? (
-                <p className="kentu-voice-vetrina__text">{voiceTranscript}</p>
+            <div className="kentu-voice-vetrina__glass kentu-voice-vetrina__glass--note" aria-live="polite">
+              {voiceNoteStatus === 'recording' ? (
+                <div className="kentu-voice-vetrina__recording-row">
+                  <span className="kentu-voice-vetrina__timer" aria-label={`Durata ${voiceNoteDuration}`}>
+                    {voiceNoteDuration}
+                  </span>
+                  <button
+                    type="button"
+                    className="kentu-voice-vetrina__stop-btn"
+                    aria-label="Ferma registrazione"
+                    disabled={isProcessing}
+                    onClick={() => {
+                      clearVoiceError();
+                      stopRecording();
+                    }}
+                  >
+                    <span className="kentu-voice-vetrina__stop-icon" aria-hidden />
+                  </button>
+                </div>
               ) : (
-                <p className="kentu-voice-vetrina__placeholder">
-                  La trascrizione compare qui mentre parli. Invia solo quando sei pronto.
-                </p>
+                <div className="kentu-voice-vetrina__pending-row">
+                  <span className="kentu-voice-vetrina__timer" aria-label={`Durata ${voiceNoteDuration}`}>
+                    {voiceNoteDuration}
+                  </span>
+                  <span className="kentu-voice-vetrina__pending-label">Nota vocale registrata</span>
+                </div>
               )}
+              {voiceError ? (
+                <p className="kentu-voice-vetrina__error" role="alert">{voiceError}</p>
+              ) : null}
             </div>
-            <div className="kentu-voice-vetrina__actions">
-              <button
-                type="button"
-                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--primary"
-                disabled={!String(voiceTranscript || '').trim() || isProcessing}
-                onClick={() => {
-                  clearVoiceError();
-                  confirmVoiceSubmit();
-                }}
-              >
-                Invia richiesta
-              </button>
-              <button
-                type="button"
-                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--secondary"
-                disabled={isProcessing}
-                onClick={() => {
-                  clearVoiceError();
-                  restartVoiceSession();
-                }}
-              >
-                Ricomincia
-              </button>
-              <button
-                type="button"
-                className="kentu-voice-vetrina__btn kentu-voice-vetrina__btn--ghost"
-                disabled={isProcessing}
-                onClick={() => {
-                  clearVoiceError();
-                  cancelVoiceSession();
-                }}
-              >
-                Annulla
-              </button>
-            </div>
+            {voiceNoteStatus === 'pendingBlob' ? (
+              <div className="kentu-voice-vetrina__actions kentu-voice-vetrina__actions--row">
+                <button
+                  type="button"
+                  className="kentu-voice-vetrina__icon-btn kentu-voice-vetrina__icon-btn--danger"
+                  aria-label="Elimina nota vocale"
+                  disabled={isProcessing || isTranscribingVoiceNote}
+                  onClick={() => {
+                    clearVoiceError();
+                    discardNote();
+                  }}
+                >
+                  🗑️
+                </button>
+                <button
+                  type="button"
+                  className={`kentu-voice-vetrina__btn kentu-voice-vetrina__btn--primary kentu-voice-vetrina__btn--send${isTranscribingVoiceNote ? ' kentu-voice-vetrina__btn--loading' : ''}`}
+                  disabled={!voiceNoteBlob || isProcessing || isTranscribingVoiceNote}
+                  aria-busy={isTranscribingVoiceNote}
+                  onClick={() => {
+                    void handleSendVoiceNote();
+                  }}
+                >
+                  {isTranscribingVoiceNote ? (
+                    <>
+                      <span className="kentu-voice-vetrina__spinner" aria-hidden />
+                      Trascrizione…
+                    </>
+                  ) : (
+                    'Invia nota vocale'
+                  )}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : (
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>
@@ -1010,17 +1095,17 @@ export default function AiCluster({
           <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
             <KentuIcon name="camera" size={22} />
           </KentuButton>
-          {sttSupported ? (
+          {voiceNoteSupported ? (
             <button
               type="button"
               className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
-              aria-label="Parla"
+              aria-label="Registra nota vocale"
               disabled={isProcessing && !isNotesMode}
               onClick={() => {
                 clearVoiceError();
-                beginVoiceSession();
+                startRecording();
               }}
-              title="Detta con il microfono"
+              title="Registra una nota vocale"
             >
               🎤
             </button>
