@@ -2,6 +2,7 @@ import { TARGETS } from '../../../useBiochimico';
 import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits';
 import {
   getFoodUsageCount,
+  MATCH_TIER_RANK,
   normalizeSearchText,
   normalizeSearchKeywords,
   searchFoodsDetailed,
@@ -176,20 +177,32 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeyword
     return score >= 75;
   });
   if (acceptable.length === 0 && hits.length > 0) {
-    // Ultimo fallback: miglior hit se ≥ SCORE_SUBSTRING e query corta (es. pomodoro in “salsa…”).
-    const needle = normalizeSearchText(nome);
+    // Ultimo fallback: miglior hit lessicale (NO usage ranking su top-5 eterogenei).
     const best = hits[0];
     const bestScore = Number(best?.strictScore) || 0;
     if (best && needle.length >= 4 && bestScore >= 50) {
-      return pickKeyByUsageCount(foodDb, hits.slice(0, 5).map((h) => h.id)) || best.id;
+      return best.id;
     }
     return null;
   }
   if (acceptable.length === 0) return null;
 
-  // Exact/parziali: best match = quello mangiato più spesso.
-  const topKeys = acceptable.map((hit) => hit.id);
-  return pickKeyByUsageCount(foodDb, topKeys) || acceptable[0].id;
+  // Preferisci uguaglianza esatta sul nome, poi il tier lessicale migliore.
+  // usageCount è solo spareggio DENTRO lo stesso tier (mai "pane" → "pane integrale…" per abitudine).
+  const exactNameHits = acceptable.filter(
+    (hit) => normalizeSearchText(hit?.name || hit?.desc || '') === needle,
+  );
+  const pool = exactNameHits.length > 0 ? exactNameHits : acceptable;
+  let bestTierRank = 0;
+  for (let i = 0; i < pool.length; i += 1) {
+    const rank = MATCH_TIER_RANK[String(pool[i]?.matchTier || 'none')] || 0;
+    if (rank > bestTierRank) bestTierRank = rank;
+  }
+  const topTier = pool.filter(
+    (hit) => (MATCH_TIER_RANK[String(hit?.matchTier || 'none')] || 0) === bestTierRank,
+  );
+  const topKeys = topTier.map((hit) => hit.id);
+  return pickKeyByUsageCount(foodDb, topKeys) || topKeys[0] || acceptable[0].id;
 }
 
 /**
@@ -349,7 +362,14 @@ export function estraiDatiFoodDb({
   );
   const dbProvided = applyDbNutrientsToPortionItem(foodItem, dbF, qta);
   zeroFillMissingNutrients(foodItem, dbProvided);
-  foodItem.desc = dbF.desc || foodItem.desc || nome;
-  foodItem.name = dbF.desc || dbF.name || nome;
+  // Se il chiamante ha già scelto la chiave (vassoio / proposal), conserva il nome mostrato.
+  const callerName = String(nome || '').trim();
+  if (preferredDbKey != null && callerName) {
+    foodItem.desc = callerName;
+    foodItem.name = callerName;
+  } else {
+    foodItem.desc = dbF.desc || foodItem.desc || nome;
+    foodItem.name = dbF.desc || dbF.name || nome;
+  }
   return enrichPortionItemWithDbUnits(foodItem, dbF, dbKey);
 }

@@ -452,6 +452,51 @@ function MealProposalCard({
     setIsInteractiveEdit(Boolean(interactiveEdit));
   }, [interactiveEdit]);
 
+  // Se i macro arrivano a 0 (DB cataloghi ancora vuoti al parse), ricalcola appena i DB sono pronti.
+  useEffect(() => {
+    const personalReady = foodDatabase && Object.keys(foodDatabase).length > 0;
+    const kentuReady = kentuItDatabase && Object.keys(kentuItDatabase).length > 0;
+    const globalReady = globalFoodDatabase && Object.keys(globalFoodDatabase).length > 0;
+    if (!personalReady && !kentuReady && !globalReady) return;
+
+    setLocalProposal((prev) => {
+      const list = Array.isArray(prev?.items) ? prev.items : [];
+      if (list.length === 0) return prev;
+      const needsHydration = list.some((item) => {
+        const name = String(item?.foodName || item?.name || '').trim();
+        return Boolean(name) && !(Number(item?.kcal) > 0);
+      });
+      if (!needsHydration) return prev;
+
+      const nextItems = list.map((item) => recalcItemMacros(
+        item,
+        foodDatabase,
+        fullHistory,
+        String(prev?.mealType || 'pranzo'),
+        {
+          kentuItDb: kentuItDatabase,
+          globalDb: globalFoodDatabase,
+        },
+      ));
+      const changed = nextItems.some((item, idx) => (
+        Number(item?.kcal) !== Number(list[idx]?.kcal)
+        || String(item?.foodDbKey || '') !== String(list[idx]?.foodDbKey || '')
+      ));
+      if (!changed) return prev;
+      const next = {
+        ...prev,
+        items: nextItems,
+        resultingItems: nextItems,
+        totals: sumItemMacros(nextItems),
+      };
+      // Defer parent sync to avoid setState-during-render warnings.
+      queueMicrotask(() => {
+        onDraftChange?.(index, next);
+      });
+      return next;
+    });
+  }, [foodDatabase, kentuItDatabase, globalFoodDatabase, fullHistory, index, onDraftChange]);
+
   const label = String(localProposal?.label || localProposal?.name || `Opzione ${index + 1}`).trim();
   const mealType = String(localProposal?.mealType || 'pranzo').trim();
   const exactTime = String(localProposal?.exactTime || localProposal?.timeString || '').trim();

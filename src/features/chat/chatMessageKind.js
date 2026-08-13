@@ -3,7 +3,6 @@
  */
 
 const RICH_TYPES = new Set([
-  'ADVICE',
   'ASK_CLARIFICATION',
   'REQUEST_FOOD_PHOTO',
   'NEW_FOOD_PREVIEW',
@@ -22,7 +21,7 @@ const ERROR_RE =
   /\b(fallit[oa]|errore|non\s+disponibile|problema|non\s+(riesco|trovo))\b/i;
 
 const MEAL_ICON_RE =
-  /\b(carrello|pasto|alimento|alimenti|cibo|cibi|cena|pranzo|colazione|spuntino|diario|food)\b/i;
+  /\b(carrello|pasto|alimento|alimenti|cibo|cibi|cena|pranzo|colazione|spuntino|diario|food|registrat[oa])\b/i;
 const MACRO_ICON_RE =
   /\b(macro|macronutrient|usda|scomposizion|kcal|calorie|proteine|carboidrati|grassi|nutrienti|analisi\s+macro)\b/i;
 const WORKOUT_ICON_RE =
@@ -104,18 +103,36 @@ function looksLikeTransactionalNotice(text) {
 }
 
 /**
+ * Chrome UI «system notice» anche se il messaggio ha allegati (proposal card, etc.).
+ * Usato per evitare l'avatar AI su ack brevi tipo «Aggiunti al carrello».
  * @param {object|null|undefined} msg
  * @returns {boolean}
  */
-export function isSystemNoticeMessage(msg) {
+export function shouldRenderSystemNoticeChrome(msg) {
   if (!msg || msg.sender !== 'ai' || msg.isTyping) return false;
-  if (hasRichInteractivePayload(msg)) return false;
+  if (msg.mealReceipt && typeof msg.mealReceipt === 'object') return false;
+  if (msg.mealDraft || msg.workoutDraft || msg.mealProposal || msg.dailyPlan) return false;
+  if (msg.clarification === true || msg.requestFoodPhoto === true) return false;
+  if (msg.type === 'ASK_CLARIFICATION' || msg.type === 'REQUEST_FOOD_PHOTO') return false;
+  if (msg.type === 'NEW_FOOD_PREVIEW' || msg.newFoodDraft) return false;
+  if (Array.isArray(msg.quickReplies) && msg.quickReplies.length > 0 && msg.clarification === true) {
+    return false;
+  }
 
   const type = String(msg.type || '').trim().toLowerCase();
   if (type === 'system' || type === 'error') return true;
   if (msg.kind === 'system' || msg.isSystem === true || msg.isError === true) return true;
-
   return looksLikeTransactionalNotice(msg.text);
+}
+
+/**
+ * @param {object|null|undefined} msg
+ * @returns {boolean}
+ */
+export function isSystemNoticeMessage(msg) {
+  if (!shouldRenderSystemNoticeChrome(msg)) return false;
+  if (hasRichInteractivePayload(msg)) return false;
+  return true;
 }
 
 /**

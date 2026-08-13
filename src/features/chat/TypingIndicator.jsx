@@ -1,14 +1,16 @@
 import React from 'react';
 import KentuAvatar from './KentuAvatar';
+import { AVATAR_MOOD_SRC } from './avatarMood.js';
 
 /**
- * Indicatore visivo mentre Kentu elabora (avatar + tre puntini, allineato a sinistra come i fumetti AI).
+ * Indicatore visivo mentre Kentu elabora (avatar Hacker + tre puntini).
  */
 export default function TypingIndicator({
   label = 'Kentu sta elaborando...',
-  avatarSrc = '/avatar.png',
+  avatarSrc = AVATAR_MOOD_SRC.coding,
 }) {
   const ariaLabel = String(label || 'Kentu sta elaborando...').trim();
+  const src = String(avatarSrc || AVATAR_MOOD_SRC.coding).trim() || AVATAR_MOOD_SRC.coding;
 
   return (
     <div
@@ -20,7 +22,8 @@ export default function TypingIndicator({
     >
       <KentuAvatar
         size="sm"
-        src={avatarSrc}
+        src={src}
+        fit="contain"
         className="h-8 w-8 animate-pulse"
         alt=""
       />

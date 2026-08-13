@@ -52,6 +52,7 @@ export default function KentuChatUI({
   preferVoiceChat = false,
   userDisplayName = '',
   healthScore = null,
+  isTrainingDay = false,
   onRequestHealthDiagnosis = null,
 }) {
   return (
@@ -116,6 +117,7 @@ export default function KentuChatUI({
         preferVoiceChat={preferVoiceChat}
         userDisplayName={userDisplayName}
         healthScore={healthScore}
+        isTrainingDay={isTrainingDay}
         onRequestHealthDiagnosis={onRequestHealthDiagnosis}
       />
     </div>

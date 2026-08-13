@@ -1229,9 +1229,15 @@ export function useCommandTerminal({
       });
       const label = String(proposal.label || proposal.name || mealType).trim();
       if (upsertAction === 'merge') {
-        appendAiMessage(`✅ Aggiunto al ${mealType}: ${label}.`);
+        appendAiMessage(`✅ Aggiunto al ${mealType}: ${label}.`, {
+          type: 'system',
+          systemIcon: 'meal',
+        });
       } else if (upsertAction === 'replace' || targetNodeId) {
-        appendAiMessage(`✅ Pasto aggiornato: ${label}.`);
+        appendAiMessage(`✅ Pasto aggiornato: ${label}.`, {
+          type: 'system',
+          systemIcon: 'meal',
+        });
       } else {
         const mealReceipt = buildMealReceiptPayload({
           items: Array.isArray(proposal.items) ? proposal.items : itemsForCommit,

@@ -28,7 +28,14 @@ import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
-import { isSystemNoticeMessage } from './features/chat/chatMessageKind.js';
+import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
+import {
+  AVATAR_MOOD,
+  AVATAR_MOOD_LABEL,
+  detectActiveMealTray,
+  getAvatarSrcForMood,
+  resolveAvatarMood,
+} from './features/chat/avatarMood.js';
 import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
@@ -127,6 +134,8 @@ export default function AiCluster({
   userDisplayName = '',
   /** Snapshot Health Score (avatar dinamico header). */
   healthScore = null,
+  /** Giorno di allenamento ON → mood fitness (Trainer) se non in coding/kitchen. */
+  isTrainingDay = false,
   /** Click sull'avatar → diagnosi in chat (intent REQUEST_HEALTH_DIAGNOSIS). */
   onRequestHealthDiagnosis = null,
 }) {
@@ -211,6 +220,50 @@ export default function AiCluster({
 
   const showTypingIndicator = isProcessing || isTranscribingVoiceNote;
 
+  const hasActiveWorkoutDraft = useMemo(
+    () => (chatHistory || []).some((m) => m.workoutDraft && !m.draftResolved),
+    [chatHistory],
+  );
+
+  const hasActiveMealTray = useMemo(
+    () => detectActiveMealTray({
+      chatHistory,
+      wipMealItems,
+      mealBuilder,
+    }),
+    [chatHistory, wipMealItems, mealBuilder],
+  );
+
+  const avatarMood = useMemo(
+    () => resolveAvatarMood({
+      isProcessing,
+      isTranscribing: isTranscribingVoiceNote,
+      isTyping: showTypingIndicator,
+      hasActiveMealTray,
+      hasActiveWorkoutDraft,
+      isTrainingDay: isTrainingDay === true,
+    }),
+    [
+      isProcessing,
+      isTranscribingVoiceNote,
+      showTypingIndicator,
+      hasActiveMealTray,
+      hasActiveWorkoutDraft,
+      isTrainingDay,
+    ],
+  );
+
+  const activeAvatarSrc = useMemo(
+    () => getAvatarSrcForMood(avatarMood, healthAvatarSrc),
+    [avatarMood, healthAvatarSrc],
+  );
+
+  const activeAvatarFit = avatarMood === AVATAR_MOOD.DEFAULT ? 'cover' : 'contain';
+
+  const headerAvatarLabel = avatarMood === AVATAR_MOOD.DEFAULT
+    ? healthScoreLabel
+    : `${AVATAR_MOOD_LABEL[avatarMood] || 'Kentu'}. ${healthScoreLabel}`;
+
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, showTypingIndicator]);
@@ -228,11 +281,6 @@ export default function AiCluster({
         || (Array.isArray(m.mealProposals) && m.mealProposals.length > 0),
     ),
     [chatHistory]
-  );
-
-  const hasActiveWorkoutDraft = useMemo(
-    () => (chatHistory || []).some((m) => m.workoutDraft && !m.draftResolved),
-    [chatHistory],
   );
 
   const visibleQuickReplies = useMemo(() => {
@@ -490,8 +538,8 @@ export default function AiCluster({
             }
           }}
           disabled={typeof onRequestHealthDiagnosis !== 'function' || isProcessing}
-          aria-label={`${healthScoreLabel}. Tocca per la diagnosi.`}
-          title={healthScoreLabel}
+          aria-label={`${headerAvatarLabel}. Tocca per la diagnosi.`}
+          title={headerAvatarLabel}
           className={[
             'shrink-0 rounded-full border border-cyan-500/35 p-0.5 transition',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
@@ -500,12 +548,12 @@ export default function AiCluster({
               : 'cursor-default opacity-80',
           ].join(' ')}
         >
-          <img
-            src={healthAvatarSrc}
+          <KentuAvatar
+            size="lg"
+            src={activeAvatarSrc}
+            fit={activeAvatarFit}
+            className="h-10 w-10"
             alt=""
-            decoding="async"
-            draggable={false}
-            className="h-10 w-10 rounded-full object-cover shadow-[0_0_12px_rgba(34,211,238,0.28)]"
           />
         </button>
         <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
@@ -515,6 +563,13 @@ export default function AiCluster({
           {introPhrase ? (
             <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
               {introPhrase}
+            </span>
+          ) : avatarMood !== AVATAR_MOOD.DEFAULT ? (
+            <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
+              {AVATAR_MOOD_LABEL[avatarMood]}
+              {healthScore != null
+                ? ` · Score ${Math.round(Number(healthScore.score) || 0)}`
+                : ''}
             </span>
           ) : healthScore != null ? (
             <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
@@ -677,7 +732,7 @@ export default function AiCluster({
                 </div>
               ) : msg.sender === 'ai' ? (
                 msg.isTyping ? (
-                  <TypingIndicator avatarSrc={healthAvatarSrc} />
+                  <TypingIndicator avatarSrc={getAvatarSrcForMood(AVATAR_MOOD.CODING, healthAvatarSrc)} />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
@@ -685,54 +740,69 @@ export default function AiCluster({
                 ) : isSystemNoticeMessage(msg) ? (
                   <SystemNoticeMessage message={msg} />
                 ) : (
-                  <div className="kentu-ai-row flex w-full max-w-[min(92%,28rem)] items-end gap-2.5">
-                    <KentuAvatar size="sm" src={healthAvatarSrc} className="mb-1 shrink-0 self-end" alt="Kentu AI" />
-                    <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
-                    {msg.local === true || msg.sourceTag === 'local_receptionist' ? (
-                      <div
-                        className="kentu-local-receptionist-badge"
-                        style={{
-                          alignSelf: 'flex-start',
-                          fontSize: 11,
-                          letterSpacing: '0.04em',
-                          textTransform: 'uppercase',
-                          opacity: 0.7,
-                          fontWeight: 600,
-                        }}
-                      >
-                        Risposta istantanea · locale
+                  <div className="flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5">
+                    {shouldRenderSystemNoticeChrome(msg) ? (
+                      <SystemNoticeMessage message={msg} />
+                    ) : (
+                      <div className="kentu-ai-row flex w-full items-end gap-2.5">
+                        <KentuAvatar
+                          size="sm"
+                          src={hasActiveMealTray
+                            ? getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, healthAvatarSrc)
+                            : healthAvatarSrc}
+                          fit={hasActiveMealTray ? 'contain' : 'cover'}
+                          className="mb-1 shrink-0 self-end"
+                          alt="Kentu AI"
+                        />
+                        <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
+                          {msg.local === true || msg.sourceTag === 'local_receptionist' ? (
+                            <div
+                              className="kentu-local-receptionist-badge"
+                              style={{
+                                alignSelf: 'flex-start',
+                                fontSize: 11,
+                                letterSpacing: '0.04em',
+                                textTransform: 'uppercase',
+                                opacity: 0.7,
+                                fontWeight: 600,
+                              }}
+                            >
+                              Risposta istantanea · locale
+                            </div>
+                          ) : null}
+                          {splitAiMessageSections(msg.text).map((block, si) =>
+                            si === 0 ? (
+                              <KentuInsightHero key={si} block={block} />
+                            ) : (
+                              <KentuInsightCard key={si} block={block} />
+                            )
+                          )}
+                          {msg.suggestedAction
+                            && !msg.adviceAccepted
+                            && typeof onAcceptAdvice === 'function' ? (
+                              <button
+                                type="button"
+                                className="kentu-advice-accept-btn"
+                                onClick={() => {
+                                  void onAcceptAdvice(msg.suggestedAction, msg.adviceId);
+                                }}
+                              >
+                                <span className="kentu-advice-accept-btn__icon" aria-hidden>
+                                  ⚡
+                                </span>
+                                <span className="kentu-advice-accept-btn__label">
+                                  Procedi e inserisci:
+                                  {' '}
+                                  {Math.round(Number(msg.suggestedAction.grams) || 0)}
+                                  g
+                                  {' '}
+                                  {msg.suggestedAction.foodName}
+                                </span>
+                              </button>
+                            ) : null}
+                        </div>
                       </div>
-                    ) : null}
-                    {splitAiMessageSections(msg.text).map((block, si) =>
-                      si === 0 ? (
-                        <KentuInsightHero key={si} block={block} />
-                      ) : (
-                        <KentuInsightCard key={si} block={block} />
-                      )
                     )}
-                    {msg.suggestedAction
-                      && !msg.adviceAccepted
-                      && typeof onAcceptAdvice === 'function' ? (
-                        <button
-                          type="button"
-                          className="kentu-advice-accept-btn"
-                          onClick={() => {
-                            void onAcceptAdvice(msg.suggestedAction, msg.adviceId);
-                          }}
-                        >
-                          <span className="kentu-advice-accept-btn__icon" aria-hidden>
-                            ⚡
-                          </span>
-                          <span className="kentu-advice-accept-btn__label">
-                            Procedi e inserisci:
-                            {' '}
-                            {Math.round(Number(msg.suggestedAction.grams) || 0)}
-                            g
-                            {' '}
-                            {msg.suggestedAction.foodName}
-                          </span>
-                        </button>
-                      ) : null}
                     {msg.type === 'ADVICE'
                       && Array.isArray(msg.mealProposals)
                       && msg.mealProposals.length > 0
@@ -787,7 +857,6 @@ export default function AiCluster({
                         </KentuButton>
                       </div>
                     ) : null}
-                    </div>
                   </div>
                 )
               ) : (
@@ -924,7 +993,9 @@ export default function AiCluster({
               )}
             </div>
           ))}
-          {showTypingIndicator ? <TypingIndicator avatarSrc={healthAvatarSrc} /> : null}
+          {showTypingIndicator ? (
+            <TypingIndicator avatarSrc={getAvatarSrcForMood(AVATAR_MOOD.CODING, healthAvatarSrc)} />
+          ) : null}
           <div ref={chatEndRef} />
         </div>
         <div className="flex shrink-0 flex-col">

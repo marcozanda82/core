@@ -46,7 +46,7 @@ const HISTORY_SCORE_WEIGHT = 0.08;
 /** Peso usageCount solo come tie-breaker (mai sopra il lexical). */
 const USAGE_COUNT_SCORE_WEIGHT = 0.35;
 
-const MATCH_TIER_RANK = Object.freeze({
+export const MATCH_TIER_RANK = Object.freeze({
   exact: 100,
   prefix: 90,
   token_exact: 80,

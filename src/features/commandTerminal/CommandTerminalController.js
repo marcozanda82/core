@@ -21,6 +21,7 @@ import {
   buildWorkoutDraftUiMessage,
   expandFoodPayloadItems,
   expandWorkoutPayloadExercises,
+  draftItemsFromProposalItems,
   getFoodItemsMissingGrams,
   getFoodPayloadMissingFields,
   MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES,
@@ -1409,7 +1410,15 @@ export class CommandTerminalController {
       }
     }
 
-    this.stagePendingMealDraft(enrichedPayload, {
+    const stagedItems = draftItemsFromProposalItems(proposal?.items);
+    this.stagePendingMealDraft({
+      ...enrichedPayload,
+      items: stagedItems.length > 0
+        ? stagedItems
+        : expandFoodPayloadItems(enrichedPayload),
+      mealType: proposal?.mealType || enrichedPayload?.mealType,
+      exactTime: proposal?.exactTime || enrichedPayload?.exactTime || enrichedPayload?.timeString,
+    }, {
       uiMessage: summaryText,
       sourceText: String(userText || '').trim() || null,
     });
@@ -1586,8 +1595,16 @@ export class CommandTerminalController {
       }
     }
 
-    // McDrive: bozza in sospeso — correzioni vocali → UPDATE_MEAL_DRAFT, «Sì» → CONFIRM.
-    this.stagePendingMealDraft(enrichedPayload, {
+    // McDrive: bozza in sospeso — allinea pending agli item della proposal (macro + foodDbKey).
+    const stagedItems = draftItemsFromProposalItems(proposal?.items);
+    this.stagePendingMealDraft({
+      ...enrichedPayload,
+      items: stagedItems.length > 0
+        ? stagedItems
+        : expandFoodPayloadItems(enrichedPayload),
+      mealType: proposal?.mealType || enrichedPayload?.mealType,
+      exactTime: proposal?.exactTime || enrichedPayload?.exactTime || enrichedPayload?.timeString,
+    }, {
       uiMessage: summaryText,
       sourceText: String(userText || '').trim() || null,
     });

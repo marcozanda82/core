@@ -102,6 +102,14 @@ export function inferDefaultMealType(currentState) {
   return MEAL_TYPES.includes(fromState) ? fromState : null;
 }
 
+function pickFiniteMacro(...candidates) {
+  for (let i = 0; i < candidates.length; i += 1) {
+    const n = Number(candidates[i]);
+    if (Number.isFinite(n)) return Math.round(n * 10) / 10;
+  }
+  return null;
+}
+
 function normalizeFoodItem(item) {
   const foodName = String(item?.foodName || item?.name || '').trim();
   const gramsRaw = item?.grams ?? item?.qty ?? item?.weight;
@@ -116,6 +124,10 @@ function normalizeFoodItem(item) {
   const searchKeywords = Array.isArray(item?.searchKeywords)
     ? item.searchKeywords.map((k) => String(k || '').trim()).filter(Boolean).slice(0, 12)
     : null;
+  const kcal = pickFiniteMacro(item?.kcal, item?.cal, item?.estKcal);
+  const pro = pickFiniteMacro(item?.pro, item?.prot, item?.estPro);
+  const carbo = pickFiniteMacro(item?.carbo, item?.carb, item?.estCar);
+  const fat = pickFiniteMacro(item?.fat, item?.fatTotal, item?.estFat);
   return {
     foodName,
     grams,
@@ -123,6 +135,7 @@ function normalizeFoodItem(item) {
     ...(wasEstimated ? { wasEstimated: true } : {}),
     ...(icon ? { icon } : {}),
     ...(item?.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
+    ...(item?.matchedKey != null ? { matchedKey: item.matchedKey } : {}),
     ...(item?.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
     ...(item?.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
     ...(searchKeywords && searchKeywords.length > 0 ? { searchKeywords } : {}),
@@ -130,7 +143,40 @@ function normalizeFoodItem(item) {
     ...(item?.userProvidedMacros && typeof item.userProvidedMacros === 'object'
       ? { userProvidedMacros: item.userProvidedMacros }
       : {}),
+    // Conserva i macro già risolti (proposal / USDA) nel vassoio e nel pending confirm.
+    ...(kcal != null ? { kcal } : {}),
+    ...(pro != null ? { pro, prot: pro } : {}),
+    ...(carbo != null ? { carbo, carb: carbo } : {}),
+    ...(fat != null ? { fat, fatTotal: fat } : {}),
   };
+}
+
+/**
+ * Allinea gli item del pending draft alla proposal mostrata in UI (nome, chiave DB, macro).
+ * @param {Array<object>|null|undefined} proposalItems
+ * @returns {Array<object>}
+ */
+export function draftItemsFromProposalItems(proposalItems) {
+  if (!Array.isArray(proposalItems) || proposalItems.length === 0) return [];
+  return proposalItems
+    .map((item) => normalizeFoodItem({
+      foodName: item?.foodName || item?.name,
+      grams: item?.grams ?? item?.qty ?? item?.weight,
+      foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+      matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+      icon: item?.icon,
+      spokenFoodName: item?.spokenFoodName,
+      searchKeywords: item?.searchKeywords,
+      isEstimated: item?.isEstimated === true,
+      wasEstimated: item?.wasEstimated === true,
+      isNewFood: item?.isNewFood === true,
+      userProvidedMacros: item?.userProvidedMacros,
+      kcal: item?.kcal ?? item?.cal ?? item?.estKcal,
+      pro: item?.pro ?? item?.prot ?? item?.estPro,
+      carbo: item?.carbo ?? item?.carb ?? item?.estCar,
+      fat: item?.fat ?? item?.fatTotal ?? item?.estFat,
+    }))
+    .filter((item) => item.foodName);
 }
 
 /** Espande payload singolo o multi-item in struttura normalizzata. */

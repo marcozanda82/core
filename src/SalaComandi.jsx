@@ -9294,6 +9294,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             preferVoiceChat={isDiabetesAppMode}
             userDisplayName={String(userProfile?.displayName || userProfile?.name || '').trim()}
             healthScore={healthScore}
+            isTrainingDay={Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog)}
             onRequestHealthDiagnosis={handleRequestHealthDiagnosis}
           />
           </Suspense>

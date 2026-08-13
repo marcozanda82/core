@@ -501,18 +501,31 @@ export default function MealReceiptMessage({
       aria-label={title}
     >
       <header className="min-w-0">
-        <h3 className="m-0 text-[15px] font-bold leading-snug text-slate-50">
-          {title}
-        </h3>
-        <p className="mt-1 m-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium text-slate-400">
-          {timeString ? <span>{timeString}</span> : null}
-          {timeString ? <span aria-hidden className="text-slate-600">·</span> : null}
-          <span className="tabular-nums">{kcal} kcal</span>
-          <span aria-hidden className="text-slate-600">·</span>
-          <span className="tabular-nums">P {pro}g</span>
-          <span className="tabular-nums">C {carbo}g</span>
-          <span className="tabular-nums">G {fat}g</span>
-        </p>
+        <div className="flex items-start gap-2.5">
+          <img
+            src="/pasto_registrato.png"
+            alt=""
+            className="mt-0.5 h-7 w-7 shrink-0 object-contain"
+            width={28}
+            height={28}
+            draggable={false}
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="m-0 text-[15px] font-bold leading-snug text-slate-50">
+              {title.replace(/^✅\s*/, '')}
+            </h3>
+            <p className="mt-1 m-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium text-slate-400">
+              {timeString ? <span>{timeString}</span> : null}
+              {timeString ? <span aria-hidden className="text-slate-600">·</span> : null}
+              <span className="tabular-nums">{kcal} kcal</span>
+              <span aria-hidden className="text-slate-600">·</span>
+              <span className="tabular-nums">P {pro}g</span>
+              <span className="tabular-nums">C {carbo}g</span>
+              <span className="tabular-nums">G {fat}g</span>
+            </p>
+          </div>
+        </div>
         {unresolvedCount > 0 ? (
           <p className="mt-1.5 m-0 text-[11px] font-medium text-amber-300/90" role="status">
             {unresolvedCount === 1
