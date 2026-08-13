@@ -27,6 +27,8 @@ import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
+import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
+import { isSystemNoticeMessage } from './features/chat/chatMessageKind.js';
 import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
@@ -680,6 +682,8 @@ export default function AiCluster({
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
+                ) : isSystemNoticeMessage(msg) ? (
+                  <SystemNoticeMessage message={msg} />
                 ) : (
                   <div className="kentu-ai-row flex w-full max-w-[min(92%,28rem)] items-end gap-2.5">
                     <KentuAvatar size="sm" src={healthAvatarSrc} className="mb-1 shrink-0 self-end" alt="Kentu AI" />

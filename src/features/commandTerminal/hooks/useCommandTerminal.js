@@ -27,6 +27,7 @@ import {
   buildMealReceiptPayload,
   mealReceiptFallbackText,
 } from '../../chat/mealReceiptUtils.js';
+import { isSystemNoticeMessage } from '../../chat/chatMessageKind.js';
 import {
   applyMealOperations,
   mergeMealItems,
@@ -230,16 +231,16 @@ export function useCommandTerminal({
 
   const handleSaveNewFoodEntry = useCallback(async (entryPer100, donorMeta = null) => {
     if (typeof onSaveFoodDbEntryRef.current !== 'function') {
-      appendAiMessage('⚠️ Salvataggio non disponibile in questa vista.');
+      appendAiMessage('⚠️ Salvataggio non disponibile in questa vista.', { type: 'system', isError: true });
       return { ok: false, reason: 'save_food_db_not_configured' };
     }
     try {
       await onSaveFoodDbEntryRef.current(entryPer100, donorMeta);
-      appendAiMessage('✅ Alimento salvato nel database.');
+      appendAiMessage('✅ Alimento salvato nel database.', { type: 'system' });
       return { ok: true };
     } catch (error) {
       const reason = error?.message || 'save_failed';
-      appendAiMessage(`⚠️ Salvataggio fallito: ${reason}`);
+      appendAiMessage(`⚠️ Salvataggio fallito: ${reason}`, { type: 'system', isError: true });
       return { ok: false, reason };
     }
   }, [appendAiMessage]);
@@ -426,8 +427,12 @@ export function useCommandTerminal({
       const lightQuickReplies = Array.isArray(payload.quickReplies)
         ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
         : [];
+      const payloadType = payload.type || null;
+      const inferredSystem = !payloadType
+        && lightQuickReplies.length === 0
+        && isSystemNoticeMessage({ sender: 'ai', text });
       appendAiMessage(text, {
-        type: payload.type || null,
+        type: payloadType || (inferredSystem ? 'system' : null),
         spokenText,
         displayText: text,
         local: payload.local === true,
@@ -444,7 +449,8 @@ export function useCommandTerminal({
         wipAddedChipIds: [],
         adviceId: payload.adviceId || null,
         newFoodDraft: payload.newFoodDraft || null,
-        isError: payload.type === 'ERROR',
+        isError: payloadType === 'ERROR',
+        isSystem: inferredSystem || payloadType === 'ERROR' || payload.isSystem === true,
         mealReceipt: payload.mealReceipt && typeof payload.mealReceipt === 'object'
           ? payload.mealReceipt
           : null,
@@ -593,7 +599,7 @@ export function useCommandTerminal({
                 abortController.signal.aborted
                 || generationToken !== generationTokenRef.current
               ) {
-                appendAiMessage('Generazione annullata.');
+                appendAiMessage('Generazione annullata.', { type: 'system' });
                 return { ok: false, aborted: true, userNotified: true };
               }
 
@@ -612,7 +618,7 @@ export function useCommandTerminal({
               };
             } catch (healthError) {
               if (isAbortError(healthError) || abortController.signal.aborted) {
-                appendAiMessage('Generazione annullata.');
+                appendAiMessage('Generazione annullata.', { type: 'system' });
                 return { ok: false, aborted: true, userNotified: true };
               }
               console.error('[useCommandTerminal] healthChat error', healthError);
@@ -716,7 +722,7 @@ export function useCommandTerminal({
           || generationToken !== generationTokenRef.current
           || result?.aborted
         ) {
-          appendAiMessage('Generazione annullata.');
+          appendAiMessage('Generazione annullata.', { type: 'system' });
           return { ok: false, aborted: true, userNotified: true };
         }
 
@@ -739,7 +745,7 @@ export function useCommandTerminal({
         return result;
       } catch (error) {
         if (isAbortError(error) || abortController.signal.aborted) {
-          appendAiMessage('Generazione annullata.');
+          appendAiMessage('Generazione annullata.', { type: 'system' });
           return { ok: false, aborted: true, userNotified: true };
         }
         console.error('[useCommandTerminal] sendMessage error', error);
@@ -777,7 +783,7 @@ export function useCommandTerminal({
       pendingMealUpdateRef.current = null;
       resolveDraftMessage(draftId, { cancelled: true });
       setActiveQuickReplies([]);
-      appendAiMessage('Inserimento annullato.');
+      appendAiMessage('Inserimento annullato.', { type: 'system' });
       return { ok: true, cancelled: true };
     },
     [controller, resolveDraftMessage, appendAiMessage],
@@ -797,7 +803,7 @@ export function useCommandTerminal({
         if (/^annulla\b/i.test(label)) {
           controller.resetConversationState();
           setActiveQuickReplies([]);
-          appendAiMessage('Inserimento annullato.');
+          appendAiMessage('Inserimento annullato.', { type: 'system' });
           return Promise.resolve({ ok: true, cancelled: true });
         }
         return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
@@ -944,7 +950,7 @@ export function useCommandTerminal({
         resolveDraftMessage(draftId, { cancelled: true });
         setActiveQuickReplies([]);
         if (controller.getConversationSnapshot().conversationState === CONVERSATION_STATE.IDLE) {
-          appendAiMessage('Bozza annullata (nessun alimento rimasto).');
+          appendAiMessage('Bozza annullata (nessun alimento rimasto).', { type: 'system' });
         }
         return { ok: true, cancelled: true };
       }
@@ -1018,7 +1024,7 @@ export function useCommandTerminal({
         resolveDraftMessage(draftId, { cancelled: true });
         setActiveQuickReplies([]);
         if (controller.getConversationSnapshot().conversationState === CONVERSATION_STATE.IDLE) {
-          appendAiMessage('Bozza annullata (nessun esercizio rimasto).');
+          appendAiMessage('Bozza annullata (nessun esercizio rimasto).', { type: 'system' });
         }
         return { ok: true, cancelled: true };
       }
@@ -1059,7 +1065,7 @@ export function useCommandTerminal({
         correlationId: 'advice_accept',
         dedupeKey: { adviceId: adviceId || foodName, foodName, grams, mealType },
       });
-      appendAiMessage('Inserito come suggerito.');
+      appendAiMessage('Inserito come suggerito.', { type: 'system' });
       return { ok: true };
     } catch (error) {
       const reason = `Advice accept failure: ${error?.message || 'unknown error'}`;
@@ -1299,7 +1305,7 @@ export function useCommandTerminal({
         )),
       );
     }
-    appendAiMessage('Ok, bozza annullata.');
+    appendAiMessage('Ok, bozza annullata.', { type: 'system' });
     return { ok: true, cancelled: true };
   }, [appendAiMessage, controller]);
 

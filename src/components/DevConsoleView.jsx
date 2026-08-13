@@ -7,6 +7,7 @@ import {
   subscribeDevNotes,
   subscribeSavedChats,
 } from '../utils/devToolsPersistence';
+import CopyToClipboardButton from './CopyToClipboardButton';
 
 const STYLES = {
   root: {
@@ -83,6 +84,7 @@ const STYLES = {
     paddingBottom: 24,
   },
   card: {
+    position: 'relative',
     background: '#111',
     border: '1px solid #2a2a2a',
     borderRadius: 12,
@@ -91,12 +93,21 @@ const STYLES = {
     flexDirection: 'column',
     gap: 10,
   },
+  cardTop: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
   meta: {
     display: 'flex',
     flexWrap: 'wrap',
     gap: '6px 12px',
     fontSize: '0.72rem',
     color: '#64748b',
+    flex: 1,
+    minWidth: 0,
+    paddingRight: 4,
   },
   body: {
     fontSize: '0.85rem',
@@ -177,9 +188,11 @@ const STYLES = {
     overflowY: 'auto',
   },
   bubble: (isUser) => ({
+    position: 'relative',
     alignSelf: isUser ? 'flex-end' : 'flex-start',
     maxWidth: '92%',
     padding: '8px 10px',
+    paddingTop: 28,
     borderRadius: 10,
     background: isUser ? 'rgba(37, 99, 235, 0.25)' : 'rgba(30, 41, 59, 0.85)',
     border: `1px solid ${isUser ? 'rgba(59, 130, 246, 0.35)' : '#1f2937'}`,
@@ -191,6 +204,11 @@ const STYLES = {
     color: '#64748b',
     marginBottom: 4,
     textTransform: 'uppercase',
+  },
+  bubbleCopy: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
   },
 };
 
@@ -226,16 +244,42 @@ async function copyText(text) {
   document.body.removeChild(ta);
 }
 
-function NoteCard({ item, onResolve, onCopy }) {
+function formatSavedChatTranscript(item) {
+  const messages = Array.isArray(item?.messages) ? item.messages : [];
+  const header = [
+    `Chat salvata · ${formatDevToolsTimestamp(item?.timestamp)}`,
+    item?.sessionId ? `session: ${item.sessionId}` : null,
+    item?.route ? `route: ${item.route}` : null,
+  ].filter(Boolean).join('\n');
+
+  const body = messages.map((msg) => {
+    const isUser = String(msg?.sender || '').toLowerCase() === 'user';
+    const label = isUser ? 'Utente' : 'AI';
+    return `[${label}]\n${String(msg?.text || '').trim() || '—'}`;
+  }).join('\n\n');
+
+  return [header, body].filter(Boolean).join('\n\n');
+}
+
+function NoteCard({ item, onResolve, onCopyPrompt, onCopied }) {
+  const noteText = String(item?.text || '').trim();
   return (
     <article style={STYLES.card}>
-      <div style={STYLES.meta}>
-        <span>{formatDevToolsTimestamp(item.timestamp)}</span>
-        <span>route: {item.route || '—'}</span>
+      <div style={STYLES.cardTop}>
+        <div style={STYLES.meta}>
+          <span>{formatDevToolsTimestamp(item.timestamp)}</span>
+          <span>route: {item.route || '—'}</span>
+        </div>
+        <CopyToClipboardButton
+          text={noteText || '—'}
+          ariaLabel="Copia nota negli appunti"
+          title="Copia nota"
+          onCopied={onCopied}
+        />
       </div>
-      <div style={STYLES.body}>{item.text || '—'}</div>
+      <div style={STYLES.body}>{noteText || '—'}</div>
       <div style={STYLES.actions}>
-        <button type="button" style={STYLES.actionBtn('copy')} onClick={() => onCopy(item)}>
+        <button type="button" style={STYLES.actionBtn('copy')} onClick={() => onCopyPrompt(item)}>
           📋 Copia Prompt per AI
         </button>
         <button type="button" style={STYLES.actionBtn('danger')} onClick={() => onResolve(item)}>
@@ -246,15 +290,24 @@ function NoteCard({ item, onResolve, onCopy }) {
   );
 }
 
-function SavedChatCard({ item, expanded, onToggle, onResolve }) {
+function SavedChatCard({ item, expanded, onToggle, onResolve, onCopied }) {
   const messages = Array.isArray(item.messages) ? item.messages : [];
+  const transcript = formatSavedChatTranscript(item);
   return (
     <article style={STYLES.card}>
-      <div style={STYLES.meta}>
-        <span>{formatDevToolsTimestamp(item.timestamp)}</span>
-        {item.sessionId ? <span>session: {item.sessionId}</span> : null}
-        <span>{item.messageCount ?? messages.length} msg</span>
-        {item.route ? <span>route: {item.route}</span> : null}
+      <div style={STYLES.cardTop}>
+        <div style={STYLES.meta}>
+          <span>{formatDevToolsTimestamp(item.timestamp)}</span>
+          {item.sessionId ? <span>session: {item.sessionId}</span> : null}
+          <span>{item.messageCount ?? messages.length} msg</span>
+          {item.route ? <span>route: {item.route}</span> : null}
+        </div>
+        <CopyToClipboardButton
+          text={transcript}
+          ariaLabel="Copia chat negli appunti"
+          title="Copia chat"
+          onCopied={onCopied}
+        />
       </div>
       <div style={STYLES.body}>{item.preview || 'Chat salvata'}</div>
       {expanded ? (
@@ -266,10 +319,20 @@ function SavedChatCard({ item, expanded, onToggle, onResolve }) {
             ) : (
               messages.map((msg, idx) => {
                 const isUser = String(msg?.sender || '').toLowerCase() === 'user';
+                const msgText = String(msg?.text || '').trim() || '—';
                 return (
                   <div key={`${item.id}-${idx}`} style={STYLES.bubble(isUser)}>
+                    <div style={STYLES.bubbleCopy}>
+                      <CopyToClipboardButton
+                        text={msgText}
+                        ariaLabel="Copia messaggio"
+                        title="Copia messaggio"
+                        className="!h-7 !w-7"
+                        onCopied={onCopied}
+                      />
+                    </div>
                     <span style={STYLES.bubbleMeta}>{isUser ? 'Utente' : 'AI'}</span>
-                    <div style={STYLES.body}>{msg?.text || '—'}</div>
+                    <div style={STYLES.body}>{msgText}</div>
                   </div>
                 );
               })
@@ -337,7 +400,7 @@ export default function DevConsoleView({ onBack, uid = null }) {
     return unsub;
   }, [uid]);
 
-  const handleCopyNote = useCallback(async (item) => {
+  const handleCopyNotePrompt = useCallback(async (item) => {
     try {
       await copyText(buildDevNoteAiPrompt(item));
       showToast('Prompt copiato negli appunti!');
@@ -345,6 +408,10 @@ export default function DevConsoleView({ onBack, uid = null }) {
       console.error('[DevConsole] copy note prompt', err);
       showToast('Copia fallita');
     }
+  }, [showToast]);
+
+  const handleCopied = useCallback(() => {
+    showToast('Copiato negli appunti!');
   }, [showToast]);
 
   const handleResolveNote = useCallback(async (item) => {
@@ -393,8 +460,9 @@ export default function DevConsoleView({ onBack, uid = null }) {
         <NoteCard
           key={item.id}
           item={item}
-          onCopy={handleCopyNote}
+          onCopyPrompt={handleCopyNotePrompt}
           onResolve={handleResolveNote}
+          onCopied={handleCopied}
         />
       )}
     />
@@ -413,6 +481,7 @@ export default function DevConsoleView({ onBack, uid = null }) {
           expanded={expandedChatIds.has(item.id)}
           onToggle={handleToggleChat}
           onResolve={handleResolveChat}
+          onCopied={handleCopied}
         />
       )}
     />

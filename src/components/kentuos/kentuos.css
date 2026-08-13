@@ -450,6 +450,39 @@
   width: 100%;
 }
 
+/* —— System / transactional notices (no AI avatar) —— */
+.kentu-system-notice {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: min(92%, 28rem);
+  margin: 0.15rem 0 0.15rem 0.15rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.35);
+  box-shadow: none;
+}
+
+.kentu-system-notice__img {
+  display: block;
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-top: 0.05rem;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.kentu-system-notice__text {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  color: rgb(209, 213, 219); /* gray-300 */
+  font-weight: 450;
+}
+
 /* —— Header —— */
 .kentu-os-header {
   display: flex;
