@@ -2,25 +2,27 @@
 
 /**
  * Avatar ufficiale Kentu (Health Score, mood attività, o /avatar.png).
- * Transizione opacity quando cambia `src`.
+ * Scale raddoppiate per leggibilità in chat. Transizione opacity su cambio `src`.
+ *
+ * size: xs 48 · sm 64 · md 72 · lg 80 · xl 96 (px)
  */
 export default function KentuAvatar({
   size = 'md',
   className = '',
   alt = 'Kentu',
   src = '/avatar.png',
-  fit = 'cover',
+  fit = 'contain',
 }) {
   const sizeClass =
     size === 'xs'
-      ? 'h-6 w-6'
+      ? 'h-12 w-12'
       : size === 'sm'
-        ? 'h-8 w-8'
+        ? 'h-16 w-16'
         : size === 'lg'
-          ? 'h-10 w-10'
+          ? 'h-20 w-20'
           : size === 'xl'
-            ? 'h-12 w-12'
-            : 'h-9 w-9';
+            ? 'h-24 w-24'
+            : 'h-[4.5rem] w-[4.5rem]';
 
   const resolvedSrc = String(src || '/avatar.png').trim() || '/avatar.png';
   const [displaySrc, setDisplaySrc] = useState(resolvedSrc);
@@ -39,7 +41,7 @@ export default function KentuAvatar({
     return () => window.clearTimeout(timer);
   }, [resolvedSrc, displaySrc]);
 
-  const fitClass = fit === 'contain' ? 'object-contain' : 'object-cover';
+  const fitClass = fit === 'cover' ? 'object-cover' : 'object-contain';
 
   return (
     <img

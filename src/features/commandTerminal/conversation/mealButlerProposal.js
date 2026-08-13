@@ -41,11 +41,11 @@ export function isGenericFoodName(foodName) {
   const norm = normalizeSearchText(foodName);
   if (!norm) return false;
   const tokens = norm.split(' ').filter(Boolean);
+  // Solo whitelist esplicita: niente «length <= 8» (sgombro ≠ generico).
   if (tokens.length === 1) {
-    return GENERIC_FOOD_TOKENS.has(tokens[0]) || tokens[0].length <= 8;
+    return GENERIC_FOOD_TOKENS.has(tokens[0]);
   }
-  // «pane integrale» è già specifico; «il pane» → generico mono-token dopo normalize
-  return tokens.length === 1;
+  return false;
 }
 
 /**
@@ -70,6 +70,7 @@ export function findMostFrequentPersonalFood(personalDb, genericName, searchKeyw
   const needleTokens = needleNorm.split(' ').filter(Boolean);
 
   // Preferisci match dove il generico è contenuto nel nome (pane → pane bauletto).
+  // DIVIETO: usageCount non può promuovere un alimento di altra categoria (sgombro→merluzzo).
   const ranked = hits
     .map((hit) => {
       const nameNorm = normalizeSearchText(hit.name);
@@ -85,7 +86,7 @@ export function findMostFrequentPersonalFood(personalDb, genericName, searchKeyw
         contains,
       };
     })
-    .filter((row) => row.contains || row.score >= 75)
+    .filter((row) => row.contains === true)
     .sort((a, b) => b.score - a.score || b.usageCount - a.usageCount);
 
   const best = ranked[0];
@@ -186,8 +187,7 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
     let proposedFromHabit = false;
     let synonymMapped = false;
 
-    const generic = isGenericFoodName(originalName)
-      || normalizeSearchText(originalName).split(' ').filter(Boolean).length === 1;
+    const generic = isGenericFoodName(originalName);
     const keywords = normalizeSearchKeywords(originalName, item.searchKeywords);
 
     // Exact su searchKeywords (es. cocomero → Anguria) prima dell'habit «solito».

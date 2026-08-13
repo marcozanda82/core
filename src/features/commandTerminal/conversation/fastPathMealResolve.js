@@ -68,46 +68,63 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
     for (let i = 0; i < layers.length; i += 1) {
       const food = layers[i].db[preferredDbKey];
       if (food) {
-        return {
-          foodName: String(food.desc || food.name || spokenName).trim() || spokenName,
-          foodDbKey: preferredDbKey,
-          matchTier: 'exact',
-          strictScore: 100,
-          source: layers[i].source,
-        };
+        const preferredName = String(food.desc || food.name || '').trim();
+        if (
+          !preferredName
+          || normalizeSearchText(preferredName).includes(normalizeSearchText(spokenName))
+          || normalizeSearchText(spokenName).includes(normalizeSearchText(preferredName))
+          || normalizeSearchText(preferredName) === normalizeSearchText(spokenName)
+        ) {
+          // Solo se il preferred è lessicalmente coerente con la query parlata.
+          const spokenNorm = normalizeSearchText(spokenName);
+          const prefNorm = normalizeSearchText(preferredName);
+          const tokens = spokenNorm.split(/\s+/).filter(Boolean);
+          const ok = tokens.length > 0 && tokens.every((t) => prefNorm.includes(t));
+          if (ok || prefNorm === spokenNorm || prefNorm.startsWith(spokenNorm)) {
+            return {
+              foodName: preferredName || spokenName,
+              foodDbKey: preferredDbKey,
+              matchTier: 'exact',
+              strictScore: 100,
+              source: layers[i].source,
+            };
+          }
+        }
+        break;
       }
     }
   }
 
-  let bestFallback = null;
+  // Sequenziale bloccante: niente bestFallback debole tra layer.
   for (let i = 0; i < layers.length; i += 1) {
     const hits = searchFoodsWithKeywords(layers[i].db, keywords, {
       limit: 8,
       includeUserHistory: false,
       enableFuzzy: true,
     });
-    const top = hits[0];
-    if (!top?.name) continue;
-    const tier = String(top.matchTier || '');
-    const score = Number(top.strictScore) || 0;
-    const candidate = {
-      foodName: String(top.name).trim(),
-      foodDbKey: top.id,
-      matchTier: tier,
-      strictScore: score,
-      source: layers[i].source,
-    };
-    if (tier === 'exact' || top.keywordExact || score >= 100) {
-      return candidate;
-    }
-    if (tier === 'prefix' || score >= 75) {
-      return candidate;
-    }
-    if (!bestFallback || score > (bestFallback.strictScore || 0)) {
-      bestFallback = candidate;
+    const strong = hits.find((top) => {
+      if (!top?.name) return false;
+      const tier = String(top.matchTier || '');
+      const score = Number(top.strictScore) || 0;
+      const nameNorm = normalizeSearchText(top.name);
+      const spokenNorm = normalizeSearchText(spokenName);
+      const tokens = spokenNorm.split(/\s+/).filter(Boolean);
+      const contains = tokens.every((t) => nameNorm.includes(t));
+      if (tier === 'exact' || top.keywordExact || score >= 100) return true;
+      if ((tier === 'prefix' || score >= 90) && contains) return true;
+      return false;
+    });
+    if (strong?.name) {
+      return {
+        foodName: String(strong.name).trim(),
+        foodDbKey: strong.id,
+        matchTier: String(strong.matchTier || ''),
+        strictScore: Number(strong.strictScore) || 0,
+        source: layers[i].source,
+      };
     }
   }
-  return bestFallback;
+  return null;
 }
 
 /**

@@ -400,7 +400,7 @@ function MealProposalItemRow({
           min={1}
           value={grams}
           disabled={disabled}
-          className="kentu-meal-proposal-card__stepper"
+          className="kentu-meal-proposal-card__stepper w-1/3 max-w-[33.333%]"
           onChange={(nextGrams) => {
             const parsed = Math.max(1, Math.round(Number(nextGrams) || 0));
             onUpdateGrams(itemIdx, parsed);

@@ -140,13 +140,35 @@ function pickKeyByUsageCount(foodDb, keys) {
 }
 
 /**
- * Match DB: preferredKey → search ranked (exact/includes/fuzzy) → max usageCount.
- * Tra più risultati per la stessa parola chiave vince sempre usageCount (abitudini).
+ * True se il nome DB è un match lessicale affidabile della query (no swap di categoria).
+ * @param {string} foodName
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function foodNameMatchesQuery(foodName, query) {
+  const nameNorm = normalizeSearchText(foodName);
+  const queryNorm = normalizeSearchText(query);
+  if (!nameNorm || !queryNorm) return false;
+  if (nameNorm === queryNorm) return true;
+  if (nameNorm.startsWith(queryNorm) || queryNorm.startsWith(nameNorm)) return true;
+  const tokens = queryNorm.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  return tokens.every((token) => nameNorm.includes(token));
+}
+
+/**
+ * Match DB: preferredKey (validato sul nome) → search ranked (exact/prefix/fuzzy forte).
+ * Niente fallback deboli score≥50 (evita sgombro→merluzzo).
  * @returns {string | null}
  */
 export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeywords = null) {
   if (preferredDbKey != null && foodDb?.[preferredDbKey] != null) {
-    return preferredDbKey;
+    const preferredRow = foodDb[preferredDbKey];
+    const preferredName = preferredRow?.desc || preferredRow?.name || '';
+    if (foodNameMatchesQuery(preferredName, nome)) {
+      return preferredDbKey;
+    }
+    // preferredKey non allineato alla query → ignora e cerca per nome.
   }
 
   const needle = normalizeSearchText(nome);
@@ -166,29 +188,22 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeyword
     });
   if (!hits.length) return null;
 
-  // Accetta match forti (exact/prefix/word ≥75) oppure fuzzy (Levenshtein 1–2 → 85–90).
-  // Accetta anche substring “forte” (≥50) se è l’unico candidato e la query è una parola intera nel nome.
+  // Solo match forti: exact/prefix, fuzzy alto, word_boundary con token contenuti.
   const acceptable = hits.filter((hit) => {
     const tier = String(hit.matchTier || '');
     const score = Number(hit.strictScore) || 0;
-    if (tier === 'exact' || tier === 'prefix') return true;
-    if (tier === 'fuzzy') return score >= 85;
-    if (tier === 'word_boundary') return score >= 75;
-    return score >= 75;
+    const nameOk = foodNameMatchesQuery(hit?.name || hit?.desc || '', nome);
+    if (tier === 'exact') return true;
+    if (tier === 'prefix' && nameOk) return true;
+    if (tier === 'fuzzy' && score >= 90 && nameOk) return true;
+    if (tier === 'word_boundary' && score >= 80 && nameOk) return true;
+    if (score >= 95 && nameOk) return true;
+    return false;
   });
-  if (acceptable.length === 0 && hits.length > 0) {
-    // Ultimo fallback: miglior hit lessicale (NO usage ranking su top-5 eterogenei).
-    const best = hits[0];
-    const bestScore = Number(best?.strictScore) || 0;
-    if (best && needle.length >= 4 && bestScore >= 50) {
-      return best.id;
-    }
-    return null;
-  }
   if (acceptable.length === 0) return null;
 
   // Preferisci uguaglianza esatta sul nome, poi il tier lessicale migliore.
-  // usageCount è solo spareggio DENTRO lo stesso tier (mai "pane" → "pane integrale…" per abitudine).
+  // usageCount è solo spareggio DENTRO lo stesso tier.
   const exactNameHits = acceptable.filter(
     (hit) => normalizeSearchText(hit?.name || hit?.desc || '') === needle,
   );
@@ -230,8 +245,13 @@ export function findFoodDbMatchCascading({
   if (preferredDbKey != null) {
     for (let i = 0; i < layers.length; i += 1) {
       const layer = layers[i];
-      if (layer.db[preferredDbKey] != null) {
-        return { key: preferredDbKey, foodDb: layer.db, source: layer.source };
+      const row = layer.db[preferredDbKey];
+      if (row != null) {
+        const preferredName = row?.desc || row?.name || '';
+        if (foodNameMatchesQuery(preferredName, nome)) {
+          return { key: preferredDbKey, foodDb: layer.db, source: layer.source };
+        }
+        break;
       }
     }
   }
@@ -239,6 +259,7 @@ export function findFoodDbMatchCascading({
   const query = String(nome || '').trim();
   if (!query) return null;
 
+  // Sequenziale bloccante: Personal → Kentu IT → Global/USDA. Primo layer con hit forte vince.
   for (let i = 0; i < layers.length; i += 1) {
     const layer = layers[i];
     const key = findFoodDbKey(layer.db, query, null, searchKeywords);

@@ -14,7 +14,7 @@ export default function TypingIndicator({
 
   return (
     <div
-      className="kentu-typing-row flex w-full max-w-[min(92%,28rem)] flex-col items-start justify-start gap-2 py-2"
+      className="kentu-typing-row flex w-full max-w-[min(92%,28rem)] flex-col items-start justify-start gap-2.5 py-2"
       aria-live="polite"
       aria-busy="true"
       aria-label={ariaLabel}
@@ -24,7 +24,7 @@ export default function TypingIndicator({
         size="sm"
         src={src}
         fit="contain"
-        className="h-8 w-8 animate-pulse"
+        className="animate-pulse"
         alt=""
       />
       <div className="typing-indicator kentu-typing-indicator pl-1" aria-hidden>

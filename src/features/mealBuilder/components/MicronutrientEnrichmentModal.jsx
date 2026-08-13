@@ -47,6 +47,9 @@ const CONFIDENCE_UI = {
  *   onSelectMatch: (match: object) => void,
  *   onSkip: () => void,
  *   onClose?: () => void,
+ *   onScanBarcode?: () => void,
+ *   onUseLabelPhoto?: () => void,
+ *   cameraBusy?: boolean,
  *   variant?: 'barcode' | 'chat',
  * }} props
  */
@@ -59,6 +62,9 @@ export default function MicronutrientEnrichmentModal({
   onSelectMatch,
   onSkip,
   onClose,
+  onScanBarcode = null,
+  onUseLabelPhoto = null,
+  cameraBusy = false,
   variant = 'barcode',
 }) {
   useEffect(() => {
@@ -91,11 +97,14 @@ export default function MicronutrientEnrichmentModal({
       </>
     );
   const skipLabel = isChatMode
-    ? 'Salta / Nessun match'
+    ? 'Continua senza profilo USDA'
     : 'Salta — Usa solo l\'etichetta (Senza micronutrienti)';
   const emptyText = isChatMode
-    ? 'Nessun match USDA affidabile. Puoi inserire i valori manualmente dopo.'
+    ? 'Nessun match USDA affidabile. Usa lo scanner o la foto etichetta per registrare l\'alimento.'
     : 'Nessun match USDA affidabile. Puoi salvare solo l\'etichetta.';
+  const showCameraActions = isChatMode
+    && (typeof onScanBarcode === 'function' || typeof onUseLabelPhoto === 'function');
+  const actionsDisabled = isLoading || cameraBusy;
 
   return createPortal(
     <div
@@ -193,11 +202,38 @@ export default function MicronutrientEnrichmentModal({
         </div>
 
         <div className="border-t border-slate-700/80 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
+          {showCameraActions ? (
+            <div className="mb-2.5 flex flex-col gap-2">
+              <p className="m-0 text-center text-[11px] font-medium uppercase tracking-wide text-slate-500">
+                Aggiungi al tuo database
+              </p>
+              {typeof onScanBarcode === 'function' ? (
+                <button
+                  type="button"
+                  onClick={() => onScanBarcode()}
+                  disabled={actionsDisabled}
+                  className="w-full rounded-xl border border-cyan-500/45 bg-cyan-950/45 py-3.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-400/70 hover:bg-cyan-900/50 disabled:opacity-50"
+                >
+                  {cameraBusy ? 'Apertura fotocamera…' : '📷 Scansione Codice a Barre'}
+                </button>
+              ) : null}
+              {typeof onUseLabelPhoto === 'function' ? (
+                <button
+                  type="button"
+                  onClick={() => onUseLabelPhoto()}
+                  disabled={actionsDisabled}
+                  className="w-full rounded-xl border border-cyan-500/45 bg-cyan-950/45 py-3.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-400/70 hover:bg-cyan-900/50 disabled:opacity-50"
+                >
+                  {cameraBusy ? 'Elaborazione…' : '🏷️ Foto Etichetta'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={() => onSkip?.()}
-            disabled={isLoading}
-            className="w-full rounded-xl border border-slate-600/70 bg-slate-900/80 py-3.5 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
+            disabled={actionsDisabled}
+            className="w-full rounded-xl border border-slate-600/70 bg-slate-900/80 py-3 text-sm font-semibold text-slate-300 transition hover:bg-slate-800 disabled:opacity-50"
           >
             {skipLabel}
           </button>

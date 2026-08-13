@@ -147,13 +147,15 @@ function ResolutionActions({
   onOpenManual = null,
   onCorrectName = null,
 }) {
-  const btnClass =
+  const primaryBtnClass =
+    'inline-flex flex-1 min-w-[9.5rem] items-center justify-center gap-1.5 rounded-xl border border-cyan-500/45 bg-cyan-950/40 px-3 py-2.5 text-[12px] font-semibold text-cyan-100 transition hover:border-cyan-400/70 hover:bg-cyan-900/50 disabled:opacity-40';
+  const secondaryBtnClass =
     'inline-flex items-center gap-1 rounded-lg border border-slate-600/70 bg-slate-900/90 px-2 py-1.5 text-[11px] font-medium text-slate-100 transition hover:border-cyan-500/50 hover:bg-slate-800 disabled:opacity-40';
 
   return (
-    <div className="mt-1.5 space-y-1.5">
+    <div className="mt-2 space-y-2">
       <p className="m-0 text-[11px] font-semibold text-amber-300/95">
-        Alimento non trovato nel DB
+        Alimento non trovato — aggiungilo al tuo database
       </p>
       {isProcessing ? (
         <p className="m-0 flex items-center gap-2 text-[11px] text-cyan-300/90" role="status">
@@ -161,40 +163,44 @@ function ResolutionActions({
           Elaborazione immagine…
         </p>
       ) : (
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Risolvi alimento">
-        <button
-          type="button"
-          className={btnClass}
-          disabled={disabled}
-          onClick={() => onCorrectName?.(itemIdx)}
-        >
-          ✏️ Correggi Nome
-        </button>
-        <button
-          type="button"
-          className={btnClass}
-          disabled={disabled}
-          onClick={() => onScanBarcode?.(itemIdx)}
-        >
-          📷 Scansiona Codice a Barre
-        </button>
-        <button
-          type="button"
-          className={btnClass}
-          disabled={disabled}
-          onClick={() => onUseLabelPhoto?.(itemIdx)}
-        >
-          🏷️ Usa Foto Etichetta
-        </button>
-        <button
-          type="button"
-          className={btnClass}
-          disabled={disabled}
-          onClick={() => onOpenManual?.(itemIdx)}
-        >
-          ✍️ Inserisci Manualmente
-        </button>
-      </div>
+        <>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Azioni principali">
+            <button
+              type="button"
+              className={primaryBtnClass}
+              disabled={disabled}
+              onClick={() => onScanBarcode?.(itemIdx)}
+            >
+              📷 Scansione Codice a Barre
+            </button>
+            <button
+              type="button"
+              className={primaryBtnClass}
+              disabled={disabled}
+              onClick={() => onUseLabelPhoto?.(itemIdx)}
+            >
+              🏷️ Foto Etichetta
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Altre opzioni">
+            <button
+              type="button"
+              className={secondaryBtnClass}
+              disabled={disabled}
+              onClick={() => onCorrectName?.(itemIdx)}
+            >
+              ✏️ Correggi Nome
+            </button>
+            <button
+              type="button"
+              className={secondaryBtnClass}
+              disabled={disabled}
+              onClick={() => onOpenManual?.(itemIdx)}
+            >
+              ✍️ Inserisci Manualmente
+            </button>
+          </div>
+        </>
       )}
       {statusHint ? (
         <p className="m-0 text-[10px] text-slate-500" role="status">
@@ -278,8 +284,8 @@ function ReceiptItemRow({
       ref={rootRef}
       className={`relative ${needsResolution ? 'rounded-xl border border-amber-500/35 bg-amber-950/20 px-2 py-2' : ''}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] leading-snug text-slate-100">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 w-2/3 max-w-[66.666%] flex-1 whitespace-normal break-words text-[13px] leading-snug text-slate-100">
           <span className="mr-1.5 inline-block" aria-hidden>{icon}</span>
           {editingName && needsResolution ? (
             <input
@@ -333,14 +339,14 @@ function ReceiptItemRow({
             min={1}
             value={grams}
             disabled={disabled || isProcessing}
-            className="kentu-meal-receipt__stepper shrink-0"
+            className="kentu-meal-receipt__stepper w-1/3 max-w-[33.333%] shrink"
             onChange={(nextGrams) => {
               const parsed = Math.max(1, Math.round(Number(nextGrams) || 0));
               onUpdateItemGrams(itemIdx, parsed);
             }}
           />
         ) : (
-          <span className="shrink-0 pt-0.5 text-[12px] font-semibold tabular-nums text-slate-400">
+          <span className="w-1/3 max-w-[33.333%] shrink-0 pt-0.5 text-right text-[12px] font-semibold tabular-nums text-slate-400">
             {grams}
             g
           </span>
@@ -505,9 +511,9 @@ export default function MealReceiptMessage({
           <img
             src="/pasto_registrato.png"
             alt=""
-            className="mt-0.5 h-7 w-7 shrink-0 object-contain"
-            width={28}
-            height={28}
+            className="mt-0.5 h-14 w-14 shrink-0 object-contain"
+            width={56}
+            height={56}
             draggable={false}
             aria-hidden
           />

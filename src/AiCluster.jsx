@@ -258,8 +258,6 @@ export default function AiCluster({
     [avatarMood, healthAvatarSrc],
   );
 
-  const activeAvatarFit = avatarMood === AVATAR_MOOD.DEFAULT ? 'cover' : 'contain';
-
   const headerAvatarLabel = avatarMood === AVATAR_MOOD.DEFAULT
     ? healthScoreLabel
     : `${AVATAR_MOOD_LABEL[avatarMood] || 'Kentu'}. ${healthScoreLabel}`;
@@ -529,7 +527,7 @@ export default function AiCluster({
       className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3.5">
         <button
           type="button"
           onClick={() => {
@@ -541,7 +539,7 @@ export default function AiCluster({
           aria-label={`${headerAvatarLabel}. Tocca per la diagnosi.`}
           title={headerAvatarLabel}
           className={[
-            'shrink-0 rounded-full border border-cyan-500/35 p-0.5 transition',
+            'shrink-0 rounded-full border border-cyan-500/35 p-1 transition',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
             typeof onRequestHealthDiagnosis === 'function' && !isProcessing
               ? 'cursor-pointer hover:border-cyan-400/60 active:scale-95'
@@ -551,8 +549,7 @@ export default function AiCluster({
           <KentuAvatar
             size="lg"
             src={activeAvatarSrc}
-            fit={activeAvatarFit}
-            className="h-10 w-10"
+            fit="contain"
             alt=""
           />
         </button>
@@ -744,14 +741,14 @@ export default function AiCluster({
                     {shouldRenderSystemNoticeChrome(msg) ? (
                       <SystemNoticeMessage message={msg} />
                     ) : (
-                      <div className="kentu-ai-row flex w-full items-end gap-2.5">
+                      <div className="kentu-ai-row flex w-full items-end gap-3">
                         <KentuAvatar
                           size="sm"
                           src={hasActiveMealTray
                             ? getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, healthAvatarSrc)
                             : healthAvatarSrc}
-                          fit={hasActiveMealTray ? 'contain' : 'cover'}
-                          className="mb-1 shrink-0 self-end"
+                          fit="contain"
+                          className="mb-0.5 shrink-0 self-end"
                           alt="Kentu AI"
                         />
                         <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">

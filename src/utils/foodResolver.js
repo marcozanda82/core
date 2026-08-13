@@ -2,6 +2,7 @@ import { searchFoodsDetailed } from '../foodSearch.js';
 import {
   estraiDatiFoodDb,
   findFoodDbMatchCascading,
+  foodNameMatchesQuery,
   FOOD_RESOLUTION_STATUS,
 } from '../features/salaComandi/engines/foodDataEngine.js';
 
@@ -250,7 +251,7 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
 
   const catalogs = resolveCatalogDbs(context);
 
-  // preferredDbKey in qualsiasi layer → usa direttamente.
+  // preferredDbKey solo se il nome DB è coerente con la query (no lock su habit sbagliato).
   if (context.preferredDbKey != null) {
     const preferredMatch = findFoodDbMatchCascading({
       ...catalogs,
@@ -259,25 +260,28 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
       searchKeywords: context.searchKeywords || null,
     });
     if (preferredMatch) {
-      const preferredPortion = buildPortionFromDbMatch(
-        {
-          foodDbKey: preferredMatch.key,
-          foodName: preferredMatch.foodDb[preferredMatch.key]?.desc
-            || preferredMatch.foodDb[preferredMatch.key]?.name
-            || query,
-          matchScore: 1,
-          dbSource: preferredMatch.source,
-          _lookupDb: preferredMatch.foodDb,
-        },
-        g,
-        context,
-      );
-      if (preferredPortion) {
-        return {
-          ...preferredPortion,
-          rawQuery: query,
-          alternatives: [],
-        };
+      const preferredLabel = preferredMatch.foodDb[preferredMatch.key]?.desc
+        || preferredMatch.foodDb[preferredMatch.key]?.name
+        || query;
+      if (foodNameMatchesQuery(preferredLabel, query)) {
+        const preferredPortion = buildPortionFromDbMatch(
+          {
+            foodDbKey: preferredMatch.key,
+            foodName: preferredLabel,
+            matchScore: 1,
+            dbSource: preferredMatch.source,
+            _lookupDb: preferredMatch.foodDb,
+          },
+          g,
+          context,
+        );
+        if (preferredPortion) {
+          return {
+            ...preferredPortion,
+            rawQuery: query,
+            alternatives: [],
+          };
+        }
       }
     }
   }
