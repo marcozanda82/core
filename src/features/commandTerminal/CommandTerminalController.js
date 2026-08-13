@@ -197,6 +197,11 @@ import {
   mealReceiptFallbackText,
 } from '../chat/mealReceiptUtils.js';
 import { buildChatPersonaSystemBlock, resolveUserDisplayName } from '../chat/chatPersona.js';
+import {
+  calculateHealthScore,
+  buildHealthDiagnosisPromptContext,
+  HEALTH_DIAGNOSIS_SYSTEM_BLOCK,
+} from '../health/HealthScoreEngine.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -3139,6 +3144,67 @@ export class CommandTerminalController {
   }
 
   /**
+   * Diagnosi avatar Health Score — risposta in prima persona sui malus maggiori.
+   */
+  async handleHealthDiagnosisRequest(userText, currentState = {}, options = {}) {
+    const healthResult = currentState?.healthScore
+      && typeof currentState.healthScore === 'object'
+      ? currentState.healthScore
+      : calculateHealthScore(
+        currentState?.healthScoreMetrics || {},
+        Boolean(currentState?.isTrainingDay),
+      );
+
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+    const diagnosisContext = buildHealthDiagnosisPromptContext(healthResult);
+    const systemInstruction = [
+      buildChatPersonaSystemBlock({ displayName }),
+      HEALTH_DIAGNOSIS_SYSTEM_BLOCK,
+      diagnosisContext,
+      String(options?.systemInstructionExtra || '').trim(),
+    ].filter(Boolean).join('\n\n');
+
+    const prompt = [
+      'L\'utente ha toccato il mio avatar Health Score nell\'header.',
+      'Formula la diagnosi in prima persona (2 frasi max) basata sul breakdown malus sopra.',
+      `Score attuale: ${healthResult?.score ?? 'n/d'} · Stato: ${healthResult?.avatar?.label || 'n/d'}.`,
+      userText ? `Nota utente: ${String(userText).trim()}` : '',
+    ].filter(Boolean).join('\n');
+
+    try {
+      const { adviceMessage } = await this.llmClient.generateConsultantResponse({
+        prompt,
+        systemInstruction,
+        temperature: 0.4,
+        chatHistory,
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
+      const text = String(adviceMessage || '').trim()
+        || 'Il mio volto riflette la giornata: oggi posso ancora migliorare su proteine e ricarica. Dimmi cosa vuoi sistemare per primo.';
+
+      return this.publishChatResponse(
+        {
+          uiMessage: text,
+          adviceMessage: text,
+          payload: { message: text },
+          requiresConfirmation: false,
+        },
+        userText,
+        { local: false },
+      );
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.error('[CommandTerminalController] handleHealthDiagnosisRequest failed', error);
+      this.publishSystemMessage(
+        'Non riesco a leggere il mio stato adesso. Riprova tra un attimo.',
+      );
+      return { ok: false, reason: 'health_diagnosis_failed', userNotified: true };
+    }
+  }
+
+  /**
    * Coach proattivo — suggerimenti per completare il Vassoio (bozza pasto attiva).
    * Non modifica né chiude la bozza; espone smart chips tap-to-add.
    */
@@ -3837,6 +3903,11 @@ export class CommandTerminalController {
     }
 
     // Local Receptionist: priorità massima assoluta su query di sola lettura (zero Gemini).
+    const forcedIntentEarly = String(options?.intent || '').trim().toUpperCase();
+    if (forcedIntentEarly === 'REQUEST_HEALTH_DIAGNOSIS') {
+      return this.handleHealthDiagnosisRequest(userText, currentState, options);
+    }
+
     if (userText && images.length === 0) {
       try {
         const globalPack = buildKentuGlobalStateFromAppState(currentState).object;
@@ -3895,6 +3966,10 @@ export class CommandTerminalController {
       hasImages: images.length > 0,
       chatHistory,
     });
+
+    if (inferredIntent === 'REQUEST_HEALTH_DIAGNOSIS') {
+      return this.handleHealthDiagnosisRequest(userText, currentState, options);
+    }
 
     if (inferredIntent === 'ASK_DRAFT_ADVICE') {
       return this.handleDraftAdviceRequest(userText, currentState, options);

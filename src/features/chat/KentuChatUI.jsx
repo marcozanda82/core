@@ -51,6 +51,8 @@ export default function KentuChatUI({
   quickStripItems = null,
   preferVoiceChat = false,
   userDisplayName = '',
+  healthScore = null,
+  onRequestHealthDiagnosis = null,
 }) {
   return (
     <div
@@ -113,6 +115,8 @@ export default function KentuChatUI({
         quickStripItems={quickStripItems}
         preferVoiceChat={preferVoiceChat}
         userDisplayName={userDisplayName}
+        healthScore={healthScore}
+        onRequestHealthDiagnosis={onRequestHealthDiagnosis}
       />
     </div>
   );

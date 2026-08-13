@@ -494,19 +494,24 @@ export function useCommandTerminal({
       const userBubbleText =
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
       const hideUserPrompt = Boolean(options?.isHiddenUserMessage);
+      const skipUserBubble = Boolean(options?.skipUserBubble);
       const visibleBubbleText = hideUserPrompt
         ? String(options?.visibleUserText || '📊 Analizzo la giornata...').trim()
         : userBubbleText;
       const priorHistory = chatHistoryRef.current || [];
-      setChatHistoryRef.current((prev) => [
-        ...(prev || []),
-        { sender: 'user', text: visibleBubbleText },
-      ]);
+      if (!skipUserBubble) {
+        setChatHistoryRef.current((prev) => [
+          ...(prev || []),
+          { sender: 'user', text: visibleBubbleText },
+        ]);
+      }
       // Per richieste con contesto nascosto: in chat resta il testo pulito;
       // all'LLM arriva resolvedText (richiesta utente) + systemInstructionExtra.
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
-      setChatInput('');
-      setChatImages([]);
+      if (!options?.keepInput) {
+        setChatInput('');
+        setChatImages([]);
+      }
       if (options?.fromQuickReply || options?.clarificationReply || options?.fromSlotQuickReply) {
         setActiveQuickReplies([]);
       }

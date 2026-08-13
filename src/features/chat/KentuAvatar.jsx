@@ -1,7 +1,12 @@
-/**
- * Avatar ufficiale Kentu (public/avatar.png).
+﻿/**
+ * Avatar ufficiale Kentu (public/avatar.png o stage Health Score).
  */
-export default function KentuAvatar({ size = 'md', className = '', alt = 'Kentu' }) {
+export default function KentuAvatar({
+  size = 'md',
+  className = '',
+  alt = 'Kentu',
+  src = '/avatar.png',
+}) {
   const sizeClass =
     size === 'xs'
       ? 'h-6 w-6'
@@ -13,9 +18,11 @@ export default function KentuAvatar({ size = 'md', className = '', alt = 'Kentu'
             ? 'h-12 w-12'
             : 'h-9 w-9';
 
+  const resolvedSrc = String(src || '/avatar.png').trim() || '/avatar.png';
+
   return (
     <img
-      src="/avatar.png"
+      src={resolvedSrc}
       alt={alt}
       decoding="async"
       draggable={false}

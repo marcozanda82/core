@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import AiCluster from '../AiCluster';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
-import KentuAvatar from '../features/chat/KentuAvatar';
 
 /**
  * FAB globale + bottom sheet chat (AiCluster).
@@ -41,7 +40,12 @@ export default function GlobalChatOverlay() {
           aria-label="Apri chat Kentu"
           className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-cyan-400/40 bg-slate-950 p-0 shadow-none transition-transform hover:scale-105 active:scale-95"
         >
-          <KentuAvatar size="lg" className="h-14 w-14 border-0 shadow-[0_0_15px_rgba(0,150,255,0.55)]" alt="" />
+          <img
+            src="/EmblemaKbianca.png"
+            alt=""
+            decoding="async"
+            className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
+          />
         </button>
       ) : null}
 
@@ -65,7 +69,12 @@ export default function GlobalChatOverlay() {
       >
         <header className="relative flex shrink-0 items-center gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <KentuAvatar size="md" />
+            <img
+              src="/nuovo%20logo%20trasparente2.png"
+              alt="KentuOS"
+              decoding="async"
+              className="h-8 w-auto max-w-[120px] shrink-0 object-contain object-left"
+            />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-wide text-slate-100">Kentu Chat</p>
               <p className="truncate text-[11px] text-slate-500">

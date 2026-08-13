@@ -28,6 +28,10 @@ import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
 import ChatFoodEnrichmentModal from './features/commandTerminal/components/ChatFoodEnrichmentModal.jsx';
+import {
+  calculateHealthScore,
+  detectPrematureFastBreak,
+} from './features/health/HealthScoreEngine.js';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
   buildMealReceiptPayload,
@@ -5960,6 +5964,72 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [activeLog, metabolicContextOptions],
   );
 
+  const healthScore = useMemo(() => {
+    const proteinTarget = Number(
+      effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot,
+    ) || 0;
+    const carbTarget = Number(
+      effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb,
+    ) || 0;
+    const tdee = Math.round(
+      Number(profileTdeeKcal)
+      || Number(homeCalorieSplit?.baseKcal)
+      || Number(dynamicDailyKcal)
+      || Number(effectiveTargetsForCurrentDate?.kcal)
+      || 0,
+    );
+    const bmrFromProfile = Number(userProfile?.bmr ?? userProfile?.BMR);
+    const todayFirstMeal = Array.isArray(metabolicTimelineMeals?.todayMealTimes)
+      && metabolicTimelineMeals.todayMealTimes.length > 0
+      ? metabolicTimelineMeals.todayMealTimes[0]
+      : null;
+    const fastingBrokenPrematurely = detectPrematureFastBreak(
+      metabolicTimelineMeals?.yesterdayLastMealTime,
+      todayFirstMeal,
+    );
+    const hoursFasted = Number(
+      metabolicSnapshot?.hoursSinceLastMeal ?? fastingData?.hoursFasted,
+    );
+
+    return calculateHealthScore(
+      {
+        proteinConsumed: Number(totali?.prot) || 0,
+        proteinTarget,
+        kcalConsumed: Number(totali?.kcal) || 0,
+        tdeeKcal: tdee,
+        dailyKcalTarget: Number(homeCalorieSplit?.targetKcal) || tdee,
+        bmrKcal: Number.isFinite(bmrFromProfile) && bmrFromProfile > 0
+          ? bmrFromProfile
+          : undefined,
+        carbConsumed: Number(totali?.carb) || 0,
+        carbTarget,
+        hoursFasted: Number.isFinite(hoursFasted) ? hoursFasted : null,
+        fastingBrokenPrematurely,
+      },
+      Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
+    );
+  }, [
+    effectiveTargetsForCurrentDate?.prot,
+    effectiveTargetsForCurrentDate?.carb,
+    effectiveTargetsForCurrentDate?.kcal,
+    userTargets?.prot,
+    userTargets?.carb,
+    profileTdeeKcal,
+    homeCalorieSplit?.baseKcal,
+    homeCalorieSplit?.targetKcal,
+    dynamicDailyKcal,
+    userProfile?.bmr,
+    userProfile?.BMR,
+    metabolicTimelineMeals,
+    metabolicSnapshot?.hoursSinceLastMeal,
+    fastingData?.hoursFasted,
+    totali?.prot,
+    totali?.kcal,
+    totali?.carb,
+    hasPlannedBlock,
+    hasRealWorkoutInActiveLog,
+  ]);
+
   const metabolicGradientStops = useMemo(
     () => buildMetabolicTimelineGradientStops({
       ...metabolicTimelineMeals,
@@ -6546,9 +6616,38 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         userProfile,
         userUid,
         userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
+        healthScore,
+        isTrainingDay: Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
+        healthScoreMetrics: {
+          proteinConsumed: Number(totali?.prot) || 0,
+          proteinTarget: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
+          kcalConsumed: Number(totali?.kcal) || 0,
+          tdeeKcal: Number(profileTdeeKcal) || Number(homeCalorieSplit?.baseKcal) || 0,
+          dailyKcalTarget: Number(homeCalorieSplit?.targetKcal) || 0,
+          carbConsumed: Number(totali?.carb) || 0,
+          carbTarget: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+          hoursFasted: Number(metabolicSnapshot?.hoursSinceLastMeal ?? fastingData?.hoursFasted) || null,
+          fastingBrokenPrematurely: Number(healthScore?.breakdown?.fastingMalus) > 0,
+        },
       };
     },
   });
+
+  const handleRequestHealthDiagnosis = useCallback(() => {
+    if (typeof sendMessage !== 'function') return;
+    void sendMessage(
+      'REQUEST_HEALTH_DIAGNOSIS — tocca avatar Health Score',
+      {
+        intent: 'REQUEST_HEALTH_DIAGNOSIS',
+        skipUserBubble: true,
+        isHiddenUserMessage: true,
+        systemInstructionExtra: [
+          'Intent forzato: REQUEST_HEALTH_DIAGNOSIS.',
+          'Rispondi in prima persona come avatar Health Score (2 frasi max).',
+        ].join(' '),
+      },
+    );
+  }, [sendMessage]);
 
   useEffect(() => {
     registerHandlers({
@@ -9194,6 +9293,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             quickStripItems={chatQuickStripItems}
             preferVoiceChat={isDiabetesAppMode}
             userDisplayName={String(userProfile?.displayName || userProfile?.name || '').trim()}
+            healthScore={healthScore}
+            onRequestHealthDiagnosis={handleRequestHealthDiagnosis}
           />
           </Suspense>
         </div>

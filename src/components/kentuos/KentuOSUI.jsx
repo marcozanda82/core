@@ -3,7 +3,6 @@
  */
 import React from 'react';
 import './kentuos.css';
-import KentuAvatar from '../../features/chat/KentuAvatar';
 
 const ICON_STROKE = 1.75;
 
@@ -270,10 +269,9 @@ export function KentuInsightHero({ block }) {
   const showBars = bars.slice(0, 3);
 
   return (
-    <article className="kentu-card kentu-card--hero">
+    <article className="kentu-card kentu-card--hero kentu-card--chat-ai">
       <div className="kentu-insight-hero__head">
         <h3 className="kentu-insight-title">{title}</h3>
-        <KentuAvatar size="xl" alt="Kentu AI" className="shrink-0" />
       </div>
       {showBars.length > 0 && (
         <div className="kentu-insight-bars">
@@ -304,7 +302,7 @@ export function KentuInsightCard({ block }) {
   const showBars = bars.slice(0, 2);
 
   return (
-    <article className="kentu-card kentu-card--insight">
+    <article className="kentu-card kentu-card--insight kentu-card--chat-ai">
       <div
         style={{
           display: 'flex',

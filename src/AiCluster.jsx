@@ -123,12 +123,21 @@ export default function AiCluster({
   preferVoiceChat = false,
   /** Nome utente (placeholder input + strip TTS). */
   userDisplayName = '',
+  /** Snapshot Health Score (avatar dinamico header). */
+  healthScore = null,
+  /** Click sull'avatar → diagnosi in chat (intent REQUEST_HEALTH_DIAGNOSIS). */
+  onRequestHealthDiagnosis = null,
 }) {
   const chatFirstName = useMemo(() => {
     const raw = String(userDisplayName || '').trim();
     if (!raw) return '';
     return raw.split(/\s+/)[0];
   }, [userDisplayName]);
+
+  const healthAvatarSrc = String(healthScore?.avatar?.src || '/avatar.png').trim() || '/avatar.png';
+  const healthScoreLabel = healthScore?.avatar?.label
+    ? `Health Score ${Math.round(Number(healthScore.score) || 0)} · ${healthScore.avatar.label}`
+    : 'Health Score';
 
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -471,7 +480,32 @@ export default function AiCluster({
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
       <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
-        <KentuAvatar size="lg" className="ring-1 ring-cyan-400/20" />
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof onRequestHealthDiagnosis === 'function') {
+              onRequestHealthDiagnosis(healthScore);
+            }
+          }}
+          disabled={typeof onRequestHealthDiagnosis !== 'function' || isProcessing}
+          aria-label={`${healthScoreLabel}. Tocca per la diagnosi.`}
+          title={healthScoreLabel}
+          className={[
+            'shrink-0 rounded-full border border-cyan-500/35 p-0.5 transition',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+            typeof onRequestHealthDiagnosis === 'function' && !isProcessing
+              ? 'cursor-pointer hover:border-cyan-400/60 active:scale-95'
+              : 'cursor-default opacity-80',
+          ].join(' ')}
+        >
+          <img
+            src={healthAvatarSrc}
+            alt=""
+            decoding="async"
+            draggable={false}
+            className="h-10 w-10 rounded-full object-cover shadow-[0_0_12px_rgba(34,211,238,0.28)]"
+          />
+        </button>
         <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
             Kentu AI Workspace
@@ -479,6 +513,10 @@ export default function AiCluster({
           {introPhrase ? (
             <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
               {introPhrase}
+            </span>
+          ) : healthScore != null ? (
+            <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
+              Score {Math.round(Number(healthScore.score) || 0)} · {healthScore?.avatar?.label || '—'}
             </span>
           ) : null}
         </div>
@@ -556,7 +594,12 @@ export default function AiCluster({
         />
         <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
           {chatHistory.map((msg, idx) => (
-            <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.sender === 'ai' ? 'flex-start' : 'flex-end', width: '100%' }}>
+            <div
+              key={idx}
+              className={`flex w-full flex-col gap-1.5 ${
+                msg.sender === 'ai' ? 'items-start' : 'items-end'
+              }`}
+            >
               {msg.sender === 'ai' && msg.mealProposal && !msg.isTyping ? (
                 <div style={{ width: '100%' }}>
                   <MenuProposalCard
@@ -632,19 +675,15 @@ export default function AiCluster({
                 </div>
               ) : msg.sender === 'ai' ? (
                 msg.isTyping ? (
-                  <div className="kentu-card kentu-card--typing">
-                    <div className="typing-indicator">
-                      <div className="dot" />
-                      <div className="dot" />
-                      <div className="dot" />
-                    </div>
-                  </div>
+                  <TypingIndicator avatarSrc={healthAvatarSrc} />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
-                  <div style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                  <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
                 ) : (
-                  <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div className="kentu-ai-row flex w-full max-w-[min(92%,28rem)] items-end gap-2.5">
+                    <KentuAvatar size="sm" src={healthAvatarSrc} className="mb-1 shrink-0 self-end" alt="Kentu AI" />
+                    <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
                     {msg.local === true || msg.sourceTag === 'local_receptionist' ? (
                       <div
                         className="kentu-local-receptionist-badge"
@@ -744,6 +783,7 @@ export default function AiCluster({
                         </KentuButton>
                       </div>
                     ) : null}
+                    </div>
                   </div>
                 )
               ) : (
@@ -880,7 +920,7 @@ export default function AiCluster({
               )}
             </div>
           ))}
-          {showTypingIndicator ? <TypingIndicator /> : null}
+          {showTypingIndicator ? <TypingIndicator avatarSrc={healthAvatarSrc} /> : null}
           <div ref={chatEndRef} />
         </div>
         <div className="flex shrink-0 flex-col">
@@ -1089,108 +1129,103 @@ export default function AiCluster({
               }
             }}
           />
-          <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
-            <KentuIcon name="camera" size={22} />
-          </KentuButton>
-          {voiceNoteSupported ? (
-            <button
-              type="button"
-              className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
-              aria-label="Registra nota vocale"
+          <div className="kentu-input-strip__composer">
+            <textarea
+              ref={chatTextareaRef}
+              rows={1}
+              className="chat-input resize-none overflow-hidden min-h-[44px] max-h-[150px] w-full"
+              placeholder={
+                isNotesMode
+                  ? 'Nota di sviluppo…'
+                  : chatImages.length > 0
+                    ? 'Commento immagini…'
+                    : chatFirstName
+                      ? `Cosa hai mangiato, ${chatFirstName}?`
+                      : 'Scrivi a Kentu…'
+              }
+              value={chatInput}
               disabled={isProcessing && !isNotesMode}
-              onClick={() => {
-                clearVoiceError();
-                startRecording();
+              onChange={(e) => {
+                setChatInput(e.target.value);
+                handleInputResize(e);
               }}
-              title="Registra una nota vocale"
-            >
-              🎤
-            </button>
-          ) : null}
-          <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
-            <button
-              type="button"
-              className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
-              aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
-              aria-expanded={showToolsMenu}
-              onClick={handleToolsButtonClick}
-            >
-              {isNotesMode ? '📝' : '🛠️'}
-            </button>
-            {showToolsMenu ? (
-              <div className="kentu-devtools-menu" role="menu">
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
-                  🧠 Analisi Oggi
-                </button>
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
-                  📷 Scanner Barcode
-                </button>
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
-                  📝 Modalità Note
-                </button>
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
-                  💬 Salva Chat
-                </button>
-                <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
-                  ⚠️ Segnala Anomalia
-                </button>
-              </div>
-            ) : null}
+              onKeyDown={handleChatKeyDown}
+            />
           </div>
-          <textarea
-            ref={chatTextareaRef}
-            rows={1}
-            className="chat-input resize-none overflow-hidden min-h-[44px] max-h-[150px]"
-            placeholder={
-              isNotesMode
-                ? 'Nota di sviluppo…'
-                : chatImages.length > 0
-                  ? 'Commento immagini…'
-                  : chatFirstName
-                    ? `Cosa hai mangiato, ${chatFirstName}?`
-                    : 'Scrivi a Kentu…'
-            }
-            value={chatInput}
-            disabled={isProcessing && !isNotesMode}
-            onChange={(e) => {
-              setChatInput(e.target.value);
-              handleInputResize(e);
-            }}
-            onKeyDown={handleChatKeyDown}
-            style={{
-              flex: 1,
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              outline: 'none',
-              minWidth: 0,
-              lineHeight: 1.4,
-              paddingTop: 10,
-              paddingBottom: 10,
-            }}
-          />
-          {isProcessing && !isNotesMode ? (
-            <KentuButton
-              variant="secondary"
-              className="kentu-send-btn"
-              aria-label="Interrompi generazione"
-              onClick={() => {
-                if (typeof onCancelGeneration === 'function') onCancelGeneration();
-              }}
-            >
-              <KentuIcon name="stop" size={16} />
-            </KentuButton>
-          ) : (
-            <KentuButton
-              variant="primary"
-              className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
-              aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
-              disabled={isProcessing && !isNotesMode}
-              onClick={handleSendFromInput}
-            >
-              <KentuIcon name="send" size={18} />
-            </KentuButton>
-          )}
+          <div className="kentu-input-strip__actions">
+            <div className="kentu-input-strip__tools">
+              <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
+                <KentuIcon name="camera" size={22} />
+              </KentuButton>
+              {voiceNoteSupported ? (
+                <button
+                  type="button"
+                  className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+                  aria-label="Registra nota vocale"
+                  disabled={isProcessing && !isNotesMode}
+                  onClick={() => {
+                    clearVoiceError();
+                    startRecording();
+                  }}
+                  title="Registra una nota vocale"
+                >
+                  🎤
+                </button>
+              ) : null}
+              <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
+                <button
+                  type="button"
+                  className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
+                  aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
+                  aria-expanded={showToolsMenu}
+                  onClick={handleToolsButtonClick}
+                >
+                  {isNotesMode ? '📝' : '🛠️'}
+                </button>
+                {showToolsMenu ? (
+                  <div className="kentu-devtools-menu" role="menu">
+                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
+                      🧠 Analisi Oggi
+                    </button>
+                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
+                      📷 Scanner Barcode
+                    </button>
+                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
+                      📝 Modalità Note
+                    </button>
+                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
+                      💬 Salva Chat
+                    </button>
+                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
+                      ⚠️ Segnala Anomalia
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {isProcessing && !isNotesMode ? (
+              <KentuButton
+                variant="secondary"
+                className="kentu-send-btn"
+                aria-label="Interrompi generazione"
+                onClick={() => {
+                  if (typeof onCancelGeneration === 'function') onCancelGeneration();
+                }}
+              >
+                <KentuIcon name="stop" size={16} />
+              </KentuButton>
+            ) : (
+              <KentuButton
+                variant="primary"
+                className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
+                aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
+                disabled={isProcessing && !isNotesMode}
+                onClick={handleSendFromInput}
+              >
+                <KentuIcon name="send" size={18} />
+              </KentuButton>
+            )}
+          </div>
           {devToolsToast ? (
             <div className="kentu-devtools-toast" role="status" aria-live="polite">
               {devToolsToast}
