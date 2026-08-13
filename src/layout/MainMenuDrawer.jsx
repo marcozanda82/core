@@ -23,6 +23,7 @@ export default function MainMenuDrawer({
   onOpenStrategicPlanner,
   onOpenProgressi,
   onOpenTacticalCoach,
+  onSanitizeFoodDb = null,
 }) {
   // Non montare un flex-1 vuoto quando è aperta un'altra vista: altrimenti ruba
   // altezza al form (es. PESI) e il body overflow-y-auto collassa a 0px.
@@ -100,6 +101,30 @@ export default function MainMenuDrawer({
               <button type="button" className="action-btn" onClick={() => setActiveAction('api_diary')}>
                 <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(251, 191, 36, 0.45))' }}>📟</span>
                 <span className="action-label" style={{ color: '#fbbf24' }}>Diario API</span>
+              </button>
+            ) : null}
+            {import.meta.env.DEV && typeof onSanitizeFoodDb === 'function' ? (
+              <button
+                type="button"
+                className="action-btn"
+                onClick={async (e) => {
+                  const dryRun = !e.shiftKey;
+                  if (!dryRun) {
+                    const ok = window.confirm(
+                      'SCRITTURA Firebase: re-sync master + sterilizza micro inventati.\n\nContinuare?',
+                    );
+                    if (!ok) return;
+                  } else {
+                    window.alert(
+                      'Dry-run avviato: controlla la console DevTools.\n\nShift+click per scrivere su Firebase.',
+                    );
+                  }
+                  await onSanitizeFoodDb({ dryRun });
+                  if (!dryRun) closeDrawer();
+                }}
+              >
+                <span className="action-icon" style={{ filter: 'drop-shadow(0 0 8px rgba(248, 113, 113, 0.45))' }}>🧹</span>
+                <span className="action-label" style={{ color: '#fca5a5' }}>Bonifica Food DB</span>
               </button>
             ) : null}
             <button type="button" className="action-btn" onClick={() => { setActiveAction('ai_chat'); closeDrawer(); }} style={{ position: 'relative', background: 'linear-gradient(145deg, rgba(26, 26, 36, 0.9), rgba(18, 16, 28, 0.9))', borderColor: '#3a2a4a' }}>

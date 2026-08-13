@@ -126,6 +126,10 @@ function normalizeFoodItem(item) {
     ...(item?.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
     ...(item?.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
     ...(searchKeywords && searchKeywords.length > 0 ? { searchKeywords } : {}),
+    ...(item?.isNewFood === true ? { isNewFood: true } : {}),
+    ...(item?.userProvidedMacros && typeof item.userProvidedMacros === 'object'
+      ? { userProvidedMacros: item.userProvidedMacros }
+      : {}),
   };
 }
 
@@ -253,6 +257,10 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
       ...(item.foodDbKey != null ? { foodDbKey: item.foodDbKey } : {}),
       ...(item.proposedFromHabit === true ? { proposedFromHabit: true } : {}),
       ...(item.spokenFoodName ? { spokenFoodName: String(item.spokenFoodName).trim() } : {}),
+      ...(item.isNewFood === true ? { isNewFood: true } : {}),
+      ...(item.userProvidedMacros && typeof item.userProvidedMacros === 'object'
+        ? { userProvidedMacros: item.userProvidedMacros }
+        : {}),
     }))
     .filter((item) => item.foodName);
   const explicitMeal =

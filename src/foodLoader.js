@@ -16,6 +16,18 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** Come toNumber ma restituisce null se assente/non numerico (no inventare 0). */
+function pickFiniteOrNull(value) {
+  if (value == null || value === '') return null;
+  const normalized = String(value).trim().replace(',', '.');
+  if (!normalized || normalized.toLowerCase() === 'tr') return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** g sale / 100g → mg sodio (Na in NaCl). */
+const SALT_G_TO_SODIUM_MG = 393.4;
+
 function pickFirst(row, keys, fallback = '') {
   for (const key of keys) {
     const value = row?.[key];
@@ -114,16 +126,12 @@ function normalizeRecordForDb(record, source) {
     normalized.fatTot = normalized.fatTotal;
   }
 
-  if (normalized.fibre == null && normalized.fibreTotali != null) {
-    normalized.fibre = toNumber(normalized.fibreTotali);
-  }
+  applyCanonicalNutrientKeys(normalized, record);
+
   if (normalized.zuccheri == null) {
     normalized.zuccheri = toNumber(
       pickFirst(record, ['zuccheri', 'sugars', 'soluble_sugars', 'sugar']),
     );
-  }
-  if (normalized.na == null) {
-    normalized.na = toNumber(pickFirst(record, ['na', 'sodium', 'sale']));
   }
   if (normalized.k == null) {
     normalized.k = toNumber(pickFirst(record, ['k', 'potassium']));
@@ -133,6 +141,32 @@ function normalizeRecordForDb(record, source) {
   }
 
   return normalized;
+}
+
+/**
+ * Allinea chiavi legacy USDA/CREA → canonico TARGETS (in memoria).
+ */
+function applyCanonicalNutrientKeys(normalized, record) {
+  const vitB2 = pickFiniteOrNull(record.b2) ?? pickFiniteOrNull(record.vitB2);
+  if (vitB2 != null) normalized.vitB2 = vitB2;
+
+  const vitB6 = pickFiniteOrNull(record.b6) ?? pickFiniteOrNull(record.vitB6);
+  if (vitB6 != null) normalized.vitB6 = vitB6;
+
+  const fibre =
+    pickFiniteOrNull(record.fibreTotali)
+    ?? pickFiniteOrNull(record.fibre)
+    ?? pickFiniteOrNull(record.fiber);
+  if (fibre != null) normalized.fibre = fibre;
+
+  let na = pickFiniteOrNull(record.na) ?? pickFiniteOrNull(record.sodium);
+  if (na == null) {
+    const saleG = pickFiniteOrNull(record.sale);
+    if (saleG != null) {
+      na = Math.round(saleG * SALT_G_TO_SODIUM_MG * 100) / 100;
+    }
+  }
+  if (na != null) normalized.na = na;
 }
 
 function indexRecords(records, source) {

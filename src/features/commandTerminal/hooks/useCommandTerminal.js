@@ -58,6 +58,7 @@ export function useCommandTerminal({
   onLogSleepCommand = null,
   onSaveFoodDbEntry = null,
   onPopulateMealLavagna = null,
+  onSaveFoodEntryPer100ToFoodDb = null,
   onChatClose = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
@@ -148,6 +149,9 @@ export function useCommandTerminal({
   const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const onWipMealSeedRef = useRef(onWipMealSeed);
   const onPopulateMealLavagnaRef = useRef(onPopulateMealLavagna);
+  const onSaveFoodEntryPer100Ref = useRef(onSaveFoodEntryPer100ToFoodDb);
+  const chatUsdaResumeRef = useRef(null);
+  const [chatUsdaEnrichmentSession, setChatUsdaEnrichmentSession] = useState(null);
   useEffect(() => {
     getCurrentStateRef.current = getCurrentState;
     getWipMealSnapshotRef.current = getWipMealSnapshot;
@@ -156,6 +160,9 @@ export function useCommandTerminal({
   useEffect(() => {
     onPopulateMealLavagnaRef.current = onPopulateMealLavagna;
   }, [onPopulateMealLavagna]);
+  useEffect(() => {
+    onSaveFoodEntryPer100Ref.current = onSaveFoodEntryPer100ToFoodDb;
+  }, [onSaveFoodEntryPer100ToFoodDb]);
 
   const controller = useMemo(() => {
     const llmClient = new GeminiStructuredClient();
@@ -166,6 +173,17 @@ export function useCommandTerminal({
       onPopulateMealLavagna: (payload) => {
         const fn = onPopulateMealLavagnaRef.current;
         return typeof fn === 'function' ? fn(payload) : false;
+      },
+      onSaveFoodEntryPer100ToFoodDb: (entry, options) => {
+        const fn = onSaveFoodEntryPer100Ref.current;
+        return typeof fn === 'function' ? fn(entry, options) : Promise.resolve(null);
+      },
+      onRequestUsdaEnrichment: (payload) => {
+        chatUsdaResumeRef.current = typeof payload?.resume === 'function' ? payload.resume : null;
+        setChatUsdaEnrichmentSession({
+          foodName: String(payload?.foodName || '').trim(),
+          masterDb: payload?.masterDb && typeof payload.masterDb === 'object' ? payload.masterDb : null,
+        });
       },
     });
   }, []);
@@ -1280,6 +1298,30 @@ export function useCommandTerminal({
     return { ok: true, cancelled: true };
   }, [appendAiMessage, controller]);
 
+  const handleChatUsdaEnrichmentSelect = useCallback(async (match) => {
+    const resume = chatUsdaResumeRef.current;
+    chatUsdaResumeRef.current = null;
+    setChatUsdaEnrichmentSession(null);
+    if (typeof resume !== 'function') return;
+    try {
+      await resume(match);
+    } catch (error) {
+      console.warn('[useCommandTerminal] chat USDA resume (select) failed', error);
+    }
+  }, []);
+
+  const handleChatUsdaEnrichmentSkip = useCallback(async () => {
+    const resume = chatUsdaResumeRef.current;
+    chatUsdaResumeRef.current = null;
+    setChatUsdaEnrichmentSession(null);
+    if (typeof resume !== 'function') return;
+    try {
+      await resume(null);
+    } catch (error) {
+      console.warn('[useCommandTerminal] chat USDA resume (skip) failed', error);
+    }
+  }, []);
+
   return {
     chatHistory,
     setChatHistory,
@@ -1308,6 +1350,9 @@ export function useCommandTerminal({
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
     handleSaveNewFoodEntry,
+    chatUsdaEnrichmentSession,
+    handleChatUsdaEnrichmentSelect,
+    handleChatUsdaEnrichmentSkip,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

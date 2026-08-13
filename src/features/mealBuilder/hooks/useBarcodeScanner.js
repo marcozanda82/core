@@ -11,8 +11,20 @@ import {
 
 /**
  * Fotocamera + risoluzione barcode → oggetto alimento compatibile con UniversalSearch / draft cart.
+ *
+ * @param {{
+ *   personalDb?: object,
+ *   onAcquireExternalFood?: (entry: object) => Promise<{ key?: string, row?: object } | void>,
+ *   onFoodResolved?: (food: object) => void,
+ *   enrichOffProduct?: (offEntry: object) => Promise<object | null | undefined>,
+ * }} params
  */
-export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, onFoodResolved }) {
+export default function useBarcodeScanner({
+  personalDb,
+  onAcquireExternalFood,
+  onFoodResolved,
+  enrichOffProduct,
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState('');
   const [isResolving, setIsResolving] = useState(false);
@@ -69,6 +81,7 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
 
       let entryPer100 = existingDbKey ? { ...(personalDb[existingDbKey] || {}) } : null;
       let generatedIconTag = null;
+      let fromOpenFoodFacts = false;
 
       if (!entryPer100) {
         const localOv = getBarcodeNutritionOverride(code);
@@ -86,6 +99,7 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
           if (entryPer100) {
             entryPer100 = applyLocalOverride({ ...entryPer100, barcode: code });
             generatedIconTag = calculateAutoIconTag(entryPer100.desc, '');
+            fromOpenFoodFacts = true;
           }
         }
       }
@@ -112,13 +126,25 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
         };
       }
 
+      // OFF → arricchimento USDA (opzionale) prima del salvataggio personale
+      if (fromOpenFoodFacts && typeof enrichOffProduct === 'function') {
+        try {
+          const enriched = await enrichOffProduct({ ...entryPer100, desc: name, barcode: code });
+          if (enriched && typeof enriched === 'object') {
+            entryPer100 = { ...enriched, desc: enriched.desc || name, barcode: code };
+          }
+        } catch (enrichErr) {
+          console.warn('[useBarcodeScanner] enrichOffProduct failed — uso solo OFF', enrichErr);
+        }
+      }
+
       let dbKey = `food_${Date.now()}_${code}`;
       let row = { ...entryPer100, desc: name, barcode: code };
 
       if (typeof onAcquireExternalFood === 'function') {
         const saved = await onAcquireExternalFood({
           ...row,
-          desc: name,
+          desc: String(row.desc || name).trim() || name,
           barcode: code,
           ...(generatedIconTag ? { iconTag: generatedIconTag } : {}),
         });
@@ -139,13 +165,13 @@ export default function useBarcodeScanner({ personalDb, onAcquireExternalFood, o
         _source: 'personal',
         id: dbKey,
         key: dbKey,
-        desc: name,
-        name,
+        desc: String(row.desc || name).trim() || name,
+        name: String(row.desc || name).trim() || name,
         row,
         barcode: code,
       };
     },
-    [personalDb, onAcquireExternalFood],
+    [personalDb, onAcquireExternalFood, enrichOffProduct],
   );
 
   const handleBarcodeDetected = useCallback(

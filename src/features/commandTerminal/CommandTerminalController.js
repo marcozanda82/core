@@ -155,6 +155,11 @@ import {
   fastPathResolveMealPayload,
 } from './conversation/fastPathMealResolve.js';
 import {
+  processUnresolvedChatFoods,
+  applyChatUsdaEnrichmentResult,
+  collectPendingUsdaEnrichmentIndices,
+} from './conversation/chatNewFoodPipeline.js';
+import {
   applyHistoricalWorkoutKcalDefault,
   applyWorkoutTimeSlotResponse,
   buildLocalWorkoutPayloadFromText,
@@ -314,12 +319,24 @@ export class CommandTerminalController {
     llmClient = geminiStructuredClient,
     composer = contextComposer,
     onPopulateMealLavagna = null,
+    onSaveFoodEntryPer100ToFoodDb = null,
+    onRequestUsdaEnrichment = null,
   } = {}) {
     this.bus = bus;
     this.llmClient = llmClient;
     this.composer = composer;
     /** @type {((payload: object) => boolean|void)|null} Voice → FastMealLogger draft (no diary save). */
     this.onPopulateMealLavagna = typeof onPopulateMealLavagna === 'function' ? onPopulateMealLavagna : null;
+    /** @type {((entry: object, options?: object) => Promise<{ key?: string, row?: object }|void>)|null} Chat new food → DB personale. */
+    this.onSaveFoodEntryPer100ToFoodDb = typeof onSaveFoodEntryPer100ToFoodDb === 'function'
+      ? onSaveFoodEntryPer100ToFoodDb
+      : null;
+    /** @type {((payload: object) => void)|null} Chat USDA enrichment UI hook. */
+    this.onRequestUsdaEnrichment = typeof onRequestUsdaEnrichment === 'function'
+      ? onRequestUsdaEnrichment
+      : null;
+    /** @type {object|null} Proposal ADD_FOOD in sospeso (Fase 3 USDA). */
+    this.suspendedMealPublication = null;
     this.conversationState = CONVERSATION_STATE.IDLE;
     this.pendingCommandPayload = null;
     this.pendingCommandType = null;
@@ -1223,6 +1240,195 @@ export class CommandTerminalController {
     return mealReceipt;
   }
 
+  buildChatFoodPipelineContext(currentState = {}, mealType = null) {
+    return {
+      saveFoodEntryPer100ToFoodDb: this.onSaveFoodEntryPer100ToFoodDb,
+      foodDb: currentState?.foodDatabase
+        || currentState?.trackerFoodDatabase
+        || currentState?.personalFoodDb
+        || {},
+      fullHistory: currentState?.fullHistory || {},
+      mealType: mealType || null,
+      kentuItDb: currentState?.kentuItDatabase || currentState?.kentuFoodDb || null,
+      globalDb: currentState?.globalFoodDatabase || currentState?.globalFoodDb || null,
+    };
+  }
+
+  syncEnrichedPayloadItem(enrichedPayload, proposalItemIndex, updatedItem) {
+    if (!enrichedPayload || proposalItemIndex == null || !updatedItem) return enrichedPayload;
+    const rawItems = expandFoodPayloadItems(enrichedPayload);
+    if (proposalItemIndex < 0 || proposalItemIndex >= rawItems.length) return enrichedPayload;
+    rawItems[proposalItemIndex] = {
+      ...rawItems[proposalItemIndex],
+      foodName: updatedItem.foodName,
+      grams: updatedItem.grams,
+      ...(updatedItem.foodDbKey != null ? { foodDbKey: updatedItem.foodDbKey } : {}),
+      ...(updatedItem.icon ? { icon: updatedItem.icon } : {}),
+      ...(updatedItem.isNewFood === true ? { isNewFood: true } : {}),
+      pendingUsdaEnrichment: false,
+    };
+    return { ...enrichedPayload, items: rawItems };
+  }
+
+  processNextUsdaEnrichment() {
+    const state = this.suspendedMealPublication;
+    if (!state) return;
+
+    while (state.currentIndex < state.pendingIndices.length) {
+      const proposalItemIndex = state.pendingIndices[state.currentIndex];
+      const item = state.proposal?.items?.[proposalItemIndex];
+      if (!item?.pendingUsdaEnrichment) {
+        state.currentIndex += 1;
+        continue;
+      }
+
+      if (typeof this.onRequestUsdaEnrichment !== 'function') {
+        state.currentIndex += 1;
+        continue;
+      }
+
+      this.onRequestUsdaEnrichment({
+        foodName: String(item.foodName || item.name || '').trim(),
+        item,
+        proposalItemIndex,
+        masterDb: state.currentState?.globalFoodDatabase
+          || state.currentState?.globalFoodDb
+          || state.currentState?.masterDb
+          || null,
+        resume: (usdaMatch) => this.resumeChatUsdaEnrichment(usdaMatch),
+      });
+      return;
+    }
+
+    void this.finishSuspendedMealPublication();
+  }
+
+  async resumeChatUsdaEnrichment(usdaMatch) {
+    const state = this.suspendedMealPublication;
+    if (!state) {
+      return { ok: false, reason: 'no_suspended_publication' };
+    }
+
+    const proposalItemIndex = state.pendingIndices[state.currentIndex];
+    const item = state.proposal?.items?.[proposalItemIndex];
+    if (!item) {
+      return { ok: false, reason: 'missing_suspended_item' };
+    }
+
+    try {
+      const updated = await applyChatUsdaEnrichmentResult(
+        item,
+        usdaMatch,
+        this.buildChatFoodPipelineContext(state.currentState, state.proposal?.mealType),
+      );
+      state.proposal.items[proposalItemIndex] = updated;
+      state.proposal.totals = sumMealItemsMacros(state.proposal.items);
+      state.enrichedPayload = this.syncEnrichedPayloadItem(
+        state.enrichedPayload,
+        proposalItemIndex,
+        updated,
+      );
+    } catch (error) {
+      console.warn('[CommandTerminalController] resumeChatUsdaEnrichment failed', error);
+    }
+
+    state.currentIndex += 1;
+    if (state.currentIndex < state.pendingIndices.length) {
+      this.processNextUsdaEnrichment();
+      return { ok: true, continued: true };
+    }
+
+    return this.finishSuspendedMealPublication();
+  }
+
+  async finishSuspendedMealPublication() {
+    const state = this.suspendedMealPublication;
+    if (!state) {
+      return { ok: false, reason: 'no_suspended_publication' };
+    }
+
+    this.suspendedMealPublication = null;
+
+    const {
+      proposal,
+      enrichedPayload,
+      userText,
+      options = {},
+      butler = {},
+      summaryText,
+      spokenText,
+      fromVoice,
+    } = state;
+
+    this.mealDraftInteractiveEdit = false;
+    const items = expandFoodPayloadItems(enrichedPayload);
+
+    if (fromVoice && typeof this.onPopulateMealLavagna === 'function') {
+      const lavagnaItems = (proposal?.items || items).map((item, idx) => ({
+        foodName: item.foodName,
+        name: item.foodName,
+        grams: item.grams,
+        qty: item.grams,
+        foodDbKey: item.foodDbKey ?? null,
+        matchedKey: item.foodDbKey ?? null,
+        icon: item.icon,
+        spokenFoodName: item.spokenFoodName,
+      }));
+      const lavagnaOk = this.onPopulateMealLavagna({
+        items: lavagnaItems,
+        mealType: enrichedPayload?.mealType || null,
+        exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || null,
+        message: summaryText,
+      });
+      if (lavagnaOk !== false) {
+        if (typeof this.clearPendingMealDraft === 'function') {
+          this.clearPendingMealDraft();
+        }
+        this.conversationState = CONVERSATION_STATE.IDLE;
+        this.publishAdviceMessage({
+          text: summaryText,
+          spokenText,
+          mealProposals: null,
+          quickReplies: [],
+        });
+        return {
+          ok: true,
+          intent: 'ADD_FOOD',
+          mealLavagna: true,
+          userNotified: true,
+          sourceText: String(userText || '').trim() || null,
+          fastPath: true,
+          awaitingConfirmation: false,
+          fromVoice: true,
+        };
+      }
+    }
+
+    this.stagePendingMealDraft(enrichedPayload, {
+      uiMessage: summaryText,
+      sourceText: String(userText || '').trim() || null,
+    });
+
+    this.publishAdviceMessage({
+      text: summaryText,
+      spokenText,
+      mealProposals: [proposal],
+      quickReplies: [...MEAL_DRAFT_CONFIRMATION_QUICK_REPLIES],
+      mealDraftInteractiveEdit: false,
+    });
+
+    return {
+      ok: true,
+      intent: 'ADD_FOOD',
+      mealProposals: [proposal],
+      userNotified: true,
+      sourceText: String(userText || '').trim() || null,
+      fastPath: true,
+      awaitingConfirmation: true,
+      pendingMealDraft: this.getPendingMealDraft(),
+    };
+  }
+
   async publishMealLogProposalCardDirect(payload, currentState = {}, userText = '', chatHistory = [], options = {}) {
     // Fast-Path: mai più wizard batch — solo card riepilogo (wizard solo su edit isolato).
     void options?.skipWizard;
@@ -1277,18 +1483,69 @@ export class CommandTerminalController {
       return { ok: false, reason: 'meal_log_proposal_build_failed', userNotified: true };
     }
 
+    if (this.onSaveFoodEntryPer100ToFoodDb && Array.isArray(proposal.items) && proposal.items.length > 0) {
+      try {
+        const pipelineResult = await processUnresolvedChatFoods(proposal.items, {
+          ...this.buildChatFoodPipelineContext(currentState, proposal.mealType || enrichedPayload?.mealType),
+        });
+        proposal.items = pipelineResult.items;
+        proposal.totals = sumMealItemsMacros(pipelineResult.items);
+        if (pipelineResult.savedCount > 0 || pipelineResult.pendingUsdaCount > 0) {
+          console.log('🍽️ DEBUG - chatNewFoodPipeline:', {
+            savedCount: pipelineResult.savedCount,
+            pendingUsdaCount: pipelineResult.pendingUsdaCount,
+          });
+        }
+      } catch (error) {
+        console.warn('[CommandTerminalController] chatNewFoodPipeline failed', error);
+      }
+    }
+
+    const pendingUsdaIndices = collectPendingUsdaEnrichmentIndices(proposal.items);
     const items = expandFoodPayloadItems(enrichedPayload);
     const fromVoice = options?.fromVoice === true;
     const adaptiveFallback = buildAdaptiveLavagnaSpokenText(items);
     const fromPayload = String(options.uiMessage || enrichedPayload?.message || '').trim();
-    // Voce / Adaptive: preferisci copy LLM Adaptive o fallback Speed/Step-by-Step.
-    // Chat testuale: resta il riepilogo McDrive se manca il messaggio Adaptive.
     const summaryText = fromVoice
       ? (fromPayload || butler.butlerMessage || adaptiveFallback)
       : (fromPayload
         || butler.butlerMessage
         || buildFastPathSummarySpokenText(items));
     const spokenText = String(options.spokenText || summaryText).trim();
+
+    if (pendingUsdaIndices.length > 0 && typeof this.onRequestUsdaEnrichment === 'function') {
+      this.suspendedMealPublication = {
+        proposal: {
+          ...proposal,
+          items: Array.isArray(proposal.items) ? proposal.items.map((item) => ({ ...item })) : [],
+        },
+        enrichedPayload: {
+          ...enrichedPayload,
+          items: Array.isArray(enrichedPayload?.items)
+            ? enrichedPayload.items.map((item) => ({ ...item }))
+            : items.map((item) => ({ ...item })),
+        },
+        userText,
+        chatHistory,
+        options,
+        butler,
+        summaryText,
+        spokenText,
+        fromVoice,
+        currentState,
+        pendingIndices: pendingUsdaIndices,
+        currentIndex: 0,
+      };
+      this.processNextUsdaEnrichment();
+      return {
+        ok: true,
+        intent: 'ADD_FOOD',
+        awaitingUsdaEnrichment: true,
+        userNotified: false,
+        sourceText: String(userText || '').trim() || null,
+        fastPath: true,
+      };
+    }
 
     this.mealDraftInteractiveEdit = false;
 
@@ -1618,6 +1875,8 @@ export class CommandTerminalController {
       const item = butlerMeta.items[i];
       const name = String(item.foodName || '').trim();
       if (!name || item.proposedFromHabit) continue;
+      // Nuovo alimento da chat: bypass foto etichetta — pipeline USDA/macro intercetta dopo.
+      if (item.isNewFood === true) continue;
       const match = findFoodDbMatchCascading({
         personalDb,
         kentuItDb: currentState?.kentuFoodDb || currentState?.kentuItDb || null,

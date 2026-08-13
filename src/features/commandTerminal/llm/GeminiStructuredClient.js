@@ -104,6 +104,43 @@ function userTextMentionsExplicitTime(userText) {
   return Boolean(parseExactTimeFromUserText(userText));
 }
 
+/** True se il testo utente menziona macro espliciti (kcal o P/C/G). */
+function userTextMentionsExplicitMacros(userText) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t) return false;
+  return (
+    /\d+\s*(?:kcal|calor(?:ie|ia)?)\b/.test(t)
+    || /\b(?:kcal|calor(?:ie|ia)?)\s*[:\s]?\s*\d+/.test(t)
+    || /\b(?:prot(?:eine|ein)?|carb(?:oidrat)?|grassi?|fat)\b[^.]{0,24}\d+(?:[.,]\d+)?/.test(t)
+    || /\d+(?:[.,]\d+)?\s*(?:g|gr)\s*(?:di\s+)?(?:prot|carb|grass)/.test(t)
+    || /\b(?:ha|con|sono|totale)\s+\d+\s*(?:kcal|calor)/.test(t)
+  );
+}
+
+function roundMacroValue(value, decimals = 1) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(n * factor) / factor;
+}
+
+/** Normalizza userProvidedMacros dal modello; null se non citati nel testo utente. */
+function sanitizeUserProvidedMacros(rawMacros, combinedText) {
+  if (!rawMacros || typeof rawMacros !== 'object') return null;
+  if (!userTextMentionsExplicitMacros(combinedText)) return null;
+
+  const cleaned = {};
+  const kcal = Number(rawMacros.kcal);
+  if (Number.isFinite(kcal) && kcal > 0) cleaned.kcal = Math.round(kcal);
+
+  ['prot', 'carb', 'fat'].forEach((key) => {
+    const n = roundMacroValue(rawMacros[key]);
+    if (n != null && n >= 0) cleaned[key] = n;
+  });
+
+  return Object.keys(cleaned).length > 0 ? cleaned : null;
+}
+
 function normalizeFoodToken(value) {
   return String(value || '')
     .toLowerCase()
@@ -919,6 +956,19 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
       delete next.searchKeywords;
     }
 
+    if (next.isNewFood === true) {
+      next.isNewFood = true;
+    } else {
+      delete next.isNewFood;
+    }
+
+    const sanitizedMacros = sanitizeUserProvidedMacros(next.userProvidedMacros, combinedText);
+    if (sanitizedMacros) {
+      next.userProvidedMacros = sanitizedMacros;
+    } else {
+      delete next.userProvidedMacros;
+    }
+
     return next;
   };
 
@@ -1309,15 +1359,17 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         "MAGGIORDOMO — PROPOSTA DEL SOLITO (SOLO mono-alimento): se l'utente cita UN solo termine (es. «pane», «cotoletta») e in [USER_HABITS] / DB personale c'è una variante frequente, usa quella in foodName. Preferisci il match DB integro alla scomposizione. VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico. VIETATO scomporre se esiste match DB.",
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti O hai applicato il fallback scomposizione (nessun match DB), estrai TUTTI in payload.items[] (uno per alimento). VIETATO menzionare grammi/varianti di piu alimenti in un unico messaggio di chat.",
         "REGOLA ADD_FOOD (orario): Se l'utente indica un orario esplicito (es. 'ore 14.45', 'alle 20:30'), estrailo in HH:mm in payload.timeString ed exactTime. Se NON indica orario, ometti exactTime — il sistema usera l'ora corrente.",
-        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento, compila foodName, searchKeywords e grams. NON inventare foodDbKey ne macronutrienti. Preferisci sempre il nome presente nel DB contesto.",
-        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, risolvi OGNI alimento/piatto citato con la gerarchia DB-first (poi fallback scomposizione solo se necessario).",
+        "REGOLA ADD_FOOD (entity resolution): Per ogni alimento, compila foodName, searchKeywords e grams. NON inventare foodDbKey ne macronutrienti generici. Preferisci sempre il nome presente nel DB contesto.",
+        "REGOLA ADD_FOOD (isNewFood): Imposta isNewFood:true se l utente nomina un piatto specifico, ricetta casalinga o prodotto commerciale che NON e un cibo base/generico e non compare in [userRecentFoods] / DB Kentu (es. «Torta della Nonna», «Barretta X2000»). isNewFood:false o ometti per pane, pasta, yogurt, pollo, ecc. Con isNewFood:true NON scomporre in ingredienti (Priorità 2 VIETATA) — una sola voce col nome detto dall utente.",
+        "REGOLA ADD_FOOD (userProvidedMacros — SOLO SE SCRITTI): Se l utente cita macro espliciti nel messaggio (es. «ha 300 calorie», «120 kcal», «20g proteine»), estraili in userProvidedMacros { kcal, prot, carb, fat } riferiti alla PORZIONE indicata. DIVIETO ASSOLUTO di inventare macro non citati — ometti userProvidedMacros se assenti nel testo.",
+        "REGOLA ADD_FOOD (pasto gia consumato): Se l'utente descrive un pasto gia mangiato, risolvi OGNI alimento/piatto citato con la gerarchia DB-first (poi fallback scomposizione solo se necessario e isNewFood:false).",
         "REGOLA ADD_FOOD (isEstimated — STIMA UNITA/PEZZI/GRAMMI MANCANTI): PRIMA [userRecentFoods].typicalGrams se match (isEstimated: false; DIVIETO 100g). Poi User_Portions_Dictionary: se presente USA ESATTAMENTE quel peso (isEstimated: false). Medie standard / 100g (isEstimated: true) SOLO se assente da recenti e porzioni, oppure su ingredienti del fallback scomposizione Priorità 2.",
-        "REGOLA ADD_FOOD (nessuna quantita + DIVIETO 100g): Senza grammi detti → (1) OBBLIGO grams = typicalGrams da [userRecentFoods] se match (mai 100 al posto di typicalGrams), (2) porzione storica/User_Portions, (3) stima standard (es. 100g) SOLO extrema ratio su alimento nuovo. Solo prodotti commerciali sconosciuti (marchio mai visto, non una ricetta/alimento DB/recente) → REQUEST_FOOD_PHOTO.",
+        "REGOLA ADD_FOOD (nessuna quantita + DIVIETO 100g): Senza grammi detti → (1) OBBLIGO grams = typicalGrams da [userRecentFoods] se match (mai 100 al posto di typicalGrams), (2) porzione storica/User_Portions, (3) stima standard (es. 100g) SOLO extrema ratio su alimento nuovo. Solo prodotti commerciali sconosciuti (marchio mai visto) senza isNewFood → REQUEST_FOOD_PHOTO.",
         "REGOLA ADD_FOOD (FOLLOW-UP CONFERMA / UPDATE): Se THREAD_RECENTE mostra una proposta maggiordomo e l'utente conferma («Sì, va bene») o corregge, DEVI estrarre subito il carrello aggiornato. MULTI-REPLACE: se nella stessa frase ci sono più sostituzioni («al posto di A metti B, e al posto di X metti Y»), applica TUTTE le mutazioni a items[] — VIETATO annullare o fermarti alla prima. Vietato nuove domande aperte e vietato fallire il parsing.",
         "REGOLA ADD_FOOD (adviceMessage/uiMessage): Lascia VUOTI — il testo Adaptive UI va SOLO in payload.message.",
         "ADATTIVE UI — payload.message: Speed (items.length>=2) → frase breve conclusiva («Aggiunti al carrello.»). Step-by-Step (items.length===1) → conferma + domanda («Bresaola aggiunta. Cos'altro hai mangiato?»). VIETATO nome proprio utente. VIETATO «Che tipo di…?». VIETATO budget/cilindri/macro.",
         "ANTI-STUTTER — RIEPILOGO: payload.message / aiResponseText deve leggere SOLO items[] finale. Se la lista ha N elementi, nomina esattamente N alimenti — MAI ripetere lo stesso alimento due volte in coda alla frase.",
-        "REGOLA REQUEST_FOOD_PHOTO: se un prodotto commerciale non è associabile (confidenza bassa, marchio nuovo) e non è risolvibile né come match DB né come ricetta scomponibile, usa REQUEST_FOOD_PHOTO. Message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?»",
+        "REGOLA REQUEST_FOOD_PHOTO: se un prodotto commerciale non è associabile (confidenza bassa, marchio nuovo) e non è risolvibile né come match DB né come ricetta scomponibile, usa REQUEST_FOOD_PHOTO — salvo che tu abbia già marcato l item con isNewFood:true (in quel caso resta ADD_FOOD e il sistema creerà l alimento). Message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?»",
         "HARD CONSTRAINT — NO DUPLICATI IN items[]: se lo stesso alimento compare due volte (o con nome quasi identico), fondili in UNA sola voce sommando i grammi. Mai due righe uguali. Il testo di riepilogo non deve mai elencare duplicati residui.",
         MEAL_SMART_DEFAULTS_PROMPT_RULES,
         "REGOLA ADD_FOOD [USER_HABITS_FOR_CURRENT_MEAL] — GRAMMI E VARIANTI: Usa lo storico per match DB + grammatura abituale quando l utente non le ha specificate (isEstimated:true). NON aggiungere alimenti dalle abitudini se l utente non li ha menzionati. Se l utente nomina un piatto presente nello storico/DB, usalo integro (Priorità 1), non scomporlo.",

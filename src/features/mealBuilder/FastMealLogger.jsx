@@ -6,6 +6,7 @@ import {
 import { usePredictiveFoodBlocks } from './hooks/usePredictiveFoodBlocks';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
+import MicronutrientEnrichmentModal from './components/MicronutrientEnrichmentModal';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
 import RecipeEditor from './components/RecipeEditor';
 import RecipeBuilder from './components/RecipeBuilder';
@@ -24,7 +25,11 @@ import {
   resolveFoodIdentityKey,
 } from './utils/draftFoodMatchUtils';
 import { roundToOneDecimal } from './utils/numberFormatUtils';
-import { getPer100Macros, buildScaledNutrientsForWeight } from './utils/foodMacroUtils';
+import {
+  buildPer100TargetNutrientsFromRow,
+  buildScaledNutrientsForWeight,
+  getPer100Macros,
+} from './utils/foodMacroUtils';
 import {
   buildRecipeDraftPayloadFromDb,
   buildRecipeDraftPayloadFromSearchResult,
@@ -42,6 +47,10 @@ import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, S
 import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
+import {
+  findSemanticUsdaMatches,
+  mergeOffAndUsda,
+} from './utils/SemanticMatchmaker';
 import useFoodDb from '../../useFoodDb';
 import {
   FOOD_DB_SOURCE,
@@ -135,12 +144,16 @@ function buildAcquirePayload(food) {
   const desc = String(food?.desc || food?.name || row.desc || row.name || '').trim();
   if (!desc) return null;
 
+  const per100Nutrients = buildPer100TargetNutrientsFromRow(row);
+
   return {
     desc,
     kcal: Number(row.kcal ?? row.cal) || 0,
     prot: Number(row.prot) || 0,
     carb: Number(row.carb) || 0,
-    fatTotal: Number(row.fatTotal ?? row.fat) || 0,
+    fatTotal: Number(row.fatTotal ?? row.fatTot ?? row.fat) || 0,
+    fat: Number(row.fatTotal ?? row.fatTot ?? row.fat) || 0,
+    ...per100Nutrients,
     ...(row.barcode ? { barcode: String(row.barcode).trim() } : {}),
     ...(food._source === 'master' ? { foodSource: 'KENTU' } : {}),
   };
@@ -295,6 +308,10 @@ function FastMealLoggerContent({
   const [deepEditFood, setDeepEditFood] = useState(null);
   const [editingCatalogFood, setEditingCatalogFood] = useState(null);
   const [catalogServingOverrides, setCatalogServingOverrides] = useState({});
+  const [enrichmentSession, setEnrichmentSession] = useState(null);
+  const enrichmentAbortRef = useRef(null);
+  const enrichmentResolveRef = useRef(null);
+  const enrichmentOffRef = useRef(null);
   const prefillAppliedRef = useRef(false);
   const cartPulseTimerRef = useRef(null);
   const addFeedbackTimerRef = useRef(null);
@@ -514,6 +531,97 @@ function FastMealLoggerContent({
     }
   };
 
+  const finishEnrichment = useCallback((entry) => {
+    const resolve = enrichmentResolveRef.current;
+    enrichmentResolveRef.current = null;
+    enrichmentOffRef.current = null;
+    if (enrichmentAbortRef.current) {
+      enrichmentAbortRef.current.abort();
+      enrichmentAbortRef.current = null;
+    }
+    setEnrichmentSession(null);
+    resolve?.(entry);
+  }, []);
+
+  const enrichOffProduct = useCallback(
+    (offEntry) =>
+      new Promise((resolve) => {
+        if (enrichmentAbortRef.current) {
+          enrichmentAbortRef.current.abort();
+        }
+        const controller = new AbortController();
+        enrichmentAbortRef.current = controller;
+        enrichmentResolveRef.current = resolve;
+        enrichmentOffRef.current = offEntry;
+
+        const productName = String(offEntry?.desc || offEntry?.name || 'Prodotto').trim();
+        const usdaDb = globalDb ?? masterDb;
+
+        setEnrichmentSession({
+          productName,
+          matches: [],
+          isLoading: true,
+          error: '',
+        });
+
+        void (async () => {
+          try {
+            const matches = await findSemanticUsdaMatches(productName, usdaDb, {
+              signal: controller.signal,
+            });
+            if (controller.signal.aborted) return;
+            setEnrichmentSession((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                matches: Array.isArray(matches) ? matches : [],
+                isLoading: false,
+                error: '',
+              };
+            });
+          } catch (err) {
+            if (controller.signal.aborted) return;
+            console.warn('[FastMealLogger] semantic enrichment failed', err);
+            setEnrichmentSession((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                matches: [],
+                isLoading: false,
+                error: 'Match AI non disponibile. Puoi salvare solo l\'etichetta.',
+              };
+            });
+          }
+        })();
+      }),
+    [globalDb, masterDb],
+  );
+
+  const handleEnrichmentSelect = useCallback(
+    (match) => {
+      const offProduct = enrichmentOffRef.current;
+      if (!offProduct) {
+        finishEnrichment(null);
+        return;
+      }
+      const merged = mergeOffAndUsda(offProduct, match.row || {}, {
+        fdcId: match.fdcId,
+        confidence: match.confidence,
+        reason: match.reason,
+      });
+      finishEnrichment(merged);
+    },
+    [finishEnrichment],
+  );
+
+  const handleEnrichmentSkip = useCallback(() => {
+    finishEnrichment(enrichmentOffRef.current || null);
+  }, [finishEnrichment]);
+
+  const handleEnrichmentCancel = useCallback(() => {
+    finishEnrichment(enrichmentOffRef.current || null);
+  }, [finishEnrichment]);
+
   const {
     isOpen: isScannerOpen,
     open: openScanner,
@@ -526,6 +634,7 @@ function FastMealLoggerContent({
     personalDb,
     onAcquireExternalFood,
     onFoodResolved: handleFoodSelection,
+    enrichOffProduct,
   });
 
   useEffect(() => {
@@ -1712,6 +1821,17 @@ function FastMealLoggerContent({
         videoRef={videoRef}
         error={scannerError}
         isResolving={isScannerResolving}
+      />
+
+      <MicronutrientEnrichmentModal
+        isOpen={Boolean(enrichmentSession)}
+        productName={enrichmentSession?.productName}
+        isLoading={Boolean(enrichmentSession?.isLoading)}
+        error={enrichmentSession?.error || ''}
+        matches={enrichmentSession?.matches || []}
+        onSelectMatch={handleEnrichmentSelect}
+        onSkip={handleEnrichmentSkip}
+        onClose={handleEnrichmentCancel}
       />
 
       <FoodDeepEditModal

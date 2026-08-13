@@ -1,3 +1,19 @@
+import { TARGETS } from '../../../useBiochimico';
+
+/** g sale / 100g → mg sodio (NaCl → frazione Na ~0,3934). */
+export const SALT_G_TO_SODIUM_MG = 393.4;
+
+const ALL_TARGET_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
+
+/** Alias legacy → chiave canonica TARGETS (lettura per 100g / voce diario). */
+const CANONICAL_READ_ALIASES = {
+  vitB2: ['b2'],
+  vitB6: ['b6'],
+  fibre: ['fibreTotali', 'fiber'],
+  na: ['sodium', 'sale'],
+  fatTotal: ['fatTot', 'fat'],
+};
+
 export const ADVANCED_NUTRIENTS = [
   'zuccheri',
   'fatSat',
@@ -40,8 +56,54 @@ export const ADVANCED_NUTRIENTS = [
 const MAIN_MACRO_KEYS = ['kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal', 'fatTot'];
 
 export function pickFiniteNumber(value) {
-  const n = Number(value);
+  if (value == null || value === '') return null;
+  const n = Number(typeof value === 'string' ? value.trim().replace(',', '.') : value);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Legge un nutriente canonico (TARGETS) da row/item con fallback alias legacy.
+ * @param {Record<string, unknown> | null | undefined} source
+ * @param {string} key — chiave canonica TARGETS
+ * @returns {number | null}
+ */
+export function readCanonicalNutrient(source, key) {
+  if (!source || typeof source !== 'object') return null;
+
+  if (key === 'fatTotal') {
+    return pickFiniteNumber(source.fatTotal ?? source.fatTot ?? source.fat);
+  }
+
+  const direct = pickFiniteNumber(source[key]);
+  if (direct != null) return direct;
+
+  for (const alias of CANONICAL_READ_ALIASES[key] || []) {
+    const raw = pickFiniteNumber(source[alias]);
+    if (raw == null) continue;
+    if (key === 'na' && alias === 'sale') {
+      return roundNutrientValue(raw * SALT_G_TO_SODIUM_MG);
+    }
+    return raw;
+  }
+
+  return null;
+}
+
+/**
+ * Estrae tutti i nutrienti TARGETS presenti su una row per 100g (nessun valore inventato).
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {Record<string, number>}
+ */
+export function buildPer100TargetNutrientsFromRow(row) {
+  const out = {};
+  if (!row || typeof row !== 'object') return out;
+
+  ALL_TARGET_NUTRIENT_KEYS.forEach((key) => {
+    const value = readCanonicalNutrient(row, key);
+    if (value != null) out[key] = value;
+  });
+
+  return out;
 }
 
 export function roundNutrientValue(value, decimals = 2) {

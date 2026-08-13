@@ -1001,6 +1001,10 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
       ...(srcIcon ? { icon: srcIcon } : {}),
       ...(spoken ? { spokenFoodName: spoken } : {}),
       ...(Array.isArray(src?.searchKeywords) ? { searchKeywords: src.searchKeywords } : {}),
+      ...(src?.isNewFood === true ? { isNewFood: true } : {}),
+      ...(src?.userProvidedMacros && typeof src.userProvidedMacros === 'object'
+        ? { userProvidedMacros: src.userProvidedMacros }
+        : {}),
     };
   });
   const items = deduplicateMealProposalItems(resolvedItems);

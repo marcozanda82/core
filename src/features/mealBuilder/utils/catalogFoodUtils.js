@@ -3,6 +3,7 @@ import { resolveFoodIdentityKey } from './draftFoodMatchUtils';
 import {
   applyPer100ToRow,
   buildBaseMacroFields,
+  buildPer100TargetNutrientsFromRow,
   computeMacrosForUnit,
   getPer100Macros,
   resolveDefaultUnitWeight,
@@ -246,12 +247,15 @@ export function buildCatalogDbPatch(updatedItem) {
 export function buildCatalogAcquirePayload(updatedItem) {
   const row = updatedItem.row || {};
   const per100 = getPer100Macros({ ...updatedItem, row });
+  const per100Nutrients = buildPer100TargetNutrientsFromRow(row);
   return {
     desc: String(updatedItem.desc || row.desc || 'Alimento').trim(),
     kcal: per100.kcal,
     prot: per100.prot,
     carb: per100.carb,
+    fat: per100.fat,
     fatTotal: per100.fat,
+    ...per100Nutrients,
     ...buildBaseMacroFields(per100),
     ...(updatedItem.customImage ? { customImage: updatedItem.customImage } : {}),
     ...(updatedItem.customIcon ? { customIcon: updatedItem.customIcon } : {}),

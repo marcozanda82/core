@@ -163,6 +163,10 @@ export function fastPathResolveFoodItem(item, ctx = {}) {
     spokenFoodName: spokenName,
     searchKeywords: keywords,
     ...(item?.icon ? { icon: item.icon } : {}),
+    ...(item?.isNewFood === true ? { isNewFood: true } : {}),
+    ...(item?.userProvidedMacros && typeof item.userProvidedMacros === 'object'
+      ? { userProvidedMacros: item.userProvidedMacros }
+      : {}),
     ...(synonymMapped ? { synonymMapped: true } : {}),
     fastPath: true,
     matchTier,

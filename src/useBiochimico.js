@@ -21,6 +21,45 @@ export const DEFAULT_TARGETS = {
 /** Elenco piatto di tutte le chiavi nutrizionali (macro + amino + vit + min + fat) per iterazione */
 const ALL_NUTRIENT_KEYS = Object.values(TARGETS).flatMap(g => Object.keys(g));
 
+/** Alias legacy su voci diario → chiave canonica TARGETS (somma widget Home). */
+const LOG_ITEM_NUTRIENT_ALIASES = {
+  vitB2: ['b2'],
+  vitB6: ['b6'],
+  fibre: ['fibreTotali', 'fiber'],
+  na: ['sodium', 'sale'],
+  fatTotal: ['fat', 'fatTot'],
+};
+
+const SALT_G_TO_SODIUM_MG = 393.4;
+
+/**
+ * @param {Record<string, unknown> | null | undefined} item
+ * @param {string} key — chiave canonica TARGETS
+ * @returns {number | null}
+ */
+function readLogItemNutrient(item, key) {
+  if (!item || typeof item !== 'object') return null;
+
+  if (key === 'fatTotal') {
+    const fat = item.fatTotal ?? item.fat ?? item.fatTot;
+    return fat != null && typeof fat === 'number' && Number.isFinite(fat) ? fat : null;
+  }
+
+  const direct = item[key];
+  if (direct != null && typeof direct === 'number' && Number.isFinite(direct)) return direct;
+
+  for (const alias of LOG_ITEM_NUTRIENT_ALIASES[key] || []) {
+    const raw = item[alias];
+    if (raw == null || typeof raw !== 'number' || !Number.isFinite(raw)) continue;
+    if (key === 'na' && alias === 'sale') {
+      return Math.round(raw * SALT_G_TO_SODIUM_MG * 100) / 100;
+    }
+    return raw;
+  }
+
+  return null;
+}
+
 /** Ordine pasti per calcolo a cascata (4 pasti ufficiali). */
 export const MEAL_ORDER = ['colazione', 'snack', 'pranzo', 'cena'];
 
@@ -74,8 +113,8 @@ export function computeTotali(dailyLog) {
     if (item.type === 'food' || item.type === 'recipe') {
       totali.kcal += Number(item.kcal || item.cal || 0) || 0;
       ALL_NUTRIENT_KEYS.forEach(k => {
-        const raw = k === 'fatTotal' ? (item.fatTotal ?? item.fat) : item[k];
-        if (raw != null && typeof raw === 'number') totali[k] += raw;
+        const raw = readLogItemNutrient(item, k);
+        if (raw != null) totali[k] += raw;
       });
     } else if (item.type === 'workout') {
       workoutKcal += Number(item.kcal || item.cal || 0) || 0;
@@ -156,8 +195,8 @@ function computeConsumedPerMeal(dailyLog) {
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;
     ALL_NUTRIENT_KEYS.forEach(k => {
-      const raw = k === 'fatTotal' ? (item.fatTotal ?? item.fat) : item[k];
-      if (raw != null && typeof raw === 'number') consumed[meal][k] += raw;
+      const raw = readLogItemNutrient(item, k);
+      if (raw != null) consumed[meal][k] += raw;
     });
   });
   return consumed;

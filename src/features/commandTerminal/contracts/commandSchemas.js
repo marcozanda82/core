@@ -46,6 +46,27 @@ export const foodItemSchema = {
         + 'Max 8 stringhe brevi. foodName resta il termine primario; searchKeywords amplia il matching.',
       items: { type: 'string' },
     },
+    isNewFood: {
+      type: 'boolean',
+      nullable: true,
+      description:
+        'true se l alimento e un piatto specifico, ricetta casalinga o prodotto commerciale nominato '
+        + 'che NON corrisponde a un cibo base/generico nel contesto ([userRecentFoods] / DB). '
+        + 'Es: «Torta della Nonna», «Barretta Proteica X2000». false o ometti per pane, pasta, yogurt, ecc.',
+    },
+    userProvidedMacros: {
+      type: 'object',
+      nullable: true,
+      description:
+        'Macro della PORZIONE citati ESPLICITAMENTE dall utente nel messaggio (es. «ha 300 calorie», '
+        + '«120g di proteine»). VIETATO inventare valori non scritti. Ometti/null se assenti.',
+      properties: {
+        kcal: { type: 'number', nullable: true },
+        prot: { type: 'number', nullable: true },
+        carb: { type: 'number', nullable: true },
+        fat: { type: 'number', nullable: true },
+      },
+    },
   },
   required: ['foodName', 'icon'],
 };

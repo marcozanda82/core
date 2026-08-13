@@ -27,6 +27,7 @@ import { calculateMetabolicVariance } from './metabolicEngine';
 import { useFirebase } from './useFirebase';
 import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
+import ChatFoodEnrichmentModal from './features/commandTerminal/components/ChatFoodEnrichmentModal.jsx';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
   buildMealReceiptPayload,
@@ -245,6 +246,8 @@ import {
   estraiDatiFoodDb as resolveFoodDataFromEngine,
   getAverageEstimate as getAverageEstimateFromEngine,
 } from './features/salaComandi/engines/foodDataEngine';
+import { buildPer100TargetNutrientsFromRow } from './features/mealBuilder/utils/foodMacroUtils';
+import { runSanitizeHistoricalFoodDbWithKentuCatalogs } from './features/nutrition/sanitizeHistoricalFoodDb';
 import {
   deriveEffectiveBodyMetricsForDate,
   deriveCurrentBodyMetricsFromHistory,
@@ -716,6 +719,34 @@ export default function SalaComandi() {
   const csvFoodDbRef = useRef(csvFoodDb);
   kentuCatalogItDbRef.current = kentuCatalogItDb;
   csvFoodDbRef.current = csvFoodDb;
+
+  const runHistoricalFoodDbSanitize = useCallback(async ({ dryRun = false } = {}) => {
+    const uid = userUid || auth?.currentUser?.uid;
+    if (!uid) {
+      console.warn('[sanitizeHistoricalFoodDb] nessun userId — login richiesto');
+      return null;
+    }
+    console.log(`[sanitizeHistoricalFoodDb] avvio${dryRun ? ' (dryRun)' : ''}…`);
+    const result = await runSanitizeHistoricalFoodDbWithKentuCatalogs(uid, { db, dryRun });
+    if (!dryRun && result?.nextFoodDb) {
+      setFoodDb(result.nextFoodDb);
+    }
+    console.log(
+      `[sanitizeHistoricalFoodDb] fatto — re-sync ${result?.resynced ?? 0}, sterilizzati ${result?.sterilized ?? 0}`,
+    );
+    return result;
+  }, [userUid, db]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof window === 'undefined') return undefined;
+    window.__KENTU_SANITIZE_FOOD_DB__ = runHistoricalFoodDbSanitize;
+    window.__KENTU_FOOD_DB__ = foodDb;
+    return () => {
+      if (window.__KENTU_SANITIZE_FOOD_DB__ === runHistoricalFoodDbSanitize) {
+        delete window.__KENTU_SANITIZE_FOOD_DB__;
+      }
+    };
+  }, [runHistoricalFoodDbSanitize, foodDb]);
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
@@ -4119,15 +4150,13 @@ Slot esistente aggiornato (nessun ghost).`;
       const fatVal = Math.round((Number(payload.fatTotal ?? payload.fat) || 0) * 10) / 10;
       payload.fat = fatVal;
       payload.fatTotal = fatVal;
-    } else {
-      Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
-        if (payload[k] == null) payload[k] = getDefaultNutrientValue(k, fullHistory);
-      }));
-      if (payload.kcal == null || Number(payload.kcal) === 0) {
-        payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
-      }
     }
+    // Canonicalizza chiavi TARGETS presenti (alias b2→vitB2, fibreTotali→fibre, …).
+    // Nessun riempimento automatico: micronutrienti assenti restano assenti (zero in widget).
+    const canonicalPer100 = buildPer100TargetNutrientsFromRow(payload);
+    Object.assign(payload, canonicalPer100);
     if (payload.fatTotal == null && payload.fat != null) payload.fatTotal = Number(payload.fat);
+    if (payload.fat == null && payload.fatTotal != null) payload.fat = Number(payload.fatTotal);
     const payloadWithUnits = enrichDbRowWithFoodUnits(withDefaultUsageStats(payload), newKey);
     await set(ref(db, `${basePath}/trackerFoodDatabase/${newKey}`), payloadWithUnits);
     setFoodDb(prev => ({ ...(prev || {}), [newKey]: payloadWithUnits }));
@@ -6451,6 +6480,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
     handleSaveNewFoodEntry,
+    chatUsdaEnrichmentSession,
+    handleChatUsdaEnrichmentSelect,
+    handleChatUsdaEnrichmentSkip,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
@@ -6464,6 +6496,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onDraftMealItems: handleDraftMealItems,
     onCommitMealBuilder: () => commitMealBuilder({ announce: false }),
     onPopulateMealLavagna: populateMealLavagnaFromChatItems,
+    onSaveFoodEntryPer100ToFoodDb: (entry, options) => saveFoodEntryPer100ToFoodDb(entry, options),
     onSaveFoodDbEntry: async (entryPer100, donorMeta = null) => {
       const safe = entryPer100 && typeof entryPer100 === 'object' ? entryPer100 : null;
       if (!safe?.desc) throw new Error('missing_desc');
@@ -8543,6 +8576,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
           onOpenProgressi={() => setActiveBottomTab('longevita')}
           onOpenTacticalCoach={() => setIsCoachOpen(true)}
+          onSanitizeFoodDb={import.meta.env.DEV ? runHistoricalFoodDbSanitize : null}
         />
 
         <Suspense fallback={<KentuLazySectionFallback label="Apertura vista…" />}>
@@ -9165,6 +9199,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
       </div>
       ) : null}
+
+      <ChatFoodEnrichmentModal
+        session={chatUsdaEnrichmentSession}
+        onSelectMatch={handleChatUsdaEnrichmentSelect}
+        onSkip={handleChatUsdaEnrichmentSkip}
+      />
 
       {showBiochemicalDiagnostics ? (
         <Suspense fallback={<KentuLazySectionFallback label="Diagnostica…" />}>
