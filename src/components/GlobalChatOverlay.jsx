@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import AiCluster from '../AiCluster';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
+import KentuAvatar from '../features/chat/KentuAvatar';
 
 /**
  * FAB globale + bottom sheet chat (AiCluster).
@@ -38,9 +39,9 @@ export default function GlobalChatOverlay() {
           type="button"
           onClick={openChat}
           aria-label="Apri chat Kentu"
-          className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center rounded-full border border-cyan-400/40 bg-slate-950 text-2xl shadow-none transition-transform hover:scale-105 active:scale-95"
+          className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-cyan-400/40 bg-slate-950 p-0 shadow-none transition-transform hover:scale-105 active:scale-95"
         >
-          <span aria-hidden className="drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]">🤖</span>
+          <KentuAvatar size="lg" className="h-14 w-14 border-0 shadow-[0_0_15px_rgba(0,150,255,0.55)]" alt="" />
         </button>
       ) : null}
 
@@ -64,7 +65,7 @@ export default function GlobalChatOverlay() {
       >
         <header className="relative flex shrink-0 items-center gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="text-lg" aria-hidden>🤖</span>
+            <KentuAvatar size="md" />
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold tracking-wide text-slate-100">Kentu Chat</p>
               <p className="truncate text-[11px] text-slate-500">

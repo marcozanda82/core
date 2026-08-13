@@ -177,10 +177,10 @@
 /* —— Typography inside cards —— */
 .kentu-insight-hero__head {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 12px;
 }
 
@@ -191,8 +191,9 @@
   line-height: 1.25;
   color: #f8fafc;
   margin: 0;
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  padding-right: 4px;
 }
 
 .kentu-card--hero .kentu-insight-title {

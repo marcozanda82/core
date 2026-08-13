@@ -26,6 +26,7 @@ import { useVoiceChat } from './features/chat/useVoiceChat.js';
 import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
+import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
@@ -120,9 +121,15 @@ export default function AiCluster({
   quickStripItems = null,
   /** Preferenza TTS iniziale (es. true in modalità diabete se mai salvata). */
   preferVoiceChat = false,
-  /** Nome utente (solo per strip TTS — non pronunciato). */
+  /** Nome utente (placeholder input + strip TTS). */
   userDisplayName = '',
 }) {
+  const chatFirstName = useMemo(() => {
+    const raw = String(userDisplayName || '').trim();
+    if (!raw) return '';
+    return raw.split(/\s+/)[0];
+  }, [userDisplayName]);
+
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
   const chatTextareaRef = useRef(null);
@@ -464,6 +471,7 @@ export default function AiCluster({
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
       <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
+        <KentuAvatar size="lg" className="ring-1 ring-cyan-400/20" />
         <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
             Kentu AI Workspace
@@ -740,7 +748,9 @@ export default function AiCluster({
                 )
               ) : (
                 <div className="kentu-user-capsule">
-                  <div className="kentu-user-capsule__label">Input</div>
+                  <div className="kentu-user-capsule__label">
+                    {(chatFirstName || 'Marco').toUpperCase()}
+                  </div>
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
@@ -1136,7 +1146,9 @@ export default function AiCluster({
                 ? 'Nota di sviluppo…'
                 : chatImages.length > 0
                   ? 'Commento immagini…'
-                  : 'Query sistema…'
+                  : chatFirstName
+                    ? `Cosa hai mangiato, ${chatFirstName}?`
+                    : 'Scrivi a Kentu…'
             }
             value={chatInput}
             disabled={isProcessing && !isNotesMode}
