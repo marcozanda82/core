@@ -25,6 +25,7 @@ import {
 import { useVoiceChat } from './features/chat/useVoiceChat.js';
 import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
+import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from './platform/expoNativeCamera.js';
@@ -190,9 +191,11 @@ export default function AiCluster({
     el.style.height = 'auto';
   }, []);
 
+  const showTypingIndicator = isProcessing || isTranscribingVoiceNote;
+
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, isProcessing]);
+  }, [chatHistory, showTypingIndicator]);
 
   useEffect(() => {
     if (!String(chatInput || '').trim()) resetInputHeight();
@@ -867,23 +870,7 @@ export default function AiCluster({
               )}
             </div>
           ))}
-          {isProcessing ? (
-            <div
-              className="kentu-typing-row"
-              aria-live="polite"
-              aria-busy="true"
-              aria-label="Elaborazione in corso"
-            >
-              <div className="kentu-typing-bubble">
-                <span className="kentu-typing-bubble__label">Elaborazione in corso</span>
-                <div className="typing-indicator kentu-typing-indicator">
-                  <div className="dot" />
-                  <div className="dot" />
-                  <div className="dot" />
-                </div>
-              </div>
-            </div>
-          ) : null}
+          {showTypingIndicator ? <TypingIndicator /> : null}
           <div ref={chatEndRef} />
         </div>
         <div className="flex shrink-0 flex-col">

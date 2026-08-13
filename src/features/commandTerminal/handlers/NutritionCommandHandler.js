@@ -23,6 +23,7 @@ export function initNutritionHandlers({
   bus = commandBus,
   onAddFoodCommand = null,
   onUpsertMealCommand = null,
+  onMealCommitSuccess = null,
 } = {}) {
   const writer = typeof onUpsertMealCommand === 'function'
     ? onUpsertMealCommand
@@ -41,6 +42,9 @@ export function initNutritionHandlers({
       });
       const result = await writer(envelope?.payload || {}, envelope);
       console.log(`🔵 DEBUG - OUTPUT TOOL ${label} (result commit):`, result);
+      if (typeof onMealCommitSuccess === 'function') {
+        onMealCommitSuccess(envelope, result);
+      }
       if (SKIP_SYSTEM_MESSAGE_CORRELATION_IDS.has(String(envelope?.meta?.correlationId || ''))) {
         return;
       }

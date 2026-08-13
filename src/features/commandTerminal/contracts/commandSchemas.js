@@ -498,13 +498,28 @@ export const consultantResponseSchema = {
     suggestions: {
       type: 'array',
       description:
-        'WIP Meal Builder: Smart Chips integrativi da aggiungere al carrello pasto in corso. Compila SOLO per intent WIP_MEAL_BUILD. 3-5 suggerimenti con name, weight (grammi ottimizzati sul residuo), calories, macros {prot,carb,fat}, reason analitica.',
+        'Smart Chips versatili. ASK_DRAFT_ADVICE: (1) kind="food" + weight = alimento da aggiungere; '
+        + '(2) kind="reply" = risposta discorsiva all\'intervista (es. "Solo Cena", weight omesso/0); '
+        + '(3) [] se equilibrio perfetto / non aggiungere nulla. '
+        + 'WIP_MEAL_BUILD: 3-5 suggerimenti food con weight/calories/macros/reason.',
       items: {
         type: 'object',
         properties: {
-          name: { type: 'string', description: 'Nome alimento puro senza grammature.' },
-          weight: { type: 'number', description: 'Grammi calibrati sul remaining (> 0).' },
-          calories: { type: 'number', description: 'Kcal stimate per la porzione.' },
+          name: {
+            type: 'string',
+            description:
+              'Nome alimento puro (kind=food) OPPURE testo chip discorsivo esatto (kind=reply), es. "Solo Cena".',
+          },
+          kind: {
+            type: 'string',
+            description: 'food = tap-to-add alimento; reply = risposta intervista/CTA (UI stampa name così com\'è).',
+          },
+          weight: {
+            type: 'number',
+            nullable: true,
+            description: 'Grammi per kind=food (> 0). Per kind=reply: 0 o omesso.',
+          },
+          calories: { type: 'number', description: 'Kcal stimate per la porzione (opzionale).' },
           macros: {
             type: 'object',
             properties: {
@@ -513,9 +528,9 @@ export const consultantResponseSchema = {
               fat: { type: 'number' },
             },
           },
-          reason: { type: 'string', description: 'Motivo analitico (macro residui da coprire).' },
+          reason: { type: 'string', description: 'Motivo analitico (opzionale).' },
         },
-        required: ['name', 'weight'],
+        required: ['name'],
       },
     },
     mealProposals: {

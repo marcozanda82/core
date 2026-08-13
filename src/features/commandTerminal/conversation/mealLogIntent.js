@@ -421,6 +421,154 @@ export function isWipMealBuildIntent(userText, chatHistory = [], wipMealItems = 
   return false;
 }
 
+/** Domande discorsive su come completare il Vassoio (bozza pasto attiva). */
+const ASK_DRAFT_ADVICE_PATTERNS = [
+  /\bcosa\s+(?:posso|devo|potrei|metto|aggiung(?:o|ere))\b/i,
+  /\bche\s+cosa\s+(?:metto|aggiung)/i,
+  /\bcome\s+(?:potrei|posso|devo|dovrei\s+)?(?:complet(?:o|are|arlo)|finisc(?:o|ere|arlo)|arrotond(?:o|are)|integr(?:o|are|arlo)|bilanci(?:o|are))\b/i,
+  /\b(?:integr(?:o|are|arlo)|complet(?:o|are|arlo)|bilanci(?:o|are))\b/i,
+  /\b(?:ho|tengo)\s+(?:in\s+)?dispensa\b/i,
+  /\bcosa\s+metto\s+per\s+(?:le|i)\s+prote/i,
+  /\bmancano?\s+(?:le|i)\s+prote/i,
+  /\bsuggerisci\s+cosa\s+aggiung/i,
+  /\b(?:suggerisci|consigli(?:ami)?)\b/i,
+  /\bsuggerimenti\b/i,
+  /\bcosa\s+(?:mi\s+)?consigli\s+di\s+aggiung/i,
+  /\b(?:cosa|che)\s+(?:aggiungo|metto)\s+(?:per|al|alla|nel|nella)\b/i,
+  /\b(?:idee|consigli)\s+per\s+(?:completare|finire|integrare|bilanciare)\b/i,
+  /\bche\s+dici\b/i,
+];
+
+/**
+ * Follow-up «dammi un esempio» dopo un consiglio teorico del coach.
+ * Restano ASK_DRAFT_ADVICE — mai mutazione bozza.
+ */
+const ASK_DRAFT_ADVICE_FOLLOWUP_PATTERNS = [
+  /\bper\s+esempio\b/i,
+  /\bad\s+esempio\b/i,
+  /\btipo\s+cosa\b/i,
+  /\bcome\s+cosa\b/i,
+  /\bcosa\s+(?:potrei|posso|devo|dovrei)?\s*aggiung/i,
+  /\bcosa\s+aggiungo\b/i,
+  /\bche\s+(?:cosa\s+)?aggiung/i,
+  /\bdammi\s+un['']?\s*idea\b/i,
+  /\bdammi\s+un['']?\s*esempio\b/i,
+  /\bsuggerisci\s+qualcosa\b/i,
+  /\bproposta(?:mi)?\s+qualcosa\b/i,
+  /\bfammi\s+(?:un['']?\s*)?(?:esempio|idea)\b/i,
+  /\bqualche\s+(?:idea|esempio|opzione)\b/i,
+];
+
+/**
+ * Reply chips dell'intervista Look-Ahead (Fase 1 coach Vassoio).
+ * Devono restare ASK_DRAFT_ADVICE, mai UPDATE_MEAL_DRAFT / mutazione alimento.
+ */
+const ASK_DRAFT_ADVICE_INTERVIEW_REPLY_PATTERNS = [
+  /\bsolo\s+(?:la\s+)?cena\b/i,
+  /\bcena\s*\+\s*1\s*snack\b/i,
+  /\bcena\s*\+\s*2\s*snack\b/i,
+  /\bcena\s+e\s+(?:un\s+|1\s+)?snack\b/i,
+  /\bcena\s+e\s+(?:due|2)\s+snack\b/i,
+  /^(?:un\s+|1\s+)snack\b/i,
+  /^(?:due\s+|2\s+)snack\b/i,
+];
+
+/**
+ * True se il testo è una risposta ai chip intervista del coach (es. «Solo Cena»).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isAskDraftAdviceInterviewReply(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  return ASK_DRAFT_ADVICE_INTERVIEW_REPLY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Follow-up di esempio / richiesta concreta dopo un consiglio vago.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isAskDraftAdviceFollowUpRequest(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  return ASK_DRAFT_ADVICE_FOLLOWUP_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Domanda ipotetica / what-if sul Vassoio (es. «e se aggiungessi 30g di mandorle?»).
+ * Deve restare ASK_DRAFT_ADVICE anche con grammi/verbi di add — mai mutazione diretta.
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isHypotheticalDraftAdviceQuestion(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text || !/\?/.test(text)) return false;
+  if (/^se\s+/.test(text)) return true;
+  if (/\be\s+se\s+/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Comandi espliciti di mutazione diretta sulla bozza (grammi, rimuovi, ecc.).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+function looksLikeDirectMealDraftMutation(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+  // Domande ipotetiche / follow-up esempio → consiglio, non mutazione.
+  if (isHypotheticalDraftAdviceQuestion(text)) return false;
+  if (isAskDraftAdviceFollowUpRequest(text)) return false;
+  if (/\d+\s*(?:g|gr|grammi)\b/i.test(text)) return true;
+  if (/\b(?:rimuov\w*|togli\w*|elimina\w*)\b/i.test(text)) return true;
+  if (/\b(?:aggiung\w*|metti(?:ci)?)\b/i.test(text) && /\d/.test(text)) return true;
+  return false;
+}
+
+/**
+ * True se l'utente chiede consiglio su come completare la bozza Vassoio (non una mutazione diretta).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isAskDraftAdviceIntent(userText) {
+  const text = String(userText || '').trim().toLowerCase();
+  if (!text) return false;
+
+  // Chip intervista («Solo Cena», «Cena + 1 Snack», …) → sempre coach, mai mutazione bozza.
+  if (isAskDraftAdviceInterviewReply(text)) return true;
+
+  // What-if con grammi («e se mettessi 30g di olio?») → coach, non UPDATE_MEAL_DRAFT.
+  if (isHypotheticalDraftAdviceQuestion(text)) return true;
+
+  // Follow-up esempio («per esempio cosa potrei aggiungere?») → coach.
+  if (isAskDraftAdviceFollowUpRequest(text)) return true;
+
+  if (looksLikeDirectMealDraftMutation(text)) return false;
+
+  // Imperativi di mutazione senza segnali discorsivi → UPDATE_MEAL_DRAFT, non coach.
+  if (/\b(?:aggiung\w*|metti(?:ci)?)\b/i.test(text)
+    && !/\?/.test(text)
+    && !/\b(?:cosa|che|come|consigli|suggerisci|dispensa|proteine|prote|potrei|posso|integr|complet|bilanci|esempio|idea)\b/i.test(text)) {
+    return false;
+  }
+
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  if (isFoodRegistrationIntent(text)) return false;
+  if (/^(?:s[iì]|ok|va\s+bene|confermo|annulla|no)\b/i.test(text)) return false;
+
+  if (ASK_DRAFT_ADVICE_PATTERNS.some((pattern) => pattern.test(text))) return true;
+
+  if (/\b(?:dispensa|ho\s+(?:delle|dei|del|della|dell'|un|una))\b/i.test(text) && /\?/.test(text)) {
+    return true;
+  }
+
+  // Domanda aperta senza mutazione diretta → coach proattivo.
+  if (/\?/.test(text)) return true;
+
+  return false;
+}
+
 /**
  * Richiesta di consiglio nutrizionale — DEVE routare a ASK_MEAL_ADVICE, non ADD_FOOD.
  * Funzione piatta: solo pattern + leaf helpers (log pasto), senza altri intent checker.

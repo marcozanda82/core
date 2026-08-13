@@ -12,7 +12,8 @@ import {
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
-import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage } from '../conversation/conversationState.js';
+import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage, expandFoodPayloadItems } from '../conversation/conversationState.js';
+import { isAskDraftAdviceIntent } from '../conversation/mealLogIntent.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
 import { processHealthChatMessage, formatClinicalSaveAck } from '../../../services/healthChatService.js';
@@ -44,6 +45,8 @@ function applyDraftConfirmReplaceGuard(controller) {
   return controller.applyExistingMealReplaceConfirmGuard();
 }
 
+const CHAT_CLOSE_AFTER_MEAL_COMMIT_MS = 400;
+
 export function useCommandTerminal({
   chatHistory,
   setChatHistory,
@@ -55,6 +58,7 @@ export function useCommandTerminal({
   onLogSleepCommand = null,
   onSaveFoodDbEntry = null,
   onPopulateMealLavagna = null,
+  onChatClose = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -96,6 +100,8 @@ export function useCommandTerminal({
   }, []);
 
   const onAddFoodRef = useRef(onAddFoodCommand);
+  const onChatCloseRef = useRef(onChatClose);
+  const chatCloseTimerRef = useRef(null);
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
   const onLogSleepRef = useRef(onLogSleepCommand);
   const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
@@ -104,6 +110,27 @@ export function useCommandTerminal({
   useEffect(() => {
     onAddFoodRef.current = onAddFoodCommand;
   }, [onAddFoodCommand]);
+
+  useEffect(() => {
+    onChatCloseRef.current = onChatClose;
+  }, [onChatClose]);
+
+  const scheduleChatCloseAfterMealCommit = useCallback(() => {
+    if (typeof onChatCloseRef.current !== 'function') return;
+    if (chatCloseTimerRef.current) {
+      clearTimeout(chatCloseTimerRef.current);
+    }
+    chatCloseTimerRef.current = setTimeout(() => {
+      chatCloseTimerRef.current = null;
+      onChatCloseRef.current?.();
+    }, CHAT_CLOSE_AFTER_MEAL_COMMIT_MS);
+  }, []);
+
+  useEffect(() => () => {
+    if (chatCloseTimerRef.current) {
+      clearTimeout(chatCloseTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     onAddWorkoutRef.current = onAddWorkoutCommand;
@@ -241,6 +268,9 @@ export function useCommandTerminal({
         onAddFoodCommand: (payload, envelope) => {
           if (typeof onAddFoodRef.current !== 'function') return null;
           return onAddFoodRef.current(payload, envelope);
+        },
+        onMealCommitSuccess: () => {
+          scheduleChatCloseAfterMealCommit();
         },
       }),
     );
@@ -427,7 +457,7 @@ export function useCommandTerminal({
         }
       });
     };
-  }, [appendAiMessage]);
+  }, [appendAiMessage, scheduleChatCloseAfterMealCommit]);
 
   const sendMessage = useCallback(
     async (text, options = {}) => {
@@ -619,6 +649,18 @@ export function useCommandTerminal({
             || mealRoute.route === 'SPLIT'
           ) {
             forcedIntent = 'ADD_FOOD';
+          }
+        }
+        if (!forcedIntent) {
+          const pendingDraft = typeof controller.getPendingMealDraft === 'function'
+            ? controller.getPendingMealDraft()
+            : null;
+          if (
+            pendingDraft
+            && expandFoodPayloadItems(pendingDraft).length > 0
+            && isAskDraftAdviceIntent(resolvedText)
+          ) {
+            forcedIntent = 'ASK_DRAFT_ADVICE';
           }
         }
         if (!forcedIntent && imageOnly) forcedIntent = 'LOG_SLEEP';

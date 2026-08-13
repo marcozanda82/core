@@ -163,6 +163,14 @@ export function isUpdateMealDraftIntent(userText) {
   const t = String(userText || '').trim();
   if (!t) return false;
   if (isConfirmMealDraftIntent(t) || isCancelMealDraftIntent(t)) return false;
+  // Domande ipotetiche («e se aggiungessi 30g…?») → coach, non mutazione McDrive.
+  if (/^(?:e\s+)?se\s+/i.test(t) && /\?/.test(t)) return false;
+  if (/\be\s+se\s+/i.test(t) && /\?/.test(t)) return false;
+  // Follow-up esempio («per esempio cosa potrei aggiungere?») → coach.
+  if (/\b(?:per\s+esempio|ad\s+esempio|tipo\s+cosa|come\s+cosa|dammi\s+un['']?\s*(?:idea|esempio)|suggerisci\s+qualcosa|cosa\s+(?:potrei|posso)?\s*aggiung)\b/i.test(t)) {
+    return false;
+  }
+
   if (/^oggi\s+[eè]\s+diverso\b/i.test(t)) return true;
 
   if (SOFT_NO_THEN_CORRECT_RE.test(t)) return true;
@@ -743,6 +751,8 @@ export function buildMcDriveUpdatedConfirmationMessage(items = []) {
 export function looksLikeClearMealDraftMutation(userText) {
   const t = String(userText || '').trim();
   if (!t) return false;
+  if (/^(?:e\s+)?se\s+/i.test(t) && /\?/.test(t)) return false;
+  if (/\be\s+se\s+/i.test(t) && /\?/.test(t)) return false;
   if (ADD_FOOD_RE.test(t) || SOFT_ADD_FOOD_RE.test(t) || REMOVE_FOOD_RE.test(t)) return true;
   if (REPLACE_NON_ERA_RE.test(t) || REPLACE_INVECE_RE.test(t) || REPLACE_CAMBIA_RE.test(t)) return true;
   if (GRAMS_FOR_FOOD_RE.test(t) || FOOD_THEN_GRAMS_RE.test(t)) return true;

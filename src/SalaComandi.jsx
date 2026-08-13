@@ -306,13 +306,6 @@ import { computeMetabolicNotification } from './notificationEngine';
 import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } from './barcodeFoodOverrides';
 import {
   useSmartKentuTriggers,
-  checkMorningBriefing,
-  checkEveningBriefing,
-  getMorningBriefingVerdict,
-  getYesterdayCalorieStatus,
-  buildPostWorkoutCoachMessage,
-  markMorningBriefingShown,
-  markEveningBriefingShown,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
 import {
@@ -5655,106 +5648,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   useEffect(() => {
-    if (kentuActiveTrigger !== 'agenda') kentuAgendaAwaitingRef.current = false;
+    // Proactive chat nudges (sleep / agenda / morning|evening briefing) are disabled.
+    // Chat must not receive AI messages without a direct user input.
+    kentuAgendaAwaitingRef.current = false;
   }, [kentuActiveTrigger]);
-
-  useEffect(() => {
-    if (activeAction !== 'ai_chat' || !kentuActiveTrigger) return;
-    const date = currentTrackerDate || getTodayString();
-    if (kentuActiveTrigger === 'sleep') {
-      const k = `kentu_pro_sleep_shown_${date}`;
-      if (typeof window !== 'undefined' && window.localStorage.getItem(k)) return;
-      if (typeof window !== 'undefined') window.localStorage.setItem(k, '1');
-      setChatHistory((prev) => {
-        const needle = 'mancano i dati del sonno';
-        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) return prev;
-        return [
-          ...prev,
-          {
-            sender: 'ai',
-            text: 'Buongiorno! L\'energia stamattina risulta bassa perché mancano i dati del sonno. Vuoi che li registriamo al volo per ricalibrare la giornata?',
-            quickReplies: ['Ho dormito 7h bene', 'Ho dormito male'],
-          },
-        ];
-      });
-      return;
-    }
-    if (kentuActiveTrigger === 'agenda') {
-      const k = `kentu_pro_agenda_shown_${date}`;
-      const sentKey = `kentu_agenda_secret_sent_${date}`;
-      const alreadySent =
-        typeof window !== 'undefined' && window.sessionStorage.getItem(sentKey);
-      if (!alreadySent) kentuAgendaAwaitingRef.current = true;
-      if (typeof window !== 'undefined' && !window.localStorage.getItem(k)) {
-        window.localStorage.setItem(k, '1');
-        setChatHistory((prev) => {
-          const needle = 'Che programmi hai per oggi';
-          if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) return prev;
-          return [
-            ...prev,
-            {
-              sender: 'ai',
-              text: 'Buongiorno! Ho registrato i dati del sonno. Che programmi hai per oggi? (es. Lavoro al pc, perizie, allenamento)',
-            },
-          ];
-        });
-      }
-      return;
-    }
-    if (kentuActiveTrigger === 'morning_briefing') {
-      const date = currentTrackerDate || getTodayString();
-      const br = checkMorningBriefing(fullHistory, userTargets, date);
-      if (!br) return;
-      setChatHistory((prev) => {
-        const needle = 'Ho analizzato i dati di ieri';
-        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) {
-          return prev;
-        }
-        markMorningBriefingShown(date);
-        return [
-          ...prev,
-          {
-            sender: 'ai',
-            text: `Buongiorno! Ho analizzato i dati di ieri: hai chiuso in ${br.status === 'deficit' ? 'deficit calorico' : 'surplus calorico'}. Per calibrare il digiuno e il timing dei pasti di oggi, dimmi: che livello di attività hai in programma?`,
-            quickReplies: [
-              '🏋️ Pesi / Alta intensità',
-              '🏃‍♂️ Cardio / Attivo',
-              '🧘‍♂️ Riposo / Scrivania',
-            ],
-            morningBriefing: { status: br.status },
-          },
-        ];
-      });
-      return;
-    }
-    if (kentuActiveTrigger === 'evening_briefing') {
-      const evDate = currentTrackerDate || getTodayString();
-      const ev = checkEveningBriefing(activeLog, userTargets, evDate, bodyBattery?.maxCapacity ?? 100);
-      if (!ev) return;
-      setChatHistory((prev) => {
-        const needle = 'È quasi ora di cena';
-        if (prev.some((m) => m.sender === 'ai' && typeof m.text === 'string' && m.text.includes(needle))) {
-          markEveningBriefingShown(evDate);
-          return prev;
-        }
-        markEveningBriefingShown(evDate);
-        const mk = Math.max(0, ev.missingKcal);
-        const mp = Math.max(0, ev.missingPro);
-        const debtWarn = ev.isHighDebt
-          ? 'Oggi la tua capacità di recupero è ridotta dal debito di sonno. Sarebbe meglio evitare allenamenti pesanti stasera per non alzare troppo il cortisolo e proteggere il riposo notturno.\n\n'
-          : '';
-        return [
-          ...prev,
-          {
-            sender: 'ai',
-            text: `${debtWarn}Buonasera! È quasi ora di cena. Per chiudere la giornata in modo ottimale hai a disposizione circa ${mk} kcal e ti servono ${mp}g di proteine. Vuoi che ti calcoli un'opzione perfetta e veloce da registrare?`,
-            quickReplies: ['🍽️ Sì, proponi la cena perfetta', '✋ No, ci penso io'],
-            eveningBriefing: { missingKcal: ev.missingKcal, missingPro: ev.missingPro },
-          },
-        ];
-      });
-    }
-  }, [activeAction, kentuActiveTrigger, currentTrackerDate, fullHistory, userTargets, activeLog, bodyBattery?.maxCapacity]);
 
   const isNightDeficit = displayTime >= 20 && targetKcalForAlerts > 0 && ((totalCaloriesTimeline || 0) / targetKcalForAlerts) <= 0.60;
   const isProteinSaturated = displayTime <= 15 && (targetMacros?.prot ?? 0) > 0 && ((totalMacrosTimeline.prot || 0) / (targetMacros.prot || 1)) >= 0.90;
@@ -6522,6 +6419,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ],
   );
 
+  const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlay();
+
+  const closeChat = useCallback(() => {
+    setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
+    closeOverlayChat();
+  }, [closeOverlayChat]);
+
   const {
     sendMessage,
     cancelGeneration,
@@ -6550,6 +6454,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
+    onChatClose: closeChat,
     getWipMealSnapshot: getWipMealSnapshotFromBridge,
     onWipMealSeed: seedWipMealFromBridge,
     onAddFoodCommand: commitAddFoodCommand,
@@ -6611,8 +6516,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       };
     },
   });
-
-  const { registerHandlers } = useChatOverlay();
 
   useEffect(() => {
     registerHandlers({
@@ -7388,10 +7291,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setIsDrawerOpen(false);
     setIsFabOpen(false);
     setActiveAction('ai_chat');
-  }, []);
-
-  const closeChat = useCallback(() => {
-    setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
   }, []);
 
   const handleRequestBarcodeScan = useCallback(() => {

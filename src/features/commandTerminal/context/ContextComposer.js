@@ -3,6 +3,7 @@ import { computeTotali } from '../../../useBiochimico.js';
 import {
   isFoodRegistrationIntent,
   isMealAdviceIntent,
+  isAskDraftAdviceIntent,
   isMealCompletionIntent,
   isMealDraftEvaluationIntent,
   isFixMealDraftIntent,
@@ -32,6 +33,9 @@ import {
   buildKentuGlobalStateFromAppState,
 } from './kentuGlobalState.js';
 import { buildUserRecentFoods } from '../conversation/userRecentFoods.js';
+import { getHistoricalFoodBlocks } from '../conversation/historicalFoodBlocks.js';
+import { ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK } from '../conversation/draftAdviceCoach.js';
+import { expandFoodPayloadItems } from '../conversation/conversationState.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
 
@@ -67,10 +71,21 @@ function buildDailyBudgetRemaining(currentState = {}) {
 export { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
 
 export class ContextComposer {
-  detectIntent(userText = '', { hasImages = false, chatHistory = [], pendingMealUpdate = null } = {}) {
+  detectIntent(userText = '', {
+    hasImages = false,
+    chatHistory = [],
+    pendingMealUpdate = null,
+    pendingMealDraft = null,
+  } = {}) {
     const text = toSafeString(userText).toLowerCase();
     if (!text) return hasImages ? 'LOG_SLEEP' : 'UNKNOWN';
     if (pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
+    const draftItems = expandFoodPayloadItems(pendingMealDraft || {});
+    if (draftItems.length > 0 && isAskDraftAdviceIntent(text)) {
+      return 'ASK_DRAFT_ADVICE';
+    }
+
     const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
     if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
 
@@ -312,6 +327,45 @@ export class ContextComposer {
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
           TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
+          app: {
+            activeDate: toSafeString(currentState?.activeDate) || null,
+            locale: toSafeString(currentState?.locale) || 'it-IT',
+          },
+        },
+      };
+    }
+    if (normalizedIntent === 'ASK_DRAFT_ADVICE') {
+      const nutritionSlices = this.buildNutritionContextSlices(currentState);
+      const activeDraft = pendingMealDraft && typeof pendingMealDraft === 'object'
+        ? pendingMealDraft
+        : null;
+      const activeDraftItems = expandFoodPayloadItems(activeDraft || {});
+      let historicalFoodBlocks = [];
+      try {
+        historicalFoodBlocks = getHistoricalFoodBlocks(currentState, { limit: 30 });
+      } catch (error) {
+        console.warn('[ContextComposer] getHistoricalFoodBlocks failed', error);
+        historicalFoodBlocks = [];
+      }
+      return {
+        intent: 'ASK_DRAFT_ADVICE',
+        contextSlices: {
+          ...nutritionSlices,
+          COACH_DRAFT_ADVICE_POLICY: ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK,
+          ...(activeDraftItems.length > 0
+            ? {
+                ACTIVE_PENDING_MEAL_DRAFT: {
+                  mealType: activeDraft?.mealType || null,
+                  targetNodeId: activeDraft?.targetNodeId || null,
+                  items: activeDraftItems.map((item) => ({
+                    foodName: String(item?.foodName || item?.name || '').trim(),
+                    grams: Math.round(Number(item?.grams ?? item?.qta) || 0),
+                    foodDbKey: item?.foodDbKey ?? null,
+                  })).filter((item) => item.foodName),
+                },
+              }
+            : {}),
+          DIZIONARIO_STORICO_BLOCCHI: historicalFoodBlocks,
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',

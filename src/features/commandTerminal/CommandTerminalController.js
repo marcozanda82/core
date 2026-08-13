@@ -94,6 +94,7 @@ import {
   parseMealLogFromChatThread,
   buildApproximateMealLogForRecovery,
   extractBareFoodNamesFromText,
+  isAskDraftAdviceIntent,
 } from './conversation/mealLogIntent.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
@@ -127,6 +128,12 @@ import {
   isUpdateMealDraftIntent,
   looksLikeClearMealDraftMutation,
 } from './conversation/mealDraftVoiceEdit.js';
+import {
+  ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK,
+  buildDraftAdviceContext,
+  buildDraftAdviceQuickReplies,
+  generateDraftAdvicePrompt,
+} from './conversation/draftAdviceCoach.js';
 import {
   createMealWizardState,
   parseWizardItemReply,
@@ -1396,6 +1403,12 @@ export class CommandTerminalController {
       return 'UPDATE_LOGGED_MEAL';
     }
 
+    // Coach Vassoio: domanda discorsiva su come completare la bozza attiva.
+    const activeDraftItems = expandFoodPayloadItems(this.getPendingMealDraft() || {});
+    if (activeDraftItems.length > 0 && isAskDraftAdviceIntent(userText)) {
+      return 'ASK_DRAFT_ADVICE';
+    }
+
     // DATA ENTRY pasti PRIMA del consulto (evita "come snack, ho mangiato…" → CHAT_RESPONSE).
     // Follow-up a chiarimento (grammi/tipo) → sempre ADD_FOOD, anche senza "ho mangiato".
     if (
@@ -1428,6 +1441,7 @@ export class CommandTerminalController {
       hasImages: options.hasImages,
       chatHistory: options?.chatHistory || [],
       pendingMealUpdate: this.getPendingMealUpdate(),
+      pendingMealDraft: this.getPendingMealDraft(),
     });
     if (detected !== 'UNKNOWN') return detected;
 
@@ -2460,6 +2474,11 @@ export class CommandTerminalController {
       return this.processUserMessage(text, currentState, options);
     }
 
+    // Coach proattivo: domanda su come completare il Vassoio (non mutazione diretta).
+    if (isAskDraftAdviceIntent(text)) {
+      return this.handleDraftAdviceRequest(text, currentState, options);
+    }
+
     // Follow-up a domanda mirata (es. «80 grammi» dopo «Che quantità… per il pane?»).
     if (this.pendingMealDraftClarification) {
       const clarified = applyPartialClarificationReply(
@@ -2554,6 +2573,11 @@ export class CommandTerminalController {
     }
 
     if (voiceIntent === 'UNKNOWN') {
+      // Coach Vassoio prima del fallback generico «Dimmi la correzione…».
+      if (isAskDraftAdviceIntent(text)) {
+        return this.handleDraftAdviceRequest(text, currentState, options);
+      }
+
       // Nuova registrazione indipendente mentre la bozza è aperta → riparti pulito.
       if (
         (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text))
@@ -2853,6 +2877,79 @@ export class CommandTerminalController {
       targetMealType,
       mealProposals: previewProposal ? [previewProposal] : [],
     };
+  }
+
+  /**
+   * Coach proattivo — suggerimenti per completare il Vassoio (bozza pasto attiva).
+   * Non modifica né chiude la bozza; espone smart chips tap-to-add.
+   */
+  async handleDraftAdviceRequest(userText, currentState = {}, options = {}) {
+    const draft = this.resolveActiveMealDraftPayload();
+    if (!draft || expandFoodPayloadItems(draft).length === 0) {
+      this.publishSystemMessage('Non trovo una bozza pasto attiva da completare.');
+      return { ok: false, reason: 'no_active_draft' };
+    }
+
+    let adviceContext;
+    try {
+      adviceContext = await buildDraftAdviceContext(userText, currentState, draft);
+    } catch (error) {
+      console.error('[CommandTerminalController] buildDraftAdviceContext failed', error);
+      this.publishSystemMessage('Non riesco a leggere la bozza. Riprova tra poco.');
+      return { ok: false, reason: 'draft_advice_context_failed', userNotified: true };
+    }
+
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+    const systemInstruction = [
+      generateConsultantSystemInstruction({ displayName }),
+      ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK,
+      buildChatPersonaSystemBlock({ displayName }),
+    ].join('\n\n');
+    const prompt = generateDraftAdvicePrompt(adviceContext, userText);
+
+    try {
+      const { adviceMessage, suggestions } = await this.llmClient.generateConsultantResponse({
+        prompt,
+        systemInstruction,
+        temperature: 0.35,
+        chatHistory,
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
+
+      const quickReplies = buildDraftAdviceQuickReplies(
+        suggestions,
+        adviceContext.historicalFoodBlocks,
+        {
+          draftItems: adviceContext.activeDraft?.items || [],
+          adviceMessage: String(adviceMessage || '').trim(),
+          userText,
+          physiologicalPolicy: adviceContext.physiologicalPolicy || null,
+        },
+      );
+
+      this.conversationState = CONVERSATION_STATE.AWAITING_CONFIRMATION;
+      this.publishAdviceMessage({
+        text: String(adviceMessage || '').trim(),
+        quickReplies: quickReplies.length > 0 ? quickReplies : null,
+      });
+
+      return {
+        ok: true,
+        intent: 'ASK_DRAFT_ADVICE',
+        awaiting: true,
+        quickReplies,
+        conversationState: this.conversationState,
+      };
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.error('[CommandTerminalController] handleDraftAdviceRequest LLM failed', error);
+      this.publishSystemMessage(
+        'Non sono riuscito a suggerirti un complemento. Riprova o dimmi cosa aggiungere (es. «aggiungi 90g sgombro»).',
+      );
+      return { ok: false, reason: 'draft_advice_llm_failed', userNotified: true };
+    }
   }
 
   async processMealAdvice(userText, currentState = {}, options = {}) {
@@ -3539,6 +3636,10 @@ export class CommandTerminalController {
       hasImages: images.length > 0,
       chatHistory,
     });
+
+    if (inferredIntent === 'ASK_DRAFT_ADVICE') {
+      return this.handleDraftAdviceRequest(userText, currentState, options);
+    }
 
     if (
       inferredIntent === 'ASK_DAY_REVIEW'
