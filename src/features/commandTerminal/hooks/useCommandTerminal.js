@@ -566,10 +566,15 @@ export function useCommandTerminal({
         : userBubbleText;
       const priorHistory = chatHistoryRef.current || [];
       if (!skipUserBubble) {
-        setChatHistoryRef.current((prev) => [
-          ...(prev || []),
-          { sender: 'user', text: visibleBubbleText },
-        ]);
+        setChatHistoryRef.current((prev) => {
+          const base = (!options?.fromQuickReply && !options?.clarificationReply && !options?.fromSlotQuickReply)
+            ? markPredictiveGreetingsSuperseded(prev || [])
+            : (prev || []);
+          return [
+            ...base,
+            { sender: 'user', text: visibleBubbleText },
+          ];
+        });
       }
       // Per richieste con contesto nascosto: in chat resta il testo pulito;
       // all'LLM arriva resolvedText (richiesta utente) + systemInstructionExtra.
@@ -977,6 +982,17 @@ export function useCommandTerminal({
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_COFFEE_VARIANT) {
         return sendMessage(label, { fromSlotQuickReply: true, clarificationReply: true, wizardSelection });
+      }
+
+      if (
+        snap.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP
+        || snap.activeWizard === 'MEAL_BUILDER'
+      ) {
+        return sendMessage(label, {
+          fromSlotQuickReply: true,
+          fromQuickReply: true,
+          wizardSelection: wizardSelection || { foodName: label },
+        });
       }
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {

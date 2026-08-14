@@ -38,8 +38,8 @@ import {
   maxFuzzyDistanceForQuery,
 } from '../../../foodSearch.js';
 
-const DEFAULT_MODEL = 'gemini-3.6-flash';
-const CONSULTANT_MODEL = 'gemini-3.6-flash';
+const DEFAULT_MODEL = 'gemini-3.7-flash';
+const CONSULTANT_MODEL = 'gemini-3.7-flash';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();

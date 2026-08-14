@@ -13,6 +13,7 @@ import {
 } from './contracts/eventTypes.js';
 import {
   CONVERSATION_STATE,
+  ACTIVE_WIZARD,
   applyGramsSlotResponse,
   buildFoodConfirmationSummary,
   buildMealDraftUiMessage,
@@ -97,6 +98,7 @@ import {
   buildApproximateMealLogForRecovery,
   extractBareFoodNamesFromText,
   isAskDraftAdviceIntent,
+  isPriorityFreeTextMealLog,
 } from './conversation/mealLogIntent.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
@@ -156,6 +158,18 @@ import {
   buildAdaptiveLavagnaSpokenText,
   fastPathResolveMealPayload,
 } from './conversation/fastPathMealResolve.js';
+import {
+  advanceMealBuilderStep,
+  appendItemToMealBuilderDraft,
+  buildMealBuilderFinalPayload,
+  buildMealBuilderStepPrompt,
+  createMealBuilderWizardState,
+  inferMealTypeForMealBuilder,
+  isMealBuilderWizardAbortCommand,
+  isMealBuilderWizardTrigger,
+  isUnrelatedCommandDuringMealBuilder,
+  parseMealBuilderStepInput,
+} from './conversation/mealBuilderWizard.js';
 import {
   processUnresolvedChatFoods,
   applyChatUsdaEnrichmentResult,
@@ -380,6 +394,10 @@ export class CommandTerminalController {
     this.pendingSoftMealRecovery = null;
     /** @type {{ originText?: string, time?: number } | null} Caffè da chat in attesa variante. */
     this.pendingCoffeeLog = null;
+    /** @type {string|null} Wizard attivo (es. MEAL_BUILDER). */
+    this.activeWizard = null;
+    /** @type {object|null} Bozza pasto del wizard guidato in memoria. */
+    this.pendingWizardDraft = null;
   }
 
   setPendingMealUpdate(ctx) {
@@ -413,6 +431,10 @@ export class CommandTerminalController {
       pendingMealDraft: this.getPendingMealDraft(),
       mealWizardState: this.getMealWizardState(),
       mealDraftInteractiveEdit: this.mealDraftInteractiveEdit === true,
+      activeWizard: this.activeWizard,
+      pendingWizardDraft: this.pendingWizardDraft
+        ? { ...this.pendingWizardDraft, items: [...(this.pendingWizardDraft.items || [])] }
+        : null,
     };
   }
 
@@ -432,6 +454,161 @@ export class CommandTerminalController {
     this.mealDraftInteractiveEdit = false;
     this.pendingSoftMealRecovery = null;
     this.pendingCoffeeLog = null;
+    this.activeWizard = null;
+    this.pendingWizardDraft = null;
+  }
+
+  clearChipWaitingState() {
+    const slotStates = new Set([
+      CONVERSATION_STATE.AWAITING_FOOD_GRAMS,
+      CONVERSATION_STATE.AWAITING_TIME,
+      CONVERSATION_STATE.AWAITING_EXACT_TIME,
+    ]);
+    if (slotStates.has(this.conversationState)) {
+      this.conversationState = CONVERSATION_STATE.IDLE;
+      this.pendingCommandPayload = null;
+      this.pendingCommandType = null;
+      this.pendingMealRegistration = false;
+    }
+  }
+
+  clearMealBuilderWizard() {
+    this.activeWizard = null;
+    this.pendingWizardDraft = null;
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP) {
+      this.conversationState = CONVERSATION_STATE.IDLE;
+    }
+  }
+
+  shouldBypassSlotFillingForFreeText(userText, chatHistory = [], options = {}) {
+    const text = String(userText || '').trim();
+    if (!text) return false;
+    if (options?.fromQuickReply || options?.clarificationReply || options?.fromSlotQuickReply) {
+      return false;
+    }
+    if (isPriorityFreeTextMealLog(text)) return true;
+    if (isWorkoutLogIntent(text)) return true;
+    if (/\b(?:peso|pesata)\s+\d+/i.test(text) || /\d+(?:[.,]\d+)?\s*kg\b/i.test(text)) return true;
+    return false;
+  }
+
+  publishMealBuilderStepPrompt(state) {
+    const prompt = buildMealBuilderStepPrompt(state);
+    this.conversationState = CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP;
+    this.activeWizard = ACTIVE_WIZARD.MEAL_BUILDER;
+    this.pendingWizardDraft = state;
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'ASK_CLARIFICATION',
+        text: prompt.text,
+        message: prompt.text,
+        spokenText: prompt.text,
+        displayText: prompt.text,
+        quickReplies: prompt.quickReplies,
+        clarification: true,
+        mealWizard: prompt.mealWizard,
+        mealWizardPhase: prompt.mealWizardPhase,
+        mealProposals: null,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      awaiting: true,
+      intent: 'MEAL_BUILDER_WIZARD',
+      activeWizard: this.activeWizard,
+      pendingWizardDraft: this.getPendingWizardDraft(),
+      conversationState: this.conversationState,
+    };
+  }
+
+  getPendingWizardDraft() {
+    return this.pendingWizardDraft
+      ? {
+          ...this.pendingWizardDraft,
+          items: [...(this.pendingWizardDraft.items || [])],
+        }
+      : null;
+  }
+
+  startMealBuilderWizard(userText, currentState = {}, options = {}) {
+    const mealType = inferMealTypeForMealBuilder(userText, currentState);
+    const state = createMealBuilderWizardState({ mealType, step: 'base', items: [] });
+    console.log('🧙 DEBUG - START MEAL BUILDER WIZARD:', { mealType, userText: String(userText || '').slice(0, 80) });
+    return this.publishMealBuilderStepPrompt(state);
+  }
+
+  async processMealBuilderWizardResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    let state = this.getPendingWizardDraft();
+
+    if (!state || this.activeWizard !== ACTIVE_WIZARD.MEAL_BUILDER) {
+      this.clearMealBuilderWizard();
+      return this.processUserMessage(text, currentState, options);
+    }
+
+    if (isMealBuilderWizardAbortCommand(text)) {
+      this.clearMealBuilderWizard();
+      this.publishSystemMessage('Ok, wizard annullato. Dimmi pure quando vuoi registrare o costruire un pasto.');
+      return { ok: true, cancelled: true, intent: 'MEAL_BUILDER_WIZARD_CANCEL' };
+    }
+
+    if (isUnrelatedCommandDuringMealBuilder(text) && !options?.fromQuickReply) {
+      this.clearMealBuilderWizard();
+      return this.processUserMessage(text, currentState, options);
+    }
+
+    const selection = options?.wizardSelection && typeof options.wizardSelection === 'object'
+      ? options.wizardSelection
+      : null;
+    const parsed = parseMealBuilderStepInput(state.step, text, selection);
+
+    if (parsed.cancel) {
+      this.clearMealBuilderWizard();
+      this.publishSystemMessage('Ok, wizard annullato.');
+      return { ok: true, cancelled: true, intent: 'MEAL_BUILDER_WIZARD_CANCEL' };
+    }
+
+    if (state.step === 'confirm') {
+      if (parsed.confirm) {
+        const payload = normalizeFoodPayload(
+          buildMealBuilderFinalPayload(state),
+          currentState,
+          { inferMealTypeFromContext: false },
+        );
+        this.clearMealBuilderWizard();
+        if (!expandFoodPayloadItems(payload).length) {
+          this.publishSystemMessage('Non ho alimenti da salvare. Ripartiamo quando vuoi.');
+          return { ok: false, reason: 'empty_meal_builder_draft' };
+        }
+        return this.publishMealLogProposalCardDirect(payload, currentState, text, [], {
+          skipWizard: true,
+          uiMessage: 'Pasto guidato pronto. Confermi il salvataggio?',
+        });
+      }
+      return this.publishMealBuilderStepPrompt(state);
+    }
+
+    const ctx = this.getFastPathContext(currentState);
+    if (parsed.skip) {
+      state = advanceMealBuilderStep(state);
+    } else if (parsed.foodName) {
+      state = appendItemToMealBuilderDraft(state, parsed, ctx);
+      state = advanceMealBuilderStep(state);
+    } else {
+      this.publishSystemMessage(
+        'Non ho colto. Scegli una chip, oppure dimmi l\'alimento (es. «pasta integrale 80g»).',
+      );
+      return this.publishMealBuilderStepPrompt(state);
+    }
+
+    if (state.step === 'confirm' && !(state.items || []).length) {
+      this.publishSystemMessage('Non abbiamo aggiunto nulla — vuoi annullare o ripartire?');
+      state = { ...state, step: 'base' };
+    }
+
+    return this.publishMealBuilderStepPrompt(state);
   }
 
   setPendingMealDraft(draft) {
@@ -1672,6 +1849,19 @@ export class CommandTerminalController {
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
+
+    // Wizard «Guidami» attivo: resta nel loop chiuso salvo abort esplicito.
+    if (
+      this.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER
+      && !isUnrelatedCommandDuringMealBuilder(userText)
+      && !isPriorityFreeTextMealLog(userText)
+    ) {
+      return 'MEAL_BUILDER_WIZARD';
+    }
+
+    if (isMealBuilderWizardTrigger(userText)) {
+      return 'START_MEAL_BUILDER_WIZARD';
+    }
 
     const wipItems = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
     const wipMeta = {
@@ -3977,8 +4167,14 @@ export class CommandTerminalController {
     console.log('🟣 DEBUG - processUserMessageCore START:', {
       userText,
       conversationState: this.conversationState,
+      activeWizard: this.activeWizard,
       imageCount: images.length,
     });
+
+    const bypassSlotFilling = this.shouldBypassSlotFillingForFreeText(userText, chatHistory, options);
+    if (bypassSlotFilling) {
+      this.clearChipWaitingState();
+    }
 
     // Conferma recovery soft (grammi approssimativi proposti dopo fallimento LLM).
     if (this.pendingSoftMealRecovery?.payload) {
@@ -3999,6 +4195,14 @@ export class CommandTerminalController {
         return { ok: true, cancelled: true, softRecovery: true };
       }
     }
+
+    if (
+      this.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER
+      || this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP
+    ) {
+      return this.processMealBuilderWizardResponse(userText, currentState, options);
+    }
+
     if (
       this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_ITEM
       || this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_WIZARD_CONFIRM
@@ -4022,7 +4226,7 @@ export class CommandTerminalController {
       return this.processCoffeeVariantResponse(userText, currentState, options);
     }
 
-    if (this.conversationState !== CONVERSATION_STATE.IDLE) {
+    if (this.conversationState !== CONVERSATION_STATE.IDLE && !bypassSlotFilling) {
       if (images.length > 0) {
         this.publishSystemMessage('Completa prima la domanda in sospeso, poi allega eventuali screenshot.');
         return this.processSlotFillingResponse(userText, currentState, options);
@@ -4105,6 +4309,14 @@ export class CommandTerminalController {
       hasImages: images.length > 0,
       chatHistory,
     });
+
+    if (inferredIntent === 'START_MEAL_BUILDER_WIZARD') {
+      return this.startMealBuilderWizard(userText, currentState, options);
+    }
+
+    if (inferredIntent === 'MEAL_BUILDER_WIZARD') {
+      return this.processMealBuilderWizardResponse(userText, currentState, options);
+    }
 
     if (inferredIntent === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);

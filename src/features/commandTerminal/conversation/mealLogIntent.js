@@ -5,6 +5,7 @@ import {
   hasMealWipConstraints,
   isMealWipSessionStart,
 } from '../../wipMealBuilder/mealWipEngine.js';
+import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -1494,6 +1495,8 @@ export function wasLastAiMessageClarification(chatHistory = []) {
     // Salta messaggi utente in coda (es. la risposta ai grammi appena aggiunta).
     if (entry.sender === 'user') continue;
     if (entry.sender !== 'ai') continue;
+    // Saluto predittivo con chip: NON è un chiarimento pasto — non sequestrare l'input libero.
+    if (isPredictiveGreetingMessage(entry)) return false;
     if (entry.clarification === true || entry.type === 'ASK_CLARIFICATION' || entry.type === 'REQUEST_FOOD_PHOTO' || entry.requestFoodPhoto === true || entry.mealWizard === true) return true;
     if (Array.isArray(entry.quickReplies) && entry.quickReplies.length >= 2) {
       const t = String(entry.text || '');
@@ -1656,6 +1659,19 @@ export function isConsumedMealLogDescription(userText) {
     /\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut)\b/.test(text)
     || /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\b/.test(text) && WEIGHT_PATTERN.test(text)
   );
+}
+
+/**
+ * Testo libero che deve avere priorità assoluta sul routing (bypass attesa chip/slot).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isPriorityFreeTextMealLog(userText) {
+  const text = String(userText || '').trim();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return true;
+  const parsed = parseConsumedMealFromNaturalText(text);
+  return Boolean(parsed?.items?.length && isFoodRegistrationIntent(text));
 }
 
 function formatExactTime(hours, minutes) {

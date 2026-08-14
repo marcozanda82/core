@@ -19,8 +19,15 @@ export const CONVERSATION_STATE = Object.freeze({
   AWAITING_MEAL_WIZARD_ITEM: 'AWAITING_MEAL_WIZARD_ITEM',
   /** SequentialFoodWizard: riepilogo finale, attesa conferma salvataggio. */
   AWAITING_MEAL_WIZARD_CONFIRM: 'AWAITING_MEAL_WIZARD_CONFIRM',
+  /** Wizard «Guidami»: loop chiuso costruzione pasto passo-passo. */
+  AWAITING_MEAL_BUILDER_STEP: 'AWAITING_MEAL_BUILDER_STEP',
   /** Caffè da testo: attesa scelta Amaro vs Zuccherato. */
   AWAITING_COFFEE_VARIANT: 'AWAITING_COFFEE_VARIANT',
+});
+
+/** Wizard attivo oltre conversationState (es. costruzione pasto guidata). */
+export const ACTIVE_WIZARD = Object.freeze({
+  MEAL_BUILDER: 'MEAL_BUILDER',
 });
 
 const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];

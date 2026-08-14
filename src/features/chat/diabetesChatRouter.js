@@ -18,6 +18,7 @@ import {
   looksLikeComplexMealLog,
   wasLastAiMessageClarification,
 } from '../commandTerminal/conversation/mealLogIntent.js';
+import { isPredictiveGreetingMessage } from '../predictive/predictiveGreeting.js';
 import { inferTherapyExceptionFromText } from '../health/utils/therapyPlanStore.js';
 
 /** @typedef {'NUTRITION' | 'HEALTH' | 'SPLIT'} DiabetesChatRoute */
@@ -91,6 +92,8 @@ export function wasLastAiMessageMealPrompt(chatHistory = []) {
     // Ignora turni utente in coda (stesso motivo di wasLastAiMessageClarification).
     if (entry.sender === 'user') continue;
     if (entry.sender !== 'ai') continue;
+
+    if (isPredictiveGreetingMessage(entry)) return false;
 
     const text = String(entry.text || '');
     if (MEAL_CONTEXT_ASK_RE.test(text)) return true;

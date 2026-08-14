@@ -189,7 +189,7 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
       return {
         userText: 'Guidami per il pranzo bilanciando i macro rimanenti di oggi',
         options: {
-          intent: 'CONSULTANT_MEAL',
+          intent: 'START_MEAL_BUILDER_WIZARD',
           fromPredictiveGreeting: true,
         },
       };
@@ -276,7 +276,7 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
       return {
         userText: 'Guidami per la cena bilanciando i macro rimanenti',
         options: {
-          intent: 'CONSULTANT_MEAL',
+          intent: 'START_MEAL_BUILDER_WIZARD',
           fromPredictiveGreeting: true,
         },
       };

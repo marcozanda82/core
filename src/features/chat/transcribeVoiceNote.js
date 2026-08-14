@@ -1,7 +1,7 @@
 import { askAI } from '../../services/aiService.js';
 import { audioBase64ToDataUrl, normalizeAudioMimeType, stripDataUrlPrefix } from '../../utils/audioUtils.js';
 
-const TRANSCRIBE_MODEL = 'gemini-3.6-flash';
+const TRANSCRIBE_MODEL = 'gemini-3.7-flash';
 
 const TRANSCRIBE_SYSTEM_INSTRUCTION = [
   'Sei un trascrittore automatico di note vocali.',

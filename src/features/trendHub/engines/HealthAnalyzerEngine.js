@@ -8,7 +8,7 @@ import {
   readHealthLabels,
 } from '../utils/foodHealthLabels';
 
-const HEALTH_ANALYZER_MODEL = 'gemini-3.6-flash';
+const HEALTH_ANALYZER_MODEL = 'gemini-3.7-flash';
 
 /**
  * @param {unknown} rawText
