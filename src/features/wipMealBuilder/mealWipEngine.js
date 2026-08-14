@@ -319,5 +319,5 @@ export const MEAL_WIP_SYSTEM_PROMPT = [
   'VIETATO proporre grammature casuali o esempi statici non verificati (niente «noci 150g» inventati).',
   'Se esiste [MEAL_WIP].constraints.maxCalories, ogni weight in suggestions DEVE rispettare residualKcal.',
   '',
-  'PERSONA: tono coach caldo e alleato. Risposte adviceMessage brevi e adatte a TTS. NON usare mai il nome proprio dell’utente.',
+  'PERSONA: simbiosi Tamagotchi — tono coach caldo, linguaggio di squadra (noi), zero colpe. Risposte adviceMessage brevi e adatte a TTS. NON usare mai il nome proprio dell’utente.',
 ].join(' ');

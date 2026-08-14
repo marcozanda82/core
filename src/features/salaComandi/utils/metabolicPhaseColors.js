@@ -109,10 +109,26 @@ function readItemProtein(item) {
 
 /**
  * Pasto che interrompe il digiuno (supera soglia fisiologica trascurabile).
+ * Ignora caffè amaro / stimolanti con breaksFast:false / 0 kcal.
  * @param {object | null | undefined} item
  * @returns {boolean}
  */
 export function isFastingBreakerLogItem(item) {
+  if (!item || typeof item !== 'object') return false;
+
+  const type = String(item.type || '').toLowerCase();
+  if (type === 'stimulant' || type === 'energizer') {
+    // Lazy import avoided — inline mirror of coffeeLogEngine.isStimulantFastingBreaker
+    if (item.breaksFast === false) return false;
+    if (item.breaksFast === true) return true;
+    if (item.coffeeVariant === 'amaro') return false;
+    if (item.coffeeVariant === 'zuccherato') return true;
+    const kcal = readItemKcal(item);
+    const carbs = readItemCarbs(item);
+    return kcal > FASTING_BREAK_THRESHOLDS.kcal || carbs > FASTING_BREAK_THRESHOLDS.carbs;
+  }
+  if (type === 'water') return false;
+
   if (!isMealLikeLogItem(item)) return false;
   const kcal = readItemKcal(item);
   const carbs = readItemCarbs(item);
@@ -285,12 +301,19 @@ export function hoursFastedAtTimelineHour(
  * @param {{ fullHistory?: object, anchorDate?: string, mealTimesObj?: object, referenceDateObj?: Date }} options
  */
 export function collectMetabolicTimelineMeals(activeLog, options = {}) {
-  const { fullHistory, anchorDate, mealTimesObj, referenceDateObj } = options;
+  const { fullHistory, anchorDate, mealTimesObj, referenceDateObj, manualNodes = [] } = options;
   const eventTimes = new Set();
+  const timelineSources = [
+    ...(Array.isArray(activeLog) ? activeLog : []),
+    ...(Array.isArray(manualNodes) ? manualNodes : []),
+  ];
 
-  for (const item of activeLog || []) {
+  for (const item of timelineSources) {
     if (!isFastingBreakerLogItem(item)) continue;
-    const resolved = resolveMealTimeFromLogItem(item, mealTimesObj);
+    let resolved = resolveMealTimeFromLogItem(item, mealTimesObj);
+    if (resolved == null && String(item.type || '').toLowerCase() === 'stimulant') {
+      resolved = normalizeMealHour(parseDecimalHourFromValue(item.time ?? item.mealTime));
+    }
     if (resolved != null) eventTimes.add(resolved);
   }
 

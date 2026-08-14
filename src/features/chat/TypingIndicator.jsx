@@ -3,7 +3,7 @@ import KentuAvatar from './KentuAvatar';
 import { AVATAR_MOOD_SRC } from './avatarMood.js';
 
 /**
- * Indicatore visivo mentre Kentu elabora (avatar Hacker + tre puntini).
+ * Indicatore visivo mentre Kentu elabora (avatar contestuale + tre puntini).
  */
 export default function TypingIndicator({
   label = 'Kentu sta elaborando...',

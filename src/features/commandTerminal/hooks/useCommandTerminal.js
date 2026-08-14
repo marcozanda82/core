@@ -8,6 +8,7 @@ import {
   DISPATCH_UPSERT_MEAL,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_LOG_SLEEP,
+  DISPATCH_LOG_STIMULANT,
   DISPATCH_SYSTEM_MESSAGE,
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
@@ -28,6 +29,19 @@ import {
   mealReceiptFallbackText,
 } from '../../chat/mealReceiptUtils.js';
 import { isSystemNoticeMessage } from '../../chat/chatMessageKind.js';
+import {
+  snapshotChatAvatarAsset,
+  isStrategicAvatarIntent,
+} from '../../chat/avatarMood.js';
+import { getTodayString } from '../../../coreEngine.jsx';
+import { getCurrentPredictiveContext } from '../../predictive/HabitEngine.js';
+import {
+  buildPredictiveGreeting,
+  evaluatePredictiveGreetingDecision,
+  markPredictiveGreetingsSuperseded,
+  PREDICTIVE_GREETING_TYPE,
+  resolvePredictiveIntentAction,
+} from '../../predictive/predictiveGreeting.js';
 import {
   applyMealOperations,
   mergeMealItems,
@@ -57,6 +71,7 @@ export function useCommandTerminal({
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
   onLogSleepCommand = null,
+  onLogStimulantCommand = null,
   onSaveFoodDbEntry = null,
   onPopulateMealLavagna = null,
   onSaveFoodEntryPer100ToFoodDb = null,
@@ -69,9 +84,12 @@ export function useCommandTerminal({
 
   const setChatHistoryRef = useRef(setChatHistory);
   const chatHistoryRef = useRef(chatHistory);
+  const getCurrentStateRef = useRef(getCurrentState);
+  const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const pendingMealUpdateRef = useRef(null);
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(0);
+  const strategicGenerationRef = useRef(false);
   useEffect(() => {
     setChatHistoryRef.current = setChatHistory;
   }, [setChatHistory]);
@@ -80,32 +98,57 @@ export function useCommandTerminal({
     chatHistoryRef.current = chatHistory;
   }, [chatHistory]);
 
+  useEffect(() => {
+    getCurrentStateRef.current = getCurrentState;
+    getWipMealSnapshotRef.current = getWipMealSnapshot;
+  }, [getCurrentState, getWipMealSnapshot]);
+
+  const buildAvatarSnapshotContext = useCallback((forceStrategic = false) => {
+    const currentState =
+      typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+    const wipSnapshot = typeof getWipMealSnapshotRef.current === 'function'
+      ? getWipMealSnapshotRef.current()
+      : { wipMealItems: [] };
+    return {
+      chatHistory: chatHistoryRef.current || [],
+      wipMealItems: wipSnapshot.wipMealItems || [],
+      mealBuilder: currentState.mealBuilder ?? null,
+      isTrainingDay: currentState.isTrainingDay === true,
+      forceStrategic: forceStrategic || strategicGenerationRef.current === true,
+    };
+  }, []);
+
   const appendAiMessage = useCallback((text, extra = {}) => {
     const line = String(text || '').trim();
     const hasReceipt = Boolean(extra?.mealReceipt && typeof extra.mealReceipt === 'object');
     if ((!line && !hasReceipt) || typeof setChatHistoryRef.current !== 'function') return;
+    const avatarAsset = String(extra?.avatarAsset || '').trim()
+      || snapshotChatAvatarAsset(extra, buildAvatarSnapshotContext(extra?.forceStrategic === true));
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
       text: line || '(mealReceipt)',
       type: extra?.type || null,
       sourceTag: extra?.sourceTag || null,
       local: extra?.local === true,
       hasMealReceipt: hasReceipt,
+      avatarAsset,
     });
     setChatHistoryRef.current((prev) => [
       ...(prev || []),
       {
+        ...(extra && typeof extra === 'object' ? extra : {}),
         sender: 'ai',
         text: line || (hasReceipt ? mealReceiptFallbackText(extra.mealReceipt) : ''),
-        ...(extra && typeof extra === 'object' ? extra : {}),
+        avatarAsset,
       },
     ]);
-  }, []);
+  }, [buildAvatarSnapshotContext]);
 
   const onAddFoodRef = useRef(onAddFoodCommand);
   const onChatCloseRef = useRef(onChatClose);
   const chatCloseTimerRef = useRef(null);
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
   const onLogSleepRef = useRef(onLogSleepCommand);
+  const onLogStimulantRef = useRef(onLogStimulantCommand);
   const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
   const handleAcceptMealProposalRef = useRef(null);
 
@@ -143,21 +186,21 @@ export function useCommandTerminal({
   }, [onLogSleepCommand]);
 
   useEffect(() => {
+    onLogStimulantRef.current = onLogStimulantCommand;
+  }, [onLogStimulantCommand]);
+
+  useEffect(() => {
     onSaveFoodDbEntryRef.current = onSaveFoodDbEntry;
   }, [onSaveFoodDbEntry]);
 
-  const getCurrentStateRef = useRef(getCurrentState);
-  const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const onWipMealSeedRef = useRef(onWipMealSeed);
   const onPopulateMealLavagnaRef = useRef(onPopulateMealLavagna);
   const onSaveFoodEntryPer100Ref = useRef(onSaveFoodEntryPer100ToFoodDb);
   const chatUsdaResumeRef = useRef(null);
   const [chatUsdaEnrichmentSession, setChatUsdaEnrichmentSession] = useState(null);
   useEffect(() => {
-    getCurrentStateRef.current = getCurrentState;
-    getWipMealSnapshotRef.current = getWipMealSnapshot;
     onWipMealSeedRef.current = onWipMealSeed;
-  }, [getCurrentState, getWipMealSnapshot, onWipMealSeed]);
+  }, [onWipMealSeed]);
   useEffect(() => {
     onPopulateMealLavagnaRef.current = onPopulateMealLavagna;
   }, [onPopulateMealLavagna]);
@@ -332,6 +375,22 @@ export function useCommandTerminal({
       }
     });
 
+    const unsubscribeLogStimulant = commandBus.subscribe(DISPATCH_LOG_STIMULANT, async (envelope) => {
+      const payload = envelope?.payload || {};
+      try {
+        if (typeof onLogStimulantRef.current === 'function') {
+          await onLogStimulantRef.current(payload, envelope);
+        }
+      } catch (error) {
+        const reason = `Stimulant handler failure: ${error?.message || 'unknown error'}`;
+        commandBus.publish(
+          DISPATCH_COMMAND_REJECTED,
+          { reason, command: payload },
+          { source: 'useCommandTerminal' },
+        );
+      }
+    });
+
     const unsubscribeSystem = commandBus.subscribe(DISPATCH_SYSTEM_MESSAGE, (envelope) => {
       const payload = envelope?.payload || {};
       if (payload.type === 'MEAL_DRAFT') {
@@ -471,6 +530,7 @@ export function useCommandTerminal({
 
     return () => {
       unsubscribeLogSleep();
+      unsubscribeLogStimulant();
       unsubscribeSystem();
       unsubscribeRejected();
       cleanupFns.forEach((fn) => {
@@ -694,6 +754,13 @@ export function useCommandTerminal({
         }
         if (!forcedIntent && imageOnly) forcedIntent = 'LOG_SLEEP';
 
+        strategicGenerationRef.current = options?.forceStrategic === true
+          || forcedIntent === 'REQUEST_HEALTH_DIAGNOSIS'
+          || forcedIntent === 'ASK_DRAFT_ADVICE'
+          || forcedIntent === 'ASK_MEAL_ADVICE'
+          || forcedIntent === 'CONSULTANT_MEAL'
+          || isStrategicAvatarIntent(resolvedText, priorHistory);
+
         const result = await controller.processUserMessage(fallbackText, {
           ...currentState,
           wipMealItems: wipSnapshot.wipMealItems || [],
@@ -755,6 +822,7 @@ export function useCommandTerminal({
         });
         return { ok: false, reason: error?.message || 'send_message_error', userNotified: true };
       } finally {
+        strategicGenerationRef.current = false;
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
@@ -766,6 +834,96 @@ export function useCommandTerminal({
     },
     [chatInput, chatImages, controller, syncActiveQuickRepliesFromController, appendAiMessage],
   );
+
+  const sendMessageRef = useRef(sendMessage);
+  useEffect(() => {
+    sendMessageRef.current = sendMessage;
+  }, [sendMessage]);
+
+  const handlePredictiveIntent = useCallback((intent, extra = {}) => {
+    const resolved = resolvePredictiveIntentAction(String(intent || ''), {
+      predictiveState: extra?.predictiveState,
+      label: extra?.label,
+    });
+    if (!resolved) {
+      return Promise.resolve({ ok: false, reason: 'unknown_predictive_intent' });
+    }
+    if (resolved.options?.snoozeOnly) {
+      appendAiMessage('Ok, ti ricorderò più tardi. 💪', { type: 'system' });
+      return Promise.resolve({ ok: true, snoozed: true });
+    }
+    const send = sendMessageRef.current;
+    if (typeof send !== 'function') {
+      return Promise.resolve({ ok: false, reason: 'send_message_unavailable' });
+    }
+    return send(resolved.userText, {
+      ...resolved.options,
+      fromPredictiveGreeting: true,
+      fromQuickReply: true,
+    });
+  }, [appendAiMessage]);
+
+  const tryEmitPredictiveGreeting = useCallback(() => {
+    if (isLoading) return { ok: false, reason: 'processing' };
+
+    const currentState =
+      typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+    const anchorDate = String(currentState.activeDate || getTodayString()).trim() || getTodayString();
+    const history = chatHistoryRef.current || [];
+
+    const ctx = getCurrentPredictiveContext({
+      fullHistory: currentState.fullHistory || {},
+      dailyLog: currentState.activeLog || [],
+      manualNodes: currentState.manualNodes || [],
+      anchorDate,
+    });
+
+    const decision = evaluatePredictiveGreetingDecision(history, ctx, { anchorDate });
+    if (decision.action === 'skip') {
+      return { ok: false, reason: 'conversation_gate', ctx };
+    }
+
+    const greeting = decision.action === 'clear_stale' ? null : buildPredictiveGreeting(ctx);
+    if (decision.action !== 'clear_stale' && !greeting) {
+      if (typeof setChatHistoryRef.current === 'function') {
+        setChatHistoryRef.current((prev) => markPredictiveGreetingsSuperseded(prev));
+      }
+      return { ok: false, reason: 'no_template', ctx };
+    }
+
+    if (typeof setChatHistoryRef.current !== 'function') {
+      return { ok: false, reason: 'chat_history_not_configured' };
+    }
+
+    setChatHistoryRef.current((prev) => {
+      const base = (decision.action === 'supersede' || decision.action === 'clear_stale')
+        ? markPredictiveGreetingsSuperseded(prev)
+        : (prev || []);
+      if (!greeting) return base;
+      return [
+        ...base,
+        {
+          sender: 'ai',
+          type: PREDICTIVE_GREETING_TYPE,
+          text: greeting.text,
+          avatarAsset: greeting.avatarAsset,
+          quickReplies: greeting.quickReplies,
+          predictiveState: greeting.predictiveState,
+          predictiveGreeting: true,
+          anchorDate,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    });
+    setActiveQuickReplies([]);
+    return {
+      ok: true,
+      state: ctx.state,
+      confidence: ctx.confidence,
+      superseded: decision.action === 'supersede',
+      cleared: decision.action === 'clear_stale',
+    };
+  }, [isLoading]);
 
   const cancelGeneration = useCallback(() => {
     if (abortControllerRef.current) {
@@ -791,6 +949,10 @@ export function useCommandTerminal({
 
   const handleQuickReplyClick = useCallback(
     (text, extra = {}) => {
+      if (extra?.predictiveIntent) {
+        return handlePredictiveIntent(extra.predictiveIntent, extra);
+      }
+
       const label = String(text ?? '').trim();
       if (!label) return Promise.resolve({ ok: false, reason: 'empty_quick_reply' });
       const wizardSelection = extra?.wizardSelection && typeof extra.wizardSelection === 'object'
@@ -811,6 +973,10 @@ export function useCommandTerminal({
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_WORKOUT_TIME) {
         return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
+      }
+
+      if (snap.conversationState === CONVERSATION_STATE.AWAITING_COFFEE_VARIANT) {
+        return sendMessage(label, { fromSlotQuickReply: true, clarificationReply: true, wizardSelection });
       }
 
       if (snap.conversationState === CONVERSATION_STATE.AWAITING_CONFIRMATION) {
@@ -914,7 +1080,7 @@ export function useCommandTerminal({
         wizardSelection,
       });
     },
-    [controller, handleDraftCancel, resolveDraftMessage, sendMessage, appendAiMessage, hasActiveWorkoutDraftInChat],
+    [controller, handleDraftCancel, resolveDraftMessage, sendMessage, appendAiMessage, hasActiveWorkoutDraftInChat, handlePredictiveIntent],
   );
 
   const handleDraftConfirm = useCallback(
@@ -1370,6 +1536,8 @@ export function useCommandTerminal({
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,
+    tryEmitPredictiveGreeting,
+    handlePredictiveIntent,
     getConversationSnapshot: () => controller.getConversationSnapshot(),
     resetConversationState,
   };

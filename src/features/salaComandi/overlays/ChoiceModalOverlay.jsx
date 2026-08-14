@@ -8,6 +8,8 @@ export default function ChoiceModalOverlay({
   onBackToMain,
   stimulantSubtype,
   setStimulantSubtype,
+  coffeeVariant,
+  setCoffeeVariant,
   stimulantTime,
   setStimulantTime,
   onSaveStimulant,
@@ -35,6 +37,40 @@ export default function ChoiceModalOverlay({
                 </button>
               ))}
             </div>
+            {stimulantSubtype === 'caffè' ? (
+              <>
+                <p style={{ margin: '0 0 8px 0', fontSize: '0.85rem', color: '#aaa' }}>Preparazione</p>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                  {[
+                    { id: 'amaro', label: '☕ Amaro (0 kcal)', hint: 'Digiuno OK' },
+                    { id: 'zuccherato', label: '☕ Zuccherato (+20 kcal)', hint: 'Rompe digiuno' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setCoffeeVariant?.(opt.id)}
+                      style={{
+                        flex: 1,
+                        padding: '10px',
+                        borderRadius: '12px',
+                        border: coffeeVariant === opt.id ? '2px solid #06b6d4' : '1px solid #333',
+                        background: coffeeVariant === opt.id ? 'rgba(6,182,212,0.12)' : 'rgba(255,255,255,0.05)',
+                        color: coffeeVariant === opt.id ? '#67e8f9' : '#fff',
+                        fontSize: '0.8rem',
+                        fontWeight: coffeeVariant === opt.id ? 'bold' : 'normal',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px',
+                      }}
+                    >
+                      <span>{opt.label}</span>
+                      <span style={{ fontSize: '0.7rem', opacity: 0.75 }}>{opt.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
             <p style={{ margin: '0 0 8px 0', fontSize: '0.85rem', color: '#aaa' }}>Orario</p>
             <input type="range" min={0} max={24} step={0.25} value={stimulantTime} onChange={(e) => setStimulantTime(Number(e.target.value))} style={{ width: '100%', marginBottom: '8px' }} />
             <span style={{ fontSize: '0.9rem', color: '#00e5ff', marginBottom: '16px' }}>{Math.floor(stimulantTime)}:{String(Math.round((stimulantTime % 1) * 60)).padStart(2, '0')}</span>

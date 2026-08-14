@@ -27,14 +27,20 @@ import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
+import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
+import { PREDICTIVE_GREETING_TYPE } from './features/predictive/predictiveGreeting.js';
 import {
   AVATAR_MOOD,
   AVATAR_MOOD_LABEL,
+  CHAT_DEFAULT_AVATAR_SRC,
   detectActiveMealTray,
+  detectStrategicConsultContext,
   getAvatarSrcForMood,
+  isStrategicAvatarIntent,
   resolveAvatarMood,
+  resolveMessageAvatarSrc,
 } from './features/chat/avatarMood.js';
 import { audioBlobToBase64 } from './utils/audioUtils.js';
 import { stopSpeaking } from './features/chat/voiceChat.js';
@@ -154,6 +160,7 @@ export default function AiCluster({
   const chatFileInputRef = useRef(null);
   const chatTextareaRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
+  const [consumedPredictiveGreetingKeys, setConsumedPredictiveGreetingKeys] = useState(() => new Set());
   const voiceSubmitRef = useRef(null);
 
   const openFoodPhotoCapture = useCallback(async () => {
@@ -204,6 +211,7 @@ export default function AiCluster({
   } = useVoiceNote({ isProcessing });
 
   const [isTranscribingVoiceNote, setIsTranscribingVoiceNote] = useState(false);
+  const [strategicProcessingLatch, setStrategicProcessingLatch] = useState(false);
 
   const handleInputResize = useCallback((e) => {
     const el = e?.target || chatTextareaRef.current;
@@ -219,6 +227,19 @@ export default function AiCluster({
   }, []);
 
   const showTypingIndicator = isProcessing || isTranscribingVoiceNote;
+
+  useEffect(() => {
+    if (!isProcessing && !isTranscribingVoiceNote) {
+      setStrategicProcessingLatch(false);
+    }
+  }, [isProcessing, isTranscribingVoiceNote]);
+
+  const isStrategicConsult = useMemo(
+    () => detectStrategicConsultContext(chatHistory, {
+      forceStrategic: strategicProcessingLatch,
+    }) || isStrategicAvatarIntent(stripInvisibleContextFromBubble(chatInput), chatHistory),
+    [chatHistory, chatInput, strategicProcessingLatch],
+  );
 
   const hasActiveWorkoutDraft = useMemo(
     () => (chatHistory || []).some((m) => m.workoutDraft && !m.draftResolved),
@@ -239,6 +260,7 @@ export default function AiCluster({
       isProcessing,
       isTranscribing: isTranscribingVoiceNote,
       isTyping: showTypingIndicator,
+      isStrategicConsult,
       hasActiveMealTray,
       hasActiveWorkoutDraft,
       isTrainingDay: isTrainingDay === true,
@@ -247,20 +269,25 @@ export default function AiCluster({
       isProcessing,
       isTranscribingVoiceNote,
       showTypingIndicator,
+      isStrategicConsult,
       hasActiveMealTray,
       hasActiveWorkoutDraft,
       isTrainingDay,
     ],
   );
 
-  const activeAvatarSrc = useMemo(
-    () => getAvatarSrcForMood(avatarMood, healthAvatarSrc),
-    [avatarMood, healthAvatarSrc],
+  const typingIndicatorLabel = useMemo(() => {
+    const base = AVATAR_MOOD_LABEL[avatarMood] || AVATAR_MOOD_LABEL[AVATAR_MOOD.CODING];
+    return `${base}...`;
+  }, [avatarMood]);
+
+  /** Avatar live solo per typing indicator — i messaggi usano message.avatarAsset congelato. */
+  const chatAvatarSrc = useMemo(
+    () => getAvatarSrcForMood(avatarMood, CHAT_DEFAULT_AVATAR_SRC),
+    [avatarMood],
   );
 
-  const headerAvatarLabel = avatarMood === AVATAR_MOOD.DEFAULT
-    ? healthScoreLabel
-    : `${AVATAR_MOOD_LABEL[avatarMood] || 'Kentu'}. ${healthScoreLabel}`;
+  const headerAvatarLabel = healthScoreLabel;
 
   useEffect(() => {
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -532,6 +559,7 @@ export default function AiCluster({
           type="button"
           onClick={() => {
             if (typeof onRequestHealthDiagnosis === 'function') {
+              setStrategicProcessingLatch(true);
               onRequestHealthDiagnosis(healthScore);
             }
           }}
@@ -548,7 +576,7 @@ export default function AiCluster({
         >
           <KentuAvatar
             size="lg"
-            src={activeAvatarSrc}
+            src={healthAvatarSrc}
             fit="contain"
             alt=""
           />
@@ -560,13 +588,6 @@ export default function AiCluster({
           {introPhrase ? (
             <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
               {introPhrase}
-            </span>
-          ) : avatarMood !== AVATAR_MOOD.DEFAULT ? (
-            <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
-              {AVATAR_MOOD_LABEL[avatarMood]}
-              {healthScore != null
-                ? ` · Score ${Math.round(Number(healthScore.score) || 0)}`
-                : ''}
             </span>
           ) : healthScore != null ? (
             <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
@@ -647,7 +668,7 @@ export default function AiCluster({
           onClear={onClearWipMeal}
         />
         <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
-          {chatHistory.map((msg, idx) => (
+          {chatHistory.filter((msg) => msg?.predictiveSuperseded !== true).map((msg, idx) => (
             <div
               key={idx}
               className={`flex w-full flex-col gap-1.5 ${
@@ -729,7 +750,7 @@ export default function AiCluster({
                 </div>
               ) : msg.sender === 'ai' ? (
                 msg.isTyping ? (
-                  <TypingIndicator avatarSrc={getAvatarSrcForMood(AVATAR_MOOD.CODING, healthAvatarSrc)} />
+                  <TypingIndicator avatarSrc={chatAvatarSrc} label={typingIndicatorLabel} />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
@@ -744,9 +765,7 @@ export default function AiCluster({
                       <div className="kentu-ai-row flex w-full items-end gap-3">
                         <KentuAvatar
                           size="sm"
-                          src={hasActiveMealTray
-                            ? getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, healthAvatarSrc)
-                            : healthAvatarSrc}
+                          src={resolveMessageAvatarSrc(msg)}
                           fit="contain"
                           className="mb-0.5 shrink-0 self-end"
                           alt="Kentu AI"
@@ -865,6 +884,38 @@ export default function AiCluster({
                 </div>
               )}
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !messageHasInteractiveDraftWidget(msg) && (() => {
+                const isPredictiveGreeting = msg.type === PREDICTIVE_GREETING_TYPE || msg.predictiveGreeting === true;
+                const predictiveKey = `pred-${idx}`;
+                if (isPredictiveGreeting && (consumedPredictiveGreetingKeys.has(predictiveKey) || msg.predictiveSuperseded === true)) return null;
+
+                if (isPredictiveGreeting) {
+                  return (
+                    <QuickReplyChipRow
+                      replies={msg.quickReplies}
+                      disabled={isProcessing}
+                      align={msg.sender === 'ai' ? 'start' : 'end'}
+                      onChipClick={(chip) => {
+                        const replyObj = chip && typeof chip === 'object' ? chip : null;
+                        const replyLabel = replyObj
+                          ? String(replyObj.label || replyObj.text || '').trim()
+                          : String(chip || '').trim();
+                        if (!replyLabel) return;
+                        setConsumedPredictiveGreetingKeys((prev) => {
+                          const next = new Set(prev);
+                          next.add(predictiveKey);
+                          return next;
+                        });
+                        onSlotQuickReplyClick?.(replyLabel, {
+                          predictiveIntent: replyObj?.intent || replyObj?.action || null,
+                          predictiveState: msg.predictiveState || null,
+                          label: replyLabel,
+                        });
+                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                      }}
+                    />
+                  );
+                }
+
                 const clarificationKey = `clr-${idx}`;
                 const isClarification = msg.clarification === true
                   || msg.type === 'ASK_CLARIFICATION'
@@ -991,7 +1042,7 @@ export default function AiCluster({
             </div>
           ))}
           {showTypingIndicator ? (
-            <TypingIndicator avatarSrc={getAvatarSrcForMood(AVATAR_MOOD.CODING, healthAvatarSrc)} />
+            <TypingIndicator avatarSrc={chatAvatarSrc} label={typingIndicatorLabel} />
           ) : null}
           <div ref={chatEndRef} />
         </div>

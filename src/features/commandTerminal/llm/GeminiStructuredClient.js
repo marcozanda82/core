@@ -1119,7 +1119,7 @@ function getEnvelopeSchemaForIntent(commandHint) {
         uiMessage: {
           type: 'string',
           description:
-            'OBBLIGATORIO per CHAT_RESPONSE: analisi BREVE (TTS) basata su KENTU_GLOBAL_STATE.',
+            'OBBLIGATORIO per CHAT_RESPONSE: analisi BREVE (TTS) basata su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: noi, mai colpevolizzante.',
         },
         adviceMessage: {
           type: 'string',
@@ -1245,7 +1245,7 @@ VIETATO forzare ricerche complesse o inventare schede nutrizionali.
 
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
 L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
--> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE.
+-> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: linguaggio di squadra (noi), leggi Avatar_Symbiosis; zero colpe.
 -> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
 
 /**

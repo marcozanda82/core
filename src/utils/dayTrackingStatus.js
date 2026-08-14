@@ -8,6 +8,16 @@ const FASTING_BREAK = { kcal: 10, carbs: 1, protein: 1 };
 function isFastingBreakerItem(item) {
   if (!item || typeof item !== 'object') return false;
   const t = String(item.type || '').toLowerCase();
+  if (t === 'stimulant' || t === 'energizer') {
+    if (item.breaksFast === false) return false;
+    if (item.breaksFast === true) return true;
+    if (item.coffeeVariant === 'amaro') return false;
+    if (item.coffeeVariant === 'zuccherato') return true;
+    const kcal = Number(item.kcal ?? item.cal) || 0;
+    const carbs = Number(item.carb ?? item.carbs ?? item.carboidrati) || 0;
+    return kcal > FASTING_BREAK.kcal || carbs > FASTING_BREAK.carbs;
+  }
+  if (t === 'water') return false;
   if (!(t === 'food' || t === 'recipe' || t === 'meal' || t === 'single' || !t)) return false;
   if (t === 'meal' && Array.isArray(item.items)) {
     return item.items.some((sub) => isFastingBreakerItem({ ...sub, type: sub.type || 'food' }));

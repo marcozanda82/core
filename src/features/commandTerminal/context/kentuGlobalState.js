@@ -14,9 +14,35 @@ import {
   CARDIO_WEEKLY_TARGET_MINUTES,
 } from './cardioCylinderStatus.js';
 import { sanitizeUserPortionsDict } from '../conversation/userPortionsMemory.js';
+import { buildFastingContextForLlm } from '../../stimulants/coffeeLogEngine.js';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
+}
+
+/**
+ * Snapshot Health Score per simbiosi Tamagotchi nel prompt LLM.
+ * @param {object | null | undefined} healthScore
+ * @returns {object | null}
+ */
+function buildAvatarSymbiosisBlock(healthScore) {
+  if (!healthScore || typeof healthScore !== 'object') return null;
+  const score = Math.round(Number(healthScore.score) || 0);
+  let symbiosisMode = 'steady_team_progress';
+  if (score >= 70) symbiosisMode = 'high_energy_celebrate_together';
+  else if (score < 45) symbiosisMode = 'low_energy_ask_user_help';
+
+  return {
+    score,
+    stageLabel: healthScore.avatar?.label || null,
+    avatarSrc: healthScore.avatar?.src || null,
+    symbiosisMode,
+    aiGuidance: symbiosisMode === 'low_energy_ask_user_help'
+      ? 'Chiedi aiuto in prima persona: la tua energia dipende dai log dell\'utente.'
+      : symbiosisMode === 'high_energy_celebrate_together'
+        ? 'Festeggia in squadra: siamo in forma, pronti a spingere.'
+        : 'Tono costruttivo di squadra, senza allarmismo.',
+  };
 }
 
 function roundMacro(value) {
@@ -280,6 +306,26 @@ export function buildKentuGlobalStateObject(
     || {},
   );
 
+  const manualNodes = Array.isArray(options.manualNodes)
+    ? options.manualNodes
+    : (Array.isArray(diaryState?.manualNodes) ? diaryState.manualNodes : []);
+
+  const fastingContext = buildFastingContextForLlm({
+    hoursFasted: options.hoursFasted ?? diaryState?.hoursFasted ?? nutritionState?.hoursFasted,
+    manualNodes,
+    fastingBrokenBySweetCoffee: options.fastingBrokenBySweetCoffee
+      ?? diaryState?.fastingBrokenBySweetCoffee,
+    bitterCoffeeDuringFast: options.bitterCoffeeDuringFast
+      ?? diaryState?.bitterCoffeeDuringFast,
+    phaseName: options.fastingPhaseName ?? diaryState?.fastingPhaseName ?? null,
+  });
+
+  const avatarSymbiosis = buildAvatarSymbiosisBlock(
+    options.healthScore
+    || nutritionState?.healthScore
+    || diaryState?.healthScore,
+  );
+
   return {
     User_Profile: {
       displayName: asTrimmedString(
@@ -308,6 +354,8 @@ export function buildKentuGlobalStateObject(
       spilloverRule: '30% della durata pesi conta come cardio (1h ipertrofia ≈ 18 min cardio)',
     },
     User_Portions_Dictionary: userPortions,
+    Fasting_Context: fastingContext,
+    ...(avatarSymbiosis ? { Avatar_Symbiosis: avatarSymbiosis } : {}),
     Diary_Context: {
       scope: 'today_only',
       meals: buildDiaryContextBlock(diaryState),
@@ -380,6 +428,10 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       userPortions: state.userPortions,
       userProfile: state.userProfile,
       userDisplayName: state.userDisplayName,
+      hoursFasted: state.healthScoreMetrics?.hoursFasted
+        ?? state.fastingData?.hoursFasted
+        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      healthScore: state.healthScore,
     },
     cylindersState,
     cardioLogs,
@@ -390,6 +442,14 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       activeDate,
       userPortions: state.userPortions,
       userDisplayName: state.userDisplayName,
+      manualNodes: state.manualNodes,
+      hoursFasted: state.healthScoreMetrics?.hoursFasted
+        ?? state.fastingData?.hoursFasted
+        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
+      bitterCoffeeDuringFast: state.healthScoreMetrics?.bitterCoffeeDuringFast,
+      fastingPhaseName: state.fastingData?.phaseName ?? state.metabolicSnapshot?.phase?.label,
+      healthScore: state.healthScore,
     },
     {
       ...options,
@@ -398,6 +458,13 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
         || state.userProfile?.displayName
         || state.userProfile?.name
         || '',
+      manualNodes: state.manualNodes,
+      hoursFasted: state.healthScoreMetrics?.hoursFasted
+        ?? state.fastingData?.hoursFasted
+        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
+      bitterCoffeeDuringFast: state.healthScoreMetrics?.bitterCoffeeDuringFast,
+      fastingPhaseName: state.fastingData?.phaseName ?? state.metabolicSnapshot?.phase?.label,
     },
   );
 

@@ -6,6 +6,7 @@ import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
   DISPATCH_LOG_SLEEP,
+  DISPATCH_LOG_STIMULANT,
   DISPATCH_COMMAND_ACCEPTED,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
@@ -203,6 +204,16 @@ import {
   buildHealthDiagnosisPromptContext,
   HEALTH_DIAGNOSIS_SYSTEM_BLOCK,
 } from '../health/HealthScoreEngine.js';
+import {
+  buildCoffeeLogAckMessage,
+  buildCoffeeStimulantNode,
+  buildFastingContextForLlm,
+  COFFEE_VARIANT,
+  COFFEE_VARIANT_QUICK_REPLIES,
+  isCoffeeLogIntent,
+  isInActiveFastingWindow,
+  resolveCoffeeVariantFromText,
+} from '../stimulants/coffeeLogEngine.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -214,6 +225,7 @@ const COMMAND_TO_EVENT = Object.freeze({
   ADD_FOOD: DISPATCH_ADD_FOOD,
   ADD_WORKOUT: DISPATCH_ADD_WORKOUT,
   LOG_SLEEP: DISPATCH_LOG_SLEEP,
+  LOG_STIMULANT: DISPATCH_LOG_STIMULANT,
 });
 
 function isFiniteNumber(value) {
@@ -366,6 +378,8 @@ export class CommandTerminalController {
     this.mealDraftInteractiveEdit = false;
     /** @type {{ confirmLabel?: string, payload?: object } | null} Recovery soft post-errore LLM. */
     this.pendingSoftMealRecovery = null;
+    /** @type {{ originText?: string, time?: number } | null} Caffè da chat in attesa variante. */
+    this.pendingCoffeeLog = null;
   }
 
   setPendingMealUpdate(ctx) {
@@ -417,6 +431,7 @@ export class CommandTerminalController {
     this.mealWizardState = null;
     this.mealDraftInteractiveEdit = false;
     this.pendingSoftMealRecovery = null;
+    this.pendingCoffeeLog = null;
   }
 
   setPendingMealDraft(draft) {
@@ -1689,6 +1704,11 @@ export class CommandTerminalController {
     }
 
     // DATA ENTRY pasti PRIMA del consulto (evita "come snack, ho mangiato…" → CHAT_RESPONSE).
+    // Caffè puro → flusso stimolante (Amaro/Zuccherato), non USDA.
+    if (isCoffeeLogIntent(userText)) {
+      return 'LOG_COFFEE';
+    }
+
     // Follow-up a chiarimento (grammi/tipo) → sempre ADD_FOOD, anche senza "ho mangiato".
     if (
       isClarificationFollowUpReply(userText, options?.chatHistory || [])
@@ -3161,6 +3181,104 @@ export class CommandTerminalController {
   }
 
   /**
+   * Registra caffè (stimulant node) — Amaro 0 kcal o Zuccherato +20 kcal/+5g CHO.
+   */
+  commitCoffeeLog(variant, timeDecimal, currentState = {}) {
+    const hoursFasted = Number(
+      currentState?.healthScoreMetrics?.hoursFasted
+      ?? currentState?.metabolicSnapshot?.hoursSinceLastMeal,
+    );
+    const inFastingWindow = isInActiveFastingWindow(hoursFasted);
+    const node = buildCoffeeStimulantNode(variant, timeDecimal);
+    const ack = buildCoffeeLogAckMessage(variant, { hoursFasted, inFastingWindow });
+
+    this.resetConversationState();
+    this.dispatchCommand('LOG_STIMULANT', node, {
+      uiMessage: ack,
+      fastingContext: buildFastingContextForLlm({
+        hoursFasted,
+        manualNodes: [
+          ...(Array.isArray(currentState?.manualNodes) ? currentState.manualNodes : []),
+          node,
+        ],
+        fastingBrokenBySweetCoffee: variant === COFFEE_VARIANT.ZUCCHERATO && inFastingWindow,
+        bitterCoffeeDuringFast: variant === COFFEE_VARIANT.AMARO && inFastingWindow,
+        phaseName: currentState?.fastingData?.phaseName
+          ?? currentState?.metabolicSnapshot?.phase?.label
+          ?? null,
+      }),
+    });
+
+    return {
+      ok: true,
+      intent: 'LOG_COFFEE',
+      commandType: 'LOG_STIMULANT',
+      variant,
+      node,
+    };
+  }
+
+  processCoffeeVariantResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    if (/^(?:annulla|cancel|stop)\b/i.test(text)) {
+      this.pendingCoffeeLog = null;
+      this.resetConversationState();
+      this.publishSystemMessage('Registrazione caffè annullata.');
+      return { ok: true, cancelled: true, intent: 'LOG_COFFEE' };
+    }
+
+    const variant = resolveCoffeeVariantFromText(text);
+    if (!variant) {
+      this.publishClarification(
+        {
+          uiMessage: '☕ Scegli sotto: Amaro (digiuno OK) o Zuccherato (+20 kcal).',
+          payload: {
+            message: '☕ Scegli sotto: Amaro (digiuno OK) o Zuccherato (+20 kcal).',
+            options: [...COFFEE_VARIANT_QUICK_REPLIES],
+          },
+        },
+        text,
+      );
+      return { ok: true, awaiting: true, intent: 'LOG_COFFEE' };
+    }
+
+    const time = Number(this.pendingCoffeeLog?.time)
+      ?? Number(currentState?.decimalHour)
+      ?? 8;
+    this.pendingCoffeeLog = null;
+    return this.commitCoffeeLog(variant, time, currentState);
+  }
+
+  handleCoffeeLogRequest(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const presetVariant = resolveCoffeeVariantFromText(text);
+    const time = Number(currentState?.decimalHour) || 8;
+
+    if (presetVariant) {
+      return this.commitCoffeeLog(presetVariant, time, currentState);
+    }
+
+    this.conversationState = CONVERSATION_STATE.AWAITING_COFFEE_VARIANT;
+    this.pendingCoffeeLog = { originText: text, time };
+    this.publishClarification(
+      {
+        uiMessage: '☕ Caffè — come l\'hai preso? Il digiuno resta attivo solo con caffè amaro.',
+        payload: {
+          message: '☕ Caffè — come l\'hai preso? Il digiuno resta attivo solo con caffè amaro.',
+          options: [...COFFEE_VARIANT_QUICK_REPLIES],
+        },
+      },
+      text,
+    );
+    return {
+      ok: true,
+      intent: 'LOG_COFFEE',
+      commandType: 'ASK_CLARIFICATION',
+      awaiting: true,
+    };
+  }
+
+  /**
    * Diagnosi avatar Health Score — risposta in prima persona sui malus maggiori.
    */
   async handleHealthDiagnosisRequest(userText, currentState = {}, options = {}) {
@@ -3199,7 +3317,7 @@ export class CommandTerminalController {
         ...(options?.signal ? { signal: options.signal } : {}),
       });
       const text = String(adviceMessage || '').trim()
-        || 'Il mio volto riflette la giornata: oggi posso ancora migliorare su proteine e ricarica. Dimmi cosa vuoi sistemare per primo.';
+        || 'Ho poca energia oggi — aiutami a recuperare: un pasto bilanciato ci rimetterà in carreggiata.';
 
       return this.publishChatResponse(
         {
@@ -3900,6 +4018,10 @@ export class CommandTerminalController {
       return this.processWorkoutSlotFillingResponse(userText, currentState, options);
     }
 
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_COFFEE_VARIANT) {
+      return this.processCoffeeVariantResponse(userText, currentState, options);
+    }
+
     if (this.conversationState !== CONVERSATION_STATE.IDLE) {
       if (images.length > 0) {
         this.publishSystemMessage('Completa prima la domanda in sospeso, poi allega eventuali screenshot.');
@@ -3986,6 +4108,10 @@ export class CommandTerminalController {
 
     if (inferredIntent === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
+    }
+
+    if (inferredIntent === 'LOG_COFFEE') {
+      return this.handleCoffeeLogRequest(userText, currentState, options);
     }
 
     if (inferredIntent === 'ASK_DRAFT_ADVICE') {

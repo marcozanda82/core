@@ -19,6 +19,8 @@ export const CONVERSATION_STATE = Object.freeze({
   AWAITING_MEAL_WIZARD_ITEM: 'AWAITING_MEAL_WIZARD_ITEM',
   /** SequentialFoodWizard: riepilogo finale, attesa conferma salvataggio. */
   AWAITING_MEAL_WIZARD_CONFIRM: 'AWAITING_MEAL_WIZARD_CONFIRM',
+  /** Caffè da testo: attesa scelta Amaro vs Zuccherato. */
+  AWAITING_COFFEE_VARIANT: 'AWAITING_COFFEE_VARIANT',
 });
 
 const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];

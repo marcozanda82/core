@@ -1,27 +1,43 @@
 /**
  * Avatar contestuale Kentu: cambia asset in base all'attività AI / UI.
  *
- * Stati:
- * - coding  → /Hacker.png   (loading, parsing, elaborazione)
- * - kitchen → /Chef.png     (vassoio pasti / modifica grammi)
- * - fitness → /Trainer.png  (giorno ON / bozza workout)
- * - default → Health Score o /avatar.png
+ * Stati (priorità):
+ * - thinking → /pensatore.png  (consigli, strategia, analisi profonda)
+ * - coding   → /Hacker.png      (loading, parsing, elaborazione transazionale)
+ * - kitchen  → /Chef.png        (vassoio pasti / modifica grammi)
+ * - fitness  → /Trainer.png     (giorno ON / bozza workout)
+ * - default  → /avatar_01_ottimale.png (chat) — Health Score solo in header app
  */
+
+import {
+  isAskDraftAdviceIntent,
+  isConsultantMealIntent,
+  isDayReviewIntent,
+  isMealAdviceIntent,
+  isMealDraftEvaluationIntent,
+} from '../commandTerminal/conversation/mealLogIntent.js';
+import { isConsultativeStateIntent } from '../commandTerminal/conversation/workoutRegistrationSlots.js';
+
+/** Avatar neutro Kentu per bolle chat / typing (non legato allo Health Score). */
+export const CHAT_DEFAULT_AVATAR_SRC = '/avatar_01_ottimale.png';
 
 export const AVATAR_MOOD = Object.freeze({
   DEFAULT: 'default',
+  THINKING: 'thinking',
   CODING: 'coding',
   KITCHEN: 'kitchen',
   FITNESS: 'fitness',
 });
 
 export const AVATAR_MOOD_SRC = Object.freeze({
+  [AVATAR_MOOD.THINKING]: '/pensatore.png',
   [AVATAR_MOOD.CODING]: '/Hacker.png',
   [AVATAR_MOOD.KITCHEN]: '/Chef.png',
   [AVATAR_MOOD.FITNESS]: '/Trainer.png',
 });
 
 export const AVATAR_MOOD_LABEL = Object.freeze({
+  [AVATAR_MOOD.THINKING]: 'Kentu sta ragionando',
   [AVATAR_MOOD.CODING]: 'Kentu sta elaborando',
   [AVATAR_MOOD.KITCHEN]: 'Modalità cucina',
   [AVATAR_MOOD.FITNESS]: 'Modalità allenamento',
@@ -29,23 +45,89 @@ export const AVATAR_MOOD_LABEL = Object.freeze({
 });
 
 /**
+ * True se il testo utente attiva il mood strategico (consigli / analisi, non log transazionale).
+ * @param {string} userText
+ * @param {Array<object>} [chatHistory]
+ * @returns {boolean}
+ */
+export function isStrategicAvatarIntent(userText, chatHistory = []) {
+  const text = String(userText || '').trim();
+  if (!text) return false;
+
+  if (isMealAdviceIntent(text, chatHistory)) return true;
+  if (isConsultantMealIntent(text, chatHistory)) return true;
+  if (isAskDraftAdviceIntent(text)) return true;
+  if (isDayReviewIntent(text)) return true;
+  if (isMealDraftEvaluationIntent(text)) return true;
+  if (isConsultativeStateIntent(text)) return true;
+
+  return false;
+}
+
+/**
+ * Ultimo messaggio utente visibile nel thread (o hidden con intent strategico).
+ * @param {Array<object>} [chatHistory]
+ * @returns {string}
+ */
+export function getLastUserMessageText(chatHistory = []) {
+  for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
+    const entry = chatHistory[i];
+    if (!entry || entry.isTyping || entry.sender !== 'user') continue;
+    return String(entry.text || '').trim();
+  }
+  return '';
+}
+
+/**
+ * Contesto strategico dal thread: ultimo input utente o intent nascosto (es. diagnosi Health Score).
+ * @param {Array<object>} [chatHistory]
+ * @param {{ forceStrategic?: boolean }} [opts]
+ * @returns {boolean}
+ */
+export function detectStrategicConsultContext(chatHistory = [], opts = {}) {
+  if (opts.forceStrategic === true) return true;
+
+  for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
+    const entry = chatHistory[i];
+    if (!entry || entry.isTyping || entry.sender !== 'user') continue;
+
+    const text = String(entry.text || '').trim();
+    if (entry.isHiddenUserMessage || entry.skipUserBubble) {
+      if (/REQUEST_HEALTH_DIAGNOSIS/i.test(text)) return true;
+      return false;
+    }
+
+    return isStrategicAvatarIntent(text, chatHistory);
+  }
+
+  return false;
+}
+
+/**
  * @param {{
  *   isProcessing?: boolean,
  *   isTyping?: boolean,
  *   isTranscribing?: boolean,
+ *   isStrategicConsult?: boolean,
  *   hasActiveMealTray?: boolean,
  *   hasActiveWorkoutDraft?: boolean,
  *   isTrainingDay?: boolean,
  * }} flags
- * @returns {'default' | 'coding' | 'kitchen' | 'fitness'}
+ * @returns {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'}
  */
 export function resolveAvatarMood(flags = {}) {
-  if (
-    flags.isProcessing === true
+  const isBusy = flags.isProcessing === true
     || flags.isTyping === true
-    || flags.isTranscribing === true
-  ) {
+    || flags.isTranscribing === true;
+
+  if (isBusy && flags.isStrategicConsult === true) {
+    return AVATAR_MOOD.THINKING;
+  }
+  if (isBusy) {
     return AVATAR_MOOD.CODING;
+  }
+  if (flags.isStrategicConsult === true) {
+    return AVATAR_MOOD.THINKING;
   }
   if (flags.hasActiveMealTray === true) {
     return AVATAR_MOOD.KITCHEN;
@@ -57,7 +139,7 @@ export function resolveAvatarMood(flags = {}) {
 }
 
 /**
- * @param {'default' | 'coding' | 'kitchen' | 'fitness'} mood
+ * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'} mood
  * @param {string} [defaultSrc]
  * @returns {string}
  */
@@ -68,6 +150,81 @@ export function getAvatarSrcForMood(mood, defaultSrc = '/avatar.png') {
   }
   const fallback = String(defaultSrc || '/avatar.png').trim();
   return fallback || '/avatar.png';
+}
+
+/**
+ * Asset avatar congelato su un messaggio chat (fallback al default Kentu).
+ * @param {object | null | undefined} message
+ * @param {string} [fallback]
+ * @returns {string}
+ */
+export function resolveMessageAvatarSrc(message, fallback = CHAT_DEFAULT_AVATAR_SRC) {
+  const asset = String(message?.avatarAsset || '').trim();
+  if (asset) return asset;
+  const safeFallback = String(fallback || CHAT_DEFAULT_AVATAR_SRC).trim();
+  return safeFallback || CHAT_DEFAULT_AVATAR_SRC;
+}
+
+/**
+ * Snapshot dell'avatar contestuale al momento in cui un messaggio AI viene creato.
+ * Non usa mood di loading (coding/Hacker) — solo stati semantici del messaggio.
+ *
+ * @param {object} [extra]
+ * @param {{
+ *   chatHistory?: Array<object>,
+ *   wipMealItems?: Array<object>,
+ *   mealBuilder?: object | null,
+ *   isTrainingDay?: boolean,
+ *   forceStrategic?: boolean,
+ * }} [context]
+ * @returns {string}
+ */
+export function snapshotChatAvatarAsset(extra = {}, context = {}) {
+  const defaultSrc = CHAT_DEFAULT_AVATAR_SRC;
+  const {
+    chatHistory = [],
+    wipMealItems = [],
+    mealBuilder = null,
+    isTrainingDay = false,
+    forceStrategic = false,
+  } = context;
+
+  if (extra?.type === 'MEAL_DRAFT' || extra?.mealDraft) {
+    return getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, defaultSrc);
+  }
+  if (extra?.type === 'WORKOUT_DRAFT' || extra?.workoutDraft) {
+    return getAvatarSrcForMood(AVATAR_MOOD.FITNESS, defaultSrc);
+  }
+  if (extra?.type === 'MEAL_RECEIPT' || extra?.mealReceipt) {
+    return getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, defaultSrc);
+  }
+  if (extra?.type === 'system' || extra?.isError === true) {
+    return defaultSrc;
+  }
+  if (
+    extra?.type === 'ADVICE'
+    || (Array.isArray(extra?.mealProposals) && extra.mealProposals.length > 0)
+    || extra?.mealDraftProjection
+  ) {
+    return getAvatarSrcForMood(AVATAR_MOOD.THINKING, defaultSrc);
+  }
+
+  const isStrategicConsult = detectStrategicConsultContext(chatHistory, { forceStrategic });
+  if (isStrategicConsult) {
+    return getAvatarSrcForMood(AVATAR_MOOD.THINKING, defaultSrc);
+  }
+
+  const hasActiveMealTray = detectActiveMealTray({ chatHistory, wipMealItems, mealBuilder });
+  if (hasActiveMealTray) {
+    return getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, defaultSrc);
+  }
+
+  const hasActiveWorkoutDraft = chatHistory.some((m) => m?.workoutDraft && !m?.draftResolved);
+  if (hasActiveWorkoutDraft || isTrainingDay === true) {
+    return getAvatarSrcForMood(AVATAR_MOOD.FITNESS, defaultSrc);
+  }
+
+  return defaultSrc;
 }
 
 /**

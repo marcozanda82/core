@@ -608,6 +608,19 @@ export function isFoodRegistrationIntent(userText) {
   if (!text) return false;
   if (looksLikeUpdateLoggedMealRequest(text)) return false;
 
+  // Caffè puro → flusso stimolante dedicato, non ADD_FOOD / USDA.
+  if (
+    /\b(?:caff[eè]|espresso|coffee)\b/i.test(text)
+    && !/\b(?:cappuccino|macchiato|latte|cornetto|brioche)\b/i.test(text)
+    && (
+      /\b(?:ho\s+)?(?:pres[oa]|bevut[oa]|fatto)\b/i.test(text)
+      || /^caff[eè]\b/i.test(text)
+      || /^un\s+caff[eè]\b/i.test(text)
+    )
+  ) {
+    return false;
+  }
+
   // Esclusione WIP flat (stessa logica core, senza ricorsione intent).
   if (
     !WIP_MEAL_PAST_LOG_RE.test(text)

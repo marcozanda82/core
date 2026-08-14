@@ -15,6 +15,16 @@ const CALORIE_MALUS_MAX = 30;
 const GLYCOGEN_MALUS_MAX = 20;
 const FASTING_MALUS_FIXED = 15;
 const GLYCOGEN_ALERT_PCT = 30;
+const PROTEIN_GRACE_HOUR = 14;
+
+/** Fasi Monitor Metabolico con scorte glicogeno ancora utilizzabili. */
+const GLYCOGEN_STOCK_OK_PHASE_IDS = new Set([
+  'digestione',
+  'assorbimento',
+  'svuotamento_gastrico',
+  'assorbimento_attivo',
+  'glicogeno',
+]);
 
 function clamp(n, lo, hi) {
   const x = Number(n);
@@ -48,7 +58,39 @@ export function getHealthAvatar(score) {
 }
 
 /**
- * Stima glicogeno 0–100 se non fornito: carb fill − decadimento digiuno.
+ * Stima glicogeno 0–100 dal Monitor Metabolico (fase post-pasto / digiuno).
+ * @param {string | null | undefined} phaseId
+ * @param {number | null | undefined} [progressInPhase]
+ * @returns {number | null}
+ */
+export function resolveGlycogenPctFromMetabolicPhase(phaseId, progressInPhase = null) {
+  const id = String(phaseId || '').trim();
+  if (!id) return null;
+
+  if (GLYCOGEN_STOCK_OK_PHASE_IDS.has(id)) {
+    const base = id === 'glicogeno' ? 80 : 95;
+    const progress = clamp(Number(progressInPhase) || 0, 0, 1);
+    if (id === 'glicogeno') {
+      return clamp(base - progress * 15, GLYCOGEN_ALERT_PCT + 5, 100);
+    }
+    return base;
+  }
+
+  const depletedEstimate = {
+    transizione: 25,
+    brucio_grassi: 15,
+    autofagia: 8,
+    digiuno_profondo: 4,
+    sovraccarico: 40,
+  };
+  const base = depletedEstimate[id];
+  if (base == null) return null;
+  const progress = clamp(Number(progressInPhase) || 0, 0, 1);
+  return clamp(base - progress * 8, 0, 100);
+}
+
+/**
+ * Stima glicogeno 0–100: Monitor Metabolico → digiuno; mai dai macro giornalieri a zero.
  * @param {object} metrics
  * @returns {number | null}
  */
@@ -56,16 +98,25 @@ function resolveGlycogenPct(metrics = {}) {
   const direct = Number(metrics.glycogenPct);
   if (Number.isFinite(direct)) return clamp(direct, 0, 100);
 
-  const carbRatio = safeRatio(metrics.carbConsumed, metrics.carbTarget);
+  const fromMonitor = resolveGlycogenPctFromMetabolicPhase(
+    metrics.metabolicPhaseId,
+    metrics.metabolicProgressInPhase,
+  );
+  if (fromMonitor != null) return fromMonitor;
+
   const hoursFasted = Number(metrics.hoursFasted);
-  let pct = carbRatio != null ? carbRatio * 100 : null;
-  if (pct == null && Number.isFinite(hoursFasted)) {
-    // Proxy: dopo 4h digiuno cala ~5pt/h da una baseline 70.
-    pct = 70 - Math.max(0, hoursFasted - 4) * 5;
-  } else if (pct != null && Number.isFinite(hoursFasted) && hoursFasted > 4) {
-    pct -= (hoursFasted - 4) * 5;
-  }
-  return pct == null ? null : clamp(pct, 0, 100);
+  if (!Number.isFinite(hoursFasted)) return null;
+
+  // Proxy temporale: baseline post-cena, calo graduale col digiuno (ignora carb del giorno corrente).
+  let pct = 85 - Math.max(0, hoursFasted - 6) * 4;
+  return clamp(pct, 0, 100);
+}
+
+function resolveCurrentHour(metrics = {}) {
+  const hour = Number(metrics.currentHour);
+  if (Number.isFinite(hour) && hour >= 0 && hour <= 23) return hour;
+  const now = metrics.now instanceof Date ? metrics.now : new Date();
+  return now.getHours();
 }
 
 /**
@@ -81,8 +132,14 @@ function resolveGlycogenPct(metrics = {}) {
  *   carbConsumed?: number,
  *   carbTarget?: number,
  *   glycogenPct?: number | null,
+ *   metabolicPhaseId?: string | null,
+ *   metabolicProgressInPhase?: number | null,
  *   hoursFasted?: number | null,
  *   fastingBrokenPrematurely?: boolean,
+ *   fastingBrokenBySweetCoffee?: boolean,
+ *   bitterCoffeeDuringFast?: boolean,
+ *   currentHour?: number | null,
+ *   now?: Date,
  * }} dailyMetrics
  * @param {boolean} [isTrainingDay=false]
  * @returns {{
@@ -102,11 +159,18 @@ function resolveGlycogenPct(metrics = {}) {
 export function calculateHealthScore(dailyMetrics = {}, isTrainingDay = false) {
   const notes = [];
   const proteinRatio = safeRatio(dailyMetrics.proteinConsumed, dailyMetrics.proteinTarget);
+  const currentHour = resolveCurrentHour(dailyMetrics);
   let proteinMalus = 0;
   if (proteinRatio == null) {
     notes.push('Proteine: target non disponibile — nessun malus.');
   } else if (proteinRatio >= 1) {
     proteinMalus = 0;
+    notes.push('Proteine: target raggiunto — nessun malus.');
+  } else if (currentHour < PROTEIN_GRACE_HOUR) {
+    proteinMalus = 0;
+    notes.push(
+      `Proteine: ${Math.round(proteinRatio * 100)}% del target — tolleranza mattutina (prima delle ${PROTEIN_GRACE_HOUR}:00), nessun malus.`,
+    );
   } else {
     proteinMalus = Math.round((1 - proteinRatio) * PROTEIN_MALUS_MAX);
     notes.push(
@@ -163,10 +227,17 @@ export function calculateHealthScore(dailyMetrics = {}, isTrainingDay = false) {
     notes.push(`Glicogeno: ~${Math.round(glycogenPct)}% — sopra soglia di allerta.`);
   }
 
-  const fastingBroken = Boolean(dailyMetrics.fastingBrokenPrematurely);
+  const fastingBrokenByMeal = Boolean(dailyMetrics.fastingBrokenPrematurely);
+  const fastingBrokenBySweetCoffee = Boolean(dailyMetrics.fastingBrokenBySweetCoffee);
+  const bitterCoffeeDuringFast = Boolean(dailyMetrics.bitterCoffeeDuringFast);
+  const fastingBroken = fastingBrokenByMeal || fastingBrokenBySweetCoffee;
   const fastingMalus = fastingBroken ? FASTING_MALUS_FIXED : 0;
-  if (fastingBroken) {
+  if (fastingBrokenBySweetCoffee) {
+    notes.push(`Digiuno: caffè zuccherato durante la finestra di digiuno → −${FASTING_MALUS_FIXED}.`);
+  } else if (fastingBrokenByMeal) {
     notes.push(`Digiuno: finestra rotta prematuramente → −${FASTING_MALUS_FIXED}.`);
+  } else if (bitterCoffeeDuringFast) {
+    notes.push('Caffè amaro in digiuno: scelta ottima — nessun malus, finestra attiva.');
   } else {
     notes.push('Digiuno: nessuna rottura prematura rilevata.');
   }
@@ -191,6 +262,8 @@ export function calculateHealthScore(dailyMetrics = {}, isTrainingDay = false) {
       kcalConsumed,
       bmr,
       tdee,
+      fastingBrokenBySweetCoffee,
+      bitterCoffeeDuringFast,
     },
     metrics: { ...dailyMetrics },
   };
@@ -232,6 +305,8 @@ export function buildHealthDiagnosisPromptContext(healthResult) {
     `malus.glycogen=${Number(b.glycogenMalus) || 0}`,
     `malus.fasting=${Number(b.fastingMalus) || 0}`,
     `malus.total=${Number(b.totalMalus) || 0}`,
+    `coffee.bitterDuringFast=${Boolean(b.bitterCoffeeDuringFast)}`,
+    `coffee.sweetBreaksFast=${Boolean(b.fastingBrokenBySweetCoffee)}`,
     'notes:',
     ...(Array.isArray(b.notes) ? b.notes.map((n) => `- ${n}`) : []),
   ];
@@ -239,19 +314,23 @@ export function buildHealthDiagnosisPromptContext(healthResult) {
 }
 
 export const HEALTH_DIAGNOSIS_SYSTEM_BLOCK = [
-  '### INTENT REQUEST_HEALTH_DIAGNOSIS (AVATAR HEALTH SCORE)',
+  '### INTENT REQUEST_HEALTH_DIAGNOSIS (AVATAR HEALTH SCORE — SIMBIOSI TAMAGOTCHI)',
   'L\'utente ha toccato il tuo volto (avatar dinamico) nell\'header della chat.',
-  'Rispondi in PRIMA PERSONA come l\'avatar stesso (tu sei il volto di Kentu).',
+  'Rispondi in PRIMA PERSONA come l\'avatar stesso (tu sei il volto di Kentu, in simbiosi con l\'utente).',
   'Spiega in massimo 2 frasi brevi (TTS) PERCHÉ il tuo volto ha quello stato/colore,',
-  'basandoti SOLO sui malus maggiori in [HEALTH_SCORE_DIAGNOSIS] (proteine, calorie, glicogeno, digiuno).',
-  'Esempio tono: «Ho un\'espressione stanca perché hai mangiato poche proteine e il serbatoio del glicogeno è vuoto. Devi ricaricare.»',
-  'Vietato elenchi lunghi, referto clinico, o ripetere tutti i numeri: cita solo 1–2 cause principali.',
+  'basandoti SOLO sui malus maggiori in [HEALTH_SCORE_DIAGNOSIS] (proteine, calorie, glicogeno, digiuno, caffè).',
+  'Score basso / avatar stanco: chiedi aiuto («Ho poca energia, aiutami a recuperare con un buon pasto»).',
+  'Score alto / avatar ottimale: festeggia in squadra («Siamo in forma smagliante, scorte cariche!»).',
+  'Se coffee.bitterDuringFast=true e nessun malus digiuno: lodare il caffè amaro («Ottima scelta il caffè amaro, stiamo mantenendo il digiuno pulito»).',
+  'Se coffee.sweetBreaksFast=true: segnalare con tono non colpevolizzante che il caffè zuccherato ha interrotto il digiuno — proponi come ripartire.',
+  'Vietato elenchi lunghi, referto clinico, tono accusatorio o ripetere tutti i numeri: cita solo 1–2 cause principali.',
   'commandType obbligatorio: CHAT_RESPONSE. requiresConfirmation=false.',
 ].join('\n');
 
 export default {
   calculateHealthScore,
   getHealthAvatar,
+  resolveGlycogenPctFromMetabolicPhase,
   buildHealthDiagnosisPromptContext,
   HEALTH_AVATAR_STAGES,
   HEALTH_DIAGNOSIS_SYSTEM_BLOCK,

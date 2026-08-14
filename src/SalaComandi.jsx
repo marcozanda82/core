@@ -32,6 +32,12 @@ import {
   calculateHealthScore,
   detectPrematureFastBreak,
 } from './features/health/HealthScoreEngine.js';
+import {
+  analyzeCoffeeForHealthScore,
+  buildCoffeeStimulantNode,
+  COFFEE_VARIANT,
+  sumSweetCoffeeMacros,
+} from './features/stimulants/coffeeLogEngine.js';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
   buildMealReceiptPayload,
@@ -786,6 +792,7 @@ export default function SalaComandi() {
   const [drawerVisceralFat, setDrawerVisceralFat] = useState('');
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
+  const [coffeeVariant, setCoffeeVariant] = useState(COFFEE_VARIANT.AMARO);
   const [stimulantTime, setStimulantTime] = useState(8);
   const [addEventMenuOrder, setAddEventMenuOrder] = useState(() => {
     try {
@@ -3456,6 +3463,7 @@ export default function SalaComandi() {
         if (!fromModal) closeDrawer();
         setStimulantTime(getCurrentTimeRoundedTo15Min());
         setStimulantSubtype('caffè');
+        setCoffeeVariant(COFFEE_VARIANT.AMARO);
         setAddChoiceView('stimulant');
         setShowChoiceModal(true);
         break;
@@ -5946,8 +5954,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       anchorDate,
       mealTimesObj: fullHistory?.[TRACKER_STORICO_KEY(anchorDate)]?.mealTimes ?? {},
       referenceDateObj: currentDateObj,
+      manualNodes,
     };
-  }, [fullHistory, currentTrackerDate, currentDateObj, getTodayString]);
+  }, [fullHistory, currentTrackerDate, currentDateObj, getTodayString, manualNodes]);
 
   const fastingData = useMemo(
     () => buildMetabolicFastingSnapshot(activeLog, currentTime, metabolicContextOptions),
@@ -5962,6 +5971,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const metabolicTimelineMeals = useMemo(
     () => collectMetabolicTimelineMeals(activeLog, metabolicContextOptions),
     [activeLog, metabolicContextOptions],
+  );
+
+  const sweetCoffeeMacros = useMemo(
+    () => sumSweetCoffeeMacros(manualNodes),
+    [manualNodes],
+  );
+
+  const coffeeHealthSignals = useMemo(
+    () => analyzeCoffeeForHealthScore(
+      manualNodes,
+      Number(metabolicSnapshot?.hoursSinceLastMeal ?? fastingData?.hoursFasted),
+    ),
+    [manualNodes, metabolicSnapshot?.hoursSinceLastMeal, fastingData?.hoursFasted],
   );
 
   const healthScore = useMemo(() => {
@@ -5995,16 +6017,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       {
         proteinConsumed: Number(totali?.prot) || 0,
         proteinTarget,
-        kcalConsumed: Number(totali?.kcal) || 0,
+        kcalConsumed: (Number(totali?.kcal) || 0) + sweetCoffeeMacros.kcal,
         tdeeKcal: tdee,
         dailyKcalTarget: Number(homeCalorieSplit?.targetKcal) || tdee,
         bmrKcal: Number.isFinite(bmrFromProfile) && bmrFromProfile > 0
           ? bmrFromProfile
           : undefined,
-        carbConsumed: Number(totali?.carb) || 0,
+        carbConsumed: (Number(totali?.carb) || 0) + sweetCoffeeMacros.carb,
         carbTarget,
         hoursFasted: Number.isFinite(hoursFasted) ? hoursFasted : null,
         fastingBrokenPrematurely,
+        fastingBrokenBySweetCoffee: coffeeHealthSignals.fastingBrokenBySweetCoffee,
+        bitterCoffeeDuringFast: coffeeHealthSignals.bitterCoffeeDuringFast,
+        metabolicPhaseId: metabolicSnapshot?.phase?.id ?? null,
+        metabolicProgressInPhase: metabolicSnapshot?.progressInPhase ?? null,
+        currentHour: new Date().getHours(),
       },
       Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
     );
@@ -6022,10 +6049,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     userProfile?.BMR,
     metabolicTimelineMeals,
     metabolicSnapshot?.hoursSinceLastMeal,
+    metabolicSnapshot?.phase?.id,
+    metabolicSnapshot?.progressInPhase,
     fastingData?.hoursFasted,
     totali?.prot,
     totali?.kcal,
     totali?.carb,
+    sweetCoffeeMacros.kcal,
+    sweetCoffeeMacros.carb,
+    coffeeHealthSignals.fastingBrokenBySweetCoffee,
+    coffeeHealthSignals.bitterCoffeeDuringFast,
     hasPlannedBlock,
     hasRealWorkoutInActiveLog,
   ]);
@@ -6518,6 +6551,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ],
   );
 
+  const commitLogStimulantCommand = useCallback(
+    (payload) => {
+      if (!payload || typeof payload !== 'object') {
+        throw new Error('stimulant payload non valido');
+      }
+      const node = { ...payload };
+      if (!node.id) node.id = `stimulant_${Date.now()}`;
+      const next = [...manualNodes, node];
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+      trackEventUsage('stimulant');
+    },
+    [dailyLog, manualNodes, setManualNodes, syncDatiFirebase, trackEventUsage],
+  );
+
   const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlay();
 
   const closeChat = useCallback(() => {
@@ -6553,6 +6601,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,
+    tryEmitPredictiveGreeting,
   } = useCommandTerminal({
     chatHistory,
     setChatHistory,
@@ -6562,6 +6611,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onAddFoodCommand: commitAddFoodCommand,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
+    onLogStimulantCommand: commitLogStimulantCommand,
     getMealBuilderState: () => mealBuilderRef.current,
     onDraftMealItems: handleDraftMealItems,
     onCommitMealBuilder: () => commitMealBuilder({ announce: false }),
@@ -6583,6 +6633,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       return {
         activeDate: currentTrackerDate || getTodayString(),
         locale: 'it-IT',
+        fullHistory,
+        manualNodes: manualNodesForTimeline,
         foodDatabase: foodDb,
         kentuItDatabase: kentuCatalogItDbRef.current || {},
         globalFoodDatabase: csvFoodDbRef.current || {},
@@ -6613,6 +6665,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         scheduledWorkout: scheduledWorkoutContextRef.current,
         timelineNodes: allNodes,
         manualNodes: manualNodesForTimeline,
+        fastingData,
+        metabolicSnapshot,
         userProfile,
         userUid,
         userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
@@ -6621,13 +6675,24 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         healthScoreMetrics: {
           proteinConsumed: Number(totali?.prot) || 0,
           proteinTarget: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
-          kcalConsumed: Number(totali?.kcal) || 0,
+          kcalConsumed: (Number(totali?.kcal) || 0) + sweetCoffeeMacros.kcal,
           tdeeKcal: Number(profileTdeeKcal) || Number(homeCalorieSplit?.baseKcal) || 0,
           dailyKcalTarget: Number(homeCalorieSplit?.targetKcal) || 0,
-          carbConsumed: Number(totali?.carb) || 0,
+          carbConsumed: (Number(totali?.carb) || 0) + sweetCoffeeMacros.carb,
           carbTarget: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
           hoursFasted: Number(metabolicSnapshot?.hoursSinceLastMeal ?? fastingData?.hoursFasted) || null,
-          fastingBrokenPrematurely: Number(healthScore?.breakdown?.fastingMalus) > 0,
+          fastingBrokenPrematurely: detectPrematureFastBreak(
+            metabolicTimelineMeals?.yesterdayLastMealTime,
+            Array.isArray(metabolicTimelineMeals?.todayMealTimes)
+              && metabolicTimelineMeals.todayMealTimes.length > 0
+              ? metabolicTimelineMeals.todayMealTimes[0]
+              : null,
+          ),
+          fastingBrokenBySweetCoffee: coffeeHealthSignals.fastingBrokenBySweetCoffee,
+          bitterCoffeeDuringFast: coffeeHealthSignals.bitterCoffeeDuringFast,
+          metabolicPhaseId: metabolicSnapshot?.phase?.id ?? null,
+          metabolicProgressInPhase: metabolicSnapshot?.progressInPhase ?? null,
+          currentHour: new Date().getHours(),
         },
       };
     },
@@ -6641,6 +6706,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         intent: 'REQUEST_HEALTH_DIAGNOSIS',
         skipUserBubble: true,
         isHiddenUserMessage: true,
+        forceStrategic: true,
         systemInstructionExtra: [
           'Intent forzato: REQUEST_HEALTH_DIAGNOSIS.',
           'Rispondi in prima persona come avatar Health Score (2 frasi max).',
@@ -6648,6 +6714,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       },
     );
   }, [sendMessage]);
+
+  useEffect(() => {
+    if (activeAction !== 'ai_chat') return undefined;
+    const timer = window.setTimeout(() => {
+      if (typeof tryEmitPredictiveGreeting === 'function') {
+        tryEmitPredictiveGreeting();
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [activeAction, tryEmitPredictiveGreeting]);
 
   useEffect(() => {
     registerHandlers({
@@ -6887,12 +6963,23 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleSaveChoiceStimulant = () => {
     const id = Date.now().toString();
-    const node = { id, type: 'stimulant', subtype: stimulantSubtype, time: stimulantTime };
+    const node = String(stimulantSubtype || '').toLowerCase() === 'caffè'
+      ? buildCoffeeStimulantNode(coffeeVariant, stimulantTime, { id })
+      : {
+        id,
+        type: 'stimulant',
+        subtype: stimulantSubtype,
+        time: stimulantTime,
+        kcal: 0,
+        carb: 0,
+        breaksFast: false,
+      };
     const next = [...manualNodes, node];
     setManualNodes(next);
     syncDatiFirebase(dailyLog, next);
     setShowChoiceModal(false);
     setAddChoiceView('main');
+    setCoffeeVariant(COFFEE_VARIANT.AMARO);
   };
 
   const sleepDurationLabel = formatSleepDurationParts(
@@ -9571,6 +9658,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onBackToMain={() => setAddChoiceView('main')}
         stimulantSubtype={stimulantSubtype}
         setStimulantSubtype={setStimulantSubtype}
+        coffeeVariant={coffeeVariant}
+        setCoffeeVariant={setCoffeeVariant}
         stimulantTime={stimulantTime}
         setStimulantTime={setStimulantTime}
         onSaveStimulant={handleSaveChoiceStimulant}
