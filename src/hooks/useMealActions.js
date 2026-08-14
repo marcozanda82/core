@@ -552,7 +552,6 @@ Ottimo! Diario aggiornato. 🥗`;
       const logSnap = dailyLogRef.current || [];
       const predicted = predictMealType(mealDec);
       const mealSlot = getGhostMealType(predicted, logSnap);
-      const mealTypeCanonical = toCanonicalMealType(String(mealSlot).split('_')[0]);
       const batchId = `meal_proposal_${Date.now()}`;
 
       const entries = selectedItems.map((it, index) => {
@@ -572,7 +571,7 @@ Ottimo! Diario aggiornato. 🥗`;
             desc: dati.desc ?? name,
             qta: dati.qta ?? dati.weight ?? qty,
             weight: dati.weight ?? dati.qta ?? qty,
-            mealType: mealTypeCanonical,
+            mealType: mealSlot,
             mealTime: mealDec,
             batchId,
             isEstimated: false,
@@ -613,7 +612,7 @@ Ottimo! Diario aggiornato. 🥗`;
           carb,
           fat,
           fatTotal: fat,
-          mealType: mealTypeCanonical,
+          mealType: mealSlot,
           mealTime: mealDec,
           batchId,
           isEstimated: true,

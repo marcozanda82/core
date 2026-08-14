@@ -98,24 +98,33 @@ export function useTimelineDiaryActions({
     if (slotId == null || slotId === 'rimanenti') return [];
     const idStr = String(slotId);
     const list = log || [];
+    // 1) Match esatto su mealType (snack, snack_2, …)
     let items = list.filter((item) => getSlotKey(item) === idStr);
-    if (items.length === 0) {
-      const u = idStr.lastIndexOf('_');
-      if (u > 0) {
-        const baseMealType = idStr.slice(0, u);
-        const parsedTime = Number(idStr.slice(u + 1));
-        if (!Number.isNaN(parsedTime)) {
-          items = list.filter(
-            (item) =>
-              (item.type === 'food' || item.type === 'recipe')
-              && item.mealType === baseMealType
-              && typeof item.mealTime === 'number'
-              && Math.abs(item.mealTime - parsedTime) < 1e-4,
-          );
-        }
+    if (items.length > 0) return items;
+
+    // 2) Id timeline composito `{mealType}_{hour}` dove mealType può contenere ghost (`snack_2_16.5`).
+    //    Non usare lastIndexOf+Number: `snack_2` verrebbe letto come mealType=snack, time=2.
+    const foods = list.filter((item) => item.type === 'food' || item.type === 'recipe');
+    const mealTypes = [...new Set(foods.map((f) => String(f.mealType || '')).filter(Boolean))];
+    // Preferisci il prefisso più lungo (snack_2 prima di snack).
+    mealTypes.sort((a, b) => b.length - a.length);
+    for (const mt of mealTypes) {
+      if (idStr === mt) {
+        return foods.filter((item) => item.mealType === mt);
       }
+      const prefix = `${mt}_`;
+      if (!idStr.startsWith(prefix)) continue;
+      const timePart = idStr.slice(prefix.length);
+      const parsedTime = Number(timePart);
+      if (!Number.isFinite(parsedTime)) continue;
+      return foods.filter(
+        (item) =>
+          item.mealType === mt
+          && typeof item.mealTime === 'number'
+          && Math.abs(item.mealTime - parsedTime) < 1e-4,
+      );
     }
-    return items;
+    return [];
   }, []);
 
   /** Commit orario nodo timeline (pasto aggregato, ghost_meal, manualNodes: work/cognitive/water/…). */

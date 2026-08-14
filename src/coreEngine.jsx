@@ -141,23 +141,42 @@ function getMealIcon(label) {
   return '🥗';
 }
 
+/**
+ * True se mealType è uno slot ghost (`snack_2`, `pranzo_3`), non un id composito orario (`snack_16.5`).
+ */
+function isGhostInstanceMealType(mealType) {
+  const str = String(mealType || '').trim();
+  if (!str.includes('_')) return false;
+  const base = str.slice(0, str.indexOf('_'));
+  const suffix = str.slice(str.indexOf('_') + 1);
+  if (!base || !/^\d+$/.test(suffix)) return false;
+  const n = parseInt(suffix, 10);
+  return Number.isFinite(n) && n >= 2;
+}
+
+/** Base mealType senza suffisso ghost/orario (`snack_2` → `snack`, `snack_16.5` → `snack`). */
+function getMealTypeBase(mealType) {
+  const str = String(mealType || '').trim();
+  if (!str.includes('_')) return str;
+  return str.slice(0, str.indexOf('_'));
+}
+
 function getGhostMealType(baseType, log) {
-  const base = String(baseType || '').split('_')[0];
+  const base = getMealTypeBase(baseType);
   const canonical = toCanonicalMealType(base);
   const existingFoods = (log || []).filter(i => i.type === 'food' || i.type === 'recipe');
   let maxSuffix = 0;
   let baseExists = false;
   existingFoods.forEach(f => {
-    const mType = f.mealType || '';
-    const mBase = mType.split('_')[0];
-    if (toCanonicalMealType(mBase) === canonical) {
-      baseExists = true;
-      if (mType.includes('_')) {
-        const num = parseInt(mType.split('_')[1], 10);
-        if (!isNaN(num) && num > maxSuffix) maxSuffix = num;
-      } else {
-        if (maxSuffix === 0) maxSuffix = 1;
-      }
+    const mType = String(f.mealType || '');
+    const mBase = getMealTypeBase(mType);
+    if (toCanonicalMealType(mBase) !== canonical) return;
+    baseExists = true;
+    if (isGhostInstanceMealType(mType)) {
+      const num = parseInt(mType.slice(mType.indexOf('_') + 1), 10);
+      if (!isNaN(num) && num > maxSuffix) maxSuffix = num;
+    } else if (!mType.includes('_') && maxSuffix === 0) {
+      maxSuffix = 1;
     }
   });
   if (!baseExists) return base;
@@ -1414,9 +1433,17 @@ const DESC_TO_MEAL_ID = {
 };
 
 function inferMealType(entry) {
+  // Preferisci sempre l'id completo (snack_2): non passare da toCanonicalMealType.
   if (entry.mealId) return entry.mealId;
   if (entry.mealType) return entry.mealType;
   const key = (entry.desc || '').toLowerCase().trim();
+  // "Snack 2" / "Pranzo 3" → snack_2 / pranzo_3 (slot ghost), non collassare a snack/pranzo.
+  const ghostLabel = key.match(/^(colazione|snack|spuntino|pranzo|cena)\s+(\d+)$/);
+  if (ghostLabel) {
+    const base = ghostLabel[1] === 'spuntino' ? 'snack' : ghostLabel[1];
+    const n = parseInt(ghostLabel[2], 10);
+    if (n >= 2) return `${base}_${n}`;
+  }
   return DESC_TO_MEAL_ID[key] || (key ? key.replace(/\s+/g, '_') : null) || 'pranzo';
 }
 
@@ -1559,7 +1586,8 @@ function normalizeLogData(rawLog) {
   const out = [];
   (rawLog || []).forEach(entry => {
     if (entry.type === 'ghost_meal') {
-      const mt = String(entry.mealType || 'pranzo').split('_')[0];
+      // Preserva snack_2 / pranzo_3: non strippare il suffisso ghost in idratazione.
+      const mt = String(entry.mealType || entry.mealId || 'pranzo').trim() || 'pranzo';
       let mTime = entry.mealTime;
       if (typeof mTime === 'string' && mTime.includes(':')) {
         const parts = mTime.trim().match(/^(\d{1,2})[:.](\d{2})$/);
@@ -1586,11 +1614,15 @@ function normalizeLogData(rawLog) {
       return;
     }
     if (entry.type === 'meal') {
-      const mealType = inferMealType(entry);
+      const folderMealType = inferMealType(entry);
       (entry.items || []).forEach(subItem => {
         const itemType = subItem.type === 'recipe' ? 'recipe' : 'food';
+        // Item-level mealType (snack_2) ha priorità sul folder se presente — evita fusione al reload.
+        const itemMt = subItem?.mealType != null && String(subItem.mealType).trim() !== ''
+          ? String(subItem.mealType).trim()
+          : folderMealType;
         out.push({
-          ...subItem, type: itemType, mealType,
+          ...subItem, type: itemType, mealType: itemMt,
           id: subItem.id || Date.now() + Math.random(),
           kcal: subItem.kcal ?? subItem.cal ?? 0
         });
@@ -2509,14 +2541,16 @@ function denormalizeLogForFirebase(flatLog) {
       return;
     }
     if (entry.type === 'food' || entry.type === 'recipe' || !entry.type) {
-      // Usa il mealType così com'è (può essere 'spuntino' o 'snack')
-      const mealType = entry.mealType || 'cena';
+      // Mantieni snack_2 / pranzo_3 così com'è — NON passare da toCanonicalMealType.
+      const mealType = String(entry.mealType || 'cena').trim() || 'cena';
       if (!meals[mealType]) meals[mealType] = [];
-      const { type, mealType: _, ...rest } = entry;
+      const { type, ...rest } = entry;
       const itemType = entry.type === 'recipe' ? 'recipe' : 'food';
       meals[mealType].push({
         ...rest,
         type: itemType,
+        // Persisti mealType anche sull'item: idratazione robusta se mealId cartella manca.
+        mealType,
         kcal: rest.kcal ?? rest.cal ?? 0,
         cal: rest.cal ?? rest.kcal ?? 0
       });
@@ -2557,7 +2591,13 @@ function denormalizeLogForFirebase(flatLog) {
 /** Applica gli orari pasto (mealTimes) al log: evita "amnesia" dopo caricamento da Firebase. */
 function applyMealTimes(logArray, timesObj) {
   if (!logArray || !Array.isArray(logArray)) return logArray || [];
-  return logArray.map(item => (item.type === 'food' && timesObj && timesObj[item.mealType] !== undefined) ? { ...item, mealTime: timesObj[item.mealType] } : item);
+  return logArray.map((item) => {
+    if ((item.type !== 'food' && item.type !== 'recipe') || !timesObj) return item;
+    // Chiave esatta (snack_2) prima del base (snack): non fondere orari di slot ghost.
+    const exact = timesObj[item.mealType];
+    if (exact !== undefined) return { ...item, mealTime: exact };
+    return item;
+  });
 }
 
 /** Dato l'albero tracker_data scaricato (una tantum), restituisce il log normalizzato per una data. */
@@ -5395,6 +5435,8 @@ export {
   getEquivalentMealTypes,
   getMealIcon,
   getGhostMealType,
+  isGhostInstanceMealType,
+  getMealTypeBase,
   getSlotKey,
   decimalToTimeStr,
   computeBaselineEnergy,

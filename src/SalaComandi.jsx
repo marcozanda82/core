@@ -3324,14 +3324,19 @@ export default function SalaComandi() {
     const log = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
     let items = getFoodItemsForMealSlot(log, mTypeOrId);
 
+    // Fallback solo per id canonici (snack), mai per ghost (snack_2) o id timeline (snack_2_16).
     if (items.length === 0 && mTypeOrId != null) {
-      const canonical = toCanonicalMealType(String(mTypeOrId).split('_')[0]);
-      const equivalents = getEquivalentMealTypes(canonical);
-      items = log.filter(
-        (item) =>
+      const idStr = String(mTypeOrId);
+      const looksGhostOrTimed = idStr.includes('_');
+      if (!looksGhostOrTimed) {
+        const canonical = toCanonicalMealType(idStr);
+        const equivalents = getEquivalentMealTypes(canonical);
+        items = log.filter(
+          (item) =>
             (item.type === 'food' || item.type === 'recipe') &&
-          equivalents.includes(item.mealType)
-      );
+            equivalents.includes(item.mealType)
+        );
+      }
     }
 
     const draftItems = items.map((f) => {
@@ -6289,11 +6294,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         throw new Error('Merge pasto fallito');
       }
 
+      // Nuovo slot (forceNewMealSlot): materializza snack_2… prima della scrittura Firebase.
+      const ghostMealType = forceNewSlot
+        ? getGhostMealType(mealTypeCanonical, logSnap)
+        : null;
       const message = commitAddFoodChatPayload({
         timeString,
         mealDec,
         items,
         mealType: mealTypeCanonical,
+        ...(ghostMealType
+          ? { forcedMealSlot: { mealType: ghostMealType, mealTime: mealDec } }
+          : {}),
       });
       if (message) return message;
       if (items.length > 1) {
@@ -6309,6 +6321,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       getCurrentTimeRoundedTo15Min,
       parseFlexibleTimeToDecimal,
       toCanonicalMealType,
+      getGhostMealType,
       userUid,
       db,
       foodDb,
