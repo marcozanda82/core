@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTimelineDrag } from '../useTimelineDrag';
 import { NODE_DRAG_ARM_CANCEL_MOVE_PX } from '../../constants/salaComandiConstants';
-import { getSlotKey } from '../../coreEngine';
+import { getSlotKey, getGhostMealType } from '../../coreEngine';
 import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPredictor';
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
@@ -252,7 +252,10 @@ export function useTimelineDiaryActions({
       const batchId = Date.now();
       const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
 
-      let mealTypeToUse = slot;
+      // Edit su slot esistente → riusa quell'ID. Nuovo pasto → ghost (snack_2…) come McDrive.
+      let mealTypeToUse = editMealId
+        ? String(editMealId)
+        : getGhostMealType(slot, logToUse);
       let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
 
       if (typeof customMealTime === 'number' && !Number.isNaN(customMealTime)) {
@@ -260,6 +263,8 @@ export function useTimelineDiaryActions({
       } else if (editMealId) {
         const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
         if (existing.length > 0) {
+          const existingType = String(existing[0]?.mealType || '').trim();
+          if (existingType) mealTypeToUse = existingType;
           if (typeof existing[0].mealTime === 'number' && !Number.isNaN(existing[0].mealTime)) {
             mealTimeToUse = existing[0].mealTime;
           }

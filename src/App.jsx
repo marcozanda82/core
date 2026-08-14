@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import { ChatOverlayProvider } from './contexts/ChatOverlayContext';
+import GlobalChatOverlay from './components/GlobalChatOverlay';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
 
@@ -28,6 +29,7 @@ export default function App() {
           </Routes>
         </Suspense>
       </BrowserRouter>
+      <GlobalChatOverlay />
     </ChatOverlayProvider>
   );
 }

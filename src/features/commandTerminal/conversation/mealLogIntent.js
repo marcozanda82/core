@@ -597,6 +597,36 @@ export function isMealAdviceIntent(userText, chatHistory = []) {
   return MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+const GENERIC_MEAL_LOG_ONLY_PATTERNS = [
+  /^registro\s+(?:uno\s+)?(?:spuntino|merenda|snack)\b/i,
+  /^voglio\s+registrare\s+(?:il\s+)?(?:pranzo|colazione|cena|pasto|snack|spuntino|merenda)\s+liberamente\b/i,
+  /^registro\s+(?:la\s+)?(?:colazione|pranzo|cena)\b/i,
+  /^inserimento\s+libero\b/i,
+];
+
+/**
+ * Richiesta generica di registrare un pasto, senza alimenti concreti (McDrive: solo ascolto).
+ * @param {string} userText
+ * @returns {boolean}
+ */
+export function isGenericMealLogIntentOnly(userText) {
+  const text = String(userText || '').trim();
+  if (!text) return false;
+  if (isConsumedMealLogDescription(text) || looksLikeComplexMealLog(text)) return false;
+  if (parseConsumedMealFromNaturalText(text)?.items?.length) return false;
+  if (extractBareFoodNamesFromText(text).length > 0) return false;
+
+  if (GENERIC_MEAL_LOG_ONLY_PATTERNS.some((pattern) => pattern.test(text))) return true;
+
+  if (!isFoodRegistrationIntent(text)) return false;
+
+  const stripped = text
+    .replace(/\b(?:registr\w*|logg\w*|aggiung\w*)\b/gi, ' ')
+    .replace(/\b(?:uno|un|una|il|la|lo|l'|mio|miei|liberamente|libero|pasto|spuntino|merenda|snack|colazione|pranzo|cena)\b/gi, ' ')
+    .trim();
+  return stripped.length < 3;
+}
+
 /**
  * Registrazione pasto al diario (alimenti/quantità da aggiungere).
  * Funzione piatta: NON chiama isWipMealBuildIntent / isDayReviewIntent / isMealAdviceIntent.
@@ -1538,13 +1568,35 @@ export function isClarificationFollowUpReply(userText, chatHistory = []) {
 
 /**
  * Unisce gli ultimi messaggi utente del thread e prova a estrarre un pasto (follow-up chiarimenti).
+ * Ogni messaggio autonomo (es. «pane e mortadella») viene processato in modo atomico — niente concat col turno precedente.
  * @param {string} userText
  * @param {Array<object>} [chatHistory]
  * @returns {{ mealType: string|null, items: Array<{foodName:string, grams:number}>, exactTime: string|null } | null}
  */
 export function parseMealLogFromChatThread(userText, chatHistory = []) {
-  const direct = parseConsumedMealFromNaturalText(userText);
+  const current = String(userText || '').trim();
+  if (!current) return null;
+
+  const direct = parseConsumedMealFromNaturalText(current);
   if (direct?.items?.length) return direct;
+
+  const bareFromCurrent = extractBareFoodNamesFromText(current);
+  if (bareFromCurrent.length > 0) {
+    return {
+      mealType: parseMealTypeFromUserText(current) || null,
+      items: bareFromCurrent.map((foodName) => ({
+        foodName,
+        grams: 100,
+        isEstimated: true,
+      })),
+      exactTime: parseExactTimeFromUserText(current),
+    };
+  }
+
+  // Merge multi-turno SOLO dopo chiarimento AI (grammi/tipo), mai per nuovo inserimento libero.
+  if (!wasLastAiMessageClarification(chatHistory)) {
+    return null;
+  }
 
   const recentUser = [];
   (chatHistory || []).forEach((entry) => {
@@ -1552,23 +1604,19 @@ export function parseMealLogFromChatThread(userText, chatHistory = []) {
     const line = String(entry.text || '').trim();
     if (line) recentUser.push(line);
   });
-  const current = String(userText || '').trim();
   if (current && recentUser[recentUser.length - 1] !== current) {
     recentUser.push(current);
   }
-  const window = recentUser.slice(-4);
-  if (window.length === 0) return null;
+  const window = recentUser.slice(-2);
+  if (window.length < 2) return null;
 
-  const combined = window.join('. ');
+  const prior = window[window.length - 2];
+  const combined = `${prior}. ${current}`;
   const fromCombined = parseConsumedMealFromNaturalText(combined);
   if (fromCombined?.items?.length) return fromCombined;
 
-  // Grammi-only sul messaggio corrente + nomi dal messaggio utente precedente
-  const gramsOnly = String(userText || '').trim().match(
-    /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/gi,
-  );
-  if (gramsOnly?.length && window.length >= 2) {
-    const prior = window[window.length - 2];
+  const gramsOnly = current.match(/(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/gi);
+  if (gramsOnly?.length) {
     const priorFoods = extractBareFoodNamesFromText(prior);
     const grams = gramsOnly
       .map((g) => Math.round(Number(String(g).replace(/[^\d.,]/g, '').replace(',', '.'))))
@@ -1635,17 +1683,16 @@ export function buildApproximateMealLogForRecovery(userText, chatHistory = []) {
     };
   }
 
-  const names = extractBareFoodNamesFromText(
-    [userText, ...((chatHistory || []).filter((e) => e?.sender === 'user').slice(-3).map((e) => e.text))]
-      .filter(Boolean)
-      .join('. '),
-  );
-  if (names.length === 0) return null;
-  return {
-    mealType: parseMealTypeFromUserText(String(userText || '')) || null,
-    items: names.map((foodName) => ({ foodName, grams: 100, isEstimated: true })),
-    exactTime: null,
-  };
+  const names = extractBareFoodNamesFromText(String(userText || '').trim());
+  if (names.length > 0) {
+    return {
+      mealType: parseMealTypeFromUserText(String(userText || '')) || null,
+      items: names.map((foodName) => ({ foodName, grams: 100, isEstimated: true })),
+      exactTime: null,
+    };
+  }
+
+  return null;
 }
 
 /**

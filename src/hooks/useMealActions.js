@@ -367,7 +367,10 @@ Ottimo! Diario aggiornato. 🥗`;
           ? drawerMealTime
           : getCurrentTimeRoundedTo15Min();
       const safeDailyLog = dailyLog || [];
-      const ourSlot = getGhostMealType(currentTargetType, safeDailyLog);
+      // Nuovo pasto → ghost slot (snack_2). Edit → riusa editingMealId (merge/replace sullo stesso slot).
+      const ourSlot = editingMealId
+        ? String(editingMealId)
+        : getGhostMealType(currentTargetType, safeDailyLog);
       const slotToReplace = editingMealId || ourSlot;
 
       const mealItems = (addedFoods || []).map((f, index) => ({
@@ -470,7 +473,10 @@ Ottimo! Diario aggiornato. 🥗`;
               ? drawerMealTime
               : getCurrentTimeRoundedTo15Min();
         const logToUse = isSimulationMode ? simulatedLog || [] : dailyLog;
-        const ourSlot = getGhostMealType(payload.mealType || mealType, logToUse);
+        // Nuovo → getGhostMealType. Edit su slot esistente → non creare snack_2 per sbaglio.
+        const ourSlot = editingMealId
+          ? String(editingMealId)
+          : getGhostMealType(payload.mealType || mealType, logToUse);
         const slotToReplace = editingMealId || ourSlot;
         const mealItems = payload.items.map((f, index) => ({
           ...f,

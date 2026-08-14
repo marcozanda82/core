@@ -21,13 +21,18 @@ export const CONVERSATION_STATE = Object.freeze({
   AWAITING_MEAL_WIZARD_CONFIRM: 'AWAITING_MEAL_WIZARD_CONFIRM',
   /** Wizard «Guidami»: loop chiuso costruzione pasto passo-passo. */
   AWAITING_MEAL_BUILDER_STEP: 'AWAITING_MEAL_BUILDER_STEP',
+  /** McDrive: inserimento guidato a ciclo aperto (un alimento per turno). */
+  AWAITING_MCDRIVE_LOOP: 'AWAITING_MCDRIVE_LOOP',
   /** Caffè da testo: attesa scelta Amaro vs Zuccherato. */
   AWAITING_COFFEE_VARIANT: 'AWAITING_COFFEE_VARIANT',
+  /** McDrive: chip inserimento libero / spuntino — ascolto attivo, nessuna previsione storica. */
+  AWAITING_FREE_MEAL_LOG: 'AWAITING_FREE_MEAL_LOG',
 });
 
 /** Wizard attivo oltre conversationState (es. costruzione pasto guidata). */
 export const ACTIVE_WIZARD = Object.freeze({
   MEAL_BUILDER: 'MEAL_BUILDER',
+  MCDRIVE_LOOP: 'MCDRIVE_LOOP',
 });
 
 const MEAL_TYPES = ['colazione', 'snack', 'pranzo', 'cena'];

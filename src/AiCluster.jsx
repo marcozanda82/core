@@ -9,6 +9,7 @@ import WorkoutDraftConfirmation from './components/WorkoutDraftConfirmation';
 import MealProposalCards from './components/MealProposalCards';
 import NewFoodPreviewCard from './components/NewFoodPreviewCard';
 import MealReceiptMessage from './features/chat/MealReceiptMessage';
+import LiveMealTray from './features/chat/LiveMealTray';
 import WipMealCartBar from './features/wipMealBuilder/components/WipMealCartBar';
 import WipMealSmartChips from './features/wipMealBuilder/components/WipMealSmartChips';
 import {
@@ -25,12 +26,14 @@ import {
 import { useVoiceChat } from './features/chat/useVoiceChat.js';
 import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
+import ChatInputBar from './features/chat/ChatInputBar.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
-import { PREDICTIVE_GREETING_TYPE } from './features/predictive/predictiveGreeting.js';
+import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
+import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
   AVATAR_MOOD,
   AVATAR_MOOD_LABEL,
@@ -38,7 +41,6 @@ import {
   detectActiveMealTray,
   detectStrategicConsultContext,
   getAvatarSrcForMood,
-  isStrategicAvatarIntent,
   resolveAvatarMood,
   resolveMessageAvatarSrc,
 } from './features/chat/avatarMood.js';
@@ -56,6 +58,7 @@ function messageHasInteractiveDraftWidget(msg) {
   if (!msg || msg.isTyping) return false;
   if (msg.mealDraft && !msg.draftResolved) return true;
   if (msg.workoutDraft && !msg.draftResolved) return true;
+  if (msg.liveMealTray && msg.liveMealTrayResolved !== true) return true;
   if (Array.isArray(msg.mealProposals) && msg.mealProposals.length > 0) return true;
   return false;
 }
@@ -110,6 +113,8 @@ export default function AiCluster({
   onDraftUpdateItemGrams,
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
+  onMcDriveRemoveItem = null,
+  onMcDriveUpdateGrams = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
   onWorkoutDraftRemoveExercise,
@@ -151,6 +156,16 @@ export default function AiCluster({
     return raw.split(/\s+/)[0];
   }, [userDisplayName]);
 
+  const [isNotesMode, setIsNotesMode] = useState(false);
+
+  const chatInputPlaceholder = useMemo(
+    () => resolveChatInputPlaceholder({
+      isNotesMode,
+      hasImages: chatImages.length > 0,
+    }),
+    [isNotesMode, chatImages.length],
+  );
+
   const healthAvatarSrc = String(healthScore?.avatar?.src || '/avatar.png').trim() || '/avatar.png';
   const healthScoreLabel = healthScore?.avatar?.label
     ? `Health Score ${Math.round(Number(healthScore.score) || 0)} · ${healthScore.avatar.label}`
@@ -158,10 +173,28 @@ export default function AiCluster({
 
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
-  const chatTextareaRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
   const [consumedPredictiveGreetingKeys, setConsumedPredictiveGreetingKeys] = useState(() => new Set());
   const voiceSubmitRef = useRef(null);
+
+  const handlePredictiveGreetingChipClick = useCallback((chip, msg, predictiveKey) => {
+    const replyObj = chip && typeof chip === 'object' ? chip : null;
+    const replyLabel = replyObj
+      ? String(replyObj.label || replyObj.text || '').trim()
+      : String(chip || '').trim();
+    if (!replyLabel) return;
+    setConsumedPredictiveGreetingKeys((prev) => {
+      const next = new Set(prev);
+      next.add(predictiveKey);
+      return next;
+    });
+    onSlotQuickReplyClick?.(replyLabel, {
+      predictiveIntent: replyObj?.intent || replyObj?.action || null,
+      predictiveState: msg.predictiveState || null,
+      label: replyLabel,
+    });
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  }, [onSlotQuickReplyClick]);
 
   const openFoodPhotoCapture = useCallback(async () => {
     try {
@@ -213,19 +246,6 @@ export default function AiCluster({
   const [isTranscribingVoiceNote, setIsTranscribingVoiceNote] = useState(false);
   const [strategicProcessingLatch, setStrategicProcessingLatch] = useState(false);
 
-  const handleInputResize = useCallback((e) => {
-    const el = e?.target || chatTextareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, []);
-
-  const resetInputHeight = useCallback(() => {
-    const el = chatTextareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-  }, []);
-
   const showTypingIndicator = isProcessing || isTranscribingVoiceNote;
 
   useEffect(() => {
@@ -237,8 +257,8 @@ export default function AiCluster({
   const isStrategicConsult = useMemo(
     () => detectStrategicConsultContext(chatHistory, {
       forceStrategic: strategicProcessingLatch,
-    }) || isStrategicAvatarIntent(stripInvisibleContextFromBubble(chatInput), chatHistory),
-    [chatHistory, chatInput, strategicProcessingLatch],
+    }),
+    [chatHistory, strategicProcessingLatch],
   );
 
   const hasActiveWorkoutDraft = useMemo(
@@ -293,10 +313,6 @@ export default function AiCluster({
     if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
   }, [chatHistory, showTypingIndicator]);
 
-  useEffect(() => {
-    if (!String(chatInput || '').trim()) resetInputHeight();
-  }, [chatInput, resetInputHeight]);
-
   const suppressQuickReplies = useMemo(
     () => (chatHistory || []).some(
       (m) => m.mealProposal
@@ -316,10 +332,20 @@ export default function AiCluster({
           foodDbKey: entry.foodDbKey ?? entry.id ?? null,
           foodName: entry.foodName || entry.name || null,
           grams: entry.grams ?? null,
-          action: entry.action || null,
+          action: entry.action || entry.intent || null,
+          intent: entry.intent || entry.action || null,
+          variant: entry.variant || null,
         };
       }
-      return { label: String(entry ?? '').trim(), foodDbKey: null, foodName: null, grams: null, action: null };
+      return {
+        label: String(entry ?? '').trim(),
+        foodDbKey: null,
+        foodName: null,
+        grams: null,
+        action: null,
+        intent: null,
+        variant: null,
+      };
     }).filter((e) => e.label);
     if (!hasActiveWorkoutDraft) return normalized;
     return normalized.filter(
@@ -341,7 +367,6 @@ export default function AiCluster({
     ];
   }, [quickStripItems]);
 
-  const [isNotesMode, setIsNotesMode] = useState(false);
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [devToolsToast, setDevToolsToast] = useState('');
   const toolsMenuRef = useRef(null);
@@ -437,7 +462,7 @@ export default function AiCluster({
     onRequestBarcodeScan?.();
   }, [onRequestBarcodeScan]);
 
-  const handleSendFromInput = useCallback(async () => {
+  const handleComposerSubmit = useCallback(async (rawText) => {
     if (isProcessing) return;
 
     if (isVoiceNoteActive) {
@@ -445,13 +470,13 @@ export default function AiCluster({
     }
     noteTextInteraction();
 
+    const text = String(rawText || '').trim();
+
     if (isNotesMode) {
-      const noteText = String(chatInput || '').trim();
-      if (!noteText) return;
+      if (!text) return;
       try {
-        await saveDevNote({ text: noteText });
+        await saveDevNote({ text });
         setChatInput('');
-        resetInputHeight();
         showDevToast('Nota salvata');
       } catch (err) {
         console.error('[DevTools] saveDevNote failed', err);
@@ -460,8 +485,10 @@ export default function AiCluster({
       return;
     }
 
-    onSendMessage(undefined, { fromInput: true });
-    resetInputHeight();
+    if (!text && !(chatImages?.length > 0)) return;
+
+    setChatInput('');
+    onSendMessage(text, { fromInput: true });
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [
     isProcessing,
@@ -469,12 +496,15 @@ export default function AiCluster({
     discardNote,
     noteTextInteraction,
     isNotesMode,
-    chatInput,
     setChatInput,
     showDevToast,
     onSendMessage,
-    resetInputHeight,
+    chatImages,
   ]);
+
+  const handleSeedConsumed = useCallback(() => {
+    setChatInput('');
+  }, [setChatInput]);
 
   const handleSendVoiceNote = useCallback(async () => {
     if (!voiceNoteBlob || isProcessing || isTranscribingVoiceNote) return;
@@ -493,12 +523,10 @@ export default function AiCluster({
 
       if (isNotesMode) {
         setChatInput(transcription);
-        resetInputHeight();
         return;
       }
 
       onSendMessage(transcription, { fromInput: true, fromVoice: true });
-      resetInputHeight();
       setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (error) {
       console.error('[AiCluster] voice note transcription failed', error);
@@ -523,7 +551,6 @@ export default function AiCluster({
     isNotesMode,
     setChatInput,
     onSendMessage,
-    resetInputHeight,
     setVoiceErrorMessage,
   ]);
 
@@ -537,17 +564,8 @@ export default function AiCluster({
       return;
     }
     onSendMessage(trimmed, { fromInput: true, fromVoice: true });
-    resetInputHeight();
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
-
-  const handleChatKeyDown = useCallback((e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendFromInput();
-      e.target.style.height = 'auto';
-    }
-  }, [handleSendFromInput]);
 
   return (
     <div
@@ -755,10 +773,57 @@ export default function AiCluster({
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
+                ) : msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard ? (
+                  <div className="flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5">
+                    <div className="kentu-ai-row flex w-full items-end gap-3">
+                      <KentuAvatar
+                        size="sm"
+                        src={resolveMessageAvatarSrc(msg)}
+                        fit="contain"
+                        className="mb-0.5 shrink-0 self-end"
+                        alt="Kentu AI"
+                      />
+                      <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
+                        {splitAiMessageSections(msg.text).map((block, si) =>
+                          si === 0 ? (
+                            <KentuInsightHero key={`mcdrive-text-${si}`} block={block} />
+                          ) : (
+                            <KentuInsightCard key={`mcdrive-text-${si}`} block={block} />
+                          )
+                        )}
+                        <LiveMealTray
+                          tray={msg.liveMealTray}
+                          active={msg.liveMealTrayResolved !== true}
+                          disabled={isProcessing}
+                          onRemoveItem={onMcDriveRemoveItem}
+                          onUpdateGrams={onMcDriveUpdateGrams}
+                          onCancel={() => {
+                            onSendMessage?.('', {
+                              intent: 'CANCEL_MCDRIVE_WIZARD',
+                              skipUserBubble: true,
+                              fromQuickReply: true,
+                            });
+                          }}
+                          onFinish={() => {
+                            onSendMessage?.('', {
+                              intent: 'FINISH_MCDRIVE_WIZARD',
+                              skipUserBubble: true,
+                              fromQuickReply: true,
+                            });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
                 ) : isSystemNoticeMessage(msg) ? (
                   <SystemNoticeMessage message={msg} />
                 ) : (
-                  <div className="flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5">
+                  <div
+                    className={[
+                      'flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5',
+                      isPredictiveGreetingMessage(msg) ? 'kentu-predictive-greeting-block' : '',
+                    ].filter(Boolean).join(' ')}
+                  >
                     {shouldRenderSystemNoticeChrome(msg) ? (
                       <SystemNoticeMessage message={msg} />
                     ) : (
@@ -815,6 +880,20 @@ export default function AiCluster({
                                   {msg.suggestedAction.foodName}
                                 </span>
                               </button>
+                            ) : null}
+                          {isPredictiveGreetingMessage(msg)
+                            && Array.isArray(msg.quickReplies)
+                            && msg.quickReplies.length > 0
+                            && !consumedPredictiveGreetingKeys.has(`pred-${idx}`)
+                            && msg.predictiveSuperseded !== true ? (
+                              <QuickReplyChipRow
+                                replies={msg.quickReplies}
+                                disabled={isProcessing}
+                                align="start"
+                                onChipClick={(chip) => {
+                                  handlePredictiveGreetingChipClick(chip, msg, `pred-${idx}`);
+                                }}
+                              />
                             ) : null}
                         </div>
                       </div>
@@ -884,37 +963,7 @@ export default function AiCluster({
                 </div>
               )}
               {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !messageHasInteractiveDraftWidget(msg) && (() => {
-                const isPredictiveGreeting = msg.type === PREDICTIVE_GREETING_TYPE || msg.predictiveGreeting === true;
-                const predictiveKey = `pred-${idx}`;
-                if (isPredictiveGreeting && (consumedPredictiveGreetingKeys.has(predictiveKey) || msg.predictiveSuperseded === true)) return null;
-
-                if (isPredictiveGreeting) {
-                  return (
-                    <QuickReplyChipRow
-                      replies={msg.quickReplies}
-                      disabled={isProcessing}
-                      align={msg.sender === 'ai' ? 'start' : 'end'}
-                      onChipClick={(chip) => {
-                        const replyObj = chip && typeof chip === 'object' ? chip : null;
-                        const replyLabel = replyObj
-                          ? String(replyObj.label || replyObj.text || '').trim()
-                          : String(chip || '').trim();
-                        if (!replyLabel) return;
-                        setConsumedPredictiveGreetingKeys((prev) => {
-                          const next = new Set(prev);
-                          next.add(predictiveKey);
-                          return next;
-                        });
-                        onSlotQuickReplyClick?.(replyLabel, {
-                          predictiveIntent: replyObj?.intent || replyObj?.action || null,
-                          predictiveState: msg.predictiveState || null,
-                          label: replyLabel,
-                        });
-                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-                      }}
-                    />
-                  );
-                }
+                if (isPredictiveGreetingMessage(msg)) return null;
 
                 const clarificationKey = `clr-${idx}`;
                 const isClarification = msg.clarification === true
@@ -997,6 +1046,12 @@ export default function AiCluster({
                               fromQuickReply: true,
                               clarificationReply: isClarification,
                               wizardSelection,
+                              intent: replyObj?.intent || replyObj?.action || undefined,
+                              skipUserBubble: [
+                                'FREE_MEAL_LISTEN',
+                                'START_MCDRIVE_WIZARD',
+                                'ASK_DAY_REVIEW',
+                              ].includes(String(replyObj?.intent || replyObj?.action || '').toUpperCase()),
                             });
                           }
                           setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -1094,7 +1149,12 @@ export default function AiCluster({
                           action: entry.action,
                         }
                       : null;
-                    onSlotQuickReplyClick?.(entry.label, { wizardSelection });
+                    onSlotQuickReplyClick?.(entry.label, {
+                      wizardSelection,
+                      predictiveIntent: entry.intent || entry.action || null,
+                      intent: entry.intent || entry.action || null,
+                      label: entry.label,
+                    });
                   }
                   setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
                 }}
@@ -1252,103 +1312,69 @@ export default function AiCluster({
               }
             }}
           />
-          <div className="kentu-input-strip__composer">
-            <textarea
-              ref={chatTextareaRef}
-              rows={1}
-              className="chat-input resize-none overflow-hidden min-h-[44px] max-h-[150px] w-full"
-              placeholder={
-                isNotesMode
-                  ? 'Nota di sviluppo…'
-                  : chatImages.length > 0
-                    ? 'Commento immagini…'
-                    : chatFirstName
-                      ? `Cosa hai mangiato, ${chatFirstName}?`
-                      : 'Scrivi a Kentu…'
-              }
-              value={chatInput}
-              disabled={isProcessing && !isNotesMode}
-              onChange={(e) => {
-                setChatInput(e.target.value);
-                handleInputResize(e);
-              }}
-              onKeyDown={handleChatKeyDown}
-            />
-          </div>
-          <div className="kentu-input-strip__actions">
-            <div className="kentu-input-strip__tools">
-              <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
-                <KentuIcon name="camera" size={22} />
-              </KentuButton>
-              {voiceNoteSupported ? (
-                <button
-                  type="button"
-                  className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
-                  aria-label="Registra nota vocale"
-                  disabled={isProcessing && !isNotesMode}
-                  onClick={() => {
-                    clearVoiceError();
-                    startRecording();
-                  }}
-                  title="Registra una nota vocale"
-                >
-                  🎤
-                </button>
-              ) : null}
-              <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
-                <button
-                  type="button"
-                  className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
-                  aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
-                  aria-expanded={showToolsMenu}
-                  onClick={handleToolsButtonClick}
-                >
-                  {isNotesMode ? '📝' : '🛠️'}
-                </button>
-                {showToolsMenu ? (
-                  <div className="kentu-devtools-menu" role="menu">
-                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
-                      🧠 Analisi Oggi
-                    </button>
-                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
-                      📷 Scanner Barcode
-                    </button>
-                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
-                      📝 Modalità Note
-                    </button>
-                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
-                      💬 Salva Chat
-                    </button>
-                    <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
-                      ⚠️ Segnala Anomalia
-                    </button>
-                  </div>
+          <ChatInputBar
+            seedText={chatInput}
+            onSeedConsumed={handleSeedConsumed}
+            placeholder={chatInputPlaceholder}
+            disabled={isProcessing && !isNotesMode}
+            isProcessing={isProcessing}
+            isNotesMode={isNotesMode}
+            canSendWithImages={!isNotesMode && Array.isArray(chatImages) && chatImages.length > 0}
+            onSubmit={handleComposerSubmit}
+            onCancelGeneration={onCancelGeneration}
+            tools={(
+              <>
+                <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
+                  <KentuIcon name="camera" size={22} />
+                </KentuButton>
+                {voiceNoteSupported ? (
+                  <button
+                    type="button"
+                    className="kentu-btn--icon inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-[16px] text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+                    aria-label="Registra nota vocale"
+                    disabled={isProcessing && !isNotesMode}
+                    onClick={() => {
+                      clearVoiceError();
+                      startRecording();
+                    }}
+                    title="Registra una nota vocale"
+                  >
+                    🎤
+                  </button>
                 ) : null}
-              </div>
-            </div>
-            {isProcessing && !isNotesMode ? (
-              <KentuButton
-                variant="secondary"
-                className="kentu-send-btn"
-                aria-label="Interrompi generazione"
-                onClick={() => {
-                  if (typeof onCancelGeneration === 'function') onCancelGeneration();
-                }}
-              >
-                <KentuIcon name="stop" size={16} />
-              </KentuButton>
-            ) : (
-              <KentuButton
-                variant="primary"
-                className={`kentu-send-btn ${!(chatInput.trim() || (!isNotesMode && chatImages.length > 0)) || (isProcessing && !isNotesMode) ? 'kentu-send-btn--idle' : ''}`}
-                aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
-                disabled={isProcessing && !isNotesMode}
-                onClick={handleSendFromInput}
-              >
-                <KentuIcon name="send" size={18} />
-              </KentuButton>
+                <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
+                  <button
+                    type="button"
+                    className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
+                    aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
+                    aria-expanded={showToolsMenu}
+                    onClick={handleToolsButtonClick}
+                  >
+                    {isNotesMode ? '📝' : '🛠️'}
+                  </button>
+                  {showToolsMenu ? (
+                    <div className="kentu-devtools-menu" role="menu">
+                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
+                        🧠 Analisi Oggi
+                      </button>
+                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
+                        📷 Scanner Barcode
+                      </button>
+                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
+                        📝 Modalità Note
+                      </button>
+                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
+                        💬 Salva Chat
+                      </button>
+                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
+                        ⚠️ Segnala Anomalia
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </>
             )}
-          </div>
+          />
           {devToolsToast ? (
             <div className="kentu-devtools-toast" role="status" aria-live="polite">
               {devToolsToast}

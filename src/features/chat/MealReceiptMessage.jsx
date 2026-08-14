@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
+import { CHAT_SUCCESS_AVATAR_SRC } from './chatMessageKind.js';
 
 const NEEDS_RESOLUTION = 'NEEDS_RESOLUTION';
 
@@ -509,7 +510,7 @@ export default function MealReceiptMessage({
       <header className="min-w-0">
         <div className="flex items-start gap-2.5">
           <img
-            src="/pasto_registrato.png"
+            src={CHAT_SUCCESS_AVATAR_SRC}
             alt=""
             className="mt-0.5 h-14 w-14 shrink-0 object-contain"
             width={56}

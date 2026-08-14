@@ -1016,9 +1016,22 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
     : items.map((item) => item.foodName).join(' + ');
 
   let upsertAction = 'append';
-  let targetNodeId = null;
+  let targetNodeId = String(payload?.targetNodeId || '').trim() || null;
+  const sourceHint = String(payload?.source || options?.source || '').trim().toLowerCase();
+  const explicitAction = String(payload?.upsertAction || payload?.action || '').trim().toLowerCase();
+  // Merge solo se esplicito («aggiungi al pranzo») — mai assorbire un nuovo pasto nello slot canonico.
+  const wantsCanonicalMerge =
+    payload?.forceNewMealSlot !== true
+    && (
+      explicitAction === 'merge'
+      || explicitAction === 'add_to'
+      || sourceHint === 'logged_meal_merge'
+      || sourceHint === 'meal_merge'
+      || options?.allowCanonicalSlotMerge === true
+    );
+
   const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
-  if (mealType && activeLog.length > 0 && payload?.forceNewMealSlot !== true) {
+  if (wantsCanonicalMerge && mealType && activeLog.length > 0) {
     const existing = findExistingCanonicalMealSlot(activeLog, mealType);
     if (existing?.slotId) {
       upsertAction = 'merge';
@@ -1026,14 +1039,20 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
     }
   }
 
+  // Nuovo pasto autonomo (NLP / McDrive): ghost slot (snack_2) se lo stesso tipo esiste già.
+  const forceNewMealSlot =
+    payload?.forceNewMealSlot === true
+    || (!wantsCanonicalMerge && !targetNodeId && upsertAction === 'append');
+
   return {
     id: `meal_log_${Date.now()}_${items.map((i) => i.foodDbKey || i.foodName).join('_')}`,
     label: String(options.label || `Riepilogo: ${defaultLabel}`).trim(),
     mealType,
     exactTime,
-    source: 'user_meal_log',
+    source: sourceHint || 'user_meal_log',
     upsertAction,
     action: upsertAction,
+    ...(forceNewMealSlot ? { forceNewMealSlot: true } : {}),
     ...(targetNodeId ? { targetNodeId } : {}),
     items,
     totals: roundTotals(sumProposalItemMacros(items)),

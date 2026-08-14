@@ -86,22 +86,22 @@ export default function MicronutrientEnrichmentModal({
       <>
         Non conosco{' '}
         <span className="font-medium text-slate-200">{titleName}</span>
-        . Scegli un profilo simile per stimarne i valori nutrizionali:
+        . Scegli un alimento simile dal Kentu DB (CREA / italiano) per stimarne i valori:
       </>
     )
     : (
       <>
         Stai salvando{' '}
         <span className="font-medium text-slate-200">{titleName}</span>
-        . Scegli un profilo USDA per arricchire vitamine e minerali:
+        . Scegli un profilo Kentu DB per arricchire vitamine e minerali:
       </>
     );
   const skipLabel = isChatMode
-    ? 'Continua senza profilo USDA'
+    ? 'Continua senza profilo Kentu DB'
     : 'Salta — Usa solo l\'etichetta (Senza micronutrienti)';
   const emptyText = isChatMode
-    ? 'Nessun match USDA affidabile. Usa lo scanner o la foto etichetta per registrare l\'alimento.'
-    : 'Nessun match USDA affidabile. Puoi salvare solo l\'etichetta.';
+    ? 'Nessun match Kentu DB affidabile. Usa lo scanner o la foto etichetta per registrare l\'alimento.'
+    : 'Nessun match Kentu DB affidabile. Puoi salvare solo l\'etichetta.';
   const showCameraActions = isChatMode
     && (typeof onScanBarcode === 'function' || typeof onUseLabelPhoto === 'function');
   const actionsDisabled = isLoading || cameraBusy;
@@ -145,7 +145,7 @@ export default function MicronutrientEnrichmentModal({
           {isLoading ? (
             <div className="flex flex-col items-center justify-center gap-3 py-10 text-slate-400">
               <Loader2 className="h-8 w-8 animate-spin text-cyan-400" aria-hidden />
-              <p className="text-sm">Cerco i profili USDA più compatibili…</p>
+              <p className="text-sm">Cerco nel Kentu DB i profili più compatibili…</p>
             </div>
           ) : null}
 

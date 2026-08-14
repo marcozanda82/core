@@ -1,23 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import MicronutrientEnrichmentModal from '../../mealBuilder/components/MicronutrientEnrichmentModal.jsx';
-import { findSemanticUsdaMatches } from '../../mealBuilder/utils/SemanticMatchmaker.js';
+import { findSemanticKentuMatches } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from '../../../platform/expoNativeCamera.js';
 import { processFoodImage } from '../../foodResolution/processFoodImage.js';
 
 /**
- * Wrapper chat: match USDA + azioni native barcode/etichetta per alimenti non trovati.
- *
- * @param {{
- *   session: {
- *     foodName: string,
- *     masterDb?: object|null,
- *     isLoading?: boolean,
- *     matches?: object[],
- *     error?: string,
- *   } | null,
- *   onSelectMatch: (match: object) => void,
- *   onSkip: () => void,
- * }} props
+ * Wrapper chat: match Kentu DB (CREA + IT) + azioni barcode/etichetta per alimenti non trovati.
  */
 export default function ChatFoodEnrichmentModal({
   session = null,
@@ -49,7 +37,10 @@ export default function ChatFoodEnrichmentModal({
 
     void (async () => {
       try {
-        const matches = await findSemanticUsdaMatches(session.foodName, session.masterDb, {
+        const matches = await findSemanticKentuMatches(session.foodName, {
+          kentuItDb: session.kentuItDb,
+          personalDb: session.personalDb,
+        }, {
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
@@ -61,12 +52,12 @@ export default function ChatFoodEnrichmentModal({
         });
       } catch (error) {
         if (controller.signal.aborted) return;
-        console.warn('[ChatFoodEnrichmentModal] USDA search failed', error);
+        console.warn('[ChatFoodEnrichmentModal] Kentu DB search failed', error);
         setLocalSession({
           foodName: session.foodName,
           isLoading: false,
           matches: [],
-          error: 'Match AI non disponibile. Usa scanner o foto etichetta per registrare l\'alimento.',
+          error: 'Match Kentu DB non disponibile. Usa scanner o foto etichetta per registrare l\'alimento.',
         });
       }
     })();
@@ -74,7 +65,7 @@ export default function ChatFoodEnrichmentModal({
     return () => {
       controller.abort();
     };
-  }, [session?.foodName, session?.masterDb]);
+  }, [session?.foodName, session?.kentuItDb, session?.personalDb]);
 
   const handleCameraResolve = useCallback(async (mode) => {
     const foodName = String(session?.foodName || localSession?.foodName || '').trim();
@@ -102,11 +93,9 @@ export default function ChatFoodEnrichmentModal({
 
       const result = await processFoodImage(shot.uri, mode, { grams: 100 });
       const macros = result?.prefilledMacros;
-      const hasMacros = macros
-        && Number(macros.kcal) > 0;
+      const hasMacros = macros && Number(macros.kcal) > 0;
 
       if (hasMacros && mode === 'label') {
-        // Scala a /100g se processFoodImage ha restituito porzione.
         const per100 = result?.macrosBasis === 'portion'
           ? {
             kcal: Math.round(Number(macros.kcal) || 0),
@@ -121,10 +110,10 @@ export default function ChatFoodEnrichmentModal({
             fat: Number(macros.fat) || 0,
           };
         onSelectMatch?.({
-          fdcId: `camera_label_${Date.now()}`,
+          fdcId: null,
           name: foodName,
           confidence: 'high',
-          reason: 'Foto etichetta',
+          reason: 'Etichetta letta da foto',
           row: {
             desc: foodName,
             name: foodName,
@@ -138,44 +127,36 @@ export default function ChatFoodEnrichmentModal({
         return;
       }
 
-      // Barcode / etichetta senza macro: chiudi USDA e lascia NEEDS_RESOLUTION + azioni card.
-      onSkip?.();
+      setLocalSession((prev) => ({
+        ...(prev || { foodName, matches: [], isLoading: false }),
+        error: 'Non ho estratto macro utili dalla foto. Prova lo scanner barcode o continua senza profilo.',
+      }));
     } catch (error) {
       console.warn('[ChatFoodEnrichmentModal] camera resolve failed', error);
       setLocalSession((prev) => ({
-        ...(prev || { foodName, matches: [], isLoading: false }),
-        error: error?.message || 'Errore fotocamera. Puoi continuare sulla card pasto.',
+        ...(prev || { foodName: session?.foodName, matches: [], isLoading: false }),
+        error: 'Errore lettura immagine. Riprova o continua senza profilo Kentu.',
       }));
     } finally {
       setCameraBusy(false);
     }
-  }, [cameraBusy, localSession?.foodName, onSelectMatch, onSkip, session?.foodName]);
+  }, [session?.foodName, localSession?.foodName, cameraBusy, onSelectMatch]);
 
-  const isOpen = Boolean(session?.foodName);
-  const view = localSession || {
-    foodName: session?.foodName || '',
-    isLoading: true,
-    matches: [],
-    error: '',
-  };
+  if (!session?.foodName && !localSession?.foodName) return null;
 
   return (
     <MicronutrientEnrichmentModal
-      isOpen={isOpen}
+      isOpen
       variant="chat"
-      productName={view.foodName}
-      isLoading={view.isLoading}
-      error={view.error}
-      matches={view.matches}
+      productName={localSession?.foodName || session?.foodName}
+      isLoading={localSession?.isLoading}
+      error={localSession?.error}
+      matches={localSession?.matches || []}
       onSelectMatch={onSelectMatch}
       onSkip={onSkip}
+      onScanBarcode={() => handleCameraResolve('barcode')}
+      onUseLabelPhoto={() => handleCameraResolve('label')}
       cameraBusy={cameraBusy}
-      onScanBarcode={() => {
-        void handleCameraResolve('barcode');
-      }}
-      onUseLabelPhoto={() => {
-        void handleCameraResolve('label');
-      }}
     />
   );
 }

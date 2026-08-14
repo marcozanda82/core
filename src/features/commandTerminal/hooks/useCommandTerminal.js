@@ -13,7 +13,7 @@ import {
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
-import { quickRepliesForConversationState, CONVERSATION_STATE, buildMealDraftUiMessage, buildWorkoutDraftUiMessage, expandFoodPayloadItems } from '../conversation/conversationState.js';
+import { quickRepliesForConversationState, CONVERSATION_STATE, ACTIVE_WIZARD, buildMealDraftUiMessage, buildWorkoutDraftUiMessage, expandFoodPayloadItems } from '../conversation/conversationState.js';
 import { isAskDraftAdviceIntent } from '../conversation/mealLogIntent.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
@@ -28,7 +28,8 @@ import {
   buildMealReceiptPayload,
   mealReceiptFallbackText,
 } from '../../chat/mealReceiptUtils.js';
-import { isSystemNoticeMessage } from '../../chat/chatMessageKind.js';
+import { isSystemNoticeMessage, withSystemNoticeDefaults } from '../../chat/chatMessageKind.js';
+import { getChatFallbackQuickReplies } from '../../chat/chatFallbackMenu.js';
 import {
   snapshotChatAvatarAsset,
   isStrategicAvatarIntent,
@@ -40,6 +41,7 @@ import {
   evaluatePredictiveGreetingDecision,
   markPredictiveGreetingsSuperseded,
   PREDICTIVE_GREETING_TYPE,
+  resolveEffectivePredictiveState,
   resolvePredictiveIntentAction,
 } from '../../predictive/predictiveGreeting.js';
 import {
@@ -76,6 +78,7 @@ export function useCommandTerminal({
   onPopulateMealLavagna = null,
   onSaveFoodEntryPer100ToFoodDb = null,
   onChatClose = null,
+  onManualShortcutFromChat = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -86,6 +89,7 @@ export function useCommandTerminal({
   const chatHistoryRef = useRef(chatHistory);
   const getCurrentStateRef = useRef(getCurrentState);
   const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
+  const onManualShortcutFromChatRef = useRef(onManualShortcutFromChat);
   const pendingMealUpdateRef = useRef(null);
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(0);
@@ -101,7 +105,8 @@ export function useCommandTerminal({
   useEffect(() => {
     getCurrentStateRef.current = getCurrentState;
     getWipMealSnapshotRef.current = getWipMealSnapshot;
-  }, [getCurrentState, getWipMealSnapshot]);
+    onManualShortcutFromChatRef.current = onManualShortcutFromChat;
+  }, [getCurrentState, getWipMealSnapshot, onManualShortcutFromChat]);
 
   const buildAvatarSnapshotContext = useCallback((forceStrategic = false) => {
     const currentState =
@@ -122,20 +127,21 @@ export function useCommandTerminal({
     const line = String(text || '').trim();
     const hasReceipt = Boolean(extra?.mealReceipt && typeof extra.mealReceipt === 'object');
     if ((!line && !hasReceipt) || typeof setChatHistoryRef.current !== 'function') return;
-    const avatarAsset = String(extra?.avatarAsset || '').trim()
-      || snapshotChatAvatarAsset(extra, buildAvatarSnapshotContext(extra?.forceStrategic === true));
+    const noticeExtra = withSystemNoticeDefaults(line, extra && typeof extra === 'object' ? extra : {});
+    const avatarAsset = String(noticeExtra?.avatarAsset || '').trim()
+      || snapshotChatAvatarAsset(noticeExtra, buildAvatarSnapshotContext(noticeExtra?.forceStrategic === true));
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
       text: line || '(mealReceipt)',
-      type: extra?.type || null,
-      sourceTag: extra?.sourceTag || null,
-      local: extra?.local === true,
+      type: noticeExtra?.type || null,
+      sourceTag: noticeExtra?.sourceTag || null,
+      local: noticeExtra?.local === true,
       hasMealReceipt: hasReceipt,
       avatarAsset,
     });
     setChatHistoryRef.current((prev) => [
       ...(prev || []),
       {
-        ...(extra && typeof extra === 'object' ? extra : {}),
+        ...noticeExtra,
         sender: 'ai',
         text: line || (hasReceipt ? mealReceiptFallbackText(extra.mealReceipt) : ''),
         avatarAsset,
@@ -223,10 +229,16 @@ export function useCommandTerminal({
         return typeof fn === 'function' ? fn(entry, options) : Promise.resolve(null);
       },
       onRequestUsdaEnrichment: (payload) => {
+        const foodName = String(payload?.foodName || '').trim();
         chatUsdaResumeRef.current = typeof payload?.resume === 'function' ? payload.resume : null;
+        if (!foodName) {
+          setChatUsdaEnrichmentSession(null);
+          return;
+        }
         setChatUsdaEnrichmentSession({
-          foodName: String(payload?.foodName || '').trim(),
-          masterDb: payload?.masterDb && typeof payload.masterDb === 'object' ? payload.masterDb : null,
+          foodName,
+          kentuItDb: payload?.kentuItDb && typeof payload.kentuItDb === 'object' ? payload.kentuItDb : null,
+          personalDb: payload?.personalDb && typeof payload.personalDb === 'object' ? payload.personalDb : null,
         });
       },
     });
@@ -426,6 +438,15 @@ export function useCommandTerminal({
         return;
       }
       if (payload.type === 'MEAL_RECEIPT' || (payload.mealReceipt && typeof payload.mealReceipt === 'object')) {
+        if (payload.resolveMcDriveTray === true && typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) =>
+            (prev || []).map((entry) => (
+              entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
+                ? { ...entry, liveMealTrayResolved: true }
+                : entry
+            )),
+          );
+        }
         const text = String(payload.text || payload.message || '').trim()
           || mealReceiptFallbackText(payload.mealReceipt);
         appendAiMessage(text, {
@@ -433,6 +454,34 @@ export function useCommandTerminal({
           mealReceipt: payload.mealReceipt,
           local: payload.local === true,
           sourceTag: payload.sourceTag || null,
+        });
+        return;
+      }
+      if (payload.type === 'MCDRIVE_TRAY' || payload.mcdriveWizard === true || payload.liveMealTray) {
+        const text = String(payload.displayText || payload.text || payload.message || '').trim();
+        const quickReplies = Array.isArray(payload.quickReplies)
+          ? payload.quickReplies
+            .map((o) => (o && typeof o === 'object' ? o : String(o || '').trim()))
+            .filter((o) => (typeof o === 'object' ? String(o.label || '').trim() : o))
+          : [];
+        if (!text) return;
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) =>
+            (prev || []).map((entry) => (
+              entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
+                ? { ...entry, liveMealTrayResolved: true }
+                : entry
+            )),
+          );
+        }
+        appendAiMessage(text, {
+          type: 'MCDRIVE_TRAY',
+          mcdriveWizard: true,
+          liveMealTray: payload.liveMealTray || { items: [], totals: { kcal: 0, pro: 0, carbo: 0, fat: 0 } },
+          liveMealTrayResolved: false,
+          quickReplies,
+          spokenText: text,
+          displayText: text,
         });
         return;
       }
@@ -482,10 +531,21 @@ export function useCommandTerminal({
       }
       const text = String(payload.displayText || payload.text || payload.message || '').trim();
       if (!text) return;
+      if (payload.resolveMcDriveTray === true && typeof setChatHistoryRef.current === 'function') {
+        setChatHistoryRef.current((prev) =>
+          (prev || []).map((entry) => (
+            entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
+              ? { ...entry, liveMealTrayResolved: true }
+              : entry
+          )),
+        );
+      }
       const spokenText = String(payload.spokenText || text).trim();
-      const lightQuickReplies = Array.isArray(payload.quickReplies)
-        ? payload.quickReplies.map((o) => String(o || '').trim()).filter(Boolean).slice(0, 4)
-        : [];
+      const rawQuickReplies = Array.isArray(payload.quickReplies) ? payload.quickReplies : [];
+      const lightQuickReplies = rawQuickReplies
+        .map((o) => (o && typeof o === 'object' ? o : String(o || '').trim()))
+        .filter((o) => (typeof o === 'object' ? String(o.label || o.text || '').trim() : Boolean(o)))
+        .slice(0, 5);
       const payloadType = payload.type || null;
       const inferredSystem = !payloadType
         && lightQuickReplies.length === 0
@@ -510,6 +570,8 @@ export function useCommandTerminal({
         newFoodDraft: payload.newFoodDraft || null,
         isError: payloadType === 'ERROR',
         isSystem: inferredSystem || payloadType === 'ERROR' || payload.isSystem === true,
+        systemIcon: payload.systemIcon || null,
+        avatarAsset: payload.avatarAsset || null,
         mealReceipt: payload.mealReceipt && typeof payload.mealReceipt === 'object'
           ? payload.mealReceipt
           : null,
@@ -553,7 +615,12 @@ export function useCommandTerminal({
       const attachedImages = Array.isArray(options?.images) && options.images.length > 0
         ? options.images
         : chatImages;
-      if (!resolvedText && attachedImages.length === 0) {
+      const isFreeMealListen = String(options?.intent || '').trim().toUpperCase() === 'FREE_MEAL_LISTEN';
+      const intentUpper = String(options?.intent || '').trim().toUpperCase();
+      const isMcdriveWizardIntent = intentUpper === 'START_MCDRIVE_WIZARD'
+        || intentUpper === 'FINISH_MCDRIVE_WIZARD'
+        || intentUpper === 'CANCEL_MCDRIVE_WIZARD';
+      if (!resolvedText && attachedImages.length === 0 && !isFreeMealListen && !isMcdriveWizardIntent) {
         return { ok: false, reason: 'empty_message' };
       }
 
@@ -576,6 +643,16 @@ export function useCommandTerminal({
           ];
         });
       }
+
+      if (options?.intent === 'MANUAL_SHORTCUT' && options?.manualShortcutId) {
+        const shortcutId = String(options.manualShortcutId || '').trim();
+        if (shortcutId && typeof onManualShortcutFromChatRef.current === 'function') {
+          onManualShortcutFromChatRef.current(shortcutId);
+        }
+        setActiveQuickReplies([]);
+        return { ok: true, manualShortcut: shortcutId || true };
+      }
+
       // Per richieste con contesto nascosto: in chat resta il testo pulito;
       // all'LLM arriva resolvedText (richiesta utente) + systemInstructionExtra.
       const historyForLlm = [...priorHistory, { sender: 'user', text: userBubbleText }];
@@ -622,7 +699,7 @@ export function useCommandTerminal({
         );
 
         if (diabetesMode) {
-          if (!resolvedText) {
+          if (!resolvedText && !isFreeMealListen && !isMcdriveWizardIntent) {
             appendAiMessage(
               'In modalità diabete puoi dirmi la glicemia, variazioni sui farmaci, oppure registrare un pasto come al solito (es. “a colazione ho mangiato yogurt”).',
               { type: 'HEALTH_CHAT', sourceTag: 'healthChatService' },
@@ -774,6 +851,7 @@ export function useCommandTerminal({
         }, {
           images: attachedImages,
           intent: forcedIntent,
+          mealTypeHint: options?.mealTypeHint || null,
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
@@ -900,14 +978,8 @@ export function useCommandTerminal({
       return { ok: false, reason: 'chat_history_not_configured' };
     }
 
-    setChatHistoryRef.current((prev) => {
-      const base = (decision.action === 'supersede' || decision.action === 'clear_stale')
-        ? markPredictiveGreetingsSuperseded(prev)
-        : (prev || []);
-      if (!greeting) return base;
-      return [
-        ...base,
-        {
+    const greetingMessage = greeting
+      ? {
           sender: 'ai',
           type: PREDICTIVE_GREETING_TYPE,
           text: greeting.text,
@@ -917,13 +989,34 @@ export function useCommandTerminal({
           predictiveGreeting: true,
           anchorDate,
           createdAt: new Date().toISOString(),
-        },
-      ];
+        }
+      : null;
+
+    const applyGreeting = () => {
+      setChatHistoryRef.current((prev) => {
+        const withoutTyping = (prev || []).filter((entry) => !entry?.isTyping);
+        const base = (decision.action === 'supersede' || decision.action === 'clear_stale')
+          ? markPredictiveGreetingsSuperseded(withoutTyping)
+          : withoutTyping;
+        if (!greetingMessage) return base;
+        return [...base, greetingMessage];
+      });
+    };
+
+    setChatHistoryRef.current((prev) => {
+      const base = (decision.action === 'supersede' || decision.action === 'clear_stale')
+        ? markPredictiveGreetingsSuperseded(prev)
+        : (prev || []);
+      if (!greetingMessage) return base;
+      return [...base, { sender: 'ai', isTyping: true }];
     });
+
+    window.setTimeout(applyGreeting, 450);
+
     setActiveQuickReplies([]);
     return {
       ok: true,
-      state: ctx.state,
+      state: resolveEffectivePredictiveState(ctx),
       confidence: ctx.confidence,
       superseded: decision.action === 'supersede',
       cleared: decision.action === 'clear_stale',
@@ -945,8 +1038,11 @@ export function useCommandTerminal({
       controller.clearPendingMealUpdate();
       pendingMealUpdateRef.current = null;
       resolveDraftMessage(draftId, { cancelled: true });
-      setActiveQuickReplies([]);
-      appendAiMessage('Inserimento annullato.', { type: 'system' });
+      setActiveQuickReplies(getChatFallbackQuickReplies());
+      appendAiMessage('Inserimento annullato.', {
+        type: 'system',
+        quickReplies: getChatFallbackQuickReplies(),
+      });
       return { ok: true, cancelled: true };
     },
     [controller, resolveDraftMessage, appendAiMessage],
@@ -970,7 +1066,11 @@ export function useCommandTerminal({
         if (/^annulla\b/i.test(label)) {
           controller.resetConversationState();
           setActiveQuickReplies([]);
-          appendAiMessage('Inserimento annullato.', { type: 'system' });
+          appendAiMessage('Inserimento annullato.', {
+            type: 'system',
+            quickReplies: getChatFallbackQuickReplies(),
+          });
+          setActiveQuickReplies(getChatFallbackQuickReplies());
           return Promise.resolve({ ok: true, cancelled: true });
         }
         return sendMessage(label, { fromSlotQuickReply: true, wizardSelection });
@@ -984,9 +1084,33 @@ export function useCommandTerminal({
         return sendMessage(label, { fromSlotQuickReply: true, clarificationReply: true, wizardSelection });
       }
 
+      const mcdriveIntent = extra?.predictiveIntent || extra?.intent;
+      if (snap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
+        if (
+          mcdriveIntent === 'FINISH_MCDRIVE_WIZARD'
+          || /termina\s+e\s+salva/i.test(label)
+        ) {
+          return sendMessage('', {
+            intent: 'FINISH_MCDRIVE_WIZARD',
+            skipUserBubble: true,
+            fromQuickReply: true,
+          });
+        }
+        if (
+          mcdriveIntent === 'CANCEL_MCDRIVE_WIZARD'
+          || /^❌?\s*annulla\b/i.test(label)
+        ) {
+          return sendMessage('', {
+            intent: 'CANCEL_MCDRIVE_WIZARD',
+            skipUserBubble: true,
+            fromQuickReply: true,
+          });
+        }
+      }
+
       if (
         snap.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP
-        || snap.activeWizard === 'MEAL_BUILDER'
+        || snap.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER
       ) {
         return sendMessage(label, {
           fromSlotQuickReply: true,
@@ -1359,6 +1483,10 @@ export function useCommandTerminal({
       operations,
       ...(exactTime ? { timeString: exactTime, exactTime } : {}),
       ...(targetNodeId ? { targetNodeId } : {}),
+      // Propaga flag: nuovo pasto → snack_2 / pranzo_2 invece di merge nello slot canonico.
+      ...(proposal.forceNewMealSlot === true || (upsertAction === 'append' && !targetNodeId)
+        ? { forceNewMealSlot: true }
+        : {}),
     };
 
     const trackerDate = String(stateBeforeCommit?.activeDate || '').trim();
@@ -1493,9 +1621,52 @@ export function useCommandTerminal({
         )),
       );
     }
-    appendAiMessage('Ok, bozza annullata.', { type: 'system' });
+    appendAiMessage('Ok, bozza annullata.', {
+      type: 'system',
+      quickReplies: getChatFallbackQuickReplies(),
+    });
+    setActiveQuickReplies(getChatFallbackQuickReplies());
     return { ok: true, cancelled: true };
   }, [appendAiMessage, controller]);
+
+  const syncMcDriveTrayInChat = useCallback((liveMealTray) => {
+    if (!liveMealTray || typeof setChatHistoryRef.current !== 'function') return;
+    setChatHistoryRef.current((prev) => {
+      const list = Array.isArray(prev) ? [...prev] : [];
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        const entry = list[i];
+        if (
+          entry?.liveMealTrayResolved !== true
+          && (entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard)
+        ) {
+          list[i] = {
+            ...entry,
+            liveMealTray,
+          };
+          break;
+        }
+      }
+      return list;
+    });
+  }, []);
+
+  const handleMcDriveRemoveItem = useCallback((index) => {
+    if (typeof controller.removeMcDriveDraftItem !== 'function') {
+      return { ok: false, reason: 'mcdrive_remove_unavailable' };
+    }
+    const result = controller.removeMcDriveDraftItem(index);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
+  const handleMcDriveUpdateGrams = useCallback((index, grams) => {
+    if (typeof controller.updateMcDriveDraftItemGrams !== 'function') {
+      return { ok: false, reason: 'mcdrive_update_unavailable' };
+    }
+    const result = controller.updateMcDriveDraftItemGrams(index, grams);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
 
   const handleChatUsdaEnrichmentSelect = useCallback(async (match) => {
     const resume = chatUsdaResumeRef.current;
@@ -1549,6 +1720,8 @@ export function useCommandTerminal({
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
     handleSaveNewFoodEntry,
+    handleMcDriveRemoveItem,
+    handleMcDriveUpdateGrams,
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,

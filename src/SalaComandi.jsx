@@ -672,6 +672,8 @@ export default function SalaComandi() {
   const coreOsClickTimer = useRef(null);
   const isDrawerOpenRef = useRef(isDrawerOpen);
   const activeActionRef = useRef(activeAction);
+  const prevChatOpenRef = useRef(false);
+  const tryEmitPredictiveGreetingRef = useRef(null);
   const closeDrawerRef = useRef(null);
   useEffect(() => { isDrawerOpenRef.current = isDrawerOpen; }, [isDrawerOpen]);
   useEffect(() => { activeActionRef.current = activeAction; }, [activeAction]);
@@ -6148,7 +6150,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         action = 'replace';
       }
 
-      // Slot canonico già presente → merge (evita cena_2 / doppio nodo pasto).
+      // Slot canonico già presente → merge (evita cena_2), SALVO forceNewMealSlot
+      // (McDrive / pasto libero autonomo → getGhostMealType crea snack_2, pranzo_2, …).
       if (action === 'append' && existingSlot?.slotId && !forceNewSlot) {
         action = 'merge';
       }
@@ -6594,6 +6597,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateItemGrams,
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
+    handleMcDriveRemoveItem,
+    handleMcDriveUpdateGrams,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
@@ -6606,6 +6611,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     chatHistory,
     setChatHistory,
     onChatClose: closeChat,
+    onManualShortcutFromChat: (actionId) => {
+      const canonical =
+        actionId === 'acqua' || actionId === 'water'
+          ? 'water'
+          : actionId === 'pasto' || actionId === 'meal'
+            ? 'meal'
+            : actionId;
+      handleAddEventMenuItem(canonical, 'predictive_chip');
+    },
     getWipMealSnapshot: getWipMealSnapshotFromBridge,
     onWipMealSeed: seedWipMealFromBridge,
     onAddFoodCommand: commitAddFoodCommand,
@@ -6698,6 +6712,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     },
   });
 
+  tryEmitPredictiveGreetingRef.current = tryEmitPredictiveGreeting;
+
   const handleRequestHealthDiagnosis = useCallback(() => {
     if (typeof sendMessage !== 'function') return;
     void sendMessage(
@@ -6716,14 +6732,33 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [sendMessage]);
 
   useEffect(() => {
-    if (activeAction !== 'ai_chat') return undefined;
+    const isChatOpenNow = activeAction === 'ai_chat';
+
+    // Chat chiusa: reset gate così la prossima apertura può salutare di nuovo.
+    if (!isChatOpenNow) {
+      prevChatOpenRef.current = false;
+      return undefined;
+    }
+
+    // Già aperta in questa sessione UI (evita re-emit su re-render).
+    if (prevChatOpenRef.current) return undefined;
+
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      if (typeof tryEmitPredictiveGreeting === 'function') {
-        tryEmitPredictiveGreeting();
+      if (cancelled) return;
+      // Segna "già aperto" solo DOPO il delay — altrimenti React Strict Mode
+      // (setup→cleanup→setup) cancella il timer e blocca per sempre il primo saluto.
+      prevChatOpenRef.current = true;
+      if (typeof tryEmitPredictiveGreetingRef.current === 'function') {
+        tryEmitPredictiveGreetingRef.current();
       }
-    }, 450);
-    return () => window.clearTimeout(timer);
-  }, [activeAction, tryEmitPredictiveGreeting]);
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [activeAction]);
 
   useEffect(() => {
     registerHandlers({
@@ -6752,6 +6787,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onDraftUpdateItemGrams: handleDraftUpdateItemGrams,
       onDraftUpdateMealMeta: handleDraftUpdateMealMeta,
       onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
+      onMcDriveRemoveItem: handleMcDriveRemoveItem,
+      onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
       onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
       onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
       onWorkoutDraftRemoveExercise: handleWorkoutDraftRemoveExercise,
@@ -6759,6 +6796,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       introPhrase,
       isProcessing: isChatProcessing,
       onCancelGeneration: cancelGeneration,
+      tryEmitPredictiveGreeting,
       mealBuilder,
       setMealBuilder,
       cancelMealBuilder,
@@ -6794,12 +6832,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateItemGrams,
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
+    handleMcDriveRemoveItem,
+    handleMcDriveUpdateGrams,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
     handleSaveNewFoodEntry,
     introPhrase,
     isChatProcessing,
+    tryEmitPredictiveGreeting,
     mealBuilder,
     cancelMealBuilder,
     commitMealBuilder,
@@ -9321,7 +9362,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       {chatShellMounted ? (
       <div
         className={[
-          'fixed inset-0 z-[100001] flex h-full w-full flex-col bg-zinc-950',
+          'fixed inset-0 z-[100001] flex h-[100dvh] max-h-[100dvh] w-full flex-col bg-zinc-950',
           'transform transition-transform duration-300 ease-in-out will-change-transform',
           activeAction === 'ai_chat' ? 'translate-y-0' : 'translate-y-full pointer-events-none',
         ].join(' ')}
@@ -9331,7 +9372,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         aria-hidden={activeAction !== 'ai_chat'}
       >
         <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden h-full"
           style={{
             paddingTop: 'env(safe-area-inset-top, 0px)',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
@@ -9363,6 +9404,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onDraftUpdateItemGrams={handleDraftUpdateItemGrams}
             onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
             onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
+            onMcDriveRemoveItem={handleMcDriveRemoveItem}
+            onMcDriveUpdateGrams={handleMcDriveUpdateGrams}
             onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
             onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}

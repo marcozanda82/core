@@ -15,12 +15,137 @@ export const PREDICTIVE_INTENT = Object.freeze({
   SNOOZE: 'SNOOZE',
   DAY_REVIEW: 'DAY_REVIEW',
   LOG_DINNER: 'LOG_DINNER',
+  LOG_WATER: 'LOG_WATER',
+  LOG_SNACK: 'LOG_SNACK',
+  START_MCDRIVE_WIZARD: 'START_MCDRIVE_WIZARD',
+});
+
+/** Saluti di cortesia quando HabitEngine è IDLE (check-in per fascia oraria). */
+export const COURTESY_CHECKIN_STATE = Object.freeze({
+  MORNING: 'COURTESY_MORNING',
+  MIDDAY: 'COURTESY_MIDDAY',
+  AFTERNOON: 'COURTESY_AFTERNOON',
+  EVENING: 'COURTESY_EVENING',
+  NIGHT: 'COURTESY_NIGHT',
+});
+
+/** Finestre orarie (ore decimali) per fallback IDLE. */
+export const COURTESY_CLOCK_WINDOWS = Object.freeze({
+  MORNING: Object.freeze({ start: 5, end: 11.5 }),
+  MIDDAY: Object.freeze({ start: 11.5, end: 15.5 }),
+  AFTERNOON: Object.freeze({ start: 15.5, end: 18.5 }),
+  EVENING: Object.freeze({ start: 18.5, end: 22.5 }),
 });
 
 const MORNING_GREETING_TEXT = [
   'Buongiorno! Come è andato il riposo stanotte?',
   'Partiamo con il nostro caffè di rito (rigorosamente amaro per mantenere il digiuno pulito) o c\'è qualche variazione?',
 ].join(' ');
+
+/**
+ * @param {number} [decimalHour]
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function resolveCourtesyCheckInState(decimalHour, now = new Date()) {
+  const h = Number.isFinite(Number(decimalHour))
+    ? Number(decimalHour)
+    : now.getHours() + now.getMinutes() / 60;
+
+  if (h >= COURTESY_CLOCK_WINDOWS.MORNING.start && h < COURTESY_CLOCK_WINDOWS.MORNING.end) {
+    return COURTESY_CHECKIN_STATE.MORNING;
+  }
+  if (h >= COURTESY_CLOCK_WINDOWS.MIDDAY.start && h < COURTESY_CLOCK_WINDOWS.MIDDAY.end) {
+    return COURTESY_CHECKIN_STATE.MIDDAY;
+  }
+  if (h >= COURTESY_CLOCK_WINDOWS.AFTERNOON.start && h < COURTESY_CLOCK_WINDOWS.AFTERNOON.end) {
+    return COURTESY_CHECKIN_STATE.AFTERNOON;
+  }
+  if (h >= COURTESY_CLOCK_WINDOWS.EVENING.start && h < COURTESY_CLOCK_WINDOWS.EVENING.end) {
+    return COURTESY_CHECKIN_STATE.EVENING;
+  }
+  return COURTESY_CHECKIN_STATE.NIGHT;
+}
+
+/**
+ * Stato effettivo per saluto: abitudine HabitEngine oppure check-in di cortesia (IDLE).
+ * @param {{ state?: string, decimalHour?: number }} [ctx]
+ * @returns {string}
+ */
+export function resolveEffectivePredictiveState(ctx = {}) {
+  const habitState = String(ctx?.state || PREDICTIVE_STATE.IDLE).trim() || PREDICTIVE_STATE.IDLE;
+  if (habitState !== PREDICTIVE_STATE.IDLE) return habitState;
+  return resolveCourtesyCheckInState(ctx?.decimalHour);
+}
+
+/**
+ * @param {string} courtesyState
+ * @returns {{ text: string, avatarAsset: string, quickReplies: object[], predictiveState: string } | null}
+ */
+function buildCourtesyCheckInGreeting(courtesyState) {
+  switch (courtesyState) {
+    case COURTESY_CHECKIN_STATE.MORNING:
+      return {
+        text: 'Buongiorno! Come posso aiutarti in questo momento?',
+        avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
+        predictiveState: courtesyState,
+        quickReplies: [
+          { label: '☕ Caffè', intent: PREDICTIVE_INTENT.LOG_COFFEE, variant: 'primary' },
+          { label: '🍳 Colazione', intent: PREDICTIVE_INTENT.LOG_BREAKFAST },
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
+        ],
+      };
+    case COURTESY_CHECKIN_STATE.MIDDAY:
+      return {
+        text: 'Metà giornata in corso. Vuoi registrare un pasto o fare il punto sui macro?',
+        avatarAsset: AVATAR_MOOD_SRC[AVATAR_MOOD.KITCHEN],
+        predictiveState: courtesyState,
+        quickReplies: [
+          { label: '🍽️ Pranzo', intent: PREDICTIVE_INTENT.START_MEAL_WIZARD, variant: 'primary' },
+          { label: '🍔 Inserimento Guidato', intent: PREDICTIVE_INTENT.START_MCDRIVE_WIZARD },
+          { label: '⚡ Inserimento Libero', intent: PREDICTIVE_INTENT.FREE_MEAL_LOG },
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
+        ],
+      };
+    case COURTESY_CHECKIN_STATE.AFTERNOON:
+      return {
+        text: 'Pomeriggio inoltrato. Come procede la giornata? Hai bisogno di registrare qualcosa o controllare i target?',
+        avatarAsset: AVATAR_MOOD_SRC[AVATAR_MOOD.THINKING] || CHAT_DEFAULT_AVATAR_SRC,
+        predictiveState: courtesyState,
+        quickReplies: [
+          { label: '💧 Acqua', intent: PREDICTIVE_INTENT.LOG_WATER, variant: 'primary' },
+          { label: '🍎 Spuntino', intent: PREDICTIVE_INTENT.LOG_SNACK },
+          { label: '🍔 Inserimento Guidato', intent: PREDICTIVE_INTENT.START_MCDRIVE_WIZARD },
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
+        ],
+      };
+    case COURTESY_CHECKIN_STATE.EVENING:
+      return {
+        text: 'Si avvicina la sera. Chiudiamo la giornata o registriamo qualcosa?',
+        avatarAsset: AVATAR_MOOD_SRC[AVATAR_MOOD.THINKING] || CHAT_DEFAULT_AVATAR_SRC,
+        predictiveState: courtesyState,
+        quickReplies: [
+          { label: '🍽️ Cena', intent: PREDICTIVE_INTENT.LOG_DINNER, variant: 'primary' },
+          { label: '🍔 Inserimento Guidato', intent: PREDICTIVE_INTENT.START_MCDRIVE_WIZARD },
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
+          { label: '💧 Acqua', intent: PREDICTIVE_INTENT.LOG_WATER },
+        ],
+      };
+    case COURTESY_CHECKIN_STATE.NIGHT:
+      return {
+        text: 'Ancora sveglio? Posso aiutarti a registrare qualcosa o fare un rapido resoconto.',
+        avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
+        predictiveState: courtesyState,
+        quickReplies: [
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW, variant: 'primary' },
+          { label: '🍎 Spuntino', intent: PREDICTIVE_INTENT.LOG_SNACK },
+          { label: '💧 Acqua', intent: PREDICTIVE_INTENT.LOG_WATER },
+        ],
+      };
+    default:
+      return null;
+  }
+}
 
 /**
  * @param {object | null | undefined} message
@@ -78,24 +203,20 @@ export function isStalePredictiveGreeting(greeting, currentState, anchorDate = '
  * @returns {{ action: 'skip' | 'emit' | 'supersede' | 'clear_stale', lastGreeting: object | null }}
  */
 export function evaluatePredictiveGreetingDecision(chatHistory = [], ctx = {}, opts = {}) {
-  const currentState = String(ctx?.state || PREDICTIVE_STATE.IDLE).trim() || PREDICTIVE_STATE.IDLE;
+  const currentState = resolveEffectivePredictiveState(ctx);
   const last = getLastConversationMessage(chatHistory);
   const lastGreeting = isPredictiveGreetingMessage(last) ? last : null;
-
-  if (currentState === PREDICTIVE_STATE.IDLE) {
-    if (lastGreeting && isStalePredictiveGreeting(lastGreeting, currentState, opts.anchorDate)) {
-      return { action: 'clear_stale', lastGreeting };
-    }
-    return { action: 'skip', lastGreeting };
-  }
 
   if (lastGreeting && lastGreeting.predictiveSuperseded !== true) {
     if (isStalePredictiveGreeting(lastGreeting, currentState, opts.anchorDate)) {
       return { action: 'supersede', lastGreeting };
     }
+    // Stesso slot ancora inevaso in cima al thread → non ripetere.
     return { action: 'skip', lastGreeting };
   }
 
+  // Nota: non bloccare su "già mostrato nella giornata" se l'utente ha già risposto
+  // o il saluto è stato superseded — altrimenti la riapertura chat resta muta.
   return { action: 'emit', lastGreeting: null };
 }
 
@@ -120,9 +241,14 @@ export function markPredictiveGreetingsSuperseded(prev = []) {
  * @returns {{ text: string, avatarAsset: string, quickReplies: object[], predictiveState: string } | null}
  */
 export function buildPredictiveGreeting(ctx) {
-  if (!ctx || ctx.state === PREDICTIVE_STATE.IDLE) return null;
+  if (!ctx) return null;
 
-  switch (ctx.state) {
+  const effectiveState = resolveEffectivePredictiveState(ctx);
+  if (effectiveState.startsWith('COURTESY_')) {
+    return buildCourtesyCheckInGreeting(effectiveState);
+  }
+
+  switch (effectiveState) {
     case PREDICTIVE_STATE.MORNING_ROUTINE:
       return {
         text: MORNING_GREETING_TEXT,
@@ -143,6 +269,7 @@ export function buildPredictiveGreeting(ctx) {
         predictiveState: ctx.state,
         quickReplies: [
           { label: '👨‍🍳 Guidami', intent: PREDICTIVE_INTENT.START_MEAL_WIZARD, variant: 'primary' },
+          { label: '🍔 Inserimento Guidato', intent: PREDICTIVE_INTENT.START_MCDRIVE_WIZARD },
           { label: '⚡ Inserimento Libero', intent: PREDICTIVE_INTENT.FREE_MEAL_LOG },
         ],
       };
@@ -187,17 +314,19 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
   switch (intent) {
     case PREDICTIVE_INTENT.START_MEAL_WIZARD:
       return {
-        userText: 'Guidami per il pranzo bilanciando i macro rimanenti di oggi',
+        userText: '',
         options: {
-          intent: 'START_MEAL_BUILDER_WIZARD',
+          intent: 'START_MCDRIVE_WIZARD',
+          skipUserBubble: true,
           fromPredictiveGreeting: true,
         },
       };
     case PREDICTIVE_INTENT.FREE_MEAL_LOG:
       return {
-        userText: 'Voglio registrare il pranzo liberamente',
+        userText: '',
         options: {
-          intent: 'ADD_FOOD',
+          intent: 'FREE_MEAL_LISTEN',
+          skipUserBubble: true,
           fromPredictiveGreeting: true,
         },
       };
@@ -274,9 +403,38 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
       };
     case PREDICTIVE_INTENT.LOG_DINNER:
       return {
-        userText: 'Guidami per la cena bilanciando i macro rimanenti',
+        userText: '',
         options: {
-          intent: 'START_MEAL_BUILDER_WIZARD',
+          intent: 'START_MCDRIVE_WIZARD',
+          skipUserBubble: true,
+          fromPredictiveGreeting: true,
+        },
+      };
+    case PREDICTIVE_INTENT.LOG_WATER:
+      return {
+        userText: '💧 Acqua',
+        options: {
+          intent: 'MANUAL_SHORTCUT',
+          manualShortcutId: 'water',
+          fromPredictiveGreeting: true,
+        },
+      };
+    case PREDICTIVE_INTENT.LOG_SNACK:
+      return {
+        userText: '',
+        options: {
+          intent: 'FREE_MEAL_LISTEN',
+          skipUserBubble: true,
+          mealTypeHint: 'snack',
+          fromPredictiveGreeting: true,
+        },
+      };
+    case PREDICTIVE_INTENT.START_MCDRIVE_WIZARD:
+      return {
+        userText: '',
+        options: {
+          intent: 'START_MCDRIVE_WIZARD',
+          skipUserBubble: true,
           fromPredictiveGreeting: true,
         },
       };

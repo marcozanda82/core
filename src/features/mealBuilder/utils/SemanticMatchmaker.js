@@ -1,20 +1,134 @@
 /**
- * Arricchimento semantico OFF → USDA (kentu_master_db).
- * 1) Filtro locale candidati
- * 2) Ranking Gemini (top 3 confidence)
- * 3) Merge: macro OFF inviolati + micro USDA
+ * Arricchimento semantico alimenti → Kentu DB (CREA + dataset italiano + personale).
+ * 1) Normalizzazione ortografica Gemini
+ * 2) Filtro locale candidati Kentu IT
+ * 3) Ranking Gemini (top 3 confidence)
  */
 
 import { askAI } from '../../../services/aiService.js';
-import { searchUSDAFoods } from '../../../usdaFoodApi.js';
+import { searchFoodsDetailed } from '../../../foodSearch.js';
 import { TARGETS } from '../../../useBiochimico.js';
 import {
   buildPer100TargetNutrientsFromRow,
   pickFiniteNumber,
 } from './foodMacroUtils.js';
 
+const GEMINI_MATCH_MODEL = 'gemini-3.7-flash';
 const DEFAULT_LOCAL_CANDIDATE_LIMIT = 20;
 const DEFAULT_GEMINI_TOP = 3;
+
+/** Correzioni locali immediate (evita chiamata AI per typo comuni). */
+const LOCAL_FOOD_TYPO_MAP = Object.freeze({
+  mordadella: 'mortadella',
+  mortadela: 'mortadella',
+  proscuitto: 'prosciutto',
+  mozarella: 'mozzarella',
+  mozzarela: 'mozzarella',
+  pana: 'pane',
+});
+
+/** Brand / voci USA da escludere dal fallback Kentu. */
+const FOREIGN_JUNK_RE = /\b(?:applebee|nutri-?grain|mcdonald|burger\s*king|kellogg|subway|starbucks|domino'?s|taco\s*bell|wendy'?s|pizza\s*hut)\b/i;
+
+const SPELLING_NORMALIZE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    normalized: { type: 'STRING' },
+    tokens: {
+      type: 'ARRAY',
+      items: { type: 'STRING' },
+    },
+  },
+  required: ['normalized', 'tokens'],
+};
+
+/**
+ * Corregge typo italiani e separa ingredienti multipli (es. «mordadella» → «mortadella»).
+ * @param {string} rawText
+ * @param {{ signal?: AbortSignal }} [opts]
+ * @returns {Promise<{ normalized: string, tokens: string[] }>}
+ */
+export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) {
+  const text = String(rawText || '').trim();
+  if (!text) return { normalized: '', tokens: [] };
+
+  const quickTokens = text
+    .split(/\s*(?:,|;|\be\b|\bed\b)\s*/i)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const word = part.toLowerCase().replace(/^(?:di|un|una|il|lo|la|i|gli|le)\s+/i, '').trim();
+      return LOCAL_FOOD_TYPO_MAP[word] || part;
+    });
+
+  const allLocalFixed = quickTokens.every((t, i) => {
+    const raw = text.split(/\s*(?:,|;|\be\b|\bed\b)\s*/i)[i]?.trim().toLowerCase() || '';
+    const key = raw.replace(/^(?:di|un|una|il|lo|la|i|gli|le)\s+/i, '').trim();
+    return LOCAL_FOOD_TYPO_MAP[key] || quickTokens.length === 1;
+  });
+
+  if (quickTokens.length > 0 && text.length <= 48 && allLocalFixed) {
+    const normalized = quickTokens.join(' e ');
+    return { normalized, tokens: quickTokens };
+  }
+
+  try {
+    const systemInstruction = [
+      'Sei un normalizzatore di nomi alimentari italiani.',
+      'Correggi errori ortografici comuni (es. mordadella→mortadella).',
+      'Restituisci SOLO JSON: normalized (frase corretta) e tokens (lista ingredienti separati).',
+      'Ignora inglese/brand USA: preferisci voci alimentari italiane generiche.',
+    ].join(' ');
+
+    const raw = await askAI(
+      `Normalizza per lookup nutrizionale Kentu DB:\n${JSON.stringify(text)}`,
+      systemInstruction,
+      {
+        model: GEMINI_MATCH_MODEL,
+        temperature: 0,
+        responseSchema: SPELLING_NORMALIZE_SCHEMA,
+        signal: opts.signal,
+      },
+    );
+
+    const parsed = JSON.parse(String(raw || '{}').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, ''));
+    const normalized = String(parsed?.normalized || text).trim() || text;
+    const tokens = Array.isArray(parsed?.tokens)
+      ? parsed.tokens.map((t) => String(t || '').trim()).filter(Boolean)
+      : quickTokens.length ? quickTokens : [normalized];
+    return { normalized, tokens };
+  } catch (error) {
+    console.warn('[SemanticMatchmaker] spelling normalize fallback', error);
+    return {
+      normalized: quickTokens.join(' e ') || text,
+      tokens: quickTokens.length ? quickTokens : [text],
+    };
+  }
+}
+
+/**
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function isLikelyForeignJunkFoodName(name) {
+  const n = String(name || '').trim();
+  if (!n) return true;
+  if (FOREIGN_JUNK_RE.test(n)) return true;
+  if (/^[A-Z0-9][A-Z0-9\s'&-]{10,}$/.test(n) && !/[àèéìòù]/i.test(n)) return true;
+  if (/\b(?:restaurant|grill|kitchen|foods,? inc)\b/i.test(n)) return true;
+  return false;
+}
+
+/**
+ * Unisce Kentu DB IT (CREA) + DB personale. Esclude il master globale USDA.
+ * @param {Record<string, object>|null|undefined} kentuItDb
+ * @param {Record<string, object>|null|undefined} personalDb
+ */
+export function mergeKentuSearchDatabases(kentuItDb, personalDb) {
+  const it = kentuItDb && typeof kentuItDb === 'object' ? kentuItDb : {};
+  const personal = personalDb && typeof personalDb === 'object' ? personalDb : {};
+  return { ...it, ...personal };
+}
 
 /** Chiavi etichetta OFF da non sovrascrivere se presenti. */
 const OFF_LOCKED_KEYS = new Set([
@@ -168,28 +282,41 @@ export function sanitizeProductNameForSearch(productName) {
 }
 
 /**
- * Filtro locale: top N candidati USDA/Kentu master.
+ * Filtro locale: top N candidati Kentu DB (CREA IT + personale).
  *
  * @param {string} productName
- * @param {Record<string, object> | null | undefined} masterDb
+ * @param {Record<string, object> | null | undefined} searchDb
  * @param {{ limit?: number }} [opts]
  * @returns {Promise<Array<{ fdcId: string, name: string, row: object }>>}
  */
-export async function findLocalUsdaCandidates(productName, masterDb, opts = {}) {
+export async function findLocalKentuCandidates(productName, searchDb, opts = {}) {
   const limit = Math.min(
     40,
     Math.max(5, Number(opts.limit) || DEFAULT_LOCAL_CANDIDATE_LIMIT),
   );
   const query = sanitizeProductNameForSearch(productName);
-  if (!query || !masterDb || typeof masterDb !== 'object') return [];
+  if (!query || !searchDb || typeof searchDb !== 'object') return [];
 
-  const hits = await searchUSDAFoods(query, { usdaDb: masterDb, pageSize: limit });
-  return hits.map((hit) => {
-    const row = hit.row || masterDb[hit.id] || {};
-    const fdcId = String(row.fdcId ?? hit.id ?? '').trim() || String(hit.id);
-    const name = String(row.desc || row.name || hit.name || fdcId).trim();
-    return { fdcId, name, row: { ...row, id: hit.id, fdcId } };
+  const hits = searchFoodsDetailed(searchDb, query, {
+    includeUserHistory: true,
+    limit: limit * 2,
+    mode: 'search',
   });
+
+  return hits
+    .filter((hit) => !isLikelyForeignJunkFoodName(hit.name))
+    .slice(0, limit)
+    .map((hit) => {
+      const row = searchDb[hit.id] || {};
+      const fdcId = String(row.fdcId ?? row.id ?? hit.id ?? '').trim() || String(hit.id);
+      const name = String(row.desc || row.name || hit.name || fdcId).trim();
+      return { fdcId, name, row: { ...row, id: hit.id, fdcId } };
+    });
+}
+
+/** @deprecated Usa findLocalKentuCandidates */
+export async function findLocalUsdaCandidates(productName, masterDb, opts = {}) {
+  return findLocalKentuCandidates(productName, masterDb, opts);
 }
 
 /**
@@ -199,7 +326,7 @@ export async function findLocalUsdaCandidates(productName, masterDb, opts = {}) 
  * @param {Array<{ fdcId: string, name: string }>} candidates
  * @param {{ signal?: AbortSignal }} [opts]
  */
-export async function rankUsdaCandidatesWithGemini(productName, candidates, opts = {}) {
+export async function rankKentuCandidatesWithGemini(productName, candidates, opts = {}) {
   const list = Array.isArray(candidates) ? candidates : [];
   if (!String(productName || '').trim() || list.length === 0) return [];
 
@@ -209,22 +336,23 @@ export async function rankUsdaCandidatesWithGemini(productName, candidates, opts
   }));
 
   const systemInstruction = [
-    'Sei un matchmaker nutrizionale. Confronti un prodotto da etichetta (Open Food Facts)',
-    'con voci USDA/FoodData Central già filtrate.',
-    'Valuta compatibilità biochimica (categoria alimento, grassi, proteine, lavorazione).',
+    'Sei un matchmaker nutrizionale Kentu (database CREA italiano).',
+    'Confronta un alimento citato dall\'utente con voci Kentu DB già filtrate.',
+    'Escludi catene USA, brand fast-food e prodotti non pertinenti.',
     'Restituisci SOLO JSON conforme allo schema. Massimo 3 match.',
     'confidence: high = profilo quasi identico; medium = generico vs specifico; low = debole.',
     'Se nessun candidato è ragionevole, restituisci matches: [].',
   ].join(' ');
 
   const prompt = [
-    `Prodotto scansionato: ${JSON.stringify(String(productName).trim())}`,
-    'Candidati USDA (solo id + nome):',
+    `Alimento richiesto: ${JSON.stringify(String(productName).trim())}`,
+    'Candidati Kentu DB (solo id + nome):',
     JSON.stringify(compact),
     'Scegli fino a 3 match migliori. Usa solo fdcId presenti nella lista.',
   ].join('\n');
 
   const raw = await askAI(prompt, systemInstruction, {
+    model: GEMINI_MATCH_MODEL,
     temperature: 0.1,
     responseSchema: SEMANTIC_MATCH_RESPONSE_SCHEMA,
     signal: opts.signal,
@@ -237,22 +365,32 @@ export async function rankUsdaCandidatesWithGemini(productName, candidates, opts
     .slice(0, DEFAULT_GEMINI_TOP);
 }
 
+/** @deprecated Usa rankKentuCandidatesWithGemini */
+export async function rankUsdaCandidatesWithGemini(productName, candidates, opts = {}) {
+  return rankKentuCandidatesWithGemini(productName, candidates, opts);
+}
+
 /**
- * Pipeline completa: filtro locale → Gemini → row USDA arricchite.
+ * Pipeline completa Kentu DB: normalizzazione → filtro locale → Gemini → profili arricchiti.
  *
  * @param {string} productName
- * @param {Record<string, object> | null | undefined} masterDb
+ * @param {{ kentuItDb?: object, personalDb?: object, masterDb?: object }} dbContext
  * @param {{ signal?: AbortSignal, localLimit?: number }} [opts]
- * @returns {Promise<Array<{
- *   fdcId: string,
- *   name: string,
- *   confidence: 'high'|'medium'|'low',
- *   reason: string,
- *   row: object,
- * }>>}
  */
-export async function findSemanticUsdaMatches(productName, masterDb, opts = {}) {
-  const candidates = await findLocalUsdaCandidates(productName, masterDb, {
+export async function findSemanticKentuMatches(productName, dbContext = {}, opts = {}) {
+  const kentuItDb = dbContext.kentuItDb || dbContext.masterDb || null;
+  const personalDb = dbContext.personalDb || null;
+  const searchDb = mergeKentuSearchDatabases(kentuItDb, personalDb);
+
+  let queryName = String(productName || '').trim();
+  try {
+    const normalized = await normalizeIngredientSpellingWithGemini(queryName, { signal: opts.signal });
+    if (normalized.normalized) queryName = normalized.normalized;
+  } catch (error) {
+    console.warn('[SemanticMatchmaker] normalize before search failed', error);
+  }
+
+  const candidates = await findLocalKentuCandidates(queryName, searchDb, {
     limit: opts.localLimit ?? DEFAULT_LOCAL_CANDIDATE_LIMIT,
   });
 
@@ -262,17 +400,16 @@ export async function findSemanticUsdaMatches(productName, masterDb, opts = {}) 
 
   let ranked = [];
   try {
-    ranked = await rankUsdaCandidatesWithGemini(productName, candidates, {
+    ranked = await rankKentuCandidatesWithGemini(queryName, candidates, {
       signal: opts.signal,
     });
   } catch (error) {
     console.warn('[SemanticMatchmaker] Gemini ranking failed, fallback lexical top', error);
-    // Fallback: primi 3 lessicali a confidence medium/low
     return candidates.slice(0, DEFAULT_GEMINI_TOP).map((c, index) => ({
       fdcId: c.fdcId,
       name: c.name,
       confidence: index === 0 ? 'medium' : 'low',
-      reason: 'Suggerimento lessicale (AI non disponibile)',
+      reason: 'Suggerimento lessicale Kentu DB (AI non disponibile)',
       row: c.row,
     }));
   }
@@ -293,21 +430,32 @@ export async function findSemanticUsdaMatches(productName, masterDb, opts = {}) 
 }
 
 /**
- * Chat new food: profilo personale interamente da USDA, nome forzato dall'utente.
+ * Compat legacy: accetta masterDb ma cerca solo Kentu IT + personale se forniti nel contesto.
+ * @deprecated Preferire findSemanticKentuMatches con kentuItDb + personalDb.
+ */
+export async function findSemanticUsdaMatches(productName, masterDb, opts = {}) {
+  return findSemanticKentuMatches(productName, {
+    kentuItDb: masterDb,
+    personalDb: opts.personalDb || null,
+  }, opts);
+}
+
+/**
+ * Chat new food: profilo da Kentu DB, nome forzato dall'utente.
  *
  * @param {string} foodName
- * @param {Record<string, unknown>} usdaRow
+ * @param {Record<string, unknown>} kentuRow
  * @param {{ confidence?: string, reason?: string, fdcId?: string }} [meta]
  */
-export function buildChatFoodFromUsdaRow(foodName, usdaRow, meta = {}) {
-  const desc = String(foodName || usdaRow?.desc || usdaRow?.name || '').trim();
-  const nutrients = buildPer100TargetNutrientsFromRow(usdaRow);
+export function buildChatFoodFromUsdaRow(foodName, kentuRow, meta = {}) {
+  const desc = String(foodName || kentuRow?.desc || kentuRow?.name || '').trim();
+  const nutrients = buildPer100TargetNutrientsFromRow(kentuRow);
   const entry = {
     desc,
     name: desc,
     ...nutrients,
     isRecipe: false,
-    learnedSource: 'chat_usda_match',
+    learnedSource: 'chat_kentu_match',
     userLearned: true,
   };
 
@@ -315,16 +463,16 @@ export function buildChatFoodFromUsdaRow(foodName, usdaRow, meta = {}) {
   if (entry.fat == null && entry.fatTotal != null) entry.fat = entry.fatTotal;
   if (entry.cal == null && entry.kcal != null) entry.cal = entry.kcal;
 
-  const fdcId = String(meta.fdcId || usdaRow?.fdcId || usdaRow?.id || '').trim();
-  entry.usdaEnrichment = {
-    fdcId: fdcId || null,
+  const dbKey = String(meta.fdcId || kentuRow?.fdcId || kentuRow?.id || '').trim();
+  entry.kentuEnrichment = {
+    dbKey: dbKey || null,
     confidence: meta.confidence || null,
     reason: meta.reason || null,
-    source: 'USDA',
+    source: 'KENTU_DB',
     mergedAt: new Date().toISOString(),
     chatTextMode: true,
   };
-  if (fdcId) entry.fdcId = fdcId;
+  if (dbKey) entry.fdcId = dbKey;
 
   return entry;
 }

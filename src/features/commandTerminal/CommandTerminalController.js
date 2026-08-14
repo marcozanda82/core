@@ -10,6 +10,7 @@ import {
   DISPATCH_COMMAND_ACCEPTED,
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
+  DISPATCH_UPSERT_MEAL,
 } from './contracts/eventTypes.js';
 import {
   CONVERSATION_STATE,
@@ -32,6 +33,7 @@ import {
   normalizeWorkoutPayload,
   parseConfirmationFromUserText,
   parseMealTypeFromUserText,
+  inferDefaultMealType,
   payloadHasEstimatedFoodWeights,
   WORKOUT_DRAFT_CONFIRMATION_QUICK_REPLIES,
 } from './conversation/conversationState.js';
@@ -99,7 +101,23 @@ import {
   extractBareFoodNamesFromText,
   isAskDraftAdviceIntent,
   isPriorityFreeTextMealLog,
+  isGenericMealLogIntentOnly,
 } from './conversation/mealLogIntent.js';
+import {
+  MCDRIVE_CANCEL_CHIP,
+  MCDRIVE_FINISH_CHIP,
+  MCDRIVE_START_MESSAGE,
+  isMcdriveFinishCommand,
+  isMcdriveCancelCommand,
+  createEmptyMcDriveDraft,
+  buildLiveMealTrayPayload,
+  parseMcdriveFoodInput,
+  buildMcdriveItemAddedMessage,
+  buildMcDriveItemFromMatch,
+  resolveMcdriveFoodViaSemanticMatchmaker,
+  rescaleMcDriveItemGrams,
+} from './conversation/mcdriveWizard.js';
+import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
   buildConversationTextsFromChatHistory,
@@ -109,7 +127,7 @@ import {
   promptForMissingMealRegistrationSlot,
   registrationSlotToConversationState,
 } from './conversation/mealRegistrationSlots.js';
-import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly } from './conversation/mealSmartDefaults.js';
+import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly, deduceMealTypeFromDecimalHour, formatCurrentSystemTimeContext } from './conversation/mealSmartDefaults.js';
 import {
   BUTLER_MEAL_QUICK_REPLIES,
   REQUEST_FOOD_PHOTO_QUICK_REPLIES,
@@ -159,16 +177,9 @@ import {
   fastPathResolveMealPayload,
 } from './conversation/fastPathMealResolve.js';
 import {
-  advanceMealBuilderStep,
-  appendItemToMealBuilderDraft,
-  buildMealBuilderFinalPayload,
   buildMealBuilderStepPrompt,
-  createMealBuilderWizardState,
-  inferMealTypeForMealBuilder,
-  isMealBuilderWizardAbortCommand,
   isMealBuilderWizardTrigger,
   isUnrelatedCommandDuringMealBuilder,
-  parseMealBuilderStepInput,
 } from './conversation/mealBuilderWizard.js';
 import {
   processUnresolvedChatFoods,
@@ -394,10 +405,16 @@ export class CommandTerminalController {
     this.pendingSoftMealRecovery = null;
     /** @type {{ originText?: string, time?: number } | null} Caffè da chat in attesa variante. */
     this.pendingCoffeeLog = null;
+    /** @type {{ mealType?: string|null } | null} McDrive: ascolto libero dopo chip spuntino/inserimento. */
+    this.pendingFreeMealLogContext = null;
     /** @type {string|null} Wizard attivo (es. MEAL_BUILDER). */
     this.activeWizard = null;
     /** @type {object|null} Bozza pasto del wizard guidato in memoria. */
     this.pendingWizardDraft = null;
+    /** @type {object[]} Vassoio McDrive (ciclo aperto, isolato dal wizard Guidami). */
+    this.pendingMcDriveDraft = [];
+    /** @type {{ foodName: string, grams: number, isEstimated?: boolean, currentState?: object } | null} */
+    this.pendingMcDriveUnknown = null;
   }
 
   setPendingMealUpdate(ctx) {
@@ -435,6 +452,9 @@ export class CommandTerminalController {
       pendingWizardDraft: this.pendingWizardDraft
         ? { ...this.pendingWizardDraft, items: [...(this.pendingWizardDraft.items || [])] }
         : null,
+      pendingMcDriveDraft: Array.isArray(this.pendingMcDriveDraft)
+        ? this.pendingMcDriveDraft.map((item) => ({ ...item }))
+        : [],
     };
   }
 
@@ -454,8 +474,11 @@ export class CommandTerminalController {
     this.mealDraftInteractiveEdit = false;
     this.pendingSoftMealRecovery = null;
     this.pendingCoffeeLog = null;
+    this.pendingFreeMealLogContext = null;
     this.activeWizard = null;
     this.pendingWizardDraft = null;
+    this.pendingMcDriveDraft = [];
+    this.pendingMcDriveUnknown = null;
   }
 
   clearChipWaitingState() {
@@ -478,6 +501,380 @@ export class CommandTerminalController {
     if (this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP) {
       this.conversationState = CONVERSATION_STATE.IDLE;
     }
+  }
+
+  clearMcdriveWizard() {
+    this.activeWizard = null;
+    this.pendingMcDriveDraft = [];
+    this.pendingMcDriveUnknown = null;
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP) {
+      this.conversationState = CONVERSATION_STATE.IDLE;
+    }
+  }
+
+  publishMcdriveTrayMessage(message) {
+    const text = String(message || '').trim();
+    if (!text) return { ok: false, reason: 'empty_mcdrive_message' };
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    const quickReplies = [
+      { label: MCDRIVE_CANCEL_CHIP.label, intent: MCDRIVE_CANCEL_CHIP.intent },
+      { label: MCDRIVE_FINISH_CHIP.label, intent: MCDRIVE_FINISH_CHIP.intent, variant: 'primary' },
+    ];
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'MCDRIVE_TRAY',
+        text,
+        message: text,
+        quickReplies,
+        liveMealTray: buildLiveMealTrayPayload(this.pendingMcDriveDraft),
+        mcdriveWizard: true,
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return {
+      ok: true,
+      awaiting: true,
+      intent: 'MCDRIVE_LOOP',
+      activeWizard: this.activeWizard,
+      conversationState: this.conversationState,
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  startMcdriveWizard(currentState = {}, options = {}) {
+    void currentState;
+    void options;
+    this.clearChipWaitingState();
+    // Chiude sempre il vecchio Guidami (step base/proteina/extra) — niente doppio wizard.
+    this.clearMealBuilderWizard();
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.pendingMcDriveDraft = createEmptyMcDriveDraft();
+    this.pendingFreeMealLogContext = null;
+    return this.publishMcdriveTrayMessage(MCDRIVE_START_MESSAGE);
+  }
+
+  async processMcdriveWizardResponse(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const forcedIntent = String(options?.intent || '').trim().toUpperCase();
+
+    if (forcedIntent === 'CANCEL_MCDRIVE_WIZARD' || isMcdriveCancelCommand(text)) {
+      return this.cancelMcdriveWizard();
+    }
+
+    if (forcedIntent === 'FINISH_MCDRIVE_WIZARD' || isMcdriveFinishCommand(text)) {
+      return this.finishMcdriveWizard(currentState);
+    }
+
+    const parsed = parseMcdriveFoodInput(text);
+    if (!parsed?.foodName) {
+      return this.publishMcdriveTrayMessage(
+        'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine».',
+      );
+    }
+
+    const dbCtx = this.getFastPathContext(currentState);
+    let resolved = null;
+    try {
+      resolved = await resolveMcdriveFoodViaSemanticMatchmaker(parsed.foodName, {
+        personalDb: dbCtx.personalDb,
+        kentuItDb: dbCtx.kentuItDb,
+        signal: options?.signal,
+      });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.warn('[CommandTerminalController] McDrive semantic match failed', error);
+    }
+
+    if (resolved?.match) {
+      const draftItem = buildMcDriveItemFromMatch(
+        parsed.foodName,
+        parsed.grams,
+        resolved.match,
+        resolved.source,
+        { isEstimated: parsed.isEstimated === true },
+      );
+      this.appendMcDriveDraftItem(draftItem);
+      return this.publishMcdriveTrayMessage(buildMcdriveItemAddedMessage(draftItem.foodName));
+    }
+
+    return this.pauseMcdriveForUnknown(parsed, currentState);
+  }
+
+  appendMcDriveDraftItem(item) {
+    if (!item?.foodName) return;
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    this.pendingMcDriveDraft = [...list, item];
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+  }
+
+  removeMcDriveDraftItem(index) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const idx = Math.round(Number(index));
+    if (!Number.isFinite(idx) || idx < 0 || idx >= list.length) {
+      return {
+        ok: false,
+        reason: 'invalid_index',
+        liveMealTray: buildLiveMealTrayPayload(list),
+      };
+    }
+    this.pendingMcDriveDraft = list.filter((_, i) => i !== idx);
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return {
+      ok: true,
+      liveMealTray: buildLiveMealTrayPayload(this.pendingMcDriveDraft),
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  updateMcDriveDraftItemGrams(index, grams) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const idx = Math.round(Number(index));
+    if (!Number.isFinite(idx) || idx < 0 || idx >= list.length) {
+      return {
+        ok: false,
+        reason: 'invalid_index',
+        liveMealTray: buildLiveMealTrayPayload(list),
+      };
+    }
+    const next = [...list];
+    next[idx] = rescaleMcDriveItemGrams(next[idx], grams);
+    this.pendingMcDriveDraft = next;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return {
+      ok: true,
+      liveMealTray: buildLiveMealTrayPayload(this.pendingMcDriveDraft),
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  pauseMcdriveForUnknown(parsed, currentState = {}) {
+    const foodName = String(parsed?.foodName || '').trim();
+    const grams = Math.max(1, Math.round(Number(parsed?.grams) || 100));
+    this.pendingMcDriveUnknown = {
+      foodName,
+      grams,
+      isEstimated: parsed?.isEstimated === true,
+      currentState,
+    };
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+
+    if (typeof this.onRequestUsdaEnrichment === 'function') {
+      this.onRequestUsdaEnrichment({
+        foodName,
+        kentuItDb: currentState?.kentuItDatabase
+          || currentState?.kentuItDb
+          || currentState?.kentuFoodDb
+          || null,
+        personalDb: currentState?.foodDatabase
+          || currentState?.trackerFoodDatabase
+          || currentState?.personalFoodDb
+          || null,
+        resume: (match) => this.resumeMcdriveUnknown(match),
+      });
+    }
+
+    return this.publishMcdriveTrayMessage(
+      `Non trovo «${foodName}» nel database. Scegli un match, scatta foto o inseriscilo dal popup.`,
+    );
+  }
+
+  async resumeMcdriveUnknown(match) {
+    const pending = this.pendingMcDriveUnknown;
+    this.pendingMcDriveUnknown = null;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+
+    if (!pending?.foodName) {
+      return this.publishMcdriveTrayMessage(MCDRIVE_START_MESSAGE);
+    }
+
+    if (!match?.row) {
+      return this.publishMcdriveTrayMessage(
+        'Ok, niente di nuovo. Dimmi un altro alimento da mettere sul vassoio.',
+      );
+    }
+
+    const grams = Math.max(1, Math.round(Number(pending.grams) || 100));
+    let draftItem = buildMcDriveItemFromMatch(
+      pending.foodName,
+      grams,
+      match,
+      'learned',
+      { isEstimated: pending.isEstimated === true },
+    );
+
+    try {
+      const enriched = await applyChatUsdaEnrichmentResult(
+        { foodName: pending.foodName, grams },
+        match,
+        this.buildChatFoodPipelineContext(pending.currentState || {}),
+      );
+      if (enriched?.foodName) {
+        draftItem = {
+          ...draftItem,
+          foodName: String(enriched.foodName || draftItem.foodName).trim(),
+          grams: Math.max(1, Math.round(Number(enriched.grams) || grams)),
+          kcal: Math.round(Number(enriched.kcal) || draftItem.kcal || 0),
+          pro: Number(enriched.pro) || draftItem.pro || 0,
+          carbo: Number(enriched.carbo) || draftItem.carbo || 0,
+          fat: Number(enriched.fat) || draftItem.fat || 0,
+          foodDbKey: enriched.foodDbKey || draftItem.foodDbKey,
+          isNewFood: true,
+          source: 'learned',
+        };
+      }
+    } catch (error) {
+      console.warn('[CommandTerminalController] McDrive unknown resume persist failed', error);
+    }
+
+    this.appendMcDriveDraftItem(draftItem);
+    return this.publishMcdriveTrayMessage(buildMcdriveItemAddedMessage(draftItem.foodName));
+  }
+
+  cancelMcdriveWizard() {
+    this.clearMcdriveWizard();
+    if (typeof this.onRequestUsdaEnrichment === 'function') {
+      this.onRequestUsdaEnrichment({ foodName: '', resume: null });
+    }
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'system',
+        text: 'Inserimento guidato annullato.',
+        message: 'Inserimento guidato annullato.',
+        isSystem: true,
+        systemIcon: 'cancel',
+        avatarAsset: '/annulla2.png',
+        resolveMcDriveTray: true,
+        quickReplies: getChatFallbackQuickReplies(),
+      },
+      { source: 'CommandTerminalController' },
+    );
+    return { ok: true, cancelled: true, intent: 'CANCEL_MCDRIVE_WIZARD' };
+  }
+
+  finishMcdriveWizard(currentState = {}) {
+    const draftItems = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    if (draftItems.length === 0) {
+      return this.publishMcdriveTrayMessage(
+        'Il vassoio è vuoto. Aggiungi almeno un alimento, poi tocca Termina e Salva.',
+      );
+    }
+
+    const timeCtx = formatCurrentSystemTimeContext();
+    const mealType = String(
+      inferDefaultMealType(currentState)
+      || deduceMealTypeFromDecimalHour(timeCtx.decimalHour)
+      || 'pranzo',
+    ).trim().toLowerCase();
+
+    let payload = normalizeFoodPayload(
+      {
+        items: draftItems.map((item) => ({
+          foodName: String(item?.foodName || item?.name || '').trim(),
+          grams: Math.max(1, Math.round(Number(item?.grams) || 0)),
+          kcal: Math.round(Number(item?.kcal) || 0),
+          pro: Number(item?.pro ?? item?.prot) || 0,
+          carbo: Number(item?.carbo ?? item?.carb) || 0,
+          fat: Number(item?.fat ?? item?.fatTotal) || 0,
+          ...(item?.foodDbKey != null ? { foodDbKey: item.foodDbKey, matchedKey: item.foodDbKey } : {}),
+          ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
+          ...(item?.isEstimated === true ? { isEstimated: true } : {}),
+        })),
+        mealType,
+        exactTime: timeCtx.timeHHmm,
+        timeString: timeCtx.timeHHmm,
+      },
+      currentState,
+      { inferMealTypeFromContext: false },
+    );
+    payload = applyMealTimingDefaultsOnly(payload);
+
+    const proposal = buildMealLogProposalFromPayload(
+      { ...payload, forceNewMealSlot: true },
+      currentState,
+      { userText: 'McDrive Termina e Salva' },
+    );
+    const itemsForCommit = (proposal?.items || expandFoodPayloadItems(payload))
+      .map((item) => {
+        const foodName = String(item?.foodName || item?.name || '').trim();
+        const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
+        const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
+        if (!foodName || grams <= 0) return null;
+        return {
+          foodName,
+          grams,
+          ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
+          ...(Number.isFinite(Number(item?.kcal)) ? { kcal: Math.round(Number(item.kcal)) } : {}),
+          ...(Number.isFinite(Number(item?.pro ?? item?.prot))
+            ? { pro: Number(item.pro ?? item.prot) }
+            : {}),
+          ...(Number.isFinite(Number(item?.carbo ?? item?.carb))
+            ? { carbo: Number(item.carbo ?? item.carb) }
+            : {}),
+          ...(Number.isFinite(Number(item?.fat ?? item?.fatTotal))
+            ? { fat: Number(item.fat ?? item.fatTotal) }
+            : {}),
+        };
+      })
+      .filter(Boolean);
+
+    if (itemsForCommit.length === 0) {
+      return this.publishMcdriveTrayMessage(
+        'Non riesco a salvare il vassoio: controlla gli alimenti e riprova.',
+      );
+    }
+
+    const exactTime = String(payload?.exactTime || payload?.timeString || timeCtx.timeHHmm).trim();
+    const resolvedMealType = String(payload?.mealType || mealType).trim().toLowerCase() || mealType;
+
+    this.clearMcdriveWizard();
+    if (typeof this.onRequestUsdaEnrichment === 'function') {
+      this.onRequestUsdaEnrichment({ foodName: '', resume: null });
+    }
+
+    this.bus.publish(
+      DISPATCH_UPSERT_MEAL,
+      {
+        mealType: resolvedMealType,
+        items: itemsForCommit,
+        action: 'add',
+        upsertAction: 'add',
+        // Nuovo evento autonomo: non assorbire nello spuntino/pranzo già presente (snack_2…).
+        forceNewMealSlot: true,
+        source: 'mcdrive_wizard',
+        ...(exactTime ? { exactTime, timeString: exactTime } : {}),
+      },
+      {
+        source: 'CommandTerminalController',
+        correlationId: 'mcdrive_finish',
+      },
+    );
+
+    this.publishProjectedMealLogFeedback(
+      {
+        items: proposal?.items || itemsForCommit,
+        mealType: resolvedMealType,
+        exactTime,
+        timeString: exactTime,
+      },
+      currentState,
+      { userText: 'McDrive Termina e Salva', resolveMcDriveTray: true },
+    );
+
+    return {
+      ok: true,
+      intent: 'FINISH_MCDRIVE_WIZARD',
+      saved: true,
+      mealType: resolvedMealType,
+      itemCount: itemsForCommit.length,
+    };
   }
 
   shouldBypassSlotFillingForFreeText(userText, chatHistory = [], options = {}) {
@@ -532,83 +929,51 @@ export class CommandTerminalController {
       : null;
   }
 
+  /**
+   * @deprecated Guidami testuale (base/proteina/extra) → dirottato su McDrive / LiveMealTray.
+   * Mantenuto come alias per chip/intent legacy START_MEAL_BUILDER_WIZARD.
+   */
   startMealBuilderWizard(userText, currentState = {}, options = {}) {
-    const mealType = inferMealTypeForMealBuilder(userText, currentState);
-    const state = createMealBuilderWizardState({ mealType, step: 'base', items: [] });
-    console.log('🧙 DEBUG - START MEAL BUILDER WIZARD:', { mealType, userText: String(userText || '').slice(0, 80) });
-    return this.publishMealBuilderStepPrompt(state);
+    void userText;
+    console.log('🧙 DEBUG - START MEAL BUILDER → McDrive redirect:', {
+      userText: String(userText || '').slice(0, 80),
+    });
+    this.clearMealBuilderWizard();
+    return this.startMcdriveWizard(currentState, options);
   }
 
+  /**
+   * @deprecated Loop Guidami step-by-step dismesso (causava falso positivo «ho corretto…»).
+   * Qualsiasi residuo di stato MEAL_BUILDER viene ripulito e passato a McDrive.
+   */
   async processMealBuilderWizardResponse(userText, currentState = {}, options = {}) {
     const text = String(userText || '').trim();
-    let state = this.getPendingWizardDraft();
+    this.clearMealBuilderWizard();
 
-    if (!state || this.activeWizard !== ACTIVE_WIZARD.MEAL_BUILDER) {
-      this.clearMealBuilderWizard();
-      return this.processUserMessage(text, currentState, options);
-    }
-
-    if (isMealBuilderWizardAbortCommand(text)) {
-      this.clearMealBuilderWizard();
-      this.publishSystemMessage('Ok, wizard annullato. Dimmi pure quando vuoi registrare o costruire un pasto.');
-      return { ok: true, cancelled: true, intent: 'MEAL_BUILDER_WIZARD_CANCEL' };
-    }
-
-    if (isUnrelatedCommandDuringMealBuilder(text) && !options?.fromQuickReply) {
-      this.clearMealBuilderWizard();
-      return this.processUserMessage(text, currentState, options);
-    }
-
-    const selection = options?.wizardSelection && typeof options.wizardSelection === 'object'
-      ? options.wizardSelection
-      : null;
-    const parsed = parseMealBuilderStepInput(state.step, text, selection);
-
-    if (parsed.cancel) {
-      this.clearMealBuilderWizard();
-      this.publishSystemMessage('Ok, wizard annullato.');
-      return { ok: true, cancelled: true, intent: 'MEAL_BUILDER_WIZARD_CANCEL' };
-    }
-
-    if (state.step === 'confirm') {
-      if (parsed.confirm) {
-        const payload = normalizeFoodPayload(
-          buildMealBuilderFinalPayload(state),
-          currentState,
-          { inferMealTypeFromContext: false },
-        );
-        this.clearMealBuilderWizard();
-        if (!expandFoodPayloadItems(payload).length) {
-          this.publishSystemMessage('Non ho alimenti da salvare. Ripartiamo quando vuoi.');
-          return { ok: false, reason: 'empty_meal_builder_draft' };
-        }
-        return this.publishMealLogProposalCardDirect(payload, currentState, text, [], {
-          skipWizard: true,
-          uiMessage: 'Pasto guidato pronto. Confermi il salvataggio?',
-        });
+    if (this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
+      if (!text) {
+        return {
+          ok: true,
+          redirected: true,
+          intent: 'MCDRIVE_LOOP',
+          activeWizard: this.activeWizard,
+        };
       }
-      return this.publishMealBuilderStepPrompt(state);
+      return this.processMcdriveWizardResponse(text, currentState, options);
     }
 
-    const ctx = this.getFastPathContext(currentState);
-    if (parsed.skip) {
-      state = advanceMealBuilderStep(state);
-    } else if (parsed.foodName) {
-      state = appendItemToMealBuilderDraft(state, parsed, ctx);
-      state = advanceMealBuilderStep(state);
-    } else {
-      this.publishSystemMessage(
-        'Non ho colto. Scegli una chip, oppure dimmi l\'alimento (es. «pasta integrale 80g»).',
-      );
-      return this.publishMealBuilderStepPrompt(state);
+    // Nessun testo: avvio lavagna con messaggio standard.
+    if (!text) {
+      return this.startMcdriveWizard(currentState, options);
     }
 
-    if (state.step === 'confirm' && !(state.items || []).length) {
-      this.publishSystemMessage('Non abbiamo aggiunto nulla — vuoi annullare o ripartire?');
-      state = { ...state, step: 'base' };
-    }
-
-    return this.publishMealBuilderStepPrompt(state);
+    // Testo presente (residuo Guidami): init silenzioso + parsing McDrive (niente doppio bollo).
+    this.clearChipWaitingState();
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.pendingMcDriveDraft = createEmptyMcDriveDraft();
+    this.pendingFreeMealLogContext = null;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return this.processMcdriveWizardResponse(text, currentState, options);
   }
 
   setPendingMealDraft(draft) {
@@ -1073,7 +1438,7 @@ export class CommandTerminalController {
       }
       if (final === 'cancel') {
         this.resetConversationState();
-        this.publishSystemMessage('Ok, bozza annullata.');
+        this.publishSystemMessage('Ok, bozza annullata.', { withFallbackMenu: true });
         return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
       }
       return this.publishWizardFinalProposalCard(state, currentState);
@@ -1099,7 +1464,7 @@ export class CommandTerminalController {
         );
       }
       this.resetConversationState();
-      this.publishSystemMessage('Ok, wizard annullato.');
+      this.publishSystemMessage('Ok, wizard annullato.', { withFallbackMenu: true });
       return { ok: true, cancelled: true, intent: 'MEAL_WIZARD_CANCEL' };
     }
 
@@ -1262,13 +1627,29 @@ export class CommandTerminalController {
     return patch;
   }
 
-  publishSystemMessage(message) {
+  publishSystemMessage(message, options = {}) {
     const text = String(message || '').trim();
     if (!text) return;
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (publishSystemMessage):', text);
+    const quickReplies = Array.isArray(options?.quickReplies)
+      ? options.quickReplies
+      : null;
+    const withFallback = options?.withFallbackMenu === true
+      ? getChatFallbackQuickReplies()
+      : quickReplies;
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
-      { message: text, text },
+      {
+        message: text,
+        text,
+        ...(options?.type ? { type: options.type } : {}),
+        ...(options?.isSystem === true ? { isSystem: true } : {}),
+        ...(options?.systemIcon ? { systemIcon: options.systemIcon } : {}),
+        ...(options?.avatarAsset ? { avatarAsset: options.avatarAsset } : {}),
+        ...(Array.isArray(withFallback) && withFallback.length > 0
+          ? { quickReplies: withFallback }
+          : {}),
+      },
       { source: 'CommandTerminalController' },
     );
   }
@@ -1432,6 +1813,7 @@ export class CommandTerminalController {
         message: text,
         text,
         mealReceipt,
+        ...(options?.resolveMcDriveTray === true ? { resolveMcDriveTray: true } : {}),
       },
       { source: 'CommandTerminalController' },
     );
@@ -1489,9 +1871,13 @@ export class CommandTerminalController {
         foodName: String(item.foodName || item.name || '').trim(),
         item,
         proposalItemIndex,
-        masterDb: state.currentState?.globalFoodDatabase
-          || state.currentState?.globalFoodDb
-          || state.currentState?.masterDb
+        kentuItDb: state.currentState?.kentuItDatabase
+          || state.currentState?.kentuItDb
+          || state.currentState?.kentuFoodDb
+          || null,
+        personalDb: state.currentState?.foodDatabase
+          || state.currentState?.trackerFoodDatabase
+          || state.currentState?.personalFoodDb
           || null,
         resume: (usdaMatch) => this.resumeChatUsdaEnrichment(usdaMatch),
       });
@@ -1680,10 +2066,22 @@ export class CommandTerminalController {
 
     const enrichedPayload = butler.payload || workingPayload;
     const conversationTexts = buildConversationTextsFromChatHistory(chatHistory, userText);
-    const proposal = buildMealLogProposalFromPayload(enrichedPayload, currentState, {
-      userText,
-      conversationTexts,
-    });
+    const mergeIntoExisting = isMergeIntoExistingMealIntent(userText);
+    const proposal = buildMealLogProposalFromPayload(
+      {
+        ...enrichedPayload,
+        // Pasto nuovo da NLP: slot ghost autonomo. «Aggiungi al pranzo» → merge (niente force).
+        ...(mergeIntoExisting
+          ? { forceNewMealSlot: false, action: enrichedPayload?.action || 'merge', upsertAction: enrichedPayload?.upsertAction || 'merge' }
+          : { forceNewMealSlot: enrichedPayload?.forceNewMealSlot !== false }),
+      },
+      currentState,
+      {
+        userText,
+        conversationTexts,
+        ...(mergeIntoExisting ? { allowCanonicalSlotMerge: true } : {}),
+      },
+    );
     if (!proposal) {
       this.publishErrorMessage(USER_FACING_PARSE_ERROR_MESSAGE);
       return { ok: false, reason: 'meal_log_proposal_build_failed', userNotified: true };
@@ -1850,17 +2248,33 @@ export class CommandTerminalController {
 
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
 
-    // Wizard «Guidami» attivo: resta nel loop chiuso salvo abort esplicito.
+    if (this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
+      const forced = String(options?.intent || '').trim().toUpperCase();
+      if (forced === 'FINISH_MCDRIVE_WIZARD' || isMcdriveFinishCommand(userText)) {
+        return 'FINISH_MCDRIVE_WIZARD';
+      }
+      if (forced === 'CANCEL_MCDRIVE_WIZARD' || isMcdriveCancelCommand(userText)) {
+        return 'CANCEL_MCDRIVE_WIZARD';
+      }
+      return 'MCDRIVE_LOOP';
+    }
+
+    if (isGenericMealLogIntentOnly(userText)) {
+      return 'FREE_MEAL_LISTEN';
+    }
+
+    // «Guidami» / meal builder testuale → stesso ingresso McDrive (niente loop step).
+    if (isMealBuilderWizardTrigger(userText)) {
+      return 'START_MCDRIVE_WIZARD';
+    }
+
+    // Residuo stato MEAL_BUILDER (sessioni vecchie): tratta come McDrive.
     if (
       this.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER
       && !isUnrelatedCommandDuringMealBuilder(userText)
       && !isPriorityFreeTextMealLog(userText)
     ) {
-      return 'MEAL_BUILDER_WIZARD';
-    }
-
-    if (isMealBuilderWizardTrigger(userText)) {
-      return 'START_MEAL_BUILDER_WIZARD';
+      return 'START_MCDRIVE_WIZARD';
     }
 
     const wipItems = Array.isArray(options?.wipMealItems) ? options.wipMealItems : [];
@@ -1944,17 +2358,75 @@ export class CommandTerminalController {
       return null;
     }
 
+    const mealType = parsed.mealType
+      || options?.mealTypeHint
+      || null;
+
     const payload = normalizeFoodPayload(
       {
         items: parsed.items,
-        mealType: parsed.mealType,
+        mealType,
         ...(parsed.exactTime ? { exactTime: parsed.exactTime, timeString: parsed.exactTime } : {}),
       },
       currentState,
-      { inferMealTypeFromContext: false },
+      { inferMealTypeFromContext: !options?.mealTypeHint },
     );
 
     return this.publishMealLogProposalCard(payload, currentState, userText, chatHistory, options);
+  }
+
+  /**
+   * McDrive: chip inserimento libero / spuntino — ascolto attivo, zero previsione storica.
+   * @param {string|null} [mealTypeHint]
+   * @param {object} [options]
+   */
+  startFreeMealListen(mealTypeHint = null, options = {}) {
+    void options;
+    this.clearChipWaitingState();
+    this.conversationState = CONVERSATION_STATE.AWAITING_FREE_MEAL_LOG;
+    this.pendingFreeMealLogContext = {
+      mealType: mealTypeHint || null,
+    };
+    const message = 'Perfetto, dimmi pure cosa hai mangiato.';
+    this.publishSystemMessage(message);
+    return {
+      ok: true,
+      intent: 'FREE_MEAL_LISTEN',
+      awaitingFreeText: true,
+      conversationState: this.conversationState,
+    };
+  }
+
+  /**
+   * Input libero dopo startFreeMealListen → parsing NLP standard (ADD_FOOD).
+   * @param {string} userText
+   * @param {object} currentState
+   * @param {object} options
+   */
+  async processFreeMealLogInput(userText, currentState = {}, options = {}) {
+    const text = String(userText || '').trim();
+    const mealTypeHint = this.pendingFreeMealLogContext?.mealType || options?.mealTypeHint || null;
+    this.conversationState = CONVERSATION_STATE.IDLE;
+    this.pendingFreeMealLogContext = null;
+
+    if (/^(?:annulla|cancel|stop)\b/i.test(text)) {
+      this.publishSystemMessage('Ok, quando vuoi registrare dimmi pure cosa hai mangiato.', {
+        withFallbackMenu: true,
+      });
+      return { ok: true, cancelled: true, intent: 'FREE_MEAL_LISTEN' };
+    }
+
+    if (!text) {
+      return this.startFreeMealListen(mealTypeHint, options);
+    }
+
+    return this.processUserMessageCore(text, currentState, {
+      ...options,
+      intent: undefined,
+      mealTypeHint,
+      fromFreeMealListen: true,
+      skipFreeMealListenGate: true,
+    });
   }
 
   /**
@@ -2889,7 +3361,7 @@ export class CommandTerminalController {
       const action = parseWorkoutConflictResponse(text);
       if (action === 'cancel') {
         this.resetConversationState();
-        this.publishSystemMessage('Inserimento annullato.');
+        this.publishSystemMessage('Inserimento annullato.', { withFallbackMenu: true });
         return { ok: true, cancelled: true };
       }
       if (action === 'proceed') {
@@ -2938,7 +3410,7 @@ export class CommandTerminalController {
 
     if (confirmation === 'no') {
       this.resetConversationState();
-      this.publishSystemMessage('Inserimento annullato.');
+      this.publishSystemMessage('Inserimento annullato.', { withFallbackMenu: true });
       return { ok: true, cancelled: true };
     }
 
@@ -3044,7 +3516,9 @@ export class CommandTerminalController {
     if (voiceIntent === CANCEL_MEAL_DRAFT) {
       console.log('🟡 DEBUG - PATH SCELTO: CANCEL_MEAL_DRAFT');
       this.resetConversationState();
-      this.publishSystemMessage('Ok, bozza annullata. Dimmi pure quando vuoi registrare di nuovo.');
+      this.publishSystemMessage('Ok, bozza annullata. Dimmi pure quando vuoi registrare di nuovo.', {
+        withFallbackMenu: true,
+      });
       return { ok: true, cancelled: true, intent: CANCEL_MEAL_DRAFT };
     }
 
@@ -4171,6 +4645,38 @@ export class CommandTerminalController {
       imageCount: images.length,
     });
 
+    const forcedIntentEarly = String(options?.intent || '').trim().toUpperCase();
+    if (forcedIntentEarly === 'START_MCDRIVE_WIZARD') {
+      return this.startMcdriveWizard(currentState, options);
+    }
+    if (forcedIntentEarly === 'START_MEAL_BUILDER_WIZARD') {
+      // Legacy Guidami → McDrive
+      return this.startMealBuilderWizard(userText, currentState, options);
+    }
+    if (forcedIntentEarly === 'FINISH_MCDRIVE_WIZARD') {
+      return this.finishMcdriveWizard(currentState);
+    }
+    if (forcedIntentEarly === 'CANCEL_MCDRIVE_WIZARD') {
+      return this.cancelMcdriveWizard();
+    }
+    if (forcedIntentEarly === 'FREE_MEAL_LISTEN') {
+      return this.startFreeMealListen(options?.mealTypeHint || null, options);
+    }
+
+    if (
+      this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP
+      && !options?.skipMcdriveGate
+    ) {
+      return this.processMcdriveWizardResponse(userText, currentState, options);
+    }
+
+    if (
+      !options?.skipFreeMealListenGate
+      && this.conversationState === CONVERSATION_STATE.AWAITING_FREE_MEAL_LOG
+    ) {
+      return this.processFreeMealLogInput(userText, currentState, options);
+    }
+
     const bypassSlotFilling = this.shouldBypassSlotFillingForFreeText(userText, chatHistory, options);
     if (bypassSlotFilling) {
       this.clearChipWaitingState();
@@ -4200,6 +4706,7 @@ export class CommandTerminalController {
       this.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER
       || this.conversationState === CONVERSATION_STATE.AWAITING_MEAL_BUILDER_STEP
     ) {
+      // Legacy Guidami: dirotta su McDrive (niente inserimento progressivo testuale).
       return this.processMealBuilderWizardResponse(userText, currentState, options);
     }
 
@@ -4246,7 +4753,6 @@ export class CommandTerminalController {
     }
 
     // Local Receptionist: priorità massima assoluta su query di sola lettura (zero Gemini).
-    const forcedIntentEarly = String(options?.intent || '').trim().toUpperCase();
     if (forcedIntentEarly === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
     }
@@ -4273,7 +4779,7 @@ export class CommandTerminalController {
       if (/^(?:annulla|cancel|stop)\b/i.test(userText)) {
         this.clearPendingMealUpdate();
         this.clearPendingMealDraft();
-        this.publishSystemMessage('Modifica pasto annullata.');
+        this.publishSystemMessage('Modifica pasto annullata.', { withFallbackMenu: true });
         return { ok: true, cancelled: true, intent: 'UPDATE_LOGGED_MEAL' };
       }
 
@@ -4314,6 +4820,22 @@ export class CommandTerminalController {
       return this.startMealBuilderWizard(userText, currentState, options);
     }
 
+    if (inferredIntent === 'START_MCDRIVE_WIZARD') {
+      return this.startMcdriveWizard(currentState, options);
+    }
+
+    if (inferredIntent === 'MCDRIVE_LOOP') {
+      return this.processMcdriveWizardResponse(userText, currentState, options);
+    }
+
+    if (inferredIntent === 'FINISH_MCDRIVE_WIZARD') {
+      return this.finishMcdriveWizard(currentState);
+    }
+
+    if (inferredIntent === 'CANCEL_MCDRIVE_WIZARD') {
+      return this.cancelMcdriveWizard();
+    }
+
     if (inferredIntent === 'MEAL_BUILDER_WIZARD') {
       return this.processMealBuilderWizardResponse(userText, currentState, options);
     }
@@ -4324,6 +4846,13 @@ export class CommandTerminalController {
 
     if (inferredIntent === 'LOG_COFFEE') {
       return this.handleCoffeeLogRequest(userText, currentState, options);
+    }
+
+    if (inferredIntent === 'FREE_MEAL_LISTEN') {
+      return this.startFreeMealListen(
+        options?.mealTypeHint || parseMealTypeFromUserText(userText) || null,
+        options,
+      );
     }
 
     if (inferredIntent === 'ASK_DRAFT_ADVICE') {

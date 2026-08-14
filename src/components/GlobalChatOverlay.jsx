@@ -1,15 +1,43 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import AiCluster from '../AiCluster';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
 
 /**
- * FAB globale + bottom sheet chat (AiCluster).
+ * Overlay chat globale (AiCluster) — niente FAB duplicato.
+ * Resta montato per saluto predittivo / openChat da context; chiuso → null.
  * Le props operative arrivano da SalaComandi via registerHandlers (DI).
  */
 export default function GlobalChatOverlay() {
-  const { isChatOpen, openChat, closeChat, actionHandlers } = useChatOverlay();
+  const { isChatOpen, closeChat, actionHandlers } = useChatOverlay();
   const handlersReady = typeof actionHandlers?.onSendMessage === 'function';
+  const prevChatOpenRef = useRef(false);
+  const tryEmitPredictiveGreetingRef = useRef(null);
+
+  tryEmitPredictiveGreetingRef.current = actionHandlers?.tryEmitPredictiveGreeting ?? null;
+
+  useEffect(() => {
+    if (!isChatOpen) {
+      prevChatOpenRef.current = false;
+      return undefined;
+    }
+
+    if (prevChatOpenRef.current) return undefined;
+    if (!handlersReady) return undefined;
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      const emit = tryEmitPredictiveGreetingRef.current;
+      if (typeof emit !== 'function') return;
+      prevChatOpenRef.current = true;
+      emit();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isChatOpen, handlersReady]);
 
   useEffect(() => {
     if (!isChatOpen) return undefined;
@@ -30,30 +58,14 @@ export default function GlobalChatOverlay() {
   }, [isChatOpen, closeChat]);
 
   if (typeof document === 'undefined') return null;
+  // Chiuso: nessun FAB (l'emblema centrale di SalaComandi apre la chat).
+  if (!isChatOpen) return null;
 
   return createPortal(
     <>
-      {!isChatOpen ? (
-        <button
-          type="button"
-          onClick={openChat}
-          aria-label="Apri chat Kentu"
-          className="fixed bottom-6 right-6 z-[100050] flex h-14 w-14 items-center justify-center overflow-hidden rounded-full border border-cyan-400/40 bg-slate-950 p-0 shadow-none transition-transform hover:scale-105 active:scale-95"
-        >
-          <img
-            src="/EmblemaKbianca.png"
-            alt=""
-            decoding="async"
-            className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
-          />
-        </button>
-      ) : null}
-
       <div
         aria-hidden={!isChatOpen}
-        className={`fixed inset-0 z-[100055] bg-black/55 transition-opacity duration-300 ${
-          isChatOpen ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
-        }`}
+        className="fixed inset-0 z-[100055] bg-black/70 transition-opacity duration-300 pointer-events-auto opacity-100"
         onClick={closeChat}
       />
 
@@ -61,11 +73,11 @@ export default function GlobalChatOverlay() {
         role="dialog"
         aria-modal="true"
         aria-label="Chat Kentu"
-        aria-hidden={!isChatOpen}
-        className={`fixed bottom-0 left-0 z-[100060] flex h-[85vh] w-full max-w-full flex-col overflow-hidden rounded-t-3xl border border-slate-700/60 bg-[#050a12] shadow-2xl transition-transform duration-300 ease-out ${
-          isChatOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'
-        }`}
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        className="fixed inset-0 z-[100060] flex h-[100dvh] max-h-[100dvh] w-full max-w-full flex-col overflow-hidden border-0 bg-[#050a12] shadow-2xl"
+        style={{
+          paddingTop: 'env(safe-area-inset-top, 0px)',
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        }}
       >
         <header className="relative flex shrink-0 items-center gap-3 border-b border-slate-800/80 px-4 pb-3 pt-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">

@@ -28,6 +28,8 @@ export default function KentuChatUI({
   onDraftUpdateItemGrams,
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
+  onMcDriveRemoveItem = null,
+  onMcDriveUpdateGrams = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
   onWorkoutDraftRemoveExercise,
@@ -57,7 +59,7 @@ export default function KentuChatUI({
 }) {
   return (
     <div
-      className="view-animate"
+      className="view-animate flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
       style={{
         flex: 1,
         minHeight: 0,
@@ -93,6 +95,8 @@ export default function KentuChatUI({
         onDraftUpdateItemGrams={onDraftUpdateItemGrams}
         onDraftUpdateMealMeta={onDraftUpdateMealMeta}
         onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
+        onMcDriveRemoveItem={onMcDriveRemoveItem}
+        onMcDriveUpdateGrams={onMcDriveUpdateGrams}
         onWorkoutDraftUpdateMeta={onWorkoutDraftUpdateMeta}
         onWorkoutDraftUpdateExercise={onWorkoutDraftUpdateExercise}
         onWorkoutDraftRemoveExercise={onWorkoutDraftRemoveExercise}

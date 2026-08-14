@@ -17,6 +17,11 @@ import {
   isMealDraftEvaluationIntent,
 } from '../commandTerminal/conversation/mealLogIntent.js';
 import { isConsultativeStateIntent } from '../commandTerminal/conversation/workoutRegistrationSlots.js';
+import {
+  CHAT_SUCCESS_AVATAR_SRC,
+  getSystemNoticeTone,
+  isSuccessConfirmationMessage,
+} from './chatMessageKind.js';
 
 /** Avatar neutro Kentu per bolle chat / typing (non legato allo Health Score). */
 export const CHAT_DEFAULT_AVATAR_SRC = '/avatar_01_ottimale.png';
@@ -159,6 +164,9 @@ export function getAvatarSrcForMood(mood, defaultSrc = '/avatar.png') {
  * @returns {string}
  */
 export function resolveMessageAvatarSrc(message, fallback = CHAT_DEFAULT_AVATAR_SRC) {
+  if (isSuccessConfirmationMessage(message)) {
+    return CHAT_SUCCESS_AVATAR_SRC;
+  }
   const asset = String(message?.avatarAsset || '').trim();
   if (asset) return asset;
   const safeFallback = String(fallback || CHAT_DEFAULT_AVATAR_SRC).trim();
@@ -189,14 +197,27 @@ export function snapshotChatAvatarAsset(extra = {}, context = {}) {
     forceStrategic = false,
   } = context;
 
+  if (
+    extra?.type === 'SUCCESS_CONFIRMATION'
+    || extra?.type === 'MEAL_RECEIPT'
+    || extra?.mealReceipt
+    || String(extra?.intent || '').toUpperCase() === 'LOG_MEAL_SUCCESS'
+    || String(extra?.intent || '').toUpperCase() === 'LOG_WORKOUT_SUCCESS'
+  ) {
+    return CHAT_SUCCESS_AVATAR_SRC;
+  }
+
+  if (extra?.type === 'system' || extra?.isSystem === true) {
+    const tone = getSystemNoticeTone({ sender: 'ai', text: extra?.text || extra?.displayText, ...extra });
+    if (tone === 'success') return CHAT_SUCCESS_AVATAR_SRC;
+    if (tone === 'cancel') return defaultSrc;
+  }
+
   if (extra?.type === 'MEAL_DRAFT' || extra?.mealDraft) {
     return getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, defaultSrc);
   }
   if (extra?.type === 'WORKOUT_DRAFT' || extra?.workoutDraft) {
     return getAvatarSrcForMood(AVATAR_MOOD.FITNESS, defaultSrc);
-  }
-  if (extra?.type === 'MEAL_RECEIPT' || extra?.mealReceipt) {
-    return getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, defaultSrc);
   }
   if (extra?.type === 'system' || extra?.isError === true) {
     return defaultSrc;

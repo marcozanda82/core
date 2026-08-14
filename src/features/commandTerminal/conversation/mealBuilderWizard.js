@@ -1,6 +1,8 @@
 /**
- * Wizard passo-passo «Guidami»: costruisce un pasto in memoria (pendingWizardDraft)
- * e salva solo alla conferma finale.
+ * @deprecated Wizard passo-passo «Guidami» (base/proteina/extra) dismesso.
+ * L'ingresso Guidami / START_MEAL_BUILDER_WIZARD viene dirottato su McDrive
+ * (LiveMealTray + pendingMcDriveDraft). Le funzioni sotto restano solo per
+ * compatibilità / eventuale ripristino; non devono più gestire il flusso live.
  */
 
 import { parseMealTypeFromUserText, parseGramsFromUserText, expandFoodPayloadItems } from './conversationState.js';
