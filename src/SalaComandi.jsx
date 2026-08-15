@@ -6612,6 +6612,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveApplyAlternative,
+    handleMcDriveReplaceFromSearch,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
@@ -6802,6 +6804,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
       onMcDriveRemoveItem: handleMcDriveRemoveItem,
       onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
+      onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
+      onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
+      getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
       onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
       onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
       onWorkoutDraftRemoveExercise: handleWorkoutDraftRemoveExercise,
@@ -6847,6 +6852,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveApplyAlternative,
+    handleMcDriveReplaceFromSearch,
+    getFastLoggerMealTargetsForSlot,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
@@ -9419,6 +9427,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
             onMcDriveRemoveItem={handleMcDriveRemoveItem}
             onMcDriveUpdateGrams={handleMcDriveUpdateGrams}
+            onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
+            onMcDriveReplaceFromSearch={handleMcDriveReplaceFromSearch}
+            getMcDriveMealTargets={getFastLoggerMealTargetsForSlot}
             onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}
             onWorkoutDraftRemoveExercise={handleWorkoutDraftRemoveExercise}

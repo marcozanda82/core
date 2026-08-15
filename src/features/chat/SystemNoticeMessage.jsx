@@ -28,9 +28,9 @@ export default function SystemNoticeMessage({ message }) {
       <img
         src={icon.src}
         alt={icon.alt}
-        className="kentu-system-notice__img h-12 w-12 object-contain"
-        width={48}
-        height={48}
+        className="kentu-system-notice__img h-[72px] w-[72px] bg-transparent object-contain"
+        width={72}
+        height={72}
         draggable={false}
       />
       <p className="kentu-system-notice__text">{text}</p>

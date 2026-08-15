@@ -1,30 +1,33 @@
 ﻿import React, { useEffect, useState } from 'react';
+import { CHAT_DEFAULT_AVATAR_SRC } from './avatarMood.js';
 
 /**
- * Avatar ufficiale Kentu (Health Score, mood attività, o /avatar.png).
- * Scale raddoppiate per leggibilità in chat. Transizione opacity su cambio `src`.
+ * Avatar ufficiale Kentu (mood chat / Health Score cellulare).
+ * PNG a trasparenza libera sullo sfondo app — niente cerchio/bordo/ombra container.
  *
- * size: xs 48 · sm 64 · md 72 · lg 80 · xl 96 (px)
+ * size (≈ +50% vs legacy chat): xs 72 · sm 96 · md 108 · header 90 · lg 120 · xl 144 (px)
  */
 export default function KentuAvatar({
   size = 'md',
   className = '',
   alt = 'Kentu',
-  src = '/avatar.png',
+  src = CHAT_DEFAULT_AVATAR_SRC,
   fit = 'contain',
 }) {
   const sizeClass =
     size === 'xs'
-      ? 'h-12 w-12'
+      ? 'h-[72px] w-[72px]'
       : size === 'sm'
-        ? 'h-16 w-16'
-        : size === 'lg'
-          ? 'h-20 w-20'
-          : size === 'xl'
-            ? 'h-24 w-24'
-            : 'h-[4.5rem] w-[4.5rem]';
+        ? 'h-24 w-24'
+        : size === 'header'
+          ? 'h-[90px] w-[90px]'
+          : size === 'lg'
+            ? 'h-[120px] w-[120px]'
+            : size === 'xl'
+              ? 'h-36 w-36'
+              : 'h-[108px] w-[108px]';
 
-  const resolvedSrc = String(src || '/avatar.png').trim() || '/avatar.png';
+  const resolvedSrc = String(src || CHAT_DEFAULT_AVATAR_SRC).trim() || CHAT_DEFAULT_AVATAR_SRC;
   const [displaySrc, setDisplaySrc] = useState(resolvedSrc);
   const [visible, setVisible] = useState(true);
 
@@ -51,13 +54,10 @@ export default function KentuAvatar({
       draggable={false}
       className={[
         sizeClass,
-        'shrink-0 rounded-full border border-cyan-500/40',
+        'shrink-0 bg-transparent',
         fitClass,
         'transition-opacity duration-200 ease-out',
         visible ? 'opacity-100' : 'opacity-0',
-        size === 'xs'
-          ? 'shadow-sm'
-          : 'shadow-[0_0_12px_rgba(34,211,238,0.28)]',
         className,
       ]
         .filter(Boolean)

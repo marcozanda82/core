@@ -269,3 +269,75 @@ export function buildUserRecentFoods(currentState = {}, options = {}) {
 
   return ranked;
 }
+
+/**
+ * Ultima quantità usata per un alimento (foodDbKey o nome).
+ * Ordine: ultima voce di diario → typicalGrams recenti → userPortions.
+ *
+ * @param {string} foodDbKeyOrName
+ * @param {object} [currentState]
+ * @returns {number|null} grammi > 0, oppure null
+ */
+export function getLastUsedQuantity(foodDbKeyOrName, currentState = {}) {
+  const needle = toSafeString(foodDbKeyOrName);
+  if (!needle) return null;
+  const needleName = normalizePortionFoodKey(needle);
+  const needleId = needle;
+
+  let best = null;
+
+  const consider = (item, dayIndex = 0) => {
+    if (!isFoodLogEntry(item)) return;
+    const dbKey = foodDbKeyFromEntry(item);
+    const name = normalizePortionFoodKey(foodNameFromEntry(item));
+    const idMatch = dbKey && (dbKey === needleId || dbKey === needle);
+    const nameMatch = name && name === needleName;
+    if (!idMatch && !nameMatch) return;
+    const grams = gramsFromEntry(item);
+    if (!grams) return;
+    const lastUsed = Number(item?.timestamp ?? item?.lastUsedAt ?? item?.lastUsed)
+      || (Date.now() - dayIndex * 86400000);
+    if (!best || lastUsed >= best.lastUsed) {
+      best = { grams, lastUsed };
+    }
+  };
+
+  const activeLog = Array.isArray(currentState?.activeLog) ? currentState.activeLog : [];
+  for (let i = activeLog.length - 1; i >= 0; i -= 1) {
+    consider(activeLog[i], 0);
+  }
+
+  const fullHistory = currentState?.fullHistory;
+  const anchor = resolveAnchorDate(currentState);
+  if (fullHistory && typeof fullHistory === 'object' && isValidIsoDate(anchor)) {
+    for (let offset = 1; offset <= USER_RECENT_FOODS_LOOKBACK_DAYS; offset += 1) {
+      const dateStr = addDays(anchor, -offset);
+      if (!isValidIsoDate(dateStr)) continue;
+      let dayLog = [];
+      try {
+        dayLog = getLogFromStoricoTree(fullHistory, dateStr) || [];
+      } catch {
+        dayLog = [];
+      }
+      for (let i = dayLog.length - 1; i >= 0; i -= 1) {
+        consider(dayLog[i], offset);
+      }
+    }
+  }
+
+  if (best?.grams > 0) return best.grams;
+
+  const recent = buildUserRecentFoods(currentState, { limit: 40 });
+  const byId = recent.find((r) => r.foodDbKey && String(r.foodDbKey) === needleId);
+  if (byId?.typicalGrams > 0) return Math.round(Number(byId.typicalGrams));
+  const byName = recent.find((r) => normalizePortionFoodKey(r.foodName) === needleName);
+  if (byName?.typicalGrams > 0) return Math.round(Number(byName.typicalGrams));
+
+  const portions = currentState?.userPortions && typeof currentState.userPortions === 'object'
+    ? currentState.userPortions
+    : {};
+  const fromPortions = Math.round(Number(portions[needleName]));
+  if (Number.isFinite(fromPortions) && fromPortions > 0) return fromPortions;
+
+  return null;
+}

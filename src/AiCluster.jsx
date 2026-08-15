@@ -59,6 +59,7 @@ function messageHasInteractiveDraftWidget(msg) {
   if (msg.mealDraft && !msg.draftResolved) return true;
   if (msg.workoutDraft && !msg.draftResolved) return true;
   if (msg.liveMealTray && msg.liveMealTrayResolved !== true) return true;
+  if ((msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard) && msg.liveMealTrayResolved !== true) return true;
   if (Array.isArray(msg.mealProposals) && msg.mealProposals.length > 0) return true;
   return false;
 }
@@ -115,6 +116,9 @@ export default function AiCluster({
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
   onMcDriveUpdateGrams = null,
+  onMcDriveApplyAlternative = null,
+  onMcDriveReplaceFromSearch = null,
+  getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
   onWorkoutDraftRemoveExercise,
@@ -166,7 +170,8 @@ export default function AiCluster({
     [isNotesMode, chatImages.length],
   );
 
-  const healthAvatarSrc = String(healthScore?.avatar?.src || '/avatar.png').trim() || '/avatar.png';
+  const healthAvatarSrc = String(healthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
+    || '/cellula_1_ottimale.png';
   const healthScoreLabel = healthScore?.avatar?.label
     ? `Health Score ${Math.round(Number(healthScore.score) || 0)} · ${healthScore.avatar.label}`
     : 'Health Score';
@@ -572,7 +577,7 @@ export default function AiCluster({
       className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3.5">
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
         <button
           type="button"
           onClick={() => {
@@ -585,18 +590,19 @@ export default function AiCluster({
           aria-label={`${headerAvatarLabel}. Tocca per la diagnosi.`}
           title={headerAvatarLabel}
           className={[
-            'shrink-0 rounded-full border border-cyan-500/35 p-1 transition',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+            'flex shrink-0 items-center justify-center bg-transparent p-0 transition',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-0',
             typeof onRequestHealthDiagnosis === 'function' && !isProcessing
-              ? 'cursor-pointer hover:border-cyan-400/60 active:scale-95'
+              ? 'cursor-pointer opacity-100 hover:opacity-90 active:scale-95'
               : 'cursor-default opacity-80',
           ].join(' ')}
         >
           <KentuAvatar
-            size="lg"
+            size="header"
             src={healthAvatarSrc}
             fit="contain"
             alt=""
+            className="bg-transparent"
           />
         </button>
         <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
@@ -774,45 +780,57 @@ export default function AiCluster({
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
                 ) : msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard ? (
-                  <div className="flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5">
-                    <div className="kentu-ai-row flex w-full items-end gap-3">
-                      <KentuAvatar
-                        size="sm"
-                        src={resolveMessageAvatarSrc(msg)}
-                        fit="contain"
-                        className="mb-0.5 shrink-0 self-end"
-                        alt="Kentu AI"
-                      />
-                      <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
-                        {splitAiMessageSections(msg.text).map((block, si) =>
+                  <div className="flex w-full max-w-full flex-col gap-2.5 box-border">
+                    <div className="kentu-ai-bubble-stack flex w-full min-w-0 flex-col gap-2.5">
+                      {String(msg.text || msg.displayText || '').trim()
+                        ? splitAiMessageSections(msg.text || msg.displayText).map((block, si) =>
                           si === 0 ? (
                             <KentuInsightHero key={`mcdrive-text-${si}`} block={block} />
                           ) : (
                             <KentuInsightCard key={`mcdrive-text-${si}`} block={block} />
-                          )
-                        )}
-                        <LiveMealTray
-                          tray={msg.liveMealTray}
-                          active={msg.liveMealTrayResolved !== true}
-                          disabled={isProcessing}
-                          onRemoveItem={onMcDriveRemoveItem}
-                          onUpdateGrams={onMcDriveUpdateGrams}
-                          onCancel={() => {
-                            onSendMessage?.('', {
-                              intent: 'CANCEL_MCDRIVE_WIZARD',
-                              skipUserBubble: true,
-                              fromQuickReply: true,
-                            });
-                          }}
-                          onFinish={() => {
-                            onSendMessage?.('', {
-                              intent: 'FINISH_MCDRIVE_WIZARD',
-                              skipUserBubble: true,
-                              fromQuickReply: true,
-                            });
-                          }}
-                        />
-                      </div>
+                          ))
+                        : null}
+                      <LiveMealTray
+                        tray={msg.liveMealTray}
+                        active={msg.liveMealTrayResolved !== true}
+                        disabled={isProcessing}
+                        personalDb={foodDatabase}
+                        kentuItDb={kentuItDatabase}
+                        globalDb={globalFoodDatabase}
+                        getMealTargets={getMcDriveMealTargets}
+                        onRemoveItem={onMcDriveRemoveItem}
+                        onUpdateGrams={onMcDriveUpdateGrams}
+                        onApplyAlternative={onMcDriveApplyAlternative}
+                        onReplaceFromSearch={onMcDriveReplaceFromSearch}
+                        onCancel={() => {
+                          onSendMessage?.('', {
+                            intent: 'CANCEL_MCDRIVE_WIZARD',
+                            skipUserBubble: true,
+                            fromQuickReply: true,
+                          });
+                        }}
+                        onFinish={() => {
+                          onSendMessage?.('', {
+                            intent: 'FINISH_MCDRIVE_WIZARD',
+                            skipUserBubble: true,
+                            fromQuickReply: true,
+                          });
+                        }}
+                        onSave={() => {
+                          onSendMessage?.('', {
+                            intent: 'SAVE_MCDRIVE_MEAL',
+                            skipUserBubble: true,
+                            fromQuickReply: true,
+                          });
+                        }}
+                        onAddMore={() => {
+                          onSendMessage?.('', {
+                            intent: 'ADD_MORE_MCDRIVE',
+                            skipUserBubble: true,
+                            fromQuickReply: true,
+                          });
+                        }}
+                      />
                     </div>
                   </div>
                 ) : isSystemNoticeMessage(msg) ? (
@@ -1047,9 +1065,16 @@ export default function AiCluster({
                               clarificationReply: isClarification,
                               wizardSelection,
                               intent: replyObj?.intent || replyObj?.action || undefined,
+                              mealType: replyObj?.mealType || replyObj?.mealTypeHint || undefined,
+                              mealTypeHint: replyObj?.mealTypeHint || replyObj?.mealType || undefined,
                               skipUserBubble: [
                                 'FREE_MEAL_LISTEN',
                                 'START_MCDRIVE_WIZARD',
+                                'SET_MCDRIVE_MEAL_TYPE',
+                                'FINISH_MCDRIVE_WIZARD',
+                                'SAVE_MCDRIVE_MEAL',
+                                'ADD_MORE_MCDRIVE',
+                                'CANCEL_MCDRIVE_WIZARD',
                                 'ASK_DAY_REVIEW',
                               ].includes(String(replyObj?.intent || replyObj?.action || '').toUpperCase()),
                             });

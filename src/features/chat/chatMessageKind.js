@@ -33,8 +33,8 @@ const RECALIBRATE_ICON_RE =
 const EXACT_SYSTEM_RE =
   /^(aggiunt[oi]\s+al\s+carrello\.?|perfetto,?\s+pasto\s+salvato\.?|ok,?\s+bozza\s+annullata\.?|ok,?\s+wizard\s+annullato\.?|inserimento\s+annullato\.?|generazione\s+annullata\.?|modifica\s+pasto\s+annullata\.?|inserito\s+come\s+suggerito\.?)$/i;
 
-/** Avatar 3D per operazioni annullate / bozze scartate. */
-export const CHAT_CANCEL_AVATAR_SRC = '/annulla2.png';
+/** Avatar sistema per annulli / errori / debug. */
+export const CHAT_CANCEL_AVATAR_SRC = '/Hacker4.png';
 
 /** Avatar 3D universale per conferme di inserimento e successo. */
 export const CHAT_SUCCESS_AVATAR_SRC = '/flag2.png';

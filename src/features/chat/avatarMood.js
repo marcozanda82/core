@@ -2,11 +2,11 @@
  * Avatar contestuale Kentu: cambia asset in base all'attività AI / UI.
  *
  * Stati (priorità):
- * - thinking → /pensatore.png  (consigli, strategia, analisi profonda)
- * - coding   → /Hacker.png      (loading, parsing, elaborazione transazionale)
- * - kitchen  → /Chef.png        (vassoio pasti / modifica grammi)
- * - fitness  → /Trainer.png     (giorno ON / bozza workout)
- * - default  → /avatar_01_ottimale.png (chat) — Health Score solo in header app
+ * - thinking → /pensatore2.png  (consigli, strategia, NLP / elaborazione)
+ * - coding   → /Hacker4.png     (debug, errori, loading, sistema)
+ * - kitchen  → /Chef2.png       (nutrizione, pasti, McDrive)
+ * - fitness  → /Trainer3.png    (workout / giorno ON)
+ * - default  → /pensatore2.png  (chat neutra) — Health Score = cellule in header
  */
 
 import {
@@ -24,7 +24,7 @@ import {
 } from './chatMessageKind.js';
 
 /** Avatar neutro Kentu per bolle chat / typing (non legato allo Health Score). */
-export const CHAT_DEFAULT_AVATAR_SRC = '/avatar_01_ottimale.png';
+export const CHAT_DEFAULT_AVATAR_SRC = '/pensatore2.png';
 
 export const AVATAR_MOOD = Object.freeze({
   DEFAULT: 'default',
@@ -35,10 +35,10 @@ export const AVATAR_MOOD = Object.freeze({
 });
 
 export const AVATAR_MOOD_SRC = Object.freeze({
-  [AVATAR_MOOD.THINKING]: '/pensatore.png',
-  [AVATAR_MOOD.CODING]: '/Hacker.png',
-  [AVATAR_MOOD.KITCHEN]: '/Chef.png',
-  [AVATAR_MOOD.FITNESS]: '/Trainer.png',
+  [AVATAR_MOOD.THINKING]: '/pensatore2.png',
+  [AVATAR_MOOD.CODING]: '/Hacker4.png',
+  [AVATAR_MOOD.KITCHEN]: '/Chef2.png',
+  [AVATAR_MOOD.FITNESS]: '/Trainer3.png',
 });
 
 export const AVATAR_MOOD_LABEL = Object.freeze({
@@ -148,13 +148,13 @@ export function resolveAvatarMood(flags = {}) {
  * @param {string} [defaultSrc]
  * @returns {string}
  */
-export function getAvatarSrcForMood(mood, defaultSrc = '/avatar.png') {
+export function getAvatarSrcForMood(mood, defaultSrc = CHAT_DEFAULT_AVATAR_SRC) {
   const key = String(mood || AVATAR_MOOD.DEFAULT);
   if (key !== AVATAR_MOOD.DEFAULT && AVATAR_MOOD_SRC[key]) {
     return AVATAR_MOOD_SRC[key];
   }
-  const fallback = String(defaultSrc || '/avatar.png').trim();
-  return fallback || '/avatar.png';
+  const fallback = String(defaultSrc || CHAT_DEFAULT_AVATAR_SRC).trim();
+  return fallback || CHAT_DEFAULT_AVATAR_SRC;
 }
 
 /**
@@ -175,7 +175,7 @@ export function resolveMessageAvatarSrc(message, fallback = CHAT_DEFAULT_AVATAR_
 
 /**
  * Snapshot dell'avatar contestuale al momento in cui un messaggio AI viene creato.
- * Non usa mood di loading (coding/Hacker) — solo stati semantici del messaggio.
+ * Non usa mood di loading (coding/Hacker4) — solo stati semantici del messaggio.
  *
  * @param {object} [extra]
  * @param {{
@@ -210,7 +210,9 @@ export function snapshotChatAvatarAsset(extra = {}, context = {}) {
   if (extra?.type === 'system' || extra?.isSystem === true) {
     const tone = getSystemNoticeTone({ sender: 'ai', text: extra?.text || extra?.displayText, ...extra });
     if (tone === 'success') return CHAT_SUCCESS_AVATAR_SRC;
-    if (tone === 'cancel') return defaultSrc;
+    if (tone === 'cancel' || tone === 'error' || extra?.isError === true) {
+      return getAvatarSrcForMood(AVATAR_MOOD.CODING, defaultSrc);
+    }
   }
 
   if (extra?.type === 'MEAL_DRAFT' || extra?.mealDraft) {
@@ -219,8 +221,8 @@ export function snapshotChatAvatarAsset(extra = {}, context = {}) {
   if (extra?.type === 'WORKOUT_DRAFT' || extra?.workoutDraft) {
     return getAvatarSrcForMood(AVATAR_MOOD.FITNESS, defaultSrc);
   }
-  if (extra?.type === 'system' || extra?.isError === true) {
-    return defaultSrc;
+  if (extra?.type === 'system' || extra?.isError === true || extra?.type === 'ERROR') {
+    return getAvatarSrcForMood(AVATAR_MOOD.CODING, defaultSrc);
   }
   if (
     extra?.type === 'ADVICE'

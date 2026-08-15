@@ -312,15 +312,26 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
   const label = String(ctx.label || '').trim().toLowerCase();
 
   switch (intent) {
-    case PREDICTIVE_INTENT.START_MEAL_WIZARD:
+    case PREDICTIVE_INTENT.START_MEAL_WIZARD: {
+      const mealFromLabel = /colazione/.test(label)
+        ? 'colazione'
+        : /pranzo/.test(label)
+          ? 'pranzo'
+          : /cena/.test(label)
+            ? 'cena'
+            : /spuntino|snack/.test(label)
+              ? 'snack'
+              : null;
       return {
         userText: '',
         options: {
           intent: 'START_MCDRIVE_WIZARD',
           skipUserBubble: true,
           fromPredictiveGreeting: true,
+          ...(mealFromLabel ? { mealTypeHint: mealFromLabel } : {}),
         },
       };
+    }
     case PREDICTIVE_INTENT.FREE_MEAL_LOG:
       return {
         userText: '',
@@ -406,6 +417,7 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
         userText: '',
         options: {
           intent: 'START_MCDRIVE_WIZARD',
+          mealTypeHint: 'cena',
           skipUserBubble: true,
           fromPredictiveGreeting: true,
         },

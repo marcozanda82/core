@@ -44,6 +44,86 @@ import {
   resolveEffectivePredictiveState,
   resolvePredictiveIntentAction,
 } from '../../predictive/predictiveGreeting.js';
+
+const MCDRIVE_TRAY_SESSION_ID = 'mcdrive_tray_singleton';
+
+function isActiveMcDriveTrayEntry(entry) {
+  if (!entry || entry.liveMealTrayResolved === true) return false;
+  return Boolean(
+    entry.liveMealTray
+    || entry.type === 'MCDRIVE_TRAY'
+    || entry.mcdriveWizard === true
+    || entry.mcdriveSessionId === MCDRIVE_TRAY_SESSION_ID,
+  );
+}
+
+/**
+ * Una sola card lavagna in cronologia: aggiorna quella attiva o ne crea una.
+ * @param {Array<object>} prev
+ * @param {{ tray: object, quickReplies?: Array|null, text?: string, keepText?: boolean }} opts
+ */
+function upsertMcDriveTrayChatEntry(prev, {
+  tray,
+  quickReplies = null,
+  text = '',
+  keepText = false,
+} = {}) {
+  const list = Array.isArray(prev) ? [...prev] : [];
+  let idx = -1;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (isActiveMcDriveTrayEntry(list[i])) {
+      idx = i;
+      break;
+    }
+  }
+
+  const safeTray = tray && typeof tray === 'object'
+    ? tray
+    : { items: [], totals: { kcal: 0, pro: 0, carbo: 0, fat: 0 } };
+  const nextReplies = Array.isArray(quickReplies) ? quickReplies : null;
+  const nextText = keepText && idx >= 0
+    ? String(list[idx]?.text || list[idx]?.displayText || '').trim()
+    : String(text || '').trim();
+
+  const nextEntry = {
+    sender: 'ai',
+    type: 'MCDRIVE_TRAY',
+    mcdriveWizard: true,
+    mcdriveSessionId: MCDRIVE_TRAY_SESSION_ID,
+    liveMealTray: safeTray,
+    liveMealTrayResolved: false,
+    text: nextText,
+    displayText: nextText,
+    spokenText: nextText,
+    ...(nextReplies ? { quickReplies: nextReplies } : (idx >= 0 && Array.isArray(list[idx]?.quickReplies)
+      ? { quickReplies: list[idx].quickReplies }
+      : { quickReplies: [] })),
+  };
+
+  if (idx >= 0) {
+    list[idx] = {
+      ...list[idx],
+      ...nextEntry,
+      ...(keepText && !nextReplies && Array.isArray(list[idx]?.quickReplies)
+        ? { quickReplies: list[idx].quickReplies }
+        : {}),
+    };
+    return list.map((entry, i) => {
+      if (i === idx) return entry;
+      if (
+        entry?.liveMealTray
+        || entry?.type === 'MCDRIVE_TRAY'
+        || entry?.mcdriveWizard
+        || entry?.mcdriveSessionId === MCDRIVE_TRAY_SESSION_ID
+      ) {
+        return { ...entry, liveMealTrayResolved: true };
+      }
+      return entry;
+    });
+  }
+
+  return [...list, nextEntry];
+}
 import {
   applyMealOperations,
   mergeMealItems,
@@ -237,8 +317,10 @@ export function useCommandTerminal({
         }
         setChatUsdaEnrichmentSession({
           foodName,
+          mode: payload?.mode === 'mcdrive' ? 'mcdrive' : 'chat',
           kentuItDb: payload?.kentuItDb && typeof payload.kentuItDb === 'object' ? payload.kentuItDb : null,
           personalDb: payload?.personalDb && typeof payload.personalDb === 'object' ? payload.personalDb : null,
+          globalDb: payload?.globalDb && typeof payload.globalDb === 'object' ? payload.globalDb : null,
         });
       },
     });
@@ -457,32 +539,40 @@ export function useCommandTerminal({
         });
         return;
       }
-      if (payload.type === 'MCDRIVE_TRAY' || payload.mcdriveWizard === true || payload.liveMealTray) {
+      if (payload.type === 'MCDRIVE_TRAY_SYNC' || payload.syncMcDriveTrayOnly === true) {
+        const tray = payload.liveMealTray;
+        const syncQuickReplies = Array.isArray(payload.quickReplies) ? payload.quickReplies : null;
+        if (tray && typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => upsertMcDriveTrayChatEntry(prev, {
+            tray,
+            quickReplies: syncQuickReplies,
+            keepText: true,
+          }));
+        }
+        if (syncQuickReplies) {
+          setActiveQuickReplies(syncQuickReplies);
+        }
+        return;
+      }
+      if (payload.type === 'MCDRIVE_TRAY' || payload.mcdriveWizard === true || payload.mcdriveTraySingleton === true) {
         const text = String(payload.displayText || payload.text || payload.message || '').trim();
         const quickReplies = Array.isArray(payload.quickReplies)
           ? payload.quickReplies
             .map((o) => (o && typeof o === 'object' ? o : String(o || '').trim()))
             .filter((o) => (typeof o === 'object' ? String(o.label || '').trim() : o))
           : [];
-        if (!text) return;
+        const tray = payload.liveMealTray || { items: [], totals: { kcal: 0, pro: 0, carbo: 0, fat: 0 } };
         if (typeof setChatHistoryRef.current === 'function') {
-          setChatHistoryRef.current((prev) =>
-            (prev || []).map((entry) => (
-              entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
-                ? { ...entry, liveMealTrayResolved: true }
-                : entry
-            )),
-          );
+          setChatHistoryRef.current((prev) => upsertMcDriveTrayChatEntry(prev, {
+            tray,
+            quickReplies,
+            text,
+            keepText: false,
+          }));
         }
-        appendAiMessage(text, {
-          type: 'MCDRIVE_TRAY',
-          mcdriveWizard: true,
-          liveMealTray: payload.liveMealTray || { items: [], totals: { kcal: 0, pro: 0, carbo: 0, fat: 0 } },
-          liveMealTrayResolved: false,
-          quickReplies,
-          spokenText: text,
-          displayText: text,
-        });
+        if (quickReplies.length > 0) {
+          setActiveQuickReplies(quickReplies);
+        }
         return;
       }
       if (payload.type === 'REQUEST_FOOD_PHOTO' || payload.requestFoodPhoto === true) {
@@ -619,15 +709,23 @@ export function useCommandTerminal({
       const intentUpper = String(options?.intent || '').trim().toUpperCase();
       const isMcdriveWizardIntent = intentUpper === 'START_MCDRIVE_WIZARD'
         || intentUpper === 'FINISH_MCDRIVE_WIZARD'
+        || intentUpper === 'SAVE_MCDRIVE_MEAL'
+        || intentUpper === 'ADD_MORE_MCDRIVE'
+        || intentUpper === 'SET_MCDRIVE_MEAL_TYPE'
         || intentUpper === 'CANCEL_MCDRIVE_WIZARD';
       if (!resolvedText && attachedImages.length === 0 && !isFreeMealListen && !isMcdriveWizardIntent) {
         return { ok: false, reason: 'empty_message' };
       }
 
+      const mcdriveSnap = controller.getConversationSnapshot?.() || {};
+      const inMcdriveLoop = mcdriveSnap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP;
+      // Loop McDrive: nessun bubble utente — solo aggiornamento lavagna.
+      const skipUserBubble = Boolean(options?.skipUserBubble) || inMcdriveLoop;
+      const quietMcdriveAppend = inMcdriveLoop && !isMcdriveWizardIntent && Boolean(resolvedText);
+
       const userBubbleText =
         resolvedText || `📷 ${attachedImages.length} immagine/i allegata/e`;
       const hideUserPrompt = Boolean(options?.isHiddenUserMessage);
-      const skipUserBubble = Boolean(options?.skipUserBubble);
       const visibleBubbleText = hideUserPrompt
         ? String(options?.visibleUserText || '📊 Analizzo la giornata...').trim()
         : userBubbleText;
@@ -672,7 +770,9 @@ export function useCommandTerminal({
       abortControllerRef.current = abortController;
       const generationToken = ++generationTokenRef.current;
 
-      setIsLoading(true);
+      if (!quietMcdriveAppend) {
+        setIsLoading(true);
+      }
       try {
         const currentState =
           typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() : {};
@@ -851,7 +951,8 @@ export function useCommandTerminal({
         }, {
           images: attachedImages,
           intent: forcedIntent,
-          mealTypeHint: options?.mealTypeHint || null,
+          mealTypeHint: options?.mealTypeHint || options?.mealType || null,
+          mealType: options?.mealType || options?.mealTypeHint || null,
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
@@ -1085,9 +1186,42 @@ export function useCommandTerminal({
       }
 
       const mcdriveIntent = extra?.predictiveIntent || extra?.intent;
-      if (snap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
+      if (
+        snap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP
+        || snap.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM
+        || snap.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_MEAL_TYPE
+      ) {
+        if (mcdriveIntent === 'SET_MCDRIVE_MEAL_TYPE' || extra?.mealType) {
+          return sendMessage(label, {
+            intent: 'SET_MCDRIVE_MEAL_TYPE',
+            mealType: extra?.mealType || null,
+            skipUserBubble: true,
+            fromQuickReply: true,
+          });
+        }
+        if (
+          mcdriveIntent === 'SAVE_MCDRIVE_MEAL'
+          || /salva\s+(?:nel\s+)?(?:diario|pasto)/i.test(label)
+        ) {
+          return sendMessage('', {
+            intent: 'SAVE_MCDRIVE_MEAL',
+            skipUserBubble: true,
+            fromQuickReply: true,
+          });
+        }
+        if (
+          mcdriveIntent === 'ADD_MORE_MCDRIVE'
+          || /aggiungi\s+ancora/i.test(label)
+        ) {
+          return sendMessage('', {
+            intent: 'ADD_MORE_MCDRIVE',
+            skipUserBubble: true,
+            fromQuickReply: true,
+          });
+        }
         if (
           mcdriveIntent === 'FINISH_MCDRIVE_WIZARD'
+          || /calcola\s+valori/i.test(label)
           || /termina\s+e\s+salva/i.test(label)
         ) {
           return sendMessage('', {
@@ -1631,23 +1765,10 @@ export function useCommandTerminal({
 
   const syncMcDriveTrayInChat = useCallback((liveMealTray) => {
     if (!liveMealTray || typeof setChatHistoryRef.current !== 'function') return;
-    setChatHistoryRef.current((prev) => {
-      const list = Array.isArray(prev) ? [...prev] : [];
-      for (let i = list.length - 1; i >= 0; i -= 1) {
-        const entry = list[i];
-        if (
-          entry?.liveMealTrayResolved !== true
-          && (entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard)
-        ) {
-          list[i] = {
-            ...entry,
-            liveMealTray,
-          };
-          break;
-        }
-      }
-      return list;
-    });
+    setChatHistoryRef.current((prev) => upsertMcDriveTrayChatEntry(prev, {
+      tray: liveMealTray,
+      keepText: true,
+    }));
   }, []);
 
   const handleMcDriveRemoveItem = useCallback((index) => {
@@ -1664,6 +1785,24 @@ export function useCommandTerminal({
       return { ok: false, reason: 'mcdrive_update_unavailable' };
     }
     const result = controller.updateMcDriveDraftItemGrams(index, grams);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
+  const handleMcDriveApplyAlternative = useCallback((index, alternative) => {
+    if (typeof controller.applyMcDriveDraftAlternative !== 'function') {
+      return { ok: false, reason: 'mcdrive_alt_unavailable' };
+    }
+    const result = controller.applyMcDriveDraftAlternative(index, alternative);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
+  const handleMcDriveReplaceFromSearch = useCallback((index, searchResult) => {
+    if (typeof controller.replaceMcDriveDraftItemFromSearch !== 'function') {
+      return { ok: false, reason: 'mcdrive_replace_unavailable' };
+    }
+    const result = controller.replaceMcDriveDraftItemFromSearch(index, searchResult);
     if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
     return result;
   }, [controller, syncMcDriveTrayInChat]);
@@ -1722,6 +1861,8 @@ export function useCommandTerminal({
     handleSaveNewFoodEntry,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveApplyAlternative,
+    handleMcDriveReplaceFromSearch,
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,

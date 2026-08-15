@@ -30,6 +30,9 @@ export default function KentuChatUI({
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
   onMcDriveUpdateGrams = null,
+  onMcDriveApplyAlternative = null,
+  onMcDriveReplaceFromSearch = null,
+  getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
   onWorkoutDraftRemoveExercise,
@@ -97,6 +100,9 @@ export default function KentuChatUI({
         onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
         onMcDriveRemoveItem={onMcDriveRemoveItem}
         onMcDriveUpdateGrams={onMcDriveUpdateGrams}
+        onMcDriveApplyAlternative={onMcDriveApplyAlternative}
+        onMcDriveReplaceFromSearch={onMcDriveReplaceFromSearch}
+        getMcDriveMealTargets={getMcDriveMealTargets}
         onWorkoutDraftUpdateMeta={onWorkoutDraftUpdateMeta}
         onWorkoutDraftUpdateExercise={onWorkoutDraftUpdateExercise}
         onWorkoutDraftRemoveExercise={onWorkoutDraftRemoveExercise}

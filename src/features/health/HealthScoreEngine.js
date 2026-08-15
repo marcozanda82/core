@@ -1,13 +1,13 @@
 /**
- * Health Score — punteggio 0–100 e avatar a 5 stadi (malus metabolici del giorno).
+ * Health Score — punteggio 0–100 e avatar cellulare a 5 stadi (malus metabolici del giorno).
  */
 
 export const HEALTH_AVATAR_STAGES = Object.freeze([
-  { min: 85, max: 100, id: 'ottimale', src: '/avatar_01_ottimale.png', label: 'Ottimale' },
-  { min: 65, max: 84, id: 'buono', src: '/avatar_02_buono.png', label: 'Buono' },
-  { min: 40, max: 64, id: 'da_migliorare', src: '/avatar_03_da_migliorare.png', label: 'Da migliorare' },
-  { min: 20, max: 39, id: 'recupero', src: '/avatar_04_recupero.png', label: 'Recupero' },
-  { min: 0, max: 19, id: 'recupero_prioritario', src: '/avatar_05_recupero_prioritario.png', label: 'Recupero prioritario' },
+  { min: 80, max: 100, id: 'ottimale', src: '/cellula_1_ottimale.png', label: 'Ottimale' },
+  { min: 60, max: 79, id: 'buono', src: '/cellula_2_buona.png', label: 'Buono' },
+  { min: 40, max: 59, id: 'medio', src: '/cellula_3_media.png', label: 'Medio' },
+  { min: 20, max: 39, id: 'scarso', src: '/cellula_4_scarsa.png', label: 'Scarso' },
+  { min: 0, max: 19, id: 'critico', src: '/cellula_5_malata.png', label: 'Critico' },
 ]);
 
 const PROTEIN_MALUS_MAX = 35;

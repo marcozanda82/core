@@ -97,6 +97,7 @@ export default function UniversalSearchModal({
   draftFoods = [],
   scannerError = '',
   isScannerResolving = false,
+  initialQuery = '',
 }) {
   const { query, setQuery, results, isSearchingExternal } = useUniversalSearchEngine(
     personalDb,
@@ -116,8 +117,11 @@ export default function UniversalSearchModal({
       setManualForm(EMPTY_MANUAL_FORM);
       setManualError('');
       setIsSavingManual(false);
+      return;
     }
-  }, [isOpen, setQuery]);
+    const seed = String(initialQuery || '').trim();
+    if (seed) setQuery(seed);
+  }, [isOpen, initialQuery, setQuery]);
 
   if (!isOpen) return null;
 

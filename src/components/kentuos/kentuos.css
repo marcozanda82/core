@@ -443,6 +443,15 @@
 
 .kentu-ai-row {
   width: 100%;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.kentu-ai-row img {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .kentu-card--chat-ai {
@@ -467,9 +476,13 @@
 .kentu-system-notice__img {
   display: block;
   flex-shrink: 0;
-  width: 3rem;
-  height: 3rem;
+  width: 4.5rem;
+  height: 4.5rem;
   object-fit: contain;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
   user-select: none;
   pointer-events: none;
 }
@@ -1635,10 +1648,15 @@
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: linear-gradient(160deg, rgba(30, 41, 59, 0.96) 0%, rgba(15, 23, 42, 0.98) 100%);
-  padding: 14px 14px 12px;
+  padding: 0;
   box-shadow:
     0 10px 32px rgba(0, 0, 0, 0.38),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+}
+
+.kentu-meal-tray--native {
+  min-height: 12rem;
+  /* Finestra flex: header/footer fissi, lista scroll interna (niente sticky). */
 }
 
 .kentu-meal-tray__header {
@@ -1646,7 +1664,150 @@
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
+}
+
+.kentu-meal-tray__header--calibration {
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 14px 14px 12px;
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgb(2, 6, 23);
+  background: rgba(2, 6, 23, 0.97);
+  z-index: 1;
+}
+
+.kentu-meal-tray__calibration-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.kentu-meal-tray__calibration-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  color: #f1f5f9;
+  line-height: 1.2;
+}
+
+.kentu-meal-tray__calibration-macros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(186, 230, 253, 0.92);
+}
+
+.kentu-meal-tray__target-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+
+.kentu-meal-tray__macro-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kentu-meal-tray__macro-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.kentu-meal-tray__macro-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.kentu-meal-tray__macro-values {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.kentu-meal-tray__macro-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.85);
+  overflow: hidden;
+}
+
+.kentu-meal-tray__macro-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(56, 189, 248, 0.75);
+  transition: width 0.25s ease, background-color 0.2s ease;
+}
+
+.kentu-meal-tray__macro-row--on-target .kentu-meal-tray__macro-values {
+  color: #86efac;
+  font-weight: 650;
+}
+
+.kentu-meal-tray__macro-row--on-target .kentu-meal-tray__macro-bar-fill {
+  background: #4ade80;
+}
+
+.kentu-meal-tray__macro-row--over .kentu-meal-tray__macro-values {
+  color: #fcd34d;
+}
+
+.kentu-meal-tray__macro-row--over .kentu-meal-tray__macro-bar-fill {
+  background: #fbbf24;
+}
+
+.kentu-meal-tray__macro-row--under .kentu-meal-tray__macro-bar-fill {
+  background: rgba(125, 211, 252, 0.7);
+}
+
+.kentu-meal-tray__row--editing {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.kentu-meal-tray__edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 0 2px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.kentu-meal-tray__edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.kentu-meal-tray__edit-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.kentu-meal-tray__edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .kentu-meal-tray__badge {
@@ -1706,7 +1867,7 @@
 }
 
 .kentu-meal-tray__estimate-banner {
-  margin: 0 0 10px;
+  margin: 10px 14px;
   padding: 8px 10px;
   border-radius: 10px;
   border: 1px solid rgba(251, 191, 36, 0.35);
@@ -1716,9 +1877,14 @@
   line-height: 1.35;
 }
 
+.kentu-meal-tray__scroll {
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 14px 8px;
+}
+
 .kentu-meal-tray__list {
   list-style: none;
-  margin: 0 0 12px;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -1741,13 +1907,21 @@
   border-color: rgba(251, 191, 36, 0.28);
 }
 
+.kentu-meal-tray__row-main {
+  min-width: 0;
+}
+
+.kentu-meal-tray__grams {
+  font-variant-numeric: tabular-nums;
+  color: #e2e8f0;
+  letter-spacing: 0.02em;
+}
+
 .kentu-meal-tray__row-info {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 2 1 0;
-  width: 66.666%;
-  max-width: 66.666%;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -1794,9 +1968,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  flex: 0 1 33.333%;
-  width: 33.333%;
-  max-width: 33.333%;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -1958,19 +2130,30 @@
 }
 
 .kentu-meal-tray__footer {
+  flex: none;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 8px;
+  justify-content: stretch;
+  padding: 10px 14px 12px;
+  margin: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(2, 6, 23, 0.97);
+  z-index: 1;
 }
 
 .kentu-meal-tray__confirm {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 140px;
   font-weight: 700;
   letter-spacing: 0.04em;
 }
 
-.kentu-meal-tray__cancel {
-  width: 100%;
+.kentu-meal-tray__cancel,
+.kentu-meal-tray__add-more {
+  flex: 1 1 auto;
+  min-width: 110px;
 }
 
 @media (min-width: 480px) {
@@ -1981,8 +2164,7 @@
   }
 
   .kentu-meal-tray__row-controls {
-    flex: 0 1 33.333%;
-    max-width: 33.333%;
+    flex: 0 0 auto;
   }
 }
 

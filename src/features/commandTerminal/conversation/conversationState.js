@@ -23,6 +23,10 @@ export const CONVERSATION_STATE = Object.freeze({
   AWAITING_MEAL_BUILDER_STEP: 'AWAITING_MEAL_BUILDER_STEP',
   /** McDrive: inserimento guidato a ciclo aperto (un alimento per turno). */
   AWAITING_MCDRIVE_LOOP: 'AWAITING_MCDRIVE_LOOP',
+  /** McDrive: scelta del pasto (colazione/pranzo/cena/snack) prima della lavagna. */
+  AWAITING_MCDRIVE_MEAL_TYPE: 'AWAITING_MCDRIVE_MEAL_TYPE',
+  /** McDrive: validazione sequenziale completata, attesa Salva / Aggiungi ancora / Annulla. */
+  AWAITING_MCDRIVE_SAVE_CONFIRM: 'AWAITING_MCDRIVE_SAVE_CONFIRM',
   /** Caffè da testo: attesa scelta Amaro vs Zuccherato. */
   AWAITING_COFFEE_VARIANT: 'AWAITING_COFFEE_VARIANT',
   /** McDrive: chip inserimento libero / spuntino — ascolto attivo, nessuna previsione storica. */

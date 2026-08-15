@@ -49,8 +49,9 @@ const CONFIDENCE_UI = {
  *   onClose?: () => void,
  *   onScanBarcode?: () => void,
  *   onUseLabelPhoto?: () => void,
+ *   onManualSearch?: () => void,
  *   cameraBusy?: boolean,
- *   variant?: 'barcode' | 'chat',
+ *   variant?: 'barcode' | 'chat' | 'mcdrive',
  * }} props
  */
 export default function MicronutrientEnrichmentModal({
@@ -64,6 +65,7 @@ export default function MicronutrientEnrichmentModal({
   onClose,
   onScanBarcode = null,
   onUseLabelPhoto = null,
+  onManualSearch = null,
   cameraBusy = false,
   variant = 'barcode',
 }) {
@@ -79,31 +81,50 @@ export default function MicronutrientEnrichmentModal({
   if (!isOpen || typeof document === 'undefined') return null;
 
   const titleName = String(productName || 'Prodotto scansionato').trim();
-  const isChatMode = variant === 'chat';
-  const modalTitle = isChatMode ? 'Nuovo alimento da chat' : 'Arricchimento micronutrienti';
-  const introText = isChatMode
+  const isChatMode = variant === 'chat' || variant === 'mcdrive';
+  const isMcdriveMode = variant === 'mcdrive';
+  const modalTitle = isMcdriveMode
+    ? 'Alimento non trovato'
+    : isChatMode
+      ? 'Nuovo alimento da chat'
+      : 'Arricchimento micronutrienti';
+  const introText = isMcdriveMode
     ? (
       <>
-        Non conosco{' '}
+        Non trovo{' '}
         <span className="font-medium text-slate-200">{titleName}</span>
-        . Scegli un alimento simile dal Kentu DB (CREA / italiano) per stimarne i valori:
+        {' '}nel database. Scegli un match, scatta una foto, cerca manualmente, oppure Tralascia per continuare.
       </>
     )
-    : (
-      <>
-        Stai salvando{' '}
-        <span className="font-medium text-slate-200">{titleName}</span>
-        . Scegli un profilo Kentu DB per arricchire vitamine e minerali:
-      </>
-    );
-  const skipLabel = isChatMode
-    ? 'Continua senza profilo Kentu DB'
-    : 'Salta — Usa solo l\'etichetta (Senza micronutrienti)';
+    : isChatMode
+      ? (
+        <>
+          Non conosco{' '}
+          <span className="font-medium text-slate-200">{titleName}</span>
+          . Scegli un alimento simile dal Kentu DB (CREA / italiano) per stimarne i valori:
+        </>
+      )
+      : (
+        <>
+          Stai salvando{' '}
+          <span className="font-medium text-slate-200">{titleName}</span>
+          . Scegli un profilo Kentu DB per arricchire vitamine e minerali:
+        </>
+      );
+  const skipLabel = isMcdriveMode
+    ? 'Tralascia'
+    : isChatMode
+      ? 'Continua senza profilo Kentu DB'
+      : 'Salta — Usa solo l\'etichetta (Senza micronutrienti)';
   const emptyText = isChatMode
-    ? 'Nessun match Kentu DB affidabile. Usa lo scanner o la foto etichetta per registrare l\'alimento.'
+    ? 'Nessun match Kentu DB affidabile. Usa scanner, foto etichetta o ricerca manuale.'
     : 'Nessun match Kentu DB affidabile. Puoi salvare solo l\'etichetta.';
-  const showCameraActions = isChatMode
-    && (typeof onScanBarcode === 'function' || typeof onUseLabelPhoto === 'function');
+  const showFallbackActions = isChatMode
+    && (
+      typeof onScanBarcode === 'function'
+      || typeof onUseLabelPhoto === 'function'
+      || typeof onManualSearch === 'function'
+    );
   const actionsDisabled = isLoading || cameraBusy;
 
   return createPortal(
@@ -202,7 +223,7 @@ export default function MicronutrientEnrichmentModal({
         </div>
 
         <div className="border-t border-slate-700/80 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
-          {showCameraActions ? (
+          {showFallbackActions ? (
             <div className="mb-2.5 flex flex-col gap-2">
               <p className="m-0 text-center text-[11px] font-medium uppercase tracking-wide text-slate-500">
                 Aggiungi al tuo database
@@ -225,6 +246,16 @@ export default function MicronutrientEnrichmentModal({
                   className="w-full rounded-xl border border-cyan-500/45 bg-cyan-950/45 py-3.5 text-sm font-semibold text-cyan-100 transition hover:border-cyan-400/70 hover:bg-cyan-900/50 disabled:opacity-50"
                 >
                   {cameraBusy ? 'Elaborazione…' : '🏷️ Foto Etichetta'}
+                </button>
+              ) : null}
+              {typeof onManualSearch === 'function' ? (
+                <button
+                  type="button"
+                  onClick={() => onManualSearch()}
+                  disabled={actionsDisabled}
+                  className="w-full rounded-xl border border-violet-500/45 bg-violet-950/40 py-3.5 text-sm font-semibold text-violet-100 transition hover:border-violet-400/70 hover:bg-violet-900/45 disabled:opacity-50"
+                >
+                  🔍 Ricerca manuale
                 </button>
               ) : null}
             </div>
