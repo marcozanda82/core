@@ -4359,13 +4359,17 @@ export class CommandTerminalController {
   /**
    * Registra caffè (stimulant node) — Amaro 0 kcal o Zuccherato +20 kcal/+5g CHO.
    */
-  commitCoffeeLog(variant, timeDecimal, currentState = {}) {
+  commitCoffeeLog(variant, timeDecimal, currentState = {}, options = {}) {
     const hoursFasted = Number(
       currentState?.healthScoreMetrics?.hoursFasted
       ?? currentState?.metabolicSnapshot?.hoursSinceLastMeal,
     );
     const inFastingWindow = isInActiveFastingWindow(hoursFasted);
-    const node = buildCoffeeStimulantNode(variant, timeDecimal);
+    const node = buildCoffeeStimulantNode(variant, timeDecimal, {
+      coffeeType: options.coffeeType || options.type,
+      type: options.coffeeType || options.type,
+      sugar: variant === COFFEE_VARIANT.ZUCCHERATO,
+    });
     const ack = buildCoffeeLogAckMessage(variant, { hoursFasted, inFastingWindow });
 
     this.resetConversationState();
@@ -5192,6 +5196,48 @@ export class CommandTerminalController {
     }
     if (forcedIntentEarly === 'FREE_MEAL_LISTEN') {
       return this.startFreeMealListen(options?.mealTypeHint || null, options);
+    }
+
+    // One-tap exact match (voce/testo): bypass motore AI alimentare.
+    const exactOneTap = userText.toLowerCase();
+    const canOneTap =
+      this.conversationState === CONVERSATION_STATE.IDLE
+      && !this.activeWizard
+      && images.length === 0
+      && !options?.skipExactOneTap;
+    if (canOneTap) {
+      if (exactOneTap === 'caffè' || exactOneTap === 'caffe') {
+        return {
+          ok: true,
+          intent: 'OPEN_COFFEE_UI',
+          openUi: 'caffe',
+        };
+      }
+      if (exactOneTap === 'tè' || exactOneTap === 'te' || exactOneTap === 'tea') {
+        return {
+          ok: true,
+          intent: 'OPEN_TEA_UI',
+          openUi: 'tea',
+        };
+      }
+      if (
+        exactOneTap === 'energy'
+        || exactOneTap === 'energy drink'
+        || exactOneTap === 'energydrink'
+      ) {
+        return {
+          ok: true,
+          intent: 'OPEN_ENERGY_UI',
+          openUi: 'energy',
+        };
+      }
+      if (exactOneTap === 'acqua') {
+        return {
+          ok: true,
+          intent: 'OPEN_WATER_UI',
+          openUi: 'acqua',
+        };
+      }
     }
 
     if (

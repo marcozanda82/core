@@ -53,17 +53,53 @@ export const AI_MEAL_CONSTRAINTS_MAX_ITEMS = 20;
 
 export const FIREBASE_LOAD_OVERLAY_FADE_MS = 800;
 
-/** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render). */
-export const EMPTY_ENERGY_CHART_DATA = [];
+/** Riferimenti stabili per chart vuoto / notte in sospeso (evita ricalcoli longevity ad ogni render).
+ *  Mai []: Recharts non disegna nulla senza asse 0–24. Baseline circadiana minimale. */
+function buildStaticBaselinePhysiologyChartData(wakeHour = 7.5) {
+  const wake = Number.isFinite(Number(wakeHour)) ? Number(wakeHour) : 7.5;
+  const out = [];
+  for (let h = 0; h <= 24; h++) {
+    let cortisolo;
+    if (h < wake) {
+      cortisolo = 25 + (h / Math.max(0.1, wake)) * (58 - 25);
+    } else if (h <= wake + 1) {
+      cortisolo = 58 + ((h - wake) / 1) * (100 - 58);
+    } else if (h <= wake + 1.5) {
+      cortisolo = 100 - ((h - wake - 1) / 0.5) * 20;
+    } else if (h < 18) {
+      const t0 = wake + 1.5;
+      cortisolo = 80 - ((h - t0) / Math.max(0.1, 18 - t0)) * 40;
+    } else {
+      cortisolo = Math.max(40, 50 - (h - 18) * (10 / 6));
+    }
+    out.push({
+      time: h,
+      hour: h,
+      energy: 35,
+      idealEnergy: 70,
+      glicemia: 85,
+      idratazione: 100,
+      cortisolo: Number.isFinite(cortisolo) ? cortisolo : 25,
+      digestione: 0,
+      neuro: 40,
+    });
+  }
+  return out;
+}
 
-export const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = {
+export const EMPTY_ENERGY_CHART_DATA = Object.freeze(buildStaticBaselinePhysiologyChartData(7.5));
+
+export const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = Object.freeze({
   chartData: EMPTY_ENERGY_CHART_DATA,
   realTotals: {},
   hasCrashRisk: false,
   hasCortisolRisk: false,
   hasDigestionRisk: false,
   nervousSystemLoad: 0,
-};
+  isWaterHydrationAutoPilot: true,
+  accumuloSNC: 0,
+  maxEnergyCap: 100,
+});
 
 export const ADD_MENU_ORDER_LS_KEY = 'kentu_add_menu_order';
 

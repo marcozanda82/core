@@ -27,6 +27,7 @@ import { useVoiceChat } from './features/chat/useVoiceChat.js';
 import { useVoiceNote } from './features/chat/useVoiceNote.js';
 import { transcribeVoiceNote } from './features/chat/transcribeVoiceNote.js';
 import ChatInputBar from './features/chat/ChatInputBar.jsx';
+import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
@@ -38,10 +39,10 @@ import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js'
 import {
   AVATAR_MOOD,
   AVATAR_MOOD_LABEL,
-  CHAT_DEFAULT_AVATAR_SRC,
+  AVATAR_MOOD_SRC,
   detectActiveMealTray,
   detectStrategicConsultContext,
-  getAvatarSrcForMood,
+  getAvatarVideoForMood,
   resolveAvatarMood,
   resolveMessageAvatarSrc,
 } from './features/chat/avatarMood.js';
@@ -141,6 +142,8 @@ export default function AiCluster({
   cancelMealBuilder,
   commitMealBuilder,
   onManualShortcut,
+  onOpenManualView = null,
+  onOpenActivityView = null,
   onRequestReport,
   onRequestBarcodeScan,
   quickStripItems = null,
@@ -322,24 +325,18 @@ export default function AiCluster({
     return `${base}...`;
   }, [avatarMood]);
 
-  /** Avatar live solo per typing indicator — i messaggi usano message.avatarAsset congelato. */
-  const chatAvatarSrc = useMemo(
-    () => getAvatarSrcForMood(avatarMood, CHAT_DEFAULT_AVATAR_SRC),
-    [avatarMood],
-  );
+  /**
+   * Elaborazione AI: poster Hacker4 (0ms) + mp4 in background.
+   * Solo UI — non attende decode e non blocca setIsProcessing / fetch.
+   */
+  const typingAvatarPosterSrc = AVATAR_MOOD_SRC[AVATAR_MOOD.CODING];
+  const typingAvatarVideoSrc = showTypingIndicator
+    ? getAvatarVideoForMood(AVATAR_MOOD.CODING)
+    : '';
 
   const headerAvatarLabel = healthScoreLabel;
 
   /** Fingerprint lavagna attiva (dock): scroll cronologia resta indipendente. */
-  const activeMcDriveTrayScrollKey = useMemo(() => {
-    if (!dockedMcDriveTray) return null;
-    const items = Array.isArray(dockedMcDriveTray?.items) ? dockedMcDriveTray.items : [];
-    const itemSig = items
-      .map((it) => `${it?.id || it?.foodName || ''}:${it?.grams || 0}:${it?.status || ''}`)
-      .join('|');
-    return `dock:${items.length}:${itemSig}`;
-  }, [dockedMcDriveTray]);
-
   const scrollChatToBottom = useCallback((behavior = 'smooth') => {
     const node = chatEndRef.current;
     if (!node) return;
@@ -348,14 +345,14 @@ export default function AiCluster({
 
   useEffect(() => {
     scrollChatToBottom('smooth');
-    // Secondo passaggio dopo layout: compensa altezza dinamica della lavagna.
     const t1 = window.setTimeout(() => scrollChatToBottom('smooth'), 80);
     const t2 = window.setTimeout(() => scrollChatToBottom('auto'), 220);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [chatHistory, showTypingIndicator, activeMcDriveTrayScrollKey, scrollChatToBottom]);
+    // Non dipendere dalla lavagna McDrive: i nuovi item nascono in cima, niente auto-scroll.
+  }, [chatHistory, showTypingIndicator, scrollChatToBottom]);
 
   const suppressQuickReplies = useMemo(
     () => (chatHistory || []).some(
@@ -397,19 +394,45 @@ export default function AiCluster({
     );
   }, [activeQuickReplies, hasActiveWorkoutDraft]);
 
-  const resolvedQuickStrip = useMemo(() => {
-    if (Array.isArray(quickStripItems) && quickStripItems.length > 0) {
-      return quickStripItems;
+  const handlePulsantieraSend = useCallback((text, options) => {
+    if (isProcessing || isNotesMode) return;
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return;
+    if (isVoiceNoteActive) {
+      discardNote();
     }
-    return [
-      { id: 'pasto', icon: '🍳', label: 'Pasto' },
-      { id: 'workout', icon: '🏋️', label: 'Workout' },
-      { id: 'sleep', icon: '😴', label: 'Sonno' },
-      { id: 'acqua', icon: '💧', label: 'Acqua' },
-      { id: 'weight', icon: '⚖️', label: 'Peso' },
-      { id: 'menu', icon: '☰', label: 'Menu' },
-    ];
-  }, [quickStripItems]);
+    noteTextInteraction();
+    setChatInput('');
+    onSendMessage(trimmed, {
+      fromInput: true,
+      ...(options?.intent ? { intent: options.intent } : {}),
+    });
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  }, [
+    isProcessing,
+    isNotesMode,
+    isVoiceNoteActive,
+    discardNote,
+    noteTextInteraction,
+    setChatInput,
+    onSendMessage,
+  ]);
+
+  const handlePulsantieraOpenManual = useCallback(() => {
+    if (typeof onOpenManualView === 'function') {
+      onOpenManualView();
+      return;
+    }
+    onManualShortcut?.('meal');
+  }, [onOpenManualView, onManualShortcut]);
+
+  const handlePulsantieraOpenActivity = useCallback((payload) => {
+    if (typeof onOpenActivityView === 'function') {
+      onOpenActivityView(payload);
+      return;
+    }
+    onManualShortcut?.('workout');
+  }, [onOpenActivityView, onManualShortcut]);
 
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [devToolsToast, setDevToolsToast] = useState('');
@@ -832,18 +855,30 @@ export default function AiCluster({
                 </div>
               ) : msg.sender === 'ai' ? (
                 msg.isTyping ? (
-                  <TypingIndicator avatarSrc={chatAvatarSrc} label={typingIndicatorLabel} />
+                  <TypingIndicator
+                    avatarSrc={typingAvatarPosterSrc}
+                    avatarVideoSrc={typingAvatarVideoSrc}
+                    label={typingIndicatorLabel}
+                  />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
                 ) : msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM' ? (
-                  <div className="w-full max-w-full box-border p-0 m-0 bg-transparent">
+                  <div className="w-full max-w-full box-border border-0 bg-transparent p-0 m-0 shadow-none">
                     <QuickEventConfirmMedia
                       imageSrc={msg.quickEventConfirm?.imageSrc || msg.imageSrc}
                       videoSrc={msg.quickEventConfirm?.videoSrc || msg.videoSrc || null}
                       title={msg.quickEventConfirm?.title || msg.text || msg.displayText || ''}
                       subtitle={msg.quickEventConfirm?.subtitle || ''}
+                      timestamp={
+                        msg.timestamp
+                        ?? msg.createdAt
+                        ?? msg.quickEventConfirm?.timestamp
+                        ?? msg.quickEventConfirm?.createdAt
+                        // Cronologia senza ts: 0 → non recente → niente autoplay maxi-card
+                        ?? 0
+                      }
                     />
                   </div>
                 ) : msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard ? (
@@ -1165,7 +1200,11 @@ export default function AiCluster({
           );
           })}
           {showTypingIndicator ? (
-            <TypingIndicator avatarSrc={chatAvatarSrc} label={typingIndicatorLabel} />
+            <TypingIndicator
+              avatarSrc={typingAvatarPosterSrc}
+              avatarVideoSrc={typingAvatarVideoSrc}
+              label={typingIndicatorLabel}
+            />
           ) : null}
           <div ref={chatEndRef} />
         </div>
@@ -1312,23 +1351,13 @@ export default function AiCluster({
           </div>
         ) : null}
         {!isNotesMode ? (
-          <div className="flex w-full shrink-0 flex-nowrap gap-2 overflow-x-auto py-2 scrollbar-hide">
-            {resolvedQuickStrip.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onManualShortcut?.(item.id === 'acqua' ? 'water' : item.id);
-                }}
-                className="flex min-w-[72px] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-400/40 hover:bg-zinc-800"
-              >
-                <span className="text-xl" aria-hidden>{item.icon}</span>
-                <span className="mt-1 text-[0.65rem] font-medium">{item.label}</span>
-              </button>
-            ))}
-          </div>
+          <PulsantieraUniversale
+            disabled={isProcessing}
+            onOpenManualView={handlePulsantieraOpenManual}
+            onOpenActivityView={handlePulsantieraOpenActivity}
+            onManualShortcut={onManualShortcut}
+            onSendChatMessage={handlePulsantieraSend}
+          />
         ) : null}
         {isVoiceNoteActive ? (
           <div className="kentu-voice-vetrina" role="region" aria-label="Nota vocale">

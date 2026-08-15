@@ -36,13 +36,25 @@ import {
   analyzeCoffeeForHealthScore,
   buildCoffeeStimulantNode,
   COFFEE_VARIANT,
+  readLastCoffeeType,
   sumSweetCoffeeMacros,
+  writeLastCoffeeType,
 } from './features/stimulants/coffeeLogEngine.js';
+import {
+  buildTeaStimulantNode,
+  readLastTeaType,
+  writeLastTeaType,
+} from './features/stimulants/teaLogEngine.js';
+import {
+  buildEnergyStimulantNode,
+  readLastEnergyType,
+  writeLastEnergyType,
+} from './features/stimulants/energyDrinkLogEngine.js';
 import QuickEventConfirmOverlay from './features/quickEvents/QuickEventConfirmOverlay.jsx';
 import {
   buildQuickEventConfirmPayload,
   buildQuickEventConfirmChatEntry,
-  isCoffeeStimulantNode,
+  resolveStimulantConfirmKind,
 } from './features/quickEvents/quickEventConfirmAssets.js';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
@@ -120,7 +132,6 @@ import {
   NODE_DRAG_ARM_CANCEL_MOVE_PX,
   REPORT_NUTRIENT_KEYS,
   EMPTY_ENERGY_CHART_DATA,
-  LONGEVITY_NIGHT_PENDING_ENERGY_SIM,
   ADD_MENU_ORDER_LS_KEY,
 } from './constants/salaComandiConstants';
 import { persistTrendHubHemisphere } from './features/trendHub/hooks/useTrendHubHemisphere';
@@ -132,6 +143,9 @@ import {
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
   resolveWorkoutMusclesForForm,
+  resolveActivitySheetTab,
+  stashActivitySheetTempTab,
+  peekActivitySheetTempTab,
 } from './activityCatalog';
 import {
   createInitialWeeklyPlan,
@@ -423,6 +437,9 @@ import {
 
 export { calculateAge } from './utils/profileAge';
 
+/** Anti-NaN: mai passare valori non finiti a Recharts / divisioni UI. */
+const safeNum = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
+
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const LongevityView = lazy(() => import('./LongevityView'));
@@ -468,6 +485,8 @@ export default function SalaComandi() {
   const timelineStripPreviewSlowRef = useRef(0);
   const timelineStripPreviewDisabledRef = useRef(false);
   const timelineStripPreviewDepsRef = useRef({});
+  /** Intent apertura Scheda Attività (tab + nonce): forza sync/remount ad ogni tap rapido. */
+  const [activitySheetIntent, setActivitySheetIntent] = useState({ tab: 'pesi', nonce: 0 });
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
   /** Chat montata solo dalla prima apertura in poi (evita costo AiCluster all'avvio). */
@@ -808,6 +827,9 @@ export default function SalaComandi() {
   const [drawerVisceralFat, setDrawerVisceralFat] = useState('');
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
   const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
+  const [coffeeType, setCoffeeType] = useState(() => readLastCoffeeType());
+  const [teaType, setTeaType] = useState(() => readLastTeaType());
+  const [energyType, setEnergyType] = useState(() => readLastEnergyType());
   const [coffeeVariant, setCoffeeVariant] = useState(COFFEE_VARIANT.AMARO);
   const [stimulantTime, setStimulantTime] = useState(8);
   const [addEventMenuOrder, setAddEventMenuOrder] = useState(() => {
@@ -1767,7 +1789,13 @@ export default function SalaComandi() {
   });
   const manualNodesRef = useRef(manualNodes);
   manualNodesRef.current = manualNodes;
-  const waterIntake = useMemo(() => manualNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0), [manualNodes]);
+  const waterIntake = useMemo(
+    () =>
+      manualNodes
+        .filter((n) => n.type === 'water')
+        .reduce((acc, n) => acc + safeNum(n.ml ?? n.amount), 0),
+    [manualNodes],
+  );
   const timelineContainerRef = useRef(null);
   const chartScrollRef = useRef(null);
   const initialPinchDistance = useRef(null);
@@ -3490,14 +3518,18 @@ export default function SalaComandi() {
         break;
       }
       case 'workout': {
-        resetWorkoutFormForNewSession();
+        stashActivitySheetTempTab('pesi');
+        resetWorkoutFormForNewSession('pesi');
         setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
+        setActivitySheetIntent({ tab: 'pesi', nonce: Date.now() });
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('allenamento');
         setIsDrawerOpen(true);
         break;
       }
       case 'stimulant':
+      case 'tea':
+      case 'energy': {
         // Evita closeDrawer() (timeout → activeAction null) che cancella il ritorno in chat.
         if (fromModal) {
           /* already in modal */
@@ -3506,12 +3538,22 @@ export default function SalaComandi() {
         } else {
           closeDrawer();
         }
+        const subtype =
+          itemId === 'tea'
+            ? 'tè'
+            : itemId === 'energy'
+              ? 'energy drink'
+              : 'caffè';
         setStimulantTime(getCurrentTimeRoundedTo15Min());
-        setStimulantSubtype('caffè');
+        setStimulantSubtype(subtype);
+        setCoffeeType(readLastCoffeeType());
+        setTeaType(readLastTeaType());
+        setEnergyType(readLastEnergyType());
         setCoffeeVariant(COFFEE_VARIANT.AMARO);
         setAddChoiceView('stimulant');
         setShowChoiceModal(true);
         break;
+      }
       case 'nap': {
         const tN = getCurrentTimeRoundedTo15Min();
         const defaultNapDurationHours = 0.5;
@@ -4609,71 +4651,6 @@ Slot esistente aggiornato (nessun ghost).`;
     return true;
   }, [setChatHistory]);
 
-  /** Scorciatoie chat: salva in-place senza uscire dalla chat / senza aprire drawer. */
-  const handleQuickEventFromChat = useCallback((actionId) => {
-    const id = String(actionId || '').trim().toLowerCase();
-    if (isSimulationMode) return false;
-    const now = getCurrentTimeRoundedTo15Min();
-
-    const stayOnChat = () => {
-      // Blindatura anti-redirect: dopo sync Firebase / popstate la chat deve restare aperta.
-      setActiveAction('ai_chat');
-      returnToChatAfterQuickActionRef.current = false;
-    };
-
-    if (id === 'water' || id === 'acqua') {
-      const ml = 250;
-      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: now, ml }];
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
-      trackEventUsage('water');
-      appendQuickEventConfirmToChat('water', { subtitle: `+${ml} ml` });
-      stayOnChat();
-      return true;
-    }
-
-    if (id === 'nap') {
-      const duration = 0.5;
-      let start = now - duration;
-      if (start < 0) start += 24;
-      const node = {
-        id: `nap_${Date.now()}`,
-        type: 'nap',
-        time: start,
-        duration: Math.round(duration * 100) / 100,
-      };
-      const next = [...manualNodes, node].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
-      trackEventUsage('nap');
-      appendQuickEventConfirmToChat('nap', { subtitle: '30 min' });
-      stayOnChat();
-      return true;
-    }
-
-    if (id === 'stimulant' || id === 'caffè' || id === 'caffe' || id === 'coffee') {
-      const node = buildCoffeeStimulantNode(COFFEE_VARIANT.AMARO, now);
-      const next = [...manualNodes, node];
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
-      trackEventUsage('stimulant');
-      appendQuickEventConfirmToChat('coffee');
-      stayOnChat();
-      return true;
-    }
-
-    return false;
-  }, [
-    isSimulationMode,
-    manualNodes,
-    setManualNodes,
-    syncDatiFirebase,
-    dailyLog,
-    trackEventUsage,
-    appendQuickEventConfirmToChat,
-    setActiveAction,
-  ]);
-
   const handleAddWater = (amount, options = {}) => {
     if (isSimulationMode) return;
     const fromChat = returnToChatAfterQuickActionRef.current === true
@@ -4926,7 +4903,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return rows;
   }, [remotePlanning]);
 
-  const waterProgress = Math.min((waterIntake / dailyWaterGoal) * 100, 100);
+  const waterProgress = dailyWaterGoal > 0
+    ? Math.min((safeNum(waterIntake) / dailyWaterGoal) * 100, 100)
+    : 0;
   
   const foodsLog = activeLog.filter(item => item.type === 'food' || item.type === 'recipe');
   const groupedFoods = foodsLog.reduce((acc, food) => {
@@ -5185,11 +5164,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel, accumuloSNC, sleepMetabolicPenalty]);
 
   const sleepStatus = getSleepStatus(activeLog);
-  const activeWaterIntake = simulationMode ? activeNodes.filter(n => n.type === 'water').reduce((acc, n) => acc + (n.ml ?? n.amount ?? 0), 0) : waterIntake;
+  const activeWaterIntake = simulationMode
+    ? activeNodes
+        .filter((n) => n.type === 'water')
+        .reduce((acc, n) => acc + safeNum(n.ml ?? n.amount), 0)
+    : waterIntake;
   const energySimulation = useMemo(() => {
-    if (sleepStatus === 'NIGHT_PENDING') {
-      return LONGEVITY_NIGHT_PENDING_ENERGY_SIM;
-    }
+    // Sempre genera serie 0–24: NIGHT_PENDING non deve più azzerare i grafici fisiologici.
     return generateRealEnergyData(
       nodesForEnergySimulation,
       dailyLogForEnergy,
@@ -5205,7 +5186,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       sleepMetabolicPenalty,
     );
   }, [
-    sleepStatus,
     nodesForEnergySimulation,
     dailyLogForEnergy,
     idealStrategy,
@@ -5218,8 +5198,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     accumuloSNC,
     sleepMetabolicPenalty,
   ]);
-  const chartDataCommitted = energySimulation?.chartData ?? EMPTY_ENERGY_CHART_DATA;
-  const chartData = timelineStripPreview?.chartData ?? chartDataCommitted;
+  const chartDataCommitted =
+    Array.isArray(energySimulation?.chartData) && energySimulation.chartData.length > 0
+      ? energySimulation.chartData
+      : EMPTY_ENERGY_CHART_DATA;
+  // Preview strip: solo se ha punti reali. Mai [] (?? non distingue array vuoto da assente).
+  const chartData =
+    Array.isArray(timelineStripPreview?.chartData) && timelineStripPreview.chartData.length > 0
+      ? timelineStripPreview.chartData
+      : chartDataCommitted;
 
   const timelineEnergySeries = useMemo(
     () =>
@@ -5335,6 +5322,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             cal = generateCalorieTimeline(merged.log);
           } catch {
             cal = { calorieTimeline: [], totalCalories: 0 };
+          }
+          if (!Array.isArray(sim?.chartData) || sim.chartData.length === 0) {
+            if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
+            return;
           }
           setTimelineStripPreview({
             chartData: sim.chartData,
@@ -5867,38 +5858,59 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     isProteinSaturated && 'proteine_sature',
     isWorkoutCrash && 'workout_crash'
   ].filter(Boolean);
-  const scale = (v) => (v == null || Number.isNaN(Number(v))) ? v : (Number(v) / 100) * targetKcalChart;
+  const scale = (v) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return null;
+    return (n / 100) * targetKcalChart;
+  };
 
   const wakeHourForRiserva = (() => {
     const sleepEntry = (activeLog || []).find(i => i?.type === 'sleep');
-    return sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd ?? 7.5;
+    return safeNum(sleepEntry?.wakeTime ?? sleepEntry?.sleepEnd) || 7.5;
   })();
   const piccoMattutinoRiserva = 85;
 
   const renderDataWithSegments = renderData.map(d => {
-    const h = d.time ?? d.hour ?? 0;
+    const h = safeNum(d.time ?? d.hour);
     const riservaFisica = h < wakeHourForRiserva
       ? Math.min(100, 25 + (h / Math.max(0.1, wakeHourForRiserva)) * (piccoMattutinoRiserva - 25))
       : Math.max(0, piccoMattutinoRiserva - (h - wakeHourForRiserva) * 3.5);
+    const energy = Number.isFinite(Number(d.energy)) ? Number(d.energy) : 0;
+    const glicemia = Number.isFinite(Number(d.glicemia)) ? Number(d.glicemia) : 85;
+    const idratazione = Number.isFinite(Number(d.idratazione)) ? Number(d.idratazione) : 100;
+    const cortisolo = Number.isFinite(Number(d.cortisolo)) ? Number(d.cortisolo) : 25;
+    const digestione = Number.isFinite(Number(d.digestione)) ? Number(d.digestione) : 0;
+    const neuro = Number.isFinite(Number(d.neuro)) ? Number(d.neuro) : 40;
     return {
     ...d,
-    riservaFisica,
+    time: h,
+    hour: h,
+    energy,
+    glicemia,
+    idratazione,
+    cortisolo,
+    digestione,
+    neuro,
+    riservaFisica: Number.isFinite(riservaFisica) ? riservaFisica : 0,
     anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
     cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
-    energyPast: d.time <= displayTime ? d.energy : null,
-    energyFuture: d.time >= displayTime ? d.energy : null,
-    kcalPast: d.time <= displayTime ? scale(d.energy) : null,
-    kcalFuture: d.time >= displayTime ? scale(d.energy) : null,
-    glicemiaPast: d.time <= displayTime ? d.glicemia : null,
-    glicemiaFuture: d.time >= displayTime ? d.glicemia : null,
-    idratazionePast: d.time <= displayTime ? d.idratazione : null,
-    idratazioneFuture: d.time >= displayTime ? d.idratazione : null,
-    cortisoloPast: d.time <= displayTime ? d.cortisolo : null,
-    cortisoloFuture: d.time >= displayTime ? d.cortisolo : null,
-    digestionePast: d.time <= displayTime ? d.digestione : null,
-    digestioneFuture: d.time >= displayTime ? d.digestione : null,
-    neuroPast: d.time <= displayTime ? d.neuro : null,
-    neuroFuture: d.time >= displayTime ? d.neuro : null
+    // Past/Future: numeri finiti (mai NaN); null solo fuori dal segmento temporale.
+    energyPast: h <= displayTime ? energy : null,
+    energyFuture: h >= displayTime ? energy : null,
+    kcalPast: h <= displayTime ? scale(energy) : null,
+    kcalFuture: h >= displayTime ? scale(energy) : null,
+    // Chiave continua per chartUnit === 'kcal' (evita dipendenza solo da *Past)
+    kcalValue: scale(energy) ?? 0,
+    glicemiaPast: h <= displayTime ? glicemia : null,
+    glicemiaFuture: h >= displayTime ? glicemia : null,
+    idratazionePast: h <= displayTime ? idratazione : null,
+    idratazioneFuture: h >= displayTime ? idratazione : null,
+    cortisoloPast: h <= displayTime ? cortisolo : null,
+    cortisoloFuture: h >= displayTime ? cortisolo : null,
+    digestionePast: h <= displayTime ? digestione : null,
+    digestioneFuture: h >= displayTime ? digestione : null,
+    neuroPast: h <= displayTime ? neuro : null,
+    neuroFuture: h >= displayTime ? neuro : null
   };
   });
 
@@ -5942,10 +5954,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
 
       // Sommiamo i macro di tutti gli alimenti che fanno parte di QUESTO specifico pasto
-      mealsById[uniqueMealId].value += Number(item.kcal || item.cal || 0);
-      mealsById[uniqueMealId].prot += Number(item.prot || item.proteine || 0);
-      mealsById[uniqueMealId].carb += Number(item.carb || item.carboidrati || 0);
-      mealsById[uniqueMealId].fat += Number(item.fatTotal || item.fat || item.grassi || 0);
+      mealsById[uniqueMealId].value += safeNum(item.kcal ?? item.cal);
+      mealsById[uniqueMealId].prot += safeNum(item.prot ?? item.proteine);
+      mealsById[uniqueMealId].carb += safeNum(item.carb ?? item.carboidrati);
+      mealsById[uniqueMealId].fat += safeNum(item.fatTotal ?? item.fat ?? item.grassi);
     });
 
     // Trasformiamo l'oggetto in array, lo ordiniamo cronologicamente e assegniamo i colori
@@ -5953,21 +5965,29 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       .sort((a, b) => a.timeValue - b.timeValue)
       .map((meal, index) => ({
         ...meal,
-        macros: { pro: meal.prot, carb: meal.carb, fat: meal.fat },
+        value: safeNum(meal.value),
+        prot: safeNum(meal.prot),
+        carb: safeNum(meal.carb),
+        fat: safeNum(meal.fat),
+        macros: {
+          pro: safeNum(meal.prot),
+          carb: safeNum(meal.carb),
+          fat: safeNum(meal.fat),
+        },
         color: PIE_COLORS[index % PIE_COLORS.length],
         fill: PIE_COLORS[index % PIE_COLORS.length]
       }));
 
-    let data = calculatedPieData.filter(d => d.value > 0);
-    const currentTotal = data.reduce((s, d) => s + d.value, 0);
+    let data = calculatedPieData.filter((d) => d.value > 0);
+    const currentTotal = data.reduce((s, d) => s + safeNum(d.value), 0);
     // Denominatore = target giornaliero (NON maxScale). A target/surplus i macro chiudono al 100%.
     const dailyTargetKcal =
       Math.round(
-        Number(homeCalorieSplit?.targetKcal)
-        || Number(dynamicDailyKcal)
-        || Number(baseKcal)
-        || Number(userProfileKcalBase)
-        || Number(userTargets?.kcal)
+        safeNum(homeCalorieSplit?.targetKcal)
+        || safeNum(dynamicDailyKcal)
+        || safeNum(baseKcal)
+        || safeNum(userProfileKcalBase)
+        || safeNum(userTargets?.kcal)
         || 2000
       ) || 2000;
     const surplusKcal = Math.max(0, Math.round(currentTotal - dailyTargetKcal));
@@ -5987,8 +6007,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const scale = dailyTargetKcal / currentTotal;
       data = data.map((meal) => ({
         ...meal,
-        actualKcal: meal.value,
-        value: meal.value * scale,
+        actualKcal: safeNum(meal.value),
+        value: safeNum(meal.value) * scale,
       }));
       data = [...data, {
         name: 'SURPLUS',
@@ -6010,13 +6030,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         color: rimanentiSliceColor,
       }];
     }
-    const sortedPieData = [...data].sort((a, b) => {
-      if (a.id === 'rimanenti' || a.id === 'surplus') return 1;
-      if (b.id === 'rimanenti' || b.id === 'surplus') return -1;
-      const tA = a.timeValue ?? a.time ?? 0;
-      const tB = b.timeValue ?? b.time ?? 0;
-      return (Number(tA) || 0) - (Number(tB) || 0);
-    });
+    const sortedPieData = [...data]
+      .map((d) => ({ ...d, value: safeNum(d.value) }))
+      .filter((fetta) => fetta.value > 0)
+      .sort((a, b) => {
+        if (a.id === 'rimanenti' || a.id === 'surplus') return 1;
+        if (b.id === 'rimanenti' || b.id === 'surplus') return -1;
+        const tA = a.timeValue ?? a.time ?? 0;
+        const tB = b.timeValue ?? b.time ?? 0;
+        return safeNum(tA) - safeNum(tB);
+      });
+    if (sortedPieData.length === 0) {
+      return [{
+        name: 'Rimanenti',
+        value: dailyTargetKcal > 0 ? dailyTargetKcal : 1,
+        macros: null,
+        id: 'rimanenti',
+        fill: rimanentiSliceColor,
+        color: rimanentiSliceColor,
+      }];
+    }
     return sortedPieData;
   }, [
     activeLog,
@@ -6028,25 +6061,32 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   ]);
 
   const mealPieDisplayData = useMemo(() => {
-    if (activeDialMode === 'kcal') return mealPieData;
+    if (activeDialMode === 'kcal') {
+      return mealPieData.filter((fetta) => safeNum(fetta.value) > 0);
+    }
 
     const macroKey =
       activeDialMode === 'pro' ? 'prot' : activeDialMode === 'cho' ? 'carb' : 'fat';
-    const targetG =
-      activeDialMode === 'pro'
-        ? userTargets?.prot ?? 150
-        : activeDialMode === 'cho'
-          ? userTargets?.carb ?? 200
-          : userTargets?.fatTotal ?? userTargets?.fat ?? 65;
+    const targetG = Math.max(
+      0,
+      safeNum(
+        activeDialMode === 'pro'
+          ? userTargets?.prot ?? 150
+          : activeDialMode === 'cho'
+            ? userTargets?.carb ?? 200
+            : userTargets?.fatTotal ?? userTargets?.fat ?? 65,
+      ),
+    );
 
     const mealsOnly = mealPieData.filter((e) => e.id !== 'rimanenti' && e.id !== 'surplus');
     const slices = mealsOnly.map((m) => ({
       ...m,
-      value: Math.max(0, Number(m[macroKey]) || 0),
+      value: Math.max(0, safeNum(m[macroKey])),
     }));
-    const consumed = slices.reduce((s, d) => s + d.value, 0);
-    let data = slices.filter((d) => d.value > 0);
-    if (consumed < targetG) {
+    const consumed = slices.reduce((s, d) => s + safeNum(d.value), 0);
+    // Scarta fette a zero (macro assenti) prima di Recharts — evita path NaN / crash.
+    let data = slices.filter((fetta) => fetta.value > 0);
+    if (targetG > 0 && consumed < targetG) {
       data = [
         ...data,
         {
@@ -6067,7 +6107,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       data = [
         {
           name: 'Rimanenti',
-          value: targetG,
+          value: targetG > 0 ? targetG : 1,
           macros: null,
           id: 'rimanenti',
           fill: 'rgba(255,255,255,0.05)',
@@ -6079,13 +6119,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         },
       ];
     }
-    return [...data].sort((a, b) => {
-      if (a.id === 'rimanenti') return 1;
-      if (b.id === 'rimanenti') return -1;
-      const tA = a.timeValue ?? 0;
-      const tB = b.timeValue ?? 0;
-      return (Number(tA) || 0) - (Number(tB) || 0);
-    });
+    return [...data]
+      .map((d) => ({ ...d, value: safeNum(d.value) }))
+      .filter((fetta) => fetta.value > 0)
+      .sort((a, b) => {
+        if (a.id === 'rimanenti') return 1;
+        if (b.id === 'rimanenti') return -1;
+        const tA = a.timeValue ?? 0;
+        const tB = b.timeValue ?? 0;
+        return safeNum(tA) - safeNum(tB);
+      });
   }, [mealPieData, activeDialMode, userTargets?.prot, userTargets?.carb, userTargets?.fat, userTargets?.fatTotal]);
 
   const finalChartData = renderDataWithSegments;
@@ -6782,13 +6825,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setChatHistory,
     onChatClose: closeChat,
     onManualShortcutFromChat: (actionId) => {
-      if (handleQuickEventFromChat(actionId)) return;
+      const raw = String(actionId || '').trim().toLowerCase();
       const canonical =
-        actionId === 'acqua' || actionId === 'water'
+        raw === 'acqua' || raw === 'water'
           ? 'water'
-          : actionId === 'pasto' || actionId === 'meal'
+          : raw === 'pasto' || raw === 'meal'
             ? 'meal'
-            : actionId;
+            : raw === 'pisolino' || raw === 'nap'
+              ? 'nap'
+              : raw === 'caffè' || raw === 'caffe' || raw === 'coffee' || raw === 'stimulant'
+                ? 'stimulant'
+                : raw === 'tè' || raw === 'te' || raw === 'tea'
+                  ? 'tea'
+                  : raw === 'energy' || raw === 'energy drink' || raw === 'energydrink' || raw === 'energy_drink'
+                    ? 'energy'
+                    : raw;
       handleAddEventMenuItem(canonical, 'predictive_chip');
     },
     getWipMealSnapshot: getWipMealSnapshotFromBridge,
@@ -7181,9 +7232,33 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleSaveChoiceStimulant = () => {
     const id = Date.now().toString();
-    const node = String(stimulantSubtype || '').toLowerCase() === 'caffè'
-      ? buildCoffeeStimulantNode(coffeeVariant, stimulantTime, { id })
-      : {
+    const sub = String(stimulantSubtype || '').toLowerCase();
+    const isCoffee = sub === 'caffè' || sub === 'caffe';
+    const isTea = sub === 'tè' || sub === 'te' || sub === 'tea';
+    const isEnergy = sub.includes('energy');
+
+    let node;
+    if (isCoffee) {
+      writeLastCoffeeType(coffeeType);
+      node = buildCoffeeStimulantNode(coffeeVariant, stimulantTime, {
+        id,
+        coffeeType,
+        type: coffeeType,
+        sugar: coffeeVariant === COFFEE_VARIANT.ZUCCHERATO,
+      });
+    } else if (isTea) {
+      writeLastTeaType(teaType);
+      node = buildTeaStimulantNode(coffeeVariant, stimulantTime, {
+        id,
+        teaType,
+        type: teaType,
+        sugar: coffeeVariant === COFFEE_VARIANT.ZUCCHERATO,
+      });
+    } else if (isEnergy) {
+      writeLastEnergyType(energyType);
+      node = buildEnergyStimulantNode(energyType, stimulantTime, { id });
+    } else {
+      node = {
         id,
         type: 'stimulant',
         subtype: stimulantSubtype,
@@ -7192,6 +7267,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         carb: 0,
         breaksFast: false,
       };
+    }
+
     const next = [...manualNodes, node];
     setManualNodes(next);
     syncDatiFirebase(dailyLog, next);
@@ -7200,11 +7277,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setCoffeeVariant(COFFEE_VARIANT.AMARO);
     const fromChat = returnToChatAfterQuickActionRef.current === true
       || activeAction === 'ai_chat';
-    if (isCoffeeStimulantNode(node)) {
+    const confirmKind = resolveStimulantConfirmKind(node);
+    if (confirmKind) {
+      const subtitle = node.label || undefined;
       if (fromChat) {
-        appendQuickEventConfirmToChat('coffee');
+        appendQuickEventConfirmToChat(confirmKind, { subtitle });
       } else {
-        setQuickEventConfirm(buildQuickEventConfirmPayload('coffee'));
+        setQuickEventConfirm(buildQuickEventConfirmPayload(confirmKind, { subtitle }));
       }
     }
     if (fromChat) {
@@ -7751,11 +7830,36 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     openFastLoggerNew();
   }, [closeChat, openFastLoggerNew]);
 
+  const handleOpenManualMealFromChat = useCallback(() => {
+    // Overlay FastMealLogger sopra la chat — senza smontare ai_chat.
+    openFastLoggerNew();
+  }, [openFastLoggerNew]);
+
+  const handleOpenActivityFromChat = useCallback((payload = {}) => {
+    let raw = String(payload?.defaultTab ?? payload?.tab ?? '').toLowerCase().trim();
+    if (!raw) {
+      raw = peekActivitySheetTempTab() || '';
+    }
+    const defaultTab = stashActivitySheetTempTab(raw || 'pesi');
+    returnToChatAfterQuickActionRef.current = true;
+    closeChat();
+    resetWorkoutFormForNewSession(defaultTab);
+    setWorkoutType(defaultTab);
+    setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
+    const nonce = Date.now();
+    setActivitySheetIntent({ tab: defaultTab, nonce });
+    console.log('DEBUG: padre openActivity', { defaultTab, nonce, payload });
+    setActiveAction('allenamento');
+    setIsDrawerOpen(true);
+  }, [
+    closeChat,
+    resetWorkoutFormForNewSession,
+    setWorkoutType,
+    setWorkoutEndTime,
+  ]);
+
   const handleChatManualShortcut = useCallback(
     (actionId) => {
-      // Acqua / pisolino / caffè: resta in chat, appende QUICK_EVENT_CONFIRM (niente closeChat → Home).
-      if (handleQuickEventFromChat(actionId)) return;
-
       if (actionId === 'menu') {
         returnToChatAfterQuickActionRef.current = true;
         closeChat();
@@ -7776,20 +7880,29 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         setShowWeightModal(true);
         return;
       }
+      const raw = String(actionId || '').trim().toLowerCase();
       const canonical =
-        actionId === 'pasto' || actionId === 'meal'
+        raw === 'pasto' || raw === 'meal'
           ? 'meal'
-          : actionId === 'acqua'
+          : raw === 'acqua' || raw === 'water'
             ? 'water'
-            : actionId === 'allenamento'
-              ? 'workout'
-              : actionId;
-      // Fallback drawer/modale: segna ritorno chat e solo allora smonta la shell chat.
+            : raw === 'pisolino' || raw === 'nap'
+              ? 'nap'
+              : raw === 'caffè' || raw === 'caffe' || raw === 'coffee' || raw === 'stimulant'
+                ? 'stimulant'
+                : raw === 'tè' || raw === 'te' || raw === 'tea'
+                  ? 'tea'
+                  : raw === 'energy' || raw === 'energy drink' || raw === 'energydrink' || raw === 'energy_drink'
+                    ? 'energy'
+                    : raw === 'allenamento'
+                      ? 'workout'
+                      : raw;
+      // Acqua / Caffè / Tè / Energy / Pisolino → panel o drawer. Ritorno chat dopo conferma.
       returnToChatAfterQuickActionRef.current = true;
       closeChat();
       handleAddEventMenuItem(canonical, 'chat_shortcut');
     },
-    [closeChat, handleAddEventMenuItem, handleQuickEventFromChat, trackEventUsage],
+    [closeChat, handleAddEventMenuItem, trackEventUsage],
   );
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
@@ -8208,11 +8321,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           className="analisi-top-visual-container"
           style={{
             flex: 1,
-            minHeight: 0,
+            minHeight: 220,
             order: 1,
           }}
         >
-        <div className="chart-wrapper" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="chart-wrapper" style={{ flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column' }}>
           <div className="chartTitle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
             <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
               {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
@@ -8225,7 +8338,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               )}
             </div>
           </div>
-          <div style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', transform: 'none' }}>
+          <div style={{ position: 'relative', flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column', transform: 'none' }}>
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
               <button
                 type="button"
@@ -8244,7 +8357,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
             </div>
-            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 0, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
+            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 200, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
               className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
               onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
@@ -8572,7 +8685,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                           />
                         </>
                       ) : null}
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                         <PieChart>
                           <Pie
                             data={mealPieDisplayData}
@@ -9097,6 +9210,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         {activeAction === 'allenamento' && (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <WorkoutView
+            key={`activity-sheet-${activitySheetIntent.nonce || '0'}`}
+            preferredWorkoutType={activitySheetIntent.tab}
+            preferredWorkoutTypeNonce={activitySheetIntent.nonce}
             onBack={() => {
               if (postWorkoutReviewActive) {
                 dismissPostWorkoutReview();
@@ -9637,6 +9753,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             cancelMealBuilder={cancelMealBuilder}
             commitMealBuilder={commitMealBuilder}
             onManualShortcut={handleChatManualShortcut}
+            onOpenManualView={handleOpenManualMealFromChat}
+            onOpenActivityView={handleOpenActivityFromChat}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
             quickStripItems={chatQuickStripItems}
@@ -9920,6 +10038,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onBackToMain={() => setAddChoiceView('main')}
         stimulantSubtype={stimulantSubtype}
         setStimulantSubtype={setStimulantSubtype}
+        coffeeType={coffeeType}
+        setCoffeeType={setCoffeeType}
+        teaType={teaType}
+        setTeaType={setTeaType}
+        energyType={energyType}
+        setEnergyType={setEnergyType}
         coffeeVariant={coffeeVariant}
         setCoffeeVariant={setCoffeeVariant}
         stimulantTime={stimulantTime}

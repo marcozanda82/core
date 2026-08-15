@@ -60,6 +60,7 @@ export function isMealBuilderWizardTrigger(userText) {
   if (!text) return false;
   return (
     /\bguidami\b/i.test(text)
+    || /\binserimento\s+guidato\b/i.test(text)
     || /\bcostruiamo\s+(?:il\s+|un\s+)?(?:pranzo|cena|colazione|pasto|snack)\b/i.test(text)
     || /\b(?:compiliamo|costruiamo)\s+.*\bmacro\b/i.test(text)
   );

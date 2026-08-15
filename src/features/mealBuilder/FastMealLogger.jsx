@@ -15,7 +15,6 @@ import FoodDetailModal from './components/FoodDetailModal';
 import QtyBadge from './components/QtyBadge';
 import QuickFoodTile from './components/QuickFoodTile';
 import LiveMacroHud from './components/LiveMacroHud';
-import TodayMealsTimeline from './components/TodayMealsTimeline';
 import { formatCheckoutMealTitle, formatMiniCartMealLabel, getFoodEmoji, resolveFoodVisual } from './utils/foodIconUtils';
 import {
   findDraftItemForFood,
@@ -43,7 +42,7 @@ import {
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, X } from 'lucide-react';
 import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
@@ -300,8 +299,8 @@ function FastMealLoggerContent({
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
-  const [isCartOpen, setIsCartOpen] = useState(
-    () => Array.isArray(initialDraft) && initialDraft.length > 0,
+  const [activeTab, setActiveTab] = useState(() =>
+    Array.isArray(initialDraft) && initialDraft.length > 0 ? 'riepilogo' : 'alimenti',
   );
   const [cartPulse, setCartPulse] = useState(false);
   const [addFeedback, setAddFeedback] = useState(null);
@@ -342,10 +341,7 @@ function FastMealLoggerContent({
     setMealTime(bounded);
   }, [setMealTime]);
 
-  /** Timeline: gesto utente esplicito (tap/drag) aggiorna l'orario e rilascia il lock dell'input nativo. */
-  const handleMealTimeChange = useCallback((hour) => {
-    commitDraftMealTime(hour, { fromNativeInput: false });
-  }, [commitDraftMealTime]);
+  /** Orario solo da input nativo nel tab Riepilogo. */
 
   const handleNativeMealTimeInputChange = useCallback((event) => {
     const raw = event?.target?.value;
@@ -649,7 +645,7 @@ function FastMealLoggerContent({
     if (Array.isArray(initialDraft) && initialDraft.length > 0) {
       loadInitialDraft(initialDraft);
       prefillAppliedRef.current = true;
-      setIsCartOpen(true);
+      setActiveTab('riepilogo');
     }
   }, [initialDraft, loadInitialDraft]);
   const mealTargets = useMemo(
@@ -1286,261 +1282,494 @@ function FastMealLoggerContent({
 
   return (
     <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100">
-      <header className="shrink-0 flex min-w-0 items-center justify-between px-4 pb-2 pt-3">
-        <img
-          src="/nuovo%20logo%20trasparente2.png"
-          alt="KentuOS"
-          decoding="async"
-          draggable={false}
-          className="h-9 w-auto max-w-[140px] object-contain object-left"
-        />
-        <button
-          type="button"
-          onClick={onClose}
-          className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-        >
-          Chiudi
-        </button>
+      <header className="shrink-0 border-b border-slate-800/80">
+        <div className="flex min-w-0 items-center justify-between px-4 pb-2 pt-3">
+          <img
+            src="/nuovo%20logo%20trasparente2.png"
+            alt="KentuOS"
+            decoding="async"
+            draggable={false}
+            className="h-9 w-auto max-w-[140px] object-contain object-left"
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Chiudi"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+          >
+            <X className="h-5 w-5" aria-hidden />
+          </button>
+        </div>
+        <div className="px-4 pb-3">
+          <div
+            role="tablist"
+            aria-label="Navigazione inserimento pasto"
+            className="flex w-full rounded-full border border-slate-800 bg-slate-900/60 p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'alimenti'}
+              onClick={() => setActiveTab('alimenti')}
+              className={`flex flex-1 items-center justify-center rounded-full px-3 py-2 text-xs font-semibold transition-all duration-200 ${
+                activeTab === 'alimenti'
+                  ? 'bg-slate-700 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Alimenti
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'riepilogo'}
+              onClick={() => setActiveTab('riepilogo')}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-all duration-200 ${
+                activeTab === 'riepilogo'
+                  ? 'bg-cyan-500/90 text-slate-950 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Riepilogo
+              {draftFoods.length > 0 ? (
+                <span
+                  className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
+                    activeTab === 'riepilogo'
+                      ? 'bg-slate-950/20 text-slate-950'
+                      : 'bg-cyan-500/20 text-cyan-300'
+                  }`}
+                >
+                  {draftFoods.length}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        </div>
       </header>
 
-      <div
-        className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2 transition-[padding] duration-300 ${
-          draftFoods.length > 0 && !isCartOpen ? 'pb-24' : 'pb-4'
-        }`}
-      >
-        <div className="space-y-3 px-0.5">
-          {!isVetrinaSearching ? (
-            <TodayMealsTimeline
-              fullHistory={fullHistory}
-              todayLog={todayLog}
-              currentMealTime={mealTime}
-              onMealTimeChange={handleMealTimeChange}
-              manualOverrideRef={mealTimeManualRef}
-              className="block w-full"
-            />
-          ) : null}
-
-          <div>
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                aria-hidden
-              />
-              <input
-                type="search"
-                value={vetrinaSearchQuery}
-                onChange={(event) => setVetrinaSearchQuery(event.target.value)}
-                placeholder="Cerca alimento o ricetta..."
-                className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
-              />
-              <button
-                type="button"
-                onClick={() => setIsSearchModalOpen(true)}
-                aria-label="Ricerca avanzata Kentu DB"
-                title="Ricerca avanzata"
-                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
-              >
-                <ScanBarcode className="h-4 w-4" />
-              </button>
-            </div>
-            <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
-              {isVetrinaSearching
-                ? vetrinaExternalResults.length > 0
-                  ? 'Ricerca globale · C > 🇮🇹 > 🌐'
-                  : 'Ricerca · personale, CREA, Italia e USDA'
-                : 'Suggerimenti basati sulle tue abitudini reali'}
-            </p>
-          </div>
-
-          {!isVetrinaSearching ? (
-            <div className="mb-2 flex items-center gap-2">
-              <div className="mx-auto flex w-full max-w-xs flex-1 rounded-full border border-slate-800 bg-slate-900/60 p-1">
-                <button
-                  type="button"
-                  onClick={() => setActiveVetrinaTab('foods')}
-                  className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                    activeVetrinaTab === 'foods'
-                      ? 'bg-slate-700 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <FaHamburger className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
-                  Alimenti
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveVetrinaTab('recipes')}
-                  className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
-                    activeVetrinaTab === 'recipes'
-                      ? 'bg-slate-700 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <MdOutlineLocalFireDepartment className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
-                  Le mie Ricette
-                </button>
-              </div>
-              <div className="flex shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
-                <button
-                  type="button"
-                  onClick={() => setCatalogViewMode('grid')}
-                  aria-label="Visualizzazione griglia"
-                  aria-pressed={catalogViewMode === 'grid'}
-                  className={`rounded-lg p-2 transition-colors ${
-                    catalogViewMode === 'grid'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatalogViewMode('list')}
-                  aria-label="Visualizzazione elenco"
-                  aria-pressed={catalogViewMode === 'list'}
-                  className={`rounded-lg p-2 transition-colors ${
-                    catalogViewMode === 'list'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="mb-2 flex justify-end">
-              <div className="flex rounded-xl border border-slate-800 bg-slate-900/60 p-1">
-                <button
-                  type="button"
-                  onClick={() => setCatalogViewMode('grid')}
-                  aria-label="Visualizzazione griglia"
-                  aria-pressed={catalogViewMode === 'grid'}
-                  className={`rounded-lg p-2 transition-colors ${
-                    catalogViewMode === 'grid'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCatalogViewMode('list')}
-                  aria-label="Visualizzazione elenco"
-                  aria-pressed={catalogViewMode === 'list'}
-                  className={`rounded-lg p-2 transition-colors ${
-                    catalogViewMode === 'list'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {isVetrinaSearching ? (
-            <div className="min-w-0 space-y-6">
-              {unifiedSearchGridItems.length > 0 ? (
-                <div className={vetrinaTilesContainerClass}>
-                  {unifiedSearchGridItems.map((item) => (
-                    <React.Fragment key={item.key}>
-                      {renderUnifiedSearchGridItem(item)}
-                    </React.Fragment>
-                  ))}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {activeTab === 'alimenti' ? (
+          <div
+            className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pt-2 transition-[padding] duration-300 ${
+              draftFoods.length > 0 ? 'pb-24' : 'pb-4'
+            }`}
+          >
+            <div className="space-y-3 px-0.5">
+              <div>
+                <div className="relative">
+                  <Search
+                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+                    aria-hidden
+                  />
+                  <input
+                    type="search"
+                    value={vetrinaSearchQuery}
+                    onChange={(event) => setVetrinaSearchQuery(event.target.value)}
+                    placeholder="Cerca alimento o ricetta..."
+                    className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchModalOpen(true)}
+                    aria-label="Ricerca avanzata Kentu DB"
+                    title="Ricerca avanzata"
+                    className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
+                  >
+                    <ScanBarcode className="h-4 w-4" />
+                  </button>
                 </div>
-              ) : null}
-
-              {isSearchingExternal ? (
-                <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-4 text-center text-xs text-slate-500">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
-                  Ricerca su Kentu DB...
+                <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
+                  {isVetrinaSearching
+                    ? vetrinaExternalResults.length > 0
+                      ? 'Ricerca globale · C > 🇮🇹 > 🌐'
+                      : 'Ricerca · personale, CREA, Italia e USDA'
+                    : 'Suggerimenti basati sulle tue abitudini reali'}
                 </p>
-              ) : null}
+              </div>
 
-              {unifiedSearchGridItems.length === 0
-                && !isSearchingExternal ? (
-                  <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
-                    Nessun risultato per &quot;{vetrinaQuery}&quot;
-                  </p>
-                ) : null}
-            </div>
-          ) : activeVetrinaTab === 'foods' ? (
-            <div className="min-w-0">
-              {gridFoods.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
-                  Nessun alimento frequente per questo slot
-                </p>
-              ) : (
-                <div className={vetrinaTilesContainerClass}>
-                  {suggestedFoods.length > 0 ? (
-                    <div
-                      className={
-                        catalogViewMode === 'grid'
-                          ? 'col-span-full mb-0.5'
-                          : 'w-full mb-2'
-                      }
+              {!isVetrinaSearching ? (
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="mx-auto flex w-full max-w-xs flex-1 rounded-full border border-slate-800 bg-slate-900/60 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveVetrinaTab('foods')}
+                      className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                        activeVetrinaTab === 'foods'
+                          ? 'bg-slate-700 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
                     >
-                      <h2 className="text-base font-bold text-slate-100">
-                        ✨ Consigliati per {selectedMealLabel}
-                      </h2>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Legenda: ✨ consigliati · C tuo DB · 🇮🇹 Italia · 🌐 USDA
-                      </p>
+                      <FaHamburger className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
+                      Alimenti
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveVetrinaTab('recipes')}
+                      className={`flex flex-1 items-center justify-center rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                        activeVetrinaTab === 'recipes'
+                          ? 'bg-slate-700 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <MdOutlineLocalFireDepartment className="mr-1.5 inline h-3.5 w-3.5" aria-hidden />
+                      Le mie Ricette
+                    </button>
+                  </div>
+                  <div className="flex shrink-0 rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setCatalogViewMode('grid')}
+                      aria-label="Visualizzazione griglia"
+                      aria-pressed={catalogViewMode === 'grid'}
+                      className={`rounded-lg p-2 transition-colors ${
+                        catalogViewMode === 'grid'
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogViewMode('list')}
+                      aria-label="Visualizzazione elenco"
+                      aria-pressed={catalogViewMode === 'list'}
+                      className={`rounded-lg p-2 transition-colors ${
+                        catalogViewMode === 'list'
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-2 flex justify-end">
+                  <div className="flex rounded-xl border border-slate-800 bg-slate-900/60 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setCatalogViewMode('grid')}
+                      aria-label="Visualizzazione griglia"
+                      aria-pressed={catalogViewMode === 'grid'}
+                      className={`rounded-lg p-2 transition-colors ${
+                        catalogViewMode === 'grid'
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogViewMode('list')}
+                      aria-label="Visualizzazione elenco"
+                      aria-pressed={catalogViewMode === 'list'}
+                      className={`rounded-lg p-2 transition-colors ${
+                        catalogViewMode === 'list'
+                          ? 'bg-slate-700 text-white'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isVetrinaSearching ? (
+                <div className="min-w-0 space-y-6">
+                  {unifiedSearchGridItems.length > 0 ? (
+                    <div className={vetrinaTilesContainerClass}>
+                      {unifiedSearchGridItems.map((item) => (
+                        <React.Fragment key={item.key}>
+                          {renderUnifiedSearchGridItem(item)}
+                        </React.Fragment>
+                      ))}
                     </div>
                   ) : null}
-                  {gridFoods.map((tile) => {
-                    const displayTile = mergeCatalogDisplay(
-                      tile,
-                      personalDb,
-                      catalogServingOverrides,
-                    );
-                    const identityKey = resolveFoodIdentityKey(displayTile);
-                    const isSuggested = Boolean(
-                      identityKey && suggestedFoodIdentityKeys.has(identityKey),
-                    );
-                    return renderQuickFoodTile(tile, isSuggested);
-                  })}
+
+                  {isSearchingExternal ? (
+                    <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-4 text-center text-xs text-slate-500">
+                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
+                      Ricerca su Kentu DB...
+                    </p>
+                  ) : null}
+
+                  {unifiedSearchGridItems.length === 0
+                    && !isSearchingExternal ? (
+                      <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                        Nessun risultato per &quot;{vetrinaQuery}&quot;
+                      </p>
+                    ) : null}
+                </div>
+              ) : activeVetrinaTab === 'foods' ? (
+                <div className="min-w-0">
+                  {gridFoods.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                      Nessun alimento frequente per questo slot
+                    </p>
+                  ) : (
+                    <div className={vetrinaTilesContainerClass}>
+                      {suggestedFoods.length > 0 ? (
+                        <div
+                          className={
+                            catalogViewMode === 'grid'
+                              ? 'col-span-full mb-0.5'
+                              : 'w-full mb-2'
+                          }
+                        >
+                          <h2 className="text-base font-bold text-slate-100">
+                            ✨ Consigliati per {selectedMealLabel}
+                          </h2>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Legenda: ✨ consigliati · C tuo DB · 🇮🇹 Italia · 🌐 USDA
+                          </p>
+                        </div>
+                      ) : null}
+                      {gridFoods.map((tile) => {
+                        const displayTile = mergeCatalogDisplay(
+                          tile,
+                          personalDb,
+                          catalogServingOverrides,
+                        );
+                        const identityKey = resolveFoodIdentityKey(displayTile);
+                        const isSuggested = Boolean(
+                          identityKey && suggestedFoodIdentityKeys.has(identityKey),
+                        );
+                        return renderQuickFoodTile(tile, isSuggested);
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsRecipeBuilderOpen(true)}
+                    className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-500 active:scale-[0.99]"
+                  >
+                    ➕ Crea Nuova Ricetta
+                  </button>
+
+                  <section>
+                    <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Le mie Ricette</h2>
+                    <p className="mb-3 text-xs text-slate-500">
+                      {savedRecipes.length}{' '}
+                      {savedRecipes.length === 1 ? 'ricetta salvata' : 'ricette salvate'}
+                    </p>
+                    {savedRecipes.length === 0 ? (
+                      <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
+                        Nessuna ricetta salvata. Crea una nuova ricetta o componi un pasto e usa &quot;Salva come ricetta&quot;.
+                      </p>
+                    ) : (
+                      <div className={vetrinaTilesContainerClass}>
+                        {savedRecipes
+                          .map((recipe) => renderSavedRecipeTile(recipe))
+                          .filter(Boolean)}
+                      </div>
+                    )}
+                  </section>
                 </div>
               )}
             </div>
-          ) : (
-            <div className="min-w-0">
+          </div>
+        ) : (
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-900/40">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-violet-300/80">
+                  Riepilogo
+                </p>
+                {viewMode === 'expanded' ? (
+                  <h2 className="truncate text-base font-semibold text-slate-100">{checkoutMealTitle}</h2>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <div className="flex rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode('expanded');
+                      setIsBuilderHeaderCollapsed(false);
+                    }}
+                    aria-label="Vista espansa"
+                    aria-pressed={viewMode === 'expanded'}
+                    title="Vista espansa"
+                    className={`rounded-md p-1.5 transition-colors ${
+                      viewMode === 'expanded'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewMode('compact');
+                      setIsBuilderHeaderCollapsed(true);
+                    }}
+                    aria-label="Vista compatta"
+                    aria-pressed={viewMode === 'compact'}
+                    title="Vista compatta"
+                    className={`rounded-md p-1.5 transition-colors ${
+                      viewMode === 'compact'
+                        ? 'bg-slate-700 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <List className="h-4 w-4" />
+                  </button>
+                </div>
+                {viewMode === 'expanded' ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsBuilderHeaderCollapsed((prev) => !prev)}
+                    className="rounded-lg border border-slate-700 p-2 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                    aria-label={isBuilderHeaderCollapsed ? 'Espandi dettagli pasto' : 'Comprimi dettagli pasto'}
+                    title={isBuilderHeaderCollapsed ? 'Espandi dettagli' : 'Comprimi dettagli'}
+                  >
+                    {isBuilderHeaderCollapsed ? (
+                      <ChevronDown className="h-5 w-5" />
+                    ) : (
+                      <ChevronUp className="h-5 w-5" />
+                    )}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {showBuilderSummaryBar ? (
+              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-2">
+                <span className="truncate text-sm font-semibold text-slate-100">{checkoutMealTitle}</span>
+                <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-cyan-400">
+                  {draftMealKcal} kcal
+                </span>
+              </div>
+            ) : null}
+
+            {viewMode === 'expanded' && !isBuilderHeaderCollapsed ? (
+              <>
+                <LiveMacroHud
+                  mealTargets={mealTargets}
+                  mealConsumed={mealConsumed}
+                  draftTotals={draftTotals}
+                  className="mx-4 mt-2 shrink-0 border-slate-700/80 bg-slate-900 shadow-none"
+                />
+
+                <div className="shrink-0 space-y-3 border-b border-slate-800 px-4 pb-3 pt-2">
+                  <div className="flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
+                    {MEAL_SLOTS.map((slot) => {
+                      const isActive = selectedSlot === slot.id;
+                      return (
+                        <button
+                          key={slot.id}
+                          type="button"
+                          onClick={() => setSelectedSlot(slot.id)}
+                          className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
+                            isActive
+                              ? 'bg-cyan-500 text-slate-950'
+                              : 'text-slate-400 hover:text-slate-200'
+                          }`}
+                        >
+                          {slot.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
+                    <label
+                      htmlFor="fast-logger-cart-meal-time"
+                      onClick={openNativeTimePicker}
+                      className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                    >
+                      <Clock className="h-4 w-4 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
+                      <input
+                        ref={mealTimeInputRef}
+                        id="fast-logger-cart-meal-time"
+                        type="time"
+                        value={decimalToTimeStr(mealTime)}
+                        onChange={handleNativeMealTimeInputChange}
+                        onClick={(event) => {
+                          if (typeof event.currentTarget.showPicker === 'function') {
+                            try {
+                              event.currentTarget.showPicker();
+                            } catch {
+                              /* picker già aperto o rifiutato dal browser */
+                            }
+                          }
+                        }}
+                        className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            <div
+              className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-4 ${
+                viewMode === 'compact' ? 'py-2' : 'py-3'
+              }`}
+            >
+              {draftFoods.length === 0 ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 py-8">
+                  <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
+                    Nessun alimento nel piatto — aggiungi dalla vetrina
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('alimenti')}
+                    className="rounded-xl border border-cyan-500/40 px-4 py-2 text-sm font-medium text-cyan-300 transition-colors hover:bg-cyan-950/30"
+                  >
+                    Vai ad Alimenti
+                  </button>
+                </div>
+              ) : (
+                <ul className={`min-w-0 flex-1 ${viewMode === 'compact' ? 'space-y-1.5' : 'space-y-2'}`}>
+                  {draftFoods.map((food) => (
+                    <DraftCartSmartRow
+                      key={food.id}
+                      item={food}
+                      personalDb={personalDb}
+                      onUpdateAmount={updateFoodAmount}
+                      onRemove={removeFoodFromDraft}
+                      onDeepEdit={handleOpenDraftDeepEdit}
+                      variant={viewMode === 'compact' ? 'compact' : 'card'}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="shrink-0 space-y-2 border-t border-slate-800 px-4 py-4">
+              {draftFoods.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={handleOpenSaveRecipe}
+                  className="w-full rounded-xl border border-violet-500/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30"
+                >
+                  Salva come ricetta
+                </button>
+              ) : null}
+
               <button
                 type="button"
-                onClick={() => setIsRecipeBuilderOpen(true)}
-                className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-500 active:scale-[0.99]"
+                onClick={handleConfirm}
+                disabled={draftFoods.length === 0}
+                className="w-full rounded-xl bg-cyan-500 px-4 py-3.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
               >
-                ➕ Crea Nuova Ricetta
+                CONFERMA PASTO · {draftMealKcal} kcal
               </button>
-
-              <section>
-                <h2 className="mb-1 truncate text-sm font-semibold text-slate-200">Le mie Ricette</h2>
-                <p className="mb-3 text-xs text-slate-500">
-                  {savedRecipes.length}{' '}
-                  {savedRecipes.length === 1 ? 'ricetta salvata' : 'ricette salvate'}
-                </p>
-                {savedRecipes.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
-                    Nessuna ricetta salvata. Crea una nuova ricetta o componi un pasto e usa &quot;Salva come ricetta&quot;.
-                  </p>
-                ) : (
-                  <div className={vetrinaTilesContainerClass}>
-                    {savedRecipes
-                      .map((recipe) => renderSavedRecipeTile(recipe))
-                      .filter(Boolean)}
-                  </div>
-                )}
-              </section>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {addFeedback && !isCartOpen ? (
+      {addFeedback && activeTab === 'alimenti' ? (
         <div
           role="status"
           className="pointer-events-none absolute bottom-20 left-1/2 z-[60] max-w-[90%] -translate-x-1/2 rounded-full border border-cyan-500/40 bg-slate-900/95 px-4 py-2 text-xs font-medium text-cyan-200 shadow-lg backdrop-blur-sm transition-all duration-300"
@@ -1549,215 +1778,7 @@ function FastMealLoggerContent({
         </div>
       ) : null}
 
-      {isCartOpen ? (
-        <button
-          type="button"
-          aria-label="Chiudi riepilogo piatto"
-          onClick={() => setIsCartOpen(false)}
-          className="absolute inset-0 z-40 bg-black/45 transition-opacity duration-300"
-        />
-      ) : null}
-
-      <div
-        className={`absolute inset-x-0 bottom-0 z-50 flex max-h-[88dvh] min-h-0 flex-col overflow-hidden border-t border-slate-700 bg-slate-900 shadow-2xl transition-all duration-300 ease-out ${
-          isCartOpen
-            ? 'translate-y-0 opacity-100'
-            : 'pointer-events-none translate-y-full opacity-0'
-        }`}
-      >
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-violet-300/80">
-                Riepilogo
-              </p>
-              {viewMode === 'expanded' ? (
-                <h2 className="truncate text-base font-semibold text-slate-100">{checkoutMealTitle}</h2>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <div className="flex rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('expanded');
-                    setIsBuilderHeaderCollapsed(false);
-                  }}
-                  aria-label="Vista espansa"
-                  aria-pressed={viewMode === 'expanded'}
-                  title="Vista espansa"
-                  className={`rounded-md p-1.5 transition-colors ${
-                    viewMode === 'expanded'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewMode('compact');
-                    setIsBuilderHeaderCollapsed(true);
-                  }}
-                  aria-label="Vista compatta"
-                  aria-pressed={viewMode === 'compact'}
-                  title="Vista compatta"
-                  className={`rounded-md p-1.5 transition-colors ${
-                    viewMode === 'compact'
-                      ? 'bg-slate-700 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <List className="h-4 w-4" />
-                </button>
-              </div>
-              {viewMode === 'expanded' ? (
-                <button
-                  type="button"
-                  onClick={() => setIsBuilderHeaderCollapsed((prev) => !prev)}
-                  className="rounded-lg border border-slate-700 p-2 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-                  aria-label={isBuilderHeaderCollapsed ? 'Espandi dettagli pasto' : 'Comprimi dettagli pasto'}
-                  title={isBuilderHeaderCollapsed ? 'Espandi dettagli' : 'Comprimi dettagli'}
-                >
-                  {isBuilderHeaderCollapsed ? (
-                    <ChevronDown className="h-5 w-5" />
-                  ) : (
-                    <ChevronUp className="h-5 w-5" />
-                  )}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setIsCartOpen(false)}
-                className="rounded-lg border border-slate-700 p-2 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
-                aria-label="Chiudi riepilogo piatto"
-              >
-                <ChevronDown className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          {showBuilderSummaryBar ? (
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-2">
-              <span className="truncate text-sm font-semibold text-slate-100">{checkoutMealTitle}</span>
-              <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-cyan-400">
-                {draftMealKcal} kcal
-              </span>
-            </div>
-          ) : null}
-
-          {viewMode === 'expanded' && !isBuilderHeaderCollapsed ? (
-            <>
-              <LiveMacroHud
-                mealTargets={mealTargets}
-                mealConsumed={mealConsumed}
-                draftTotals={draftTotals}
-                className="mx-4 mt-2 shrink-0 border-slate-700/80 bg-slate-900 shadow-none"
-              />
-
-              <div className="shrink-0 space-y-3 border-b border-slate-800 px-4 pb-3 pt-2">
-                <div className="flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
-                  {MEAL_SLOTS.map((slot) => {
-                    const isActive = selectedSlot === slot.id;
-                    return (
-                      <button
-                        key={slot.id}
-                        type="button"
-                        onClick={() => setSelectedSlot(slot.id)}
-                        className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
-                          isActive
-                            ? 'bg-cyan-500 text-slate-950'
-                            : 'text-slate-400 hover:text-slate-200'
-                        }`}
-                      >
-                        {slot.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
-                  <label
-                    htmlFor="fast-logger-cart-meal-time"
-                    onClick={openNativeTimePicker}
-                    className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                  >
-                    <Clock className="h-4 w-4 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
-                    <input
-                      ref={mealTimeInputRef}
-                      id="fast-logger-cart-meal-time"
-                      type="time"
-                      value={decimalToTimeStr(mealTime)}
-                      onChange={handleNativeMealTimeInputChange}
-                      onClick={(event) => {
-                        if (typeof event.currentTarget.showPicker === 'function') {
-                          try {
-                            event.currentTarget.showPicker();
-                          } catch {
-                            /* picker già aperto o rifiutato dal browser */
-                          }
-                        }
-                      }}
-                      className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
-                    />
-                  </label>
-                </div>
-              </div>
-            </>
-          ) : null}
-
-          <div
-            className={`flex min-h-0 flex-1 flex-grow flex-col px-4 ${
-              viewMode === 'compact' ? 'py-2' : 'py-3'
-            }`}
-          >
-            {draftFoods.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-6 text-center text-sm text-slate-500">
-                Nessun alimento nel piatto — aggiungi dalla vetrina
-              </p>
-            ) : (
-              <ul className={`min-w-0 flex-1 ${viewMode === 'compact' ? 'space-y-1.5' : 'space-y-2'}`}>
-                {draftFoods.map((food) => (
-                  <DraftCartSmartRow
-                    key={food.id}
-                    item={food}
-                    personalDb={personalDb}
-                    onUpdateAmount={updateFoodAmount}
-                    onRemove={removeFoodFromDraft}
-                    onDeepEdit={handleOpenDraftDeepEdit}
-                    variant={viewMode === 'compact' ? 'compact' : 'card'}
-                  />
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-
-        <div className="shrink-0 space-y-2 border-t border-slate-800 px-4 py-4">
-          {draftFoods.length > 0 ? (
-            <button
-              type="button"
-              onClick={handleOpenSaveRecipe}
-              className="w-full rounded-xl border border-violet-500/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30"
-            >
-              Salva come ricetta
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={handleConfirm}
-            disabled={draftFoods.length === 0}
-            className="w-full rounded-xl bg-cyan-500 px-4 py-3.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-          >
-            CONFERMA PASTO · {draftMealKcal} kcal
-          </button>
-        </div>
-      </div>
-
-      {!isCartOpen && draftFoods.length > 0 ? (
+      {activeTab === 'alimenti' && draftFoods.length > 0 ? (
         <div
           key={`mini-cart-${draftFoods.length}`}
           className={`absolute inset-x-0 bottom-0 z-30 shrink-0 px-4 pb-4 pt-2 ${
@@ -1766,7 +1787,7 @@ function FastMealLoggerContent({
         >
           <button
             type="button"
-            onClick={() => setIsCartOpen(true)}
+            onClick={() => setActiveTab('riepilogo')}
             className={`flex w-full items-center justify-between gap-3 rounded-2xl border border-cyan-400/40 bg-gradient-to-r from-cyan-500 to-cyan-400 px-4 py-3.5 text-left shadow-xl shadow-cyan-950/40 transition-all duration-300 hover:from-cyan-400 hover:to-cyan-300 active:scale-[0.98] ${
               cartPulse ? 'ring-2 ring-cyan-200/50' : ''
             }`}

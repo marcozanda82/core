@@ -56,11 +56,15 @@ export default function MealDialPieChart({
     );
   };
 
+  const pieData = (Array.isArray(mealPieDisplayData) ? mealPieDisplayData : []).filter(
+    (fetta) => Number.isFinite(Number(fetta?.value)) && Number(fetta.value) > 0,
+  );
+
   return (
-    <ResponsiveContainer width="100%" height="100%">
+    <ResponsiveContainer width="100%" height="100%" minHeight={250}>
       <PieChart>
         <Pie
-          data={mealPieDisplayData}
+          data={pieData}
           cx="50%"
           cy="50%"
           innerRadius="68%"
@@ -77,7 +81,7 @@ export default function MealDialPieChart({
           onClick={onPieSliceClick}
           style={{ cursor: 'pointer', outline: 'none' }}
         >
-          {mealPieDisplayData.map((entry) => {
+          {pieData.map((entry) => {
             const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
             const hasSelection = !!selectedMealCenter;
             return (

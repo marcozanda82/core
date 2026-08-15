@@ -66,7 +66,7 @@ export function takeNextCoffeeConfirmVisual() {
 }
 
 /**
- * @param {'water'|'nap'|'coffee'} kind
+ * @param {'water'|'nap'|'coffee'|'tea'|'energy'} kind
  * @param {{ title?: string, subtitle?: string }} [extra]
  * @returns {{ kind: string, title: string, subtitle?: string, imageSrc: string, videoSrc: string|null }}
  */
@@ -99,17 +99,45 @@ export function buildQuickEventConfirmPayload(kind, extra = {}) {
       videoSrc: visual.videoSrc,
     };
   }
+  if (kind === 'tea') {
+    // Stesso ciclo media del caffè (asset dedicati non ancora in /public).
+    const visual = takeNextCoffeeConfirmVisual();
+    return {
+      kind: 'tea',
+      title: extra.title || 'Tè registrato',
+      subtitle: extra.subtitle || undefined,
+      imageSrc: visual.imageSrc,
+      videoSrc: visual.videoSrc,
+    };
+  }
+  if (kind === 'energy') {
+    const visual = takeNextCoffeeConfirmVisual();
+    return {
+      kind: 'energy',
+      title: extra.title || 'Energy drink registrato',
+      subtitle: extra.subtitle || undefined,
+      imageSrc: visual.imageSrc,
+      videoSrc: visual.videoSrc,
+    };
+  }
   return null;
 }
 
 /**
  * Entry cronologia chat per conferma media (sistema).
- * @param {'water'|'nap'|'coffee'} kind
+ * @param {'water'|'nap'|'coffee'|'tea'|'energy'} kind
  * @param {{ title?: string, subtitle?: string }} [extra]
  */
 export function buildQuickEventConfirmChatEntry(kind, extra = {}) {
   const payload = buildQuickEventConfirmPayload(kind, extra);
   if (!payload) return null;
+  const now = Date.now();
+  const systemIcon =
+    kind === 'water' ? 'water'
+      : kind === 'nap' ? 'nap'
+        : kind === 'tea' ? 'tea'
+          : kind === 'energy' ? 'energy'
+            : 'coffee';
   return {
     sender: 'ai',
     type: 'QUICK_EVENT_CONFIRM',
@@ -118,11 +146,31 @@ export function buildQuickEventConfirmChatEntry(kind, extra = {}) {
     spokenText: payload.title,
     quickEventConfirm: payload,
     isSystem: true,
-    systemIcon: kind === 'water' ? 'water' : kind === 'nap' ? 'nap' : 'coffee',
+    systemIcon,
+    timestamp: now,
+    createdAt: now,
   };
 }
 
 export function isCoffeeStimulantNode(node) {
   const sub = String(node?.subtype || node?.name || '').trim().toLowerCase();
   return sub === 'caffè' || sub === 'caffe' || /\bcaff/.test(sub);
+}
+
+export function isTeaStimulantNode(node) {
+  const sub = String(node?.subtype || node?.name || '').trim().toLowerCase();
+  return sub === 'tè' || sub === 'te' || sub === 'tea' || /\bt[eè]\b/.test(sub);
+}
+
+export function isEnergyStimulantNode(node) {
+  const sub = String(node?.subtype || node?.name || '').trim().toLowerCase();
+  return sub.includes('energy') || sub.includes('pre-workout') || sub.includes('pre workout');
+}
+
+/** @returns {'coffee'|'tea'|'energy'|null} */
+export function resolveStimulantConfirmKind(node) {
+  if (isCoffeeStimulantNode(node)) return 'coffee';
+  if (isTeaStimulantNode(node)) return 'tea';
+  if (isEnergyStimulantNode(node)) return 'energy';
+  return null;
 }

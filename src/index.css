@@ -327,10 +327,22 @@ html, body, #root {
 .analisi-top-visual-container {
   width: 100%;
   flex-shrink: 0;
+  min-height: 220px;
   margin-bottom: 16px;
   display: flex;
   flex-direction: column;
   z-index: 10;
+}
+
+.chart-wrapper {
+  flex: 1 1 auto;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-scroll-container {
+  min-height: 200px;
 }
 
 /* Selettore tipo grafico — tab Analisi: una riga, tutti i bottoni in larghezza schermo (flex equal) */
@@ -589,7 +601,7 @@ html, body, #root {
 /* Ammortizzatore elastico — cerchio kcal */
 .kcal-dial-shell {
   flex: 1 1 0%;
-  min-height: 0;
+  min-height: 250px;
   width: 100%;
   display: flex;
   align-items: center;
@@ -600,6 +612,8 @@ html, body, #root {
   position: relative;
   height: 100%;
   width: auto;
+  min-width: 250px;
+  min-height: 250px;
   max-width: 100%;
   max-height: 100%;
   aspect-ratio: 1 / 1;
@@ -608,6 +622,9 @@ html, body, #root {
 }
 
 .kcal-dial-inner .recharts-responsive-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 250px;
   max-width: 100%;
   max-height: 100%;
 }

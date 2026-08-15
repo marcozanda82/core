@@ -208,11 +208,11 @@ export const WORKOUT_ACTIVITY_TYPE_DEFS = [
   },
   {
     id: 'cardio',
-    label: 'Cardio / Corsa',
+    label: 'Cardio',
     category: 'cardio',
     nodeKind: 'workout',
-    icon: '🏃',
-    selectorButtonLabel: '🏃 CARDIO',
+    icon: '💓',
+    selectorButtonLabel: '💓 CARDIO',
     showInActivitySelector: true,
   },
   {
@@ -225,13 +225,31 @@ export const WORKOUT_ACTIVITY_TYPE_DEFS = [
     showInActivitySelector: true,
   },
   {
+    id: 'camminata',
+    label: 'Camminata',
+    category: 'cardio',
+    nodeKind: 'workout',
+    icon: '🚶',
+    selectorButtonLabel: '🚶 CAMMINATA',
+    showInActivitySelector: true,
+  },
+  {
+    id: 'corsa',
+    label: 'Corsa',
+    category: 'cardio',
+    nodeKind: 'workout',
+    icon: '🏃',
+    selectorButtonLabel: '🏃 CORSA',
+    showInActivitySelector: true,
+  },
+  {
     id: 'lavoro',
     label: 'Attività lavorativa',
     category: 'work',
     nodeKind: 'work',
     icon: '💼',
     selectorButtonLabel: '💼 LAVORO',
-    showInActivitySelector: true,
+    showInActivitySelector: false,
   },
   {
     id: 'studio',
@@ -240,7 +258,7 @@ export const WORKOUT_ACTIVITY_TYPE_DEFS = [
     nodeKind: 'cognitive',
     icon: '📚',
     selectorButtonLabel: '📚 STUDIO',
-    showInActivitySelector: true,
+    showInActivitySelector: false,
     cognitiveMet: 1.3,
   },
   {
@@ -250,7 +268,7 @@ export const WORKOUT_ACTIVITY_TYPE_DEFS = [
     nodeKind: 'cognitive',
     icon: '💻',
     selectorButtonLabel: '💻 LAVORO PC',
-    showInActivitySelector: true,
+    showInActivitySelector: false,
     cognitiveMet: 1.5,
   },
   {
@@ -271,10 +289,86 @@ export function getWorkoutActivityTypeDef(id) {
   return ACTIVITY_BY_ID.get(String(id));
 }
 
-/** Id mostrati nel selettore vista Attività (ordine stabile). */
-export const WORKOUT_ACTIVITY_SELECTOR_IDS = WORKOUT_ACTIVITY_TYPE_DEFS.filter(
-  (d) => d.showInActivitySelector !== false
-).map((d) => d.id);
+/**
+ * Tab Scheda Attività (ordine UI). Esclude sedentarie (lavoro/studio/PC).
+ * @type {readonly string[]}
+ */
+export const WORKOUT_ACTIVITY_SELECTOR_IDS = Object.freeze([
+  'pesi',
+  'cardio',
+  'hiit',
+  'camminata',
+  'corsa',
+]);
+
+/**
+ * @param {unknown} raw
+ * @returns {'pesi'|'cardio'|'hiit'|'camminata'|'corsa'}
+ */
+export function resolveActivitySheetTab(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  if (WORKOUT_ACTIVITY_SELECTOR_IDS.includes(s)) return s;
+  return 'pesi';
+}
+
+/** Sticky in-memory: sopravvive al clear LS durante Strict Mode remount (~8s). */
+let stickyActivitySheetTempTab = /** @type {string | null} */ (null);
+let stickyActivitySheetTempUntil = 0;
+
+/**
+ * Salva il tab scelto dal pulsante rapido (LS + sticky).
+ * @param {unknown} raw
+ * @returns {'pesi'|'cardio'|'hiit'|'camminata'|'corsa'}
+ */
+export function stashActivitySheetTempTab(raw) {
+  const tab = resolveActivitySheetTab(raw);
+  stickyActivitySheetTempTab = tab;
+  stickyActivitySheetTempUntil = Date.now() + 8000;
+  try {
+    localStorage.setItem('temp_activity', tab);
+  } catch {
+    /* ignore */
+  }
+  return tab;
+}
+
+/**
+ * Legge temp_activity con priorità sticky → localStorage.
+ * @returns {string | null}
+ */
+export function peekActivitySheetTempTab() {
+  const now = Date.now();
+  if (stickyActivitySheetTempTab && now < stickyActivitySheetTempUntil) {
+    return stickyActivitySheetTempTab;
+  }
+  try {
+    const raw = localStorage.getItem('temp_activity');
+    if (!raw) return null;
+    const tab = resolveActivitySheetTab(raw);
+    stickyActivitySheetTempTab = tab;
+    stickyActivitySheetTempUntil = now + 8000;
+    return tab;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pulisce LS; di default mantiene lo sticky per remount React.
+ * @param {{ keepSticky?: boolean }} [opts]
+ */
+export function clearActivitySheetTempTab(opts = {}) {
+  const keepSticky = opts.keepSticky !== false;
+  try {
+    localStorage.removeItem('temp_activity');
+  } catch {
+    /* ignore */
+  }
+  if (!keepSticky) {
+    stickyActivitySheetTempTab = null;
+    stickyActivitySheetTempUntil = 0;
+  }
+}
 
 /**
  * Risolve un id attività da dati legacy; sconosciuto → null (il chiamante può fallback).
@@ -283,7 +377,7 @@ export const WORKOUT_ACTIVITY_SELECTOR_IDS = WORKOUT_ACTIVITY_TYPE_DEFS.filter(
  */
 export function resolveWorkoutActivityTypeId(raw) {
   if (raw == null || String(raw).trim() === '') return null;
-  const s = String(raw).trim();
+  const s = String(raw).trim().toLowerCase();
   return ACTIVITY_BY_ID.has(s) ? s : null;
 }
 
@@ -298,8 +392,10 @@ export function getWorkoutActivityLogDescription(activityId, muscles = []) {
   const ms = m.length > 0 ? ` (${m.join(' + ')})` : '';
 
   if (activityId === 'pesi') return `Sollevamento Pesi${ms}`;
-  if (activityId === 'cardio') return 'Cardio / Corsa';
+  if (activityId === 'cardio') return 'Cardio';
   if (activityId === 'hiit') return 'HIIT / Circuito';
+  if (activityId === 'camminata') return 'Camminata';
+  if (activityId === 'corsa') return 'Corsa';
   if (activityId === 'riposo') return 'Riposo';
   if (activityId === 'studio') return 'Studio';
   if (activityId === 'lavoro_pc') return 'Lavoro PC';

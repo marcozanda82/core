@@ -296,9 +296,73 @@ function computeDigestiveLoad(entry) {
  * t = tempo dall'evento, peakTime = ora del picco, duration = durata totale.
  */
 function responseCurve(t, peakTime, duration) {
-  if (t < 0 || t > duration) return 0;
-  const peak = 1 - Math.abs((t - peakTime) / peakTime);
-  return Math.max(0, peak);
+  const tt = Number(t);
+  const dur = Number(duration);
+  const pt = Number(peakTime);
+  if (!Number.isFinite(tt) || !Number.isFinite(dur) || tt < 0 || tt > dur) return 0;
+  const peakSafe = Number.isFinite(pt) && pt > 0 ? pt : Math.max(0.1, dur * 0.4);
+  const peak = 1 - Math.abs((tt - peakSafe) / peakSafe);
+  return Math.max(0, Number.isFinite(peak) ? peak : 0);
+}
+
+/** Anti-NaN per punti timeline fisiologica (Recharts interrompe la Line su un solo NaN). */
+function safePhysNum(val, fallback = 0) {
+  const n = Number(val);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function sanitizePhysiologyChartPoint(point, hourFallback = 0) {
+  const h = safePhysNum(point?.time ?? point?.hour, hourFallback);
+  return {
+    ...point,
+    time: h,
+    hour: h,
+    energy: Math.max(0, Math.min(100, safePhysNum(point?.energy, 0))),
+    idealEnergy: Math.max(0, Math.min(100, safePhysNum(point?.idealEnergy, 70))),
+    glicemia: Math.max(55, Math.min(250, safePhysNum(point?.glicemia, 85))),
+    idratazione: Math.max(0, Math.min(100, safePhysNum(point?.idratazione, 100))),
+    cortisolo: Math.max(0, Math.min(100, safePhysNum(point?.cortisolo, 25))),
+    digestione: Math.max(0, Math.min(100, safePhysNum(point?.digestione, 0))),
+    neuro: Math.max(0, Math.min(100, safePhysNum(point?.neuro, 40))),
+  };
+}
+
+/**
+ * Asse 0–24h con baseline circadiana — mai array vuoto per Recharts.
+ * Usato come fallback quando la sim è assente / notte in sospeso.
+ */
+function buildBaselinePhysiologyChartData(wakeHour = 7.5) {
+  const wake = safePhysNum(wakeHour, 7.5);
+  const out = [];
+  for (let h = 0; h <= 24; h++) {
+    let cortisolBase;
+    if (h < wake) {
+      cortisolBase = 25 + (h / Math.max(0.1, wake)) * (58 - 25);
+    } else if (h <= wake + 1) {
+      cortisolBase = 58 + ((h - wake) / 1) * (100 - 58);
+    } else if (h <= wake + 1.5) {
+      cortisolBase = 100 - ((h - wake - 1) / 0.5) * 20;
+    } else if (h < 18) {
+      const t0 = wake + 1.5;
+      cortisolBase = 80 - ((h - t0) / Math.max(0.1, 18 - t0)) * 40;
+    } else {
+      cortisolBase = Math.max(40, 50 - (h - 18) * (10 / 6));
+    }
+    out.push(
+      sanitizePhysiologyChartPoint({
+        time: h,
+        hour: h,
+        energy: DEFAULT_NO_SLEEP_ENERGY,
+        idealEnergy: 70,
+        glicemia: 85,
+        idratazione: 100,
+        cortisolo: cortisolBase,
+        digestione: 0,
+        neuro: 40,
+      }, h),
+    );
+  }
+  return out;
 }
 
 /**
@@ -356,6 +420,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   const sleepMetabolicPenalty = Number.isFinite(Number(metabolicPenalty))
     ? Math.max(1, Math.min(1.3, Number(metabolicPenalty)))
     : 1;
+  const waterGoalSafe = safePhysNum(dailyWaterGoal, 2500) || 2500;
   const graphTimelineNodes = Array.isArray(timelineNodes) ? [...timelineNodes] : [];
   // Sonnellini: sleep con durata < 3 h → nodi 'nap' (anche se unici nel log); notte principale resta type sleep nel log
   const allSleepsForChart = log.filter(e => e && e.type === 'sleep');
@@ -403,7 +468,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   });
 
   const isWaterAutoPilot = computeWaterHydrationAutoPilot(log, graphTimelineNodes);
-  const maxEnergyCap = Math.max(0, Math.min(100, 100 - (Number(accumuloSNC) || 0) * 0.25));
+  const maxEnergyCap = Math.max(0, Math.min(100, 100 - safePhysNum(accumuloSNC, 0) * 0.25));
   const ideal = idealStrategy || {};
   const model = {
     caffeineSensitivity: clampModelValue(userModel?.caffeineSensitivity ?? 1),
@@ -413,32 +478,35 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     recoveryRate: clampModelValue(userModel?.recoveryRate ?? 1)
   };
 
-  let load = Math.max(0, Math.min(100, Number(nervousSystemLoad) ?? 30));
+  let load = Math.max(0, Math.min(100, safePhysNum(nervousSystemLoad, 30)));
   log.forEach(entry => {
     if (entry.type === 'sleep') {
-      load -= (entry.hours ?? 0) * 4;
+      load -= safePhysNum(entry.hours, 0) * 4;
     }
   });
   load = Math.max(0, Math.min(100, load));
 
-  const realBaseline = computeBaselineEnergy(log, graphTimelineNodes);
+  const realBaseline = safePhysNum(computeBaselineEnergy(log, graphTimelineNodes), DEFAULT_NO_SLEEP_ENERGY);
   const hasValidSleepLogged = logHasValidSleepEntry(log);
   let baselineEnergy = hasValidSleepLogged
     ? Math.max(55, Math.min(95, realBaseline))
     : Math.min(95, Math.max(5, realBaseline));
+  if (!Number.isFinite(baselineEnergy)) baselineEnergy = DEFAULT_NO_SLEEP_ENERGY;
 
   const sleepNode =
     pickMainNightSleepEntry(log.filter(e => e && e.type === 'sleep')) ||
     log.find(e => e.type === 'sleep') ||
     graphTimelineNodes.find(n => n.type === 'sleep');
-  const wakeTime = sleepNode?.wakeTime ?? 7.5;
-  const sleepEnd = sleepNode?.sleepEnd != null ? sleepNode.sleepEnd : wakeTime;
+  const wakeTime = safePhysNum(sleepNode?.wakeTime, 7.5);
+  const sleepEnd = sleepNode?.sleepEnd != null ? safePhysNum(sleepNode.sleepEnd, wakeTime) : wakeTime;
+  const initialEnergySafe = initialEnergy != null ? safePhysNum(initialEnergy, baselineEnergy) : null;
+  const initialIdealEnergySafe = initialIdealEnergy != null ? safePhysNum(initialIdealEnergy, 70) : null;
   const nightStartEnergy =
-    initialEnergy != null
-      ? Math.max(initialEnergy, baselineEnergy * 0.7)
+    initialEnergySafe != null
+      ? Math.max(initialEnergySafe, baselineEnergy * 0.7)
       : baselineEnergy;
-  const sleepStart = sleepNode?.sleepStart ?? 0;
-  const wake = sleepEnd;
+  const sleepStart = safePhysNum(sleepNode?.sleepStart, 0);
+  const wake = Number.isFinite(sleepEnd) ? sleepEnd : wakeTime;
 
   const defaultIdealKcalForStrategy = (sk, idealObj) => {
     const legacySnack =
@@ -478,7 +546,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
   metabolicEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   neuralEnergy -= load * PHYSIOLOGY_CONFIG.nervousSystemImpact;
   let currentEnergy = metabolicEnergy;
-  let currentIdealEnergy = initialIdealEnergy != null ? (initialIdealEnergy ?? initialEnergy) : 70;
+  let currentIdealEnergy = initialIdealEnergySafe != null ? initialIdealEnergySafe : (initialEnergySafe != null ? initialEnergySafe : 70);
   let globalCrashRisk = false;
 
   let currentHydration = 100;
@@ -532,7 +600,7 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     neuralFatigue *= 0.96;
     let currentDigestione = 0;
     let hadMealThisHour = false;
-    const useContinuityAtZero = h === 0 && initialEnergy != null;
+    const useContinuityAtZero = h === 0 && initialEnergySafe != null;
     const isSleeping =
       sleepStart > wake
         ? (h >= sleepStart || h < wake)
@@ -564,41 +632,44 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     }
 
     graphTimelineNodes.forEach(node => {
+      if (!node || !Number.isFinite(Number(node.time))) return;
+      const nodeTime = safePhysNum(node.time, NaN);
+      if (!Number.isFinite(nodeTime)) return;
       if (node.type === 'meal') {
-        if (node.time >= h && node.time < h + 1) hadMealThisHour = true;
-        const timeSince = h - node.time;
+        if (nodeTime >= h && nodeTime < h + 1) hadMealThisHour = true;
+        const timeSince = h - nodeTime;
         const { onsetDelay, duration, peakTime } = calculateMealKinetics(node);
         const windowEnd = onsetDelay + duration;
         if (timeSince >= onsetDelay && timeSince <= windowEnd) {
           const mealEffect = responseCurve(timeSince, peakTime, windowEnd);
-          const realK = node.kcal || node.cal || 500;
+          const realK = safePhysNum(node.kcal ?? node.cal, 500);
           let sk = node.strategyKey;
           if (sk === 'spuntino' || sk === 'merenda_pm' || sk === 'merenda_am' || sk === 'merenda2') sk = 'snack';
-          const idealK = Number(ideal[node.strategyKey] ?? ideal[sk]) || defaultIdealKcalForStrategy(sk, ideal);
+          const idealK = safePhysNum(ideal[node.strategyKey] ?? ideal[sk], defaultIdealKcalForStrategy(sk, ideal));
           metabolicEnergy += mealEffect * (realK / 20);
           currentIdealEnergy += mealEffect * (idealK / 20);
         }
       }
       if (node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') {
-        const dur = Math.max(0.5, node.duration || 1);
-        const timeSince = h - node.time;
+        const dur = Math.max(0.5, safePhysNum(node.duration, 1));
+        const timeSince = h - nodeTime;
         const fatigueWindow = dur + 2;
         if (timeSince >= 0 && timeSince <= fatigueWindow) {
           const fatigueEffect = responseCurve(timeSince, 0.5, fatigueWindow);
-          const burnKcal = node.kcal || 300;
+          const burnKcal = safePhysNum(node.kcal, 300);
           const drain = (burnKcal / dur) / 10;
           neuralEnergy -= fatigueEffect * drain;
           currentIdealEnergy -= fatigueEffect * drain;
         }
-        if (node.time >= h && node.time < h + 1) {
+        if (nodeTime >= h && nodeTime < h + 1) {
           if (node.type === 'workout') { load += PHYSIOLOGY_CONFIG.workoutLoadImpact; neuralFatigue += 3; }
-          else if (node.type === 'work') { load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact; neuralFatigue += 2; }
-          else if (node.type === 'cognitive') { load += (node.duration ?? 1) * PHYSIOLOGY_CONFIG.workLoadImpact * 0.8; neuralFatigue += 1.5; }
+          else if (node.type === 'work') { load += safePhysNum(node.duration, 1) * PHYSIOLOGY_CONFIG.workLoadImpact; neuralFatigue += 2; }
+          else if (node.type === 'cognitive') { load += safePhysNum(node.duration, 1) * PHYSIOLOGY_CONFIG.workLoadImpact * 0.8; neuralFatigue += 1.5; }
         }
       }
       if (node.type === 'stimulant') {
-        if (node.time >= h && node.time < h + 1) { load += PHYSIOLOGY_CONFIG.stimulantLoadImpact; neuralFatigue += 1; }
-        const timeSince = h - node.time;
+        if (nodeTime >= h && nodeTime < h + 1) { load += PHYSIOLOGY_CONFIG.stimulantLoadImpact; neuralFatigue += 1; }
+        const timeSince = h - nodeTime;
         const effect = responseCurve(timeSince, 1.5, 4);
         if (effect > 0) {
           const sub = (node.subtype || 'caffè').toLowerCase();
@@ -607,8 +678,8 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         }
       }
       if (node.type === 'nap') {
-        const timeSince = h - node.time;
-        const duration = node.duration ?? 0.25;
+        const timeSince = h - nodeTime;
+        const duration = safePhysNum(node.duration, 0.25);
         const effectWindow = duration + 1.5;
         if (timeSince >= 0 && timeSince <= effectWindow) {
           const effect = responseCurve(timeSince, 0.3, effectWindow);
@@ -616,51 +687,52 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
         }
       }
     });
-    load = Math.max(0, Math.min(100, load));
+    load = Math.max(0, Math.min(100, safePhysNum(load, 0)));
 
     let gl = 85;
     graphTimelineNodes.forEach(node => {
-      if (node.type === 'meal') {
-        const diff = h - node.time;
-        const { onsetDelay, duration } = calculateMealKinetics(node);
-        const windowEnd = onsetDelay + duration;
-        if (diff >= onsetDelay && diff <= windowEnd) {
-          const elapsed = diff - onsetDelay;
-          const digestionFactor = duration > 0 ? 1 - elapsed / duration : 0;
-          const mealKcal = node.kcal ?? node.cal ?? 500;
-          const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
-          const digestionPenalty =
-            mealLoad *
-            PHYSIOLOGY_CONFIG.digestionEnergyImpact *
-            Math.sqrt(Math.max(0, digestionFactor));
-          metabolicEnergy -= digestionPenalty;
-          const digestionSignal =
-            100 * Math.max(0, digestionFactor) +
-            mealLoad * 30 * Math.max(0, digestionFactor);
-          currentDigestione = Math.max(currentDigestione, digestionSignal);
-        }
+      if (!node || node.type !== 'meal' || !Number.isFinite(Number(node.time))) return;
+      const nodeTime = safePhysNum(node.time);
+      const diff = h - nodeTime;
+      const { onsetDelay, duration } = calculateMealKinetics(node);
+      const windowEnd = onsetDelay + duration;
+      if (diff >= onsetDelay && diff <= windowEnd) {
+        const elapsed = diff - onsetDelay;
+        const digestionFactor = duration > 0 ? 1 - elapsed / duration : 0;
+        const mealKcal = safePhysNum(node.kcal ?? node.cal, 500);
+        const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));
+        const digestionPenalty =
+          mealLoad *
+          PHYSIOLOGY_CONFIG.digestionEnergyImpact *
+          Math.sqrt(Math.max(0, safePhysNum(digestionFactor, 0)));
+        metabolicEnergy -= digestionPenalty;
+        const digestionSignal =
+          100 * Math.max(0, safePhysNum(digestionFactor, 0)) +
+          mealLoad * 30 * Math.max(0, safePhysNum(digestionFactor, 0));
+        currentDigestione = Math.max(currentDigestione, digestionSignal);
       }
     });
     graphTimelineNodes.forEach((node) => {
-      if (node.type !== 'meal') return;
-      const diff = h - node.time;
+      if (!node || node.type !== 'meal' || !Number.isFinite(Number(node.time))) return;
+      const nodeTime = safePhysNum(node.time);
+      const diff = h - nodeTime;
       const { onsetDelay, duration, peakTime } = calculateMealKinetics(node);
       const windowEnd = onsetDelay + duration;
       if (diff < 0 || diff > windowEnd + 0.5) return;
 
-      const contribution = calculateGlycemicContribution(diff, node, sleepMetabolicPenalty);
+      const contribution = safePhysNum(calculateGlycemicContribution(diff, node, sleepMetabolicPenalty), 0);
       if (contribution <= 0) return;
 
       gl += contribution;
       glycemicMemory += contribution * 0.4;
 
       const { carb, fibre, fat } = readMealMacroGrams(node);
-      if (carb > 40 && fibre < 4 && fat < 10 && diff >= peakTime + 0.3 && diff < peakTime + 1.3) {
+      if (safePhysNum(carb) > 40 && safePhysNum(fibre) < 4 && safePhysNum(fat) < 10 && diff >= peakTime + 0.3 && diff < peakTime + 1.3) {
         gl -= 15 * model.carbCrashSensitivity;
         globalCrashRisk = true;
       }
     });
-    currentDigestione = Math.max(0, Math.min(100, currentDigestione));
+    currentDigestione = Math.max(0, Math.min(100, safePhysNum(currentDigestione, 0)));
 
     if (hadMealThisHour) hoursSinceMeal = 0; else hoursSinceMeal++;
     if (hoursSinceMeal > 6) {
@@ -688,41 +760,45 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
     if (!isWaterAutoPilot) {
       currentHydration -= PHYSIOLOGY_CONFIG.hydrationDecayPerHour;
       graphTimelineNodes.forEach(node => {
-        if (node.type === 'water' && node.time >= h && node.time < h + 1) {
-          const ml = node.ml ?? node.amount ?? 250;
-          currentHydration += (ml / (dailyWaterGoal || 2500)) * 45;
+        if (!node || !Number.isFinite(Number(node.time))) return;
+        const nodeTime = safePhysNum(node.time);
+        if (node.type === 'water' && nodeTime >= h && nodeTime < h + 1) {
+          const ml = safePhysNum(node.ml ?? node.amount, 250);
+          currentHydration += (ml / waterGoalSafe) * 45;
         }
-        if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= node.time && h <= node.time + (node.duration || 1)) {
+        if ((node.type === 'work' || node.type === 'workout' || node.type === 'cognitive') && h >= nodeTime && h <= nodeTime + safePhysNum(node.duration, 1)) {
           currentHydration -= 8.0;
         }
-        if (node.type === 'stimulant' && node.time >= h && node.time < h + 1) {
+        if (node.type === 'stimulant' && nodeTime >= h && nodeTime < h + 1) {
           const sub = (node.subtype || 'caffè').toLowerCase();
           const malus = sub === 'energy drink' ? 15 : sub === 'caffè' ? 10 : 5;
           currentHydration -= malus;
         }
-        if (node.type === 'alcohol' && node.time >= h && node.time < h + 1) {
-          const diuresi = getPureAlcoholGrams(node) * 10;
-          currentHydration -= (diuresi / (dailyWaterGoal || 2500)) * 45;
+        if (node.type === 'alcohol' && nodeTime >= h && nodeTime < h + 1) {
+          const diuresi = safePhysNum(getPureAlcoholGrams(node), 0) * 10;
+          currentHydration -= (diuresi / waterGoalSafe) * 45;
         }
       });
-      currentHydration = Math.max(0, Math.min(100, currentHydration));
+      currentHydration = Math.max(0, Math.min(100, safePhysNum(currentHydration, 100)));
     } else {
       currentHydration = 100;
       graphTimelineNodes.forEach(node => {
-        if (node.type === 'alcohol' && node.time >= h && node.time < h + 1) {
-          const diuresi = getPureAlcoholGrams(node) * 10;
-          currentHydration -= (diuresi / (dailyWaterGoal || 2500)) * 45;
+        if (!node || node.type !== 'alcohol' || !Number.isFinite(Number(node.time))) return;
+        const nodeTime = safePhysNum(node.time);
+        if (nodeTime >= h && nodeTime < h + 1) {
+          const diuresi = safePhysNum(getPureAlcoholGrams(node), 0) * 10;
+          currentHydration -= (diuresi / waterGoalSafe) * 45;
         }
       });
-      currentHydration = Math.max(0, Math.min(100, currentHydration));
+      currentHydration = Math.max(0, Math.min(100, safePhysNum(currentHydration, 100)));
     }
 
-    currentEnergy = Math.max(0, Math.min(100, currentEnergy));
-    currentIdealEnergy = Math.max(0, Math.min(100, currentIdealEnergy));
+    currentEnergy = Math.max(0, Math.min(100, safePhysNum(currentEnergy, 0)));
+    currentIdealEnergy = Math.max(0, Math.min(100, safePhysNum(currentIdealEnergy, 70)));
 
     currentEnergy = currentEnergy * 0.7 + previousEnergy * 0.3;
     currentEnergy = Math.min(currentEnergy, maxEnergyCap);
-    previousEnergy = currentEnergy;
+    previousEnergy = safePhysNum(currentEnergy, previousEnergy);
 
     kentuDebugEnergyLog("Simulated energy:", currentEnergy);
 
@@ -735,10 +811,11 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       cortisolBase = 100 - ((h - wake - 1) / 0.5) * 20;
     } else if (h < 18) {
       const t0 = wake + 1.5;
-      cortisolBase = 80 - ((h - t0) / (18 - t0)) * 40;
+      cortisolBase = 80 - ((h - t0) / Math.max(0.1, 18 - t0)) * 40;
     } else {
       cortisolBase = Math.max(40, 50 - (h - 18) * (10 / 6));
     }
+    cortisolBase = safePhysNum(cortisolBase, 25);
     currentCortisol += (cortisolBase - currentCortisol) * 0.3;
     if (currentEnergy < 35) { currentCortisol += 8; globalCortisolRisk = true; }
     if (!isWaterAutoPilot && currentHydration < 45) { currentCortisol += 6 * model.hydrationSensitivity; globalCortisolRisk = true; }
@@ -845,18 +922,26 @@ if (isSleeping) {
       peakNeuroAtWake = Math.max(peakNeuroAtWake ?? 0, currentNeuro);
     }
 
-    const energyCapped = Math.min(useContinuityAtZero ? initialEnergy : currentEnergy, maxEnergyCap);
-    out.push({
-      time: h,
-      hour: h,
-      energy: energyCapped,
-      idealEnergy: useContinuityAtZero ? (initialIdealEnergy ?? initialEnergy) : currentIdealEnergy,
-      glicemia: Math.max(55, Math.min(250, gl)),
-      idratazione: currentHydration,
-      cortisolo: currentCortisol,
-      digestione: Math.max(0, Math.min(100, currentDigestione)),
-      neuro: currentNeuro
-    });
+    const energyRaw = useContinuityAtZero ? initialEnergySafe : currentEnergy;
+    const idealRaw = useContinuityAtZero
+      ? (initialIdealEnergySafe ?? initialEnergySafe)
+      : currentIdealEnergy;
+    out.push(
+      sanitizePhysiologyChartPoint(
+        {
+          time: h,
+          hour: h,
+          energy: Math.min(safePhysNum(energyRaw, 0), maxEnergyCap),
+          idealEnergy: idealRaw,
+          glicemia: Math.max(55, Math.min(250, safePhysNum(gl, 85))),
+          idratazione: currentHydration,
+          cortisolo: currentCortisol,
+          digestione: Math.max(0, Math.min(100, safePhysNum(currentDigestione, 0))),
+          neuro: currentNeuro,
+        },
+        h,
+      ),
+    );
     if (useContinuityAtZero) {
       metabolicEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
       neuralEnergy -= PHYSIOLOGY_CONFIG.energyDecayPerHour;
@@ -873,15 +958,21 @@ if (isSleeping) {
       if ((pt.cortisolo ?? 0) < 70) globalCortisolRisk = false;
     }
   }
+  // Garantisce sempre 25 punti (0–24); mai [] verso Recharts.
+  const chartData =
+    out.length > 0
+      ? out.map((p, i) => sanitizePhysiologyChartPoint(p, i))
+      : buildBaselinePhysiologyChartData(wake);
+
   return {
-    chartData: out,
+    chartData,
     realTotals,
     hasCrashRisk: globalCrashRisk,
     hasCortisolRisk: globalCortisolRisk,
     hasDigestionRisk,
     nervousSystemLoad: load,
     isWaterHydrationAutoPilot: isWaterAutoPilot,
-    accumuloSNC: Number(accumuloSNC) || 0,
+    accumuloSNC: safePhysNum(accumuloSNC, 0),
     maxEnergyCap
   };
 }
@@ -5446,6 +5537,8 @@ export {
   computeWaterHydrationAutoPilot,
   computeAccumuloSNC,
   generateRealEnergyData,
+  buildBaselinePhysiologyChartData,
+  sanitizePhysiologyChartPoint,
   computeEnergyDrivers,
   computeMetabolicStress,
   computeMetabolicDayScore,

@@ -2,8 +2,25 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './quickEventConfirm.css';
 
+const FRESH_MS = 5000;
+
+const THUMB_CLASS =
+  'relative h-24 w-24 shrink-0 overflow-hidden rounded-xl shadow-md cursor-pointer border border-slate-500/25 bg-slate-900/85 p-0';
+
+const MEDIA_FILL_CLASS = 'h-full w-full object-cover';
+
+/** @param {unknown} timestamp */
+function resolveIsRecent(timestamp) {
+  if (timestamp == null || timestamp === '') return true;
+  const raw = typeof timestamp === 'number' ? timestamp : Date.parse(String(timestamp));
+  if (!Number.isFinite(raw)) return true;
+  return Date.now() - raw < FRESH_MS;
+}
+
 /**
- * Conferma rapida: video a tutto schermo → thumbnail collassata (replay al tap).
+ * Conferma rapida in chat: icona 96px.
+ * Se fresco + video → riproduce nella miniatura, poi passa a <img> senza layout shift.
+ * Click → lightbox a tutto schermo (chiudi con tap / Esc).
  */
 export default function QuickEventConfirmMedia({
   imageSrc,
@@ -13,11 +30,17 @@ export default function QuickEventConfirmMedia({
   compact = false,
   onFinished = null,
   imageHoldMs = 0,
+  timestamp = null,
 }) {
   const hasVideo = Boolean(videoSrc);
   const videoRef = useRef(null);
+  const lightboxVideoRef = useRef(null);
   const holdTimerRef = useRef(null);
-  const [isExpanded, setIsExpanded] = useState(() => hasVideo);
+
+  const [playInlineVideo, setPlayInlineVideo] = useState(() => (
+    Boolean(videoSrc) && resolveIsRecent(timestamp)
+  ));
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const clearHold = useCallback(() => {
     if (holdTimerRef.current != null) {
@@ -36,36 +59,43 @@ export default function QuickEventConfirmMedia({
     }
   }, [clearHold, imageHoldMs, onFinished]);
 
-  const collapse = useCallback(() => {
-    setIsExpanded(false);
+  const finishInlineVideo = useCallback(() => {
+    setPlayInlineVideo(false);
     scheduleFinished();
   }, [scheduleFinished]);
 
-  const expandForReplay = useCallback(() => {
-    if (!hasVideo) return;
+  const openFullscreen = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     clearHold();
-    setIsExpanded(true);
-  }, [hasVideo, clearHold]);
+    setIsFullscreen(true);
+  }, [clearHold]);
 
-  // Nuovo asset: riparte espanso solo se c’è video.
+  const closeFullscreen = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setIsFullscreen(false);
+  }, []);
+
+  // Nuovo asset: video inline solo se fresco (cronologia = icona statica).
   useEffect(() => {
     clearHold();
-    const nextExpanded = Boolean(videoSrc);
-    setIsExpanded(nextExpanded);
-    if (!nextExpanded && imageHoldMs > 0 && typeof onFinished === 'function') {
+    const nextPlay = Boolean(videoSrc) && resolveIsRecent(timestamp);
+    setPlayInlineVideo(nextPlay);
+    setIsFullscreen(false);
+    if (!nextPlay && imageHoldMs > 0 && typeof onFinished === 'function') {
       holdTimerRef.current = window.setTimeout(() => {
         holdTimerRef.current = null;
         onFinished();
       }, imageHoldMs);
     }
     return () => clearHold();
-    // Solo al cambio asset — non riespandere su ogni render del parent.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: imageSrc/videoSrc only
-  }, [imageSrc, videoSrc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- asset + freschezza
+  }, [imageSrc, videoSrc, timestamp]);
 
-  // Autoplay quando l’overlay è aperto.
+  // Autoplay nella miniatura (non blocca API; best-effort).
   useEffect(() => {
-    if (!isExpanded || !hasVideo) return undefined;
+    if (!playInlineVideo || !hasVideo) return undefined;
     const el = videoRef.current;
     if (!el) return undefined;
     let cancelled = false;
@@ -77,7 +107,7 @@ export default function QuickEventConfirmMedia({
         await el.play();
       } catch (error) {
         console.warn('[QuickEventConfirmMedia] autoplay failed', error);
-        if (!cancelled) collapse();
+        if (!cancelled) finishInlineVideo();
       }
     };
     void play();
@@ -89,44 +119,104 @@ export default function QuickEventConfirmMedia({
         // ignore
       }
     };
-  }, [isExpanded, hasVideo, videoSrc, collapse]);
+  }, [playInlineVideo, hasVideo, videoSrc, finishInlineVideo]);
+
+  // Lightbox: autoplay video se presente.
+  useEffect(() => {
+    if (!isFullscreen || !hasVideo) return undefined;
+    const el = lightboxVideoRef.current;
+    if (!el) return undefined;
+    let cancelled = false;
+    const play = async () => {
+      try {
+        el.muted = true;
+        el.playsInline = true;
+        el.currentTime = 0;
+        await el.play();
+      } catch (error) {
+        console.warn('[QuickEventConfirmMedia] lightbox play failed', error);
+        if (!cancelled) {
+          // resta sull'immagine in lightbox via fallback sotto
+        }
+      }
+    };
+    void play();
+    return () => {
+      cancelled = true;
+      try {
+        el.pause();
+      } catch {
+        // ignore
+      }
+    };
+  }, [isFullscreen, hasVideo, videoSrc]);
+
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') closeFullscreen();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isFullscreen, closeFullscreen]);
 
   if (!imageSrc) return null;
 
-  const expandedOverlay = isExpanded && hasVideo && typeof document !== 'undefined'
+  const thumbLabel = title
+    ? `${title}${hasVideo ? ' — tap per ingrandire' : ''}`
+    : (hasVideo ? 'Conferma — tap per ingrandire' : 'Conferma');
+
+  const lightbox = isFullscreen && typeof document !== 'undefined'
     ? createPortal(
       <div
-        className="kentu-quick-confirm-expand fixed inset-0 z-[100100] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+        className="kentu-quick-confirm-lightbox fixed inset-0 z-[100090] flex items-center justify-center bg-black/80 p-4 backdrop-blur-[2px]"
         role="dialog"
         aria-modal="true"
-        aria-label={title || 'Animazione conferma'}
-        onClick={collapse}
+        aria-label={title || 'Anteprima conferma'}
+        onClick={closeFullscreen}
       >
         <button
           type="button"
-          className="kentu-quick-confirm-expand__close absolute right-4 top-4 z-10 rounded-full border border-white/20 bg-black/50 px-3 py-1.5 text-sm font-medium text-white/90 transition hover:bg-black/70"
+          className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-black/50 text-lg text-white"
           style={{ top: 'max(1rem, env(safe-area-inset-top, 0px))' }}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            collapse();
-          }}
+          aria-label="Chiudi"
+          onClick={closeFullscreen}
         >
-          Chiudi
+          ✕
         </button>
-        <video
-          ref={videoRef}
-          key={videoSrc}
-          className="kentu-quick-confirm-expand__video max-h-[85vh] w-[90vw] max-w-lg object-contain"
-          src={videoSrc}
-          muted
-          playsInline
-          autoPlay
-          preload="auto"
+        <div
+          className="relative flex max-h-[min(90dvh,90vw)] max-w-[min(90dvh,90vw)] items-center justify-center"
           onClick={(event) => event.stopPropagation()}
-          onEnded={collapse}
-          onError={collapse}
-        />
+        >
+          {hasVideo ? (
+            <video
+              ref={lightboxVideoRef}
+              key={`lb-${videoSrc}`}
+              className="max-h-[min(90dvh,90vw)] max-w-[min(90dvh,90vw)] rounded-2xl object-contain shadow-2xl"
+              src={videoSrc}
+              muted
+              playsInline
+              autoPlay
+              controls={false}
+              loop
+              preload="auto"
+              onClick={closeFullscreen}
+            />
+          ) : (
+            <img
+              className="max-h-[min(90dvh,90vw)] max-w-[min(90dvh,90vw)] rounded-2xl object-contain shadow-2xl"
+              src={imageSrc}
+              alt={title || ''}
+              draggable={false}
+              onClick={closeFullscreen}
+            />
+          )}
+        </div>
       </div>,
       document.body,
     )
@@ -134,7 +224,6 @@ export default function QuickEventConfirmMedia({
 
   return (
     <>
-      {expandedOverlay}
       <figure
         className={[
           'kentu-quick-confirm-media kentu-quick-confirm-media--thumb',
@@ -143,36 +232,32 @@ export default function QuickEventConfirmMedia({
       >
         <button
           type="button"
-          className={[
-            'kentu-quick-confirm-media__thumb',
-            'group relative block w-24 h-24 shrink-0 overflow-hidden rounded-xl shadow-md',
-            'transition-transform hover:scale-105',
-            hasVideo ? 'cursor-pointer' : 'cursor-default',
-          ].join(' ')}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            expandForReplay();
-          }}
-          aria-label={hasVideo ? `${title || 'Conferma'} — riproduci` : (title || 'Conferma')}
-          disabled={!hasVideo}
+          className={THUMB_CLASS}
+          onClick={openFullscreen}
+          aria-label={thumbLabel}
         >
-          <img
-            className="h-full w-full object-cover"
-            src={imageSrc}
-            alt=""
-            draggable={false}
-          />
-          {hasVideo ? (
-            <span
-              className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/25 opacity-0 transition-opacity group-hover:opacity-100"
-              aria-hidden
-            >
-              <span className="rounded-full bg-black/55 px-2 py-1 text-[0.65rem] font-semibold text-white">
-                ▶ Replay
-              </span>
-            </span>
-          ) : null}
+          {playInlineVideo && hasVideo ? (
+            <video
+              ref={videoRef}
+              key={videoSrc}
+              className={MEDIA_FILL_CLASS}
+              src={videoSrc}
+              poster={imageSrc}
+              muted
+              playsInline
+              autoPlay
+              preload="auto"
+              onEnded={finishInlineVideo}
+              onError={finishInlineVideo}
+            />
+          ) : (
+            <img
+              className={MEDIA_FILL_CLASS}
+              src={imageSrc}
+              alt=""
+              draggable={false}
+            />
+          )}
         </button>
         {(title || subtitle) ? (
           <figcaption className="kentu-quick-confirm-media__caption mt-1.5 px-0.5">
@@ -181,6 +266,7 @@ export default function QuickEventConfirmMedia({
           </figcaption>
         ) : null}
       </figure>
+      {lightbox}
     </>
   );
 }

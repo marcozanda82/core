@@ -1907,7 +1907,7 @@
 @keyframes kentu-meal-tray-row-in {
   from {
     opacity: 0;
-    transform: translateY(0.5rem);
+    transform: translateY(-0.4rem);
   }
   to {
     opacity: 1;

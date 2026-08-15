@@ -41,6 +41,11 @@ export const AVATAR_MOOD_SRC = Object.freeze({
   [AVATAR_MOOD.FITNESS]: '/Trainer3.png',
 });
 
+/** Video loop opzionali (poster = AVATAR_MOOD_SRC). Solo UI di elaborazione — mai nel path API. */
+export const AVATAR_MOOD_VIDEO = Object.freeze({
+  [AVATAR_MOOD.CODING]: '/Hacker4animazione.mp4',
+});
+
 export const AVATAR_MOOD_LABEL = Object.freeze({
   [AVATAR_MOOD.THINKING]: 'Kentu sta ragionando',
   [AVATAR_MOOD.CODING]: 'Kentu sta elaborando',
@@ -155,6 +160,16 @@ export function getAvatarSrcForMood(mood, defaultSrc = CHAT_DEFAULT_AVATAR_SRC) 
   }
   const fallback = String(defaultSrc || CHAT_DEFAULT_AVATAR_SRC).trim();
   return fallback || CHAT_DEFAULT_AVATAR_SRC;
+}
+
+/**
+ * Video loop per mood (es. coding → Hacker4animazione). Stringa vuota se assente.
+ * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'} mood
+ * @returns {string}
+ */
+export function getAvatarVideoForMood(mood) {
+  const key = String(mood || AVATAR_MOOD.DEFAULT);
+  return String(AVATAR_MOOD_VIDEO[key] || '').trim();
 }
 
 /**

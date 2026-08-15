@@ -18,6 +18,7 @@ import {
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
   resolveWorkoutMusclesForForm,
+  resolveActivitySheetTab,
 } from '../../activityCatalog';
 import {
   parseDurationMinutesInput,
@@ -235,11 +236,12 @@ export function useWorkoutManager({
   }, []);
 
   /** Reset form per nuova sessione (non edit): evita che editingWorkoutId blocchi il 4-cylinder. */
-  const resetWorkoutFormForNewSession = useCallback(() => {
+  const resetWorkoutFormForNewSession = useCallback((defaultTab = 'pesi') => {
+    const tab = resolveActivitySheetTab(defaultTab);
     setEditingWorkoutId(null);
     setPostWorkoutReviewActive(false);
     setWorkoutPlanDraft(null);
-    setWorkoutType('pesi');
+    setWorkoutType(tab);
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
     setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));

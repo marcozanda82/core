@@ -1,31 +1,3 @@
-.kentu-quick-confirm {
-  position: fixed;
-  inset: 0;
-  z-index: 100080;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(2, 6, 23, 0.55);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  animation: kentu-quick-confirm-fade 0.25s ease-out both;
-}
-
-.kentu-quick-confirm__card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: auto;
-  max-width: min(90vw, 12rem);
-  padding: 0;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  animation: kentu-quick-confirm-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 .kentu-quick-confirm-media {
   display: flex;
   flex-direction: column;
@@ -40,16 +12,6 @@
 
 .kentu-quick-confirm-media--thumb {
   align-items: flex-start;
-}
-
-.kentu-quick-confirm-media__thumb {
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.85);
-  padding: 0;
-}
-
-.kentu-quick-confirm-media__thumb:disabled {
-  opacity: 1;
 }
 
 .kentu-quick-confirm-media__caption {
@@ -76,14 +38,8 @@
   color: rgba(148, 163, 184, 0.95);
 }
 
-.kentu-quick-confirm-expand {
+.kentu-quick-confirm-lightbox {
   animation: kentu-quick-confirm-fade 0.2s ease-out both;
-}
-
-.kentu-quick-confirm-expand__video {
-  border-radius: 1rem;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
-  background: #000;
 }
 
 @keyframes kentu-quick-confirm-fade {
@@ -94,7 +50,7 @@
 @keyframes kentu-quick-confirm-pop {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.96);
+    transform: translateY(8px) scale(0.98);
   }
   to {
     opacity: 1;
@@ -102,14 +58,39 @@
   }
 }
 
+/* Overlay legacy (conferma fuori chat) */
+.kentu-quick-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 100080;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: kentu-quick-confirm-fade 0.25s ease-out both;
+}
+
+.kentu-quick-confirm__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: auto;
+  max-width: min(90vw, 24rem);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  animation: kentu-quick-confirm-pop 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kentu-quick-confirm,
   .kentu-quick-confirm__card,
-  .kentu-quick-confirm-expand {
+  .kentu-quick-confirm-lightbox {
     animation: none;
-  }
-
-  .kentu-quick-confirm-media__thumb {
-    transition: none;
   }
 }

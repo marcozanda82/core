@@ -588,6 +588,8 @@ export function useCommandTerminal({
           isSystem: true,
           local: payload.local === true,
           sourceTag: payload.sourceTag || null,
+          timestamp: Date.now(),
+          createdAt: Date.now(),
         });
         return;
       }
@@ -1023,6 +1025,9 @@ export function useCommandTerminal({
 
         if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
           onWipMealSeedRef.current(result.wipSeed);
+        }
+        if (result?.openUi && typeof onManualShortcutFromChatRef.current === 'function') {
+          onManualShortcutFromChatRef.current(result.openUi);
         }
         pendingMealUpdateRef.current = controller.getPendingMealUpdate();
         if (result && result.ok === false && !result.userNotified) {

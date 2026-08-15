@@ -165,9 +165,15 @@ function LiveMealTray({
     || Number(mealTargets.carbo) > 0
     || Number(mealTargets.fat) > 0;
 
+  // Solo visualizzazione LIFO: ultimo inserito in cima. Gli indici restano quelli dell'array stato.
+  const displayItems = useMemo(
+    () => items.map((item, index) => ({ item, index })).reverse(),
+    [items],
+  );
+
   return (
     <div
-      className="kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(60vh,100%)] w-full flex-col overflow-hidden"
+      className="kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden"
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
     >
@@ -205,14 +211,14 @@ function LiveMealTray({
         )}
       </div>
 
-      <div className="kentu-meal-tray__scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div className="kentu-meal-tray__scroll min-h-0 max-h-[40vh] flex-1 overflow-y-auto overscroll-contain">
         {items.length === 0 ? (
           <p className="kentu-meal-tray__estimate-banner" role="status">
             Nessun alimento sul vassoio.
           </p>
         ) : (
           <ul className="kentu-meal-tray__list">
-            {items.map((item, index) => {
+            {displayItems.map(({ item, index }, displayIndex) => {
               const name = String(item?.foodName || item?.name || 'Alimento').trim();
               const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
               const visualStatus = resolveMcDriveVisualStatus(item);
@@ -221,6 +227,9 @@ function LiveMealTray({
               const isPending = visualStatus === 'pending_enrichment';
               const isResolved = visualStatus === 'resolved';
               const isSkipped = visualStatus === 'skipped';
+              // LIFO: displayIndex 0 = ultimo inserimento (in cima).
+              const isLatestInsert = displayIndex === 0;
+              const highlightLatest = isLatestInsert && isRaw;
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
@@ -233,29 +242,33 @@ function LiveMealTray({
               else if (isRaw) detailLabel = ''; // nessun calcolo visibile
               else if (isResolved || kcal > 0) detailLabel = `${kcal} kcal`;
 
-              const rowStatusClass = isRaw
-                ? 'kentu-meal-tray__row--raw italic text-gray-500 opacity-60'
-                : isProcessing
-                  ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
-                  : isResolved
-                    ? 'kentu-meal-tray__row--resolved font-bold text-white bg-green-500/10 border-l-4 border-green-500'
-                    : isSkipped
-                      ? 'kentu-meal-tray__row--skipped line-through text-gray-600 opacity-40'
-                      : isPending
-                        ? 'kentu-meal-tray__row--pending text-orange-400 bg-orange-500/20 border-l-4 border-orange-500'
-                        : '';
+              const rowStatusClass = highlightLatest
+                ? 'kentu-meal-tray__row--latest-raw border-l-4 border-cyan-400 bg-cyan-500/10'
+                : isRaw
+                  ? 'kentu-meal-tray__row--raw italic text-slate-300'
+                  : isProcessing
+                    ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
+                    : isResolved
+                      ? 'kentu-meal-tray__row--resolved font-bold text-white bg-green-500/10 border-l-4 border-green-500'
+                      : isSkipped
+                        ? 'kentu-meal-tray__row--skipped line-through text-slate-500'
+                        : isPending
+                          ? 'kentu-meal-tray__row--pending text-orange-400 bg-orange-500/20 border-l-4 border-orange-500'
+                          : '';
 
-              const nameStatusClass = isRaw
-                ? 'italic text-gray-500 opacity-60'
-                : isProcessing
-                  ? 'font-medium text-cyan-500 animate-pulse'
-                  : isResolved
-                    ? 'font-bold text-white'
-                    : isSkipped
-                      ? 'line-through text-gray-600 opacity-40'
-                      : isPending
-                        ? 'text-orange-400'
-                        : '';
+              const nameStatusClass = highlightLatest
+                ? 'font-bold text-cyan-300 text-base leading-snug'
+                : isRaw
+                  ? 'italic text-slate-300'
+                  : isProcessing
+                    ? 'font-medium text-cyan-500 animate-pulse'
+                    : isResolved
+                      ? 'font-bold text-white'
+                      : isSkipped
+                        ? 'line-through text-slate-500'
+                        : isPending
+                          ? 'text-orange-400'
+                          : '';
 
               return (
                 <li
@@ -264,7 +277,7 @@ function LiveMealTray({
                     'kentu-meal-tray__row',
                     'kentu-meal-tray__row--enter',
                     'transition-all duration-300',
-                    'animate-in fade-in slide-in-from-bottom-2 duration-300',
+                    'animate-in fade-in slide-in-from-top-2 duration-300',
                     rowStatusClass,
                     isEditing ? 'kentu-meal-tray__row--editing' : '',
                   ].filter(Boolean).join(' ')}
@@ -297,9 +310,10 @@ function LiveMealTray({
                     </div>
                     <span
                       className={[
-                        'kentu-meal-tray__grams font-mono text-sm shrink-0 transition-all duration-300',
-                        isSkipped || isRaw ? 'opacity-40' : 'opacity-80',
-                        nameStatusClass,
+                        'kentu-meal-tray__grams font-mono shrink-0 transition-all duration-300',
+                        highlightLatest ? 'text-base font-bold text-cyan-300' : 'text-sm',
+                        isSkipped ? 'text-slate-500' : isRaw && !highlightLatest ? 'text-slate-300' : 'opacity-90',
+                        !highlightLatest ? nameStatusClass : '',
                       ].filter(Boolean).join(' ')}
                     >
                       {grams} g

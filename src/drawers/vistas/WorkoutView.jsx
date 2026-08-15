@@ -15,6 +15,9 @@ import {
   getMuscleGroupsForMacro,
   normalizeMuscleGroupArray,
   getWorkoutActivityLogDescription,
+  resolveActivitySheetTab,
+  peekActivitySheetTempTab,
+  clearActivitySheetTempTab,
 } from '../../activityCatalog';
 
 /**
@@ -137,7 +140,9 @@ export function derivePlannerIntensity(workoutType, muscles = [], burnKcal = 0) 
   if (workoutType === 'riposo') return 'rest';
   const burn = Number(burnKcal) || 0;
   if (burn <= 0) return 'rest';
+  if (workoutType === 'camminata') return 'low';
   if (workoutType === 'cardio') return 'low';
+  if (workoutType === 'corsa') return 'medium';
   if (workoutType === 'hiit') return 'medium';
   if (workoutType === 'pesi') {
     const m = normalizeMuscleGroupArray(muscles);
@@ -363,6 +368,9 @@ export default function WorkoutView({
   onDraftConsumed,
   /** Etichetta bottone Salva in modalità planner (default: APPLICA AZIONE). */
   plannerSaveLabel = null,
+  /** Tab richiesto all'apertura (pesi|cardio|hiit) — risincronizza ad ogni nonce. */
+  preferredWorkoutType = null,
+  preferredWorkoutTypeNonce = 0,
   workoutType: workoutTypeProp,
   setWorkoutType: setWorkoutTypeProp,
   workoutStartTime: workoutStartTimeProp,
@@ -393,8 +401,7 @@ export default function WorkoutView({
   const internalPlannerRef = useRef(null);
   const planner = usePlannerWorkoutState(isPlannerMode ? initialData : null, comboHistory);
 
-  const workoutType = isPlannerMode ? planner.workoutType : workoutTypeProp;
-  const setWorkoutType = isPlannerMode ? planner.setWorkoutType : setWorkoutTypeProp;
+  const setWorkoutTypePropSafe = isPlannerMode ? planner.setWorkoutType : setWorkoutTypeProp;
   const workoutStartTime = isPlannerMode ? planner.workoutStartTime : workoutStartTimeProp;
   const setWorkoutStartTime = isPlannerMode ? planner.setWorkoutStartTime : null;
   const workoutEndTime = isPlannerMode ? planner.workoutEndTime : workoutEndTimeProp;
@@ -404,6 +411,135 @@ export default function WorkoutView({
   const workoutDurationHours = isPlannerMode ? planner.workoutDurationHours : workoutDurationHoursProp;
   const workoutMuscles = isPlannerMode ? planner.workoutMuscles : workoutMusclesProp;
   const setWorkoutMuscles = isPlannerMode ? planner.setWorkoutMuscles : setWorkoutMusclesProp;
+
+  /**
+   * Priorità tab apertura:
+   * 1) temp_activity (sticky/LS — click rapido)
+   * 2) preferredWorkoutType esplicito (intent/nonce)
+   * 3) workoutTypeProp / default 'pesi'
+   */
+  const resolveOpenTab = (preferred, propFallback) => {
+    const temp = peekActivitySheetTempTab();
+    if (temp) return { tab: temp, source: 'temp_activity' };
+
+    const preferredRaw =
+      preferred != null && String(preferred).trim() !== ''
+        ? String(preferred).toLowerCase().trim()
+        : '';
+    if (preferredRaw) {
+      return {
+        tab: resolveActivitySheetTab(preferredRaw),
+        source: 'preferred',
+      };
+    }
+
+    return {
+      tab: resolveActivitySheetTab(propFallback || 'pesi'),
+      source: 'fallback',
+    };
+  };
+
+  /**
+   * Tab attività: lazy init — temp_activity prima di qualsiasi prop 'pesi'.
+   */
+  const [activeTab, setActiveTab] = useState(() => {
+    if (isPlannerMode) {
+      return resolveActivitySheetTab(planner.workoutType || 'pesi');
+    }
+    const { tab } = resolveOpenTab(
+      preferredWorkoutTypeNonce ? preferredWorkoutType : null,
+      workoutTypeProp,
+    );
+    return tab;
+  });
+
+  /** Blocca sync padre→figlio verso 'pesi' dopo un open rapido non-pesi. */
+  const quickOpenLockRef = useRef(
+    /** @type {string | null} */ (
+      !isPlannerMode && activeTab !== 'pesi' ? activeTab : null
+    ),
+  );
+  const lastAppliedIntentNonceRef = useRef(0);
+
+  /** Solo su nuovo nonce: applica intent con priorità temp > preferred > fallback. */
+  useEffect(() => {
+    if (isPlannerMode) return;
+    if (!preferredWorkoutTypeNonce) return;
+    if (lastAppliedIntentNonceRef.current === preferredWorkoutTypeNonce) return;
+    lastAppliedIntentNonceRef.current = preferredWorkoutTypeNonce;
+
+    const { tab, source } = resolveOpenTab(preferredWorkoutType, workoutTypeProp);
+    // Se preferred arriva 'pesi' ma c'era già un tab non-pesi da temp/init, non degradare.
+    if (
+      source !== 'temp_activity' &&
+      resolveActivitySheetTab(preferredWorkoutType || 'pesi') === 'pesi' &&
+      quickOpenLockRef.current &&
+      quickOpenLockRef.current !== 'pesi'
+    ) {
+      console.log('DEBUG: intent SKIP pesi (lock attivo)', {
+        lock: quickOpenLockRef.current,
+        preferredWorkoutType,
+        nonce: preferredWorkoutTypeNonce,
+      });
+      clearActivitySheetTempTab({ keepSticky: true });
+      return;
+    }
+
+    console.log('DEBUG: intent apply →', tab, { source, nonce: preferredWorkoutTypeNonce });
+    if (tab !== 'pesi') quickOpenLockRef.current = tab;
+    else quickOpenLockRef.current = null;
+
+    setActiveTab(tab);
+    if (typeof setWorkoutTypePropSafe === 'function') {
+      setWorkoutTypePropSafe(tab);
+    }
+    clearActivitySheetTempTab({ keepSticky: true });
+  }, [
+    isPlannerMode,
+    preferredWorkoutType,
+    preferredWorkoutTypeNonce,
+    workoutTypeProp,
+    setWorkoutTypePropSafe,
+  ]);
+
+  /**
+   * Sync dal parent: ignora completamente 'pesi' se c'è un lock da pulsante rapido.
+   */
+  useEffect(() => {
+    if (isPlannerMode) return;
+    if (workoutTypeProp == null || String(workoutTypeProp).trim() === '') return;
+    const next = resolveActivitySheetTab(workoutTypeProp);
+    setActiveTab((prev) => {
+      if (prev === next) return prev;
+      if (next === 'pesi' && quickOpenLockRef.current && quickOpenLockRef.current !== 'pesi') {
+        console.log('DEBUG: prop sync IGNORE pesi', {
+          prev,
+          lock: quickOpenLockRef.current,
+        });
+        return prev;
+      }
+      if (next !== 'pesi') quickOpenLockRef.current = null;
+      return next;
+    });
+  }, [isPlannerMode, workoutTypeProp]);
+
+  // Planner: tab da stato planner.
+  useEffect(() => {
+    if (!isPlannerMode) return;
+    setActiveTab(resolveActivitySheetTab(planner.workoutType || 'pesi'));
+  }, [isPlannerMode, planner.workoutType]);
+
+  const workoutType = isPlannerMode ? planner.workoutType : activeTab;
+  const setWorkoutType = isPlannerMode ? planner.setWorkoutType : setWorkoutTypePropSafe;
+
+  const handleTabChange = (typeId) => {
+    const tab = resolveActivitySheetTab(typeId);
+    quickOpenLockRef.current = null;
+    clearActivitySheetTempTab({ keepSticky: false });
+    setActiveTab(tab);
+    if (typeof setWorkoutType === 'function') setWorkoutType(tab);
+  };
+
   const toggleWorkoutMuscle = (muscleId) => {
     if (isPlannerMode && typeof planner.toggleWorkoutMuscle === 'function') {
       planner.toggleWorkoutMuscle(muscleId);
@@ -647,7 +783,15 @@ export default function WorkoutView({
           </div>
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '30px', flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: '6px',
+          marginBottom: '30px',
+          flexWrap: 'wrap',
+          justifyContent: 'space-between',
+        }}
+      >
         {selectorIds.map((typeId) => {
           const ad = getWorkoutActivityTypeDef(typeId);
           return (
@@ -655,7 +799,8 @@ export default function WorkoutView({
               key={typeId}
               type="button"
               className={`type-btn ${workoutType === typeId ? 'active orange' : ''}`}
-              onClick={() => setWorkoutType(typeId)}
+              style={{ flex: '1 1 calc(20% - 6px)', minWidth: '4.5rem' }}
+              onClick={() => handleTabChange(typeId)}
             >
               {ad?.selectorButtonLabel ?? PLANNER_EXTRA_TAB_LABELS[typeId] ?? typeId}
             </button>

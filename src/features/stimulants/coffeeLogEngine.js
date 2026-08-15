@@ -8,6 +8,69 @@ export const COFFEE_VARIANT = Object.freeze({
   ZUCCHERATO: 'zuccherato',
 });
 
+/** Tipologie bevanda (UI pannello caffè). */
+export const COFFEE_TYPE = Object.freeze({
+  ESPRESSO: 'espresso',
+  AMERICANO: 'americano',
+  CAPPUCCINO: 'cappuccino',
+  CORTADO: 'cortado',
+  MOCACCINO: 'mocaccino',
+});
+
+export const COFFEE_TYPE_OPTIONS = Object.freeze([
+  { id: COFFEE_TYPE.ESPRESSO, label: 'Espresso' },
+  { id: COFFEE_TYPE.AMERICANO, label: 'Americano' },
+  { id: COFFEE_TYPE.CAPPUCCINO, label: 'Cappuccino' },
+  { id: COFFEE_TYPE.CORTADO, label: 'Cortado' },
+  { id: COFFEE_TYPE.MOCACCINO, label: 'Mocaccino' },
+]);
+
+export const COFFEE_TYPE_LS_KEY = 'kentu_last_coffee_type';
+export const DEFAULT_COFFEE_TYPE = COFFEE_TYPE.ESPRESSO;
+
+/**
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function resolveCoffeeType(raw) {
+  const id = String(raw || '').toLowerCase().trim();
+  if (COFFEE_TYPE_OPTIONS.some((opt) => opt.id === id)) return id;
+  return DEFAULT_COFFEE_TYPE;
+}
+
+/**
+ * @returns {string}
+ */
+export function readLastCoffeeType() {
+  try {
+    if (typeof localStorage === 'undefined') return DEFAULT_COFFEE_TYPE;
+    return resolveCoffeeType(localStorage.getItem(COFFEE_TYPE_LS_KEY));
+  } catch {
+    return DEFAULT_COFFEE_TYPE;
+  }
+}
+
+/**
+ * @param {unknown} type
+ */
+export function writeLastCoffeeType(type) {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(COFFEE_TYPE_LS_KEY, resolveCoffeeType(type));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/**
+ * @param {string} coffeeType
+ * @returns {string}
+ */
+export function getCoffeeTypeLabel(coffeeType) {
+  const id = resolveCoffeeType(coffeeType);
+  return COFFEE_TYPE_OPTIONS.find((opt) => opt.id === id)?.label || 'Espresso';
+}
+
 export const SWEET_COFFEE_KCAL = 20;
 export const SWEET_COFFEE_CARB = 5;
 export const MIN_FASTING_HOURS_FOR_COFFEE_RULES = 8;
@@ -153,26 +216,29 @@ export function buildFastingContextForLlm(params = {}) {
 /**
  * @param {'amaro' | 'zuccherato'} variant
  * @param {number} [timeDecimal] ore decimali 0–24
- * @param {{ id?: string }} [options]
+ * @param {{ id?: string, coffeeType?: string, type?: string }} [options]
  * @returns {object}
  */
 export function buildCoffeeStimulantNode(variant, timeDecimal, options = {}) {
   const coffeeVariant = variant === COFFEE_VARIANT.ZUCCHERATO
     ? COFFEE_VARIANT.ZUCCHERATO
     : COFFEE_VARIANT.AMARO;
+  const coffeeType = resolveCoffeeType(options.coffeeType || options.type);
   const time = Number.isFinite(Number(timeDecimal)) ? Number(timeDecimal) : 8;
   const isSweet = coffeeVariant === COFFEE_VARIANT.ZUCCHERATO;
+  const typeLabel = getCoffeeTypeLabel(coffeeType);
 
   return {
     id: String(options.id || `stimulant_${Date.now()}`),
     type: 'stimulant',
     subtype: 'caffè',
+    coffeeType,
     coffeeVariant,
     breaksFast: isSweet,
     kcal: isSweet ? SWEET_COFFEE_KCAL : 0,
     carb: isSweet ? SWEET_COFFEE_CARB : 0,
     time,
-    label: isSweet ? 'Caffè zuccherato' : 'Caffè amaro',
+    label: isSweet ? `${typeLabel} zuccherato` : `${typeLabel} amaro`,
   };
 }
 
@@ -278,9 +344,17 @@ export function isAwaitingCoffeeVariantReply(chatHistory = []) {
 
 export default {
   COFFEE_VARIANT,
+  COFFEE_TYPE,
+  COFFEE_TYPE_OPTIONS,
+  COFFEE_TYPE_LS_KEY,
+  DEFAULT_COFFEE_TYPE,
   COFFEE_VARIANT_QUICK_REPLIES,
   SWEET_COFFEE_KCAL,
   SWEET_COFFEE_CARB,
+  resolveCoffeeType,
+  readLastCoffeeType,
+  writeLastCoffeeType,
+  getCoffeeTypeLabel,
   isCoffeeLogIntent,
   resolveCoffeeVariantFromText,
   isInActiveFastingWindow,
