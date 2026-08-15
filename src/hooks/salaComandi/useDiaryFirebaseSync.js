@@ -94,7 +94,8 @@ export function useDiaryFirebaseSync({
           const mealTimes = cached?.mealTimes ?? {};
           lastLogFromFirebaseRef.current = JSON.stringify(normalized);
           setDailyLog(applyMealTimes(normalized, mealTimes));
-          setActiveAction('home');
+          // Non buttare fuori dalla chat se l’utente è già in ai_chat (race bootstrap).
+          setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
           setIsInitialLoadComplete(true);
         }
       }
@@ -174,7 +175,7 @@ export function useDiaryFirebaseSync({
           });
         }
 
-        setActiveAction('home');
+        setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
         setIsInitialLoadComplete(true);
         attachTodayLiveListener();
 
@@ -194,7 +195,7 @@ export function useDiaryFirebaseSync({
       .catch((err) => {
         console.warn('Bootstrap load failed:', err);
         if (cancelled) return;
-        setActiveAction('home');
+        setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
         setIsInitialLoadComplete(true);
         attachTodayLiveListener();
       });

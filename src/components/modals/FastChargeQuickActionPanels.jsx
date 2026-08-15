@@ -13,57 +13,82 @@ export function FastChargeNapQuickPanel({
 }) {
   const durationFieldRef = useRef(null);
 
-  const handleSave = () => {
+  const handleSave = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     durationFieldRef.current?.commit?.();
-    onSaveNap();
+    onSaveNap?.(event);
   };
 
   return (
-    <div className="view-animate">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <button type="button" onClick={onBack} style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}>&lt; INDIETRO</button>
+    <div className="view-animate flex max-h-[min(85vh,100dvh)] min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between" style={{ marginBottom: '12px' }}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onBack?.(event);
+          }}
+          style={{ background: 'none', border: 'none', color: '#666', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}
+        >
+          &lt; INDIETRO
+        </button>
         <h2 style={{ fontSize: '0.8rem', color: '#818cf8', letterSpacing: '2px', margin: 0 }}>😴 PISOLINO</h2>
         <div style={{ width: '70px' }} />
       </div>
-      <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-          <div>
-            <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-              Durata (Minuti)
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4 [-webkit-overflow-scrolling:touch]">
+        <div style={{ padding: '18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid #2a2a2a', marginBottom: '16px', backdropFilter: 'blur(12px)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Durata (Minuti)
+              </div>
+              <FastChargeNapDurationMinutesField
+                ref={durationFieldRef}
+                drawerFastChargeStart={drawerFastChargeStart}
+                setDrawerFastChargeStart={setDrawerFastChargeStart}
+                drawerFastChargeEnd={drawerFastChargeEnd}
+                style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
+              />
             </div>
-            <FastChargeNapDurationMinutesField
-              ref={durationFieldRef}
-              drawerFastChargeStart={drawerFastChargeStart}
-              setDrawerFastChargeStart={setDrawerFastChargeStart}
-              drawerFastChargeEnd={drawerFastChargeEnd}
-              style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
-            />
-          </div>
-          <div>
-            <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
-              Ora del risveglio
+            <div>
+              <div style={{ fontSize: '0.65rem', color: '#888', letterSpacing: '1px', marginBottom: '6px', textTransform: 'uppercase' }}>
+                Ora del risveglio
+              </div>
+              <input
+                type="time"
+                value={decimalToTimeStr(drawerFastChargeEnd)}
+                onChange={(e) => {
+                  const nextEnd = parseTimeStrToDecimal(e.target.value);
+                  let durationHours = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
+                  if (durationHours < 0) durationHours += 24;
+                  durationHours = Math.max(0, durationHours);
+                  let nextStart = nextEnd - durationHours;
+                  while (nextStart < 0) nextStart += 24;
+                  while (nextStart >= 24) nextStart -= 24;
+                  setDrawerFastChargeEnd(nextEnd);
+                  setDrawerFastChargeStart(nextStart);
+                }}
+                style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
+              />
             </div>
-            <input
-              type="time"
-              value={decimalToTimeStr(drawerFastChargeEnd)}
-              onChange={(e) => {
-                const nextEnd = parseTimeStrToDecimal(e.target.value);
-                let durationHours = Number(drawerFastChargeEnd) - Number(drawerFastChargeStart);
-                if (durationHours < 0) durationHours += 24;
-                durationHours = Math.max(0, durationHours);
-                let nextStart = nextEnd - durationHours;
-                while (nextStart < 0) nextStart += 24;
-                while (nextStart >= 24) nextStart -= 24;
-                setDrawerFastChargeEnd(nextEnd);
-                setDrawerFastChargeStart(nextStart);
-              }}
-              style={{ width: '100%', minWidth: '100px', padding: '10px', background: '#1a1a1a', border: '1px solid #818cf8', borderRadius: '10px', color: '#a5b4fc', fontSize: '1rem', fontWeight: 'bold', textAlign: 'center' }}
-            />
           </div>
+          <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
         </div>
-        <div style={{ fontSize: '0.75rem', color: '#666', marginTop: '10px' }}>Durata: {(() => { let d = drawerFastChargeEnd - drawerFastChargeStart; if (d < 0) d += 24; d = Math.max(0, d); return `${Math.floor(d * 60)} min`; })()}</div>
       </div>
-      <button type="button" onClick={handleSave} style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(129,140,248,0.4)' }}>SALVA</button>
+      <div
+        className="mt-auto flex shrink-0"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 0px))' }}
+      >
+        <button
+          type="button"
+          onClick={handleSave}
+          style={{ width: '100%', padding: '18px', background: 'linear-gradient(135deg, #6366f1, #818cf8)', color: '#fff', border: 'none', borderRadius: '15px', fontSize: '0.9rem', fontWeight: 'bold', letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(129,140,248,0.4)' }}
+        >
+          SALVA
+        </button>
+      </div>
     </div>
   );
 }

@@ -32,6 +32,7 @@ import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
+import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
@@ -280,6 +281,21 @@ export default function AiCluster({
     [chatHistory, wipMealItems, mealBuilder],
   );
 
+  /** Lavagna McDrive attiva: esce dalla cronologia scroll e va nel dock sopra l'input. */
+  const dockedMcDriveTrayMsg = useMemo(() => {
+    const messages = Array.isArray(chatHistory) ? chatHistory : [];
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      if (msg?.liveMealTrayResolved === true) continue;
+      if (msg?.liveMealTray || msg?.type === 'MCDRIVE_TRAY' || msg?.mcdriveWizard) {
+        return msg;
+      }
+    }
+    return null;
+  }, [chatHistory]);
+
+  const dockedMcDriveTray = dockedMcDriveTrayMsg?.liveMealTray || null;
+
   const avatarMood = useMemo(
     () => resolveAvatarMood({
       isProcessing,
@@ -314,9 +330,32 @@ export default function AiCluster({
 
   const headerAvatarLabel = healthScoreLabel;
 
+  /** Fingerprint lavagna attiva (dock): scroll cronologia resta indipendente. */
+  const activeMcDriveTrayScrollKey = useMemo(() => {
+    if (!dockedMcDriveTray) return null;
+    const items = Array.isArray(dockedMcDriveTray?.items) ? dockedMcDriveTray.items : [];
+    const itemSig = items
+      .map((it) => `${it?.id || it?.foodName || ''}:${it?.grams || 0}:${it?.status || ''}`)
+      .join('|');
+    return `dock:${items.length}:${itemSig}`;
+  }, [dockedMcDriveTray]);
+
+  const scrollChatToBottom = useCallback((behavior = 'smooth') => {
+    const node = chatEndRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior, block: 'end' });
+  }, []);
+
   useEffect(() => {
-    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, showTypingIndicator]);
+    scrollChatToBottom('smooth');
+    // Secondo passaggio dopo layout: compensa altezza dinamica della lavagna.
+    const t1 = window.setTimeout(() => scrollChatToBottom('smooth'), 80);
+    const t2 = window.setTimeout(() => scrollChatToBottom('auto'), 220);
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [chatHistory, showTypingIndicator, activeMcDriveTrayScrollKey, scrollChatToBottom]);
 
   const suppressQuickReplies = useMemo(
     () => (chatHistory || []).some(
@@ -692,11 +731,30 @@ export default function AiCluster({
           onClear={onClearWipMeal}
         />
         <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
-          {chatHistory.filter((msg) => msg?.predictiveSuperseded !== true).map((msg, idx) => (
+          {chatHistory.filter((msg) => {
+            if (msg?.predictiveSuperseded === true) return false;
+            // Lavagna attiva: solo nel dock sopra l'input, non in cronologia.
+            if (dockedMcDriveTrayMsg && msg === dockedMcDriveTrayMsg) return false;
+            if (
+              msg?.liveMealTrayResolved !== true
+              && (msg?.liveMealTray || msg?.type === 'MCDRIVE_TRAY' || msg?.mcdriveWizard)
+            ) {
+              return false;
+            }
+            return true;
+          }).map((msg, idx) => {
+            const isQuickEventConfirm = Boolean(
+              msg?.quickEventConfirm || msg?.type === 'QUICK_EVENT_CONFIRM',
+            );
+            return (
             <div
               key={idx}
               className={`flex w-full flex-col gap-1.5 ${
-                msg.sender === 'ai' ? 'items-start' : 'items-end'
+                isQuickEventConfirm
+                  ? 'items-stretch px-0'
+                  : msg.sender === 'ai'
+                    ? 'items-start'
+                    : 'items-end'
               }`}
             >
               {msg.sender === 'ai' && msg.mealProposal && !msg.isTyping ? (
@@ -779,6 +837,15 @@ export default function AiCluster({
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
                   </div>
+                ) : msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM' ? (
+                  <div className="w-full max-w-full box-border p-0 m-0 bg-transparent">
+                    <QuickEventConfirmMedia
+                      imageSrc={msg.quickEventConfirm?.imageSrc || msg.imageSrc}
+                      videoSrc={msg.quickEventConfirm?.videoSrc || msg.videoSrc || null}
+                      title={msg.quickEventConfirm?.title || msg.text || msg.displayText || ''}
+                      subtitle={msg.quickEventConfirm?.subtitle || ''}
+                    />
+                  </div>
                 ) : msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard ? (
                   <div className="flex w-full max-w-full flex-col gap-2.5 box-border">
                     <div className="kentu-ai-bubble-stack flex w-full min-w-0 flex-col gap-2.5">
@@ -789,48 +856,23 @@ export default function AiCluster({
                           ) : (
                             <KentuInsightCard key={`mcdrive-text-${si}`} block={block} />
                           ))
-                        : null}
-                      <LiveMealTray
-                        tray={msg.liveMealTray}
-                        active={msg.liveMealTrayResolved !== true}
-                        disabled={isProcessing}
-                        personalDb={foodDatabase}
-                        kentuItDb={kentuItDatabase}
-                        globalDb={globalFoodDatabase}
-                        getMealTargets={getMcDriveMealTargets}
-                        onRemoveItem={onMcDriveRemoveItem}
-                        onUpdateGrams={onMcDriveUpdateGrams}
-                        onApplyAlternative={onMcDriveApplyAlternative}
-                        onReplaceFromSearch={onMcDriveReplaceFromSearch}
-                        onCancel={() => {
-                          onSendMessage?.('', {
-                            intent: 'CANCEL_MCDRIVE_WIZARD',
-                            skipUserBubble: true,
-                            fromQuickReply: true,
-                          });
-                        }}
-                        onFinish={() => {
-                          onSendMessage?.('', {
-                            intent: 'FINISH_MCDRIVE_WIZARD',
-                            skipUserBubble: true,
-                            fromQuickReply: true,
-                          });
-                        }}
-                        onSave={() => {
-                          onSendMessage?.('', {
-                            intent: 'SAVE_MCDRIVE_MEAL',
-                            skipUserBubble: true,
-                            fromQuickReply: true,
-                          });
-                        }}
-                        onAddMore={() => {
-                          onSendMessage?.('', {
-                            intent: 'ADD_MORE_MCDRIVE',
-                            skipUserBubble: true,
-                            fromQuickReply: true,
-                          });
-                        }}
-                      />
+                        : (
+                          <div className="rounded-xl border border-zinc-700/60 bg-zinc-900/80 px-3 py-2 text-sm text-zinc-300">
+                            {(() => {
+                              const tray = msg.liveMealTray;
+                              const items = Array.isArray(tray?.items) ? tray.items : [];
+                              const totals = tray?.resolvedTotals || tray?.totals || {};
+                              const names = items
+                                .map((it) => String(it?.foodName || it?.name || '').trim())
+                                .filter(Boolean)
+                                .slice(0, 5);
+                              const kcal = Math.round(Number(totals.kcal) || 0);
+                              return names.length
+                                ? `📋 ${names.join(', ')}${items.length > names.length ? '…' : ''} · ${kcal} kcal`
+                                : '📋 Pasto McDrive chiuso.';
+                            })()}
+                          </div>
+                        )}
                     </div>
                   </div>
                 ) : isSystemNoticeMessage(msg) ? (
@@ -1120,12 +1162,65 @@ export default function AiCluster({
                 </div>
               )}
             </div>
-          ))}
+          );
+          })}
           {showTypingIndicator ? (
             <TypingIndicator avatarSrc={chatAvatarSrc} label={typingIndicatorLabel} />
           ) : null}
           <div ref={chatEndRef} />
         </div>
+
+        {dockedMcDriveTray ? (
+          <div
+            className="kentu-mcdrive-dock flex max-h-[55vh] min-h-0 w-full shrink-0 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2"
+            style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
+            role="region"
+            aria-label="Lavagna McDrive"
+          >
+            <LiveMealTray
+              tray={dockedMcDriveTray}
+              active
+              disabled={isProcessing}
+              personalDb={foodDatabase}
+              kentuItDb={kentuItDatabase}
+              globalDb={globalFoodDatabase}
+              getMealTargets={getMcDriveMealTargets}
+              onRemoveItem={onMcDriveRemoveItem}
+              onUpdateGrams={onMcDriveUpdateGrams}
+              onApplyAlternative={onMcDriveApplyAlternative}
+              onReplaceFromSearch={onMcDriveReplaceFromSearch}
+              onCancel={() => {
+                onSendMessage?.('', {
+                  intent: 'CANCEL_MCDRIVE_WIZARD',
+                  skipUserBubble: true,
+                  fromQuickReply: true,
+                });
+              }}
+              onFinish={() => {
+                onSendMessage?.('', {
+                  intent: 'FINISH_MCDRIVE_WIZARD',
+                  skipUserBubble: true,
+                  fromQuickReply: true,
+                });
+              }}
+              onSave={() => {
+                onSendMessage?.('', {
+                  intent: 'SAVE_MCDRIVE_MEAL',
+                  skipUserBubble: true,
+                  fromQuickReply: true,
+                });
+              }}
+              onAddMore={() => {
+                onSendMessage?.('', {
+                  intent: 'ADD_MORE_MCDRIVE',
+                  skipUserBubble: true,
+                  fromQuickReply: true,
+                });
+              }}
+            />
+          </div>
+        ) : null}
+
         <div className="flex shrink-0 flex-col">
         {chatImages.length > 0 && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>
@@ -1222,7 +1317,11 @@ export default function AiCluster({
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onManualShortcut?.(item.id === 'acqua' ? 'water' : item.id)}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onManualShortcut?.(item.id === 'acqua' ? 'water' : item.id);
+                }}
                 className="flex min-w-[72px] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 p-2 text-zinc-100 transition-colors hover:border-cyan-400/40 hover:bg-zinc-800"
               >
                 <span className="text-xl" aria-hidden>{item.icon}</span>

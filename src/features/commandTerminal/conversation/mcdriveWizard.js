@@ -2,7 +2,7 @@ import {
   parseConsumedMealFromNaturalText,
   extractBareFoodNamesFromText,
 } from './mealLogIntent.js';
-import { findSemanticKentuMatches } from '../../mealBuilder/utils/SemanticMatchmaker.js';
+import { findSemanticKentuMatches, findExactLiteralFoodInDb } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 import {
   computeMacrosForWeight,
   getPer100Macros,
@@ -247,7 +247,10 @@ export function sumMcDriveResolvedTotals(items = []) {
  * @returns {boolean}
  */
 export function draftHasRawMcDriveItems(items = []) {
-  return findNextRawMcDriveIndex(items) >= 0;
+  return (Array.isArray(items) ? items : []).some((item) => {
+    const status = String(item?.status || '').toLowerCase();
+    return status === 'raw' || status === 'processing' || status === 'validating';
+  });
 }
 
 /**
@@ -378,7 +381,8 @@ export function isMcDriveRawItem(item) {
   if (!item || typeof item !== 'object') return false;
   const status = String(item.status || '').toLowerCase();
   if (status === 'resolved') return false;
-  if (status === 'raw' || status === 'pending_enrichment' || status === 'skipped' || status === 'validating') {
+  if (status === 'raw' || status === 'pending_enrichment' || status === 'skipped'
+    || status === 'processing' || status === 'validating') {
     return true;
   }
   const hasMacros = Number.isFinite(Number(item.kcal)) && Number(item.kcal) > 0;
@@ -549,7 +553,9 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
 }
 
 /**
- * Personal DB prima, poi Kentu DB. Solo match high/medium come top.
+ * Personal DB prima, poi Kentu DB.
+ * 1) Match letterale esatto (case/accenti) → resolved immediato, niente AI.
+ * 2) Altrimenti Semantic Matchmaker (solo high/medium).
  * Restituisce anche alternatives (top 3–4 escluso il match).
  * @param {string} foodName
  * @param {{ personalDb?: object|null, kentuItDb?: object|null, signal?: AbortSignal }} ctx
@@ -562,6 +568,28 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
   const signal = ctx.signal;
   const personalDb = ctx.personalDb && typeof ctx.personalDb === 'object' ? ctx.personalDb : null;
   const kentuItDb = ctx.kentuItDb && typeof ctx.kentuItDb === 'object' ? ctx.kentuItDb : null;
+
+  // Gate letterale: priorità assoluta sul ranking semantico AI.
+  if (personalDb && Object.keys(personalDb).length > 0) {
+    const exactPersonal = findExactLiteralFoodInDb(name, personalDb);
+    if (exactPersonal) {
+      return {
+        match: exactPersonal,
+        source: 'personal',
+        alternatives: [],
+      };
+    }
+  }
+  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
+    const exactKentu = findExactLiteralFoodInDb(name, kentuItDb);
+    if (exactKentu) {
+      return {
+        match: exactKentu,
+        source: 'kentu',
+        alternatives: [],
+      };
+    }
+  }
 
   if (personalDb && Object.keys(personalDb).length > 0) {
     const personalMatches = await findSemanticKentuMatches(name, {

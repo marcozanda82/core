@@ -38,6 +38,12 @@ import {
   COFFEE_VARIANT,
   sumSweetCoffeeMacros,
 } from './features/stimulants/coffeeLogEngine.js';
+import QuickEventConfirmOverlay from './features/quickEvents/QuickEventConfirmOverlay.jsx';
+import {
+  buildQuickEventConfirmPayload,
+  buildQuickEventConfirmChatEntry,
+  isCoffeeStimulantNode,
+} from './features/quickEvents/quickEventConfirmAssets.js';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
   buildMealReceiptPayload,
@@ -466,6 +472,8 @@ export default function SalaComandi() {
   const [activeAction, setActiveAction] = useState('home');
   /** Chat montata solo dalla prima apertura in poi (evita costo AiCluster all'avvio). */
   const [chatShellMounted, setChatShellMounted] = useState(false);
+  /** Se un drawer/modale rapido è partito dalla chat, al salvataggio si torna in ai_chat (niente Home). */
+  const returnToChatAfterQuickActionRef = useRef(false);
   useEffect(() => {
     if (activeAction === 'ai_chat') setChatShellMounted(true);
   }, [activeAction]);
@@ -689,6 +697,11 @@ export default function SalaComandi() {
         window.history.pushState({ noExit: true }, '');
         return;
       }
+      // Mai forzare Home se la chat è aperta (redirect fantasma post eventi rapidi / gesture back).
+      if (activeActionRef.current === 'ai_chat') {
+        window.history.pushState({ noExit: true }, '');
+        return;
+      }
       if (activeActionRef.current && activeActionRef.current !== 'home') {
         setActiveAction('home');
         window.history.pushState({ noExit: true }, '');
@@ -784,6 +797,7 @@ export default function SalaComandi() {
   const [nutrientModal, setNutrientModal] = useState(null);
   const [editQuantityValue, setEditQuantityValue] = useState('');
   const [showChoiceModal, setShowChoiceModal] = useState(false);
+  const [quickEventConfirm, setQuickEventConfirm] = useState(null);
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [inputWeightDate, setInputWeightDate] = useState(() => getTodayString());
   const [inputWeight, setInputWeight] = useState('');
@@ -3081,8 +3095,19 @@ export default function SalaComandi() {
   function closeDrawer() {
     setEditingMealId(null);
     setIsDrawerOpen(false);
-    setTimeout(() => setActiveAction(null), 400);
+    // Non azzerare ai_chat: closeDrawer su stimulant/menu può arrivare dopo un ripristino chat.
+    setTimeout(() => {
+      setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : null));
+    }, 400);
   }
+
+  /** Chiude il drawer e ripristina la chat solo se l’azione rapida era partita da lì. */
+  const finishQuickActionSurface = useCallback((opts = {}) => {
+    const preferChat = opts.forceChat === true || returnToChatAfterQuickActionRef.current === true;
+    returnToChatAfterQuickActionRef.current = false;
+    setIsDrawerOpen(false);
+    setActiveAction(preferChat ? 'ai_chat' : null);
+  }, []);
 
   const commitAddEventMenuOrder = useCallback((nextOrder) => {
     setAddEventMenuOrder(nextOrder);
@@ -3423,6 +3448,10 @@ export default function SalaComandi() {
 
   function handleAddEventMenuItem(itemId, source) {
     const fromModal = source === 'modal';
+    const fromChat = source === 'chat_shortcut' || source === 'predictive_chip';
+    if (fromChat) {
+      returnToChatAfterQuickActionRef.current = true;
+    }
     if (itemId && itemId !== 'menu' && itemId !== 'diary') {
       trackEventUsage(itemId);
     }
@@ -3441,7 +3470,8 @@ export default function SalaComandi() {
         break;
       case 'weight':
         if (fromModal) setShowChoiceModal(false);
-        else closeDrawer();
+        else if (!fromChat) closeDrawer();
+        else setIsDrawerOpen(false);
         setShowWeightModal(true);
         break;
       case 'alcohol': {
@@ -3454,7 +3484,8 @@ export default function SalaComandi() {
           timeStr: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
         });
         if (fromModal) setShowChoiceModal(false);
-        else closeDrawer();
+        else if (!fromChat) closeDrawer();
+        else setIsDrawerOpen(false);
         setShowAlcoholPopup(true);
         break;
       }
@@ -3467,7 +3498,14 @@ export default function SalaComandi() {
         break;
       }
       case 'stimulant':
-        if (!fromModal) closeDrawer();
+        // Evita closeDrawer() (timeout → activeAction null) che cancella il ritorno in chat.
+        if (fromModal) {
+          /* already in modal */
+        } else if (fromChat) {
+          setIsDrawerOpen(false);
+        } else {
+          closeDrawer();
+        }
         setStimulantTime(getCurrentTimeRoundedTo15Min());
         setStimulantSubtype('caffè');
         setCoffeeVariant(COFFEE_VARIANT.AMARO);
@@ -4564,12 +4602,97 @@ Slot esistente aggiornato (nessun ghost).`;
   const getAlcoholGlassIcon = (type) => (type === 'birra' ? '🍺' : type === 'vino' ? '🍷' : '🥃');
   const getAlcoholBaseMl = (type) => (type === 'birra' ? 330 : type === 'vino' ? 150 : 40);
 
-  const handleAddWater = (amount) => {
+  const appendQuickEventConfirmToChat = useCallback((kind, extra = {}) => {
+    const entry = buildQuickEventConfirmChatEntry(kind, extra);
+    if (!entry || typeof setChatHistory !== 'function') return false;
+    setChatHistory((prev) => [...(prev || []), entry]);
+    return true;
+  }, [setChatHistory]);
+
+  /** Scorciatoie chat: salva in-place senza uscire dalla chat / senza aprire drawer. */
+  const handleQuickEventFromChat = useCallback((actionId) => {
+    const id = String(actionId || '').trim().toLowerCase();
+    if (isSimulationMode) return false;
+    const now = getCurrentTimeRoundedTo15Min();
+
+    const stayOnChat = () => {
+      // Blindatura anti-redirect: dopo sync Firebase / popstate la chat deve restare aperta.
+      setActiveAction('ai_chat');
+      returnToChatAfterQuickActionRef.current = false;
+    };
+
+    if (id === 'water' || id === 'acqua') {
+      const ml = 250;
+      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: now, ml }];
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+      trackEventUsage('water');
+      appendQuickEventConfirmToChat('water', { subtitle: `+${ml} ml` });
+      stayOnChat();
+      return true;
+    }
+
+    if (id === 'nap') {
+      const duration = 0.5;
+      let start = now - duration;
+      if (start < 0) start += 24;
+      const node = {
+        id: `nap_${Date.now()}`,
+        type: 'nap',
+        time: start,
+        duration: Math.round(duration * 100) / 100,
+      };
+      const next = [...manualNodes, node].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+      trackEventUsage('nap');
+      appendQuickEventConfirmToChat('nap', { subtitle: '30 min' });
+      stayOnChat();
+      return true;
+    }
+
+    if (id === 'stimulant' || id === 'caffè' || id === 'caffe' || id === 'coffee') {
+      const node = buildCoffeeStimulantNode(COFFEE_VARIANT.AMARO, now);
+      const next = [...manualNodes, node];
+      setManualNodes(next);
+      syncDatiFirebase(dailyLog, next);
+      trackEventUsage('stimulant');
+      appendQuickEventConfirmToChat('coffee');
+      stayOnChat();
+      return true;
+    }
+
+    return false;
+  }, [
+    isSimulationMode,
+    manualNodes,
+    setManualNodes,
+    syncDatiFirebase,
+    dailyLog,
+    trackEventUsage,
+    appendQuickEventConfirmToChat,
+    setActiveAction,
+  ]);
+
+  const handleAddWater = (amount, options = {}) => {
     if (isSimulationMode) return;
+    const fromChat = returnToChatAfterQuickActionRef.current === true
+      || activeAction === 'ai_chat';
     if (amount > 0) {
       const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: amount }];
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
+      // Se l’azione è dalla chat, conferma in cronologia (niente overlay / Home).
+      if (fromChat || activeAction === 'ai_chat') {
+        appendQuickEventConfirmToChat('water', { subtitle: `+${amount} ml` });
+      } else {
+        setQuickEventConfirm(buildQuickEventConfirmPayload('water', {
+          subtitle: `+${amount} ml`,
+        }));
+      }
+      if (options.closeAfter === true) {
+        finishQuickActionSurface({ forceChat: fromChat });
+      }
     } else {
       const toRemove = amount === -250 ? 1 : 2;
       const waterNodes = manualNodes.filter(n => n.type === 'water');
@@ -4579,6 +4702,16 @@ Slot esistente aggiornato (nessun ghost).`;
       syncDatiFirebase(dailyLog, next);
     }
   };
+
+  const handleConfirmWaterDrawer = useCallback(() => {
+    if (returnToChatAfterQuickActionRef.current) {
+      finishQuickActionSurface({ forceChat: true });
+    } else {
+      returnToChatAfterQuickActionRef.current = false;
+      setIsDrawerOpen(false);
+      setActiveAction(null);
+    }
+  }, [finishQuickActionSurface]);
 
   const handleSaveFastCharge = (chargeType) => {
     if (isSimulationMode) return;
@@ -4600,8 +4733,28 @@ Slot esistente aggiornato (nessun ghost).`;
     const next = [...manualNodes, node].sort((a, b) => (a.time ?? 0) - (b.time ?? 0));
     setManualNodes(next);
     syncDatiFirebase(dailyLog, next);
-    setActiveAction(null);
+    const fromChat = returnToChatAfterQuickActionRef.current === true
+      || activeAction === 'ai_chat';
     setFastChargeSupplementName('');
+    if (chargeType === 'nap') {
+      const mins = Math.round((Number(node.duration) || 0) * 60);
+      if (fromChat) {
+        appendQuickEventConfirmToChat('nap', {
+          subtitle: mins > 0 ? `${mins} min` : undefined,
+        });
+      } else {
+        setQuickEventConfirm(buildQuickEventConfirmPayload('nap', {
+          subtitle: mins > 0 ? `${mins} min` : undefined,
+        }));
+      }
+    }
+    // Non tornare a Home se arriviamo dalla chat: resta in chat + chiudi drawer.
+    if (fromChat) {
+      finishQuickActionSurface({ forceChat: true });
+    } else {
+      returnToChatAfterQuickActionRef.current = false;
+      setActiveAction(null);
+    }
   };
 
   const processTestoAI = (testo) => {
@@ -6578,6 +6731,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
       trackEventUsage('stimulant');
+      // Conferma media già pubblicata da commitCoffeeLog via QUICK_EVENT_CONFIRM —
+      // evita secondo ciclo caffe1→2 e overlay che chiude la chat.
     },
     [dailyLog, manualNodes, setManualNodes, syncDatiFirebase, trackEventUsage],
   );
@@ -6627,6 +6782,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setChatHistory,
     onChatClose: closeChat,
     onManualShortcutFromChat: (actionId) => {
+      if (handleQuickEventFromChat(actionId)) return;
       const canonical =
         actionId === 'acqua' || actionId === 'water'
           ? 'water'
@@ -7042,6 +7198,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setShowChoiceModal(false);
     setAddChoiceView('main');
     setCoffeeVariant(COFFEE_VARIANT.AMARO);
+    const fromChat = returnToChatAfterQuickActionRef.current === true
+      || activeAction === 'ai_chat';
+    if (isCoffeeStimulantNode(node)) {
+      if (fromChat) {
+        appendQuickEventConfirmToChat('coffee');
+      } else {
+        setQuickEventConfirm(buildQuickEventConfirmPayload('coffee'));
+      }
+    }
+    if (fromChat) {
+      finishQuickActionSurface({ forceChat: true });
+    } else {
+      returnToChatAfterQuickActionRef.current = false;
+      setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : null));
+    }
   };
 
   const sleepDurationLabel = formatSleepDurationParts(
@@ -7582,17 +7753,25 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleChatManualShortcut = useCallback(
     (actionId) => {
-      closeChat();
+      // Acqua / pisolino / caffè: resta in chat, appende QUICK_EVENT_CONFIRM (niente closeChat → Home).
+      if (handleQuickEventFromChat(actionId)) return;
+
       if (actionId === 'menu') {
+        returnToChatAfterQuickActionRef.current = true;
+        closeChat();
         setAddChoiceView('main');
         setShowChoiceModal(true);
         return;
       }
       if (actionId === 'sleep') {
+        returnToChatAfterQuickActionRef.current = true;
+        closeChat();
         setShowSleepPrompt(true);
         return;
       }
       if (actionId === 'weight') {
+        returnToChatAfterQuickActionRef.current = true;
+        closeChat();
         trackEventUsage('weight');
         setShowWeightModal(true);
         return;
@@ -7605,9 +7784,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             : actionId === 'allenamento'
               ? 'workout'
               : actionId;
+      // Fallback drawer/modale: segna ritorno chat e solo allora smonta la shell chat.
+      returnToChatAfterQuickActionRef.current = true;
+      closeChat();
       handleAddEventMenuItem(canonical, 'chat_shortcut');
     },
-    [closeChat, handleAddEventMenuItem, trackEventUsage],
+    [closeChat, handleAddEventMenuItem, handleQuickEventFromChat, trackEventUsage],
   );
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
@@ -8835,7 +9017,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         {/* VISTA ACQUA */}
         {activeAction === 'acqua' && (
           <WaterActionModal
-            onBack={() => setActiveAction(null)}
+            onBack={() => {
+              if (returnToChatAfterQuickActionRef.current) {
+                finishQuickActionSurface();
+              } else {
+                setActiveAction(null);
+              }
+            }}
+            onConfirm={handleConfirmWaterDrawer}
             drawerWaterTime={drawerWaterTime}
             setDrawerWaterTime={setDrawerWaterTime}
             miniTimelineWaterRef={miniTimelineWaterRef}
@@ -8859,7 +9048,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         {/* VISTA FAST CHARGE - PISOLINO */}
         {activeAction === 'fast_charge_nap' && (
           <FastChargeNapQuickPanel
-            onBack={() => setActiveAction(null)}
+            onBack={() => {
+              if (returnToChatAfterQuickActionRef.current) {
+                finishQuickActionSurface();
+              } else {
+                setActiveAction(null);
+              }
+            }}
             drawerFastChargeStart={drawerFastChargeStart}
             setDrawerFastChargeStart={setDrawerFastChargeStart}
             drawerFastChargeEnd={drawerFastChargeEnd}
@@ -10262,6 +10457,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : null}
 
       {fixedAppBottomChrome}
+
+      <QuickEventConfirmOverlay
+        payload={quickEventConfirm}
+        onDone={() => setQuickEventConfirm(null)}
+      />
     </div>
   );
   }

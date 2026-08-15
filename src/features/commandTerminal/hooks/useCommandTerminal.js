@@ -58,7 +58,27 @@ function isActiveMcDriveTrayEntry(entry) {
 }
 
 /**
- * Una sola card lavagna in cronologia: aggiorna quella attiva o ne crea una.
+ * Se la lavagna McDrive attiva non è già l'ultimo messaggio, la sposta in fondo.
+ * @param {Array<object>} prev
+ * @returns {Array<object>}
+ */
+function bumpActiveMcDriveTrayToEnd(prev) {
+  const list = Array.isArray(prev) ? [...prev] : [];
+  let idx = -1;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    if (isActiveMcDriveTrayEntry(list[i])) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0 || idx === list.length - 1) return list;
+  const [trayEntry] = list.splice(idx, 1);
+  return [...list, trayEntry];
+}
+
+/**
+ * Una sola card lavagna in cronologia: aggiorna quella attiva, la sposta in fondo, o ne crea una.
+ * Timestamp/id sempre rinnovati così nessun sort/cronologia la riporta in alto.
  * @param {Array<object>} prev
  * @param {{ tray: object, quickReplies?: Array|null, text?: string, keepText?: boolean }} opts
  */
@@ -85,7 +105,13 @@ function upsertMcDriveTrayChatEntry(prev, {
     ? String(list[idx]?.text || list[idx]?.displayText || '').trim()
     : String(text || '').trim();
 
+  const now = Date.now();
+  const basePrev = idx >= 0 ? list[idx] : null;
   const nextEntry = {
+    ...(basePrev && typeof basePrev === 'object' ? basePrev : {}),
+    id: `mcdrive_tray_${now}`,
+    timestamp: now,
+    createdAt: now,
     sender: 'ai',
     type: 'MCDRIVE_TRAY',
     mcdriveWizard: true,
@@ -95,35 +121,38 @@ function upsertMcDriveTrayChatEntry(prev, {
     text: nextText,
     displayText: nextText,
     spokenText: nextText,
-    ...(nextReplies ? { quickReplies: nextReplies } : (idx >= 0 && Array.isArray(list[idx]?.quickReplies)
-      ? { quickReplies: list[idx].quickReplies }
-      : { quickReplies: [] })),
+    ...(nextReplies
+      ? { quickReplies: nextReplies }
+      : (basePrev && Array.isArray(basePrev.quickReplies)
+        ? { quickReplies: basePrev.quickReplies }
+        : { quickReplies: [] })),
   };
 
-  if (idx >= 0) {
-    list[idx] = {
-      ...list[idx],
-      ...nextEntry,
-      ...(keepText && !nextReplies && Array.isArray(list[idx]?.quickReplies)
-        ? { quickReplies: list[idx].quickReplies }
-        : {}),
-    };
-    return list.map((entry, i) => {
-      if (i === idx) return entry;
-      if (
-        entry?.liveMealTray
-        || entry?.type === 'MCDRIVE_TRAY'
-        || entry?.mcdriveWizard
-        || entry?.mcdriveSessionId === MCDRIVE_TRAY_SESSION_ID
-      ) {
-        return { ...entry, liveMealTrayResolved: true };
-      }
-      return entry;
-    });
+  // Estrai la card attiva e risolvi eventuali altre tray; poi push in coda (bump to bottom).
+  const rest = [];
+  for (let i = 0; i < list.length; i += 1) {
+    if (i === idx) continue;
+    const entry = list[i];
+    if (
+      entry?.liveMealTray
+      || entry?.type === 'MCDRIVE_TRAY'
+      || entry?.mcdriveWizard
+      || entry?.mcdriveSessionId === MCDRIVE_TRAY_SESSION_ID
+    ) {
+      rest.push({ ...entry, liveMealTrayResolved: true });
+    } else {
+      rest.push(entry);
+    }
   }
 
-  return [...list, nextEntry];
+  return [...rest, nextEntry];
 }
+
+/** Rimuove la lavagna attiva dalla cronologia (passa al dock UI / chiusura). */
+function purgeActiveMcDriveTrayEntries(prev) {
+  return (Array.isArray(prev) ? prev : []).filter((entry) => !isActiveMcDriveTrayEntry(entry));
+}
+
 import {
   applyMealOperations,
   mergeMealItems,
@@ -210,6 +239,8 @@ export function useCommandTerminal({
     const noticeExtra = withSystemNoticeDefaults(line, extra && typeof extra === 'object' ? extra : {});
     const avatarAsset = String(noticeExtra?.avatarAsset || '').trim()
       || snapshotChatAvatarAsset(noticeExtra, buildAvatarSnapshotContext(noticeExtra?.forceStrategic === true));
+    const purgeTray = noticeExtra?.purgeMcDriveTray === true
+      || noticeExtra?.resolveMcDriveTray === true;
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
       text: line || '(mealReceipt)',
       type: noticeExtra?.type || null,
@@ -217,16 +248,30 @@ export function useCommandTerminal({
       local: noticeExtra?.local === true,
       hasMealReceipt: hasReceipt,
       avatarAsset,
+      purgeTray,
     });
-    setChatHistoryRef.current((prev) => [
-      ...(prev || []),
-      {
-        ...noticeExtra,
-        sender: 'ai',
-        text: line || (hasReceipt ? mealReceiptFallbackText(extra.mealReceipt) : ''),
-        avatarAsset,
-      },
-    ]);
+    setChatHistoryRef.current((prev) => {
+      let base = Array.isArray(prev) ? prev : [];
+      if (purgeTray) {
+        base = purgeActiveMcDriveTrayEntries(base);
+      }
+      const {
+        purgeMcDriveTray: _purgeFlag,
+        resolveMcDriveTray: _resolveFlag,
+        ...safeExtra
+      } = noticeExtra;
+      const next = [
+        ...base,
+        {
+          ...safeExtra,
+          sender: 'ai',
+          text: line || (hasReceipt ? mealReceiptFallbackText(extra.mealReceipt) : ''),
+          avatarAsset,
+        },
+      ];
+      // McDrive attivo: la lavagna resta sempre l'ultimo messaggio in chat (dato per il dock).
+      return purgeTray ? next : bumpActiveMcDriveTrayToEnd(next);
+    });
   }, [buildAvatarSnapshotContext]);
 
   const onAddFoodRef = useRef(onAddFoodCommand);
@@ -520,20 +565,27 @@ export function useCommandTerminal({
         return;
       }
       if (payload.type === 'MEAL_RECEIPT' || (payload.mealReceipt && typeof payload.mealReceipt === 'object')) {
-        if (payload.resolveMcDriveTray === true && typeof setChatHistoryRef.current === 'function') {
-          setChatHistoryRef.current((prev) =>
-            (prev || []).map((entry) => (
-              entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
-                ? { ...entry, liveMealTrayResolved: true }
-                : entry
-            )),
-          );
-        }
         const text = String(payload.text || payload.message || '').trim()
           || mealReceiptFallbackText(payload.mealReceipt);
         appendAiMessage(text, {
           type: 'MEAL_RECEIPT',
           mealReceipt: payload.mealReceipt,
+          local: payload.local === true,
+          sourceTag: payload.sourceTag || null,
+          purgeMcDriveTray: payload.resolveMcDriveTray === true,
+        });
+        return;
+      }
+      if (payload.type === 'QUICK_EVENT_CONFIRM' || payload.quickEventConfirm) {
+        const confirm = payload.quickEventConfirm && typeof payload.quickEventConfirm === 'object'
+          ? payload.quickEventConfirm
+          : null;
+        const text = String(payload.displayText || payload.text || payload.message || confirm?.title || '').trim()
+          || 'Evento registrato';
+        appendAiMessage(text, {
+          type: 'QUICK_EVENT_CONFIRM',
+          quickEventConfirm: confirm,
+          isSystem: true,
           local: payload.local === true,
           sourceTag: payload.sourceTag || null,
         });
@@ -621,15 +673,6 @@ export function useCommandTerminal({
       }
       const text = String(payload.displayText || payload.text || payload.message || '').trim();
       if (!text) return;
-      if (payload.resolveMcDriveTray === true && typeof setChatHistoryRef.current === 'function') {
-        setChatHistoryRef.current((prev) =>
-          (prev || []).map((entry) => (
-            entry?.liveMealTray || entry?.type === 'MCDRIVE_TRAY' || entry?.mcdriveWizard
-              ? { ...entry, liveMealTrayResolved: true }
-              : entry
-          )),
-        );
-      }
       const spokenText = String(payload.spokenText || text).trim();
       const rawQuickReplies = Array.isArray(payload.quickReplies) ? payload.quickReplies : [];
       const lightQuickReplies = rawQuickReplies
@@ -665,6 +708,7 @@ export function useCommandTerminal({
         mealReceipt: payload.mealReceipt && typeof payload.mealReceipt === 'object'
           ? payload.mealReceipt
           : null,
+        purgeMcDriveTray: payload.resolveMcDriveTray === true,
         ...(lightQuickReplies.length > 0
           ? { quickReplies: lightQuickReplies, clarification: payload.clarification === true }
           : {}),

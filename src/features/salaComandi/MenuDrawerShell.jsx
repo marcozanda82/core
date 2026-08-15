@@ -24,8 +24,9 @@ export default function MenuDrawerShell({ isDrawerOpen, onClose, children }) {
             ✕
           </button>
         ) : null}
-        {/* Flex column vincolato all'altezza del drawer: le viste figlie scrollano internamente */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 pt-14 pb-4">
+        {/* Flex column vincolato all'altezza del drawer: le viste figlie scrollano internamente.
+            pb-24 lascia spazio al CONFERMA acqua in portal fixed. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 pt-14 pb-24">
           {children}
         </div>
       </div>

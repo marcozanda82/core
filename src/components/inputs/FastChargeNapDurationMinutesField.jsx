@@ -64,6 +64,13 @@ const FastChargeNapDurationMinutesField = forwardRef(function FastChargeNapDurat
         focusedRef.current = false;
         commitDraft();
       }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          commitDraft();
+        }
+      }}
       style={style}
     />
   );

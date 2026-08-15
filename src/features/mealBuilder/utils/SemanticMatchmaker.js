@@ -6,7 +6,7 @@
  */
 
 import { askAI } from '../../../services/aiService.js';
-import { searchFoodsDetailed } from '../../../foodSearch.js';
+import { normalizeSearchText, searchFoodsDetailed } from '../../../foodSearch.js';
 import { TARGETS } from '../../../useBiochimico.js';
 import {
   buildPer100TargetNutrientsFromRow,
@@ -282,6 +282,59 @@ export function sanitizeProductNameForSearch(productName) {
 }
 
 /**
+ * Match letterale esatto su un DB (case/accenti ignorati).
+ * Es. "fette biscottate" → "Fette biscottate".
+ *
+ * @param {string} foodName
+ * @param {Record<string, object>|null|undefined} foodDb
+ * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
+ */
+export function findExactLiteralFoodInDb(foodName, foodDb) {
+  const needle = normalizeSearchText(foodName);
+  if (!needle || !foodDb || typeof foodDb !== 'object') return null;
+
+  for (const [id, food] of Object.entries(foodDb)) {
+    if (!food || typeof food !== 'object') continue;
+
+    const descName = String(food.desc || '').trim();
+    const altName = String(food.name || '').trim();
+    const keyAsName = String(id || '').trim();
+    const keyLooksLikeName = keyAsName.length >= 2
+      && !/^\d+$/.test(keyAsName)
+      && !/^food[_-]?\d+/i.test(keyAsName)
+      && /[\p{L}]/u.test(keyAsName);
+
+    const candidates = [
+      descName,
+      altName,
+      keyLooksLikeName ? keyAsName.replace(/[_-]+/g, ' ') : '',
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (normalizeSearchText(candidate) !== needle) continue;
+      const displayName = descName || altName || candidate;
+      const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
+      return {
+        fdcId,
+        name: displayName,
+        confidence: 'high',
+        reason: 'Match letterale esatto',
+        row: {
+          ...food,
+          id: food.id ?? id,
+          fdcId,
+          foodDbKey: food.foodDbKey ?? fdcId,
+          desc: food.desc || displayName,
+          name: food.name || displayName,
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Filtro locale: top N candidati Kentu DB (CREA IT + personale).
  *
  * @param {string} productName
@@ -382,12 +435,40 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
   const personalDb = dbContext.personalDb || null;
   const searchDb = mergeKentuSearchDatabases(kentuItDb, personalDb);
 
-  let queryName = String(productName || '').trim();
+  const rawName = String(productName || '').trim();
+  if (!rawName) return [];
+
+  // Priorità assoluta: match letterale esatto (niente AI / confidence basse).
+  // Personal DB ha priorità sul merge (...it, ...personal) ma cerchiamo esplicitamente in ordine.
+  if (personalDb && Object.keys(personalDb).length > 0) {
+    const exactPersonal = findExactLiteralFoodInDb(rawName, personalDb);
+    if (exactPersonal) return [exactPersonal];
+  }
+  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
+    const exactKentu = findExactLiteralFoodInDb(rawName, kentuItDb);
+    if (exactKentu) return [exactKentu];
+  }
+  const exactMerged = findExactLiteralFoodInDb(rawName, searchDb);
+  if (exactMerged) return [exactMerged];
+
+  let queryName = rawName;
   try {
     const normalized = await normalizeIngredientSpellingWithGemini(queryName, { signal: opts.signal });
     if (normalized.normalized) queryName = normalized.normalized;
   } catch (error) {
     console.warn('[SemanticMatchmaker] normalize before search failed', error);
+  }
+
+  // Dopo normalizzazione ortografica, riprova match letterale (es. typo → nome DB).
+  if (queryName !== rawName) {
+    if (personalDb && Object.keys(personalDb).length > 0) {
+      const exactPersonal = findExactLiteralFoodInDb(queryName, personalDb);
+      if (exactPersonal) return [exactPersonal];
+    }
+    if (kentuItDb && Object.keys(kentuItDb).length > 0) {
+      const exactKentu = findExactLiteralFoodInDb(queryName, kentuItDb);
+      if (exactKentu) return [exactKentu];
+    }
   }
 
   const candidates = await findLocalKentuCandidates(queryName, searchDb, {

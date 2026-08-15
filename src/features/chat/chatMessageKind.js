@@ -11,6 +11,7 @@ const RICH_TYPES = new Set([
   'MEAL_RECEIPT',
   'DAILY_PLAN',
   'MEAL_PROPOSAL',
+  'QUICK_EVENT_CONFIRM',
 ]);
 
 const SUCCESS_RE =
@@ -78,6 +79,7 @@ function hasRichInteractivePayload(msg) {
   if (!msg || typeof msg !== 'object') return false;
   if (msg.mealProposal || msg.dailyPlan || msg.mealDraft || msg.workoutDraft || msg.mealReceipt) return true;
   if (msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard === true) return true;
+  if (msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM') return true;
   if (msg.suggestedAction || msg.newFoodDraft) return true;
   if (Array.isArray(msg.mealProposals) && msg.mealProposals.length > 0) return true;
   if (Array.isArray(msg.wipSuggestions) && msg.wipSuggestions.length > 0) return true;
@@ -123,6 +125,7 @@ export function shouldRenderSystemNoticeChrome(msg) {
   if (!msg || msg.sender !== 'ai' || msg.isTyping) return false;
   if (msg.mealReceipt && typeof msg.mealReceipt === 'object') return false;
   if (msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard === true) return false;
+  if (msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM') return false;
   if (msg.mealDraft || msg.workoutDraft || msg.mealProposal || msg.dailyPlan) return false;
   if (msg.clarification === true || msg.requestFoodPhoto === true) return false;
   if (msg.type === 'ASK_CLARIFICATION' || msg.type === 'REQUEST_FOOD_PHOTO') return false;

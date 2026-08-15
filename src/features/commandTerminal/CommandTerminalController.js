@@ -107,9 +107,6 @@ import {
   MCDRIVE_CANCEL_CHIP,
   MCDRIVE_FINISH_CHIP,
   MCDRIVE_START_MESSAGE,
-  MCDRIVE_SAVE_CONFIRM_CHIP,
-  MCDRIVE_SAVE_CONFIRM_MESSAGE,
-  MCDRIVE_SAVE_CONFIRM_QUICK_REPLIES,
   MCDRIVE_ADD_MORE_CHIP,
   MCDRIVE_MEAL_TYPE_PROMPT,
   MCDRIVE_MEAL_TYPE_QUICK_REPLIES,
@@ -253,6 +250,7 @@ import {
   isInActiveFastingWindow,
   resolveCoffeeVariantFromText,
 } from '../stimulants/coffeeLogEngine.js';
+import { buildQuickEventConfirmPayload } from '../quickEvents/quickEventConfirmAssets.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -1033,7 +1031,7 @@ export class CommandTerminalController {
   }
 
   /**
-   * Ciclo validazione: primo raw → match DB → resolved e continua; fail → enrichment pause.
+   * Ciclo validazione: primo raw → processing (+ delay UI) → match DB → resolved e continua; fail → enrichment pause.
    */
   async processNextRawMcdriveItem() {
     if (this.mcdriveValidationRunning) {
@@ -1056,10 +1054,12 @@ export class CommandTerminalController {
     const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
     this.rememberMcdriveContextState(currentState);
 
+    // Stato transitorio visivo prima di qualsiasi lookup DB / matcher.
     const nextList = [...list];
-    nextList[idx] = { ...item, status: 'validating' };
+    nextList[idx] = { ...item, status: 'processing' };
     this.pendingMcDriveDraft = nextList;
     this.publishMcdriveTraySync();
+    await new Promise((resolve) => setTimeout(resolve, 450));
 
     let resolved = null;
     try {
@@ -1110,7 +1110,7 @@ export class CommandTerminalController {
       return this.processNextRawMcdriveItem();
     }
 
-    // Ostacolo: pausa + enrichment UI
+    // Ostacolo: pausa + enrichment UI (processing → pending_enrichment)
     const paused = [...this.pendingMcDriveDraft];
     paused[idx] = {
       ...item,
@@ -1213,24 +1213,12 @@ export class CommandTerminalController {
     return this.processNextRawMcdriveItem();
   }
 
-  /** Azione 5: nessun raw/pending → chiedi conferma salvataggio. */
+  /** Fine ciclo: aggiorna lavagna + chip in silenzio (nessuna bolla «Calcolo completato»). */
   promptMcdriveSaveConfirm() {
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM;
+    // Solo sync tray: footer/chip si aggiornano da buildMcdriveActionQuickReplies.
     this.publishMcdriveTraySync();
-    this.bus.publish(
-      DISPATCH_SYSTEM_MESSAGE,
-      {
-        type: 'ASK_CLARIFICATION',
-        clarification: true,
-        text: MCDRIVE_SAVE_CONFIRM_MESSAGE,
-        message: MCDRIVE_SAVE_CONFIRM_MESSAGE,
-        spokenText: MCDRIVE_SAVE_CONFIRM_MESSAGE,
-        displayText: MCDRIVE_SAVE_CONFIRM_MESSAGE,
-        quickReplies: [...MCDRIVE_SAVE_CONFIRM_QUICK_REPLIES],
-      },
-      { source: 'CommandTerminalController' },
-    );
     return {
       ok: true,
       awaiting: true,
@@ -1250,7 +1238,8 @@ export class CommandTerminalController {
     // Solo voci verificate; skipped esclusi dal commit (zero macro / scartati).
     const commitSource = draftItems.filter((item) => {
       const status = String(item?.status || '').toLowerCase();
-      if (status === 'skipped' || status === 'raw' || status === 'pending_enrichment' || status === 'validating') {
+      if (status === 'skipped' || status === 'raw' || status === 'pending_enrichment'
+        || status === 'processing' || status === 'validating') {
         return false;
       }
       return status === 'resolved' || Number(item?.kcal) > 0 || item?.foodDbKey;
@@ -3383,7 +3372,20 @@ export class CommandTerminalController {
       { source: 'CommandTerminalController' },
     );
 
-    if (meta.uiMessage) {
+    if (meta.quickEventConfirm && typeof meta.quickEventConfirm === 'object') {
+      this.bus.publish(
+        DISPATCH_SYSTEM_MESSAGE,
+        {
+          type: 'QUICK_EVENT_CONFIRM',
+          text: meta.quickEventConfirm.title || meta.uiMessage || 'Evento registrato',
+          message: meta.quickEventConfirm.title || meta.uiMessage || 'Evento registrato',
+          displayText: meta.quickEventConfirm.title || meta.uiMessage || 'Evento registrato',
+          quickEventConfirm: meta.quickEventConfirm,
+          isSystem: true,
+        },
+        { source: 'CommandTerminalController' },
+      );
+    } else if (meta.uiMessage) {
       this.publishSystemMessage(meta.uiMessage);
     }
 
@@ -4367,8 +4369,14 @@ export class CommandTerminalController {
     const ack = buildCoffeeLogAckMessage(variant, { hoursFasted, inFastingWindow });
 
     this.resetConversationState();
+    const quickEventConfirm = buildQuickEventConfirmPayload('coffee', { subtitle: ack });
+
     this.dispatchCommand('LOG_STIMULANT', node, {
-      uiMessage: ack,
+      // Media in chat: titolo + subtitle (ack digiuno); niente bolla solo testo.
+      uiMessage: '',
+      quickEventConfirm: quickEventConfirm
+        ? { ...quickEventConfirm, subtitle: ack }
+        : null,
       fastingContext: buildFastingContextForLlm({
         hoursFasted,
         manualNodes: [

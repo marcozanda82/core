@@ -15,6 +15,61 @@ import {
   isMcDriveRawItem,
 } from '../commandTerminal/conversation/mcdriveWizard.js';
 
+/** Normalizza status lavagna per UI (validating → processing). */
+function resolveMcDriveVisualStatus(item) {
+  const status = String(item?.status || '').toLowerCase();
+  if (status === 'validating') return 'processing';
+  if (status === 'raw' || status === 'processing' || status === 'pending_enrichment' || status === 'skipped' || status === 'resolved') {
+    return status;
+  }
+  if (isMcDriveRawItem(item)) return 'raw';
+  if (Number(item?.kcal) > 0 || item?.foodDbKey) return 'resolved';
+  return 'raw';
+}
+
+function McDriveStatusIcon({ visualStatus }) {
+  if (visualStatus === 'processing') {
+    return (
+      <span
+        className="kentu-meal-tray__status-icon inline-flex h-4 w-4 shrink-0 items-center justify-center"
+        aria-hidden
+      >
+        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-500 border-t-cyan-300" />
+      </span>
+    );
+  }
+  if (visualStatus === 'resolved') {
+    return (
+      <span className="kentu-meal-tray__status-icon shrink-0 text-sm leading-none" aria-hidden>
+        🟢
+      </span>
+    );
+  }
+  if (visualStatus === 'pending_enrichment') {
+    return (
+      <span className="kentu-meal-tray__status-icon shrink-0 text-sm leading-none" aria-hidden>
+        ⚠️
+      </span>
+    );
+  }
+  if (visualStatus === 'skipped') {
+    return (
+      <span className="kentu-meal-tray__status-icon shrink-0 text-sm leading-none opacity-60" aria-hidden>
+        ⚪
+      </span>
+    );
+  }
+  // raw — pallino vuoto grigio
+  return (
+    <span
+      className="kentu-meal-tray__status-icon inline-flex h-4 w-4 shrink-0 items-center justify-center"
+      aria-hidden
+    >
+      <span className="h-2.5 w-2.5 rounded-full border-2 border-slate-400/75 bg-transparent" />
+    </span>
+  );
+}
+
 function MacroCompareRow({ label, actual, target, unit = 'g' }) {
   const a = Number(actual) || 0;
   const t = Number(target) || 0;
@@ -112,7 +167,7 @@ function LiveMealTray({
 
   return (
     <div
-      className="kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[60vh] w-full flex-col overflow-hidden"
+      className="kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(60vh,100%)] w-full flex-col overflow-hidden"
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
     >
@@ -160,40 +215,93 @@ function LiveMealTray({
             {items.map((item, index) => {
               const name = String(item?.foodName || item?.name || 'Alimento').trim();
               const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
-              const isRaw = isMcDriveRawItem(item);
-              const status = String(item?.status || '').toLowerCase();
-              const isResolved = status === 'resolved' || (!isRaw && Number(item?.kcal) > 0);
+              const visualStatus = resolveMcDriveVisualStatus(item);
+              const isRaw = visualStatus === 'raw';
+              const isProcessing = visualStatus === 'processing';
+              const isPending = visualStatus === 'pending_enrichment';
+              const isResolved = visualStatus === 'resolved';
+              const isSkipped = visualStatus === 'skipped';
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
               const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
 
-              // Status/kcal sotto il nome; i grammi sono sempre a destra (tag dedicato).
               let detailLabel = '';
-              if (status === 'pending_enrichment') detailLabel = 'in attesa…';
-              else if (status === 'validating') detailLabel = 'verifica…';
-              else if (status === 'skipped') detailLabel = 'tralasciato';
-              else if (isRaw) detailLabel = 'da calibrare';
+              if (isPending) detailLabel = 'in attesa…';
+              else if (isProcessing) detailLabel = 'analisi…';
+              else if (isSkipped) detailLabel = 'tralasciato';
+              else if (isRaw) detailLabel = ''; // nessun calcolo visibile
               else if (isResolved || kcal > 0) detailLabel = `${kcal} kcal`;
+
+              const rowStatusClass = isRaw
+                ? 'kentu-meal-tray__row--raw italic text-gray-500 opacity-60'
+                : isProcessing
+                  ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
+                  : isResolved
+                    ? 'kentu-meal-tray__row--resolved font-bold text-white bg-green-500/10 border-l-4 border-green-500'
+                    : isSkipped
+                      ? 'kentu-meal-tray__row--skipped line-through text-gray-600 opacity-40'
+                      : isPending
+                        ? 'kentu-meal-tray__row--pending text-orange-400 bg-orange-500/20 border-l-4 border-orange-500'
+                        : '';
+
+              const nameStatusClass = isRaw
+                ? 'italic text-gray-500 opacity-60'
+                : isProcessing
+                  ? 'font-medium text-cyan-500 animate-pulse'
+                  : isResolved
+                    ? 'font-bold text-white'
+                    : isSkipped
+                      ? 'line-through text-gray-600 opacity-40'
+                      : isPending
+                        ? 'text-orange-400'
+                        : '';
 
               return (
                 <li
                   key={key}
                   className={[
                     'kentu-meal-tray__row',
-                    isRaw ? 'kentu-meal-tray__row--raw' : '',
-                    status === 'pending_enrichment' ? 'kentu-meal-tray__row--pending' : '',
+                    'kentu-meal-tray__row--enter',
+                    'transition-all duration-300',
+                    'animate-in fade-in slide-in-from-bottom-2 duration-300',
+                    rowStatusClass,
                     isEditing ? 'kentu-meal-tray__row--editing' : '',
                   ].filter(Boolean).join(' ')}
                 >
                   <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center justify-between gap-3">
-                    <div className="kentu-meal-tray__row-text min-w-0">
-                      <span className="kentu-meal-tray__name">{name}</span>
-                      {detailLabel ? (
-                        <span className="kentu-meal-tray__kcal">{detailLabel}</span>
-                      ) : null}
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                      <McDriveStatusIcon visualStatus={visualStatus} />
+                      <div className="kentu-meal-tray__row-text min-w-0">
+                        <span
+                          className={[
+                            'kentu-meal-tray__name',
+                            'transition-all duration-300',
+                            nameStatusClass,
+                          ].filter(Boolean).join(' ')}
+                        >
+                          {name}
+                        </span>
+                        {detailLabel ? (
+                          <span
+                            className={[
+                              'kentu-meal-tray__kcal',
+                              'transition-all duration-300',
+                              nameStatusClass,
+                            ].filter(Boolean).join(' ')}
+                          >
+                            {detailLabel}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
-                    <span className="kentu-meal-tray__grams font-mono text-sm opacity-80 shrink-0">
+                    <span
+                      className={[
+                        'kentu-meal-tray__grams font-mono text-sm shrink-0 transition-all duration-300',
+                        isSkipped || isRaw ? 'opacity-40' : 'opacity-80',
+                        nameStatusClass,
+                      ].filter(Boolean).join(' ')}
+                    >
                       {grams} g
                     </span>
                   </div>

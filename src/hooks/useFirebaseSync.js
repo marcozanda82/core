@@ -77,7 +77,7 @@ export default function useFirebaseSync({
           setDailyLog(applyMealTimes(normalized, mealTimes));
         }
       });
-      setActiveAction('home');
+      setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
       setIsInitialLoadComplete(true);
     });
 
