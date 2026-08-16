@@ -93,6 +93,7 @@ export default function UniversalSearchModal({
   personalDb,
   kentuItDb = null,
   globalDb = null,
+  offDb = null,
   masterDb = null,
   draftFoods = [],
   scannerError = '',
@@ -103,7 +104,7 @@ export default function UniversalSearchModal({
     personalDb,
     kentuItDb,
     globalDb ?? masterDb,
-    { searchGlobal: true },
+    { searchGlobal: true, offDb },
   );
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
@@ -426,6 +427,11 @@ export default function UniversalSearchModal({
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold tracking-tight text-slate-50">{name}</p>
+                      {String(result.brand || result.row?.brand || '').trim() ? (
+                        <p className="mt-0.5 truncate text-xs text-slate-400">
+                          {String(result.brand || result.row?.brand || '').trim()}
+                        </p>
+                      ) : null}
                       <p className="mt-0.5 font-mono text-xs tabular-nums text-slate-400">
                         {displayWeight}g · <span className="text-cyan-400/90">{displayKcal} kcal</span>
                         {isRecipe && macros.kcal != null ? ` · ${macros.kcal}/100g` : ''}

@@ -2,6 +2,7 @@
 export const FOOD_DB_SOURCE = {
   KENTU_IT: 'KENTU_IT',
   GLOBAL: 'GLOBAL',
+  OFF: 'OFF',
 };
 
 /** Provenienza visibile in Vetrina, Ricerca e Carrello. */
@@ -9,6 +10,7 @@ export const FOOD_PROVENANCE = {
   PERSONAL: 'PERSONAL',
   ITALY: 'ITALY',
   GLOBAL: 'GLOBAL',
+  OFF: 'OFF',
 };
 
 export const FOOD_PROVENANCE_META = {
@@ -33,6 +35,13 @@ export const FOOD_PROVENANCE_META = {
     borderClass: '',
     badgeClass: 'text-violet-300/70',
   },
+  [FOOD_PROVENANCE.OFF]: {
+    glyph: 'OFF',
+    tooltip: 'Fonte: Open Food Facts',
+    sortRank: 3,
+    borderClass: '',
+    badgeClass: 'text-orange-400/80',
+  },
 };
 
 export const FOOD_DB_SOURCE_BADGE = {
@@ -48,6 +57,12 @@ export const FOOD_DB_SOURCE_BADGE = {
     title: 'Kentu DB globale — esplorazione',
     className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
   },
+  [FOOD_DB_SOURCE.OFF]: {
+    emoji: '🛒',
+    label: 'Open Food Facts',
+    title: 'Open Food Facts — prodotti confezionati',
+    className: 'border-orange-500/40 bg-orange-500/20 text-orange-400',
+  },
 };
 
 export function isKentuItSource(value) {
@@ -58,15 +73,23 @@ export function isGlobalSource(value) {
   return value === FOOD_DB_SOURCE.GLOBAL;
 }
 
+export function isOffSource(value) {
+  return value === FOOD_DB_SOURCE.OFF || value === 'off';
+}
+
 export function resolveProvenanceFromLegacySource(legacySource) {
-  if (legacySource === 'master') return FOOD_PROVENANCE.GLOBAL;
-  if (legacySource === 'kentu_it') return FOOD_PROVENANCE.ITALY;
+  if (legacySource === 'master' || legacySource === 'usda') return FOOD_PROVENANCE.GLOBAL;
+  if (legacySource === 'kentu_it' || legacySource === 'crea') return FOOD_PROVENANCE.ITALY;
+  if (legacySource === 'off') return FOOD_PROVENANCE.OFF;
   if (legacySource === 'personal' || legacySource === 'recipe') return FOOD_PROVENANCE.PERSONAL;
   return FOOD_PROVENANCE.PERSONAL;
 }
 
 export function resolveProvenanceFromTile(tile, personalDb = null) {
   if (tile?.provenance) return tile.provenance;
+  if (tile?.source === FOOD_DB_SOURCE.OFF || tile?.row?.source === FOOD_DB_SOURCE.OFF || tile?._source === 'off') {
+    return FOOD_PROVENANCE.OFF;
+  }
   if (tile?.source === FOOD_DB_SOURCE.GLOBAL || tile?.row?.source === FOOD_DB_SOURCE.GLOBAL) {
     return FOOD_PROVENANCE.GLOBAL;
   }
@@ -91,6 +114,7 @@ export function resolveProvenanceFromTile(tile, personalDb = null) {
 export function resolveProvenanceFromSearchResult(result) {
   if (result?.provenance) return result.provenance;
   if (result?._source) return resolveProvenanceFromLegacySource(result._source);
+  if (result?.source === FOOD_DB_SOURCE.OFF) return FOOD_PROVENANCE.OFF;
   if (result?.source === FOOD_DB_SOURCE.GLOBAL) return FOOD_PROVENANCE.GLOBAL;
   if (result?.source === FOOD_DB_SOURCE.KENTU_IT) return FOOD_PROVENANCE.ITALY;
   return FOOD_PROVENANCE.PERSONAL;
@@ -100,6 +124,7 @@ export function resolveProvenanceFromDraftItem(item) {
   if (item?.provenance) return item.provenance;
   if (item?._searchSource) return resolveProvenanceFromLegacySource(item._searchSource);
   if (item?.foodDbKey) return FOOD_PROVENANCE.PERSONAL;
+  if (item?.row?.source === FOOD_DB_SOURCE.OFF) return FOOD_PROVENANCE.OFF;
   if (item?.row?.source === FOOD_DB_SOURCE.GLOBAL) return FOOD_PROVENANCE.GLOBAL;
   if (item?.row?.source === FOOD_DB_SOURCE.KENTU_IT) return FOOD_PROVENANCE.ITALY;
   return FOOD_PROVENANCE.PERSONAL;
@@ -120,14 +145,23 @@ export function compareProvenancePriority(a, b) {
 /** @deprecated Usare compareProvenancePriority */
 export function compareFoodDbSourcePriority(a, b) {
   const provenanceA = a?.provenance
-    ?? (isGlobalSource(a?.source ?? a?.row?.source) ? FOOD_PROVENANCE.GLOBAL : FOOD_PROVENANCE.ITALY);
+    ?? (isOffSource(a?.source ?? a?.row?.source)
+      ? FOOD_PROVENANCE.OFF
+      : isGlobalSource(a?.source ?? a?.row?.source)
+        ? FOOD_PROVENANCE.GLOBAL
+        : FOOD_PROVENANCE.ITALY);
   const provenanceB = b?.provenance
-    ?? (isGlobalSource(b?.source ?? b?.row?.source) ? FOOD_PROVENANCE.GLOBAL : FOOD_PROVENANCE.ITALY);
+    ?? (isOffSource(b?.source ?? b?.row?.source)
+      ? FOOD_PROVENANCE.OFF
+      : isGlobalSource(b?.source ?? b?.row?.source)
+        ? FOOD_PROVENANCE.GLOBAL
+        : FOOD_PROVENANCE.ITALY);
   return compareProvenancePriority({ provenance: provenanceA }, { provenance: provenanceB });
 }
 
 export function resolveResultDbSource(result) {
   const provenance = resolveProvenanceFromSearchResult(result);
+  if (provenance === FOOD_PROVENANCE.OFF) return FOOD_DB_SOURCE.OFF;
   if (provenance === FOOD_PROVENANCE.GLOBAL) return FOOD_DB_SOURCE.GLOBAL;
   return FOOD_DB_SOURCE.KENTU_IT;
 }

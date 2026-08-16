@@ -44,6 +44,7 @@ export const AVATAR_MOOD_SRC = Object.freeze({
 /** Video loop opzionali (poster = AVATAR_MOOD_SRC). Solo UI di elaborazione — mai nel path API. */
 export const AVATAR_MOOD_VIDEO = Object.freeze({
   [AVATAR_MOOD.CODING]: '/Hacker4animazione.mp4',
+  [AVATAR_MOOD.FITNESS]: '/Trainer3animazione.mp4',
 });
 
 export const AVATAR_MOOD_LABEL = Object.freeze({

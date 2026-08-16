@@ -1,6 +1,9 @@
 import { searchFoodsDetailed } from './foodSearch.js';
+import { FOOD_DB_SOURCE } from './foodDbSource.js';
 
 const MASTER_SOURCE = 'KENTU';
+const OFF_SOURCE = 'OFF';
+const OFF_SEARCH_LIMIT = 30;
 
 function fusionItemToUi(item) {
   const row = item.row || {
@@ -17,7 +20,32 @@ function fusionItemToUi(item) {
     foodSource: MASTER_SOURCE,
     sourceBadgeLabel: 'Kentu DB',
     iconTag: row.iconTag ?? item.iconTag ?? null,
+    brand: row.brand ?? item.brand ?? null,
     row,
+    _source: item.source === OFF_SOURCE ? 'off' : undefined,
+  };
+}
+
+function offFusionItemToUi(item) {
+  const row = item.row || {
+    id: item.id,
+    desc: item.name,
+    name: item.name,
+    foodSource: OFF_SOURCE,
+    _source: 'off',
+  };
+  const brand = String(row.brand || item.brand || '').trim() || null;
+
+  return {
+    id: item.id,
+    name: item.name,
+    desc: row.desc || item.name,
+    foodSource: OFF_SOURCE,
+    sourceBadgeLabel: 'Open Food Facts',
+    iconTag: row.iconTag ?? item.iconTag ?? null,
+    brand,
+    row: { ...row, brand: brand || row.brand, _source: 'off', source: FOOD_DB_SOURCE.OFF },
+    _source: 'off',
   };
 }
 
@@ -72,6 +100,72 @@ export function getMasterFusionPayload(masterDb, query, options = {}) {
   return {
     masterNormalized,
     uiItems: masterNormalized.map(fusionItemToUi),
+  };
+}
+
+/**
+ * Ricerca Open Food Facts (prodotti confezionati) — `_source: 'off'`, brand, iconTag.
+ *
+ * @returns {{ offNormalized: object[], uiItems: object[] }}
+ */
+export function getOffFusionPayload(offDb, query, options = {}) {
+  const q = String(query || '').trim();
+  const limit = Number.isFinite(options.limit) && options.limit > 0
+    ? Math.floor(options.limit)
+    : Number.isFinite(options.offLimit) && options.offLimit > 0
+      ? Math.floor(options.offLimit)
+      : OFF_SEARCH_LIMIT;
+
+  if (!q || offDb == null || typeof offDb !== 'object' || Array.isArray(offDb)) {
+    return { offNormalized: [], uiItems: [] };
+  }
+
+  const detailed = searchFoodsDetailed(offDb, q, {
+    includeUserHistory: false,
+    limit,
+    mode: 'search',
+  });
+
+  const offNormalized = detailed.map((hit) => {
+    const row = offDb[hit.id] || null;
+    const name = String(row?.desc ?? row?.name ?? hit.name ?? '').trim();
+    const brand = String(row?.brand || '').trim() || null;
+
+    return {
+      id: hit.id,
+      name,
+      source: OFF_SOURCE,
+      row: row
+        ? { ...row, _source: 'off', source: FOOD_DB_SOURCE.OFF, brand: brand || row.brand }
+        : {
+            id: hit.id,
+            desc: name,
+            name,
+            foodSource: OFF_SOURCE,
+            _source: 'off',
+            source: FOOD_DB_SOURCE.OFF,
+            brand,
+          },
+      textScore: hit.textScore,
+      matchScore: hit.matchScore,
+      recencyScore: hit.recencyScore,
+      frequencyScore: hit.frequencyScore,
+      iconTag: row?.iconTag ?? null,
+      brand,
+      _source: 'off',
+    };
+  });
+
+  offNormalized.sort((a, b) => {
+    const scoreA = Number(a.textScore ?? a.matchScore ?? 0);
+    const scoreB = Number(b.textScore ?? b.matchScore ?? 0);
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return String(a.name).localeCompare(String(b.name), 'it');
+  });
+
+  return {
+    offNormalized,
+    uiItems: offNormalized.map(offFusionItemToUi),
   };
 }
 

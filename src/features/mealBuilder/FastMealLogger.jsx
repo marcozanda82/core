@@ -270,6 +270,7 @@ function FastMealLoggerContent({
   personalDb,
   kentuItDb,
   globalDb,
+  offDb = null,
   masterDb,
   onAcquireExternalFood,
   onSaveRecipe,
@@ -753,7 +754,7 @@ function FastMealLoggerContent({
       isVetrinaSearching ? vetrinaQuery : '',
       personalDb,
       globalDb ?? masterDb,
-      { kentuItDb, searchGlobal: true },
+      { kentuItDb, offDb, searchGlobal: true },
     );
 
   const quickFoodIdentityKeys = useMemo(() => {
@@ -888,6 +889,7 @@ function FastMealLoggerContent({
     const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
     const sourceBadge = SEARCH_SOURCE_BADGE[result._source] || null;
     const provenance = resolveProvenanceFromSearchResult(result);
+    const brand = result.brand || result.row?.brand || null;
 
     return (
       <QuickFoodTile
@@ -899,6 +901,7 @@ function FastMealLoggerContent({
         qty={qty}
         sourceBadge={sourceBadge}
         provenance={provenance}
+        brand={brand}
         onConfirmAdd={(portionCount) => handleAddSearchResult(result, portionCount)}
         onRemoveOne={() => removeOneUnitFromDraft(matchFood, defaultUnitWeight)}
         onOpenDetail={() => openFoodDetailFromSearchResult(result)}
@@ -1824,6 +1827,7 @@ function FastMealLoggerContent({
         personalDb={personalDb}
         kentuItDb={kentuItDb}
         globalDb={globalDb ?? masterDb}
+        offDb={offDb}
         masterDb={globalDb ?? masterDb}
         onSelectFood={handleFoodSelection}
         onEditCatalogFood={openEditModalForCatalog}
@@ -1969,9 +1973,10 @@ export default function FastMealLogger({
   autoOpenBarcodeScanner = false,
   onAutoOpenBarcodeScannerConsumed,
 }) {
-  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb } = useFoodDb({ defer: false });
+  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb, offDb: loadedOffDb } = useFoodDb({ defer: false });
   const resolvedKentuItDb = loadedKentuItDb;
   const resolvedGlobalDb = masterDbProp ?? loadedGlobalDb;
+  const resolvedOffDb = loadedOffDb;
   const composerInitialMealTime = useMemo(() => {
     if (typeof initialMealTime === 'number' && !Number.isNaN(initialMealTime)) {
       return initialMealTime;
@@ -2010,6 +2015,7 @@ export default function FastMealLogger({
           personalDb={personalDb}
           kentuItDb={resolvedKentuItDb}
           globalDb={resolvedGlobalDb}
+          offDb={resolvedOffDb}
           masterDb={resolvedGlobalDb}
           onAcquireExternalFood={onAcquireExternalFood}
           onSaveRecipe={onSaveRecipe}

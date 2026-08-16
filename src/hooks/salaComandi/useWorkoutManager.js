@@ -66,7 +66,36 @@ export function useWorkoutManager({
   lastCalibrationWeek,
   fullHistory = null,
   proteinTarget = null,
+  /**
+   * Chiude la scheda allenamento rispettando il ritorno in chat (niente home immediata).
+   * @type {((opts?: { confirmExtra?: { title?: string, subtitle?: string } }) => void) | null}
+   */
+  closeWorkoutSurface = null,
+  /** @type {((extra?: { title?: string, subtitle?: string }) => void) | null} */
+  onWorkoutLoggedConfirm = null,
 }) {
+  const onWorkoutLoggedConfirmRef = useRef(onWorkoutLoggedConfirm);
+  onWorkoutLoggedConfirmRef.current = onWorkoutLoggedConfirm;
+  const closeWorkoutSurfaceRef = useRef(closeWorkoutSurface);
+  closeWorkoutSurfaceRef.current = closeWorkoutSurface;
+  /** Extra conferma Trainer3 in attesa fino alla chiusura superficie. */
+  const pendingWorkoutConfirmRef = useRef(/** @type {{ title?: string, subtitle?: string } | null} */ (null));
+
+  const endWorkoutSurface = useCallback((opts = {}) => {
+    const confirmExtra = opts.confirmExtra ?? pendingWorkoutConfirmRef.current;
+    pendingWorkoutConfirmRef.current = null;
+    if (typeof closeWorkoutSurfaceRef.current === 'function') {
+      closeWorkoutSurfaceRef.current({
+        ...(confirmExtra ? { confirmExtra } : {}),
+      });
+      return;
+    }
+    if (confirmExtra && typeof onWorkoutLoggedConfirmRef.current === 'function') {
+      onWorkoutLoggedConfirmRef.current(confirmExtra);
+    }
+    closeDrawer();
+  }, [closeDrawer]);
+
   const [workoutPlanDraft, setWorkoutPlanDraft] = useState(
     /** @type {import('../../drawers/vistas/WorkoutView').WorkoutPlanDraft | null} */ (null),
   );
@@ -254,8 +283,8 @@ export function useWorkoutManager({
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
     setWorkoutPlanDraft(null);
-    closeDrawer();
-  }, [closeDrawer]);
+    endWorkoutSurface();
+  }, [endWorkoutSurface]);
 
   const skipTodayPlanSession = useCallback(async () => {
     const uid = user?.uid;
@@ -458,6 +487,17 @@ export function useWorkoutManager({
       ));
       const fromTrainingBlockExecute = trainingBlockExecuteRef.current;
 
+      // Prenota conferma media (Trainer3): si riproduce alla chiusura, con chat aperta.
+      if (!isWork && !isCognitive && !editingAtStart) {
+        const mins = Math.round(normalizedDurationMin);
+        const kcal = Math.round(Number(workoutKcal) || 0);
+        pendingWorkoutConfirmRef.current = {
+          subtitle: [mins > 0 ? `${mins} min` : null, kcal > 0 ? `~${kcal} kcal` : null]
+            .filter(Boolean)
+            .join(' · ') || undefined,
+        };
+      }
+
       const finishPostSaveUi = () => {
         setWorkoutPlanDraft(null);
         setIsPlanActionSheetOpen(false);
@@ -467,7 +507,7 @@ export function useWorkoutManager({
           setEditingWorkoutId(null);
           setWorkoutMuscles([]);
           setWorkoutStrengthDetail('');
-          closeDrawer();
+          endWorkoutSurface();
           return;
         }
         if (inReviewAtStart) {
@@ -475,7 +515,7 @@ export function useWorkoutManager({
           setEditingWorkoutId(null);
           setWorkoutMuscles([]);
           setWorkoutStrengthDetail('');
-          closeDrawer();
+          endWorkoutSurface();
           return;
         }
         if (!editingAtStart) {
@@ -486,7 +526,7 @@ export function useWorkoutManager({
         setEditingWorkoutId(null);
         setWorkoutMuscles([]);
         setWorkoutStrengthDetail('');
-        closeDrawer();
+        endWorkoutSurface();
       };
 
       const runHeavyPersist = () => {
@@ -596,7 +636,6 @@ export function useWorkoutManager({
     setDailyLog,
     setManualNodes,
     syncDatiFirebase,
-    closeDrawer,
     setIsPlanActionSheetOpen,
     currentTrackerDate,
     userModel,
@@ -606,6 +645,7 @@ export function useWorkoutManager({
     lastCalibrationWeek,
     fullHistory,
     proteinTarget,
+    endWorkoutSurface,
   ]);
 
   const commitAddWorkoutCommand = useCallback(
@@ -720,6 +760,18 @@ export function useWorkoutManager({
           });
         }
       }
+
+      if (
+        !isWork
+        && !isCognitive
+        && typeof onWorkoutLoggedConfirmRef.current === 'function'
+      ) {
+        // Chat già aperta: conferma immediata (banner cinema monta subito).
+        onWorkoutLoggedConfirmRef.current({
+          subtitle: `${durationMinutes} min · ~${logItem.kcal} kcal`,
+        });
+      }
+
       return `✅ Allenamento registrato: ${label} (${durationMinutes} min, ~${logItem.kcal} kcal).`;
     },
     [

@@ -19,7 +19,7 @@ function resolveIsRecent(timestamp) {
 
 /**
  * Conferma rapida in chat: icona 96px.
- * Se fresco + video → riproduce nella miniatura, poi passa a <img> senza layout shift.
+ * Se fresco + video e non bannerOwnsVideo → riproduce nella miniatura, poi <img>.
  * Click → lightbox a tutto schermo (chiudi con tap / Esc).
  */
 export default function QuickEventConfirmMedia({
@@ -31,14 +31,16 @@ export default function QuickEventConfirmMedia({
   onFinished = null,
   imageHoldMs = 0,
   timestamp = null,
+  /** Se true, il video è già nella fascia cinema sotto l'header. */
+  bannerOwnsVideo = false,
 }) {
-  const hasVideo = Boolean(videoSrc);
+  const hasVideo = Boolean(videoSrc) && !bannerOwnsVideo;
   const videoRef = useRef(null);
   const lightboxVideoRef = useRef(null);
   const holdTimerRef = useRef(null);
 
   const [playInlineVideo, setPlayInlineVideo] = useState(() => (
-    Boolean(videoSrc) && resolveIsRecent(timestamp)
+    Boolean(videoSrc) && !bannerOwnsVideo && resolveIsRecent(timestamp)
   ));
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -77,10 +79,10 @@ export default function QuickEventConfirmMedia({
     setIsFullscreen(false);
   }, []);
 
-  // Nuovo asset: video inline solo se fresco (cronologia = icona statica).
+  // Nuovo asset: video inline solo se fresco e non già in fascia cinema.
   useEffect(() => {
     clearHold();
-    const nextPlay = Boolean(videoSrc) && resolveIsRecent(timestamp);
+    const nextPlay = Boolean(videoSrc) && !bannerOwnsVideo && resolveIsRecent(timestamp);
     setPlayInlineVideo(nextPlay);
     setIsFullscreen(false);
     if (!nextPlay && imageHoldMs > 0 && typeof onFinished === 'function') {
@@ -91,7 +93,7 @@ export default function QuickEventConfirmMedia({
     }
     return () => clearHold();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- asset + freschezza
-  }, [imageSrc, videoSrc, timestamp]);
+  }, [imageSrc, videoSrc, timestamp, bannerOwnsVideo]);
 
   // Autoplay nella miniatura (non blocca API; best-effort).
   useEffect(() => {

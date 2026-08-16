@@ -3159,6 +3159,57 @@ export default function SalaComandi() {
     [fullStorico],
   );
 
+  const appendQuickEventConfirmToChat = useCallback((kind, extra = {}) => {
+    const entry = buildQuickEventConfirmChatEntry(kind, extra);
+    if (!entry || typeof setChatHistory !== 'function') return false;
+    setChatHistory((prev) => [...(prev || []), entry]);
+    return true;
+  }, [setChatHistory]);
+
+  /**
+   * Chiude la scheda allenamento: se partita dalla chat, resta in chat e riproduce
+   * Trainer3 nel banner (niente redirect home via closeDrawer timeout).
+   */
+  const closeWorkoutSurface = useCallback((opts = {}) => {
+    const confirmExtra = opts?.confirmExtra;
+    const preferChat = returnToChatAfterQuickActionRef.current === true
+      || activeAction === 'ai_chat';
+
+    setIsDrawerOpen(false);
+
+    if (preferChat) {
+      returnToChatAfterQuickActionRef.current = false;
+      setActiveAction('ai_chat');
+      if (confirmExtra) {
+        // Chat montata nel frame successivo → banner cinema può riprodurre il video.
+        window.setTimeout(() => {
+          appendQuickEventConfirmToChat('workout', confirmExtra);
+        }, 50);
+      }
+      return;
+    }
+
+    // Percorso Home: overlay fullscreen, chiudi azione senza smontare l'overlay.
+    returnToChatAfterQuickActionRef.current = false;
+    setActiveAction(null);
+    if (confirmExtra) {
+      setQuickEventConfirm(buildQuickEventConfirmPayload('workout', confirmExtra));
+    }
+  }, [activeAction, appendQuickEventConfirmToChat]);
+
+  const handleWorkoutLoggedConfirm = useCallback((extra = {}) => {
+    const preferChat = returnToChatAfterQuickActionRef.current === true
+      || activeAction === 'ai_chat';
+    if (preferChat) {
+      setActiveAction('ai_chat');
+      setIsDrawerOpen(false);
+      appendQuickEventConfirmToChat('workout', extra);
+      returnToChatAfterQuickActionRef.current = false;
+      return;
+    }
+    setQuickEventConfirm(buildQuickEventConfirmPayload('workout', extra));
+  }, [activeAction, appendQuickEventConfirmToChat]);
+
   const parseTimeStrToDecimal = (value) => {
     const digits = (value || '').replace(/\D/g, '');
     if (digits.length === 0) return 12;
@@ -3225,6 +3276,8 @@ export default function SalaComandi() {
     lastCalibrationWeek,
     fullHistory,
     proteinTarget: userTargets?.prot ?? userProfile?.proteinTarget ?? null,
+    onWorkoutLoggedConfirm: handleWorkoutLoggedConfirm,
+    closeWorkoutSurface,
   });
 
   const handleExecuteTrainingBlockSession = useCallback(
@@ -4643,13 +4696,6 @@ Slot esistente aggiornato (nessun ghost).`;
 
   const getAlcoholGlassIcon = (type) => (type === 'birra' ? '🍺' : type === 'vino' ? '🍷' : '🥃');
   const getAlcoholBaseMl = (type) => (type === 'birra' ? 330 : type === 'vino' ? 150 : 40);
-
-  const appendQuickEventConfirmToChat = useCallback((kind, extra = {}) => {
-    const entry = buildQuickEventConfirmChatEntry(kind, extra);
-    if (!entry || typeof setChatHistory !== 'function') return false;
-    setChatHistory((prev) => [...(prev || []), entry]);
-    return true;
-  }, [setChatHistory]);
 
   const handleAddWater = (amount, options = {}) => {
     if (isSimulationMode) return;
@@ -9219,7 +9265,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 return;
               }
               clearWorkoutPlanDraft();
-              setActiveAction(null);
+              if (returnToChatAfterQuickActionRef.current) {
+                closeWorkoutSurface();
+              } else {
+                setActiveAction(null);
+              }
             }}
             postWorkoutReview={postWorkoutReviewActive}
             onDismissPostWorkoutReview={dismissPostWorkoutReview}
@@ -10585,6 +10635,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <QuickEventConfirmOverlay
         payload={quickEventConfirm}
         onDone={() => setQuickEventConfirm(null)}
+        imageHoldMs={quickEventConfirm?.videoSrc ? 0 : 1600}
       />
     </div>
   );

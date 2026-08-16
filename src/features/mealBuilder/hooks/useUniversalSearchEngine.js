@@ -9,10 +9,9 @@ import { searchFoodsDetailed } from '../../../foodSearch';
 
 
 const PERSONAL_SEARCH_LIMIT = 30;
-
 const KENTU_IT_SEARCH_LIMIT = 30;
-
 const GLOBAL_SEARCH_LIMIT = 30;
+const OFF_SEARCH_LIMIT = 30;
 
 
 
@@ -89,67 +88,48 @@ function isRecipeRow(row) {
 
 
 function buildUnifiedResult({
-
   id,
-
   desc,
-
   row,
-
   source,
-
   legacySource,
-
   matchScore,
-
   matchType,
-
   textScore,
-
   recencyScore,
-
 }) {
-
   const name = String(desc || row?.desc || row?.name || id || '').trim();
-
-  const dbSource = source === FOOD_DB_SOURCE.GLOBAL ? FOOD_DB_SOURCE.GLOBAL : FOOD_DB_SOURCE.KENTU_IT;
-
-
+  const dbSource = source === FOOD_DB_SOURCE.OFF
+    ? FOOD_DB_SOURCE.OFF
+    : source === FOOD_DB_SOURCE.GLOBAL
+      ? FOOD_DB_SOURCE.GLOBAL
+      : FOOD_DB_SOURCE.KENTU_IT;
+  const brand = String(row?.brand || '').trim() || undefined;
 
   return {
-
     id: String(id),
-
     key: String(id),
-
     desc: name,
-
     name,
-
+    brand,
     barcode: row?.barcode != null ? String(row.barcode).trim() : undefined,
-
-    row: row ? { ...row, source: row.source || dbSource } : { id, desc: name, name, source: dbSource },
-
+    row: row
+      ? { ...row, source: row.source || dbSource, ...(brand ? { brand } : {}) }
+      : { id, desc: name, name, source: dbSource, ...(brand ? { brand } : {}) },
     _source: legacySource,
-
     source: dbSource,
-
     provenance: legacySource === 'master'
       ? FOOD_PROVENANCE.GLOBAL
-      : legacySource === 'kentu_it'
-        ? FOOD_PROVENANCE.ITALY
-        : FOOD_PROVENANCE.PERSONAL,
-
+      : legacySource === 'off'
+        ? FOOD_PROVENANCE.OFF
+        : legacySource === 'kentu_it'
+          ? FOOD_PROVENANCE.ITALY
+          : FOOD_PROVENANCE.PERSONAL,
     matchScore,
-
     matchType,
-
     textScore,
-
     recencyScore,
-
   };
-
 }
 
 
@@ -489,202 +469,126 @@ export function searchKentuItDb(query, kentuItDb, existingResults = []) {
 
 
 /**
-
  * Tier 3 — catalogo Kentu DB 🌐 (esplorazione globale).
-
  */
-
 export function searchGlobalDb(query, globalDb, existingResults = []) {
-
   return searchCatalogDb(query, globalDb, existingResults, {
-
     limit: GLOBAL_SEARCH_LIMIT,
-
     legacySource: 'master',
-
     dbSource: FOOD_DB_SOURCE.GLOBAL,
-
   });
-
 }
-
-
-
-/** @deprecated Usare searchGlobalDb */
-
-export function searchMasterDb(query, masterDb, personalResults = []) {
-
-  return searchGlobalDb(query, masterDb, personalResults);
-
-}
-
-
-
-/** @deprecated Usare searchGlobalDb */
-
-export function searchExternalSources(query, masterDb, _legacyUsdaDb, personalResults = []) {
-
-  void _legacyUsdaDb;
-
-  return searchGlobalDb(query, masterDb, personalResults);
-
-}
-
-
-
-export const SEARCH_SOURCE_BADGE = {
-
-  personal: {
-
-    label: 'Personale',
-
-    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
-
-  },
-
-  kentu_it: {
-
-    label: 'Kentu DB IT',
-
-    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
-
-  },
-
-  master: {
-
-    label: 'Kentu DB 🌐',
-
-    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
-
-  },
-
-  recipe: {
-
-    label: 'Ricetta',
-
-    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
-
-  },
-
-};
-
-
 
 /**
-
- * Ricerca Kentu DB IT + opzionale globale per la barra inline della Vetrina.
-
+ * Tier 4 — Open Food Facts (prodotti confezionati).
  */
+export function searchOffDb(query, offDb, existingResults = []) {
+  return searchCatalogDb(query, offDb, existingResults, {
+    limit: OFF_SEARCH_LIMIT,
+    legacySource: 'off',
+    dbSource: FOOD_DB_SOURCE.OFF,
+  });
+}
 
+/** @deprecated Usare searchGlobalDb */
+export function searchMasterDb(query, masterDb, personalResults = []) {
+  return searchGlobalDb(query, masterDb, personalResults);
+}
+
+/** @deprecated Usare searchGlobalDb */
+export function searchExternalSources(query, masterDb, _legacyUsdaDb, personalResults = []) {
+  void _legacyUsdaDb;
+  return searchGlobalDb(query, masterDb, personalResults);
+}
+
+export const SEARCH_SOURCE_BADGE = {
+  personal: {
+    label: 'Personale',
+    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+  },
+  kentu_it: {
+    label: 'Kentu DB IT',
+    className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
+  },
+  master: {
+    label: 'Kentu DB 🌐',
+    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
+  },
+  off: {
+    label: 'Open Food Facts',
+    className: 'border-orange-500/40 bg-orange-500/20 text-orange-400',
+  },
+  recipe: {
+    label: 'Ricetta',
+    className: 'border-violet-500/40 bg-violet-500/15 text-violet-300',
+  },
+};
+
+/**
+ * Ricerca Kentu DB IT + globale + OFF per la barra inline della Vetrina.
+ */
 export function useDebouncedExternalFoodSearch(
-
   query,
-
   personalDb,
-
   globalDb = null,
-
   options = {},
-
 ) {
-
-  const { kentuItDb = null, searchGlobal = false } = options;
-
-
+  const { kentuItDb = null, offDb = null, searchGlobal = false } = options;
 
   const results = useMemo(() => {
-
     const trimmedQuery = String(query || '').trim();
-
     if (!trimmedQuery) return [];
 
-
-
     const personalResults = searchPersonalDb(personalDb, trimmedQuery);
-
     const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, personalResults);
-
     const kentuItCombined = [...personalResults, ...kentuItResults];
-
-
 
     if (!searchGlobal) return [];
 
-
-
-    return searchGlobalDb(trimmedQuery, globalDb, kentuItCombined);
-
-  }, [query, personalDb, kentuItDb, globalDb, searchGlobal]);
-
-
+    const globalResults = searchGlobalDb(trimmedQuery, globalDb, kentuItCombined);
+    const offResults = searchOffDb(
+      trimmedQuery,
+      offDb,
+      [...kentuItCombined, ...globalResults],
+    );
+    return [...globalResults, ...offResults];
+  }, [query, personalDb, kentuItDb, globalDb, offDb, searchGlobal]);
 
   return { externalResults: results, isSearchingExternal: false };
-
 }
-
-
 
 /**
-
- * Motore di ricerca unificato: Kentu DB IT (priorità) + opzionale globale.
-
+ * Motore di ricerca unificato: CREA/Kentu IT + globale + Open Food Facts.
  */
-
 export function useUniversalSearchEngine(personalDb, kentuItDb = null, globalDb = null, options = {}) {
-
-  const { searchGlobal = true } = options;
-
+  const { searchGlobal = true, offDb = null } = options;
   const [query, setQuery] = useState('');
 
-
-
   const results = useMemo(() => {
-
     const trimmedQuery = String(query || '').trim();
-
     if (!trimmedQuery) return [];
 
-
-
     const personalResults = searchPersonalDb(personalDb, trimmedQuery);
-
-    const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, personalResults);
-
-    const combined = [...personalResults, ...kentuItResults];
-
-
+    const creaResults = searchKentuItDb(trimmedQuery, kentuItDb, personalResults);
+    const combined = [...personalResults, ...creaResults];
 
     if (!searchGlobal) {
-
-      return combined.sort(compareProvenancePriority);
-
+      const offOnly = searchOffDb(trimmedQuery, offDb, combined);
+      return [...combined, ...offOnly].sort(compareProvenancePriority);
     }
 
-
-
-    const globalResults = searchGlobalDb(trimmedQuery, globalDb, combined);
-
-    return [...combined, ...globalResults].sort(compareProvenancePriority);
-
-  }, [query, personalDb, kentuItDb, globalDb, searchGlobal]);
-
-
+    const usdaResults = searchGlobalDb(trimmedQuery, globalDb, combined);
+    const offResults = searchOffDb(trimmedQuery, offDb, [...combined, ...usdaResults]);
+    return [...combined, ...usdaResults, ...offResults].sort(compareProvenancePriority);
+  }, [query, personalDb, kentuItDb, globalDb, offDb, searchGlobal]);
 
   return {
-
     query,
-
     setQuery,
-
     results,
-
     isSearchingExternal: false,
-
   };
-
 }
-
-
 
 export default useUniversalSearchEngine;
 

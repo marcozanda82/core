@@ -4,6 +4,7 @@ import { enrichDbRowWithFoodUnits } from './foodUnits';
 
 const KENTU_IT_DB_URL = '/crea_gold_standard.json';
 const GLOBAL_DB_URL = '/kentu_master_db.json';
+const OFF_DB_URL = '/kentu_off_master_db.json';
 
 function toNumber(value) {
   if (typeof value === 'number') {
@@ -64,6 +65,7 @@ function resolveItalianName(record) {
       'desc',
       'name',
       'food_name',
+      'product_name',
       'description',
       'lowercaseDescription',
     ]),
@@ -84,6 +86,7 @@ function normalizeRecordForDb(record, source) {
   const englishName = String(pickFirst(record, ['name', 'description'], '')).trim();
   const rawIconTag = pickFirst(record, ['iconTag', 'icon_tag'], '');
   const resolvedIconTag = rawIconTag ? resolveIconTagId(rawIconTag) : null;
+  const brand = String(pickFirst(record, ['brand', 'brands', 'marca'], '')).trim();
 
   const normalized = {
     ...record,
@@ -93,7 +96,11 @@ function normalizeRecordForDb(record, source) {
       ? { nameEn: englishName }
       : {}),
     ...(resolvedIconTag ? { iconTag: resolvedIconTag } : {}),
+    ...(brand ? { brand } : {}),
     source,
+    ...(source === FOOD_DB_SOURCE.OFF || record?._source === 'off'
+      ? { _source: 'off' }
+      : {}),
   };
 
   if (normalized.kcal == null) {
@@ -114,7 +121,7 @@ function normalizeRecordForDb(record, source) {
   }
 
   const fatValue = toNumber(
-    pickFirst(record, ['fatTot', 'fat', 'fatTotal', 'lipids']),
+    pickFirst(record, ['fatTot', 'fat', 'fats', 'fatTotal', 'lipids']),
   );
   if (normalized.fat == null || normalized.fat === 0) {
     normalized.fat = fatValue;
@@ -137,7 +144,9 @@ function normalizeRecordForDb(record, source) {
     normalized.k = toNumber(pickFirst(record, ['k', 'potassium']));
   }
   if (!normalized.foodSource) {
-    normalized.foodSource = source === FOOD_DB_SOURCE.KENTU_IT ? 'CREA' : 'KENTU';
+    if (source === FOOD_DB_SOURCE.KENTU_IT) normalized.foodSource = 'CREA';
+    else if (source === FOOD_DB_SOURCE.OFF) normalized.foodSource = 'OFF';
+    else normalized.foodSource = 'KENTU';
   }
 
   return normalized;
@@ -194,28 +203,44 @@ async function fetchKentuJson(url) {
 }
 
 /**
- * Carica i due pilastri del database KentuOS:
- * - Kentu DB IT (CREA): `/public/crea_gold_standard.json`
- * - Kentu DB 🌐: `/public/kentu_master_db.json`
+ * Carica i pilastri del database KentuOS:
+ * - Kentu DB IT (CREA): `/crea_gold_standard.json`
+ * - Kentu DB 🌐: `/kentu_master_db.json`
+ * - Open Food Facts: `/kentu_off_master_db.json` (graceful se assente)
  *
- * Ogni record è marcato con `source: "KENTU_IT" | "GLOBAL"`.
- * In caso di chiavi duplicate tra i due DB, prevale Kentu DB IT.
- *
- * @returns {Promise<{ kentuItDb: Record<string, object>, globalDb: Record<string, object>, masterDb: Record<string, object> }>}
+ * @returns {Promise<{
+ *   kentuItDb: Record<string, object>,
+ *   globalDb: Record<string, object>,
+ *   masterDb: Record<string, object>,
+ *   offDb: Record<string, object>,
+ *   unifiedDb: Record<string, object>,
+ *   usdaDb: Record<string, object>,
+ * }>}
  */
 let kentuDatabasesPromise = null;
 
 async function loadKentuDatabasesUncached() {
-  const empty = { kentuItDb: {}, globalDb: {}, masterDb: {} };
+  const empty = {
+    kentuItDb: {},
+    globalDb: {},
+    masterDb: {},
+    offDb: {},
+    unifiedDb: {},
+    usdaDb: {},
+  };
 
   try {
-    const [kentuItJson, globalJson] = await Promise.all([
+    const [kentuItJson, globalJson, offJson] = await Promise.all([
       fetchKentuJson(KENTU_IT_DB_URL).catch((error) => {
         console.warn('[foodLoader] Kentu DB IT unavailable', error);
         return null;
       }),
       fetchKentuJson(GLOBAL_DB_URL).catch((error) => {
         console.warn('[foodLoader] Kentu DB global unavailable', error);
+        return null;
+      }),
+      fetchKentuJson(OFF_DB_URL).catch((error) => {
+        console.warn('[foodLoader] Open Food Facts DB unavailable — using empty offDb', error);
         return null;
       }),
     ]);
@@ -225,6 +250,7 @@ async function loadKentuDatabasesUncached() {
 
     const kentuItRecords = kentuItJson != null ? extractRecords(kentuItJson) : [];
     const globalRecords = globalJson != null ? extractRecords(globalJson) : [];
+    const offRecords = offJson != null ? extractRecords(offJson) : [];
 
     const kentuItDb = indexRecords(kentuItRecords, FOOD_DB_SOURCE.KENTU_IT);
 
@@ -237,15 +263,26 @@ async function loadKentuDatabasesUncached() {
       delete globalDb[key];
     });
 
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const offDb = offJson != null
+      ? indexRecords(offRecords, FOOD_DB_SOURCE.OFF)
+      : {};
+
     console.log('[foodLoader] loaded Kentu databases', {
       kentuIt: Object.keys(kentuItDb).length,
       global: Object.keys(globalDb).length,
+      off: Object.keys(offDb).length,
     });
 
     return {
       kentuItDb,
       globalDb,
       masterDb: globalDb,
+      offDb,
+      // Alias Fase 4 / legacy naming
+      unifiedDb: kentuItDb,
+      usdaDb: globalDb,
     };
   } catch (error) {
     console.error('[foodLoader] failed to load Kentu databases', error);

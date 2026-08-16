@@ -17,6 +17,7 @@ export default function QuickFoodTile({
   onOpenDetail,
   sourceBadge = null,
   provenance = null,
+  brand = null,
   viewMode = 'grid',
   isSuggested = false,
 }) {
@@ -27,6 +28,12 @@ export default function QuickFoodTile({
 
   const isList = viewMode === 'list';
   const name = displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento';
+  const brandLabel = String(
+    brand
+    || displayTile?.brand
+    || displayTile?.row?.brand
+    || '',
+  ).trim();
   const baseWeight = Math.round(Number(defaultUnitWeight) || 100);
   const baseKcal = Math.round(Number(defaultUnitKcal) || 0);
   const tempWeight = Math.round(tempQty * baseWeight);
@@ -273,6 +280,9 @@ export default function QuickFoodTile({
             <p className="truncate text-sm font-semibold leading-snug tracking-tight text-slate-50">
               {name}
             </p>
+            {brandLabel ? (
+              <p className="mt-0.5 truncate text-xs text-slate-400">{brandLabel}</p>
+            ) : null}
             <p className="mt-0.5 text-xs font-medium text-slate-500">
               <span className="font-mono tabular-nums text-slate-400">{baseWeight}g</span>
               <span className="mx-1.5 text-slate-700">·</span>
@@ -280,7 +290,12 @@ export default function QuickFoodTile({
             </p>
             {sourceBadge ? (
               <span
-                className={`mt-1.5 inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${sourceBadge.className}`}
+                className={`mt-1.5 inline-block rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                  sourceBadge.className
+                  || (provenance === FOOD_PROVENANCE.OFF
+                    ? 'border-orange-500/40 bg-orange-500/20 text-orange-400'
+                    : '')
+                }`}
               >
                 {sourceBadge.label}
               </span>
@@ -322,9 +337,19 @@ export default function QuickFoodTile({
           <span className="line-clamp-2 w-full text-[11px] font-semibold leading-tight tracking-tight text-slate-100">
             {name}
           </span>
+          {brandLabel ? (
+            <span className="mt-0.5 line-clamp-1 w-full text-[10px] text-slate-400">
+              {brandLabel}
+            </span>
+          ) : null}
           {sourceBadge ? (
             <span
-              className={`mt-1 inline-block rounded-full border px-1.5 py-px text-[8px] font-bold uppercase tracking-wider ${sourceBadge.className}`}
+              className={`mt-1 inline-block rounded-full border px-1.5 py-px text-[8px] font-bold uppercase tracking-wider ${
+                sourceBadge.className
+                || (provenance === FOOD_PROVENANCE.OFF
+                  ? 'border-orange-500/40 bg-orange-500/20 text-orange-400'
+                  : '')
+              }`}
             >
               {sourceBadge.label}
             </span>

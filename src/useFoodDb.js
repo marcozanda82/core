@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { loadKentuDatabases } from './foodLoader';
 import { scheduleAfterPaint } from './utils/scheduleAfterPaint';
 
@@ -6,6 +6,9 @@ const EMPTY_DBS = {
   kentuItDb: {},
   globalDb: {},
   masterDb: {},
+  offDb: {},
+  unifiedDb: {},
+  usdaDb: {},
 };
 
 /**
@@ -14,8 +17,7 @@ const EMPTY_DBS = {
  * Pass `enabled: false` to skip until a feature needs the DB.
  */
 export function useFoodDb({ enabled = true, defer = true } = {}) {
-  const [kentuItDb, setKentuItDb] = useState(EMPTY_DBS.kentuItDb);
-  const [globalDb, setGlobalDb] = useState(EMPTY_DBS.globalDb);
+  const [masterDatabases, setMasterDatabases] = useState(EMPTY_DBS);
   const [isLoading, setIsLoading] = useState(Boolean(enabled));
 
   useEffect(() => {
@@ -32,18 +34,30 @@ export function useFoodDb({ enabled = true, defer = true } = {}) {
       try {
         const data = await loadKentuDatabases();
         if (!cancelled) {
-          setKentuItDb(
-            data?.kentuItDb && typeof data.kentuItDb === 'object' ? data.kentuItDb : {},
-          );
-          setGlobalDb(
-            data?.globalDb && typeof data.globalDb === 'object' ? data.globalDb : {},
-          );
+          const kentuItDb =
+            data?.kentuItDb && typeof data.kentuItDb === 'object'
+              ? data.kentuItDb
+              : (data?.unifiedDb && typeof data.unifiedDb === 'object' ? data.unifiedDb : {});
+          const globalDb =
+            data?.globalDb && typeof data.globalDb === 'object'
+              ? data.globalDb
+              : (data?.usdaDb && typeof data.usdaDb === 'object' ? data.usdaDb : {});
+          const offDb =
+            data?.offDb && typeof data.offDb === 'object' ? data.offDb : {};
+
+          setMasterDatabases({
+            kentuItDb,
+            globalDb,
+            masterDb: globalDb,
+            offDb,
+            unifiedDb: kentuItDb,
+            usdaDb: globalDb,
+          });
         }
       } catch (error) {
         console.error('[useFoodDb] failed to load Kentu databases', error);
         if (!cancelled) {
-          setKentuItDb(EMPTY_DBS.kentuItDb);
-          setGlobalDb(EMPTY_DBS.globalDb);
+          setMasterDatabases(EMPTY_DBS);
         }
       } finally {
         if (!cancelled) {
@@ -67,12 +81,16 @@ export function useFoodDb({ enabled = true, defer = true } = {}) {
     };
   }, [enabled, defer]);
 
-  return {
-    kentuItDb,
-    globalDb,
-    masterDb: globalDb,
+  return useMemo(() => ({
+    masterDatabases,
+    kentuItDb: masterDatabases.kentuItDb,
+    globalDb: masterDatabases.globalDb,
+    masterDb: masterDatabases.masterDb,
+    offDb: masterDatabases.offDb,
+    unifiedDb: masterDatabases.unifiedDb,
+    usdaDb: masterDatabases.usdaDb,
     isLoading,
-  };
+  }), [masterDatabases, isLoading]);
 }
 
 export default useFoodDb;

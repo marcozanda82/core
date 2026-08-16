@@ -30,10 +30,12 @@ import ChatInputBar from './features/chat/ChatInputBar.jsx';
 import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
+import KentuProcessingBanner from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
 import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
+import { resolveCinemaBannerFromChat } from './features/quickEvents/quickEventConfirmAssets.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
@@ -42,6 +44,7 @@ import {
   AVATAR_MOOD_SRC,
   detectActiveMealTray,
   detectStrategicConsultContext,
+  getAvatarSrcForMood,
   getAvatarVideoForMood,
   resolveAvatarMood,
   resolveMessageAvatarSrc,
@@ -326,13 +329,78 @@ export default function AiCluster({
   }, [avatarMood]);
 
   /**
-   * Elaborazione AI: poster Hacker4 (0ms) + mp4 in background.
+   * Elaborazione AI: poster mood (0ms) + mp4 se disponibile (es. Hacker4animazione).
    * Solo UI — non attende decode e non blocca setIsProcessing / fetch.
    */
-  const typingAvatarPosterSrc = AVATAR_MOOD_SRC[AVATAR_MOOD.CODING];
+  const typingAvatarPosterSrc = getAvatarSrcForMood(avatarMood, AVATAR_MOOD_SRC[AVATAR_MOOD.CODING]);
   const typingAvatarVideoSrc = showTypingIndicator
-    ? getAvatarVideoForMood(AVATAR_MOOD.CODING)
+    ? getAvatarVideoForMood(avatarMood)
     : '';
+
+  /** Chiavi quick-event già riprodotte in fascia (one-shot). */
+  const [dismissedCinemaKeys, setDismissedCinemaKeys] = useState(() => new Set());
+  /** Tick per far scadere la fascia quando il quick-event non è più “fresco”. */
+  const [cinemaClock, setCinemaClock] = useState(0);
+
+  const quickEventCinema = useMemo(
+    () => resolveCinemaBannerFromChat(chatHistory),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cinemaClock forza re-check freschezza
+    [chatHistory, cinemaClock],
+  );
+
+  useEffect(() => {
+    if (!quickEventCinema) return undefined;
+    const id = window.setInterval(() => {
+      setCinemaClock((n) => n + 1);
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [quickEventCinema?.messageKey]);
+
+  const cinemaBanner = useMemo(() => {
+    if (
+      quickEventCinema
+      && (quickEventCinema.messageKey == null
+        || !dismissedCinemaKeys.has(quickEventCinema.messageKey))
+    ) {
+      return {
+        posterSrc: quickEventCinema.posterSrc,
+        videoSrc: quickEventCinema.videoSrc,
+        label: quickEventCinema.label,
+        loop: false,
+        messageKey: quickEventCinema.messageKey,
+        source: 'quick_event',
+      };
+    }
+    if (showTypingIndicator) {
+      return {
+        posterSrc: typingAvatarPosterSrc,
+        videoSrc: typingAvatarVideoSrc || null,
+        label: typingIndicatorLabel,
+        loop: Boolean(typingAvatarVideoSrc),
+        messageKey: null,
+        source: 'processing',
+      };
+    }
+    return null;
+  }, [
+    quickEventCinema,
+    dismissedCinemaKeys,
+    showTypingIndicator,
+    typingAvatarPosterSrc,
+    typingAvatarVideoSrc,
+    typingIndicatorLabel,
+  ]);
+
+  const handleCinemaVideoEnded = useCallback(() => {
+    const key = cinemaBanner?.messageKey;
+    if (key == null) return;
+    setDismissedCinemaKeys((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, [cinemaBanner?.messageKey]);
 
   const headerAvatarLabel = healthScoreLabel;
 
@@ -738,6 +806,16 @@ export default function AiCluster({
         </div>
       </header>
 
+      {cinemaBanner ? (
+        <KentuProcessingBanner
+          posterSrc={cinemaBanner.posterSrc}
+          videoSrc={cinemaBanner.videoSrc}
+          label={cinemaBanner.label}
+          loop={cinemaBanner.loop}
+          onVideoEnded={handleCinemaVideoEnded}
+        />
+      ) : null}
+
       <div
         className="chat-container flex min-h-0 flex-1 flex-col"
         style={{
@@ -857,7 +935,8 @@ export default function AiCluster({
                 msg.isTyping ? (
                   <TypingIndicator
                     avatarSrc={typingAvatarPosterSrc}
-                    avatarVideoSrc={typingAvatarVideoSrc}
+                    avatarVideoSrc={null}
+                    hideAvatar={Boolean(cinemaBanner)}
                     label={typingIndicatorLabel}
                   />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
@@ -871,6 +950,12 @@ export default function AiCluster({
                       videoSrc={msg.quickEventConfirm?.videoSrc || msg.videoSrc || null}
                       title={msg.quickEventConfirm?.title || msg.text || msg.displayText || ''}
                       subtitle={msg.quickEventConfirm?.subtitle || ''}
+                      bannerOwnsVideo={
+                        cinemaBanner?.source === 'quick_event'
+                        && Boolean(String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim())
+                        && String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim()
+                          === String(cinemaBanner.videoSrc || '').trim()
+                      }
                       timestamp={
                         msg.timestamp
                         ?? msg.createdAt
@@ -1202,7 +1287,8 @@ export default function AiCluster({
           {showTypingIndicator ? (
             <TypingIndicator
               avatarSrc={typingAvatarPosterSrc}
-              avatarVideoSrc={typingAvatarVideoSrc}
+              avatarVideoSrc={null}
+              hideAvatar={Boolean(cinemaBanner)}
               label={typingIndicatorLabel}
             />
           ) : null}
