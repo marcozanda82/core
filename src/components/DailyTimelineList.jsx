@@ -8,7 +8,6 @@ import { CHART_AXIS_GUTTER_LEFT_PX, CHART_AXIS_GUTTER_RIGHT_PX } from '../timeLa
  */
 export default function DailyTimelineList({
   showZoomBar,
-  openTimelineQuickAddAtCenter,
   setZoomLevel,
   handleCenterZoomAndPan,
   chartScrollRef,
@@ -28,6 +27,9 @@ export default function DailyTimelineList({
   children,
   timelineNodiProps,
 }) {
+  /** zoom 1 → 200% width → 12 ore visibili. */
+  const chartWidthPct = 200 * (Number(zoomLevel) || 1);
+
   return (
     <div
       style={{
@@ -44,19 +46,6 @@ export default function DailyTimelineList({
           <button
             type="button"
             className="zoom-btn-vertical"
-            onClick={openTimelineQuickAddAtCenter}
-            title="Aggiungi sulla timeline (ora centrale)"
-            aria-label="Aggiungi sulla timeline"
-            style={{
-              background: 'linear-gradient(145deg, rgba(0,229,255,0.35), rgba(0,120,140,0.45))',
-              borderColor: 'rgba(0,229,255,0.45)',
-            }}
-          >
-            ⊕
-          </button>
-          <button
-            type="button"
-            className="zoom-btn-vertical"
             onClick={() => setZoomLevel((prev) => Math.min(prev + 0.2, 1.5))}
             title="Ingrandisci"
           >
@@ -66,14 +55,14 @@ export default function DailyTimelineList({
             type="button"
             className="zoom-btn-vertical"
             onClick={handleCenterZoomAndPan}
-            title="Centra su ora attuale (30%)"
+            title="Centra su ora attuale (12 ore)"
           >
             🎯
           </button>
           <button
             type="button"
             className="zoom-btn-vertical"
-            onClick={() => setZoomLevel((prev) => Math.max(prev - 0.2, 0.45))}
+            onClick={() => setZoomLevel((prev) => Math.max(prev - 0.2, 0.5))}
             title="Riduci"
           >
             −
@@ -105,8 +94,8 @@ export default function DailyTimelineList({
           onMouseLeave={onChartTooltipMouseLeave}
           style={{
             flexShrink: 0,
-            width: `${220 * zoomLevel}%`,
-            minWidth: `${800 * zoomLevel}px`,
+            width: `${chartWidthPct}%`,
+            minWidth: `${Math.round(960 * (Number(zoomLevel) || 1))}px`,
             height: '100%',
             display: 'flex',
             flexDirection: 'column',
@@ -141,7 +130,7 @@ export default function DailyTimelineList({
             <TimelineNodi {...timelineNodiProps} />
           </div>
         </div>
-        <div style={{ width: '80px', flexShrink: 0 }} />
+        <div style={{ width: '24px', flexShrink: 0 }} />
       </div>
     </div>
   );

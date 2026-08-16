@@ -23,6 +23,7 @@ const SUBMENUS = {
     { id: 'allenamento', icon: '🏋️', label: 'Allenamento', action: 'openActivity', defaultTab: 'pesi' },
     { id: 'camminata', icon: '🚶', label: 'Camminata', action: 'openActivity', defaultTab: 'camminata' },
     { id: 'corsa', icon: '🏃', label: 'Corsa', action: 'openActivity', defaultTab: 'corsa' },
+    { id: 'piano', icon: '🗓️', label: 'Piano', action: 'openPlan' },
   ],
 };
 
@@ -49,6 +50,7 @@ const VOCABULARY_SECTIONS = [
       { id: 'allenamento', icon: '🏋️', label: 'Allenamento', action: 'openActivity', defaultTab: 'pesi' },
       { id: 'camminata', icon: '🚶', label: 'Camminata', action: 'openActivity', defaultTab: 'camminata' },
       { id: 'corsa', icon: '🏃', label: 'Corsa', action: 'openActivity', defaultTab: 'corsa' },
+      { id: 'piano', icon: '🗓️', label: 'Piano', action: 'openPlan' },
       { id: 'peso', icon: '⚖️', label: 'Peso', action: 'send', message: 'Peso' },
     ],
   },
@@ -101,9 +103,11 @@ function SubActionButton({ icon, label, onClick }) {
 export default function PulsantieraUniversale({
   onOpenManualView,
   onOpenActivityView,
+  onOpenPlanView = null,
   onManualShortcut,
   onSendChatMessage,
   disabled = false,
+  isDiabetesAppMode = false,
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
 
@@ -120,6 +124,14 @@ export default function PulsantieraUniversale({
     return () => document.removeEventListener('keydown', onKey);
   }, [activeCategory, closeMenus]);
 
+  const resolveItemPresentation = useCallback((item) => {
+    if (!item || item.action !== 'openPlan') return item;
+    if (isDiabetesAppMode) {
+      return { ...item, icon: '💊', label: 'Terapia' };
+    }
+    return { ...item, icon: '🗓️', label: 'Piano' };
+  }, [isDiabetesAppMode]);
+
   const dispatchItem = useCallback((item) => {
     if (disabled || !item) return;
     if (item.action === 'openManual') {
@@ -130,8 +142,12 @@ export default function PulsantieraUniversale({
     if (item.action === 'openActivity') {
       closeMenus();
       const defaultTab = stashActivitySheetTempTab(item.defaultTab || 'pesi');
-      console.log('DEBUG: pulsantiera openActivity →', defaultTab);
       onOpenActivityView?.({ defaultTab });
+      return;
+    }
+    if (item.action === 'openPlan') {
+      closeMenus();
+      onOpenPlanView?.();
       return;
     }
     if (item.action === 'shortcut') {
@@ -152,6 +168,7 @@ export default function PulsantieraUniversale({
     disabled,
     onOpenManualView,
     onOpenActivityView,
+    onOpenPlanView,
     onManualShortcut,
     onSendChatMessage,
   ]);
@@ -162,7 +179,7 @@ export default function PulsantieraUniversale({
   }, [disabled]);
 
   const subItems = activeCategory && activeCategory !== 'tutti'
-    ? (SUBMENUS[activeCategory] || [])
+    ? (SUBMENUS[activeCategory] || []).map(resolveItemPresentation)
     : [];
 
   const tuttiDrawer = activeCategory === 'tutti' && typeof document !== 'undefined'
@@ -201,7 +218,9 @@ export default function PulsantieraUniversale({
                   {section.title}
                 </h3>
                 <ul className="flex flex-col gap-1.5">
-                  {section.items.map((item) => (
+                  {section.items.map((rawItem) => {
+                    const item = resolveItemPresentation(rawItem);
+                    return (
                     <li key={`${section.id}-${item.id}`}>
                       <button
                         type="button"
@@ -213,7 +232,8 @@ export default function PulsantieraUniversale({
                         <span className="font-medium">{item.label}</span>
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               </section>
             ))}

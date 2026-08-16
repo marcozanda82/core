@@ -147,6 +147,8 @@ export default function AiCluster({
   onManualShortcut,
   onOpenManualView = null,
   onOpenActivityView = null,
+  onOpenPlanView = null,
+  isDiabetesAppMode = false,
   onRequestReport,
   onRequestBarcodeScan,
   quickStripItems = null,
@@ -501,6 +503,12 @@ export default function AiCluster({
     }
     onManualShortcut?.('workout');
   }, [onOpenActivityView, onManualShortcut]);
+
+  const handlePulsantieraOpenPlan = useCallback(() => {
+    if (typeof onOpenPlanView === 'function') {
+      onOpenPlanView();
+    }
+  }, [onOpenPlanView]);
 
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [devToolsToast, setDevToolsToast] = useState('');
@@ -1441,8 +1449,10 @@ export default function AiCluster({
             disabled={isProcessing}
             onOpenManualView={handlePulsantieraOpenManual}
             onOpenActivityView={handlePulsantieraOpenActivity}
+            onOpenPlanView={handlePulsantieraOpenPlan}
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
+            isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}
         {isVoiceNoteActive ? (

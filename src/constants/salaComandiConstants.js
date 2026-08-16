@@ -1,15 +1,16 @@
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation). */
 export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 
-/** Tab bottom bar persistibili in localStorage (Pianifica apre un drawer, non una tab). */
+/** Tab bottom bar persistibili in localStorage (Menu apre un drawer, non una tab). */
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
-/** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome). */
+/** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome).
+ *  Layout: Oggi | Timeline | [Emblema] | Storico | Menu (ex slot Piano). */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
   { id: 'bussola', label: 'Storico', icon: '❤️' },
-  { id: 'pianifica', label: 'Piano', icon: '🗓️' },
+  { id: 'menu', label: 'Menu', icon: '☰' },
 ];
 
 export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
@@ -87,7 +88,12 @@ function buildStaticBaselinePhysiologyChartData(wakeHour = 7.5) {
   return out;
 }
 
-export const EMPTY_ENERGY_CHART_DATA = Object.freeze(buildStaticBaselinePhysiologyChartData(7.5));
+export const EMPTY_ENERGY_CHART_DATA = buildStaticBaselinePhysiologyChartData(7.5);
+
+/** Copia mutabile 0–24h per Recharts (non riusare lo stesso array frozen/condiviso). */
+export function createEmptyEnergyChartData(wakeHour = 7.5) {
+  return buildStaticBaselinePhysiologyChartData(wakeHour);
+}
 
 export const LONGEVITY_NIGHT_PENDING_ENERGY_SIM = Object.freeze({
   chartData: EMPTY_ENERGY_CHART_DATA,

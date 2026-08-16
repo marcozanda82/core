@@ -201,26 +201,31 @@ html, body, #root {
   }
 }
 
-/* Barra zoom verticale (Analisi + Fullscreen) - pollice-friendly, bordo destro */
+/* Barra zoom orizzontale sopra il grafico (Analisi + Fullscreen) */
 .zoom-vertical-bar {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: relative;
+  top: auto;
+  right: auto;
+  transform: none;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   z-index: 50;
+  align-self: center;
+  margin: 0 0 8px;
   background: rgba(0, 0, 0, 0.5);
-  padding: 10px 6px;
-  border-radius: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.12);
   pointer-events: auto;
+  flex-shrink: 0;
 }
 .zoom-btn-vertical {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   background: #2c2c2e;
   color: white;
@@ -228,7 +233,7 @@ html, body, #root {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
   cursor: pointer;
 }

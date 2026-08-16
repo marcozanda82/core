@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import {
   ComposedChart,
   Line,
@@ -19,9 +19,8 @@ import { CustomChartTooltip } from '../../coreEngine';
 import { SncEnergyChartGradients, useMetabolicChartGradient } from '../../components/charts/MetabolicTimelineGradient';
 
 /**
- * Chiavi motore (coreEngine) vs segmenti Past/Future (SalaComandi).
- * Le curve fisiologiche usano SEMPRE valueKey (es. cortisolo) — garantito dall'engine.
- * Past/Future restano solo per energia % / kcal split estetico.
+ * Config serie: allineata al pattern Energia (past/future + continuo) che già disegna la linea.
+ * Calorie (calorieTimeline) usa un unico dataKey continuo `kcal` — stesso principio per valueKey.
  */
 const PHYSIO_SERIES = {
   glicemia: {
@@ -30,8 +29,8 @@ const PHYSIO_SERIES = {
     futureKey: 'glicemiaFuture',
     stroke: '#ef4444',
     futureStroke: '#7f1d1d',
-    fill: 'url(#colorGlicemia)',
-    yDomain: [40, 220],
+    fill: '#ef4444',
+    yDomainBase: [40, 220],
     tickFmt: (v) => v,
   },
   idratazione: {
@@ -40,8 +39,8 @@ const PHYSIO_SERIES = {
     futureKey: 'idratazioneFuture',
     stroke: '#00e5ff',
     futureStroke: '#003a8c',
-    fill: 'url(#colorWater)',
-    yDomain: [0, 100],
+    fill: '#00e5ff',
+    yDomainBase: [0, 100],
     tickFmt: (v) => `${v}%`,
   },
   cortisolo: {
@@ -50,8 +49,8 @@ const PHYSIO_SERIES = {
     futureKey: 'cortisoloFuture',
     stroke: '#f59e0b',
     futureStroke: '#78350f',
-    fill: 'url(#colorCortisol)',
-    yDomain: [0, 100],
+    fill: '#f59e0b',
+    yDomainBase: [0, 100],
     tickFmt: (v) => `${v}%`,
   },
   digestione: {
@@ -60,8 +59,8 @@ const PHYSIO_SERIES = {
     futureKey: 'digestioneFuture',
     stroke: '#9333ea',
     futureStroke: '#581c87',
-    fill: 'url(#colorDigestion)',
-    yDomain: [0, 100],
+    fill: '#9333ea',
+    yDomainBase: [0, 100],
     tickFmt: (v) => `${v}%`,
   },
   neuro: {
@@ -70,8 +69,8 @@ const PHYSIO_SERIES = {
     futureKey: 'neuroFuture',
     stroke: '#6366f1',
     futureStroke: '#3730a3',
-    fill: 'url(#colorNeuro)',
-    yDomain: [0, 100],
+    fill: '#6366f1',
+    yDomainBase: [0, 100],
     tickFmt: (v) => `${v}%`,
   },
   kcal: {
@@ -80,8 +79,8 @@ const PHYSIO_SERIES = {
     futureKey: 'kcalFuture',
     stroke: '#00e5ff',
     futureStroke: '#444444',
-    fill: 'url(#colorKcal)',
-    yDomain: null,
+    fill: '#00e5ff',
+    yDomainBase: [0, 2000],
     tickFmt: (v) => Math.round(Number(v)),
   },
   energy: {
@@ -90,8 +89,8 @@ const PHYSIO_SERIES = {
     futureKey: 'energyFuture',
     stroke: '#00e5ff',
     futureStroke: '#444444',
-    fill: 'url(#colorEnergy)',
-    yDomain: [0, 100],
+    fill: '#00e5ff',
+    yDomainBase: [0, 100],
     tickFmt: (v) => `${v}%`,
   },
 };
@@ -101,18 +100,216 @@ function resolvePhysioSeries(chartUnit) {
   return PHYSIO_SERIES.energy;
 }
 
-function resolveYDomain(chartUnit, series, targetKcalChart, totalCaloriesTimeline) {
-  if (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') {
-    const maxK = Math.max(safeFinite(targetKcalChart, 2000), safeFinite(totalCaloriesTimeline, 0), 1);
-    return [0, maxK];
-  }
-  if (series?.yDomain) return series.yDomain;
-  return [0, 100];
+/** Anti-NaN stretto: solo number finiti; altrimenti null (Recharts abortisce il path su NaN). */
+function chartNumOrNull(val) {
+  return typeof val === 'number' && !Number.isNaN(val) && Number.isFinite(val) ? val : null;
+}
+
+function chartNum(val, fallback = 0) {
+  const n = chartNumOrNull(typeof val === 'number' ? val : Number(val));
+  return n == null ? fallback : n;
 }
 
 function safeFinite(v, fallback = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
+  return chartNum(v, fallback);
+}
+
+/**
+ * Dominio Y dinamico: include sempre i valori calcolati (niente linea fuori viewBox).
+ */
+function resolveYDomain(chartUnit, series, chartData, targetKcalChart, totalCaloriesTimeline) {
+  if (chartUnit === 'calorieTimeline' || chartUnit === 'kcal') {
+    const maxK = Math.max(safeFinite(targetKcalChart, 2000), safeFinite(totalCaloriesTimeline, 0), 1);
+    const key = chartUnit === 'calorieTimeline' ? 'kcal' : series.valueKey;
+    let dataMax = 0;
+    for (const p of chartData || []) {
+      const v = chartNumOrNull(Number(p?.[key]));
+      if (v != null) dataMax = Math.max(dataMax, v);
+    }
+    return [0, Math.max(maxK, dataMax * 1.05, 1)];
+  }
+
+  const base = series?.yDomainBase || [0, 100];
+  const key = series?.valueKey;
+  let minV = base[0];
+  let maxV = base[1];
+  for (const p of chartData || []) {
+    const v = chartNumOrNull(Number(p?.[key]));
+    if (v == null) continue;
+    minV = Math.min(minV, v);
+    maxV = Math.max(maxV, v);
+  }
+  const pad = Math.max(2, (maxV - minV) * 0.05);
+  return [Math.min(base[0], minV - pad), Math.max(base[1], maxV + pad)];
+}
+
+/**
+ * Shape allineata a Energia/Calorie:
+ * - valueKey continuo (riferimento / pallino)
+ * - past/future con cerniera su `now` (entrambe le chiavi valorizzate → niente gap)
+ * - mai NaN: solo number o null
+ */
+const PAST_FUTURE_KEYS = [
+  { value: 'energy', past: 'energyPast', future: 'energyFuture' },
+  { value: 'glicemia', past: 'glicemiaPast', future: 'glicemiaFuture' },
+  { value: 'idratazione', past: 'idratazionePast', future: 'idratazioneFuture' },
+  { value: 'cortisolo', past: 'cortisoloPast', future: 'cortisoloFuture' },
+  { value: 'digestione', past: 'digestionePast', future: 'digestioneFuture' },
+  { value: 'neuro', past: 'neuroPast', future: 'neuroFuture' },
+  { value: 'kcalValue', past: 'kcalPast', future: 'kcalFuture' },
+];
+
+/** Segmenta past/future; sul punto `now` (cerniera) valorizza ENTRAMBE le chiavi. */
+function segmentPastFuture(hour, now, value) {
+  const v = chartNumOrNull(typeof value === 'number' ? value : Number(value));
+  if (v == null) return { past: null, future: null };
+  const atHinge = Math.abs(hour - now) < 1e-4;
+  return {
+    past: hour <= now || atHinge ? v : null,
+    future: hour >= now || atHinge ? v : null,
+  };
+}
+
+/**
+ * Cerniera: il punto più vicino a `now` (idealmente l'ora attuale inserita dall'engine)
+ * ha pastKey = futureKey = value, così la linea tratteggiata parte sotto il pallino.
+ */
+function applyNowHinge(points, now) {
+  if (!Array.isArray(points) || points.length === 0) return points;
+  let hingeIdx = points.findIndex((p) => Math.abs(p.hour - now) < 1e-4);
+  if (hingeIdx < 0) {
+    hingeIdx = points.reduce((best, p, i) => (
+      Math.abs(p.hour - now) < Math.abs(points[best].hour - now) ? i : best
+    ), 0);
+  }
+  const hinge = points[hingeIdx];
+  for (const { value, past, future } of PAST_FUTURE_KEYS) {
+    const val = chartNumOrNull(hinge[value]);
+    if (val == null) continue;
+    hinge[past] = val;
+    hinge[future] = val;
+  }
+  return points;
+}
+
+function normalizePhysioChartData(raw, series, displayTime = 12) {
+  const list = Array.isArray(raw) ? raw : [];
+  const now = chartNum(displayTime, 12);
+
+  let points = list.map((d, index) => {
+    const hour = chartNum(d?.hour ?? d?.time ?? index, index);
+    const energy = chartNum(d?.energy, 35);
+    const glicemia = chartNum(d?.glicemia, 85);
+    const idratazione = chartNum(d?.idratazione, 100);
+    const cortisolo = chartNum(d?.cortisolo, 25);
+    const digestione = chartNum(d?.digestione, 0);
+    const neuro = chartNum(d?.neuro, 40);
+    const kcalRaw = d?.kcalValue ?? d?.kcal;
+    const kcalValue = chartNum(kcalRaw, 0);
+    const idealEnergy = chartNum(d?.idealEnergy, 70);
+    const riservaFisica = chartNum(d?.riservaFisica, 50);
+
+    const eSeg = segmentPastFuture(hour, now, energy);
+    const gSeg = segmentPastFuture(hour, now, glicemia);
+    const iSeg = segmentPastFuture(hour, now, idratazione);
+    const cSeg = segmentPastFuture(hour, now, cortisolo);
+    const dSeg = segmentPastFuture(hour, now, digestione);
+    const nSeg = segmentPastFuture(hour, now, neuro);
+    const kSeg = segmentPastFuture(hour, now, kcalValue);
+
+    return {
+      time: hour,
+      hour,
+      energy,
+      glicemia,
+      idratazione,
+      cortisolo,
+      digestione,
+      neuro,
+      kcal: kcalValue,
+      kcalValue,
+      idealEnergy,
+      riservaFisica,
+      anabolicScore: chartNum(d?.anabolicScore, 0),
+      cortisolScore: chartNum(d?.cortisolScore, 0),
+      energyPast: eSeg.past,
+      energyFuture: eSeg.future,
+      glicemiaPast: gSeg.past,
+      glicemiaFuture: gSeg.future,
+      idratazionePast: iSeg.past,
+      idratazioneFuture: iSeg.future,
+      cortisoloPast: cSeg.past,
+      cortisoloFuture: cSeg.future,
+      digestionePast: dSeg.past,
+      digestioneFuture: dSeg.future,
+      neuroPast: nSeg.past,
+      neuroFuture: nSeg.future,
+      kcalPast: kSeg.past,
+      kcalFuture: kSeg.future,
+    };
+  });
+
+  points = points
+    .filter((p) => chartNumOrNull(p.hour) != null)
+    .sort((a, b) => a.hour - b.hour);
+
+  // Cerniera now: past + future sullo stesso punto (niente gap sotto il pallino)
+  points = applyNowHinge(points, now);
+
+  const valueKey = series?.valueKey || 'glicemia';
+  let validCount = points.filter((p) => chartNumOrNull(p[valueKey]) != null).length;
+
+  if (points.length < 2 || validCount < 2) {
+    const baseline = [];
+    for (let h = 0; h <= 24; h += 1) {
+      const glicemia = 85;
+      const idratazione = 100;
+      const cortisolo = 40;
+      const digestione = 0;
+      const neuro = 40;
+      const energy = 50;
+      const gSeg = segmentPastFuture(h, now, glicemia);
+      const iSeg = segmentPastFuture(h, now, idratazione);
+      const cSeg = segmentPastFuture(h, now, cortisolo);
+      const dSeg = segmentPastFuture(h, now, digestione);
+      const nSeg = segmentPastFuture(h, now, neuro);
+      const eSeg = segmentPastFuture(h, now, energy);
+      baseline.push({
+        time: h,
+        hour: h,
+        energy,
+        glicemia,
+        idratazione,
+        cortisolo,
+        digestione,
+        neuro,
+        kcal: 0,
+        kcalValue: 0,
+        idealEnergy: 70,
+        riservaFisica: 50,
+        anabolicScore: 0,
+        cortisolScore: 0,
+        energyPast: eSeg.past,
+        energyFuture: eSeg.future,
+        glicemiaPast: gSeg.past,
+        glicemiaFuture: gSeg.future,
+        idratazionePast: iSeg.past,
+        idratazioneFuture: iSeg.future,
+        cortisoloPast: cSeg.past,
+        cortisoloFuture: cSeg.future,
+        digestionePast: dSeg.past,
+        digestioneFuture: dSeg.future,
+        neuroPast: nSeg.past,
+        neuroFuture: nSeg.future,
+        kcalPast: h <= now ? 0 : null,
+        kcalFuture: h >= now ? 0 : null,
+      });
+    }
+    points = applyNowHinge(baseline, now);
+    validCount = points.length;
+  }
+
+  return { points, validCount, valueKey };
 }
 
 export default function MainDashboardCharts({
@@ -147,47 +344,89 @@ export default function MainDashboardCharts({
     flexShrink: 0,
   };
 
-  const chartData = useMemo(
-    () => (Array.isArray(mainChartData) ? mainChartData : []),
-    [mainChartData],
+  const series = resolvePhysioSeries(chartUnit);
+
+  const { points: chartData, validCount: valueKeyValidCount } = useMemo(
+    () => normalizePhysioChartData(mainChartData, resolvePhysioSeries(chartUnit), displayTime),
+    [mainChartData, chartUnit, displayTime],
   );
 
-  const series = resolvePhysioSeries(chartUnit);
-  const yDomain = resolveYDomain(chartUnit, series, targetKcalChart, totalCaloriesTimeline);
+  const yDomain = useMemo(
+    () => resolveYDomain(chartUnit, series, chartData, targetKcalChart, totalCaloriesTimeline),
+    [chartUnit, series, chartData, targetKcalChart, totalCaloriesTimeline],
+  );
 
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const first = chartData[0] || null;
-    const keys = first ? Object.keys(first) : [];
-    const sampleKey = series.valueKey;
-    const vals = chartData
-      .map((p) => Number(p?.[sampleKey]))
-      .filter((n) => Number.isFinite(n));
-    const min = vals.length ? Math.min(...vals) : null;
-    const max = vals.length ? Math.max(...vals) : null;
-    // Temporaneo: conferma chiavi engine vs Past e range valori (flatline?).
+  if (import.meta.env.DEV) {
+    const countFinite = (key) =>
+      chartData.filter((p) => chartNumOrNull(Number(p?.[key])) != null).length;
+    const nanKeys = [];
+    if (chartData[0]) {
+      for (const k of Object.keys(chartData[0])) {
+        if (chartData.some((p) => typeof p?.[k] === 'number' && Number.isNaN(p[k]))) nanKeys.push(k);
+      }
+    }
     // eslint-disable-next-line no-console
-    console.log('RECHARTS DATA:', {
+    console.log('CHART DATA COUNTS:', {
       chartUnit,
       len: chartData.length,
-      first,
-      keys,
-      valueKey: sampleKey,
-      hasValueKey: first ? Object.prototype.hasOwnProperty.call(first, sampleKey) : false,
-      hasPastKey: first ? Object.prototype.hasOwnProperty.call(first, series.pastKey) : false,
-      min,
-      max,
+      valueKey: series.valueKey,
+      pastKey: series.pastKey,
+      futureKey: series.futureKey,
+      valueKeyValidCount,
       yDomain,
+      nanKeys,
+      counts: {
+        [series.valueKey]: countFinite(series.valueKey),
+        [series.pastKey]: countFinite(series.pastKey),
+        [series.futureKey]: countFinite(series.futureKey),
+        energy: countFinite('energy'),
+        energyPast: countFinite('energyPast'),
+        kcal: countFinite('kcal'),
+      },
+      canDrawLine: valueKeyValidCount >= 2,
     });
-  }, [chartData, chartUnit, series.valueKey, series.pastKey, yDomain]);
+  }
 
   const sleepNodes = Array.isArray(nodesForEnergySimulation)
     ? nodesForEnergySimulation.filter((n) => n && n.type === 'sleep')
     : [];
 
-  return (
+  const overlayBlock = (
     <>
-      {chartUnit === 'percent' ? (
+      {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
+      <TimeAlignmentChartDebugOverlay />
+      {showMetabolicOverlay ? (
+        <MetabolicTimelineOverlay
+          activeLog={activeLog}
+          options={metabolicContextOptions}
+          nowHour={metabolicOverlayNowHour}
+          onPhaseClick={onMetabolicPhaseClick}
+        />
+      ) : null}
+    </>
+  );
+
+  const sleepRefs = sleepNodes.map((node, index) => (
+    <ReferenceLine
+      key={`sleep-ref-${node.id ?? index}`}
+      x={safeFinite(node.wakeTime, 7.5)}
+      stroke="#00e5ff"
+      strokeDasharray="3 3"
+      strokeWidth={1.5}
+      label={{
+        position: 'insideTopLeft',
+        value: '🌅 Sveglia',
+        fill: '#4ba3e3',
+        fontSize: 11,
+        fontWeight: 'bold',
+      }}
+    />
+  ));
+
+  // ─── Energia % (FUNZIONA): nessun yAxisId, past/future + continuo ───
+  if (chartUnit === 'percent') {
+    return (
+      <>
         <div style={chartShellStyle}>
           <ResponsiveContainer width="100%" height="100%" minHeight={200}>
             <ComposedChart data={chartData} margin={sncChartMargin}>
@@ -239,16 +478,7 @@ export default function MainDashboardCharts({
                   return label;
                 }}
               />
-              {sleepNodes.map((node, index) => (
-                <ReferenceLine
-                  key={`snc-sleep-${node.id ?? index}`}
-                  x={safeFinite(node.wakeTime, 7.5)}
-                  stroke="#00e5ff"
-                  strokeDasharray="3 3"
-                  strokeWidth={1.5}
-                  label={{ position: 'insideTopLeft', value: '🌅 Sveglia', fill: '#4ba3e3', fontSize: 11, fontWeight: 'bold' }}
-                />
-              ))}
+              {sleepRefs}
               <ReferenceDot
                 x={displayTime}
                 y={finalDotY}
@@ -260,7 +490,7 @@ export default function MainDashboardCharts({
                 className="pulsing-dot"
               />
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="riservaFisica"
                 name="Riserva Fisica"
                 stroke="#00e676"
@@ -269,11 +499,11 @@ export default function MainDashboardCharts({
                 strokeWidth={2}
                 dot={false}
                 baseValue={0}
-                isAnimationActive={!draggingNode}
+                connectNulls
+                isAnimationActive={false}
               />
-              {/* Stroke esadecimale solido: url(#gradient) sul stroke spesso rende la linea invisibile */}
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="energyPast"
                 name="Energia SNC"
                 stroke="#00e5ff"
@@ -281,11 +511,22 @@ export default function MainDashboardCharts({
                 fillOpacity={1}
                 fill={energyGradient.fill || '#00e5ff'}
                 baseValue={0}
-                connectNulls={false}
-                isAnimationActive={!draggingNode}
+                connectNulls
+                isAnimationActive={false}
+              />
+              <Line
+                type="linear"
+                dataKey="energyPast"
+                stroke="#00e5ff"
+                strokeWidth={3}
+                strokeOpacity={1}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                legendType="none"
               />
               <Area
-                type="monotone"
+                type="linear"
                 dataKey="energyFuture"
                 name="Previsione"
                 stroke="#666666"
@@ -294,75 +535,51 @@ export default function MainDashboardCharts({
                 fill="transparent"
                 className="future"
                 baseValue={0}
-                connectNulls={false}
-                isAnimationActive={!draggingNode}
+                connectNulls
+                isAnimationActive={false}
+              />
+              <Line
+                type="linear"
+                dataKey="energyFuture"
+                stroke="#888888"
+                strokeWidth={2.5}
+                strokeOpacity={1}
+                strokeDasharray="10 10"
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                legendType="none"
+              />
+              <Line
+                type="linear"
+                dataKey="energy"
+                stroke="#00e5ff"
+                strokeWidth={2}
+                strokeOpacity={0.45}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+                legendType="none"
               />
               <ReferenceLine y={20} stroke="#ff4d4d" strokeDasharray="3 3" strokeOpacity={0.5} />
               <ReferenceLine y={50} stroke="#ffea00" strokeDasharray="3 3" strokeOpacity={0.5} />
             </ComposedChart>
           </ResponsiveContainer>
-          {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-          <TimeAlignmentChartDebugOverlay />
-          {showMetabolicOverlay ? (
-            <MetabolicTimelineOverlay
-              activeLog={activeLog}
-              options={metabolicContextOptions}
-              nowHour={metabolicOverlayNowHour}
-              onPhaseClick={onMetabolicPhaseClick}
-            />
-          ) : null}
+          {overlayBlock}
         </div>
-      ) : (
+      </>
+    );
+  }
+
+  // ─── Calorie cumulative (FUNZIONA): un solo dataKey continuo, domain dinamico ───
+  if (chartUnit === 'calorieTimeline') {
+    return (
+      <>
         <div style={chartShellStyle}>
           <ResponsiveContainer width="100%" height="100%" minHeight={200}>
             <ComposedChart data={chartData} margin={{ top: 10, right: 15, left: 15, bottom: 15 }}>
-              <defs>
-                <linearGradient id="colorEnergy" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
-                </linearGradient>
-                <linearGradient id="colorKcal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00b4d8" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#047857" stopOpacity={0.7} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={0.6} />
-                </linearGradient>
-                <linearGradient id="colorGlicemia" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#ef4444" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#f59e0b" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#ef4444" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="colorWater" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#007aff" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#00e5ff" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#007aff" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="colorCortisol" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#fbbf24" stopOpacity={0.5} />
-                  <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="colorAnabolic" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
-                  <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorCortisolPurple" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#9c27b0" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="#9c27b0" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="colorDigestion" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#9333ea" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#a855f7" stopOpacity={0.5} />
-                  <stop offset="100%" stopColor="#9333ea" stopOpacity={0.0} />
-                </linearGradient>
-                <linearGradient id="colorNeuro" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9} />
-                  <stop offset="50%" stopColor="#818cf8" stopOpacity={0.5} />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0.0} />
-                </linearGradient>
-              </defs>
               <XAxis
-                dataKey={chartUnit === 'calorieTimeline' ? 'time' : 'hour'}
+                dataKey="time"
                 type="number"
                 domain={[0, 24]}
                 allowDataOverflow
@@ -374,178 +591,165 @@ export default function MainDashboardCharts({
                 padding={{ left: 0, right: 0 }}
               />
               <YAxis
-                yAxisId="left"
                 domain={yDomain}
-                allowDataOverflow={false}
-                tickFormatter={series.tickFmt}
+                allowDataOverflow
+                tickFormatter={(v) => Math.round(Number(v))}
                 tick={{ fill: '#555', fontSize: 12 }}
                 axisLine={false}
                 tickLine={false}
                 width={35}
               />
-              <YAxis yAxisId="anabolic" orientation="right" domain={[0, 150]} width={0} hide />
               <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
-              {sleepNodes.map((node, index) => (
-                <ReferenceLine
-                  key={`sleep-ref-${node.id ?? index}`}
-                  yAxisId="left"
-                  x={safeFinite(node.wakeTime, 7.5)}
-                  stroke="#00e5ff"
-                  strokeDasharray="3 3"
-                  strokeWidth={1.5}
-                  label={{
-                    position: 'insideTopLeft',
-                    value: '🌅 Sveglia',
-                    fill: '#4ba3e3',
-                    fontSize: 11,
-                    fontWeight: 'bold',
-                  }}
-                />
-              ))}
-              {chartUnit !== 'calorieTimeline' && (
-                <>
-                  <Area
-                    type="monotone"
-                    dataKey="anabolicScore"
-                    fill="url(#colorAnabolic)"
-                    stroke="transparent"
-                    strokeWidth={0}
-                    fillOpacity={0.35}
-                    yAxisId="anabolic"
-                    isAnimationActive={!draggingNode}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="cortisolScore"
-                    fill="url(#colorCortisolPurple)"
-                    stroke="#9c27b0"
-                    strokeWidth={2}
-                    strokeDasharray="5 5"
-                    fillOpacity={0.3}
-                    yAxisId="anabolic"
-                    isAnimationActive={!draggingNode}
-                  />
-                </>
-              )}
-              {chartUnit === 'glicemia' && (
-                <>
-                  <ReferenceArea yAxisId="left" y1={40} y2={85} fill="#22c55e20" stroke="none" />
-                  <ReferenceArea yAxisId="left" y1={85} y2={140} fill="#eab30820" stroke="none" />
-                  <ReferenceArea yAxisId="left" y1={140} y2={220} fill="#3b82f620" stroke="none" />
-                </>
-              )}
+              {sleepRefs}
               <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
-              {chartUnit === 'calorieTimeline' ? (
-                <Line
-                  type="monotone"
-                  yAxisId="left"
-                  dataKey="kcal"
-                  stroke="#ff9800"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={!draggingNode}
-                />
-              ) : (
-                <>
-                  {/* Curva primaria sulle chiavi engine (cortisolo / digestione / …), yAxisId="left" obbligatorio */}
-                  <Area
-                    type="monotone"
-                    yAxisId="left"
-                    dataKey={series.valueKey}
-                    stroke={series.stroke}
-                    strokeWidth={3}
-                    fill={series.fill}
-                    fillOpacity={0.45}
-                    isAnimationActive={!draggingNode}
-                    animationDuration={600}
-                    animationEasing="ease-in-out"
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    yAxisId="left"
-                    dataKey={series.valueKey}
-                    stroke={series.stroke}
-                    strokeWidth={2.5}
-                    dot={false}
-                    connectNulls
-                    isAnimationActive={!draggingNode}
-                    legendType="none"
-                  />
-                </>
-              )}
-              {chartUnit === 'glicemia' ? (
-                <ReferenceLine
-                  yAxisId="left"
-                  y={85}
-                  stroke="rgba(255, 255, 255, 0.2)"
-                  strokeDasharray="5 5"
-                  label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }}
-                />
-              ) : chartUnit === 'calorieTimeline' || chartUnit === 'kcal' ? null : (
-                <Line
-                  type="monotone"
-                  yAxisId="left"
-                  dataKey="idealEnergy"
-                  stroke="rgba(255, 255, 255, 0.25)"
-                  strokeWidth={2}
-                  strokeDasharray="8 8"
-                  dot={false}
-                  isAnimationActive={!draggingNode}
-                  animationDuration={600}
-                  animationEasing="ease-in-out"
-                />
-              )}
+              <Line
+                type="linear"
+                dataKey="kcal"
+                stroke="#ff9800"
+                strokeWidth={3}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
               <ReferenceDot
-                yAxisId="left"
                 x={displayTime}
                 y={finalDotY}
                 isFront
                 shape={(props) => {
                   const cx = props?.cx;
                   const cy = props?.cy;
-                  if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') {
-                    return <path d="M0 0" />;
-                  }
-                  const fillColor =
-                    chartUnit === 'glicemia'
-                      ? '#ef4444'
-                      : chartUnit === 'cortisolo'
-                        ? '#f59e0b'
-                        : chartUnit === 'digestione'
-                          ? '#9333ea'
-                          : chartUnit === 'neuro'
-                            ? '#6366f1'
-                            : chartUnit === 'idratazione'
-                              ? '#00e5ff'
-                              : chartUnit === 'calorieTimeline'
-                                ? '#ff9800'
-                                : '#00e5ff';
+                  if (cx == null || cy == null) return <path d="M0 0" />;
                   return (
                     <g className="pulsing-dot">
-                      <circle cx={cx} cy={cy} r={10} fill={fillColor} />
-                      <circle cx={cx} cy={cy} r={10} fill="none" stroke={fillColor} strokeWidth={3} opacity={0.5}>
-                        <animate attributeName="r" values="10;17;10" dur="2.8s" repeatCount="indefinite" />
-                        <animate attributeName="opacity" values="0.5;0;0.5" dur="2.8s" repeatCount="indefinite" />
-                      </circle>
+                      <circle cx={cx} cy={cy} r={10} fill="#ff9800" />
                     </g>
                   );
                 }}
               />
             </ComposedChart>
           </ResponsiveContainer>
-          {!isViewingPastDate ? <NowVerticalLineOverlay hour={currentTime} visible /> : null}
-          <TimeAlignmentChartDebugOverlay />
-          {showMetabolicOverlay ? (
-            <MetabolicTimelineOverlay
-              activeLog={activeLog}
-              options={metabolicContextOptions}
-              nowHour={metabolicOverlayNowHour}
-              onPhaseClick={onMetabolicPhaseClick}
-            />
-          ) : null}
+          {overlayBlock}
         </div>
-      )}
+      </>
+    );
+  }
+
+  // ─── Glicemia / Acqua / Neuro / Stress / Digestione ───
+  // monotoneX (curve morbide) + past solido / future tratteggiato, cerniera su now.
+  const stroke = series.stroke || '#00e5ff';
+  const futureStroke = series.futureStroke || '#888888';
+  const fillColor = series.fill || stroke;
+
+  return (
+    <>
+      <div style={chartShellStyle}>
+        <ResponsiveContainer width="100%" height="100%" minHeight={200}>
+          <ComposedChart data={chartData} margin={sncChartMargin}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#1a1a1a" vertical={false} />
+            <XAxis
+              dataKey="hour"
+              type="number"
+              domain={[0, 24]}
+              allowDataOverflow
+              stroke="#666"
+              fontSize={10}
+              tickFormatter={(tick) => `${tick}h`}
+              ticks={[0, 3, 6, 9, 12, 15, 18, 21, 24]}
+              padding={{ left: 0, right: 0 }}
+              scale="linear"
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              domain={yDomain}
+              allowDataOverflow
+              stroke="#666"
+              fontSize={10}
+              tickFormatter={series.tickFmt}
+              width={35}
+              tickMargin={2}
+              axisLine={false}
+              tickLine={false}
+            />
+            <Tooltip content={<CustomChartTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '5 5' }} />
+            {sleepRefs}
+            {chartUnit === 'glicemia' && (
+              <>
+                <ReferenceArea y1={Math.max(yDomain[0], 40)} y2={Math.min(yDomain[1], 85)} fill="#22c55e20" stroke="none" />
+                <ReferenceArea y1={Math.max(yDomain[0], 85)} y2={Math.min(yDomain[1], 140)} fill="#eab30820" stroke="none" />
+                <ReferenceArea y1={Math.max(yDomain[0], 140)} y2={Math.min(yDomain[1], 220)} fill="#3b82f620" stroke="none" />
+                <ReferenceLine
+                  y={85}
+                  stroke="rgba(255, 255, 255, 0.2)"
+                  strokeDasharray="5 5"
+                  label={{ position: 'insideTopLeft', value: 'Basale', fill: '#555', fontSize: 10 }}
+                />
+              </>
+            )}
+            {/* Passato: Area + Line solidi, curve biomediche monotoneX */}
+            <Area
+              type="monotoneX"
+              dataKey={series.pastKey}
+              name={series.valueKey}
+              stroke={stroke}
+              strokeWidth={3}
+              fill={fillColor}
+              fillOpacity={0.22}
+              baseValue={yDomain[0]}
+              connectNulls
+              isAnimationActive={false}
+              dot={false}
+            />
+            <Line
+              type="monotoneX"
+              dataKey={series.pastKey}
+              stroke={stroke}
+              strokeWidth={3}
+              strokeOpacity={1}
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+              legendType="none"
+            />
+            {/* Futuro: solo Line tratteggiata — parte dalla cerniera now (past∩future) */}
+            <Line
+              type="monotoneX"
+              dataKey={series.futureKey}
+              name="Previsione"
+              stroke={futureStroke}
+              strokeWidth={2.5}
+              strokeOpacity={0.95}
+              strokeDasharray="5 5"
+              dot={false}
+              connectNulls
+              isAnimationActive={false}
+              legendType="none"
+            />
+            <ReferenceDot
+              x={displayTime}
+              y={finalDotY}
+              isFront
+              shape={(props) => {
+                const cx = props?.cx;
+                const cy = props?.cy;
+                if (cx == null || cy == null || typeof cx !== 'number' || typeof cy !== 'number') {
+                  return <path d="M0 0" />;
+                }
+                return (
+                  <g className="pulsing-dot">
+                    <circle cx={cx} cy={cy} r={10} fill={stroke} />
+                    <circle cx={cx} cy={cy} r={10} fill="none" stroke={stroke} strokeWidth={3} opacity={0.5}>
+                      <animate attributeName="r" values="10;17;10" dur="2.8s" repeatCount="indefinite" />
+                      <animate attributeName="opacity" values="0.5;0;0.5" dur="2.8s" repeatCount="indefinite" />
+                    </circle>
+                  </g>
+                );
+              }}
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+        {overlayBlock}
+      </div>
     </>
   );
 }

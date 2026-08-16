@@ -2,10 +2,10 @@
  * Avatar contestuale Kentu: cambia asset in base all'attività AI / UI.
  *
  * Stati (priorità):
- * - thinking → /pensatore2.png  (consigli, strategia, NLP / elaborazione)
- * - coding   → /Hacker4.png     (debug, errori, loading, sistema)
+ * - thinking → /pensatore2.png + /pensatore2animazione.mp4  (consigli, strategia, NLP / elaborazione)
+ * - coding   → /Hacker4.png + /Hacker4animazione.mp4       (debug, errori, loading, sistema)
  * - kitchen  → /Chef2.png       (nutrizione, pasti, McDrive)
- * - fitness  → /Trainer3.png    (workout / giorno ON)
+ * - fitness  → /Trainer3.png + /Trainer3animazione.mp4     (workout / giorno ON)
  * - default  → /pensatore2.png  (chat neutra) — Health Score = cellule in header
  */
 
@@ -43,6 +43,7 @@ export const AVATAR_MOOD_SRC = Object.freeze({
 
 /** Video loop opzionali (poster = AVATAR_MOOD_SRC). Solo UI di elaborazione — mai nel path API. */
 export const AVATAR_MOOD_VIDEO = Object.freeze({
+  [AVATAR_MOOD.THINKING]: '/pensatore2animazione.mp4',
   [AVATAR_MOOD.CODING]: '/Hacker4animazione.mp4',
   [AVATAR_MOOD.FITNESS]: '/Trainer3animazione.mp4',
 });
@@ -164,7 +165,8 @@ export function getAvatarSrcForMood(mood, defaultSrc = CHAT_DEFAULT_AVATAR_SRC) 
 }
 
 /**
- * Video loop per mood (es. coding → Hacker4animazione). Stringa vuota se assente.
+ * Video loop per mood (es. thinking → pensatore2animazione, coding → Hacker4animazione).
+ * Stringa vuota se assente.
  * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'} mood
  * @returns {string}
  */

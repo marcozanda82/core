@@ -320,7 +320,6 @@ export default function AnalisiTodayProPanel({
             </div>
             <DailyTimelineList
               showZoomBar={activeBottomTab === 'analisi' || !activeAction || activeAction === 'home'}
-              openTimelineQuickAddAtCenter={openTimelineQuickAddAtCenter}
               setZoomLevel={setZoomLevel}
               handleCenterZoomAndPan={handleCenterZoomAndPan}
               chartScrollRef={chartScrollRef}

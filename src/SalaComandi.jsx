@@ -131,7 +131,7 @@ import {
   EVENT_USAGE_DEFAULT,
   NODE_DRAG_ARM_CANCEL_MOVE_PX,
   REPORT_NUTRIENT_KEYS,
-  EMPTY_ENERGY_CHART_DATA,
+  createEmptyEnergyChartData,
   ADD_MENU_ORDER_LS_KEY,
 } from './constants/salaComandiConstants';
 import { persistTrendHubHemisphere } from './features/trendHub/hooks/useTrendHubHemisphere';
@@ -475,7 +475,7 @@ export default function SalaComandi() {
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
   const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
-  const [zoomLevel, setZoomLevel] = useState(1.8); // Partiamo con uno zoom maggiore per separare i nodi
+  const [zoomLevel, setZoomLevel] = useState(1); // 1 = viewport 12 ore (vedi TIMELINE_DEFAULT_VIEWPORT_HOURS)
   const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
   /** Anteprima curve (energia/kcal) durante drag nodo timeline; null = stato committato. */
   const [timelineStripPreview, setTimelineStripPreview] = useState(null);
@@ -1027,13 +1027,10 @@ export default function SalaComandi() {
 
   const bottomNavItems = useMemo(() => (
     BOTTOM_NAV_ITEMS.map((item) => {
-      if (item.id !== 'pianifica') return item;
-      if (isDiabetesAppMode) {
-        return { ...item, label: 'Terapia', icon: '💊' };
-      }
-      return { ...item, label: 'Piano', icon: '🗓️' };
+      if (item.id !== 'menu') return item;
+      return { ...item, label: 'Menu', icon: '☰' };
     })
-  ), [isDiabetesAppMode]);
+  ), []);
 
   const handleBottomNavTabSelect = useCallback(
     (tabId) => {
@@ -1043,7 +1040,7 @@ export default function SalaComandi() {
         return;
       }
       if (tabId === 'pianifica') {
-        // Diabete/salute → Piano Terapeutico; standard → Piano Allenamento.
+        // Legacy / deep-link: Diabete → Terapia; standard → Piano Allenamento.
         if (isDiabetesAppMode) {
           openTherapyPlan();
           return;
@@ -2207,22 +2204,27 @@ export default function SalaComandi() {
     }
   }, [fullHistory, currentTrackerDate]);
 
-  const CURRENT_TIME_VIEW_OFFSET = 0.3; // ora attuale al 30% da sinistra (più spazio a destra per la proiezione)
+  /** Viewport di default: 12 ore; now centrato (6h prima / 6h dopo), clamp ai bordi giornata. */
+  const TIMELINE_DEFAULT_VIEWPORT_HOURS = 12;
+  const TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1 = (24 / TIMELINE_DEFAULT_VIEWPORT_HOURS) * 100; // 200%
 
   const centerCurrentTime = useCallback(() => {
     if (!chartScrollRef.current) return;
     const container = chartScrollRef.current;
     const scrollWidth = container.scrollWidth;
     const clientWidth = container.clientWidth;
+    if (clientWidth <= 0 || scrollWidth <= clientWidth) return;
 
     if (currentTrackerDate === getTodayString()) {
       const chartWidth =
         scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX;
       const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
-      const targetScroll = timePos - (clientWidth * CURRENT_TIME_VIEW_OFFSET);
-      container.scrollLeft = Math.max(0, Math.min(targetScroll, scrollWidth - clientWidth));
+      // Centra `now` nel viewport (50%). Clamp: non superare inizio/fine giornata.
+      const targetScroll = timePos - clientWidth * 0.5;
+      const maxScroll = Math.max(0, scrollWidth - clientWidth);
+      container.scrollLeft = Math.max(0, Math.min(targetScroll, maxScroll));
     } else {
-      container.scrollLeft = scrollWidth;
+      container.scrollLeft = 0;
     }
   }, [currentTime, currentTrackerDate, zoomLevel]);
 
@@ -2267,7 +2269,7 @@ export default function SalaComandi() {
       const currentDist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
       const scale = currentDist / initialPinchDistance.current;
       let newZoom = initialZoomLevel.current * scale;
-      newZoom = Math.max(0.45, Math.min(1.5, newZoom));
+      newZoom = Math.max(0.5, Math.min(1.5, newZoom));
       setZoomLevel(newZoom);
     }
   };
@@ -2646,17 +2648,13 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (currentTrackerDate !== getTodayString()) {
-      setZoomLevel(0.45);
+      // Giorno passato: mostra l'intera giornata (~24h).
+      setZoomLevel(0.5);
       return;
     }
-    const pointNodes = activeNodes.filter(n => n.type !== 'work');
-    if (pointNodes.length === 0) return;
-    const times = pointNodes.map(n => n.time).sort((a, b) => a - b);
-    let minGap = 24;
-    for (let i = 1; i < times.length; i++) minGap = Math.min(minGap, times[i] - times[i - 1]);
-    const suggested = minGap < 0.35 ? 1.5 : minGap < 0.6 ? 1.3 : minGap < 1 ? 1.1 : minGap < 2 ? 0.9 : 0.65;
-    setZoomLevel(prev => Math.max(0.45, Math.min(1.5, suggested)));
-  }, [simulationMode, simulationNodes, allNodes, currentTrackerDate]);
+    // Oggi: viewport fisso 12h (zoom 1), senza auto-zoom basato sui gap nodi.
+    setZoomLevel(1);
+  }, [simulationMode, currentTrackerDate]);
 
   useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
@@ -5247,10 +5245,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const chartDataCommitted =
     Array.isArray(energySimulation?.chartData) && energySimulation.chartData.length > 0
       ? energySimulation.chartData
-      : EMPTY_ENERGY_CHART_DATA;
+      : createEmptyEnergyChartData();
   // Preview strip: solo se ha punti reali. Mai [] (?? non distingue array vuoto da assente).
+  // Richiede ≥2 punti: un solo punto = Recharts disegna solo il pallino, non la linea.
   const chartData =
-    Array.isArray(timelineStripPreview?.chartData) && timelineStripPreview.chartData.length > 0
+    Array.isArray(timelineStripPreview?.chartData) && timelineStripPreview.chartData.length >= 2
       ? timelineStripPreview.chartData
       : chartDataCommitted;
 
@@ -5916,49 +5915,92 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   })();
   const piccoMattutinoRiserva = 85;
 
-  const renderDataWithSegments = renderData.map(d => {
-    const h = safeNum(d.time ?? d.hour);
-    const riservaFisica = h < wakeHourForRiserva
-      ? Math.min(100, 25 + (h / Math.max(0.1, wakeHourForRiserva)) * (piccoMattutinoRiserva - 25))
-      : Math.max(0, piccoMattutinoRiserva - (h - wakeHourForRiserva) * 3.5);
-    const energy = Number.isFinite(Number(d.energy)) ? Number(d.energy) : 0;
-    const glicemia = Number.isFinite(Number(d.glicemia)) ? Number(d.glicemia) : 85;
-    const idratazione = Number.isFinite(Number(d.idratazione)) ? Number(d.idratazione) : 100;
-    const cortisolo = Number.isFinite(Number(d.cortisolo)) ? Number(d.cortisolo) : 25;
-    const digestione = Number.isFinite(Number(d.digestione)) ? Number(d.digestione) : 0;
-    const neuro = Number.isFinite(Number(d.neuro)) ? Number(d.neuro) : 40;
-    return {
-    ...d,
-    time: h,
-    hour: h,
-    energy,
-    glicemia,
-    idratazione,
-    cortisolo,
-    digestione,
-    neuro,
-    riservaFisica: Number.isFinite(riservaFisica) ? riservaFisica : 0,
-    anabolicScore: getAnabolicAtTime(anabolicCurve, d.time),
-    cortisolScore: getCortisolAtTime(cortisolCurve, d.time),
-    // Past/Future: numeri finiti (mai NaN); null solo fuori dal segmento temporale.
-    energyPast: h <= displayTime ? energy : null,
-    energyFuture: h >= displayTime ? energy : null,
-    kcalPast: h <= displayTime ? scale(energy) : null,
-    kcalFuture: h >= displayTime ? scale(energy) : null,
-    // Chiave continua per chartUnit === 'kcal' (evita dipendenza solo da *Past)
-    kcalValue: scale(energy) ?? 0,
-    glicemiaPast: h <= displayTime ? glicemia : null,
-    glicemiaFuture: h >= displayTime ? glicemia : null,
-    idratazionePast: h <= displayTime ? idratazione : null,
-    idratazioneFuture: h >= displayTime ? idratazione : null,
-    cortisoloPast: h <= displayTime ? cortisolo : null,
-    cortisoloFuture: h >= displayTime ? cortisolo : null,
-    digestionePast: h <= displayTime ? digestione : null,
-    digestioneFuture: h >= displayTime ? digestione : null,
-    neuroPast: h <= displayTime ? neuro : null,
-    neuroFuture: h >= displayTime ? neuro : null
-  };
-  });
+  const renderDataWithSegments = (() => {
+    const mapped = renderData.map((d, index) => {
+      const hourRaw = d?.time ?? d?.hour ?? index;
+      const hNum = Number(hourRaw);
+      const h = (typeof hNum === 'number' && !Number.isNaN(hNum) && Number.isFinite(hNum)) ? hNum : index;
+      const toNum = (val, fallback) => {
+        if (typeof val === 'number' && !Number.isNaN(val) && Number.isFinite(val)) return val;
+        if (val == null || val === '') return fallback;
+        const n = Number(val);
+        return (typeof n === 'number' && !Number.isNaN(n) && Number.isFinite(n)) ? n : fallback;
+      };
+      const riservaRaw = h < wakeHourForRiserva
+        ? Math.min(100, 25 + (h / Math.max(0.1, wakeHourForRiserva)) * (piccoMattutinoRiserva - 25))
+        : Math.max(0, piccoMattutinoRiserva - (h - wakeHourForRiserva) * 3.5);
+      const energy = toNum(d.energy, 0);
+      const glicemia = toNum(d.glicemia, 85);
+      const idratazione = toNum(d.idratazione, 100);
+      const cortisolo = toNum(d.cortisolo, 25);
+      const digestione = toNum(d.digestione, 0);
+      const neuro = toNum(d.neuro, 40);
+      const kcalValue = toNum(scale(energy), 0);
+      const riservaFisica = toNum(riservaRaw, 0);
+      // Cerniera now: h === displayTime → past E future valorizzati (niente gap sotto il pallino)
+      const atHinge = Math.abs(h - displayTime) < 1e-4;
+      const mkPast = (val) => (h <= displayTime || atHinge ? val : null);
+      const mkFuture = (val) => (h >= displayTime || atHinge ? val : null);
+      return {
+        time: h,
+        hour: h,
+        energy,
+        glicemia,
+        idratazione,
+        cortisolo,
+        digestione,
+        neuro,
+        idealEnergy: toNum(d.idealEnergy, 70),
+        riservaFisica,
+        anabolicScore: toNum(getAnabolicAtTime(anabolicCurve, h), 0),
+        cortisolScore: toNum(getCortisolAtTime(cortisolCurve, h), 0),
+        energyPast: mkPast(energy),
+        energyFuture: mkFuture(energy),
+        kcalPast: mkPast(kcalValue),
+        kcalFuture: mkFuture(kcalValue),
+        kcalValue,
+        kcal: kcalValue,
+        glicemiaPast: mkPast(glicemia),
+        glicemiaFuture: mkFuture(glicemia),
+        idratazionePast: mkPast(idratazione),
+        idratazioneFuture: mkFuture(idratazione),
+        cortisoloPast: mkPast(cortisolo),
+        cortisoloFuture: mkFuture(cortisolo),
+        digestionePast: mkPast(digestione),
+        digestioneFuture: mkFuture(digestione),
+        neuroPast: mkPast(neuro),
+        neuroFuture: mkFuture(neuro),
+      };
+    });
+
+    // Cerniera esplicita: il punto più vicino a displayTime ha past = future = value
+    if (mapped.length > 0) {
+      let hingeIdx = mapped.findIndex((p) => Math.abs(p.hour - displayTime) < 1e-4);
+      if (hingeIdx < 0) {
+        hingeIdx = mapped.reduce((best, p, i) => (
+          Math.abs(p.hour - displayTime) < Math.abs(mapped[best].hour - displayTime) ? i : best
+        ), 0);
+      }
+      const hinge = mapped[hingeIdx];
+      const hingePairs = [
+        ['energy', 'energyPast', 'energyFuture'],
+        ['glicemia', 'glicemiaPast', 'glicemiaFuture'],
+        ['idratazione', 'idratazionePast', 'idratazioneFuture'],
+        ['cortisolo', 'cortisoloPast', 'cortisoloFuture'],
+        ['digestione', 'digestionePast', 'digestioneFuture'],
+        ['neuro', 'neuroPast', 'neuroFuture'],
+        ['kcalValue', 'kcalPast', 'kcalFuture'],
+      ];
+      for (const [valueKey, pastKey, futureKey] of hingePairs) {
+        const val = hinge[valueKey];
+        if (typeof val === 'number' && !Number.isNaN(val) && Number.isFinite(val)) {
+          hinge[pastKey] = val;
+          hinge[futureKey] = val;
+        }
+      }
+    }
+    return mapped;
+  })();
 
   const mealPieData = useMemo(() => {
     // Palette Sci-Fi per distinguere i vari pasti in modo univoco
@@ -6177,7 +6219,74 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       });
   }, [mealPieData, activeDialMode, userTargets?.prot, userTargets?.carb, userTargets?.fat, userTargets?.fatTotal]);
 
-  const finalChartData = renderDataWithSegments;
+  const finalChartData =
+    Array.isArray(renderDataWithSegments) && renderDataWithSegments.length >= 2
+      ? renderDataWithSegments
+      : (() => {
+          const now = displayTime;
+          const mapped = createEmptyEnergyChartData().map((d, index) => {
+            const h = Number(d.hour ?? d.time ?? index);
+            const glicemia = Number(d.glicemia) || 85;
+            const idratazione = Number(d.idratazione) || 100;
+            const cortisolo = Number(d.cortisolo) || 25;
+            const digestione = Number(d.digestione) || 0;
+            const neuro = Number(d.neuro) || 40;
+            const energy = Number(d.energy) || 35;
+            const atHinge = Math.abs(h - now) < 1e-4;
+            const mkPast = (val) => (h <= now || atHinge ? val : null);
+            const mkFuture = (val) => (h >= now || atHinge ? val : null);
+            return {
+              ...d,
+              time: h,
+              hour: h,
+              energy,
+              glicemia,
+              idratazione,
+              cortisolo,
+              digestione,
+              neuro,
+              energyPast: mkPast(energy),
+              energyFuture: mkFuture(energy),
+              glicemiaPast: mkPast(glicemia),
+              glicemiaFuture: mkFuture(glicemia),
+              idratazionePast: mkPast(idratazione),
+              idratazioneFuture: mkFuture(idratazione),
+              cortisoloPast: mkPast(cortisolo),
+              cortisoloFuture: mkFuture(cortisolo),
+              digestionePast: mkPast(digestione),
+              digestioneFuture: mkFuture(digestione),
+              neuroPast: mkPast(neuro),
+              neuroFuture: mkFuture(neuro),
+              kcalPast: null,
+              kcalFuture: null,
+              kcalValue: 0,
+            };
+          });
+          if (mapped.length > 0) {
+            let hingeIdx = mapped.findIndex((p) => Math.abs(p.hour - now) < 1e-4);
+            if (hingeIdx < 0) {
+              hingeIdx = mapped.reduce((best, p, i) => (
+                Math.abs(p.hour - now) < Math.abs(mapped[best].hour - now) ? i : best
+              ), 0);
+            }
+            const hinge = mapped[hingeIdx];
+            for (const [vk, pk, fk] of [
+              ['energy', 'energyPast', 'energyFuture'],
+              ['glicemia', 'glicemiaPast', 'glicemiaFuture'],
+              ['idratazione', 'idratazionePast', 'idratazioneFuture'],
+              ['cortisolo', 'cortisoloPast', 'cortisoloFuture'],
+              ['digestione', 'digestionePast', 'digestioneFuture'],
+              ['neuro', 'neuroPast', 'neuroFuture'],
+            ]) {
+              const val = hinge[vk];
+              if (typeof val === 'number' && Number.isFinite(val)) {
+                hinge[pk] = val;
+                hinge[fk] = val;
+              }
+            }
+          }
+          return mapped;
+        })();
   const mainChartData = chartUnit === 'calorieTimeline' ? safeCalorieTimelineData : finalChartData;
   const dotYCalorieTimeline = (() => {
     if (chartUnit !== 'calorieTimeline') return null;
@@ -7904,6 +8013,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setWorkoutEndTime,
   ]);
 
+  const handleOpenPlanFromChat = useCallback(() => {
+    returnToChatAfterQuickActionRef.current = true;
+    closeChat();
+    if (isDiabetesAppMode) {
+      openTherapyPlan();
+      return;
+    }
+    openTrainingPlan();
+  }, [closeChat, isDiabetesAppMode, openTherapyPlan, openTrainingPlan]);
+
   const handleChatManualShortcut = useCallback(
     (actionId) => {
       if (actionId === 'menu') {
@@ -8386,22 +8505,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </div>
           <div style={{ position: 'relative', flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column', transform: 'none' }}>
             <div className="zoom-vertical-bar" aria-label="Controlli zoom">
-              <button
-                type="button"
-                className="zoom-btn-vertical"
-                onClick={openTimelineQuickAddAtCenter}
-                title="Aggiungi sulla timeline (ora centrale)"
-                aria-label="Aggiungi sulla timeline"
-                style={{
-                  background: 'linear-gradient(145deg, rgba(0,229,255,0.35), rgba(0,120,140,0.45))',
-                  borderColor: 'rgba(0,229,255,0.45)',
-                }}
-              >
-                ⊕
-              </button>
               <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-              <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (30%)">🎯</button>
-              <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.45))} title="Riduci">−</button>
+              <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (12 ore)">🎯</button>
+              <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.5))} title="Riduci">−</button>
             </div>
             <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 200, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
             <div
@@ -8415,8 +8521,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
               style={{
                 flexShrink: 0,
-                width: `${220 * zoomLevel}%`,
-                minWidth: `${800 * zoomLevel}px`,
+                width: `${TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1 * zoomLevel}%`,
+                minWidth: `${Math.round(960 * zoomLevel)}px`,
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
@@ -8498,8 +8604,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 </Suspense>
               </div>
             </div>
-            {/* SPACER PER PULSANTIERA: permette di scrollare oltre la fine del grafico */}
-            <div style={{ width: '80px', flexShrink: 0 }} />
+            {/* Spacer scroll: margine destro senza pulsantiera laterale */}
+            <div style={{ width: '24px', flexShrink: 0 }} />
           </div>
         </div>
         </div>
@@ -9805,6 +9911,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onManualShortcut={handleChatManualShortcut}
             onOpenManualView={handleOpenManualMealFromChat}
             onOpenActivityView={handleOpenActivityFromChat}
+            onOpenPlanView={handleOpenPlanFromChat}
+            isDiabetesAppMode={isDiabetesAppMode}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
             quickStripItems={chatQuickStripItems}

@@ -307,14 +307,15 @@ function responseCurve(t, peakTime, duration) {
 
 /** Anti-NaN per punti timeline fisiologica (Recharts interrompe la Line su un solo NaN). */
 function safePhysNum(val, fallback = 0) {
+  if (typeof val === 'number' && !Number.isNaN(val) && Number.isFinite(val)) return val;
   const n = Number(val);
   return Number.isFinite(n) ? n : fallback;
 }
 
 function sanitizePhysiologyChartPoint(point, hourFallback = 0) {
   const h = safePhysNum(point?.time ?? point?.hour, hourFallback);
+  // Oggetto pulito senza spread di `point` (evita NaN residui su chiavi usate dal chart).
   return {
-    ...point,
     time: h,
     hour: h,
     energy: Math.max(0, Math.min(100, safePhysNum(point?.energy, 0))),

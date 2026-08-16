@@ -11,7 +11,7 @@ export default function BottomChrome({
 }) {
   const leftItems = (BOTTOM_NAV_ITEMS || []).filter((t) => t.id === 'oggi' || t.id === 'analisi');
   const rightItems = (BOTTOM_NAV_ITEMS || []).filter(
-    (t) => t.id === 'bussola' || t.id === 'pianifica' || t.id === 'menu',
+    (t) => t.id === 'bussola' || t.id === 'menu' || t.id === 'pianifica',
   );
 
   const renderTab = (t) => {
