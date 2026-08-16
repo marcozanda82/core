@@ -4,7 +4,7 @@
  * Stati (priorità):
  * - thinking → /pensatore2.png + /pensatore2animazione.mp4  (consigli, strategia, NLP / elaborazione)
  * - coding   → /Hacker4.png + /Hacker4animazione.mp4       (debug, errori, loading, sistema)
- * - kitchen  → /Chef2.png       (nutrizione, pasti, McDrive)
+ * - kitchen  → /Chef2.png + /Chef2animazione.mp4           (nutrizione, pasti, McDrive / cibo)
  * - fitness  → /Trainer3.png + /Trainer3animazione.mp4     (workout / giorno ON)
  * - coffee   → /caffe3.png + /caffe3animazione.mp4         (stimolante / caffè)
  * - default  → /pensatore2.png  (chat neutra) — Health Score = cellule in header
@@ -32,6 +32,10 @@ export const AVATAR_MOOD = Object.freeze({
   THINKING: 'thinking',
   CODING: 'coding',
   KITCHEN: 'kitchen',
+  /** Alias semantici per cucina/cibo (stesso asset di KITCHEN). */
+  CHEF: 'kitchen',
+  COOKING: 'kitchen',
+  FOOD: 'kitchen',
   FITNESS: 'fitness',
   COFFEE: 'coffee',
 });
@@ -48,6 +52,7 @@ export const AVATAR_MOOD_SRC = Object.freeze({
 export const AVATAR_MOOD_VIDEO = Object.freeze({
   [AVATAR_MOOD.THINKING]: '/pensatore2animazione.mp4',
   [AVATAR_MOOD.CODING]: '/Hacker4animazione.mp4',
+  [AVATAR_MOOD.KITCHEN]: '/Chef2animazione.mp4',
   [AVATAR_MOOD.FITNESS]: '/Trainer3animazione.mp4',
   [AVATAR_MOOD.COFFEE]: '/caffe3animazione.mp4',
 });
