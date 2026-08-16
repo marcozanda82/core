@@ -138,6 +138,7 @@ export default function UniversalSearchModal({
 
   const handleSelect = (result) => {
     onSelectFood?.(result);
+    clearSearch();
   };
 
   const handleManualFieldChange = (field) => (event) => {
@@ -191,6 +192,7 @@ export default function UniversalSearchModal({
       });
       setIsManualEntryOpen(false);
       setManualForm(EMPTY_MANUAL_FORM);
+      clearSearch();
     } catch {
       setManualError('Salvataggio non riuscito. Riprova.');
     } finally {
@@ -385,7 +387,7 @@ export default function UniversalSearchModal({
           <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
             Digita e premi Invio (o l&apos;icona cerca) per cercare alimenti, ricette e Kentu DB
           </p>
-        ) : results.length === 0 ? (
+        ) : !isSearching && results.length === 0 ? (
           <div className="space-y-3">
             <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
               Nessun risultato per &quot;{query.trim()}&quot;

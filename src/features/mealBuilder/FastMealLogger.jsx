@@ -296,6 +296,7 @@ function FastMealLoggerContent({
   const [viewMode, setViewMode] = useState('expanded');
   const [isBuilderHeaderCollapsed, setIsBuilderHeaderCollapsed] = useState(false);
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
+  const [vetrinaCommittedQuery, setVetrinaCommittedQuery] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
   const [activeTab, setActiveTab] = useState(() =>
@@ -397,6 +398,11 @@ function FastMealLoggerContent({
     [],
   );
 
+  const resetVetrinaSearchBar = useCallback(() => {
+    setVetrinaSearchQuery('');
+    setVetrinaCommittedQuery('');
+  }, []);
+
   const handleFoodSelection = async (food) => {
     if (!food) return;
 
@@ -405,6 +411,7 @@ function FastMealLoggerContent({
       if (!payload) return;
       addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
       setIsSearchModalOpen(false);
+      resetVetrinaSearchBar();
       notifyItemAdded(payload.desc);
       return;
     }
@@ -423,6 +430,7 @@ function FastMealLoggerContent({
     const draftPayload = formatSearchResultForDraft(food);
     addOrIncrementDraftFood(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
     setIsSearchModalOpen(false);
+    resetVetrinaSearchBar();
     notifyItemAdded(
       String(food?.desc || food?.name || food?.row?.desc || 'Alimento').trim(),
     );
@@ -437,6 +445,7 @@ function FastMealLoggerContent({
       for (let i = 0; i < portionCount; i += 1) {
         addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
       }
+      resetVetrinaSearchBar();
       notifyItemAdded(payload.desc);
       return;
     }
@@ -456,6 +465,7 @@ function FastMealLoggerContent({
     for (let i = 0; i < portionCount; i += 1) {
       addOrIncrementDraftFood(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
     }
+    resetVetrinaSearchBar();
     notifyItemAdded(
       String(food?.desc || food?.name || food?.row?.desc || 'Alimento').trim(),
     );
@@ -710,7 +720,6 @@ function FastMealLoggerContent({
   );
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
-  const [vetrinaCommittedQuery, setVetrinaCommittedQuery] = useState('');
   /** Ricerca DB solo dopo Invio: niente scan live su OFF/CREA. */
   const vetrinaQuery = vetrinaCommittedQuery.trim();
   const isVetrinaSearching = vetrinaQuery.length > 0;

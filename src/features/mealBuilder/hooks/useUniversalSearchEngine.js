@@ -133,9 +133,39 @@ function mapCatalogHitToResult(hit, row, legacySource, dbSource) {
   });
 }
 
+/** Sotto questa soglia il risultato è scartato (zero tolleranza su match sparsi). */
+export const MIN_RELEVANCE_SCORE = 300;
+
+/**
+ * Match “solido” di una singola parola della query su name/brand.
+ * Parole corte (≤3): solo token esatto o prefisso molto stretto (pan→pane).
+ * Parole lunghe: token esatto, prefisso token, o substring della frase.
+ */
+function wordHasSolidMatch(field, fieldWords, word) {
+  const w = String(word || '').trim();
+  if (!w || !field) return false;
+  if (field === w) return true;
+  if (fieldWords.includes(w)) return true;
+
+  if (w.length <= 2) return false;
+
+  if (w.length <= 3) {
+    return fieldWords.some(
+      (fw) => fw === w || (fw.startsWith(w) && fw.length <= w.length + 2),
+    );
+  }
+
+  if (fieldWords.some((fw) => fw === w || fw.startsWith(w))) return true;
+  // Substring solo se non è un frammento dentro un'altra parola casuale:
+  // richiedi confini (inizio / spazio prima).
+  if (field.startsWith(w) || field.includes(` ${w}`)) return true;
+  return false;
+}
+
 /**
  * Pertinenza rispetto a query su name + brand.
- * Exact ≫ tutte le parole ≫ prefisso / starts-with.
+ * Exact / frase ≫ tutte le parole-chiave ≫ prefissi solidi.
+ * Match sparsi o solo su una parola di una query multi-termine → 0.
  */
 export function computeRelevanceScore(item, query) {
   const q = normalizeSearchText(query);
@@ -146,46 +176,74 @@ export function computeRelevanceScore(item, query) {
   const fields = [name, brand, [name, brand].filter(Boolean).join(' ')].filter(Boolean);
   if (fields.length === 0) return 0;
 
-  const qWords = q.split(' ').filter(Boolean);
-  let best = 0;
+  const qWords = q.split(' ').filter((w) => w.length >= 2);
+  if (qWords.length === 0) return 0;
 
   if (item?.matchType === 'barcode') {
-    best = Math.max(best, 1100);
+    return 1100;
   }
+
+  let best = 0;
 
   for (let i = 0; i < fields.length; i += 1) {
     const field = fields[i];
     const fieldWords = field.split(' ').filter(Boolean);
+    if (fieldWords.length === 0) continue;
 
-    if (field === q) {
-      best = Math.max(best, 1000);
+    // Gate: ogni parola della query deve avere un match solido (zero tolleranza).
+    const allWordsSolid = qWords.every((w) => wordHasSolidMatch(field, fieldWords, w));
+    if (!allWordsSolid) {
       continue;
     }
-    if (field.startsWith(`${q} `) || field.startsWith(q)) {
-      best = Math.max(best, 850);
+
+    let score = 0;
+
+    if (field === q) {
+      score = 1000;
+    } else if (field.startsWith(`${q} `) || field.startsWith(q)) {
+      score = 920;
+    } else if (field.includes(` ${q} `) || field.endsWith(` ${q}`) || field.includes(q)) {
+      // Frase intera contenuta (es. "biscotti pan gocciole classici")
+      score = 840;
+    } else {
+      const allExactTokens = qWords.every((w) => fieldWords.includes(w));
+      const startsWithFirst = fieldWords[0] === qWords[0] || fieldWords[0]?.startsWith(qWords[0]);
+
+      if (allExactTokens && startsWithFirst) {
+        score = 780;
+      } else if (allExactTokens) {
+        score = 720;
+      } else if (startsWithFirst) {
+        // Tutte solide + nome inizia con la prima keyword
+        score = 640;
+      } else {
+        // Tutte solide ma ordine/posizione più deboli
+        score = 520;
+      }
+
+      // Query a una sola parola: alza se token iniziale esatto
+      if (qWords.length === 1 && fieldWords[0] === qWords[0]) {
+        score = Math.max(score, 800);
+      }
     }
-    if (qWords.length > 1 && qWords.every((w) => fieldWords.includes(w))) {
-      best = Math.max(best, 700);
-    } else if (qWords.length > 1 && qWords.every((w) => field.includes(w))) {
-      best = Math.max(best, 620);
-    } else if (qWords.every((w) => fieldWords.some((fw) => fw.startsWith(w)))) {
-      best = Math.max(best, 520);
+
+    // Bonus brand se la query compare anche lì (non inventa score da solo).
+    if (brand && score > 0 && (brand === q || brand.includes(q) || qWords.every((w) => brand.includes(w)))) {
+      score += 25;
     }
-    if (fieldWords[0] && qWords[0] && fieldWords[0].startsWith(qWords[0])) {
-      best = Math.max(best, 420);
-    }
-    if (field.includes(q)) {
-      best = Math.max(best, 350);
+
+    best = Math.max(best, score);
+  }
+
+  // Tie-break minuscolo SOLO se c'è già un match keyword solido — mai creare score da fuzzy.
+  if (best > 0) {
+    const lexical = Number(item?.textScore ?? item?.matchScore ?? 0);
+    if (Number.isFinite(lexical) && lexical > 0) {
+      best += Math.min(15, Math.round(lexical * 8));
     }
   }
 
-  // Tie-break leggero da score lessicale del motore di matching.
-  const lexical = Number(item?.textScore ?? item?.matchScore ?? 0);
-  if (Number.isFinite(lexical) && lexical > 0) {
-    best = Math.max(best, Math.round(lexical * 100));
-  }
-
-  return best;
+  return best >= MIN_RELEVANCE_SCORE ? best : 0;
 }
 
 function dedupeKeyForResult(item) {
@@ -198,6 +256,7 @@ function dedupeKeyForResult(item) {
 
 /**
  * Unisce i hit dei vari DB, ordina per relevanceScore, tie-break per fonte.
+ * Esclude categoricamente score 0 / sotto soglia (niente riempimento con cibi casuali).
  */
 export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESULT_CAP) {
   const list = Array.isArray(items) ? items : [];
@@ -207,6 +266,9 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
     const item = list[i];
     if (!item) continue;
     const relevanceScore = computeRelevanceScore(item, query);
+    if (!Number.isFinite(relevanceScore) || relevanceScore < MIN_RELEVANCE_SCORE) {
+      continue;
+    }
     const scored = { ...item, relevanceScore };
     const key = dedupeKeyForResult(scored);
     const prev = bestByKey.get(key);
@@ -224,6 +286,7 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
   }
 
   return Array.from(bestByKey.values())
+    .filter((item) => Number(item.relevanceScore) >= MIN_RELEVANCE_SCORE)
     .sort((a, b) => {
       const scoreA = Number(a.relevanceScore) || 0;
       const scoreB = Number(b.relevanceScore) || 0;
@@ -241,7 +304,9 @@ function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
     limit = KENTU_IT_SEARCH_LIMIT,
     legacySource = 'kentu_it',
     dbSource = FOOD_DB_SOURCE.KENTU_IT,
-    enableFuzzy = dbSource !== FOOD_DB_SOURCE.OFF,
+    // Fuzzy spento: i match “vicini” sparsi vengono comunque azzerati dallo score,
+    // ma evitiamo di scaricare junk irrilevante nei pool.
+    enableFuzzy = false,
     requireUsableKcal = dbSource === FOOD_DB_SOURCE.OFF,
   } = options;
   const detailed = searchFoodsDetailed(safeDb, q, {
@@ -462,6 +527,8 @@ function scheduleSearchWork(work) {
 
 /**
  * Ricerca esterna / unificata su query *committata* (Invio), non live.
+ * isSearching è true non appena la query committata non coincide ancora coi risultati risolti
+ * (evita il flash "Nessun risultato" prima che l'effect parta).
  */
 export function useCommittedFoodSearch(committedQuery, personalDb, options = {}) {
   const {
@@ -470,21 +537,26 @@ export function useCommittedFoodSearch(committedQuery, personalDb, options = {})
     offDb = null,
     searchGlobal = true,
   } = options;
+  const trimmed = String(committedQuery || '').trim();
   const [results, setResults] = useState([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [resolvedQuery, setResolvedQuery] = useState('');
+  const [inFlight, setInFlight] = useState(false);
   const genRef = useRef(0);
 
+  const isSearching = Boolean(trimmed) && (inFlight || resolvedQuery !== trimmed);
+  const safeResults = !trimmed || isSearching || resolvedQuery !== trimmed ? [] : results;
+
   useEffect(() => {
-    const trimmed = String(committedQuery || '').trim();
     const gen = ++genRef.current;
 
     if (!trimmed) {
       setResults([]);
-      setIsSearching(false);
+      setResolvedQuery('');
+      setInFlight(false);
       return undefined;
     }
 
-    setIsSearching(true);
+    setInFlight(true);
     let cancelled = false;
 
     void scheduleSearchWork(() =>
@@ -497,21 +569,22 @@ export function useCommittedFoodSearch(committedQuery, personalDb, options = {})
       }),
     ).then((next) => {
       if (cancelled || gen !== genRef.current) return;
-      setResults(next);
-      setIsSearching(false);
+      setResults(Array.isArray(next) ? next : []);
+      setResolvedQuery(trimmed);
+      setInFlight(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [committedQuery, personalDb, kentuItDb, globalDb, offDb, searchGlobal]);
+  }, [trimmed, personalDb, kentuItDb, globalDb, offDb, searchGlobal]);
 
   return {
-    results,
+    results: safeResults,
     isSearching,
     /** @deprecated alias compat */
     isSearchingExternal: isSearching,
-    externalResults: results,
+    externalResults: safeResults,
   };
 }
 
