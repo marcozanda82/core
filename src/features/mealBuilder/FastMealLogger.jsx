@@ -61,9 +61,7 @@ import {
 } from '../../foodDbSource';
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
 import {
-  searchPersonalDb,
-  searchKentuItDb,
-  useDebouncedExternalFoodSearch,
+  useCommittedFoodSearch,
   SEARCH_SOURCE_BADGE,
 } from './hooks/useUniversalSearchEngine';
 import { decimalToTimeStr } from '../../coreEngine';
@@ -552,6 +550,7 @@ function FastMealLoggerContent({
         enrichmentOffRef.current = offEntry;
 
         const productName = String(offEntry?.desc || offEntry?.name || 'Prodotto').trim();
+        // Mai passare offDb (centinaia di k) all'AI: solo catalogo globale/USDA già filtrato.
         const usdaDb = globalDb ?? masterDb;
 
         setEnrichmentSession({
@@ -571,7 +570,7 @@ function FastMealLoggerContent({
               if (!prev) return prev;
               return {
                 ...prev,
-                matches: Array.isArray(matches) ? matches : [],
+                matches: Array.isArray(matches) ? matches.slice(0, 12) : [],
                 isLoading: false,
                 error: '',
               };
@@ -711,8 +710,14 @@ function FastMealLoggerContent({
   );
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
-  const vetrinaQuery = vetrinaSearchQuery.trim();
+  const [vetrinaCommittedQuery, setVetrinaCommittedQuery] = useState('');
+  /** Ricerca DB solo dopo Invio: niente scan live su OFF/CREA. */
+  const vetrinaQuery = vetrinaCommittedQuery.trim();
   const isVetrinaSearching = vetrinaQuery.length > 0;
+
+  const submitVetrinaSearch = useCallback(() => {
+    setVetrinaCommittedQuery(vetrinaSearchQuery.trim());
+  }, [vetrinaSearchQuery]);
 
   const filteredQuickFoods = useMemo(
     () =>
@@ -742,20 +747,15 @@ function FastMealLoggerContent({
     [savedRecipes, vetrinaQuery],
   );
 
-  const vetrinaDbSearchResults = useMemo(() => {
-    if (!isVetrinaSearching) return [];
-    const personalResults = searchPersonalDb(personalDb, vetrinaQuery);
-    const creaResults = searchKentuItDb(vetrinaQuery, kentuItDb, personalResults);
-    return [...personalResults, ...creaResults].sort(compareProvenancePriority);
-  }, [personalDb, kentuItDb, vetrinaQuery, isVetrinaSearching]);
-
-  const { externalResults: vetrinaExternalResults, isSearchingExternal } =
-    useDebouncedExternalFoodSearch(
-      isVetrinaSearching ? vetrinaQuery : '',
-      personalDb,
-      globalDb ?? masterDb,
-      { kentuItDb, offDb, searchGlobal: true },
-    );
+  const {
+    results: vetrinaUnifiedResults,
+    isSearching: isVetrinaDbSearching,
+  } = useCommittedFoodSearch(vetrinaQuery, personalDb, {
+    kentuItDb,
+    globalDb: globalDb ?? masterDb,
+    offDb,
+    searchGlobal: true,
+  });
 
   const quickFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
@@ -769,14 +769,14 @@ function FastMealLoggerContent({
 
   const extraDbSearchResults = useMemo(
     () =>
-      vetrinaDbSearchResults.filter((result) => {
+      vetrinaUnifiedResults.filter((result) => {
         const matchKey = result._source === 'personal' || result._source === 'recipe'
           ? `db:${String(result.key || result.id).trim()}`
           : null;
         if (matchKey && quickFoodIdentityKeys.has(matchKey)) return false;
         return true;
       }),
-    [vetrinaDbSearchResults, quickFoodIdentityKeys],
+    [vetrinaUnifiedResults, quickFoodIdentityKeys],
   );
 
   const unifiedSearchGridItems = useMemo(() => {
@@ -789,14 +789,6 @@ function FastMealLoggerContent({
     });
 
     extraDbSearchResults.forEach((result) => {
-      items.push({
-        kind: 'search',
-        key: `search-${result._source}-${result.id}`,
-        data: result,
-      });
-    });
-
-    vetrinaExternalResults.forEach((result) => {
       items.push({
         kind: 'search',
         key: `search-${result._source}-${result.id}`,
@@ -828,22 +820,15 @@ function FastMealLoggerContent({
       });
     });
 
-    return items.sort((a, b) => {
-      const provenanceA = a.kind === 'predictive'
-        ? resolveProvenanceFromTile(a.data, personalDb)
-        : resolveProvenanceFromSearchResult(a.data);
-      const provenanceB = b.kind === 'predictive'
-        ? resolveProvenanceFromTile(b.data, personalDb)
-        : resolveProvenanceFromSearchResult(b.data);
-      return compareProvenancePriority({ provenance: provenanceA }, { provenance: provenanceB });
-    });
+    // Predictive in cima; risultati DB già ordinati per relevanceScore.
+    const predictive = items.filter((item) => item.kind === 'predictive');
+    const searchItems = items.filter((item) => item.kind !== 'predictive');
+    return [...predictive, ...searchItems];
   }, [
     isVetrinaSearching,
     filteredQuickFoods,
     extraDbSearchResults,
-    vetrinaExternalResults,
     filteredSavedRecipes,
-    personalDb,
   ]);
 
   const handleSavedRecipeAdd = (recipe) => {
@@ -1359,7 +1344,13 @@ function FastMealLoggerContent({
           >
             <div className="space-y-3 px-0.5">
               <div>
-                <div className="relative">
+                <form
+                  className="relative"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    submitVetrinaSearch();
+                  }}
+                >
                   <Search
                     className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
                     aria-hidden
@@ -1367,26 +1358,45 @@ function FastMealLoggerContent({
                   <input
                     type="search"
                     value={vetrinaSearchQuery}
-                    onChange={(event) => setVetrinaSearchQuery(event.target.value)}
-                    placeholder="Cerca alimento o ricetta..."
-                    className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      setVetrinaSearchQuery(next);
+                      if (!next.trim()) setVetrinaCommittedQuery('');
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        submitVetrinaSearch();
+                      }
+                    }}
+                    enterKeyHint="search"
+                    placeholder="Cerca alimento o ricetta... (Invio)"
+                    className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-24 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setIsSearchModalOpen(true)}
-                    aria-label="Ricerca avanzata Kentu DB"
-                    title="Ricerca avanzata"
-                    className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
-                  >
-                    <ScanBarcode className="h-4 w-4" />
-                  </button>
-                </div>
+                  <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+                    <button
+                      type="submit"
+                      aria-label="Cerca"
+                      title="Cerca"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-cyan-300 transition-all hover:border-cyan-500/40 hover:text-cyan-200 active:scale-95"
+                    >
+                      <Search className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsSearchModalOpen(true)}
+                      aria-label="Ricerca avanzata Kentu DB"
+                      title="Ricerca avanzata"
+                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
+                    >
+                      <ScanBarcode className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
                 <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
                   {isVetrinaSearching
-                    ? vetrinaExternalResults.length > 0
-                      ? 'Ricerca globale · C > 🇮🇹 > 🌐'
-                      : 'Ricerca · personale, CREA, Italia e USDA'
-                    : 'Suggerimenti basati sulle tue abitudini reali'}
+                    ? 'Risultati ordinati per pertinenza · Invio per aggiornare'
+                    : 'Digita e premi Invio per cercare · Suggerimenti dalle tue abitudini'}
                 </p>
               </div>
 
@@ -1492,15 +1502,15 @@ function FastMealLoggerContent({
                     </div>
                   ) : null}
 
-                  {isSearchingExternal ? (
+                  {isVetrinaDbSearching ? (
                     <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-4 text-center text-xs text-slate-500">
                       <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
-                      Ricerca su Kentu DB...
+                      Ricerca in corso...
                     </p>
                   ) : null}
 
                   {unifiedSearchGridItems.length === 0
-                    && !isSearchingExternal ? (
+                    && !isVetrinaDbSearching ? (
                       <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
                         Nessun risultato per &quot;{vetrinaQuery}&quot;
                       </p>

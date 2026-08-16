@@ -124,12 +124,15 @@ export function getOffFusionPayload(offDb, query, options = {}) {
     includeUserHistory: false,
     limit,
     mode: 'search',
+    enableFuzzy: false,
   });
 
   const offNormalized = detailed.map((hit) => {
     const row = offDb[hit.id] || null;
     const name = String(row?.desc ?? row?.name ?? hit.name ?? '').trim();
     const brand = String(row?.brand || '').trim() || null;
+    const kcal = Number(row?.kcal ?? row?.cal);
+    if (!Number.isFinite(kcal) || kcal <= 0) return null;
 
     return {
       id: hit.id,
@@ -154,7 +157,7 @@ export function getOffFusionPayload(offDb, query, options = {}) {
       brand,
       _source: 'off',
     };
-  });
+  }).filter(Boolean);
 
   offNormalized.sort((a, b) => {
     const scoreA = Number(a.textScore ?? a.matchScore ?? 0);
@@ -164,8 +167,8 @@ export function getOffFusionPayload(offDb, query, options = {}) {
   });
 
   return {
-    offNormalized,
-    uiItems: offNormalized.map(offFusionItemToUi),
+    offNormalized: offNormalized.slice(0, limit),
+    uiItems: offNormalized.slice(0, limit).map(offFusionItemToUi),
   };
 }
 

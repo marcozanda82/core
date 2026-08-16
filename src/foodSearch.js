@@ -503,9 +503,12 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   const entries = Object.entries(foodDb);
   const recentFoodScores = includeUserHistory ? buildRecentFoodScoreMap() : new Map();
 
+  // Solo con storico utente serve il max usage; su OFF (~100k+) evita un pass O(n) inutile.
   let maxUsageInDb = 1;
-  for (let i = 0; i < entries.length; i += 1) {
-    maxUsageInDb = Math.max(maxUsageInDb, getFoodUsageCount(entries[i][1]));
+  if (includeUserHistory) {
+    for (let i = 0; i < entries.length; i += 1) {
+      maxUsageInDb = Math.max(maxUsageInDb, getFoodUsageCount(entries[i][1]));
+    }
   }
 
   for (let i = 0; i < entries.length; i += 1) {

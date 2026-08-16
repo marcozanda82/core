@@ -184,12 +184,56 @@ function indexRecords(records, source) {
   records.forEach((raw, index) => {
     if (!raw || typeof raw !== 'object') return;
 
+    // OFF: solo prodotti con kcal reali (no null/0/undefined) — evita AI e UI a 0 kcal.
+    if (source === FOOD_DB_SOURCE.OFF && !hasUsableOffKcal(raw)) return;
+
     const key = resolveRecordKey(raw, index);
     if (db[key]) return;
 
     const row = normalizeRecordForDb(raw, source);
+    if (source === FOOD_DB_SOURCE.OFF && !hasUsableOffKcal(row)) return;
+
     db[key] = enrichDbRowWithFoodUnits(row, key);
   });
+
+  return db;
+}
+
+/** Kcal utilizzabili (> 0) per record OFF grezzo o normalizzato. */
+export function hasUsableOffKcal(record) {
+  if (!record || typeof record !== 'object') return false;
+  const raw = record.kcal ?? record.cal ?? record.energy_kcal ?? record.energy ?? record.kcalPer100g;
+  if (raw == null || raw === '') return false;
+  const n = typeof raw === 'number' ? raw : Number(String(raw).trim().replace(',', '.'));
+  return Number.isFinite(n) && n > 0;
+}
+
+/**
+ * Index OFF a chunk: yield periodici per non congelare il main thread.
+ * @param {object[]} records
+ * @returns {Promise<Record<string, object>>}
+ */
+async function indexOffRecordsAsync(records) {
+  const db = {};
+  const list = Array.isArray(records) ? records : [];
+  const CHUNK = 4000;
+
+  for (let i = 0; i < list.length; i += 1) {
+    if (i > 0 && i % CHUNK === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const raw = list[i];
+    if (!raw || typeof raw !== 'object') continue;
+    if (!hasUsableOffKcal(raw)) continue;
+
+    const key = resolveRecordKey(raw, i);
+    if (db[key]) continue;
+
+    const row = normalizeRecordForDb(raw, FOOD_DB_SOURCE.OFF);
+    if (!hasUsableOffKcal(row)) continue;
+
+    db[key] = enrichDbRowWithFoodUnits(row, key);
+  }
 
   return db;
 }
@@ -266,13 +310,14 @@ async function loadKentuDatabasesUncached() {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const offDb = offJson != null
-      ? indexRecords(offRecords, FOOD_DB_SOURCE.OFF)
+      ? await indexOffRecordsAsync(offRecords)
       : {};
 
     console.log('[foodLoader] loaded Kentu databases', {
       kentuIt: Object.keys(kentuItDb).length,
       global: Object.keys(globalDb).length,
       off: Object.keys(offDb).length,
+      offSkippedNoKcal: offRecords.length - Object.keys(offDb).length,
     });
 
     return {

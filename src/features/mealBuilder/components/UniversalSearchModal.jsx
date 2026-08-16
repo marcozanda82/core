@@ -100,7 +100,15 @@ export default function UniversalSearchModal({
   isScannerResolving = false,
   initialQuery = '',
 }) {
-  const { query, setQuery, results, isSearchingExternal } = useUniversalSearchEngine(
+  const {
+    query,
+    setQuery,
+    results,
+    isSearching,
+    runSearch,
+    clearSearch,
+    hasSearched,
+  } = useUniversalSearchEngine(
     personalDb,
     kentuItDb,
     globalDb ?? masterDb,
@@ -113,7 +121,7 @@ export default function UniversalSearchModal({
 
   useEffect(() => {
     if (!isOpen) {
-      setQuery('');
+      clearSearch();
       setIsManualEntryOpen(false);
       setManualForm(EMPTY_MANUAL_FORM);
       setManualError('');
@@ -121,8 +129,10 @@ export default function UniversalSearchModal({
       return;
     }
     const seed = String(initialQuery || '').trim();
-    if (seed) setQuery(seed);
-  }, [isOpen, initialQuery, setQuery]);
+    if (seed) runSearch(seed);
+    // Solo all'apertura / cambio seed — non a ogni keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- clearSearch/runSearch sono stabili
+  }, [isOpen, initialQuery]);
 
   if (!isOpen) return null;
 
@@ -208,7 +218,13 @@ export default function UniversalSearchModal({
           </button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            runSearch();
+          }}
+        >
           <div className="relative min-w-0 flex-1">
             <Search
               className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
@@ -218,10 +234,25 @@ export default function UniversalSearchModal({
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  runSearch();
+                }
+              }}
+              enterKeyHint="search"
               autoFocus={!isManualEntryOpen}
-              placeholder="Nome, ricetta o barcode..."
-              className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-4 text-sm text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
+              placeholder="Nome, ricetta o barcode... (Invio per cercare)"
+              className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
             />
+            <button
+              type="submit"
+              className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-cyan-300 transition-all hover:border-cyan-500/40 hover:text-cyan-200 active:scale-95"
+              aria-label="Cerca"
+              title="Cerca"
+            >
+              <Search className="h-4 w-4" />
+            </button>
           </div>
           <button
             type="button"
@@ -232,7 +263,7 @@ export default function UniversalSearchModal({
           >
             <ScanBarcode className="h-5 w-5" />
           </button>
-        </div>
+        </form>
 
         {!isManualEntryOpen ? (
           <button
@@ -345,11 +376,16 @@ export default function UniversalSearchModal({
               </button>
             </div>
           </form>
-        ) : query.trim().length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
-            Digita per cercare alimenti, ricette salvate e Kentu DB
+        ) : isSearching ? (
+          <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-400">
+            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
+            Ricerca in corso...
           </p>
-        ) : results.length === 0 && !isSearchingExternal ? (
+        ) : !hasSearched ? (
+          <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
+            Digita e premi Invio (o l&apos;icona cerca) per cercare alimenti, ricette e Kentu DB
+          </p>
+        ) : results.length === 0 ? (
           <div className="space-y-3">
             <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-10 text-center text-sm text-slate-500">
               Nessun risultato per &quot;{query.trim()}&quot;
