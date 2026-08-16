@@ -6,6 +6,7 @@
  * - coding   → /Hacker4.png + /Hacker4animazione.mp4       (debug, errori, loading, sistema)
  * - kitchen  → /Chef2.png       (nutrizione, pasti, McDrive)
  * - fitness  → /Trainer3.png + /Trainer3animazione.mp4     (workout / giorno ON)
+ * - coffee   → /caffe3.png + /caffe3animazione.mp4         (stimolante / caffè)
  * - default  → /pensatore2.png  (chat neutra) — Health Score = cellule in header
  */
 
@@ -32,6 +33,7 @@ export const AVATAR_MOOD = Object.freeze({
   CODING: 'coding',
   KITCHEN: 'kitchen',
   FITNESS: 'fitness',
+  COFFEE: 'coffee',
 });
 
 export const AVATAR_MOOD_SRC = Object.freeze({
@@ -39,6 +41,7 @@ export const AVATAR_MOOD_SRC = Object.freeze({
   [AVATAR_MOOD.CODING]: '/Hacker4.png',
   [AVATAR_MOOD.KITCHEN]: '/Chef2.png',
   [AVATAR_MOOD.FITNESS]: '/Trainer3.png',
+  [AVATAR_MOOD.COFFEE]: '/caffe3.png',
 });
 
 /** Video loop opzionali (poster = AVATAR_MOOD_SRC). Solo UI di elaborazione — mai nel path API. */
@@ -46,6 +49,7 @@ export const AVATAR_MOOD_VIDEO = Object.freeze({
   [AVATAR_MOOD.THINKING]: '/pensatore2animazione.mp4',
   [AVATAR_MOOD.CODING]: '/Hacker4animazione.mp4',
   [AVATAR_MOOD.FITNESS]: '/Trainer3animazione.mp4',
+  [AVATAR_MOOD.COFFEE]: '/caffe3animazione.mp4',
 });
 
 export const AVATAR_MOOD_LABEL = Object.freeze({
@@ -53,6 +57,7 @@ export const AVATAR_MOOD_LABEL = Object.freeze({
   [AVATAR_MOOD.CODING]: 'Kentu sta elaborando',
   [AVATAR_MOOD.KITCHEN]: 'Modalità cucina',
   [AVATAR_MOOD.FITNESS]: 'Modalità allenamento',
+  [AVATAR_MOOD.COFFEE]: 'Modalità caffè',
   [AVATAR_MOOD.DEFAULT]: 'Kentu',
 });
 
@@ -124,8 +129,9 @@ export function detectStrategicConsultContext(chatHistory = [], opts = {}) {
  *   hasActiveMealTray?: boolean,
  *   hasActiveWorkoutDraft?: boolean,
  *   isTrainingDay?: boolean,
+ *   hasActiveCoffee?: boolean,
  * }} flags
- * @returns {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'}
+ * @returns {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness' | 'coffee'}
  */
 export function resolveAvatarMood(flags = {}) {
   const isBusy = flags.isProcessing === true
@@ -141,6 +147,9 @@ export function resolveAvatarMood(flags = {}) {
   if (flags.isStrategicConsult === true) {
     return AVATAR_MOOD.THINKING;
   }
+  if (flags.hasActiveCoffee === true) {
+    return AVATAR_MOOD.COFFEE;
+  }
   if (flags.hasActiveMealTray === true) {
     return AVATAR_MOOD.KITCHEN;
   }
@@ -151,7 +160,7 @@ export function resolveAvatarMood(flags = {}) {
 }
 
 /**
- * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'} mood
+ * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness' | 'coffee'} mood
  * @param {string} [defaultSrc]
  * @returns {string}
  */
@@ -165,9 +174,9 @@ export function getAvatarSrcForMood(mood, defaultSrc = CHAT_DEFAULT_AVATAR_SRC) 
 }
 
 /**
- * Video loop per mood (es. thinking → pensatore2animazione, coding → Hacker4animazione).
+ * Video loop per mood (es. thinking → pensatore2, coffee → caffe3animazione).
  * Stringa vuota se assente.
- * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness'} mood
+ * @param {'default' | 'thinking' | 'coding' | 'kitchen' | 'fitness' | 'coffee'} mood
  * @returns {string}
  */
 export function getAvatarVideoForMood(mood) {

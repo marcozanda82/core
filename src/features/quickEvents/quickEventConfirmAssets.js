@@ -1,7 +1,7 @@
 /**
  * Asset e rotazione ciclica per conferme rapide (acqua, pisolino, caffè, allenamento).
  * File in /public: acqua.png, acquaanimazione.mp4, pisolino.png, pisolinoanimazione.mp4,
- * caffe1–3.png, caffe1/2animazione.mp4, Trainer3.png, Trainer3animazione.mp4
+ * caffe1–3.png, caffe1/2/3animazione.mp4, Trainer3.png, Trainer3animazione.mp4
  */
 
 export const QUICK_EVENT_ASSET = Object.freeze({
@@ -16,6 +16,7 @@ export const QUICK_EVENT_ASSET = Object.freeze({
   coffee3: '/caffe3.png',
   coffee1Video: '/caffe1animazione.mp4',
   coffee2Video: '/caffe2animazione.mp4',
+  coffee3Video: '/caffe3animazione.mp4',
 });
 
 /** Finestra in cui un quick-event “fresco” va in fascia cinema sotto l'header. */
@@ -23,7 +24,7 @@ export const QUICK_EVENT_CINEMA_FRESH_MS = 12000;
 
 const COFFEE_CYCLE_STORAGE_KEY = 'kentu_quick_coffee_confirm_cycle';
 
-/** caffe1→video1, caffe2→video2, caffe3→solo immagine. */
+/** caffe1→video1, caffe2→video2, caffe3→video3. */
 const COFFEE_CYCLE = Object.freeze([
   {
     imageSrc: QUICK_EVENT_ASSET.coffee1,
@@ -35,7 +36,7 @@ const COFFEE_CYCLE = Object.freeze([
   },
   {
     imageSrc: QUICK_EVENT_ASSET.coffee3,
-    videoSrc: null,
+    videoSrc: QUICK_EVENT_ASSET.coffee3Video,
   },
 ]);
 
