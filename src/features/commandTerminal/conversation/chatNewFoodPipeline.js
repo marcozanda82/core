@@ -1,7 +1,8 @@
 /**
  * Pipeline post-LLM per alimenti nuovi da chat testuale.
  * Caso A: macro forniti dall'utente → save DB personale → RESOLVED.
- * Caso B: senza macro → pendingUsdaEnrichment (Fase 3 UI).
+ * Caso B: match esatto/forte nel DB personale/Kentu → auto-resolve (niente modale).
+ * Caso C: senza macro e senza match → pendingUsdaEnrichment (Fase 3 UI).
  */
 
 import {
@@ -9,7 +10,11 @@ import {
   persistLearnedFoodToDatabase,
   resolveLearnedPortionAfterSave,
 } from '../../../services/userFoodLearning.js';
-import { resolveFoodItemForProposal } from '../../../utils/foodResolver.js';
+import {
+  EXACT_DB_MATCH_STRICT_SCORE,
+  resolveFoodItemForProposal,
+  tryExactDbMatchFastPath,
+} from '../../../utils/foodResolver.js';
 import { FOOD_RESOLUTION_STATUS } from '../../../features/salaComandi/engines/foodDataEngine.js';
 import { buildChatFoodFromUsdaRow } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 
@@ -19,6 +24,14 @@ import { buildChatFoodFromUsdaRow } from '../../mealBuilder/utils/SemanticMatchm
  */
 export function isChatNewFoodCandidate(item) {
   if (!item || typeof item !== 'object') return false;
+  // Già risolto in buildMealLogProposal / auto-resolve: non aprire modale enrichment.
+  if (
+    String(item.status || '') === FOOD_RESOLUTION_STATUS.RESOLVED
+    && item.foodDbKey != null
+    && String(item.foodDbKey).trim() !== ''
+  ) {
+    return false;
+  }
   if (item.isNewFood === true) return true;
   return String(item.status || '') === FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION;
 }
@@ -44,6 +57,68 @@ function markPendingUsdaEnrichment(item) {
     status: FOOD_RESOLUTION_STATUS.NEEDS_RESOLUTION,
     resolutionSource: 'pending_usda_enrichment',
   };
+}
+
+/**
+ * Auto-resolve da DB personale/Kentu (stessa cascata della ricerca manuale).
+ * Evita modale «Non conosco X» quando X è già nel trackerFoodDatabase.
+ *
+ * @param {object} item
+ * @param {object} context
+ * @returns {object | null}
+ */
+function tryAutoResolveFromDb(item, context = {}) {
+  const foodName = String(item?.foodName || item?.name || item?.spokenFoodName || '').trim();
+  const grams = Math.max(1, Math.round(Number(item?.grams) || 0));
+  if (!foodName || !Number.isFinite(grams) || grams <= 0) return null;
+
+  const resolveCtx = {
+    foodDb: context.foodDb,
+    personalDb: context.foodDb,
+    kentuItDb: context.kentuItDb,
+    globalDb: context.globalDb,
+    fullHistory: context.fullHistory,
+    mealType: context.mealType,
+    preferredDbKey: item?.foodDbKey ?? null,
+    searchKeywords: item?.searchKeywords || null,
+  };
+
+  // Fast-path allineato alla modale: exact/stem forte nel personale (score 100).
+  const exactFast = tryExactDbMatchFastPath(foodName, grams, resolveCtx);
+  if (
+    exactFast?.status === FOOD_RESOLUTION_STATUS.RESOLVED
+    && exactFast.foodDbKey != null
+    && String(exactFast.foodDbKey).trim() !== ''
+  ) {
+    return {
+      ...item,
+      ...exactFast,
+      foodName: exactFast.foodName || foodName,
+      strictScore: EXACT_DB_MATCH_STRICT_SCORE,
+      matchTier: 'exact',
+      pendingUsdaEnrichment: false,
+      isNewFood: false,
+      resolutionSource: exactFast.resolutionSource || 'exact_db_match',
+    };
+  }
+
+  const resolved = resolveFoodItemForProposal(foodName, grams, resolveCtx);
+
+  if (
+    resolved?.status === FOOD_RESOLUTION_STATUS.RESOLVED
+    && resolved.foodDbKey != null
+    && String(resolved.foodDbKey).trim() !== ''
+  ) {
+    return {
+      ...item,
+      ...resolved,
+      foodName: resolved.foodName || foodName,
+      pendingUsdaEnrichment: false,
+      isNewFood: false,
+      resolutionSource: resolved.resolutionSource || 'chat_db_auto_resolve',
+    };
+  }
+  return null;
 }
 
 /**
@@ -153,6 +228,11 @@ export async function processUnresolvedChatFoods(proposalItems, context = {}) {
           pendingUsdaCount += 1;
         }
         return resolved;
+      }
+
+      const autoResolved = tryAutoResolveFromDb(item, context);
+      if (autoResolved) {
+        return autoResolved;
       }
 
       pendingUsdaCount += 1;

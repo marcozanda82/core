@@ -1,6 +1,7 @@
 import { TARGETS } from '../../../useBiochimico';
 import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits';
 import {
+  foodNameMatchesQuery,
   getFoodUsageCount,
   MATCH_TIER_RANK,
   normalizeSearchText,
@@ -8,6 +9,8 @@ import {
   searchFoodsDetailed,
   searchFoodsWithKeywords,
 } from '../../../foodSearch.js';
+
+export { foodNameMatchesQuery } from '../../../foodSearch.js';
 
 export const FOOD_RESOLUTION_STATUS = Object.freeze({
   RESOLVED: 'RESOLVED',
@@ -140,23 +143,6 @@ function pickKeyByUsageCount(foodDb, keys) {
 }
 
 /**
- * True se il nome DB è un match lessicale affidabile della query (no swap di categoria).
- * @param {string} foodName
- * @param {string} query
- * @returns {boolean}
- */
-export function foodNameMatchesQuery(foodName, query) {
-  const nameNorm = normalizeSearchText(foodName);
-  const queryNorm = normalizeSearchText(query);
-  if (!nameNorm || !queryNorm) return false;
-  if (nameNorm === queryNorm) return true;
-  if (nameNorm.startsWith(queryNorm) || queryNorm.startsWith(nameNorm)) return true;
-  const tokens = queryNorm.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return false;
-  return tokens.every((token) => nameNorm.includes(token));
-}
-
-/**
  * Match DB: preferredKey (validato sul nome) → search ranked (exact/prefix/fuzzy forte).
  * Niente fallback deboli score≥50 (evita sgombro→merluzzo).
  * @returns {string | null}
@@ -188,16 +174,18 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeyword
     });
   if (!hits.length) return null;
 
-  // Solo match forti: exact/prefix, fuzzy alto, word_boundary con token contenuti.
+  // Match forti + includes/stem (banana → Banane / Bananas, raw).
   const acceptable = hits.filter((hit) => {
     const tier = String(hit.matchTier || '');
     const score = Number(hit.strictScore) || 0;
     const nameOk = foodNameMatchesQuery(hit?.name || hit?.desc || '', nome);
     if (tier === 'exact') return true;
-    if (tier === 'prefix' && nameOk) return true;
-    if (tier === 'fuzzy' && score >= 90 && nameOk) return true;
-    if (tier === 'word_boundary' && score >= 80 && nameOk) return true;
-    if (score >= 95 && nameOk) return true;
+    if (!nameOk) return false;
+    if (tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') {
+      return true;
+    }
+    if (tier === 'fuzzy' && score >= 80) return true;
+    if (score >= 50) return true;
     return false;
   });
   if (acceptable.length === 0) return null;

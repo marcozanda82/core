@@ -1,7 +1,11 @@
 import { computeTotali } from '../useBiochimico';
 import { getTargetForNutrient } from '../useBiochimico';
 import { searchFoodsDetailed } from '../foodSearch';
-import { estraiDatiFoodDb, findFoodDbMatchCascading } from '../features/salaComandi/engines/foodDataEngine';
+import {
+  estraiDatiFoodDb,
+  findFoodDbMatchCascading,
+  FOOD_RESOLUTION_STATUS,
+} from '../features/salaComandi/engines/foodDataEngine';
 import { toCanonicalMealType, generateCortisolCurve } from '../coreEngine';
 import { inferDefaultMealType, expandFoodPayloadItems } from '../features/commandTerminal/conversation/conversationState';
 import {
@@ -956,9 +960,19 @@ export function ensureMealProposalsForUpdateLoggedMeal(mealProposals, adviceCont
  * @returns {object | null}
  */
 export function buildMealLogProposalFromPayload(payload, currentAppState = {}, options = {}) {
-  const foodDb = currentAppState?.foodDatabase || {};
-  const kentuItDb = currentAppState?.kentuItDatabase || currentAppState?.kentuItDb || {};
-  const globalDb = currentAppState?.globalFoodDatabase || currentAppState?.globalDb || currentAppState?.masterDb || {};
+  const foodDb = currentAppState?.foodDatabase
+    || currentAppState?.trackerFoodDatabase
+    || currentAppState?.personalFoodDb
+    || {};
+  const kentuItDb = currentAppState?.kentuItDatabase
+    || currentAppState?.kentuItDb
+    || currentAppState?.kentuFoodDb
+    || {};
+  const globalDb = currentAppState?.globalFoodDatabase
+    || currentAppState?.globalDb
+    || currentAppState?.globalFoodDb
+    || currentAppState?.masterDb
+    || {};
   const fullHistory = currentAppState?.fullHistory || {};
   const userText = String(options.userText || '').trim();
   const conversationTexts = Array.isArray(options.conversationTexts)
@@ -1001,7 +1015,10 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
       ...(srcIcon ? { icon: srcIcon } : {}),
       ...(spoken ? { spokenFoodName: spoken } : {}),
       ...(Array.isArray(src?.searchKeywords) ? { searchKeywords: src.searchKeywords } : {}),
-      ...(src?.isNewFood === true ? { isNewFood: true } : {}),
+      ...(src?.isNewFood === true
+        && String(resolved?.status || '') !== FOOD_RESOLUTION_STATUS.RESOLVED
+        ? { isNewFood: true }
+        : {}),
       ...(src?.userProvidedMacros && typeof src.userProvidedMacros === 'object'
         ? { userProvidedMacros: src.userProvidedMacros }
         : {}),

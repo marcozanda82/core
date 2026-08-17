@@ -8,6 +8,7 @@ import {
   searchFoodsWithKeywords,
   normalizeSearchText,
 } from '../../../foodSearch.js';
+import { foodNameMatchesQuery } from '../../salaComandi/engines/foodDataEngine.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 import { expandFoodPayloadItems } from './conversationState.js';
 
@@ -106,12 +107,12 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
       if (!top?.name) return false;
       const tier = String(top.matchTier || '');
       const score = Number(top.strictScore) || 0;
-      const nameNorm = normalizeSearchText(top.name);
-      const spokenNorm = normalizeSearchText(spokenName);
-      const tokens = spokenNorm.split(/\s+/).filter(Boolean);
-      const contains = tokens.every((t) => nameNorm.includes(t));
+      const stemOk = foodNameMatchesQuery(top.name, spokenName);
       if (tier === 'exact' || top.keywordExact || score >= 100) return true;
-      if ((tier === 'prefix' || score >= 90) && contains) return true;
+      if ((tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') && stemOk) {
+        return true;
+      }
+      if (score >= 50 && stemOk) return true;
       return false;
     });
     if (strong?.name) {

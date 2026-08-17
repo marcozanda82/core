@@ -304,6 +304,9 @@ export default function AiCluster({
 
   const dockedMcDriveTray = dockedMcDriveTrayMsg?.liveMealTray || null;
 
+  /** Deep Work: lavagna a tutto schermo, cronologia chat nascosta. */
+  const isAiGuidedImmersive = Boolean(dockedMcDriveTray);
+
   const avatarMood = useMemo(
     () => resolveAvatarMood({
       isProcessing,
@@ -467,7 +470,10 @@ export default function AiCluster({
   const handlePulsantieraSend = useCallback((text, options) => {
     if (isProcessing || isNotesMode) return;
     const trimmed = String(text || '').trim();
-    if (!trimmed) return;
+    const intent = String(options?.intent || '').trim();
+    const mealType = String(options?.mealType || options?.mealTypeHint || '').trim() || null;
+    const allowEmpty = intent === 'START_MCDRIVE_WIZARD' && Boolean(mealType);
+    if (!trimmed && !allowEmpty) return;
     if (isVoiceNoteActive) {
       discardNote();
     }
@@ -475,7 +481,9 @@ export default function AiCluster({
     setChatInput('');
     onSendMessage(trimmed, {
       fromInput: true,
-      ...(options?.intent ? { intent: options.intent } : {}),
+      ...(intent ? { intent } : {}),
+      ...(mealType ? { mealType, mealTypeHint: mealType } : {}),
+      ...(options?.skipUserBubble === true ? { skipUserBubble: true } : {}),
     });
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [
@@ -825,20 +833,23 @@ export default function AiCluster({
       ) : null}
 
       <div
-        className="chat-container flex min-h-0 flex-1 flex-col"
+        className={`chat-container flex min-h-0 flex-1 flex-col${isAiGuidedImmersive ? ' chat-container--ai-guided' : ''}`}
         style={{
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        <WipMealCartBar
-          items={wipMealItems}
-          totals={wipMealTotals}
-          mealType={wipMealType}
-          onRemoveItem={onRemoveWipItem}
-          onClear={onClearWipMeal}
-        />
+        {!isAiGuidedImmersive ? (
+          <WipMealCartBar
+            items={wipMealItems}
+            totals={wipMealTotals}
+            mealType={wipMealType}
+            onRemoveItem={onRemoveWipItem}
+            onClear={onClearWipMeal}
+          />
+        ) : null}
+        {!isAiGuidedImmersive ? (
         <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
           {chatHistory.filter((msg) => {
             if (msg?.predictiveSuperseded === true) return false;
@@ -1302,17 +1313,23 @@ export default function AiCluster({
           ) : null}
           <div ref={chatEndRef} />
         </div>
+        ) : null}
 
         {dockedMcDriveTray ? (
           <div
-            className="kentu-mcdrive-dock flex max-h-[55vh] min-h-0 w-full shrink-0 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2"
-            style={{ paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
+            className={
+              isAiGuidedImmersive
+                ? 'kentu-mcdrive-dock kentu-mcdrive-dock--immersive flex min-h-0 w-full flex-1 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
+                : 'kentu-mcdrive-dock flex max-h-[55vh] min-h-0 w-full shrink-0 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
+            }
+            style={isAiGuidedImmersive ? undefined : { paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
             role="region"
             aria-label="Lavagna McDrive"
           >
             <LiveMealTray
               tray={dockedMcDriveTray}
               active
+              immersive={isAiGuidedImmersive}
               disabled={isProcessing}
               personalDb={foodDatabase}
               kentuItDb={kentuItDatabase}
@@ -1447,6 +1464,7 @@ export default function AiCluster({
         {!isNotesMode ? (
           <PulsantieraUniversale
             disabled={isProcessing}
+            isAiGuidedModeActive={Boolean(dockedMcDriveTray)}
             onOpenManualView={handlePulsantieraOpenManual}
             onOpenActivityView={handlePulsantieraOpenActivity}
             onOpenPlanView={handlePulsantieraOpenPlan}

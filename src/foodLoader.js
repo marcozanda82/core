@@ -2,6 +2,7 @@ import { FOOD_DB_SOURCE } from './foodDbSource';
 import { resolveIconTagId } from './features/mealBuilder/utils/FoodIcons';
 import { enrichDbRowWithFoodUnits } from './foodUnits';
 import { ensureMasterDbVersion } from './features/mealBuilder/utils/masterFoodResync';
+import { KENTU_MASTER_DB_VERSION } from './constants/foodDbVersion';
 
 const KENTU_IT_DB_URL = '/crea_gold_standard.json';
 const GLOBAL_DB_URL = '/kentu_master_db.json';
@@ -239,10 +240,16 @@ async function indexOffRecordsAsync(records) {
   return db;
 }
 
-async function fetchKentuJson(url) {
-  const res = await fetch(url);
+function withDbCacheBust(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}v=${encodeURIComponent(KENTU_MASTER_DB_VERSION)}`;
+}
+
+async function fetchKentuJson(url, { cacheBust = false } = {}) {
+  const fetchUrl = cacheBust ? withDbCacheBust(url) : url;
+  const res = await fetch(fetchUrl);
   if (!res.ok) {
-    throw new Error(`Failed to load ${url}: ${res.status}`);
+    throw new Error(`Failed to load ${fetchUrl}: ${res.status}`);
   }
   return res.json();
 }
@@ -282,7 +289,7 @@ async function loadKentuDatabasesUncached() {
         console.warn('[foodLoader] Kentu DB IT unavailable', error);
         return null;
       }),
-      fetchKentuJson(GLOBAL_DB_URL).catch((error) => {
+      fetchKentuJson(GLOBAL_DB_URL, { cacheBust: true }).catch((error) => {
         console.warn('[foodLoader] Kentu DB global unavailable', error);
         return null;
       }),

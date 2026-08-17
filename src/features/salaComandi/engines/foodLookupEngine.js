@@ -11,6 +11,7 @@ import {
   singleTokenFromNormalizedQuery,
   strictSingleWordBaseMatchConfidence,
 } from './italianFoodVariants';
+import { foodNameMatchesQuery } from '../../../foodSearch';
 
 /** @typedef {'CREA' | 'USDA' | 'USER'} LookupSnapshotSource */
 
@@ -471,8 +472,26 @@ function scoreFoodCandidate(normQ, normD) {
     best = Math.max(best, 0.72 + Math.min(ratio * 0.15, 0.15));
   }
 
+  // Radice / desinenza: banana ↔ banane / bananas (includes su stem, non exact).
+  const qStem = normQ.length >= 4 ? normQ.slice(0, Math.max(4, normQ.length - 1)) : normQ;
+  const dWords = normD.split(/\s+/).filter(Boolean);
+  if (qStem.length >= 4 && dWords.some((w) => w.startsWith(qStem) || qStem.startsWith(w.slice(0, qStem.length)))) {
+    best = Math.max(best, 0.86);
+  }
+  qTokens.forEach((qt) => {
+    if (!qt || qt.length < 4) return;
+    if (normD.includes(qt) || dWords.some((w) => w.startsWith(qt) || qt.startsWith(w))) {
+      best = Math.max(best, 0.84);
+    }
+  });
+
   const j = jaccardSets(qTokens, dTokens);
   if (j > 0) best = Math.max(best, 0.42 + j * 0.34);
+
+  // Stem / sing-plurale garantito (banana ↔ banane / bananas): supera soglia auto-match.
+  if (foodNameMatchesQuery(normD, normQ)) {
+    best = Math.max(best, 0.9);
+  }
 
   return Math.min(1, Math.round(best * 10000) / 10000);
 }

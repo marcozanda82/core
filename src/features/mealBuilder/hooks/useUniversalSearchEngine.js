@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FOOD_DB_SOURCE, FOOD_PROVENANCE, compareProvenancePriority } from '../../../foodDbSource';
-import { searchFoodsDetailed } from '../../../foodSearch';
+import {
+  foodNameMatchesQuery,
+  normalizeSearchText as normalizeSearchTextShared,
+  searchFoodsDetailed,
+  textMatchesSearchQuery,
+  tokenSharesStem,
+} from '../../../foodSearch';
 import { hasUsableOffKcal } from '../../../foodLoader';
+import { useDebouncedValue } from './useDebouncedValue';
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 const PERSONAL_SEARCH_LIMIT = 40;
 const KENTU_IT_SEARCH_LIMIT = 40;
@@ -19,13 +28,7 @@ function catalogDbIsEmpty(db) {
 }
 
 export function normalizeSearchText(value) {
-  return String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return normalizeSearchTextShared(value);
 }
 
 function normalizePersonalDb(personalDb) {
@@ -137,29 +140,11 @@ function mapCatalogHitToResult(hit, row, legacySource, dbSource) {
 export const MIN_RELEVANCE_SCORE = 300;
 
 /**
- * Match “solido” di una singola parola della query su name/brand.
- * Parole corte (≤3): solo token esatto o prefisso molto stretto (pan→pane).
- * Parole lunghe: token esatto, prefisso token, o substring della frase.
+ * Match “solido” di una singola parola: includes o tokenSharesStem sui token del nome.
  */
 function wordHasSolidMatch(field, fieldWords, word) {
-  const w = String(word || '').trim();
-  if (!w || !field) return false;
-  if (field === w) return true;
-  if (fieldWords.includes(w)) return true;
-
-  if (w.length <= 2) return false;
-
-  if (w.length <= 3) {
-    return fieldWords.some(
-      (fw) => fw === w || (fw.startsWith(w) && fw.length <= w.length + 2),
-    );
-  }
-
-  if (fieldWords.some((fw) => fw === w || fw.startsWith(w))) return true;
-  // Substring solo se non è un frammento dentro un'altra parola casuale:
-  // richiedi confini (inizio / spazio prima).
-  if (field.startsWith(w) || field.includes(` ${w}`)) return true;
-  return false;
+  return textMatchesSearchQuery(field, word)
+    || fieldWords.some((fw) => tokenSharesStem(fw, word));
 }
 
 /**
@@ -227,7 +212,18 @@ export function computeRelevanceScore(item, query) {
       }
     }
 
-    // Bonus brand se la query compare anche lì (non inventa score da solo).
+      // Query monotoken: preferisci voce base corta (Banane > Banana disidratata…).
+      if (qWords.length === 1 && foodNameMatchesQuery(field, q)) {
+        const firstWord = fieldWords[0] || '';
+        if (firstWord && tokenSharesStem(firstWord, qWords[0]) && fieldWords.length === 1) {
+          score = Math.max(score, 980);
+        } else if (firstWord && tokenSharesStem(firstWord, qWords[0])) {
+          const shortBonus = Math.max(0, 60 - Math.max(0, field.length - firstWord.length));
+          score = Math.max(score, 900 + shortBonus);
+        }
+      }
+
+      // Bonus brand se la query compare anche lì (non inventa score da solo).
     if (brand && score > 0 && (brand === q || brand.includes(q) || qWords.every((w) => brand.includes(w)))) {
       score += 25;
     }
@@ -254,9 +250,78 @@ function dedupeKeyForResult(item) {
   return `n:${name}|b:${brand}|s:${item?._source || item?.source || ''}`;
 }
 
+const MASTER_SOURCE_BONUS = 100;
+const EXACT_NAME_BONUS = 10;
+/** Preferisci nomi più corti a parità di match (Banane > Banana disidratata…). */
+const SHORT_NAME_BONUS_MAX = 45;
+
+function isOffSearchResult(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.provenance === FOOD_PROVENANCE.OFF) return true;
+  if (item._source === 'off' || item.source === FOOD_DB_SOURCE.OFF) return true;
+  if (item.row?.source === FOOD_DB_SOURCE.OFF) return true;
+  const foodSource = String(item.foodSource || item.row?.foodSource || '').toUpperCase();
+  return foodSource === 'OFF';
+}
+
+function isMasterSearchResult(item) {
+  if (!item || typeof item !== 'object' || isOffSearchResult(item)) return false;
+  const foodSource = String(item.foodSource || item.row?.foodSource || '').toUpperCase();
+  if (foodSource === 'KENTU' || foodSource === 'CREA' || foodSource === 'GLOBAL') return true;
+  const source = String(item.source || item._source || item.row?.source || '').toUpperCase();
+  if (
+    source === FOOD_DB_SOURCE.GLOBAL
+    || source === FOOD_DB_SOURCE.KENTU_IT
+    || source === 'CREA'
+    || source === 'MASTER'
+    || source === 'KENTU_IT'
+    || source === 'GLOBAL'
+    || source === 'PERSONAL'
+    || source === 'RECIPE'
+  ) {
+    return true;
+  }
+  return (
+    item.provenance === FOOD_PROVENANCE.GLOBAL
+    || item.provenance === FOOD_PROVENANCE.ITALY
+    || item.provenance === FOOD_PROVENANCE.PERSONAL
+  );
+}
+
+function isExactNameMatch(item, query) {
+  const q = normalizeSearchText(query);
+  const name = normalizeSearchText(item?.name || item?.desc || '');
+  if (!q || !name) return false;
+  if (name === q || name.startsWith(`${q} `)) return true;
+  return foodNameMatchesQuery(name, q) && name.split(/\s+/).length <= q.split(/\s+/).length + 1;
+}
+
+/** Bonus se il nome visualizzato è corto rispetto ad alternative stem-equivalenti. */
+function computeShortNameBonus(item, query) {
+  const q = normalizeSearchText(query);
+  const name = normalizeSearchText(item?.name || item?.desc || '');
+  if (!q || !name || !foodNameMatchesQuery(name, q)) return 0;
+  const qTokens = q.split(/\s+/).filter(Boolean);
+  if (qTokens.length !== 1) return 0;
+  const token = qTokens[0];
+  const firstWord = name.split(/\s+/).filter(Boolean)[0] || '';
+  if (!firstWord || !tokenSharesStem(firstWord, token)) return 0;
+  const extraLen = Math.max(0, name.length - firstWord.length);
+  return Math.max(0, SHORT_NAME_BONUS_MAX - Math.min(SHORT_NAME_BONUS_MAX, extraLen));
+}
+
+/** Score di sort: Master +100, match esatto +10, nome corto, poi relevance lessicale. */
+function computeRankingScore(item, query, relevanceScore) {
+  let score = Number(relevanceScore) || 0;
+  if (isMasterSearchResult(item)) score += MASTER_SOURCE_BONUS;
+  if (isExactNameMatch(item, query)) score += EXACT_NAME_BONUS;
+  score += computeShortNameBonus(item, query);
+  return score;
+}
+
 /**
- * Unisce i hit dei vari DB, ordina per relevanceScore, tie-break per fonte.
- * Esclude categoricamente score 0 / sotto soglia (niente riempimento con cibi casuali).
+ * Unisce i hit dei vari DB. Priorità assoluta Master (Kentu/CREA/GLOBAL) su OFF,
+ * poi rankingScore (Master +100, exact +10, relevance).
  */
 export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESULT_CAP) {
   const list = Array.isArray(items) ? items : [];
@@ -269,15 +334,23 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
     if (!Number.isFinite(relevanceScore) || relevanceScore < MIN_RELEVANCE_SCORE) {
       continue;
     }
-    const scored = { ...item, relevanceScore };
+    const rankingScore = computeRankingScore(item, query, relevanceScore);
+    const scored = { ...item, relevanceScore, rankingScore };
     const key = dedupeKeyForResult(scored);
     const prev = bestByKey.get(key);
     if (!prev) {
       bestByKey.set(key, scored);
       continue;
     }
-    if (scored.relevanceScore !== prev.relevanceScore) {
-      if (scored.relevanceScore > prev.relevanceScore) bestByKey.set(key, scored);
+    const preferScoredMaster = isMasterSearchResult(scored) && !isMasterSearchResult(prev);
+    const preferPrevMaster = isMasterSearchResult(prev) && !isMasterSearchResult(scored);
+    if (preferScoredMaster) {
+      bestByKey.set(key, scored);
+      continue;
+    }
+    if (preferPrevMaster) continue;
+    if (scored.rankingScore !== prev.rankingScore) {
+      if (scored.rankingScore > prev.rankingScore) bestByKey.set(key, scored);
       continue;
     }
     if (compareProvenancePriority(scored, prev) < 0) {
@@ -288,9 +361,15 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
   return Array.from(bestByKey.values())
     .filter((item) => Number(item.relevanceScore) >= MIN_RELEVANCE_SCORE)
     .sort((a, b) => {
-      const scoreA = Number(a.relevanceScore) || 0;
-      const scoreB = Number(b.relevanceScore) || 0;
+      const aOff = isOffSearchResult(a);
+      const bOff = isOffSearchResult(b);
+      if (aOff !== bOff) return aOff ? 1 : -1;
+      const scoreA = Number(a.rankingScore) || 0;
+      const scoreB = Number(b.rankingScore) || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
+      const lenA = normalizeSearchText(a?.name || a?.desc || '').length;
+      const lenB = normalizeSearchText(b?.name || b?.desc || '').length;
+      if (lenA !== lenB) return lenA - lenB;
       return compareProvenancePriority(a, b);
     })
     .slice(0, Math.max(1, Math.floor(cap) || MERGED_SEARCH_RESULT_CAP));
@@ -388,7 +467,7 @@ export function searchPersonalDb(personalDb, query) {
       const name = String(row.desc ?? row.name ?? '').trim();
       if (!name) return;
       const nameNorm = normalizeSearchText(name);
-      if (!nameNorm.includes(qNorm)) return;
+      if (!textMatchesSearchQuery(name, q)) return;
       seenIds.add(id);
       results.push(
         buildUnifiedResult({
@@ -603,11 +682,17 @@ export function useUniversalSearchEngine(personalDb, kentuItDb = null, globalDb 
   const {
     searchGlobal = true,
     offDb = null,
+    debounceMs = SEARCH_DEBOUNCE_MS,
   } = options;
   const [query, setQuery] = useState('');
+  const debouncedQuery = useDebouncedValue(query, debounceMs);
   const [committedQuery, setCommittedQuery] = useState('');
   const queryRef = useRef(query);
   queryRef.current = query;
+
+  useEffect(() => {
+    setCommittedQuery(String(debouncedQuery || '').trim());
+  }, [debouncedQuery]);
 
   const { results, isSearching } = useCommittedFoodSearch(committedQuery, personalDb, {
     kentuItDb,

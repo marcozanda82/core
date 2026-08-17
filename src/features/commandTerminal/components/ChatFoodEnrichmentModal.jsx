@@ -218,11 +218,12 @@ export default function ChatFoodEnrichmentModal({
       />
       <UniversalSearchModal
         isOpen={manualSearchOpen}
-        initialQuery={foodName}
+        initialQuery={foodName || ''}
         onClose={() => setManualSearchOpen(false)}
-        personalDb={session?.personalDb || null}
-        kentuItDb={session?.kentuItDb || null}
-        globalDb={session?.globalDb || null}
+        personalDb={session?.personalDb || {}}
+        kentuItDb={session?.kentuItDb || {}}
+        globalDb={session?.globalDb || {}}
+        draftFoods={[]}
         onSelectFood={handleManualSearchSelect}
       />
     </>

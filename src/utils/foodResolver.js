@@ -1,15 +1,17 @@
-import { searchFoodsDetailed } from '../foodSearch.js';
+import { foodNameMatchesQuery, normalizeSearchText, searchFoodsDetailed, tokenSharesStem } from '../foodSearch.js';
 import {
   estraiDatiFoodDb,
   findFoodDbMatchCascading,
-  foodNameMatchesQuery,
   FOOD_RESOLUTION_STATUS,
 } from '../features/salaComandi/engines/foodDataEngine.js';
+import { findExactLiteralFoodInDb } from '../features/mealBuilder/utils/SemanticMatchmaker.js';
 
 const DEFAULT_RESOLVE_LIMIT = 8;
 const MIN_ALTERNATIVES_FOR_UI = 2;
 /** Sotto questa soglia (0–100) il match non è affidabile → NEEDS_RESOLUTION. */
 const MIN_ACCEPTABLE_STRICT_SCORE = 50;
+/** Score assegnato al bypass auto-resolve su match letterale esatto (allineato alla modale). */
+export const EXACT_DB_MATCH_STRICT_SCORE = 100;
 
 function roundMacro(value) {
   const n = Number(value);
@@ -208,6 +210,112 @@ function orderCandidates(candidates, preferredDbKey) {
   return [preferred, ...rest];
 }
 
+/**
+ * Match forte su catalogo: letterale esatto, poi stem con preferenza nome più corto.
+ * @param {string} query
+ * @param {Record<string, object>|null|undefined} foodDb
+ * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
+ */
+function findStrongDbMatchInCatalog(query, foodDb) {
+  const exact = findExactLiteralFoodInDb(query, foodDb);
+  if (exact) return exact;
+
+  const needle = normalizeSearchText(query);
+  if (!needle || !foodDb || typeof foodDb !== 'object') return null;
+
+  let best = null;
+  let bestNameLen = Infinity;
+
+  for (const [id, food] of Object.entries(foodDb)) {
+    if (!food || typeof food !== 'object') continue;
+    const displayName = String(food.desc || food.name || '').trim();
+    if (!displayName || !foodNameMatchesQuery(displayName, query)) continue;
+
+    const nameNorm = normalizeSearchText(displayName);
+    const queryFirst = needle.split(/\s+/).filter(Boolean)[0] || '';
+    const nameFirst = nameNorm.split(/\s+/).filter(Boolean)[0] || '';
+    const stemOk = nameNorm === needle
+      || (queryFirst && nameFirst && tokenSharesStem(nameFirst, queryFirst));
+    if (!stemOk) continue;
+
+    if (nameNorm.length >= bestNameLen) continue;
+
+    const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
+    bestNameLen = nameNorm.length;
+    best = {
+      fdcId,
+      name: displayName,
+      confidence: 'high',
+      reason: nameNorm === needle ? 'Match letterale esatto' : 'Match lessicale forte',
+      row: {
+        ...food,
+        id: food.id ?? id,
+        fdcId,
+        foodDbKey: food.foodDbKey ?? fdcId,
+        desc: food.desc || displayName,
+        name: food.name || displayName,
+      },
+    };
+  }
+
+  return best;
+}
+
+/**
+ * Bypass immediato: match letterale/stem forte nel personale → Kentu IT → globale.
+ * Stessa logica di findSemanticKentuMatches / ChatFoodEnrichmentModal.
+ *
+ * @param {string} query
+ * @param {number} grams
+ * @param {object} context
+ * @returns {object | null}
+ */
+export function tryExactDbMatchFastPath(query, grams, context = {}) {
+  const q = String(query || '').trim();
+  const g = Math.max(1, Math.round(Number(grams) || 0));
+  if (!q || !Number.isFinite(g) || g <= 0) return null;
+
+  const catalogs = resolveCatalogDbs(context);
+  const layers = [
+    { db: catalogs.personalDb, source: 'personal' },
+    { db: catalogs.kentuItDb, source: 'kentu_it' },
+    { db: catalogs.globalDb, source: 'global' },
+  ];
+
+  for (let i = 0; i < layers.length; i += 1) {
+    const { db, source } = layers[i];
+    if (!db || typeof db !== 'object' || Object.keys(db).length === 0) continue;
+
+    const exact = findStrongDbMatchInCatalog(q, db);
+    if (!exact?.fdcId) continue;
+
+    const portion = buildPortionFromDbMatch(
+      {
+        foodDbKey: exact.fdcId,
+        foodName: exact.name,
+        matchScore: 1,
+        strictScore: EXACT_DB_MATCH_STRICT_SCORE,
+        dbSource: source,
+        _lookupDb: db,
+      },
+      g,
+      context,
+    );
+    if (portion) {
+      return {
+        ...portion,
+        rawQuery: q,
+        strictScore: EXACT_DB_MATCH_STRICT_SCORE,
+        matchTier: 'exact',
+        resolutionSource: 'exact_db_match',
+        alternatives: [],
+      };
+    }
+  }
+
+  return null;
+}
+
 function buildUnresolvedPortion(query, grams) {
   const g = Math.max(1, Math.round(Number(grams) || 0));
   return {
@@ -250,6 +358,10 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
   }
 
   const catalogs = resolveCatalogDbs(context);
+
+  // Fast-path: match letterale esatto (personale → Kentu → globale), come la modale enrichment.
+  const exactFast = tryExactDbMatchFastPath(query, g, context);
+  if (exactFast) return exactFast;
 
   // preferredDbKey solo se il nome DB è coerente con la query (no lock su habit sbagliato).
   if (context.preferredDbKey != null) {

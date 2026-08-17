@@ -184,10 +184,11 @@ export default function MicronutrientEnrichmentModal({
 
           {!isLoading && matches.length > 0 ? (
             <ul className="flex flex-col gap-2.5">
-              {matches.map((match) => {
+              {matches.filter(Boolean).map((match, index) => {
                 const ui = CONFIDENCE_UI[match.confidence] || CONFIDENCE_UI.low;
+                const matchKey = String(match.fdcId || match.id || match.name || index);
                 return (
-                  <li key={match.fdcId}>
+                  <li key={matchKey}>
                     <button
                       type="button"
                       onClick={() => onSelectMatch?.(match)}

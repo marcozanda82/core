@@ -30,6 +30,36 @@ function pickMasterDbs(masterContext = {}) {
   return { kentuItDb, globalDb };
 }
 
+/** Indice label normalizzata → row (costruito una volta per riferimento DB). */
+const masterLabelIndexCache = new WeakMap();
+
+function getMasterLabelIndex(db) {
+  if (!db || typeof db !== 'object') return null;
+  let index = masterLabelIndexCache.get(db);
+  if (!index) {
+    index = new Map();
+    Object.values(db).forEach((entry) => {
+      if (!entry || typeof entry !== 'object') return;
+      const norm = normalizeLabel(entry.desc || entry.name || entry.italianName);
+      if (norm && !index.has(norm)) index.set(norm, entry);
+    });
+    masterLabelIndexCache.set(db, index);
+  }
+  return index;
+}
+
+function findMasterRowByLabel(labels, kentuItDb, globalDb) {
+  for (const label of labels) {
+    const norm = normalizeLabel(label);
+    if (!norm) continue;
+    for (const db of [kentuItDb, globalDb]) {
+      const hit = getMasterLabelIndex(db)?.get(norm);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
 /**
  * Invalida cache locale se il master è stato aggiornato.
  * @returns {boolean} true se la versione è cambiata e la cache è stata pulita
@@ -118,22 +148,7 @@ export function findMasterRowForFood(item, masterContext = {}) {
     row?.name,
     row?.italianName,
   ];
-  for (const label of labels) {
-    const norm = normalizeLabel(label);
-    if (!norm) continue;
-    for (const db of [kentuItDb, globalDb]) {
-      if (!db || typeof db !== 'object') continue;
-      for (const entry of Object.values(db)) {
-        if (!entry || typeof entry !== 'object') continue;
-        const entryNorm = normalizeLabel(
-          entry.desc || entry.name || entry.italianName,
-        );
-        if (entryNorm && entryNorm === norm) return entry;
-      }
-    }
-  }
-
-  return null;
+  return findMasterRowByLabel(labels, kentuItDb, globalDb);
 }
 
 /**

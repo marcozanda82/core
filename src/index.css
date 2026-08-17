@@ -29,6 +29,29 @@
   animation: pop 0.25s ease-out;
 }
 
+/* Respiro lunare — solo opacity, mai box-shadow (FAB Kentu) */
+@keyframes lunar-breathe {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 0.52;
+  }
+}
+
+.lunar-breathe {
+  animation: lunar-breathe 5s ease-in-out infinite;
+  will-change: opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lunar-breathe {
+    animation: none;
+    opacity: 0.32;
+  }
+}
+
 /* KentuOS Vetrina — micro-interazioni logging alimenti */
 @keyframes vetrina-tile-enter {
   from {

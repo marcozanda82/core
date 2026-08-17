@@ -337,7 +337,85 @@ export function italianSingularPluralForms(word) {
   if (w.endsWith('co')) forms.add(`${w.slice(0, -2)}chi`);
   if (w.endsWith('ghi')) forms.add(`${w.slice(0, -3)}go`);
   if (w.endsWith('go')) forms.add(`${w.slice(0, -2)}ghi`);
+  // Inglese: banana ↔ bananas (USDA).
+  if (w.endsWith('s') && w.length > 3 && !w.endsWith('ss')) forms.add(w.slice(0, -1));
+  if (!w.endsWith('s')) forms.add(`${w}s`);
   return [...forms];
+}
+
+/** Score minimo quando stem / sing-plurale garantisce un match lessicale affidabile. */
+export const SCORE_STEM_GUARANTEED = 90;
+
+/**
+ * Radice / desinenza condivisa tra token (banana ↔ banane / bananas).
+ * @param {string} nameToken
+ * @param {string} queryToken
+ * @returns {boolean}
+ */
+export function tokenSharesStem(nameToken, queryToken) {
+  const a = String(nameToken || '');
+  const b = String(queryToken || '');
+  if (!a || !b) return false;
+  if (a === b || a.startsWith(b) || b.startsWith(a)) return true;
+  const forms = italianSingularPluralForms(b);
+  if (forms.some((f) => f && (a === f || a.startsWith(f) || a.includes(f)))) return true;
+  const minLen = Math.min(a.length, b.length);
+  if (minLen < 4) return false;
+  const stemLen = Math.max(4, minLen - 1);
+  return a.slice(0, stemLen) === b.slice(0, stemLen);
+}
+
+/**
+ * True se il nome alimento è un match lessicale affidabile della query.
+ * Tollerante su desinenze: banana ↔ banane / bananas.
+ * @param {string} foodName
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function foodNameMatchesQuery(foodName, query) {
+  const nameNorm = normalizeSearchText(foodName);
+  const queryNorm = normalizeSearchText(query);
+  if (!nameNorm || !queryNorm) return false;
+  if (nameNorm === queryNorm) return true;
+  if (nameNorm.startsWith(queryNorm) || queryNorm.startsWith(nameNorm)) return true;
+  if (nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm)) return true;
+  const tokens = queryNorm.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  const nameWords = nameNorm.split(/\s+/).filter(Boolean);
+  return tokens.every((token) => {
+    if (nameNorm.includes(token)) return true;
+    const forms = italianSingularPluralForms(token);
+    if (forms.some((f) => f && nameNorm.includes(f))) return true;
+    return nameWords.some((word) => tokenSharesStem(word, token));
+  });
+}
+
+/**
+ * Filtro UI pre-slice: ogni token query deve matchare (includes o tokenSharesStem).
+ * Es. «banana» → «Banane», «bananas raw».
+ *
+ * @param {string} text
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function textMatchesSearchQuery(text, query) {
+  const queryNorm = normalizeSearchText(query);
+  if (!queryNorm) return true;
+  const nameNorm = normalizeSearchText(text);
+  if (!nameNorm) return false;
+  if (nameNorm === queryNorm) return true;
+  if (nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm)) return true;
+
+  const queryTokens = queryNorm.split(/\s+/).filter(Boolean);
+  const nameWords = nameNorm.split(/\s+/).filter(Boolean);
+  if (queryTokens.length === 0) return false;
+
+  return queryTokens.every((queryToken) => {
+    if (nameNorm.includes(queryToken)) return true;
+    const forms = italianSingularPluralForms(queryToken);
+    if (forms.some((f) => f && nameNorm.includes(f))) return true;
+    return nameWords.some((nameWord) => tokenSharesStem(nameWord, queryToken));
+  });
 }
 
 function hasWordBoundaryMatch(normalizedText, queryWord) {
@@ -388,6 +466,11 @@ function scoreQueryToken(normalizedName, itemWords, queryWord) {
 
     if (normalizedName.includes(qw)) {
       best = Math.max(best, SCORE_SUBSTRING);
+      continue;
+    }
+
+    if (itemWords.some((word) => tokenSharesStem(word, qw))) {
+      best = Math.max(best, SCORE_TOKEN_EXACT);
     }
   }
 
@@ -586,6 +669,17 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         allTokensMatch = true;
       } else if (itemWords.some((w) => italianSingularPluralForms(w).some((f) => qForms.has(f)))) {
         strictScore = Math.max(strictScore, SCORE_TOKEN_EXACT);
+        if ((MATCH_TIER_RANK[matchTier] || 0) < MATCH_TIER_RANK.token_exact) {
+          matchTier = 'token_exact';
+        }
+        allTokensMatch = true;
+      }
+    }
+
+    // Match stem garantito (banana ↔ banane / bananas): entra in ranking e supera soglie AI.
+    if (foodNameMatchesQuery(name, trimmedQuery)) {
+      if (strictScore < SCORE_STEM_GUARANTEED) {
+        strictScore = SCORE_STEM_GUARANTEED;
         if ((MATCH_TIER_RANK[matchTier] || 0) < MATCH_TIER_RANK.token_exact) {
           matchTier = 'token_exact';
         }

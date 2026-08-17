@@ -41,8 +41,8 @@ import {
   buildCatalogOverrideFromEdit,
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
+import { useDebouncedValue } from './hooks/useDebouncedValue';
 import {
-  applyMasterResyncToFoodItem,
   clearCatalogServingOverride,
   ensureMasterDbVersion,
   loadCatalogServingOverrides,
@@ -67,6 +67,7 @@ import {
   resolveProvenanceFromTile,
 } from '../../foodDbSource';
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
+import { textMatchesSearchQuery } from '../../foodSearch';
 import {
   useCommittedFoodSearch,
   SEARCH_SOURCE_BADGE,
@@ -86,6 +87,8 @@ import {
 const QUICK_FOODS_LIMIT = 30;
 const SUGGESTED_FOODS_LIMIT = 6;
 const SEARCH_DEFAULT_UNIT_WEIGHT = 100;
+const VETRINA_SEARCH_DEBOUNCE_MS = 300;
+const VETRINA_SEARCH_RESULT_LIMIT = 50;
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -192,10 +195,21 @@ function formatSearchResultForDraft(food) {
   }, food._source);
 }
 
+/** Filtro vetrina: token query + tokenSharesStem (banana ↔ banane). */
 function textMatchesQuery(text, query) {
-  const q = String(query || '').trim().toLowerCase();
-  if (!q) return true;
-  return String(text || '').trim().toLowerCase().includes(q);
+  return textMatchesSearchQuery(text, query);
+}
+
+/** Testo ricercabile su tile grezzo — zero merge/resync. */
+function resolveRawTileSearchText(tile) {
+  return String(
+    tile?.label
+    || tile?.desc
+    || tile?.name
+    || tile?.row?.desc
+    || tile?.row?.name
+    || '',
+  ).trim();
 }
 
 function resolveSearchKcalPer100(result) {
@@ -250,24 +264,30 @@ function resolveSearchResultTileStats(result, personalDb, catalogServingOverride
     };
   }
 
-  const matchFood = applyMasterResyncToFoodItem(
-    buildSearchMatchFood(result, personalDb),
+  const matchFood = buildSearchMatchFood(result, personalDb);
+  const personalDbKey = matchFood.foodDbKey;
+  const hasPersonalRow = personalDbKey && personalDb?.[personalDbKey];
+
+  if (!hasPersonalRow) {
+    return {
+      matchFood,
+      defaultUnitWeight: SEARCH_DEFAULT_UNIT_WEIGHT,
+      defaultUnitKcal: resolveSearchKcalPer100(result),
+      displayTile: { desc: name, label: name, row: result.row || matchFood.row },
+    };
+  }
+
+  const catalogItem = mergeCatalogDisplay(
+    { foodDbKey: personalDbKey, desc: name, name, row: result.row || matchFood.row },
+    personalDb,
+    catalogServingOverrides,
     masterContext,
   );
-  const displayTile = masterContext
-    ? mergeCatalogDisplay(
-      { desc: name, name, row: result.row || matchFood.row, _searchSource: result._source },
-      personalDb,
-      catalogServingOverrides,
-      masterContext,
-    )
-    : { desc: name, label: name, row: result.row || matchFood.row };
-
   return {
-    matchFood,
-    defaultUnitWeight: SEARCH_DEFAULT_UNIT_WEIGHT,
-    defaultUnitKcal: resolveSearchKcalPer100(result),
-    displayTile,
+    matchFood: catalogItem,
+    defaultUnitWeight: getFoodUnitWeight(catalogItem),
+    defaultUnitKcal: getDefaultUnitKcal(catalogItem),
+    displayTile: catalogItem,
   };
 }
 
@@ -316,7 +336,7 @@ function FastMealLoggerContent({
   const [viewMode, setViewMode] = useState('expanded');
   const [isBuilderHeaderCollapsed, setIsBuilderHeaderCollapsed] = useState(false);
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
-  const [vetrinaCommittedQuery, setVetrinaCommittedQuery] = useState('');
+  const debouncedVetrinaQuery = useDebouncedValue(vetrinaSearchQuery, VETRINA_SEARCH_DEBOUNCE_MS);
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
   const [activeTab, setActiveTab] = useState(() =>
@@ -435,7 +455,6 @@ function FastMealLoggerContent({
 
   const resetVetrinaSearchBar = useCallback(() => {
     setVetrinaSearchQuery('');
-    setVetrinaCommittedQuery('');
   }, []);
 
   const handleFoodSelection = async (food) => {
@@ -725,19 +744,17 @@ function FastMealLoggerContent({
   const suggestedFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
     suggestedFoods.forEach((tile) => {
-      const displayTile = mergeCatalog(tile);
-      const key = resolveFoodIdentityKey(displayTile);
+      const key = resolveFoodIdentityKey(tile);
       if (key) keys.add(key);
     });
     return keys;
-  }, [suggestedFoods, mergeCatalog]);
+  }, [suggestedFoods]);
 
   const remainingFoods = useMemo(
     () =>
       quickFoods
         .filter((tile) => {
-          const displayTile = mergeCatalog(tile);
-          const key = resolveFoodIdentityKey(displayTile);
+          const key = resolveFoodIdentityKey(tile);
           return !key || !suggestedFoodIdentityKeys.has(key);
         })
         .sort((a, b) =>
@@ -746,7 +763,7 @@ function FastMealLoggerContent({
             { provenance: resolveProvenanceFromTile(b, personalDb) },
           ),
         ),
-    [quickFoods, mergeCatalog, suggestedFoodIdentityKeys],
+    [quickFoods, suggestedFoodIdentityKeys, personalDb],
   );
 
   const gridFoods = useMemo(
@@ -754,24 +771,49 @@ function FastMealLoggerContent({
     [suggestedFoods, remainingFoods],
   );
 
+  /** Display tile pre-calcolati per la griglia catalogo (indipendenti dalla query). */
+  const catalogDisplayByTileKey = useMemo(() => {
+    const cache = new Map();
+    gridFoods.forEach((tile) => {
+      if (tile?.key == null) return;
+      cache.set(
+        tile.key,
+        mergeCatalogDisplay(tile, personalDb, catalogServingOverrides, masterContext),
+      );
+    });
+    return cache;
+  }, [gridFoods, personalDb, catalogServingOverrides, masterContext]);
+
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
-  /** Ricerca DB solo dopo Invio: niente scan live su OFF/CREA. */
-  const vetrinaQuery = vetrinaCommittedQuery.trim();
+  /** Query debounced: filtraggio e ricerca DB partono solo dopo pausa digitazione. */
+  const vetrinaQuery = debouncedVetrinaQuery.trim();
   const isVetrinaSearching = vetrinaQuery.length > 0;
 
   const submitVetrinaSearch = useCallback(() => {
-    setVetrinaCommittedQuery(vetrinaSearchQuery.trim());
-  }, [vetrinaSearchQuery]);
+    // Invio immediato: forza sync query (debounce gestisce il resto al prossimo tick).
+    setVetrinaSearchQuery((prev) => prev.trim());
+  }, []);
 
-  const filteredQuickFoods = useMemo(
-    () =>
-      quickFoods.filter((tile) => {
-        const displayTile = mergeCatalog(tile);
-        const name = displayTile.label || displayTile.desc || '';
-        return textMatchesQuery(name, vetrinaQuery);
-      }),
-    [quickFoods, mergeCatalog, vetrinaQuery],
-  );
+  /** Filter → slice (solo grezzi, zero merge). */
+  const filteredQuickFoodsRaw = useMemo(() => {
+    if (!vetrinaQuery) return [];
+    return quickFoods
+      .filter((tile) => textMatchesQuery(resolveRawTileSearchText(tile), vetrinaQuery))
+      .slice(0, VETRINA_SEARCH_RESULT_LIMIT);
+  }, [quickFoods, vetrinaQuery]);
+
+  /** Map pesante solo sui match visibili della ricerca. */
+  const filteredQuickFoodDisplayByKey = useMemo(() => {
+    const map = new Map();
+    filteredQuickFoodsRaw.forEach((tile) => {
+      if (tile?.key == null) return;
+      map.set(
+        tile.key,
+        mergeCatalogDisplay(tile, personalDb, catalogServingOverrides, masterContext),
+      );
+    });
+    return map;
+  }, [filteredQuickFoodsRaw, personalDb, catalogServingOverrides, masterContext]);
 
   const selectedMealLabel = useMemo(
     () => getLearnedMealSlotLabel(mealTime, fullHistory),
@@ -803,13 +845,12 @@ function FastMealLoggerContent({
 
   const quickFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
-    filteredQuickFoods.forEach((tile) => {
-      const displayTile = mergeCatalog(tile);
-      const key = resolveFoodIdentityKey(displayTile);
+    filteredQuickFoodsRaw.forEach((tile) => {
+      const key = resolveFoodIdentityKey(tile);
       if (key) keys.add(key);
     });
     return keys;
-  }, [filteredQuickFoods, mergeCatalog]);
+  }, [filteredQuickFoodsRaw]);
 
   const extraDbSearchResults = useMemo(
     () =>
@@ -823,12 +864,24 @@ function FastMealLoggerContent({
     [vetrinaUnifiedResults, quickFoodIdentityKeys],
   );
 
+  const searchResultStatsByKey = useMemo(() => {
+    const map = new Map();
+    extraDbSearchResults.forEach((result) => {
+      const statsKey = `${result._source}-${result.id}`;
+      map.set(
+        statsKey,
+        resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext),
+      );
+    });
+    return map;
+  }, [extraDbSearchResults, personalDb, catalogServingOverrides, masterContext]);
+
   const unifiedSearchGridItems = useMemo(() => {
     if (!isVetrinaSearching) return [];
 
     const items = [];
 
-    filteredQuickFoods.forEach((tile) => {
+    filteredQuickFoodsRaw.forEach((tile) => {
       items.push({ kind: 'predictive', key: `predictive-${tile.key}`, data: tile });
     });
 
@@ -870,10 +923,22 @@ function FastMealLoggerContent({
     return [...predictive, ...searchItems];
   }, [
     isVetrinaSearching,
-    filteredQuickFoods,
+    filteredQuickFoodsRaw,
     extraDbSearchResults,
     filteredSavedRecipes,
   ]);
+
+  const resolveDisplayTile = useCallback(
+    (tile) => {
+      if (tile?.key != null) {
+        const cached = catalogDisplayByTileKey.get(tile.key)
+          ?? filteredQuickFoodDisplayByKey.get(tile.key);
+        if (cached) return cached;
+      }
+      return mergeCatalog(tile);
+    },
+    [catalogDisplayByTileKey, filteredQuickFoodDisplayByKey, mergeCatalog],
+  );
 
   const handleSavedRecipeAdd = (recipe) => {
     const payload = buildRecipeDraftPayloadFromDb(recipe.key, recipe.row);
@@ -883,7 +948,7 @@ function FastMealLoggerContent({
   };
 
   const renderQuickFoodTile = (tile, isSuggested = false) => {
-        const displayTile = mergeCatalog(tile);
+    const displayTile = resolveDisplayTile(tile);
     const tileVisual = resolveFoodVisual(displayTile, personalDb);
     const defaultUnitWeight = getFoodUnitWeight(displayTile);
     const defaultUnitKcal = getDefaultUnitKcal(displayTile);
@@ -908,12 +973,15 @@ function FastMealLoggerContent({
   };
 
   const renderSearchResultTile = (result) => {
+    const statsKey = `${result._source}-${result.id}`;
+    const stats = searchResultStatsByKey.get(statsKey)
+      ?? resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext);
     const {
       matchFood,
       defaultUnitWeight,
       defaultUnitKcal,
       displayTile,
-    } = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext);
+    } = stats;
     const tileVisual = resolveFoodVisual(result, personalDb);
     const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
     const sourceBadge = SEARCH_SOURCE_BADGE[result._source] || null;
@@ -1064,7 +1132,7 @@ function FastMealLoggerContent({
   };
 
   const buildTileDraftPayload = (tile, targetWeight) => {
-        const displayTile = mergeCatalog(tile);
+    const displayTile = resolveDisplayTile(tile);
     let payload = displayTile;
     const dbKey = displayTile.foodDbKey;
     if (dbKey && personalDb && typeof personalDb === 'object' && personalDb[dbKey]) {
@@ -1113,7 +1181,7 @@ function FastMealLoggerContent({
 
   const openFoodDetail = (tile) => {
     if (!tile) return;
-        const displayTile = mergeCatalog(tile);
+    const displayTile = resolveDisplayTile(tile);
     setDetailFood({
       tile,
       displayTile,
@@ -1170,7 +1238,7 @@ function FastMealLoggerContent({
   const handleAddPredictiveBlock = (tile, portionCount = 1) => {
     if (!tile || portionCount <= 0) return;
 
-        const displayTile = mergeCatalog(tile);
+    const displayTile = resolveDisplayTile(tile);
     let payload = displayTile;
     const dbKey = displayTile.foodDbKey;
     if (dbKey && personalDb && typeof personalDb === 'object' && personalDb[dbKey]) {
@@ -1215,7 +1283,7 @@ function FastMealLoggerContent({
     setDeepEditFood(null);
     const mergedSource = source?._source
       ? source
-      : mergeCatalog(source);
+      : resolveDisplayTile(source);
     const editItem = buildCatalogDeepEditItem(mergedSource, personalDb, masterContext);
     if (editItem) setEditingCatalogFood(editItem);
   };
@@ -1418,9 +1486,7 @@ function FastMealLoggerContent({
                     type="search"
                     value={vetrinaSearchQuery}
                     onChange={(event) => {
-                      const next = event.target.value;
-                      setVetrinaSearchQuery(next);
-                      if (!next.trim()) setVetrinaCommittedQuery('');
+                      setVetrinaSearchQuery(event.target.value);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') {
@@ -1429,7 +1495,7 @@ function FastMealLoggerContent({
                       }
                     }}
                     enterKeyHint="search"
-                    placeholder="Cerca alimento o ricetta... (Invio)"
+                    placeholder="Cerca alimento o ricetta..."
                     className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-24 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
                   />
                   <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
@@ -1600,8 +1666,7 @@ function FastMealLoggerContent({
                         </div>
                       ) : null}
                       {gridFoods.map((tile) => {
-                        const displayTile = mergeCatalog(tile);
-                        const identityKey = resolveFoodIdentityKey(displayTile);
+                        const identityKey = resolveFoodIdentityKey(tile);
                         const isSuggested = Boolean(
                           identityKey && suggestedFoodIdentityKeys.has(identityKey),
                         );

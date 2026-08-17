@@ -2581,7 +2581,7 @@ export class CommandTerminalController {
       return { ok: false, reason: 'meal_log_proposal_build_failed', userNotified: true };
     }
 
-    if (this.onSaveFoodEntryPer100ToFoodDb && Array.isArray(proposal.items) && proposal.items.length > 0) {
+    if (Array.isArray(proposal.items) && proposal.items.length > 0) {
       try {
         const pipelineResult = await processUnresolvedChatFoods(proposal.items, {
           ...this.buildChatFoodPipelineContext(currentState, proposal.mealType || enrichedPayload?.mealType),

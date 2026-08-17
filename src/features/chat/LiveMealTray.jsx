@@ -102,6 +102,7 @@ function MacroCompareRow({ label, actual, target, unit = 'g' }) {
 function LiveMealTray({
   tray = null,
   active = true,
+  immersive = false,
   disabled = false,
   onCancel,
   onFinish,
@@ -173,7 +174,11 @@ function LiveMealTray({
 
   return (
     <div
-      className="kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden"
+      className={
+        immersive
+          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
+          : 'kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden'
+      }
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
     >
@@ -211,7 +216,13 @@ function LiveMealTray({
         )}
       </div>
 
-      <div className="kentu-meal-tray__scroll min-h-0 max-h-[40vh] flex-1 overflow-y-auto overscroll-contain">
+      <div
+        className={
+          immersive
+            ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive min-h-0 flex-1 overflow-y-auto overscroll-contain'
+            : 'kentu-meal-tray__scroll min-h-0 max-h-[40vh] flex-1 overflow-y-auto overscroll-contain'
+        }
+      >
         {items.length === 0 ? (
           <p className="kentu-meal-tray__estimate-banner" role="status">
             Nessun alimento sul vassoio.
@@ -245,7 +256,7 @@ function LiveMealTray({
               const rowStatusClass = highlightLatest
                 ? 'kentu-meal-tray__row--latest-raw border-l-4 border-cyan-400 bg-cyan-500/10'
                 : isRaw
-                  ? 'kentu-meal-tray__row--raw italic text-slate-300'
+                  ? 'kentu-meal-tray__row--raw text-white'
                   : isProcessing
                     ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
                     : isResolved
@@ -257,9 +268,9 @@ function LiveMealTray({
                           : '';
 
               const nameStatusClass = highlightLatest
-                ? 'font-bold text-cyan-300 text-base leading-snug'
+                ? 'font-bold not-italic text-cyan-300 text-base leading-snug'
                 : isRaw
-                  ? 'italic text-slate-300'
+                  ? 'font-normal not-italic text-white'
                   : isProcessing
                     ? 'font-medium text-cyan-500 animate-pulse'
                     : isResolved
@@ -311,9 +322,11 @@ function LiveMealTray({
                     <span
                       className={[
                         'kentu-meal-tray__grams font-mono shrink-0 transition-all duration-300',
-                        highlightLatest ? 'text-base font-bold text-cyan-300' : 'text-sm',
-                        isSkipped ? 'text-slate-500' : isRaw && !highlightLatest ? 'text-slate-300' : 'opacity-90',
-                        !highlightLatest ? nameStatusClass : '',
+                        highlightLatest
+                          ? 'text-base font-bold text-cyan-300'
+                          : isSkipped
+                            ? 'text-sm text-slate-500'
+                            : 'text-sm font-medium text-white',
                       ].filter(Boolean).join(' ')}
                     >
                       {grams} g

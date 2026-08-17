@@ -48,6 +48,41 @@
   background: transparent;
 }
 
+/* Deep Work — sessione guidata AI: lavagna espansa, cronologia nascosta */
+.kentu-os .chat-container--ai-guided {
+  overflow: hidden;
+}
+
+.kentu-mcdrive-dock--immersive {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.kentu-meal-tray--immersive {
+  max-height: none;
+  min-height: 0;
+  border-radius: 14px 14px 0 0;
+}
+
+.kentu-meal-tray--immersive .kentu-meal-tray__scroll--immersive {
+  max-height: none;
+}
+
+.kentu-meal-tray--immersive .kentu-meal-tray__scroll--immersive:has(.kentu-meal-tray__estimate-banner) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.kentu-meal-tray--immersive .kentu-meal-tray__estimate-banner {
+  margin: auto 0;
+  text-align: center;
+  font-size: 0.9rem;
+  padding: 24px 16px;
+}
+
 .kentu-os .chat-messages {
   gap: 14px;
 }
@@ -745,6 +780,35 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+/* —— Pulsantiera: focus overlay sottomenu —— */
+@keyframes kentu-submenu-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kentu-submenu-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.kentu-submenu-focus-backdrop {
+  animation: kentu-submenu-overlay-in 0.22s ease-out forwards;
+}
+
+.kentu-submenu-focus-panel {
+  animation: kentu-submenu-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 /* —— Voice vetrina (controllo manuale) —— */
@@ -2041,13 +2105,27 @@
 }
 
 .kentu-meal-tray__row--raw {
-  opacity: 0.6;
+  opacity: 1;
 }
 
-.kentu-meal-tray__row--raw .kentu-meal-tray__name {
-  font-style: italic;
-  font-weight: 400;
-  color: #6b7280;
+.kentu-meal-tray__row--raw .kentu-meal-tray__name,
+.kentu-meal-tray__row--raw .kentu-meal-tray__kcal,
+.kentu-meal-tray__row--raw .kentu-meal-tray__grams {
+  font-style: normal;
+  font-weight: 500;
+  color: #f8fafc;
+  opacity: 1;
+}
+
+.kentu-meal-tray__row--latest-raw .kentu-meal-tray__name {
+  font-style: normal;
+  font-weight: 700;
+  color: #67e8f9;
+}
+
+.kentu-meal-tray__row--latest-raw .kentu-meal-tray__grams {
+  font-weight: 700;
+  color: #67e8f9;
 }
 
 .kentu-meal-tray__row--skipped {

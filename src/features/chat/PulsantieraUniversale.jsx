@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
 
@@ -9,10 +9,27 @@ const PILLARS = [
   { id: 'tutti', icon: '⋯', label: 'Tutti' },
 ];
 
+const CATEGORY_LABELS = {
+  pasti: 'Pasti',
+  rapidi: 'Rapidi',
+  attivita: 'Attività',
+  tutti: 'Tutte le azioni',
+  'guidato-pasto': 'Per quale pasto vuoi che ti guidi?',
+};
+
+const GUIDED_MEAL_PICKER_ID = 'guidato-pasto';
+
+const GUIDED_MEAL_ITEMS = [
+  { id: 'colazione', icon: '🍳', label: 'Colazione', action: 'startGuidedMeal', mealType: 'colazione' },
+  { id: 'spuntino', icon: '🍎', label: 'Spuntino', action: 'startGuidedMeal', mealType: 'snack' },
+  { id: 'pranzo', icon: '🍽️', label: 'Pranzo', action: 'startGuidedMeal', mealType: 'pranzo' },
+  { id: 'cena', icon: '🌙', label: 'Cena', action: 'startGuidedMeal', mealType: 'cena' },
+];
+
 const SUBMENUS = {
   pasti: [
     { id: 'manuale', icon: '🔎', label: 'Manuale', action: 'openManual' },
-    { id: 'guidato', icon: '✨', label: 'Guidato AI', action: 'send', message: 'Inserimento guidato pasto', intent: 'START_MCDRIVE_WIZARD' },
+    { id: 'guidato', icon: '✨', label: 'Guidato AI', action: 'pickGuidedMeal' },
   ],
   rapidi: [
     { id: 'acqua', icon: '💧', label: 'Acqua', action: 'shortcut', shortcutId: 'acqua' },
@@ -27,14 +44,14 @@ const SUBMENUS = {
   ],
 };
 
-/** Vocabolario discovery — drawer "Tutti". */
+/** Vocabolario completo — pilastro "Tutti". */
 const VOCABULARY_SECTIONS = [
   {
     id: 'alimentazione',
     title: 'Alimentazione',
     items: [
       { id: 'manuale', icon: '🔎', label: 'Pasto manuale', action: 'openManual' },
-      { id: 'guidato', icon: '✨', label: 'Inserimento guidato', action: 'send', message: 'Inserimento guidato pasto', intent: 'START_MCDRIVE_WIZARD' },
+      { id: 'guidato', icon: '✨', label: 'Inserimento guidato', action: 'pickGuidedMeal' },
       { id: 'acqua', icon: '💧', label: 'Acqua', action: 'shortcut', shortcutId: 'acqua' },
       { id: 'caffe', icon: '☕', label: 'Caffè', action: 'shortcut', shortcutId: 'caffe' },
       { id: 'te', icon: '🍵', label: 'Tè', action: 'shortcut', shortcutId: 'tea' },
@@ -65,6 +82,16 @@ const VOCABULARY_SECTIONS = [
   },
 ];
 
+/** Griglia responsive con scroll sicuro su cataloghi lunghi. */
+const GRID_COMPACT = 'grid w-full max-w-md grid-cols-2 gap-3 sm:grid-cols-2';
+const GRID_CATALOG = 'grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4';
+
+function resolveCompactGridClass(itemCount) {
+  if (itemCount >= 4) return GRID_COMPACT;
+  if (itemCount === 3) return 'grid w-full max-w-md grid-cols-2 gap-3 sm:grid-cols-3';
+  return 'grid w-full max-w-sm grid-cols-2 gap-3';
+}
+
 function PillarButton({ icon, label, active, onClick }) {
   return (
     <button
@@ -84,21 +111,147 @@ function PillarButton({ icon, label, active, onClick }) {
   );
 }
 
-function SubActionButton({ icon, label, onClick }) {
+function OverlayActionButton({ icon, label, onClick, disabled, compact = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex min-w-[4.5rem] flex-shrink-0 flex-col items-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 px-2.5 py-2 text-zinc-100 transition-colors hover:border-cyan-400/40 hover:bg-zinc-800"
+      disabled={disabled}
+      className={[
+        'flex flex-col items-center justify-center gap-2 rounded-2xl border',
+        compact ? 'min-h-[4.75rem] px-3 py-3' : 'min-h-[5.5rem] gap-2.5 px-4 py-4',
+        'border-white/12 bg-white/[0.06] text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)]',
+        'backdrop-blur-sm transition-all duration-150',
+        'hover:border-cyan-400/45 hover:bg-cyan-500/10 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)]',
+        'active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+        'disabled:pointer-events-none disabled:opacity-45',
+      ].join(' ')}
     >
-      <span className="text-xl leading-none" aria-hidden>{icon}</span>
-      <span className="mt-1 text-[0.65rem] font-medium">{label}</span>
+      <span className={`leading-none ${compact ? 'text-2xl' : 'text-3xl'}`} aria-hidden>{icon}</span>
+      <span className="text-center text-xs font-semibold leading-tight sm:text-sm">{label}</span>
     </button>
   );
 }
 
+function OverlayActionGrid({ items, disabled, onSelectItem, gridClass, compact = false }) {
+  return (
+    <div className={gridClass}>
+      {items.map((item) => (
+        <OverlayActionButton
+          key={item.id}
+          icon={item.icon}
+          label={item.label}
+          disabled={disabled}
+          compact={compact}
+          onClick={() => onSelectItem(item)}
+        />
+      ))}
+    </div>
+  );
+}
+
 /**
- * Pulsantiera a 4 pilastri → sottomenu → routing verso chat / FastMealLogger / one-tap.
+ * Vetrina ghiacciata: overlay glassmorphism con azioni centrate.
+ * @param {'compact'|'catalog'} layout — catalog = Tutti (scroll + griglia ampia)
+ */
+function SubmenuFocusOverlay({
+  categoryLabel,
+  subtitle = 'Scegli azione',
+  items = [],
+  sections = null,
+  layout = 'compact',
+  disabled,
+  onClose,
+  onSelectItem,
+  cancelLabel = 'Annulla',
+}) {
+  const isCatalog = layout === 'catalog';
+  const hasSections = Array.isArray(sections) && sections.length > 0;
+  const flatItems = hasSections
+    ? sections.flatMap((section) => section.items || [])
+    : items;
+  const itemCount = flatItems.length;
+
+  if (!itemCount || typeof document === 'undefined') return null;
+
+  const gridClass = isCatalog ? GRID_CATALOG : resolveCompactGridClass(itemCount);
+  const panelMaxWidth = isCatalog ? 'max-w-3xl' : 'max-w-lg';
+
+  return createPortal(
+    <>
+      <div
+        className="kentu-submenu-focus-backdrop fixed inset-0 z-[100040] bg-black/60 backdrop-blur-md"
+        aria-hidden
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Sottomenu ${categoryLabel}`}
+        className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 pb-28 pt-8 sm:px-6 sm:pt-10"
+      >
+        <div
+          className={`kentu-submenu-focus-panel pointer-events-auto flex w-full ${panelMaxWidth} max-h-[min(88dvh,720px)] flex-col items-center gap-4`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="shrink-0 text-center">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              {subtitle}
+            </p>
+            <h2 className="mt-1 text-xl font-semibold text-zinc-50">{categoryLabel}</h2>
+          </div>
+
+          <div
+            className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain max-h-[70vh] px-0.5 pb-1"
+          >
+            {hasSections ? (
+              <div className="flex flex-col gap-5">
+                {sections.map((section) => (
+                  <section key={section.id}>
+                    <h3 className="mb-2.5 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                      {section.title}
+                    </h3>
+                    <OverlayActionGrid
+                      items={section.items}
+                      disabled={disabled}
+                      onSelectItem={onSelectItem}
+                      gridClass={gridClass}
+                      compact
+                    />
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <OverlayActionGrid
+                items={items}
+                disabled={disabled}
+                onSelectItem={onSelectItem}
+                gridClass={gridClass}
+              />
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className={[
+              'shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
+              'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
+              'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+            ].join(' ')}
+          >
+            {cancelLabel}
+          </button>
+        </div>
+      </div>
+    </>,
+    document.body,
+  );
+}
+
+/**
+ * Pulsantiera a 4 pilastri → overlay focus → routing verso chat / FastMealLogger / one-tap.
  */
 export default function PulsantieraUniversale({
   onOpenManualView,
@@ -108,21 +261,37 @@ export default function PulsantieraUniversale({
   onSendChatMessage,
   disabled = false,
   isDiabetesAppMode = false,
+  isAiGuidedModeActive = false,
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
+  const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
 
   const closeMenus = useCallback(() => {
     setActiveCategory(null);
+    setGuidedMealOrigin(null);
   }, []);
 
+  const handleOverlayClose = useCallback(() => {
+    if (activeCategory === GUIDED_MEAL_PICKER_ID && guidedMealOrigin) {
+      setActiveCategory(guidedMealOrigin);
+      setGuidedMealOrigin(null);
+      return;
+    }
+    closeMenus();
+  }, [activeCategory, guidedMealOrigin, closeMenus]);
+
   useEffect(() => {
-    if (activeCategory !== 'tutti') return undefined;
+    if (isAiGuidedModeActive) closeMenus();
+  }, [isAiGuidedModeActive, closeMenus]);
+
+  useEffect(() => {
+    if (!activeCategory) return undefined;
     const onKey = (event) => {
-      if (event.key === 'Escape') closeMenus();
+      if (event.key === 'Escape') handleOverlayClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [activeCategory, closeMenus]);
+  }, [activeCategory, handleOverlayClose]);
 
   const resolveItemPresentation = useCallback((item) => {
     if (!item || item.action !== 'openPlan') return item;
@@ -157,6 +326,22 @@ export default function PulsantieraUniversale({
       onManualShortcut?.(shortcutId);
       return;
     }
+    if (item.action === 'pickGuidedMeal') {
+      setGuidedMealOrigin(activeCategory === GUIDED_MEAL_PICKER_ID ? guidedMealOrigin : activeCategory);
+      setActiveCategory(GUIDED_MEAL_PICKER_ID);
+      return;
+    }
+    if (item.action === 'startGuidedMeal') {
+      const mealType = String(item.mealType || '').trim();
+      if (!mealType) return;
+      closeMenus();
+      onSendChatMessage?.('', {
+        intent: 'START_MCDRIVE_WIZARD',
+        mealType,
+        skipUserBubble: true,
+      });
+      return;
+    }
     if (item.action === 'send') {
       const text = String(item.message || item.label || '').trim();
       if (!text) return;
@@ -166,6 +351,8 @@ export default function PulsantieraUniversale({
   }, [
     closeMenus,
     disabled,
+    activeCategory,
+    guidedMealOrigin,
     onOpenManualView,
     onOpenActivityView,
     onOpenPlanView,
@@ -178,100 +365,71 @@ export default function PulsantieraUniversale({
     setActiveCategory((prev) => (prev === pillarId ? null : pillarId));
   }, [disabled]);
 
-  const subItems = activeCategory && activeCategory !== 'tutti'
-    ? (SUBMENUS[activeCategory] || []).map(resolveItemPresentation)
-    : [];
+  const overlayConfig = useMemo(() => {
+    if (!activeCategory) return null;
 
-  const tuttiDrawer = activeCategory === 'tutti' && typeof document !== 'undefined'
-    ? createPortal(
-      <>
-        <div
-          className="fixed inset-0 z-[100050] bg-black/55 backdrop-blur-[2px]"
-          aria-hidden
-          onClick={closeMenus}
-        />
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Tutte le azioni"
-          className="fixed inset-x-0 bottom-0 z-[100051] flex max-h-[55dvh] flex-col rounded-t-3xl border-t border-zinc-700/80 bg-[#0b0f14] shadow-[0_-12px_40px_rgba(0,0,0,0.55)]"
-          style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))' }}
-        >
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3">
-            <div>
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-zinc-500">Vocabolario</p>
-              <h2 className="text-base font-semibold text-zinc-100">Tutte le azioni</h2>
-            </div>
-            <button
-              type="button"
-              onClick={closeMenus}
-              aria-label="Chiudi"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700 text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-            {VOCABULARY_SECTIONS.map((section) => (
-              <section key={section.id} className="mb-4 last:mb-0">
-                <h3 className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  {section.title}
-                </h3>
-                <ul className="flex flex-col gap-1.5">
-                  {section.items.map((rawItem) => {
-                    const item = resolveItemPresentation(rawItem);
-                    return (
-                    <li key={`${section.id}-${item.id}`}>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => dispatchItem(item)}
-                        className="flex w-full items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/70 px-3 py-2.5 text-left text-sm text-zinc-100 transition-colors hover:border-cyan-500/35 hover:bg-zinc-800/90 disabled:opacity-50"
-                      >
-                        <span className="text-lg" aria-hidden>{item.icon}</span>
-                        <span className="font-medium">{item.label}</span>
-                      </button>
-                    </li>
-                    );
-                  })}
-                </ul>
-              </section>
-            ))}
-          </div>
-        </div>
-      </>,
-      document.body,
-    )
-    : null;
+    if (activeCategory === GUIDED_MEAL_PICKER_ID) {
+      return {
+        categoryLabel: CATEGORY_LABELS[GUIDED_MEAL_PICKER_ID],
+        subtitle: 'Guidato AI',
+        items: GUIDED_MEAL_ITEMS,
+        layout: 'compact',
+      };
+    }
+
+    if (activeCategory === 'tutti') {
+      const sections = VOCABULARY_SECTIONS.map((section) => ({
+        id: section.id,
+        title: section.title,
+        items: section.items.map((rawItem) => ({
+          ...resolveItemPresentation(rawItem),
+          id: `${section.id}-${rawItem.id}`,
+        })),
+      }));
+      const itemCount = sections.reduce((sum, section) => sum + section.items.length, 0);
+      if (itemCount === 0) return null;
+      return {
+        categoryLabel: CATEGORY_LABELS.tutti,
+        subtitle: 'Vocabolario',
+        sections,
+        layout: 'catalog',
+      };
+    }
+
+    const items = (SUBMENUS[activeCategory] || []).map((rawItem) => ({
+      ...resolveItemPresentation(rawItem),
+      id: rawItem.id,
+    }));
+    if (items.length === 0) return null;
+
+    return {
+      categoryLabel: CATEGORY_LABELS[activeCategory] || 'Azioni',
+      subtitle: 'Scegli azione',
+      items,
+      layout: 'compact',
+    };
+  }, [activeCategory, resolveItemPresentation]);
+
+  const submenuOverlay = overlayConfig ? (
+    <SubmenuFocusOverlay
+      key={activeCategory}
+      categoryLabel={overlayConfig.categoryLabel}
+      subtitle={overlayConfig.subtitle}
+      items={overlayConfig.items}
+      sections={overlayConfig.sections}
+      layout={overlayConfig.layout}
+      disabled={disabled}
+      onClose={handleOverlayClose}
+      onSelectItem={dispatchItem}
+      cancelLabel={activeCategory === GUIDED_MEAL_PICKER_ID ? 'Indietro' : 'Annulla'}
+    />
+  ) : null;
+
+  if (isAiGuidedModeActive) return null;
 
   return (
-    <div className="flex w-full shrink-0 flex-col gap-2 py-2">
-      {subItems.length > 0 ? (
-        <div
-          className="flex w-full items-center gap-2 overflow-x-auto px-0.5 scrollbar-hide"
-          role="toolbar"
-          aria-label="Sottomenu azioni"
-        >
-          <button
-            type="button"
-            onClick={closeMenus}
-            aria-label="Chiudi sottomenu"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-900/90 text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
-          >
-            ←
-          </button>
-          <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto scrollbar-hide">
-            {subItems.map((item) => (
-              <SubActionButton
-                key={item.id}
-                icon={item.icon}
-                label={item.label}
-                onClick={() => dispatchItem(item)}
-              />
-            ))}
-          </div>
-        </div>
-      ) : null}
+    <div className="relative z-[100045] flex w-full shrink-0 flex-col gap-2 py-2">
+      {submenuOverlay}
 
       <div
         className="grid w-full grid-cols-4 gap-2"
@@ -288,8 +446,6 @@ export default function PulsantieraUniversale({
           />
         ))}
       </div>
-
-      {tuttiDrawer}
     </div>
   );
 }

@@ -150,7 +150,17 @@ export function isStrictBaseFoodLabelForVariants(normD, variantSet) {
   const words = cleanWordTokens(normD);
   if (words.length === 0 || words.length > 2) return false;
 
-  const headOk = (w) => typeof w === 'string' && w.length >= 2 && set.has(w);
+  const headOk = (w) => {
+    if (typeof w !== 'string' || w.length < 2) return false;
+    if (set.has(w)) return true;
+    for (const v of set) {
+      if (!v || v.length < 4) continue;
+      if (w.startsWith(v) || v.startsWith(w)) return true;
+      const stemLen = Math.max(4, Math.min(w.length, v.length) - 1);
+      if (w.slice(0, stemLen) === v.slice(0, stemLen)) return true;
+    }
+    return false;
+  };
   if (words.length === 1) return headOk(words[0]);
   if (headOk(words[0]) && FRESH_PRODUCE_LABEL_RE.test(normD)) return true;
   if (words[0] === 'frutta' && headOk(words[1])) return true;

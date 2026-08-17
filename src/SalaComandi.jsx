@@ -100,7 +100,6 @@ import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import DialMaintenanceMarker from './components/DialMaintenanceMarker';
-import KcalMetabolicTelemetryRing from './components/KcalMetabolicTelemetryRing';
 import KcalFuelTelemetryRing from './components/KcalFuelTelemetryRing';
 import { resolveKcalDialTelemetry, resolveKcalZoneHudLabel } from './utils/kcalDialTelemetry';
 import { buildMetabolicMapThresholdsFromSplit } from './features/planning/trainingBlockTargets';
@@ -449,7 +448,6 @@ const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
 const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
-const HealthspanOverlay = lazy(() => import('./features/longevity/HealthspanOverlay'));
 const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
 const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
@@ -889,9 +887,7 @@ export default function SalaComandi() {
   weeklyPlanRef.current = weeklyPlan;
 
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
-  const [showLongevityModal, setShowLongevityModal] = useState(false);
-  const [longevityDays, setLongevityDays] = useState(7);
-  const [expandedRiskId, setExpandedRiskId] = useState(null);
+  const longevityDays = 7;
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
@@ -1036,7 +1032,7 @@ export default function SalaComandi() {
     (tabId) => {
       if (tabId === 'menu') {
         setActiveAction('menu_secondary');
-        setIsDrawerOpen(true);
+        setIsDrawerOpen(false);
         return;
       }
       if (tabId === 'pianifica') {
@@ -3098,16 +3094,6 @@ export default function SalaComandi() {
     return { ...matrix, masterScore, color };
   }, [fullHistory, userTargets, longevityDays]);
 
-  const longevityModalRiskRows = useMemo(() => {
-    if (!longevityData) return [];
-    return [
-      { id: 'metabolic', label: 'Rischio Metabolico', data: longevityData.metabolic, icon: '🩸', desc: 'Glicazione, Insulina e Autofagia' },
-      { id: 'neuro', label: 'Usura Neuro-Ormonale', data: longevityData.neuro, icon: '🧠', desc: 'Cortisolo, Stress e Deep Sleep' },
-      { id: 'inflammatory', label: 'Carico Infiammatorio', data: longevityData.inflammatory, icon: '🔥', desc: 'Danno tissutale e Tossicità' },
-      { id: 'cardio', label: 'Rischio Cardiovascolare', data: longevityData.cardio, icon: '🫀', desc: 'Endotelio e Sedentarietà' }
-    ];
-  }, [longevityData]);
-
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
     return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, trendDays);
@@ -3647,7 +3633,7 @@ export default function SalaComandi() {
       case 'menu':
         if (fromModal) setShowChoiceModal(false);
         setActiveAction('menu_secondary');
-        if (fromModal) setIsDrawerOpen(true);
+        setIsDrawerOpen(false);
         break;
       default:
         break;
@@ -8087,12 +8073,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           className={[
             'fixed left-1/2 z-[100010] flex h-[72px] w-[72px] -translate-x-1/2 items-center justify-center',
             'bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] top-auto',
-            'border-none bg-transparent p-0 shadow-none focus:outline-none',
-            'transition-all duration-300 ease-in-out active:scale-95',
+            'overflow-visible border-none bg-transparent p-0 shadow-none focus:outline-none',
+            'transition-transform duration-300 ease-in-out active:scale-95',
           ].join(' ')}
           aria-label="Apri chat Kentu"
           aria-pressed={false}
         >
+          <div
+            aria-hidden
+            className="lunar-breathe pointer-events-none absolute -inset-5 z-0 rounded-full bg-white/30 blur-2xl"
+          />
           {kentuChatNotificationBadge ? (
             <span
               aria-hidden
@@ -8105,7 +8095,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             width={72}
             height={72}
             decoding="async"
-            className="h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
+            className="relative z-[1] h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
           />
         </button>
       ))
@@ -8818,20 +8808,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                     {/* Layer 2: Telemetria kcal + grafico pasti */}
                     <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
                       {showKcalTelemetryRings && telemetry ? (
-                        <>
-                          <KcalFuelTelemetryRing
-                            consumedKcal={telemetry.consumedKcal}
-                            dailyTargetKcal={dialDailyTargetKcal}
-                            maxScaleKcal={telemetry.maxScaleKcal}
-                          />
-                          <KcalMetabolicTelemetryRing
-                            maxScaleKcal={telemetry.maxScaleKcal}
-                            deficitKcal={telemetry.deficitKcal}
-                            targetStartKcal={telemetry.targetStartKcal}
-                            targetEndKcal={telemetry.targetEndKcal}
-                            surplusKcal={telemetry.surplusKcal}
-                          />
-                        </>
+                        <KcalFuelTelemetryRing
+                          consumedKcal={telemetry.consumedKcal}
+                          dailyTargetKcal={dialDailyTargetKcal}
+                          maxScaleKcal={telemetry.maxScaleKcal}
+                        />
                       ) : null}
                       <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                         <PieChart>
@@ -9260,19 +9241,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onOpenTrainingPlan={openTrainingPlan}
           isDiabetesAppMode={isDiabetesAppMode}
           closeDrawer={closeDrawer}
+          setIsDrawerOpen={setIsDrawerOpen}
           setShowProfile={setShowProfile}
-          kentuChatNotificationBadge={kentuChatNotificationBadge}
-          calorieTuning={calorieTuning}
-          setCalorieTuning={setCalorieTuning}
           onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
-          onOpenProgressi={() => setActiveBottomTab('longevita')}
           onOpenTacticalCoach={() => setIsCoachOpen(true)}
           onSanitizeFoodDb={import.meta.env.DEV ? runHistoricalFoodDbSanitize : null}
         />
 
         <Suspense fallback={<KentuLazySectionFallback label="Apertura vista…" />}>
         {import.meta.env.DEV && activeAction === 'api_diary' && (
-          <ApiDiary onBack={() => setActiveAction('menu_secondary')} />
+          <ApiDiary onBack={() => { setIsDrawerOpen(false); setActiveAction('menu_secondary'); }} />
         )}
 
         {/* VISTA ACQUA */}
@@ -9450,7 +9428,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               <div style={{ maxWidth: 1200, margin: '0 auto', padding: '16px 16px 40px', minHeight: '100%' }}>
                 <DevConsoleView
                   uid={userUid}
-                  onBack={() => setActiveAction('menu_secondary')}
+                  onBack={() => { setIsDrawerOpen(false); setActiveAction('menu_secondary'); }}
               />
             </div>
             </Suspense>
@@ -10168,8 +10146,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         calculateSmartTargets={calculateSmartTargets}
         csvInputRef={csvInputRef}
         handleCSVUpload={handleCSVUpload}
-        longevityData={longevityData}
-        onOpenLongevityStats={() => { setShowProfile(false); setShowLongevityModal(true); }}
         auth={auth}
         saveProfileToFirebase={saveProfileToFirebase}
         onAppModeChange={handleAppModeChange}
@@ -10661,45 +10637,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         getAlcoholGlassIcon={getAlcoholGlassIcon}
         handleSaveAlcohol={handleSaveAlcohol}
       />
-
-      {showLongevityModal && longevityData && (
-        <Suspense fallback={<KentuLazySectionFallback label="Healthspan…" />}>
-        <HealthspanOverlay
-          longevityData={longevityData}
-          longevityDays={longevityDays}
-          setLongevityDays={setLongevityDays}
-          onClose={() => { setShowLongevityModal(false); setExpandedRiskId(null); }}
-          onOpenAnalisiTab={() => {
-            setShowLongevityModal(false);
-            handleBottomNavTabSelect('analisi');
-          }}
-          longevityEngineScore={longevityEngineScore}
-          longevityExplanation={longevityExplanation}
-          dailyKcalConsumed={Math.round(Number(totali?.kcal) || 0)}
-          dailyKcalTarget={Math.round(Number(dynamicDailyKcal) || Number(userTargets?.kcal) || 2000)}
-          userAge={userAge}
-          bodyMetricsHistory={bodyMetricsHistory}
-          longevityScoreHistory={longevityScoreHistory}
-          currentTrackerDate={currentTrackerDate}
-          fullHistory={fullHistory}
-          userTargets={userTargets}
-          userProfile={userProfile}
-          onUpdateTDEE={handleUpdateTDEE}
-          tdeeHistory={tdeeHistory}
-          predictiveCalibration={predictiveCalibration}
-          onBalanceCsvImport={handleCSVUpload}
-          onQuickWeighInSubmit={handleQuickWeighInFromHistory}
-          onDeleteBodyMetrics={handleDeleteBodyMetrics}
-          pastDaysStorico={pastDaysStorico}
-          weeklyTrendData={weeklyTrendData}
-          weeklyMicrosTotals={weeklyMicrosTotals}
-          weeklyKcalChartReference={weeklyKcalChartReference}
-          longevityModalRiskRows={longevityModalRiskRows}
-          expandedRiskId={expandedRiskId}
-          setExpandedRiskId={setExpandedRiskId}
-        />
-        </Suspense>
-      )}
 
       {showFastLogger ? (
         <Suspense fallback={<KentuLazySectionFallback label="Logger pasti…" />}>

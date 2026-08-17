@@ -4,6 +4,7 @@
  */
 
 import {
+  foodNameMatchesQuery,
   searchFoodsWithKeywords,
   normalizeSearchText,
   normalizeSearchKeywords,
@@ -67,14 +68,13 @@ export function findMostFrequentPersonalFood(personalDb, genericName, searchKeyw
   if (!hits.length) return null;
 
   const needleNorm = normalizeSearchText(needle);
-  const needleTokens = needleNorm.split(' ').filter(Boolean);
 
   // Preferisci match dove il generico è contenuto nel nome (pane → pane bauletto).
   // DIVIETO: usageCount non può promuovere un alimento di altra categoria (sgombro→merluzzo).
   const ranked = hits
     .map((hit) => {
       const nameNorm = normalizeSearchText(hit.name);
-      const contains = needleTokens.every((t) => nameNorm.includes(t));
+      const contains = foodNameMatchesQuery(hit.name, needle);
       const usage = Number(hit.usageCount) || 0;
       const strict = Number(hit.strictScore) || 0;
       const tierBoost = hit.matchTier === 'exact' || hit.matchTier === 'prefix' ? 20 : 0;

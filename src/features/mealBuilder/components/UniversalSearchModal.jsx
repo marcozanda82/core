@@ -58,6 +58,13 @@ function SourceBadge({ source }) {
 }
 
 function resolveDraftMatchForResult(result, personalDb) {
+  if (!result || typeof result !== 'object') {
+    return {
+      matchFood: { desc: 'Alimento', name: 'Alimento' },
+      unitWeight: SEARCH_UNIT_WEIGHT,
+      defaultUnitKcal: 0,
+    };
+  }
   if (result._source === 'recipe') {
     const payload = buildRecipeDraftPayloadFromSearchResult(result, personalDb);
     if (payload) {
@@ -103,8 +110,9 @@ export default function UniversalSearchModal({
   const {
     query,
     setQuery,
-    results,
+    results: rawResults,
     isSearching,
+    isSearchingExternal,
     runSearch,
     clearSearch,
     hasSearched,
@@ -114,6 +122,7 @@ export default function UniversalSearchModal({
     globalDb ?? masterDb,
     { searchGlobal: true, offDb },
   );
+  const results = Array.isArray(rawResults) ? rawResults : [];
   const [isManualEntryOpen, setIsManualEntryOpen] = useState(false);
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [isSavingManual, setIsSavingManual] = useState(false);
@@ -405,7 +414,7 @@ export default function UniversalSearchModal({
           </div>
         ) : (
           <ul className="space-y-2">
-            {results.map((result) => {
+            {results.filter(Boolean).map((result, index) => {
               const visual = resolveFoodVisual(result, personalDb);
               const macros = resolveMacrosPer100(result);
               const name = result.desc || result.name || 'Alimento';
@@ -420,9 +429,10 @@ export default function UniversalSearchModal({
                 unitWeight,
                 defaultUnitKcal,
               );
+              const resultKey = `${result._source || 'search'}-${result.id ?? result.key ?? index}`;
 
               return (
-                <li key={`${result._source}-${result.id}`}>
+                <li key={resultKey}>
                   <div className="vetrina-tile-enter flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-gradient-to-r from-slate-800/60 to-slate-900/80 p-2.5 shadow-md shadow-black/20 transition-all hover:border-cyan-500/20">
                     <div className="relative shrink-0">
                       {qty > 0 ? (
