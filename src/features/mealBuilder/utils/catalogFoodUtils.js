@@ -9,6 +9,13 @@ import {
   resolveDefaultUnitWeight,
   resolveUnitName,
 } from './foodMacroUtils';
+import {
+  applyMasterResyncToFoodItem,
+  clearCatalogServingOverride,
+  findMasterRowForFood,
+  hasStaleNutrientsVsMaster,
+  resyncRowNutrientsFromMaster,
+} from './masterFoodResync';
 
 function roundMacro(value, asInt = false) {
   const n = Number(value);
@@ -57,11 +64,22 @@ function buildCatalogEditItemBase(source, personalDb, options = {}) {
     source.foodDbKey ??
     (source._source === 'personal' ? source.key || source.id : null);
 
+  const masterContext = options.masterContext || null;
   let row = source.row;
   if (foodDbKey && personalDb?.[foodDbKey]) {
     row = { ...personalDb[foodDbKey], ...(row || {}) };
   } else if (!row) {
     row = buildRowFromPortion(source, 100);
+  }
+
+  if (masterContext && row) {
+    const masterRow = findMasterRowForFood({ ...source, foodDbKey, row, desc }, masterContext);
+    if (masterRow) {
+      const stale = hasStaleNutrientsVsMaster(row, masterRow);
+      if (stale || !source._manualOverride) {
+        row = resyncRowNutrientsFromMaster(row, masterRow, { forceOnManual: stale });
+      }
+    }
   }
 
   const unitName = resolveUnitName({ ...source, row });
@@ -105,7 +123,7 @@ function buildCatalogEditItemBase(source, personalDb, options = {}) {
   };
 }
 
-export function buildCatalogDeepEditItem(source, personalDb) {
+export function buildCatalogDeepEditItem(source, personalDb, masterContext = null) {
   if (!source || typeof source !== 'object') return null;
 
   if (source._source) {
@@ -114,6 +132,7 @@ export function buildCatalogDeepEditItem(source, personalDb) {
       id: `catalog_search_${foodDbKey || source.desc || source.name}`,
       foodDbKey,
       catalogKind: 'search',
+      masterContext,
       extra: { _searchSource: source._source },
     });
   }
@@ -121,10 +140,11 @@ export function buildCatalogDeepEditItem(source, personalDb) {
   return buildCatalogEditItemBase(source, personalDb, {
     id: `catalog_tile_${source.foodDbKey || source.key || source.desc}`,
     catalogKind: 'tile',
+    masterContext,
   });
 }
 
-export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
+export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}, masterContext = null) {
   if (!item) return item;
 
   const identity = resolveFoodIdentityKey(item);
@@ -135,10 +155,28 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
   const dbRow = foodDbKey && personalDb?.[foodDbKey] ? personalDb[foodDbKey] : null;
 
   if (override) {
-    merged = { ...merged, ...override };
+    const masterRow = masterContext
+      ? findMasterRowForFood({ ...item, foodDbKey, row: dbRow }, masterContext)
+      : null;
+    const overrideStale = masterRow
+      && dbRow
+      && hasStaleNutrientsVsMaster(
+        { ...dbRow, ...(override.row || override) },
+        masterRow,
+      );
+    if (overrideStale) {
+      clearCatalogServingOverride(identity);
+    } else {
+      merged = { ...merged, ...override };
+    }
   }
 
-  const row = dbRow ? { ...dbRow, ...(merged.row || {}) } : merged.row;
+  let row = dbRow ? { ...dbRow, ...(merged.row || {}) } : merged.row;
+
+  if (masterContext && row) {
+    merged = applyMasterResyncToFoodItem({ ...merged, row, foodDbKey }, masterContext);
+    row = merged.row || row;
+  }
   const unitWeight = resolveDefaultUnitWeight({ ...merged, row });
   const unitName = resolveUnitName({ ...merged, row });
 
@@ -167,7 +205,7 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}) {
   return merged;
 }
 
-export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
+export function applyCatalogEditToDraftItem(draftItem, updatedCatalog, options = {}) {
   const weight = Number(draftItem.weight ?? draftItem.qta) || 0;
   const row = updatedCatalog.row || {};
   const per100 = getPer100Macros({ row });
@@ -183,8 +221,13 @@ export function applyCatalogEditToDraftItem(draftItem, updatedCatalog) {
     cal: portion.kcal,
     ...buildBaseMacroFields(per100),
     qtyLabel: buildQtyLabel(draftItem, selectedUnit, multiplier, weight),
-    _manualOverride: true,
   };
+
+  if (options.manualOverride !== false) {
+    next._manualOverride = true;
+  } else {
+    delete next._manualOverride;
+  }
 
   if (updatedCatalog.customImage) {
     next.customImage = updatedCatalog.customImage;

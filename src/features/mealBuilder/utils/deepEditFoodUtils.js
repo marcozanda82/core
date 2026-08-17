@@ -12,6 +12,7 @@ import {
   resolveDefaultUnitWeight,
   resolveUnitName,
 } from './foodMacroUtils';
+import { restoreFoodItemFromMaster } from './masterFoodResync';
 
 const MACRO_KEYS = ['kcal', 'cal', 'prot', 'carb', 'fat', 'fatTotal'];
 
@@ -150,7 +151,7 @@ function applyAdvancedNutrientsFromForm(row, next, form, defaultUnitWeight) {
   });
 }
 
-export function applyDeepEditFormToItem(item, form, iconState) {
+export function applyDeepEditFormToItem(item, form, iconState, options = {}) {
   const unitName = String(form.unitName ?? '').trim();
   const defaultUnitWeight = Math.max(1, parseFormNumber(form.defaultUnitWeight, 100));
 
@@ -195,8 +196,14 @@ export function applyDeepEditFormToItem(item, form, iconState) {
     fat: portion.fat,
     fatTotal: portion.fat,
     qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(defaultUnitWeight)}g`,
-    _manualOverride: true,
   };
+
+  if (options.manualOverride !== false) {
+    next._manualOverride = true;
+  } else {
+    delete next._manualOverride;
+    delete row._manualOverride;
+  }
 
   applyIconFields(row, next, iconState);
   applyAdvancedNutrientsFromForm(row, next, form, defaultUnitWeight);
@@ -205,8 +212,9 @@ export function applyDeepEditFormToItem(item, form, iconState) {
   return next;
 }
 
-export function restoreDeepEditFormFromDefaults(item, form) {
-  const defaults = buildDefaultsFromRow(item);
+export function restoreDeepEditFormFromDefaults(item, form, masterContext = null) {
+  const baseItem = masterContext ? restoreFoodItemFromMaster(item, masterContext) : item;
+  const defaults = buildDefaultsFromRow(baseItem);
 
   return {
     ...form,

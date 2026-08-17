@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, Clipboard, RotateCcw, Trash2, X } from 'lucide-react';
 import FoodThumbnail from './FoodThumbnail';
 import ImageSelectionSheet from './ImageSelectionSheet';
@@ -8,16 +8,25 @@ import {
   applyDeepEditFormToItem,
   buildDeepEditFormState,
   restoreDeepEditFormFromDefaults,
-} from '../utils/deepEditFoodUtils';const inputClassName =
+} from '../utils/deepEditFoodUtils';
+
+const inputClassName =
   'w-full rounded-lg border border-slate-700 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-500/50';
 
-export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave }) {
+export default function FoodDeepEditModal({
+  foodItem,
+  isOpen,
+  onClose,
+  onSave,
+  masterContext = null,
+}) {
   const [form, setForm] = useState(() => buildDeepEditFormState(foodItem || {}));
   const [customImage, setCustomImage] = useState(null);
   const [customEmoji, setCustomEmoji] = useState(null);
   const [customIcon, setCustomIcon] = useState(null);
   const [isImageSheetOpen, setIsImageSheetOpen] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
+  const restoredFromMasterRef = useRef(false);
 
   useEffect(() => {
     if (isOpen && foodItem) {
@@ -27,6 +36,7 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
       setCustomIcon(foodItem.customIcon || foodItem.row?.customIcon || null);
       setIsImageSheetOpen(false);
       setCopiedJson(false);
+      restoredFromMasterRef.current = false;
     }
   }, [isOpen, foodItem]);
 
@@ -36,9 +46,13 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
   const isCatalogEdit = foodItem._editSource === 'catalog';
   const hasCustomIcon = Boolean(customImage || customEmoji || customIcon);
 
-  const patchForm = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const patchForm = (patch) => {
+    restoredFromMasterRef.current = false;
+    setForm((prev) => ({ ...prev, ...patch }));
+  };
   const handleRestoreDefaults = () => {
-    setForm((prev) => restoreDeepEditFormFromDefaults(foodItem, prev));
+    restoredFromMasterRef.current = true;
+    setForm((prev) => restoreDeepEditFormFromDefaults(foodItem, prev, masterContext));
   };
 
   const handleSelectEmoji = (emoji) => {
@@ -67,7 +81,9 @@ export default function FoodDeepEditModal({ foodItem, isOpen, onClose, onSave })
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSave?.(applyDeepEditFormToItem(foodItem, form, { customImage, customEmoji, customIcon }));
+    onSave?.(applyDeepEditFormToItem(foodItem, form, { customImage, customEmoji, customIcon }, {
+      manualOverride: !restoredFromMasterRef.current,
+    }));
     onClose?.();
   };
 

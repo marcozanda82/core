@@ -41,6 +41,13 @@ import {
   buildCatalogOverrideFromEdit,
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
+import {
+  applyMasterResyncToFoodItem,
+  clearCatalogServingOverride,
+  ensureMasterDbVersion,
+  loadCatalogServingOverrides,
+  saveCatalogServingOverrides,
+} from './utils/masterFoodResync';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
 import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, X } from 'lucide-react';
 import { FaHamburger } from 'react-icons/fa';
@@ -211,7 +218,7 @@ function buildSearchMatchFood(result, personalDb) {
   };
 }
 
-function resolveSearchResultTileStats(result, personalDb, catalogServingOverrides) {
+function resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext = null) {
   const name = String(result.desc || result.name || 'Alimento').trim();
 
   if (result._source === 'recipe') {
@@ -233,6 +240,7 @@ function resolveSearchResultTileStats(result, personalDb, catalogServingOverride
       { foodDbKey: dbKey, desc: name, name, row },
       personalDb,
       catalogServingOverrides,
+      masterContext,
     );
     return {
       matchFood: catalogItem,
@@ -242,12 +250,24 @@ function resolveSearchResultTileStats(result, personalDb, catalogServingOverride
     };
   }
 
-  const matchFood = buildSearchMatchFood(result, personalDb);
+  const matchFood = applyMasterResyncToFoodItem(
+    buildSearchMatchFood(result, personalDb),
+    masterContext,
+  );
+  const displayTile = masterContext
+    ? mergeCatalogDisplay(
+      { desc: name, name, row: result.row || matchFood.row, _searchSource: result._source },
+      personalDb,
+      catalogServingOverrides,
+      masterContext,
+    )
+    : { desc: name, label: name, row: result.row || matchFood.row };
+
   return {
     matchFood,
     defaultUnitWeight: SEARCH_DEFAULT_UNIT_WEIGHT,
     defaultUnitKcal: resolveSearchKcalPer100(result),
-    displayTile: { desc: name, label: name, row: result.row },
+    displayTile,
   };
 }
 
@@ -306,7 +326,22 @@ function FastMealLoggerContent({
   const [addFeedback, setAddFeedback] = useState(null);
   const [deepEditFood, setDeepEditFood] = useState(null);
   const [editingCatalogFood, setEditingCatalogFood] = useState(null);
-  const [catalogServingOverrides, setCatalogServingOverrides] = useState({});
+  const [catalogServingOverrides, setCatalogServingOverrides] = useState(() => {
+    ensureMasterDbVersion();
+    return loadCatalogServingOverrides();
+  });
+  const masterContext = useMemo(
+    () => ({ kentuItDb, globalDb, masterDb: globalDb }),
+    [kentuItDb, globalDb],
+  );
+  const mergeCatalog = useCallback(
+    (item) => mergeCatalogDisplay(item, personalDb, catalogServingOverrides, masterContext),
+    [personalDb, catalogServingOverrides, masterContext],
+  );
+
+  useEffect(() => {
+    saveCatalogServingOverrides(catalogServingOverrides);
+  }, [catalogServingOverrides]);
   const [enrichmentSession, setEnrichmentSession] = useState(null);
   const enrichmentAbortRef = useRef(null);
   const enrichmentResolveRef = useRef(null);
@@ -690,18 +725,18 @@ function FastMealLoggerContent({
   const suggestedFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
     suggestedFoods.forEach((tile) => {
-      const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+      const displayTile = mergeCatalog(tile);
       const key = resolveFoodIdentityKey(displayTile);
       if (key) keys.add(key);
     });
     return keys;
-  }, [suggestedFoods, personalDb, catalogServingOverrides]);
+  }, [suggestedFoods, mergeCatalog]);
 
   const remainingFoods = useMemo(
     () =>
       quickFoods
         .filter((tile) => {
-          const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+          const displayTile = mergeCatalog(tile);
           const key = resolveFoodIdentityKey(displayTile);
           return !key || !suggestedFoodIdentityKeys.has(key);
         })
@@ -711,7 +746,7 @@ function FastMealLoggerContent({
             { provenance: resolveProvenanceFromTile(b, personalDb) },
           ),
         ),
-    [quickFoods, personalDb, catalogServingOverrides, suggestedFoodIdentityKeys],
+    [quickFoods, mergeCatalog, suggestedFoodIdentityKeys],
   );
 
   const gridFoods = useMemo(
@@ -731,11 +766,11 @@ function FastMealLoggerContent({
   const filteredQuickFoods = useMemo(
     () =>
       quickFoods.filter((tile) => {
-        const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const displayTile = mergeCatalog(tile);
         const name = displayTile.label || displayTile.desc || '';
         return textMatchesQuery(name, vetrinaQuery);
       }),
-    [quickFoods, personalDb, catalogServingOverrides, vetrinaQuery],
+    [quickFoods, mergeCatalog, vetrinaQuery],
   );
 
   const selectedMealLabel = useMemo(
@@ -769,12 +804,12 @@ function FastMealLoggerContent({
   const quickFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
     filteredQuickFoods.forEach((tile) => {
-      const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+      const displayTile = mergeCatalog(tile);
       const key = resolveFoodIdentityKey(displayTile);
       if (key) keys.add(key);
     });
     return keys;
-  }, [filteredQuickFoods, personalDb, catalogServingOverrides]);
+  }, [filteredQuickFoods, mergeCatalog]);
 
   const extraDbSearchResults = useMemo(
     () =>
@@ -848,7 +883,7 @@ function FastMealLoggerContent({
   };
 
   const renderQuickFoodTile = (tile, isSuggested = false) => {
-    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const displayTile = mergeCatalog(tile);
     const tileVisual = resolveFoodVisual(displayTile, personalDb);
     const defaultUnitWeight = getFoodUnitWeight(displayTile);
     const defaultUnitKcal = getDefaultUnitKcal(displayTile);
@@ -878,7 +913,7 @@ function FastMealLoggerContent({
       defaultUnitWeight,
       defaultUnitKcal,
       displayTile,
-    } = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides);
+    } = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext);
     const tileVisual = resolveFoodVisual(result, personalDb);
     const qty = getDraftQtyForFood(draftFoods, matchFood, defaultUnitWeight);
     const sourceBadge = SEARCH_SOURCE_BADGE[result._source] || null;
@@ -1029,7 +1064,7 @@ function FastMealLoggerContent({
   };
 
   const buildTileDraftPayload = (tile, targetWeight) => {
-    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const displayTile = mergeCatalog(tile);
     let payload = displayTile;
     const dbKey = displayTile.foodDbKey;
     if (dbKey && personalDb && typeof personalDb === 'object' && personalDb[dbKey]) {
@@ -1078,7 +1113,7 @@ function FastMealLoggerContent({
 
   const openFoodDetail = (tile) => {
     if (!tile) return;
-    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const displayTile = mergeCatalog(tile);
     setDetailFood({
       tile,
       displayTile,
@@ -1089,7 +1124,7 @@ function FastMealLoggerContent({
 
   const openFoodDetailFromSearchResult = (result) => {
     if (!result) return;
-    const stats = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides);
+    const stats = resolveSearchResultTileStats(result, personalDb, catalogServingOverrides, masterContext);
     const dbKey = result._source === 'personal' ? (result.key || result.id) : undefined;
     const tile = {
       foodDbKey: dbKey,
@@ -1135,7 +1170,7 @@ function FastMealLoggerContent({
   const handleAddPredictiveBlock = (tile, portionCount = 1) => {
     if (!tile || portionCount <= 0) return;
 
-    const displayTile = mergeCatalogDisplay(tile, personalDb, catalogServingOverrides);
+        const displayTile = mergeCatalog(tile);
     let payload = displayTile;
     const dbKey = displayTile.foodDbKey;
     if (dbKey && personalDb && typeof personalDb === 'object' && personalDb[dbKey]) {
@@ -1180,8 +1215,8 @@ function FastMealLoggerContent({
     setDeepEditFood(null);
     const mergedSource = source?._source
       ? source
-      : mergeCatalogDisplay(source, personalDb, catalogServingOverrides);
-    const editItem = buildCatalogDeepEditItem(mergedSource, personalDb);
+      : mergeCatalog(source);
+    const editItem = buildCatalogDeepEditItem(mergedSource, personalDb, masterContext);
     if (editItem) setEditingCatalogFood(editItem);
   };
 
@@ -1213,12 +1248,25 @@ function FastMealLoggerContent({
   const handleCatalogDeepEditSave = async (updatedItem) => {
     if (!updatedItem) return;
 
-    const overrideEntry = buildCatalogOverrideFromEdit(updatedItem);
-    if (overrideEntry) {
-      setCatalogServingOverrides((prev) => ({
-        ...prev,
-        [overrideEntry.key]: overrideEntry.patch,
-      }));
+    const identity = resolveFoodIdentityKey(updatedItem);
+    const isManual = updatedItem._manualOverride === true;
+
+    if (isManual) {
+      const overrideEntry = buildCatalogOverrideFromEdit(updatedItem);
+      if (overrideEntry) {
+        setCatalogServingOverrides((prev) => ({
+          ...prev,
+          [overrideEntry.key]: overrideEntry.patch,
+        }));
+      }
+    } else if (identity) {
+      clearCatalogServingOverride(identity);
+      setCatalogServingOverrides((prev) => {
+        if (!prev[identity]) return prev;
+        const next = { ...prev };
+        delete next[identity];
+        return next;
+      });
     }
 
     const dbKey = updatedItem.foodDbKey;
@@ -1236,11 +1284,13 @@ function FastMealLoggerContent({
       }
     }
 
-    const identity = resolveFoodIdentityKey(updatedItem);
     if (identity) {
       draftFoods.forEach((item) => {
         if (resolveFoodIdentityKey(item) === identity) {
-          updateFoodInDraft(item.id, applyCatalogEditToDraftItem(item, updatedItem));
+          updateFoodInDraft(
+            item.id,
+            applyCatalogEditToDraftItem(item, updatedItem, { manualOverride: isManual }),
+          );
         }
       });
     }
@@ -1550,11 +1600,7 @@ function FastMealLoggerContent({
                         </div>
                       ) : null}
                       {gridFoods.map((tile) => {
-                        const displayTile = mergeCatalogDisplay(
-                          tile,
-                          personalDb,
-                          catalogServingOverrides,
-                        );
+                        const displayTile = mergeCatalog(tile);
                         const identityKey = resolveFoodIdentityKey(displayTile);
                         const isSuggested = Boolean(
                           identityKey && suggestedFoodIdentityKeys.has(identityKey),
@@ -1881,6 +1927,7 @@ function FastMealLoggerContent({
       <FoodDeepEditModal
         isOpen={Boolean(activeDeepEditItem)}
         foodItem={activeDeepEditItem}
+        masterContext={masterContext}
         onClose={closeDeepEditModal}
         onSave={handleUnifiedDeepEditSave}
       />

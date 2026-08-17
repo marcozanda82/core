@@ -1,6 +1,7 @@
 import { FOOD_DB_SOURCE } from './foodDbSource';
 import { resolveIconTagId } from './features/mealBuilder/utils/FoodIcons';
 import { enrichDbRowWithFoodUnits } from './foodUnits';
+import { ensureMasterDbVersion } from './features/mealBuilder/utils/masterFoodResync';
 
 const KENTU_IT_DB_URL = '/crea_gold_standard.json';
 const GLOBAL_DB_URL = '/kentu_master_db.json';
@@ -264,6 +265,8 @@ async function fetchKentuJson(url) {
 let kentuDatabasesPromise = null;
 
 async function loadKentuDatabasesUncached() {
+  ensureMasterDbVersion();
+
   const empty = {
     kentuItDb: {},
     globalDb: {},

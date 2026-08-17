@@ -4412,11 +4412,7 @@ Slot esistente aggiornato (nessun ghost).`;
       }
     }
 
-    Object.keys(TARGETS).forEach((g) =>
-      Object.keys(TARGETS[g] || {}).forEach((k) => {
-        if (merged[k] == null) merged[k] = getDefaultNutrientValue(k, fullHistory);
-      }),
-    );
+    // Non inventare micronutrienti: restano assenti finché non arrivano dal master o da edit esplicito.
     if (merged.kcal == null || Number(merged.kcal) === 0) {
       merged.kcal = getDefaultNutrientValue('kcal', fullHistory);
     }
