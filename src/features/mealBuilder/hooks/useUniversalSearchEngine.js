@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FOOD_DB_SOURCE, FOOD_PROVENANCE, compareProvenancePriority } from '../../../foodDbSource';
 import {
   foodNameMatchesQuery,
@@ -8,9 +8,8 @@ import {
   tokenSharesStem,
 } from '../../../foodSearch';
 import { hasUsableOffKcal } from '../../../foodLoader';
-import { useDebouncedValue } from './useDebouncedValue';
 
-const SEARCH_DEBOUNCE_MS = 300;
+const MEGA_SEARCH_CHUNK_SIZE = 1000;
 
 const PERSONAL_SEARCH_LIMIT = 40;
 const KENTU_IT_SEARCH_LIMIT = 40;
@@ -407,6 +406,134 @@ function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
   return results.slice(0, limit);
 }
 
+function yieldToMainThread() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function isSearchAborted(signal) {
+  return typeof signal?.isCancelled === 'function' && signal.isCancelled();
+}
+
+/**
+ * Ricerca catalogo a chunk — yield tra blocchi da 1000 voci per non bloccare il main thread.
+ */
+async function searchCatalogDbChunked(query, catalogDb, existingResults, options = {}, signal = null) {
+  const safeDb = normalizeCatalogDb(catalogDb);
+  const q = String(query || '').trim();
+  if (!q || !safeDb || catalogDbIsEmpty(safeDb) || isSearchAborted(signal)) return [];
+
+  const {
+    limit = KENTU_IT_SEARCH_LIMIT,
+    legacySource = 'kentu_it',
+    dbSource = FOOD_DB_SOURCE.KENTU_IT,
+    enableFuzzy = false,
+    requireUsableKcal = dbSource === FOOD_DB_SOURCE.OFF,
+  } = options;
+
+  const entries = Object.entries(safeDb);
+  const results = [];
+  const poolLimit = Math.max(limit * 2, limit);
+
+  for (let start = 0; start < entries.length; start += MEGA_SEARCH_CHUNK_SIZE) {
+    if (isSearchAborted(signal)) return results.slice(0, limit);
+
+    const chunkEntries = entries.slice(start, start + MEGA_SEARCH_CHUNK_SIZE);
+    const chunkDb = Object.fromEntries(chunkEntries);
+    const detailed = searchFoodsDetailed(chunkDb, q, {
+      includeUserHistory: dbSource === FOOD_DB_SOURCE.KENTU_IT,
+      limit: poolLimit,
+      mode: 'search',
+      enableFuzzy,
+    });
+
+    detailed.forEach((hit) => {
+      if (results.length >= limit) return;
+      const row = safeDb[hit.id];
+      if (!row) return;
+      if (requireUsableKcal && !hasUsableOffKcal(row)) return;
+      const mapped = mapCatalogHitToResult(hit, row, legacySource, dbSource);
+      if (!isDuplicateOfExisting(mapped, existingResults) && !isDuplicateOfExisting(mapped, results)) {
+        results.push(mapped);
+      }
+    });
+
+    if (results.length >= limit) break;
+    await yieldToMainThread();
+  }
+
+  return results.slice(0, limit);
+}
+
+/**
+ * Tier 2–4 async — time-sliced, cancellabile via signal.isCancelled().
+ */
+export async function searchMegaDbsOnlyAsync(query, options = {}, signal = null) {
+  const trimmedQuery = String(query || '').trim();
+  if (!trimmedQuery || isSearchAborted(signal)) return [];
+
+  const {
+    kentuItDb = null,
+    globalDb = null,
+    offDb = null,
+    searchGlobal = true,
+    cap = MERGED_SEARCH_RESULT_CAP,
+  } = options;
+
+  await yieldToMainThread();
+  if (isSearchAborted(signal)) return [];
+
+  const kentuItResults = await searchCatalogDbChunked(
+    trimmedQuery,
+    kentuItDb,
+    [],
+    {
+      limit: KENTU_IT_SEARCH_LIMIT,
+      legacySource: 'kentu_it',
+      dbSource: FOOD_DB_SOURCE.KENTU_IT,
+    },
+    signal,
+  );
+  if (isSearchAborted(signal)) return [];
+
+  const globalResults = searchGlobal
+    ? await searchCatalogDbChunked(
+      trimmedQuery,
+      globalDb,
+      kentuItResults,
+      {
+        limit: GLOBAL_SEARCH_LIMIT,
+        legacySource: 'master',
+        dbSource: FOOD_DB_SOURCE.GLOBAL,
+      },
+      signal,
+    )
+    : [];
+  if (isSearchAborted(signal)) return [];
+
+  const offResults = await searchCatalogDbChunked(
+    trimmedQuery,
+    offDb,
+    [...kentuItResults, ...globalResults],
+    {
+      limit: OFF_SEARCH_LIMIT,
+      legacySource: 'off',
+      dbSource: FOOD_DB_SOURCE.OFF,
+      enableFuzzy: false,
+      requireUsableKcal: true,
+    },
+    signal,
+  );
+  if (isSearchAborted(signal)) return [];
+
+  return mergeAndRankSearchResults(
+    trimmedQuery,
+    [...kentuItResults, ...globalResults, ...offResults],
+    cap,
+  );
+}
+
 /**
  * Tier 1 — ricerca sincrona sul database personale Firebase (Kentu DB IT).
  */
@@ -559,6 +686,34 @@ export function runUnifiedFoodSearch(query, options = {}) {
   );
 }
 
+/**
+ * Tier 2–4 — solo cataloghi pesanti (Kentu IT, Global, OFF). Esclude il DB personale.
+ */
+export function searchMegaDbsOnly(query, options = {}) {
+  const trimmedQuery = String(query || '').trim();
+  if (!trimmedQuery) return [];
+
+  const {
+    kentuItDb = null,
+    globalDb = null,
+    offDb = null,
+    searchGlobal = true,
+    cap = MERGED_SEARCH_RESULT_CAP,
+  } = options;
+
+  const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, []);
+  const globalResults = searchGlobal
+    ? searchGlobalDb(trimmedQuery, globalDb, [])
+    : [];
+  const offResults = searchOffDb(trimmedQuery, offDb, []);
+
+  return mergeAndRankSearchResults(
+    trimmedQuery,
+    [...kentuItResults, ...globalResults, ...offResults],
+    cap,
+  );
+}
+
 /** @deprecated Usare searchGlobalDb */
 export function searchMasterDb(query, masterDb, personalResults = []) {
   return searchGlobalDb(query, masterDb, personalResults);
@@ -594,76 +749,165 @@ export const SEARCH_SOURCE_BADGE = {
 };
 
 /**
- * Esegue la ricerca pesante in modo deferito così il spinner può paintare.
+ * Ricerca ibrida:
+ * - DB personale: istantaneo sulla liveQuery (useMemo)
+ * - Mega DB: solo su committedMegaQuery (Invio / commitMegaSearch), time-sliced async
  */
-function scheduleSearchWork(work) {
-  return new Promise((resolve) => {
-    window.setTimeout(() => {
-      resolve(work());
-    }, 0);
-  });
-}
-
-/**
- * Ricerca esterna / unificata su query *committata* (Invio), non live.
- * isSearching è true non appena la query committata non coincide ancora coi risultati risolti
- * (evita il flash "Nessun risultato" prima che l'effect parta).
- */
-export function useCommittedFoodSearch(committedQuery, personalDb, options = {}) {
+export function useSplitFoodSearch(liveQuery, personalDb, options = {}) {
   const {
     kentuItDb = null,
     globalDb = null,
     offDb = null,
     searchGlobal = true,
+    cap = MERGED_SEARCH_RESULT_CAP,
   } = options;
-  const trimmed = String(committedQuery || '').trim();
-  const [results, setResults] = useState([]);
-  const [resolvedQuery, setResolvedQuery] = useState('');
-  const [inFlight, setInFlight] = useState(false);
-  const genRef = useRef(0);
 
-  const isSearching = Boolean(trimmed) && (inFlight || resolvedQuery !== trimmed);
-  const safeResults = !trimmed || isSearching || resolvedQuery !== trimmed ? [] : results;
+  const liveTrimmed = String(liveQuery || '').trim();
+  const liveTrimmedRef = useRef(liveTrimmed);
+  liveTrimmedRef.current = liveTrimmed;
+
+  const [committedMegaQuery, setCommittedMegaQuery] = useState('');
+  const [megaResults, setMegaResults] = useState([]);
+  const [resolvedMegaQuery, setResolvedMegaQuery] = useState('');
+  const [megaInFlight, setMegaInFlight] = useState(false);
+  const searchGenRef = useRef(0);
+
+  const personalResults = useMemo(() => {
+    if (!liveTrimmed) return [];
+    return searchPersonalDb(personalDb, liveTrimmed);
+  }, [liveTrimmed, personalDb]);
+
+  const commitMegaSearch = useCallback((overrideQuery) => {
+    const next = String(
+      overrideQuery != null ? overrideQuery : liveTrimmedRef.current,
+    ).trim();
+    setCommittedMegaQuery(next);
+  }, []);
+
+  const clearMegaSearch = useCallback(() => {
+    searchGenRef.current += 1;
+    setCommittedMegaQuery('');
+    setMegaResults([]);
+    setResolvedMegaQuery('');
+    setMegaInFlight(false);
+  }, []);
 
   useEffect(() => {
-    const gen = ++genRef.current;
+    if (!liveTrimmed) {
+      clearMegaSearch();
+    }
+  }, [liveTrimmed, clearMegaSearch]);
 
-    if (!trimmed) {
-      setResults([]);
-      setResolvedQuery('');
-      setInFlight(false);
+  useEffect(() => {
+    const gen = ++searchGenRef.current;
+    let cancelled = false;
+    const signal = {
+      isCancelled: () => cancelled || gen !== searchGenRef.current,
+    };
+
+    if (!committedMegaQuery) {
+      setMegaResults([]);
+      setResolvedMegaQuery('');
+      setMegaInFlight(false);
       return undefined;
     }
 
-    setInFlight(true);
-    let cancelled = false;
+    setMegaInFlight(true);
 
-    void scheduleSearchWork(() =>
-      runUnifiedFoodSearch(trimmed, {
-        personalDb,
-        kentuItDb,
-        globalDb,
-        offDb,
-        searchGlobal,
-      }),
-    ).then((next) => {
-      if (cancelled || gen !== genRef.current) return;
-      setResults(Array.isArray(next) ? next : []);
-      setResolvedQuery(trimmed);
-      setInFlight(false);
-    });
+    void (async () => {
+      await yieldToMainThread();
+      if (signal.isCancelled()) return;
+
+      const next = await searchMegaDbsOnlyAsync(
+        committedMegaQuery,
+        {
+          kentuItDb,
+          globalDb,
+          offDb,
+          searchGlobal,
+          cap,
+        },
+        signal,
+      );
+
+      if (signal.isCancelled()) return;
+      setMegaResults(Array.isArray(next) ? next : []);
+      setResolvedMegaQuery(committedMegaQuery);
+      setMegaInFlight(false);
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [trimmed, personalDb, kentuItDb, globalDb, offDb, searchGlobal]);
+  }, [committedMegaQuery, kentuItDb, globalDb, offDb, searchGlobal, cap]);
+
+  const megaResultsReady = !committedMegaQuery || resolvedMegaQuery === committedMegaQuery;
+  const isSearchingMega = Boolean(committedMegaQuery) && (megaInFlight || !megaResultsReady);
+  const megaMatchesLive = Boolean(committedMegaQuery) && liveTrimmed === committedMegaQuery;
+
+  const results = useMemo(() => {
+    if (!liveTrimmed) return [];
+    const megaForMerge = megaResultsReady && megaMatchesLive ? megaResults : [];
+    return mergeAndRankSearchResults(
+      liveTrimmed,
+      [...personalResults, ...megaForMerge],
+      cap,
+    );
+  }, [
+    liveTrimmed,
+    personalResults,
+    megaResults,
+    megaResultsReady,
+    megaMatchesLive,
+    cap,
+  ]);
 
   return {
-    results: safeResults,
-    isSearching,
+    results,
+    personalResults,
+    megaResults: megaResultsReady && megaMatchesLive ? megaResults : [],
+    committedMegaQuery,
+    commitMegaSearch,
+    clearMegaSearch,
+    isSearchingMega,
     /** @deprecated alias compat */
-    isSearchingExternal: isSearching,
-    externalResults: safeResults,
+    isSearching: isSearchingMega,
+    isSearchingExternal: isSearchingMega,
+    externalResults: megaResultsReady && megaMatchesLive ? megaResults : [],
+  };
+}
+
+/**
+ * Ricerca su query committata (Invio): personal istantaneo + mega al cambio query.
+ */
+export function useCommittedFoodSearch(committedQuery, personalDb, options = {}) {
+  const trimmed = String(committedQuery || '').trim();
+  const {
+    results,
+    isSearchingMega,
+    megaResults,
+    personalResults,
+    commitMegaSearch,
+  } = useSplitFoodSearch(trimmed, personalDb, options);
+  const lastCommittedRef = useRef('');
+
+  useEffect(() => {
+    if (trimmed && trimmed !== lastCommittedRef.current) {
+      lastCommittedRef.current = trimmed;
+      commitMegaSearch(trimmed);
+    }
+    if (!trimmed) {
+      lastCommittedRef.current = '';
+    }
+  }, [trimmed, commitMegaSearch]);
+
+  return {
+    results,
+    isSearching: isSearchingMega,
+    isSearchingExternal: isSearchingMega,
+    externalResults: megaResults,
+    personalResults,
+    commitMegaSearch,
   };
 }
 
@@ -676,25 +920,25 @@ export function useDebouncedExternalFoodSearch(query, personalDb, globalDb = nul
 }
 
 /**
- * Motore universale: digitazione libera; ricerca solo su Invio / runSearch().
+ * Motore universale: personal live, mega DB solo su Invio (runSearch / commitMegaSearch).
  */
 export function useUniversalSearchEngine(personalDb, kentuItDb = null, globalDb = null, options = {}) {
   const {
     searchGlobal = true,
     offDb = null,
-    debounceMs = SEARCH_DEBOUNCE_MS,
   } = options;
   const [query, setQuery] = useState('');
-  const debouncedQuery = useDebouncedValue(query, debounceMs);
-  const [committedQuery, setCommittedQuery] = useState('');
   const queryRef = useRef(query);
   queryRef.current = query;
 
-  useEffect(() => {
-    setCommittedQuery(String(debouncedQuery || '').trim());
-  }, [debouncedQuery]);
+  const liveTrimmed = String(query || '').trim();
 
-  const { results, isSearching } = useCommittedFoodSearch(committedQuery, personalDb, {
+  const {
+    results,
+    isSearchingMega,
+    commitMegaSearch,
+    clearMegaSearch,
+  } = useSplitFoodSearch(liveTrimmed, personalDb, {
     kentuItDb,
     globalDb,
     offDb,
@@ -704,25 +948,27 @@ export function useUniversalSearchEngine(personalDb, kentuItDb = null, globalDb 
   const runSearch = useCallback((overrideQuery) => {
     const next = String(overrideQuery != null ? overrideQuery : queryRef.current).trim();
     if (overrideQuery != null) setQuery(String(overrideQuery));
-    setCommittedQuery(next);
-  }, []);
+    commitMegaSearch(next);
+  }, [commitMegaSearch]);
 
   const clearSearch = useCallback(() => {
     setQuery('');
-    setCommittedQuery('');
-  }, []);
+    clearMegaSearch();
+  }, [clearMegaSearch]);
 
   return {
     query,
     setQuery,
     results,
-    isSearching,
+    isSearching: isSearchingMega,
+    isSearchingMega,
     /** @deprecated alias compat con UI precedente */
-    isSearchingExternal: isSearching,
+    isSearchingExternal: isSearchingMega,
     runSearch,
     clearSearch,
-    committedQuery,
-    hasSearched: committedQuery.trim().length > 0,
+    commitMegaSearch,
+    committedQuery: liveTrimmed,
+    hasSearched: liveTrimmed.length > 0,
   };
 }
 

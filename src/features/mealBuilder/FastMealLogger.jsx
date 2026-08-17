@@ -41,7 +41,6 @@ import {
   buildCatalogOverrideFromEdit,
   mergeCatalogDisplay,
 } from './utils/catalogFoodUtils';
-import { useDebouncedValue } from './hooks/useDebouncedValue';
 import {
   clearCatalogServingOverride,
   ensureMasterDbVersion,
@@ -69,7 +68,7 @@ import {
 import { draftFoodsToRecipePayload, fetchRecipesFromDb } from './utils/recipeDraftUtils';
 import { textMatchesSearchQuery } from '../../foodSearch';
 import {
-  useCommittedFoodSearch,
+  useSplitFoodSearch,
   SEARCH_SOURCE_BADGE,
 } from './hooks/useUniversalSearchEngine';
 import { decimalToTimeStr } from '../../coreEngine';
@@ -87,7 +86,6 @@ import {
 const QUICK_FOODS_LIMIT = 30;
 const SUGGESTED_FOODS_LIMIT = 6;
 const SEARCH_DEFAULT_UNIT_WEIGHT = 100;
-const VETRINA_SEARCH_DEBOUNCE_MS = 300;
 const VETRINA_SEARCH_RESULT_LIMIT = 50;
 
 const MEAL_SLOTS = [
@@ -336,7 +334,6 @@ function FastMealLoggerContent({
   const [viewMode, setViewMode] = useState('expanded');
   const [isBuilderHeaderCollapsed, setIsBuilderHeaderCollapsed] = useState(false);
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
-  const debouncedVetrinaQuery = useDebouncedValue(vetrinaSearchQuery, VETRINA_SEARCH_DEBOUNCE_MS);
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
   const [activeTab, setActiveTab] = useState(() =>
@@ -785,22 +782,32 @@ function FastMealLoggerContent({
   }, [gridFoods, personalDb, catalogServingOverrides, masterContext]);
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
-  /** Query debounced: filtraggio e ricerca DB partono solo dopo pausa digitazione. */
-  const vetrinaQuery = debouncedVetrinaQuery.trim();
-  const isVetrinaSearching = vetrinaQuery.length > 0;
+  /** Query live: filtro personale istantaneo. Mega DB solo su Invio (commitMegaSearch). */
+  const liveVetrinaQuery = vetrinaSearchQuery.trim();
+  const isVetrinaSearching = liveVetrinaQuery.length > 0;
+
+  const {
+    results: vetrinaUnifiedResults,
+    isSearchingMega: isVetrinaDbSearching,
+    commitMegaSearch,
+  } = useSplitFoodSearch(liveVetrinaQuery, personalDb, {
+    kentuItDb,
+    globalDb: globalDb ?? masterDb,
+    offDb,
+    searchGlobal: true,
+  });
 
   const submitVetrinaSearch = useCallback(() => {
-    // Invio immediato: forza sync query (debounce gestisce il resto al prossimo tick).
-    setVetrinaSearchQuery((prev) => prev.trim());
-  }, []);
+    commitMegaSearch();
+  }, [commitMegaSearch]);
 
-  /** Filter → slice (solo grezzi, zero merge). */
+  /** Filter → slice (solo grezzi, zero merge). Istantaneo sulla query live. */
   const filteredQuickFoodsRaw = useMemo(() => {
-    if (!vetrinaQuery) return [];
+    if (!liveVetrinaQuery) return [];
     return quickFoods
-      .filter((tile) => textMatchesQuery(resolveRawTileSearchText(tile), vetrinaQuery))
+      .filter((tile) => textMatchesQuery(resolveRawTileSearchText(tile), liveVetrinaQuery))
       .slice(0, VETRINA_SEARCH_RESULT_LIMIT);
-  }, [quickFoods, vetrinaQuery]);
+  }, [quickFoods, liveVetrinaQuery]);
 
   /** Map pesante solo sui match visibili della ricerca. */
   const filteredQuickFoodDisplayByKey = useMemo(() => {
@@ -829,19 +836,9 @@ function FastMealLoggerContent({
     || (viewMode === 'expanded' && isBuilderHeaderCollapsed);
 
   const filteredSavedRecipes = useMemo(
-    () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, vetrinaQuery)),
-    [savedRecipes, vetrinaQuery],
+    () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, liveVetrinaQuery)),
+    [savedRecipes, liveVetrinaQuery],
   );
-
-  const {
-    results: vetrinaUnifiedResults,
-    isSearching: isVetrinaDbSearching,
-  } = useCommittedFoodSearch(vetrinaQuery, personalDb, {
-    kentuItDb,
-    globalDb: globalDb ?? masterDb,
-    offDb,
-    searchGlobal: true,
-  });
 
   const quickFoodIdentityKeys = useMemo(() => {
     const keys = new Set();
@@ -1520,8 +1517,8 @@ function FastMealLoggerContent({
                 </form>
                 <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
                   {isVetrinaSearching
-                    ? 'Risultati ordinati per pertinenza · Invio per aggiornare'
-                    : 'Digita e premi Invio per cercare · Suggerimenti dalle tue abitudini'}
+                    ? 'Il tuo DB si aggiorna mentre digiti · Invio per cercare nei cataloghi'
+                    : 'Digita per filtrare il tuo DB · Invio per cercare Kentu IT / Global / OFF'}
                 </p>
               </div>
 
@@ -1637,7 +1634,7 @@ function FastMealLoggerContent({
                   {unifiedSearchGridItems.length === 0
                     && !isVetrinaDbSearching ? (
                       <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
-                        Nessun risultato per &quot;{vetrinaQuery}&quot;
+                        Nessun risultato per &quot;{liveVetrinaQuery}&quot;
                       </p>
                     ) : null}
                 </div>
