@@ -40,6 +40,22 @@ const COFFEE_CYCLE = Object.freeze([
   },
 ]);
 
+/** Limite superiore di riproduzione per singoli asset video (secondi). */
+export const QUICK_EVENT_VIDEO_MAX_CLAMP_SEC = Object.freeze({
+  [QUICK_EVENT_ASSET.coffee2Video]: 6.3,
+});
+
+/**
+ * @param {string|null|undefined} videoSrc
+ * @returns {number|null}
+ */
+export function resolveQuickEventVideoMaxClampSeconds(videoSrc) {
+  const src = String(videoSrc || '').trim();
+  if (!src) return null;
+  const clamp = QUICK_EVENT_VIDEO_MAX_CLAMP_SEC[src];
+  return Number.isFinite(clamp) && clamp > 0 ? clamp : null;
+}
+
 /**
  * Indice ciclo caffè (0 → 1 → 2 → 0 …). Persistito in localStorage.
  * @returns {number}
@@ -128,6 +144,7 @@ export function resolveCinemaBannerFromChat(chatHistory = []) {
       label: String(payload.title || msg.text || msg.displayText || 'Evento registrato').trim(),
       loop: false,
       messageKey: msg.id ?? msg.timestamp ?? i,
+      maxClampSeconds: resolveQuickEventVideoMaxClampSeconds(videoSrc),
     };
   }
   return null;
@@ -179,6 +196,7 @@ export function buildQuickEventConfirmPayload(kind, extra = {}) {
       subtitle: extra.subtitle || undefined,
       imageSrc: visual.imageSrc,
       videoSrc: visual.videoSrc,
+      maxClampSeconds: resolveQuickEventVideoMaxClampSeconds(visual.videoSrc),
     };
   }
   if (normalizedKind === 'tea') {

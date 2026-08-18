@@ -95,6 +95,8 @@ export default function KentuProcessingBanner({
   tailLoopFromSeconds = null,
   /** Lavagna / AI ancora attiva: loop 8→fine finché true. */
   tailLoopWhileActive = false,
+  /** Limite superiore di riproduzione (es. 6.3): pausa e stop senza arrivare a fine file. */
+  maxClampSeconds = null,
 }) {
   const ariaLabel = String(label || 'Kentu sta elaborando...').trim();
   const poster = String(posterSrc || '').trim() || '/Hacker4.png';
@@ -103,10 +105,13 @@ export default function KentuProcessingBanner({
   const loopFadeTimerRef = useRef(null);
   const isLoopFadingRef = useRef(false);
   const isTailLoopingRef = useRef(false);
+  const isMaxClampReachedRef = useRef(false);
   const [mediaOpacity, setMediaOpacity] = useState(1);
   const showCaption = !hideCaption && variant !== 'header';
   const clampSeconds = Number(clampToFirstSeconds);
   const tailLoopSec = Number(tailLoopFromSeconds);
+  const maxClampSec = Number(maxClampSeconds);
+  const hasMaxClamp = Number.isFinite(maxClampSec) && maxClampSec > 0;
   const shouldClampProcessingLoop = Number.isFinite(clampSeconds)
     && clampSeconds > 0
     && !isPenultimateOrLater;
@@ -117,8 +122,6 @@ export default function KentuProcessingBanner({
   const loopResetSec = resolveProcessingLoopResetSec(
     shouldClampProcessingLoop ? clampSeconds : null,
   );
-  const effectiveLoop = (shouldClampProcessingLoop || shouldTailLoop) ? false : loop;
-
   const performTailLoopSeek = useCallback((el) => {
     if (!el || isTailLoopingRef.current) return false;
     isTailLoopingRef.current = true;
@@ -131,8 +134,26 @@ export default function KentuProcessingBanner({
     return true;
   }, [tailLoopSec]);
 
+  const effectiveLoop = (shouldClampProcessingLoop || shouldTailLoop || hasMaxClamp) ? false : loop;
+
+  const stopAtMaxClamp = useCallback((el) => {
+    if (!el || isMaxClampReachedRef.current) return false;
+    isMaxClampReachedRef.current = true;
+    el.currentTime = maxClampSec;
+    el.pause();
+    if (typeof onVideoEnded === 'function') {
+      onVideoEnded();
+    }
+    return true;
+  }, [maxClampSec, onVideoEnded]);
+
   const handleTimeUpdate = useCallback((event) => {
     const el = event.currentTarget;
+
+    if (hasMaxClamp && !isMaxClampReachedRef.current && el.currentTime >= maxClampSec) {
+      stopAtMaxClamp(el);
+      return;
+    }
 
     if (shouldClampProcessingLoop) {
       if (isLoopFadingRef.current) return;
@@ -166,6 +187,9 @@ export default function KentuProcessingBanner({
     if (!isVideoNearEnd(el)) return;
     performTailLoopSeek(el);
   }, [
+    hasMaxClamp,
+    maxClampSec,
+    stopAtMaxClamp,
     shouldClampProcessingLoop,
     loopResetSec,
     shouldTailLoop,
@@ -173,14 +197,19 @@ export default function KentuProcessingBanner({
   ]);
 
   const handleVideoEnded = useCallback(() => {
+    if (isMaxClampReachedRef.current) return;
     const el = videoRef.current;
+    if (hasMaxClamp && el && el.currentTime >= maxClampSec - 0.05) {
+      stopAtMaxClamp(el);
+      return;
+    }
     if (shouldTailLoop && el && performTailLoopSeek(el)) {
       return;
     }
     if (!effectiveLoop && typeof onVideoEnded === 'function') {
       onVideoEnded();
     }
-  }, [shouldTailLoop, performTailLoopSeek, effectiveLoop, onVideoEnded]);
+  }, [hasMaxClamp, maxClampSec, stopAtMaxClamp, shouldTailLoop, performTailLoopSeek, effectiveLoop, onVideoEnded]);
 
   useEffect(() => () => {
     if (loopFadeTimerRef.current) {
@@ -196,6 +225,7 @@ export default function KentuProcessingBanner({
   }, [shouldClampProcessingLoop, shouldTailLoop]);
 
   useEffect(() => {
+    isMaxClampReachedRef.current = false;
     if (!video) return undefined;
     const el = videoRef.current;
     if (!el) return undefined;
@@ -224,11 +254,11 @@ export default function KentuProcessingBanner({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !video || el.ended) return;
+    if (!el || !video || el.ended || isMaxClampReachedRef.current) return;
     if (el.paused) {
       void el.play().catch(() => {});
     }
-  }, [video, shouldClampProcessingLoop, shouldTailLoop, isPenultimateOrLater]);
+  }, [video, shouldClampProcessingLoop, shouldTailLoop, isPenultimateOrLater, hasMaxClamp]);
 
   if (!video && !poster) return null;
 

@@ -36,7 +36,7 @@ import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
 import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
-import { resolveCinemaBannerFromChat } from './features/quickEvents/quickEventConfirmAssets.js';
+import { resolveCinemaBannerFromChat, resolveQuickEventVideoMaxClampSeconds } from './features/quickEvents/quickEventConfirmAssets.js';
 import { draftHasRawMcDriveItems, isMcDriveValidationPenultimateOrLater } from './features/commandTerminal/conversation/mcdriveWizard.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
@@ -382,6 +382,7 @@ export default function AiCluster({
         label: quickEventCinema.label,
         loop: false,
         messageKey: quickEventCinema.messageKey,
+        maxClampSeconds: quickEventCinema.maxClampSeconds ?? null,
         source: 'quick_event',
       };
     }
@@ -497,6 +498,8 @@ export default function AiCluster({
       label: payload.label || 'Conferma evento',
       loop: payload.loop === true,
       messageKey: payload.messageKey ?? null,
+      maxClampSeconds: payload.maxClampSeconds
+        ?? resolveQuickEventVideoMaxClampSeconds(payload.videoSrc),
       source: payload.source || 'quick_event',
     });
   }, []);
@@ -866,6 +869,7 @@ export default function AiCluster({
               isPenultimateOrLater={!isMcDriveProcessingVideo || isMcDrivePenultimateOrLater}
               tailLoopFromSeconds={isMcDriveProcessingVideo ? 8 : null}
               tailLoopWhileActive={isMcDriveTailLoopActive}
+              maxClampSeconds={hoistedVideo.maxClampSeconds ?? null}
               onVideoEnded={handleHoistedVideoEnded}
             />
             <div className="absolute right-3 top-3 z-10 flex shrink-0 items-center">
@@ -1126,6 +1130,10 @@ export default function AiCluster({
                           label: msg.quickEventConfirm?.title || msg.text || msg.displayText || 'Conferma evento',
                           loop: false,
                           messageKey: msg.quickEventConfirm?.messageKey ?? msg.id ?? idx,
+                          maxClampSeconds: msg.quickEventConfirm?.maxClampSeconds
+                            ?? resolveQuickEventVideoMaxClampSeconds(
+                              msg.quickEventConfirm?.videoSrc || msg.videoSrc,
+                            ),
                           source: 'quick_event',
                         });
                       }}
