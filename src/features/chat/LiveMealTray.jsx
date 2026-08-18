@@ -110,6 +110,7 @@ function LiveMealTray({
   onAddMore,
   onRemoveItem,
   onUpdateGrams,
+  onUpdateMealTime = null,
   onApplyAlternative = null,
   onReplaceFromSearch = null,
   getMealTargets = null,
@@ -128,6 +129,7 @@ function LiveMealTray({
   const needsCalculate = hasRaw || hasPendingMcDriveEnrichment(items);
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
+  const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
 
   const mealTargets = useMemo(() => {
     if (typeof getMealTargets === 'function' && mealType) {
@@ -185,8 +187,35 @@ function LiveMealTray({
       {/* Header fisso: flex-none — lo scroll è solo sulla lista sotto */}
       <div className="kentu-meal-tray__header kentu-meal-tray__header--calibration flex-none">
         <div className="kentu-meal-tray__calibration-title-row">
-          <span className="kentu-meal-tray__badge">Calibrazione</span>
-          <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
+          <div className="kentu-meal-tray__calibration-title-group">
+            <span className="kentu-meal-tray__badge">Calibrazione</span>
+            <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
+          </div>
+          <label
+            htmlFor="mcdrive-meal-time"
+            className="kentu-meal-tray__time-chip inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition-colors hover:border-cyan-500/35"
+          >
+            <span aria-hidden>🕒</span>
+            <input
+              id="mcdrive-meal-time"
+              type="time"
+              value={exactTimeValue}
+              onChange={(e) => {
+                const next = String(e?.target?.value || '').trim();
+                onUpdateMealTime?.(next);
+              }}
+              onClick={(e) => {
+                if (typeof e?.currentTarget?.showPicker === 'function') {
+                  try {
+                    e.currentTarget.showPicker();
+                  } catch {
+                    /* ignored */
+                  }
+                }
+              }}
+              className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-semibold leading-none text-cyan-200 outline-none [color-scheme:dark]"
+            />
+          </label>
         </div>
         {hasTargets ? (
           <div className="kentu-meal-tray__target-grid" aria-label="Confronto vassoio / target pasto">

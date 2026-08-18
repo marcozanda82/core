@@ -289,6 +289,8 @@ export function buildLiveMealTrayPayload(items = [], meta = {}) {
     items: list.map((item) => ({ ...item })),
     mealType,
     mealTypeLabel: formatMcdriveMealTypeLabel(mealType),
+    exactTime: meta?.exactTime ?? null,
+    timeString: meta?.timeString ?? null,
     hasRaw: draftHasRawMcDriveItems(list),
     mealTargets,
     totals: {
@@ -396,6 +398,41 @@ export function isMcDriveRawItem(item) {
 export function findNextRawMcDriveIndex(items = []) {
   const list = Array.isArray(items) ? items : [];
   return list.findIndex((item) => String(item?.status || '').toLowerCase() === 'raw');
+}
+
+/**
+ * True quando la validazione sequenziale McDrive è al penultimo alimento o oltre
+ * (sblocca il video header oltre i primi 3 secondi).
+ * @param {object[]} [items]
+ * @returns {boolean}
+ */
+export function isMcDriveValidationPenultimateOrLater(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  const total = list.length;
+  if (total === 0) return true;
+  if (total <= 2) return true;
+
+  const processingIdx = list.findIndex(
+    (item) => String(item?.status || '').toLowerCase() === 'processing',
+  );
+  if (processingIdx >= 0 && processingIdx >= total - 2) {
+    return true;
+  }
+
+  const awaitingCount = list.filter((item) => {
+    const status = String(item?.status || '').toLowerCase();
+    return status === 'raw' || status === 'processing' || status === 'validating';
+  }).length;
+  if (awaitingCount <= 2) {
+    return true;
+  }
+
+  const nextRawIdx = findNextRawMcDriveIndex(list);
+  if (nextRawIdx < 0 && !draftHasRawMcDriveItems(list)) {
+    return true;
+  }
+
+  return false;
 }
 
 /**

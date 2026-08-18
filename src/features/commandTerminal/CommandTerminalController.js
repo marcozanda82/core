@@ -129,6 +129,7 @@ import {
   formatMcdriveMealTypeLabel,
 } from './conversation/mcdriveWizard.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
+import { getFoodItemsForMealSlotFromLog } from '../../utils/mealProposalBuilders.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
 import {
   buildConversationTextsFromChatHistory,
@@ -532,6 +533,9 @@ export class CommandTerminalController {
     this.pendingMcDriveDraft = [];
     this.pendingMcDriveUnknown = null;
     this.mcdriveMealType = null;
+    this.mcdriveEditingMealId = null;
+    this.mcdriveExactTime = null;
+    this.mcdriveTimeString = null;
     this.mcdriveContextState = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
@@ -548,6 +552,8 @@ export class CommandTerminalController {
   buildMcdriveTrayPayload() {
     return buildLiveMealTrayPayload(this.pendingMcDriveDraft, {
       mealType: this.mcdriveMealType,
+      exactTime: this.mcdriveExactTime,
+      timeString: this.mcdriveTimeString,
       currentState: this.mcdriveContextState
         || this.mcdriveValidationContext?.currentState
         || {},
@@ -605,6 +611,7 @@ export class CommandTerminalController {
       conversationState: this.conversationState,
       pendingMcDriveDraft: [...this.pendingMcDriveDraft],
       mcdriveMealType: this.mcdriveMealType,
+      liveMealTray: this.buildMcdriveTrayPayload(),
     };
   }
 
@@ -643,6 +650,11 @@ export class CommandTerminalController {
     }
     this.mcdriveMealType = mealType;
     this.pendingMcDriveDraft = createEmptyMcDriveDraft();
+    if (!String(this.mcdriveExactTime || '').trim()) {
+      const timeCtx = formatCurrentSystemTimeContext();
+      this.mcdriveExactTime = timeCtx.timeHHmm;
+      this.mcdriveTimeString = timeCtx.timeHHmm;
+    }
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     // Card unica: nessun testo chat — l'header della lavagna mostra già il pasto.
@@ -658,6 +670,12 @@ export class CommandTerminalController {
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
 
+    const editingMealId = options?.editingMealId != null
+      ? String(options.editingMealId).trim()
+      : null;
+    const isEditing = Boolean(editingMealId);
+    this.mcdriveEditingMealId = editingMealId;
+
     const fromOptions = normalizeMcdriveMealType(
       options?.mealTypeHint || options?.mealType || null,
     );
@@ -667,7 +685,80 @@ export class CommandTerminalController {
     if (!mealType) {
       return this.promptMcdriveMealType();
     }
-    return this.setMcdriveMealTypeAndOpen(mealType);
+
+    // Default tempo: ora corrente, a meno di override (editing).
+    const timeCtx = formatCurrentSystemTimeContext();
+    const nextTime = isEditing
+      ? String(
+        options?.editingExactTime
+        || options?.exactTime
+        || options?.timeString
+        || options?.mealTime
+        || timeCtx.timeHHmm,
+      ).trim()
+      : timeCtx.timeHHmm;
+    this.mcdriveExactTime = nextTime;
+    this.mcdriveTimeString = nextTime;
+
+    if (!isEditing) {
+      return this.setMcdriveMealTypeAndOpen(mealType);
+    }
+
+    // Hydration: pre-popoliamo la lavagna con gli alimenti del pasto esistente.
+    let editingFoods = Array.isArray(options?.editingFoods) ? options.editingFoods : [];
+    if (editingFoods.length === 0 && editingMealId) {
+      const log = Array.isArray(currentState?.activeLog) ? currentState.activeLog : [];
+      editingFoods = getFoodItemsForMealSlotFromLog(log, editingMealId).map((f) => ({
+        foodName: f.foodName || f.name || f.desc || f.label || '',
+        grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
+        kcal: f.kcal ?? f.cal ?? 0,
+        pro: f.pro ?? f.prot ?? 0,
+        carb: f.carb ?? f.carbo ?? f.cho ?? 0,
+        fat: f.fat ?? f.fatTotal ?? 0,
+        foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
+        itemId: f.itemId ?? f.id ?? null,
+      }));
+    }
+    const hydratedDraft = editingFoods
+      .map((f, idx) => {
+        if (!f || typeof f !== 'object') return null;
+        const foodName = String(f.foodName || f.name || f.desc || f.label || '').trim();
+        const grams = Math.max(
+          1,
+          Math.round(Number(f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0) || 0),
+        );
+        if (!foodName) return null;
+
+        const kcal = Math.round(Number(f.kcal ?? f.cal ?? 0) || 0);
+        const pro = Number(f.pro ?? f.prot ?? 0) || 0;
+        const carbo = Number(f.carbo ?? f.carb ?? f.cho ?? 0) || 0;
+        const fat = Number(f.fatTotal ?? f.fat ?? 0) || 0;
+        const foodDbKey = f.foodDbKey ?? f.matchedKey ?? f.foodDbKey;
+        const id = String(f.itemId || f.id || f.key || `mcdrive_edit_${idx}`).trim();
+
+        return {
+          id,
+          foodName,
+          spokenFoodName: foodName,
+          grams,
+          kcal,
+          pro,
+          carbo,
+          fat,
+          foodDbKey: foodDbKey != null && String(foodDbKey).trim() ? String(foodDbKey).trim() : null,
+          status: 'resolved',
+          isEstimated: false,
+          alternatives: Array.isArray(f.alternatives) ? f.alternatives.slice(0, 4) : [],
+          row: f.row && typeof f.row === 'object' ? { ...f.row } : undefined,
+        };
+      })
+      .filter(Boolean);
+
+    this.mcdriveMealType = mealType;
+    this.pendingMcDriveDraft = hydratedDraft;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return this.publishMcdriveTrayMessage('');
   }
 
   continueMcdriveAddMore() {
@@ -808,6 +899,21 @@ export class CommandTerminalController {
       ok: true,
       liveMealTray: this.buildMcdriveTrayPayload(),
       pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  updateMcDriveMealTime(exactTimeStr) {
+    const raw = String(exactTimeStr || '').trim();
+    if (!raw) return { ok: false, reason: 'empty_time' };
+    // Validazione base: HH:mm
+    const ok = /^\d{2}:\d{2}$/.test(raw);
+    if (!ok) return { ok: false, reason: 'invalid_time_format' };
+    this.mcdriveExactTime = raw;
+    this.mcdriveTimeString = raw;
+    this.publishMcdriveTraySync();
+    return {
+      ok: true,
+      liveMealTray: this.buildMcdriveTrayPayload(),
     };
   }
 
@@ -1234,6 +1340,8 @@ export class CommandTerminalController {
   commitMcdriveValidatedMeal(currentState = {}) {
     const draftItems = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
     const state = currentState || this.mcdriveValidationContext?.currentState || {};
+    const editingMealId = this.mcdriveEditingMealId;
+    const isEditingLoggedMeal = Boolean(editingMealId);
 
     // Solo voci verificate; skipped esclusi dal commit (zero macro / scartati).
     const commitSource = draftItems.filter((item) => {
@@ -1261,12 +1369,16 @@ export class CommandTerminalController {
     }
 
     const timeCtx = formatCurrentSystemTimeContext();
+    const selectedExactTime = String(this.mcdriveExactTime || this.mcdriveTimeString || timeCtx.timeHHmm).trim();
     const mealType = String(
       normalizeMcdriveMealType(this.mcdriveMealType)
       || inferDefaultMealType(state)
       || deduceMealTypeFromDecimalHour(timeCtx.decimalHour)
       || 'pranzo',
     ).trim().toLowerCase();
+    const mealTypeForPayload = isEditingLoggedMeal
+      ? String(editingMealId).split('_')[0].trim().toLowerCase() || mealType
+      : mealType;
 
     let payload = normalizeFoodPayload(
       {
@@ -1281,9 +1393,9 @@ export class CommandTerminalController {
           ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
           ...(item?.isEstimated === true ? { isEstimated: true } : {}),
         })),
-        mealType,
-        exactTime: timeCtx.timeHHmm,
-        timeString: timeCtx.timeHHmm,
+        mealType: mealTypeForPayload,
+        exactTime: selectedExactTime,
+        timeString: selectedExactTime,
       },
       state,
       { inferMealTypeFromContext: false },
@@ -1291,7 +1403,7 @@ export class CommandTerminalController {
     payload = applyMealTimingDefaultsOnly(payload);
 
     const proposal = buildMealLogProposalFromPayload(
-      { ...payload, forceNewMealSlot: true },
+      { ...payload, forceNewMealSlot: !isEditingLoggedMeal },
       state,
       { userText: 'McDrive Salva Pasto' },
     );
@@ -1326,8 +1438,8 @@ export class CommandTerminalController {
       };
     }
 
-    const exactTime = String(payload?.exactTime || payload?.timeString || timeCtx.timeHHmm).trim();
-    const resolvedMealType = String(payload?.mealType || mealType).trim().toLowerCase() || mealType;
+    const exactTime = String(payload?.exactTime || payload?.timeString || selectedExactTime || timeCtx.timeHHmm).trim();
+    const resolvedMealType = String(payload?.mealType || mealTypeForPayload).trim().toLowerCase() || mealTypeForPayload;
 
     this.clearMcdriveWizard();
     if (typeof this.onRequestUsdaEnrichment === 'function') {
@@ -1339,10 +1451,11 @@ export class CommandTerminalController {
       {
         mealType: resolvedMealType,
         items: itemsForCommit,
-        action: 'add',
-        upsertAction: 'add',
-        forceNewMealSlot: true,
-        source: 'mcdrive_wizard',
+        action: isEditingLoggedMeal ? 'replace' : 'add',
+        upsertAction: isEditingLoggedMeal ? 'replace' : 'add',
+        forceNewMealSlot: isEditingLoggedMeal ? false : true,
+        ...(isEditingLoggedMeal ? { targetNodeId: editingMealId } : {}),
+        source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(exactTime ? { exactTime, timeString: exactTime } : {}),
       },
       {

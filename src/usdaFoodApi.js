@@ -1,5 +1,5 @@
 /**
- * USDA FoodData Central — ricerca locale su `kentu_master_db.json` (in memoria).
+ * USDA FoodData Central — ricerca locale su `kentu_smart_master_usda.json` (in memoria).
  * Mantiene la firma storica `searchUSDAFoods` per compatibilità con i call site legacy.
  */
 

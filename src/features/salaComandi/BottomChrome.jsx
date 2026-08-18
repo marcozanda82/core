@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrendingUp } from 'lucide-react';
+import { Activity } from 'lucide-react';
 
 /**
  * Bottom Navigation "Arc Reactor": 4 tab + slot centrale (Emblema flottante gestito da SalaComandi).
@@ -33,7 +33,7 @@ export default function BottomChrome({
           ].join(' ')}
         >
           <span className="inline-flex h-6 items-center justify-center text-[1.2rem] leading-none" aria-hidden>
-            {t.id === 'bussola' ? <TrendingUp size={20} strokeWidth={2.2} /> : t.icon}
+            {t.id === 'bussola' ? <Activity size={20} strokeWidth={2.2} /> : t.icon}
           </span>
           <span>{t.label}</span>
         </span>

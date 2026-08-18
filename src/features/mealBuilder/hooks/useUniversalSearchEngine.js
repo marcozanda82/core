@@ -82,7 +82,12 @@ function buildUnifiedResult({
     brand,
     barcode: row?.barcode != null ? String(row.barcode).trim() : undefined,
     row: row
-      ? { ...row, source: row.source || dbSource, ...(brand ? { brand } : {}) }
+      ? {
+        ...row,
+        source: row.source || dbSource,
+        ...(brand ? { brand } : {}),
+        ...(row.semanticTags ? { semanticTags: row.semanticTags } : {}),
+      }
       : { id, desc: name, name, source: dbSource, ...(brand ? { brand } : {}) },
     _source: legacySource,
     source: dbSource,
@@ -97,6 +102,7 @@ function buildUnifiedResult({
     matchType,
     textScore,
     recencyScore,
+    ...(row?.semanticTags ? { semanticTags: row.semanticTags } : {}),
   };
 }
 

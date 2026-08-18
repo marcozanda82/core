@@ -442,7 +442,7 @@ const safeNum = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
 const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
 const TimelineNodi = lazy(() => import('./TimelineNodi'));
 const LongevityView = lazy(() => import('./LongevityView'));
-const MetabolicUnifiedView = lazy(() => import('./MetabolicUnifiedView'));
+const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
@@ -499,8 +499,6 @@ export default function SalaComandi() {
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
   const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
-  /** Tool Storico da aprire al prossimo mount tab bussola (COMPASS | RADAR | MAP). */
-  const [metabolicToolRequest, setMetabolicToolRequest] = useState(null);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
@@ -774,7 +772,7 @@ export default function SalaComandi() {
       setFoodDb(result.nextFoodDb);
     }
     console.log(
-      `[sanitizeHistoricalFoodDb] fatto — re-sync ${result?.resynced ?? 0}, sterilizzati ${result?.sterilized ?? 0}`,
+      `[sanitizeHistoricalFoodDb] fatto — re-sync ${result?.resynced ?? 0}, sterilizzati ${result?.sterilized ?? 0}, tags ${result?.tagStats?.total ?? 0} (${result?.tagStats?.masterMatched ?? 0} master, ${result?.tagStats?.heuristic ?? 0} euristici)`,
     );
     return result;
   }, [userUid, db]);
@@ -6947,6 +6945,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     handleWorkoutDraftUpdateMeta,
@@ -7148,6 +7147,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
       onMcDriveRemoveItem: handleMcDriveRemoveItem,
       onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
+      onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
       onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
       onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
       getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
@@ -7196,6 +7196,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     getFastLoggerMealTargetsForSlot,
@@ -7967,10 +7968,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     openFastLoggerNew();
   }, [closeChat, openFastLoggerNew]);
 
-  const handleOpenManualMealFromChat = useCallback(() => {
+  const handleOpenManualMealFromChat = useCallback((payload = null) => {
+    const editingMealId = payload?.editingMealId != null
+      ? String(payload.editingMealId).trim()
+      : null;
+
     // Overlay FastMealLogger sopra la chat — senza smontare ai_chat.
+    if (editingMealId) {
+      loadMealToConstructor(editingMealId);
+      return;
+    }
     openFastLoggerNew();
-  }, [openFastLoggerNew]);
+  }, [openFastLoggerNew, loadMealToConstructor]);
 
   const handleOpenActivityFromChat = useCallback((payload = {}) => {
     let raw = String(payload?.defaultTab ?? payload?.tab ?? '').toLowerCase().trim();
@@ -9130,35 +9139,22 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
       {activeBottomTab === 'bussola' && (
         <div
-          className="trend-tab-shell"
+          className="centro-analisi-tab-shell"
           style={{
             flex: 1,
             minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'stretch',
-            justifyContent: 'flex-start',
-            padding: '12px 12px 0',
-            overflowY: 'hidden',
-            overflowX: 'hidden',
+            overflow: 'hidden',
             width: '100%',
             boxSizing: 'border-box',
           }}
         >
-          <Suspense fallback={<KentuLazySectionFallback label="Storico metabolico…" />}>
-          <MetabolicUnifiedView
-            mapData={metabolicMapData}
-            dailyHistory={metabolicCompassDailyHistory}
-            bodyMetricsHistory={bodyMetricsHistory}
-            compassScreenActive={activeBottomTab === 'bussola' && !snapshotOverlayOpen}
-            fullHistory={fullHistory}
-            userTargets={userTargets}
-            projectionAnchorDate={currentTrackerDate}
-            selectedTimeframe={metabolicCompassTimeframe}
-            onTimeframeChange={setMetabolicCompassTimeframe}
-            activeToolRequest={metabolicToolRequest}
-            onActiveToolRequestHandled={() => setMetabolicToolRequest(null)}
-          />
+          <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
+            <CentroAnalisiView
+              embedded
+              onExit={() => setActiveBottomTab('oggi')}
+            />
           </Suspense>
         </div>
       )}
@@ -9860,6 +9856,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             kentuItDatabase={kentuCatalogItDb}
             globalFoodDatabase={csvFoodDb}
             fullHistory={fullHistory}
+            dailyLog={activeLog}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}
@@ -9868,6 +9865,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
             onMcDriveRemoveItem={handleMcDriveRemoveItem}
             onMcDriveUpdateGrams={handleMcDriveUpdateGrams}
+            onMcDriveUpdateMealTime={handleMcDriveUpdateMealTime}
             onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
             onMcDriveReplaceFromSearch={handleMcDriveReplaceFromSearch}
             getMcDriveMealTargets={getFastLoggerMealTargetsForSlot}

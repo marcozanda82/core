@@ -4,8 +4,8 @@ import { enrichDbRowWithFoodUnits } from './foodUnits';
 import { ensureMasterDbVersion } from './features/mealBuilder/utils/masterFoodResync';
 import { KENTU_MASTER_DB_VERSION } from './constants/foodDbVersion';
 
-const KENTU_IT_DB_URL = '/crea_gold_standard.json';
-const GLOBAL_DB_URL = '/kentu_master_db.json';
+const KENTU_IT_DB_URL = '/kentu_smart_master_db.json';
+const GLOBAL_DB_URL = '/kentu_smart_master_usda.json';
 const OFF_DB_URL = '/kentu_off_master_db.json';
 
 function toNumber(value) {
@@ -80,6 +80,38 @@ function resolveRecordKey(record, index) {
   return `kentu_${index}`;
 }
 
+const SEMANTIC_TAG_KEYS = [
+  'glycemicIndex',
+  'novaGroup',
+  'inflammation',
+  'fodmap',
+  'proteinQuality',
+  'satiety',
+  'timing',
+  'allergens',
+];
+
+/**
+ * Clona semanticTags dal JSON Smart DB (IG, NOVA, infiammazione, FODMAP, ecc.).
+ * Non inventa chiavi: se il record non le ha, non le aggiunge.
+ */
+function preserveSemanticTags(record) {
+  const tags = record?.semanticTags;
+  if (!tags || typeof tags !== 'object' || Array.isArray(tags)) return undefined;
+  const next = {};
+  SEMANTIC_TAG_KEYS.forEach((key) => {
+    if (tags[key] === undefined) return;
+    next[key] = key === 'allergens' && Array.isArray(tags[key])
+      ? tags[key].slice()
+      : tags[key];
+  });
+  Object.keys(tags).forEach((key) => {
+    if (next[key] !== undefined) return;
+    next[key] = tags[key];
+  });
+  return next;
+}
+
 /**
  * Normalizza alias di ricerca/visualizzazione senza rimuovere campi avanzati (micro, amminoacidi, ecc.).
  */
@@ -89,6 +121,7 @@ function normalizeRecordForDb(record, source) {
   const rawIconTag = pickFirst(record, ['iconTag', 'icon_tag'], '');
   const resolvedIconTag = rawIconTag ? resolveIconTagId(rawIconTag) : null;
   const brand = String(pickFirst(record, ['brand', 'brands', 'marca'], '')).trim();
+  const semanticTags = preserveSemanticTags(record);
 
   const normalized = {
     ...record,
@@ -99,6 +132,7 @@ function normalizeRecordForDb(record, source) {
       : {}),
     ...(resolvedIconTag ? { iconTag: resolvedIconTag } : {}),
     ...(brand ? { brand } : {}),
+    ...(semanticTags ? { semanticTags } : {}),
     source,
     ...(source === FOOD_DB_SOURCE.OFF || record?._source === 'off'
       ? { _source: 'off' }
@@ -256,9 +290,9 @@ async function fetchKentuJson(url, { cacheBust = false } = {}) {
 
 /**
  * Carica i pilastri del database KentuOS:
- * - Kentu DB IT (CREA): `/crea_gold_standard.json`
- * - Kentu DB 🌐: `/kentu_master_db.json`
- * - Open Food Facts: `/kentu_off_master_db.json` (graceful se assente)
+ * - Kentu DB IT (CREA unificato): `/kentu_smart_master_db.json`
+ * - Kentu DB USDA arricchito: `/kentu_smart_master_usda.json`
+ * - Open Food Facts: `/kentu_off_master_db.json` (graceful se assente, invariato)
  *
  * @returns {Promise<{
  *   kentuItDb: Record<string, object>,

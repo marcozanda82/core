@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
+import { decimalToTimeStr } from '../../coreEngine';
 
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti' },
@@ -259,6 +260,7 @@ export default function PulsantieraUniversale({
   onOpenPlanView = null,
   onManualShortcut,
   onSendChatMessage,
+  dailyLog = [],
   disabled = false,
   isDiabetesAppMode = false,
   isAiGuidedModeActive = false,
@@ -396,6 +398,9 @@ export default function PulsantieraUniversale({
       };
     }
 
+    // "Pasti" gestito con overlay custom (2 sezioni + lista).
+    if (activeCategory === 'pasti') return null;
+
     const items = (SUBMENUS[activeCategory] || []).map((rawItem) => ({
       ...resolveItemPresentation(rawItem),
       id: rawItem.id,
@@ -410,7 +415,180 @@ export default function PulsantieraUniversale({
     };
   }, [activeCategory, resolveItemPresentation]);
 
-  const submenuOverlay = overlayConfig ? (
+  const pastiToday = useMemo(() => {
+    const log = Array.isArray(dailyLog) ? dailyLog : [];
+    const items = log.filter(
+      (e) => (e?.type === 'food' || e?.type === 'recipe')
+        && typeof e?.mealTime === 'number'
+        && Number.isFinite(e.mealTime)
+        && String(e?.mealType || '').trim().length > 0,
+    );
+
+    const labelByBase = {
+      colazione: 'Colazione',
+      pranzo: 'Pranzo',
+      cena: 'Cena',
+      snack: 'Spuntino',
+      spuntino: 'Spuntino',
+    };
+
+    // Note: nel diario il slot "id" usato dagli editori è composito (mealType+time),
+    // quindi emettiamo `editingMealId` nello stesso formato.
+    const groups = new Map();
+    items.forEach((it) => {
+      const mealTypeBase = String(it.mealType || '').split('_')[0].trim().toLowerCase();
+      const base = mealTypeBase;
+      const t = Number(it.mealTime);
+      const slotId = `${base}_${t}`;
+
+      if (!groups.has(slotId)) {
+        groups.set(slotId, {
+          slotId,
+          mealTypeBase: base,
+          mealTime: t,
+          foods: [],
+        });
+      }
+      groups.get(slotId).foods.push(it);
+    });
+
+    return Array.from(groups.values())
+      .sort((a, b) => (Number(b.mealTime) || 0) - (Number(a.mealTime) || 0))
+      .map((g) => ({
+        ...g,
+        timeStr: decimalToTimeStr(g.mealTime),
+        title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
+      }));
+  }, [dailyLog]);
+
+  const pastiOverlay = activeCategory === 'pasti' ? (
+    createPortal(
+      <>
+        <div
+          className="kentu-submenu-focus-backdrop fixed inset-0 z-[100040] bg-black/60 backdrop-blur-md"
+          aria-hidden
+          onClick={handleOverlayClose}
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sottomenu Pasti"
+          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 pb-28 pt-8 sm:px-6 sm:pt-10"
+        >
+          <div
+            className="kentu-submenu-focus-panel pointer-events-auto flex w-full max-w-lg max-h-[min(88dvh,720px)] flex-col items-center gap-4"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="shrink-0 text-center">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Scegli pasto
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-zinc-50">Pasti</h2>
+            </div>
+
+            <div className="mx-auto grid w-full max-w-sm grid-cols-2 gap-3 px-4 [&>button]:w-full">
+              <OverlayActionButton
+                icon={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.icon || '🔎'}
+                label={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.label || 'Manuale'}
+                onClick={() => dispatchItem(SUBMENUS.pasti.find((i) => i.id === 'manuale'))}
+              />
+              <OverlayActionButton
+                icon={SUBMENUS.pasti.find((i) => i.id === 'guidato')?.icon || '✨'}
+                label={SUBMENUS.pasti.find((i) => i.id === 'guidato')?.label || 'Guidato AI'}
+                onClick={() => dispatchItem(SUBMENUS.pasti.find((i) => i.id === 'guidato'))}
+              />
+            </div>
+
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 pb-1">
+              {pastiToday.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                  Nessun pasto registrato oggi.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {pastiToday.map((meal) => {
+                    const foodsForMcDrive = meal.foods.map((f) => ({
+                      foodName: f.foodName || f.name || f.desc || f.label || '',
+                      grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
+                      kcal: f.kcal ?? f.cal ?? 0,
+                      pro: f.pro ?? f.prot ?? 0,
+                      carb: f.carb ?? f.carbo ?? f.cho ?? 0,
+                      fat: f.fat ?? f.fatTotal ?? 0,
+                      foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
+                      itemId: f.itemId ?? f.id ?? null,
+                    }));
+
+                    return (
+                      <div
+                        key={meal.slotId}
+                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-800/80 bg-slate-900/40 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-slate-100">
+                            {meal.title}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              closeMenus();
+                              onOpenManualView?.({ editingMealId: meal.slotId });
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                            aria-label="Modifica pasto"
+                            title="Modifica"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              closeMenus();
+                              onSendChatMessage?.('', {
+                                intent: 'START_MCDRIVE_WIZARD',
+                                mealType: meal.mealTypeBase,
+                                editingMealId: meal.slotId,
+                                editingFoods: foodsForMcDrive,
+                                editingExactTime: meal.timeStr,
+                                skipUserBubble: true,
+                              });
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                            aria-label="Guidami modifica"
+                            title="Guidato AI"
+                          >
+                            ✨
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOverlayClose}
+              className={[
+                'shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
+                'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
+                'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+              ].join(' ')}
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      </>,
+      document.body,
+    )
+  ) : null;
+
+  const submenuOverlay = pastiOverlay || (overlayConfig ? (
     <SubmenuFocusOverlay
       key={activeCategory}
       categoryLabel={overlayConfig.categoryLabel}
@@ -423,7 +601,7 @@ export default function PulsantieraUniversale({
       onSelectItem={dispatchItem}
       cancelLabel={activeCategory === GUIDED_MEAL_PICKER_ID ? 'Indietro' : 'Annulla'}
     />
-  ) : null;
+  ) : null);
 
   if (isAiGuidedModeActive) return null;
 

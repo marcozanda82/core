@@ -2,6 +2,7 @@
  * AiCluster.jsx — KentuOS: superficie chat (messaggi, quick replies, input).
  */
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { Home } from 'lucide-react';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import MealDraftTrayBubble from './components/MealDraftTrayBubble';
@@ -30,12 +31,13 @@ import ChatInputBar from './features/chat/ChatInputBar.jsx';
 import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
-import KentuProcessingBanner from './features/chat/KentuProcessingBanner.jsx';
+import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
 import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
 import { resolveCinemaBannerFromChat } from './features/quickEvents/quickEventConfirmAssets.js';
+import { draftHasRawMcDriveItems, isMcDriveValidationPenultimateOrLater } from './features/commandTerminal/conversation/mcdriveWizard.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
@@ -121,6 +123,7 @@ export default function AiCluster({
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
   onMcDriveUpdateGrams = null,
+  onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
   getMcDriveMealTargets = null,
@@ -228,9 +231,6 @@ export default function AiCluster({
 
   // TTS risposta AI (invariato). STT disabilitato — input vocale via useVoiceNote (MediaRecorder).
   const {
-    ttsEnabled,
-    toggleTts,
-    ttsSupported,
     noteTextInteraction,
     markVoiceSubmitForTts,
   } = useVoiceChat({
@@ -304,6 +304,11 @@ export default function AiCluster({
 
   const dockedMcDriveTray = dockedMcDriveTrayMsg?.liveMealTray || null;
 
+  const mcdriveTrayItems = useMemo(
+    () => (Array.isArray(dockedMcDriveTray?.items) ? dockedMcDriveTray.items : []),
+    [dockedMcDriveTray],
+  );
+
   /** Deep Work: lavagna a tutto schermo, cronologia chat nascosta. */
   const isAiGuidedImmersive = Boolean(dockedMcDriveTray);
 
@@ -344,6 +349,10 @@ export default function AiCluster({
 
   /** Chiavi quick-event già riprodotte in fascia (one-shot). */
   const [dismissedCinemaKeys, setDismissedCinemaKeys] = useState(() => new Set());
+  /** Video sollevato nell'header (sostituisce mascotte + titolo). */
+  const [hoistedVideo, setHoistedVideo] = useState(null);
+  /** Utente ha chiuso manualmente il video di elaborazione (typing). */
+  const [processingVideoDismissed, setProcessingVideoDismissed] = useState(false);
   /** Tick per far scadere la fascia quando il quick-event non è più “fresco”. */
   const [cinemaClock, setCinemaClock] = useState(0);
 
@@ -361,7 +370,7 @@ export default function AiCluster({
     return () => window.clearInterval(id);
   }, [quickEventCinema?.messageKey]);
 
-  const cinemaBanner = useMemo(() => {
+  const cinemaBannerCandidate = useMemo(() => {
     if (
       quickEventCinema
       && (quickEventCinema.messageKey == null
@@ -396,8 +405,71 @@ export default function AiCluster({
     typingIndicatorLabel,
   ]);
 
-  const handleCinemaVideoEnded = useCallback(() => {
-    const key = cinemaBanner?.messageKey;
+  useEffect(() => {
+    if (!cinemaBannerCandidate) {
+      setHoistedVideo(null);
+      return;
+    }
+    if (
+      cinemaBannerCandidate.source === 'processing'
+      && processingVideoDismissed
+    ) {
+      setHoistedVideo(null);
+      return;
+    }
+    if (
+      cinemaBannerCandidate.messageKey != null
+      && dismissedCinemaKeys.has(cinemaBannerCandidate.messageKey)
+    ) {
+      setHoistedVideo(null);
+      return;
+    }
+    setHoistedVideo(cinemaBannerCandidate);
+  }, [cinemaBannerCandidate, dismissedCinemaKeys, processingVideoDismissed]);
+
+  const isMcDriveProcessingVideo = Boolean(
+    hoistedVideo?.source === 'processing' && dockedMcDriveTray,
+  );
+
+  const isMcDrivePenultimateOrLater = useMemo(
+    () => isMcDriveValidationPenultimateOrLater(mcdriveTrayItems),
+    [mcdriveTrayItems],
+  );
+
+  const isMcDriveTailLoopActive = useMemo(() => {
+    if (!isMcDriveProcessingVideo || !isMcDrivePenultimateOrLater) return false;
+    return draftHasRawMcDriveItems(mcdriveTrayItems) || showTypingIndicator;
+  }, [
+    isMcDriveProcessingVideo,
+    isMcDrivePenultimateOrLater,
+    mcdriveTrayItems,
+    showTypingIndicator,
+  ]);
+
+  useEffect(() => {
+    if (!showTypingIndicator) {
+      setProcessingVideoDismissed(false);
+    }
+  }, [showTypingIndicator]);
+
+  const dismissHoistedVideo = useCallback(() => {
+    if (hoistedVideo?.source === 'processing') {
+      setProcessingVideoDismissed(true);
+    }
+    const key = hoistedVideo?.messageKey;
+    if (key != null) {
+      setDismissedCinemaKeys((prev) => {
+        if (prev.has(key)) return prev;
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    }
+    setHoistedVideo(null);
+  }, [hoistedVideo?.messageKey]);
+
+  const handleHoistedVideoEnded = useCallback(() => {
+    const key = hoistedVideo?.messageKey;
     if (key == null) return;
     setDismissedCinemaKeys((prev) => {
       if (prev.has(key)) return prev;
@@ -405,7 +477,29 @@ export default function AiCluster({
       next.add(key);
       return next;
     });
-  }, [cinemaBanner?.messageKey]);
+    setHoistedVideo(null);
+  }, [hoistedVideo?.messageKey]);
+
+  const handleHoistVideoFromMessage = useCallback((payload) => {
+    if (!payload?.videoSrc) return;
+    if (payload.messageKey != null) {
+      setDismissedCinemaKeys((prev) => {
+        if (!prev.has(payload.messageKey)) return prev;
+        const next = new Set(prev);
+        next.delete(payload.messageKey);
+        return next;
+      });
+    }
+    setProcessingVideoDismissed(false);
+    setHoistedVideo({
+      posterSrc: payload.posterSrc || payload.videoSrc,
+      videoSrc: payload.videoSrc,
+      label: payload.label || 'Conferma evento',
+      loop: payload.loop === true,
+      messageKey: payload.messageKey ?? null,
+      source: payload.source || 'quick_event',
+    });
+  }, []);
 
   const headerAvatarLabel = healthScoreLabel;
 
@@ -461,11 +555,25 @@ export default function AiCluster({
         variant: null,
       };
     }).filter((e) => e.label);
-    if (!hasActiveWorkoutDraft) return normalized;
-    return normalized.filter(
-      (entry) => !/^s[iì]\s*,\s*salva\b/i.test(entry.label),
-    );
-  }, [activeQuickReplies, hasActiveWorkoutDraft]);
+    const withoutWorkoutSaveDupes = !hasActiveWorkoutDraft
+      ? normalized
+      : normalized.filter(
+        (entry) => !/^s[iì]\s*,\s*salva\b/i.test(entry.label),
+      );
+    // Lavagna McDrive attiva: i pulsanti Annulla/Salva/Aggiungi vivono solo nel footer della card.
+    if (dockedMcDriveTray) {
+      const mcdriveTrayIntents = new Set([
+        'CANCEL_MCDRIVE_WIZARD',
+        'SAVE_MCDRIVE_MEAL',
+        'ADD_MORE_MCDRIVE',
+        'FINISH_MCDRIVE_WIZARD',
+      ]);
+      return withoutWorkoutSaveDupes.filter(
+        (entry) => !mcdriveTrayIntents.has(String(entry.intent || entry.action || '').toUpperCase()),
+      );
+    }
+    return withoutWorkoutSaveDupes;
+  }, [activeQuickReplies, hasActiveWorkoutDraft, dockedMcDriveTray]);
 
   const handlePulsantieraSend = useCallback((text, options) => {
     if (isProcessing || isNotesMode) return;
@@ -483,6 +591,9 @@ export default function AiCluster({
       fromInput: true,
       ...(intent ? { intent } : {}),
       ...(mealType ? { mealType, mealTypeHint: mealType } : {}),
+      ...(options?.editingMealId != null ? { editingMealId: options.editingMealId } : {}),
+      ...(Array.isArray(options?.editingFoods) ? { editingFoods: options.editingFoods } : {}),
+      ...(options?.editingExactTime != null ? { editingExactTime: options.editingExactTime } : {}),
       ...(options?.skipUserBubble === true ? { skipUserBubble: true } : {}),
     });
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
@@ -496,9 +607,9 @@ export default function AiCluster({
     onSendMessage,
   ]);
 
-  const handlePulsantieraOpenManual = useCallback(() => {
+  const handlePulsantieraOpenManual = useCallback((payload = null) => {
     if (typeof onOpenManualView === 'function') {
-      onOpenManualView();
+      onOpenManualView(payload);
       return;
     }
     onManualShortcut?.('meal');
@@ -718,118 +829,142 @@ export default function AiCluster({
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
+  const handleWorkspaceHomeClick = useCallback(() => {
+    if (hoistedVideo) {
+      dismissHoistedVideo();
+    }
+    discardNote();
+    stopSpeaking();
+    onBack?.();
+  }, [dismissHoistedVideo, discardNote, hoistedVideo, onBack]);
+
   return (
     <div
       className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-800 bg-zinc-950 px-4 py-3">
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof onRequestHealthDiagnosis === 'function') {
-              setStrategicProcessingLatch(true);
-              onRequestHealthDiagnosis(healthScore);
-            }
-          }}
-          disabled={typeof onRequestHealthDiagnosis !== 'function' || isProcessing}
-          aria-label={`${headerAvatarLabel}. Tocca per la diagnosi.`}
-          title={headerAvatarLabel}
-          className={[
-            'flex shrink-0 items-center justify-center bg-transparent p-0 transition',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-0',
-            typeof onRequestHealthDiagnosis === 'function' && !isProcessing
-              ? 'cursor-pointer opacity-100 hover:opacity-90 active:scale-95'
-              : 'cursor-default opacity-80',
-          ].join(' ')}
-        >
-          <KentuAvatar
-            size="header"
-            src={healthAvatarSrc}
-            fit="contain"
-            alt=""
-            className="bg-transparent"
-          />
-        </button>
-        <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-          <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
-            Kentu AI Workspace
-          </span>
-          {introPhrase ? (
-            <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
-              {introPhrase}
-            </span>
-          ) : healthScore != null ? (
-            <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
-              Score {Math.round(Number(healthScore.score) || 0)} · {healthScore?.avatar?.label || '—'}
-            </span>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {ttsSupported ? (
-            <button
-              type="button"
-              onClick={toggleTts}
-              aria-pressed={ttsEnabled}
-              aria-label={ttsEnabled ? 'Disattiva lettura vocale' : 'Attiva lettura vocale'}
-              title={
-                ttsEnabled
-                  ? 'Voce AI: ON (solo dopo messaggi vocali)'
-                  : 'Voce AI: OFF'
+      <header
+        className={[
+          'relative flex shrink-0 flex-col overflow-hidden border-b border-zinc-800 bg-zinc-950',
+          'transition-all duration-500 ease-in-out',
+          hoistedVideo ? 'h-64' : 'h-20',
+        ].join(' ')}
+      >
+        {hoistedVideo ? (
+          <div className="relative h-full min-h-0 w-full">
+            <KentuProcessingBanner
+              variant="header"
+              posterSrc={hoistedVideo.posterSrc}
+              videoSrc={hoistedVideo.videoSrc}
+              label={hoistedVideo.label}
+              loop={
+                isMcDriveProcessingVideo
+                  ? (isMcDrivePenultimateOrLater ? false : hoistedVideo.loop)
+                  : hoistedVideo.loop
               }
-              className={[
-                'inline-flex h-10 w-10 items-center justify-center rounded-full border text-[15px] transition',
-                ttsEnabled
-                  ? 'border-cyan-500/50 bg-cyan-500/15 text-cyan-200'
-                  : 'border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-500',
-              ].join(' ')}
-            >
-              {ttsEnabled ? '🔊' : '🔇'}
-            </button>
-          ) : null}
-          {typeof onBack === 'function' ? (
+              clampToFirstSeconds={isMcDriveProcessingVideo ? 3 : null}
+              isPenultimateOrLater={!isMcDriveProcessingVideo || isMcDrivePenultimateOrLater}
+              tailLoopFromSeconds={isMcDriveProcessingVideo ? 8 : null}
+              tailLoopWhileActive={isMcDriveTailLoopActive}
+              onVideoEnded={handleHoistedVideoEnded}
+            />
+            <div className="absolute right-3 top-3 z-10 flex shrink-0 items-center">
+              {typeof onBack === 'function' ? (
+                <button
+                  type="button"
+                  onClick={handleWorkspaceHomeClick}
+                  aria-label="Torna alla Home"
+                  title="Home"
+                  className={[
+                    'inline-flex h-10 w-10 items-center justify-center rounded-full border',
+                    'border-zinc-700/80 bg-zinc-950/75 text-cyan-200 backdrop-blur-sm transition',
+                    'hover:border-cyan-500/45 hover:text-cyan-100',
+                    'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+                  ].join(' ')}
+                >
+                  <Home className="h-4 w-4" aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full items-center gap-3 px-4 py-3">
             <button
               type="button"
               onClick={() => {
-                discardNote();
-                stopSpeaking();
-                onBack();
+                if (typeof onRequestHealthDiagnosis === 'function') {
+                  setStrategicProcessingLatch(true);
+                  onRequestHealthDiagnosis(healthScore);
+                }
               }}
-              aria-label="Chiudi chat"
-              title="Chiudi chat"
+              disabled={typeof onRequestHealthDiagnosis !== 'function' || isProcessing}
+              aria-label={`${headerAvatarLabel}. Tocca per la diagnosi.`}
+              title={headerAvatarLabel}
               className={[
-                'inline-flex h-10 w-10 items-center justify-center rounded-full border',
-                'border-zinc-700 bg-zinc-900 text-red-400 transition',
-                'hover:border-red-500/50 hover:text-red-300',
-                'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40',
+                'flex shrink-0 items-center justify-center bg-transparent p-0 transition',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 focus-visible:ring-offset-0',
+                typeof onRequestHealthDiagnosis === 'function' && !isProcessing
+                  ? 'cursor-pointer opacity-100 hover:opacity-90 active:scale-95'
+                  : 'cursor-default opacity-80',
               ].join(' ')}
             >
-              <svg
-                aria-hidden
-                viewBox="0 0 24 24"
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
+              <KentuAvatar
+                size="header"
+                src={healthAvatarSrc}
+                fit="contain"
+                alt=""
+                className="bg-transparent"
+              />
             </button>
-          ) : null}
-        </div>
+            <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
+              <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
+                Kentu AI Workspace
+              </span>
+              {introPhrase ? (
+                <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
+                  {introPhrase}
+                </span>
+              ) : healthScore != null ? (
+                <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
+                  Score {Math.round(Number(healthScore.score) || 0)} · {healthScore?.avatar?.label || '—'}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center">
+              {typeof onBack === 'function' ? (
+                <button
+                  type="button"
+                  onClick={handleWorkspaceHomeClick}
+                  aria-label="Torna alla Home"
+                  title="Home"
+                  className={[
+                    'inline-flex h-10 w-10 items-center justify-center rounded-full border',
+                    'border-zinc-700 bg-zinc-900 text-cyan-200 transition',
+                    'hover:border-cyan-500/45 hover:text-cyan-100',
+                    'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+                  ].join(' ')}
+                >
+                  <Home className="h-4 w-4" aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
       </header>
 
-      {cinemaBanner ? (
-        <KentuProcessingBanner
-          posterSrc={cinemaBanner.posterSrc}
-          videoSrc={cinemaBanner.videoSrc}
-          label={cinemaBanner.label}
-          loop={cinemaBanner.loop}
-          onVideoEnded={handleCinemaVideoEnded}
-        />
+      {hoistedVideo ? (
+        <div
+          className={[
+            'flex w-full shrink-0 justify-center border-b border-white/10 bg-white/[0.05] px-4 py-2',
+            'backdrop-blur-md transition-all duration-500 ease-in-out',
+          ].join(' ')}
+          aria-live="polite"
+        >
+          <KentuProcessingStatusBadge
+            label={hoistedVideo.label}
+            busy={Boolean(hoistedVideo.videoSrc)}
+          />
+        </div>
       ) : null}
 
       <div
@@ -955,7 +1090,7 @@ export default function AiCluster({
                   <TypingIndicator
                     avatarSrc={typingAvatarPosterSrc}
                     avatarVideoSrc={null}
-                    hideAvatar={Boolean(cinemaBanner)}
+                    hideAvatar={Boolean(hoistedVideo)}
                     label={typingIndicatorLabel}
                   />
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
@@ -969,12 +1104,31 @@ export default function AiCluster({
                       videoSrc={msg.quickEventConfirm?.videoSrc || msg.videoSrc || null}
                       title={msg.quickEventConfirm?.title || msg.text || msg.displayText || ''}
                       subtitle={msg.quickEventConfirm?.subtitle || ''}
-                      bannerOwnsVideo={
-                        cinemaBanner?.source === 'quick_event'
+                      headerOwnsVideo={
+                        Boolean(hoistedVideo?.videoSrc)
                         && Boolean(String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim())
                         && String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim()
-                          === String(cinemaBanner.videoSrc || '').trim()
+                          === String(hoistedVideo.videoSrc || '').trim()
                       }
+                      videoDismissed={
+                        Boolean(String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim())
+                        && !(
+                          hoistedVideo?.videoSrc
+                          && String(hoistedVideo.videoSrc).trim()
+                            === String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim()
+                        )
+                      }
+                      onHoistVideo={handleHoistVideoFromMessage}
+                      onReopenVideo={() => {
+                        handleHoistVideoFromMessage({
+                          videoSrc: msg.quickEventConfirm?.videoSrc || msg.videoSrc || null,
+                          posterSrc: msg.quickEventConfirm?.imageSrc || msg.imageSrc || null,
+                          label: msg.quickEventConfirm?.title || msg.text || msg.displayText || 'Conferma evento',
+                          loop: false,
+                          messageKey: msg.quickEventConfirm?.messageKey ?? msg.id ?? idx,
+                          source: 'quick_event',
+                        });
+                      }}
                       timestamp={
                         msg.timestamp
                         ?? msg.createdAt
@@ -1307,7 +1461,7 @@ export default function AiCluster({
             <TypingIndicator
               avatarSrc={typingAvatarPosterSrc}
               avatarVideoSrc={null}
-              hideAvatar={Boolean(cinemaBanner)}
+              hideAvatar={Boolean(hoistedVideo)}
               label={typingIndicatorLabel}
             />
           ) : null}
@@ -1318,11 +1472,11 @@ export default function AiCluster({
         {dockedMcDriveTray ? (
           <div
             className={
-              isAiGuidedImmersive
+              isAiGuidedImmersive || hoistedVideo
                 ? 'kentu-mcdrive-dock kentu-mcdrive-dock--immersive flex min-h-0 w-full flex-1 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
                 : 'kentu-mcdrive-dock flex max-h-[55vh] min-h-0 w-full shrink-0 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
             }
-            style={isAiGuidedImmersive ? undefined : { paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
+            style={isAiGuidedImmersive || hoistedVideo ? undefined : { paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
             role="region"
             aria-label="Lavagna McDrive"
           >
@@ -1337,6 +1491,7 @@ export default function AiCluster({
               getMealTargets={getMcDriveMealTargets}
               onRemoveItem={onMcDriveRemoveItem}
               onUpdateGrams={onMcDriveUpdateGrams}
+              onUpdateMealTime={onMcDriveUpdateMealTime}
               onApplyAlternative={onMcDriveApplyAlternative}
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
               onCancel={() => {
@@ -1371,7 +1526,16 @@ export default function AiCluster({
           </div>
         ) : null}
 
-        <div className="flex shrink-0 flex-col">
+        <div
+          className={[
+            'flex shrink-0 flex-col overflow-hidden origin-bottom',
+            'transition-[max-height,opacity] duration-500 ease-in-out',
+            hoistedVideo
+              ? 'pointer-events-none max-h-0 opacity-0'
+              : 'max-h-[32rem] opacity-100',
+          ].join(' ')}
+          aria-hidden={hoistedVideo ? true : undefined}
+        >
         {chatImages.length > 0 && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>
             {chatImages.map((imgSrc, index) => (
@@ -1401,7 +1565,7 @@ export default function AiCluster({
             ))}
           </div>
         )}
-        {visibleQuickReplies.length > 0 && !suppressQuickReplies ? (
+        {visibleQuickReplies.length > 0 && !suppressQuickReplies && !dockedMcDriveTray ? (
           <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
             {visibleQuickReplies.map((entry) => (
               <button
@@ -1470,6 +1634,7 @@ export default function AiCluster({
             onOpenPlanView={handlePulsantieraOpenPlan}
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
+            dailyLog={dailyLog}
             isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}

@@ -5,11 +5,11 @@ export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
 /** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome).
- *  Layout: Oggi | Timeline | [Emblema] | Storico | Menu (ex slot Piano). */
+ *  Layout: Oggi | Timeline | [Emblema] | Analisi | Menu (ex slot Piano). */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Oggi', icon: '🏠' },
   { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'bussola', label: 'Storico', icon: '❤️' },
+  { id: 'bussola', label: 'Analisi', icon: '📊' },
   { id: 'menu', label: 'Menu', icon: '☰' },
 ];
 

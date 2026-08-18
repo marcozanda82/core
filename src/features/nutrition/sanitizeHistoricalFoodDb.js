@@ -14,6 +14,7 @@ import { get, ref, update } from 'firebase/database';
 import { db as defaultDb } from '../../firebaseConfig';
 import { TARGETS } from '../../useBiochimico';
 import { buildPer100TargetNutrientsFromRow } from '../mealBuilder/utils/foodMacroUtils';
+import { enrichCustomFoodsWithTags } from '../food/utils/semanticTagsMigration';
 
 const ACCENT_REGEX = /[\u0300-\u036f]/g;
 const UPDATE_CHUNK_SIZE = 40;
@@ -386,6 +387,14 @@ export async function sanitizeHistoricalFoodDb(userId, masterDb, options = {}) {
     }
   }
 
+  const { foods: taggedFoodDb, stats: tagStats } = enrichCustomFoodsWithTags(nextFoodDb, masterDb);
+  nextFoodDb = taggedFoodDb;
+  Object.keys(nextFoodDb).forEach((key) => {
+    patchByKey[key] = nextFoodDb[key];
+  });
+
+  console.log('[sanitizeHistoricalFoodDb] semanticTags', tagStats);
+
   console.log('[sanitizeHistoricalFoodDb] riepilogo', {
     dryRun,
     total: entries.length,
@@ -414,6 +423,7 @@ export async function sanitizeHistoricalFoodDb(userId, masterDb, options = {}) {
     resynced,
     sterilized,
     recipesSterilized,
+    tagStats,
     nextFoodDb,
     resyncSamples,
     sterilizeSamples,

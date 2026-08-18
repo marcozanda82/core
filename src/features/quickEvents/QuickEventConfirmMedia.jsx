@@ -18,8 +18,7 @@ function resolveIsRecent(timestamp) {
 }
 
 /**
- * Conferma rapida in chat: icona 96px.
- * Se fresco + video e non bannerOwnsVideo → riproduce nella miniatura, poi <img>.
+ * Conferma rapida in chat: icona 96px o chip se il video è nell'header.
  * Click → lightbox a tutto schermo (chiudi con tap / Esc).
  */
 export default function QuickEventConfirmMedia({
@@ -31,16 +30,27 @@ export default function QuickEventConfirmMedia({
   onFinished = null,
   imageHoldMs = 0,
   timestamp = null,
-  /** Se true, il video è già nella fascia cinema sotto l'header. */
+  /** @deprecated use headerOwnsVideo */
   bannerOwnsVideo = false,
+  /** Se true, il video è già nell'header sollevato. */
+  headerOwnsVideo = false,
+  /** Video chiuso dall'utente: chip mostra "Riapri video". */
+  videoDismissed = false,
+  /** Solleva il video nell'header al mount (State Hoisting). */
+  onHoistVideo = null,
+  /** Riapre il video nell'header dopo dismiss. */
+  onReopenVideo = null,
 }) {
-  const hasVideo = Boolean(videoSrc) && !bannerOwnsVideo;
+  const ownsHeaderVideo = headerOwnsVideo || bannerOwnsVideo;
+  const hasVideo = Boolean(videoSrc);
+  const hoistMode = hasVideo && typeof onHoistVideo === 'function';
+  const suppressInlineVideo = ownsHeaderVideo || hoistMode;
   const videoRef = useRef(null);
   const lightboxVideoRef = useRef(null);
   const holdTimerRef = useRef(null);
 
   const [playInlineVideo, setPlayInlineVideo] = useState(() => (
-    Boolean(videoSrc) && !bannerOwnsVideo && resolveIsRecent(timestamp)
+    Boolean(videoSrc) && !suppressInlineVideo && resolveIsRecent(timestamp)
   ));
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -79,10 +89,40 @@ export default function QuickEventConfirmMedia({
     setIsFullscreen(false);
   }, []);
 
-  // Nuovo asset: video inline solo se fresco e non già in fascia cinema.
+  const handleReopenVideo = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (typeof onReopenVideo === 'function') {
+      onReopenVideo();
+      return;
+    }
+    if (typeof onHoistVideo === 'function' && videoSrc) {
+      onHoistVideo({
+        videoSrc,
+        posterSrc: imageSrc || videoSrc,
+        label: title || 'Conferma evento',
+        loop: false,
+      });
+    }
+  }, [imageSrc, onHoistVideo, onReopenVideo, title, videoSrc]);
+
+  // Solleva il video nell'header al mount (no inline enorme in chat).
+  useEffect(() => {
+    if (!hasVideo || !hoistMode || ownsHeaderVideo) return undefined;
+    if (!resolveIsRecent(timestamp)) return undefined;
+    onHoistVideo({
+      videoSrc,
+      posterSrc: imageSrc || videoSrc,
+      label: title || 'Conferma evento',
+      loop: false,
+    });
+    return undefined;
+  }, [hasVideo, hoistMode, ownsHeaderVideo, onHoistVideo, videoSrc, imageSrc, title, timestamp]);
+
+  // Nuovo asset: video inline solo se non sollevato in header.
   useEffect(() => {
     clearHold();
-    const nextPlay = Boolean(videoSrc) && !bannerOwnsVideo && resolveIsRecent(timestamp);
+    const nextPlay = Boolean(videoSrc) && !suppressInlineVideo && resolveIsRecent(timestamp);
     setPlayInlineVideo(nextPlay);
     setIsFullscreen(false);
     if (!nextPlay && imageHoldMs > 0 && typeof onFinished === 'function') {
@@ -93,11 +133,11 @@ export default function QuickEventConfirmMedia({
     }
     return () => clearHold();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- asset + freschezza
-  }, [imageSrc, videoSrc, timestamp, bannerOwnsVideo]);
+  }, [imageSrc, videoSrc, timestamp, suppressInlineVideo]);
 
-  // Autoplay nella miniatura (non blocca API; best-effort).
+  // Autoplay nella miniatura (legacy path senza hoisting).
   useEffect(() => {
-    if (!playInlineVideo || !hasVideo) return undefined;
+    if (!playInlineVideo || suppressInlineVideo || !hasVideo) return undefined;
     const el = videoRef.current;
     if (!el) return undefined;
     let cancelled = false;
@@ -121,7 +161,7 @@ export default function QuickEventConfirmMedia({
         // ignore
       }
     };
-  }, [playInlineVideo, hasVideo, videoSrc, finishInlineVideo]);
+  }, [playInlineVideo, suppressInlineVideo, hasVideo, videoSrc, finishInlineVideo]);
 
   // Lightbox: autoplay video se presente.
   useEffect(() => {
@@ -167,7 +207,7 @@ export default function QuickEventConfirmMedia({
     };
   }, [isFullscreen, closeFullscreen]);
 
-  if (!imageSrc) return null;
+  if (!imageSrc && !videoSrc) return null;
 
   const thumbLabel = title
     ? `${title}${hasVideo ? ' — tap per ingrandire' : ''}`
@@ -224,6 +264,8 @@ export default function QuickEventConfirmMedia({
     )
     : null;
 
+  const showHoistedChip = hasVideo && (suppressInlineVideo || ownsHeaderVideo);
+
   return (
     <>
       <figure
@@ -232,35 +274,47 @@ export default function QuickEventConfirmMedia({
           compact ? 'kentu-quick-confirm-media--compact' : '',
         ].filter(Boolean).join(' ')}
       >
-        <button
-          type="button"
-          className={THUMB_CLASS}
-          onClick={openFullscreen}
-          aria-label={thumbLabel}
-        >
-          {playInlineVideo && hasVideo ? (
-            <video
-              ref={videoRef}
-              key={videoSrc}
-              className={MEDIA_FILL_CLASS}
-              src={videoSrc}
-              poster={imageSrc}
-              muted
-              playsInline
-              autoPlay
-              preload="auto"
-              onEnded={finishInlineVideo}
-              onError={finishInlineVideo}
-            />
-          ) : (
-            <img
-              className={MEDIA_FILL_CLASS}
-              src={imageSrc}
-              alt=""
-              draggable={false}
-            />
-          )}
-        </button>
+        {showHoistedChip ? (
+          <button
+            type="button"
+            className="kentu-hoisted-video-chip"
+            onClick={handleReopenVideo}
+            aria-label={videoDismissed ? 'Riapri video in alto' : 'Video in riproduzione nell\'header'}
+          >
+            <span aria-hidden>{videoDismissed ? '🎬' : '🎬'}</span>
+            {videoDismissed ? 'Riapri video' : 'Riproduzione in alto…'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={THUMB_CLASS}
+            onClick={openFullscreen}
+            aria-label={thumbLabel}
+          >
+            {playInlineVideo && hasVideo ? (
+              <video
+                ref={videoRef}
+                key={videoSrc}
+                className={MEDIA_FILL_CLASS}
+                src={videoSrc}
+                poster={imageSrc}
+                muted
+                playsInline
+                autoPlay
+                preload="auto"
+                onEnded={finishInlineVideo}
+                onError={finishInlineVideo}
+              />
+            ) : (
+              <img
+                className={MEDIA_FILL_CLASS}
+                src={imageSrc}
+                alt=""
+                draggable={false}
+              />
+            )}
+          </button>
+        )}
         {(title || subtitle) ? (
           <figcaption className="kentu-quick-confirm-media__caption mt-1.5 px-0.5">
             {title ? <p className="kentu-quick-confirm-media__title">{title}</p> : null}

@@ -5,6 +5,7 @@ import { getFoodEmoji } from '../utils/foodIconUtils';
 import { renderIconFromTag } from '../../../utils/iconEngine';
 import { computeMacrosForWeight, getPer100Macros, scaleNutrientsForWeight } from '../utils/foodMacroUtils';
 import AdvancedNutrientsAccordion from './AdvancedNutrientsAccordion';
+import FoodSemanticProfile from '../../../components/FoodSemanticProfile';
 import {
   getItemUnits,
   resolveUnitIdFromUnit,
@@ -75,6 +76,7 @@ export default function FoodDetailModal({
 
   const per100 = getPer100Macros(displayTile);
   const liveMacros = computeMacrosForWeight(per100, selectedWeight);
+  const semanticTags = displayTile?.row?.semanticTags ?? displayTile?.semanticTags ?? food?.semanticTags ?? null;
   const step = selectedUnit === 'g' ? 10 : 0.25;
   const unitLabel = selectedUnit === 'g'
     ? 'grammi'
@@ -174,6 +176,8 @@ export default function FoodDetailModal({
               </div>
             ))}
           </div>
+
+          <FoodSemanticProfile tags={semanticTags} />
 
           <AdvancedNutrientsAccordion
             nutrients={liveNutrients}

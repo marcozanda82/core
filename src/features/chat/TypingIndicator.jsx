@@ -4,14 +4,14 @@ import { AVATAR_MOOD_SRC } from './avatarMood.js';
 
 /**
  * Indicatore visivo mentre Kentu elabora (avatar contestuale + tre puntini).
- * Con hideAvatar: solo i puntini (il video vive nella fascia cinema sotto l'header).
+ * Con hideAvatar: solo i puntini (il video vive nell'header sollevato).
  */
 export default function TypingIndicator({
   label = 'Kentu sta elaborando...',
   avatarSrc = AVATAR_MOOD_SRC.coding,
   /** Se valorizzato (es. Hacker4animazione), poster = avatarSrc a 0ms. */
   avatarVideoSrc = null,
-  /** Nasconde l'avatar/video inline (usato quando c'è KentuProcessingBanner). */
+  /** Nasconde l'avatar/video inline (usato quando c'è video sollevato nell'header). */
   hideAvatar = false,
 }) {
   const ariaLabel = String(label || 'Kentu sta elaborando...').trim();

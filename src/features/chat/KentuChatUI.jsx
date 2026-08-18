@@ -22,6 +22,7 @@ export default function KentuChatUI({
   kentuItDatabase = {},
   globalFoodDatabase = {},
   fullHistory = {},
+  dailyLog = [],
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -30,6 +31,7 @@ export default function KentuChatUI({
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
   onMcDriveUpdateGrams = null,
+  onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
   getMcDriveMealTargets = null,
@@ -92,6 +94,7 @@ export default function KentuChatUI({
         kentuItDatabase={kentuItDatabase}
         globalFoodDatabase={globalFoodDatabase}
         fullHistory={fullHistory}
+        dailyLog={dailyLog}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}
@@ -100,6 +103,7 @@ export default function KentuChatUI({
         onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
         onMcDriveRemoveItem={onMcDriveRemoveItem}
         onMcDriveUpdateGrams={onMcDriveUpdateGrams}
+        onMcDriveUpdateMealTime={onMcDriveUpdateMealTime}
         onMcDriveApplyAlternative={onMcDriveApplyAlternative}
         onMcDriveReplaceFromSearch={onMcDriveReplaceFromSearch}
         getMcDriveMealTargets={getMcDriveMealTargets}

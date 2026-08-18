@@ -999,6 +999,9 @@ export function useCommandTerminal({
           intent: forcedIntent,
           mealTypeHint: options?.mealTypeHint || options?.mealType || null,
           mealType: options?.mealType || options?.mealTypeHint || null,
+          ...(options?.editingMealId != null ? { editingMealId: options.editingMealId } : {}),
+          ...(Array.isArray(options?.editingFoods) ? { editingFoods: options.editingFoods } : {}),
+          ...(options?.editingExactTime != null ? { editingExactTime: options.editingExactTime } : {}),
           chatHistory: historyForLlm,
           wipMealItems: wipSnapshot.wipMealItems || [],
           wipMealMealType: wipSnapshot.mealType || null,
@@ -1838,6 +1841,15 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  const handleMcDriveUpdateMealTime = useCallback((exactTime) => {
+    if (typeof controller.updateMcDriveMealTime !== 'function') {
+      return { ok: false, reason: 'mcdrive_time_unavailable' };
+    }
+    const result = controller.updateMcDriveMealTime(exactTime);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
   const handleMcDriveApplyAlternative = useCallback((index, alternative) => {
     if (typeof controller.applyMcDriveDraftAlternative !== 'function') {
       return { ok: false, reason: 'mcdrive_alt_unavailable' };
@@ -1910,6 +1922,7 @@ export function useCommandTerminal({
     handleSaveNewFoodEntry,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     chatUsdaEnrichmentSession,

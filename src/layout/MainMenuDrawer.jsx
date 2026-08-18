@@ -230,7 +230,7 @@ export default function MainMenuDrawer({
                           const dryRun = !e.shiftKey;
                           if (!dryRun) {
                             const ok = window.confirm(
-                              'SCRITTURA Firebase: re-sync master + sterilizza micro inventati.\n\nContinuare?',
+                              'SCRITTURA Firebase: re-sync master + sterilizza micro inventati + auto-tagging semanticTags.\n\nContinuare?',
                             );
                             if (!ok) return;
                           } else {
@@ -238,7 +238,14 @@ export default function MainMenuDrawer({
                               'Dry-run avviato: controlla la console DevTools.\n\nShift+click per scrivere su Firebase.',
                             );
                           }
-                          await onSanitizeFoodDb({ dryRun });
+                          const result = await onSanitizeFoodDb({ dryRun });
+                          if (result?.tagStats) {
+                            const { total = 0, masterMatched = 0, heuristic = 0 } = result.tagStats;
+                            const modeLabel = dryRun ? 'Dry-run completato' : 'Bonifica e auto-tagging completati';
+                            window.alert(
+                              `${modeLabel} su ${total} alimenti.\n${masterMatched} tag da master · ${heuristic} tag euristici.`,
+                            );
+                          }
                           if (!dryRun) closeMenu();
                         }}
                       />
