@@ -492,9 +492,16 @@ export function useWorkoutManager({
         const mins = Math.round(normalizedDurationMin);
         const kcal = Math.round(Number(workoutKcal) || 0);
         pendingWorkoutConfirmRef.current = {
+          workoutType,
+          activityType: workoutType,
           subtitle: [mins > 0 ? `${mins} min` : null, kcal > 0 ? `~${kcal} kcal` : null]
             .filter(Boolean)
             .join(' · ') || undefined,
+          title: workoutType === 'camminata'
+            ? 'Camminata registrata'
+            : workoutType === 'corsa'
+              ? 'Corsa registrata'
+              : undefined,
         };
       }
 
@@ -769,6 +776,14 @@ export function useWorkoutManager({
         // Chat già aperta: conferma immediata (banner cinema monta subito).
         onWorkoutLoggedConfirmRef.current({
           subtitle: `${durationMinutes} min · ~${logItem.kcal} kcal`,
+          workoutType: logItem.workoutType,
+          activityType: logItem.workoutType,
+          workoutName: label,
+          title: String(logItem.workoutType || '').toLowerCase() === 'camminata'
+            ? 'Camminata registrata'
+            : String(logItem.workoutType || '').toLowerCase() === 'corsa'
+              ? 'Corsa registrata'
+              : undefined,
         });
       }
 

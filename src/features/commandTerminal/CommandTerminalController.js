@@ -251,7 +251,7 @@ import {
   isInActiveFastingWindow,
   resolveCoffeeVariantFromText,
 } from '../stimulants/coffeeLogEngine.js';
-import { buildQuickEventConfirmPayload } from '../quickEvents/quickEventConfirmAssets.js';
+import { buildQuickEventConfirmPayload, resolveLocomotionConfirmKind } from '../quickEvents/quickEventConfirmAssets.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -3853,12 +3853,34 @@ export class CommandTerminalController {
         payload: { ...this.pendingAction.payload },
         meta: { ...(this.pendingAction.meta || {}) },
         draftId: this.pendingAction.draftId || null,
+        originUserText: this.pendingWorkoutOriginUserText || '',
       };
       this.resetConversationState();
 
       const { uiMessage: _uiMessage, ...execMeta } = snapshot.meta;
       const cmd = snapshot.commandType;
       const isFood = cmd === 'ADD_FOOD';
+      if (
+        cmd === 'ADD_WORKOUT'
+        && !execMeta.quickEventConfirm
+      ) {
+        const locomotionKind = resolveLocomotionConfirmKind({
+          kind: 'workout',
+          workoutType: snapshot.payload?.workoutType,
+          activityType: snapshot.payload?.activityType,
+          subType: snapshot.payload?.subType,
+          workoutName: snapshot.payload?.workoutName,
+          title: snapshot.payload?.workoutName,
+          desc: snapshot.originUserText,
+        });
+        if (locomotionKind) {
+          execMeta.quickEventConfirm = buildQuickEventConfirmPayload(locomotionKind, {
+            workoutType: snapshot.payload?.workoutType,
+            workoutName: snapshot.payload?.workoutName,
+            subtitle: _uiMessage || undefined,
+          });
+        }
+      }
       const correlationId = snapshot.draftId
         ? (isFood ? `meal_draft_confirm_${snapshot.draftId}` : `workout_draft_confirm_${snapshot.draftId}`)
         : (isFood ? `meal_confirm_${Date.now()}` : `workout_confirm_${Date.now()}`);
