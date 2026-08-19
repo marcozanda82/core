@@ -139,6 +139,7 @@ export default function MetabolicTrendChart({
   );
   const [sliderDelta, setSliderDelta] = useState(committedDelta);
   const [savedDelta, setSavedDelta] = useState(committedDelta);
+  const savedDeltaRef = useRef(committedDelta);
   const lastParentCommittedRef = useRef(committedDelta);
   const [isApplying, setIsApplying] = useState(false);
   const [applyFeedback, setApplyFeedback] = useState(null);
@@ -149,10 +150,16 @@ export default function MetabolicTrendChart({
   const [isSavingCompensation, setIsSavingCompensation] = useState(false);
 
   useEffect(() => {
+    savedDeltaRef.current = savedDelta;
+  }, [savedDelta]);
+
+  useEffect(() => {
     if (committedDelta === lastParentCommittedRef.current) return;
     lastParentCommittedRef.current = committedDelta;
     setSavedDelta(committedDelta);
-    setSliderDelta(committedDelta);
+    setSliderDelta((current) => (
+      current !== savedDeltaRef.current ? current : committedDelta
+    ));
   }, [committedDelta]);
 
   useEffect(
@@ -215,6 +222,7 @@ export default function MetabolicTrendChart({
     setIsApplying(true);
     try {
       await onApplyGoal(next);
+      savedDeltaRef.current = next;
       setSavedDelta(next);
       setSliderDelta(next);
       setApplyFeedback(`Obiettivo metabolico aggiornato a ${formatKcal(next)} kcal/g`);
