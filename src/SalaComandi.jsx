@@ -1612,7 +1612,7 @@ export default function SalaComandi() {
 
   /** Commit What-If Ghost Car → strategy Kentu + delta continuo persistito (profilo / LS). */
   const applyGhostSimGoal = useCallback(
-    async (deltaRaw) => {
+    (deltaRaw) => {
       const delta = clampGhostSimDelta(deltaRaw);
       const goal = ghostSimDeltaToGoal(delta);
       const strategy = ghostSimDeltaToKentuStrategy(delta);
@@ -1642,6 +1642,8 @@ export default function SalaComandi() {
         }
         return next;
       });
+
+      return Promise.resolve(delta);
     },
     [currentTrackerDate, getTodayString, db, user?.uid, userTargets],
   );

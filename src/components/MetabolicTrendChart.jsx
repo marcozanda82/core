@@ -137,24 +137,35 @@ export default function MetabolicTrendChart({
       ? committedDeltaKcal
       : resolveGhostDailyDeltaFromGoal(normalizeGhostSimGoal(committedGoal)),
   );
-  const [simulatedDeltaKcal, setSimulatedDeltaKcal] = useState(committedDelta);
-  const simulatedDeltaRef = useRef(committedDelta);
+  const [sliderDelta, setSliderDelta] = useState(committedDelta);
+  const [savedDelta, setSavedDelta] = useState(committedDelta);
+  const lastParentCommittedRef = useRef(committedDelta);
   const [isApplying, setIsApplying] = useState(false);
+  const [applyFeedback, setApplyFeedback] = useState(null);
+  const applyFeedbackTimerRef = useRef(null);
   const [showRientroPanel, setShowRientroPanel] = useState(false);
   const [rientroDays, setRientroDays] = useState(3);
   const [rientroDailyDelta, setRientroDailyDelta] = useState(-250);
   const [isSavingCompensation, setIsSavingCompensation] = useState(false);
 
   useEffect(() => {
-    setSimulatedDeltaKcal(committedDelta);
-    simulatedDeltaRef.current = committedDelta;
+    if (committedDelta === lastParentCommittedRef.current) return;
+    lastParentCommittedRef.current = committedDelta;
+    setSavedDelta(committedDelta);
+    setSliderDelta(committedDelta);
   }, [committedDelta]);
 
-  const setSimulatedDelta = (raw) => {
-    const next = clampGhostSimDelta(raw);
-    simulatedDeltaRef.current = next;
-    setSimulatedDeltaKcal(next);
+  useEffect(
+    () => () => {
+      if (applyFeedbackTimerRef.current) window.clearTimeout(applyFeedbackTimerRef.current);
+    },
+    [],
+  );
+
+  const adjustSliderDelta = (deltaStep) => {
+    setSliderDelta((prev) => clampGhostSimDelta(Number(prev) + deltaStep));
   };
+
   const series = useMemo(
     () => buildMetabolicCompensationSeries({
       fullHistory,
@@ -163,10 +174,10 @@ export default function MetabolicTrendChart({
       activeDate,
       windowDays: 7,
       corridorHalfWidth: GHOST_CORRIDOR_HALF_WIDTH_KCAL,
-      simulatedDeltaKcal,
+      simulatedDeltaKcal: sliderDelta,
       settingsBaseKcal,
     }),
-    [fullHistory, userTargets, activeLog, activeDate, simulatedDeltaKcal, settingsBaseKcal],
+    [fullHistory, userTargets, activeLog, activeDate, sliderDelta, settingsBaseKcal],
   );
 
   const chartPoints = useMemo(
@@ -175,9 +186,9 @@ export default function MetabolicTrendChart({
   );
 
   const { adherenceOk, latest, corridorHalfWidth, ghostDailyDelta } = series;
-  const isDirty = simulatedDeltaKcal !== committedDelta;
-  const smartLabel = ghostSimDeltaSmartLabel(simulatedDeltaKcal);
-  const deltaDisplay = formatKcal(simulatedDeltaKcal);
+  const isPreview = sliderDelta !== savedDelta;
+  const smartLabel = ghostSimDeltaSmartLabel(sliderDelta);
+  const deltaDisplay = formatKcal(sliderDelta);
 
   const deviation = Math.round(Number(latest?.deviation) || 0);
   const absDeviation = Math.abs(deviation);
@@ -195,28 +206,28 @@ export default function MetabolicTrendChart({
   };
 
   const handleReset = () => {
-    setSimulatedDelta(committedDelta);
+    setSliderDelta(savedDelta);
   };
 
   const handleApply = async () => {
-    if (!isDirty || typeof onApplyGoal !== 'function' || isApplying) return;
+    if (typeof onApplyGoal !== 'function' || isApplying) return;
+    const next = clampGhostSimDelta(sliderDelta);
     setIsApplying(true);
     try {
-      await onApplyGoal(simulatedDeltaRef.current);
+      await onApplyGoal(next);
+      setSavedDelta(next);
+      setSliderDelta(next);
+      setApplyFeedback(`Obiettivo metabolico aggiornato a ${formatKcal(next)} kcal/g`);
+      if (applyFeedbackTimerRef.current) window.clearTimeout(applyFeedbackTimerRef.current);
+      applyFeedbackTimerRef.current = window.setTimeout(() => setApplyFeedback(null), 2800);
+    } catch (err) {
+      console.warn('[Ghost What-If] apply failed', err);
+      setApplyFeedback('Salvataggio non riuscito — riprova');
+      if (applyFeedbackTimerRef.current) window.clearTimeout(applyFeedbackTimerRef.current);
+      applyFeedbackTimerRef.current = window.setTimeout(() => setApplyFeedback(null), 3200);
     } finally {
       setIsApplying(false);
     }
-  };
-
-  /** Persistenza on-release: una sola scrittura Firebase/LS a fine drag. */
-  const commitSimulatedDelta = () => {
-    if (typeof onApplyGoal !== 'function' || isApplying) return;
-    const next = clampGhostSimDelta(simulatedDeltaRef.current);
-    if (next === committedDelta) return;
-    setIsApplying(true);
-    Promise.resolve(onApplyGoal(next))
-      .catch((err) => console.warn('[Ghost What-If] persist on-release failed', err))
-      .finally(() => setIsApplying(false));
   };
 
   const handleConfirmCompensation = async () => {
@@ -392,37 +403,46 @@ export default function MetabolicTrendChart({
               {smartLabel}
             </span>
           </p>
-          {isDirty ? (
-            <span className="shrink-0 text-[9px] text-amber-400/90">
-              {isApplying ? 'salvo…' : 'rilascia per salvare'}
-            </span>
+          {isPreview ? (
+            <span className="shrink-0 text-[9px] text-amber-400/90">anteprima</span>
           ) : (
             <span className="shrink-0 text-[9px] text-emerald-500/80">salvato</span>
           )}
         </div>
-        <input
-          type="range"
-          min={GHOST_SIM_DELTA_MIN}
-          max={GHOST_SIM_DELTA_MAX}
-          step={GHOST_SIM_DELTA_STEP}
-          value={simulatedDeltaKcal}
-          onChange={(e) => setSimulatedDelta(e.target.value)}
-          onPointerUp={commitSimulatedDelta}
-          onMouseUp={commitSimulatedDelta}
-          onTouchEnd={commitSimulatedDelta}
-          onKeyUp={(e) => {
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight'
-              || e.key === 'ArrowUp' || e.key === 'ArrowDown'
-              || e.key === 'Home' || e.key === 'End') {
-              commitSimulatedDelta();
-            }
-          }}
-          aria-valuemin={GHOST_SIM_DELTA_MIN}
-          aria-valuemax={GHOST_SIM_DELTA_MAX}
-          aria-valuenow={simulatedDeltaKcal}
-          aria-valuetext={`${deltaDisplay} kcal/g · ${smartLabel}`}
-          className="ghost-sim-slider__input"
-        />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => adjustSliderDelta(-GHOST_SIM_DELTA_STEP)}
+            disabled={isApplying || sliderDelta <= GHOST_SIM_DELTA_MIN}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-slate-900/80 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+            aria-label="Diminuisci delta"
+          >
+            −
+          </button>
+          <input
+            type="range"
+            min={GHOST_SIM_DELTA_MIN}
+            max={GHOST_SIM_DELTA_MAX}
+            step={GHOST_SIM_DELTA_STEP}
+            value={sliderDelta}
+            onChange={(e) => setSliderDelta(clampGhostSimDelta(Number(e.target.value)))}
+            disabled={isApplying}
+            aria-valuemin={GHOST_SIM_DELTA_MIN}
+            aria-valuemax={GHOST_SIM_DELTA_MAX}
+            aria-valuenow={sliderDelta}
+            aria-valuetext={`${deltaDisplay} kcal/g · ${smartLabel}`}
+            className="ghost-sim-slider__input min-w-0 flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => adjustSliderDelta(GHOST_SIM_DELTA_STEP)}
+            disabled={isApplying || sliderDelta >= GHOST_SIM_DELTA_MAX}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-slate-900/80 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+            aria-label="Aumenta delta"
+          >
+            +
+          </button>
+        </div>
         <div className="mt-0.5 flex justify-between px-0.5 font-mono text-[9px] text-slate-600">
           <span>−1000</span>
           <span>0</span>
@@ -430,29 +450,33 @@ export default function MetabolicTrendChart({
         </div>
       </div>
 
-      {isDirty ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-950/25 px-2.5 py-2">
-          <p className="min-w-0 flex-1 text-[10px] leading-snug text-amber-100/90">
-            Anteprima non ancora salvata. Rilascia lo slider o conferma sotto.
-          </p>
-          <button
-            type="button"
-            onClick={handleReset}
-            disabled={isApplying}
-            className="rounded-md border border-white/15 bg-slate-900/80 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300 hover:bg-slate-800"
-          >
-            Ripristina
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            disabled={isApplying || typeof onApplyGoal !== 'function'}
-            className="rounded-md border border-cyan-400/40 bg-cyan-500/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50"
-          >
-            {isApplying ? 'Applico…' : 'Applica obiettivo'}
-          </button>
-        </div>
+      {applyFeedback ? (
+        <p
+          role="status"
+          className="mt-2 rounded-lg border border-emerald-400/35 bg-emerald-950/30 px-2.5 py-1.5 text-center text-[10px] font-semibold text-emerald-100"
+        >
+          ✓ {applyFeedback}
+        </p>
       ) : null}
+
+      <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-slate-900/40 px-2.5 py-2">
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={isApplying}
+          className="rounded-md border border-white/15 bg-slate-900/80 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+        >
+          Ripristina
+        </button>
+        <button
+          type="button"
+          onClick={handleApply}
+          disabled={isApplying}
+          className="ml-auto rounded-md border border-cyan-400/40 bg-cyan-500/20 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wide text-cyan-100 hover:bg-cyan-500/30 disabled:opacity-50"
+        >
+          {isApplying ? 'Applico…' : 'Applica obiettivo'}
+        </button>
+      </div>
 
       {compensationStatus.isActive ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-violet-500/30 bg-violet-950/25 px-2.5 py-2">
