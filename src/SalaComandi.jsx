@@ -241,6 +241,7 @@ import {
 import useWorkoutManager from './hooks/salaComandi/useWorkoutManager';
 import useKentuMealHandlers from './hooks/salaComandi/useKentuMealHandlers';
 import useDiaryFirebaseSync from './hooks/salaComandi/useDiaryFirebaseSync';
+import { useDeferredMemo } from './hooks/useDeferredMemo';
 import useFourCylinderBootCatchUp from './hooks/salaComandi/useFourCylinderBootCatchUp';
 import {
   attachFourCylinderSleepSnapshot,
@@ -1733,20 +1734,28 @@ export default function SalaComandi() {
   }, [selectedNodeReport]);
 
   /** Carico allostatico (0–100) ultimi 60gg → tetto energia in generateRealEnergyData */
-  const accumuloSNC = useMemo(() => {
+  const accumuloSNC = useDeferredMemo(() => {
     if (!fullHistory || typeof fullHistory !== 'object') return 0;
-    return computeAccumuloSNC(fullHistory, 60);
-  }, [fullHistory]);
+    console.time('[perf] accumuloSNC');
+    const result = computeAccumuloSNC(fullHistory, 60);
+    console.timeEnd('[perf] accumuloSNC');
+    return result;
+  }, [fullHistory], 0);
 
   /** Serie giornaliera reale (Firebase `fullHistory`) per la bussola metabolica. */
-  const metabolicCompassDailyHistory = useMemo(
-    () =>
-      buildMetabolicCompassDailyHistory(
+  const metabolicCompassDailyHistory = useDeferredMemo(
+    () => {
+      console.time('[perf] metabolicCompassDailyHistory');
+      const result = buildMetabolicCompassDailyHistory(
         fullHistory,
         currentTrackerDate || getTodayString(),
         userTargets
-      ),
-    [fullHistory, currentTrackerDate, userTargets]
+      );
+      console.timeEnd('[perf] metabolicCompassDailyHistory');
+      return result;
+    },
+    [fullHistory, currentTrackerDate, userTargets],
+    [],
   );
 
   const [metabolicCompassTimeframe, setMetabolicCompassTimeframe] = useState('1d');
@@ -3077,10 +3086,11 @@ export default function SalaComandi() {
     return computeDayEvaluations(activeLog, effectiveTargetsForCurrentDate);
   }, [activeLog, currentTrackerDate, effectiveTargetsForCurrentDate]);
 
-  const longevityData = useMemo(() => {
+  const longevityData = useDeferredMemo(() => {
     if (!fullHistory || !userTargets) return null;
     if (Object.keys(fullHistory || {}).length === 0) return null;
 
+    console.time('[perf] longevityData');
     const matrix = computeRiskMatrix(fullHistory, userTargets, longevityDays);
     const weightedRisk = (matrix.metabolic.score * 0.30) + (matrix.neuro.score * 0.30) + (matrix.inflammatory.score * 0.20) + (matrix.cardio.score * 0.20);
     const masterScore = Math.max(0, Math.min(100, Math.round(100 - weightedRisk)));
@@ -3089,8 +3099,9 @@ export default function SalaComandi() {
     if (masterScore < 60) color = '#f44336';
     else if (masterScore < 85) color = '#ffb300';
 
+    console.timeEnd('[perf] longevityData');
     return { ...matrix, masterScore, color };
-  }, [fullHistory, userTargets, longevityDays]);
+  }, [fullHistory, userTargets, longevityDays], null);
 
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
@@ -5012,12 +5023,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return { log, calorie, proteine, workoutKcal, deficit };
   }, [fullStorico, selectedHistoryDate]);
 
-  const pastDaysStorico = useMemo(() => {
+  const pastDaysStorico = useDeferredMemo(() => {
     if (!fullStorico || typeof fullStorico !== 'object') return [];
+    console.time('[perf] pastDaysStorico');
     const keys = Object.keys(fullStorico).filter(k => k.startsWith('trackerStorico_'));
     const dates = keys.map(k => k.replace('trackerStorico_', '')).filter(d => d !== todayStr);
     dates.sort((a, b) => new Date(b) - new Date(a));
-    return dates.map(dataStr => {
+    const result = dates.map(dataStr => {
       const node = fullStorico[TRACKER_STORICO_KEY(dataStr)];
       const raw = node?.log ?? [];
       const log = Array.isArray(raw) ? raw : Object.values(raw || {});
@@ -5050,7 +5062,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         isIntentionalFast: node?.isIntentionalFast === true,
       };
     });
-  }, [fullStorico, todayStr]);
+    console.timeEnd('[perf] pastDaysStorico');
+    return result;
+  }, [fullStorico, todayStr], [], { delayMs: 50 });
 
   const weeklyTrendData = useMemo(() => {
     return [...pastDaysStorico].slice(0, 7).reverse().map((d) => {
@@ -5194,8 +5208,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         .reduce((acc, n) => acc + safeNum(n.ml ?? n.amount), 0)
     : waterIntake;
   const energySimulation = useMemo(() => {
+    console.time('[perf] energySimulation');
     // Sempre genera serie 0–24: NIGHT_PENDING non deve più azzerare i grafici fisiologici.
-    return generateRealEnergyData(
+    const _result = generateRealEnergyData(
       nodesForEnergySimulation,
       dailyLogForEnergy,
       idealStrategy,
@@ -5209,6 +5224,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       accumuloSNC,
       sleepMetabolicPenalty,
     );
+    console.timeEnd('[perf] energySimulation');
+    return _result;
   }, [
     nodesForEnergySimulation,
     dailyLogForEnergy,
@@ -5464,8 +5481,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const userAge = calculateAge(birthDate);
 
   /** Punteggi giornalieri (matrice rischi su singolo giorno) prima del giorno ancorato al tracker, per media mobile età proiettata. */
-  const longevityScoreHistory = useMemo(() => {
+  const longevityScoreHistory = useDeferredMemo(() => {
     if (!fullHistory || !userTargets) return [];
+    console.time('[perf] longevityScoreHistory');
     const anchor = currentTrackerDate || getTodayString();
     const maxLookback = 120;
     const out = [];
@@ -5481,8 +5499,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const ts = new Date(`${dStr}T12:00:00`).getTime();
       out.push({ date: dStr, score, timestamp: ts });
     }
+    console.timeEnd('[perf] longevityScoreHistory');
     return out.sort((a, b) => a.date.localeCompare(b.date));
-  }, [fullHistory, userTargets, currentTrackerDate]);
+  }, [fullHistory, userTargets, currentTrackerDate], [], { delayMs: 100 });
 
   /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
   const longevityTodayScore = useMemo(() => {

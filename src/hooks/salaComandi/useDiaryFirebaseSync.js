@@ -124,8 +124,10 @@ export function useDiaryFirebaseSync({
       });
     };
 
+    console.time('[perf] bootstrap:today+profile');
     Promise.all([get(todayRef), get(profileRef)])
       .then(([todaySnap, profileSnap]) => {
+        console.timeEnd('[perf] bootstrap:today+profile');
         if (cancelled) return;
 
         const todayVal = todaySnap.exists() ? todaySnap.val() : null;
@@ -181,8 +183,10 @@ export function useDiaryFirebaseSync({
 
         // Storico completo: dopo il primo paint della dashboard (non blocca TTI).
         const cancelHist = scheduleAfterPaint(() => {
+          console.time('[perf] bootstrap:fullHistory-download');
           get(ref(db, basePath))
             .then((histSnap) => {
+              console.timeEnd('[perf] bootstrap:fullHistory-download');
               if (cancelled) return;
               const tree = histSnap.exists() ? histSnap.val() : null;
               setFullStorico(tree);

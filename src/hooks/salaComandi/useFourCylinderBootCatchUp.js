@@ -57,6 +57,7 @@ export function useFourCylinderBootCatchUp({
 
     let cancelled = false;
     const todayIso = getTodayString();
+    console.time('[perf] fourCylinderBootCatchUp');
     const nutritionMap = fullHistory
       ? buildDailyNutritionMap(fullHistory, proteinTarget)
       : null;
@@ -188,6 +189,7 @@ export function useFourCylinderBootCatchUp({
           };
         });
 
+        console.timeEnd('[perf] fourCylinderBootCatchUp');
         catchUpDoneForUidRef.current = userUid;
 
         if (!needsSave) {

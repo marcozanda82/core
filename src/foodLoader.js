@@ -306,6 +306,7 @@ async function fetchKentuJson(url, { cacheBust = false } = {}) {
 let kentuDatabasesPromise = null;
 
 async function loadKentuDatabasesUncached() {
+  console.time('[perf] foodLoader:total');
   ensureMasterDbVersion();
 
   const empty = {
@@ -357,6 +358,7 @@ async function loadKentuDatabasesUncached() {
       ? await indexOffRecordsAsync(offRecords)
       : {};
 
+    console.timeEnd('[perf] foodLoader:total');
     console.log('[foodLoader] loaded Kentu databases', {
       kentuIt: Object.keys(kentuItDb).length,
       global: Object.keys(globalDb).length,
