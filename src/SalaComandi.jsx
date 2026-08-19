@@ -755,7 +755,12 @@ export default function SalaComandi() {
   const [userPortions, setUserPortions] = useState({});
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
-  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true });
+  const [foodDbNeeded, setFoodDbNeeded] = useState(false);
+  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
+  useEffect(() => {
+    if (foodDbNeeded) return;
+    if (showFastLogger || activeAction === 'ai_chat') setFoodDbNeeded(true);
+  }, [showFastLogger, activeAction, foodDbNeeded]);
   const kentuCatalogItDbRef = useRef(kentuCatalogItDb);
   const csvFoodDbRef = useRef(csvFoodDb);
   kentuCatalogItDbRef.current = kentuCatalogItDb;
@@ -5480,28 +5485,55 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const userAge = calculateAge(birthDate);
 
-  /** Punteggi giornalieri (matrice rischi su singolo giorno) prima del giorno ancorato al tracker, per media mobile età proiettata. */
-  const longevityScoreHistory = useDeferredMemo(() => {
-    if (!fullHistory || !userTargets) return [];
-    console.time('[perf] longevityScoreHistory');
+  /** Punteggi giornalieri (matrice rischi su singolo giorno) — calcolo incrementale a chunk per non bloccare il main thread. */
+  const [longevityScoreHistory, setLongevityScoreHistory] = useState([]);
+  useEffect(() => {
+    if (!fullHistory || !userTargets) { setLongevityScoreHistory([]); return; }
+    const histKeys = Object.keys(fullHistory);
+    if (histKeys.length === 0) { setLongevityScoreHistory([]); return; }
+
+    let cancelled = false;
     const anchor = currentTrackerDate || getTodayString();
     const maxLookback = 120;
+    const CHUNK = 10;
     const out = [];
-    for (let k = 1; k < maxLookback; k++) {
-      const dStr = addDays(anchor, -k);
-      const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-      const dayNode = fullHistory[TRACKER_STORICO_KEY(dStr)];
-      const manualNodes = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
-      if (log.length === 0 && manualNodes.length === 0) continue;
-      const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
-      const score = computeLongevityMasterScoreFromMatrix(matrix);
-      if (score == null || Number.isNaN(score)) continue;
-      const ts = new Date(`${dStr}T12:00:00`).getTime();
-      out.push({ date: dStr, score, timestamp: ts });
-    }
-    console.timeEnd('[perf] longevityScoreHistory');
-    return out.sort((a, b) => a.date.localeCompare(b.date));
-  }, [fullHistory, userTargets, currentTrackerDate], [], { delayMs: 100 });
+
+    const processChunk = (startK) => {
+      if (cancelled) return;
+      const endK = Math.min(startK + CHUNK, maxLookback);
+      console.time(`[perf] longevityScoreHistory chunk ${startK}-${endK}`);
+      for (let k = startK; k < endK; k++) {
+        const dStr = addDays(anchor, -k);
+        const log = getLogFromStoricoTree(fullHistory, dStr) || [];
+        const dayNode = fullHistory[TRACKER_STORICO_KEY(dStr)];
+        const mn = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
+        if (log.length === 0 && mn.length === 0) continue;
+        const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
+        const score = computeLongevityMasterScoreFromMatrix(matrix);
+        if (score == null || Number.isNaN(score)) continue;
+        out.push({ date: dStr, score, timestamp: new Date(`${dStr}T12:00:00`).getTime() });
+      }
+      console.timeEnd(`[perf] longevityScoreHistory chunk ${startK}-${endK}`);
+
+      if (endK < maxLookback) {
+        // Yield to main thread between chunks
+        setTimeout(() => processChunk(endK), 0);
+      } else {
+        if (!cancelled) {
+          setLongevityScoreHistory(out.sort((a, b) => a.date.localeCompare(b.date)));
+        }
+      }
+    };
+
+    // Defer first chunk after paint
+    const rafId = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) processChunk(1);
+      });
+    });
+
+    return () => { cancelled = true; cancelAnimationFrame(rafId); };
+  }, [fullHistory, userTargets, currentTrackerDate]);
 
   /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
   const longevityTodayScore = useMemo(() => {

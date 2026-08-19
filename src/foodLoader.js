@@ -341,11 +341,15 @@ async function loadKentuDatabasesUncached() {
     const globalRecords = globalJson != null ? extractRecords(globalJson) : [];
     const offRecords = offJson != null ? extractRecords(offJson) : [];
 
+    console.time('[perf] foodLoader:indexKentuIt');
     const kentuItDb = indexRecords(kentuItRecords, FOOD_DB_SOURCE.KENTU_IT);
+    console.timeEnd('[perf] foodLoader:indexKentuIt');
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    console.time('[perf] foodLoader:indexGlobal');
     const globalDbRaw = indexRecords(globalRecords, FOOD_DB_SOURCE.GLOBAL);
+    console.timeEnd('[perf] foodLoader:indexGlobal');
 
     const globalDb = { ...globalDbRaw };
     Object.keys(kentuItDb).forEach((key) => {
@@ -354,9 +358,11 @@ async function loadKentuDatabasesUncached() {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    console.time('[perf] foodLoader:indexOFF');
     const offDb = offJson != null
       ? await indexOffRecordsAsync(offRecords)
       : {};
+    console.timeEnd('[perf] foodLoader:indexOFF');
 
     console.timeEnd('[perf] foodLoader:total');
     console.log('[foodLoader] loaded Kentu databases', {

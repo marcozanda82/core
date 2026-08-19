@@ -58,10 +58,6 @@ export function useFourCylinderBootCatchUp({
     let cancelled = false;
     const todayIso = getTodayString();
     console.time('[perf] fourCylinderBootCatchUp');
-    const nutritionMap = fullHistory
-      ? buildDailyNutritionMap(fullHistory, proteinTarget)
-      : null;
-    const historyHydrated = isTrackerHistoryHydrated(fullHistory);
 
     setFourCylinderWriteGuardContext({
       fullHistory,
@@ -79,6 +75,11 @@ export function useFourCylinderBootCatchUp({
 
     get(ref(db, `users/${userUid}/physiology_model`))
       .then((physSnap) => {
+        // Build nutrition map inside .then() so it runs after the network wait, not blocking the main thread during boot
+        const nutritionMap = fullHistory
+          ? buildDailyNutritionMap(fullHistory, proteinTarget)
+          : null;
+        const historyHydrated = isTrackerHistoryHydrated(fullHistory);
         if (cancelled) return undefined;
 
         const existingDoc = physSnap.exists() && physSnap.val() && typeof physSnap.val() === 'object'
