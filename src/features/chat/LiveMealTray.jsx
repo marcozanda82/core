@@ -1,7 +1,13 @@
-import React, { memo, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
+import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
+import {
+  draftFoodsToSolverItems,
+  solverProposalToMcDriveItem,
+} from '../../utils/solverEngine';
 import {
   EMPTY_MCDRIVE_TOTALS,
   MCDRIVE_ADD_MORE_CHIP,
@@ -113,6 +119,7 @@ function LiveMealTray({
   onUpdateMealTime = null,
   onApplyAlternative = null,
   onReplaceFromSearch = null,
+  onAppendSolverItems = null,
   getMealTargets = null,
   personalDb = null,
   kentuItDb = null,
@@ -129,6 +136,11 @@ function LiveMealTray({
   const needsCalculate = hasRaw || hasPendingMcDriveEnrichment(items);
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
+  const [showSolverModal, setShowSolverModal] = useState(false);
+  const [solverFeedback, setSolverFeedback] = useState(null);
+  const [solverHighlightIds, setSolverHighlightIds] = useState(() => new Set());
+  const solverFeedbackTimerRef = useRef(null);
+  const solverHighlightTimerRef = useRef(null);
   const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
 
   const mealTargets = useMemo(() => {
@@ -168,6 +180,64 @@ function LiveMealTray({
     || Number(mealTargets.carbo) > 0
     || Number(mealTargets.fat) > 0;
 
+  const hasNutrientGap = useMemo(() => {
+    if (!hasTargets) return false;
+    const gapKcal = Math.max(0, Number(mealTargets.kcal) - Number(resolvedTotals.kcal));
+    const gapPro = Math.max(0, Number(mealTargets.pro) - Number(resolvedTotals.pro));
+    const gapCarbo = Math.max(0, Number(mealTargets.carbo) - Number(resolvedTotals.carbo));
+    const gapFat = Math.max(0, Number(mealTargets.fat) - Number(resolvedTotals.fat));
+    return gapKcal > 5 || gapPro > 0.5 || gapCarbo > 0.5 || gapFat > 0.5;
+  }, [hasTargets, mealTargets, resolvedTotals]);
+
+  const canOpenSolver = items.length >= 1 || hasNutrientGap;
+
+  const solverExistingFoods = useMemo(
+    () => draftFoodsToSolverItems(items),
+    [items],
+  );
+
+  const solverTargets = useMemo(
+    () => ({
+      kcal: mealTargets.kcal,
+      prot: mealTargets.pro,
+      carb: mealTargets.carbo,
+      fat: mealTargets.fat,
+    }),
+    [mealTargets],
+  );
+
+  useEffect(
+    () => () => {
+      if (solverFeedbackTimerRef.current) window.clearTimeout(solverFeedbackTimerRef.current);
+      if (solverHighlightTimerRef.current) window.clearTimeout(solverHighlightTimerRef.current);
+    },
+    [],
+  );
+
+  const handleSolverApply = useCallback(
+    (proposals) => {
+      const confirmed = (proposals || []).filter(Boolean);
+      if (confirmed.length === 0) return;
+
+      const mcItems = confirmed.map((proposal) => solverProposalToMcDriveItem(proposal));
+      onAppendSolverItems?.(mcItems);
+
+      const nextHighlightIds = new Set(mcItems.map((item) => item.id).filter(Boolean));
+      setSolverHighlightIds(nextHighlightIds);
+
+      const label = mcItems.length === 1
+        ? `Consulto: ${mcItems[0].foodName}`
+        : `Consulto: ${mcItems.length} alimenti aggiunti`;
+      setSolverFeedback(label);
+
+      if (solverFeedbackTimerRef.current) window.clearTimeout(solverFeedbackTimerRef.current);
+      if (solverHighlightTimerRef.current) window.clearTimeout(solverHighlightTimerRef.current);
+      solverFeedbackTimerRef.current = window.setTimeout(() => setSolverFeedback(null), 2400);
+      solverHighlightTimerRef.current = window.setTimeout(() => setSolverHighlightIds(new Set()), 2800);
+    },
+    [onAppendSolverItems],
+  );
+
   // Solo visualizzazione LIFO: ultimo inserito in cima. Gli indici restano quelli dell'array stato.
   const displayItems = useMemo(
     () => items.map((item, index) => ({ item, index })).reverse(),
@@ -178,8 +248,8 @@ function LiveMealTray({
     <div
       className={
         immersive
-          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
-          : 'kentu-meal-tray kentu-meal-tray--native flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden'
+          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
+          : 'kentu-meal-tray kentu-meal-tray--native relative flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden'
       }
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
@@ -270,6 +340,7 @@ function LiveMealTray({
               // LIFO: displayIndex 0 = ultimo inserimento (in cima).
               const isLatestInsert = displayIndex === 0;
               const highlightLatest = isLatestInsert && isRaw;
+              const highlightSolver = solverHighlightIds.has(String(item?.id || ''));
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
@@ -282,7 +353,9 @@ function LiveMealTray({
               else if (isRaw) detailLabel = ''; // nessun calcolo visibile
               else if (isResolved || kcal > 0) detailLabel = `${kcal} kcal`;
 
-              const rowStatusClass = highlightLatest
+              const rowStatusClass = highlightSolver
+                ? 'kentu-meal-tray__row--solver border-l-4 border-violet-400 bg-violet-500/15 ring-1 ring-violet-300/30'
+                : highlightLatest
                 ? 'kentu-meal-tray__row--latest-raw border-l-4 border-cyan-400 bg-cyan-500/10'
                 : isRaw
                   ? 'kentu-meal-tray__row--raw text-white'
@@ -478,6 +551,18 @@ function LiveMealTray({
         <div className="kentu-meal-tray__footer flex-none">
           <KentuButton
             variant="secondary"
+            className="kentu-meal-tray__solver kentu-btn--sm min-w-[96px] shrink-0"
+            disabled={disabled || !canOpenSolver}
+            onClick={() => setShowSolverModal(true)}
+            title={canOpenSolver ? 'Bilancia pasto con Kentu Solver' : 'Aggiungi alimenti o attendi target pasto'}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              Bilancia
+            </span>
+          </KentuButton>
+          <KentuButton
+            variant="secondary"
             className="kentu-meal-tray__cancel"
             disabled={disabled}
             onClick={() => onCancel?.()}
@@ -515,6 +600,25 @@ function LiveMealTray({
           )}
         </div>
       ) : null}
+
+      {solverFeedback ? (
+        <div
+          role="status"
+          className="pointer-events-none absolute bottom-[4.75rem] left-1/2 z-20 max-w-[92%] -translate-x-1/2 rounded-full border border-violet-400/40 bg-slate-950/95 px-3 py-1.5 text-[11px] font-semibold text-violet-100 shadow-lg backdrop-blur-sm"
+        >
+          ✓ {solverFeedback}
+        </div>
+      ) : null}
+
+      <KentuSolverModal
+        open={showSolverModal}
+        onClose={() => setShowSolverModal(false)}
+        targets={solverTargets}
+        existingFoods={solverExistingFoods}
+        mealType={mealType}
+        onApply={handleSolverApply}
+        elevated
+      />
 
       <UniversalSearchModal
         isOpen={searchIndex != null}

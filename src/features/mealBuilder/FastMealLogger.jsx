@@ -48,7 +48,9 @@ import {
   saveCatalogServingOverrides,
 } from './utils/masterFoodResync';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles, X } from 'lucide-react';
+import KentuSolverModal from '../../components/solver/KentuSolverModal';
+import { draftFoodsToSolverItems, solverProposalToDraftFood } from '../../utils/solverEngine';
 import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
@@ -341,6 +343,7 @@ function FastMealLoggerContent({
   );
   const [cartPulse, setCartPulse] = useState(false);
   const [addFeedback, setAddFeedback] = useState(null);
+  const [showSolverModal, setShowSolverModal] = useState(false);
   const [deepEditFood, setDeepEditFood] = useState(null);
   const [editingCatalogFood, setEditingCatalogFood] = useState(null);
   const [catalogServingOverrides, setCatalogServingOverrides] = useState(() => {
@@ -376,6 +379,7 @@ function FastMealLoggerContent({
     mealTime,
     setMealTime,
     addFoodToDraft,
+    addFoodsToDraft,
     removeFoodFromDraft,
     updateFoodAmount,
     updateFoodInDraft,
@@ -712,6 +716,36 @@ function FastMealLoggerContent({
   const mealTargets = useMemo(
     () => getMealTargetsForSlot?.(selectedSlot) ?? {},
     [selectedSlot, getMealTargetsForSlot],
+  );
+  const solverExistingFoods = useMemo(
+    () => draftFoodsToSolverItems(draftFoods),
+    [draftFoods],
+  );
+  const solverTargets = useMemo(
+    () => ({
+      kcal: mealTargets?.kcal ?? 0,
+      prot: mealTargets?.prot ?? mealTargets?.proteins ?? 0,
+      carb: mealTargets?.carb ?? mealTargets?.carbs ?? 0,
+      fat: mealTargets?.fat ?? mealTargets?.fatTotal ?? 0,
+    }),
+    [mealTargets],
+  );
+  const handleSolverApply = useCallback(
+    (proposals) => {
+      const confirmed = (proposals || []).filter(Boolean);
+      if (confirmed.length === 0) return;
+
+      const draftItems = confirmed.map((proposal) =>
+        solverProposalToDraftFood(proposal, { mealType: selectedSlot, mealTime }),
+      );
+      addFoodsToDraft(draftItems);
+      setActiveTab('riepilogo');
+      const label = draftItems.length === 1
+        ? `Consulto: ${draftItems[0].desc}`
+        : `Consulto: ${draftItems.length} alimenti aggiunti`;
+      notifyItemAdded(label);
+    },
+    [addFoodsToDraft, mealTime, notifyItemAdded, selectedSlot],
   );
   const mealConsumed = useMemo(
     () => getMealConsumedForSlot?.(selectedSlot) ?? {},
@@ -1876,6 +1910,15 @@ function FastMealLoggerContent({
             </div>
 
             <div className="shrink-0 space-y-2 border-t border-slate-800 px-4 py-4">
+              <button
+                type="button"
+                onClick={() => setShowSolverModal(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/35 bg-violet-500/10 px-4 py-2.5 text-sm font-medium text-violet-200 transition-colors hover:border-violet-300/50 hover:bg-violet-500/20 active:scale-[0.98]"
+              >
+                <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
+                Bilancia Pasto
+              </button>
+
               {draftFoods.length > 0 ? (
                 <button
                   type="button"
@@ -1899,7 +1942,7 @@ function FastMealLoggerContent({
         )}
       </div>
 
-      {addFeedback && activeTab === 'alimenti' ? (
+      {addFeedback ? (
         <div
           role="status"
           className="pointer-events-none absolute bottom-20 left-1/2 z-[60] max-w-[90%] -translate-x-1/2 rounded-full border border-cyan-500/40 bg-slate-900/95 px-4 py-2 text-xs font-medium text-cyan-200 shadow-lg backdrop-blur-sm transition-all duration-300"
@@ -1911,10 +1954,18 @@ function FastMealLoggerContent({
       {activeTab === 'alimenti' && draftFoods.length > 0 ? (
         <div
           key={`mini-cart-${draftFoods.length}`}
-          className={`absolute inset-x-0 bottom-0 z-30 shrink-0 px-4 pb-4 pt-2 ${
+          className={`absolute inset-x-0 bottom-0 z-30 shrink-0 space-y-2 px-4 pb-4 pt-2 ${
             cartPulse ? 'vetrina-cart-row-enter' : ''
           }`}
         >
+          <button
+            type="button"
+            onClick={() => setShowSolverModal(true)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/35 bg-violet-950/80 px-3 py-2 text-xs font-semibold text-violet-200 shadow-lg backdrop-blur-sm transition-colors hover:border-violet-300/50 hover:bg-violet-900/80 active:scale-[0.98]"
+          >
+            <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Chiedi Consulto
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab('riepilogo')}
@@ -2077,6 +2128,16 @@ function FastMealLoggerContent({
           onAcquireExternalFood={onAcquireExternalFood}
         />
       ) : null}
+
+      <KentuSolverModal
+        open={showSolverModal}
+        onClose={() => setShowSolverModal(false)}
+        targets={solverTargets}
+        existingFoods={solverExistingFoods}
+        selectedSlot={selectedSlot}
+        onApply={handleSolverApply}
+        elevated
+      />
 
     </div>
   );

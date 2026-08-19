@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import CentroAnalisiPage from './pages/CentroAnalisiPage';
+import ConsultoPreview from './pages/ConsultoPreview';
 import { ChatOverlayProvider } from './contexts/ChatOverlayContext';
 import GlobalChatOverlay from './components/GlobalChatOverlay';
 
@@ -29,6 +30,7 @@ export default function App() {
             {/* Centro Analisi: scheletro isolato, non tocca Storico / Timeline. */}
             <Route path="/centro-analisi" element={<CentroAnalisiPage />} />
             <Route path="/analisi" element={<CentroAnalisiPage />} />
+            <Route path="/consulto" element={<ConsultoPreview />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

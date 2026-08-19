@@ -34,6 +34,7 @@ export default function KentuChatUI({
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
+  onMcDriveAppendSolverItems = null,
   getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
@@ -106,6 +107,7 @@ export default function KentuChatUI({
         onMcDriveUpdateMealTime={onMcDriveUpdateMealTime}
         onMcDriveApplyAlternative={onMcDriveApplyAlternative}
         onMcDriveReplaceFromSearch={onMcDriveReplaceFromSearch}
+        onMcDriveAppendSolverItems={onMcDriveAppendSolverItems}
         getMcDriveMealTargets={getMcDriveMealTargets}
         onWorkoutDraftUpdateMeta={onWorkoutDraftUpdateMeta}
         onWorkoutDraftUpdateExercise={onWorkoutDraftUpdateExercise}

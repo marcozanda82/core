@@ -1868,6 +1868,15 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  const handleMcDriveAppendSolverItems = useCallback((items) => {
+    if (typeof controller.appendMcDriveDraftItems !== 'function') {
+      return { ok: false, reason: 'mcdrive_append_unavailable' };
+    }
+    const result = controller.appendMcDriveDraftItems(items);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
   const handleChatUsdaEnrichmentSelect = useCallback(async (match) => {
     const resume = chatUsdaResumeRef.current;
     chatUsdaResumeRef.current = null;
@@ -1925,6 +1934,7 @@ export function useCommandTerminal({
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
+    handleMcDriveAppendSolverItems,
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,

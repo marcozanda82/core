@@ -860,6 +860,27 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
   }
 
+  appendMcDriveDraftItems(items = []) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const toAdd = (Array.isArray(items) ? items : []).filter((item) => item?.foodName);
+    if (toAdd.length === 0) {
+      return {
+        ok: false,
+        reason: 'empty_items',
+        liveMealTray: this.buildMcdriveTrayPayload(),
+      };
+    }
+    this.pendingMcDriveDraft = [...list, ...toAdd];
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return {
+      ok: true,
+      liveMealTray: this.buildMcdriveTrayPayload(),
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+      addedCount: toAdd.length,
+    };
+  }
+
   removeMcDriveDraftItem(index) {
     const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
     const idx = Math.round(Number(index));

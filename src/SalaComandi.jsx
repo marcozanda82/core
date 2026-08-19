@@ -6999,6 +6999,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
+    handleMcDriveAppendSolverItems,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
@@ -7201,6 +7202,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
       onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
       onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
+      onMcDriveAppendSolverItems: handleMcDriveAppendSolverItems,
       getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
       onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
       onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
@@ -7250,6 +7252,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
+    handleMcDriveAppendSolverItems,
     getFastLoggerMealTargetsForSlot,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
@@ -9919,6 +9922,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onMcDriveUpdateMealTime={handleMcDriveUpdateMealTime}
             onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
             onMcDriveReplaceFromSearch={handleMcDriveReplaceFromSearch}
+            onMcDriveAppendSolverItems={handleMcDriveAppendSolverItems}
             getMcDriveMealTargets={getFastLoggerMealTargetsForSlot}
             onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}

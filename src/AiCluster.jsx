@@ -126,6 +126,7 @@ export default function AiCluster({
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
+  onMcDriveAppendSolverItems = null,
   getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
@@ -1502,6 +1503,7 @@ export default function AiCluster({
               onUpdateMealTime={onMcDriveUpdateMealTime}
               onApplyAlternative={onMcDriveApplyAlternative}
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
+              onAppendSolverItems={onMcDriveAppendSolverItems}
               onCancel={() => {
                 onSendMessage?.('', {
                   intent: 'CANCEL_MCDRIVE_WIZARD',
