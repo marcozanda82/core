@@ -1421,16 +1421,29 @@ export function useCommandTerminal({
       if (snap.pendingAction?.draftId && draftId && snap.pendingAction.draftId !== draftId) {
         return { ok: false, reason: 'stale_draft_confirm' };
       }
-      // ADD_WORKOUT: conferma solo via card inline — mai aprire drawer/cassetto nativo.
       confirmingDraftRef.current = true;
-      try {
-        resolveDraftMessage(draftId);
-        setActiveQuickReplies([]);
-        applyDraftConfirmReplaceGuard(controller);
-        return controller.confirmPendingAction();
-      } finally {
-        confirmingDraftRef.current = false;
+      // Optimistic: smonta subito la card; commit Firebase/ricalcoli in idle.
+      resolveDraftMessage(draftId);
+      setActiveQuickReplies([]);
+      applyDraftConfirmReplaceGuard(controller);
+
+      const runCommit = () => {
+        Promise.resolve(controller.confirmPendingAction())
+          .catch((err) => {
+            console.error('[useCommandTerminal] confirm draft failed', err);
+          })
+          .finally(() => {
+            confirmingDraftRef.current = false;
+          });
+      };
+
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(runCommit, { timeout: 150 });
+      } else {
+        setTimeout(runCommit, 0);
       }
+
+      return { ok: true, optimistic: true };
     },
     [controller, resolveDraftMessage],
   );

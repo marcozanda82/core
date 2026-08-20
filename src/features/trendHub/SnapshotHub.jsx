@@ -16,8 +16,8 @@ import { getTodayString } from '../../coreEngine';
 const SaluteView = lazy(() => import('./SaluteView'));
 
 const HEMISPHERE_OPTIONS = [
-  { value: 'progressione', label: 'Progressione' },
-  { value: 'salute', label: 'Salute' },
+  { value: 'progressione', icon: '📈', label: 'Progressione' },
+  { value: 'salute', icon: '🫀', label: 'Salute' },
 ];
 
 /**
@@ -203,7 +203,7 @@ export default function SnapshotHub({
         role="tablist"
         aria-label="Fotografia Progressione o Salute"
       >
-        {HEMISPHERE_OPTIONS.map(({ value, label }) => {
+        {HEMISPHERE_OPTIONS.map(({ value, icon, label }) => {
           const active = hemisphere === value;
           return (
             <button
@@ -211,10 +211,12 @@ export default function SnapshotHub({
               type="button"
               role="tab"
               aria-selected={active}
-              className={`trend-hub-hemisphere-segment${active ? ' trend-hub-hemisphere-segment--active' : ''}`}
+              aria-label={label}
+              title={label}
+              className={`trend-hub-hemisphere-segment trend-hub-hemisphere-segment--icon${active ? ' trend-hub-hemisphere-segment--active' : ''}`}
               onClick={() => setHemisphere(value)}
             >
-              {label}
+              <span className="trend-hub-hemisphere-segment__icon" aria-hidden>{icon}</span>
             </button>
           );
         })}

@@ -15,9 +15,9 @@ import { useActiveTrendTool } from './features/trendHub/hooks/useActiveTrendTool
 
 const DEFAULT_TIMEFRAME = '1d';
 const TREND_TOOLS = [
-  { value: 'COMPASS', label: '🧭 Bussola' },
-  { value: 'RADAR', label: '🕸️ Radar' },
-  { value: 'MAP', label: '🗺️ Mappa' },
+  { value: 'COMPASS', icon: '🧭', label: 'Bussola' },
+  { value: 'RADAR', icon: '🕸️', label: 'Radar' },
+  { value: 'MAP', icon: '🗺️', label: 'Mappa' },
 ];
 const RADAR_TIMEFRAMES = [
   { value: 'AUTO', label: 'AUTO' },
@@ -461,15 +461,16 @@ export default function MetabolicUnifiedView({
           aria-label="Strumento storico metabolico"
           className="trend-tool-segmented"
         >
-          {TREND_TOOLS.map(({ value, label }) => (
+          {TREND_TOOLS.map(({ value, icon, label }) => (
             <TrendToolSegmentButton
               key={value}
               active={activeTool === value}
               onClick={() => setActiveTool(value)}
               reducedMotion={reducedMotion}
               aria-label={label}
+              title={label}
             >
-              {label}
+              <span className="trend-tool-segment__icon" aria-hidden>{icon}</span>
             </TrendToolSegmentButton>
           ))}
         </div>

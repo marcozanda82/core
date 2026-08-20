@@ -1,5 +1,11 @@
 const OFF_USER_AGENT = 'GhostApp/1.0 (KentuOS; barcode-scanner)';
 
+/** Timeout rigido lookup Open Food Facts (ms). */
+export const OFF_FETCH_TIMEOUT_MS = 6000;
+
+export const BARCODE_NO_MATCH_MESSAGE =
+  'Prodotto non trovato nell\'archivio. Inserisci i dati manualmente.';
+
 function pickOffNutriment(nutriments, keys) {
   if (!nutriments || typeof nutriments !== 'object') return undefined;
   for (let i = 0; i < keys.length; i += 1) {
@@ -63,14 +69,41 @@ function mapOpenFoodFactsProduct(barcode, product) {
   return entryPer100;
 }
 
-/** Risolve un barcode via Open Food Facts (v2 + v0). */
+/**
+ * Fetch singolo endpoint OFF con AbortController + timeout.
+ * @param {string} url
+ * @param {number} timeoutMs
+ * @returns {Promise<{ ok: boolean, status: number, data: object|null, aborted?: boolean }>}
+ */
+async function fetchOffJson(url, timeoutMs = OFF_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, data: null };
+    }
+    const data = await res.json();
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    const aborted = err?.name === 'AbortError' || controller.signal.aborted;
+    return { ok: false, status: aborted ? 408 : 0, data: null, aborted };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Risolve un barcode via Open Food Facts (v2 + v0) con timeout 6s per tentativo.
+ * @param {string} barcode
+ * @returns {Promise<object|null>}
+ */
 export async function fetchOpenFoodFactsByBarcode(barcode) {
   const code = String(barcode ?? '').trim();
   if (!code) return null;
-
-  const requestOpts = {
-    headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
-  };
 
   const endpoints = [
     `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`,
@@ -79,21 +112,21 @@ export async function fetchOpenFoodFactsByBarcode(barcode) {
 
   for (let i = 0; i < endpoints.length; i += 1) {
     const url = endpoints[i];
-    try {
-      const res = await fetch(url, requestOpts);
-      if (!res.ok) continue;
-      const data = await res.json();
-      const product = data?.product;
-      if (!product) continue;
-      const mapped = mapOpenFoodFactsProduct(code, product);
-      if (mapped) return mapped;
-    } catch {
-      /* try next endpoint */
+    const result = await fetchOffJson(url, OFF_FETCH_TIMEOUT_MS);
+    if (result.aborted) {
+      // Timeout: non continuare sul secondo endpoint (evita loop di attesa).
+      return null;
     }
+    if (!result.ok || !result.data) continue;
+
+    const status = Number(result.data?.status);
+    if (status === 0) continue;
+    const product = result.data?.product;
+    if (!product) continue;
+
+    const mapped = mapOpenFoodFactsProduct(code, product);
+    if (mapped) return mapped;
   }
 
   return null;
 }
-
-export const BARCODE_NO_MATCH_MESSAGE =
-  'Nessuna corrispondenza trovata. Riprova la scansione o inserisci manualmente.';

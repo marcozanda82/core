@@ -72,7 +72,8 @@ export const EMPTY_MCDRIVE_TOTALS = Object.freeze({
 export const MCDRIVE_TARGET_MARGIN_RATIO = 0.1;
 
 const DEFAULT_GRAMS = 100;
-const VALID_CONFIDENCE = new Set(['high', 'medium']);
+/** Solo match ad alta confidenza: evita allucinazioni tipo «passata» → pizza. */
+const VALID_CONFIDENCE = new Set(['high']);
 const MCDRIVE_MEAL_TYPES = new Set(['colazione', 'snack', 'pranzo', 'cena']);
 const MAX_ALTERNATIVES = 4;
 

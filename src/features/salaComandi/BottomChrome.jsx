@@ -2,7 +2,7 @@ import React from 'react';
 import { Activity } from 'lucide-react';
 
 /**
- * Bottom Navigation "Arc Reactor": 4 tab + slot centrale (Emblema flottante gestito da SalaComandi).
+ * Bottom Navigation "Arc Reactor": tab icon-only + slot centrale (Emblema flottante gestito da SalaComandi).
  */
 export default function BottomChrome({
   BOTTOM_NAV_ITEMS,
@@ -16,26 +16,27 @@ export default function BottomChrome({
 
   const renderTab = (t) => {
     const isActive = activeBottomTab === t.id;
+    const label = t.label || t.id;
     return (
       <button
         key={t.id}
         type="button"
         onClick={() => handleBottomNavTabSelect(t.id)}
         aria-current={isActive ? 'page' : undefined}
-        className="flex min-w-0 flex-1 flex-col items-center justify-center bg-transparent p-1"
+        aria-label={label}
+        title={label}
+        className="flex min-w-0 flex-1 items-center justify-center bg-transparent p-0.5"
       >
         <span
           className={[
-            'flex flex-col items-center gap-0.5 text-[0.65rem] transition-all duration-300',
+            'flex h-9 w-9 items-center justify-center rounded-xl text-[1.2rem] leading-none transition-all duration-300',
             isActive
-              ? 'translate-y-[-2px] scale-110 text-cyan-400 opacity-100 drop-shadow-[0_0_8px_rgba(0,229,255,0.45)]'
-              : 'text-zinc-500 opacity-70',
+              ? 'scale-105 bg-cyan-500/15 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.4)]'
+              : 'text-zinc-500 opacity-75 hover:opacity-100',
           ].join(' ')}
+          aria-hidden
         >
-          <span className="inline-flex h-6 items-center justify-center text-[1.2rem] leading-none" aria-hidden>
-            {t.id === 'bussola' ? <Activity size={20} strokeWidth={2.2} /> : t.icon}
-          </span>
-          <span>{t.label}</span>
+          {t.id === 'bussola' ? <Activity size={20} strokeWidth={2.2} /> : t.icon}
         </span>
       </button>
     );
@@ -44,7 +45,7 @@ export default function BottomChrome({
   return (
     <nav
       aria-label="Navigazione principale"
-      className="fixed bottom-0 left-0 right-0 z-40 h-16 w-full overflow-visible px-2 pb-[env(safe-area-inset-bottom,0px)]"
+      className="fixed bottom-0 left-0 right-0 z-40 h-12 w-full overflow-visible px-1 pb-[env(safe-area-inset-bottom,0px)]"
       style={{ boxSizing: 'border-box', overflow: 'visible' }}
     >
       <div
@@ -54,7 +55,6 @@ export default function BottomChrome({
 
       <div className="relative z-10 flex h-full w-full items-center justify-around overflow-visible">
         {leftItems.map(renderTab)}
-        {/* Slot centrale: spazio per Emblema flottante (fuori dalla nav) */}
         <div className="relative flex flex-1 items-center justify-center overflow-visible" aria-hidden />
         {rightItems.slice(0, 2).map(renderTab)}
       </div>

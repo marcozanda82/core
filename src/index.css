@@ -383,6 +383,27 @@ html, body, #root {
   margin-bottom: 16px;
 }
 
+.chart-selector-container--icon-only {
+  padding: 4px 2px;
+  margin-bottom: 8px;
+  gap: 3px;
+}
+
+.chart-selector-container--icon-only .chart-selector-btn {
+  flex-direction: row;
+  padding: 5px 0;
+  min-height: 36px;
+}
+
+.chart-selector-container--icon-only .chart-btn-icon {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.chart-selector-container--icon-only .chart-btn-label {
+  display: none;
+}
+
 .chart-selector-btn {
   display: flex;
   flex-direction: column;
@@ -1161,7 +1182,7 @@ html, body, #root {
   display: flex;
   gap: 6px;
   width: 100%;
-  padding: 4px;
+  padding: 3px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(10, 12, 16, 0.72);
@@ -1184,6 +1205,19 @@ html, body, #root {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.trend-hub-hemisphere-segment--icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  min-height: 36px;
+}
+
+.trend-hub-hemisphere-segment__icon {
+  font-size: 1.15rem;
+  line-height: 1;
 }
 
 .trend-hub-hemisphere-segment--active {
@@ -2508,7 +2542,7 @@ html, body, #root {
 .trend-tool-segmented {
   flex-shrink: 0;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
   width: 100%;
 }
@@ -2516,8 +2550,9 @@ html, body, #root {
 .trend-tool-segment {
   flex: 1;
   min-width: 0;
+  max-width: 52px;
   margin: 0;
-  padding: 7px 10px;
+  padding: 6px 8px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.04);
@@ -2529,6 +2564,14 @@ html, body, #root {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.trend-tool-segment__icon {
+  font-size: 1.15rem;
+  line-height: 1;
 }
 
 .trend-tool-segment--active {

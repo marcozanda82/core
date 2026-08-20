@@ -951,11 +951,20 @@ export function buildBodyMetricsSavePayload({
 
   const weightProvided = weight !== undefined && String(weight ?? '').trim() !== '';
   const waistProvided = waist !== undefined && String(waist ?? '').trim() !== '';
-  const explicitWeight = parseOpt(weight);
+  let explicitWeight = parseOpt(weight);
   const explicitWaist = parseOpt(waist);
 
   if (weightProvided && explicitWeight == null) {
     return { payload: null, error: 'Inserisci un peso valido (maggiore di 0).' };
+  }
+  if (explicitWeight != null && (explicitWeight < 30 || explicitWeight > 300)) {
+    return {
+      payload: null,
+      error: 'Peso fuori range: inserisci un valore tra 30 e 300 kg.',
+    };
+  }
+  if (explicitWeight != null) {
+    explicitWeight = Math.min(300, Math.max(30, explicitWeight));
   }
   if (waistProvided && explicitWaist == null) {
     return { payload: null, error: 'Inserisci un girovita valido in cm (maggiore di 0).' };

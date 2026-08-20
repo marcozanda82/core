@@ -106,6 +106,8 @@ export default function UniversalSearchModal({
   scannerError = '',
   isScannerResolving = false,
   initialQuery = '',
+  /** Se true all'apertura, mostra subito il form manuale (es. barcode non trovato). */
+  preferManualEntry = false,
 }) {
   const {
     query,
@@ -139,9 +141,13 @@ export default function UniversalSearchModal({
     }
     const seed = String(initialQuery || '').trim();
     if (seed) runSearch(seed);
+    if (preferManualEntry) {
+      setIsManualEntryOpen(true);
+      setManualForm(EMPTY_MANUAL_FORM);
+    }
     // Solo all'apertura / cambio seed — non a ogni keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearSearch/runSearch sono stabili
-  }, [isOpen, initialQuery]);
+  }, [isOpen, initialQuery, preferManualEntry]);
 
   if (!isOpen) return null;
 

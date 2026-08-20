@@ -128,6 +128,7 @@ import {
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
 } from './conversation/mcdriveWizard.js';
+import { buildProvisionalCustomFoodItem } from '../../utils/getFoodIcon.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
 import { getFoodItemsForMealSlotFromLog } from '../../utils/mealProposalBuilders.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
@@ -1186,7 +1187,7 @@ export class CommandTerminalController {
     nextList[idx] = { ...item, status: 'processing' };
     this.pendingMcDriveDraft = nextList;
     this.publishMcdriveTraySync();
-    await new Promise((resolve) => setTimeout(resolve, 450));
+    await new Promise((resolve) => setTimeout(resolve, 80));
 
     let resolved = null;
     try {
@@ -1237,52 +1238,26 @@ export class CommandTerminalController {
       return this.processNextRawMcdriveItem();
     }
 
-    // Ostacolo: pausa + enrichment UI (processing → pending_enrichment)
-    const paused = [...this.pendingMcDriveDraft];
-    paused[idx] = {
-      ...item,
-      status: 'pending_enrichment',
-    };
-    this.pendingMcDriveDraft = paused;
-    this.publishMcdriveTraySync();
-
-    if (typeof this.onRequestUsdaEnrichment === 'function') {
-      this.onRequestUsdaEnrichment({
-        foodName,
-        mode: 'mcdrive',
-        kentuItDb: currentState?.kentuItDatabase
-          || currentState?.kentuItDb
-          || currentState?.kentuFoodDb
-          || null,
-        personalDb: currentState?.foodDatabase
-          || currentState?.trackerFoodDatabase
-          || currentState?.personalFoodDb
-          || null,
-        globalDb: currentState?.globalFoodDatabase
-          || currentState?.globalDb
-          || currentState?.usdaDatabase
-          || null,
-        resume: (match) => this.resumeMcdriveValidationEnrichment(match),
-      });
-    }
-
-    this.bus.publish(
-      DISPATCH_SYSTEM_MESSAGE,
-      {
-        type: 'system',
-        text: `Non trovo «${foodName}» nel database. Scegli un match, ricerca manuale o Tralascia.`,
-        message: `Non trovo «${foodName}» nel database. Scegli un match, ricerca manuale o Tralascia.`,
-        isSystem: true,
-      },
-      { source: 'CommandTerminalController' },
+    // Nessun match high-confidence: custom temporaneo con macro standard (niente allucinazione DB).
+    const provisionalGrams = resolveMcdriveGramsWithHistory(
+      item,
+      { foodDbKey: null, foodName },
+      currentState,
     );
-
-    return {
-      ok: true,
-      paused: true,
-      intent: 'MCDRIVE_ENRICHMENT_PAUSE',
-      foodName,
+    const provisional = buildProvisionalCustomFoodItem(foodName, provisionalGrams, {
+      id: item.id,
+    });
+    const afterProvisional = [...this.pendingMcDriveDraft];
+    afterProvisional[idx] = {
+      ...provisional,
+      id: item.id || provisional.id,
+      status: 'resolved',
+      isEstimated: true,
+      spokenFoodName: foodName,
     };
+    this.pendingMcDriveDraft = afterProvisional;
+    this.publishMcdriveTraySync();
+    return this.processNextRawMcdriveItem();
   }
 
   /**

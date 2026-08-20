@@ -51,6 +51,7 @@ import { resolveUnitWeight } from './utils/draftFoodUnits';
 import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles, X } from 'lucide-react';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { draftFoodsToSolverItems, solverProposalToDraftFood } from '../../utils/solverEngine';
+import { clampFoodGrams } from '../../utils/inputSanity';
 import { FaHamburger } from 'react-icons/fa';
 import { MdOutlineLocalFireDepartment } from 'react-icons/md';
 import useBarcodeScanner from './hooks/useBarcodeScanner';
@@ -326,6 +327,8 @@ function FastMealLoggerContent({
     () => initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
   );
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+  const [preferManualSearchEntry, setPreferManualSearchEntry] = useState(false);
+  const [isSavingMeal, setIsSavingMeal] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
   const [editingRecipe, setEditingRecipe] = useState(null);
@@ -683,6 +686,11 @@ function FastMealLoggerContent({
     finishEnrichment(enrichmentOffRef.current || null);
   }, [finishEnrichment]);
 
+  const handleBarcodeNotFound = useCallback(() => {
+    setPreferManualSearchEntry(true);
+    setIsSearchModalOpen(true);
+  }, []);
+
   const {
     isOpen: isScannerOpen,
     open: openScanner,
@@ -696,6 +704,7 @@ function FastMealLoggerContent({
     onAcquireExternalFood,
     onFoodResolved: handleFoodSelection,
     enrichOffProduct,
+    onBarcodeNotFound: handleBarcodeNotFound,
   });
 
   useEffect(() => {
@@ -1144,17 +1153,38 @@ function FastMealLoggerContent({
   const miniCartMealLabel = formatMiniCartMealLabel(selectedSlot);
 
   const handleConfirm = () => {
-    if (draftFoods.length === 0) return;
+    if (draftFoods.length === 0 || isSavingMeal) return;
+    const foodsSnapshot = draftFoods.map((f) => ({ ...f }));
     const learnedSlot = getLearnedMealSlot(mealTime, fullHistory);
     const mealSlotToSave = selectedSlot || learnedSlot;
-    recordDraftFoodsUsageStats(
-      draftFoods,
-      personalDb,
-      onPatchFoodDbEntry,
-      getTimeSlotForDecimalHour(mealTime),
-    );
-    onSave?.(draftFoods, mealSlotToSave, editingMealId ?? undefined, mealTime);
+    const mealTimeToSave = mealTime;
+    const editId = editingMealId ?? undefined;
+
+    setIsSavingMeal(true);
+    // Optimistic UI: svuota carrello e chiudi subito; write async fuori dal paint critico.
     clearDraft();
+    const runSave = () => {
+      try {
+        recordDraftFoodsUsageStats(
+          foodsSnapshot,
+          personalDb,
+          onPatchFoodDbEntry,
+          getTimeSlotForDecimalHour(mealTimeToSave),
+        );
+        onSave?.(foodsSnapshot, mealSlotToSave, editId, mealTimeToSave);
+      } catch (err) {
+        console.error('[FastMealLogger] salvataggio pasto fallito', err);
+      } finally {
+        setIsSavingMeal(false);
+        onClose?.();
+      }
+    };
+
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(() => runSave(), { timeout: 120 });
+    } else {
+      setTimeout(runSave, 0);
+    }
   };
 
   const handleOpenScanner = () => {
@@ -1246,11 +1276,14 @@ function FastMealLoggerContent({
   const handleDetailCartConfirm = (selectedWeight) => {
     if (!detailFood?.tile || selectedWeight <= 0) return;
 
-    const payload = buildTileDraftPayload(detailFood.tile, selectedWeight);
+    const grams = clampFoodGrams(selectedWeight);
+    if (grams == null || grams <= 0) return;
+
+    const payload = buildTileDraftPayload(detailFood.tile, grams);
     const existing = findDraftItemForFood(draftFoods, payload);
 
     if (existing) {
-      updateFoodAmount(existing.id, selectedWeight, 'g');
+      updateFoodAmount(existing.id, grams, 'g');
     } else {
       addFoodToDraft(payload);
     }
@@ -1905,6 +1938,18 @@ function FastMealLoggerContent({
                       variant={viewMode === 'compact' ? 'compact' : 'card'}
                     />
                   ))}
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreferManualSearchEntry(false);
+                        setIsSearchModalOpen(true);
+                      }}
+                      className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-4 py-3 text-sm font-medium text-cyan-300 transition-colors hover:border-cyan-400/50 hover:bg-cyan-500/10"
+                    >
+                      + Aggiungi un altro alimento
+                    </button>
+                  </li>
                 </ul>
               )}
             </div>
@@ -1923,7 +1968,8 @@ function FastMealLoggerContent({
                 <button
                   type="button"
                   onClick={handleOpenSaveRecipe}
-                  className="w-full rounded-xl border border-violet-500/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30"
+                  disabled={isSavingMeal}
+                  className="w-full rounded-xl border border-violet-500/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30 disabled:opacity-50"
                 >
                   Salva come ricetta
                 </button>
@@ -1932,10 +1978,12 @@ function FastMealLoggerContent({
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={draftFoods.length === 0}
+                disabled={draftFoods.length === 0 || isSavingMeal}
                 className="w-full rounded-xl bg-cyan-500 px-4 py-3.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
               >
-                CONFERMA PASTO · {draftMealKcal} kcal
+                {isSavingMeal
+                  ? 'Salvataggio…'
+                  : `CONFERMA PASTO · ${draftMealKcal} kcal`}
               </button>
             </div>
           </div>
@@ -2001,7 +2049,10 @@ function FastMealLoggerContent({
 
       <UniversalSearchModal
         isOpen={isSearchModalOpen}
-        onClose={() => setIsSearchModalOpen(false)}
+        onClose={() => {
+          setIsSearchModalOpen(false);
+          setPreferManualSearchEntry(false);
+        }}
         personalDb={personalDb}
         kentuItDb={kentuItDb}
         globalDb={globalDb ?? masterDb}
@@ -2016,6 +2067,7 @@ function FastMealLoggerContent({
         draftFoods={draftFoods}
         scannerError={scannerError}
         isScannerResolving={isScannerResolving}
+        preferManualEntry={preferManualSearchEntry}
       />
 
       <BarcodeScannerOverlay

@@ -14,6 +14,7 @@ import {
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
 import AmountStepper from './AmountStepper';
 import UnitChips from './UnitChips';
+import { FOOD_GRAMS_MAX, clampFoodGrams } from '../../../utils/inputSanity';
 
 const MACRO_BOXES = [
   { id: 'kcal', label: 'Kcal', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/25' },
@@ -96,7 +97,9 @@ export default function FoodDetailModal({
 
   const handleConfirm = () => {
     if (selectedWeight <= 0) return;
-    onConfirm?.(selectedWeight);
+    const grams = clampFoodGrams(selectedWeight);
+    if (grams == null || grams <= 0) return;
+    onConfirm?.(grams);
     setJustConfirmed(true);
     window.setTimeout(() => setJustConfirmed(false), 500);
   };
@@ -203,10 +206,17 @@ export default function FoodDetailModal({
             value={amount}
             onChange={setAmount}
             step={step}
+            min={selectedUnit === 'g' ? 1 : 0.25}
+            max={selectedUnit === 'g' ? FOOD_GRAMS_MAX : Math.ceil(FOOD_GRAMS_MAX / Math.max(1, resolveUnitWeight(displayTile, selectedUnit)))}
             unitLabel={unitLabel}
             size="lg"
             className="w-full"
           />
+          {selectedUnit === 'g' && Number(amount) > FOOD_GRAMS_MAX ? (
+            <p className="text-center text-[11px] font-medium text-rose-400" role="alert">
+              Max {FOOD_GRAMS_MAX} g per porzione
+            </p>
+          ) : null}
 
           <button
             type="button"

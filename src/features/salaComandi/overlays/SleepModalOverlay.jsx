@@ -1,4 +1,10 @@
 import React from 'react';
+import {
+  SLEEP_HOURS_MAX,
+  SLEEP_MINUTES_MAX,
+  isSleepHoursOutOfRange,
+  sanitizeNumericInput,
+} from '../../../utils/inputSanity';
 
 const STAR_LABELS = ['Pessima', 'Scarsa', 'Discreta', 'Buona', 'Ottima'];
 
@@ -11,6 +17,12 @@ const fieldStyle = {
   color: '#fff',
   fontSize: '1rem',
   boxSizing: 'border-box',
+};
+
+const fieldErrorStyle = {
+  ...fieldStyle,
+  border: '1px solid #ef4444',
+  boxShadow: '0 0 0 1px rgba(239, 68, 68, 0.35)',
 };
 
 const labelStyle = {
@@ -52,6 +64,26 @@ export default function SleepModalOverlay({
       month: 'long',
     });
   })();
+
+  const hoursInvalid = isSleepHoursOutOfRange(sleepFormDurationHours);
+
+  const handleHoursChange = (raw) => {
+    const { display, value, clamped } = sanitizeNumericInput(raw, 0, SLEEP_HOURS_MAX);
+    if (clamped || value != null) {
+      setSleepFormDurationHours(display === '' ? '' : Math.round(Number(display)));
+      return;
+    }
+    setSleepFormDurationHours(display);
+  };
+
+  const handleMinutesChange = (raw) => {
+    const { display, value, clamped } = sanitizeNumericInput(raw, 0, SLEEP_MINUTES_MAX);
+    if (clamped || value != null) {
+      setSleepFormDurationMinutes(display === '' ? '' : Math.round(Number(display)));
+      return;
+    }
+    setSleepFormDurationMinutes(display);
+  };
 
   return (
     <div
@@ -108,22 +140,35 @@ export default function SleepModalOverlay({
               <input
                 type="number"
                 min={0}
-                max={24}
+                max={SLEEP_HOURS_MAX}
+                inputMode="numeric"
                 value={sleepFormDurationHours}
-                onChange={(e) => setSleepFormDurationHours(e.target.value)}
-                style={fieldStyle}
+                onChange={(e) => handleHoursChange(e.target.value)}
+                style={hoursInvalid ? fieldErrorStyle : fieldStyle}
                 aria-label="Ore"
+                aria-invalid={hoursInvalid}
+                title={`Max ${SLEEP_HOURS_MAX} ore`}
               />
               <input
                 type="number"
                 min={0}
-                max={59}
+                max={SLEEP_MINUTES_MAX}
+                inputMode="numeric"
                 value={sleepFormDurationMinutes}
-                onChange={(e) => setSleepFormDurationMinutes(e.target.value)}
+                onChange={(e) => handleMinutesChange(e.target.value)}
                 style={fieldStyle}
                 aria-label="Minuti"
               />
             </div>
+            {hoursInvalid ? (
+              <p style={{ margin: '6px 0 0', fontSize: '0.72rem', color: '#f87171' }} role="alert">
+                Max {SLEEP_HOURS_MAX} ore
+              </p>
+            ) : (
+              <p style={{ margin: '6px 0 0', fontSize: '0.68rem', color: '#64748b' }}>
+                Ore 0–{SLEEP_HOURS_MAX} · Minuti 0–{SLEEP_MINUTES_MAX}
+              </p>
+            )}
           </div>
           <div>
             <label style={labelStyle}>Risvegli / Note</label>

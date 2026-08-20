@@ -1067,6 +1067,12 @@ export default function AiCluster({
                       onDraftUpdateItemGrams?.(msg.draftId, itemIndex, grams);
                     }}
                     onUpdateMealMeta={onDraftUpdateMealMeta}
+                    onAddFood={() => {
+                      onSendMessage?.('aggiungi un altro alimento alla bozza', {
+                        skipUserBubble: true,
+                        fromQuickReply: true,
+                      });
+                    }}
                   />
                 </div>
               ) : msg.sender === 'ai' && msg.workoutDraft && !msg.draftResolved && !msg.isTyping ? (

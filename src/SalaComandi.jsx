@@ -136,6 +136,11 @@ import {
 import { persistTrendHubHemisphere } from './features/trendHub/hooks/useTrendHubHemisphere';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 import {
+  SLEEP_HOURS_MAX,
+  WATER_ML_MAX,
+  clampSleepDurationHours,
+} from './utils/inputSanity';
+import {
   getWorkoutActivityTypeDef,
   getWorkoutActivityLogDescription,
   getCognitiveMetForActivity,
@@ -262,7 +267,6 @@ import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverl
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
 import KentuLazySectionFallback from './components/KentuLazySectionFallback';
-import SalaComandiLoginScreen from './components/auth/SalaComandiLoginScreen';
 import { createMealPieCustomizedLabel, MealPieActiveShape } from './components/charts/mealPieChartRenderers';
 import {
   FastChargeNapQuickPanel,
@@ -460,14 +464,9 @@ const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
-  const { db, auth, user, authReady, handleLogin: firebaseLogin } = useFirebase();
+  const { db, auth, user } = useFirebase();
   const isAuthenticated = !!user;
   const userUid = user?.uid ?? null;
-
-  // Form di login (stato locale)
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [isBooting, setIsBooting] = useState(false);
   const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
 
   // STATI INTERFACCIA
@@ -918,15 +917,17 @@ export default function SalaComandi() {
       const durationMinutes = Number(item.durationMinutes);
       const hoursDec = Number(item.hours ?? item.duration ?? item.sleepHours);
       if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
-        setSleepFormDurationHours(Math.floor(durationMinutes / 60));
-        setSleepFormDurationMinutes(durationMinutes % 60);
+        const clampedTotalMin = Math.min(SLEEP_HOURS_MAX * 60, Math.max(0, Math.round(durationMinutes)));
+        setSleepFormDurationHours(Math.floor(clampedTotalMin / 60));
+        setSleepFormDurationMinutes(clampedTotalMin % 60);
       } else if (Number.isFinite(hoursDec) && hoursDec > 0) {
-        setSleepFormDurationHours(Math.floor(hoursDec));
-        setSleepFormDurationMinutes(Math.round((hoursDec % 1) * 60));
+        const clamped = clampSleepDurationHours(hoursDec, 0);
+        setSleepFormDurationHours(Math.floor(clamped));
+        setSleepFormDurationMinutes(Math.round((clamped % 1) * 60));
     } else {
         const bed = Number(item.bedtime ?? item.sleepStart);
         if (Number.isFinite(bed) && Number.isFinite(wake)) {
-          const inferred = computeSleepDurationHours(bed, wake);
+          const inferred = clampSleepDurationHours(computeSleepDurationHours(bed, wake), 0);
           setSleepFormDurationHours(Math.floor(inferred));
           setSleepFormDurationMinutes(Math.round((inferred % 1) * 60));
         } else {
@@ -2765,18 +2766,6 @@ export default function SalaComandi() {
       console.warn('Errore durante il salvataggio della calibrazione:', err);
     });
   }, [userUid, isAuthenticated, fullHistory, userModel, idealStrategy, lastCalibrationWeek]);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setIsBooting(true);
-    try {
-      await firebaseLogin(loginEmail, loginPassword);
-    } catch (error) {
-      alert("ACCESSO NEGATO: Controlla le credenziali.");
-    } finally {
-      setIsBooting(false);
-    }
-  };
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -4698,15 +4687,24 @@ Slot esistente aggiornato (nessun ghost).`;
     const fromChat = returnToChatAfterQuickActionRef.current === true
       || activeAction === 'ai_chat';
     if (amount > 0) {
-      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: amount }];
+      const currentMl = (manualNodes || [])
+        .filter((n) => n?.type === 'water')
+        .reduce((sum, n) => sum + (Number(n.ml) || 0), 0);
+      const roomLeft = Math.max(0, WATER_ML_MAX - currentMl);
+      const clampedAdd = Math.min(Math.round(Number(amount) || 0), roomLeft);
+      if (!(clampedAdd > 0)) {
+        window.alert(`Limite idratazione giornaliera: max ${WATER_ML_MAX} ml.`);
+        return;
+      }
+      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: clampedAdd }];
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
       // Se l’azione è dalla chat, conferma in cronologia (niente overlay / Home).
       if (fromChat || activeAction === 'ai_chat') {
-        appendQuickEventConfirmToChat('water', { subtitle: `+${amount} ml` });
+        appendQuickEventConfirmToChat('water', { subtitle: `+${clampedAdd} ml` });
       } else {
         setQuickEventConfirm(buildQuickEventConfirmPayload('water', {
-          subtitle: `+${amount} ml`,
+          subtitle: `+${clampedAdd} ml`,
         }));
       }
       if (options.closeAfter === true) {
@@ -6833,8 +6831,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const commitLogSleepCommand = useCallback(
     (payload) => {
-      const hours = Number(payload?.durationHours);
-      if (!Number.isFinite(hours) || hours <= 0) {
+      const hoursRaw = Number(payload?.durationHours);
+      if (!Number.isFinite(hoursRaw) || hoursRaw <= 0) {
+        throw new Error('durationHours non valido');
+      }
+      const hours = clampSleepDurationHours(hoursRaw, 0);
+      if (!(hours > 0)) {
         throw new Error('durationHours non valido');
       }
       const roundedHours = Math.round(hours * 100) / 100;
@@ -7495,18 +7497,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const computedSleepBedtimeLabel = (() => {
     const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
-    const durationHours = (Number(sleepFormDurationHours) || 0)
-      + (Number(sleepFormDurationMinutes) || 0) / 60;
+    const durationHours = clampSleepDurationHours(
+      sleepFormDurationHours,
+      sleepFormDurationMinutes,
+    );
     const bedDec = computeBedtimeFromWakeAndDuration(wakeDec, durationHours);
     return Number.isFinite(bedDec) ? decimalToTimeStr(bedDec) : null;
   })();
 
   const handleSaveSleepEntry = (editingId = null) => {
     const wakeDec = parseTimeStrToDecimal(sleepFormWakeStr);
-    const durationHours = (Number(sleepFormDurationHours) || 0)
-      + (Number(sleepFormDurationMinutes) || 0) / 60;
+    const durationHours = clampSleepDurationHours(
+      sleepFormDurationHours,
+      sleepFormDurationMinutes,
+    );
     if (!(durationHours > 0)) {
       window.alert('Inserisci una durata di sonno valida (ore o minuti).');
+      return;
+    }
+    if (durationHours > SLEEP_HOURS_MAX) {
+      window.alert(`La durata del sonno non può superare ${SLEEP_HOURS_MAX} ore.`);
       return;
     }
     const bedDec = computeBedtimeFromWakeAndDuration(wakeDec, durationHours);
@@ -8126,7 +8136,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const kentuEmblemFab =
-    authReady && isAuthenticated
+    isAuthenticated
     && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
     && (isChatOpen || !isDrawerOpen)
     && !trainingBlockCreatorOpen
@@ -8168,21 +8178,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   let salaContent;
 
-  if (!authReady) {
-    salaContent = <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />;
-  } else if (!isAuthenticated) {
-    salaContent = (
-      <SalaComandiLoginScreen
-        isBooting={isBooting}
-        introPhrase={introPhrase}
-        loginEmail={loginEmail}
-        setLoginEmail={setLoginEmail}
-        loginPassword={loginPassword}
-        setLoginPassword={setLoginPassword}
-        onSubmit={handleLogin}
-      />
-    );
-  } else if (!isInitialLoadComplete) {
+  if (!isInitialLoadComplete) {
     salaContent = (
       <>
         <div style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }} aria-hidden />
@@ -8456,7 +8452,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           }}
         >
           {/* Dashboard Allarmi — Timeline */}
-            <div className="chart-selector-container">
+            <div className="chart-selector-container chart-selector-container--icon-only">
               {(() => {
                 const activeAlerts = [];
                 if (hasCrashRisk) activeAlerts.push('glicemia');
@@ -8469,64 +8465,71 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                       type="button"
                       onClick={() => setChartUnit('percent')}
                       aria-pressed={chartUnit === 'percent'}
+                      aria-label="TDEE"
+                      title="TDEE"
                       className={`chart-selector-btn${chartUnit === 'percent' ? ' active' : ''}${activeAlerts.includes('percent') ? ' chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">⚡</span>
-                      <span className="chart-btn-label">TDEE</span>
+                      <span className="chart-btn-icon" aria-hidden>⚡</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('calorieTimeline')}
                       aria-pressed={chartUnit === 'calorieTimeline'}
+                      aria-label="Kcal"
+                      title="Kcal"
                       className={`chart-selector-btn chart-selector-btn--cumul${chartUnit === 'calorieTimeline' ? ' active' : ''}${activeAlerts.includes('calorieTimeline') ? ' chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">🔥</span>
-                      <span className="chart-btn-label">Kcal</span>
+                      <span className="chart-btn-icon" aria-hidden>🔥</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('glicemia')}
                       aria-pressed={chartUnit === 'glicemia'}
+                      aria-label="Glicemia"
+                      title="Glicemia"
                       className={`chart-selector-btn chart-selector-btn--blood${chartUnit === 'glicemia' ? ' active' : ''}${hasCrashRisk && chartUnit !== 'glicemia' ? ' pulse-alert chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">🩸</span>
-                      <span className="chart-btn-label">Glic</span>
+                      <span className="chart-btn-icon" aria-hidden>🩸</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('idratazione')}
                       aria-pressed={chartUnit === 'idratazione'}
+                      aria-label="Idratazione"
+                      title="Idratazione"
                       className={`chart-selector-btn chart-selector-btn--water${chartUnit === 'idratazione' ? ' active' : ''}${hasWaterRisk && chartUnit !== 'idratazione' ? ' pulse-alert-water chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">💧</span>
-                      <span className="chart-btn-label">Acqua</span>
+                      <span className="chart-btn-icon" aria-hidden>💧</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('neuro')}
                       aria-pressed={chartUnit === 'neuro'}
+                      aria-label="Neuro"
+                      title="Neuro"
                       className={`chart-selector-btn chart-selector-btn--neuro${chartUnit === 'neuro' ? ' active' : ''}${activeAlerts.includes('neuro') ? ' chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">🧠</span>
-                      <span className="chart-btn-label">Neuro</span>
+                      <span className="chart-btn-icon" aria-hidden>🧠</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('cortisolo')}
                       aria-pressed={chartUnit === 'cortisolo'}
+                      aria-label="Stress"
+                      title="Stress"
                       className={`chart-selector-btn chart-selector-btn--cortisol${chartUnit === 'cortisolo' ? ' active' : ''}${hasCortisolRisk && chartUnit !== 'cortisolo' ? ' pulse-alert-cortisol chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">😰</span>
-                      <span className="chart-btn-label">Stress</span>
+                      <span className="chart-btn-icon" aria-hidden>😰</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setChartUnit('digestione')}
                       aria-pressed={chartUnit === 'digestione'}
+                      aria-label="Macro"
+                      title="Macro"
                       className={`chart-selector-btn chart-selector-btn--digest${chartUnit === 'digestione' ? ' active' : ''}${hasDigestionRisk && chartUnit !== 'digestione' ? ' pulse-alert chart-selector-alarm' : ''}`}
                     >
-                      <span className="chart-btn-icon">🥑</span>
-                      <span className="chart-btn-label">Macro</span>
+                      <span className="chart-btn-icon" aria-hidden>🥑</span>
                     </button>
                   </>
                 );
@@ -10201,7 +10204,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         calculateSmartTargets={calculateSmartTargets}
         csvInputRef={csvInputRef}
         handleCSVUpload={handleCSVUpload}
-        auth={auth}
         saveProfileToFirebase={saveProfileToFirebase}
         onAppModeChange={handleAppModeChange}
       />
@@ -10739,7 +10741,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const isDataLoaded = isInitialLoadComplete;
   const startupOverlayBlocking =
-    !startupSafetyBypass && (!authReady || (isAuthenticated && !isDataLoaded));
+    !startupSafetyBypass && !isDataLoaded;
 
   return (
     <UserNutritionGoalsProvider value={nutritionGoalsValue}>

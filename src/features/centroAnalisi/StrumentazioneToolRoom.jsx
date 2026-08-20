@@ -53,9 +53,9 @@ function GlassSpinner({ label = 'Sincronizzo strumentazione…' }) {
 }
 
 const TOOL_TABS = [
-  { tool: 'COMPASS', roomId: 'bussola', label: 'Bussola' },
-  { tool: 'RADAR', roomId: 'radar', label: 'Radar' },
-  { tool: 'MAP', roomId: 'mappa', label: 'Mappa' },
+  { tool: 'COMPASS', roomId: 'bussola', icon: '🧭', label: 'Bussola' },
+  { tool: 'RADAR', roomId: 'radar', icon: '🕸️', label: 'Radar' },
+  { tool: 'MAP', roomId: 'mappa', icon: '🗺️', label: 'Mappa' },
 ];
 
 function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
@@ -65,7 +65,7 @@ function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
     <div
       role="tablist"
       aria-label="Strumento"
-      className={`mb-3 flex w-full gap-1 rounded-2xl p-1 ${GLASS_SURFACE_CLASS}`}
+      className={`mb-2 flex w-full gap-1 rounded-2xl p-0.5 ${GLASS_SURFACE_CLASS}`}
     >
       {TOOL_TABS.map((tab) => {
         const selected = activeTool === tab.tool;
@@ -75,16 +75,18 @@ function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
             type="button"
             role="tab"
             aria-selected={selected}
+            aria-label={tab.label}
+            title={tab.label}
             onClick={() => onSwitchRoom(tab.roomId)}
             className={[
-              'flex-1 rounded-xl px-2 py-2 text-[11px] font-semibold tracking-wide transition-all duration-150',
+              'flex flex-1 items-center justify-center rounded-xl px-2 py-1.5 text-lg leading-none transition-all duration-150',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
               selected
-                ? 'bg-white/15 text-cyan-100 shadow-[0_4px_16px_rgba(0,0,0,0.35)]'
+                ? 'bg-white/15 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,0.28)]'
                 : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
             ].join(' ')}
           >
-            {tab.label}
+            <span aria-hidden>{tab.icon}</span>
           </button>
         );
       })}

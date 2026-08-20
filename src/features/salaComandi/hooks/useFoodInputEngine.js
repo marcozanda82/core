@@ -10,7 +10,7 @@ import { deriveClassicSearchQuery, orchestrateFoodInput } from '../engines/foodI
 import { parseFoodCommandIntent } from '../engines/foodCommandEngine.js';
 
 const BARCODE_NO_MATCH_MESSAGE =
-  'Nessuna corrispondenza trovata. Riprova la scansione o inserisci manualmente.';
+  'Prodotto non trovato nell\'archivio. Inserisci i dati manualmente.';
 
 const OFF_USER_AGENT = 'GhostApp/1.0 (KentuOS; barcode-scanner)';
 
@@ -76,10 +76,6 @@ async function fetchOpenFoodFactsByBarcode(barcode) {
   const code = String(barcode ?? '').trim();
   if (!code) return null;
 
-  const requestOpts = {
-    headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
-  };
-
   const endpoints = [
     `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`,
     `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`,
@@ -87,17 +83,19 @@ async function fetchOpenFoodFactsByBarcode(barcode) {
 
   for (let i = 0; i < endpoints.length; i += 1) {
     const url = endpoints[i];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
     try {
-      const res = await fetch(url, requestOpts);
+      const res = await fetch(url, {
+        headers: { 'User-Agent': OFF_USER_AGENT, Accept: 'application/json' },
+        signal: controller.signal,
+      });
       if (!res.ok) {
-        // eslint-disable-next-line no-console
         console.warn('[barcode:OFF] HTTP error', { barcode: code, url, status: res.status });
         continue;
       }
       const data = await res.json();
-      const product = data?.product;
-      if (!product) {
-        // eslint-disable-next-line no-console
+      if (Number(data?.status) === 0 || !data?.product) {
         console.warn('[barcode:OFF] Prodotto assente', {
           barcode: code,
           url,
@@ -106,22 +104,23 @@ async function fetchOpenFoodFactsByBarcode(barcode) {
         });
         continue;
       }
-      const mapped = mapOpenFoodFactsProduct(code, product);
+      const mapped = mapOpenFoodFactsProduct(code, data.product);
       if (mapped) {
-        // eslint-disable-next-line no-console
         console.log('[barcode:OFF] Match', code, {
           desc: mapped.desc,
           kcal: mapped.kcal,
-          prot: mapped.prot,
-          carb: mapped.carb,
-          fatTotal: mapped.fatTotal,
           source: url.includes('/v2/') ? 'v2' : 'v0',
         });
         return mapped;
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
+      if (err?.name === 'AbortError') {
+        console.warn('[barcode:OFF] Timeout 6s', { barcode: code, url });
+        return null;
+      }
       console.error('[barcode:OFF] Fetch fallito', { barcode: code, url, error: err?.message || err });
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { WATER_ML_MAX } from '../utils/inputSanity';
 
 export default function useDailyActions({
   isSimulationMode,
@@ -82,7 +83,13 @@ export default function useDailyActions({
   const handleAddWater = useCallback((amount) => {
     if (isSimulationMode) return;
     if (amount > 0) {
-      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: amount }];
+      const currentMl = (manualNodes || [])
+        .filter((n) => n?.type === 'water')
+        .reduce((sum, n) => sum + (Number(n.ml) || 0), 0);
+      const roomLeft = Math.max(0, WATER_ML_MAX - currentMl);
+      const clampedAdd = Math.min(Math.round(Number(amount) || 0), roomLeft);
+      if (!(clampedAdd > 0)) return;
+      const next = [...manualNodes, { id: `water_${Date.now()}`, type: 'water', time: drawerWaterTime, ml: clampedAdd }];
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
     } else {

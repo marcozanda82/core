@@ -13,6 +13,7 @@ export default function AmountStepper({
   onChange,
   step = 1,
   min = 0,
+  max = null,
   unitLabel = '',
   size = 'md',
   variant = 'tailwind',
@@ -27,6 +28,15 @@ export default function AmountStepper({
   const rounded = roundToOneDecimal(value);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const hasMax = max != null && Number.isFinite(Number(max));
+  const maxN = hasMax ? Number(max) : null;
+
+  const clampValue = (n) => {
+    let next = roundToOneDecimal(n);
+    if (next < min) next = min;
+    if (hasMax && next > maxN) next = maxN;
+    return next;
+  };
 
   const sizeConfig =
     size === 'lg'
@@ -40,7 +50,7 @@ export default function AmountStepper({
   }, [rounded, isEditing]);
 
   const handleStep = (direction) => {
-    const next = Math.max(min, roundToOneDecimal(rounded + direction * step));
+    const next = clampValue(rounded + direction * step);
     onChange(next);
   };
 
@@ -55,7 +65,7 @@ export default function AmountStepper({
     if (raw === '' || raw === '.') return;
     const next = Number(raw);
     if (!Number.isFinite(next) || next < min) return;
-    onChange(next);
+    onChange(clampValue(next));
   };
 
   const handleBlur = () => {
@@ -65,7 +75,7 @@ export default function AmountStepper({
       setEditValue('');
       return;
     }
-    const next = roundToOneDecimal(raw);
+    const next = clampValue(raw);
     if (next !== rounded) onChange(next);
     setEditValue('');
   };
@@ -96,6 +106,7 @@ export default function AmountStepper({
             inputMode="decimal"
             step="any"
             min={min}
+            max={hasMax ? maxN : undefined}
             value={displayValue}
             onFocus={handleFocus}
             onChange={handleInputChange}
@@ -151,6 +162,7 @@ export default function AmountStepper({
           inputMode="decimal"
           step="any"
           min={min}
+          max={hasMax ? maxN : undefined}
           value={displayValue}
           disabled={disabled}
           onFocus={handleFocus}
@@ -170,7 +182,7 @@ export default function AmountStepper({
       <button
         type="button"
         onClick={() => handleStep(1)}
-        disabled={disabled}
+        disabled={disabled || (hasMax && rounded >= maxN)}
         aria-label="Aumenta quantità"
         className={`${btnBase} ${sizeConfig.btn}`}
       >

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import { buildFoodNameSelectOptions } from '../features/commandTerminal/conversation/recentFoodNames.js';
+import { clampFoodGrams } from '../utils/inputSanity';
+import { getFoodIcon } from '../utils/getFoodIcon';
 
 const MEAL_OPTIONS = [
   { value: 'colazione', label: 'Colazione' },
@@ -34,11 +36,13 @@ export default function MealDraftConfirmation({
   onUpdateItemGrams,
   onUpdateMealMeta,
   onUpdateFoodItemName,
+  onAddFood,
 }) {
   const payload = mealDraft?.payload || {};
   const items = Array.isArray(payload.items) ? payload.items : [];
   const [editingIndex, setEditingIndex] = useState(null);
   const [editGrams, setEditGrams] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const mealTypeValue = normalizeMealTypeValue(payload.mealType);
   const timeValue = normalizeTimeValue(payload.exactTime, payload.timeString);
@@ -52,11 +56,31 @@ export default function MealDraftConfirmation({
   };
 
   const commitEdit = (index) => {
-    const grams = Math.max(1, Math.round(Number(editGrams) || 0));
-    if (!Number.isFinite(grams) || grams <= 0) return;
+    const grams = clampFoodGrams(editGrams);
+    if (grams == null || grams <= 0) return;
     onUpdateItemGrams?.(draftId, index, grams);
     setEditingIndex(null);
     setEditGrams('');
+  };
+
+  const handleConfirmClick = () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    const run = () => {
+      try {
+        const result = onConfirm?.(draftId);
+        if (result && typeof result.then === 'function') {
+          result.catch(() => setIsSaving(false));
+        }
+      } catch {
+        setIsSaving(false);
+      }
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(run, { timeout: 100 });
+    } else {
+      setTimeout(run, 0);
+    }
   };
 
   return (
@@ -69,6 +93,7 @@ export default function MealDraftConfirmation({
             <select
               className="kentu-meal-draft__select"
               value={mealTypeValue}
+              disabled={isSaving}
               onChange={(e) => onUpdateMealMeta?.(draftId, { mealType: e.target.value })}
               aria-label="Tipo di pasto"
             >
@@ -85,6 +110,7 @@ export default function MealDraftConfirmation({
               type="time"
               className="kentu-meal-draft__time-input"
               value={timeValue}
+              disabled={isSaving}
               onChange={(e) => onUpdateMealMeta?.(draftId, { exactTime: e.target.value })}
               aria-label="Orario del pasto"
             />
@@ -104,6 +130,13 @@ export default function MealDraftConfirmation({
           const grams = Math.round(Number(item.grams ?? item.qty) || 0);
           const isEstimated = item?.isEstimated === true;
           const isEditing = editingIndex === index;
+          const icon = String(item?.icon || '').trim()
+            || getFoodIcon(name, {
+              kcal: item?.kcal,
+              prot: item?.pro ?? item?.prot,
+              carb: item?.carbo ?? item?.carb,
+              fat: item?.fat,
+            });
           const nameOptions = buildFoodNameSelectOptions(
             name,
             Array.isArray(item?.historicalVariations) ? item.historicalVariations : [],
@@ -115,11 +148,15 @@ export default function MealDraftConfirmation({
               className={`kentu-meal-draft__row${isEstimated ? ' kentu-meal-draft__row--estimated' : ''}`}
             >
               <div className="kentu-meal-draft__row-main">
+                <span className="kentu-meal-draft__food-icon shrink-0 text-base" aria-hidden>
+                  {icon}
+                </span>
                 <label className="kentu-meal-draft__food-field">
                   <span className="kentu-meal-draft__meta-label">Alimento</span>
                   <select
                     className="kentu-meal-draft__select kentu-meal-draft__food-select"
                     value={name}
+                    disabled={isSaving}
                     onChange={(e) => onUpdateFoodItemName?.(draftId, index, e.target.value)}
                     aria-label={`Alimento ${index + 1}`}
                   >
@@ -173,6 +210,7 @@ export default function MealDraftConfirmation({
                     type="button"
                     className={`kentu-meal-draft__grams${isEstimated ? ' kentu-meal-draft__grams--estimated' : ''}`}
                     onClick={() => startEdit(index, grams)}
+                    disabled={isSaving}
                     title={isEstimated ? 'Peso stimato — tocca per correggere' : 'Modifica quantità'}
                     aria-label={`Grammi ${name}${isEstimated ? ' stimati' : ''}: ${grams}g. Modifica`}
                   >
@@ -194,6 +232,7 @@ export default function MealDraftConfirmation({
                     type="button"
                     className="kentu-meal-draft__icon-btn"
                     onClick={() => startEdit(index, grams)}
+                    disabled={isSaving}
                     aria-label={`Modifica quantità ${name}`}
                     title="Modifica quantità"
                   >
@@ -203,6 +242,7 @@ export default function MealDraftConfirmation({
                     type="button"
                     className="kentu-meal-draft__icon-btn kentu-meal-draft__icon-btn--danger"
                     onClick={() => onRemoveItem?.(draftId, index)}
+                    disabled={isSaving}
                     aria-label={`Rimuovi ${name}`}
                     title="Rimuovi"
                   >
@@ -213,19 +253,41 @@ export default function MealDraftConfirmation({
             </li>
           );
         })}
+        <li className="kentu-meal-draft__row kentu-meal-draft__row--add">
+          <button
+            type="button"
+            className="kentu-meal-draft__add-food"
+            disabled={isSaving}
+            onClick={() => onAddFood?.(draftId)}
+            style={{
+              width: '100%',
+              border: '1px dashed rgba(34,211,238,0.35)',
+              borderRadius: 12,
+              background: 'rgba(34,211,238,0.06)',
+              color: '#67e8f9',
+              padding: '10px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            + Aggiungi un altro alimento
+          </button>
+        </li>
       </ul>
 
       <div className="kentu-meal-draft__footer">
         <KentuButton
           variant="primary"
           className="kentu-meal-draft__confirm"
-          onClick={() => onConfirm?.(draftId)}
+          disabled={isSaving}
+          onClick={handleConfirmClick}
         >
-          Conferma inserimento
+          {isSaving ? 'Salvataggio…' : 'Conferma inserimento'}
         </KentuButton>
         <KentuButton
           variant="secondary"
           className="kentu-meal-draft__cancel"
+          disabled={isSaving}
           onClick={() => onCancel?.(draftId)}
         >
           Annulla

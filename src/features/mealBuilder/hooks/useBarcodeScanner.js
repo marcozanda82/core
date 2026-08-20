@@ -24,6 +24,7 @@ export default function useBarcodeScanner({
   onAcquireExternalFood,
   onFoodResolved,
   enrichOffProduct,
+  onBarcodeNotFound,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState('');
@@ -179,22 +180,29 @@ export default function useBarcodeScanner({
       if (resolvingRef.current) return;
       resolvingRef.current = true;
       setIsResolving(true);
+      setError('');
       stopCamera();
       setIsOpen(false);
+      const code = String(barcode ?? '').trim();
       try {
-        const food = await resolveBarcodeToFood(barcode);
+        if (!code) throw new Error(BARCODE_NO_MATCH_MESSAGE);
+        const food = await resolveBarcodeToFood(code);
         setError('');
         triggerSelectionHaptic(18);
         onFoodResolved?.(food);
       } catch (err) {
         const msg = err?.message || BARCODE_NO_MATCH_MESSAGE;
         setError(msg);
+        // Termina loading e apri inserimento manuale (niente loop di retry).
+        if (typeof onBarcodeNotFound === 'function') {
+          onBarcodeNotFound({ barcode: code, message: msg });
+        }
       } finally {
         resolvingRef.current = false;
         setIsResolving(false);
       }
     },
-    [resolveBarcodeToFood, stopCamera, onFoodResolved],
+    [resolveBarcodeToFood, stopCamera, onFoodResolved, onBarcodeNotFound],
   );
 
   useEffect(() => {
@@ -225,8 +233,8 @@ export default function useBarcodeScanner({
           try {
             const barcodes = await barcodeDetector.detect(videoRef.current);
             if (barcodes.length > 0) {
-              const code = barcodes[0].rawValue;
-              handleBarcodeDetected(code);
+              const code = String(barcodes[0].rawValue ?? '').trim();
+              if (code) handleBarcodeDetected(code);
             }
           } catch {
             /* ignore detect errors */

@@ -1,4 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import {
+  BODY_WEIGHT_KG_MAX,
+  BODY_WEIGHT_KG_MIN,
+  isBodyWeightOutOfRange,
+  sanitizeNumericInput,
+} from '../../utils/inputSanity';
 
 export default function PesataDrawer({
   showWeightModal,
@@ -19,6 +25,29 @@ export default function PesataDrawer({
   setDrawerVisceralFat,
   handleSaveBodyMetrics,
 }) {
+  const weightInvalid = useMemo(
+    () => isBodyWeightOutOfRange(inputWeight),
+    [inputWeight],
+  );
+
+  const handleWeightChange = (raw) => {
+    const { display, clamped } = sanitizeNumericInput(
+      raw,
+      BODY_WEIGHT_KG_MIN,
+      BODY_WEIGHT_KG_MAX,
+    );
+    // Permetti digitazione intermedia; clamp solo se supera i limiti.
+    if (clamped) {
+      setInputWeight(display);
+      return;
+    }
+    setInputWeight(display);
+  };
+
+  const weightBorder = weightInvalid
+    ? '1px solid #ef4444'
+    : '1px solid #333';
+
   return showWeightModal && (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100020, padding: '20px' }} onClick={() => { setShowWeightModal(false); }}>
       <div style={{ background: '#1a1a1c', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px', padding: '22px', width: '100%', maxWidth: '380px', boxShadow: '0 12px 48px rgba(0,0,0,0.75)' }} onClick={(e) => e.stopPropagation()}>
@@ -27,7 +56,34 @@ export default function PesataDrawer({
         <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Data pesata</label>
         <input type="date" value={inputWeightDate} onChange={(e) => setInputWeightDate(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '14px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '0.95rem' }} />
         <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Peso (kg) *</label>
-        <input type="number" step="0.1" min="0.1" inputMode="decimal" value={inputWeight} onChange={(e) => setInputWeight(e.target.value)} placeholder="es. 75.5" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '14px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
+        <input
+          type="number"
+          step="0.1"
+          min={BODY_WEIGHT_KG_MIN}
+          max={BODY_WEIGHT_KG_MAX}
+          inputMode="decimal"
+          value={inputWeight}
+          onChange={(e) => handleWeightChange(e.target.value)}
+          placeholder="es. 75.5"
+          aria-invalid={weightInvalid}
+          title={`Range ${BODY_WEIGHT_KG_MIN}–${BODY_WEIGHT_KG_MAX} kg`}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '12px 14px',
+            marginBottom: weightInvalid ? '6px' : '14px',
+            borderRadius: '12px',
+            border: weightBorder,
+            background: '#0d0d0f',
+            color: '#fff',
+            fontSize: '1rem',
+          }}
+        />
+        {weightInvalid ? (
+          <p style={{ margin: '0 0 12px', fontSize: '0.72rem', color: '#f87171' }} role="alert">
+            Peso consentito: {BODY_WEIGHT_KG_MIN}–{BODY_WEIGHT_KG_MAX} kg
+          </p>
+        ) : null}
         <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Girovita (cm — opzionale)</label>
         <input type="number" step="0.1" min="0.1" inputMode="decimal" value={inputWaist} onChange={(e) => setInputWaist(e.target.value)} placeholder="es. 84" style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', marginBottom: '14px', borderRadius: '12px', border: '1px solid #333', background: '#0d0d0f', color: '#fff', fontSize: '1rem' }} />
         <label style={{ display: 'block', fontSize: '0.75rem', color: '#aaa', marginBottom: '6px' }}>Massa grassa (% — opzionale)</label>

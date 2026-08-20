@@ -96,69 +96,76 @@ export default function AnalisiTodayProPanel({
           }}
         >
           {activeBottomTab === 'analisi' ? (
-            <div className="chart-selector-container">
+            <div className="chart-selector-container chart-selector-container--icon-only">
               <button
                 type="button"
                 onClick={() => setChartUnit('percent')}
                 aria-pressed={chartUnit === 'percent'}
+                aria-label="TDEE"
+                title="TDEE"
                 className={`chart-selector-btn${chartUnit === 'percent' ? ' active' : ''}${chartSelectorAlerts.includes('percent') ? ' chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">⚡</span>
-                <span className="chart-btn-label">TDEE</span>
+                <span className="chart-btn-icon" aria-hidden>⚡</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('calorieTimeline')}
                 aria-pressed={chartUnit === 'calorieTimeline'}
+                aria-label="Kcal"
+                title="Kcal"
                 className={`chart-selector-btn chart-selector-btn--cumul${chartUnit === 'calorieTimeline' ? ' active' : ''}${chartSelectorAlerts.includes('calorieTimeline') ? ' chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">🔥</span>
-                <span className="chart-btn-label">Kcal</span>
+                <span className="chart-btn-icon" aria-hidden>🔥</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('glicemia')}
                 aria-pressed={chartUnit === 'glicemia'}
+                aria-label="Glicemia"
+                title="Glicemia"
                 className={`chart-selector-btn chart-selector-btn--blood${chartUnit === 'glicemia' ? ' active' : ''}${hasCrashRisk && chartUnit !== 'glicemia' ? ' pulse-alert chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">🩸</span>
-                <span className="chart-btn-label">Glic</span>
+                <span className="chart-btn-icon" aria-hidden>🩸</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('idratazione')}
                 aria-pressed={chartUnit === 'idratazione'}
+                aria-label="Idratazione"
+                title="Idratazione"
                 className={`chart-selector-btn chart-selector-btn--water${chartUnit === 'idratazione' ? ' active' : ''}${hasWaterRisk && chartUnit !== 'idratazione' ? ' pulse-alert-water chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">💧</span>
-                <span className="chart-btn-label">Acqua</span>
+                <span className="chart-btn-icon" aria-hidden>💧</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('neuro')}
                 aria-pressed={chartUnit === 'neuro'}
+                aria-label="Neuro"
+                title="Neuro"
                 className={`chart-selector-btn chart-selector-btn--neuro${chartUnit === 'neuro' ? ' active' : ''}${chartSelectorAlerts.includes('neuro') ? ' chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">🧠</span>
-                <span className="chart-btn-label">Neuro</span>
+                <span className="chart-btn-icon" aria-hidden>🧠</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('cortisolo')}
                 aria-pressed={chartUnit === 'cortisolo'}
+                aria-label="Stress"
+                title="Stress"
                 className={`chart-selector-btn chart-selector-btn--cortisol${chartUnit === 'cortisolo' ? ' active' : ''}${hasCortisolRisk && chartUnit !== 'cortisolo' ? ' pulse-alert-cortisol chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">😰</span>
-                <span className="chart-btn-label">Stress</span>
+                <span className="chart-btn-icon" aria-hidden>😰</span>
               </button>
               <button
                 type="button"
                 onClick={() => setChartUnit('digestione')}
                 aria-pressed={chartUnit === 'digestione'}
+                aria-label="Macro"
+                title="Macro"
                 className={`chart-selector-btn chart-selector-btn--digest${chartUnit === 'digestione' ? ' active' : ''}${hasDigestionRisk && chartUnit !== 'digestione' ? ' pulse-alert chart-selector-alarm' : ''}`}
               >
-                <span className="chart-btn-icon">🥑</span>
-                <span className="chart-btn-label">Macro</span>
+                <span className="chart-btn-icon" aria-hidden>🥑</span>
               </button>
             </div>
           ) : (

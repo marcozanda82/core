@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { logout } from '../../services/firebaseAuth';
 import { MANUAL_TARGET_EDIT_EXCLUDED_KEYS } from '../../constants/salaComandiConstants';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import {
@@ -64,7 +65,6 @@ export default function TargetSettingsModal({
   calculateSmartTargets,
   csvInputRef,
   handleCSVUpload,
-  auth,
   saveProfileToFirebase,
   onAppModeChange = null,
 }) {
@@ -470,7 +470,7 @@ export default function TargetSettingsModal({
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => auth.signOut()}
+              onClick={() => logout()}
               className="rounded-full border border-red-400/35 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/20"
             >
               Esci

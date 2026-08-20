@@ -4,6 +4,7 @@ import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
+import { getFoodIcon } from '../../utils/getFoodIcon';
 import {
   draftFoodsToSolverItems,
   solverProposalToMcDriveItem,
@@ -33,7 +34,7 @@ function resolveMcDriveVisualStatus(item) {
   return 'raw';
 }
 
-function McDriveStatusIcon({ visualStatus }) {
+function McDriveStatusIcon({ visualStatus, foodName, macros }) {
   if (visualStatus === 'processing') {
     return (
       <span
@@ -46,8 +47,8 @@ function McDriveStatusIcon({ visualStatus }) {
   }
   if (visualStatus === 'resolved') {
     return (
-      <span className="kentu-meal-tray__status-icon shrink-0 text-sm leading-none" aria-hidden>
-        🟢
+      <span className="kentu-meal-tray__status-icon shrink-0 text-base leading-none" aria-hidden>
+        {getFoodIcon(foodName, macros)}
       </span>
     );
   }
@@ -65,13 +66,10 @@ function McDriveStatusIcon({ visualStatus }) {
       </span>
     );
   }
-  // raw — pallino vuoto grigio
+  // raw — icona categoria soft o pallino vuoto
   return (
-    <span
-      className="kentu-meal-tray__status-icon inline-flex h-4 w-4 shrink-0 items-center justify-center"
-      aria-hidden
-    >
-      <span className="h-2.5 w-2.5 rounded-full border-2 border-slate-400/75 bg-transparent" />
+    <span className="kentu-meal-tray__status-icon shrink-0 text-base leading-none opacity-70" aria-hidden>
+      {getFoodIcon(foodName, macros)}
     </span>
   );
 }
@@ -137,6 +135,7 @@ function LiveMealTray({
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
   const [showSolverModal, setShowSolverModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [solverFeedback, setSolverFeedback] = useState(null);
   const [solverHighlightIds, setSolverHighlightIds] = useState(() => new Set());
   const solverFeedbackTimerRef = useRef(null);
@@ -323,9 +322,21 @@ function LiveMealTray({
         }
       >
         {items.length === 0 ? (
-          <p className="kentu-meal-tray__estimate-banner" role="status">
-            Nessun alimento sul vassoio.
-          </p>
+          <div className="space-y-2 px-1 py-2">
+            <p className="kentu-meal-tray__estimate-banner" role="status">
+              Nessun alimento sul vassoio.
+            </p>
+            {active ? (
+              <button
+                type="button"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+                disabled={disabled || isSaving}
+                onClick={() => onAddMore?.()}
+              >
+                + Aggiungi un altro alimento
+              </button>
+            ) : null}
+          </div>
         ) : (
           <ul className="kentu-meal-tray__list">
             {displayItems.map(({ item, index }, displayIndex) => {
@@ -397,7 +408,16 @@ function LiveMealTray({
                 >
                   <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                      <McDriveStatusIcon visualStatus={visualStatus} />
+                      <McDriveStatusIcon
+                        visualStatus={visualStatus}
+                        foodName={name}
+                        macros={{
+                          kcal: Number(item?.kcal) || 0,
+                          prot: Number(item?.pro ?? item?.prot) || 0,
+                          carb: Number(item?.carbo ?? item?.carb) || 0,
+                          fat: Number(item?.fat) || 0,
+                        }}
+                      />
                       <div className="kentu-meal-tray__row-text min-w-0">
                         <span
                           className={[
@@ -445,12 +465,13 @@ function LiveMealTray({
                           unitLabel="g"
                           step={5}
                           min={1}
+                          max={2500}
                           value={grams}
                           disabled={disabled}
                           autoFocusInput
                           className="kentu-meal-tray__stepper"
                           onChange={(nextGrams) => {
-                            const parsed = Math.max(1, Math.round(Number(nextGrams) || 0));
+                            const parsed = Math.max(1, Math.min(2500, Math.round(Number(nextGrams) || 0)));
                             onUpdateGrams?.(index, parsed);
                           }}
                         />
@@ -543,6 +564,18 @@ function LiveMealTray({
                 </li>
               );
             })}
+            {active ? (
+              <li className="kentu-meal-tray__row kentu-meal-tray__row--add">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+                  disabled={disabled || isSaving}
+                  onClick={() => onAddMore?.()}
+                >
+                  + Aggiungi un altro alimento
+                </button>
+              </li>
+            ) : null}
           </ul>
         )}
       </div>
@@ -552,7 +585,7 @@ function LiveMealTray({
           <KentuButton
             variant="secondary"
             className="kentu-meal-tray__solver kentu-btn--sm min-w-[96px] shrink-0"
-            disabled={disabled || !canOpenSolver}
+            disabled={disabled || isSaving || !canOpenSolver}
             onClick={() => setShowSolverModal(true)}
             title={canOpenSolver ? 'Bilancia pasto con Kentu Solver' : 'Aggiungi alimenti o attendi target pasto'}
           >
@@ -564,7 +597,7 @@ function LiveMealTray({
           <KentuButton
             variant="secondary"
             className="kentu-meal-tray__cancel"
-            disabled={disabled}
+            disabled={disabled || isSaving}
             onClick={() => onCancel?.()}
           >
             {MCDRIVE_CANCEL_CHIP.label}
@@ -573,7 +606,7 @@ function LiveMealTray({
             <KentuButton
               variant="primary"
               className="kentu-meal-tray__confirm"
-              disabled={disabled || items.length === 0 || hasPendingMcDriveEnrichment(items)}
+              disabled={disabled || isSaving || items.length === 0 || hasPendingMcDriveEnrichment(items)}
               onClick={() => onFinish?.()}
             >
               {MCDRIVE_FINISH_CHIP.label}
@@ -583,7 +616,7 @@ function LiveMealTray({
               <KentuButton
                 variant="secondary"
                 className="kentu-meal-tray__add-more"
-                disabled={disabled}
+                disabled={disabled || isSaving}
                 onClick={() => onAddMore?.()}
               >
                 {MCDRIVE_ADD_MORE_CHIP.label}
@@ -591,10 +624,26 @@ function LiveMealTray({
               <KentuButton
                 variant="primary"
                 className="kentu-meal-tray__confirm"
-                disabled={disabled || items.length === 0 || !hasAnyResolvedMacros}
-                onClick={() => onSave?.()}
+                disabled={disabled || isSaving || items.length === 0 || !hasAnyResolvedMacros}
+                onClick={() => {
+                  if (isSaving) return;
+                  setIsSaving(true);
+                  const run = () => {
+                    try {
+                      onSave?.();
+                    } catch (err) {
+                      console.error('[LiveMealTray] salvataggio fallito', err);
+                      setIsSaving(false);
+                    }
+                  };
+                  if (typeof requestIdleCallback === 'function') {
+                    requestIdleCallback(run, { timeout: 100 });
+                  } else {
+                    setTimeout(run, 0);
+                  }
+                }}
               >
-                {MCDRIVE_SAVE_CONFIRM_CHIP.label}
+                {isSaving ? 'Salvataggio…' : MCDRIVE_SAVE_CONFIRM_CHIP.label}
               </KentuButton>
             </>
           )}

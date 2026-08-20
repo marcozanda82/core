@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import AmountStepper from '../features/mealBuilder/components/AmountStepper';
+import { getFoodIcon } from '../utils/getFoodIcon';
 
 const MEAL_OPTIONS = [
   { value: 'colazione', label: 'Colazione' },
@@ -44,16 +45,38 @@ export default function MealDraftTrayBubble({
   onRemoveItem,
   onUpdateGrams,
   onUpdateMealMeta,
+  onAddFood,
 }) {
   const payload = mealDraft?.payload || {};
   const items = Array.isArray(payload.items) ? payload.items : [];
   const mealTypeValue = normalizeMealTypeValue(payload.mealType);
   const timeValue = normalizeTimeValue(payload.exactTime, payload.timeString);
   const hasEstimatedWeights = items.some((item) => item?.isEstimated === true);
+  const [isSaving, setIsSaving] = useState(false);
 
   const totals = useMemo(() => computeMealTotals(items), [items]);
 
   if (!items.length) return null;
+
+  const handleConfirmClick = () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    const run = () => {
+      try {
+        const result = onConfirm?.(draftId);
+        if (result && typeof result.then === 'function') {
+          result.catch(() => setIsSaving(false));
+        }
+      } catch {
+        setIsSaving(false);
+      }
+    };
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(run, { timeout: 100 });
+    } else {
+      setTimeout(run, 0);
+    }
+  };
 
   return (
     <div className="kentu-meal-tray" role="group" aria-label="Bozza pasto">
@@ -65,6 +88,7 @@ export default function MealDraftTrayBubble({
             <select
               className="kentu-meal-tray__select"
               value={mealTypeValue}
+              disabled={isSaving}
               onChange={(e) => onUpdateMealMeta?.(draftId, { mealType: e.target.value })}
               aria-label="Tipo di pasto"
             >
@@ -81,6 +105,7 @@ export default function MealDraftTrayBubble({
               type="time"
               className="kentu-meal-tray__time-input"
               value={timeValue}
+              disabled={isSaving}
               onChange={(e) => onUpdateMealMeta?.(draftId, { exactTime: e.target.value })}
               aria-label="Orario del pasto"
             />
@@ -97,7 +122,13 @@ export default function MealDraftTrayBubble({
       <ul className="kentu-meal-tray__list">
         {items.map((item, index) => {
           const name = String(item.foodName || item.name || 'Alimento').trim();
-          const icon = String(item?.icon || '').trim() || '🍽️';
+          const icon = String(item?.icon || '').trim()
+            || getFoodIcon(name, {
+              kcal: item?.kcal,
+              prot: item?.pro ?? item?.prot,
+              carb: item?.carbo ?? item?.carb,
+              fat: item?.fat,
+            });
           const grams = Math.max(1, Math.round(Number(item.grams ?? item.qty) || 0));
           const kcal = Math.round(Number(item?.kcal) || 0);
           const isEstimated = item?.isEstimated === true;
@@ -137,6 +168,7 @@ export default function MealDraftTrayBubble({
                   <button
                     type="button"
                     className="kentu-meal-tray__remove"
+                    disabled={isSaving}
                     onClick={() => onRemoveItem(draftId, index)}
                     aria-label={`Rimuovi ${name}`}
                     title="Rimuovi"
@@ -148,6 +180,16 @@ export default function MealDraftTrayBubble({
             </li>
           );
         })}
+        <li className="kentu-meal-tray__row kentu-meal-tray__row--add">
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() => onAddFood?.(draftId)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+          >
+            + Aggiungi un altro alimento
+          </button>
+        </li>
       </ul>
 
       <div className="kentu-meal-tray__totals" aria-label="Totali pasto">
@@ -161,13 +203,15 @@ export default function MealDraftTrayBubble({
         <KentuButton
           variant="primary"
           className="kentu-meal-tray__confirm"
-          onClick={() => onConfirm?.(draftId)}
+          disabled={isSaving}
+          onClick={handleConfirmClick}
         >
-          Conferma
+          {isSaving ? 'Salvataggio…' : 'Conferma'}
         </KentuButton>
         <KentuButton
           variant="secondary"
           className="kentu-meal-tray__cancel"
+          disabled={isSaving}
           onClick={() => onCancel?.(draftId)}
         >
           Annulla
