@@ -1,229 +1,73 @@
-/**
- * Markdown → HTML minimale per export PDF (niente Tailwind / glass).
- * @param {string} markdown
- * @returns {string}
- */
-export function markdownToPlainHtml(markdown) {
-  const lines = String(markdown || '').replace(/\r\n/g, '\n').split('\n');
-  const html = [];
-  let inUl = false;
-  let inOl = false;
-
-  const closeLists = () => {
-    if (inUl) {
-      html.push('</ul>');
-      inUl = false;
-    }
-    if (inOl) {
-      html.push('</ol>');
-      inOl = false;
-    }
-  };
-
-  const inline = (text) => String(text || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/_([^_]+)_/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  for (const raw of lines) {
-    const line = String(raw || '');
-    const trimmed = line.trim();
-
-    if (!trimmed) {
-      closeLists();
-      continue;
-    }
-
-    if (/^---+$/.test(trimmed)) {
-      closeLists();
-      html.push('<hr style="border:none;border-top:1px solid #e5e7eb;margin:16px 0;" />');
-      continue;
-    }
-
-    const h1 = trimmed.match(/^#\s+(.+)$/);
-    if (h1) {
-      closeLists();
-      html.push(`<h1 style="font-size:20px;font-weight:700;margin:0 0 12px;color:#111827;">${inline(h1[1])}</h1>`);
-      continue;
-    }
-    const h2 = trimmed.match(/^##\s+(.+)$/);
-    if (h2) {
-      closeLists();
-      html.push(`<h2 style="font-size:17px;font-weight:700;margin:16px 0 8px;color:#111827;">${inline(h2[1])}</h2>`);
-      continue;
-    }
-    const h3 = trimmed.match(/^###\s+(.+)$/);
-    if (h3) {
-      closeLists();
-      html.push(`<h3 style="font-size:15px;font-weight:600;margin:14px 0 6px;color:#0f766e;">${inline(h3[1])}</h3>`);
-      continue;
-    }
-
-    const ul = trimmed.match(/^[-*]\s+(.+)$/);
-    if (ul) {
-      if (inOl) {
-        html.push('</ol>');
-        inOl = false;
-      }
-      if (!inUl) {
-        html.push('<ul style="margin:0 0 12px;padding-left:20px;color:#111827;">');
-        inUl = true;
-      }
-      html.push(`<li style="margin:0 0 4px;line-height:1.45;">${inline(ul[1])}</li>`);
-      continue;
-    }
-
-    const ol = trimmed.match(/^\d+\.\s+(.+)$/);
-    if (ol) {
-      if (inUl) {
-        html.push('</ul>');
-        inUl = false;
-      }
-      if (!inOl) {
-        html.push('<ol style="margin:0 0 12px;padding-left:20px;color:#111827;">');
-        inOl = true;
-      }
-      html.push(`<li style="margin:0 0 4px;line-height:1.45;">${inline(ol[1])}</li>`);
-      continue;
-    }
-
-    closeLists();
-    html.push(`<p style="margin:0 0 10px;line-height:1.5;color:#111827;font-size:13px;">${inline(trimmed)}</p>`);
-  }
-
-  closeLists();
-  return html.join('');
-}
+import { PHANTOM_REPORT_ROOT_ID } from './PhantomDailyReport.jsx';
 
 /**
- * Genera un PDF (Blob) da HTML chiaro (container off-screen).
+ * Genera un PDF (Blob) dal template fantasma `#kentu-phantom-report`.
  * @param {{
  *   title?: string,
- *   markdown?: string,
- *   coverSrc?: string,
  *   filename?: string,
+ *   elementId?: string,
  * }} opts
  * @returns {Promise<{ blob: Blob, filename: string }>}
  */
 export async function generateKentuReportPdfBlob({
   title = 'Bollettino Kentu',
-  markdown = '',
-  coverSrc = '/report.jpg',
   filename = null,
+  elementId = PHANTOM_REPORT_ROOT_ID,
 } = {}) {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     throw new Error('PDF disponibile solo nel browser');
   }
 
-  const bodyMd = String(markdown || '').trim();
-  if (!bodyMd) {
-    throw new Error('Nessun contenuto da esportare');
+  const element = document.getElementById(String(elementId || PHANTOM_REPORT_ROOT_ID));
+  if (!element) {
+    throw new Error(
+      `Template PDF non trovato (#${elementId || PHANTOM_REPORT_ROOT_ID}). Assicurati che PhantomDailyReport sia montato.`,
+    );
   }
 
   const html2pdfModule = await import('html2pdf.js');
   const html2pdf = html2pdfModule.default || html2pdfModule;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const safeFilename = String(filename || `KentuOS_Bollettino_${today}.pdf`)
+  const today = new Date().toISOString().split('T')[0];
+  const safeFilename = String(filename || `Kentu_Daily_Report_${today}.pdf`)
     .replace(/[<>:"/\\|?*]+/g, '_');
 
-  const absCover = (() => {
-    const src = String(coverSrc || '').trim();
-    if (!src) return '';
-    if (/^https?:\/\//i.test(src)) return src;
-    try {
-      return new URL(src, window.location.origin).href;
-    } catch {
-      return src;
-    }
-  })();
+  // html2canvas non disegna nodi con opacity:0 → forza opacità solo durante la cattura.
+  const prevOpacity = element.style.opacity;
+  const prevVisibility = element.style.visibility;
+  element.style.opacity = '1';
+  element.style.visibility = 'visible';
 
-  const host = document.createElement('div');
-  host.setAttribute('id', `kentu-pdf-host-${Date.now()}`);
-  host.setAttribute('aria-hidden', 'true');
-  host.style.cssText = [
-    'position:absolute',
-    'left:-9999px',
-    'top:0',
-    'width:794px',
-    'background:#ffffff',
-    'color:#111827',
-    'font-family:Arial,Helvetica,sans-serif',
-    'z-index:-1',
-    'pointer-events:none',
-  ].join(';');
-
-  const inner = document.createElement('div');
-  inner.setAttribute('id', 'pdf-report-content-id');
-  inner.style.cssText = [
-    'box-sizing:border-box',
-    'width:100%',
-    'padding:24px',
-    'background:#ffffff',
-    'color:#111827',
-    'font-family:Arial,Helvetica,sans-serif',
-    'font-size:13px',
-    'line-height:1.5',
-  ].join(';');
-
-  const coverHtml = absCover
-    ? `<img src="${absCover}" alt="" crossorigin="anonymous" style="display:block;width:100%;height:160px;object-fit:cover;border-radius:8px;margin:0 0 16px;background:#e5e7eb;" />`
-    : '';
-
-  const heading = String(title || 'Bollettino Kentu')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  inner.innerHTML = [
-    coverHtml,
-    `<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:#6b7280;margin:0 0 4px;">KentuOS</div>`,
-    `<div style="font-size:18px;font-weight:700;color:#111827;margin:0 0 16px;">${heading}</div>`,
-    markdownToPlainHtml(bodyMd),
-  ].join('');
-
-  host.appendChild(inner);
-  document.body.appendChild(host);
-
-  // Attendi layout + eventuale load immagine copertina
+  // Attendi paint completo (layout + font) prima di fotografare.
   await new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(resolve));
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.setTimeout(resolve, 50);
+      });
+    });
   });
-  const coverImg = inner.querySelector('img');
-  if (coverImg && !coverImg.complete) {
-    await Promise.race([
-      new Promise((resolve) => {
-        coverImg.onload = () => resolve();
-        coverImg.onerror = () => resolve();
-      }),
-      new Promise((resolve) => setTimeout(resolve, 1500)),
-    ]);
-  }
 
   const options = {
-    margin: 10,
+    margin: 0,
     filename: safeFilename,
-    image: { type: 'jpeg', quality: 0.98 },
+    image: { type: 'jpeg', quality: 1 },
     html2canvas: {
       scale: 2,
       useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
+      scrollY: 0,
+      scrollX: 0,
+      backgroundColor: '#020617', // slate-950
       logging: false,
     },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    jsPDF: { unit: 'px', format: [800, 1130], orientation: 'portrait' },
   };
 
   try {
-    const blob = await html2pdf().set(options).from(inner).outputPdf('blob');
-    return { blob, filename: safeFilename };
+    const blob = await html2pdf().set(options).from(element).outputPdf('blob');
+    return { blob, filename: safeFilename, title };
   } finally {
-    host.remove();
+    element.style.opacity = prevOpacity;
+    element.style.visibility = prevVisibility;
   }
 }
 
@@ -240,13 +84,7 @@ function triggerBlobDownload(blob, filename) {
 }
 
 /**
- * Genera e scarica un PDF da HTML chiaro (container off-screen).
- * @param {{
- *   title?: string,
- *   markdown?: string,
- *   coverSrc?: string,
- *   filename?: string,
- * }} opts
+ * Genera e scarica il PDF del Daily Report (template phantom).
  */
 export async function downloadKentuReportPdf(opts = {}) {
   const { blob, filename } = await generateKentuReportPdfBlob(opts);
@@ -256,17 +94,10 @@ export async function downloadKentuReportPdf(opts = {}) {
 
 /**
  * Condivide il PDF via Web Share API; fallback download se non supportata / fallisce.
- * @param {{
- *   title?: string,
- *   markdown?: string,
- *   coverSrc?: string,
- *   filename?: string,
- * }} opts
- * @returns {Promise<{ shared?: boolean, downloaded?: boolean, aborted?: boolean }>}
  */
 export async function shareOrDownloadKentuReportPdf(opts = {}) {
   const { blob, filename } = await generateKentuReportPdfBlob(opts);
-  const title = String(opts.title || 'Bollettino Kentu').trim() || 'Bollettino Kentu';
+  const title = String(opts.title || 'Kentu Daily Report').trim() || 'Kentu Daily Report';
   const file = new File([blob], filename, { type: 'application/pdf' });
 
   const canShareFiles = typeof navigator !== 'undefined'

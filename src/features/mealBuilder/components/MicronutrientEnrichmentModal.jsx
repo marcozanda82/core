@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader2, X } from 'lucide-react';
 import { estimateStandardMacrosPer100g } from '../../../utils/getFoodIcon.js';
+import { filterAcceptableDisambiguationCandidates } from '../../commandTerminal/conversation/multiDbFoodResolver.js';
 
 const CONFIDENCE_UI = {
   high: {
@@ -58,6 +59,10 @@ export default function MicronutrientEnrichmentModal({
   isOpen,
   productName = 'Prodotto scansionato',
   isLoading = false,
+  loadingMessage = '',
+  searchPhase = null,
+  canInterruptSearch = false,
+  onInterruptSearch = null,
   error = '',
   matches = [],
   onSelectMatch,
@@ -69,6 +74,7 @@ export default function MicronutrientEnrichmentModal({
   onCreateCustom = null,
   cameraBusy = false,
   variant = 'barcode',
+  allowActionsWhileLoading = false,
 }) {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [manualForm, setManualForm] = useState({
@@ -144,11 +150,20 @@ export default function MicronutrientEnrichmentModal({
       || typeof onManualSearch === 'function'
       || typeof onCreateCustom === 'function'
     );
-  const actionsDisabled = isLoading || cameraBusy;
+  const actionsDisabled = cameraBusy || (isLoading && !allowActionsWhileLoading);
+  const statusMessage = String(loadingMessage || '').trim()
+    || (searchPhase === 'external'
+      ? 'Non trovato nei tuoi archivi. Interrogazione Open Food Facts e USDA in corso…'
+      : searchPhase === 'local'
+        ? 'Cerco nel Database Personale e Kentu ITA…'
+        : 'Cerco corrispondenze affidabili…');
 
   const topMatches = useMemo(
-    () => (Array.isArray(matches) ? matches.filter(Boolean).slice(0, 4) : []),
-    [matches],
+    () => filterAcceptableDisambiguationCandidates(
+      titleName,
+      Array.isArray(matches) ? matches : [],
+    ),
+    [matches, titleName],
   );
 
   if (!isOpen || typeof document === 'undefined') return null;
@@ -202,9 +217,29 @@ export default function MicronutrientEnrichmentModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10 text-slate-400">
+            <div className="mb-4 flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-700/70 bg-slate-900/50 px-4 py-8 text-slate-400">
               <Loader2 className="h-8 w-8 animate-spin text-cyan-400" aria-hidden />
-              <p className="text-sm">Cerco in Personale, CREA, USDA e Open Food Facts…</p>
+              <p className="max-w-sm text-center text-sm leading-snug text-slate-300">
+                {statusMessage}
+              </p>
+              {searchPhase === 'external' ? (
+                <p className="text-center text-[11px] text-slate-500">
+                  Livello 2 · cataloghi esterni (solo match ≥ 50% con legame lessicale)
+                </p>
+              ) : searchPhase === 'local' ? (
+                <p className="text-center text-[11px] text-slate-500">
+                  Livello 1 · Database Personale e Kentu ITA
+                </p>
+              ) : null}
+              {canInterruptSearch && typeof onInterruptSearch === 'function' ? (
+                <button
+                  type="button"
+                  onClick={() => onInterruptSearch()}
+                  className="mt-1 rounded-xl border border-amber-500/45 bg-amber-950/35 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-400/70 hover:bg-amber-900/40"
+                >
+                  Interrompi / Ricerca manuale
+                </button>
+              ) : null}
             </div>
           ) : null}
 
@@ -214,69 +249,69 @@ export default function MicronutrientEnrichmentModal({
             </p>
           ) : null}
 
-          {!isLoading ? (
+          {!isLoading && topMatches.length > 0 ? (
             <section className="mb-4">
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Corrispondenze trovate
               </h3>
-              {topMatches.length === 0 ? (
-                <p className="rounded-xl border border-slate-700/70 bg-slate-900/40 px-3 py-6 text-center text-sm text-slate-500">
-                  {emptyText}
-                </p>
-              ) : (
-                <ul className="flex flex-col gap-2.5">
-                  {topMatches.map((match, index) => {
-                    const ui = CONFIDENCE_UI[match.confidence] || CONFIDENCE_UI.low;
-                    const badge = formatSourceBadge(match);
-                    const sourceKey = String(match.source || '').toLowerCase();
-                    const badgeClass = SOURCE_BADGE_UI[sourceKey] || SOURCE_BADGE_UI.kentu;
-                    const scorePct = Number.isFinite(Number(match.confidenceScore))
-                      ? Math.round(Number(match.confidenceScore) * 100)
-                      : null;
-                    const matchKey = String(match.fdcId || match.id || match.name || index);
-                    return (
-                      <li key={matchKey}>
-                        <button
-                          type="button"
-                          onClick={() => onSelectMatch?.(match)}
-                          className={`w-full rounded-xl border px-3.5 py-3 text-left transition hover:brightness-110 active:scale-[0.99] ${ui.border} ${ui.bg}`}
-                        >
-                          <div className="flex items-start gap-2.5">
-                            <span className="text-lg leading-none" aria-hidden>
-                              {ui.emoji}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                {badge ? (
-                                  <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}>
-                                    {badge}
-                                  </span>
-                                ) : null}
-                                <span className={`text-xs font-bold uppercase tracking-wide ${ui.text}`}>
-                                  {ui.label}
-                                  {scorePct != null ? ` · ${scorePct}%` : ''}
+              <ul className="flex flex-col gap-2.5">
+                {topMatches.map((match, index) => {
+                  const ui = CONFIDENCE_UI[match.confidence] || CONFIDENCE_UI.low;
+                  const badge = formatSourceBadge(match);
+                  const sourceKey = String(match.source || '').toLowerCase();
+                  const badgeClass = SOURCE_BADGE_UI[sourceKey] || SOURCE_BADGE_UI.kentu;
+                  const scorePct = Number.isFinite(Number(match.confidenceScore))
+                    ? Math.round(Number(match.confidenceScore) * 100)
+                    : null;
+                  const matchKey = String(match.fdcId || match.id || match.name || index);
+                  return (
+                    <li key={matchKey}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectMatch?.(match)}
+                        className={`w-full rounded-xl border px-3.5 py-3 text-left transition hover:brightness-110 active:scale-[0.99] ${ui.border} ${ui.bg}`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span className="text-lg leading-none" aria-hidden>
+                            {ui.emoji}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              {badge ? (
+                                <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}>
+                                  {badge}
                                 </span>
-                              </div>
-                              <p className="mt-1 text-sm font-medium leading-snug text-slate-100">
-                                {match.name}
-                              </p>
-                              {match.reason ? (
-                                <p className="mt-1 text-xs leading-snug text-slate-400">
-                                  {match.reason}
-                                </p>
                               ) : null}
+                              <span className={`text-xs font-bold uppercase tracking-wide ${ui.text}`}>
+                                {ui.label}
+                                {scorePct != null ? ` · ${scorePct}%` : ''}
+                              </span>
                             </div>
+                            <p className="mt-1 text-sm font-medium leading-snug text-slate-100">
+                              {match.name}
+                            </p>
+                            {match.reason ? (
+                              <p className="mt-1 text-xs leading-snug text-slate-400">
+                                {match.reason}
+                              </p>
+                            ) : null}
                           </div>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           ) : null}
 
-          {!isLoading && typeof onCreateCustom === 'function' ? (
+          {!isLoading && topMatches.length === 0 ? (
+            <p className="mb-4 rounded-xl border border-slate-700/70 bg-slate-900/40 px-3 py-4 text-center text-sm text-slate-500">
+              {emptyText}
+            </p>
+          ) : null}
+
+          {(!isLoading || allowActionsWhileLoading) && typeof onCreateCustom === 'function' ? (
             <section className="mb-2">
               <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Crea alimento al volo

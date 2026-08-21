@@ -372,6 +372,7 @@ export function useCommandTerminal({
           mode: payload?.mode === 'mcdrive' ? 'mcdrive' : 'chat',
           variant: payload?.variant === 'disambiguation' ? 'disambiguation' : 'enrichment',
           matches: Array.isArray(payload?.matches) ? payload.matches : null,
+          needsExternalSearch: payload?.needsExternalSearch === true,
           kentuItDb: payload?.kentuItDb && typeof payload.kentuItDb === 'object' ? payload.kentuItDb : null,
           personalDb: payload?.personalDb && typeof payload.personalDb === 'object' ? payload.personalDb : null,
           globalDb: payload?.globalDb && typeof payload.globalDb === 'object' ? payload.globalDb : null,

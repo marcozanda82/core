@@ -1,16 +1,18 @@
 /**
- * Pipeline gerarchica multi-database per McDrive / Meal Draft:
- * Personale → Kentu IT/CREA → USDA (globale) → Open Food Facts.
- * Auto-accetta solo con confidenza ≥ 0.85; altrimenti disambiguazione.
+ * Pipeline a livelli multi-database per McDrive / Meal Draft:
+ * Livello 1 — Personale + Kentu ITA (match ≥80% → subito).
+ * Livello 2 — OFF / USDA solo se L1 vuoto, con feedback UI + Interrompi.
+ * Filtro rigido: niente candidati <50% o senza legame lessicale.
  */
 
+import { normalizeSearchText } from '../../../foodSearch.js';
 import {
   findExactLiteralFoodInDb,
+  findFastLexicalFoodMatches,
   findSemanticKentuMatches,
 } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 import {
   computeRelevanceScore,
-  runUnifiedFoodSearch,
   searchGlobalDb,
   searchKentuItDb,
   searchOffDb,
@@ -18,7 +20,25 @@ import {
 } from '../../mealBuilder/hooks/useUniversalSearchEngine.js';
 
 export const AUTO_ACCEPT_CONFIDENCE = 0.85;
+/** Match forte Livello 1 (Personale + Kentu): auto-accept / stop senza cataloghi esterni. */
+export const LEVEL1_STRONG_CONFIDENCE = 0.8;
+/** @deprecated Preferire LEVEL1_STRONG_CONFIDENCE */
+export const FAST_PATH_EARLY_EXIT_CONFIDENCE = LEVEL1_STRONG_CONFIDENCE;
 export const DISAMBIGUATION_CANDIDATE_LIMIT = 4;
+/**
+ * Soglia minima per mostrare un candidato in disambiguazione.
+ * Sotto questa soglia (e senza exact match) → scartato: UI vuota + ricerca manuale.
+ */
+export const MIN_DISAMBIGUATION_CONFIDENCE = 0.5;
+/** Step 2 su USDA/OFF: risultati stretti, niente full-scan. */
+const HEAVY_STEP2_RESULT_LIMIT = 5;
+
+const QUERY_STOPWORDS = new Set([
+  'di', 'del', 'della', 'dei', 'delle', 'dello', 'da', 'dal', 'dalla',
+  'con', 'e', 'ed', 'a', 'al', 'alla', 'ai', 'alle',
+  'la', 'il', 'lo', 'le', 'i', 'gli', 'un', 'una', 'uno',
+  'per', 'in', 'su', 'sul', 'sulla', 'the', 'of', 'and',
+]);
 
 export const FOOD_SOURCE_BADGE = Object.freeze({
   personal: { key: 'personal', label: 'Personale', short: '[Personale]' },
@@ -112,6 +132,106 @@ function candidateIdentity(candidate) {
 }
 
 /**
+ * Token significativi della query (stopword e token corti esclusi).
+ * @param {string} query
+ * @returns {string[]}
+ */
+export function significantFoodQueryTokens(query) {
+  return normalizeSearchText(query)
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !QUERY_STOPWORDS.has(t));
+}
+
+/**
+ * True se il candidato è un match letterale / near-exact (sempre ammissibile in UI).
+ * @param {object} candidate
+ */
+export function isExactOrNearExactCandidate(candidate) {
+  const score = Number(candidate?.confidenceScore) || 0;
+  if (score >= 0.98) return true;
+  const reason = String(candidate?.reason || '').toLowerCase();
+  if (reason.includes('letterale') || reason.includes('exact')) return true;
+  const kind = String(candidate?.matchKind || '').toLowerCase();
+  return kind === 'exact' || kind === 'whole_token';
+}
+
+/**
+ * Frazione di token query presenti come token (o prefisso forte) nel nome candidato.
+ * @param {string} query
+ * @param {string} candidateName
+ * @returns {number} 0–1
+ */
+export function lexicalLinkStrength(query, candidateName) {
+  const qTokens = significantFoodQueryTokens(query);
+  if (qTokens.length === 0) return 1;
+  const hayTokens = normalizeSearchText(candidateName).split(/\s+/).filter(Boolean);
+  if (hayTokens.length === 0) return 0;
+
+  let hits = 0;
+  for (let i = 0; i < qTokens.length; i += 1) {
+    const t = qTokens[i];
+    const matched = hayTokens.some((ht) => {
+      if (ht === t) return true;
+      const minLen = Math.min(ht.length, t.length);
+      if (minLen < 4) return false;
+      return ht.startsWith(t) || t.startsWith(ht);
+    });
+    if (matched) hits += 1;
+  }
+  return hits / qTokens.length;
+}
+
+/**
+ * Gate UI disambiguazione: scarta confidenza bassa / 0% e match senza legame lessicale.
+ * Exact match sempre ammessi.
+ *
+ * @param {string} query
+ * @param {object} candidate
+ * @returns {boolean}
+ */
+export function isAcceptableDisambiguationCandidate(query, candidate) {
+  if (!candidate?.row || !String(candidate?.name || '').trim()) return false;
+  if (isExactOrNearExactCandidate(candidate)) return true;
+
+  const score = Number(candidate.confidenceScore);
+  if (!Number.isFinite(score) || score < MIN_DISAMBIGUATION_CONFIDENCE) return false;
+
+  const label = String(candidate.confidence || '').trim().toLowerCase();
+  if (label === 'low') return false;
+
+  const qTokens = significantFoodQueryTokens(query);
+  const link = lexicalLinkStrength(query, candidate.name);
+  if (link < 0.5) return false;
+
+  // Query multi-parola (es. "salame ungherese"): serve copertura piena dei token,
+  // altrimenti solo match ad alta confidenza (≥ auto-accept). Evita "pizza al salame".
+  if (qTokens.length >= 2 && link < 1 && score < AUTO_ACCEPT_CONFIDENCE) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Filtra la lista candidati per la sezione "Corrispondenze trovate".
+ * Se nessuno passa → array vuoto (ricerca manuale / scanner).
+ *
+ * @param {string} query
+ * @param {object[]} candidates
+ * @param {{ limit?: number }} [opts]
+ * @returns {object[]}
+ */
+export function filterAcceptableDisambiguationCandidates(query, candidates = [], opts = {}) {
+  const limit = Number.isFinite(opts.limit) && opts.limit > 0
+    ? Math.floor(opts.limit)
+    : DISAMBIGUATION_CANDIDATE_LIMIT;
+  const list = Array.isArray(candidates) ? candidates : [];
+  return sortCandidates(
+    list.filter((c) => isAcceptableDisambiguationCandidate(query, c)),
+  ).slice(0, limit);
+}
+
+/**
  * @param {object} partial
  * @returns {object}
  */
@@ -143,6 +263,7 @@ function buildCandidate(partial = {}) {
     sourceBadge: badge.short,
     sourceLabel: badge.label,
     row,
+    ...(partial.matchKind ? { matchKind: partial.matchKind } : {}),
   };
 }
 
@@ -217,8 +338,11 @@ export function searchResultToResolverCandidate(searchResult, fallbackSource = '
  */
 function semanticMatchToCandidate(semanticMatch, source) {
   if (!semanticMatch?.row) return null;
+  const label = String(semanticMatch.confidence || '').toLowerCase();
+  // Gemini "low" non entra mai nel pool disambiguazione.
+  if (label === 'low') return null;
+
   const labelScore = confidenceLabelToScore(semanticMatch.confidence);
-  // Exact / high semantic: boost slightly for personal priority already encoded in source sort.
   const exactBoost = String(semanticMatch.reason || '').toLowerCase().includes('letterale')
     ? 1
     : labelScore;
@@ -240,51 +364,91 @@ function pushLexicalHits(pool, hits, source) {
   });
 }
 
+function pushFastHits(pool, name, db, source) {
+  if (!db || Object.keys(db).length === 0) return;
+  const exact = findExactLiteralFoodInDb(name, db);
+  if (exact) {
+    mergeCandidatePool(pool, buildCandidate({
+      ...exact,
+      confidence: 'high',
+      confidenceScore: 1,
+      reason: exact.reason || 'Match letterale esatto',
+      source,
+      matchKind: 'exact',
+    }));
+  }
+  findFastLexicalFoodMatches(name, db, { limit: 4 }).forEach((hit) => {
+    const score = hit.matchKind === 'exact'
+      ? 1
+      : hit.matchKind === 'whole_token'
+        ? 0.96
+        : 0.92;
+    mergeCandidatePool(pool, buildCandidate({
+      fdcId: hit.fdcId,
+      name: hit.name,
+      confidence: 'high',
+      confidenceScore: score,
+      reason: hit.reason,
+      source,
+      row: hit.row,
+      matchKind: hit.matchKind,
+    }));
+  });
+}
+
 /**
- * Raccoglie candidati da tutti i DB in ordine gerarchico.
+ * Livello 1 — solo Database Personale + Kentu ITA (curato).
+ * Exact / lexical / semantic locale. Nessun USDA/OFF.
+ *
  * @param {string} foodName
- * @param {{
- *   personalDb?: object|null,
- *   kentuItDb?: object|null,
- *   globalDb?: object|null,
- *   offDb?: object|null,
- *   signal?: AbortSignal,
- * }} ctx
+ * @param {object} ctx
  * @returns {Promise<object[]>}
  */
-export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
+export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
   const name = String(foodName || '').trim();
   if (!name) return [];
 
   const personalDb = ctx.personalDb && typeof ctx.personalDb === 'object' ? ctx.personalDb : null;
   const kentuItDb = ctx.kentuItDb && typeof ctx.kentuItDb === 'object' ? ctx.kentuItDb : null;
-  const globalDb = ctx.globalDb && typeof ctx.globalDb === 'object' ? ctx.globalDb : null;
-  const offDb = ctx.offDb && typeof ctx.offDb === 'object' ? ctx.offDb : null;
   const signal = ctx.signal;
   const pool = new Map();
 
-  // 1) Match letterali esatti — priorità assoluta per layer.
-  const exactLayers = [
-    { db: personalDb, source: 'personal' },
-    { db: kentuItDb, source: 'kentu' },
-    { db: globalDb, source: 'usda' },
-    { db: offDb, source: 'off' },
-  ];
-  for (const layer of exactLayers) {
-    if (!layer.db || Object.keys(layer.db).length === 0) continue;
-    const exact = findExactLiteralFoodInDb(name, layer.db);
-    if (exact) {
-      mergeCandidatePool(pool, buildCandidate({
-        ...exact,
-        confidence: 'high',
-        confidenceScore: 1,
-        reason: exact.reason || 'Match letterale esatto',
-        source: layer.source,
-      }));
-    }
+  typeof ctx.onProgress === 'function'
+    && ctx.onProgress({
+      level: 1,
+      phase: 'local',
+      message: 'Cerco nel Database Personale e Kentu ITA…',
+    });
+
+  pushFastHits(pool, name, personalDb, 'personal');
+  pushFastHits(pool, name, kentuItDb, 'kentu');
+
+  let ranked = sortCandidates([...pool.values()]);
+  const finalize = (list) => filterAcceptableDisambiguationCandidates(name, list);
+
+  if (
+    ranked[0]
+    && Number(ranked[0].confidenceScore) >= LEVEL1_STRONG_CONFIDENCE
+  ) {
+    return finalize(ranked);
   }
 
-  // 2) Personale — semantico + lessicale
+  if (personalDb && Object.keys(personalDb).length > 0) {
+    pushLexicalHits(pool, searchPersonalDb(personalDb, name).slice(0, 4), 'personal');
+  }
+  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
+    pushLexicalHits(pool, searchKentuItDb(name, kentuItDb, []).slice(0, 4), 'kentu');
+  }
+
+  ranked = sortCandidates([...pool.values()]);
+  if (
+    ranked[0]
+    && Number(ranked[0].confidenceScore) >= LEVEL1_STRONG_CONFIDENCE
+  ) {
+    return finalize(ranked);
+  }
+
+  // Semantic solo su archivi locali (niente inventare da cataloghi esterni).
   if (personalDb && Object.keys(personalDb).length > 0) {
     try {
       const personalSemantic = await findSemanticKentuMatches(name, {
@@ -297,12 +461,10 @@ export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
       });
     } catch (error) {
       if (signal?.aborted) throw error;
-      console.warn('[multiDbFoodResolver] personal semantic failed', error);
+      console.warn('[multiDbFoodResolver] L1 personal semantic failed', error);
     }
-    pushLexicalHits(pool, searchPersonalDb(personalDb, name), 'personal');
   }
 
-  // 3) Kentu IT / CREA
   if (kentuItDb && Object.keys(kentuItDb).length > 0) {
     try {
       const kentuSemantic = await findSemanticKentuMatches(name, {
@@ -315,41 +477,98 @@ export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
       });
     } catch (error) {
       if (signal?.aborted) throw error;
-      console.warn('[multiDbFoodResolver] kentu semantic failed', error);
+      console.warn('[multiDbFoodResolver] L1 kentu semantic failed', error);
     }
-    pushLexicalHits(pool, searchKentuItDb(name, kentuItDb, []), 'kentu');
   }
 
-  // 4) USDA / globale
-  if (globalDb && Object.keys(globalDb).length > 0) {
-    pushLexicalHits(pool, searchGlobalDb(name, globalDb, []), 'usda');
-  }
+  return finalize(sortCandidates([...pool.values()]));
+}
 
-  // 5) Open Food Facts
+/**
+ * Livello 2 — cataloghi esterni USDA / Open Food Facts (mirato + filtro rigido).
+ *
+ * @param {string} foodName
+ * @param {object} ctx
+ * @returns {Promise<object[]>}
+ */
+export async function collectLevel2ExternalCandidates(foodName, ctx = {}) {
+  const name = String(foodName || '').trim();
+  if (!name) return [];
+
+  const globalDb = ctx.globalDb && typeof ctx.globalDb === 'object' ? ctx.globalDb : null;
+  const offDb = ctx.offDb && typeof ctx.offDb === 'object' ? ctx.offDb : null;
+  const pool = new Map();
+
+  typeof ctx.onProgress === 'function'
+    && ctx.onProgress({
+      level: 2,
+      phase: 'external',
+      message: 'Non trovato nei tuoi archivi. Interrogazione Open Food Facts e USDA in corso…',
+    });
+
+  if (signalAborted(ctx.signal)) return [];
+
   if (offDb && Object.keys(offDb).length > 0) {
-    pushLexicalHits(pool, searchOffDb(name, offDb, []), 'off');
+    pushLexicalHits(
+      pool,
+      searchOffDb(name, offDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT }),
+      'off',
+    );
+  }
+  if (signalAborted(ctx.signal)) return [];
+
+  if (globalDb && Object.keys(globalDb).length > 0) {
+    pushLexicalHits(
+      pool,
+      searchGlobalDb(name, globalDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT }),
+      'usda',
+    );
   }
 
-  // Unificato come safety net (dedupe già gestito nel pool)
-  const unified = runUnifiedFoodSearch(name, {
-    personalDb,
-    kentuItDb,
-    globalDb,
-    offDb,
-    searchGlobal: true,
-    cap: 12,
-  });
-  (Array.isArray(unified) ? unified : []).forEach((hit) => {
-    const c = searchResultToResolverCandidate(hit);
-    if (c) mergeCandidatePool(pool, c);
-  });
+  return filterAcceptableDisambiguationCandidates(name, sortCandidates([...pool.values()]));
+}
 
-  return sortCandidates([...pool.values()]);
+function signalAborted(signal) {
+  return Boolean(signal?.aborted || (typeof signal?.isCancelled === 'function' && signal.isCancelled()));
+}
+
+/**
+ * Pipeline a livelli: L1 Personale+Kentu → (solo se vuoto) L2 OFF/USDA.
+ * Callback `onProgress` per feedback UI trasparente.
+ *
+ * @param {string} foodName
+ * @param {{
+ *   personalDb?: object|null,
+ *   kentuItDb?: object|null,
+ *   globalDb?: object|null,
+ *   offDb?: object|null,
+ *   signal?: AbortSignal,
+ *   onProgress?: (info: { level: number, phase: string, message: string }) => void,
+ *   skipExternal?: boolean,
+ * }} ctx
+ * @returns {Promise<object[]>}
+ */
+export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
+  const name = String(foodName || '').trim();
+  if (!name) return [];
+
+  const level1 = await collectLevel1LocalCandidates(name, ctx);
+  if (signalAborted(ctx.signal)) return level1;
+
+  // Match forti o comunque accettabili in L1 → non mischiare cataloghi esterni.
+  if (level1.length > 0) return level1;
+
+  if (ctx.skipExternal === true) return [];
+
+  return collectLevel2ExternalCandidates(name, ctx);
 }
 
 /**
  * Decide auto-accept vs disambiguazione.
+ * I candidati sotto soglia non vengono mai proposti in UI.
  * @param {object[]} candidates
+ * @param {string} [query]
+ * @param {{ autoAcceptThreshold?: number }} [opts]
  * @returns {{
  *   needsDisambiguation: boolean,
  *   match: object|null,
@@ -359,9 +578,15 @@ export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
  *   alternatives: object[],
  * }}
  */
-export function decideMultiDbResolution(candidates = []) {
-  const ranked = sortCandidates(Array.isArray(candidates) ? candidates.filter((c) => c?.row) : []);
-  const topN = ranked.slice(0, DISAMBIGUATION_CANDIDATE_LIMIT);
+export function decideMultiDbResolution(candidates = [], query = '', opts = {}) {
+  const autoThreshold = Number.isFinite(Number(opts.autoAcceptThreshold))
+    ? Number(opts.autoAcceptThreshold)
+    : AUTO_ACCEPT_CONFIDENCE;
+  const filtered = filterAcceptableDisambiguationCandidates(
+    query,
+    Array.isArray(candidates) ? candidates.filter((c) => c?.row) : [],
+  );
+  const topN = filtered.slice(0, DISAMBIGUATION_CANDIDATE_LIMIT);
   const top = topN[0] || null;
   const second = topN[1] || null;
 
@@ -381,10 +606,20 @@ export function decideMultiDbResolution(candidates = []) {
   const closeRace = Boolean(
     second
     && topScore < 0.98
-    && secondScore >= AUTO_ACCEPT_CONFIDENCE - 0.05
+    && secondScore >= autoThreshold - 0.05
     && (topScore - secondScore) < 0.08,
   );
-  const needsDisambiguation = topScore < AUTO_ACCEPT_CONFIDENCE || closeRace;
+  const needsDisambiguation = topScore < autoThreshold || closeRace;
+
+  const altMap = (c) => ({
+    foodDbKey: c.fdcId || null,
+    foodName: c.name,
+    confidence: c.confidence,
+    confidenceScore: c.confidenceScore,
+    source: c.source,
+    sourceBadge: c.sourceBadge,
+    row: c.row,
+  });
 
   if (needsDisambiguation) {
     return {
@@ -393,15 +628,7 @@ export function decideMultiDbResolution(candidates = []) {
       source: null,
       confidenceScore: topScore,
       candidates: topN,
-      alternatives: topN.slice(1).map((c) => ({
-        foodDbKey: c.fdcId || null,
-        foodName: c.name,
-        confidence: c.confidence,
-        confidenceScore: c.confidenceScore,
-        source: c.source,
-        sourceBadge: c.sourceBadge,
-        row: c.row,
-      })),
+      alternatives: topN.slice(1).map(altMap),
     };
   }
 
@@ -411,24 +638,77 @@ export function decideMultiDbResolution(candidates = []) {
     source: top.source,
     confidenceScore: topScore,
     candidates: topN,
-    alternatives: topN.slice(1).map((c) => ({
-      foodDbKey: c.fdcId || null,
-      foodName: c.name,
-      confidence: c.confidence,
-      confidenceScore: c.confidenceScore,
-      source: c.source,
-      sourceBadge: c.sourceBadge,
-      row: c.row,
-    })),
+    alternatives: topN.slice(1).map(altMap),
   };
 }
 
 /**
- * Entry point: ricerca multi-DB + decisione confidenza.
+ * Entry point a livelli: L1 locale; se vuoto e non deferito → L2 esterni.
  * @param {string} foodName
  * @param {object} ctx
  */
 export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
-  const candidates = await collectMultiDbFoodCandidates(foodName, ctx);
-  return decideMultiDbResolution(candidates);
+  const name = String(foodName || '').trim();
+  if (!name) {
+    return {
+      needsDisambiguation: true,
+      match: null,
+      source: null,
+      confidenceScore: 0,
+      candidates: [],
+      alternatives: [],
+      searchLevel: 1,
+      needsExternalSearch: true,
+    };
+  }
+
+  const level1 = await collectLevel1LocalCandidates(name, ctx);
+  if (signalAborted(ctx.signal)) {
+    return {
+      needsDisambiguation: true,
+      match: null,
+      source: null,
+      confidenceScore: 0,
+      candidates: [],
+      alternatives: [],
+      searchLevel: 1,
+      needsExternalSearch: false,
+      aborted: true,
+    };
+  }
+
+  const decision1 = decideMultiDbResolution(level1, name, {
+    autoAcceptThreshold: LEVEL1_STRONG_CONFIDENCE,
+  });
+
+  // Match forte L1 (≥80%) → restituisci subito, senza cataloghi esterni.
+  if (!decision1.needsDisambiguation && decision1.match) {
+    return { ...decision1, searchLevel: 1, needsExternalSearch: false };
+  }
+
+  // Candidati L1 accettabili ma ambigui → disambiguazione locale, stop (niente OFF/USDA).
+  if (decision1.candidates.length > 0) {
+    return { ...decision1, searchLevel: 1, needsExternalSearch: false };
+  }
+
+  // L1 vuoto: deferisci L2 alla UI (feedback + Interrompi) oppure esegui subito.
+  if (ctx.deferExternalSearch === true || ctx.skipExternal === true) {
+    return {
+      needsDisambiguation: true,
+      match: null,
+      source: null,
+      confidenceScore: 0,
+      candidates: [],
+      alternatives: [],
+      searchLevel: 1,
+      needsExternalSearch: ctx.skipExternal !== true,
+    };
+  }
+
+  const level2 = await collectLevel2ExternalCandidates(name, ctx);
+  const decision2 = decideMultiDbResolution(level2, name, {
+    autoAcceptThreshold: AUTO_ACCEPT_CONFIDENCE,
+  });
+  return { ...decision2, searchLevel: 2, needsExternalSearch: false };
 }
+

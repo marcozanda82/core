@@ -27,6 +27,36 @@ const LOCAL_FOOD_TYPO_MAP = Object.freeze({
   pana: 'pane',
 });
 
+/** Cache di sessione: evita askAI duplicati per stringhe già normalizzate/rankate. */
+const SPELLING_NORMALIZE_SESSION_CACHE = new Map();
+const GEMINI_RANK_SESSION_CACHE = new Map();
+const SEMANTIC_MATCH_SESSION_CACHE = new Map();
+const SESSION_CACHE_MAX = 200;
+
+function rememberSessionCache(map, key, value) {
+  if (!key) return value;
+  if (map.size >= SESSION_CACHE_MAX) {
+    const oldest = map.keys().next().value;
+    map.delete(oldest);
+  }
+  map.set(key, value);
+  return value;
+}
+
+function buildRankCacheKey(productName, candidates) {
+  const q = normalizeSearchText(productName);
+  const ids = (Array.isArray(candidates) ? candidates : [])
+    .slice(0, DEFAULT_LOCAL_CANDIDATE_LIMIT)
+    .map((c) => String(c?.fdcId || '').trim())
+    .filter(Boolean)
+    .join(',');
+  return `${q}::${ids}`;
+}
+
+/** Soglia oltre la quale un DB è trattato come catalogo pesante (cap scan). */
+const HEAVY_DB_ENTRY_THRESHOLD = 5000;
+const HEAVY_DB_MAX_SCAN = 4000;
+
 /** Brand / voci USA da escludere dal fallback Kentu. */
 const FOREIGN_JUNK_RE = /\b(?:applebee|nutri-?grain|mcdonald|burger\s*king|kellogg|subway|starbucks|domino'?s|taco\s*bell|wendy'?s|pizza\s*hut)\b/i;
 
@@ -52,6 +82,11 @@ export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) 
   const text = String(rawText || '').trim();
   if (!text) return { normalized: '', tokens: [] };
 
+  const cacheKey = normalizeSearchText(text);
+  if (cacheKey && SPELLING_NORMALIZE_SESSION_CACHE.has(cacheKey)) {
+    return SPELLING_NORMALIZE_SESSION_CACHE.get(cacheKey);
+  }
+
   const quickTokens = text
     .split(/\s*(?:,|;|\be\b|\bed\b)\s*/i)
     .map((part) => part.trim())
@@ -69,7 +104,10 @@ export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) 
 
   if (quickTokens.length > 0 && text.length <= 48 && allLocalFixed) {
     const normalized = quickTokens.join(' e ');
-    return { normalized, tokens: quickTokens };
+    return rememberSessionCache(SPELLING_NORMALIZE_SESSION_CACHE, cacheKey, {
+      normalized,
+      tokens: quickTokens,
+    });
   }
 
   try {
@@ -96,13 +134,16 @@ export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) 
     const tokens = Array.isArray(parsed?.tokens)
       ? parsed.tokens.map((t) => String(t || '').trim()).filter(Boolean)
       : quickTokens.length ? quickTokens : [normalized];
-    return { normalized, tokens };
+    return rememberSessionCache(SPELLING_NORMALIZE_SESSION_CACHE, cacheKey, {
+      normalized,
+      tokens,
+    });
   } catch (error) {
     console.warn('[SemanticMatchmaker] spelling normalize fallback', error);
-    return {
+    return rememberSessionCache(SPELLING_NORMALIZE_SESSION_CACHE, cacheKey, {
       normalized: quickTokens.join(' e ') || text,
       tokens: quickTokens.length ? quickTokens : [text],
-    };
+    });
   }
 }
 
@@ -284,16 +325,24 @@ export function sanitizeProductNameForSearch(productName) {
 /**
  * Match letterale esatto su un DB (case/accenti ignorati).
  * Es. "fette biscottate" → "Fette biscottate".
+ * Priorità assoluta alla stringa intera: "fagioli" ≠ "fagiolini".
  *
  * @param {string} foodName
  * @param {Record<string, object>|null|undefined} foodDb
  * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
  */
-export function findExactLiteralFoodInDb(foodName, foodDb) {
+export function findExactLiteralFoodInDb(foodName, foodDb, opts = {}) {
   const needle = normalizeSearchText(foodName);
   if (!needle || !foodDb || typeof foodDb !== 'object') return null;
 
-  for (const [id, food] of Object.entries(foodDb)) {
+  const entries = Object.entries(foodDb);
+  const maxScan = Number.isFinite(opts.maxEntriesToScan) && opts.maxEntriesToScan > 0
+    ? Math.floor(opts.maxEntriesToScan)
+    : (entries.length > HEAVY_DB_ENTRY_THRESHOLD ? HEAVY_DB_MAX_SCAN : entries.length);
+  const scanEnd = Math.min(entries.length, maxScan);
+
+  for (let i = 0; i < scanEnd; i += 1) {
+    const [id, food] = entries[i];
     if (!food || typeof food !== 'object') continue;
 
     const descName = String(food.desc || '').trim();
@@ -332,6 +381,110 @@ export function findExactLiteralFoodInDb(foodName, foodDb) {
   }
 
   return null;
+}
+
+/**
+ * True se `needle` è un token intero in `haystack` (evita fagioli→fagiolini via prefisso).
+ * @param {string} needle
+ * @param {string} haystack
+ */
+export function isWholeTokenFoodMatch(needle, haystack) {
+  const n = normalizeSearchText(needle);
+  const h = normalizeSearchText(haystack);
+  if (!n || !h) return false;
+  if (n === h) return true;
+  const tokens = h.split(/\s+/).filter(Boolean);
+  return tokens.some((t) => t === n);
+}
+
+/**
+ * True se needle è prefisso stretto di un token più lungo (collisione tipica stemming).
+ * @param {string} needle
+ * @param {string} haystack
+ */
+export function isPrefixTokenCollision(needle, haystack) {
+  const n = normalizeSearchText(needle);
+  const h = normalizeSearchText(haystack);
+  if (!n || !h || n === h) return false;
+  const tokens = h.split(/\s+/).filter(Boolean);
+  return tokens.some((t) => t.length > n.length && t.startsWith(n) && !isWholeTokenFoodMatch(n, t));
+}
+
+/**
+ * Ricerca veloce: exact / starts-with / whole-token (senza fuzzy pesante).
+ * @param {string} foodName
+ * @param {Record<string, object>|null|undefined} foodDb
+ * @param {{ limit?: number }} [opts]
+ * @returns {Array<{ fdcId: string, name: string, confidence: string, reason: string, row: object, matchKind: string }>}
+ */
+export function findFastLexicalFoodMatches(foodName, foodDb, opts = {}) {
+  const needle = normalizeSearchText(foodName);
+  const limit = Math.min(8, Math.max(1, Number(opts.limit) || 4));
+  if (!needle || !foodDb || typeof foodDb !== 'object') return [];
+
+  const exact = [];
+  const wholeToken = [];
+  const startsWith = [];
+
+  const entries = Object.entries(foodDb);
+  const maxScan = Number.isFinite(opts.maxEntriesToScan) && opts.maxEntriesToScan > 0
+    ? Math.floor(opts.maxEntriesToScan)
+    : (entries.length > HEAVY_DB_ENTRY_THRESHOLD ? HEAVY_DB_MAX_SCAN : entries.length);
+  const scanEnd = Math.min(entries.length, maxScan);
+
+  for (let i = 0; i < scanEnd; i += 1) {
+    const [id, food] = entries[i];
+    if (!food || typeof food !== 'object') continue;
+    const descName = String(food.desc || '').trim();
+    const altName = String(food.name || '').trim();
+    const displayName = descName || altName;
+    if (!displayName) continue;
+    const norm = normalizeSearchText(displayName);
+    if (!norm) continue;
+
+    // Scarta collisioni prefisso (fagioli vs fagiolini) salvo match intero.
+    if (isPrefixTokenCollision(needle, norm) && !isWholeTokenFoodMatch(needle, norm)) {
+      continue;
+    }
+
+    const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
+    const row = {
+      ...food,
+      id: food.id ?? id,
+      fdcId,
+      foodDbKey: food.foodDbKey ?? fdcId,
+      desc: food.desc || displayName,
+      name: food.name || displayName,
+    };
+    const base = {
+      fdcId,
+      name: displayName,
+      confidence: 'high',
+      row,
+    };
+
+    if (norm === needle) {
+      exact.push({ ...base, reason: 'Match letterale esatto', matchKind: 'exact' });
+    } else if (isWholeTokenFoodMatch(needle, norm)) {
+      wholeToken.push({ ...base, reason: 'Match token intero', matchKind: 'whole_token' });
+    } else if (norm.startsWith(`${needle} `) || norm.startsWith(needle)) {
+      // starts-with solo se non è collisione tipo "fagiolo"→"fagiolini"
+      if (norm === needle || norm.startsWith(`${needle} `) || /\s/.test(norm.slice(needle.length, needle.length + 1))) {
+        startsWith.push({
+          ...base,
+          confidence: 'high',
+          reason: 'Match inizia-con',
+          matchKind: 'starts_with',
+        });
+      }
+    }
+
+    if (exact.length + wholeToken.length + startsWith.length >= limit * 3) {
+      break;
+    }
+  }
+
+  return [...exact, ...wholeToken, ...startsWith].slice(0, limit);
 }
 
 /**
@@ -388,6 +541,11 @@ export async function rankKentuCandidatesWithGemini(productName, candidates, opt
     name: String(c.name),
   }));
 
+  const rankKey = buildRankCacheKey(productName, compact);
+  if (rankKey && GEMINI_RANK_SESSION_CACHE.has(rankKey)) {
+    return GEMINI_RANK_SESSION_CACHE.get(rankKey);
+  }
+
   const systemInstruction = [
     'Sei un matchmaker nutrizionale Kentu (database CREA italiano).',
     'Confronta un alimento citato dall\'utente con voci Kentu DB già filtrate.',
@@ -412,10 +570,12 @@ export async function rankKentuCandidatesWithGemini(productName, candidates, opt
   });
 
   const allowed = new Set(compact.map((c) => c.fdcId));
-  return parseGeminiMatches(raw)
+  const ranked = parseGeminiMatches(raw)
     .filter((m) => allowed.has(m.fdcId))
     .sort((a, b) => (CONFIDENCE_RANK[a.confidence] ?? 9) - (CONFIDENCE_RANK[b.confidence] ?? 9))
     .slice(0, DEFAULT_GEMINI_TOP);
+
+  return rememberSessionCache(GEMINI_RANK_SESSION_CACHE, rankKey, ranked);
 }
 
 /** @deprecated Usa rankKentuCandidatesWithGemini */
@@ -438,18 +598,33 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
   const rawName = String(productName || '').trim();
   if (!rawName) return [];
 
+  const sessionKey = [
+    normalizeSearchText(rawName),
+    personalDb ? 'p1' : 'p0',
+    kentuItDb ? 'k1' : 'k0',
+  ].join('|');
+  if (sessionKey && SEMANTIC_MATCH_SESSION_CACHE.has(sessionKey)) {
+    return SEMANTIC_MATCH_SESSION_CACHE.get(sessionKey);
+  }
+
   // Priorità assoluta: match letterale esatto (niente AI / confidence basse).
   // Personal DB ha priorità sul merge (...it, ...personal) ma cerchiamo esplicitamente in ordine.
   if (personalDb && Object.keys(personalDb).length > 0) {
     const exactPersonal = findExactLiteralFoodInDb(rawName, personalDb);
-    if (exactPersonal) return [exactPersonal];
+    if (exactPersonal) {
+      return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, [exactPersonal]);
+    }
   }
   if (kentuItDb && Object.keys(kentuItDb).length > 0) {
     const exactKentu = findExactLiteralFoodInDb(rawName, kentuItDb);
-    if (exactKentu) return [exactKentu];
+    if (exactKentu) {
+      return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, [exactKentu]);
+    }
   }
   const exactMerged = findExactLiteralFoodInDb(rawName, searchDb);
-  if (exactMerged) return [exactMerged];
+  if (exactMerged) {
+    return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, [exactMerged]);
+  }
 
   let queryName = rawName;
   try {
@@ -463,11 +638,15 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
   if (queryName !== rawName) {
     if (personalDb && Object.keys(personalDb).length > 0) {
       const exactPersonal = findExactLiteralFoodInDb(queryName, personalDb);
-      if (exactPersonal) return [exactPersonal];
+      if (exactPersonal) {
+        return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, [exactPersonal]);
+      }
     }
     if (kentuItDb && Object.keys(kentuItDb).length > 0) {
       const exactKentu = findExactLiteralFoodInDb(queryName, kentuItDb);
-      if (exactKentu) return [exactKentu];
+      if (exactKentu) {
+        return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, [exactKentu]);
+      }
     }
   }
 
@@ -475,7 +654,9 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
     limit: opts.localLimit ?? DEFAULT_LOCAL_CANDIDATE_LIMIT,
   });
 
-  if (candidates.length === 0) return [];
+  if (candidates.length === 0) {
+    return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, []);
+  }
 
   const byId = new Map(candidates.map((c) => [c.fdcId, c]));
 
@@ -486,16 +667,17 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
     });
   } catch (error) {
     console.warn('[SemanticMatchmaker] Gemini ranking failed, fallback lexical top', error);
-    return candidates.slice(0, DEFAULT_GEMINI_TOP).map((c, index) => ({
+    const fallback = candidates.slice(0, DEFAULT_GEMINI_TOP).map((c, index) => ({
       fdcId: c.fdcId,
       name: c.name,
       confidence: index === 0 ? 'medium' : 'low',
       reason: 'Suggerimento lessicale Kentu DB (AI non disponibile)',
       row: c.row,
     }));
+    return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, fallback);
   }
 
-  return ranked
+  const enriched = ranked
     .map((m) => {
       const hit = byId.get(m.fdcId);
       if (!hit) return null;
@@ -508,6 +690,8 @@ export async function findSemanticKentuMatches(productName, dbContext = {}, opts
       };
     })
     .filter(Boolean);
+
+  return rememberSessionCache(SEMANTIC_MATCH_SESSION_CACHE, sessionKey, enriched);
 }
 
 /**

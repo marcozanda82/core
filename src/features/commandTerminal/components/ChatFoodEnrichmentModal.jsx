@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import MicronutrientEnrichmentModal from '../../mealBuilder/components/MicronutrientEnrichmentModal.jsx';
 import UniversalSearchModal from '../../mealBuilder/components/UniversalSearchModal.jsx';
-import { collectMultiDbFoodCandidates } from '../conversation/multiDbFoodResolver.js';
+import {
+  collectLevel1LocalCandidates,
+  collectLevel2ExternalCandidates,
+  filterAcceptableDisambiguationCandidates,
+} from '../conversation/multiDbFoodResolver.js';
 import { estimateStandardMacrosPer100g } from '../../../utils/getFoodIcon.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from '../../../platform/expoNativeCamera.js';
 import { processFoodImage } from '../../foodResolution/processFoodImage.js';
@@ -39,8 +43,18 @@ function searchResultToEnrichmentMatch(result) {
   };
 }
 
+const INITIAL_LOCAL = {
+  foodName: '',
+  isLoading: false,
+  matches: [],
+  error: '',
+  loadingMessage: '',
+  searchPhase: null,
+  canInterrupt: false,
+};
+
 /**
- * Wrapper chat: ricerca multi-DB + azioni barcode/etichetta/crea al volo.
+ * Wrapper chat / McDrive: ricerca a livelli + azioni barcode/etichetta/crea al volo.
  */
 export default function ChatFoodEnrichmentModal({
   session = null,
@@ -51,6 +65,26 @@ export default function ChatFoodEnrichmentModal({
   const [localSession, setLocalSession] = useState(null);
   const [cameraBusy, setCameraBusy] = useState(false);
   const [manualSearchOpen, setManualSearchOpen] = useState(false);
+
+  const interruptSearch = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setLocalSession((prev) => ({
+      ...(prev || INITIAL_LOCAL),
+      isLoading: false,
+      loadingMessage: '',
+      searchPhase: null,
+      canInterrupt: false,
+      matches: filterAcceptableDisambiguationCandidates(
+        prev?.foodName || session?.foodName || '',
+        prev?.matches || [],
+      ),
+      error: '',
+    }));
+    setManualSearchOpen(true);
+  }, [session?.foodName]);
 
   useEffect(() => {
     if (!session?.foodName) {
@@ -63,51 +97,112 @@ export default function ChatFoodEnrichmentModal({
     const controller = new AbortController();
     abortRef.current = controller;
     const foodName = String(session.foodName || '').trim();
-    const preloaded = Array.isArray(session.matches) ? session.matches.filter(Boolean) : null;
+    const preloadedRaw = Array.isArray(session.matches) ? session.matches.filter(Boolean) : null;
+    const preloaded = preloadedRaw
+      ? filterAcceptableDisambiguationCandidates(foodName, preloadedRaw)
+      : null;
+    const forceExternal = session.needsExternalSearch === true;
+
+    const dbCtx = {
+      kentuItDb: session.kentuItDb,
+      personalDb: session.personalDb,
+      globalDb: session.globalDb,
+      offDb: session.offDb,
+      signal: controller.signal,
+      onProgress: (info) => {
+        if (controller.signal.aborted) return;
+        setLocalSession((prev) => ({
+          ...(prev || { foodName, matches: [], error: '' }),
+          foodName,
+          isLoading: true,
+          loadingMessage: String(info?.message || '').trim(),
+          searchPhase: info?.phase || null,
+          canInterrupt: info?.level === 2,
+          error: '',
+        }));
+      },
+    };
 
     void (async () => {
       setManualSearchOpen(false);
-      if (preloaded && preloaded.length > 0) {
+
+      // Match L1 già pronti dal controller → mostra subito, niente L2.
+      if (preloaded && preloaded.length > 0 && !forceExternal) {
         if (controller.signal.aborted) return;
         setLocalSession({
           foodName,
           isLoading: false,
-          matches: preloaded.slice(0, 4),
+          matches: preloaded,
           error: '',
+          loadingMessage: '',
+          searchPhase: null,
+          canInterrupt: false,
         });
         return;
       }
 
-      setLocalSession({
-        foodName,
-        isLoading: true,
-        matches: [],
-        error: '',
-      });
-
       try {
-        const matches = await collectMultiDbFoodCandidates(foodName, {
-          kentuItDb: session.kentuItDb,
-          personalDb: session.personalDb,
-          globalDb: session.globalDb,
-          offDb: session.offDb,
-          signal: controller.signal,
+        let matches = [];
+
+        if (!forceExternal) {
+          setLocalSession({
+            foodName,
+            isLoading: true,
+            matches: [],
+            error: '',
+            loadingMessage: 'Cerco nel Database Personale e Kentu ITA…',
+            searchPhase: 'local',
+            canInterrupt: false,
+          });
+          matches = await collectLevel1LocalCandidates(foodName, dbCtx);
+          if (controller.signal.aborted) return;
+
+          if (matches.length > 0) {
+            setLocalSession({
+              foodName,
+              isLoading: false,
+              matches,
+              error: '',
+              loadingMessage: '',
+              searchPhase: null,
+              canInterrupt: false,
+            });
+            return;
+          }
+        }
+
+        setLocalSession({
+          foodName,
+          isLoading: true,
+          matches: [],
+          error: '',
+          loadingMessage: 'Non trovato nei tuoi archivi. Interrogazione Open Food Facts e USDA in corso…',
+          searchPhase: 'external',
+          canInterrupt: true,
         });
+        matches = await collectLevel2ExternalCandidates(foodName, dbCtx);
         if (controller.signal.aborted) return;
+
         setLocalSession({
           foodName,
           isLoading: false,
-          matches: Array.isArray(matches) ? matches.slice(0, 4) : [],
+          matches: filterAcceptableDisambiguationCandidates(foodName, matches),
           error: '',
+          loadingMessage: '',
+          searchPhase: null,
+          canInterrupt: false,
         });
       } catch (error) {
         if (controller.signal.aborted) return;
-        console.warn('[ChatFoodEnrichmentModal] multi-DB search failed', error);
+        console.warn('[ChatFoodEnrichmentModal] tiered search failed', error);
         setLocalSession({
           foodName,
           isLoading: false,
           matches: [],
-          error: 'Ricerca multi-database non disponibile. Usa scanner, foto etichetta, ricerca o crea al volo.',
+          error: 'Ricerca non disponibile. Usa scanner, foto etichetta, ricerca manuale o crea al volo.',
+          loadingMessage: '',
+          searchPhase: null,
+          canInterrupt: false,
         });
       }
     })();
@@ -122,6 +217,7 @@ export default function ChatFoodEnrichmentModal({
     session?.globalDb,
     session?.offDb,
     session?.matches,
+    session?.needsExternalSearch,
   ]);
 
   const handleCameraResolve = useCallback(async (mode) => {
@@ -244,6 +340,7 @@ export default function ChatFoodEnrichmentModal({
   const isMcdriveMode = session?.mode === 'mcdrive';
   const isDisambiguation = session?.variant === 'disambiguation' || isMcdriveMode;
   const foodName = String(localSession?.foodName || session?.foodName || '').trim();
+  const isLoading = Boolean(localSession?.isLoading);
 
   return (
     <>
@@ -251,7 +348,11 @@ export default function ChatFoodEnrichmentModal({
         isOpen
         variant={isDisambiguation ? 'disambiguation' : (isMcdriveMode ? 'mcdrive' : 'chat')}
         productName={foodName}
-        isLoading={localSession?.isLoading}
+        isLoading={isLoading}
+        loadingMessage={localSession?.loadingMessage || ''}
+        searchPhase={localSession?.searchPhase || null}
+        canInterruptSearch={Boolean(localSession?.canInterrupt && isLoading)}
+        onInterruptSearch={interruptSearch}
         error={localSession?.error}
         matches={localSession?.matches || []}
         onSelectMatch={onSelectMatch}
@@ -261,12 +362,25 @@ export default function ChatFoodEnrichmentModal({
             setManualSearchOpen(false);
             return;
           }
+          if (isLoading && abortRef.current) {
+            abortRef.current.abort();
+          }
           onSkip?.();
         }}
-        onScanBarcode={() => handleCameraResolve('barcode')}
-        onUseLabelPhoto={() => handleCameraResolve('label')}
-        onManualSearch={() => setManualSearchOpen(true)}
+        onScanBarcode={() => {
+          if (isLoading && abortRef.current) abortRef.current.abort();
+          handleCameraResolve('barcode');
+        }}
+        onUseLabelPhoto={() => {
+          if (isLoading && abortRef.current) abortRef.current.abort();
+          handleCameraResolve('label');
+        }}
+        onManualSearch={() => {
+          if (isLoading) interruptSearch();
+          else setManualSearchOpen(true);
+        }}
         cameraBusy={cameraBusy}
+        allowActionsWhileLoading
       />
       <UniversalSearchModal
         isOpen={manualSearchOpen}

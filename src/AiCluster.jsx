@@ -513,7 +513,35 @@ export default function AiCluster({
         source: 'quick_event',
       };
     }
-    // Stesso layout cinema header dell'Inserimento Pasti Guidato (KentuProcessingBanner).
+
+    // Inserimento Pasti: video elaborazione SOLO durante validazione post-«Calcola Valori»
+    // (status processing/validating), non mentre l'utente compila i raw sulla lavagna.
+    const mcdriveValidating = Boolean(dockedMcDriveTray) && (
+      showTypingIndicator
+      || (
+        Array.isArray(mcdriveTrayItems)
+        && mcdriveTrayItems.some((item) => {
+          const status = String(item?.status || '').toLowerCase();
+          return status === 'processing' || status === 'validating';
+        })
+      )
+    );
+    if (mcdriveValidating) {
+      const mealPoster = getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, AVATAR_MOOD_SRC[AVATAR_MOOD.CODING]);
+      const mealVideo = getAvatarVideoForMood(AVATAR_MOOD.KITCHEN)
+        || getAvatarVideoForMood(AVATAR_MOOD.CODING)
+        || '/Hacker4animazione.mp4';
+      return {
+        posterSrc: mealPoster || typingAvatarPosterSrc,
+        videoSrc: mealVideo,
+        label: AVATAR_MOOD_LABEL[AVATAR_MOOD.KITCHEN] || typingIndicatorLabel,
+        loop: true,
+        messageKey: null,
+        source: 'processing',
+      };
+    }
+
+    // Report: stesso layout cinema, senza bloccare McDrive.
     if (reportVideoActive) {
       return {
         posterSrc: REPORT_COVER_SRC,
@@ -525,7 +553,6 @@ export default function AiCluster({
         source: 'report',
       };
     }
-    // Dopo/oltre il video report: niente Hacker/pensatore.
     if (isReportSequenceActive) {
       return null;
     }
@@ -543,13 +570,15 @@ export default function AiCluster({
   }, [
     quickEventCinema,
     dismissedCinemaKeys,
+    dockedMcDriveTray,
+    mcdriveTrayItems,
+    showTypingIndicator,
+    typingAvatarPosterSrc,
+    typingIndicatorLabel,
     reportVideoActive,
     reportSessionKey,
     isReportSequenceActive,
-    showTypingIndicator,
-    typingAvatarPosterSrc,
     typingAvatarVideoSrc,
-    typingIndicatorLabel,
   ]);
 
   useEffect(() => {
@@ -1328,6 +1357,7 @@ export default function AiCluster({
                               || msg.reportCard?.coverSrc
                               || REPORT_COVER_SRC
                             }
+                            reportData={msg.reportCard?.phantomData || msg.reportCard?.data || null}
                             ready
                           />
                         </div>

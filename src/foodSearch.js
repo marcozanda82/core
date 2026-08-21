@@ -578,23 +578,32 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   const limit = Number.isFinite(options.limit) && options.limit > 0
     ? Math.floor(options.limit)
     : DEFAULT_SEARCH_LIMIT;
+  // Cataloghi pesanti (USDA / OFF): non scansionare l'intero Object.entries.
+  const maxEntriesToScan = Number.isFinite(options.maxEntriesToScan) && options.maxEntriesToScan > 0
+    ? Math.floor(options.maxEntriesToScan)
+    : null;
+  const earlyExitOnStrong = options.earlyExitOnStrong === true;
 
   const queryWords = normalizedQuery.split(' ').filter(Boolean);
   if (queryWords.length === 0) return [];
 
   const results = [];
   const entries = Object.entries(foodDb);
+  const scanLimit = maxEntriesToScan != null
+    ? Math.min(entries.length, maxEntriesToScan)
+    : entries.length;
   const recentFoodScores = includeUserHistory ? buildRecentFoodScoreMap() : new Map();
 
   // Solo con storico utente serve il max usage; su OFF (~100k+) evita un pass O(n) inutile.
   let maxUsageInDb = 1;
   if (includeUserHistory) {
-    for (let i = 0; i < entries.length; i += 1) {
+    for (let i = 0; i < scanLimit; i += 1) {
       maxUsageInDb = Math.max(maxUsageInDb, getFoodUsageCount(entries[i][1]));
     }
   }
 
-  for (let i = 0; i < entries.length; i += 1) {
+  let strongHitCount = 0;
+  for (let i = 0; i < scanLimit; i += 1) {
     const [id, food] = entries[i];
     const descName = String(food?.desc || '').trim();
     const altName = String(food?.name || '').trim();
@@ -718,6 +727,19 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       allTokensMatch,
       lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
     });
+
+    if (
+      matchTier === 'exact'
+      || matchTier === 'prefix'
+      || matchTier === 'token_exact'
+      || Number(strictScore) >= 75
+    ) {
+      strongHitCount += 1;
+    }
+    // Con limite scan (mega-DB): stop appena abbiamo abbastanza match forti da rankare.
+    if (earlyExitOnStrong && strongHitCount >= limit && results.length >= limit) {
+      break;
+    }
   }
 
   // Fuzzy fallback: se non ci sono match forti (≥75), anche in presenza di substring deboli.
@@ -728,7 +750,9 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   });
   if (!hasStrongMatch && enableFuzzy) {
     const existingIds = new Set(results.map((r) => String(r.id)));
-    for (let i = 0; i < entries.length; i += 1) {
+    const fuzzyScanLimit = scanLimit;
+    let fuzzyAdded = 0;
+    for (let i = 0; i < fuzzyScanLimit; i += 1) {
       const [id, food] = entries[i];
       if (existingIds.has(String(id))) continue;
       const descName = String(food?.desc || '').trim();
@@ -802,6 +826,11 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         fuzzyDistance: fuzzy.distance,
         lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
       });
+      fuzzyAdded += 1;
+      // Mega-DB: cap immediato sui fuzzy, niente secondo full-scan.
+      if (fuzzyAdded >= Math.max(limit, 5) || (earlyExitOnStrong && fuzzyAdded >= limit)) {
+        break;
+      }
     }
   }
 

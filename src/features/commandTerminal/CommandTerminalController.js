@@ -1163,6 +1163,7 @@ export class CommandTerminalController {
 
   /**
    * Ciclo validazione: primo raw → processing (+ delay UI) → match DB → resolved e continua; fail → enrichment pause.
+   * Parte solo da «Calcola Valori» (finishMcdriveWizard) — mai in automatico sull'append.
    */
   async processNextRawMcdriveItem() {
     if (this.mcdriveValidationRunning) {
@@ -1185,12 +1186,45 @@ export class CommandTerminalController {
     const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
     this.rememberMcdriveContextState(currentState);
 
-    // Stato transitorio visivo prima di qualsiasi lookup DB / matcher.
+    // Nome vuoto: fallimento immediato, niente delay / lookup.
+    if (!foodName) {
+      this.mcdriveValidationRunning = false;
+      const afterEmpty = [...this.pendingMcDriveDraft];
+      afterEmpty[idx] = {
+        ...item,
+        id: item.id,
+        foodName: '',
+        spokenFoodName: '',
+        status: 'requires_disambiguation',
+        candidates: [],
+        alternatives: [],
+        confidenceScore: 0,
+        needsExternalSearch: false,
+        searchLevel: 1,
+        kcal: 0,
+        pro: 0,
+        carbo: 0,
+        fat: 0,
+        foodDbKey: null,
+      };
+      this.pendingMcDriveDraft = afterEmpty;
+      this.publishMcdriveTraySync();
+      this.openMcdriveDisambiguationForItem(idx);
+      return { ok: true, paused: true, reason: 'requires_disambiguation' };
+    }
+
+    // Paint minimo "processing" senza timer artificiali (niente 80ms per elemento).
     const nextList = [...list];
     nextList[idx] = { ...item, status: 'processing' };
     this.pendingMcDriveDraft = nextList;
     this.publishMcdriveTraySync();
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await new Promise((resolve) => {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(() => resolve());
+      } else {
+        queueMicrotask(resolve);
+      }
+    });
 
     let resolved = null;
     try {
@@ -1207,6 +1241,7 @@ export class CommandTerminalController {
         throw error;
       }
       console.warn('[CommandTerminalController] McDrive sequential match failed', error);
+      // Fallimento ricerca: esci subito verso disambiguazione (niente retry/wait).
       resolved = {
         match: null,
         needsDisambiguation: true,
@@ -1249,6 +1284,8 @@ export class CommandTerminalController {
       };
       this.pendingMcDriveDraft = after;
       this.publishMcdriveTraySync();
+      // Passaggio coda immediato (microtask): niente delay tra item risolti.
+      await Promise.resolve();
       return this.processNextRawMcdriveItem();
     }
 
@@ -1264,6 +1301,8 @@ export class CommandTerminalController {
       candidates,
       alternatives: resolved?.alternatives || [],
       confidenceScore: Number(resolved?.confidenceScore) || 0,
+      needsExternalSearch: resolved?.needsExternalSearch === true,
+      searchLevel: Number(resolved?.searchLevel) || 1,
       kcal: 0,
       pro: 0,
       carbo: 0,
@@ -1299,6 +1338,8 @@ export class CommandTerminalController {
         mode: 'mcdrive',
         variant: 'disambiguation',
         matches: Array.isArray(item.candidates) ? item.candidates : [],
+        needsExternalSearch: item.needsExternalSearch === true
+          || (Array.isArray(item.candidates) && item.candidates.length === 0),
         personalDb: dbCtx.personalDb,
         kentuItDb: dbCtx.kentuItDb,
         globalDb: dbCtx.globalDb,

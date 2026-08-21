@@ -635,21 +635,25 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
       candidates: [],
       confidenceScore: 0,
       needsDisambiguation: true,
+      searchLevel: 1,
+      needsExternalSearch: true,
     };
   }
 
+  // L1 subito; L2 deferito alla UI di disambiguazione (feedback + Interrompi).
   const decision = await resolveFoodAcrossDatabases(name, {
     personalDb: ctx.personalDb,
     kentuItDb: ctx.kentuItDb,
     globalDb: ctx.globalDb,
     offDb: ctx.offDb,
     signal: ctx.signal,
+    deferExternalSearch: ctx.deferExternalSearch !== false,
+    onProgress: ctx.onProgress,
   });
 
   if (!decision.needsDisambiguation && decision.match) {
-    // Compat: se arriva un match “high” legacy senza score numerico, ok.
     const label = String(decision.match.confidence || '').toLowerCase();
-    if (label && !VALID_CONFIDENCE.has(label) && Number(decision.confidenceScore) < 0.85) {
+    if (label && !VALID_CONFIDENCE.has(label) && Number(decision.confidenceScore) < 0.8) {
       return {
         ...decision,
         match: null,

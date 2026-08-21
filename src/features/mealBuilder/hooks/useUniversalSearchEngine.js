@@ -15,6 +15,8 @@ const PERSONAL_SEARCH_LIMIT = 40;
 const KENTU_IT_SEARCH_LIMIT = 40;
 const GLOBAL_SEARCH_LIMIT = 40;
 const OFF_SEARCH_LIMIT = 40;
+/** Cataloghi pesanti (USDA / OFF): cap su Object.entries per non bloccare il main thread. */
+const HEAVY_CATALOG_MAX_SCAN = 4000;
 /** Cap assoluto risultati UI / merge (mai renderizzare migliaia di nodi). */
 export const MERGED_SEARCH_RESULT_CAP = 40;
 
@@ -380,6 +382,10 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
     .slice(0, Math.max(1, Math.floor(cap) || MERGED_SEARCH_RESULT_CAP));
 }
 
+function isHeavyCatalogSource(dbSource) {
+  return dbSource === FOOD_DB_SOURCE.GLOBAL || dbSource === FOOD_DB_SOURCE.OFF;
+}
+
 function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
   const safeDb = normalizeCatalogDb(catalogDb);
   const q = String(query || '').trim();
@@ -392,12 +398,19 @@ function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
     // ma evitiamo di scaricare junk irrilevante nei pool.
     enableFuzzy = false,
     requireUsableKcal = dbSource === FOOD_DB_SOURCE.OFF,
+    maxEntriesToScan = null,
+    earlyExitOnStrong = false,
   } = options;
+  const heavy = isHeavyCatalogSource(dbSource);
+  const effectiveLimit = limit;
   const detailed = searchFoodsDetailed(safeDb, q, {
     includeUserHistory: dbSource === FOOD_DB_SOURCE.KENTU_IT,
-    limit: Math.max(limit * 2, limit),
+    limit: Math.max(effectiveLimit * 2, effectiveLimit),
     mode: 'search',
-    enableFuzzy,
+    enableFuzzy: heavy ? false : enableFuzzy,
+    maxEntriesToScan: maxEntriesToScan
+      ?? (heavy ? HEAVY_CATALOG_MAX_SCAN : null),
+    earlyExitOnStrong: earlyExitOnStrong || heavy,
   });
   const results = [];
   detailed.forEach((hit) => {
@@ -409,7 +422,7 @@ function searchCatalogDb(query, catalogDb, existingResults, options = {}) {
       results.push(mapped);
     }
   });
-  return results.slice(0, limit);
+  return results.slice(0, effectiveLimit);
 }
 
 function yieldToMainThread() {
@@ -436,26 +449,37 @@ async function searchCatalogDbChunked(query, catalogDb, existingResults, options
     dbSource = FOOD_DB_SOURCE.KENTU_IT,
     enableFuzzy = false,
     requireUsableKcal = dbSource === FOOD_DB_SOURCE.OFF,
+    maxEntriesToScan = null,
   } = options;
+
+  const heavy = isHeavyCatalogSource(dbSource);
+  const effectiveLimit = limit;
+  const scanCap = maxEntriesToScan
+    ?? (heavy ? HEAVY_CATALOG_MAX_SCAN : null);
 
   const entries = Object.entries(safeDb);
   const results = [];
-  const poolLimit = Math.max(limit * 2, limit);
+  const poolLimit = Math.max(effectiveLimit * 2, effectiveLimit);
+  const hardScanEnd = scanCap != null
+    ? Math.min(entries.length, scanCap)
+    : entries.length;
 
-  for (let start = 0; start < entries.length; start += MEGA_SEARCH_CHUNK_SIZE) {
-    if (isSearchAborted(signal)) return results.slice(0, limit);
+  for (let start = 0; start < hardScanEnd; start += MEGA_SEARCH_CHUNK_SIZE) {
+    if (isSearchAborted(signal)) return results.slice(0, effectiveLimit);
 
-    const chunkEntries = entries.slice(start, start + MEGA_SEARCH_CHUNK_SIZE);
+    const chunkEnd = Math.min(start + MEGA_SEARCH_CHUNK_SIZE, hardScanEnd);
+    const chunkEntries = entries.slice(start, chunkEnd);
     const chunkDb = Object.fromEntries(chunkEntries);
     const detailed = searchFoodsDetailed(chunkDb, q, {
       includeUserHistory: dbSource === FOOD_DB_SOURCE.KENTU_IT,
       limit: poolLimit,
       mode: 'search',
-      enableFuzzy,
+      enableFuzzy: heavy ? false : enableFuzzy,
+      earlyExitOnStrong: heavy,
     });
 
     detailed.forEach((hit) => {
-      if (results.length >= limit) return;
+      if (results.length >= effectiveLimit) return;
       const row = safeDb[hit.id];
       if (!row) return;
       if (requireUsableKcal && !hasUsableOffKcal(row)) return;
@@ -465,11 +489,11 @@ async function searchCatalogDbChunked(query, catalogDb, existingResults, options
       }
     });
 
-    if (results.length >= limit) break;
+    if (results.length >= effectiveLimit) break;
     await yieldToMainThread();
   }
 
-  return results.slice(0, limit);
+  return results.slice(0, effectiveLimit);
 }
 
 /**
@@ -632,26 +656,37 @@ export function searchKentuItDb(query, kentuItDb, existingResults = []) {
 
 /**
  * Tier 3 — catalogo Kentu DB 🌐 (esplorazione globale).
+ * Scan cap su Object.entries: evita full-scan sincrono su USDA.
  */
-export function searchGlobalDb(query, globalDb, existingResults = []) {
+export function searchGlobalDb(query, globalDb, existingResults = [], overrides = {}) {
   return searchCatalogDb(query, globalDb, existingResults, {
     limit: GLOBAL_SEARCH_LIMIT,
     legacySource: 'master',
     dbSource: FOOD_DB_SOURCE.GLOBAL,
+    enableFuzzy: false,
+    maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
+    earlyExitOnStrong: true,
+    ...overrides,
   });
 }
 
 /**
  * Tier 4 — Open Food Facts (solo kcal > 0).
+ * Scan cap su Object.entries: evita full-scan sincrono su OFF.
  */
-export function searchOffDb(query, offDb, existingResults = []) {
-  return searchCatalogDb(query, offDb, existingResults, {
+export function searchOffDb(query, offDb, existingResults = [], overrides = {}) {
+  const merged = {
     limit: OFF_SEARCH_LIMIT,
     legacySource: 'off',
     dbSource: FOOD_DB_SOURCE.OFF,
     enableFuzzy: false,
     requireUsableKcal: true,
-  }).slice(0, OFF_SEARCH_LIMIT);
+    maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
+    earlyExitOnStrong: true,
+    ...overrides,
+  };
+  return searchCatalogDb(query, offDb, existingResults, merged)
+    .slice(0, merged.limit ?? OFF_SEARCH_LIMIT);
 }
 
 /**
