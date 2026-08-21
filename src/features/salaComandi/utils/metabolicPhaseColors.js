@@ -1,5 +1,6 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../../../coreEngine';
 import { resolveOvernightCarryMeal } from '../../../utils/dayTrackingStatus';
+import { isFastingBreakerLogItem } from '../../../utils/fastingBreakRules';
 import { parseDecimalHourFromValue } from './mealConsumedTime';
 import { METABOLIC_PHASES, resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
 import {
@@ -10,6 +11,8 @@ import {
   POST_ABSORPTION_PHASES,
   resolveKineticMetabolicPhase,
 } from '../../metabolic/MetabolicKinetics';
+
+export { isFastingBreakerLogItem, FASTING_BREAK_THRESHOLDS } from '../../../utils/fastingBreakRules';
 
 export const METABOLIC_PHASE_COLORS = Object.freeze({
   digestiva: '#22d3ee',
@@ -84,61 +87,6 @@ export function resolveMetabolicColorForHoursFasted(hoursFasted) {
 
 const MEAL_HOUR_EPS = 0.002;
 const MEAL_TYPES = new Set(['food', 'recipe', 'ghost_meal']);
-
-/** Soglia tolleranza metabolica: sotto questi valori il pasto non interrompe il digiuno. */
-const FASTING_BREAK_THRESHOLDS = Object.freeze({
-  kcal: 10,
-  carbs: 1,
-  protein: 1,
-});
-
-function readItemKcal(item) {
-  const n = Number(item?.kcal ?? item?.cal ?? item?.calories ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function readItemCarbs(item) {
-  const n = Number(item?.carb ?? item?.carbs ?? item?.carboidrati ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function readItemProtein(item) {
-  const n = Number(item?.prot ?? item?.protein ?? item?.proteine ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
-
-/**
- * Pasto che interrompe il digiuno (supera soglia fisiologica trascurabile).
- * Ignora caffè amaro / stimolanti con breaksFast:false / 0 kcal.
- * @param {object | null | undefined} item
- * @returns {boolean}
- */
-export function isFastingBreakerLogItem(item) {
-  if (!item || typeof item !== 'object') return false;
-
-  const type = String(item.type || '').toLowerCase();
-  if (type === 'stimulant' || type === 'energizer') {
-    // Lazy import avoided — inline mirror of coffeeLogEngine.isStimulantFastingBreaker
-    if (item.breaksFast === false) return false;
-    if (item.breaksFast === true) return true;
-    if (item.coffeeVariant === 'amaro') return false;
-    if (item.coffeeVariant === 'zuccherato') return true;
-    const kcal = readItemKcal(item);
-    const carbs = readItemCarbs(item);
-    return kcal > FASTING_BREAK_THRESHOLDS.kcal || carbs > FASTING_BREAK_THRESHOLDS.carbs;
-  }
-  if (type === 'water') return false;
-
-  if (!isMealLikeLogItem(item)) return false;
-  const kcal = readItemKcal(item);
-  const carbs = readItemCarbs(item);
-  const protein = readItemProtein(item);
-  return (
-    kcal > FASTING_BREAK_THRESHOLDS.kcal
-    || carbs > FASTING_BREAK_THRESHOLDS.carbs
-    || protein > FASTING_BREAK_THRESHOLDS.protein
-  );
-}
 
 /** Ore decimali 0–24 arrotondate a 30s (allineamento timeline ↔ overlay metabolico). */
 export function normalizeMealHour(hour) {
@@ -220,20 +168,12 @@ function resolveAnchorDateStr(referenceDateObj, anchorDate) {
   return new Date(d.getTime() - offset).toISOString().slice(0, 10);
 }
 
-/**
- * Carry overnight: non attraversa giorni Null (vuoti senza isIntentionalFast).
- * @returns {{ lastMealTime: number, intentionalEmptyDays: number, sourceDate: string } | null}
- */
+/** @returns {{ lastMealTime: number, intentionalEmptyDays: number, sourceDate: string } | null} */
 function getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate) {
   if (!fullHistory) return null;
   const anchorStr = resolveAnchorDateStr(referenceDateObj, anchorDate);
   if (!anchorStr) return null;
   return resolveOvernightCarryMeal(fullHistory, anchorStr);
-}
-
-/** @returns {number | null} orario ultimo pasto sul giorno sorgente */
-function getYesterdayLastMealTime(fullHistory, referenceDateObj, anchorDate) {
-  return getOvernightCarryContext(fullHistory, referenceDateObj, anchorDate)?.lastMealTime ?? null;
 }
 
 /**

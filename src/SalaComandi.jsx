@@ -9,7 +9,7 @@
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell } from 'recharts';
@@ -464,6 +464,7 @@ const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { db, auth, user } = useFirebase();
   const isAuthenticated = !!user;
   const userUid = user?.uid ?? null;
@@ -499,6 +500,8 @@ export default function SalaComandi() {
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
   const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
+  /** Emisfero bloccato quando l'overlay è aperto da un widget Home. */
+  const [snapshotOverlayHemisphere, setSnapshotOverlayHemisphere] = useState('progressione');
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
@@ -641,6 +644,7 @@ export default function SalaComandi() {
   /** Home / deep-link → Fotografia Progressione (diagnostica). */
   const handleOpenTrendDiag = useCallback(() => {
     persistTrendHubHemisphere('progressione');
+    setSnapshotOverlayHemisphere('progressione');
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -649,6 +653,7 @@ export default function SalaComandi() {
   /** Home twin widget → Fotografia emisfero Salute. */
   const handleOpenTrendSalute = useCallback(() => {
     persistTrendHubHemisphere('salute');
+    setSnapshotOverlayHemisphere('salute');
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -657,6 +662,7 @@ export default function SalaComandi() {
   /** Home twin widget → Fotografia emisfero Progressione. */
   const handleOpenTrendProgressione = useCallback(() => {
     persistTrendHubHemisphere('progressione');
+    setSnapshotOverlayHemisphere('progressione');
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -665,6 +671,24 @@ export default function SalaComandi() {
   const handleCloseSnapshotOverlay = useCallback(() => {
     setSnapshotOverlayOpen(false);
   }, []);
+
+  /** Deep-link da `/centro-analisi` → stessa Fotografia dei widget Home. */
+  useEffect(() => {
+    const target = String(location.state?.openFotografia || '').toLowerCase();
+    if (target !== 'salute' && target !== 'progressione') return undefined;
+    if (target === 'salute') {
+      persistTrendHubHemisphere('salute');
+      setSnapshotOverlayHemisphere('salute');
+    } else {
+      persistTrendHubHemisphere('progressione');
+      setSnapshotOverlayHemisphere('progressione');
+    }
+    setSnapshotOverlayOpen(true);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+    navigate(location.pathname || '/', { replace: true, state: {} });
+    return undefined;
+  }, [location.state, location.pathname, navigate]);
 
   const handleMainTabTouchCancel = useCallback((e) => {
     if (mainTabSwipeIgnoreRef.current && typeof e?.stopPropagation === 'function') {
@@ -755,15 +779,17 @@ export default function SalaComandi() {
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
   const [foodDbNeeded, setFoodDbNeeded] = useState(false);
-  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
+  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, offDb: offFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
   useEffect(() => {
     if (foodDbNeeded) return;
     if (showFastLogger || activeAction === 'ai_chat') setFoodDbNeeded(true);
   }, [showFastLogger, activeAction, foodDbNeeded]);
   const kentuCatalogItDbRef = useRef(kentuCatalogItDb);
   const csvFoodDbRef = useRef(csvFoodDb);
+  const offFoodDbRef = useRef(offFoodDb);
   kentuCatalogItDbRef.current = kentuCatalogItDb;
   csvFoodDbRef.current = csvFoodDb;
+  offFoodDbRef.current = offFoodDb;
 
   const runHistoricalFoodDbSanitize = useCallback(async ({ dryRun = false } = {}) => {
     const uid = userUid || auth?.currentUser?.uid;
@@ -5481,6 +5507,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     activeLog,
     currentTrackerDate,
     metabolicBiometrics,
+    manualNodes,
   );
 
   const userAge = calculateAge(birthDate);
@@ -7004,6 +7031,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     handleMcDriveAppendSolverItems,
+    handleMcDriveRequestDisambiguation,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
     handleWorkoutDraftRemoveExercise,
@@ -7066,6 +7094,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         foodDatabase: foodDb,
         kentuItDatabase: kentuCatalogItDbRef.current || {},
         globalFoodDatabase: csvFoodDbRef.current || {},
+        offDb: offFoodDbRef.current || {},
+        offDatabase: offFoodDbRef.current || {},
         activeLog: activeLog || [],
         userTargets: effectiveTargetsForCurrentDate,
         dynamicDailyKcal:
@@ -7193,6 +7223,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       foodDatabase: foodDb,
       kentuItDatabase: kentuCatalogItDb,
       globalFoodDatabase: csvFoodDb,
+      offDb: offFoodDb,
       fullHistory,
       dailyLog: activeLog,
       onDraftConfirm: handleDraftConfirm,
@@ -7207,6 +7238,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
       onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
       onMcDriveAppendSolverItems: handleMcDriveAppendSolverItems,
+      onMcDriveRequestDisambiguation: handleMcDriveRequestDisambiguation,
       getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
       onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
       onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
@@ -7243,6 +7275,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     foodDb,
     kentuCatalogItDb,
     csvFoodDb,
+    offFoodDb,
     fullHistory,
     activeLog,
     handleDraftConfirm,
@@ -7257,6 +7290,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     handleMcDriveAppendSolverItems,
+    handleMcDriveRequestDisambiguation,
     getFastLoggerMealTargetsForSlot,
     handleWorkoutDraftUpdateMeta,
     handleWorkoutDraftUpdateExercise,
@@ -8403,7 +8437,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             >
               ← Home
             </button>
-            <span className="snapshot-overlay-title">Fotografia</span>
+            <span className="snapshot-overlay-title">
+              {snapshotOverlayHemisphere === 'salute' ? 'Salute' : 'Progressione'}
+            </span>
             <span className="snapshot-overlay-chrome-spacer" aria-hidden />
           </div>
           <Suspense fallback={<KentuLazySectionFallback label="Fotografia…" />}>
@@ -8431,6 +8467,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               bodyMetricsHistory={bodyMetricsHistory}
               profileHeightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || 174}
               enabled={snapshotOverlayOpen}
+              lockedHemisphere={snapshotOverlayHemisphere}
+              hideHemisphereNav
             />
           </Suspense>
         </div>
@@ -9213,6 +9251,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             <CentroAnalisiView
               embedded
               onExit={() => setActiveBottomTab('oggi')}
+              onOpenFotografiaSalute={handleOpenTrendSalute}
+              onOpenFotografiaProgressione={handleOpenTrendProgressione}
             />
           </Suspense>
         </div>
@@ -9914,6 +9954,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             foodDatabase={foodDb}
             kentuItDatabase={kentuCatalogItDb}
             globalFoodDatabase={csvFoodDb}
+            offDb={offFoodDb}
             fullHistory={fullHistory}
             dailyLog={activeLog}
             onDraftConfirm={handleDraftConfirm}
@@ -9928,6 +9969,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
             onMcDriveReplaceFromSearch={handleMcDriveReplaceFromSearch}
             onMcDriveAppendSolverItems={handleMcDriveAppendSolverItems}
+            onMcDriveRequestDisambiguation={handleMcDriveRequestDisambiguation}
             getMcDriveMealTargets={getFastLoggerMealTargetsForSlot}
             onWorkoutDraftUpdateMeta={handleWorkoutDraftUpdateMeta}
             onWorkoutDraftUpdateExercise={handleWorkoutDraftUpdateExercise}

@@ -104,6 +104,14 @@ import {
   isGenericMealLogIntentOnly,
 } from './conversation/mealLogIntent.js';
 import {
+  REPORT_ANIMATION_SRC,
+  REPORT_COVER_SRC,
+  buildPeriodReportData,
+  buildReportSystemInstruction,
+  formatPeriodReportMarkdown,
+  matchReportCommand,
+} from './conversation/reportCommandIntent.js';
+import {
   MCDRIVE_CANCEL_CHIP,
   MCDRIVE_FINISH_CHIP,
   MCDRIVE_START_MESSAGE,
@@ -125,10 +133,10 @@ import {
   rescaleMcDriveItemGrams,
   findNextRawMcDriveIndex,
   hasPendingMcDriveEnrichment,
+  isMcDriveDisambiguationStatus,
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
 } from './conversation/mcdriveWizard.js';
-import { buildProvisionalCustomFoodItem } from '../../utils/getFoodIcon.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
 import { getFoodItemsForMealSlotFromLog } from '../../utils/mealProposalBuilders.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
@@ -1038,20 +1046,15 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
 
     if (typeof this.onRequestUsdaEnrichment === 'function') {
+      const dbCtx = this.getFastPathContext(currentState);
       this.onRequestUsdaEnrichment({
         foodName,
-        kentuItDb: currentState?.kentuItDatabase
-          || currentState?.kentuItDb
-          || currentState?.kentuFoodDb
-          || null,
-        personalDb: currentState?.foodDatabase
-          || currentState?.trackerFoodDatabase
-          || currentState?.personalFoodDb
-          || null,
-        globalDb: currentState?.globalFoodDatabase
-          || currentState?.globalDb
-          || currentState?.usdaDatabase
-          || null,
+        mode: 'mcdrive',
+        variant: 'disambiguation',
+        kentuItDb: dbCtx.kentuItDb,
+        personalDb: dbCtx.personalDb,
+        globalDb: dbCtx.globalDb,
+        offDb: dbCtx.offDb,
         resume: (match) => this.resumeMcdriveUnknown(match),
       });
     }
@@ -1168,7 +1171,7 @@ export class CommandTerminalController {
 
     const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
     if (hasPendingMcDriveEnrichment(list)) {
-      return { ok: true, paused: true, reason: 'pending_enrichment' };
+      return { ok: true, paused: true, reason: 'requires_disambiguation' };
     }
 
     const idx = findNextRawMcDriveIndex(list);
@@ -1195,6 +1198,8 @@ export class CommandTerminalController {
       resolved = await resolveMcdriveFoodViaSemanticMatchmaker(foodName, {
         personalDb: dbCtx.personalDb,
         kentuItDb: dbCtx.kentuItDb,
+        globalDb: dbCtx.globalDb,
+        offDb: dbCtx.offDb,
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -1202,11 +1207,19 @@ export class CommandTerminalController {
         throw error;
       }
       console.warn('[CommandTerminalController] McDrive sequential match failed', error);
+      resolved = {
+        match: null,
+        needsDisambiguation: true,
+        candidates: [],
+        alternatives: [],
+        confidenceScore: 0,
+        source: null,
+      };
     }
 
     this.mcdriveValidationRunning = false;
 
-    if (resolved?.match) {
+    if (resolved?.match && !resolved?.needsDisambiguation) {
       const matchFoodDbKey = String(
         resolved.match?.fdcId || resolved.match?.row?.id || resolved.match?.row?.foodDbKey || '',
       ).trim() || null;
@@ -1232,48 +1245,86 @@ export class CommandTerminalController {
         ...built,
         id: item.id || built.id,
         status: 'resolved',
+        confidenceScore: Number(resolved.confidenceScore) || null,
       };
       this.pendingMcDriveDraft = after;
       this.publishMcdriveTraySync();
       return this.processNextRawMcdriveItem();
     }
 
-    // Nessun match high-confidence: custom temporaneo con macro standard (niente allucinazione DB).
-    const provisionalGrams = resolveMcdriveGramsWithHistory(
-      item,
-      { foodDbKey: null, foodName },
-      currentState,
-    );
-    const provisional = buildProvisionalCustomFoodItem(foodName, provisionalGrams, {
+    // Confidenza insufficiente o più candidati simili: non indovinare — scheda disambiguazione.
+    const candidates = Array.isArray(resolved?.candidates) ? resolved.candidates : [];
+    const afterAmbiguous = [...this.pendingMcDriveDraft];
+    afterAmbiguous[idx] = {
+      ...item,
       id: item.id,
-    });
-    const afterProvisional = [...this.pendingMcDriveDraft];
-    afterProvisional[idx] = {
-      ...provisional,
-      id: item.id || provisional.id,
-      status: 'resolved',
-      isEstimated: true,
+      foodName,
       spokenFoodName: foodName,
+      status: 'requires_disambiguation',
+      candidates,
+      alternatives: resolved?.alternatives || [],
+      confidenceScore: Number(resolved?.confidenceScore) || 0,
+      kcal: 0,
+      pro: 0,
+      carbo: 0,
+      fat: 0,
+      foodDbKey: null,
     };
-    this.pendingMcDriveDraft = afterProvisional;
+    this.pendingMcDriveDraft = afterAmbiguous;
     this.publishMcdriveTraySync();
-    return this.processNextRawMcdriveItem();
+    this.openMcdriveDisambiguationForItem(idx);
+    return { ok: true, paused: true, reason: 'requires_disambiguation' };
+  }
+
+  /**
+   * Apre la Scheda di Risoluzione Alimento per una voce requires_disambiguation.
+   * @param {number} index
+   */
+  openMcdriveDisambiguationForItem(index) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const idx = Number.isFinite(Number(index)) ? Number(index) : -1;
+    const item = idx >= 0 ? list[idx] : null;
+    if (!item || !isMcDriveDisambiguationStatus(item)) {
+      return { ok: false, reason: 'no_disambiguation_item' };
+    }
+
+    const foodName = String(item.spokenFoodName || item.foodName || item.name || '').trim();
+    const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
+    const dbCtx = this.getFastPathContext(currentState);
+    this.mcdriveDisambiguationIndex = idx;
+
+    if (typeof this.onRequestUsdaEnrichment === 'function') {
+      this.onRequestUsdaEnrichment({
+        foodName,
+        mode: 'mcdrive',
+        variant: 'disambiguation',
+        matches: Array.isArray(item.candidates) ? item.candidates : [],
+        personalDb: dbCtx.personalDb,
+        kentuItDb: dbCtx.kentuItDb,
+        globalDb: dbCtx.globalDb,
+        offDb: dbCtx.offDb,
+        resume: (match) => this.resumeMcdriveValidationEnrichment(match, idx),
+      });
+    }
+
+    return { ok: true, foodName };
   }
 
   /**
    * Ripresa dopo ChatFoodEnrichmentModal (match trovato o skip/tralascia).
    */
-  async resumeMcdriveValidationEnrichment(match) {
+  async resumeMcdriveValidationEnrichment(match, forcedIndex = null) {
     const list = Array.isArray(this.pendingMcDriveDraft) ? [...this.pendingMcDriveDraft] : [];
-    const idx = list.findIndex(
-      (item) => String(item?.status || '').toLowerCase() === 'pending_enrichment',
-    );
+    let idx = Number.isFinite(Number(forcedIndex)) ? Number(forcedIndex) : -1;
+    if (idx < 0 || !isMcDriveDisambiguationStatus(list[idx])) {
+      idx = list.findIndex((item) => isMcDriveDisambiguationStatus(item));
+    }
     if (idx < 0) {
       return this.processNextRawMcdriveItem();
     }
 
     const pending = list[idx];
-    const foodName = String(pending?.foodName || '').trim();
+    const foodName = String(pending?.spokenFoodName || pending?.foodName || '').trim();
 
     if (!match?.row) {
       list[idx] = {
@@ -1284,9 +1335,11 @@ export class CommandTerminalController {
         carbo: 0,
         fat: 0,
         foodDbKey: null,
+        candidates: [],
       };
     } else {
       const matchFoodDbKey = String(match?.fdcId || match?.row?.id || match?.row?.foodDbKey || '').trim() || null;
+      const matchSource = String(match?.source || match?.dbSource || 'learned').trim() || 'learned';
       const grams = resolveMcdriveGramsWithHistory(
         pending,
         { foodDbKey: matchFoodDbKey, foodName: match?.name || foodName },
@@ -1296,10 +1349,10 @@ export class CommandTerminalController {
         foodName,
         grams,
         match,
-        'learned',
+        matchSource,
         {
           id: pending.id,
-          isEstimated: pending?.isEstimated === true,
+          isEstimated: pending?.isEstimated === true || match?.isCustom === true,
           alternatives: Array.isArray(pending.alternatives) ? pending.alternatives : [],
         },
       );
@@ -1307,9 +1360,12 @@ export class CommandTerminalController {
         ...built,
         id: pending.id || built.id,
         status: 'resolved',
+        isCustom: match?.isCustom === true,
+        candidates: [],
       };
     }
 
+    this.mcdriveDisambiguationIndex = null;
     this.pendingMcDriveDraft = list;
     this.publishMcdriveTraySync();
     return this.processNextRawMcdriveItem();
@@ -1343,6 +1399,7 @@ export class CommandTerminalController {
     const commitSource = draftItems.filter((item) => {
       const status = String(item?.status || '').toLowerCase();
       if (status === 'skipped' || status === 'raw' || status === 'pending_enrichment'
+        || status === 'requires_disambiguation'
         || status === 'processing' || status === 'validating') {
         return false;
       }
@@ -1850,6 +1907,10 @@ export class CommandTerminalController {
         || currentState?.kentuGlobalDb
         || currentState?.globalFoodDatabase
         || null,
+      offDb: currentState?.offDb
+        || currentState?.offDatabase
+        || currentState?.openFoodFactsDb
+        || null,
       userPortions: sanitizeUserPortionsDict(
         currentState?.userPortions
         || currentState?.nutrition?.userPortions
@@ -2249,12 +2310,121 @@ export class CommandTerminalController {
         ...(options?.isSystem === true ? { isSystem: true } : {}),
         ...(options?.systemIcon ? { systemIcon: options.systemIcon } : {}),
         ...(options?.avatarAsset ? { avatarAsset: options.avatarAsset } : {}),
+        ...(options?.reportCard && typeof options.reportCard === 'object'
+          ? { reportCard: options.reportCard }
+          : {}),
         ...(Array.isArray(withFallback) && withFallback.length > 0
           ? { quickReplies: withFallback }
           : {}),
       },
       { source: 'CommandTerminalController' },
     );
+  }
+
+  /**
+   * Intent Router — report/bollettino telemetrico (zero food parser).
+   * @param {string} userText
+   * @param {object} currentState
+   * @param {object} [options]
+   */
+  async processReportCommand(userText, currentState = {}, options = {}) {
+    const matched = matchReportCommand(userText, {
+      intent: options?.intent,
+      reportKind: options?.reportKind || options?.kind,
+    });
+    if (!matched) {
+      return { ok: false, reason: 'not_a_report_command' };
+    }
+
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'REPORT_LOADING',
+        text: '',
+        message: '',
+        reportLoading: true,
+        playIntro: true,
+        reportSessionId: `report-${Date.now()}`,
+        videoSrc: REPORT_ANIMATION_SRC,
+        coverSrc: REPORT_COVER_SRC,
+        reportCard: {
+          title: matched.label,
+          markdown: '',
+          kind: matched.kind,
+          periodLabel: matched.label,
+          coverSrc: REPORT_COVER_SRC,
+          videoSrc: REPORT_ANIMATION_SRC,
+        },
+        isSystem: false,
+        sourceTag: 'period_report_loading',
+        avatarAsset: REPORT_COVER_SRC,
+      },
+      { source: 'CommandTerminalController' },
+    );
+
+    const data = buildPeriodReportData(currentState, matched.kind);
+    const fallbackMarkdown = formatPeriodReportMarkdown(data);
+    let markdown = fallbackMarkdown;
+
+    try {
+      const { adviceMessage } = await this.llmClient.generateConsultantResponse({
+        prompt: [
+          `Genera il bollettino: ${matched.label}.`,
+          `DATI_PERIODO_JSON: ${JSON.stringify(data)}`,
+        ].join('\n'),
+        systemInstruction: buildReportSystemInstruction(data),
+        temperature: 0.35,
+        chatHistory: Array.isArray(options?.chatHistory) ? options.chatHistory : [],
+        signal: options?.signal || null,
+      });
+      const polished = String(adviceMessage || '').trim();
+      if (polished.length > 40) {
+        markdown = polished
+          .replace(/!\[[^\]]*\]\([^)]*\)\s*/g, '')
+          .trim();
+      }
+    } catch (error) {
+      if (isAbortError(error)) {
+        this.publishSystemMessage('Generazione report annullata.');
+        return { ok: false, aborted: true, intent: 'GENERATE_PERIOD_REPORT' };
+      }
+      console.warn('[ReportCommand] LLM failed, using local telemetry markdown', error);
+    }
+
+    const reportCard = {
+      title: data.title,
+      markdown,
+      kind: matched.kind,
+      periodLabel: data.periodLabel,
+      coverSrc: REPORT_COVER_SRC,
+      videoSrc: REPORT_ANIMATION_SRC,
+    };
+
+    this.bus.publish(
+      DISPATCH_SYSTEM_MESSAGE,
+      {
+        type: 'PERIOD_REPORT',
+        text: markdown,
+        message: markdown,
+        displayText: markdown,
+        isSystem: false,
+        sourceTag: 'period_report',
+        systemIcon: 'macro',
+        avatarAsset: REPORT_COVER_SRC,
+        playIntro: true,
+        videoSrc: REPORT_ANIMATION_SRC,
+        coverSrc: REPORT_COVER_SRC,
+        reportCard,
+      },
+      { source: 'CommandTerminalController' },
+    );
+
+    return {
+      ok: true,
+      intent: 'GENERATE_PERIOD_REPORT',
+      reportKind: matched.kind,
+      commandType: 'PERIOD_REPORT',
+    };
   }
 
   publishErrorMessage(message = USER_FACING_ERROR_MESSAGE) {
@@ -2481,6 +2651,12 @@ export class CommandTerminalController {
         personalDb: state.currentState?.foodDatabase
           || state.currentState?.trackerFoodDatabase
           || state.currentState?.personalFoodDb
+          || null,
+        globalDb: state.currentState?.globalFoodDatabase
+          || state.currentState?.globalDb
+          || null,
+        offDb: state.currentState?.offDb
+          || state.currentState?.offDatabase
           || null,
         resume: (usdaMatch) => this.resumeChatUsdaEnrichment(usdaMatch),
       });
@@ -4492,10 +4668,12 @@ export class CommandTerminalController {
    */
   commitCoffeeLog(variant, timeDecimal, currentState = {}, options = {}) {
     const hoursFasted = Number(
-      currentState?.healthScoreMetrics?.hoursFasted
-      ?? currentState?.metabolicSnapshot?.hoursSinceLastMeal,
+      currentState?.metabolicSnapshot?.activeFastingStatus?.hoursSinceLastMeal
+      ?? currentState?.metabolicSnapshot?.hoursSinceLastMeal
+      ?? currentState?.healthScoreMetrics?.hoursFasted,
     );
-    const inFastingWindow = isInActiveFastingWindow(hoursFasted);
+    const inFastingWindow = isInActiveFastingWindow(hoursFasted)
+      || currentState?.metabolicSnapshot?.activeFastingStatus?.isFastingActive === true;
     const node = buildCoffeeStimulantNode(variant, timeDecimal, {
       coffeeType: options.coffeeType || options.type,
       type: options.coffeeType || options.type,
@@ -4520,9 +4698,14 @@ export class CommandTerminalController {
         ],
         fastingBrokenBySweetCoffee: variant === COFFEE_VARIANT.ZUCCHERATO && inFastingWindow,
         bitterCoffeeDuringFast: variant === COFFEE_VARIANT.AMARO && inFastingWindow,
-        phaseName: currentState?.fastingData?.phaseName
+        phaseName: currentState?.metabolicSnapshot?.activeFastingStatus?.phaseLabel
           ?? currentState?.metabolicSnapshot?.phase?.label
+          ?? currentState?.fastingData?.phaseName
           ?? null,
+        phaseId: currentState?.metabolicSnapshot?.activeFastingStatus?.phaseId
+          ?? currentState?.metabolicSnapshot?.phase?.id
+          ?? null,
+        metabolicSnapshot: currentState?.metabolicSnapshot ?? null,
       }),
     });
 
@@ -4607,10 +4790,26 @@ export class CommandTerminalController {
         Boolean(currentState?.isTrainingDay),
       );
 
+    const metabolicSnapshot = currentState?.metabolicSnapshot
+      && typeof currentState.metabolicSnapshot === 'object'
+      ? currentState.metabolicSnapshot
+      : null;
+
     const displayName = resolveUserDisplayName(currentState?.userProfile)
       || String(currentState?.userDisplayName || '').trim();
     const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
-    const diagnosisContext = buildHealthDiagnosisPromptContext(healthResult);
+    const diagnosisContext = buildHealthDiagnosisPromptContext(healthResult, metabolicSnapshot);
+    const phaseLabel = String(
+      metabolicSnapshot?.phase?.label
+      || metabolicSnapshot?.phase?.name
+      || currentState?.fastingData?.phaseName
+      || '',
+    ).trim();
+    const hoursFasted = Number(
+      metabolicSnapshot?.hoursSinceLastMeal
+      ?? currentState?.healthScoreMetrics?.hoursFasted
+      ?? currentState?.fastingData?.hoursFasted,
+    );
     const systemInstruction = [
       buildChatPersonaSystemBlock({ displayName }),
       HEALTH_DIAGNOSIS_SYSTEM_BLOCK,
@@ -4620,8 +4819,13 @@ export class CommandTerminalController {
 
     const prompt = [
       'L\'utente ha toccato il mio avatar Health Score nell\'header.',
-      'Formula la diagnosi in prima persona (2 frasi max) basata sul breakdown malus sopra.',
-      `Score attuale: ${healthResult?.score ?? 'n/d'} · Stato: ${healthResult?.avatar?.label || 'n/d'}.`,
+      'Formula la diagnosi in prima persona (2 frasi max) basata sul Monitor Metabolico + breakdown malus.',
+      `Score attuale: ${healthResult?.score ?? 'n/d'} · Stato avatar: ${healthResult?.avatar?.label || 'n/d'}.`,
+      phaseLabel
+        ? `Monitor Metabolico (fonte di verità): fase «${phaseLabel}» · ore dall'ultimo pasto calorico: ${
+          Number.isFinite(hoursFasted) ? `${Math.round(hoursFasted * 10) / 10}h` : 'n/d'
+        }.`
+        : '',
       userText ? `Nota utente: ${String(userText).trim()}` : '',
     ].filter(Boolean).join('\n');
 
@@ -5463,6 +5667,26 @@ export class CommandTerminalController {
     // Local Receptionist: priorità massima assoluta su query di sola lettura (zero Gemini).
     if (forcedIntentEarly === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
+    }
+
+    // Intent Router: report/bollettino (ieri / settimana / mese) — prima del food parser.
+    {
+      const reportMatch = matchReportCommand(userText, {
+        intent: forcedIntentEarly || options?.intent,
+        reportKind: options?.reportKind || options?.kind,
+      });
+      if (
+        reportMatch
+        || forcedIntentEarly === 'GENERATE_PERIOD_REPORT'
+        || forcedIntentEarly === 'GENERATE_REPORT'
+      ) {
+        console.log('[ReportIntentRouter] intercepted → skip food/Gemini structured', reportMatch);
+        return this.processReportCommand(userText, currentState, {
+          ...options,
+          intent: forcedIntentEarly || options?.intent || 'GENERATE_PERIOD_REPORT',
+          reportKind: options?.reportKind || reportMatch?.kind,
+        });
+      }
     }
 
     if (userText && images.length === 0) {

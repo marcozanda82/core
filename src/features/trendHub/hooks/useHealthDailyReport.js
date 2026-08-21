@@ -4,12 +4,14 @@ import {
   buildFoodHealthLabelsFirebasePatch,
   buildHealthAnalysisContext,
   buildHealthReportDocument,
+  isHealthReportGeneratedToday,
   requestHealthAnalyzerReport,
 } from '../engines/HealthAnalyzerEngine';
 
 /**
  * Referto salute giornaliero (ieri) + lazy labeling sul food slice rilevante.
  * Contratto snello P1: `yesterdayLog` + `relevantFoodDatabase` (niente fullHistory).
+ * Generazione LLM: al massimo una volta per giorno calendario (`generatedAt`).
  */
 export function useHealthDailyReport({
   db = null,
@@ -60,6 +62,11 @@ export function useHealthDailyReport({
     [analysisDate, context, sleepKey],
   );
 
+  const isUpdatedToday = useMemo(
+    () => isHealthReportGeneratedToday(report, todayDate),
+    [report, todayDate],
+  );
+
   const persistReport = useCallback(
     async (doc) => {
       if (!db || !uid || !doc?.date) return;
@@ -105,6 +112,12 @@ export function useHealthDailyReport({
         return null;
       }
 
+      // Una sola generazione LLM per giorno calendario
+      if (force && isHealthReportGeneratedToday(report, todayDate)) {
+        setStatus('ready');
+        return report;
+      }
+
       inFlightRef.current = true;
       const token = ++runTokenRef.current;
       setIsRefreshing(true);
@@ -142,7 +155,7 @@ export function useHealthDailyReport({
         }
       }
     },
-    [enabled, db, uid, todayDate, context, applyLazyLabels, persistReport],
+    [enabled, db, uid, todayDate, context, report, applyLazyLabels, persistReport],
   );
 
   // Cache Firebase per la data di analisi (attendi snapshot prima di generare).
@@ -166,7 +179,7 @@ export function useHealthDailyReport({
     return () => unsub();
   }, [enabled, db, uid, analysisDate]);
 
-  // Auto-generazione: miss cache, oppure sonno appena disponibile senza insight correlato.
+  // Auto-generazione solo a cache miss (niente re-run mid-day).
   useEffect(() => {
     if (!enabled || !db || !uid || !todayDate || !cacheHydrated) return undefined;
     if (!context.hasFoods) {
@@ -174,28 +187,14 @@ export function useHealthDailyReport({
       return undefined;
     }
     const cachedForDate = report && String(report.date) === analysisDate;
-    const insightText = String(report?.sleepCorrelationInsight || '');
-    const insightClaimsMissingSleep = /manca|non (è )?disponib|assente|null|senza dato|dato sonno manc/i.test(insightText);
-    const snapshotMissing = !report?.morningSleepSnapshot
-      || !Number.isFinite(Number(report?.morningSleepSnapshot?.hours));
-    const needsSleepInsightRefresh = Boolean(
-      cachedForDate
-      && morningSleepLog
-      && Number.isFinite(Number(morningSleepLog.hours))
-      && (
-        !insightText.trim()
-        || snapshotMissing
-        || insightClaimsMissingSleep
-      ),
-    );
-    if (cachedForDate && !needsSleepInsightRefresh) {
+    if (cachedForDate) {
       setStatus('ready');
       return undefined;
     }
-    const autoKey = needsSleepInsightRefresh ? `${contextKey}|sleep-fix` : contextKey;
+    const autoKey = contextKey;
     if (lastAutoKeyRef.current === autoKey) return undefined;
     lastAutoKeyRef.current = autoKey;
-    void generateReport({ force: needsSleepInsightRefresh });
+    void generateReport({ force: false });
     return undefined;
   }, [
     enabled,
@@ -207,7 +206,6 @@ export function useHealthDailyReport({
     contextKey,
     analysisDate,
     report,
-    morningSleepLog,
     generateReport,
   ]);
 
@@ -217,10 +215,14 @@ export function useHealthDailyReport({
     status,
     errorMessage,
     isRefreshing,
+    isUpdatedToday,
     needsLabeling: context.needsLabeling,
     foodCount: context.allFoods.length,
     unknownCount: context.unknownFoods.length,
     refresh: () => {
+      if (isHealthReportGeneratedToday(report, todayDate)) {
+        return Promise.resolve(report);
+      }
       lastAutoKeyRef.current = '';
       return generateReport({ force: true });
     },

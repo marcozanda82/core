@@ -279,11 +279,11 @@ export function useDiaryFirebaseSync({
   /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */
   const syncDatiFirebase = useCallback(
     (nuovoLog, nuoviNodi) => {
-      if (isSimulationMode) return;
+      if (isSimulationMode) return Promise.resolve(false);
       const currentUser = auth.currentUser;
       if (!currentUser) {
         console.warn('⚠️ Firebase Sync interrotto: Nessun utente loggato rilevato da auth.currentUser');
-        return;
+        return Promise.resolve(false);
       }
       const uid = currentUser.uid;
 
@@ -321,14 +321,20 @@ export function useDiaryFirebaseSync({
         const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
         console.log('📁 Percorso di salvataggio:', dbPath);
 
-        set(ref(db, dbPath), sanitized)
+        // Unico write atomico per l'intera giornata (tutte le voci pasto in un payload).
+        return set(ref(db, dbPath), sanitized)
           .then(() => {
             setFullHistory((prev) => ({ ...prev, [TRACKER_STORICO_KEY(dateStr)]: sanitized }));
             console.log('✅ Dati salvati con successo su Firebase!');
+            return true;
           })
-          .catch((err) => console.error('❌ Errore critico durante il salvataggio Firebase:', err));
+          .catch((err) => {
+            console.error('❌ Errore critico durante il salvataggio Firebase:', err);
+            throw err;
+          });
       } catch (error) {
         console.error('❌ Errore durante la preparazione del payload Firebase:', error);
+        return Promise.reject(error);
       }
     },
     [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory],

@@ -3,6 +3,11 @@
  * Biforcazione Amaro (0 kcal, digiuno OK) vs Zuccherato (+20 kcal, +5g CHO, rompe digiuno).
  */
 
+import {
+  isStimulantFastingBreaker as isStimulantFastingBreakerShared,
+  isZeroCalorieFastSafeItem,
+} from '../../utils/fastingBreakRules.js';
+
 export const COFFEE_VARIANT = Object.freeze({
   AMARO: 'amaro',
   ZUCCHERATO: 'zuccherato',
@@ -145,15 +150,7 @@ export function isInActiveFastingWindow(hoursFasted) {
  * @returns {boolean}
  */
 export function isStimulantFastingBreaker(node) {
-  if (!node || typeof node !== 'object') return false;
-  if (String(node.type || '').toLowerCase() !== 'stimulant') return false;
-  if (node.breaksFast === false) return false;
-  if (node.breaksFast === true) return true;
-  if (node.coffeeVariant === COFFEE_VARIANT.AMARO) return false;
-  if (node.coffeeVariant === COFFEE_VARIANT.ZUCCHERATO) return true;
-  const kcal = Number(node.kcal) || 0;
-  const carb = Number(node.carb) || 0;
-  return kcal > 10 || carb > 1;
+  return isStimulantFastingBreakerShared(node);
 }
 
 /**
@@ -162,54 +159,106 @@ export function isStimulantFastingBreaker(node) {
  * @returns {boolean}
  */
 export function isZeroCalorieFastSafeNode(node) {
-  if (!node || typeof node !== 'object') return false;
-  const type = String(node.type || '').toLowerCase();
-  if (type === 'water') return true;
-  if (type === 'stimulant') return !isStimulantFastingBreaker(node);
-  return false;
+  return isZeroCalorieFastSafeItem(node);
 }
 
 /**
  * Contesto digiuno esplicito per prompt LLM (Kentu Global State).
+ * Fonte di verità = Monitor Metabolico (`metabolicSnapshot` / `activeFastingStatus`),
+ * NON il meal log del diario.
  * @param {{
  *   hoursFasted?: number | null,
  *   manualNodes?: Array<object>,
  *   fastingBrokenBySweetCoffee?: boolean,
  *   bitterCoffeeDuringFast?: boolean,
+ *   fastingBrokenPrematurely?: boolean,
  *   phaseName?: string | null,
+ *   phaseId?: string | null,
+ *   metabolicSnapshot?: object | null,
  * }} [params]
  */
 export function buildFastingContextForLlm(params = {}) {
-  const hoursFasted = Number(params.hoursFasted);
+  const snap = params.metabolicSnapshot && typeof params.metabolicSnapshot === 'object'
+    ? params.metabolicSnapshot
+    : null;
+  const monitor = snap?.activeFastingStatus && typeof snap.activeFastingStatus === 'object'
+    ? snap.activeFastingStatus
+    : null;
+
+  const hoursFasted = Number(
+    monitor?.hoursSinceLastMeal
+    ?? snap?.hoursSinceLastMeal
+    ?? params.hoursFasted,
+  );
   const inActiveWindow = isInActiveFastingWindow(hoursFasted);
   const brokenBySweet = Boolean(params.fastingBrokenBySweetCoffee);
   const bitterDuringFast = Boolean(params.bitterCoffeeDuringFast);
-  const isFasting = inActiveWindow && !brokenBySweet;
+  const prematureBreak = Boolean(params.fastingBrokenPrematurely);
+  const phaseName = params.phaseName
+    || monitor?.phaseLabel
+    || snap?.phase?.label
+    || snap?.phase?.name
+    || null;
+  const phaseId = params.phaseId
+    || monitor?.phaseId
+    || snap?.phase?.id
+    || null;
+
+  // Monitor Metabolico batte qualsiasi inferenza dal log pasti.
+  const monitorSaysActive = monitor
+    ? monitor.isFastingActive === true
+    : inActiveWindow;
+  const isFasting = monitorSaysActive && !brokenBySweet && !prematureBreak;
+
+  const currentFastingPhase = phaseName
+    || phaseId
+    || (isFasting ? 'digiuno attivo' : 'post-pasto / non in digiuno');
+
+  const statusLine = `Stato Digiuno: ${isFasting ? 'ATTIVO' : 'INTERROTTO'}. Fase attuale: ${currentFastingPhase}. (Nota: bevande < 10 kcal come il caffè amaro NON interrompono il digiuno).`;
 
   let aiGuidance = 'Nessuna finestra di digiuno attiva rilevata.';
   if (brokenBySweet) {
     aiGuidance = 'Digiuno INTERROTTO da caffè zuccherato (+kcal/+CHO). Segnalalo all\'utente.';
+  } else if (prematureBreak) {
+    aiGuidance = 'Digiuno overnight interrotto prematuramente da un pasto calorico. Non biasimare: orienta al ripristino.';
   } else if (bitterDuringFast || (isFasting && (params.manualNodes || []).some(
     (n) => n?.type === 'stimulant'
       && String(n?.subtype || '').toLowerCase() === 'caffè'
       && n?.coffeeVariant === COFFEE_VARIANT.AMARO,
   ))) {
     aiGuidance =
-      'Utente ANCORA A DIGIUNO: ha registrato caffè amaro (0 kcal, breaksFast=false). '
-      + 'NON dire che il digiuno è interrotto — lodalo per la scelta.';
+      'Utente ANCORA A DIGIUNO (Monitor Metabolico): ha registrato caffè amaro (0 kcal, breaksFast=false). '
+      + 'NON dire che il digiuno è interrotto — lodalo per la scelta. '
+      + (phaseName ? `Fase monitor: «${phaseName}».` : '');
   } else if (isFasting) {
-    aiGuidance = 'Utente in finestra di digiuno attiva. Bevande zero-calorie non interrompono il timer.';
+    aiGuidance = phaseName
+      ? `Utente in digiuno attivo — fase Monitor «${phaseName}». Bevande zero-calorie non interrompono il timer.`
+      : 'Utente in finestra di digiuno attiva. Bevande zero-calorie non interrompono il timer.';
   }
 
   return {
     isFasting,
+    statusLine,
+    statusText: statusLine,
+    monitorAuthority: true,
     hoursFasted: Number.isFinite(hoursFasted) ? Math.round(hoursFasted * 10) / 10 : null,
     fastingDurationHours: Number.isFinite(hoursFasted) ? Math.round(hoursFasted * 10) / 10 : null,
     inActiveFastingWindow: inActiveWindow,
     brokenBySweetCoffee: brokenBySweet,
     bitterCoffeeDuringFast: bitterDuringFast,
-    phaseName: params.phaseName || null,
-    aiGuidance,
+    fastingBrokenPrematurely: prematureBreak,
+    phaseId,
+    phaseName,
+    currentFastingPhase,
+    metabolicMonitor: monitor || (snap ? {
+      hoursSinceLastMeal: snap.hoursSinceLastMeal ?? null,
+      phaseId: snap.phase?.id ?? null,
+      phaseLabel: snap.phase?.label ?? snap.phase?.name ?? null,
+      isFastingActive: isFasting,
+    } : null),
+    aiGuidance: `${statusLine} ${aiGuidance} `
+      + 'FONTE DI VERITÀ = Monitor Metabolico (statusLine/isFasting). '
+      + 'VIETATO dedurre interruzione digiuno dal Diary_Context / log pasti se statusLine dice ATTIVO.',
   };
 }
 

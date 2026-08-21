@@ -3,6 +3,7 @@
  */
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { Home } from 'lucide-react';
+import { matchReportCommand, REPORT_ANIMATION_SRC, REPORT_COVER_SRC } from './features/commandTerminal/conversation/reportCommandIntent.js';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
 import MealDraftTrayBubble from './components/MealDraftTrayBubble';
@@ -31,6 +32,7 @@ import ChatInputBar from './features/chat/ChatInputBar.jsx';
 import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
+import ChatReportCard from './features/chat/ChatReportCard.jsx';
 import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
@@ -114,6 +116,7 @@ export default function AiCluster({
   foodDatabase = {},
   kentuItDatabase = {},
   globalFoodDatabase = {},
+  offDb = {},
   fullHistory = {},
   onDraftConfirm,
   onDraftCancel,
@@ -127,6 +130,7 @@ export default function AiCluster({
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
   onMcDriveAppendSolverItems = null,
+  onMcDriveRequestDisambiguation = null,
   getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
@@ -310,8 +314,130 @@ export default function AiCluster({
     [dockedMcDriveTray],
   );
 
-  /** Deep Work: lavagna a tutto schermo, cronologia chat nascosta. */
+  /** Deep Work: lavagna a tutto schermo, cronologia chat nascosta — solo Inserimento Pasti Guidato (McDrive). */
   const isAiGuidedImmersive = Boolean(dockedMcDriveTray);
+
+  /**
+   * Video report nell'header (stesso cinema banner di McDrive).
+   * Completamento solo su onEnded nativo — nessun timer di taglio.
+   */
+  const [reportVideoActive, setReportVideoActive] = useState(false);
+  const [reportIntroComplete, setReportIntroComplete] = useState(true);
+  const [reportHeaderExiting, setReportHeaderExiting] = useState(false);
+  const reportHeaderSessionRef = useRef(null);
+  const reportHeaderExitTimerRef = useRef(null);
+
+  const lastUserReportIntent = useMemo(() => {
+    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const msg = list[i];
+      if (!msg || msg.sender !== 'user') continue;
+      return Boolean(matchReportCommand(String(msg.text || '').trim()));
+    }
+    return false;
+  }, [chatHistory]);
+
+  const reportSessionKey = useMemo(() => {
+    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const msg = list[i];
+      if (!msg || msg.sender !== 'ai') continue;
+      if (
+        msg.type === 'REPORT_LOADING'
+        || msg.reportLoading === true
+        || msg.type === 'PERIOD_REPORT'
+        || (msg.reportCard && typeof msg.reportCard === 'object')
+      ) {
+        if (msg.reportSessionId) return String(msg.reportSessionId);
+        return String(msg.id || msg.timestamp || msg.createdAt || `report-msg-${i}`);
+      }
+      break;
+    }
+    if (isProcessing && lastUserReportIntent) {
+      return `processing-report`;
+    }
+    return null;
+  }, [chatHistory, isProcessing, lastUserReportIntent]);
+
+  const clearReportHeaderExitTimer = useCallback(() => {
+    if (reportHeaderExitTimerRef.current != null) {
+      window.clearTimeout(reportHeaderExitTimerRef.current);
+      reportHeaderExitTimerRef.current = null;
+    }
+  }, []);
+
+  const startReportHeaderVideo = useCallback((sessionKey) => {
+    if (!sessionKey) return;
+    if (reportHeaderSessionRef.current === sessionKey && reportVideoActive) return;
+    clearReportHeaderExitTimer();
+    reportHeaderSessionRef.current = sessionKey;
+    setReportHeaderExiting(false);
+    setReportVideoActive(true);
+    setReportIntroComplete(false);
+  }, [clearReportHeaderExitTimer, reportVideoActive]);
+
+  const finishReportHeaderVideo = useCallback(() => {
+    clearReportHeaderExitTimer();
+    setReportHeaderExiting(false);
+    setReportVideoActive(false);
+    setReportIntroComplete(true);
+  }, [clearReportHeaderExitTimer]);
+
+  /** onEnded: card subito + shrink/fade header; dopo la transizione spegne lo slot video. */
+  const beginReportHeaderExit = useCallback(() => {
+    if (reportHeaderExiting) return;
+    setReportIntroComplete(true);
+    setReportHeaderExiting(true);
+    clearReportHeaderExitTimer();
+    reportHeaderExitTimerRef.current = window.setTimeout(() => {
+      reportHeaderExitTimerRef.current = null;
+      setReportVideoActive(false);
+      setReportHeaderExiting(false);
+    }, 500);
+  }, [clearReportHeaderExitTimer, reportHeaderExiting]);
+
+  useEffect(() => {
+    if (!reportSessionKey) return;
+    if (reportHeaderSessionRef.current === reportSessionKey) return;
+
+    // Handoff early "processing-report" → id stabile da REPORT_LOADING (niente restart).
+    if (
+      reportVideoActive
+      && reportHeaderSessionRef.current === 'processing-report'
+      && reportSessionKey !== 'processing-report'
+    ) {
+      reportHeaderSessionRef.current = reportSessionKey;
+      return;
+    }
+
+    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    const hasLoading = list.some(
+      (msg) => msg?.type === 'REPORT_LOADING' || msg?.reportLoading === true,
+    );
+    if (hasLoading || (isProcessing && lastUserReportIntent)) {
+      startReportHeaderVideo(reportSessionKey);
+    }
+  }, [
+    chatHistory,
+    isProcessing,
+    lastUserReportIntent,
+    reportSessionKey,
+    reportVideoActive,
+    startReportHeaderVideo,
+  ]);
+
+  useEffect(() => () => {
+    clearReportHeaderExitTimer();
+  }, [clearReportHeaderExitTimer]);
+
+  /**
+   * Flusso report attivo: niente banner Hacker/pensatore; video solo nello slot header.
+   */
+  const isReportSequenceActive = Boolean(
+    reportVideoActive
+    || !reportIntroComplete
+    || (isProcessing && lastUserReportIntent),
+  );
 
   const avatarMood = useMemo(
     () => resolveAvatarMood({
@@ -387,6 +513,22 @@ export default function AiCluster({
         source: 'quick_event',
       };
     }
+    // Stesso layout cinema header dell'Inserimento Pasti Guidato (KentuProcessingBanner).
+    if (reportVideoActive) {
+      return {
+        posterSrc: REPORT_COVER_SRC,
+        videoSrc: REPORT_ANIMATION_SRC,
+        label: 'Preparazione bollettino…',
+        loop: false,
+        messageKey: reportSessionKey || 'report-header',
+        maxClampSeconds: null,
+        source: 'report',
+      };
+    }
+    // Dopo/oltre il video report: niente Hacker/pensatore.
+    if (isReportSequenceActive) {
+      return null;
+    }
     if (showTypingIndicator) {
       return {
         posterSrc: typingAvatarPosterSrc,
@@ -401,6 +543,9 @@ export default function AiCluster({
   }, [
     quickEventCinema,
     dismissedCinemaKeys,
+    reportVideoActive,
+    reportSessionKey,
+    isReportSequenceActive,
     showTypingIndicator,
     typingAvatarPosterSrc,
     typingAvatarVideoSrc,
@@ -433,6 +578,14 @@ export default function AiCluster({
     hoistedVideo?.source === 'processing' && dockedMcDriveTray,
   );
 
+  /** Header cinema aperto: report resta open fino a onEnded, poi shrink con fade. */
+  const headerCinemaExpanded = Boolean(hoistedVideo) && !reportHeaderExiting;
+
+  /** Collassa composer solo per cinema McDrive/quick-event — non per il report. */
+  const collapseComposerForHoisted = Boolean(
+    hoistedVideo && hoistedVideo.source !== 'report',
+  );
+
   const isMcDrivePenultimateOrLater = useMemo(
     () => isMcDriveValidationPenultimateOrLater(mcdriveTrayItems),
     [mcdriveTrayItems],
@@ -455,6 +608,9 @@ export default function AiCluster({
   }, [showTypingIndicator]);
 
   const dismissHoistedVideo = useCallback(() => {
+    if (hoistedVideo?.source === 'report') {
+      finishReportHeaderVideo();
+    }
     if (hoistedVideo?.source === 'processing') {
       setProcessingVideoDismissed(true);
     }
@@ -468,9 +624,13 @@ export default function AiCluster({
       });
     }
     setHoistedVideo(null);
-  }, [hoistedVideo?.messageKey]);
+  }, [finishReportHeaderVideo, hoistedVideo?.messageKey, hoistedVideo?.source]);
 
   const handleHoistedVideoEnded = useCallback(() => {
+    if (hoistedVideo?.source === 'report') {
+      beginReportHeaderExit();
+      return;
+    }
     const key = hoistedVideo?.messageKey;
     if (key == null) return;
     setDismissedCinemaKeys((prev) => {
@@ -480,7 +640,7 @@ export default function AiCluster({
       return next;
     });
     setHoistedVideo(null);
-  }, [hoistedVideo?.messageKey]);
+  }, [beginReportHeaderExit, hoistedVideo?.messageKey, hoistedVideo?.source]);
 
   const handleHoistVideoFromMessage = useCallback((payload) => {
     if (!payload?.videoSrc) return;
@@ -584,6 +744,7 @@ export default function AiCluster({
     const trimmed = String(text || '').trim();
     const intent = String(options?.intent || '').trim();
     const mealType = String(options?.mealType || options?.mealTypeHint || '').trim() || null;
+    const reportKind = String(options?.reportKind || '').trim() || null;
     const allowEmpty = intent === 'START_MCDRIVE_WIZARD' && Boolean(mealType);
     if (!trimmed && !allowEmpty) return;
     if (isVoiceNoteActive) {
@@ -594,6 +755,7 @@ export default function AiCluster({
     onSendMessage(trimmed, {
       fromInput: true,
       ...(intent ? { intent } : {}),
+      ...(reportKind ? { reportKind } : {}),
       ...(mealType ? { mealType, mealTypeHint: mealType } : {}),
       ...(options?.editingMealId != null ? { editingMealId: options.editingMealId } : {}),
       ...(Array.isArray(options?.editingFoods) ? { editingFoods: options.editingFoods } : {}),
@@ -850,27 +1012,56 @@ export default function AiCluster({
       <header
         className={[
           'relative flex shrink-0 flex-col overflow-hidden border-b border-zinc-800 bg-zinc-950',
-          'transition-all duration-500 ease-in-out',
-          hoistedVideo ? 'h-64' : 'h-20',
+          'transition-[height,opacity] duration-500 ease-in-out',
+          headerCinemaExpanded ? 'h-64' : 'h-20',
         ].join(' ')}
       >
         {hoistedVideo ? (
-          <div className="relative h-full min-h-0 w-full">
+          <div
+            className={[
+              'relative h-full min-h-0 w-full transition-opacity duration-500 ease-in-out',
+              reportHeaderExiting ? 'opacity-0' : 'opacity-100',
+            ].join(' ')}
+          >
             <KentuProcessingBanner
               variant="header"
               posterSrc={hoistedVideo.posterSrc}
               videoSrc={hoistedVideo.videoSrc}
               label={hoistedVideo.label}
               loop={
-                isMcDriveProcessingVideo
-                  ? (isMcDrivePenultimateOrLater ? false : hoistedVideo.loop)
-                  : hoistedVideo.loop
+                hoistedVideo.source === 'report'
+                  ? false
+                  : (
+                    isMcDriveProcessingVideo
+                      ? (isMcDrivePenultimateOrLater ? false : hoistedVideo.loop)
+                      : hoistedVideo.loop
+                  )
               }
-              clampToFirstSeconds={isMcDriveProcessingVideo ? 3 : null}
-              isPenultimateOrLater={!isMcDriveProcessingVideo || isMcDrivePenultimateOrLater}
-              tailLoopFromSeconds={isMcDriveProcessingVideo ? 8 : null}
-              tailLoopWhileActive={isMcDriveTailLoopActive}
-              maxClampSeconds={hoistedVideo.maxClampSeconds ?? null}
+              clampToFirstSeconds={
+                hoistedVideo.source === 'report'
+                  ? null
+                  : (isMcDriveProcessingVideo ? 3 : null)
+              }
+              isPenultimateOrLater={
+                hoistedVideo.source === 'report'
+                  ? true
+                  : (!isMcDriveProcessingVideo || isMcDrivePenultimateOrLater)
+              }
+              tailLoopFromSeconds={
+                hoistedVideo.source === 'report'
+                  ? null
+                  : (isMcDriveProcessingVideo ? 8 : null)
+              }
+              tailLoopWhileActive={
+                hoistedVideo.source === 'report'
+                  ? false
+                  : isMcDriveTailLoopActive
+              }
+              maxClampSeconds={
+                hoistedVideo.source === 'report'
+                  ? null
+                  : (hoistedVideo.maxClampSeconds ?? null)
+              }
               onVideoEnded={handleHoistedVideoEnded}
             />
             <div className="absolute right-3 top-3 z-10 flex shrink-0 items-center">
@@ -962,12 +1153,13 @@ export default function AiCluster({
           className={[
             'flex w-full shrink-0 justify-center border-b border-white/10 bg-white/[0.05] px-4 py-2',
             'backdrop-blur-md transition-all duration-500 ease-in-out',
+            reportHeaderExiting ? 'max-h-0 opacity-0 py-0 overflow-hidden border-transparent' : 'max-h-16 opacity-100',
           ].join(' ')}
           aria-live="polite"
         >
           <KentuProcessingStatusBadge
             label={hoistedVideo.label}
-            busy={Boolean(hoistedVideo.videoSrc)}
+            busy={Boolean(hoistedVideo.videoSrc) && !reportHeaderExiting}
           />
         </div>
       ) : null}
@@ -1104,6 +1296,44 @@ export default function AiCluster({
                     hideAvatar={Boolean(hoistedVideo)}
                     label={typingIndicatorLabel}
                   />
+                ) : (msg.reportCard && typeof msg.reportCard === 'object')
+                  || msg.type === 'REPORT_LOADING'
+                  || msg.reportLoading === true
+                  || msg.type === 'PERIOD_REPORT' ? (
+                  (() => {
+                    const reportMarkdown = String(msg.reportCard?.markdown || msg.text || '').trim();
+                    const isCurrentReportSession = Boolean(
+                      !reportIntroComplete
+                      && reportSessionKey
+                      && msg.reportSessionId
+                      && String(msg.reportSessionId) === String(reportSessionKey),
+                    );
+                    const ready = Boolean(reportMarkdown) && !isCurrentReportSession;
+                    if (!ready) return null;
+                    return (
+                      <div className="flex w-full max-w-full flex-col gap-2.5 box-border">
+                        <div className="kentu-ai-row flex w-full items-end gap-3">
+                          <KentuAvatar
+                            size="sm"
+                            src={resolveMessageAvatarSrc(msg) || REPORT_COVER_SRC}
+                            fit="contain"
+                            className="mb-0.5 shrink-0 self-end"
+                            alt="Kentu AI"
+                          />
+                          <ChatReportCard
+                            markdown={reportMarkdown}
+                            title={msg.reportCard?.title || 'Bollettino Kentu'}
+                            coverSrc={
+                              msg.coverSrc
+                              || msg.reportCard?.coverSrc
+                              || REPORT_COVER_SRC
+                            }
+                            ready
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()
                 ) : msg.mealReceipt && typeof msg.mealReceipt === 'object' ? (
                   <div className="w-full max-w-full box-border">
                     <MealReceiptMessage receipt={msg.mealReceipt} />
@@ -1472,7 +1702,7 @@ export default function AiCluster({
             </div>
           );
           })}
-          {showTypingIndicator ? (
+          {showTypingIndicator && !isReportSequenceActive ? (
             <TypingIndicator
               avatarSrc={typingAvatarPosterSrc}
               avatarVideoSrc={null}
@@ -1503,6 +1733,7 @@ export default function AiCluster({
               personalDb={foodDatabase}
               kentuItDb={kentuItDatabase}
               globalDb={globalFoodDatabase}
+              offDb={offDb}
               getMealTargets={getMcDriveMealTargets}
               onRemoveItem={onMcDriveRemoveItem}
               onUpdateGrams={onMcDriveUpdateGrams}
@@ -1510,6 +1741,7 @@ export default function AiCluster({
               onApplyAlternative={onMcDriveApplyAlternative}
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
               onAppendSolverItems={onMcDriveAppendSolverItems}
+              onRequestDisambiguation={onMcDriveRequestDisambiguation}
               onCancel={() => {
                 onSendMessage?.('', {
                   intent: 'CANCEL_MCDRIVE_WIZARD',
@@ -1546,11 +1778,11 @@ export default function AiCluster({
           className={[
             'flex shrink-0 flex-col overflow-hidden origin-bottom',
             'transition-[max-height,opacity] duration-500 ease-in-out',
-            hoistedVideo
+            collapseComposerForHoisted
               ? 'pointer-events-none max-h-0 opacity-0'
               : 'max-h-[32rem] opacity-100',
           ].join(' ')}
-          aria-hidden={hoistedVideo ? true : undefined}
+          aria-hidden={collapseComposerForHoisted ? true : undefined}
         >
         {chatImages.length > 0 && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>

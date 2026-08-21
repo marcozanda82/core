@@ -1,32 +1,26 @@
 /**
  * Albero concettuale del Centro Analisi — solo metadati UI.
- * Nessuna logica di calcolo o accesso al diario.
+ * Salute / Progressione aprono la Fotografia Home (`opensFotografia`).
+ * Strumentazione resta a stanze interne.
  */
 export const CENTRO_ANALISI_AREAS = Object.freeze([
   {
     id: 'salute',
     icon: '🫀',
     label: 'Salute',
-    kicker: 'Macro-area',
-    hint: 'Clinica, recupero e metabolismo.',
-    rooms: [
-      { id: 'metabolismo', icon: '🔥', label: 'Metabolismo' },
-      { id: 'sonno', icon: '🛌', label: 'Sonno' },
-      { id: 'biometrie', icon: '⚖️', label: 'Biometrie' },
-      { id: 'clinica', icon: '🩺', label: 'Clinica' },
-    ],
+    kicker: 'Fotografia',
+    hint: 'Stessa vista intera dei widget Home.',
+    opensFotografia: 'salute',
+    rooms: [],
   },
   {
     id: 'progressione',
     icon: '📈',
     label: 'Progressione',
-    kicker: 'Macro-area',
-    hint: 'Aderenza e adattamento nel tempo.',
-    rooms: [
-      { id: 'nutrizione', icon: '🍽', label: 'Nutrizione' },
-      { id: 'allenamento', icon: '🏋️', label: 'Allenamento' },
-      { id: 'recupero', icon: '🌙', label: 'Recupero' },
-    ],
+    kicker: 'Fotografia',
+    hint: 'Stessa vista intera dei widget Home.',
+    opensFotografia: 'progressione',
+    rooms: [],
   },
   {
     id: 'strumentazione',
@@ -34,6 +28,7 @@ export const CENTRO_ANALISI_AREAS = Object.freeze([
     label: 'Strumentazione',
     kicker: 'Strumenti',
     hint: 'Bussola, Mappa e Radar — cabina di pilotaggio.',
+    opensFotografia: null,
     rooms: [
       { id: 'bussola', icon: '🧭', label: 'Bussola' },
       { id: 'mappa', icon: '🗺️', label: 'Mappa' },
@@ -49,5 +44,5 @@ export function findCentroAnalisiArea(areaId) {
 export function findCentroAnalisiRoom(areaId, roomId) {
   const area = findCentroAnalisiArea(areaId);
   if (!area) return null;
-  return area.rooms.find((room) => room.id === roomId) || null;
+  return (area.rooms || []).find((room) => room.id === roomId) || null;
 }

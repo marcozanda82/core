@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import BiometricsHealthCard from './components/BiometricsHealthCard';
 import SaluteClinicalInsight from './components/SaluteClinicalInsight';
 import SaluteDashKpiCard from './components/SaluteDashKpiCard';
+import SaluteFastingTrendCard from './components/SaluteFastingTrendCard';
 import SaluteGlycemicRiskBar from './components/SaluteGlycemicRiskBar';
 import SaluteLongevityHero from './components/SaluteLongevityHero';
 import SaluteSleepGhostCard from './components/SaluteSleepGhostCard';
@@ -14,6 +15,7 @@ import {
   averageMuscleResidual,
   calculateLongevityScore,
   buildGlycemicRiskBreakdown,
+  computeAverageDailyFastingWindow,
   computeGlycemicRiskPercent,
   formatCompensationDelta,
   formatFastingHoursLabel,
@@ -22,6 +24,7 @@ import {
 } from './utils/saluteDashboardMetrics';
 import {
   buildSaluteLongevityWindow,
+  buildSleepTrendChartData,
   buildUnifiedSleepSeries,
   computeGhostBaselineFromSeries,
   LONGEVITY_WINDOW_DAYS,
@@ -116,6 +119,15 @@ export default function SaluteView({
     ? Number(fastingData.hoursFasted)
     : null;
 
+  const fastingTrend14d = useMemo(
+    () => computeAverageDailyFastingWindow({
+      fullHistory,
+      todayDate,
+      windowDays: LONGEVITY_WINDOW_DAYS,
+    }),
+    [fullHistory, todayDate],
+  );
+
   const sleepSeries = useMemo(
     () => buildUnifiedSleepSeries({
       fullHistory,
@@ -127,7 +139,18 @@ export default function SaluteView({
   );
 
   const ghostBaseline = useMemo(
-    () => computeGhostBaselineFromSeries(sleepSeries, todayDate),
+    () => computeGhostBaselineFromSeries(sleepSeries, todayDate, undefined, {
+      maxSampleDays: SLEEP_GHOST_LOOKBACK_DAYS,
+    }),
+    [sleepSeries, todayDate],
+  );
+
+  const sleepTrend14d = useMemo(
+    () => buildSleepTrendChartData({
+      sleepSeries,
+      todayDate,
+      days: LONGEVITY_WINDOW_DAYS,
+    }),
     [sleepSeries, todayDate],
   );
 
@@ -220,8 +243,7 @@ export default function SaluteView({
 
   const muscleAvg = averageMuscleResidual(fourCylinder);
   const muscleLabel = muscleAvg == null ? 'n/d' : `${Math.round(muscleAvg * 100)}%`;
-  const fastingLabel = fastingData?.timeString
-    || formatFastingHoursLabel(hoursFasted);
+  const fastingLabel = formatFastingHoursLabel(fastingTrend14d.averageHours);
 
   const compensationLabel = formatCompensationDelta(metabolicCompensationDeltaKcal);
   const compensationTrend =
@@ -266,13 +288,13 @@ export default function SaluteView({
           unit="cm"
           trend={biometrics.waistDelta?.direction || 'none'}
         />
-        <SaluteDashKpiCard
-          icon="⏳"
-          title="Finestra alimentare"
-          value={hoursFasted != null ? formatMetric(hoursFasted, 1) : '—'}
-          unit="h dig."
-          trend={hoursFasted != null && hoursFasted >= 12 ? 'up' : hoursFasted != null ? 'flat' : 'none'}
-          invertTrendColors
+        <SaluteFastingTrendCard
+          value={fastingTrend14d.averageHours != null
+            ? formatMetric(fastingTrend14d.averageHours, 1)
+            : '—'}
+          unit="h"
+          trend={fastingTrend14d.trend}
+          fastingHistory={fastingTrend14d.fastingHistory}
         />
         <SaluteDashKpiCard
           icon="⌬"
@@ -288,6 +310,8 @@ export default function SaluteView({
           quality={morningSleep?.quality ?? null}
           ghostHours={ghostBaseline.ghostHours}
           ghostLabel={ghostLabel}
+          sleepData={sleepTrend14d.sleepData}
+          avg14Days={sleepTrend14d.avg14Days}
         />
       </div>
 
@@ -322,9 +346,11 @@ export default function SaluteView({
       <SaluteClinicalInsight
         report={health.report}
         analysisDate={health.analysisDate || analysisDate}
+        todayDate={todayDate}
         status={health.status}
         errorMessage={health.errorMessage}
         isRefreshing={health.isRefreshing}
+        isUpdatedToday={health.isUpdatedToday}
         onRefresh={health.refresh}
       />
     </div>

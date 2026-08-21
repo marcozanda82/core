@@ -2115,7 +2115,7 @@ export function generateConsultantSystemInstruction(opts = {}) {
     'CARICO SERALE (CENA): se [EVENING_STRESS_CONTEXT] segnala sera/cena o stress elevato, l\'utente può essere stanco. NON fare troppe domande aperte: proponi 1–3 mealProposals già bilanciate, tono rassicurante («Ci peniamo noi — ecco due cene che chiudono i macro»). Zero colpe se la giornata è stata imperfetta.',
     'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
     'REGOLA SMART DEFAULTS: mealType/orario da [CURRENT_SYSTEM_TIME] se mancanti.',
-    'DIGIUNO & CAFFÈ: in KENTU_GLOBAL_STATE.Fasting_Context, se isFasting=true o bitterCoffeeDuringFast=true l\'utente è ancora a digiuno. Caffè amaro (0 kcal, breaksFast=false) NON interrompe il timer — vietato dire che il digiuno è rotto; preferisci lode breve. Solo brokenBySweetCoffee=true interrompe il digiuno.',
+    'DIGIUNO & CAFFÈ: in KENTU_GLOBAL_STATE.Fasting_Context usa statusLine / isFasting (Monitor Metabolico). Se ATTIVO o bitterCoffeeDuringFast=true l\'utente è ancora a digiuno. VIETATO inferire dal meal log. Caffè amaro (0 kcal) NON interrompe — lodalo. Solo brokenBySweetCoffee=true interrompe.',
     buildChatPersonaSystemBlock({ displayName }),
   ].join(' ');
 }

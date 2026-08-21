@@ -286,13 +286,39 @@ export function detectPrematureFastBreak(yesterdayLastMealHour, todayFirstMealHo
 /**
  * Testo contesto nascosto per Gemini (diagnosi avatar).
  * @param {ReturnType<typeof calculateHealthScore>} healthResult
+ * @param {object | null | undefined} [metabolicSnapshot] Monitor Metabolico — unica fonte digiuno/fase
  * @returns {string}
  */
-export function buildHealthDiagnosisPromptContext(healthResult) {
+export function buildHealthDiagnosisPromptContext(healthResult, metabolicSnapshot = null) {
   const result = healthResult && typeof healthResult === 'object' ? healthResult : null;
   if (!result) return '';
   const b = result.breakdown || {};
   const avatar = result.avatar || {};
+  const hoursFromMetrics = Number(result.metrics?.hoursFasted);
+  const hoursFromMonitor = Number(metabolicSnapshot?.hoursSinceLastMeal);
+  const hoursFasted = Number.isFinite(hoursFromMonitor)
+    ? hoursFromMonitor
+    : (Number.isFinite(hoursFromMetrics) ? hoursFromMetrics : null);
+  const phase = metabolicSnapshot?.phase && typeof metabolicSnapshot.phase === 'object'
+    ? metabolicSnapshot.phase
+    : null;
+  const phaseId = String(phase?.id || metabolicSnapshot?.phaseId || '').trim();
+  const phaseLabel = String(phase?.label || phase?.name || '').trim();
+  const sweetBreak = Boolean(b.fastingBrokenBySweetCoffee);
+  const mealBreak = Boolean(result.metrics?.fastingBrokenPrematurely);
+  const fastingActive = Boolean(
+    metabolicSnapshot?.activeFastingStatus?.isFastingActive === true
+    || (
+      Number.isFinite(hoursFasted)
+      && hoursFasted >= 4
+      && !sweetBreak
+      && !mealBreak
+    ),
+  ) && !sweetBreak && !mealBreak;
+
+  const currentFastingPhase = phaseLabel || phaseId || (fastingActive ? 'digiuno attivo' : 'n/d');
+  const fastingStatusLine = `Stato Digiuno: ${fastingActive ? 'ATTIVO' : 'INTERROTTO'}. Fase attuale: ${currentFastingPhase}. (Nota: bevande < 10 kcal come il caffè amaro NON interrompono il digiuno).`;
+
   const lines = [
     '[HEALTH_SCORE_DIAGNOSIS]',
     `score=${result.score}`,
@@ -306,9 +332,23 @@ export function buildHealthDiagnosisPromptContext(healthResult) {
     `malus.fasting=${Number(b.fastingMalus) || 0}`,
     `malus.total=${Number(b.totalMalus) || 0}`,
     `coffee.bitterDuringFast=${Boolean(b.bitterCoffeeDuringFast)}`,
-    `coffee.sweetBreaksFast=${Boolean(b.fastingBrokenBySweetCoffee)}`,
+    `coffee.sweetBreaksFast=${sweetBreak}`,
     'notes:',
     ...(Array.isArray(b.notes) ? b.notes.map((n) => `- ${n}`) : []),
+    '',
+    '[METABOLIC_MONITOR — FONTE DI VERITÀ DIGIUNO]',
+    fastingStatusLine,
+    `phaseId=${phaseId || 'n/d'}`,
+    `phaseLabel=${phaseLabel || 'n/d'}`,
+    `hoursSinceLastMeal=${Number.isFinite(hoursFasted) ? Math.round(hoursFasted * 10) / 10 : 'n/d'}`,
+    `isFastingActive=${fastingActive}`,
+    `fastingBrokenPrematurely=${mealBreak}`,
+    'aiRule: Ripeti lo STATO ESATTO del Monitor Metabolico (riga Stato Digiuno). '
+      + 'Se isFastingActive=true o phaseId in {stabilita,adrenergico,autofagia,uso_glicogeno,brucia_grassi}: '
+      + 'parla di digiuno/fase attiva (es. «Siamo in piena fase di attivazione metabolica…»). '
+      + 'VIETATO dire che il digiuno è interrotto salvo coffee.sweetBreaksFast=true o fastingBrokenPrematurely=true. '
+      + 'VIETATO dedurre interruzione dal solo log pasti. '
+      + 'Caffè amaro (coffee.bitterDuringFast) NON interrompe il digiuno.',
   ];
   return lines.join('\n');
 }
@@ -318,7 +358,9 @@ export const HEALTH_DIAGNOSIS_SYSTEM_BLOCK = [
   'L\'utente ha toccato il tuo volto (avatar dinamico) nell\'header della chat.',
   'Rispondi in PRIMA PERSONA come l\'avatar stesso (tu sei il volto di Kentu, in simbiosi con l\'utente).',
   'Spiega in massimo 2 frasi brevi (TTS) PERCHÉ il tuo volto ha quello stato/colore,',
-  'basandoti SOLO sui malus maggiori in [HEALTH_SCORE_DIAGNOSIS] (proteine, calorie, glicogeno, digiuno, caffè).',
+  'basandoti sui malus in [HEALTH_SCORE_DIAGNOSIS] E sullo stato digiuno in [METABOLIC_MONITOR].',
+  'Il Monitor Metabolico è l\'unica fonte di verità sul digiuno/fase: non contraddirlo.',
+  'Se isFastingActive=true: allinea il tono alla phaseLabel (glicogeno / brucia grassi / autofagia / stabilità).',
   'Score basso / avatar stanco: chiedi aiuto («Ho poca energia, aiutami a recuperare con un buon pasto»).',
   'Score alto / avatar ottimale: festeggia in squadra («Siamo in forma smagliante, scorte cariche!»).',
   'Se coffee.bitterDuringFast=true e nessun malus digiuno: lodare il caffè amaro («Ottima scelta il caffè amaro, stiamo mantenendo il digiuno pulito»).',

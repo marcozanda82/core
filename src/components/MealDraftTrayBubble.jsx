@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import AmountStepper from '../features/mealBuilder/components/AmountStepper';
 import { getFoodIcon } from '../utils/getFoodIcon';
+import { withMealSavingOverlay } from '../utils/mealSavingOverlayController';
 
 const MEAL_OPTIONS = [
   { value: 'colazione', label: 'Colazione' },
@@ -58,23 +59,16 @@ export default function MealDraftTrayBubble({
 
   if (!items.length) return null;
 
-  const handleConfirmClick = () => {
+  const handleConfirmClick = async () => {
     if (isSaving) return;
-    setIsSaving(true);
-    const run = () => {
-      try {
-        const result = onConfirm?.(draftId);
-        if (result && typeof result.then === 'function') {
-          result.catch(() => setIsSaving(false));
-        }
-      } catch {
-        setIsSaving(false);
-      }
-    };
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(run, { timeout: 100 });
-    } else {
-      setTimeout(run, 0);
+    try {
+      await withMealSavingOverlay(async () => {
+        setIsSaving(true);
+        await Promise.resolve(onConfirm?.(draftId));
+      });
+    } catch (err) {
+      console.error('[MealDraftTrayBubble] salvataggio fallito', err);
+      setIsSaving(false);
     }
   };
 

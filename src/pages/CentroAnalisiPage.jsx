@@ -4,7 +4,7 @@ import CentroAnalisiView from '../features/centroAnalisi/CentroAnalisiView';
 
 /**
  * Rotta isolata `/centro-analisi` (alias `/analisi`).
- * Non monta SalaComandi, Storico o motori esistenti.
+ * Salute / Progressione reindirizzano a Home → stessa Fotografia dei widget.
  */
 export default function CentroAnalisiPage() {
   const navigate = useNavigate();
@@ -12,6 +12,12 @@ export default function CentroAnalisiPage() {
   return (
     <CentroAnalisiView
       onExit={() => navigate('/', { replace: true })}
+      onOpenFotografiaSalute={() => {
+        navigate('/', { replace: true, state: { openFotografia: 'salute' } });
+      }}
+      onOpenFotografiaProgressione={() => {
+        navigate('/', { replace: true, state: { openFotografia: 'progressione' } });
+      }}
     />
   );
 }

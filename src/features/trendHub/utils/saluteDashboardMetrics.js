@@ -1,4 +1,8 @@
 import { TRACKER_STORICO_KEY } from '../../../coreEngine';
+import {
+  computeDayMaxFastingWindowHours,
+  shiftDateStr,
+} from '../../../utils/dayTrackingStatus';
 import { flattenLogToFoodEntries } from '../../mealBuilder/hooks/usePredictiveFoodBlocks';
 import {
   clamp01,
@@ -10,13 +14,14 @@ import { getHoursSinceLastMeal } from '../../salaComandi/utils/metabolicStateEng
 import { DEFAULT_SLEEP_HOURS } from './sleepLogs';
 import {
   LONGEVITY_WINDOW_DAYS,
+  PROGRESSION_MIN_NUTRITION_DAY_KCAL,
   REFERENCE_HEIGHT_CM,
   resolveMorningSleepForInsight as resolveMorningSleepFromHistory,
 } from './saluteHistorySeries';
 import { countSufficientlyStimulatedPillars } from './muscleSpillover.js';
 
 export const SLEEP_TARGET_HOURS = DEFAULT_SLEEP_HOURS;
-export { REFERENCE_HEIGHT_CM };
+export { REFERENCE_HEIGHT_CM, PROGRESSION_MIN_NUTRITION_DAY_KCAL };
 export { resolveMorningSleepFromHistory as resolveMorningSleepForInsight };
 
 /** Soglia clinica WHtR: girovita critico = altezza × 0.5 (multi-utente). */
@@ -445,6 +450,116 @@ export function formatFastingHoursLabel(hours) {
 }
 
 /**
+ * Media aritmetica delle finestre massime di digiuno giornaliere
+ * (`24 − (ultimo − primo pasto)`) su una finestra storica.
+ * Esclude oggi (giorno incompleto). Confronta con i 14gg precedenti per il trend.
+ *
+ * @param {{
+ *   fullHistory?: object | null,
+ *   todayDate?: string,
+ *   windowDays?: number,
+ * }} [input]
+ * @returns {{
+ *   averageHours: number | null,
+ *   sampleDays: number,
+ *   previousAverageHours: number | null,
+ *   previousSampleDays: number,
+ *   trend: 'up' | 'down' | 'flat' | 'none',
+ *   fastingHistory: Array<{ date: string, dateKey: string, hours: number | null }>,
+ * }}
+ */
+export function computeAverageDailyFastingWindow(input = {}) {
+  const {
+    fullHistory = null,
+    todayDate = '',
+    windowDays = LONGEVITY_WINDOW_DAYS,
+  } = input && typeof input === 'object' ? input : {};
+
+  const empty = {
+    averageHours: null,
+    sampleDays: 0,
+    previousAverageHours: null,
+    previousSampleDays: 0,
+    trend: 'none',
+    fastingHistory: [],
+  };
+
+  const safeToday = String(todayDate || '').slice(0, 10);
+  if (!fullHistory || !/^\d{4}-\d{2}-\d{2}$/.test(safeToday)) return empty;
+
+  const days = Math.max(1, Number(windowDays) || LONGEVITY_WINDOW_DAYS);
+
+  const formatDayLabel = (dateStr) => {
+    const parts = String(dateStr).split('-');
+    if (parts.length !== 3) return dateStr;
+    return `${parts[2]}/${parts[1]}`;
+  };
+
+  /** @param {number} startOffset @param {number} endOffsetExclusive */
+  const collectWindow = (startOffset, endOffsetExclusive, { withHistory = false } = {}) => {
+    const values = [];
+    const history = [];
+    // Chronological when building history: oldest → newest
+    const offsets = [];
+    for (let offset = startOffset; offset < endOffsetExclusive; offset += 1) {
+      offsets.push(offset);
+    }
+    const ordered = withHistory ? [...offsets].reverse() : offsets;
+
+    for (const offset of ordered) {
+      const dateStr = shiftDateStr(safeToday, -offset);
+      if (!dateStr) continue;
+      const dayNode = fullHistory[TRACKER_STORICO_KEY(dateStr)];
+      const windowH = computeDayMaxFastingWindowHours(dayNode);
+      const hours = windowH != null && Number.isFinite(windowH) ? windowH : null;
+      if (hours != null) values.push(hours);
+      if (withHistory) {
+        history.push({
+          date: formatDayLabel(dateStr),
+          dateKey: dateStr,
+          hours,
+        });
+      }
+    }
+    if (values.length === 0) {
+      return { averageHours: null, sampleDays: 0, history };
+    }
+    const sum = values.reduce((acc, v) => acc + v, 0);
+    return {
+      averageHours: Math.round((sum / values.length) * 10) / 10,
+      sampleDays: values.length,
+      history,
+    };
+  };
+
+  // Ultimi 14 giorni completi: ieri … ieri−13 (esclude oggi)
+  const current = collectWindow(1, days + 1, { withHistory: true });
+  // Precedenti 14: ieri−14 … ieri−27
+  const previous = collectWindow(days + 1, days * 2 + 1);
+
+  let trend = 'none';
+  if (
+    current.averageHours != null
+    && previous.averageHours != null
+    && previous.sampleDays > 0
+  ) {
+    const delta = current.averageHours - previous.averageHours;
+    if (Math.abs(delta) < 0.3) trend = 'flat';
+    else if (delta > 0) trend = 'up';
+    else trend = 'down';
+  }
+
+  return {
+    averageHours: current.averageHours,
+    sampleDays: current.sampleDays,
+    previousAverageHours: previous.averageHours,
+    previousSampleDays: previous.sampleDays,
+    trend,
+    fastingHistory: current.history || [],
+  };
+}
+
+/**
  * @param {number | null | undefined} deltaKcal
  * @returns {string}
  */
@@ -485,59 +600,72 @@ export function resolveProgressionNutritionTargets(userTargets = {}) {
 }
 
 /**
- * Score giornaliero nutrizione 0–1 (calorie 0.5 + prot 0.3 + carbo/grassi 0.2).
- * @param {{ kcal?: number, prot?: number, carb?: number, fat?: number }} intake
- * @param {{ kcal: number, prot: number, carb: number, fat: number }} targets
- * @returns {number}
+ * Score giornaliero nutrizione 0–1 (prossimità continua).
+ * Ignora giorni vuoti / solo caffè (kcal < 300) → null.
+ *
+ * kcal 60% + proteine 40%: all'80% del target calorie → ~0.8 × peso relativo.
+ *
+ * @param {{ kcal?: number, calories?: number, prot?: number, protein?: number }} intake
+ * @param {{ kcal: number, prot: number }} targets
+ * @returns {number | null}
  */
 export function scoreProgressionNutritionDay(intake, targets) {
-  const kcal = Math.max(0, Number(intake?.kcal) || 0);
-  const prot = Math.max(0, Number(intake?.prot) || 0);
-  const carb = Math.max(0, Number(intake?.carb ?? intake?.carbo) || 0);
-  const fat = Math.max(0, Number(intake?.fat ?? intake?.fatTotal) || 0);
-  const t = targets || resolveProgressionNutritionTargets();
+  if (!intake || typeof intake !== 'object') return null;
 
-  let score = 0;
-  if (t.kcal > 0 && Math.abs(kcal - t.kcal) / t.kcal <= 0.05) {
-    score += 0.5;
+  const kcal = Math.max(
+    0,
+    Number(intake.kcal ?? intake.calories) || 0,
+  );
+  if (kcal < PROGRESSION_MIN_NUTRITION_DAY_KCAL) return null;
+
+  const prot = Math.max(
+    0,
+    Number(intake.prot ?? intake.protein) || 0,
+  );
+  const t = targets || resolveProgressionNutritionTargets();
+  const targetKcal = Number(t.kcal) > 0 ? Number(t.kcal) : 2000;
+  const targetProt = Number(t.prot) > 0 ? Number(t.prot) : 150;
+
+  const kcalScore = Math.max(0, 1 - Math.abs(kcal - targetKcal) / targetKcal);
+  const protScore = Math.max(0, 1 - Math.abs(prot - targetProt) / targetProt);
+
+  return Math.max(0, Math.min(1, (kcalScore * 0.6) + (protScore * 0.4)));
+}
+
+function resolveTodayIsoFromLogs(days, logs) {
+  const fromLogs = String(logs?.todayDate || '').slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromLogs)) return fromLogs;
+  const marked = (Array.isArray(days) ? days : []).find((d) => d?.isToday === true);
+  if (marked?.date) return String(marked.date).slice(0, 10);
+  // Convenzione buildProgressionLogsWindow: primo elemento = oggi.
+  const first = Array.isArray(days) && days[0]?.date ? String(days[0].date).slice(0, 10) : '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(first) ? first : '';
+}
+
+function isNutritionDayComplete(day, todayIso) {
+  if (day?.nutritionDayComplete === true || day?.dayComplete === true || day?.isComplete === true) {
+    return true;
   }
-  if (Math.abs(prot - t.prot) <= 10) {
-    score += 0.3;
-  }
-  if (Math.abs(carb - t.carb) <= 15 && Math.abs(fat - t.fat) <= 5) {
-    score += 0.2;
-  }
-  return Math.max(0, Math.min(1, score));
+  const date = String(day?.date || '').slice(0, 10);
+  if (!todayIso || !date) return true;
+  // Oggi escluso dalla media finché non marcato concluso.
+  if (date === todayIso || day?.isToday === true) return false;
+  return true;
+}
+
+function dayQualifiesForNutritionScore(day) {
+  if (day?.hasNutrition === true) return true;
+  return (Number(day?.kcal) || 0) >= PROGRESSION_MIN_NUTRITION_DAY_KCAL;
 }
 
 /**
  * Punteggio Progressione 0–100 — aderenza 14gg su Nutrizione, Allenamento, Sonno.
  *
- * @param {Array<{
- *   date?: string,
- *   kcal?: number,
- *   prot?: number,
- *   carb?: number,
- *   fat?: number,
- *   hasNutrition?: boolean,
- *   workoutSessions?: number,
- *   sleepHours?: number | null,
- * }> | object} logs — array di giorni, oppure `{ days, sleepAvgHours, workoutSessionsTotal }`
+ * Nutrizione: media solo su giorni COMPLETATI (non oggi) con hasNutrition / kcal >= 300.
+ * Se nessun giorno valido → stato neutro (pilastro pieno + awaitingData).
+ *
+ * @param {Array<object> | object} logs
  * @param {object} [userTargets]
- * @returns {{
- *   finalScore: number,
- *   breakdown: {
- *     nutritionScore: number,
- *     trainingScore: number,
- *     sleepScore: number,
- *     nutritionTolerancePct: number,
- *     nutritionDaysScored: number,
- *     workoutSessions: number,
- *     workoutTarget: number,
- *     sleepAvg: number | null,
- *     sleepTarget: number,
- *   },
- * }}
  */
 export function calculateProgressionScore(logs, userTargets = {}) {
   const targets = resolveProgressionNutritionTargets(userTargets);
@@ -553,10 +681,12 @@ export function calculateProgressionScore(logs, userTargets = {}) {
   let days = [];
   let precomputedSleepAvg = null;
   let precomputedSessions = null;
+  let logsObj = null;
 
   if (Array.isArray(logs)) {
     days = logs;
   } else if (logs && typeof logs === 'object') {
+    logsObj = logs;
     days = Array.isArray(logs.days) ? logs.days : [];
     if (Number.isFinite(Number(logs.sleepAvgHours)) && Number(logs.sleepAvgHours) > 0) {
       precomputedSleepAvg = Number(logs.sleepAvgHours);
@@ -566,23 +696,41 @@ export function calculateProgressionScore(logs, userTargets = {}) {
     }
   }
 
-  // —— Nutrizione: media sui soli giorni con log alimentare ——
+  const todayIso = resolveTodayIsoFromLogs(days, logsObj);
+
+  // —— Nutrizione: solo giorni precedenti completati con apporto reale ——
   const nutritionDayScores = [];
+  const nutritionDaysUsed = [];
   for (const day of days) {
-    const hasNutrition = day?.hasNutrition === true
-      || (Number(day?.kcal) || 0) > 0
-      || (Number(day?.prot) || 0) > 0;
-    if (!hasNutrition) continue;
-    nutritionDayScores.push(scoreProgressionNutritionDay(day, targets));
+    if (!isNutritionDayComplete(day, todayIso)) continue;
+    if (!dayQualifiesForNutritionScore(day)) continue;
+    const dayScore = scoreProgressionNutritionDay(day, targets);
+    if (dayScore == null || !Number.isFinite(dayScore)) continue;
+    nutritionDayScores.push(dayScore);
+    nutritionDaysUsed.push(day);
   }
-  const nutritionAvg = nutritionDayScores.length > 0
-    ? nutritionDayScores.reduce((a, b) => a + b, 0) / nutritionDayScores.length
-    : 0;
+
+  const nutritionAwaitingData = nutritionDayScores.length === 0;
+  const nutritionAvg = nutritionAwaitingData
+    ? 1
+    : nutritionDayScores.reduce((a, b) => a + b, 0) / nutritionDayScores.length;
   const nutritionScore = Math.min(
     PROGRESSION_PILLAR_MAX,
     nutritionAvg * PROGRESSION_PILLAR_MAX,
   );
-  const nutritionTolerancePct = Math.round(nutritionAvg * 1000) / 10;
+  const nutritionPct = Math.round(Math.max(0, Math.min(100, nutritionAvg * 100)));
+  const nutritionTolerancePct = nutritionPct;
+
+  let nutritionAvgKcal = null;
+  let nutritionAvgProt = null;
+  if (nutritionDaysUsed.length > 0) {
+    nutritionAvgKcal = Math.round(
+      nutritionDaysUsed.reduce((s, d) => s + (Number(d.kcal) || 0), 0) / nutritionDaysUsed.length,
+    );
+    nutritionAvgProt = Math.round(
+      nutritionDaysUsed.reduce((s, d) => s + (Number(d.prot) || 0), 0) / nutritionDaysUsed.length,
+    );
+  }
 
   // —— Allenamento ——
   const workoutSessions = precomputedSessions != null
@@ -592,6 +740,9 @@ export function calculateProgressionScore(logs, userTargets = {}) {
   const trainingScore = Math.min(
     PROGRESSION_PILLAR_MAX,
     Math.max(0, trainingRatio) * PROGRESSION_PILLAR_MAX,
+  );
+  const trainingPct = Math.round(
+    Math.max(0, Math.min(100, (trainingScore / PROGRESSION_PILLAR_MAX) * 100)),
   );
 
   // —— Riposo ——
@@ -611,6 +762,9 @@ export function calculateProgressionScore(logs, userTargets = {}) {
     PROGRESSION_PILLAR_MAX,
     Math.max(0, sleepRatio) * PROGRESSION_PILLAR_MAX,
   );
+  const sleepPct = Math.round(
+    Math.max(0, Math.min(100, (sleepScore / PROGRESSION_PILLAR_MAX) * 100)),
+  );
 
   const finalScore = Math.max(
     0,
@@ -623,8 +777,16 @@ export function calculateProgressionScore(logs, userTargets = {}) {
       nutritionScore: Math.round(nutritionScore * 10) / 10,
       trainingScore: Math.round(trainingScore * 10) / 10,
       sleepScore: Math.round(sleepScore * 10) / 10,
+      nutritionPct,
+      trainingPct,
+      sleepPct,
       nutritionTolerancePct,
       nutritionDaysScored: nutritionDayScores.length,
+      nutritionAwaitingData,
+      nutritionAvgKcal,
+      nutritionAvgProt,
+      nutritionTargetKcal: targets.kcal,
+      nutritionTargetProt: targets.prot,
       workoutSessions,
       workoutTarget: sessionTarget,
       sleepAvg: sleepAvg != null ? Math.round(sleepAvg * 10) / 10 : null,

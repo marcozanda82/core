@@ -11,6 +11,7 @@ import {
 import {
   averageMuscleResidual,
   buildGlycemicRiskBreakdown,
+  computeAverageDailyFastingWindow,
   computeGlycemicRiskPercent,
   formatFastingHoursLabel,
   REFERENCE_HEIGHT_CM,
@@ -144,6 +145,15 @@ export default function ClinicaRoom({ store }) {
     ? Number(fastingData.hoursFasted)
     : null;
 
+  const fastingTrend14d = useMemo(
+    () => computeAverageDailyFastingWindow({
+      fullHistory,
+      todayDate,
+      windowDays: LONGEVITY_WINDOW_DAYS,
+    }),
+    [fullHistory, todayDate],
+  );
+
   const glycemic = useMemo(
     () => computeGlycemicRiskPercent({
       hoursFasted,
@@ -178,7 +188,7 @@ export default function ClinicaRoom({ store }) {
 
   const muscleAvg = averageMuscleResidual(fourCylinder);
   const muscleLabel = muscleAvg == null ? 'n/d' : `${Math.round(muscleAvg * 100)}%`;
-  const fastingLabel = fastingData?.timeString || formatFastingHoursLabel(hoursFasted);
+  const fastingLabel = formatFastingHoursLabel(fastingTrend14d.averageHours);
 
   if (!ready) {
     return <GlassSpinner />;
@@ -206,9 +216,11 @@ export default function ClinicaRoom({ store }) {
       <SaluteClinicalInsight
         report={health.report}
         analysisDate={health.analysisDate || analysisDate}
+        todayDate={todayDate}
         status={health.status}
         errorMessage={health.errorMessage}
         isRefreshing={health.isRefreshing}
+        isUpdatedToday={health.isUpdatedToday}
         onRefresh={health.refresh}
       />
 

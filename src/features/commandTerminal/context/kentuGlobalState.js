@@ -15,6 +15,7 @@ import {
 } from './cardioCylinderStatus.js';
 import { sanitizeUserPortionsDict } from '../conversation/userPortionsMemory.js';
 import { buildFastingContextForLlm } from '../../stimulants/coffeeLogEngine.js';
+import { isFastingBreakerItem } from '../../../utils/fastingBreakRules.js';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -255,19 +256,33 @@ export function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activ
  * @returns {Array<object>}
  */
 function buildDiaryContextBlock(diaryState = {}) {
+  let meals = [];
   if (Array.isArray(diaryState)) {
-    return diaryState;
+    meals = diaryState;
+  } else if (Array.isArray(diaryState?.TODAY_DIARY_INDEX)) {
+    meals = diaryState.TODAY_DIARY_INDEX;
+  } else if (Array.isArray(diaryState?.meals)) {
+    meals = diaryState.meals;
+  } else {
+    const activeLog = Array.isArray(diaryState?.activeLog) ? diaryState.activeLog : [];
+    meals = buildTodayDiaryIndex(activeLog, {
+      fullHistory: diaryState?.fullHistory || {},
+      activeDate: diaryState?.activeDate || null,
+    });
   }
-  if (Array.isArray(diaryState?.TODAY_DIARY_INDEX)) {
-    return diaryState.TODAY_DIARY_INDEX;
-  }
-  if (Array.isArray(diaryState?.meals)) {
-    return diaryState.meals;
-  }
-  const activeLog = Array.isArray(diaryState?.activeLog) ? diaryState.activeLog : [];
-  return buildTodayDiaryIndex(activeLog, {
-    fullHistory: diaryState?.fullHistory || {},
-    activeDate: diaryState?.activeDate || null,
+
+  // Annota ogni voce: il caffè amaro / <10 kcal NON conta come interruzione digiuno.
+  return (Array.isArray(meals) ? meals : []).map((meal) => {
+    if (!meal || typeof meal !== 'object') return meal;
+    const breaksFast = isFastingBreakerItem(meal);
+    return {
+      ...meal,
+      breaksFast,
+      countsAsLastMeal: breaksFast,
+      fastingNote: breaksFast
+        ? null
+        : 'NON interrompe il digiuno (kcal < 10 o bevanda safe). Ignora per stato digiuno.',
+    };
   });
 }
 
@@ -317,7 +332,21 @@ export function buildKentuGlobalStateObject(
       ?? diaryState?.fastingBrokenBySweetCoffee,
     bitterCoffeeDuringFast: options.bitterCoffeeDuringFast
       ?? diaryState?.bitterCoffeeDuringFast,
-    phaseName: options.fastingPhaseName ?? diaryState?.fastingPhaseName ?? null,
+    fastingBrokenPrematurely: options.fastingBrokenPrematurely
+      ?? diaryState?.fastingBrokenPrematurely
+      ?? nutritionState?.healthScoreMetrics?.fastingBrokenPrematurely,
+    phaseName: options.fastingPhaseName
+      ?? diaryState?.fastingPhaseName
+      ?? options.metabolicSnapshot?.activeFastingStatus?.phaseLabel
+      ?? options.metabolicSnapshot?.phase?.label
+      ?? null,
+    phaseId: options.metabolicSnapshot?.activeFastingStatus?.phaseId
+      ?? options.metabolicSnapshot?.phase?.id
+      ?? null,
+    metabolicSnapshot: options.metabolicSnapshot
+      ?? diaryState?.metabolicSnapshot
+      ?? nutritionState?.metabolicSnapshot
+      ?? null,
   });
 
   const avatarSymbiosis = buildAvatarSymbiosisBlock(
@@ -359,6 +388,9 @@ export function buildKentuGlobalStateObject(
     Diary_Context: {
       scope: 'today_only',
       meals: buildDiaryContextBlock(diaryState),
+      fastingRule:
+        'Solo meals con breaksFast/countsAsLastMeal=true (kcal >= 10) contano come ultimo pasto. '
+        + 'Caffè amaro e voci con fastingNote NON interrompono il digiuno: usa Fasting_Context.statusLine.',
     },
   };
 }
@@ -390,7 +422,7 @@ export function buildKentuGlobalState(
     diaryState,
     options,
   );
-  return JSON.stringify(pack, null, 2);
+  return serializeKentuGlobalState(pack);
 }
 
 /**
@@ -417,6 +449,11 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
     || state.cylindersState
     || null;
 
+  const hoursFromMonitor = state.metabolicSnapshot?.activeFastingStatus?.hoursSinceLastMeal
+    ?? state.metabolicSnapshot?.hoursSinceLastMeal
+    ?? state.fastingData?.hoursFasted
+    ?? state.healthScoreMetrics?.hoursFasted;
+
   const object = buildKentuGlobalStateObject(
     {
       activeLog,
@@ -428,10 +465,9 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       userPortions: state.userPortions,
       userProfile: state.userProfile,
       userDisplayName: state.userDisplayName,
-      hoursFasted: state.healthScoreMetrics?.hoursFasted
-        ?? state.fastingData?.hoursFasted
-        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      hoursFasted: hoursFromMonitor,
       healthScore: state.healthScore,
+      metabolicSnapshot: state.metabolicSnapshot,
     },
     cylindersState,
     cardioLogs,
@@ -443,12 +479,14 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       userPortions: state.userPortions,
       userDisplayName: state.userDisplayName,
       manualNodes: state.manualNodes,
-      hoursFasted: state.healthScoreMetrics?.hoursFasted
-        ?? state.fastingData?.hoursFasted
-        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      hoursFasted: hoursFromMonitor,
       fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
       bitterCoffeeDuringFast: state.healthScoreMetrics?.bitterCoffeeDuringFast,
-      fastingPhaseName: state.fastingData?.phaseName ?? state.metabolicSnapshot?.phase?.label,
+      fastingBrokenPrematurely: state.healthScoreMetrics?.fastingBrokenPrematurely,
+      fastingPhaseName: state.metabolicSnapshot?.activeFastingStatus?.phaseLabel
+        ?? state.metabolicSnapshot?.phase?.label
+        ?? state.fastingData?.phaseName,
+      metabolicSnapshot: state.metabolicSnapshot,
       healthScore: state.healthScore,
     },
     {
@@ -459,23 +497,33 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
         || state.userProfile?.name
         || '',
       manualNodes: state.manualNodes,
-      hoursFasted: state.healthScoreMetrics?.hoursFasted
-        ?? state.fastingData?.hoursFasted
-        ?? state.metabolicSnapshot?.hoursSinceLastMeal,
+      hoursFasted: hoursFromMonitor,
       fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
       bitterCoffeeDuringFast: state.healthScoreMetrics?.bitterCoffeeDuringFast,
-      fastingPhaseName: state.fastingData?.phaseName ?? state.metabolicSnapshot?.phase?.label,
+      fastingBrokenPrematurely: state.healthScoreMetrics?.fastingBrokenPrematurely,
+      fastingPhaseName: state.metabolicSnapshot?.activeFastingStatus?.phaseLabel
+        ?? state.metabolicSnapshot?.phase?.label
+        ?? state.fastingData?.phaseName,
+      metabolicSnapshot: state.metabolicSnapshot,
     },
   );
 
   return {
     object,
-    text: JSON.stringify(object, null, 2),
+    text: serializeKentuGlobalState(object),
   };
 }
 
 /** Intestazione richiesta per l'iniezione nel system_instruction. */
-export const KENTU_GLOBAL_STATE_PROMPT_HEADER = '\n\n--- STATO ATTUALE DELL\'UTENTE ---\n';
+export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
+  '',
+  '',
+  '--- STATO ATTUALE DELL\'UTENTE ---',
+  'REGOLA DIGIUNO (OBBLIGATORIA): usa SOLO Fasting_Context.statusLine / isFasting / aiGuidance.',
+  'Il Monitor Metabolico è la fonte di verità. NON dedurre interruzione digiuno dal Diary_Context o dal log pasti.',
+  'Bevande < 10 kcal (caffè amaro, tè, acqua) NON interrompono il digiuno.',
+  '',
+].join('\n');
 
 /**
  * Accoda il Global State a una system instruction esistente.
@@ -489,4 +537,11 @@ export function appendKentuGlobalStateToSystemInstruction(systemInstruction, glo
   if (!pack) return base;
   if (!base) return `${KENTU_GLOBAL_STATE_PROMPT_HEADER.trimStart()}${pack}`;
   return `${base}${KENTU_GLOBAL_STATE_PROMPT_HEADER}${pack}`;
+}
+
+function serializeKentuGlobalState(object) {
+  const statusLine = asTrimmedString(object?.Fasting_Context?.statusLine);
+  const json = JSON.stringify(object, null, 2);
+  if (!statusLine) return json;
+  return `${statusLine}\n\n${json}`;
 }

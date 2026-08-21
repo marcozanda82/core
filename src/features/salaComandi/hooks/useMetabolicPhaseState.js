@@ -11,8 +11,15 @@ const TICK_MS = 60_000;
  * Interroga diario (SNC, sonno) se `biometrics` non è passato esplicitamente.
  *
  * @param {object|null} biometricsOverride — `{ stressLevel, sleepQuality, recoveryScore }` opzionale
+ * @param {Array<object>|null} [manualNodes] — stimolanti (caffè) del giorno
  */
-export function useMetabolicPhaseState(fullHistory, activeLog, anchorDate, biometricsOverride) {
+export function useMetabolicPhaseState(
+  fullHistory,
+  activeLog,
+  anchorDate,
+  biometricsOverride,
+  manualNodes = null,
+) {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -31,8 +38,12 @@ export function useMetabolicPhaseState(fullHistory, activeLog, anchorDate, biome
   }, [fullHistory, activeLog, anchorDate, biometricsOverride, tick]);
 
   return useMemo(
-    () => buildMetabolicSnapshot(fullHistory, activeLog, { anchorDate, biometrics }),
-    [fullHistory, activeLog, anchorDate, biometrics, tick],
+    () => buildMetabolicSnapshot(fullHistory, activeLog, {
+      anchorDate,
+      biometrics,
+      manualNodes: Array.isArray(manualNodes) ? manualNodes : [],
+    }),
+    [fullHistory, activeLog, anchorDate, biometrics, tick, manualNodes],
   );
 }
 

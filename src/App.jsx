@@ -10,6 +10,7 @@ import GlobalChatOverlay from './components/GlobalChatOverlay';
 import LoginScreen from './components/auth/LoginScreen';
 import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
+import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import { db } from './firebaseConfig';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
@@ -26,7 +27,7 @@ function AppBootFallback() {
 
 /**
  * Dopo login: se `profile.firstSetupCompleted !== true`, mostra il Battesimo
- * al posto dell'app principale. Al submit smonta il wizard e rivela SalaComandi.
+ * al posto dell'app principale. Dopo salvataggio + «Inizia ora» smonta il wizard.
  */
 function AuthenticatedApp() {
   const { user, authReady } = useAuth();
@@ -130,6 +131,7 @@ function AuthenticatedApp() {
         </Routes>
       </Suspense>
       <GlobalChatOverlay />
+      <MealSavingOverlayHost />
     </>
   );
 }

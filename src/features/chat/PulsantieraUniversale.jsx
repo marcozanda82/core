@@ -7,6 +7,7 @@ const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti' },
   { id: 'rapidi', icon: '⚡', label: 'Rapidi' },
   { id: 'attivita', icon: '🏃', label: 'Attività' },
+  { id: 'report', icon: '📊', label: 'Report' },
   { id: 'tutti', icon: '⋯', label: 'Tutti' },
 ];
 
@@ -14,6 +15,7 @@ const CATEGORY_LABELS = {
   pasti: 'Pasti',
   rapidi: 'Rapidi',
   attivita: 'Attività',
+  report: 'Report',
   tutti: 'Tutte le azioni',
   'guidato-pasto': 'Per quale pasto vuoi che ti guidi?',
 };
@@ -43,6 +45,35 @@ const SUBMENUS = {
     { id: 'corsa', icon: '🏃', label: 'Corsa', action: 'openActivity', defaultTab: 'corsa' },
     { id: 'piano', icon: '🗓️', label: 'Piano', action: 'openPlan' },
   ],
+  report: [
+    {
+      id: 'report-ieri',
+      icon: '📰',
+      label: 'Report di Ieri',
+      action: 'send',
+      message: 'Genera il report di ieri',
+      intent: 'GENERATE_PERIOD_REPORT',
+      reportKind: 'yesterday',
+    },
+    {
+      id: 'sintesi-settimanale',
+      icon: '📅',
+      label: 'Sintesi Settimanale',
+      action: 'send',
+      message: 'Genera la sintesi settimanale',
+      intent: 'GENERATE_PERIOD_REPORT',
+      reportKind: 'weekly',
+    },
+    {
+      id: 'trend-mensile',
+      icon: '📈',
+      label: 'Trend Mensile',
+      action: 'send',
+      message: 'Genera il trend mensile',
+      intent: 'GENERATE_PERIOD_REPORT',
+      reportKind: 'monthly',
+    },
+  ],
 };
 
 /** Vocabolario completo — pilastro "Tutti". */
@@ -70,6 +101,39 @@ const VOCABULARY_SECTIONS = [
       { id: 'corsa', icon: '🏃', label: 'Corsa', action: 'openActivity', defaultTab: 'corsa' },
       { id: 'piano', icon: '🗓️', label: 'Piano', action: 'openPlan' },
       { id: 'peso', icon: '⚖️', label: 'Peso', action: 'send', message: 'Peso' },
+    ],
+  },
+  {
+    id: 'report',
+    title: 'Report',
+    items: [
+      {
+        id: 'report-ieri',
+        icon: '📰',
+        label: 'Report di Ieri',
+        action: 'send',
+        message: 'Genera il report di ieri',
+        intent: 'GENERATE_PERIOD_REPORT',
+        reportKind: 'yesterday',
+      },
+      {
+        id: 'sintesi-settimanale',
+        icon: '📅',
+        label: 'Sintesi Settimanale',
+        action: 'send',
+        message: 'Genera la sintesi settimanale',
+        intent: 'GENERATE_PERIOD_REPORT',
+        reportKind: 'weekly',
+      },
+      {
+        id: 'trend-mensile',
+        icon: '📈',
+        label: 'Trend Mensile',
+        action: 'send',
+        message: 'Genera il trend mensile',
+        intent: 'GENERATE_PERIOD_REPORT',
+        reportKind: 'monthly',
+      },
     ],
   },
   {
@@ -348,7 +412,10 @@ export default function PulsantieraUniversale({
       const text = String(item.message || item.label || '').trim();
       if (!text) return;
       closeMenus();
-      onSendChatMessage?.(text, item.intent ? { intent: item.intent } : undefined);
+      const extras = {};
+      if (item.intent) extras.intent = item.intent;
+      if (item.reportKind) extras.reportKind = item.reportKind;
+      onSendChatMessage?.(text, Object.keys(extras).length ? extras : undefined);
     }
   }, [
     closeMenus,
@@ -610,7 +677,7 @@ export default function PulsantieraUniversale({
       {submenuOverlay}
 
       <div
-        className="grid w-full grid-cols-4 gap-2"
+        className="grid w-full grid-cols-5 gap-1.5 sm:gap-2"
         role="toolbar"
         aria-label="Pulsantiera universale"
       >

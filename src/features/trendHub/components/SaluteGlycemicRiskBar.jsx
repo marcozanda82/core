@@ -91,7 +91,8 @@ export default function SaluteGlycemicRiskBar({
 
         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-400 sm:grid-cols-3">
           <p className="m-0 truncate">
-            Digiuno: <span className="font-semibold text-slate-200">{hoursFastedLabel}</span>
+            Media Digiuno (14gg):{' '}
+            <span className="font-semibold text-slate-200">{hoursFastedLabel}</span>
           </p>
           <p className="m-0 truncate text-right sm:text-center">
             Residuo: <span className="font-semibold text-slate-200">{muscleLabel}</span>

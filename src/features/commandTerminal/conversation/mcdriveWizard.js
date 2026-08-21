@@ -2,13 +2,13 @@ import {
   parseConsumedMealFromNaturalText,
   extractBareFoodNamesFromText,
 } from './mealLogIntent.js';
-import { findSemanticKentuMatches, findExactLiteralFoodInDb } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 import {
   computeMacrosForWeight,
   getPer100Macros,
 } from '../../mealBuilder/utils/foodMacroUtils.js';
 import { getDynamicMealTargets, toCanonicalMealType } from '../../../coreEngine.jsx';
 import { getLastUsedQuantity } from './userRecentFoods.js';
+import { resolveFoodAcrossDatabases } from './multiDbFoodResolver.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -76,6 +76,12 @@ const DEFAULT_GRAMS = 100;
 const VALID_CONFIDENCE = new Set(['high']);
 const MCDRIVE_MEAL_TYPES = new Set(['colazione', 'snack', 'pranzo', 'cena']);
 const MAX_ALTERNATIVES = 4;
+
+/** Stati che richiedono la scheda di risoluzione alimento. */
+export const MCDRIVE_DISAMBIGUATION_STATUSES = Object.freeze([
+  'requires_disambiguation',
+  'pending_enrichment',
+]);
 
 /**
  * @param {string} raw
@@ -380,12 +386,23 @@ export function buildMcDriveRawItem(parsed = {}) {
  * @param {object} item
  * @returns {boolean}
  */
+/**
+ * @param {string|object} statusOrItem
+ * @returns {boolean}
+ */
+export function isMcDriveDisambiguationStatus(statusOrItem) {
+  const status = typeof statusOrItem === 'object'
+    ? String(statusOrItem?.status || '').toLowerCase()
+    : String(statusOrItem || '').toLowerCase();
+  return MCDRIVE_DISAMBIGUATION_STATUSES.includes(status);
+}
+
 export function isMcDriveRawItem(item) {
   if (!item || typeof item !== 'object') return false;
   const status = String(item.status || '').toLowerCase();
   if (status === 'resolved') return false;
-  if (status === 'raw' || status === 'pending_enrichment' || status === 'skipped'
-    || status === 'processing' || status === 'validating') {
+  if (status === 'raw' || status === 'pending_enrichment' || status === 'requires_disambiguation'
+    || status === 'skipped' || status === 'processing' || status === 'validating') {
     return true;
   }
   const hasMacros = Number.isFinite(Number(item.kcal)) && Number(item.kcal) > 0;
@@ -441,9 +458,7 @@ export function isMcDriveValidationPenultimateOrLater(items = []) {
  * @returns {boolean}
  */
 export function hasPendingMcDriveEnrichment(items = []) {
-  return (Array.isArray(items) ? items : []).some(
-    (item) => String(item?.status || '').toLowerCase() === 'pending_enrichment',
-  );
+  return (Array.isArray(items) ? items : []).some((item) => isMcDriveDisambiguationStatus(item));
 }
 
 /**
@@ -591,75 +606,59 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
 }
 
 /**
- * Personal DB prima, poi Kentu DB.
- * 1) Match letterale esatto (case/accenti) → resolved immediato, niente AI.
- * 2) Altrimenti Semantic Matchmaker (solo high/medium).
- * Restituisce anche alternatives (top 3–4 escluso il match).
+ * Pipeline multi-DB gerarchica: Personale → CREA/Kentu IT → USDA → OFF.
+ * Auto-accetta solo confidenza ≥ 0.85; altrimenti needsDisambiguation + candidati.
  * @param {string} foodName
- * @param {{ personalDb?: object|null, kentuItDb?: object|null, signal?: AbortSignal }} ctx
- * @returns {Promise<{ match: object, source: 'personal'|'kentu', alternatives: object[] } | null>}
+ * @param {{
+ *   personalDb?: object|null,
+ *   kentuItDb?: object|null,
+ *   globalDb?: object|null,
+ *   offDb?: object|null,
+ *   signal?: AbortSignal,
+ * }} ctx
+ * @returns {Promise<{
+ *   match: object|null,
+ *   source: string|null,
+ *   alternatives: object[],
+ *   candidates: object[],
+ *   confidenceScore: number,
+ *   needsDisambiguation: boolean,
+ * }>}
  */
 export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}) {
   const name = String(foodName || '').trim();
-  if (!name) return null;
-
-  const signal = ctx.signal;
-  const personalDb = ctx.personalDb && typeof ctx.personalDb === 'object' ? ctx.personalDb : null;
-  const kentuItDb = ctx.kentuItDb && typeof ctx.kentuItDb === 'object' ? ctx.kentuItDb : null;
-
-  // Gate letterale: priorità assoluta sul ranking semantico AI.
-  if (personalDb && Object.keys(personalDb).length > 0) {
-    const exactPersonal = findExactLiteralFoodInDb(name, personalDb);
-    if (exactPersonal) {
-      return {
-        match: exactPersonal,
-        source: 'personal',
-        alternatives: [],
-      };
-    }
-  }
-  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
-    const exactKentu = findExactLiteralFoodInDb(name, kentuItDb);
-    if (exactKentu) {
-      return {
-        match: exactKentu,
-        source: 'kentu',
-        alternatives: [],
-      };
-    }
+  if (!name) {
+    return {
+      match: null,
+      source: null,
+      alternatives: [],
+      candidates: [],
+      confidenceScore: 0,
+      needsDisambiguation: true,
+    };
   }
 
-  if (personalDb && Object.keys(personalDb).length > 0) {
-    const personalMatches = await findSemanticKentuMatches(name, {
-      personalDb,
-      kentuItDb: null,
-    }, { signal });
-    const personalHit = pickValidSemanticMatch(personalMatches);
-    if (personalHit) {
+  const decision = await resolveFoodAcrossDatabases(name, {
+    personalDb: ctx.personalDb,
+    kentuItDb: ctx.kentuItDb,
+    globalDb: ctx.globalDb,
+    offDb: ctx.offDb,
+    signal: ctx.signal,
+  });
+
+  if (!decision.needsDisambiguation && decision.match) {
+    // Compat: se arriva un match “high” legacy senza score numerico, ok.
+    const label = String(decision.match.confidence || '').toLowerCase();
+    if (label && !VALID_CONFIDENCE.has(label) && Number(decision.confidenceScore) < 0.85) {
       return {
-        match: personalHit,
-        source: 'personal',
-        alternatives: buildMcDriveAlternatives(personalMatches, personalHit, MAX_ALTERNATIVES),
+        ...decision,
+        match: null,
+        needsDisambiguation: true,
       };
     }
   }
 
-  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
-    const kentuMatches = await findSemanticKentuMatches(name, {
-      kentuItDb,
-      personalDb: null,
-    }, { signal });
-    const kentuHit = pickValidSemanticMatch(kentuMatches);
-    if (kentuHit) {
-      return {
-        match: kentuHit,
-        source: 'kentu',
-        alternatives: buildMcDriveAlternatives(kentuMatches, kentuHit, MAX_ALTERNATIVES),
-      };
-    }
-  }
-
-  return null;
+  return decision;
 }
 
 export { getLastUsedQuantity };

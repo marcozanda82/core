@@ -21,8 +21,7 @@ const HEMISPHERE_OPTIONS = [
 ];
 
 /**
- * Fotografia dello stato attuale: Progressione (score + diagnostica) | Salute.
- * Nessun grafico storico (Bussola / Radar / Mappa).
+ * Fotografia Progressione — score + diagnostica metabolica.
  */
 function ProgressioneSnapshot({
   fourCylinder = null,
@@ -72,6 +71,7 @@ function ProgressioneSnapshot({
     return calculateProgressionScore(
       {
         days: logs.days,
+        todayDate: logs.todayDate,
         sleepAvgHours: logs.sleepAvgHours,
         workoutSessionsTotal: logs.workoutSessionsTotal,
       },
@@ -108,7 +108,8 @@ function ProgressioneSnapshot({
 }
 
 /**
- * Shell Fotografia — switch Progressione / Salute (ex emisferi TrendHub).
+ * Shell Fotografia — Progressione (`ProgressioneSnapshot`) | Salute (`SaluteView`).
+ * Da Home / Centro Analisi: `lockedHemisphere` + `hideHemisphereNav` → videata dedicata.
  */
 export default function SnapshotHub({
   fourCylinder = null,
@@ -124,7 +125,6 @@ export default function SnapshotHub({
   activeCompensation = null,
   onConfirmCompensation = null,
   onClearCompensation = null,
-  // —— Salute ——
   onSaveHealthBiometrics = null,
   healthTodayDate = '',
   healthDb = null,
@@ -135,8 +135,20 @@ export default function SnapshotHub({
   bodyMetricsHistory = [],
   profileHeightCm = null,
   enabled = true,
+  lockedHemisphere = null,
+  hideHemisphereNav = false,
 } = {}) {
-  const { hemisphere, setHemisphere, isProgressione, isSalute } = useTrendHubHemisphere();
+  const { hemisphere, setHemisphere } = useTrendHubHemisphere();
+
+  const effectiveHemisphere = useMemo(() => {
+    const locked = String(lockedHemisphere || '').toLowerCase();
+    if (locked === 'progressione' || locked === 'salute') return locked;
+    return hemisphere === 'salute' ? 'salute' : 'progressione';
+  }, [lockedHemisphere, hemisphere]);
+
+  const isProgressione = effectiveHemisphere === 'progressione';
+  const isSalute = effectiveHemisphere === 'salute';
+  const showHemisphereNav = !hideHemisphereNav && !lockedHemisphere;
 
   const activeLogIsToday = useMemo(() => {
     const today = String(healthTodayDate || '').slice(0, 10);
@@ -198,29 +210,31 @@ export default function SnapshotHub({
 
   return (
     <div className="trend-hub-root snapshot-hub-root">
-      <div
-        className="trend-hub-hemisphere-segmented"
-        role="tablist"
-        aria-label="Fotografia Progressione o Salute"
-      >
-        {HEMISPHERE_OPTIONS.map(({ value, icon, label }) => {
-          const active = hemisphere === value;
-          return (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              aria-label={label}
-              title={label}
-              className={`trend-hub-hemisphere-segment trend-hub-hemisphere-segment--icon${active ? ' trend-hub-hemisphere-segment--active' : ''}`}
-              onClick={() => setHemisphere(value)}
-            >
-              <span className="trend-hub-hemisphere-segment__icon" aria-hidden>{icon}</span>
-            </button>
-          );
-        })}
-      </div>
+      {showHemisphereNav ? (
+        <div
+          className="trend-hub-hemisphere-segmented"
+          role="tablist"
+          aria-label="Fotografia Progressione o Salute"
+        >
+          {HEMISPHERE_OPTIONS.map(({ value, icon, label }) => {
+            const active = effectiveHemisphere === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={label}
+                title={label}
+                className={`trend-hub-hemisphere-segment trend-hub-hemisphere-segment--icon${active ? ' trend-hub-hemisphere-segment--active' : ''}`}
+                onClick={() => setHemisphere(value)}
+              >
+                <span className="trend-hub-hemisphere-segment__icon" aria-hidden>{icon}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div className="trend-hub-stage snapshot-hub-stage">
         <Suspense fallback={<KentuLazySectionFallback label={fallbackLabel} />}>

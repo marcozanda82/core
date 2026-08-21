@@ -5,16 +5,9 @@ import {
   findCentroAnalisiRoom,
 } from './centroAnalisiTree';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
-import MetabolismoRoom from './MetabolismoRoom';
-import SonnoRoom from './SonnoRoom';
-import BiometrieRoom from './BiometrieRoom';
-import ClinicaRoom from './ClinicaRoom';
 import BussolaRoom from './BussolaRoom';
 import MappaRoom from './MappaRoom';
 import RadarRoom from './RadarRoom';
-import RecuperoRoom from './RecuperoRoom';
-import AllenamentoRoom from './AllenamentoRoom';
-import NutrizioneRoom from './NutrizioneRoom';
 import PremiumAmbientBackground from './PremiumAmbientBackground';
 import { useCentroAnalisiReadStore } from './useCentroAnalisiReadStore';
 
@@ -46,38 +39,6 @@ function GlassCardButton({ icon, label, hint, onClick, wide = false }) {
   );
 }
 
-function BreadcrumbTrail({ crumbs, onSelect }) {
-  return (
-    <nav aria-label="Percorso" className="min-w-0 flex-1">
-      <ol className="flex min-w-0 flex-wrap items-center gap-1.5 text-[0.72rem] font-semibold tracking-wide sm:text-sm">
-        {crumbs.map((crumb, index) => {
-          const isLast = index === crumbs.length - 1;
-          return (
-            <li key={crumb.id} className="flex min-w-0 items-center gap-1.5">
-              {index > 0 ? (
-                <span className="shrink-0 text-zinc-500" aria-hidden>›</span>
-              ) : null}
-              {isLast ? (
-                <span className="truncate text-cyan-100" aria-current="page">
-                  {crumb.label}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onSelect(crumb.id)}
-                  className="truncate text-zinc-400 transition-colors hover:text-zinc-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40"
-                >
-                  {crumb.label}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
-}
-
 function PlaceholderRoomPanel({ area, room }) {
   return (
     <section
@@ -97,11 +58,24 @@ function PlaceholderRoomPanel({ area, room }) {
 }
 
 /**
- * Scheletro isolato del Centro Analisi.
- * La stanza Metabolismo legge il diario in sola lettura; SnapshotHub/SaluteView restano intatti.
+ * Centro Analisi — hub.
+ * Salute / Progressione → stessa Fotografia della Home (`onOpenFotografia*`).
+ * Strumentazione resta a stanze interne (Bussola / Mappa / Radar).
  */
-export default function CentroAnalisiView({ onExit = null, embedded = false } = {}) {
-  const [areaId, setAreaId] = useState(null);
+export default function CentroAnalisiView({
+  onExit = null,
+  embedded = false,
+  /** Apre la Fotografia Salute (stesso handler dei widget Home). */
+  onOpenFotografiaSalute = null,
+  /** Apre la Fotografia Progressione (stesso handler dei widget Home). */
+  onOpenFotografiaProgressione = null,
+  initialAreaId = null,
+} = {}) {
+  const [areaId, setAreaId] = useState(() => {
+    const id = String(initialAreaId || '').toLowerCase();
+    // Solo Strumentazione ha ancora drill-down interno
+    return id === 'strumentazione' ? id : null;
+  });
   const [roomId, setRoomId] = useState(null);
   const centroAnalisiStore = useCentroAnalisiReadStore();
 
@@ -110,21 +84,8 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
     () => (areaId && roomId ? findCentroAnalisiRoom(areaId, roomId) : null),
     [areaId, roomId],
   );
-
-  const crumbs = useMemo(() => {
-    const list = [
-      { id: 'kentuos', label: 'KentuOS' },
-      { id: 'hub', label: 'Centro Analisi' },
-    ];
-    if (area) list.push({ id: `area:${area.id}`, label: area.label });
-    if (area && room) list.push({ id: `room:${room.id}`, label: room.label });
-    return list;
-  }, [area, room]);
-
-  const goHub = useCallback(() => {
-    setAreaId(null);
-    setRoomId(null);
-  }, []);
+  const isStrumentazione = area?.id === 'strumentazione';
+  const isStrumentazioneRoom = isStrumentazione && Boolean(room);
 
   const handleBack = useCallback(() => {
     if (roomId) {
@@ -138,27 +99,32 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
     onExit?.();
   }, [areaId, onExit, roomId]);
 
-  const handleCrumb = useCallback((crumbId) => {
-    if (crumbId === 'kentuos') {
-      onExit?.();
+  const openHubItem = useCallback((itemId) => {
+    if (itemId === 'salute') {
+      if (typeof onOpenFotografiaSalute === 'function') {
+        onOpenFotografiaSalute();
+        return;
+      }
       return;
     }
-    if (crumbId === 'hub') {
-      goHub();
+    if (itemId === 'progressione') {
+      if (typeof onOpenFotografiaProgressione === 'function') {
+        onOpenFotografiaProgressione();
+        return;
+      }
       return;
     }
-    if (String(crumbId).startsWith('area:')) {
+    if (itemId === 'strumentazione') {
+      setAreaId('strumentazione');
       setRoomId(null);
     }
-  }, [goHub, onExit]);
+  }, [onOpenFotografiaProgressione, onOpenFotografiaSalute]);
 
   const title = room?.label || area?.label || 'Centro Analisi';
-  const subtitle = room
-    ? 'Stanza'
-    : area
-      ? area.kicker
-      : 'Scegli una macro-area';
-  const isStrumentazioneRoom = area?.id === 'strumentazione' && Boolean(room);
+  const showHubTitle = !area;
+  const backLabel = areaId || roomId
+    ? '← Indietro'
+    : (embedded ? '← Home' : '← Indietro');
 
   return (
     <div
@@ -167,16 +133,15 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
         embedded ? 'h-full flex-1' : 'h-full max-h-[100dvh] [height:100dvh]',
       ].join(' ')}
     >
-      <PremiumAmbientBackground activeRoomId={room?.id} />
+      <PremiumAmbientBackground activeRoomId={room?.id || null} />
 
-      {/* Layer 10 — lastre di vetro */}
       <header className="relative z-10 shrink-0 px-3 pt-3 sm:px-5">
         <div className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${GLASS_SURFACE_CLASS}`}>
           <button
             type="button"
             onClick={handleBack}
             className={[
-              'flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-cyan-200',
+              'flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-sm font-semibold text-cyan-200',
               GLASS_SURFACE_CLASS,
               'transition-all duration-150 hover:border-white/25 hover:bg-white/[0.08]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
@@ -184,23 +149,26 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
             aria-label={areaId || roomId ? 'Torna indietro' : 'Torna a KentuOS'}
             title="Indietro"
           >
-            ←
+            {backLabel}
           </button>
-          <BreadcrumbTrail crumbs={crumbs} onSelect={handleCrumb} />
+          <h1 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
+            {title}
+          </h1>
         </div>
       </header>
 
       <main
-        className={`relative z-10 mx-auto flex w-full ${isStrumentazioneRoom ? 'max-w-2xl' : 'max-w-lg'} min-h-0 flex-1 flex-col overflow-hidden px-4 pt-6 sm:px-6`}
+        className={`relative z-10 mx-auto flex w-full ${isStrumentazioneRoom ? 'max-w-2xl' : 'max-w-lg'} min-h-0 flex-1 flex-col overflow-hidden px-4 pt-4 sm:px-6`}
       >
-        <div className="shrink-0 text-center">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-            {subtitle}
-          </p>
-          <h1 className="mt-1 text-xl font-semibold text-zinc-50">{title}</h1>
-        </div>
+        {showHubTitle ? (
+          <div className="shrink-0 text-center">
+            <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Scegli una macro-area
+            </p>
+          </div>
+        ) : null}
 
-        <div className="mt-5 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-24 [padding-bottom:max(6rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))]">
+        <div className="mt-4 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-24 [padding-bottom:max(6rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))]">
           {!area ? (
             <div className="grid w-full grid-cols-2 gap-3">
               {CENTRO_ANALISI_AREAS.map((item) => (
@@ -210,16 +178,13 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
                   label={item.label}
                   hint={item.hint}
                   wide={item.id === 'strumentazione'}
-                  onClick={() => {
-                    setAreaId(item.id);
-                    setRoomId(null);
-                  }}
+                  onClick={() => openHubItem(item.id)}
                 />
               ))}
             </div>
           ) : null}
 
-          {area && !room ? (
+          {isStrumentazione && !room ? (
             <div className="grid w-full grid-cols-2 gap-3">
               {area.rooms.map((item) => (
                 <GlassCardButton
@@ -232,27 +197,13 @@ export default function CentroAnalisiView({ onExit = null, embedded = false } = 
             </div>
           ) : null}
 
-          {area && room ? (
-            room.id === 'metabolismo' ? (
-              <MetabolismoRoom store={centroAnalisiStore} />
-            ) : room.id === 'sonno' ? (
-              <SonnoRoom store={centroAnalisiStore} />
-            ) : room.id === 'biometrie' ? (
-              <BiometrieRoom store={centroAnalisiStore} />
-            ) : room.id === 'clinica' ? (
-              <ClinicaRoom store={centroAnalisiStore} />
-            ) : room.id === 'bussola' ? (
+          {isStrumentazione && room ? (
+            room.id === 'bussola' ? (
               <BussolaRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
             ) : room.id === 'mappa' ? (
               <MappaRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
             ) : room.id === 'radar' ? (
               <RadarRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
-            ) : room.id === 'recupero' ? (
-              <RecuperoRoom store={centroAnalisiStore} />
-            ) : room.id === 'allenamento' ? (
-              <AllenamentoRoom store={centroAnalisiStore} />
-            ) : room.id === 'nutrizione' ? (
-              <NutrizioneRoom store={centroAnalisiStore} />
             ) : (
               <PlaceholderRoomPanel area={area} room={room} />
             )

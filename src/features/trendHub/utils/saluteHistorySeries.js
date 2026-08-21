@@ -28,6 +28,9 @@ import {
   selectStoricoDayNode,
 } from './healthContextSelectors';
 
+/** Soglia kcal minima per contare un giorno nella media Nutrizione Progressione. */
+export const PROGRESSION_MIN_NUTRITION_DAY_KCAL = 300;
+
 export const REFERENCE_HEIGHT_CM = 174;
 export const LONGEVITY_WINDOW_DAYS = 14;
 export const SLEEP_GHOST_LOOKBACK_DAYS = 7;
@@ -180,16 +183,25 @@ export function buildUnifiedSleepSeries({
 
 /**
  * Baseline ghost: media notti precedenti (escl. oggi) o target 7.5.
+ * @param {Array<{ date?: string, hours?: number }> | null | undefined} series
+ * @param {string} todayDate
+ * @param {number} [targetHours]
+ * @param {{ maxSampleDays?: number }} [options] — limita alle N notti più recenti (es. 7)
  */
 export function computeGhostBaselineFromSeries(
   series,
   todayDate,
   targetHours = DEFAULT_SLEEP_HOURS,
+  options = {},
 ) {
   const today = String(todayDate || '').slice(0, 10);
-  const prior = (Array.isArray(series) ? series : []).filter(
+  const maxSample = Number(options.maxSampleDays);
+  let prior = (Array.isArray(series) ? series : []).filter(
     (s) => s.date !== today && Number.isFinite(s.hours),
   );
+  if (Number.isFinite(maxSample) && maxSample > 0 && prior.length > maxSample) {
+    prior = prior.slice(-maxSample);
+  }
   if (prior.length === 0) {
     return { averageHours: null, sampleSize: 0, targetHours, ghostHours: targetHours };
   }
@@ -202,6 +214,51 @@ export function computeGhostBaselineFromSeries(
     targetHours,
     ghostHours: averageHours,
   };
+}
+
+/**
+ * Serie calendario 14gg per il grafico Sonno · Ghost Car.
+ * @returns {{
+ *   sleepData: Array<{ date: string, dateKey: string, hours: number | null }>,
+ *   avg14Days: number | null,
+ *   sampleDays: number,
+ * }}
+ */
+export function buildSleepTrendChartData({
+  sleepSeries = [],
+  todayDate = '',
+  days = LONGEVITY_WINDOW_DAYS,
+} = {}) {
+  const today = String(todayDate || '').slice(0, 10);
+  const empty = { sleepData: [], avg14Days: null, sampleDays: 0 };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) return empty;
+
+  const byDate = new Map();
+  for (const row of Array.isArray(sleepSeries) ? sleepSeries : []) {
+    const key = String(row?.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) continue;
+    const h = Number(row.hours);
+    if (!Number.isFinite(h) || h <= 0) continue;
+    byDate.set(key, Math.round(h * 10) / 10);
+  }
+
+  const windowDays = Math.max(1, Number(days) || LONGEVITY_WINDOW_DAYS);
+  const sleepData = [];
+  const values = [];
+  for (let i = windowDays - 1; i >= 0; i -= 1) {
+    const dateKey = addDays(today, -i);
+    const hours = byDate.has(dateKey) ? byDate.get(dateKey) : null;
+    const parts = String(dateKey).split('-');
+    const label = parts.length === 3 ? `${parts[2]}/${parts[1]}` : dateKey;
+    sleepData.push({ date: label, dateKey, hours });
+    if (hours != null) values.push(hours);
+  }
+
+  if (values.length === 0) {
+    return { sleepData, avg14Days: null, sampleDays: 0 };
+  }
+  const avg14Days = Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+  return { sleepData, avg14Days, sampleDays: values.length };
 }
 
 export function isCardioWorkoutEntry(workout) {
@@ -460,6 +517,7 @@ export function buildProgressionLogsWindow({
   if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) {
     return {
       days: [],
+      todayDate: today || '',
       workoutSessionsTotal: 0,
       sleepAvgHours: null,
       windowDays,
@@ -489,18 +547,44 @@ export function buildProgressionLogsWindow({
 
   for (let i = 0; i < windowDays; i += 1) {
     const dateStr = addDays(today, -i);
-    const dayLog = dateStr === today && Array.isArray(todayLiveLog) && todayLiveLog.length > 0
+    const isToday = dateStr === today;
+    const dayNode = selectStoricoDayNode(fullHistory, dateStr);
+    const dayLog = isToday && Array.isArray(todayLiveLog) && todayLiveLog.length > 0
       ? todayLiveLog
-      : selectDayLogFromStoricoNode(selectStoricoDayNode(fullHistory, dateStr));
+      : selectDayLogFromStoricoNode(dayNode);
 
     const totals = computeTotali(Array.isArray(dayLog) ? dayLog : []);
     const kcal = Math.max(0, Math.round(Number(totals.kcal) || 0));
     const prot = Math.max(0, Math.round(Number(totals.prot) || 0));
     const carb = Math.max(0, Math.round(Number(totals.carb) || 0));
     const fat = Math.max(0, Math.round(Number(totals.fatTotal) || 0));
-    const hasNutrition = (Array.isArray(dayLog) ? dayLog : []).some(
-      (e) => e && (e.type === 'food' || e.type === 'recipe' || e.type === 'meal'),
-    ) || kcal > 0;
+
+    const hasRealCaloricMeal = (Array.isArray(dayLog) ? dayLog : []).some((e) => {
+      if (!e || typeof e !== 'object') return false;
+      const t = String(e.type || '').toLowerCase();
+      if (t === 'meal' && Array.isArray(e.items)) {
+        const mealKcal = e.items.reduce(
+          (sum, item) => sum + (Number(item?.kcal ?? item?.cal ?? item?.calories) || 0),
+          0,
+        );
+        return mealKcal >= PROGRESSION_MIN_NUTRITION_DAY_KCAL;
+      }
+      if (t === 'food' || t === 'recipe' || t === 'single') {
+        return (Number(e.kcal ?? e.cal ?? e.calories) || 0) >= PROGRESSION_MIN_NUTRITION_DAY_KCAL;
+      }
+      return false;
+    });
+
+    // Solo giorni con apporto calorico reale (≥ 300 kcal). Caffè/acqua non contano.
+    const hasNutrition = kcal >= PROGRESSION_MIN_NUTRITION_DAY_KCAL || hasRealCaloricMeal;
+
+    const nutritionDayComplete = Boolean(
+      dayNode?.nutritionDayComplete
+      || dayNode?.dayComplete
+      || dayNode?.isComplete
+      || dayNode?.dati?.nutritionDayComplete
+      || dayNode?.dati?.dayComplete,
+    );
 
     let workoutSessions = 0;
     for (const entry of (Array.isArray(dayLog) ? dayLog : [])) {
@@ -513,11 +597,14 @@ export function buildProgressionLogsWindow({
 
     dayRows.push({
       date: dateStr,
+      isToday,
       kcal,
       prot,
       carb,
       fat,
       hasNutrition,
+      nutritionDayComplete,
+      dayComplete: nutritionDayComplete,
       workoutSessions,
       sleepHours: sleepByDate.has(dateStr) ? sleepByDate.get(dateStr) : null,
     });
@@ -530,6 +617,7 @@ export function buildProgressionLogsWindow({
 
   return {
     days: dayRows,
+    todayDate: today,
     workoutSessionsTotal,
     sleepAvgHours,
     windowDays,

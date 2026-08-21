@@ -1,10 +1,11 @@
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
 import { getFoodIcon } from '../../utils/getFoodIcon';
+import { withMealSavingOverlay } from '../../utils/mealSavingOverlayController';
 import {
   draftFoodsToSolverItems,
   solverProposalToMcDriveItem,
@@ -19,6 +20,7 @@ import {
   draftHasRawMcDriveItems,
   formatMcdriveMealTypeLabel,
   hasPendingMcDriveEnrichment,
+  isMcDriveDisambiguationStatus,
   isMcDriveRawItem,
 } from '../commandTerminal/conversation/mcdriveWizard.js';
 
@@ -26,6 +28,7 @@ import {
 function resolveMcDriveVisualStatus(item) {
   const status = String(item?.status || '').toLowerCase();
   if (status === 'validating') return 'processing';
+  if (status === 'requires_disambiguation') return 'requires_disambiguation';
   if (status === 'raw' || status === 'processing' || status === 'pending_enrichment' || status === 'skipped' || status === 'resolved') {
     return status;
   }
@@ -52,7 +55,7 @@ function McDriveStatusIcon({ visualStatus, foodName, macros }) {
       </span>
     );
   }
-  if (visualStatus === 'pending_enrichment') {
+  if (visualStatus === 'pending_enrichment' || visualStatus === 'requires_disambiguation') {
     return (
       <span className="kentu-meal-tray__status-icon shrink-0 text-sm leading-none" aria-hidden>
         ⚠️
@@ -118,10 +121,12 @@ function LiveMealTray({
   onApplyAlternative = null,
   onReplaceFromSearch = null,
   onAppendSolverItems = null,
+  onRequestDisambiguation = null,
   getMealTargets = null,
   personalDb = null,
   kentuItDb = null,
   globalDb = null,
+  offDb = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
@@ -131,7 +136,8 @@ function LiveMealTray({
   const mealTypeLabel = String(tray?.mealTypeLabel || '').trim()
     || formatMcdriveMealTypeLabel(mealType);
   const hasRaw = tray?.hasRaw === true || draftHasRawMcDriveItems(items);
-  const needsCalculate = hasRaw || hasPendingMcDriveEnrichment(items);
+  const hasDisambiguationPending = hasPendingMcDriveEnrichment(items);
+  const needsCalculate = hasRaw || hasDisambiguationPending;
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
   const [showSolverModal, setShowSolverModal] = useState(false);
@@ -345,7 +351,9 @@ function LiveMealTray({
               const visualStatus = resolveMcDriveVisualStatus(item);
               const isRaw = visualStatus === 'raw';
               const isProcessing = visualStatus === 'processing';
-              const isPending = visualStatus === 'pending_enrichment';
+              const isPending = visualStatus === 'pending_enrichment'
+                || visualStatus === 'requires_disambiguation'
+                || isMcDriveDisambiguationStatus(item);
               const isResolved = visualStatus === 'resolved';
               const isSkipped = visualStatus === 'skipped';
               // LIFO: displayIndex 0 = ultimo inserimento (in cima).
@@ -358,7 +366,7 @@ function LiveMealTray({
               const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
 
               let detailLabel = '';
-              if (isPending) detailLabel = 'in attesa…';
+              if (isPending) detailLabel = 'Tocca per scegliere l\'alimento esatto';
               else if (isProcessing) detailLabel = 'analisi…';
               else if (isSkipped) detailLabel = 'tralasciato';
               else if (isRaw) detailLabel = ''; // nessun calcolo visibile
@@ -373,11 +381,11 @@ function LiveMealTray({
                   : isProcessing
                     ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
                     : isResolved
-                      ? 'kentu-meal-tray__row--resolved font-bold text-white bg-green-500/10 border-l-4 border-green-500'
+                      ? 'kentu-meal-tray__row--resolved font-bold text-white bg-transparent'
                       : isSkipped
                         ? 'kentu-meal-tray__row--skipped line-through text-slate-500'
                         : isPending
-                          ? 'kentu-meal-tray__row--pending text-orange-400 bg-orange-500/20 border-l-4 border-orange-500'
+                          ? 'kentu-meal-tray__row--pending cursor-pointer border border-amber-400/70 bg-amber-500/10 text-amber-200 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.25)]'
                           : '';
 
               const nameStatusClass = highlightLatest
@@ -391,7 +399,7 @@ function LiveMealTray({
                       : isSkipped
                         ? 'line-through text-slate-500'
                         : isPending
-                          ? 'text-orange-400'
+                          ? 'text-amber-200'
                           : '';
 
               return (
@@ -405,6 +413,15 @@ function LiveMealTray({
                     rowStatusClass,
                     isEditing ? 'kentu-meal-tray__row--editing' : '',
                   ].filter(Boolean).join(' ')}
+                  onClick={isPending && active && !isEditing ? () => onRequestDisambiguation?.(index) : undefined}
+                  onKeyDown={isPending && active && !isEditing ? (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      onRequestDisambiguation?.(index);
+                    }
+                  } : undefined}
+                  role={isPending && active ? 'button' : undefined}
+                  tabIndex={isPending && active ? 0 : undefined}
                 >
                   <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center justify-between gap-3">
                     <div className="flex min-w-0 flex-1 items-center gap-2.5">
@@ -538,7 +555,11 @@ function LiveMealTray({
                       </div>
                     </div>
                   ) : active ? (
-                    <div className="kentu-meal-tray__row-controls">
+                    <div
+                      className="kentu-meal-tray__row-controls"
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
                       <button
                         type="button"
                         className="kentu-meal-tray__remove"
@@ -605,11 +626,19 @@ function LiveMealTray({
           {needsCalculate ? (
             <KentuButton
               variant="primary"
-              className="kentu-meal-tray__confirm"
-              disabled={disabled || isSaving || items.length === 0 || hasPendingMcDriveEnrichment(items)}
+              className={[
+                'kentu-meal-tray__confirm',
+                hasDisambiguationPending ? 'ring-2 ring-amber-400/70' : '',
+              ].filter(Boolean).join(' ')}
+              disabled={disabled || isSaving || items.length === 0 || hasDisambiguationPending}
               onClick={() => onFinish?.()}
+              title={hasDisambiguationPending
+                ? 'Ci sono alimenti da confermare — tocca le voci evidenziate'
+                : undefined}
             >
-              {MCDRIVE_FINISH_CHIP.label}
+              {hasDisambiguationPending
+                ? '⚠️ Risolvi alimenti dubbi'
+                : MCDRIVE_FINISH_CHIP.label}
             </KentuButton>
           ) : (
             <>
@@ -623,27 +652,33 @@ function LiveMealTray({
               </KentuButton>
               <KentuButton
                 variant="primary"
-                className="kentu-meal-tray__confirm"
-                disabled={disabled || isSaving || items.length === 0 || !hasAnyResolvedMacros}
-                onClick={() => {
+                className={[
+                  'kentu-meal-tray__confirm',
+                  hasDisambiguationPending ? 'ring-2 ring-amber-400/70' : '',
+                ].filter(Boolean).join(' ')}
+                disabled={disabled || isSaving || items.length === 0 || !hasAnyResolvedMacros || hasDisambiguationPending}
+                title={hasDisambiguationPending
+                  ? 'Ci sono alimenti da confermare — tocca le voci evidenziate'
+                  : undefined}
+                onClick={async () => {
                   if (isSaving) return;
-                  setIsSaving(true);
-                  const run = () => {
-                    try {
-                      onSave?.();
-                    } catch (err) {
-                      console.error('[LiveMealTray] salvataggio fallito', err);
-                      setIsSaving(false);
-                    }
-                  };
-                  if (typeof requestIdleCallback === 'function') {
-                    requestIdleCallback(run, { timeout: 100 });
-                  } else {
-                    setTimeout(run, 0);
+                  try {
+                    await withMealSavingOverlay(async () => {
+                      setIsSaving(true);
+                      await Promise.resolve(onSave?.());
+                    });
+                  } catch (err) {
+                    console.error('[LiveMealTray] salvataggio fallito', err);
+                  } finally {
+                    setIsSaving(false);
                   }
                 }}
               >
-                {isSaving ? 'Salvataggio…' : MCDRIVE_SAVE_CONFIRM_CHIP.label}
+                {isSaving
+                  ? 'Salvataggio…'
+                  : hasDisambiguationPending
+                    ? '⚠️ Risolvi alimenti dubbi'
+                    : MCDRIVE_SAVE_CONFIRM_CHIP.label}
               </KentuButton>
             </>
           )}
@@ -675,6 +710,7 @@ function LiveMealTray({
         personalDb={personalDb}
         kentuItDb={kentuItDb}
         globalDb={globalDb}
+        offDb={offDb}
         onSelectFood={(result) => {
           if (searchIndex == null) return;
           onReplaceFromSearch?.(searchIndex, result);

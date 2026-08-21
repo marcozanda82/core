@@ -5,8 +5,10 @@ import { useSleepCoach } from '../salaComandi/hooks/useSleepCoach';
 import { computeSleepEngineSnapshot } from '../../hooks/useSleepEngine';
 import { computeTotali } from '../../useBiochimico';
 import {
+  buildSleepTrendChartData,
   buildUnifiedSleepSeries,
   computeGhostBaselineFromSeries,
+  LONGEVITY_WINDOW_DAYS,
   resolveMorningSleepForInsight,
   SLEEP_GHOST_LOOKBACK_DAYS,
 } from '../trendHub/utils/saluteHistorySeries';
@@ -80,14 +82,25 @@ export default function SonnoRoom({ store }) {
     () => buildUnifiedSleepSeries({
       fullHistory,
       todayDate,
-      lookbackDays: SLEEP_GHOST_LOOKBACK_DAYS,
+      lookbackDays: Math.max(SLEEP_GHOST_LOOKBACK_DAYS, LONGEVITY_WINDOW_DAYS),
       todayLiveLog: activeLog,
     }),
     [fullHistory, todayDate, activeLog],
   );
 
   const ghostBaseline = useMemo(
-    () => computeGhostBaselineFromSeries(sleepSeries, todayDate),
+    () => computeGhostBaselineFromSeries(sleepSeries, todayDate, undefined, {
+      maxSampleDays: SLEEP_GHOST_LOOKBACK_DAYS,
+    }),
+    [sleepSeries, todayDate],
+  );
+
+  const sleepTrend14d = useMemo(
+    () => buildSleepTrendChartData({
+      sleepSeries,
+      todayDate,
+      days: LONGEVITY_WINDOW_DAYS,
+    }),
     [sleepSeries, todayDate],
   );
 
@@ -128,6 +141,8 @@ export default function SonnoRoom({ store }) {
         quality={morningSleep?.quality ?? null}
         ghostHours={ghostBaseline.ghostHours}
         ghostLabel={ghostLabel}
+        sleepData={sleepTrend14d.sleepData}
+        avg14Days={sleepTrend14d.avg14Days}
       />
       <SleepCoachCard data={sleepCoachData} />
     </div>

@@ -15,6 +15,7 @@ import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
 import { initWorkoutHandlers } from '../handlers/WorkoutCommandHandler.js';
 import { quickRepliesForConversationState, CONVERSATION_STATE, ACTIVE_WIZARD, buildMealDraftUiMessage, buildWorkoutDraftUiMessage, expandFoodPayloadItems } from '../conversation/conversationState.js';
 import { isAskDraftAdviceIntent } from '../conversation/mealLogIntent.js';
+import { matchReportCommand } from '../conversation/reportCommandIntent.js';
 import { enrichMealDraftWithHistoricalVariations } from '../conversation/recentFoodNames.js';
 import { isAbortError } from '../../../services/aiService.js';
 import { processHealthChatMessage, formatClinicalSaveAck } from '../../../services/healthChatService.js';
@@ -235,18 +236,24 @@ export function useCommandTerminal({
   const appendAiMessage = useCallback((text, extra = {}) => {
     const line = String(text || '').trim();
     const hasReceipt = Boolean(extra?.mealReceipt && typeof extra.mealReceipt === 'object');
-    if ((!line && !hasReceipt) || typeof setChatHistoryRef.current !== 'function') return;
+    const hasReportCard = Boolean(extra?.reportCard && typeof extra.reportCard === 'object');
+    const hasReportLoading = extra?.type === 'REPORT_LOADING' || extra?.reportLoading === true;
+    if (
+      (!line && !hasReceipt && !hasReportCard && !hasReportLoading)
+      || typeof setChatHistoryRef.current !== 'function'
+    ) return;
     const noticeExtra = withSystemNoticeDefaults(line, extra && typeof extra === 'object' ? extra : {});
     const avatarAsset = String(noticeExtra?.avatarAsset || '').trim()
       || snapshotChatAvatarAsset(noticeExtra, buildAvatarSnapshotContext(noticeExtra?.forceStrategic === true));
     const purgeTray = noticeExtra?.purgeMcDriveTray === true
       || noticeExtra?.resolveMcDriveTray === true;
     console.log('🟢 DEBUG - RISPOSTA FINALE PRONTA PER LA UI (appendAiMessage→chatHistory):', {
-      text: line || '(mealReceipt)',
+      text: line || (hasReportCard ? '(reportCard)' : '(mealReceipt)'),
       type: noticeExtra?.type || null,
       sourceTag: noticeExtra?.sourceTag || null,
       local: noticeExtra?.local === true,
       hasMealReceipt: hasReceipt,
+      hasReportCard,
       avatarAsset,
       purgeTray,
     });
@@ -363,9 +370,12 @@ export function useCommandTerminal({
         setChatUsdaEnrichmentSession({
           foodName,
           mode: payload?.mode === 'mcdrive' ? 'mcdrive' : 'chat',
+          variant: payload?.variant === 'disambiguation' ? 'disambiguation' : 'enrichment',
+          matches: Array.isArray(payload?.matches) ? payload.matches : null,
           kentuItDb: payload?.kentuItDb && typeof payload.kentuItDb === 'object' ? payload.kentuItDb : null,
           personalDb: payload?.personalDb && typeof payload.personalDb === 'object' ? payload.personalDb : null,
           globalDb: payload?.globalDb && typeof payload.globalDb === 'object' ? payload.globalDb : null,
+          offDb: payload?.offDb && typeof payload.offDb === 'object' ? payload.offDb : null,
         });
       },
     });
@@ -574,6 +584,86 @@ export function useCommandTerminal({
           sourceTag: payload.sourceTag || null,
           purgeMcDriveTray: payload.resolveMcDriveTray === true,
         });
+        return;
+      }
+      if (payload.type === 'REPORT_LOADING' || payload.reportLoading === true) {
+        const reportCard = payload.reportCard && typeof payload.reportCard === 'object'
+          ? payload.reportCard
+          : {
+              title: 'Bollettino Kentu',
+              markdown: '',
+            };
+        appendAiMessage('', {
+          type: 'REPORT_LOADING',
+          reportLoading: true,
+          playIntro: true,
+          reportSessionId: payload.reportSessionId || null,
+          videoSrc: payload.videoSrc || reportCard.videoSrc || '/reportanimazione.mp4',
+          coverSrc: payload.coverSrc || reportCard.coverSrc || '/report.jpg',
+          reportCard,
+          sourceTag: payload.sourceTag || 'period_report_loading',
+          avatarAsset: payload.avatarAsset || '/report.jpg',
+          timestamp: Date.now(),
+        });
+        setActiveQuickReplies([]);
+        return;
+      }
+      if (payload.type === 'PERIOD_REPORT' || (payload.reportCard && typeof payload.reportCard === 'object')) {
+        const reportCard = payload.reportCard && typeof payload.reportCard === 'object'
+          ? payload.reportCard
+          : {
+              title: 'Bollettino Kentu',
+              markdown: String(payload.text || payload.message || '').trim(),
+            };
+        const text = String(payload.text || payload.message || reportCard.markdown || '').trim();
+        const coverSrc = payload.coverSrc || reportCard.coverSrc || '/report.jpg';
+        const videoSrc = payload.videoSrc || reportCard.videoSrc || '/reportanimazione.mp4';
+        const avatarAsset = payload.avatarAsset || coverSrc;
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => {
+            const list = Array.isArray(prev) ? [...prev] : [];
+            for (let i = list.length - 1; i >= 0; i -= 1) {
+              const msg = list[i];
+              if (msg?.type === 'REPORT_LOADING' || msg?.reportLoading === true) {
+                list[i] = {
+                  ...msg,
+                  type: 'PERIOD_REPORT',
+                  text,
+                  displayText: text,
+                  reportLoading: false,
+                  playIntro: true,
+                  reportSessionId: msg.reportSessionId || payload.reportSessionId || null,
+                  videoSrc,
+                  coverSrc,
+                  reportCard: { ...reportCard, coverSrc, videoSrc },
+                  sourceTag: payload.sourceTag || 'period_report',
+                  systemIcon: payload.systemIcon || 'macro',
+                  avatarAsset,
+                };
+                return list;
+              }
+            }
+            return [
+              ...list,
+              {
+                sender: 'ai',
+                text,
+                displayText: text,
+                type: 'PERIOD_REPORT',
+                reportCard: { ...reportCard, coverSrc, videoSrc },
+                playIntro: true,
+                reportSessionId: payload.reportSessionId || null,
+                videoSrc,
+                coverSrc,
+                sourceTag: payload.sourceTag || 'period_report',
+                systemIcon: payload.systemIcon || 'macro',
+                avatarAsset,
+                timestamp: Date.now(),
+              },
+            ];
+          });
+        }
+        setActiveQuickReplies([]);
         return;
       }
       if (payload.type === 'QUICK_EVENT_CONFIRM' || payload.quickEventConfirm) {
@@ -844,7 +934,16 @@ export function useCommandTerminal({
           || options?.fromSlotQuickReply,
         );
 
-        if (diabetesMode) {
+        const earlyReportMatch = matchReportCommand(resolvedText, {
+          intent: options?.intent,
+          reportKind: options?.reportKind,
+        });
+        const isReportCommand = Boolean(earlyReportMatch)
+          || ['GENERATE_PERIOD_REPORT', 'GENERATE_REPORT'].includes(
+            String(options?.intent || '').trim().toUpperCase(),
+          );
+
+        if (diabetesMode && !isReportCommand) {
           if (!resolvedText && !isFreeMealListen && !isMcdriveWizardIntent) {
             appendAiMessage(
               'In modalità diabete puoi dirmi la glicemia, variazioni sui farmaci, oppure registrare un pasto come al solito (es. “a colazione ho mangiato yogurt”).',
@@ -950,7 +1049,14 @@ export function useCommandTerminal({
           resolvedText ||
           'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
         let forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
-        if (!forcedIntent && diabetesMode) {
+        const reportMatchEarly = earlyReportMatch || matchReportCommand(resolvedText, {
+          intent: forcedIntent,
+          reportKind: options?.reportKind,
+        });
+        if ((reportMatchEarly || isReportCommand) && !forcedIntent) {
+          forcedIntent = 'GENERATE_PERIOD_REPORT';
+        }
+        if (!forcedIntent && diabetesMode && !reportMatchEarly && !isReportCommand) {
           // Continuity pasti: elenco alimenti / follow-up / tap grammi → ADD_FOOD standard.
           const mealRoute = classified && typeof classified === 'object'
             ? classified
@@ -997,6 +1103,7 @@ export function useCommandTerminal({
         }, {
           images: attachedImages,
           intent: forcedIntent,
+          reportKind: options?.reportKind || reportMatchEarly?.kind || null,
           mealTypeHint: options?.mealTypeHint || options?.mealType || null,
           mealType: options?.mealType || options?.mealTypeHint || null,
           ...(options?.editingMealId != null ? { editingMealId: options.editingMealId } : {}),
@@ -1890,6 +1997,13 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  const handleMcDriveRequestDisambiguation = useCallback((index) => {
+    if (typeof controller.openMcdriveDisambiguationForItem !== 'function') {
+      return { ok: false, reason: 'mcdrive_disambiguation_unavailable' };
+    }
+    return controller.openMcdriveDisambiguationForItem(index);
+  }, [controller]);
+
   const handleChatUsdaEnrichmentSelect = useCallback(async (match) => {
     const resume = chatUsdaResumeRef.current;
     chatUsdaResumeRef.current = null;
@@ -1948,6 +2062,7 @@ export function useCommandTerminal({
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     handleMcDriveAppendSolverItems,
+    handleMcDriveRequestDisambiguation,
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,
     handleChatUsdaEnrichmentSkip,

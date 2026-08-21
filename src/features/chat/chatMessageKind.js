@@ -12,6 +12,8 @@ const RICH_TYPES = new Set([
   'DAILY_PLAN',
   'MEAL_PROPOSAL',
   'QUICK_EVENT_CONFIRM',
+  'PERIOD_REPORT',
+  'REPORT_LOADING',
 ]);
 
 const SUCCESS_RE =
@@ -78,6 +80,9 @@ function normalizeNoticeText(text) {
 function hasRichInteractivePayload(msg) {
   if (!msg || typeof msg !== 'object') return false;
   if (msg.mealProposal || msg.dailyPlan || msg.mealDraft || msg.workoutDraft || msg.mealReceipt) return true;
+  if (msg.reportCard || msg.type === 'PERIOD_REPORT' || msg.type === 'REPORT_LOADING' || msg.reportLoading === true) {
+    return true;
+  }
   if (msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard === true) return true;
   if (msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM') return true;
   if (msg.suggestedAction || msg.newFoodDraft) return true;
@@ -124,6 +129,9 @@ function looksLikeTransactionalNotice(text) {
 export function shouldRenderSystemNoticeChrome(msg) {
   if (!msg || msg.sender !== 'ai' || msg.isTyping) return false;
   if (msg.mealReceipt && typeof msg.mealReceipt === 'object') return false;
+  if (msg.reportCard || msg.type === 'PERIOD_REPORT' || msg.type === 'REPORT_LOADING' || msg.reportLoading === true) {
+    return false;
+  }
   if (msg.liveMealTray || msg.type === 'MCDRIVE_TRAY' || msg.mcdriveWizard === true) return false;
   if (msg.quickEventConfirm || msg.type === 'QUICK_EVENT_CONFIRM') return false;
   if (msg.mealDraft || msg.workoutDraft || msg.mealProposal || msg.dailyPlan) return false;

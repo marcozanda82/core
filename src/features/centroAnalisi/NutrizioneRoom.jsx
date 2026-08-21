@@ -142,6 +142,7 @@ export default function NutrizioneRoom({ store }) {
     () => calculateProgressionScore(
       {
         days: windowLogs.days,
+        todayDate: windowLogs.todayDate,
         sleepAvgHours: windowLogs.sleepAvgHours,
         workoutSessionsTotal: windowLogs.workoutSessionsTotal,
       },

@@ -672,6 +672,10 @@ export class ContextComposer {
           },
         };
         kentuGlobalStateText = JSON.stringify(kentuGlobalState, null, 2);
+        const statusLine = String(kentuGlobalState?.Fasting_Context?.statusLine || '').trim();
+        if (statusLine) {
+          kentuGlobalStateText = `${statusLine}\n\n${kentuGlobalStateText}`;
+        }
       }
     } catch (error) {
       console.warn('[ContextComposer] buildKentuGlobalState failed', error);

@@ -1,36 +1,7 @@
 import { TRACKER_STORICO_KEY, normalizeLogData } from '../coreEngine';
+import { isFastingBreakerItem } from './fastingBreakRules';
 
 const FOOD_TYPES = new Set(['food', 'recipe', 'meal', 'single']);
-
-/** Allineato a FASTING_BREAK_THRESHOLDS in metabolicPhaseColors. */
-const FASTING_BREAK = { kcal: 10, carbs: 1, protein: 1 };
-
-function isFastingBreakerItem(item) {
-  if (!item || typeof item !== 'object') return false;
-  const t = String(item.type || '').toLowerCase();
-  if (t === 'stimulant' || t === 'energizer') {
-    if (item.breaksFast === false) return false;
-    if (item.breaksFast === true) return true;
-    if (item.coffeeVariant === 'amaro') return false;
-    if (item.coffeeVariant === 'zuccherato') return true;
-    const kcal = Number(item.kcal ?? item.cal) || 0;
-    const carbs = Number(item.carb ?? item.carbs ?? item.carboidrati) || 0;
-    return kcal > FASTING_BREAK.kcal || carbs > FASTING_BREAK.carbs;
-  }
-  if (t === 'water') return false;
-  if (!(t === 'food' || t === 'recipe' || t === 'meal' || t === 'single' || !t)) return false;
-  if (t === 'meal' && Array.isArray(item.items)) {
-    return item.items.some((sub) => isFastingBreakerItem({ ...sub, type: sub.type || 'food' }));
-  }
-  const kcal = Number(item.kcal ?? item.cal) || 0;
-  const carbs = Number(item.carb ?? item.carbs ?? item.carboidrati) || 0;
-  const protein = Number(item.prot ?? item.protein ?? item.proteine) || 0;
-  return (
-    kcal > FASTING_BREAK.kcal
-    || carbs > FASTING_BREAK.carbs
-    || protein > FASTING_BREAK.protein
-  );
-}
 
 /**
  * @param {unknown} log
@@ -110,6 +81,66 @@ export function getDayLastMealTime(dayNode) {
     if (hour > maxT) maxT = hour;
   }
   return maxT >= 0 ? maxT : null;
+}
+
+/**
+ * Primo orario pasto (breaker) in un giorno storico.
+ * @returns {number | null}
+ */
+export function getDayFirstMealTime(dayNode) {
+  if (!dayNode) return null;
+  const log = normalizeLogData(normalizeTrackerDayLog(dayNode.log));
+  let minT = null;
+  for (const item of log) {
+    if (!isFastingBreakerItem(item)) continue;
+    let hour = Number(item?.mealTime ?? item?.time);
+    if (!Number.isFinite(hour) && item?.mealType != null) {
+      hour = Number(dayNode.mealTimes?.[item.mealType]);
+    }
+    if (!Number.isFinite(hour)) hour = 8;
+    if (minT == null || hour < minT) minT = hour;
+  }
+  return minT;
+}
+
+/**
+ * Orari pasti breaker di un giorno (0–24), ordinati.
+ * @returns {number[]}
+ */
+export function getDayBreakerMealHours(dayNode) {
+  if (!dayNode) return [];
+  const log = normalizeLogData(normalizeTrackerDayLog(dayNode.log));
+  const hours = [];
+  for (const item of log) {
+    if (!isFastingBreakerItem(item)) continue;
+    let hour = Number(item?.mealTime ?? item?.time);
+    if (!Number.isFinite(hour) && item?.mealType != null) {
+      hour = Number(dayNode.mealTimes?.[item.mealType]);
+    }
+    if (!Number.isFinite(hour)) continue;
+    hours.push(Math.max(0, Math.min(24, hour)));
+  }
+  return hours.sort((a, b) => a - b);
+}
+
+/**
+ * Finestra massima di digiuno in un giorno = 24 − (ultimo − primo pasto).
+ * - 0 pasti: null (escluso), oppure 24 se digiuno intenzionale
+ * - 1 pasto: 24h (OMAD)
+ * - 2+ pasti: 24 − (last − first)
+ * @returns {number | null}
+ */
+export function computeDayMaxFastingWindowHours(dayNode) {
+  if (!dayNode) return null;
+  const hours = getDayBreakerMealHours(dayNode);
+  if (hours.length === 0) {
+    return isDayIntentionalFast(dayNode) ? 24 : null;
+  }
+  if (hours.length === 1) return 24;
+  const first = hours[0];
+  const last = hours[hours.length - 1];
+  const eatingSpan = Math.max(0, last - first);
+  return Math.round(Math.max(0, Math.min(24, 24 - eatingSpan)) * 10) / 10;
 }
 
 /**

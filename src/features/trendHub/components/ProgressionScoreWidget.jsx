@@ -1,4 +1,5 @@
 import React, { useId, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 
 function toneFromScore(score) {
   const n = Number(score);
@@ -15,12 +16,119 @@ const TONE_STROKE = {
   neutral: '#a78bfa',
 };
 
+const PILLAR_MAX = 100 / 3;
+
+function pillarPctFromScore(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n) || PILLAR_MAX <= 0) return 0;
+  return Math.round(Math.max(0, Math.min(100, (n / PILLAR_MAX) * 100)));
+}
+
+function buildNutritionDetail(b, nutritionPct) {
+  if (b.nutritionAwaitingData) {
+    return {
+      raw: 'Nessun giorno nutrizionale completato nella finestra (media kcal ≥ 300).',
+      analysis: 'In attesa di pasti registrati. Quando chiuderai qualche giornata con un introito reale, qui vedrai l\'aderenza ai target.',
+    };
+  }
+  const avgKcal = Number.isFinite(Number(b.nutritionAvgKcal)) ? Math.round(Number(b.nutritionAvgKcal)) : null;
+  const targetKcal = Number.isFinite(Number(b.nutritionTargetKcal)) ? Math.round(Number(b.nutritionTargetKcal)) : null;
+  const avgProt = Number.isFinite(Number(b.nutritionAvgProt)) ? Math.round(Number(b.nutritionAvgProt)) : null;
+  const targetProt = Number.isFinite(Number(b.nutritionTargetProt)) ? Math.round(Number(b.nutritionTargetProt)) : null;
+
+  const raw = [
+    avgKcal != null && targetKcal != null ? `Media Kcal: ${avgKcal} / Target: ${targetKcal}` : null,
+    avgProt != null && targetProt != null ? `Media Prot: ${avgProt}g / Target: ${targetProt}g` : null,
+  ].filter(Boolean).join(' | ') || 'Dati nutrizionali non disponibili.';
+
+  const analysis = nutritionPct >= 80
+    ? 'Ottima costanza! Stai centrando i macro, il corpo ha tutto il carburante necessario.'
+    : 'Le calorie o le proteine fluttuano un po\' troppo rispetto al target. Cerca di stabilizzare l\'introito.';
+
+  return { raw, analysis };
+}
+
+function buildTrainingDetail(b, trainingPct) {
+  const sessions = Math.max(0, Math.round(Number(b.workoutSessions) || 0));
+  const target = Math.max(1, Math.round(Number(b.workoutTarget) || 8));
+  const raw = `Sessioni completate: ${sessions} / Target: ${target}`;
+
+  let analysis;
+  if (trainingPct >= 100) {
+    analysis = 'Hai raggiunto o superato il volume previsto. Ottimo lavoro, ma ascolta il corpo per evitare overtraining.';
+  } else if (trainingPct >= 70) {
+    analysis = 'Sei vicino al target di volume. Completa le sessioni mancanti per consolidare lo stimolo.';
+  } else {
+    analysis = 'Il volume di allenamento è sotto target. Programma le sessioni mancanti nella settimana per non perdere adattamento.';
+  }
+
+  return { raw, analysis };
+}
+
+function buildRecoveryDetail(b, sleepPct) {
+  const sleepAvg = Number.isFinite(Number(b.sleepAvg)) && Number(b.sleepAvg) > 0
+    ? Number(b.sleepAvg)
+    : null;
+  const sleepTarget = Number.isFinite(Number(b.sleepTarget)) && Number(b.sleepTarget) > 0
+    ? Number(b.sleepTarget)
+    : 7.5;
+
+  const raw = sleepAvg != null
+    ? `Sonno medio: ${sleepAvg.toFixed(1)}h / Target: ${sleepTarget.toFixed(1)}h`
+    : `Sonno medio: n/d / Target: ${sleepTarget.toFixed(1)}h`;
+
+  let analysis;
+  if (sleepAvg == null) {
+    analysis = 'Ancora pochi dati sul sonno. Registra le notti per ottenere un\'analisi sul recupero.';
+  } else if (sleepPct >= 100) {
+    analysis = 'Recupero solido: stai rispettando (o superando) il target di sonno. Ottima base per sintesi e adattamento.';
+  } else {
+    analysis = 'Sei in leggero deficit di sonno. Cerca di anticipare la buonanotte di 30 minuti per massimizzare la sintesi proteica notturna.';
+  }
+
+  return { raw, analysis };
+}
+
+function PagellaExpandPanel({ raw, analysis }) {
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className="overflow-hidden"
+    >
+      <div className="mt-2 rounded-lg border border-slate-700/50 bg-slate-900/50 p-3">
+        <p className="text-[11px] leading-relaxed text-slate-400">
+          <span className="mr-1" aria-hidden>📊</span>
+          <span className="font-semibold text-slate-300">Dati grezzi:</span>
+          {' '}
+          {raw}
+        </p>
+        <p className="mt-2 text-[12px] leading-relaxed text-slate-100">
+          <span className="mr-1" aria-hidden>💡</span>
+          <span className="font-semibold text-emerald-300/90">Analisi:</span>
+          {' '}
+          {analysis}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
 const EMPTY_BREAKDOWN = Object.freeze({
   nutritionScore: 0,
   trainingScore: 0,
   sleepScore: 0,
-  nutritionTolerancePct: 0,
+  nutritionPct: null,
+  trainingPct: null,
+  sleepPct: null,
   nutritionDaysScored: 0,
+  nutritionAwaitingData: false,
+  nutritionAvgKcal: null,
+  nutritionAvgProt: null,
+  nutritionTargetKcal: null,
+  nutritionTargetProt: null,
   workoutSessions: 0,
   workoutTarget: 8,
   sleepAvg: null,
@@ -39,6 +147,7 @@ export default function ProgressionScoreWidget({
   onClick = null,
 } = {}) {
   const [showDetails, setShowDetails] = useState(false);
+  const [expandedItem, setExpandedItem] = useState(null);
   const uid = useId().replace(/:/g, '');
   const gradId = `progression-grad-${uid}`;
   const ringSize = compact ? Math.min(Number(size) || 96, 110) : (Number(size) || 200);
@@ -53,12 +162,16 @@ export default function ProgressionScoreWidget({
   const strokeColor = TONE_STROKE[tone] || TONE_STROKE.neutral;
 
   const b = breakdown && typeof breakdown === 'object' ? breakdown : EMPTY_BREAKDOWN;
-  const nutritionScore = Number(b.nutritionScore) || 0;
-  const trainingScore = Number(b.trainingScore) || 0;
-  const sleepScore = Number(b.sleepScore) || 0;
-  const nutritionTolerancePct = Number.isFinite(Number(b.nutritionTolerancePct))
-    ? Number(b.nutritionTolerancePct)
-    : 0;
+  const nutritionAwaitingData = b.nutritionAwaitingData === true;
+  const nutritionPct = Number.isFinite(Number(b.nutritionPct))
+    ? Math.round(Number(b.nutritionPct))
+    : pillarPctFromScore(b.nutritionScore);
+  const trainingPct = Number.isFinite(Number(b.trainingPct))
+    ? Math.round(Number(b.trainingPct))
+    : pillarPctFromScore(b.trainingScore);
+  const sleepPct = Number.isFinite(Number(b.sleepPct))
+    ? Math.round(Number(b.sleepPct))
+    : pillarPctFromScore(b.sleepScore);
   const workoutSessions = Math.max(0, Math.round(Number(b.workoutSessions) || 0));
   const workoutTarget = Math.max(1, Math.round(Number(b.workoutTarget) || 8));
   const sleepAvg = Number.isFinite(Number(b.sleepAvg)) && Number(b.sleepAvg) > 0
@@ -67,6 +180,25 @@ export default function ProgressionScoreWidget({
   const sleepTarget = Number.isFinite(Number(b.sleepTarget)) && Number(b.sleepTarget) > 0
     ? Number(b.sleepTarget)
     : 7.5;
+
+  const nutritionInTarget = !nutritionAwaitingData && nutritionPct >= 80;
+
+  const nutritionDetail = useMemo(
+    () => buildNutritionDetail(b, nutritionPct),
+    [b, nutritionPct],
+  );
+  const trainingDetail = useMemo(
+    () => buildTrainingDetail(b, trainingPct),
+    [b, trainingPct],
+  );
+  const recoveryDetail = useMemo(
+    () => buildRecoveryDetail(b, sleepPct),
+    [b, sleepPct],
+  );
+
+  const toggleExpanded = (key) => {
+    setExpandedItem((prev) => (prev === key ? null : key));
+  };
 
   const aria = useMemo(
     () => (value == null
@@ -150,7 +282,10 @@ export default function ProgressionScoreWidget({
     >
       <button
         type="button"
-        onClick={() => setShowDetails((v) => !v)}
+        onClick={() => {
+          setShowDetails((v) => !v);
+          setExpandedItem(null);
+        }}
         className="relative cursor-pointer rounded-full border-0 bg-transparent p-0 transition-transform duration-200 ease-out hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-400/60 active:scale-[1.02]"
         style={{ width: ringSize, height: ringSize }}
         aria-expanded={showDetails}
@@ -160,14 +295,14 @@ export default function ProgressionScoreWidget({
       </button>
 
       <p className="mt-2 max-w-[18rem] text-center text-[10px] uppercase tracking-wider text-slate-500">
-        {showDetails ? 'Tocca per chiudere' : 'Tocca per il breakdown · Aderenza 14gg'}
+        {showDetails ? 'Tocca una voce per i dettagli' : 'Tocca per il breakdown · Aderenza 14gg'}
       </p>
 
       <div
         id={`progression-pagella-${uid}`}
         className={`w-full max-w-sm overflow-hidden transition-[max-height,opacity,margin] duration-300 ease-out ${
           showDetails
-            ? 'mt-3 max-h-56 opacity-100'
+            ? 'mt-3 max-h-[28rem] opacity-100'
             : 'mt-0 max-h-0 opacity-0'
         }`}
         aria-hidden={!showDetails}
@@ -176,33 +311,89 @@ export default function ProgressionScoreWidget({
           <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
             Pagella aderenza
           </p>
-          <ul className="space-y-1.5 text-[12px] leading-snug text-slate-200">
-            <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🍏 Nutrizione</span>
-              <span className="tabular-nums text-right text-slate-100">
-                {nutritionScore.toFixed(1)} / 33.3 pt
-                <span className="ml-1 text-slate-500">
-                  (tolleranza media {nutritionTolerancePct.toFixed(0)}%)
+          <ul className="space-y-1 text-[12px] leading-snug text-slate-200">
+            <li>
+              <button
+                type="button"
+                onClick={() => toggleExpanded('nutrition')}
+                aria-expanded={expandedItem === 'nutrition'}
+                className="flex w-full cursor-pointer items-baseline justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-slate-800/40"
+              >
+                <span className="min-w-0 shrink text-slate-300">🍏 Nutrizione</span>
+                <span className="min-w-0 text-right tabular-nums text-slate-100">
+                  {nutritionAwaitingData ? (
+                    <span className="text-slate-400">In attesa pasti</span>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-slate-50">{nutritionPct}%</span>
+                      <span className="ml-1.5 text-slate-500">
+                        {nutritionInTarget ? '— In target' : ''}
+                      </span>
+                    </>
+                  )}
                 </span>
-              </span>
+              </button>
+              <AnimatePresence initial={false}>
+                {expandedItem === 'nutrition' ? (
+                  <PagellaExpandPanel
+                    key="nutrition-panel"
+                    raw={nutritionDetail.raw}
+                    analysis={nutritionDetail.analysis}
+                  />
+                ) : null}
+              </AnimatePresence>
             </li>
-            <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🏋️ Allenamento</span>
-              <span className="tabular-nums text-right text-slate-100">
-                {trainingScore.toFixed(1)} / 33.3 pt
-                <span className="ml-1 text-slate-500">
-                  ({workoutSessions} / {workoutTarget} completate)
+
+            <li>
+              <button
+                type="button"
+                onClick={() => toggleExpanded('training')}
+                aria-expanded={expandedItem === 'training'}
+                className="flex w-full cursor-pointer items-baseline justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-slate-800/40"
+              >
+                <span className="min-w-0 shrink text-slate-300">🏋️ Allenamento</span>
+                <span className="min-w-0 text-right tabular-nums text-slate-100">
+                  <span className="font-semibold text-slate-50">{trainingPct}%</span>
+                  <span className="ml-1.5 text-slate-500">
+                    ({workoutSessions} / {workoutTarget} completate)
+                  </span>
                 </span>
-              </span>
+              </button>
+              <AnimatePresence initial={false}>
+                {expandedItem === 'training' ? (
+                  <PagellaExpandPanel
+                    key="training-panel"
+                    raw={trainingDetail.raw}
+                    analysis={trainingDetail.analysis}
+                  />
+                ) : null}
+              </AnimatePresence>
             </li>
-            <li className="flex items-baseline justify-between gap-2">
-              <span className="min-w-0 shrink text-slate-300">🛌 Recupero</span>
-              <span className="tabular-nums text-right text-slate-100">
-                {sleepScore.toFixed(1)} / 33.3 pt
-                <span className="ml-1 text-slate-500">
-                  (Media {sleepAvg != null ? `${sleepAvg.toFixed(1)}h` : 'n/d'} / Target {sleepTarget.toFixed(1)}h)
+
+            <li>
+              <button
+                type="button"
+                onClick={() => toggleExpanded('recovery')}
+                aria-expanded={expandedItem === 'recovery'}
+                className="flex w-full cursor-pointer items-baseline justify-between gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-slate-800/40"
+              >
+                <span className="min-w-0 shrink text-slate-300">🛌 Recupero</span>
+                <span className="min-w-0 text-right tabular-nums text-slate-100">
+                  <span className="font-semibold text-slate-50">{sleepPct}%</span>
+                  <span className="ml-1.5 text-slate-500">
+                    (Media {sleepAvg != null ? `${sleepAvg.toFixed(1)}h` : 'n/d'} / Target {sleepTarget.toFixed(1)}h)
+                  </span>
                 </span>
-              </span>
+              </button>
+              <AnimatePresence initial={false}>
+                {expandedItem === 'recovery' ? (
+                  <PagellaExpandPanel
+                    key="recovery-panel"
+                    raw={recoveryDetail.raw}
+                    analysis={recoveryDetail.analysis}
+                  />
+                ) : null}
+              </AnimatePresence>
             </li>
           </ul>
         </div>

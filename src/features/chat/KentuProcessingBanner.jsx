@@ -106,6 +106,8 @@ export default function KentuProcessingBanner({
   const isLoopFadingRef = useRef(false);
   const isTailLoopingRef = useRef(false);
   const isMaxClampReachedRef = useRef(false);
+  const onVideoEndedRef = useRef(onVideoEnded);
+  onVideoEndedRef.current = onVideoEnded;
   const [mediaOpacity, setMediaOpacity] = useState(1);
   const showCaption = !hideCaption && variant !== 'header';
   const clampSeconds = Number(clampToFirstSeconds);
@@ -141,11 +143,11 @@ export default function KentuProcessingBanner({
     isMaxClampReachedRef.current = true;
     el.currentTime = maxClampSec;
     el.pause();
-    if (typeof onVideoEnded === 'function') {
-      onVideoEnded();
+    if (typeof onVideoEndedRef.current === 'function') {
+      onVideoEndedRef.current();
     }
     return true;
-  }, [maxClampSec, onVideoEnded]);
+  }, [maxClampSec]);
 
   const handleTimeUpdate = useCallback((event) => {
     const el = event.currentTarget;
@@ -206,10 +208,10 @@ export default function KentuProcessingBanner({
     if (shouldTailLoop && el && performTailLoopSeek(el)) {
       return;
     }
-    if (!effectiveLoop && typeof onVideoEnded === 'function') {
-      onVideoEnded();
+    if (!effectiveLoop && typeof onVideoEndedRef.current === 'function') {
+      onVideoEndedRef.current();
     }
-  }, [hasMaxClamp, maxClampSec, stopAtMaxClamp, shouldTailLoop, performTailLoopSeek, effectiveLoop, onVideoEnded]);
+  }, [hasMaxClamp, maxClampSec, stopAtMaxClamp, shouldTailLoop, performTailLoopSeek, effectiveLoop]);
 
   useEffect(() => () => {
     if (loopFadeTimerRef.current) {
@@ -238,7 +240,9 @@ export default function KentuProcessingBanner({
         await el.play();
       } catch (error) {
         console.warn('[KentuProcessingBanner] autoplay failed', error);
-        if (!cancelled && typeof onVideoEnded === 'function') onVideoEnded();
+        if (!cancelled && typeof onVideoEndedRef.current === 'function') {
+          onVideoEndedRef.current();
+        }
       }
     };
     void play();
@@ -250,7 +254,7 @@ export default function KentuProcessingBanner({
         /* ignore */
       }
     };
-  }, [video, poster, onVideoEnded]);
+  }, [video, poster]);
 
   useEffect(() => {
     const el = videoRef.current;

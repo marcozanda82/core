@@ -7,6 +7,7 @@ import { usePredictiveFoodBlocks } from './hooks/usePredictiveFoodBlocks';
 import UniversalSearchModal from './components/UniversalSearchModal';
 import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import MicronutrientEnrichmentModal from './components/MicronutrientEnrichmentModal';
+import { withMealSavingOverlay } from '../../utils/mealSavingOverlayController';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
 import RecipeEditor from './components/RecipeEditor';
 import RecipeBuilder from './components/RecipeBuilder';
@@ -1152,7 +1153,7 @@ function FastMealLoggerContent({
   const checkoutMealTitle = formatCheckoutMealTitle(selectedSlot);
   const miniCartMealLabel = formatMiniCartMealLabel(selectedSlot);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (draftFoods.length === 0 || isSavingMeal) return;
     const foodsSnapshot = draftFoods.map((f) => ({ ...f }));
     const learnedSlot = getLearnedMealSlot(mealTime, fullHistory);
@@ -1160,30 +1161,26 @@ function FastMealLoggerContent({
     const mealTimeToSave = mealTime;
     const editId = editingMealId ?? undefined;
 
-    setIsSavingMeal(true);
-    // Optimistic UI: svuota carrello e chiudi subito; write async fuori dal paint critico.
-    clearDraft();
-    const runSave = () => {
-      try {
+    try {
+      // Overlay chef: prima azione (flushSync) dentro withMealSavingOverlay, prima del save.
+      await withMealSavingOverlay(async () => {
+        setIsSavingMeal(true);
         recordDraftFoodsUsageStats(
           foodsSnapshot,
           personalDb,
           onPatchFoodDbEntry,
           getTimeSlotForDecimalHour(mealTimeToSave),
         );
-        onSave?.(foodsSnapshot, mealSlotToSave, editId, mealTimeToSave);
-      } catch (err) {
-        console.error('[FastMealLogger] salvataggio pasto fallito', err);
-      } finally {
-        setIsSavingMeal(false);
-        onClose?.();
-      }
-    };
-
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(() => runSave(), { timeout: 120 });
-    } else {
-      setTimeout(runSave, 0);
+        await Promise.resolve(
+          onSave?.(foodsSnapshot, mealSlotToSave, editId, mealTimeToSave),
+        );
+      });
+      clearDraft();
+      onClose?.();
+    } catch (err) {
+      console.error('[FastMealLogger] salvataggio pasto fallito', err);
+    } finally {
+      setIsSavingMeal(false);
     }
   };
 
@@ -1473,8 +1470,9 @@ function FastMealLoggerContent({
           <button
             type="button"
             onClick={onClose}
+            disabled={isSavingMeal}
             aria-label="Chiudi"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-40"
           >
             <X className="h-5 w-5" aria-hidden />
           </button>

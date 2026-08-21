@@ -248,8 +248,8 @@ export function useTimelineDiaryActions({
   }, [historyIndex, historyStack, syncDatiFirebase, setDailyLog, setManualNodes]);
 
   const handleFastLoggerSave = useCallback(
-    (draftFoods, targetMealType, editMealId, customMealTime) => {
-      if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return;
+    async (draftFoods, targetMealType, editMealId, customMealTime) => {
+      if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return false;
 
       const mealTimeBySlot = {
         colazione: 8.0,
@@ -333,17 +333,21 @@ export function useTimelineDiaryActions({
         }
       }
 
+      // Stato locale subito; ricalcoli pesanti (SNC / Ghost Car) via re-render React deferiti.
       if (isSimulationMode) {
         setSimulatedLog(nuovoLog);
       } else {
         setDailyLog(nuovoLog);
-        syncDatiFirebase(nuovoLog, manualNodes || []);
+        // Write atomico giornaliero (tutte le voci in un unico set).
+        await Promise.resolve(syncDatiFirebase(nuovoLog, manualNodes || []));
       }
+
+      // Cleanup UI: il logger chiude dopo overlay; qui resettiamo i seed.
       setMealToEdit(null);
       setEditingMealId(null);
       setFastLoggerInitialSlot(null);
       setPendingGhostMealId(null);
-      setShowFastLogger(false);
+      return true;
     },
     [
       dailyLog,
@@ -361,7 +365,6 @@ export function useTimelineDiaryActions({
       setEditingMealId,
       setFastLoggerInitialSlot,
       setPendingGhostMealId,
-      setShowFastLogger,
     ],
   );
 

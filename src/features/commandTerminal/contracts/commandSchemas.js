@@ -682,24 +682,29 @@ export const healthReportSchema = {
       type: 'number',
       description: 'Score salute giornata 0–100 (qualità cibo + timing).',
     },
+    clinicalBulletinMarkdown: {
+      type: 'string',
+      description:
+        'Bollettino clinico mattutino in Markdown. Inizia con "# 📰 Analisi Metabolica del Mattino", '
+        + 'poi 3 sezioni ### con emoji, elenchi e grassetto. NON includere immagini Markdown né URL di immagini.',
+    },
     inflammationSummary: {
       type: 'string',
-      description: 'Sintesi analitica del bilancio infiammatorio della giornata (italiano, max 3 frasi).',
+      description: 'Sintesi breve (plain text, 1-2 frasi) dello stato infiammatorio — estratto della sezione corrispondente.',
     },
     timingFeedback: {
       type: 'string',
       description:
-        'Feedback sul timing dei pasti (es. carico glicemico serale, digiuno, distribuzione). Italiano, max 3 frasi.',
+        'Feedback breve (plain text, 1-2 frasi) su timing / equilibrio glicemico — estratto della sezione corrispondente.',
     },
     sleepCorrelationInsight: {
       type: 'string',
       nullable: true,
       description:
-        'Correlazione cena di ieri (orario, macro, carico glicemico) con qualità/ore del sonno registrato stamattina. '
-        + 'Se [MORNING_SLEEP_LOG] è null, spiega brevemente che manca il dato sonno. Italiano, max 3 frasi.',
+        'Correlazione breve (plain text) cena↔sonno. Se [MORNING_SLEEP_LOG] è null, indica che manca il dato sonno.',
     },
   },
-  required: ['newLabels', 'dailyScore', 'inflammationSummary', 'timingFeedback'],
+  required: ['newLabels', 'dailyScore', 'clinicalBulletinMarkdown', 'inflammationSummary', 'timingFeedback'],
 };
 
 // Nuovo alimento da etichetta (Vision): solo dati stampati, per 100g.

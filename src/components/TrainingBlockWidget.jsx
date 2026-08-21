@@ -222,6 +222,7 @@ export default function TrainingBlockWidget({
     return calculateProgressionScore(
       {
         days: logs.days,
+        todayDate: logs.todayDate,
         sleepAvgHours: logs.sleepAvgHours,
         workoutSessionsTotal: logs.workoutSessionsTotal,
       },

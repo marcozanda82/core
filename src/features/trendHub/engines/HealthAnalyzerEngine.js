@@ -163,11 +163,13 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
     '   - inflammationFactor (-1 | 0 | +1)',
     '   - hasSaturatedFats (boolean)',
     '   Se UNKNOWN è vuoto, newLabels DEVE essere [].',
-    '2) Genera SEMPRE il referto salute sul totale ALL_CONSUMED_FOODS (noti + ignoti), considerando timing/mealType:',
-    '   - dailyScore (0-100)',
+    '2) Genera SEMPRE dailyScore (0-100) sul totale ALL_CONSUMED_FOODS (noti + ignoti), considerando timing/mealType.',
+    '3) Genera clinicalBulletinMarkdown: bollettino clinico mattutino in Markdown (vedi system instruction).',
+    '   Nessuna immagine Markdown: niente Pollinations né URL esterni.',
+    '4) Compila anche i campi plain-text brevi (1-2 frasi ciascuno) per i widget compatte:',
     '   - inflammationSummary',
-    '   - timingFeedback (es. impatto glicemico serale, distribuzione pasti)',
-    '3) Compila sleepCorrelationInsight:',
+    '   - timingFeedback',
+    '5) Compila sleepCorrelationInsight (plain text):',
     '   Analizza i macro e l\'orario della cena di ieri e correlali con la qualità del sonno registrata stamattina.',
     '   Cerca pattern come eccesso di grassi, zuccheri semplici prima di dormire, o un perfetto bilanciamento che ha favorito il riposo.',
     hasSleep
@@ -181,7 +183,7 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
 
 export function buildHealthAnalyzerSystemInstruction() {
   return [
-    'Sei Kentu Health Analyzer.',
+    'Sei un analista clinico Kentu. Scrivi l\'Insight come un elegante bollettino mattutino in Markdown.',
     'Rispondi SOLO con JSON valido conforme allo schema healthReportSchema.',
     'Non inventare alimenti non presenti nei blocchi del prompt.',
     'novaScore: 1=minimamente processato … 4=ultra-processato.',
@@ -189,9 +191,56 @@ export function buildHealthAnalyzerSystemInstruction() {
     'Usa i tag già presenti in KNOWN_FOODS_CACHED senza ricalcolarli.',
     'Per UNKNOWN classifica in modo coerente con la letteratura nutrizionale standard.',
     'Disallineamento temporale: cibo = analysisDate (ieri); sonno = MORNING_SLEEP_LOG di oggi (notte successiva alla cena).',
-    'Se SLEEP_STATUS=AVAILABLE, sleepCorrelationInsight DEVE citare ore/qualità e NON può dire che il sonno manca.',
-    'In sleepCorrelationInsight collega esplicitamente cena (orario/macro/carico glicemico) e riposo notturno.',
+    'Se SLEEP_STATUS=AVAILABLE, sleepCorrelationInsight e la sezione sonno del bollettino DEVONO citare ore/qualità e NON possono dire che il sonno manca.',
+    '',
+    'REGOLE FORMATTAZIONE OBBLIGATORIE per clinicalBulletinMarkdown:',
+    '1. TITOLO: La prima riga DEVE essere esattamente: # 📰 Analisi Metabolica del Mattino',
+    '2. SEZIONI: Dividi in 3 brevi sezioni con titoli ### ed emoji, ad esempio:',
+    '### 🔬 Stato Infiammatorio',
+    '### ⚖️ Equilibrio Glicemico',
+    '### 😴 Sonno e Recupero',
+    '3. STILE: Usa elenchi puntati e **grassetto**. Tono autorevole ma leggibile a colazione. Niente muri di testo.',
+    '4. NON includere immagini Markdown, URL Pollinations, né link a generatori di immagini: la copertina è gestita dall\'app.',
+    'Il Markdown va dentro la stringa JSON clinicalBulletinMarkdown (escape corretto delle virgolette).',
   ].join(' ');
+}
+
+/**
+ * Giorno calendario locale YYYY-MM-DD da epoch ms.
+ * @param {number} ms
+ * @returns {string}
+ */
+export function localIsoDateFromMs(ms) {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * True se il referto è già stato generato nel giorno calendario `todayDate`.
+ * @param {object | null | undefined} report
+ * @param {string} todayDate YYYY-MM-DD
+ */
+export function isHealthReportGeneratedToday(report, todayDate) {
+  const today = String(todayDate || '').slice(0, 10);
+  if (!report || !/^\d{4}-\d{2}-\d{2}$/.test(today)) return false;
+  const ts = Number(report.generatedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return false;
+  return localIsoDateFromMs(ts) === today;
+}
+
+/**
+ * Rimuove immagini Markdown (es. Pollinations) dal bollettino.
+ * @param {string} markdown
+ */
+export function stripClinicalBulletinImages(markdown) {
+  return String(markdown || '')
+    .replace(/!\[[^\]]*\]\([^)]*\)\s*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -216,12 +265,19 @@ export function parseHealthAnalyzerResponse(rawText) {
   const inflammationSummary = String(parsed?.inflammationSummary || '').trim();
   const timingFeedback = String(parsed?.timingFeedback || '').trim();
   const sleepCorrelationInsight = String(parsed?.sleepCorrelationInsight || '').trim() || null;
+  const clinicalBulletinMarkdown = stripClinicalBulletinImages(
+    String(parsed?.clinicalBulletinMarkdown || '').trim(),
+  );
+  if (!clinicalBulletinMarkdown) {
+    throw new Error('Health Analyzer: bollettino Markdown mancante');
+  }
   if (!inflammationSummary || !timingFeedback) {
     throw new Error('Health Analyzer: referto incompleto');
   }
   return {
     newLabels,
     dailyScore,
+    clinicalBulletinMarkdown,
     inflammationSummary,
     timingFeedback,
     sleepCorrelationInsight,
@@ -345,6 +401,7 @@ export function buildHealthReportDocument({
   return {
     date: analysisDate,
     dailyScore: report.dailyScore,
+    clinicalBulletinMarkdown: stripClinicalBulletinImages(report.clinicalBulletinMarkdown || '') || null,
     inflammationSummary: report.inflammationSummary,
     timingFeedback: report.timingFeedback,
     sleepCorrelationInsight: report.sleepCorrelationInsight || null,
@@ -353,7 +410,7 @@ export function buildHealthReportDocument({
     knownCount: knownFoods.length,
     unknownCount: unknownFoods.length,
     generatedAt,
-    source: 'health_analyzer_v1',
+    source: 'health_analyzer_v2_bulletin',
   };
 }
 

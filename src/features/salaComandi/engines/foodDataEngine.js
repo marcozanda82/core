@@ -220,6 +220,7 @@ export function findFoodDbMatchCascading({
   personalDb = null,
   kentuItDb = null,
   globalDb = null,
+  offDb = null,
   nome,
   preferredDbKey = null,
   searchKeywords = null,
@@ -228,6 +229,7 @@ export function findFoodDbMatchCascading({
     { db: personalDb, source: 'personal' },
     { db: kentuItDb, source: 'kentu_it' },
     { db: globalDb, source: 'global' },
+    { db: offDb, source: 'off' },
   ].filter((layer) => layer.db && typeof layer.db === 'object');
 
   if (preferredDbKey != null) {
@@ -286,7 +288,7 @@ function buildUnresolvedFoodItem({ nome, qta, pastoType }) {
 
 /**
  * Estrazione dati alimento da DB. Tolleranza zero: niente stime medie automatiche.
- * Cascata: personale → Kentu IT → Kentu globale. Match assente → NEEDS_RESOLUTION.
+ * Cascata: personale → Kentu IT → USDA/globale → OFF. Match assente → NEEDS_RESOLUTION.
  */
 export function estraiDatiFoodDb({
   nome,
@@ -296,6 +298,7 @@ export function estraiDatiFoodDb({
   foodDb,
   kentuItDb = null,
   globalDb = null,
+  offDb = null,
   fullHistory,
 }) {
   void fullHistory;
@@ -303,6 +306,7 @@ export function estraiDatiFoodDb({
     personalDb: foodDb,
     kentuItDb,
     globalDb,
+    offDb,
     nome,
     preferredDbKey,
   });

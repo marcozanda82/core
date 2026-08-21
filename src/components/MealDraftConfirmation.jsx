@@ -3,6 +3,7 @@ import { KentuButton } from './kentuos/KentuOSUI';
 import { buildFoodNameSelectOptions } from '../features/commandTerminal/conversation/recentFoodNames.js';
 import { clampFoodGrams } from '../utils/inputSanity';
 import { getFoodIcon } from '../utils/getFoodIcon';
+import { withMealSavingOverlay } from '../utils/mealSavingOverlayController';
 
 const MEAL_OPTIONS = [
   { value: 'colazione', label: 'Colazione' },
@@ -63,23 +64,16 @@ export default function MealDraftConfirmation({
     setEditGrams('');
   };
 
-  const handleConfirmClick = () => {
+  const handleConfirmClick = async () => {
     if (isSaving) return;
-    setIsSaving(true);
-    const run = () => {
-      try {
-        const result = onConfirm?.(draftId);
-        if (result && typeof result.then === 'function') {
-          result.catch(() => setIsSaving(false));
-        }
-      } catch {
-        setIsSaving(false);
-      }
-    };
-    if (typeof requestIdleCallback === 'function') {
-      requestIdleCallback(run, { timeout: 100 });
-    } else {
-      setTimeout(run, 0);
+    try {
+      await withMealSavingOverlay(async () => {
+        setIsSaving(true);
+        await Promise.resolve(onConfirm?.(draftId));
+      });
+    } catch (err) {
+      console.error('[MealDraftConfirmation] salvataggio fallito', err);
+      setIsSaving(false);
     }
   };
 

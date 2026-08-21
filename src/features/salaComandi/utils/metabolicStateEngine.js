@@ -6,7 +6,14 @@ import {
   METABOLIC_PHASES,
   METABOLIC_OVERLOAD_PHASE,
 } from './metabolicPhaseConfig';
-import { resolveEntryMealConsumedAtMs } from './mealConsumedTime';
+import {
+  isFastingBreakerItem,
+  filterFastingRelevantMeals,
+} from '../../../utils/fastingBreakRules';
+import {
+  resolveEntryMealConsumedAtMs,
+  parseDecimalHourFromValue,
+} from './mealConsumedTime';
 import {
   resolveKineticMetabolicPhase,
 } from '../../metabolic/MetabolicKinetics';
@@ -46,6 +53,7 @@ function resolveReferenceMs(anchorDate, now) {
 
 /**
  * Timestamp ms dell'ultimo pasto consumato (mealTime/time, non loggedAt).
+ * Esclude bevande/voci < 10 kcal (caffè amaro, tè, acqua) — non ripartono il timer.
  * @returns {number|null}
  */
 export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}) {
@@ -55,6 +63,7 @@ export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}
   const referenceMs = Number.isFinite(Number(options.referenceMs))
     ? Number(options.referenceMs)
     : resolveReferenceMs(anchorDate, now);
+  const manualNodes = Array.isArray(options.manualNodes) ? options.manualNodes : [];
 
   const seen = new Set();
   const candidates = [];
@@ -75,13 +84,42 @@ export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}
     });
   }
 
+  // Stimolanti del giorno (caffè zuccherato sì, amaro no) via manualNodes.
+  manualNodes.forEach((node) => {
+    if (!node || typeof node !== 'object') return;
+    const key = `manual|${node.id || ''}|${node.time}|${node.label || node.subtype || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({
+      ...node,
+      _dayKey: anchorDate,
+      mealTime: node.time ?? node.mealTime,
+    });
+  });
+
+  // Solo pasti caloricamente rilevanti (>= 10 kcal / breaksFast).
+  const pastiValidi = filterFastingRelevantMeals(candidates);
+
   let lastConsumedMs = null;
 
-  candidates.forEach((entry) => {
+  pastiValidi.forEach((entry) => {
     const mealTimesObj = mealTimesForDay(fullHistory, entry._dayKey);
-    const consumedAt =
+    let consumedAt =
       entry._consumedAtMs
       ?? resolveEntryMealConsumedAtMs(entry, entry._dayKey, mealTimesObj);
+
+    // Fallback stimolanti: solo ora decimale sul giorno ancora.
+    if ((!consumedAt || consumedAt <= 0) && entry._dayKey) {
+      const hour = parseDecimalHourFromValue(entry.time ?? entry.mealTime);
+      if (hour != null) {
+        const base = new Date(`${entry._dayKey}T00:00:00`);
+        if (!Number.isNaN(base.getTime())) {
+          base.setHours(Math.floor(hour), Math.round((hour % 1) * 60), 0, 0);
+          consumedAt = base.getTime();
+        }
+      }
+    }
+
     if (!consumedAt || consumedAt > referenceMs) return;
     if (lastConsumedMs == null || consumedAt > lastConsumedMs) {
       lastConsumedMs = consumedAt;
@@ -97,6 +135,7 @@ function collectMealEntryCandidates(fullHistory, activeLog, options = {}) {
   const now = options.now instanceof Date ? options.now : new Date();
   const anchorDate = options.anchorDate ?? now.toISOString().slice(0, 10);
   const lookbackDays = Math.max(1, Number(options.lookbackDays) || 60);
+  const manualNodes = Array.isArray(options.manualNodes) ? options.manualNodes : [];
 
   const seen = new Set();
   const candidates = [];
@@ -117,7 +156,19 @@ function collectMealEntryCandidates(fullHistory, activeLog, options = {}) {
     });
   }
 
-  return candidates;
+  manualNodes.forEach((node) => {
+    if (!node || typeof node !== 'object') return;
+    const key = `manual|${node.id || ''}|${node.time}|${node.label || node.subtype || ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    candidates.push({
+      ...node,
+      _dayKey: anchorDate,
+      mealTime: node.time ?? node.mealTime,
+    });
+  });
+
+  return filterFastingRelevantMeals(candidates);
 }
 
 /**
@@ -143,6 +194,7 @@ export function resolveLastMealAggregateNode(fullHistory, activeLog, options = {
   const seen = new Set();
 
   collectMealEntryCandidates(fullHistory, activeLog, { ...options, now, anchorDate }).forEach((entry) => {
+    if (!isFastingBreakerItem(entry)) return;
     const mealTimesObj = mealTimesForDay(fullHistory, entry._dayKey);
     const consumedAt =
       entry._consumedAtMs
@@ -535,5 +587,13 @@ export function buildMetabolicSnapshot(fullHistory, activeLog, options = {}) {
       )
       : null,
     lastMealAggregateNode,
+    /** Stato digiuno condiviso (Monitor = fonte di verità per UI e avatar). */
+    activeFastingStatus: {
+      hoursSinceLastMeal,
+      phaseId: state?.phase?.id ?? null,
+      phaseLabel: state?.phase?.label ?? state?.phase?.name ?? null,
+      isFastingActive: hoursSinceLastMeal != null && Number(hoursSinceLastMeal) >= 4,
+      lastMealConsumedAtMs,
+    },
   };
 }

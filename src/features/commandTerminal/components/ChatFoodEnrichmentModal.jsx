@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import MicronutrientEnrichmentModal from '../../mealBuilder/components/MicronutrientEnrichmentModal.jsx';
 import UniversalSearchModal from '../../mealBuilder/components/UniversalSearchModal.jsx';
-import { findSemanticKentuMatches } from '../../mealBuilder/utils/SemanticMatchmaker.js';
+import { collectMultiDbFoodCandidates } from '../conversation/multiDbFoodResolver.js';
+import { estimateStandardMacrosPer100g } from '../../../utils/getFoodIcon.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from '../../../platform/expoNativeCamera.js';
 import { processFoodImage } from '../../foodResolution/processFoodImage.js';
 
@@ -21,11 +22,14 @@ function searchResultToEnrichmentMatch(result) {
   const fdcId = String(
     result.key || result.id || result.fdcId || row.id || row.foodDbKey || '',
   ).trim() || null;
+  const source = String(result._source || result.source || result.legacySource || 'search').trim();
   return {
     fdcId,
     name,
     confidence: 'high',
+    confidenceScore: 1,
     reason: 'Selezionato da ricerca manuale',
+    source,
     row: {
       ...(row && typeof row === 'object' ? row : {}),
       desc: name,
@@ -36,7 +40,7 @@ function searchResultToEnrichmentMatch(result) {
 }
 
 /**
- * Wrapper chat: match Kentu DB (CREA + IT) + azioni barcode/etichetta/ricerca per alimenti non trovati.
+ * Wrapper chat: ricerca multi-DB + azioni barcode/etichetta/crea al volo.
  */
 export default function ChatFoodEnrichmentModal({
   session = null,
@@ -50,8 +54,6 @@ export default function ChatFoodEnrichmentModal({
 
   useEffect(() => {
     if (!session?.foodName) {
-      setLocalSession(null);
-      setManualSearchOpen(false);
       return undefined;
     }
 
@@ -60,38 +62,52 @@ export default function ChatFoodEnrichmentModal({
     }
     const controller = new AbortController();
     abortRef.current = controller;
-
-    setLocalSession({
-      foodName: session.foodName,
-      isLoading: true,
-      matches: [],
-      error: '',
-    });
-    setManualSearchOpen(false);
+    const foodName = String(session.foodName || '').trim();
+    const preloaded = Array.isArray(session.matches) ? session.matches.filter(Boolean) : null;
 
     void (async () => {
+      setManualSearchOpen(false);
+      if (preloaded && preloaded.length > 0) {
+        if (controller.signal.aborted) return;
+        setLocalSession({
+          foodName,
+          isLoading: false,
+          matches: preloaded.slice(0, 4),
+          error: '',
+        });
+        return;
+      }
+
+      setLocalSession({
+        foodName,
+        isLoading: true,
+        matches: [],
+        error: '',
+      });
+
       try {
-        const matches = await findSemanticKentuMatches(session.foodName, {
+        const matches = await collectMultiDbFoodCandidates(foodName, {
           kentuItDb: session.kentuItDb,
           personalDb: session.personalDb,
-        }, {
+          globalDb: session.globalDb,
+          offDb: session.offDb,
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
         setLocalSession({
-          foodName: session.foodName,
+          foodName,
           isLoading: false,
-          matches: Array.isArray(matches) ? matches : [],
+          matches: Array.isArray(matches) ? matches.slice(0, 4) : [],
           error: '',
         });
       } catch (error) {
         if (controller.signal.aborted) return;
-        console.warn('[ChatFoodEnrichmentModal] Kentu DB search failed', error);
+        console.warn('[ChatFoodEnrichmentModal] multi-DB search failed', error);
         setLocalSession({
-          foodName: session.foodName,
+          foodName,
           isLoading: false,
           matches: [],
-          error: 'Match Kentu DB non disponibile. Usa scanner, foto etichetta o ricerca manuale.',
+          error: 'Ricerca multi-database non disponibile. Usa scanner, foto etichetta, ricerca o crea al volo.',
         });
       }
     })();
@@ -99,7 +115,14 @@ export default function ChatFoodEnrichmentModal({
     return () => {
       controller.abort();
     };
-  }, [session?.foodName, session?.kentuItDb, session?.personalDb]);
+  }, [
+    session?.foodName,
+    session?.kentuItDb,
+    session?.personalDb,
+    session?.globalDb,
+    session?.offDb,
+    session?.matches,
+  ]);
 
   const handleCameraResolve = useCallback(async (mode) => {
     const foodName = String(session?.foodName || localSession?.foodName || '').trim();
@@ -130,24 +153,20 @@ export default function ChatFoodEnrichmentModal({
       const hasMacros = macros && Number(macros.kcal) > 0;
 
       if (hasMacros && mode === 'label') {
-        const per100 = result?.macrosBasis === 'portion'
-          ? {
-            kcal: Math.round(Number(macros.kcal) || 0),
-            prot: Number(macros.pro) || 0,
-            carb: Number(macros.carbo) || 0,
-            fat: Number(macros.fat) || 0,
-          }
-          : {
-            kcal: Math.round(Number(macros.kcal) || 0),
-            prot: Number(macros.pro) || 0,
-            carb: Number(macros.carbo) || 0,
-            fat: Number(macros.fat) || 0,
-          };
+        const per100 = {
+          kcal: Math.round(Number(macros.kcal) || 0),
+          prot: Number(macros.pro) || 0,
+          carb: Number(macros.carbo) || 0,
+          fat: Number(macros.fat) || 0,
+        };
         onSelectMatch?.({
           fdcId: null,
           name: foodName,
           confidence: 'high',
+          confidenceScore: 1,
           reason: 'Etichetta letta da foto',
+          source: 'custom',
+          isCustom: true,
           row: {
             desc: foodName,
             name: foodName,
@@ -169,7 +188,7 @@ export default function ChatFoodEnrichmentModal({
       console.warn('[ChatFoodEnrichmentModal] camera resolve failed', error);
       setLocalSession((prev) => ({
         ...(prev || { foodName: session?.foodName, matches: [], isLoading: false }),
-        error: 'Errore lettura immagine. Riprova o continua senza profilo Kentu.',
+        error: 'Errore lettura immagine. Riprova o continua senza profilo.',
       }));
     } finally {
       setCameraBusy(false);
@@ -189,21 +208,54 @@ export default function ChatFoodEnrichmentModal({
     onSelectMatch?.(match);
   }, [onSelectMatch, session?.foodName]);
 
-  if (!session?.foodName && !localSession?.foodName) return null;
+  const handleCreateCustom = useCallback((customPayload) => {
+    const foodName = String(
+      customPayload?.name || session?.foodName || localSession?.foodName || 'Alimento',
+    ).trim() || 'Alimento';
+    const estimated = estimateStandardMacrosPer100g(foodName);
+    const per100 = {
+      kcal: Math.max(0, Math.round(Number(customPayload?.kcal ?? estimated.kcal) || 0)),
+      prot: Math.max(0, Number(customPayload?.prot ?? estimated.prot) || 0),
+      carb: Math.max(0, Number(customPayload?.carb ?? estimated.carb) || 0),
+      fat: Math.max(0, Number(customPayload?.fat ?? estimated.fat) || 0),
+    };
+    onSelectMatch?.({
+      fdcId: null,
+      name: foodName,
+      confidence: 'high',
+      confidenceScore: 1,
+      reason: 'Creato al volo',
+      source: 'custom',
+      isCustom: true,
+      row: {
+        desc: foodName,
+        name: foodName,
+        kcal: per100.kcal,
+        prot: per100.prot,
+        carb: per100.carb,
+        fat: per100.fat,
+        fatTotal: per100.fat,
+      },
+    });
+  }, [onSelectMatch, session?.foodName, localSession?.foodName]);
+
+  if (!session?.foodName) return null;
 
   const isMcdriveMode = session?.mode === 'mcdrive';
+  const isDisambiguation = session?.variant === 'disambiguation' || isMcdriveMode;
   const foodName = String(localSession?.foodName || session?.foodName || '').trim();
 
   return (
     <>
       <MicronutrientEnrichmentModal
         isOpen
-        variant={isMcdriveMode ? 'mcdrive' : 'chat'}
+        variant={isDisambiguation ? 'disambiguation' : (isMcdriveMode ? 'mcdrive' : 'chat')}
         productName={foodName}
         isLoading={localSession?.isLoading}
         error={localSession?.error}
         matches={localSession?.matches || []}
         onSelectMatch={onSelectMatch}
+        onCreateCustom={handleCreateCustom}
         onSkip={() => {
           if (manualSearchOpen) {
             setManualSearchOpen(false);
@@ -223,6 +275,7 @@ export default function ChatFoodEnrichmentModal({
         personalDb={session?.personalDb || {}}
         kentuItDb={session?.kentuItDb || {}}
         globalDb={session?.globalDb || {}}
+        offDb={session?.offDb || {}}
         draftFoods={[]}
         onSelectFood={handleManualSearchSelect}
       />
