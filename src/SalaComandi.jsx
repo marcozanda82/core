@@ -166,6 +166,10 @@ import {
   WORKOUT_DURATION_MAX,
 } from './utils/durationMinutesInput';
 import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
+import {
+  loadPersonalDbFromCache,
+  mergePersonalDbRemoteOverLocal,
+} from './utils/offlineCacheUtils';
 import { workoutActivityRequiresStrengthDetailNote } from './utils/workoutActivityNotes';
 import { calculateAge } from './utils/profileAge';
 import { stripUndefined } from './utils/firebasePayloadUtils';
@@ -773,13 +777,22 @@ export default function SalaComandi() {
   // STRATEGIA E DATABASE
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
-  const [foodDb, setFoodDb] = useState({});
+  const [foodDb, setFoodDb] = useState(() => loadPersonalDbFromCache());
   /** Memoria porzioni utente: { pomodoro: 150, pane: 30, ... } */
   const [userPortions, setUserPortions] = useState({});
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
   const [foodDbNeeded, setFoodDbNeeded] = useState(false);
   const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, offDb: offFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
+
+  // Offline-First Fase 1: re-idrata cache per uid appena disponibile (senza attendere RTDB).
+  useEffect(() => {
+    if (!userUid) return;
+    const cached = loadPersonalDbFromCache(userUid);
+    if (Object.keys(cached).length === 0) return;
+    setFoodDb((prev) => mergePersonalDbRemoteOverLocal(prev, cached));
+  }, [userUid]);
+
   useEffect(() => {
     if (foodDbNeeded) return;
     if (showFastLogger || activeAction === 'ai_chat') setFoodDbNeeded(true);
@@ -4043,6 +4056,18 @@ export default function SalaComandi() {
   );
 
   /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
+  const commitDiaryLogWrite = useCallback((nextLog) => {
+    if (isSimulationMode) {
+      setSimulatedLog(nextLog);
+      return;
+    }
+    // Un solo aggiornamento React state; cloud sync non blocca la UI.
+    setDailyLog(nextLog);
+    void syncDatiFirebase(nextLog, manualNodesRef.current).catch((err) => {
+      console.error('[commitDiaryLogWrite] background sync failed', err);
+    });
+  }, [isSimulationMode, setSimulatedLog, setDailyLog, syncDatiFirebase]);
+
   const commitAddFoodChatPayload = useCallback(
     (payload) => {
       const {
@@ -4102,11 +4127,8 @@ export default function SalaComandi() {
       if (isSimulationMode) {
         setSimulatedLog((prev) => [...(prev || []), ...alimentiProcessatiFood]);
       } else {
-        setDailyLog((prev) => {
-          const nuovoLogFood = [...(prev || []), ...alimentiProcessatiFood];
-          syncDatiFirebase(nuovoLogFood, manualNodesRef.current);
-          return nuovoLogFood;
-        });
+        const nextLog = [...(dailyLogRef.current || []), ...alimentiProcessatiFood];
+        commitDiaryLogWrite(nextLog);
       }
       return {
         mealReceipt,
@@ -4118,8 +4140,7 @@ export default function SalaComandi() {
       isSimulationMode,
       simulatedLog,
       setSimulatedLog,
-      setDailyLog,
-      syncDatiFirebase,
+      commitDiaryLogWrite,
       effectiveTargetsForCurrentDate,
       userTargets,
     ]
@@ -4187,11 +4208,7 @@ Slot esistente aggiornato (nessun ghost).`;
       if (isSimulationMode) {
         setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, mergedEntries));
       } else {
-        setDailyLog((prev) => {
-          const next = replaceMealSlotInLog(prev || [], slotId, mergedEntries);
-          syncDatiFirebase(next, manualNodesRef.current);
-          return next;
-        });
+        commitDiaryLogWrite(replaceMealSlotInLog(dailyLogRef.current || [], slotId, mergedEntries));
       }
       return testoRispostaFood;
     },
@@ -4200,8 +4217,7 @@ Slot esistente aggiornato (nessun ghost).`;
       getFoodItemsForMealSlot,
       isSimulationMode,
       setSimulatedLog,
-      setDailyLog,
-      syncDatiFirebase,
+      commitDiaryLogWrite,
       decimalToTimeStr,
       toCanonicalMealType,
     ],
@@ -4257,11 +4273,7 @@ Slot esistente aggiornato (nessun ghost).`;
       if (isSimulationMode) {
         setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood));
       } else {
-        setDailyLog((prev) => {
-          const next = replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood);
-          syncDatiFirebase(next, manualNodesRef.current);
-        return next;
-        });
+        commitDiaryLogWrite(replaceMealSlotInLog(dailyLogRef.current || [], slotId, alimentiProcessatiFood));
       }
       return testoRispostaFood;
     },
@@ -4270,8 +4282,7 @@ Slot esistente aggiornato (nessun ghost).`;
       getFoodItemsForMealSlot,
       isSimulationMode,
       setSimulatedLog,
-      setDailyLog,
-      syncDatiFirebase,
+      commitDiaryLogWrite,
       decimalToTimeStr,
       toCanonicalMealType,
     ]
@@ -4438,6 +4449,35 @@ Slot esistente aggiornato (nessun ghost).`;
     const payload = enrichDbRowWithFoodUnits(withDefaultUsageStats(merged), foodDbKey);
     await set(ref(db, `${basePath}/trackerFoodDatabase/${foodDbKey}`), payload);
     setFoodDb((p) => ({ ...(p || {}), [foodDbKey]: payload }));
+  }, [userUid, db, foodDb, fullHistory]);
+
+  /** Bulk patch DB personale — una sola write Firebase per N alimenti (usage stats pasto). */
+  const patchFoodDbEntriesBatch = useCallback(async (patchesByKey = {}) => {
+    if (!userUid || !db || !patchesByKey || typeof patchesByKey !== 'object') return;
+    const basePath = `users/${userUid}/tracker_data`;
+    const localMerged = {};
+    const firebasePayload = {};
+
+    Object.entries(patchesByKey).forEach(([foodDbKey, patch]) => {
+      if (!foodDbKey || !patch || typeof patch !== 'object') return;
+      const prev = foodDb?.[foodDbKey];
+      if (!prev) return;
+
+      const merged = { ...prev, ...patch };
+      if (merged.kcal == null || Number(merged.kcal) === 0) {
+        merged.kcal = getDefaultNutrientValue('kcal', fullHistory);
+      }
+      if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = Number(merged.fat);
+
+      const payload = enrichDbRowWithFoodUnits(withDefaultUsageStats(merged), foodDbKey);
+      localMerged[foodDbKey] = payload;
+      firebasePayload[foodDbKey] = payload;
+    });
+
+    if (Object.keys(firebasePayload).length === 0) return;
+
+    setFoodDb((p) => ({ ...(p || {}), ...localMerged }));
+    await update(ref(db, `${basePath}/trackerFoodDatabase`), firebasePayload);
   }, [userUid, db, foodDb, fullHistory]);
 
   /** Override locale + aggiornamento riga Firebase per stesso barcode (correzioni utente). */
@@ -6658,12 +6698,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         });
       }
 
-      // Abitudini: incrementa usageCount sul DB personale per ranking "minestrone più mangiato".
+      // Abitudini: bulk patch usage stats (una write Firebase, non N sequenziali).
       recordDraftFoodsUsageStats(
         items.map((it) => ({ foodDbKey: it.foodDbKey || it.matchedKey || null })),
         foodDb,
         patchFoodDbEntry,
         getCurrentTimeSlot(),
+        { batchPatch: patchFoodDbEntriesBatch },
       );
 
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
@@ -6735,6 +6776,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       db,
       foodDb,
       patchFoodDbEntry,
+      patchFoodDbEntriesBatch,
     ],
   );
 

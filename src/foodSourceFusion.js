@@ -1,4 +1,4 @@
-import { searchFoodsDetailed } from './foodSearch.js';
+import { searchOpenFoodFactsApi } from './features/mealBuilder/utils/openFoodFactsSearchApi.js';
 import { FOOD_DB_SOURCE } from './foodDbSource.js';
 
 const MASTER_SOURCE = 'KENTU';
@@ -104,11 +104,12 @@ export function getMasterFusionPayload(masterDb, query, options = {}) {
 }
 
 /**
- * Ricerca Open Food Facts (prodotti confezionati) — `_source: 'off'`, brand, iconTag.
+ * Ricerca Open Food Facts via REST (prodotti confezionati) — `_source: 'off'`, brand.
  *
- * @returns {{ offNormalized: object[], uiItems: object[] }}
+ * @returns {Promise<{ offNormalized: object[], uiItems: object[] }>}
  */
-export function getOffFusionPayload(offDb, query, options = {}) {
+export async function getOffFusionPayload(_offDb, query, options = {}) {
+  void _offDb;
   const q = String(query || '').trim();
   const limit = Number.isFinite(options.limit) && options.limit > 0
     ? Math.floor(options.limit)
@@ -116,54 +117,38 @@ export function getOffFusionPayload(offDb, query, options = {}) {
       ? Math.floor(options.offLimit)
       : OFF_SEARCH_LIMIT;
 
-  if (!q || offDb == null || typeof offDb !== 'object' || Array.isArray(offDb)) {
+  if (!q) {
     return { offNormalized: [], uiItems: [] };
   }
 
-  const detailed = searchFoodsDetailed(offDb, q, {
-    includeUserHistory: false,
-    limit,
-    mode: 'search',
-    enableFuzzy: false,
-  });
+  const rows = await searchOpenFoodFactsApi(q, { limit });
 
-  const offNormalized = detailed.map((hit) => {
-    const row = offDb[hit.id] || null;
-    const name = String(row?.desc ?? row?.name ?? hit.name ?? '').trim();
-    const brand = String(row?.brand || '').trim() || null;
-    const kcal = Number(row?.kcal ?? row?.cal);
-    if (!Number.isFinite(kcal) || kcal <= 0) return null;
+  const offNormalized = rows.map((row) => {
+    const name = String(row.desc ?? row.name ?? '').trim();
+    const brand = String(row.brand || '').trim() || null;
+    const id = String(row.id || row.barcode || name).trim();
 
     return {
-      id: hit.id,
+      id,
       name,
       source: OFF_SOURCE,
-      row: row
-        ? { ...row, _source: 'off', source: FOOD_DB_SOURCE.OFF, brand: brand || row.brand }
-        : {
-            id: hit.id,
-            desc: name,
-            name,
-            foodSource: OFF_SOURCE,
-            _source: 'off',
-            source: FOOD_DB_SOURCE.OFF,
-            brand,
-          },
-      textScore: hit.textScore,
-      matchScore: hit.matchScore,
-      recencyScore: hit.recencyScore,
-      frequencyScore: hit.frequencyScore,
-      iconTag: row?.iconTag ?? null,
+      row: {
+        ...row,
+        id,
+        desc: name,
+        name,
+        _source: 'off',
+        source: FOOD_DB_SOURCE.OFF,
+        brand,
+      },
+      textScore: 0.9,
+      matchScore: 0.9,
+      recencyScore: 0,
+      frequencyScore: 0,
+      iconTag: row.iconTag ?? null,
       brand,
       _source: 'off',
     };
-  }).filter(Boolean);
-
-  offNormalized.sort((a, b) => {
-    const scoreA = Number(a.textScore ?? a.matchScore ?? 0);
-    const scoreB = Number(b.textScore ?? b.matchScore ?? 0);
-    if (scoreB !== scoreA) return scoreB - scoreA;
-    return String(a.name).localeCompare(String(b.name), 'it');
   });
 
   return {

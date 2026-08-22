@@ -12,6 +12,7 @@ const SKIP_SYSTEM_MESSAGE_CORRELATION_IDS = new Set([
   'meal_proposal_update',
   'meal_proposal_merge',
   'meal_upsert_accept',
+  'mcdrive_save_confirm',
 ]);
 
 /**

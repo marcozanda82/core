@@ -115,6 +115,45 @@ export function sortFoodsByTimeSlotUsage(foods, personalDb, timeSlot) {
   });
 }
 
+export function buildDraftFoodsUsageStatsPatches(draftFoods, personalDb, timeSlot) {
+  if (!Array.isArray(draftFoods) || !personalDb || typeof personalDb !== 'object') {
+    return {};
+  }
+
+  const patches = {};
+  const seen = new Set();
+  draftFoods.forEach((item) => {
+    const key = item?.foodDbKey;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    const entry = personalDb[key];
+    if (!entry) return;
+    patches[key] = buildUsageStatsIncrementPatch(entry, timeSlot);
+  });
+  return patches;
+}
+
+export function recordDraftFoodsUsageStats(draftFoods, personalDb, onPatchFoodDbEntry, timeSlot, options = {}) {
+  const patches = buildDraftFoodsUsageStatsPatches(draftFoods, personalDb, timeSlot);
+  const keys = Object.keys(patches);
+  if (keys.length === 0) return;
+
+  const batchPatch = options?.batchPatch;
+  if (typeof batchPatch === 'function') {
+    void batchPatch(patches).catch(() => {
+      /* persistenza silenziosa */
+    });
+    return;
+  }
+
+  if (typeof onPatchFoodDbEntry !== 'function') return;
+
+  // Fallback: scritture parallele (non sequenziali), fire-and-forget.
+  void Promise.all(
+    keys.map((key) => onPatchFoodDbEntry(key, patches[key]).catch(() => {})),
+  );
+}
+
 export function recordFoodUsageStats(foodDbKey, personalDb, onPatchFoodDbEntry, timeSlot) {
   if (!foodDbKey || typeof onPatchFoodDbEntry !== 'function') return;
   const entry = personalDb?.[foodDbKey];
@@ -123,18 +162,6 @@ export function recordFoodUsageStats(foodDbKey, personalDb, onPatchFoodDbEntry, 
   const patch = buildUsageStatsIncrementPatch(entry, timeSlot);
   void onPatchFoodDbEntry(foodDbKey, patch).catch(() => {
     /* persistenza silenziosa */
-  });
-}
-
-export function recordDraftFoodsUsageStats(draftFoods, personalDb, onPatchFoodDbEntry, timeSlot) {
-  if (!Array.isArray(draftFoods) || typeof onPatchFoodDbEntry !== 'function') return;
-
-  const seen = new Set();
-  draftFoods.forEach((item) => {
-    const key = item?.foodDbKey;
-    if (!key || seen.has(key)) return;
-    seen.add(key);
-    recordFoodUsageStats(key, personalDb, onPatchFoodDbEntry, timeSlot);
   });
 }
 

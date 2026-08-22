@@ -437,7 +437,11 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
     pushLexicalHits(pool, searchPersonalDb(personalDb, name).slice(0, 4), 'personal');
   }
   if (kentuItDb && Object.keys(kentuItDb).length > 0) {
-    pushLexicalHits(pool, searchKentuItDb(name, kentuItDb, []).slice(0, 4), 'kentu');
+    pushLexicalHits(
+      pool,
+      (await searchKentuItDb(name, kentuItDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT, signal: ctx.signal })).slice(0, 4),
+      'kentu',
+    );
   }
 
   ranked = sortCandidates([...pool.values()]);
@@ -496,7 +500,6 @@ export async function collectLevel2ExternalCandidates(foodName, ctx = {}) {
   if (!name) return [];
 
   const globalDb = ctx.globalDb && typeof ctx.globalDb === 'object' ? ctx.globalDb : null;
-  const offDb = ctx.offDb && typeof ctx.offDb === 'object' ? ctx.offDb : null;
   const pool = new Map();
 
   typeof ctx.onProgress === 'function'
@@ -508,19 +511,23 @@ export async function collectLevel2ExternalCandidates(foodName, ctx = {}) {
 
   if (signalAborted(ctx.signal)) return [];
 
-  if (offDb && Object.keys(offDb).length > 0) {
-    pushLexicalHits(
-      pool,
-      searchOffDb(name, offDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT }),
-      'off',
-    );
-  }
+  pushLexicalHits(
+    pool,
+    await searchOffDb(name, null, [], {
+      limit: HEAVY_STEP2_RESULT_LIMIT,
+      signal: ctx.signal,
+    }),
+    'off',
+  );
   if (signalAborted(ctx.signal)) return [];
 
   if (globalDb && Object.keys(globalDb).length > 0) {
     pushLexicalHits(
       pool,
-      searchGlobalDb(name, globalDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT }),
+      await searchGlobalDb(name, globalDb, [], {
+        limit: HEAVY_STEP2_RESULT_LIMIT,
+        signal: ctx.signal,
+      }),
       'usda',
     );
   }

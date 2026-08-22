@@ -8,13 +8,16 @@ import {
   tokenSharesStem,
 } from '../../../foodSearch';
 import { hasUsableOffKcal } from '../../../foodLoader';
+import { searchOpenFoodFactsApi } from '../utils/openFoodFactsSearchApi';
 
 const MEGA_SEARCH_CHUNK_SIZE = 1000;
 
 const PERSONAL_SEARCH_LIMIT = 40;
 const KENTU_IT_SEARCH_LIMIT = 40;
 const GLOBAL_SEARCH_LIMIT = 40;
-const OFF_SEARCH_LIMIT = 40;
+/** Ricerca locale Kentu IT / USDA (L1/L2 resolver): cap stretto + yield. */
+const LOCAL_CATALOG_RESOLVER_LIMIT = 5;
+const OFF_SEARCH_LIMIT = 5;
 /** Cataloghi pesanti (USDA / OFF): cap su Object.entries per non bloccare il main thread. */
 const HEAVY_CATALOG_MAX_SCAN = 4000;
 /** Cap assoluto risultati UI / merge (mai renderizzare migliaia di nodi). */
@@ -432,6 +435,7 @@ function yieldToMainThread() {
 }
 
 function isSearchAborted(signal) {
+  if (signal?.aborted) return true;
   return typeof signal?.isCancelled === 'function' && signal.isCancelled();
 }
 
@@ -542,18 +546,11 @@ export async function searchMegaDbsOnlyAsync(query, options = {}, signal = null)
     : [];
   if (isSearchAborted(signal)) return [];
 
-  const offResults = await searchCatalogDbChunked(
+  const offResults = await searchOffDb(
     trimmedQuery,
-    offDb,
+    null,
     [...kentuItResults, ...globalResults],
-    {
-      limit: OFF_SEARCH_LIMIT,
-      legacySource: 'off',
-      dbSource: FOOD_DB_SOURCE.OFF,
-      enableFuzzy: false,
-      requireUsableKcal: true,
-    },
-    signal,
+    { limit: OFF_SEARCH_LIMIT, signal },
   );
   if (isSearchAborted(signal)) return [];
 
@@ -645,61 +642,86 @@ export function searchPersonalDb(personalDb, query) {
 
 /**
  * Tier 2 — catalogo Kentu DB IT (CREA certificato).
+ * Async + yield ogni 1000 voci per non bloccare il main thread.
  */
-export function searchKentuItDb(query, kentuItDb, existingResults = []) {
-  return searchCatalogDb(query, kentuItDb, existingResults, {
-    limit: KENTU_IT_SEARCH_LIMIT,
+export async function searchKentuItDb(query, kentuItDb, existingResults = [], overrides = {}) {
+  return searchCatalogDbChunked(query, kentuItDb, existingResults, {
+    limit: LOCAL_CATALOG_RESOLVER_LIMIT,
     legacySource: 'kentu_it',
     dbSource: FOOD_DB_SOURCE.KENTU_IT,
-  });
+    ...overrides,
+  }, overrides.signal ?? null);
 }
 
 /**
- * Tier 3 — catalogo Kentu DB 🌐 (esplorazione globale).
- * Scan cap su Object.entries: evita full-scan sincrono su USDA.
+ * Tier 3 — catalogo Kentu DB 🌐 (USDA).
+ * Async + yield; scan cap su Object.entries.
  */
-export function searchGlobalDb(query, globalDb, existingResults = [], overrides = {}) {
-  return searchCatalogDb(query, globalDb, existingResults, {
-    limit: GLOBAL_SEARCH_LIMIT,
+export async function searchGlobalDb(query, globalDb, existingResults = [], overrides = {}) {
+  return searchCatalogDbChunked(query, globalDb, existingResults, {
+    limit: LOCAL_CATALOG_RESOLVER_LIMIT,
     legacySource: 'master',
     dbSource: FOOD_DB_SOURCE.GLOBAL,
     enableFuzzy: false,
     maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
-    earlyExitOnStrong: true,
     ...overrides,
+  }, overrides.signal ?? null);
+}
+
+/**
+ * Tier 4 — Open Food Facts via REST API (Livello 2 cloud).
+ * Il parametro offDb è ignorato (legacy compat).
+ */
+export async function searchOffDb(query, _offDb, existingResults = [], overrides = {}) {
+  void _offDb;
+  const trimmedQuery = String(query || '').trim();
+  if (!trimmedQuery) return [];
+
+  const limit = Number.isFinite(overrides.limit) && overrides.limit > 0
+    ? Math.floor(overrides.limit)
+    : OFF_SEARCH_LIMIT;
+
+  if (isSearchAborted(overrides.signal)) return [];
+
+  const rows = await searchOpenFoodFactsApi(trimmedQuery, {
+    limit,
+    signal: overrides.signal,
   });
+
+  const results = [];
+  rows.forEach((row, index) => {
+    const id = String(row.id || row.barcode || `off_${index}`).trim();
+    const mapped = mapCatalogHitToResult(
+      {
+        id,
+        name: row.name || row.desc,
+        textScore: 0.92,
+        matchScore: 0.92,
+      },
+      { ...row, id },
+      'off',
+      FOOD_DB_SOURCE.OFF,
+    );
+    if (!isDuplicateOfExisting(mapped, existingResults) && !isDuplicateOfExisting(mapped, results)) {
+      results.push(mapped);
+    }
+  });
+
+  return results.slice(0, limit);
 }
 
 /**
- * Tier 4 — Open Food Facts (solo kcal > 0).
- * Scan cap su Object.entries: evita full-scan sincrono su OFF.
+ * Slice OFF sicuro per lookup AI: REST, max 5 risultati.
  */
-export function searchOffDb(query, offDb, existingResults = [], overrides = {}) {
-  const merged = {
-    limit: OFF_SEARCH_LIMIT,
-    legacySource: 'off',
-    dbSource: FOOD_DB_SOURCE.OFF,
-    enableFuzzy: false,
-    requireUsableKcal: true,
-    maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
-    earlyExitOnStrong: true,
-    ...overrides,
-  };
-  return searchCatalogDb(query, offDb, existingResults, merged)
-    .slice(0, merged.limit ?? OFF_SEARCH_LIMIT);
-}
-
-/**
- * Slice OFF sicuro per lookup AI: mai l'intero DB.
- */
-export function searchOffDbForAi(query, offDb) {
-  return searchOffDb(query, offDb, []).slice(0, OFF_SEARCH_LIMIT);
+export async function searchOffDbForAi(query, _offDb) {
+  void _offDb;
+  return searchOffDb(query, null, [], { limit: OFF_SEARCH_LIMIT });
 }
 
 /**
  * Cerca su tutti i DB, unisce e ordina per pertinenza (non per fonte).
  */
-export function runUnifiedFoodSearch(query, options = {}) {
+export async function runUnifiedFoodSearch(query, options = {}) {
   const trimmedQuery = String(query || '').trim();
   if (!trimmedQuery) return [];
 
@@ -710,15 +732,37 @@ export function runUnifiedFoodSearch(query, options = {}) {
     offDb = null,
     searchGlobal = true,
     cap = MERGED_SEARCH_RESULT_CAP,
+    signal = null,
   } = options;
 
-  // Pool indipendenti: niente ordinamento per fonte qui — solo fetch.
   const personalResults = searchPersonalDb(personalDb, trimmedQuery);
-  const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, []);
+  const kentuItResults = await searchCatalogDbChunked(
+    trimmedQuery,
+    kentuItDb,
+    [],
+    {
+      limit: KENTU_IT_SEARCH_LIMIT,
+      legacySource: 'kentu_it',
+      dbSource: FOOD_DB_SOURCE.KENTU_IT,
+    },
+    signal,
+  );
   const globalResults = searchGlobal
-    ? searchGlobalDb(trimmedQuery, globalDb, [])
+    ? await searchCatalogDbChunked(
+      trimmedQuery,
+      globalDb,
+      kentuItResults,
+      {
+        limit: GLOBAL_SEARCH_LIMIT,
+        legacySource: 'master',
+        dbSource: FOOD_DB_SOURCE.GLOBAL,
+        enableFuzzy: false,
+        maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
+      },
+      signal,
+    )
     : [];
-  const offResults = searchOffDb(trimmedQuery, offDb, []);
+  const offResults = await searchOffDb(trimmedQuery, offDb, [], { signal });
 
   return mergeAndRankSearchResults(
     trimmedQuery,
@@ -730,7 +774,7 @@ export function runUnifiedFoodSearch(query, options = {}) {
 /**
  * Tier 2–4 — solo cataloghi pesanti (Kentu IT, Global, OFF). Esclude il DB personale.
  */
-export function searchMegaDbsOnly(query, options = {}) {
+export async function searchMegaDbsOnly(query, options = {}, signal = null) {
   const trimmedQuery = String(query || '').trim();
   if (!trimmedQuery) return [];
 
@@ -742,11 +786,36 @@ export function searchMegaDbsOnly(query, options = {}) {
     cap = MERGED_SEARCH_RESULT_CAP,
   } = options;
 
-  const kentuItResults = searchKentuItDb(trimmedQuery, kentuItDb, []);
+  const kentuItResults = await searchCatalogDbChunked(
+    trimmedQuery,
+    kentuItDb,
+    [],
+    {
+      limit: KENTU_IT_SEARCH_LIMIT,
+      legacySource: 'kentu_it',
+      dbSource: FOOD_DB_SOURCE.KENTU_IT,
+    },
+    signal,
+  );
   const globalResults = searchGlobal
-    ? searchGlobalDb(trimmedQuery, globalDb, [])
+    ? await searchCatalogDbChunked(
+      trimmedQuery,
+      globalDb,
+      kentuItResults,
+      {
+        limit: GLOBAL_SEARCH_LIMIT,
+        legacySource: 'master',
+        dbSource: FOOD_DB_SOURCE.GLOBAL,
+        enableFuzzy: false,
+        maxEntriesToScan: HEAVY_CATALOG_MAX_SCAN,
+      },
+      signal,
+    )
     : [];
-  const offResults = searchOffDb(trimmedQuery, offDb, []);
+  const offResults = await searchOffDb(trimmedQuery, offDb, [...kentuItResults, ...globalResults], {
+    limit: OFF_SEARCH_LIMIT,
+    signal,
+  });
 
   return mergeAndRankSearchResults(
     trimmedQuery,
@@ -756,12 +825,12 @@ export function searchMegaDbsOnly(query, options = {}) {
 }
 
 /** @deprecated Usare searchGlobalDb */
-export function searchMasterDb(query, masterDb, personalResults = []) {
+export async function searchMasterDb(query, masterDb, personalResults = []) {
   return searchGlobalDb(query, masterDb, personalResults);
 }
 
 /** @deprecated Usare searchGlobalDb */
-export function searchExternalSources(query, masterDb, _legacyUsdaDb, personalResults = []) {
+export async function searchExternalSources(query, masterDb, _legacyUsdaDb, personalResults = []) {
   void _legacyUsdaDb;
   return searchGlobalDb(query, masterDb, personalResults);
 }

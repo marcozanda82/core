@@ -7,6 +7,11 @@ import { stripUndefined } from '../../utils/firebasePayloadUtils';
 import { dayHasFoodLog } from '../../utils/dayTrackingStatus';
 import { scheduleAfterPaint } from '../../utils/scheduleAfterPaint';
 import {
+  mergePersonalDbRemoteOverLocal,
+  personalFoodDbSnapshotsEqual,
+  savePersonalDbToCache,
+} from '../../utils/offlineCacheUtils';
+import {
   TRACKER_STORICO_KEY,
   normalizeLogData,
   denormalizeLogForFirebase,
@@ -113,13 +118,18 @@ export function useDiaryFirebaseSync({
             Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
           );
           const mealTimes = val?.mealTimes ?? {};
-          lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-          setDailyLog(applyMealTimes(normalized, mealTimes));
+          const serialized = JSON.stringify(normalized);
           writeTodayTrackerLocalCache(
             getTodayString(),
             Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
             mealTimes,
           );
+          // Evita re-render se l'echo Firebase coincide con l'ultimo commit locale.
+          if (lastLogFromFirebaseRef.current === serialized) {
+            return;
+          }
+          lastLogFromFirebaseRef.current = serialized;
+          setDailyLog(applyMealTimes(normalized, mealTimes));
         }
       });
     };
@@ -244,9 +254,18 @@ export function useDiaryFirebaseSync({
         Object.keys(val).forEach((k) => {
           const row = val[k];
           if (!row || typeof row !== 'object') return;
-          enriched[k] = row.isRecipe === true || row.type === 'recipe' ? row : enrichDbRowWithFoodUnits(row, k);
+          enriched[k] = row.isRecipe === true || row.type === 'recipe'
+            ? row
+            : enrichDbRowWithFoodUnits(row, k);
         });
-        setFoodDb(enriched);
+
+        void savePersonalDbToCache(enriched, user.uid);
+
+        setFoodDb((prev) => {
+          const merged = mergePersonalDbRemoteOverLocal(prev, enriched);
+          if (personalFoodDbSnapshotsEqual(prev, merged)) return prev;
+          return merged;
+        });
       });
     }, { timeout: 3500 });
     backgroundCancels.push(cancelSecondary);
@@ -287,8 +306,6 @@ export function useDiaryFirebaseSync({
       }
       const uid = currentUser.uid;
 
-      console.log('🔄 Preparazione salvataggio su Firebase per UID:', uid);
-
       try {
         const dateStr = currentTrackerDate;
         const logForFirebase = denormalizeLogForFirebase(nuovoLog || []);
@@ -315,23 +332,27 @@ export function useDiaryFirebaseSync({
           ...(keepIntentionalFast ? { isIntentionalFast: true } : {}),
         };
         const sanitized = stripUndefined(payload);
+        const storicoKey = TRACKER_STORICO_KEY(dateStr);
 
         writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
 
-        const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
-        console.log('📁 Percorso di salvataggio:', dbPath);
+        const normalizedLocal = normalizeLogData(nuovoLog || []);
+        lastLogFromFirebaseRef.current = JSON.stringify(normalizedLocal);
 
-        // Unico write atomico per l'intera giornata (tutte le voci pasto in un payload).
-        return set(ref(db, dbPath), sanitized)
+        const dbPath = `users/${uid}/tracker_data/${storicoKey}`;
+
+        // Cloud sync in background: la UI è già aggiornata via setDailyLog + cache locale.
+        void set(ref(db, dbPath), sanitized)
           .then(() => {
-            setFullHistory((prev) => ({ ...prev, [TRACKER_STORICO_KEY(dateStr)]: sanitized }));
-            console.log('✅ Dati salvati con successo su Firebase!');
-            return true;
+            queueMicrotask(() => {
+              setFullHistory((prev) => ({ ...prev, [storicoKey]: sanitized }));
+            });
           })
           .catch((err) => {
             console.error('❌ Errore critico durante il salvataggio Firebase:', err);
-            throw err;
           });
+
+        return Promise.resolve(true);
       } catch (error) {
         console.error('❌ Errore durante la preparazione del payload Firebase:', error);
         return Promise.reject(error);
