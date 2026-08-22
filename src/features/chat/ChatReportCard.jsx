@@ -3,12 +3,11 @@ import { Share2 } from 'lucide-react';
 import { REPORT_COVER_SRC } from '../commandTerminal/conversation/reportCommandIntent';
 import { shareOrDownloadKentuReportPdf } from './downloadKentuReportPdf';
 import PhantomDailyReport, {
-  PHANTOM_DAILY_REPORT_MOCK,
   PHANTOM_REPORT_ROOT_ID,
 } from './PhantomDailyReport.jsx';
 
 /**
- * Card essenziale bollettino in chat + template fantasma PDF off-screen.
+ * Card essenziale bollettino in chat + template fantasma PDF off-screen (dati reali).
  *
  * @param {{
  *   markdown?: string,
@@ -16,6 +15,10 @@ import PhantomDailyReport, {
  *   coverSrc?: string,
  *   ready?: boolean,
  *   reportData?: object|null,
+ *   dailyLog?: object[],
+ *   userTargets?: object|null,
+ *   healthScore?: object|number|null,
+ *   userDisplayName?: string,
  * }} props
  */
 export default function ChatReportCard({
@@ -24,32 +27,35 @@ export default function ChatReportCard({
   coverSrc = REPORT_COVER_SRC,
   ready = true,
   reportData = null,
+  dailyLog = [],
+  userTargets = null,
+  healthScore = null,
+  userDisplayName = '',
 } = {}) {
   const body = String(markdown || '').trim();
   const [isSharing, setIsSharing] = useState(false);
 
-  const phantomData = useMemo(() => {
-    const base = { ...PHANTOM_DAILY_REPORT_MOCK };
-    if (reportData && typeof reportData === 'object') {
-      Object.assign(base, reportData);
-    }
-    if (body) {
-      base.insight = body.slice(0, 480);
-    }
+  const reportLabel = useMemo(() => {
     if (title && title !== 'Bollettino Kentu') {
-      base.reportLabel = String(title).replace(/^[^A-Za-z0-9]+/, '').toUpperCase() || base.reportLabel;
+      return String(title).replace(/^[^A-Za-z0-9]+/, '').toUpperCase() || 'DAILY REPORT';
     }
-    return base;
-  }, [body, reportData, title]);
+    return 'DAILY REPORT';
+  }, [title]);
+
+  /** Snapshot messaggio: usato solo se non c’è diario live (priorità giornata corrente). */
+  const snapshotOverride = useMemo(() => {
+    if (Array.isArray(dailyLog) && dailyLog.length > 0) return null;
+    if (!reportData || typeof reportData !== 'object') return null;
+    if (Array.isArray(reportData.meals) || reportData.calories || reportData.totals) {
+      return reportData;
+    }
+    return null;
+  }, [dailyLog, reportData]);
 
   const handleShare = useCallback(async () => {
     if (!ready || isSharing) return;
     setIsSharing(true);
     try {
-      // Assicura un frame di paint del phantom prima della cattura html2pdf.
-      await new Promise((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(resolve));
-      });
       const today = new Date().toISOString().slice(0, 10);
       await shareOrDownloadKentuReportPdf({
         title: title || 'Kentu Daily Report',
@@ -70,8 +76,16 @@ export default function ChatReportCard({
 
   return (
     <>
-      <PhantomDailyReport data={phantomData} />
-      <article className="w-full max-w-[min(92%,28rem)] overflow-hidden rounded-2xl border border-cyan-500/25 bg-slate-950/80 shadow-lg shadow-black/30 transition-opacity duration-500 ease-out">
+      <PhantomDailyReport
+        data={snapshotOverride}
+        dailyLog={dailyLog}
+        userTargets={userTargets}
+        healthScore={healthScore}
+        userDisplayName={userDisplayName}
+        insight={body.slice(0, 480)}
+        reportLabel={reportLabel}
+      />
+      <article className="relative w-full max-w-[min(92%,28rem)] overflow-hidden rounded-2xl border border-cyan-500/25 bg-slate-950/80 shadow-lg shadow-black/30 transition-opacity duration-500 ease-out">
         <img
           src={coverSrc}
           alt="Copertina report"

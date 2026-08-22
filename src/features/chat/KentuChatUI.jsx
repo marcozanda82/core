@@ -23,6 +23,7 @@ export default function KentuChatUI({
   globalFoodDatabase = {},
   fullHistory = {},
   dailyLog = [],
+  userTargets = null,
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -96,6 +97,7 @@ export default function KentuChatUI({
         globalFoodDatabase={globalFoodDatabase}
         fullHistory={fullHistory}
         dailyLog={dailyLog}
+        userTargets={userTargets}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}

@@ -10025,6 +10025,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             offDb={offFoodDb}
             fullHistory={fullHistory}
             dailyLog={activeLog}
+            userTargets={effectiveTargetsForCurrentDate || userTargets}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}

@@ -1,69 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+import {
+  buildPhantomDailyReportData,
+  createEmptyPhantomDailyReportData,
+  formatItalianDateLabel,
+} from './buildPhantomDailyReportData.js';
 
 export const PHANTOM_REPORT_ROOT_ID = 'kentu-phantom-report';
-
-/** Mock premium per test rendering PDF (Dark Mode Telemetria). */
-export const PHANTOM_DAILY_REPORT_MOCK = Object.freeze({
-  brand: 'Kentu',
-  reportLabel: 'DAILY REPORT',
-  dateLabel: '21 Agosto 2026',
-  userName: 'Marco',
-  dailyScore: 82,
-  dailyScoreMax: 100,
-  calories: { value: 2180, target: 2250 },
-  protein: { value: 154, target: 160, unit: 'g' },
-  carbs: { value: 198, target: 220, unit: 'g' },
-  fat: { value: 72, target: 70, unit: 'g' },
-  fiber: { value: 28, target: 30, unit: 'g' },
-  sleep: { label: '7h 32m', hours: 7.53 },
-  recovery: { value: 79, max: 100 },
-  meals: [
-    {
-      time: '07:40',
-      meal: 'Colazione',
-      foods: 'Yogurt greco, avena, mirtilli',
-      kcal: 420,
-      prot: 32,
-      carb: 48,
-      fat: 12,
-    },
-    {
-      time: '13:15',
-      meal: 'Pranzo',
-      foods: 'Pollo, riso basmati, verdure',
-      kcal: 680,
-      prot: 52,
-      carb: 62,
-      fat: 18,
-    },
-    {
-      time: '16:30',
-      meal: 'Spuntino',
-      foods: 'Whey + banana',
-      kcal: 280,
-      prot: 28,
-      carb: 32,
-      fat: 4,
-    },
-    {
-      time: '20:10',
-      meal: 'Cena',
-      foods: 'Salmone, patate, insalata',
-      kcal: 800,
-      prot: 42,
-      carb: 56,
-      fat: 38,
-    },
-  ],
-  totals: { kcal: 2180, prot: 154, carb: 198, fat: 72 },
-  training: {
-    title: 'Upper Body',
-    durationLabel: '84 min',
-    detail: 'Push · Volume moderato · RPE 7',
-  },
-  insight:
-    'Giornata positiva: aderenza calorica e proteica solide, sonno nella fascia ottimale. Focus per domani: anticipare i carboidrati pre-allenamento e chiudere la finestra alimentare entro le 21:00.',
-});
 
 function clampPct(value, target) {
   const v = Number(value) || 0;
@@ -160,28 +102,88 @@ function MacroBar({ label, value, target, unit = 'g', barClass }) {
  * Template fantasma A4 — Dark Mode Telemetria per html2pdf.
  * Montato off-screen; catturato via #kentu-phantom-report.
  *
- * @param {{ data?: object, visibleForDebug?: boolean }} props
+ * Preferire props `dailyLog` / `userTargets` / `healthScore` (dati reali).
+ * `data` resta un override opzionale (es. snapshot salvato nel messaggio).
+ *
+ * @param {{
+ *   data?: object|null,
+ *   dailyLog?: object[],
+ *   userTargets?: object|null,
+ *   healthScore?: object|number|null,
+ *   userDisplayName?: string,
+ *   insight?: string,
+ *   reportLabel?: string,
+ *   visibleForDebug?: boolean,
+ * }} props
  */
 export default function PhantomDailyReport({
   data = null,
+  dailyLog = null,
+  userTargets = null,
+  healthScore = null,
+  userDisplayName = '',
+  insight = '',
+  reportLabel = 'DAILY REPORT',
   visibleForDebug = false,
 } = {}) {
-  const d = { ...PHANTOM_DAILY_REPORT_MOCK, ...(data && typeof data === 'object' ? data : {}) };
-  const meals = Array.isArray(d.meals) ? d.meals : PHANTOM_DAILY_REPORT_MOCK.meals;
-  const totals = d.totals || PHANTOM_DAILY_REPORT_MOCK.totals;
+  const d = useMemo(() => {
+    const hasLiveInputs = (
+      Array.isArray(dailyLog)
+      || userTargets
+      || healthScore != null
+      || Boolean(userDisplayName)
+      || Boolean(insight)
+    );
 
-  const rootClass = [
-    'w-[800px] min-h-[1130px] bg-slate-950 text-slate-100 p-8 font-sans',
-    'box-border',
-    visibleForDebug
-      ? 'relative left-0 opacity-100'
-      : 'fixed top-0 left-0 -z-[9999] opacity-0 pointer-events-none',
-  ].join(' ');
+    // Priorità: diario/target/score live della giornata; `data` solo come override/snapshot.
+    if (hasLiveInputs) {
+      return buildPhantomDailyReportData({
+        dailyLog: Array.isArray(dailyLog) ? dailyLog : [],
+        userTargets,
+        healthScore,
+        userDisplayName,
+        insight,
+        reportLabel,
+        date: new Date(),
+        overrides: data && typeof data === 'object' ? data : null,
+      });
+    }
 
-  return (
+    if (data && typeof data === 'object') {
+      return {
+        ...createEmptyPhantomDailyReportData({ reportLabel }),
+        ...data,
+        dateLabel: data.dateLabel
+          ? String(data.dateLabel)
+          : formatItalianDateLabel(new Date()),
+      };
+    }
+
+    return createEmptyPhantomDailyReportData({ reportLabel });
+  }, [
+    data,
+    dailyLog,
+    userTargets,
+    healthScore,
+    userDisplayName,
+    insight,
+    reportLabel,
+  ]);
+
+  const meals = Array.isArray(d.meals) ? d.meals : [];
+  const totals = d.totals || { kcal: 0, prot: 0, carb: 0, fat: 0 };
+
+  // Off-screen senza opacity:0 / display:none (html2canvas li scarta).
+  // Wrapper 0×0 + overflow clippa dalla vista; il figlio resta layoutato a 800×1130.
+  const reportClass = [
+    'w-[800px] h-[1130px] bg-slate-950 text-slate-100 p-8 font-sans box-border overflow-hidden',
+    visibleForDebug ? 'relative' : '',
+  ].filter(Boolean).join(' ');
+
+  const report = (
     <div
       id={PHANTOM_REPORT_ROOT_ID}
-      className={rootClass}
+      className={reportClass}
       aria-hidden={visibleForDebug ? undefined : true}
     >
       {/* Header */}
@@ -243,25 +245,33 @@ export default function PhantomDailyReport({
               </tr>
             </thead>
             <tbody>
-              {meals.map((row, idx) => (
-                <tr key={`${row.time}-${idx}`} className="border-b border-slate-800">
-                  <td className="px-3 py-2.5 tabular-nums text-slate-400">{row.time}</td>
-                  <td className="px-3 py-2.5 font-medium text-slate-200">{row.meal}</td>
-                  <td className="px-3 py-2.5 text-slate-400">{row.foods}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">
-                    {formatNum(row.kcal)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
-                    {formatNum(row.prot)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
-                    {formatNum(row.carb)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
-                    {formatNum(row.fat)}
+              {meals.length === 0 ? (
+                <tr className="border-b border-slate-800">
+                  <td className="px-3 py-4 text-slate-500" colSpan={7}>
+                    Nessun alimento registrato oggi
                   </td>
                 </tr>
-              ))}
+              ) : (
+                meals.map((row, idx) => (
+                  <tr key={`${row.time}-${row.meal}-${idx}`} className="border-b border-slate-800">
+                    <td className="px-3 py-2.5 tabular-nums text-slate-400">{row.time}</td>
+                    <td className="px-3 py-2.5 font-medium text-slate-200">{row.meal}</td>
+                    <td className="px-3 py-2.5 text-slate-400">{row.foods}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-200">
+                      {formatNum(row.kcal)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                      {formatNum(row.prot)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                      {formatNum(row.carb)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-300">
+                      {formatNum(row.fat)}
+                    </td>
+                  </tr>
+                ))
+              )}
               <tr className="bg-slate-900/90">
                 <td className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-cyan-400" colSpan={3}>
                   Totali
@@ -348,6 +358,19 @@ export default function PhantomDailyReport({
       <footer className="mt-8 border-t border-slate-800 pt-3 text-center text-[10px] uppercase tracking-[0.18em] text-slate-600">
         KentuOS · Telemetria Giornaliera · Confidenziale
       </footer>
+    </div>
+  );
+
+  if (visibleForDebug) {
+    return report;
+  }
+
+  return (
+    <div
+      className="absolute top-0 left-0 w-0 h-0 overflow-hidden z-[-1] pointer-events-none"
+      aria-hidden
+    >
+      {report}
     </div>
   );
 }

@@ -103,6 +103,7 @@ import {
   isPriorityFreeTextMealLog,
   isGenericMealLogIntentOnly,
 } from './conversation/mealLogIntent.js';
+import { buildPhantomDailyReportData } from '../chat/buildPhantomDailyReportData.js';
 import {
   REPORT_ANIMATION_SRC,
   REPORT_COVER_SRC,
@@ -2439,6 +2440,22 @@ export class CommandTerminalController {
       periodLabel: data.periodLabel,
       coverSrc: REPORT_COVER_SRC,
       videoSrc: REPORT_ANIMATION_SRC,
+      phantomData: buildPhantomDailyReportData({
+        dailyLog: Array.isArray(currentState?.activeLog) ? currentState.activeLog : [],
+        userTargets: currentState?.userTargets || null,
+        healthScore: currentState?.healthScore ?? null,
+        userDisplayName: String(
+          currentState?.userDisplayName
+          || currentState?.userProfile?.displayName
+          || currentState?.userProfile?.name
+          || '',
+        ).trim(),
+        insight: markdown.slice(0, 480),
+        reportLabel: String(data.title || matched.label || 'DAILY REPORT')
+          .replace(/^[^A-Za-z0-9]+/, '')
+          .toUpperCase() || 'DAILY REPORT',
+        date: currentState?.todayDate || currentState?.activeDate || new Date(),
+      }),
     };
 
     this.bus.publish(

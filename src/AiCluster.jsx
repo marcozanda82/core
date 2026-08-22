@@ -138,6 +138,7 @@ export default function AiCluster({
   onSaveNewFoodEntry,
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
+  userTargets = null,
   onBack,
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
@@ -1358,6 +1359,10 @@ export default function AiCluster({
                               || REPORT_COVER_SRC
                             }
                             reportData={msg.reportCard?.phantomData || msg.reportCard?.data || null}
+                            dailyLog={dailyLog}
+                            userTargets={userTargets}
+                            healthScore={healthScore}
+                            userDisplayName={userDisplayName || chatFirstName || ''}
                             ready
                           />
                         </div>

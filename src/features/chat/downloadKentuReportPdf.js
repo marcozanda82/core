@@ -1,73 +1,94 @@
 import { PHANTOM_REPORT_ROOT_ID } from './PhantomDailyReport.jsx';
 
+const PDF_CAPTURE_YIELD_MS = 300;
+
+function buildPdfOptions(filename) {
+  return {
+    margin: 0,
+    filename,
+    image: { type: 'jpeg', quality: 1 },
+    html2canvas: {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#020617', // slate-950
+      logging: false,
+      scrollX: 0,
+      scrollY: 0,
+    },
+    jsPDF: { unit: 'px', format: [800, 1130], orientation: 'portrait' },
+  };
+}
+
+/**
+ * Attende un frame di paint React + breve yield per font/grafici.
+ * Non smontare il phantom finché questa Promise (e la cattura) non sono complete.
+ */
+async function waitForPhantomPaint() {
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.setTimeout(resolve, PDF_CAPTURE_YIELD_MS);
+      });
+    });
+  });
+}
+
+async function resolveHtml2Pdf() {
+  const html2pdfModule = await import('html2pdf.js');
+  return html2pdfModule.default || html2pdfModule;
+}
+
+function resolvePhantomElement(elementId) {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    throw new Error('PDF disponibile solo nel browser');
+  }
+  const id = String(elementId || PHANTOM_REPORT_ROOT_ID);
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(
+      `Template PDF non trovato (#${id}). Assicurati che PhantomDailyReport sia montato.`,
+    );
+  }
+  return element;
+}
+
+function resolveFilename(filename) {
+  const today = new Date().toISOString().split('T')[0];
+  return String(filename || `Kentu_Daily_Report_${today}.pdf`)
+    .replace(/[<>:"/\\|?*]+/g, '_');
+}
+
 /**
  * Genera un PDF (Blob) dal template fantasma `#kentu-phantom-report`.
+ * Attende il paint e la risoluzione di html2pdf prima di ritornare.
+ *
  * @param {{
  *   title?: string,
  *   filename?: string,
  *   elementId?: string,
  * }} opts
- * @returns {Promise<{ blob: Blob, filename: string }>}
+ * @returns {Promise<{ blob: Blob, filename: string, title: string }>}
  */
 export async function generateKentuReportPdfBlob({
   title = 'Bollettino Kentu',
   filename = null,
   elementId = PHANTOM_REPORT_ROOT_ID,
 } = {}) {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    throw new Error('PDF disponibile solo nel browser');
-  }
+  const element = resolvePhantomElement(elementId);
+  const safeFilename = resolveFilename(filename);
+  const html2pdf = await resolveHtml2Pdf();
 
-  const element = document.getElementById(String(elementId || PHANTOM_REPORT_ROOT_ID));
-  if (!element) {
-    throw new Error(
-      `Template PDF non trovato (#${elementId || PHANTOM_REPORT_ROOT_ID}). Assicurati che PhantomDailyReport sia montato.`,
-    );
-  }
+  // Yield: React deve aver layoutato grafici/font nel nodo off-screen (no opacity:0).
+  await waitForPhantomPaint();
 
-  const html2pdfModule = await import('html2pdf.js');
-  const html2pdf = html2pdfModule.default || html2pdfModule;
-
-  const today = new Date().toISOString().split('T')[0];
-  const safeFilename = String(filename || `Kentu_Daily_Report_${today}.pdf`)
-    .replace(/[<>:"/\\|?*]+/g, '_');
-
-  // html2canvas non disegna nodi con opacity:0 → forza opacità solo durante la cattura.
-  const prevOpacity = element.style.opacity;
-  const prevVisibility = element.style.visibility;
-  element.style.opacity = '1';
-  element.style.visibility = 'visible';
-
-  // Attendi paint completo (layout + font) prima di fotografare.
-  await new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        window.setTimeout(resolve, 50);
-      });
-    });
-  });
-
-  const options = {
-    margin: 0,
-    filename: safeFilename,
-    image: { type: 'jpeg', quality: 1 },
-    html2canvas: {
-      scale: 2,
-      useCORS: true,
-      scrollY: 0,
-      scrollX: 0,
-      backgroundColor: '#020617', // slate-950
-      logging: false,
-    },
-    jsPDF: { unit: 'px', format: [800, 1130], orientation: 'portrait' },
-  };
+  const options = buildPdfOptions(safeFilename);
 
   try {
     const blob = await html2pdf().set(options).from(element).outputPdf('blob');
     return { blob, filename: safeFilename, title };
-  } finally {
-    element.style.opacity = prevOpacity;
-    element.style.visibility = prevVisibility;
+  } catch (error) {
+    console.error('Errore generazione PDF:', error);
+    throw error;
   }
 }
 
@@ -84,16 +105,30 @@ function triggerBlobDownload(blob, filename) {
 }
 
 /**
- * Genera e scarica il PDF del Daily Report (template phantom).
+ * Genera e scarica il PDF — attende `.save()` prima di risolvere.
+ * Lo stato UI (loader) va resettato solo dopo questa Promise (finally nel caller).
  */
 export async function downloadKentuReportPdf(opts = {}) {
-  const { blob, filename } = await generateKentuReportPdfBlob(opts);
-  triggerBlobDownload(blob, filename);
-  return { blob, filename, downloaded: true };
+  const element = resolvePhantomElement(opts.elementId);
+  const safeFilename = resolveFilename(opts.filename);
+  const html2pdf = await resolveHtml2Pdf();
+
+  await waitForPhantomPaint();
+
+  const options = buildPdfOptions(safeFilename);
+
+  try {
+    await html2pdf().from(element).set(options).save();
+    return { filename: safeFilename, downloaded: true };
+  } catch (error) {
+    console.error('Errore generazione PDF:', error);
+    throw error;
+  }
 }
 
 /**
  * Condivide il PDF via Web Share API; fallback download se non supportata / fallisce.
+ * Completa solo dopo blob + share/download (niente reset stato prematuro).
  */
 export async function shareOrDownloadKentuReportPdf(opts = {}) {
   const { blob, filename } = await generateKentuReportPdfBlob(opts);
