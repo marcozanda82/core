@@ -169,7 +169,9 @@ import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
 import {
   loadPersonalDbFromCache,
   mergePersonalDbRemoteOverLocal,
+  savePersonalDbToCache,
 } from './utils/offlineCacheUtils';
+import { promoteForeignMealItemsForSave } from './utils/personalFoodPromotion';
 import { workoutActivityRequiresStrengthDetailNote } from './utils/workoutActivityNotes';
 import { calculateAge } from './utils/profileAge';
 import { stripUndefined } from './utils/firebasePayloadUtils';
@@ -4452,15 +4454,16 @@ Slot esistente aggiornato (nessun ghost).`;
   }, [userUid, db, foodDb, fullHistory]);
 
   /** Bulk patch DB personale — una sola write Firebase per N alimenti (usage stats pasto). */
-  const patchFoodDbEntriesBatch = useCallback(async (patchesByKey = {}) => {
+  const patchFoodDbEntriesBatch = useCallback(async (patchesByKey = {}, sourceDb = null) => {
     if (!userUid || !db || !patchesByKey || typeof patchesByKey !== 'object') return;
+    const dbSnap = sourceDb && typeof sourceDb === 'object' ? sourceDb : foodDb;
     const basePath = `users/${userUid}/tracker_data`;
     const localMerged = {};
     const firebasePayload = {};
 
     Object.entries(patchesByKey).forEach(([foodDbKey, patch]) => {
       if (!foodDbKey || !patch || typeof patch !== 'object') return;
-      const prev = foodDb?.[foodDbKey];
+      const prev = dbSnap?.[foodDbKey];
       if (!prev) return;
 
       const merged = { ...prev, ...patch };
@@ -6663,7 +6666,29 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           : [];
       if (!rawItems.length) throw new Error('Nessun alimento nel payload');
 
-      const items = rawItems.map((item) => {
+      const promotion = promoteForeignMealItemsForSave(rawItems, {
+        personalDb: foodDb,
+        kentuItDb: kentuCatalogItDbRef.current || {},
+        globalDb: csvFoodDbRef.current || {},
+        offDb: offFoodDbRef.current || {},
+      });
+
+      if (promotion.promotedCount > 0 && Object.keys(promotion.localPatch).length > 0) {
+        setFoodDb((prev) => ({ ...(prev || {}), ...promotion.localPatch }));
+        void savePersonalDbToCache(promotion.mergedPersonalDb, userUid);
+
+        if (userUid && db && !isSimulationMode) {
+          const basePath = `users/${userUid}/tracker_data`;
+          void update(ref(db, `${basePath}/trackerFoodDatabase`), promotion.firebasePayload).catch((err) => {
+            console.warn('[commitAddFoodCommand] personal food promotion RTDB write failed', err);
+          });
+        }
+      }
+
+      const itemsSource = promotion.items;
+      const personalDbForUsage = promotion.mergedPersonalDb;
+
+      const items = itemsSource.map((item) => {
         const name = String(item?.foodName || item?.name || '').trim();
         const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 0));
         if (!name) throw new Error('foodName mancante');
@@ -6701,10 +6726,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       // Abitudini: bulk patch usage stats (una write Firebase, non N sequenziali).
       recordDraftFoodsUsageStats(
         items.map((it) => ({ foodDbKey: it.foodDbKey || it.matchedKey || null })),
-        foodDb,
+        personalDbForUsage,
         patchFoodDbEntry,
         getCurrentTimeSlot(),
-        { batchPatch: patchFoodDbEntriesBatch },
+        { batchPatch: patchFoodDbEntriesBatch, batchSourceDb: personalDbForUsage },
       );
 
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
@@ -6774,6 +6799,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       getGhostMealType,
       userUid,
       db,
+      isSimulationMode,
       foodDb,
       patchFoodDbEntry,
       patchFoodDbEntriesBatch,

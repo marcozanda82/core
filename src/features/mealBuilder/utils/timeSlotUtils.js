@@ -140,7 +140,7 @@ export function recordDraftFoodsUsageStats(draftFoods, personalDb, onPatchFoodDb
 
   const batchPatch = options?.batchPatch;
   if (typeof batchPatch === 'function') {
-    void batchPatch(patches).catch(() => {
+    void batchPatch(patches, options.batchSourceDb).catch(() => {
       /* persistenza silenziosa */
     });
     return;
