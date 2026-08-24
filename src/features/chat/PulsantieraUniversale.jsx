@@ -253,10 +253,10 @@ function SubmenuFocusOverlay({
         role="dialog"
         aria-modal="true"
         aria-label={`Sottomenu ${categoryLabel}`}
-        className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 pb-28 pt-8 sm:px-6 sm:pt-10"
+        className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 py-6 sm:px-6 sm:py-8"
       >
         <div
-          className={`kentu-submenu-focus-panel pointer-events-auto flex w-full ${panelMaxWidth} max-h-[min(88dvh,720px)] flex-col items-center gap-4`}
+          className={`kentu-submenu-focus-panel pointer-events-auto flex max-h-[90dvh] w-full ${panelMaxWidth} flex-col items-center gap-4 overflow-hidden`}
           onClick={(event) => event.stopPropagation()}
         >
           <div className="shrink-0 text-center">
@@ -267,7 +267,7 @@ function SubmenuFocusOverlay({
           </div>
 
           <div
-            className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain max-h-[70vh] px-0.5 pb-1"
+            className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-0.5 pb-1"
           >
             {hasSections ? (
               <div className="flex flex-col gap-5">
@@ -300,7 +300,7 @@ function SubmenuFocusOverlay({
             type="button"
             onClick={onClose}
             className={[
-              'shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
+              'mt-auto flex-shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
               'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
               'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
@@ -540,10 +540,10 @@ export default function PulsantieraUniversale({
           role="dialog"
           aria-modal="true"
           aria-label="Sottomenu Pasti"
-          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 pb-28 pt-8 sm:px-6 sm:pt-10"
+          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 py-6 sm:px-6 sm:py-8"
         >
           <div
-            className="kentu-submenu-focus-panel pointer-events-auto flex w-full max-w-lg max-h-[min(88dvh,720px)] flex-col items-center gap-4"
+            className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[90dvh] w-full max-w-lg flex-col items-center gap-4 overflow-hidden"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="shrink-0 text-center">
@@ -553,7 +553,7 @@ export default function PulsantieraUniversale({
               <h2 className="mt-1 text-xl font-semibold text-zinc-50">Pasti</h2>
             </div>
 
-            <div className="mx-auto grid w-full max-w-sm grid-cols-2 gap-3 px-4 [&>button]:w-full">
+            <div className="mx-auto grid w-full max-w-sm shrink-0 grid-cols-2 gap-3 px-4 [&>button]:w-full">
               <OverlayActionButton
                 icon={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.icon || '🔎'}
                 label={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.label || 'Manuale'}
@@ -640,7 +640,7 @@ export default function PulsantieraUniversale({
               type="button"
               onClick={handleOverlayClose}
               className={[
-                'shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
+                'mt-auto flex-shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
                 'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
                 'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
