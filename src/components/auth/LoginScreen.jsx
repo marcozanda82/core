@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { loginWithGoogle } from '../../services/firebaseAuth';
 import { takeNextKentuIntroPhrase } from '../../kentuIntroPhrases';
+import LegalTextModal from '../legal/LegalTextModal.jsx';
+import {
+  MEDICAL_DISCLAIMER_BODY,
+  MEDICAL_DISCLAIMER_TITLE,
+  PRIVACY_POLICY_SUMMARY,
+  PRIVACY_POLICY_TITLE,
+} from '../../constants/legalContent.js';
 
 function GoogleIcon() {
   return (
@@ -16,10 +23,12 @@ function GoogleIcon() {
 export default function LoginScreen() {
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [error, setError] = useState(null);
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const [legalModal, setLegalModal] = useState(null);
   const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
 
   const handleGoogleLogin = async () => {
-    if (isSigningIn) return;
+    if (isSigningIn || !legalAccepted) return;
     setIsSigningIn(true);
     setError(null);
     try {
@@ -34,6 +43,8 @@ export default function LoginScreen() {
       setIsSigningIn(false);
     }
   };
+
+  const loginDisabled = isSigningIn || !legalAccepted;
 
   return (
     <div
@@ -87,7 +98,7 @@ export default function LoginScreen() {
             font-weight: 600;
             letter-spacing: 0.02em;
             cursor: pointer;
-            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
             border-radius: 10px;
             margin-top: 8px;
           }
@@ -97,8 +108,8 @@ export default function LoginScreen() {
             box-shadow: 0 0 20px rgba(34, 211, 238, 0.12);
           }
           .kentu-google-btn:disabled {
-            opacity: 0.6;
-            cursor: wait;
+            opacity: 0.45;
+            cursor: not-allowed;
           }
           .kentu-auth-spinner {
             border: 2px solid transparent;
@@ -110,6 +121,21 @@ export default function LoginScreen() {
             margin: 0 auto 12px auto;
           }
           @keyframes kentu-auth-spin { to { transform: rotate(360deg); } }
+          .kentu-legal-link {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+            color: #22d3ee;
+            font: inherit;
+            font-weight: 600;
+            text-decoration: underline;
+            text-underline-offset: 2px;
+            cursor: pointer;
+          }
+          .kentu-legal-link:hover {
+            color: #67e8f9;
+          }
         `}
       </style>
 
@@ -165,11 +191,65 @@ export default function LoginScreen() {
           Beta · Accedi con il tuo account Google
         </p>
 
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 10,
+            marginBottom: 16,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={legalAccepted}
+            onChange={(e) => setLegalAccepted(e.target.checked)}
+            style={{
+              marginTop: 3,
+              width: 16,
+              height: 16,
+              accentColor: '#22d3ee',
+              flexShrink: 0,
+              cursor: 'pointer',
+            }}
+          />
+          <span style={{ fontSize: '0.72rem', lineHeight: 1.45, color: '#94a3b8' }}>
+            Ho letto e accetto la{' '}
+            <button
+              type="button"
+              className="kentu-legal-link"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setLegalModal('privacy');
+              }}
+            >
+              Privacy Policy
+            </button>
+            {' '}
+            e dichiaro di aver compreso il{' '}
+            <button
+              type="button"
+              className="kentu-legal-link"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setLegalModal('disclaimer');
+              }}
+            >
+              Disclaimer Medico
+            </button>
+            .
+          </span>
+        </label>
+
         <button
           type="button"
           className="kentu-google-btn"
           onClick={handleGoogleLogin}
-          disabled={isSigningIn}
+          disabled={loginDisabled}
+          aria-disabled={loginDisabled}
         >
           {isSigningIn ? (
             <>
@@ -183,6 +263,19 @@ export default function LoginScreen() {
             </>
           )}
         </button>
+
+        {!legalAccepted ? (
+          <p
+            style={{
+              marginTop: 10,
+              textAlign: 'center',
+              fontSize: '0.68rem',
+              color: '#64748b',
+            }}
+          >
+            Spunta l&apos;accettazione per abilitare l&apos;accesso.
+          </p>
+        ) : null}
 
         {error ? (
           <p
@@ -198,6 +291,20 @@ export default function LoginScreen() {
           </p>
         ) : null}
       </div>
+
+      <LegalTextModal
+        open={legalModal === 'disclaimer'}
+        title={MEDICAL_DISCLAIMER_TITLE}
+        body={MEDICAL_DISCLAIMER_BODY}
+        onClose={() => setLegalModal(null)}
+      />
+      <LegalTextModal
+        open={legalModal === 'privacy'}
+        title={PRIVACY_POLICY_TITLE}
+        body={PRIVACY_POLICY_SUMMARY}
+        showExternalPrivacyLink
+        onClose={() => setLegalModal(null)}
+      />
     </div>
   );
 }

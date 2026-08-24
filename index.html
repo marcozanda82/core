@@ -8,6 +8,7 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="icon" type="image/png" href="/nuova%20icon_fixed_192.png" />
     <meta name="theme-color" content="#050a12">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="KentuOS">
@@ -16,16 +17,5 @@
   <body style="margin:0;background:#050a12;">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-    <script>
-      /* TEMP: unregister per svuotare cache SW e forzare nuove icone. Ripristina register('/sw.js') quando ok. */
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.getRegistrations().then((regs) => {
-            regs.forEach((reg) => reg.unregister());
-            console.log('KentuOS: Service Worker unregistered (cache bust / icone).');
-          }).catch((err) => console.error('SW unregister error:', err));
-        });
-      }
-    </script>
   </body>
 </html>

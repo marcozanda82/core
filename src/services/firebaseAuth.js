@@ -6,8 +6,12 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  deleteUser,
+  reauthenticateWithPopup,
 } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { remove, ref } from 'firebase/database';
+import { auth, db } from '../firebaseConfig';
+import { clearKentuLocalUserData } from '../utils/offlineCacheUtils';
 
 export { auth };
 
@@ -28,6 +32,40 @@ export async function loginWithGoogle() {
  */
 export async function logout() {
   return signOut(auth);
+}
+
+/**
+ * Elimina i dati RTDB dell'utente, l'account Auth e la cache locale (GDPR / store).
+ * Richiede login recente; in caso di `auth/requires-recent-login` riesegue re-auth Google.
+ * @returns {Promise<void>}
+ */
+export async function deleteAccountAndUserData() {
+  const user = auth.currentUser;
+  if (!user?.uid) {
+    throw new Error('Nessun utente autenticato');
+  }
+
+  const uid = user.uid;
+
+  await remove(ref(db, `users/${uid}`));
+  clearKentuLocalUserData();
+
+  try {
+    await deleteUser(user);
+  } catch (error) {
+    if (error?.code === 'auth/requires-recent-login') {
+      await reauthenticateWithPopup(user, googleProvider);
+      const refreshed = auth.currentUser;
+      if (!refreshed) {
+        throw new Error('Re-autenticazione non riuscita');
+      }
+      await remove(ref(db, `users/${refreshed.uid}`));
+      clearKentuLocalUserData();
+      await deleteUser(refreshed);
+      return;
+    }
+    throw error;
+  }
 }
 
 /**

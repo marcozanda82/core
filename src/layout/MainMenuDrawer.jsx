@@ -1,7 +1,13 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Leaf } from 'lucide-react';
 import AddEventMenuGrid from '../components/AddEventMenuGrid';
+import LegalTextModal from '../components/legal/LegalTextModal.jsx';
+import {
+  MEDICAL_DISCLAIMER_BODY,
+  MEDICAL_DISCLAIMER_TITLE,
+  PRIVACY_POLICY_URL,
+} from '../constants/legalContent.js';
 
 const MENU_BTN_CLASS = [
   'flex items-center justify-center rounded-2xl border',
@@ -71,6 +77,7 @@ export default function MainMenuDrawer({
 }) {
   const showHome = !activeAction || activeAction === 'home';
   const showSecondary = activeAction === 'menu_secondary';
+  const [showMedicalDisclaimer, setShowMedicalDisclaimer] = useState(false);
 
   const closeMenu = useCallback(() => {
     setActiveAction(null);
@@ -261,6 +268,24 @@ export default function MainMenuDrawer({
                         setIsDrawerOpen?.(false);
                       }}
                     />
+                    <MenuGlassButton
+                      icon="⚕️"
+                      label="Disclaimer Medico"
+                      labelClassName="text-[#fcd34d]"
+                      iconFilter="drop-shadow(0 0 8px rgba(251, 191, 36, 0.4))"
+                      onClick={() => setShowMedicalDisclaimer(true)}
+                    />
+                    <MenuGlassButton
+                      icon="🔒"
+                      label="Privacy Policy"
+                      labelClassName="text-[#67e8f9]"
+                      iconFilter="drop-shadow(0 0 8px rgba(34, 211, 238, 0.4))"
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          window.open(PRIVACY_POLICY_URL, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -278,6 +303,12 @@ export default function MainMenuDrawer({
                 </button>
               </div>
             </div>
+            <LegalTextModal
+              open={showMedicalDisclaimer}
+              title={MEDICAL_DISCLAIMER_TITLE}
+              body={MEDICAL_DISCLAIMER_BODY}
+              onClose={() => setShowMedicalDisclaimer(false)}
+            />
           </>,
           document.body,
         )

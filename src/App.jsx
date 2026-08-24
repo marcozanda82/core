@@ -11,6 +11,7 @@ import LoginScreen from './components/auth/LoginScreen';
 import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
+import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
 import { db } from './firebaseConfig';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
@@ -141,6 +142,7 @@ export default function App() {
     <AuthProvider>
       <ChatOverlayProvider>
         <BrowserRouter>
+          <NativeAndroidBackHandler />
           <AuthenticatedApp />
         </BrowserRouter>
       </ChatOverlayProvider>

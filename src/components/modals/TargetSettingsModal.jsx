@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { logout } from '../../services/firebaseAuth';
+import { deleteAccountAndUserData, logout } from '../../services/firebaseAuth';
 import { MANUAL_TARGET_EDIT_EXCLUDED_KEYS } from '../../constants/salaComandiConstants';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import {
   APP_MODE_OPTIONS,
   resolveSelectableAppMode,
 } from '../../features/chat/healthChatMode.js';
+import LegalTextModal from '../legal/LegalTextModal.jsx';
+import {
+  MEDICAL_DISCLAIMER_BODY,
+  MEDICAL_DISCLAIMER_TITLE,
+  PRIVACY_POLICY_URL,
+} from '../../constants/legalContent.js';
 
 const CONTROL_CLASS = [
   'min-w-0 shrink-0 rounded-lg border border-white/10 bg-white/[0.06]',
@@ -70,6 +76,10 @@ export default function TargetSettingsModal({
 }) {
   const [appModeSaving, setAppModeSaving] = useState(false);
   const [appModeFeedback, setAppModeFeedback] = useState('');
+  const [showMedicalDisclaimer, setShowMedicalDisclaimer] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   const selectedAppMode = useMemo(
     () => resolveSelectableAppMode(userProfile),
@@ -105,14 +115,47 @@ export default function TargetSettingsModal({
     }
   }, [onAppModeChange, selectedAppMode, setUserProfile, userProfile]);
 
+  const handleDeleteAccount = useCallback(async () => {
+    if (isDeletingAccount) return;
+    setIsDeletingAccount(true);
+    setDeleteError('');
+    try {
+      await deleteAccountAndUserData();
+      // Auth listener in AuthContext riporta automaticamente a LoginScreen.
+    } catch (err) {
+      console.error('[TargetSettingsModal] delete account failed', err);
+      setDeleteError(
+        err?.code === 'auth/requires-recent-login'
+          ? 'Per sicurezza, rieffettua l’accesso Google e riprova a eliminare l’account.'
+          : 'Eliminazione non riuscita. Verifica la connessione e riprova.',
+      );
+      setIsDeletingAccount(false);
+    }
+  }, [isDeletingAccount]);
+
+  useEffect(() => {
+    if (!open) {
+      setShowDeleteConfirm(false);
+      setDeleteError('');
+      setIsDeletingAccount(false);
+      setShowMedicalDisclaimer(false);
+    }
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => {
-      if (event.key === 'Escape') onClose?.();
+      if (event.key === 'Escape') {
+        if (showDeleteConfirm) {
+          setShowDeleteConfirm(false);
+          return;
+        }
+        onClose?.();
+      }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, showDeleteConfirm]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -467,6 +510,57 @@ export default function TargetSettingsModal({
             />
           </SettingsSection>
 
+          <SettingsSection title="Legale">
+            <SettingsRow
+              title="Disclaimer Medico"
+              description="Avvertenze sanitarie e limiti dell’app."
+              control={(
+                <button
+                  type="button"
+                  onClick={() => setShowMedicalDisclaimer(true)}
+                  className="rounded-lg border border-amber-400/35 bg-amber-500/10 px-3 py-1.5 text-sm font-semibold text-amber-100 transition-colors hover:bg-amber-500/20"
+                >
+                  Apri
+                </button>
+              )}
+            />
+            <SettingsRow
+              title="Privacy Policy"
+              description="Documento completo sul trattamento dei dati."
+              last
+              control={(
+                <a
+                  href={PRIVACY_POLICY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-cyan-400/35 bg-cyan-500/10 px-3 py-1.5 text-sm font-semibold text-cyan-200 transition-colors hover:bg-cyan-500/20"
+                >
+                  Apri ↗
+                </a>
+              )}
+            />
+          </SettingsSection>
+
+          <SettingsSection title="Account">
+            <SettingsRow
+              title="Elimina Account e Dati"
+              description="Cancella in modo permanente diario, alimenti e profilo. Irreversibile."
+              last
+              control={(
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError('');
+                    setShowDeleteConfirm(true);
+                  }}
+                  className="rounded-lg border border-red-500/50 bg-red-600/20 px-3 py-1.5 text-sm font-semibold text-red-200 transition-colors hover:bg-red-600/35"
+                >
+                  Elimina
+                </button>
+              )}
+            />
+          </SettingsSection>
+
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
@@ -494,6 +588,70 @@ export default function TargetSettingsModal({
           </div>
         </div>
       </div>
+
+      <LegalTextModal
+        open={showMedicalDisclaimer}
+        title={MEDICAL_DISCLAIMER_TITLE}
+        body={MEDICAL_DISCLAIMER_BODY}
+        onClose={() => setShowMedicalDisclaimer(false)}
+      />
+
+      {showDeleteConfirm ? (
+        <>
+          <div
+            className="fixed inset-0 z-[100070] bg-black/80 backdrop-blur-sm"
+            aria-hidden
+            onClick={() => {
+              if (!isDeletingAccount) setShowDeleteConfirm(false);
+            }}
+          />
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="kentu-delete-account-title"
+            className="fixed inset-0 z-[100071] flex items-center justify-center p-4"
+          >
+            <div className="w-full max-w-md rounded-2xl border border-red-500/40 bg-[#0a0608] p-5 shadow-2xl shadow-black/60">
+              <h3
+                id="kentu-delete-account-title"
+                className="m-0 text-base font-semibold text-red-100"
+              >
+                Sei sicuro?
+              </h3>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                Questa azione è <strong className="text-red-200">irreversibile</strong> e
+                cancellerà tutto il tuo diario, i tuoi alimenti personali, i target e i
+                dati associati all’account. Non sarà possibile recuperarli.
+              </p>
+              {deleteError ? (
+                <p role="alert" className="mt-3 text-sm text-red-300">
+                  {deleteError}
+                </p>
+              ) : null}
+              <div className="mt-5 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-xl border border-zinc-600/80 bg-zinc-900/80 px-4 py-2.5 text-sm font-medium text-zinc-300 disabled:opacity-50"
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingAccount}
+                  onClick={() => {
+                    void handleDeleteAccount();
+                  }}
+                  className="ml-auto rounded-xl border border-red-500/60 bg-red-600/30 px-4 py-2.5 text-sm font-bold text-red-50 transition-colors hover:bg-red-600/45 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isDeletingAccount ? 'Eliminazione…' : 'Elimina definitivamente'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
     </>,
     document.body,
   );

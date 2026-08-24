@@ -737,6 +737,8 @@
 /* —— Input strip (composer a due righe) —— */
 .kentu-input-strip {
   position: relative;
+  z-index: 50;
+  overflow: visible;
   margin-top: 10px;
   flex-shrink: 0;
   display: flex;
@@ -1097,7 +1099,9 @@
 
 .kentu-devtools-wrap {
   position: relative;
+  z-index: 60;
   flex-shrink: 0;
+  overflow: visible;
 }
 
 .kentu-devtools-btn {
@@ -1137,7 +1141,7 @@
   position: absolute;
   bottom: calc(100% + 10px);
   left: 0;
-  z-index: 40;
+  z-index: 100;
   min-width: 220px;
   padding: 6px;
   border-radius: 14px;

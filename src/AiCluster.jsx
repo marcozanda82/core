@@ -2,6 +2,7 @@
  * AiCluster.jsx — KentuOS: superficie chat (messaggi, quick replies, input).
  */
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Home } from 'lucide-react';
 import { matchReportCommand, REPORT_ANIMATION_SRC, REPORT_COVER_SRC } from './features/commandTerminal/conversation/reportCommandIntent.js';
 import MenuProposalCard from './MenuProposalCard';
@@ -180,14 +181,6 @@ export default function AiCluster({
 
   const [isNotesMode, setIsNotesMode] = useState(false);
 
-  const chatInputPlaceholder = useMemo(
-    () => resolveChatInputPlaceholder({
-      isNotesMode,
-      hasImages: chatImages.length > 0,
-    }),
-    [isNotesMode, chatImages.length],
-  );
-
   const healthAvatarSrc = String(healthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
     || '/cellula_1_ottimale.png';
   const healthScoreLabel = healthScore?.avatar?.label
@@ -309,6 +302,15 @@ export default function AiCluster({
   }, [chatHistory]);
 
   const dockedMcDriveTray = dockedMcDriveTrayMsg?.liveMealTray || null;
+
+  const chatInputPlaceholder = useMemo(
+    () => resolveChatInputPlaceholder({
+      isNotesMode,
+      hasImages: chatImages.length > 0,
+      isAiGuidedMode: Boolean(dockedMcDriveTray),
+    }),
+    [isNotesMode, chatImages.length, dockedMcDriveTray],
+  );
 
   const mcdriveTrayItems = useMemo(
     () => (Array.isArray(dockedMcDriveTray?.items) ? dockedMcDriveTray.items : []),
@@ -827,7 +829,10 @@ export default function AiCluster({
 
   const [showToolsMenu, setShowToolsMenu] = useState(false);
   const [devToolsToast, setDevToolsToast] = useState('');
+  const [toolsMenuPos, setToolsMenuPos] = useState(null);
   const toolsMenuRef = useRef(null);
+  const toolsMenuPanelRef = useRef(null);
+  const toolsButtonRef = useRef(null);
   const chatSessionIdRef = useRef(
     (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
       ? crypto.randomUUID()
@@ -842,12 +847,36 @@ export default function AiCluster({
   useEffect(() => {
     if (!showToolsMenu) return undefined;
     const onPointerDown = (event) => {
-      if (toolsMenuRef.current && !toolsMenuRef.current.contains(event.target)) {
-        setShowToolsMenu(false);
-      }
+      const target = event.target;
+      if (toolsMenuRef.current?.contains(target)) return;
+      if (toolsMenuPanelRef.current?.contains(target)) return;
+      setShowToolsMenu(false);
     };
     document.addEventListener('pointerdown', onPointerDown);
     return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showToolsMenu]);
+
+  useEffect(() => {
+    if (!showToolsMenu) {
+      setToolsMenuPos(null);
+      return undefined;
+    }
+    const updatePos = () => {
+      const btn = toolsButtonRef.current;
+      if (!btn) return;
+      const rect = btn.getBoundingClientRect();
+      setToolsMenuPos({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 236)),
+        bottom: Math.max(8, window.innerHeight - rect.top + 10),
+      });
+    };
+    updatePos();
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    return () => {
+      window.removeEventListener('resize', updatePos);
+      window.removeEventListener('scroll', updatePos, true);
+    };
   }, [showToolsMenu]);
 
   const handleToolsButtonClick = useCallback(() => {
@@ -1811,7 +1840,8 @@ export default function AiCluster({
 
         <div
           className={[
-            'flex shrink-0 flex-col overflow-hidden origin-bottom',
+            'flex shrink-0 flex-col origin-bottom',
+            collapseComposerForHoisted ? 'overflow-hidden' : 'overflow-visible',
             'transition-[max-height,opacity] duration-500 ease-in-out',
             collapseComposerForHoisted
               ? 'pointer-events-none max-h-0 opacity-0'
@@ -2060,6 +2090,7 @@ export default function AiCluster({
                 <div className="kentu-devtools-wrap" ref={toolsMenuRef}>
                   <button
                     type="button"
+                    ref={toolsButtonRef}
                     className={`kentu-devtools-btn${isNotesMode ? ' kentu-devtools-btn--notes' : ''}`}
                     aria-label={isNotesMode ? 'Disattiva modalità note' : 'Tools'}
                     aria-expanded={showToolsMenu}
@@ -2067,25 +2098,39 @@ export default function AiCluster({
                   >
                     {isNotesMode ? '📝' : '🛠️'}
                   </button>
-                  {showToolsMenu ? (
-                    <div className="kentu-devtools-menu" role="menu">
-                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
-                        🧠 Analisi Oggi
-                      </button>
-                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
-                        📷 Scanner Barcode
-                      </button>
-                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
-                        📝 Modalità Note
-                      </button>
-                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
-                        💬 Salva Chat
-                      </button>
-                      <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
-                        ⚠️ Segnala Anomalia
-                      </button>
-                    </div>
-                  ) : null}
+                  {showToolsMenu && toolsMenuPos && typeof document !== 'undefined'
+                    ? createPortal(
+                      <div
+                        ref={toolsMenuPanelRef}
+                        className="kentu-devtools-menu"
+                        role="menu"
+                        style={{
+                          position: 'fixed',
+                          left: toolsMenuPos.left,
+                          bottom: toolsMenuPos.bottom,
+                          zIndex: 100080,
+                          top: 'auto',
+                        }}
+                      >
+                        <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleRequestReportFromTools}>
+                          🧠 Analisi Oggi
+                        </button>
+                        <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleBarcodeTool}>
+                          📷 Scanner Barcode
+                        </button>
+                        <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleActivateNotesMode}>
+                          📝 Modalità Note
+                        </button>
+                        <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleSaveChat}>
+                          💬 Salva Chat
+                        </button>
+                        <button type="button" role="menuitem" className="kentu-devtools-menu__item" onClick={handleFlagAnomaly}>
+                          ⚠️ Segnala Anomalia
+                        </button>
+                      </div>,
+                      document.body,
+                    )
+                    : null}
                 </div>
               </>
             )}

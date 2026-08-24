@@ -29,6 +29,7 @@ export default function FoodDetailModal({
   onClose,
   onConfirm,
   onDeepEdit,
+  inspectOnly = false,
 }) {
   const weightInputRef = useRef(null);
   const [selectedUnit, setSelectedUnit] = useState('g');
@@ -117,6 +118,7 @@ export default function FoodDetailModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative shrink-0">
+          {!inspectOnly && typeof onDeepEdit === 'function' ? (
           <button
             type="button"
             onClick={() => onDeepEdit?.()}
@@ -125,6 +127,7 @@ export default function FoodDetailModal({
           >
             <Edit2 className="h-4 w-4" />
           </button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -218,6 +221,15 @@ export default function FoodDetailModal({
             </p>
           ) : null}
 
+          {inspectOnly ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-2xl border border-slate-600/80 bg-slate-800/80 px-4 py-3.5 text-sm font-bold text-slate-100 transition-all hover:bg-slate-700"
+            >
+              Chiudi
+            </button>
+          ) : (
           <button
             type="button"
             onClick={handleConfirm}
@@ -230,6 +242,7 @@ export default function FoodDetailModal({
           >
             {justConfirmed ? '✓ Aggiunto' : isInCart ? 'Aggiorna pasto' : 'Aggiungi al pasto'}
           </button>
+          )}
         </div>
       </div>
     </div>

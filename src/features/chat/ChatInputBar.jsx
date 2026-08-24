@@ -88,7 +88,7 @@ export default function ChatInputBar({
         />
       </div>
       <div className="kentu-input-strip__actions">
-        <div className="kentu-input-strip__tools">
+        <div className="kentu-input-strip__tools overflow-visible">
           {tools}
         </div>
         {isProcessing && !isNotesMode && typeof onCancelGeneration === 'function' ? (

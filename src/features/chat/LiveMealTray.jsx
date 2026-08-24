@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { ArrowLeftRight, Info, Sparkles } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
+import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
 import { getFoodIcon } from '../../utils/getFoodIcon';
@@ -77,6 +78,37 @@ function McDriveStatusIcon({ visualStatus, foodName, macros }) {
   );
 }
 
+function buildInspectFoodPayload(item) {
+  const name = String(item?.foodName || item?.name || 'Alimento').trim();
+  const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 100));
+  const row = item?.row && typeof item.row === 'object'
+    ? item.row
+    : {
+      desc: name,
+      name,
+      kcal: Number(item?.kcal) || 0,
+      prot: Number(item?.pro ?? item?.prot) || 0,
+      carb: Number(item?.carbo ?? item?.carb) || 0,
+      fat: Number(item?.fat) || 0,
+      foodDbKey: item?.foodDbKey || null,
+    };
+  return {
+    displayTile: {
+      desc: name,
+      label: name,
+      name,
+      foodDbKey: item?.foodDbKey || row.foodDbKey || null,
+      row,
+      kcal: Number(row.kcal ?? item?.kcal) || 0,
+      prot: Number(row.prot ?? item?.pro ?? item?.prot) || 0,
+      carb: Number(row.carb ?? item?.carbo ?? item?.carb) || 0,
+      fat: Number(row.fatTotal ?? row.fat ?? item?.fat) || 0,
+    },
+    tileVisual: { name },
+    defaultUnitWeight: grams,
+  };
+}
+
 function MacroCompareRow({ label, actual, target, unit = 'g' }) {
   const a = Number(actual) || 0;
   const t = Number(target) || 0;
@@ -140,6 +172,7 @@ function LiveMealTray({
   const needsCalculate = hasRaw || hasDisambiguationPending;
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
+  const [inspectItem, setInspectItem] = useState(null);
   const [showSolverModal, setShowSolverModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [solverFeedback, setSolverFeedback] = useState(null);
@@ -436,15 +469,23 @@ function LiveMealTray({
                         }}
                       />
                       <div className="kentu-meal-tray__row-text min-w-0">
-                        <span
+                        <button
+                          type="button"
                           className={[
                             'kentu-meal-tray__name',
-                            'transition-all duration-300',
+                            'transition-all duration-300 text-left max-w-full',
                             nameStatusClass,
+                            active ? 'cursor-pointer hover:text-cyan-200' : '',
                           ].filter(Boolean).join(' ')}
+                          disabled={!active || disabled}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setInspectItem(item);
+                          }}
+                          title="Apri scheda alimento"
                         >
                           {name}
-                        </span>
+                        </button>
                         {detailLabel ? (
                           <span
                             className={[
@@ -560,6 +601,26 @@ function LiveMealTray({
                       onClick={(event) => event.stopPropagation()}
                       onKeyDown={(event) => event.stopPropagation()}
                     >
+                      <button
+                        type="button"
+                        className="kentu-meal-tray__remove inline-flex items-center justify-center"
+                        disabled={disabled}
+                        onClick={() => setSearchIndex(index)}
+                        aria-label={`Cambia associazione di ${name}`}
+                        title="Cambia associazione"
+                      >
+                        <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                      <button
+                        type="button"
+                        className="kentu-meal-tray__remove inline-flex items-center justify-center"
+                        disabled={disabled}
+                        onClick={() => setInspectItem(item)}
+                        aria-label={`Scheda alimento ${name}`}
+                        title="Scheda alimento"
+                      >
+                        <Info className="h-3.5 w-3.5" aria-hidden />
+                      </button>
                       <button
                         type="button"
                         className="kentu-meal-tray__remove"
@@ -707,6 +768,16 @@ function LiveMealTray({
       <UniversalSearchModal
         isOpen={searchIndex != null}
         onClose={() => setSearchIndex(null)}
+        initialQuery={
+          searchIndex != null
+            ? String(
+              items[searchIndex]?.spokenFoodName
+              || items[searchIndex]?.foodName
+              || items[searchIndex]?.name
+              || '',
+            ).trim()
+            : ''
+        }
         personalDb={personalDb}
         kentuItDb={kentuItDb}
         globalDb={globalDb}
@@ -718,6 +789,14 @@ function LiveMealTray({
           setEditingIndex(null);
         }}
       />
+
+      {inspectItem ? (
+        <FoodDetailModal
+          food={buildInspectFoodPayload(inspectItem)}
+          inspectOnly
+          onClose={() => setInspectItem(null)}
+        />
+      ) : null}
     </div>
   );
 }

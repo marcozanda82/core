@@ -134,3 +134,51 @@ export function personalFoodDbSnapshotsEqual(a, b) {
   }
   return true;
 }
+
+/**
+ * Rimuove la cache offline del DB alimentare personale (GDPR / elimina account).
+ * @returns {boolean}
+ */
+export function clearPersonalDbCache() {
+  if (typeof window === 'undefined' || !window.localStorage) return false;
+  try {
+    window.localStorage.removeItem(CACHE_STORAGE_KEY);
+    return true;
+  } catch (error) {
+    console.warn('[offlineCache] clear failed', error);
+    return false;
+  }
+}
+
+/**
+ * Pulisce chiavi localStorage KentuOS tipiche (cache tracker, versioni DB, ecc.).
+ * Best-effort — non interrompe il flusso di eliminazione account.
+ */
+export function clearKentuLocalUserData() {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  clearPersonalDbCache();
+  const keysToRemove = [];
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key) continue;
+      if (
+        key === CACHE_STORAGE_KEY
+        || key.startsWith('kentu_')
+        || key.startsWith('trackerStorico_')
+        || key.startsWith('ghost_')
+      ) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch (error) {
+    console.warn('[offlineCache] clearKentuLocalUserData failed', error);
+  }
+}

@@ -12,8 +12,6 @@ import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspens
 import { useNavigate, useLocation } from 'react-router-dom';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid, Tooltip, PieChart, Pie, Cell } from 'recharts';
-
 import { ref, get, set, update, push, onValue, remove } from 'firebase/database';
 
 import {
@@ -120,7 +118,6 @@ import {
 } from './utils/activeCompensation';
 import TimelineNodeReport from './components/TimelineNodeReport';
 import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
-import CustomDateTick from './components/CustomDateTick';
 import {
   MAIN_BOTTOM_TAB_ORDER,
   PERSISTED_BOTTOM_TAB_IDS,
@@ -273,7 +270,6 @@ import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverl
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
 import KentuLazySectionFallback from './components/KentuLazySectionFallback';
-import { createMealPieCustomizedLabel, MealPieActiveShape } from './components/charts/mealPieChartRenderers';
 import {
   FastChargeNapQuickPanel,
   FastChargeMeditationQuickPanel,
@@ -467,6 +463,8 @@ const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
 const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
 const HealthReportView = lazy(() => import('./features/health/HealthReportView'));
 const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
+const HomeMealPieDial = lazy(() => import('./components/charts/HomeMealPieDial'));
+const TrendMetricLineChart = lazy(() => import('./components/charts/TrendMetricLineChart'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -7495,11 +7493,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     );
   }, [generateDailySnapshot, isDiabetesAppMode, openHealthReport, sendMessage]);
 
-  const renderCustomizedLabel = useMemo(
-    () => createMealPieCustomizedLabel(setSelectedMealCenter),
-    [setSelectedMealCenter],
-  );
-
   const selectedMealCenterIndex = selectedMealCenter
     ? mealPieDisplayData.findIndex((e) => e.id === selectedMealCenter.id)
     : -1;
@@ -8988,62 +8981,30 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                           maxScaleKcal={telemetry.maxScaleKcal}
                         />
                       ) : null}
-                      <ResponsiveContainer width="100%" height="100%" minHeight={250}>
-                        <PieChart>
-                          <Pie
-                            data={mealPieDisplayData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius="68%"
-                            outerRadius="85%"
-                            paddingAngle={3}
-                            startAngle={90}
-                            endAngle={-270}
-                            dataKey="value"
-                            stroke="none"
-                            labelLine={false}
-                            label={renderCustomizedLabel}
-                            activeShape={MealPieActiveShape}
-                            activeIndex={selectedMealCenterIndex}
-                            onClick={(data, index, e) => {
-                              if (e && e.stopPropagation) e.stopPropagation();
-                              if (data.id === 'rimanenti' || data.id === 'surplus') return;
-                              const pastoCorrente = mealPieDisplayData.find((m) => m?.id === data.id);
-                              if (!pastoCorrente) {
-                                console.warn('[SalaComandi] meal pie entry not found', { id: data.id });
-                                return;
-                              }
-                              const entry = pastoCorrente;
-                              const mealName = entry.name || entry.id || 'Pasto';
-                              const compositeId = String(entry.id);
-
-                              if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                                loadMealToConstructor(compositeId);
-                                return;
-                              }
-                              setSelectedMealCenter(pastoCorrente);
-                              setSelectedNodeReport(null);
-                            }}
-                            style={{ cursor: 'pointer', outline: 'none' }}
-                          >
-                            {mealPieDisplayData.map((entry, index) => {
-                              const isSelected = selectedMealCenter && entry.id === selectedMealCenter.id;
-                              const hasSelection = !!selectedMealCenter;
-                              return (
-                                <Cell
-                                  key={entry.id}
-                                  fill={entry.color}
-                                  style={{
-                                    filter: isSelected ? `drop-shadow(0 0 15px ${entry.color})` : 'none',
-                                    opacity: hasSelection && !isSelected ? 0.3 : 1,
-                                    outline: 'none'
-                                  }}
-                                />
-                              );
-                            })}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
+                      <Suspense fallback={<KentuLazySectionFallback label="Grafico pasti…" />}>
+                        <HomeMealPieDial
+                          mealPieDisplayData={mealPieDisplayData}
+                          selectedMealCenterIndex={selectedMealCenterIndex}
+                          selectedMealCenter={selectedMealCenter}
+                          onSelectMealCenter={setSelectedMealCenter}
+                          onPieSliceClick={(data, _index, e) => {
+                            if (e && e.stopPropagation) e.stopPropagation();
+                            if (data.id === 'rimanenti' || data.id === 'surplus') return;
+                            const pastoCorrente = mealPieDisplayData.find((m) => m?.id === data.id);
+                            if (!pastoCorrente) {
+                              console.warn('[SalaComandi] meal pie entry not found', { id: data.id });
+                              return;
+                            }
+                            const compositeId = String(pastoCorrente.id);
+                            if (selectedMealCenter && selectedMealCenter.id === data.id) {
+                              loadMealToConstructor(compositeId);
+                              return;
+                            }
+                            setSelectedMealCenter(pastoCorrente);
+                            setSelectedNodeReport(null);
+                          }}
+                        />
+                      </Suspense>
                       {showMaintenanceMarker ? (
                         <DialMaintenanceMarker
                           tdeeRatio={maintenanceMarkerRatio}
@@ -10601,35 +10562,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             </div>
 
             <div style={{ width: '100%', height: 250, marginBottom: '20px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trendData} margin={{ top: 8, right: 8, left: 0, bottom: 52 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
-                  <XAxis
-                    dataKey="date"
-                    tick={<CustomDateTick />}
-                    tickLine={false}
-                    axisLine={{ stroke: '#333' }}
-                    minTickGap={40}
-                    height={60}
-                  />
-                  <YAxis stroke="#888" tick={{ fill: '#888', fontSize: 10 }} width={36} />
-                  <Tooltip
-                    contentStyle={{ background: '#1a1a1a', border: '1px solid #444', borderRadius: '8px' }}
-                    labelStyle={{ color: '#aaa' }}
-                    formatter={(value, name) => [value, name === 'score' ? 'Score cumulativo' : name]}
-                    labelFormatter={(label) => `Data ${label}`}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#00e5ff"
-                    strokeWidth={trendDays > 90 ? 2 : 3}
-                    dot={trendDays <= 30 ? { r: 4, fill: '#00e5ff', stroke: '#1a1a1c', strokeWidth: 2 } : false}
-                    activeDot={{ r: 6, fill: '#fff' }}
-                    isAnimationActive={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<KentuLazySectionFallback label="Trend storico…" />}>
+                <TrendMetricLineChart trendData={trendData} trendDays={trendDays} />
+              </Suspense>
             </div>
 
             <button
