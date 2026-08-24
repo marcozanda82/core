@@ -646,6 +646,7 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
     kentuItDb: ctx.kentuItDb,
     globalDb: ctx.globalDb,
     offDb: ctx.offDb,
+    userFoodAliases: ctx.userFoodAliases,
     signal: ctx.signal,
     deferExternalSearch: ctx.deferExternalSearch !== false,
     onProgress: ctx.onProgress,

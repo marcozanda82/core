@@ -72,6 +72,13 @@ import {
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
 } from './features/commandTerminal/conversation/userPortionsMemory.js';
+import {
+  fetchUserFoodAliasesDict,
+  loadUserFoodAliasesFromCache,
+  mergeUserFoodAliasesRemoteOverLocal,
+  sanitizeUserFoodAliasesDict,
+  saveUserFoodAliasesToCache,
+} from './features/commandTerminal/conversation/userFoodAliases.js';
 import { getWipMealSnapshotFromBridge, seedWipMealFromBridge } from './features/wipMealBuilder/wipMealBridge.js';
 import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContext.jsx';
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
@@ -782,6 +789,10 @@ export default function SalaComandi() {
   const [userPortions, setUserPortions] = useState({});
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
+  /** Dizionario alias alimenti: { "pasta integrale": "foodDbKey", ... } */
+  const [userFoodAliases, setUserFoodAliases] = useState(() => loadUserFoodAliasesFromCache());
+  const userFoodAliasesRef = useRef(userFoodAliases);
+  userFoodAliasesRef.current = userFoodAliases;
   const [foodDbNeeded, setFoodDbNeeded] = useState(false);
   const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, offDb: offFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
 
@@ -791,6 +802,14 @@ export default function SalaComandi() {
     const cached = loadPersonalDbFromCache(userUid);
     if (Object.keys(cached).length === 0) return;
     setFoodDb((prev) => mergePersonalDbRemoteOverLocal(prev, cached));
+  }, [userUid]);
+
+  // Offline-First: re-idrata cache alias alimenti per uid.
+  useEffect(() => {
+    if (!userUid) return;
+    const cached = loadUserFoodAliasesFromCache(userUid);
+    if (Object.keys(cached).length === 0) return;
+    setUserFoodAliases((prev) => mergeUserFoodAliasesRemoteOverLocal(prev, cached));
   }, [userUid]);
 
   useEffect(() => {
@@ -1899,6 +1918,24 @@ export default function SalaComandi() {
     let cancelled = false;
     fetchUserPortionsDict(db, userUid).then((dict) => {
       if (!cancelled) setUserPortions(sanitizeUserPortionsDict(dict));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userUid, db, isAuthenticated]);
+
+  // Dizionario alias alimenti (user_food_aliases) — load + cache locale.
+  useEffect(() => {
+    if (!userUid || !db || !isAuthenticated) {
+      setUserFoodAliases({});
+      return undefined;
+    }
+    let cancelled = false;
+    fetchUserFoodAliasesDict(db, userUid).then((dict) => {
+      if (cancelled) return;
+      const merged = sanitizeUserFoodAliasesDict(dict);
+      setUserFoodAliases(merged);
+      saveUserFoodAliasesToCache(merged, userUid);
     });
     return () => {
       cancelled = true;
@@ -7148,6 +7185,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
       await saveFoodEntryPer100ToFoodDb(payload);
     },
+    onUserFoodAliasesMerge: (patch) => {
+      setUserFoodAliases((prev) => {
+        const next = {
+          ...sanitizeUserFoodAliasesDict(prev),
+          ...sanitizeUserFoodAliasesDict(patch),
+        };
+        if (userUid) saveUserFoodAliasesToCache(next, userUid);
+        return next;
+      });
+    },
     getCurrentState: () => {
       const todayWorkoutKcal = (activeLog || [])
         .filter((item) => item?.type === 'workout')
@@ -7183,6 +7230,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         fourCylinder: userModel?.fourCylinder ?? null,
         // Memoria porzioni a lungo termine (Motore Ibrido Stadio 1).
         userPortions: sanitizeUserPortionsDict(userPortions),
+        userFoodAliases: sanitizeUserFoodAliasesDict(userFoodAliases),
+        userUid,
+        firebaseDb: db,
         todayPlanBlock: todayPlanBlock ?? null,
         hasRealWorkoutToday: hasRealWorkoutInActiveLog,
         isWorkoutDoneToday: hasRealWorkoutInActiveLog,

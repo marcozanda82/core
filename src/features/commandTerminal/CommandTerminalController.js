@@ -158,6 +158,7 @@ import {
   buildRequestFoodPhotoMessage,
 } from './conversation/mealButlerProposal.js';
 import { sanitizeUserPortionsDict } from './conversation/userPortionsMemory.js';
+import { learnUserFoodAlias, sanitizeUserFoodAliasesDict } from './conversation/userFoodAliases.js';
 import { findFoodDbMatchCascading } from '../salaComandi/engines/foodDataEngine.js';
 import {
   CONFIRM_MEAL_DRAFT,
@@ -387,6 +388,7 @@ export class CommandTerminalController {
     onPopulateMealLavagna = null,
     onSaveFoodEntryPer100ToFoodDb = null,
     onRequestUsdaEnrichment = null,
+    onUserFoodAliasesMerge = null,
   } = {}) {
     this.bus = bus;
     this.llmClient = llmClient;
@@ -400,6 +402,10 @@ export class CommandTerminalController {
     /** @type {((payload: object) => void)|null} Chat USDA enrichment UI hook. */
     this.onRequestUsdaEnrichment = typeof onRequestUsdaEnrichment === 'function'
       ? onRequestUsdaEnrichment
+      : null;
+    /** @type {((patch: Record<string, string>) => void)|null} Merge locale dizionario alias. */
+    this.onUserFoodAliasesMerge = typeof onUserFoodAliasesMerge === 'function'
+      ? onUserFoodAliasesMerge
       : null;
     /** @type {object|null} Proposal ADD_FOOD in sospeso (Fase 3 USDA). */
     this.suspendedMealPublication = null;
@@ -994,6 +1000,10 @@ export class CommandTerminalController {
     const next = [...list];
     next[idx] = built;
     this.pendingMcDriveDraft = next;
+    this.learnMcDriveFoodAlias(
+      prev.spokenFoodName || prev.foodName || built.spokenFoodName,
+      built.foodDbKey,
+    );
     this.publishMcdriveTraySync();
     return {
       ok: true,
@@ -1026,6 +1036,10 @@ export class CommandTerminalController {
     const next = [...list];
     next[idx] = built;
     this.pendingMcDriveDraft = next;
+    this.learnMcDriveFoodAlias(
+      prev.spokenFoodName || prev.foodName || built.spokenFoodName,
+      built.foodDbKey,
+    );
     this.publishMcdriveTraySync();
     return {
       ok: true,
@@ -1113,6 +1127,7 @@ export class CommandTerminalController {
     }
 
     this.appendMcDriveDraftItem(draftItem);
+    this.learnMcDriveFoodAlias(pending.foodName, draftItem.foodDbKey);
     this.publishMcdriveTraySync();
     return {
       ok: true,
@@ -1235,6 +1250,7 @@ export class CommandTerminalController {
         kentuItDb: dbCtx.kentuItDb,
         globalDb: dbCtx.globalDb,
         offDb: dbCtx.offDb,
+        userFoodAliases: dbCtx.userFoodAliases,
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -1405,6 +1421,7 @@ export class CommandTerminalController {
         isCustom: match?.isCustom === true,
         candidates: [],
       };
+      this.learnMcDriveFoodAlias(foodName, built.foodDbKey);
     }
 
     this.mcdriveDisambiguationIndex = null;
@@ -1958,7 +1975,38 @@ export class CommandTerminalController {
         || currentState?.nutrition?.userPortions
         || {},
       ),
+      userFoodAliases: sanitizeUserFoodAliasesDict(
+        currentState?.userFoodAliases
+        || currentState?.nutrition?.userFoodAliases
+        || {},
+      ),
     };
+  }
+
+  /**
+   * Memorizza mappatura nome parlato → foodDbKey (memoria semantica AI).
+   * @param {string} spokenTerm
+   * @param {string|null|undefined} foodDbKey
+   */
+  learnMcDriveFoodAlias(spokenTerm, foodDbKey) {
+    const spoken = String(spokenTerm || '').trim();
+    const key = String(foodDbKey || '').trim();
+    if (!spoken || !key) return;
+
+    const state = this.mcdriveValidationContext?.currentState
+      || this.mcdriveContextState
+      || {};
+    const uid = String(state?.userUid || '').trim();
+    const firebaseDb = state?.firebaseDb || state?.db || null;
+    if (!uid || !firebaseDb) return;
+
+    learnUserFoodAlias({
+      db: firebaseDb,
+      uid,
+      spokenTerm: spoken,
+      foodDbKey: key,
+      onLocalMerge: this.onUserFoodAliasesMerge,
+    });
   }
 
   /**

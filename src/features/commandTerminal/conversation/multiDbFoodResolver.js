@@ -18,6 +18,7 @@ import {
   searchOffDb,
   searchPersonalDb,
 } from '../../mealBuilder/hooks/useUniversalSearchEngine.js';
+import { lookupUserFoodAlias } from './userFoodAliases.js';
 
 export const AUTO_ACCEPT_CONFIDENCE = 0.85;
 /** Match forte Livello 1 (Personale + Kentu): auto-accept / stop senza cataloghi esterni. */
@@ -650,6 +651,48 @@ export function decideMultiDbResolution(candidates = [], query = '', opts = {}) 
 }
 
 /**
+ * Risolve un candidato esatto dal dizionario alias utente (memoria semantica).
+ * @param {string} foodName
+ * @param {object} ctx
+ * @returns {object|null}
+ */
+export function lookupFoodCandidateFromAlias(foodName, ctx = {}) {
+  const aliases = ctx.userFoodAliases && typeof ctx.userFoodAliases === 'object'
+    ? ctx.userFoodAliases
+    : null;
+  if (!aliases || Object.keys(aliases).length === 0) return null;
+
+  const foodDbKey = lookupUserFoodAlias(foodName, aliases);
+  if (!foodDbKey) return null;
+
+  const catalogs = [
+    { db: ctx.personalDb, source: 'personal' },
+    { db: ctx.kentuItDb, source: 'kentu' },
+    { db: ctx.globalDb, source: 'usda' },
+    { db: ctx.offDb, source: 'off' },
+  ];
+
+  for (let i = 0; i < catalogs.length; i += 1) {
+    const { db, source } = catalogs[i];
+    if (!db || typeof db !== 'object' || !db[foodDbKey]) continue;
+    const row = db[foodDbKey];
+    const displayName = String(row.desc || row.name || foodName).trim();
+    return buildCandidate({
+      fdcId: foodDbKey,
+      name: displayName,
+      confidence: 'high',
+      confidenceScore: 1,
+      reason: 'Alias memorizzato',
+      source,
+      row,
+      matchKind: 'exact',
+    });
+  }
+
+  return null;
+}
+
+/**
  * Entry point a livelli: L1 locale; se vuoto e non deferito → L2 esterni.
  * @param {string} foodName
  * @param {object} ctx
@@ -666,6 +709,21 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
       alternatives: [],
       searchLevel: 1,
       needsExternalSearch: true,
+    };
+  }
+
+  const aliasCandidate = lookupFoodCandidateFromAlias(name, ctx);
+  if (aliasCandidate) {
+    return {
+      needsDisambiguation: false,
+      match: aliasCandidate,
+      source: aliasCandidate.source,
+      confidenceScore: 1,
+      candidates: [aliasCandidate],
+      alternatives: [],
+      searchLevel: 1,
+      needsExternalSearch: false,
+      fromAlias: true,
     };
   }
 

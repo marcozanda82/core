@@ -187,6 +187,7 @@ export function useCommandTerminal({
   onSaveFoodDbEntry = null,
   onPopulateMealLavagna = null,
   onSaveFoodEntryPer100ToFoodDb = null,
+  onUserFoodAliasesMerge = null,
   onChatClose = null,
   onManualShortcutFromChat = null,
 } = {}) {
@@ -334,6 +335,7 @@ export function useCommandTerminal({
   const onWipMealSeedRef = useRef(onWipMealSeed);
   const onPopulateMealLavagnaRef = useRef(onPopulateMealLavagna);
   const onSaveFoodEntryPer100Ref = useRef(onSaveFoodEntryPer100ToFoodDb);
+  const onUserFoodAliasesMergeRef = useRef(onUserFoodAliasesMerge);
   const chatUsdaResumeRef = useRef(null);
   const [chatUsdaEnrichmentSession, setChatUsdaEnrichmentSession] = useState(null);
   useEffect(() => {
@@ -345,6 +347,9 @@ export function useCommandTerminal({
   useEffect(() => {
     onSaveFoodEntryPer100Ref.current = onSaveFoodEntryPer100ToFoodDb;
   }, [onSaveFoodEntryPer100ToFoodDb]);
+  useEffect(() => {
+    onUserFoodAliasesMergeRef.current = onUserFoodAliasesMerge;
+  }, [onUserFoodAliasesMerge]);
 
   const controller = useMemo(() => {
     const llmClient = new GeminiStructuredClient();
@@ -378,6 +383,10 @@ export function useCommandTerminal({
           globalDb: payload?.globalDb && typeof payload.globalDb === 'object' ? payload.globalDb : null,
           offDb: payload?.offDb && typeof payload.offDb === 'object' ? payload.offDb : null,
         });
+      },
+      onUserFoodAliasesMerge: (patch) => {
+        const fn = onUserFoodAliasesMergeRef.current;
+        if (typeof fn === 'function') fn(patch);
       },
     });
   }, []);

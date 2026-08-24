@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, Info, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, Info, MoreVertical, Pencil, Sparkles, Trash2 } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
@@ -75,6 +75,88 @@ function McDriveStatusIcon({ visualStatus, foodName, macros }) {
     <span className="kentu-meal-tray__status-icon shrink-0 text-base leading-none opacity-70" aria-hidden>
       {getFoodIcon(foodName, macros)}
     </span>
+  );
+}
+
+function MealTrayRowActionsMenu({
+  open = false,
+  disabled = false,
+  name = 'Alimento',
+  onToggle = null,
+  onClose = null,
+  onReplace = null,
+  onInspect = null,
+  onEditGrams = null,
+  onRemove = null,
+}) {
+  const buttonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleOutside = (event) => {
+      if (menuRef.current?.contains(event.target) || buttonRef.current?.contains(event.target)) {
+        return;
+      }
+      onClose?.();
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+    };
+  }, [open, onClose]);
+
+  const run = (handler) => (event) => {
+    event.stopPropagation();
+    onClose?.();
+    handler?.();
+  };
+
+  return (
+    <div className="relative shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        disabled={disabled}
+        className="kentu-meal-tray__kebab inline-flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-zinc-800/80 hover:text-zinc-100 disabled:opacity-40"
+        aria-label={`Azioni per ${name}`}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle?.();
+        }}
+      >
+        <MoreVertical className="h-4 w-4" aria-hidden />
+      </button>
+      {open ? (
+        <div
+          ref={menuRef}
+          role="menu"
+          className="absolute right-0 top-full z-50 mt-1 min-w-[11.5rem] overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-900/95 py-1 shadow-xl backdrop-blur-md"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" className="kentu-meal-tray__menu-item" onClick={run(onReplace)}>
+            <ArrowLeftRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Cambia associazione
+          </button>
+          <button type="button" role="menuitem" className="kentu-meal-tray__menu-item" onClick={run(onInspect)}>
+            <Info className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Scheda Info
+          </button>
+          <button type="button" role="menuitem" className="kentu-meal-tray__menu-item" onClick={run(onEditGrams)}>
+            <Pencil className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Modifica grammi
+          </button>
+          <button type="button" role="menuitem" className="kentu-meal-tray__menu-item kentu-meal-tray__menu-item--danger" onClick={run(onRemove)}>
+            <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Elimina
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -172,6 +254,7 @@ function LiveMealTray({
   const needsCalculate = hasRaw || hasDisambiguationPending;
   const [editingIndex, setEditingIndex] = useState(null);
   const [searchIndex, setSearchIndex] = useState(null);
+  const [openMenuIndex, setOpenMenuIndex] = useState(null);
   const [inspectItem, setInspectItem] = useState(null);
   const [showSolverModal, setShowSolverModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -398,13 +481,6 @@ function LiveMealTray({
               const isEditing = editingIndex === index && active;
               const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
 
-              let detailLabel = '';
-              if (isPending) detailLabel = 'Tocca per scegliere l\'alimento esatto';
-              else if (isProcessing) detailLabel = 'analisi…';
-              else if (isSkipped) detailLabel = 'tralasciato';
-              else if (isRaw) detailLabel = ''; // nessun calcolo visibile
-              else if (isResolved || kcal > 0) detailLabel = `${kcal} kcal`;
-
               const rowStatusClass = highlightSolver
                 ? 'kentu-meal-tray__row--solver border-l-4 border-violet-400 bg-violet-500/15 ring-1 ring-violet-300/30'
                 : highlightLatest
@@ -456,49 +532,26 @@ function LiveMealTray({
                   role={isPending && active ? 'button' : undefined}
                   tabIndex={isPending && active ? 0 : undefined}
                 >
-                  <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center justify-between gap-3">
-                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                      <McDriveStatusIcon
-                        visualStatus={visualStatus}
-                        foodName={name}
-                        macros={{
-                          kcal: Number(item?.kcal) || 0,
-                          prot: Number(item?.pro ?? item?.prot) || 0,
-                          carb: Number(item?.carbo ?? item?.carb) || 0,
-                          fat: Number(item?.fat) || 0,
-                        }}
-                      />
-                      <div className="kentu-meal-tray__row-text min-w-0">
-                        <button
-                          type="button"
-                          className={[
-                            'kentu-meal-tray__name',
-                            'transition-all duration-300 text-left max-w-full',
-                            nameStatusClass,
-                            active ? 'cursor-pointer hover:text-cyan-200' : '',
-                          ].filter(Boolean).join(' ')}
-                          disabled={!active || disabled}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setInspectItem(item);
-                          }}
-                          title="Apri scheda alimento"
-                        >
-                          {name}
-                        </button>
-                        {detailLabel ? (
-                          <span
-                            className={[
-                              'kentu-meal-tray__kcal',
-                              'transition-all duration-300',
-                              nameStatusClass,
-                            ].filter(Boolean).join(' ')}
-                          >
-                            {detailLabel}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
+                  <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center gap-2">
+                    <McDriveStatusIcon
+                      visualStatus={visualStatus}
+                      foodName={name}
+                      macros={{
+                        kcal: Number(item?.kcal) || 0,
+                        prot: Number(item?.pro ?? item?.prot) || 0,
+                        carb: Number(item?.carbo ?? item?.carb) || 0,
+                        fat: Number(item?.fat) || 0,
+                      }}
+                    />
+                    <span
+                      className={[
+                        'kentu-meal-tray__name truncate min-w-0 flex-1 text-left',
+                        nameStatusClass,
+                      ].filter(Boolean).join(' ')}
+                      title={name}
+                    >
+                      {name}
+                    </span>
                     <span
                       className={[
                         'kentu-meal-tray__grams font-mono shrink-0 transition-all duration-300',
@@ -511,6 +564,40 @@ function LiveMealTray({
                     >
                       {grams} g
                     </span>
+                    {isPending ? (
+                      <span className="kentu-meal-tray__kcal shrink-0 text-[0.65rem] text-amber-300/90 max-w-[5.5rem] truncate">
+                        Scegli
+                      </span>
+                    ) : isProcessing ? (
+                      <span className="kentu-meal-tray__kcal shrink-0 text-xs text-cyan-400">…</span>
+                    ) : isSkipped ? (
+                      <span className="kentu-meal-tray__kcal shrink-0 text-xs text-slate-500">—</span>
+                    ) : (isResolved || kcal > 0) ? (
+                      <span
+                        className={[
+                          'kentu-meal-tray__kcal shrink-0 font-mono text-xs tabular-nums',
+                          nameStatusClass,
+                        ].filter(Boolean).join(' ')}
+                      >
+                        {kcal} kcal
+                      </span>
+                    ) : null}
+                    {active && !isEditing ? (
+                      <MealTrayRowActionsMenu
+                        open={openMenuIndex === index}
+                        disabled={disabled}
+                        name={name}
+                        onToggle={() => setOpenMenuIndex((prev) => (prev === index ? null : index))}
+                        onClose={() => setOpenMenuIndex(null)}
+                        onReplace={() => setSearchIndex(index)}
+                        onInspect={() => setInspectItem(item)}
+                        onEditGrams={() => {
+                          setOpenMenuIndex(null);
+                          setEditingIndex(index);
+                        }}
+                        onRemove={() => onRemoveItem?.(index)}
+                      />
+                    ) : null}
                   </div>
 
                   {active && isEditing ? (
@@ -594,53 +681,6 @@ function LiveMealTray({
                           ❌
                         </button>
                       </div>
-                    </div>
-                  ) : active ? (
-                    <div
-                      className="kentu-meal-tray__row-controls"
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="kentu-meal-tray__remove inline-flex items-center justify-center"
-                        disabled={disabled}
-                        onClick={() => setSearchIndex(index)}
-                        aria-label={`Cambia associazione di ${name}`}
-                        title="Cambia associazione"
-                      >
-                        <ArrowLeftRight className="h-3.5 w-3.5" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        className="kentu-meal-tray__remove inline-flex items-center justify-center"
-                        disabled={disabled}
-                        onClick={() => setInspectItem(item)}
-                        aria-label={`Scheda alimento ${name}`}
-                        title="Scheda alimento"
-                      >
-                        <Info className="h-3.5 w-3.5" aria-hidden />
-                      </button>
-                      <button
-                        type="button"
-                        className="kentu-meal-tray__remove"
-                        disabled={disabled}
-                        onClick={() => setEditingIndex(index)}
-                        aria-label={`Modifica ${name}`}
-                        title="Modifica"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        className="kentu-meal-tray__remove"
-                        disabled={disabled}
-                        onClick={() => onRemoveItem?.(index)}
-                        aria-label={`Elimina ${name}`}
-                        title="Elimina"
-                      >
-                        ❌
-                      </button>
                     </div>
                   ) : null}
                 </li>

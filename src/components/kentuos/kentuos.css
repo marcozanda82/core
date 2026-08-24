@@ -2275,6 +2275,36 @@
   min-width: 0;
 }
 
+.kentu-meal-tray__menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  text-align: left;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.kentu-meal-tray__menu-item:hover,
+.kentu-meal-tray__menu-item:focus-visible {
+  background: rgba(51, 65, 85, 0.55);
+  color: #f8fafc;
+  outline: none;
+}
+
+.kentu-meal-tray__menu-item--danger {
+  color: #fca5a5;
+}
+
+.kentu-meal-tray__menu-item--danger:hover,
+.kentu-meal-tray__menu-item--danger:focus-visible {
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+}
+
 .kentu-meal-tray__stepper {
   flex: 1 1 auto;
   min-width: 0;
