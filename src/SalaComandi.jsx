@@ -23,36 +23,25 @@ import {
 import { calculateMetabolicVariance } from './metabolicEngine';
 
 import { useFirebase } from './useFirebase';
-import { useFoodDb } from './useFoodDb';
 import { useCommandTerminal } from './features/commandTerminal/hooks/useCommandTerminal';
 import ChatFoodEnrichmentModal from './features/commandTerminal/components/ChatFoodEnrichmentModal.jsx';
-import {
-  calculateHealthScore,
-  detectPrematureFastBreak,
-} from './features/health/HealthScoreEngine.js';
+import { detectPrematureFastBreak } from './features/health/HealthScoreEngine.js';
 import {
   analyzeCoffeeForHealthScore,
-  buildCoffeeStimulantNode,
   COFFEE_VARIANT,
   readLastCoffeeType,
   sumSweetCoffeeMacros,
-  writeLastCoffeeType,
 } from './features/stimulants/coffeeLogEngine.js';
 import {
-  buildTeaStimulantNode,
   readLastTeaType,
-  writeLastTeaType,
 } from './features/stimulants/teaLogEngine.js';
 import {
-  buildEnergyStimulantNode,
   readLastEnergyType,
-  writeLastEnergyType,
 } from './features/stimulants/energyDrinkLogEngine.js';
 import QuickEventConfirmOverlay from './features/quickEvents/QuickEventConfirmOverlay.jsx';
 import {
   buildQuickEventConfirmPayload,
   buildQuickEventConfirmChatEntry,
-  resolveStimulantConfirmKind,
 } from './features/quickEvents/quickEventConfirmAssets.js';
 import { projectNutritionAfterMeal } from './conversation/ConsultantEngine';
 import {
@@ -68,14 +57,10 @@ import {
 import { resolveFoodItemForProposal } from './utils/foodResolver.js';
 import { ensureRecipeDiaryFields } from './utils/recipeDiaryFields.js';
 import {
-  fetchUserPortionsDict,
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
 } from './features/commandTerminal/conversation/userPortionsMemory.js';
 import {
-  fetchUserFoodAliasesDict,
-  loadUserFoodAliasesFromCache,
-  mergeUserFoodAliasesRemoteOverLocal,
   sanitizeUserFoodAliasesDict,
   saveUserFoodAliasesToCache,
 } from './features/commandTerminal/conversation/userFoodAliases.js';
@@ -88,7 +73,6 @@ import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
 import { withDefaultUsageStats, recordDraftFoodsUsageStats, getCurrentTimeSlot } from './features/mealBuilder/utils/timeSlotUtils';
-import { applyTimelineStripHourToPreviewInputs } from './timelineDragPreview';
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
 import { isHealthDiabetesChatMode } from './features/chat/healthChatMode.js';
@@ -98,26 +82,13 @@ import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './
 import {
   getTimePositionPercent,
   getWallClockDecimalHour,
-  CHART_AXIS_GUTTER_LEFT_PX,
-  CHART_AXIS_GUTTER_RIGHT_PX,
 } from './timeLayout';
 import DailyMacroSheet from './DailyMacroSheet';
 import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
-import DialMaintenanceMarker from './components/DialMaintenanceMarker';
-import KcalFuelTelemetryRing from './components/KcalFuelTelemetryRing';
-import { resolveKcalDialTelemetry, resolveKcalZoneHudLabel } from './utils/kcalDialTelemetry';
 import { buildMetabolicMapThresholdsFromSplit } from './features/planning/trainingBlockTargets';
-import TrainingBlockWidget from './components/TrainingBlockWidget';
 import useTrainingBlock from './hooks/planning/useTrainingBlock';
 import usePlannedDayDelta from './hooks/usePlannedDayDelta';
-import {
-  normalizeGhostSimGoal,
-  ghostSimDeltaToGoal,
-  ghostSimDeltaToKentuStrategy,
-  clampGhostSimDelta,
-  resolveGhostDailyDeltaFromGoal,
-} from './utils/metabolicCompensationCurve';
 import {
   normalizeActiveCompensation,
   resolveActiveCompensationDailyDelta,
@@ -133,7 +104,6 @@ import {
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
   NODE_DRAG_ARM_CANCEL_MOVE_PX,
-  REPORT_NUTRIENT_KEYS,
   createEmptyEnergyChartData,
   ADD_MENU_ORDER_LS_KEY,
 } from './constants/salaComandiConstants';
@@ -155,13 +125,6 @@ import {
   stashActivitySheetTempTab,
   peekActivitySheetTempTab,
 } from './activityCatalog';
-import {
-  createInitialWeeklyPlan,
-  getWeekStartMondayKeyLocal,
-  sanitizeWeeklyPlanFromFirebase,
-  weeklyPlanStableJson,
-  weeklyPlanToFirebasePayload,
-} from './weeklyPlanning';
 import { normalizeMealSlotType } from './features/mealBuilder/utils/slotPredictor';
 import {
   parseDurationMinutesInput,
@@ -171,8 +134,6 @@ import {
 } from './utils/durationMinutesInput';
 import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
 import {
-  loadPersonalDbFromCache,
-  mergePersonalDbRemoteOverLocal,
   savePersonalDbToCache,
 } from './utils/offlineCacheUtils';
 import { promoteForeignMealItemsForSave } from './utils/personalFoodPromotion';
@@ -217,15 +178,8 @@ import {
   buildUserRestDayBlock,
   relocatePlanBlockToDate,
 } from './features/weeklyBlocks/planBlockSwapUtils';
-import {
-  NEURAL_RESET_PATTERNS,
-  ZEN_SESSION_DURATION_OPTIONS,
-  getNeuralResetZenStep,
-  getZenBreathAudioFade,
-} from './drawers/vistas/neuralResetZenModel';
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
-import MetabolicMonitorCard from './components/MetabolicMonitorCard';
 import EnergyArcWidget from './components/EnergyArcWidget';
 import DiaryDetailsSheet from './components/DiaryDetailsSheet';
 import EnergyBalanceSheet from './components/EnergyBalanceSheet';
@@ -235,7 +189,6 @@ import CarbsDetailsSheet from './components/CarbsDetailsSheet';
 import ProteinDetailsSheet from './components/ProteinDetailsSheet';
 import MineralsDetailsSheet from './components/MineralsDetailsSheet';
 import VitaminsDetailsSheet from './components/VitaminsDetailsSheet';
-import HomeNutrientStrip from './components/HomeNutrientStrip';
 import { buildFatDetailsData } from './features/nutrition/buildFatDetailsData';
 import { buildCarbsDetailsData } from './features/nutrition/buildCarbsDetailsData';
 import { buildProteinDetailsData } from './features/nutrition/buildProteinDetailsData';
@@ -290,7 +243,6 @@ import {
   getAverageEstimate as getAverageEstimateFromEngine,
 } from './features/salaComandi/engines/foodDataEngine';
 import { buildPer100TargetNutrientsFromRow } from './features/mealBuilder/utils/foodMacroUtils';
-import { runSanitizeHistoricalFoodDbWithKentuCatalogs } from './features/nutrition/sanitizeHistoricalFoodDb';
 import {
   deriveEffectiveBodyMetricsForDate,
   deriveCurrentBodyMetricsFromHistory,
@@ -353,7 +305,7 @@ import { setBarcodeNutritionOverride as setBarcodeNutritionOverrideStorage } fro
 import {
   useSmartKentuTriggers,
 } from './useSmartKentuTriggers';
-import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue, getTargetForNutrient } from './useBiochimico';
+import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue } from './useBiochimico';
 import {
   DEFAULT_NO_SLEEP_ENERGY,
   getTodayString,
@@ -440,25 +392,41 @@ import {
   computeSleepDurationHours,
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
-  kentuChatStorageKey,
-  readKentuChatHistoryFromLocalStorage,
-  kentuChatHistoryForPersistence,
   getNowDecimalHourForPlanMerge,
   tryAcquireMealConfirmGuard,
   releaseMealConfirmGuard,
+  safeNum,
+  parseTimeStrToDecimal,
 } from './utils/salaComandiUtils';
+import { getAlcoholGlassIcon, getAlcoholBaseMl } from './utils/alcoholUiUtils';
+import { useNeuralResetSession } from './hooks/salaComandi/useNeuralResetSession';
+import { useMealPieDialData } from './hooks/salaComandi/useMealPieDialData';
+import NeuralResetZenPortal from './components/salaComandi/NeuralResetZenPortal';
+import HomeOggiDialSection from './components/salaComandi/HomeOggiDialSection';
+import GhostProgramDeleteModal from './components/salaComandi/GhostProgramDeleteModal';
+import EditFoodQuantityModal from './components/salaComandi/EditFoodQuantityModal';
+import SncStressPopup from './components/salaComandi/SncStressPopup';
+import PeriodReportOverlay from './components/salaComandi/PeriodReportOverlay';
+import LongevityTabShell from './components/salaComandi/LongevityTabShell';
+import PlanningTabPanel from './components/salaComandi/PlanningTabPanel';
+import RecalibrationProposalModal from './components/salaComandi/RecalibrationProposalModal';
+import AnalisiTimelineTab from './components/salaComandi/AnalisiTimelineTab';
+import { useHealthScoreSnapshot } from './hooks/salaComandi/useHealthScoreSnapshot';
+import { useLongevityDashboardData } from './hooks/salaComandi/useLongevityDashboardData';
+import { useDailyWeeklyPlanningSync } from './hooks/salaComandi/useDailyWeeklyPlanningSync';
+import { useGhostSimCompensation } from './hooks/salaComandi/useGhostSimCompensation';
+import { useStimulantQuickLog } from './hooks/salaComandi/useStimulantQuickLog';
+import { usePersonalFoodDbBootstrap } from './hooks/salaComandi/usePersonalFoodDbBootstrap';
+import { useMainTabSwipe } from './hooks/salaComandi/useMainTabSwipe';
+import { useTimelineChartShell } from './hooks/salaComandi/useTimelineChartShell';
+import { useKentuChatShell } from './hooks/salaComandi/useKentuChatShell';
+import KentuChatFab from './components/salaComandi/KentuChatFab';
+import KentuChatShell from './components/salaComandi/KentuChatShell';
 
 export { calculateAge } from './utils/profileAge';
 
-/** Anti-NaN: mai passare valori non finiti a Recharts / divisioni UI. */
-const safeNum = (val) => (Number.isFinite(Number(val)) ? Number(val) : 0);
-
-const MainDashboardCharts = lazy(() => import('./features/charts/MainDashboardCharts'));
-const TimelineNodi = lazy(() => import('./TimelineNodi'));
-const LongevityView = lazy(() => import('./LongevityView'));
 const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
-const WeeklyPlanning = lazy(() => import('./components/WeeklyPlanning'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
 const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
@@ -470,7 +438,6 @@ const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
 const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
 const HealthReportView = lazy(() => import('./features/health/HealthReportView'));
 const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
-const HomeMealPieDial = lazy(() => import('./components/charts/HomeMealPieDial'));
 const TrendMetricLineChart = lazy(() => import('./components/charts/TrendMetricLineChart'));
 
 export default function SalaComandi() {
@@ -484,28 +451,13 @@ export default function SalaComandi() {
   // STATI INTERFACCIA
   const [currentTime, setCurrentTime] = useState(8);
   const [showDetails, setShowDetails] = useState(false);
-  const [chartUnit, setChartUnit] = useState('percent'); // 'percent' | 'kcal'
-  const [zoomLevel, setZoomLevel] = useState(1); // 1 = viewport 12 ore (vedi TIMELINE_DEFAULT_VIEWPORT_HOURS)
-  const [isChartTooltipActive, setIsChartTooltipActive] = useState(false);
-  /** Anteprima curve (energia/kcal) durante drag nodo timeline; null = stato committato. */
-  const [timelineStripPreview, setTimelineStripPreview] = useState(null);
-  const timelineStripPreviewGenRef = useRef(0);
-  const timelineStripPreviewDebounceRef = useRef(null);
-  const timelineStripPreviewLatestRef = useRef(null);
-  const timelineStripPreviewSlowRef = useRef(0);
-  const timelineStripPreviewDisabledRef = useRef(false);
-  const timelineStripPreviewDepsRef = useRef({});
   /** Intent apertura Scheda Attività (tab + nonce): forza sync/remount ad ogni tap rapido. */
   const [activitySheetIntent, setActivitySheetIntent] = useState({ tab: 'pesi', nonce: 0 });
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeAction, setActiveAction] = useState('home');
-  /** Chat montata solo dalla prima apertura in poi (evita costo AiCluster all'avvio). */
-  const [chatShellMounted, setChatShellMounted] = useState(false);
   /** Se un drawer/modale rapido è partito dalla chat, al salvataggio si torna in ai_chat (niente Home). */
   const returnToChatAfterQuickActionRef = useRef(false);
-  useEffect(() => {
-    if (activeAction === 'ai_chat') setChatShellMounted(true);
-  }, [activeAction]);
+  const closeOverlayChatRef = useRef(null);
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
@@ -526,7 +478,18 @@ export default function SalaComandi() {
   useEffect(() => {
     showFastLoggerRef.current = showFastLogger;
   }, [showFastLogger]);
-  const [slideDirection, setSlideDirection] = useState('slide-none');
+
+  const {
+    slideDirection,
+    setSlideDirection,
+    handleMainTabTouchStart,
+    handleMainTabTouchMove,
+    handleMainTabTouchEnd,
+    handleMainTabTouchCancel,
+  } = useMainTabSwipe({
+    activeBottomTab,
+    setActiveBottomTab,
+  });
 
   const trackEventUsage = useCallback((id) => {
     if (!Object.prototype.hasOwnProperty.call(EVENT_USAGE_DEFAULT, id)) return;
@@ -559,98 +522,6 @@ export default function SalaComandi() {
       setActiveBottomTab('oggi');
     }
   }, [activeBottomTab]);
-
-  const [mainTabTouchStartX, setMainTabTouchStartX] = useState(null);
-  const [mainTabTouchEndX, setMainTabTouchEndX] = useState(null);
-  const mainTabTouchStartXRef = useRef(null);
-  const mainTabTouchEndXRef = useRef(null);
-  const mainTabTouchStartYRef = useRef(null);
-  const mainTabTouchEndYRef = useRef(null);
-  const mainTabSwipeIgnoreRef = useRef(false);
-
-  const handleMainTabTouchStart = useCallback((e) => {
-    const el = e.target;
-    if (el && typeof el.closest === 'function') {
-      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros') || el.closest('.home-training-carousel')) {
-        mainTabSwipeIgnoreRef.current = true;
-        return;
-      }
-    }
-    mainTabSwipeIgnoreRef.current = false;
-    const touch = e.targetTouches[0];
-    if (!touch) return;
-    setMainTabTouchEndX(null);
-    mainTabTouchEndXRef.current = null;
-    setMainTabTouchStartX(touch.clientX);
-    mainTabTouchStartXRef.current = touch.clientX;
-    mainTabTouchStartYRef.current = touch.clientY;
-    mainTabTouchEndYRef.current = touch.clientY;
-  }, []);
-
-  const handleMainTabTouchMove = useCallback((e) => {
-    if (mainTabSwipeIgnoreRef.current) {
-      if (typeof e.stopPropagation === 'function') e.stopPropagation();
-      return;
-    }
-    const touch = e.targetTouches[0];
-    if (!touch) return;
-    setMainTabTouchEndX(touch.clientX);
-    mainTabTouchEndXRef.current = touch.clientX;
-    mainTabTouchEndYRef.current = touch.clientY;
-  }, []);
-
-  const handleMainTabTouchEnd = useCallback(
-    (e) => {
-      if (mainTabSwipeIgnoreRef.current) {
-        if (typeof e.stopPropagation === 'function') e.stopPropagation();
-        mainTabSwipeIgnoreRef.current = false;
-        setMainTabTouchStartX(null);
-        setMainTabTouchEndX(null);
-        mainTabTouchStartXRef.current = null;
-        mainTabTouchEndXRef.current = null;
-        return;
-      }
-      const startX = mainTabTouchStartXRef.current;
-      const endX = mainTabTouchEndXRef.current ?? e.changedTouches?.[0]?.clientX ?? null;
-      const startY = mainTabTouchStartYRef.current;
-      const endY = mainTabTouchEndYRef.current ?? e.changedTouches?.[0]?.clientY ?? null;
-      setMainTabTouchStartX(null);
-      setMainTabTouchEndX(null);
-      mainTabTouchStartXRef.current = null;
-      mainTabTouchEndXRef.current = null;
-
-      if (startX == null || endX == null) return;
-
-      const minSwipeDistance = 50;
-      const distance = startX - endX;
-      const absDx = Math.abs(distance);
-      const absDy = Math.abs((startY ?? 0) - (endY ?? 0));
-      if (absDx < minSwipeDistance) return;
-      if (absDx <= absDy * 1.25) return;
-
-      const idx = MAIN_BOTTOM_TAB_ORDER.indexOf(activeBottomTab);
-      if (idx < 0) return;
-
-      if (distance > minSwipeDistance) {
-        if (idx < MAIN_BOTTOM_TAB_ORDER.length - 1) {
-          if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            navigator.vibrate(15);
-          }
-          setSlideDirection('slide-left');
-          setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx + 1]);
-        }
-      } else if (distance < -minSwipeDistance) {
-        if (idx > 0) {
-          if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            navigator.vibrate(15);
-          }
-          setSlideDirection('slide-right');
-          setActiveBottomTab(MAIN_BOTTOM_TAB_ORDER[idx - 1]);
-        }
-      }
-    },
-    [activeBottomTab]
-  );
 
   /** Home / deep-link → Fotografia Progressione (diagnostica). */
   const handleOpenTrendDiag = useCallback(() => {
@@ -701,24 +572,11 @@ export default function SalaComandi() {
     return undefined;
   }, [location.state, location.pathname, navigate]);
 
-  const handleMainTabTouchCancel = useCallback((e) => {
-    if (mainTabSwipeIgnoreRef.current && typeof e?.stopPropagation === 'function') {
-      e.stopPropagation();
-    }
-    mainTabSwipeIgnoreRef.current = false;
-    setMainTabTouchStartX(null);
-    setMainTabTouchEndX(null);
-    mainTabTouchStartXRef.current = null;
-    mainTabTouchEndXRef.current = null;
-  }, []);
-
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   /** add_food con qty mancante: proposta da abitudine DB + storico, in attesa di Sì/No */
   const [pendingHabit, setPendingHabit] = useState(null);
   const [selectedMealCenter, setSelectedMealCenter] = useState(null);
   const [dailyMacroSheetOpen, setDailyMacroSheetOpen] = useState(false);
-  /** Quadrante home (modalità base): kcal | pro | cho | fat */
-  const [activeDialMode, setActiveDialMode] = useState('kcal');
   const [userModel, setUserModel] = useState(DEFAULT_USER_MODEL);
   const [lastCalibrationWeek, setLastCalibrationWeek] = useState(null);
   const [nervousSystemLoad, setNervousSystemLoad] = useState(30);
@@ -784,79 +642,41 @@ export default function SalaComandi() {
   // STRATEGIA E DATABASE
   const [dayProfile, setDayProfile] = useState('upper');
   const [calorieTuning, setCalorieTuning] = useState(0);
-  const [foodDb, setFoodDb] = useState(() => loadPersonalDbFromCache());
-  /** Memoria porzioni utente: { pomodoro: 150, pane: 30, ... } */
-  const [userPortions, setUserPortions] = useState({});
-  const userPortionsRef = useRef(userPortions);
-  userPortionsRef.current = userPortions;
-  /** Dizionario alias alimenti: { "pasta integrale": "foodDbKey", ... } */
-  const [userFoodAliases, setUserFoodAliases] = useState(() => loadUserFoodAliasesFromCache());
-  const userFoodAliasesRef = useRef(userFoodAliases);
-  userFoodAliasesRef.current = userFoodAliases;
-  const [foodDbNeeded, setFoodDbNeeded] = useState(false);
-  const { kentuItDb: kentuCatalogItDb, masterDb: csvFoodDb, offDb: offFoodDb, isLoading: csvFoodDbLoading } = useFoodDb({ defer: true, enabled: foodDbNeeded });
-
-  // Offline-First Fase 1: re-idrata cache per uid appena disponibile (senza attendere RTDB).
-  useEffect(() => {
-    if (!userUid) return;
-    const cached = loadPersonalDbFromCache(userUid);
-    if (Object.keys(cached).length === 0) return;
-    setFoodDb((prev) => mergePersonalDbRemoteOverLocal(prev, cached));
-  }, [userUid]);
-
-  // Offline-First: re-idrata cache alias alimenti per uid.
-  useEffect(() => {
-    if (!userUid) return;
-    const cached = loadUserFoodAliasesFromCache(userUid);
-    if (Object.keys(cached).length === 0) return;
-    setUserFoodAliases((prev) => mergeUserFoodAliasesRemoteOverLocal(prev, cached));
-  }, [userUid]);
-
-  useEffect(() => {
-    if (foodDbNeeded) return;
-    if (showFastLogger || activeAction === 'ai_chat') setFoodDbNeeded(true);
-  }, [showFastLogger, activeAction, foodDbNeeded]);
-  const kentuCatalogItDbRef = useRef(kentuCatalogItDb);
-  const csvFoodDbRef = useRef(csvFoodDb);
-  const offFoodDbRef = useRef(offFoodDb);
-  kentuCatalogItDbRef.current = kentuCatalogItDb;
-  csvFoodDbRef.current = csvFoodDb;
-  offFoodDbRef.current = offFoodDb;
-
-  const runHistoricalFoodDbSanitize = useCallback(async ({ dryRun = false } = {}) => {
-    const uid = userUid || auth?.currentUser?.uid;
-    if (!uid) {
-      console.warn('[sanitizeHistoricalFoodDb] nessun userId — login richiesto');
-      return null;
-    }
-    console.log(`[sanitizeHistoricalFoodDb] avvio${dryRun ? ' (dryRun)' : ''}…`);
-    const result = await runSanitizeHistoricalFoodDbWithKentuCatalogs(uid, { db, dryRun });
-    if (!dryRun && result?.nextFoodDb) {
-      setFoodDb(result.nextFoodDb);
-    }
-    console.log(
-      `[sanitizeHistoricalFoodDb] fatto — re-sync ${result?.resynced ?? 0}, sterilizzati ${result?.sterilized ?? 0}, tags ${result?.tagStats?.total ?? 0} (${result?.tagStats?.masterMatched ?? 0} master, ${result?.tagStats?.heuristic ?? 0} euristici)`,
-    );
-    return result;
-  }, [userUid, db]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV || typeof window === 'undefined') return undefined;
-    window.__KENTU_SANITIZE_FOOD_DB__ = runHistoricalFoodDbSanitize;
-    window.__KENTU_FOOD_DB__ = foodDb;
-    return () => {
-      if (window.__KENTU_SANITIZE_FOOD_DB__ === runHistoricalFoodDbSanitize) {
-        delete window.__KENTU_SANITIZE_FOOD_DB__;
-      }
-    };
-  }, [runHistoricalFoodDbSanitize, foodDb]);
+  const {
+    foodDb,
+    setFoodDb,
+    userPortions,
+    setUserPortions,
+    userPortionsRef,
+    userFoodAliases,
+    setUserFoodAliases,
+    userFoodAliasesRef,
+    kentuCatalogItDb,
+    csvFoodDb,
+    offFoodDb,
+    csvFoodDbLoading,
+    kentuCatalogItDbRef,
+    csvFoodDbRef,
+    offFoodDbRef,
+    runHistoricalFoodDbSanitize,
+  } = usePersonalFoodDbBootstrap({
+    userUid,
+    db,
+    auth,
+    isAuthenticated,
+    showFastLogger,
+    activeAction,
+  });
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
   dailyLogRef.current = dailyLog;
   /** Idempotenza commit pasti chat (ADD_FOOD + UPSERT_MEAL entro finestra breve). */
   const mealCommitGuardRef = useRef({ fingerprint: null, at: 0 });
   const MEAL_COMMIT_DEDUPE_MS = 5000;
-  const activeLog = isSimulationMode && simulatedLog != null ? simulatedLog : dailyLog;
+  const activeLog = useMemo(() => {
+    const raw = isSimulationMode && simulatedLog != null ? simulatedLog : dailyLog;
+    return Array.isArray(raw) ? raw : [];
+  }, [isSimulationMode, simulatedLog, dailyLog]);
 
   // STATI MODULI (Pasti, Acqua, Allenamento, Zen)
   const [mealType, setMealType] = useState('cena');
@@ -885,12 +705,6 @@ export default function SalaComandi() {
   const [drawerBodyWater, setDrawerBodyWater] = useState('');
   const [drawerVisceralFat, setDrawerVisceralFat] = useState('');
   const [addChoiceView, setAddChoiceView] = useState('main'); // 'main' | 'stimulant'
-  const [stimulantSubtype, setStimulantSubtype] = useState('caffè'); // 'caffè' | 'tè' | 'energy drink'
-  const [coffeeType, setCoffeeType] = useState(() => readLastCoffeeType());
-  const [teaType, setTeaType] = useState(() => readLastTeaType());
-  const [energyType, setEnergyType] = useState(() => readLastEnergyType());
-  const [coffeeVariant, setCoffeeVariant] = useState(COFFEE_VARIANT.AMARO);
-  const [stimulantTime, setStimulantTime] = useState(8);
   const [addEventMenuOrder, setAddEventMenuOrder] = useState(() => {
     try {
       const saved = localStorage.getItem(ADD_MENU_ORDER_LS_KEY);
@@ -938,17 +752,8 @@ export default function SalaComandi() {
   const [showStrategicPlanner, setShowStrategicPlanner] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
   const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
-  const [remotePlanning, setRemotePlanning] = useState(null);
-
-  /** Piano settimanale: goal, kcal settimanale, giorni `{ [dateKey]: { type, kcalTarget } }`. Pasti non collegati. */
-  const [weeklyPlan, setWeeklyPlan] = useState(createInitialWeeklyPlan);
-  const weeklyPlanningRemoteSigRef = useRef('');
-  const weeklyPlanningListenerReadyRef = useRef(false);
-  const weeklyPlanRef = useRef(weeklyPlan);
-  weeklyPlanRef.current = weeklyPlan;
 
   const [showAlcoholPopup, setShowAlcoholPopup] = useState(false);
-  const longevityDays = 7;
   const [alcoholForm, setAlcoholForm] = useState({ subtype: 'vino', ml: 150, abv: 12, timeStr: '20:00' });
   const [showSncPopup, setShowSncPopup] = useState(false);
   const [showSleepPrompt, setShowSleepPrompt] = useState(false);
@@ -1211,249 +1016,12 @@ export default function SalaComandi() {
 
   const [editingMealId, setEditingMealId] = useState(null);
 
-  const dailyWaterGoal = userTargets.water ?? 2500; 
-  const [isZenActive, setIsZenActive] = useState(false);
-  const [zenBreathPhase, setZenBreathPhase] = useState(null);
-  const [zenSunScale, setZenSunScale] = useState(1);
-  /** Audio guidato sul respiro: nessuno | mare (ondemare) */
-  const [audioMode, setAudioMode] = useState('muted');
-  /** Paesaggio sonoro continuo foresta (indipendente dai fade del respiro) */
-  const [zenForestAmbientOn, setZenForestAmbientOn] = useState(false);
-  const [zenBreathPatternId, setZenBreathPatternId] = useState('square');
-  const [zenSessionDurationKey, setZenSessionDurationKey] = useState('3');
-  const [zenSessionRemainingSec, setZenSessionRemainingSec] = useState(null);
-  const [zenGracefulEnd, setZenGracefulEnd] = useState(false);
-  const neuralResetAudioRef = useRef(null);
-  const neuralResetBellRef = useRef(null);
-  const zenAmbientForestRef = useRef(null);
-  const zenAmbientFadeIntervalRef = useRef(null);
-  const neuralResetFadeIntervalRef = useRef(null);
-  const zenSessionEndTriggeredRef = useRef(false);
-  const zenEndSessionTimeoutRef = useRef(null);
-  const neuralResetAudioContextRef = useRef(null);
-  const neuralResetGainRef = useRef(null);
-  const neuralResetMediaSourceCreatedRef = useRef(false);
+  const dailyWaterGoal = userTargets?.water ?? 2500;
 
-  const clearNeuralResetFades = useCallback(() => {
-    if (neuralResetFadeIntervalRef.current != null) {
-      clearInterval(neuralResetFadeIntervalRef.current);
-      neuralResetFadeIntervalRef.current = null;
-    }
-    const ctx = neuralResetAudioContextRef.current;
-    const gain = neuralResetGainRef.current;
-    if (ctx && gain) {
-      try {
-        gain.gain.cancelScheduledValues(ctx.currentTime);
-      } catch {
-        /* noop */
-      }
-    }
-  }, []);
-
-  const ensureNeuralResetWebAudio = useCallback(() => {
-    const el = neuralResetAudioRef.current;
-    if (!el) return null;
-    const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
-    if (!AC) return null;
-    if (!neuralResetAudioContextRef.current) {
-      neuralResetAudioContextRef.current = new AC();
-    }
-    const ctx = neuralResetAudioContextRef.current;
-    if (!neuralResetGainRef.current) {
-      const g = ctx.createGain();
-      g.connect(ctx.destination);
-      neuralResetGainRef.current = g;
-    }
-    const gain = neuralResetGainRef.current;
-    if (!neuralResetMediaSourceCreatedRef.current) {
-      try {
-        const src = ctx.createMediaElementSource(el);
-        src.connect(gain);
-        neuralResetMediaSourceCreatedRef.current = true;
-        const v = el.volume;
-        el.volume = 1;
-        gain.gain.value = v > 0 ? v : 1;
-      } catch {
-        return null;
-      }
-    }
-    return { ctx, gain };
-  }, []);
-
-  const ZEN_AMBIENT_TARGET_VOL = 0.35;
-  const ZEN_AMBIENT_FADE_MS = 2000;
-
-  const clearZenAmbientFade = useCallback(() => {
-    if (zenAmbientFadeIntervalRef.current != null) {
-      clearInterval(zenAmbientFadeIntervalRef.current);
-      zenAmbientFadeIntervalRef.current = null;
-    }
-  }, []);
-
-  /** Fade sul solo elemento ambient (non tocca Web Audio del respiro). */
-  const fadeZenAmbientVolume = useCallback((targetVol, durationMs, onComplete) => {
-    const el = zenAmbientForestRef.current;
-    if (!el) {
-      onComplete?.();
-      return;
-    }
-    clearZenAmbientFade();
-    const safeTarget = Math.max(0, Math.min(1, targetVol));
-    const startVol = el.volume;
-    const tickMs = 32;
-    const t0 = performance.now();
-    const dur = Math.max(1, durationMs);
-    const easeInOut = (u) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, u)));
-    const id = setInterval(() => {
-      const t = Math.min(1, (performance.now() - t0) / dur);
-      const w = easeInOut(t);
-      el.volume = startVol + (safeTarget - startVol) * w;
-      if (t >= 1) {
-        el.volume = safeTarget;
-        clearInterval(id);
-        zenAmbientFadeIntervalRef.current = null;
-        onComplete?.();
-      }
-    }, tickMs);
-    zenAmbientFadeIntervalRef.current = id;
-  }, [clearZenAmbientFade]);
-
-  const fadeAudio = useCallback((targetVolume, durationMs) => {
-    const el = neuralResetAudioRef.current;
-    if (!el) return;
-    clearNeuralResetFades();
-    const safeTarget = Math.max(0, Math.min(1, targetVolume));
-    const floor = 0.0001;
-    const rampEnd = Math.max(floor, safeTarget);
-    const durationSec = Math.max(0.02, durationMs / 1000);
-
-    const graph = ensureNeuralResetWebAudio();
-    if (graph) {
-      const { ctx, gain } = graph;
-      ctx.resume().catch(() => {});
-      const param = gain.gain;
-      const now = ctx.currentTime;
-      param.cancelScheduledValues(now);
-      if (safeTarget <= 0) {
-        const cur = Math.max(param.value, 0);
-        param.setValueAtTime(cur, now);
-        param.linearRampToValueAtTime(0, now + durationSec);
-        return;
-      }
-      const current = Math.max(param.value, floor);
-      param.setValueAtTime(current, now);
-      try {
-        param.exponentialRampToValueAtTime(rampEnd, now + durationSec);
-      } catch {
-        param.linearRampToValueAtTime(safeTarget, now + durationSec);
-      }
-      return;
-    }
-
-    const startVol = Math.max(el.volume, safeTarget <= 0 ? 0 : floor);
-    const endVol = safeTarget <= 0 ? 0 : rampEnd;
-    const tickMs = 32;
-    const startTime = performance.now();
-    const safeDur = Math.max(1, durationMs);
-    const id = setInterval(() => {
-      const elapsed = performance.now() - startTime;
-      const t = Math.min(1, elapsed / safeDur);
-      let v;
-      if (safeTarget <= 0) {
-        v = startVol * (1 - t);
-      } else {
-        v = startVol * (endVol / Math.max(startVol, floor)) ** t;
-      }
-      el.volume = Math.min(1, Math.max(0, v));
-      if (t >= 1) {
-        el.volume = safeTarget;
-        clearInterval(id);
-        if (neuralResetFadeIntervalRef.current === id) neuralResetFadeIntervalRef.current = null;
-      }
-    }, tickMs);
-    neuralResetFadeIntervalRef.current = id;
-  }, [clearNeuralResetFades, ensureNeuralResetWebAudio]);
-
-  const endZenSessionGracefully = useCallback(() => {
-    setZenGracefulEnd(true);
-    if (zenSessionDurationKey !== 'infinite') {
-      setZenSessionRemainingSec(0);
-    }
-    setZenBreathPhase(null);
-    setZenSunScale(1);
-    const bell = neuralResetBellRef.current;
-    if (bell) {
-      bell.currentTime = 0;
-      bell.volume = 1;
-      bell.play().catch(() => {});
-    }
-    fadeAudio(0, 2600);
-    fadeZenAmbientVolume(0, 2600, () => {
-      const amb = zenAmbientForestRef.current;
-      if (amb) {
-        amb.pause();
-        amb.currentTime = 0;
-      }
-      setZenForestAmbientOn(false);
-    });
-    if (zenEndSessionTimeoutRef.current) {
-      clearTimeout(zenEndSessionTimeoutRef.current);
-      zenEndSessionTimeoutRef.current = null;
-    }
-    zenEndSessionTimeoutRef.current = window.setTimeout(() => {
-      zenEndSessionTimeoutRef.current = null;
-      setIsZenActive(false);
-      setZenGracefulEnd(false);
-      setZenSessionRemainingSec(null);
-      const el = neuralResetAudioRef.current;
-      if (el) {
-        el.pause();
-        el.currentTime = 0;
-      }
-      clearNeuralResetFades();
-      const g = neuralResetGainRef.current;
-      const ctx = neuralResetAudioContextRef.current;
-      if (ctx && g) {
-        try {
-          g.gain.cancelScheduledValues(ctx.currentTime);
-          g.gain.value = 1;
-        } catch {
-          /* noop */
-        }
-      }
-      if (el) el.volume = 1;
-      zenSessionEndTriggeredRef.current = false;
-      clearZenAmbientFade();
-      const amb = zenAmbientForestRef.current;
-      if (amb) {
-        amb.pause();
-        amb.currentTime = 0;
-        amb.volume = 0;
-      }
-    }, 2800);
-  }, [clearNeuralResetFades, clearZenAmbientFade, fadeAudio, fadeZenAmbientVolume, zenSessionDurationKey]);
-
-  const zenSunTransitionMs = useMemo(() => {
-    if (zenGracefulEnd && !zenBreathPhase) return 2500;
-    if (!zenBreathPhase) return 4000;
-    return getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase)?.ms ?? 4000;
-  }, [zenBreathPatternId, zenBreathPhase, zenGracefulEnd]);
-
-  const zenSunDimHold = useMemo(() => {
-    const step = zenBreathPhase ? getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase) : null;
-    return !!step?.dimHold;
-  }, [zenBreathPatternId, zenBreathPhase]);
-
-  const zenTimerLine = useMemo(() => {
-    if (!isZenActive) return null;
-    if (zenGracefulEnd) return '00:00';
-    if (zenSessionDurationKey === 'infinite') return 'Senza limite';
-    if (zenSessionRemainingSec == null) return null;
-    if (zenSessionRemainingSec <= 0) return '00:00';
-    const m = Math.floor(zenSessionRemainingSec / 60);
-    const s = Math.max(0, zenSessionRemainingSec % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }, [isZenActive, zenGracefulEnd, zenSessionDurationKey, zenSessionRemainingSec]);
+  const neuralReset = useNeuralResetSession({
+    activeAction,
+    isDrawerOpen,
+  });
 
   // AI ASSISTANT
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
@@ -1461,17 +1029,22 @@ export default function SalaComandi() {
   const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
-  const [chatHistory, setChatHistory] = useState(() => {
-    try {
-      const stored = readKentuChatHistoryFromLocalStorage(getTodayString());
-      if (stored) return stored;
-    } catch {
-      /* noop */
-    }
-    return [{ sender: 'ai', text: introPhrase }];
+  const {
+    chatShellMounted,
+    chatHistory,
+    setChatHistory,
+    isChatOpen,
+    openChat,
+    closeChat,
+  } = useKentuChatShell({
+    introPhrase,
+    currentTrackerDate,
+    activeAction,
+    setActiveAction,
+    setIsDrawerOpen,
+    setIsFabOpen,
+    closeOverlayChatRef,
   });
-  const skipKentuChatPersistRef = useRef(false);
-  const kentuChatBoundDateRef = useRef(null);
   /** Strategia calorica giornaliera da comandi invisibili chat (deficit / pari / surplus). */
   const [kentuDailyCalorieStrategy, setKentuDailyCalorieStrategy] = useState('pari');
   const CHAT_HISTORY_WINDOW = 10;
@@ -1549,7 +1122,6 @@ export default function SalaComandi() {
   const [showVitaminsSheet, setShowVitaminsSheet] = useState(false);
   const [showDateCalendarModal, setShowDateCalendarModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [showRecalibrationDetails, setShowRecalibrationDetails] = useState(false);
   const [trendModalMetric, setTrendModalMetric] = useState(null);
   const [trendDays, setTrendDays] = useState(30);
   const [reportViewedDates, setReportViewedDates] = useState(() => {
@@ -1557,10 +1129,6 @@ export default function SalaComandi() {
   });
   const [reportPeriod, setReportPeriod] = useState('7');
   const [calendarMonthIso, setCalendarMonthIso] = useState(() => getTodayString().slice(0, 7));
-
-  useEffect(() => {
-    if (!recalibrationProposal?.show) setShowRecalibrationDetails(false);
-  }, [recalibrationProposal?.show]);
 
   const applyTargetModeUpdate = useCallback(
     ({ updater, mode, source }) => {
@@ -1624,41 +1192,16 @@ export default function SalaComandi() {
   }, [calendarMonthIso]);
 
   useEffect(() => {
-    const d = currentTrackerDate || getTodayString();
-    skipKentuChatPersistRef.current = true;
-    const stored = readKentuChatHistoryFromLocalStorage(d);
-    const prevBound = kentuChatBoundDateRef.current;
-    kentuChatBoundDateRef.current = d;
-    if (stored) {
-      setChatHistory(stored);
-    } else if (prevBound != null && prevBound !== d) {
-      setChatHistory([{ sender: 'ai', text: introPhrase }]);
-    }
-  }, [currentTrackerDate, introPhrase]);
-
-  useEffect(() => {
-    if (skipKentuChatPersistRef.current) {
-      skipKentuChatPersistRef.current = false;
-      return;
-    }
-    const d = currentTrackerDate || getTodayString();
-    if (kentuChatBoundDateRef.current !== d) return;
-    try {
-      const payload = kentuChatHistoryForPersistence(chatHistory);
-      localStorage.setItem(kentuChatStorageKey(d), JSON.stringify(payload));
-    } catch {
-      /* quota / private mode */
-    }
-  }, [chatHistory, currentTrackerDate]);
-
-  useEffect(() => {
     scheduledWorkoutContextRef.current = null;
   }, [currentTrackerDate]);
 
   useEffect(() => {
     const d = currentTrackerDate || getTodayString();
     try {
-      const v = localStorage.getItem(`kentu_cal_strategy_${d}`);
+      const global = localStorage.getItem('kentu_cal_strategy_global');
+      const v = (global === 'deficit' || global === 'pari' || global === 'surplus')
+        ? global
+        : localStorage.getItem(`kentu_cal_strategy_${d}`);
       if (v === 'deficit' || v === 'pari' || v === 'surplus') {
         setKentuDailyCalorieStrategy(v);
       } else {
@@ -1669,81 +1212,21 @@ export default function SalaComandi() {
     }
   }, [currentTrackerDate]);
 
-  /** Commit What-If Ghost Car → strategy Kentu + delta continuo persistito (profilo / LS). */
-  const applyGhostSimGoal = useCallback(
-    (deltaRaw) => {
-      const delta = clampGhostSimDelta(deltaRaw);
-      const goal = ghostSimDeltaToGoal(delta);
-      const strategy = ghostSimDeltaToKentuStrategy(delta);
-      const dateKey = currentTrackerDate || getTodayString();
-
-      setKentuDailyCalorieStrategy(strategy);
-      try {
-        localStorage.setItem(`kentu_cal_strategy_${dateKey}`, strategy);
-        localStorage.setItem(`kentu_ghost_sim_delta_${dateKey}`, String(delta));
-      } catch {
-        /* ignore */
-      }
-
-      setUserProfile((prev) => {
-        const next = {
-          ...prev,
-          nutritionGoal: goal,
-          goal: goal === 'cut' ? 'lose' : goal === 'bulk' ? 'gain' : 'maintain',
-          ghostSimDeltaKcal: delta,
-        };
-        const uid = auth.currentUser?.uid || user?.uid;
-        if (uid && db) {
-          set(ref(db, `users/${uid}/profile_targets`), {
-            profile: next,
-            targets: userTargets,
-          }).catch((err) => console.error('[Ghost What-If] salvataggio profilo fallito', err));
-        }
-        return next;
-      });
-
-      return Promise.resolve(delta);
-    },
-    [currentTrackerDate, getTodayString, db, user?.uid, userTargets],
-  );
-
-  const committedGhostGoal = useMemo(() => {
-    const fromStrategy = normalizeGhostSimGoal(kentuDailyCalorieStrategy);
-    if (kentuDailyCalorieStrategy && kentuDailyCalorieStrategy !== 'pari') {
-      return fromStrategy;
-    }
-    return normalizeGhostSimGoal(
-      userProfile?.nutritionGoal || userProfile?.goal || fromStrategy,
-    );
-  }, [kentuDailyCalorieStrategy, userProfile?.nutritionGoal, userProfile?.goal]);
-
-  /** Delta cursore: preferisci valore continuo persistito, poi strategy discreta. */
-  const committedGhostDeltaKcal = useMemo(() => {
-    const fromProfile = Number(userProfile?.ghostSimDeltaKcal);
-    if (Number.isFinite(fromProfile)) {
-      return clampGhostSimDelta(fromProfile);
-    }
-    const dateKey = currentTrackerDate || getTodayString();
-    try {
-      const fromLs = localStorage.getItem(`kentu_ghost_sim_delta_${dateKey}`);
-      if (fromLs != null && fromLs !== '') {
-        return clampGhostSimDelta(fromLs);
-      }
-    } catch {
-      /* ignore */
-    }
-    const strat = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
-    if (strat && Object.prototype.hasOwnProperty.call(CALORIE_STRATEGY_KCAL_DELTA, strat)) {
-      return Math.round(Number(CALORIE_STRATEGY_KCAL_DELTA[strat]) || 0);
-    }
-    return resolveGhostDailyDeltaFromGoal(committedGhostGoal);
-  }, [
-    userProfile?.ghostSimDeltaKcal,
-    currentTrackerDate,
-    getTodayString,
-    kentuDailyCalorieStrategy,
+  const {
+    applyGhostSimGoal,
     committedGhostGoal,
-  ]);
+    committedGhostDeltaKcal,
+  } = useGhostSimCompensation({
+    currentTrackerDate,
+    db,
+    user,
+    auth,
+    userTargets,
+    userProfile,
+    setUserProfile,
+    kentuDailyCalorieStrategy,
+    setKentuDailyCalorieStrategy,
+  });
 
   /** Persistenza piano Compensazione Esplicita (profilo / Firebase). */
   const persistProfileWithCompensation = useCallback(
@@ -1863,10 +1346,6 @@ export default function SalaComandi() {
     [manualNodes],
   );
   const timelineContainerRef = useRef(null);
-  const chartScrollRef = useRef(null);
-  const initialPinchDistance = useRef(null);
-  const initialZoomLevel = useRef(1);
-  const chartTouchTimerRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressMoveCleanupRef = useRef(null);
   const pendingClickRef = useRef(null);
@@ -1883,6 +1362,20 @@ export default function SalaComandi() {
   const fullStoricoRef = useRef(fullStorico);
   useEffect(() => { fullHistoryRef.current = fullHistory; }, [fullHistory]);
   useEffect(() => { fullStoricoRef.current = fullStorico; }, [fullStorico]);
+
+  const {
+    remotePlanning,
+    weeklyPlan,
+    setWeeklyPlan,
+    weeklyPlanningRemoteSigRef,
+    weeklyPlanningListenerReadyRef,
+  } = useDailyWeeklyPlanningSync({
+    db,
+    user,
+    currentTrackerDate,
+    currentTrackerDateRef,
+    isSimulationMode,
+  });
 
   const { syncDatiFirebase, isInitialLoadComplete } = useDiaryFirebaseSync({
     db,
@@ -1908,39 +1401,6 @@ export default function SalaComandi() {
     weeklyPlanningListenerReadyRef,
     weeklyPlanningRemoteSigRef,
   });
-
-  // Memoria porzioni (user_portions) — load silente all'avvio.
-  useEffect(() => {
-    if (!userUid || !db || !isAuthenticated) {
-      setUserPortions({});
-      return undefined;
-    }
-    let cancelled = false;
-    fetchUserPortionsDict(db, userUid).then((dict) => {
-      if (!cancelled) setUserPortions(sanitizeUserPortionsDict(dict));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [userUid, db, isAuthenticated]);
-
-  // Dizionario alias alimenti (user_food_aliases) — load + cache locale.
-  useEffect(() => {
-    if (!userUid || !db || !isAuthenticated) {
-      setUserFoodAliases({});
-      return undefined;
-    }
-    let cancelled = false;
-    fetchUserFoodAliasesDict(db, userUid).then((dict) => {
-      if (cancelled) return;
-      const merged = sanitizeUserFoodAliasesDict(dict);
-      setUserFoodAliases(merged);
-      saveUserFoodAliasesToCache(merged, userUid);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [userUid, db, isAuthenticated]);
 
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
   const applyTrainingBlockDailyTargets = useCallback(
@@ -2290,79 +1750,6 @@ export default function SalaComandi() {
       console.warn('Weekly calibration skipped:', err);
     }
   }, [fullHistory, currentTrackerDate]);
-
-  /** Viewport di default: 12 ore; now centrato (6h prima / 6h dopo), clamp ai bordi giornata. */
-  const TIMELINE_DEFAULT_VIEWPORT_HOURS = 12;
-  const TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1 = (24 / TIMELINE_DEFAULT_VIEWPORT_HOURS) * 100; // 200%
-
-  const centerCurrentTime = useCallback(() => {
-    if (!chartScrollRef.current) return;
-    const container = chartScrollRef.current;
-    const scrollWidth = container.scrollWidth;
-    const clientWidth = container.clientWidth;
-    if (clientWidth <= 0 || scrollWidth <= clientWidth) return;
-
-    if (currentTrackerDate === getTodayString()) {
-      const chartWidth =
-        scrollWidth - CHART_AXIS_GUTTER_LEFT_PX - CHART_AXIS_GUTTER_RIGHT_PX;
-      const timePos = (getTimePositionPercent(currentTime) / 100) * chartWidth;
-      // Centra `now` nel viewport (50%). Clamp: non superare inizio/fine giornata.
-      const targetScroll = timePos - clientWidth * 0.5;
-      const maxScroll = Math.max(0, scrollWidth - clientWidth);
-      container.scrollLeft = Math.max(0, Math.min(targetScroll, maxScroll));
-    } else {
-      container.scrollLeft = 0;
-    }
-  }, [currentTime, currentTrackerDate, zoomLevel]);
-
-  const handleCenterZoomAndPan = useCallback(() => {
-    setZoomLevel(1);
-    const runPan = () => {
-      if (chartScrollRef.current) {
-        centerCurrentTime();
-      }
-    };
-    setTimeout(runPan, 120);
-  }, [centerCurrentTime]);
-
-  useEffect(() => {
-    const timer = setTimeout(centerCurrentTime, 50);
-    return () => clearTimeout(timer);
-  }, [currentTime, zoomLevel, centerCurrentTime]);
-
-  // Forza la centratura del grafico su tab Analisi o con interfaccia Pro su Oggi
-  useEffect(() => {
-    if (activeBottomTab === 'analisi' || userProfile?.level === 'pro') {
-      const timer = setTimeout(() => centerCurrentTime(), 100);
-      return () => clearTimeout(timer);
-    }
-  }, [userProfile?.level, currentTrackerDate, zoomLevel, centerCurrentTime, activeBottomTab]);
-
-  const handleChartTouchStart = (e) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const dist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-      initialPinchDistance.current = dist;
-      initialZoomLevel.current = zoomLevel;
-    }
-  };
-  const handleChartTouchMove = (e) => {
-    if (e.touches.length === 2 && initialPinchDistance.current != null) {
-      e.preventDefault();
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const currentDist = Math.hypot(touch1.clientX - touch2.clientX, touch1.clientY - touch2.clientY);
-      const scale = currentDist / initialPinchDistance.current;
-      let newZoom = initialZoomLevel.current * scale;
-      newZoom = Math.max(0.5, Math.min(1.5, newZoom));
-      setZoomLevel(newZoom);
-    }
-  };
-  const handleChartTouchEnd = () => {
-    initialPinchDistance.current = null;
-  };
 
   // ============================================================================
   // COMPUTED CON RETROCOMPATIBILITÀ
@@ -2734,86 +2121,12 @@ export default function SalaComandi() {
   };
 
   useEffect(() => {
-    if (currentTrackerDate !== getTodayString()) {
-      // Giorno passato: mostra l'intera giornata (~24h).
-      setZoomLevel(0.5);
-      return;
-    }
-    // Oggi: viewport fisso 12h (zoom 1), senza auto-zoom basato sui gap nodi.
-    setZoomLevel(1);
-  }, [simulationMode, currentTrackerDate]);
-
-  useEffect(() => {
     localStorage.setItem('vyta_timeline', JSON.stringify(manualNodes));
   }, [manualNodes]);
 
   useEffect(() => {
     localStorage.setItem('vyta_idealStrategy', JSON.stringify(idealStrategy));
   }, [idealStrategy]);
-
-  /** Carica pianificazione giornaliera da RTDB `planning/{uid}/{date}` (separata da tracker_data). */
-  useEffect(() => {
-    if (!db || !user?.uid || !currentTrackerDate || isSimulationMode) {
-      setRemotePlanning(null);
-      return;
-    }
-    const r = ref(db, `planning/${user.uid}/${currentTrackerDate}`);
-    const unsub = onValue(r, (snap) => {
-      setRemotePlanning(snap.exists() ? snap.val() : null);
-    });
-    return () => unsub();
-  }, [db, user?.uid, currentTrackerDate, isSimulationMode]);
-
-  /** RTDB `weeklyPlanning/{uid}/{weekStartMonday}` — separato da `planning/{uid}/{date}`. */
-  useEffect(() => {
-    weeklyPlanningListenerReadyRef.current = false;
-    weeklyPlanningRemoteSigRef.current = '';
-    if (!db || !user?.uid || isSimulationMode) {
-      setWeeklyPlan(createInitialWeeklyPlan());
-      return;
-    }
-    const weekKey = getWeekStartMondayKeyLocal(currentTrackerDate || getTodayString());
-    const r = ref(db, `weeklyPlanning/${user.uid}/${weekKey}`);
-    const unsub = onValue(r, (snap) => {
-      weeklyPlanningListenerReadyRef.current = true;
-      if (!snap.exists()) {
-        const empty = createInitialWeeklyPlan();
-        weeklyPlanningRemoteSigRef.current = weeklyPlanStableJson(empty);
-        setWeeklyPlan(empty);
-        return;
-      }
-      const next = sanitizeWeeklyPlanFromFirebase(snap.val());
-      weeklyPlanningRemoteSigRef.current = weeklyPlanStableJson(next);
-      setWeeklyPlan(next);
-    });
-    return () => {
-      unsub();
-      weeklyPlanningListenerReadyRef.current = false;
-    };
-  }, [db, user?.uid, currentTrackerDate, isSimulationMode]);
-
-  useEffect(() => {
-    if (!db || !user?.uid || isSimulationMode) return;
-    if (!weeklyPlanningListenerReadyRef.current) return;
-    const plan = weeklyPlanRef.current;
-    const sig = weeklyPlanStableJson(plan);
-    if (sig === weeklyPlanningRemoteSigRef.current) return;
-    const t = window.setTimeout(() => {
-      if (!weeklyPlanningListenerReadyRef.current) return;
-      const dateStr = currentTrackerDateRef.current || getTodayString();
-      const weekKey = getWeekStartMondayKeyLocal(dateStr);
-      const uid = user.uid;
-      const latest = weeklyPlanRef.current;
-      const latestSig = weeklyPlanStableJson(latest);
-      if (latestSig === weeklyPlanningRemoteSigRef.current) return;
-      void set(ref(db, `weeklyPlanning/${uid}/${weekKey}`), weeklyPlanToFirebasePayload(latest))
-        .then(() => {
-          weeklyPlanningRemoteSigRef.current = latestSig;
-        })
-        .catch((err) => console.warn('weeklyPlanning save:', err));
-    }, 500);
-    return () => window.clearTimeout(t);
-  }, [weeklyPlan, db, user?.uid, isSimulationMode]);
 
   // Weekly calibration: at start of new week (Monday), adjust userModel from last week's data and persist.
   useEffect(() => {
@@ -2891,161 +2204,12 @@ export default function SalaComandi() {
     setDrawerVisceralFat(pvf != null && pvf !== '' ? String(pvf) : '');
   }, [showWeightModal, getTodayString]);
 
-  useEffect(() => { if (!isDrawerOpen) setIsZenActive(false); }, [isDrawerOpen]);
-
-  useEffect(() => {
-    if (isZenActive) zenSessionEndTriggeredRef.current = false;
-  }, [isZenActive]);
-
-  useEffect(() => {
-    if (!isZenActive) {
-      setZenBreathPhase(null);
-      setZenSunScale(1);
-      return undefined;
-    }
-    if (zenGracefulEnd) return undefined;
-
-    const pattern = NEURAL_RESET_PATTERNS[zenBreathPatternId];
-    if (!pattern?.steps?.length) return undefined;
-
-    const timeouts = [];
-    let cancelled = false;
-    const after = (ms, fn) => {
-      const id = setTimeout(() => {
-        if (!cancelled) fn();
-      }, ms);
-      timeouts.push(id);
-    };
-
-    const runStep = (stepIndex) => {
-      if (cancelled) return;
-      const { steps } = pattern;
-      const step = steps[stepIndex];
-      if (!step) return;
-      setZenBreathPhase(step.phase);
-      setZenSunScale(step.sunTarget);
-      after(step.ms, () => {
-        if (cancelled) return;
-        runStep((stepIndex + 1) % steps.length);
-      });
-    };
-
-    runStep(0);
-    return () => {
-      cancelled = true;
-      timeouts.forEach(clearTimeout);
-    };
-  }, [isZenActive, zenBreathPatternId, zenGracefulEnd]);
-
-  useEffect(() => {
-    if (!isZenActive || zenGracefulEnd || zenSessionDurationKey === 'infinite') {
-      if (!isZenActive) setZenSessionRemainingSec(null);
-      return undefined;
-    }
-    const opt = ZEN_SESSION_DURATION_OPTIONS.find((o) => o?.value === zenSessionDurationKey);
-    const total = opt?.sec;
-    if (total == null) return undefined;
-    setZenSessionRemainingSec(total);
-    const id = window.setInterval(() => {
-      setZenSessionRemainingSec((r) => {
-        if (r === null || r <= 0) return 0;
-        return r - 1;
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isZenActive, zenSessionDurationKey, zenGracefulEnd]);
-
-  useEffect(() => {
-    if (zenSessionDurationKey === 'infinite' || !isZenActive || zenGracefulEnd) return;
-    if (zenSessionRemainingSec !== 0) return;
-    if (zenSessionEndTriggeredRef.current) return;
-    zenSessionEndTriggeredRef.current = true;
-    endZenSessionGracefully();
-  }, [zenSessionRemainingSec, zenSessionDurationKey, isZenActive, zenGracefulEnd, endZenSessionGracefully]);
-
-  useEffect(() => {
-    if (activeAction !== 'focus') return undefined;
-    return () => {
-      clearNeuralResetFades();
-      const el = neuralResetAudioRef.current;
-      if (el) {
-        el.pause();
-        el.currentTime = 0;
-      }
-      const bell = neuralResetBellRef.current;
-      if (bell) {
-        bell.pause();
-        bell.currentTime = 0;
-      }
-      clearZenAmbientFade();
-      const amb = zenAmbientForestRef.current;
-      if (amb) {
-        amb.pause();
-        amb.currentTime = 0;
-        amb.volume = 0;
-      }
-      setZenForestAmbientOn(false);
-    };
-  }, [activeAction, clearNeuralResetFades, clearZenAmbientFade]);
-
-  useEffect(() => {
-    if (activeAction === 'focus') return;
-    clearZenAmbientFade();
-    const amb = zenAmbientForestRef.current;
-    if (amb) {
-      amb.pause();
-      amb.currentTime = 0;
-      amb.volume = 0;
-    }
-    setZenForestAmbientOn(false);
-    setAudioMode('muted');
-  }, [activeAction, clearZenAmbientFade]);
-
-  useEffect(() => {
-    if (activeAction !== 'focus') return;
-    const el = neuralResetAudioRef.current;
-    if (!el) return;
-
-    if (audioMode === 'muted' || !isZenActive) {
-      clearNeuralResetFades();
-      el.pause();
-      el.currentTime = 0;
-      return;
-    }
-
-    const nextSrc = '/onde-mare.mp3';
-    const tail = nextSrc.replace(/^\//, '');
-    let pathMatches = false;
-    try {
-      if (el.src) pathMatches = new URL(el.src, window.location.href).pathname.endsWith(tail);
-    } catch {
-      pathMatches = false;
-    }
-    if (!pathMatches) {
-      clearNeuralResetFades();
-      el.pause();
-      el.src = nextSrc;
-      el.load();
-    }
-
-    el.play().catch(() => {});
-  }, [activeAction, audioMode, isZenActive, clearNeuralResetFades]);
-
-  useEffect(() => {
-    if (activeAction !== 'focus' || !isZenActive || audioMode === 'muted' || zenGracefulEnd) return;
-    if (!zenBreathPhase) return;
-    const step = getNeuralResetZenStep(zenBreathPatternId, zenBreathPhase);
-    if (!step) return;
-    const fade = getZenBreathAudioFade(zenBreathPhase, step.ms);
-    if (fade) fadeAudio(fade.target, fade.duration);
-  }, [zenBreathPhase, zenBreathPatternId, activeAction, isZenActive, audioMode, zenGracefulEnd, fadeAudio]);
-
   useEffect(() => {
     closeDrawerRef.current = closeDrawer;
   });
 
   // Motore biochimico
-  const baseKcal = (effectiveTargetsForCurrentDate.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
+  const baseKcal = (effectiveTargetsForCurrentDate?.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
   const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
   const realFatData = useMemo(
     () => buildFatDetailsData(activeLog, userTargets),
@@ -3158,23 +2322,6 @@ export default function SalaComandi() {
     return computeDayEvaluations(activeLog, effectiveTargetsForCurrentDate);
   }, [activeLog, currentTrackerDate, effectiveTargetsForCurrentDate]);
 
-  const longevityData = useDeferredMemo(() => {
-    if (!fullHistory || !userTargets) return null;
-    if (Object.keys(fullHistory || {}).length === 0) return null;
-
-    console.time('[perf] longevityData');
-    const matrix = computeRiskMatrix(fullHistory, userTargets, longevityDays);
-    const weightedRisk = (matrix.metabolic.score * 0.30) + (matrix.neuro.score * 0.30) + (matrix.inflammatory.score * 0.20) + (matrix.cardio.score * 0.20);
-    const masterScore = Math.max(0, Math.min(100, Math.round(100 - weightedRisk)));
-
-    let color = '#00e5ff';
-    if (masterScore < 60) color = '#f44336';
-    else if (masterScore < 85) color = '#ffb300';
-
-    console.timeEnd('[perf] longevityData');
-    return { ...matrix, masterScore, color };
-  }, [fullHistory, userTargets, longevityDays], null);
-
   const trendData = useMemo(() => {
     if (!trendModalMetric) return [];
     return computeEvaluationTrend(fullHistory, trendModalMetric, userTargets, trendDays);
@@ -3231,6 +2378,35 @@ export default function SalaComandi() {
     return true;
   }, [setChatHistory]);
 
+  const {
+    stimulantSubtype,
+    setStimulantSubtype,
+    coffeeType,
+    setCoffeeType,
+    teaType,
+    setTeaType,
+    energyType,
+    setEnergyType,
+    coffeeVariant,
+    setCoffeeVariant,
+    stimulantTime,
+    setStimulantTime,
+    handleSaveChoiceStimulant,
+  } = useStimulantQuickLog({
+    manualNodes,
+    setManualNodes,
+    dailyLog,
+    syncDatiFirebase,
+    setShowChoiceModal,
+    setAddChoiceView,
+    activeAction,
+    setActiveAction,
+    returnToChatAfterQuickActionRef,
+    appendQuickEventConfirmToChat,
+    setQuickEventConfirm,
+    finishQuickActionSurface,
+  });
+
   /**
    * Chiude la scheda allenamento: se partita dalla chat, resta in chat e riproduce
    * Trainer3 nel banner (niente redirect home via closeDrawer timeout).
@@ -3274,16 +2450,6 @@ export default function SalaComandi() {
     }
     setQuickEventConfirm(buildQuickEventConfirmPayload('workout', extra));
   }, [activeAction, appendQuickEventConfirmToChat]);
-
-  const parseTimeStrToDecimal = (value) => {
-    const digits = (value || '').replace(/\D/g, '');
-    if (digits.length === 0) return 12;
-    const formatted = digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2, 4) : digits;
-    const [hh, mm] = formatted.includes(':') ? formatted.split(':') : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
-    const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
-    const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
-    return h + m / 60;
-  };
 
   const {
     workoutPlanDraft,
@@ -4783,9 +3949,6 @@ Slot esistente aggiornato (nessun ghost).`;
     setShowAlcoholPopup(false);
   };
 
-  const getAlcoholGlassIcon = (type) => (type === 'birra' ? '🍺' : type === 'vino' ? '🍷' : '🥃');
-  const getAlcoholBaseMl = (type) => (type === 'birra' ? 330 : type === 'vino' ? 150 : 40);
-
   const handleAddWater = (amount, options = {}) => {
     if (isSimulationMode) return;
     const fromChat = returnToChatAfterQuickActionRef.current === true
@@ -5051,7 +4214,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     ? Math.min((safeNum(waterIntake) / dailyWaterGoal) * 100, 100)
     : 0;
   
-  const foodsLog = activeLog.filter(item => item.type === 'food' || item.type === 'recipe');
+  const foodsLog = (activeLog || []).filter(item => item.type === 'food' || item.type === 'recipe');
   const groupedFoods = foodsLog.reduce((acc, food) => {
     const typeKey = food.mealType || 'pasto';
     const timeKey =
@@ -5063,7 +4226,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return acc;
   }, {});
   
-  const workoutsLog = activeLog.filter(item => item.type === 'workout');
+  const workoutsLog = (activeLog || []).filter(item => item.type === 'workout');
 
   /** Diario + pisolini Fast Charge (manualNodes type nap) — SSOT Arco Energetico. */
   const sleepEngineInputLog = useMemo(
@@ -5311,6 +4474,36 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [currentTrackerDate, fullHistory, idealStrategy, userModel, accumuloSNC, sleepMetabolicPenalty]);
 
   const sleepStatus = getSleepStatus(activeLog);
+
+  const {
+    chartUnit,
+    setChartUnit,
+    zoomLevel,
+    setZoomLevel,
+    timelineStripPreview,
+    isChartTooltipActive,
+    setIsChartTooltipActive,
+    chartScrollRef,
+    chartTouchTimerRef,
+    timelineStripPreviewDepsRef,
+    TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1,
+    handleCenterZoomAndPan,
+    handleChartTouchStart,
+    handleChartTouchMove,
+    handleChartTouchEnd,
+    clearTimelineStripEnergyPreview,
+    onTimelineStripPreviewDragStart,
+    scheduleTimelineStripEnergyPreview,
+  } = useTimelineChartShell({
+    currentTime,
+    currentTrackerDate,
+    activeBottomTab,
+    userProfileLevel: userProfile?.level,
+    simulationMode,
+    isSimulationMode,
+    sleepStatus,
+  });
+
   const activeWaterIntake = simulationMode
     ? activeNodes
         .filter((n) => n.type === 'water')
@@ -5390,185 +4583,27 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     isSimulationMode,
   };
 
-  const clearTimelineStripEnergyPreview = useCallback(() => {
-    if (timelineStripPreviewDebounceRef.current != null) {
-      window.clearTimeout(timelineStripPreviewDebounceRef.current);
-      timelineStripPreviewDebounceRef.current = null;
-    }
-    timelineStripPreviewLatestRef.current = null;
-    timelineStripPreviewGenRef.current += 1;
-    setTimelineStripPreview(null);
-  }, []);
-
-  const onTimelineStripPreviewDragStart = useCallback(() => {
-    timelineStripPreviewDisabledRef.current = false;
-    timelineStripPreviewSlowRef.current = 0;
-    timelineStripPreviewGenRef.current += 1;
-  }, []);
-
-  const scheduleTimelineStripEnergyPreview = useCallback(
-    (dragNodeId, hourDecimal) => {
-      if (isSimulationMode || sleepStatus === 'NIGHT_PENDING') return;
-      timelineStripPreviewLatestRef.current = { id: dragNodeId, hour: hourDecimal };
-      if (timelineStripPreviewDebounceRef.current != null) {
-        window.clearTimeout(timelineStripPreviewDebounceRef.current);
-      }
-      timelineStripPreviewDebounceRef.current = window.setTimeout(() => {
-        timelineStripPreviewDebounceRef.current = null;
-        const token = timelineStripPreviewGenRef.current;
-        window.requestAnimationFrame(() => {
-          if (token !== timelineStripPreviewGenRef.current) return;
-          const d = timelineStripPreviewDepsRef.current;
-          if (!d || d.isSimulationMode || d.sleepStatus === 'NIGHT_PENDING') return;
-          if (timelineStripPreviewDisabledRef.current) return;
-          const pending = timelineStripPreviewLatestRef.current;
-          if (!pending || pending.id == null) return;
-
-          const merged = applyTimelineStripHourToPreviewInputs(
-            pending.id,
-            pending.hour,
-            d.nodesForEnergySimulation,
-            d.dailyLogForEnergy,
-            d.getFoodItemsForMealSlot,
-            d.manualNodes
-          );
-          if (!merged) {
-            if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
-            return;
-          }
-
-          const t0 = performance.now();
-          let sim;
-          try {
-            sim = generateRealEnergyData(
-              merged.nodes,
-              merged.log,
-              d.idealStrategy,
-              d.activeWaterIntake,
-              d.dailyWaterGoal,
-              d.yesterdayEnergyAt24?.energy ?? undefined,
-              d.yesterdayEnergyAt24?.idealEnergy ?? undefined,
-              d.userModel,
-              d.nervousSystemLoad,
-              d.currentTime,
-              d.accumuloSNC,
-              d.sleepMetabolicPenalty ?? 1,
-            );
-          } catch {
-            return;
-          }
-          const dt = performance.now() - t0;
-          if (dt > 55) {
-            timelineStripPreviewSlowRef.current += 1;
-            if (timelineStripPreviewSlowRef.current >= 2) {
-              timelineStripPreviewDisabledRef.current = true;
-              if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
-              return;
-            }
-          }
-          if (token !== timelineStripPreviewGenRef.current) return;
-
-          let cal;
-          try {
-            cal = generateCalorieTimeline(merged.log);
-          } catch {
-            cal = { calorieTimeline: [], totalCalories: 0 };
-          }
-          if (!Array.isArray(sim?.chartData) || sim.chartData.length === 0) {
-            if (token === timelineStripPreviewGenRef.current) setTimelineStripPreview(null);
-            return;
-          }
-          setTimelineStripPreview({
-            chartData: sim.chartData,
-            calorieTimeline: cal.calorieTimeline,
-            totalCalories: cal.totalCalories,
-          });
-        });
-      }, 24);
-    },
-    [isSimulationMode, sleepStatus]
-  );
-
-  /** Input giornaliero per computeLongevityScore (allineato a chart, totali, rischio matrix, acqua). */
-  const longevityPayload = useMemo(() => {
-    const nutritionTotals =
-      totali && typeof totali === 'object'
-        ? {
-            ...totali,
-            fat: totali.fat != null && totali.fat > 0 ? totali.fat : (totali.fatTotal ?? 0)
-          }
-        : computeTotali(activeLog || []);
-
-    const stressPts = (chartData || [])
-      .map(p => computeMetabolicStress(p))
-      .filter(v => typeof v === 'number' && !Number.isNaN(v));
-    const metabolicStressVal = stressPts.length
-      ? Math.round(stressPts.reduce((a, b) => a + b, 0) / stressPts.length)
-      : undefined;
-
-    const riskBadness =
-      longevityData != null && typeof longevityData.masterScore === 'number'
-        ? Math.max(0, Math.min(100, 100 - longevityData.masterScore))
-        : undefined;
-
-    const sleepEntry = (activeLog || []).find(e => e?.type === 'sleep');
-    const sleepHoursRaw = sleepEntry
-      ? Number(sleepEntry.hours ?? sleepEntry.duration ?? sleepEntry.sleepHours ?? NaN)
-      : NaN;
-    const sleepHours = !Number.isNaN(sleepHoursRaw) ? sleepHoursRaw : undefined;
-
-    const payload = {
-      totals: nutritionTotals,
-      nutrition: nutritionTotals,
-      targets: {
-        kcal: targetKcal,
-        prot: userTargets?.prot ?? DEFAULT_TARGETS.prot,
-        carb: userTargets?.carb ?? DEFAULT_TARGETS.carb,
-        fat: userTargets?.fat ?? userTargets?.fatTotal ?? DEFAULT_TARGETS.fatTotal
-      },
-      metabolicStress: metabolicStressVal,
-      stress: metabolicStressVal,
-      risk: riskBadness ?? 50,
-      hydration: activeWaterIntake,
-      hydrationTarget: dailyWaterGoal,
-      energySeries: (chartData || []).map(p => p.energy).filter(v => typeof v === 'number' && !Number.isNaN(v))
-    };
-
-    if (sleepHours !== undefined) {
-      payload.sleepHours = sleepHours;
-    } else {
-      payload.sleepScore =
-        sleepStatus === 'OK'
-          ? 80
-          : sleepStatus === 'NIGHT_PENDING'
-            ? 45
-            : sleepStatus === 'NO_DATA'
-              ? DEFAULT_NO_SLEEP_ENERGY
-              : 55;
-    }
-
-    return payload;
-  }, [
-    activeLog,
+  const {
+    longevityData,
+    longevityPayload,
+    longevityEngineScore,
+    longevityExplanation,
+    longevityScoreHistory,
+    longevityTodayScore,
+  } = useLongevityDashboardData({
+    fullHistory,
     userTargets,
-    targetKcal,
+    longevityDays: 7,
+    activeLog,
     totali,
+    chartData,
+    targetKcal,
     energySimulation,
     activeWaterIntake,
     dailyWaterGoal,
     sleepStatus,
-    longevityData
-  ]);
-
-  const longevityEngineScore = useMemo(
-    () => computeLongevityScore(longevityPayload),
-    [longevityPayload]
-  );
-
-  const longevityExplanation = useMemo(
-    () => buildLongevityExplanation(longevityEngineScore),
-    [longevityEngineScore]
-  );
+    currentTrackerDate,
+  });
 
   const metabolicBiometrics = useMemo(
     () => ({
@@ -5589,68 +4624,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const userAge = calculateAge(birthDate);
-
-  /** Punteggi giornalieri (matrice rischi su singolo giorno) — calcolo incrementale a chunk per non bloccare il main thread. */
-  const [longevityScoreHistory, setLongevityScoreHistory] = useState([]);
-  useEffect(() => {
-    if (!fullHistory || !userTargets) { setLongevityScoreHistory([]); return; }
-    const histKeys = Object.keys(fullHistory);
-    if (histKeys.length === 0) { setLongevityScoreHistory([]); return; }
-
-    let cancelled = false;
-    const anchor = currentTrackerDate || getTodayString();
-    const maxLookback = 120;
-    const CHUNK = 10;
-    const out = [];
-
-    const processChunk = (startK) => {
-      if (cancelled) return;
-      const endK = Math.min(startK + CHUNK, maxLookback);
-      console.time(`[perf] longevityScoreHistory chunk ${startK}-${endK}`);
-      for (let k = startK; k < endK; k++) {
-        const dStr = addDays(anchor, -k);
-        const log = getLogFromStoricoTree(fullHistory, dStr) || [];
-        const dayNode = fullHistory[TRACKER_STORICO_KEY(dStr)];
-        const mn = Array.isArray(dayNode?.manualNodes) ? dayNode.manualNodes : [];
-        if (log.length === 0 && mn.length === 0) continue;
-        const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(dStr, 1));
-        const score = computeLongevityMasterScoreFromMatrix(matrix);
-        if (score == null || Number.isNaN(score)) continue;
-        out.push({ date: dStr, score, timestamp: new Date(`${dStr}T12:00:00`).getTime() });
-      }
-      console.timeEnd(`[perf] longevityScoreHistory chunk ${startK}-${endK}`);
-
-      if (endK < maxLookback) {
-        // Yield to main thread between chunks
-        setTimeout(() => processChunk(endK), 0);
-      } else {
-        if (!cancelled) {
-          setLongevityScoreHistory(out.sort((a, b) => a.date.localeCompare(b.date)));
-        }
-      }
-    };
-
-    // Defer first chunk after paint
-    const rafId = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (!cancelled) processChunk(1);
-      });
-    });
-
-    return () => { cancelled = true; cancelAnimationFrame(rafId); };
-  }, [fullHistory, userTargets, currentTrackerDate]);
-
-  /** Punteggio “oggi” (giorno tracker): motore longevità se calendario = oggi, altrimenti matrice su quel giorno. */
-  const longevityTodayScore = useMemo(() => {
-    if (!fullHistory || !userTargets) return 0;
-    if (currentTrackerDate === getTodayString()) {
-      const s = longevityEngineScore?.score;
-      if (typeof s === 'number' && !Number.isNaN(s)) return s;
-    }
-    const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(currentTrackerDate, 1));
-    const m = computeLongevityMasterScoreFromMatrix(matrix);
-    return typeof m === 'number' && !Number.isNaN(m) ? m : 0;
-  }, [currentTrackerDate, longevityEngineScore, fullHistory, userTargets]);
 
   const dailyReportDisplay = useMemo(() => {
     if (!dailyReport) return null;
@@ -5769,7 +4742,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   });
 
   // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
-  const burnedKcal = activeLog.filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
+  const burnedKcal = (activeLog || []).filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
 
   const fastLoggerDailyLogForTargets = useMemo(() => {
     const log = activeLog || [];
@@ -5972,38 +4945,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     userTargets?.kcal,
   ]);
 
-  const homeKcalDialTelemetry = useMemo(() => {
-    const dailyTarget = Math.round(
-      Number(homeCalorieSplit.targetKcal)
-      || Number(dynamicDailyKcal)
-      || Number(dogmaticTargetKcal)
-      || Number(baseKcal)
-      || Number(userProfileKcalBase)
-      || Number(userTargets?.kcal)
-      || 2500,
-    );
-    const thresholdOverrides =
-      homeCalorieSplit.metabolicMapThresholds
-      ?? null;
-    return resolveKcalDialTelemetry({
-      tdeeKcal: homeCalorieSplit.baseKcal || dogmaticSettingsBaseKcal || profileTdeeKcal,
-      dailyTargetKcal: dailyTarget,
-      consumedKcal: Number(totali?.kcal) || 0,
-      plannedDelta: homeCalorieSplit.deltaKcal,
-      thresholds: thresholdOverrides,
-    });
-  }, [
-    homeCalorieSplit,
-    dynamicDailyKcal,
-    dogmaticTargetKcal,
-    dogmaticSettingsBaseKcal,
-    baseKcal,
-    userProfileKcalBase,
-    userTargets?.kcal,
-    profileTdeeKcal,
-    totali?.kcal,
-  ]);
-
   const targetKcalChart = dynamicDailyKcal;
   // --- NUOVI ALLARMI PREDITTIVI PERCENTUALI ---
   const targetKcalForAlerts = dynamicDailyKcal || baseKcal || (userTargets?.kcal ?? 2000);
@@ -6138,222 +5079,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return mapped;
   })();
 
-  const mealPieData = useMemo(() => {
-    // Palette Sci-Fi per distinguere i vari pasti in modo univoco
-    const PIE_COLORS = ['#00e5ff', '#b388ff', '#00e676', '#ffea00', '#ff9800', '#f48fb1', '#4fc3f7', '#aed581', '#ffb74d'];
-    const rimanentiSliceColor = 'rgba(255, 255, 255, 0.05)';
-
-    const mealsById = {};
-
-    (activeLog || []).forEach(item => {
-      if (item.type !== 'food' && item.type !== 'recipe' && item.type !== 'meal') return;
-
-      // Chiave univoca basata sull'orario per raggruppare gli alimenti dello STESSO pasto
-      const timeKey = typeof item.mealTime === 'number' ? item.mealTime.toString() : 'unknown';
-      const typeKey = item.mealType || 'pasto';
-      const uniqueMealId = `${typeKey}_${timeKey}`;
-
-      if (!mealsById[uniqueMealId]) {
-        // Calcoliamo la label dell'orario (es. "10:30") per rendere chiara la fetta
-        let timeLabel = '';
-        if (typeof item.mealTime === 'number') {
-          const h = Math.floor(item.mealTime).toString().padStart(2, '0');
-          const m = Math.round((item.mealTime % 1) * 60).toString().padStart(2, '0');
-          timeLabel = ` (${h}:${m})`;
-        }
-
-        // Prova a usare MEAL_LABELS_SAVE se esiste nel file, altrimenti usa item.mealType
-        const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
-        const baseName = typeof MEAL_LABELS_SAVE !== 'undefined' ? (MEAL_LABELS_SAVE[slot] || item.mealType || 'Pasto') : (item.mealType || 'Pasto');
-
-        mealsById[uniqueMealId] = {
-          id: uniqueMealId,
-          name: `${baseName}${timeLabel}`,
-          value: 0,
-          prot: 0,
-          carb: 0,
-          fat: 0,
-          timeValue: typeof item.mealTime === 'number' ? item.mealTime : 0
-        };
-      }
-
-      // Sommiamo i macro di tutti gli alimenti che fanno parte di QUESTO specifico pasto
-      mealsById[uniqueMealId].value += safeNum(item.kcal ?? item.cal);
-      mealsById[uniqueMealId].prot += safeNum(item.prot ?? item.proteine);
-      mealsById[uniqueMealId].carb += safeNum(item.carb ?? item.carboidrati);
-      mealsById[uniqueMealId].fat += safeNum(item.fatTotal ?? item.fat ?? item.grassi);
-    });
-
-    // Trasformiamo l'oggetto in array, lo ordiniamo cronologicamente e assegniamo i colori
-    const calculatedPieData = Object.values(mealsById)
-      .sort((a, b) => a.timeValue - b.timeValue)
-      .map((meal, index) => ({
-        ...meal,
-        value: safeNum(meal.value),
-        prot: safeNum(meal.prot),
-        carb: safeNum(meal.carb),
-        fat: safeNum(meal.fat),
-        macros: {
-          pro: safeNum(meal.prot),
-          carb: safeNum(meal.carb),
-          fat: safeNum(meal.fat),
-        },
-        color: PIE_COLORS[index % PIE_COLORS.length],
-        fill: PIE_COLORS[index % PIE_COLORS.length]
-      }));
-
-    let data = calculatedPieData.filter((d) => d.value > 0);
-    const currentTotal = data.reduce((s, d) => s + safeNum(d.value), 0);
-    // Denominatore = target giornaliero (NON maxScale). A target/surplus i macro chiudono al 100%.
-    const dailyTargetKcal =
-      Math.round(
-        safeNum(homeCalorieSplit?.targetKcal)
-        || safeNum(dynamicDailyKcal)
-        || safeNum(baseKcal)
-        || safeNum(userProfileKcalBase)
-        || safeNum(userTargets?.kcal)
-        || 2000
-      ) || 2000;
-    const surplusKcal = Math.max(0, Math.round(currentTotal - dailyTargetKcal));
-
-    if (dailyTargetKcal > 0 && currentTotal > 0 && currentTotal < dailyTargetKcal) {
-      data = [...data, {
-        name: 'Rimanenti',
-        value: dailyTargetKcal - currentTotal,
-        macros: null,
-        id: 'rimanenti',
-        fill: rimanentiSliceColor,
-        color: rimanentiSliceColor,
-      }];
-    } else if (surplusKcal > 0 && currentTotal > 0) {
-      // Opzione A: pasti riscalati al target (chiudono la base), + fetta surplus = sforo reale.
-      // Totale pie = dailyTarget + surplus = currentTotal → macro base + overfill senza buchi.
-      const scale = dailyTargetKcal / currentTotal;
-      data = data.map((meal) => ({
-        ...meal,
-        actualKcal: safeNum(meal.value),
-        value: safeNum(meal.value) * scale,
-      }));
-      data = [...data, {
-        name: 'SURPLUS',
-        value: surplusKcal,
-        actualKcal: surplusKcal,
-        macros: null,
-        id: 'surplus',
-        fill: '#ef4444',
-        color: '#ef4444',
-      }];
-    }
-    if (data.length === 0) {
-      data = [{
-        name: 'Rimanenti',
-        value: dailyTargetKcal,
-        macros: null,
-        id: 'rimanenti',
-        fill: rimanentiSliceColor,
-        color: rimanentiSliceColor,
-      }];
-    }
-    const sortedPieData = [...data]
-      .map((d) => ({ ...d, value: safeNum(d.value) }))
-      .filter((fetta) => fetta.value > 0)
-      .sort((a, b) => {
-        if (a.id === 'rimanenti' || a.id === 'surplus') return 1;
-        if (b.id === 'rimanenti' || b.id === 'surplus') return -1;
-        const tA = a.timeValue ?? a.time ?? 0;
-        const tB = b.timeValue ?? b.time ?? 0;
-        return safeNum(tA) - safeNum(tB);
-      });
-    if (sortedPieData.length === 0) {
-      return [{
-        name: 'Rimanenti',
-        value: dailyTargetKcal > 0 ? dailyTargetKcal : 1,
-        macros: null,
-        id: 'rimanenti',
-        fill: rimanentiSliceColor,
-        color: rimanentiSliceColor,
-      }];
-    }
-    return sortedPieData;
-  }, [
+  const {
+    activeDialMode,
+    setActiveDialMode,
+    mealPieDisplayData,
+    selectedMealCenterIndex,
+    dialHud,
+  } = useMealPieDialData({
     activeLog,
-    userTargets?.kcal,
+    userTargets,
+    homeCalorieSplit,
     dynamicDailyKcal,
     baseKcal,
     userProfileKcalBase,
-    homeCalorieSplit?.targetKcal,
-  ]);
-
-  const mealPieDisplayData = useMemo(() => {
-    if (activeDialMode === 'kcal') {
-      return mealPieData.filter((fetta) => safeNum(fetta.value) > 0);
-    }
-
-    const macroKey =
-      activeDialMode === 'pro' ? 'prot' : activeDialMode === 'cho' ? 'carb' : 'fat';
-    const targetG = Math.max(
-      0,
-      safeNum(
-        activeDialMode === 'pro'
-          ? userTargets?.prot ?? 150
-          : activeDialMode === 'cho'
-            ? userTargets?.carb ?? 200
-            : userTargets?.fatTotal ?? userTargets?.fat ?? 65,
-      ),
-    );
-
-    const mealsOnly = mealPieData.filter((e) => e.id !== 'rimanenti' && e.id !== 'surplus');
-    const slices = mealsOnly.map((m) => ({
-      ...m,
-      value: Math.max(0, safeNum(m[macroKey])),
-    }));
-    const consumed = slices.reduce((s, d) => s + safeNum(d.value), 0);
-    // Scarta fette a zero (macro assenti) prima di Recharts — evita path NaN / crash.
-    let data = slices.filter((fetta) => fetta.value > 0);
-    if (targetG > 0 && consumed < targetG) {
-      data = [
-        ...data,
-        {
-          name: 'Rimanenti',
-          value: targetG - consumed,
-          macros: null,
-          id: 'rimanenti',
-          fill: 'rgba(255, 255, 255, 0.05)',
-          color: 'rgba(255, 255, 255, 0.05)',
-          prot: 0,
-          carb: 0,
-          fat: 0,
-          timeValue: 0,
-        },
-      ];
-    }
-    if (data.length === 0) {
-      data = [
-        {
-          name: 'Rimanenti',
-          value: targetG > 0 ? targetG : 1,
-          macros: null,
-          id: 'rimanenti',
-          fill: 'rgba(255,255,255,0.05)',
-          color: 'rgba(255,255,255,0.05)',
-          prot: 0,
-          carb: 0,
-          fat: 0,
-          timeValue: 0,
-        },
-      ];
-    }
-    return [...data]
-      .map((d) => ({ ...d, value: safeNum(d.value) }))
-      .filter((fetta) => fetta.value > 0)
-      .sort((a, b) => {
-        if (a.id === 'rimanenti') return 1;
-        if (b.id === 'rimanenti') return -1;
-        const tA = a.timeValue ?? 0;
-        const tB = b.timeValue ?? 0;
-        return safeNum(tA) - safeNum(tB);
-      });
-  }, [mealPieData, activeDialMode, userTargets?.prot, userTargets?.carb, userTargets?.fat, userTargets?.fatTotal]);
+    dogmaticTargetKcal,
+    dogmaticSettingsBaseKcal,
+    dogmaticDeltaKcal,
+    dogmaticCompensationKcal,
+    profileTdeeKcal,
+    totali,
+    hasPlannedBlock,
+    selectedMealCenter,
+  });
 
   const finalChartData =
     Array.isArray(renderDataWithSegments) && renderDataWithSegments.length >= 2
@@ -6480,82 +5227,22 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [manualNodes, metabolicSnapshot?.hoursSinceLastMeal, fastingData?.hoursFasted],
   );
 
-  const healthScore = useMemo(() => {
-    const proteinTarget = Number(
-      effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot,
-    ) || 0;
-    const carbTarget = Number(
-      effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb,
-    ) || 0;
-    const tdee = Math.round(
-      Number(profileTdeeKcal)
-      || Number(homeCalorieSplit?.baseKcal)
-      || Number(dynamicDailyKcal)
-      || Number(effectiveTargetsForCurrentDate?.kcal)
-      || 0,
-    );
-    const bmrFromProfile = Number(userProfile?.bmr ?? userProfile?.BMR);
-    const todayFirstMeal = Array.isArray(metabolicTimelineMeals?.todayMealTimes)
-      && metabolicTimelineMeals.todayMealTimes.length > 0
-      ? metabolicTimelineMeals.todayMealTimes[0]
-      : null;
-    const fastingBrokenPrematurely = detectPrematureFastBreak(
-      metabolicTimelineMeals?.yesterdayLastMealTime,
-      todayFirstMeal,
-    );
-    const hoursFasted = Number(
-      metabolicSnapshot?.hoursSinceLastMeal ?? fastingData?.hoursFasted,
-    );
-
-    return calculateHealthScore(
-      {
-        proteinConsumed: Number(totali?.prot) || 0,
-        proteinTarget,
-        kcalConsumed: (Number(totali?.kcal) || 0) + sweetCoffeeMacros.kcal,
-        tdeeKcal: tdee,
-        dailyKcalTarget: Number(homeCalorieSplit?.targetKcal) || tdee,
-        bmrKcal: Number.isFinite(bmrFromProfile) && bmrFromProfile > 0
-          ? bmrFromProfile
-          : undefined,
-        carbConsumed: (Number(totali?.carb) || 0) + sweetCoffeeMacros.carb,
-        carbTarget,
-        hoursFasted: Number.isFinite(hoursFasted) ? hoursFasted : null,
-        fastingBrokenPrematurely,
-        fastingBrokenBySweetCoffee: coffeeHealthSignals.fastingBrokenBySweetCoffee,
-        bitterCoffeeDuringFast: coffeeHealthSignals.bitterCoffeeDuringFast,
-        metabolicPhaseId: metabolicSnapshot?.phase?.id ?? null,
-        metabolicProgressInPhase: metabolicSnapshot?.progressInPhase ?? null,
-        currentHour: new Date().getHours(),
-      },
-      Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
-    );
-  }, [
-    effectiveTargetsForCurrentDate?.prot,
-    effectiveTargetsForCurrentDate?.carb,
-    effectiveTargetsForCurrentDate?.kcal,
-    userTargets?.prot,
-    userTargets?.carb,
+  const { healthScore } = useHealthScoreSnapshot({
+    effectiveTargetsForCurrentDate,
+    userTargets,
     profileTdeeKcal,
-    homeCalorieSplit?.baseKcal,
-    homeCalorieSplit?.targetKcal,
+    homeCalorieSplit,
     dynamicDailyKcal,
-    userProfile?.bmr,
-    userProfile?.BMR,
+    userProfile,
     metabolicTimelineMeals,
-    metabolicSnapshot?.hoursSinceLastMeal,
-    metabolicSnapshot?.phase?.id,
-    metabolicSnapshot?.progressInPhase,
-    fastingData?.hoursFasted,
-    totali?.prot,
-    totali?.kcal,
-    totali?.carb,
-    sweetCoffeeMacros.kcal,
-    sweetCoffeeMacros.carb,
-    coffeeHealthSignals.fastingBrokenBySweetCoffee,
-    coffeeHealthSignals.bitterCoffeeDuringFast,
+    metabolicSnapshot,
+    fastingData,
+    totali,
+    sweetCoffeeMacros,
+    coffeeHealthSignals,
     hasPlannedBlock,
     hasRealWorkoutInActiveLog,
-  ]);
+  });
 
   const metabolicGradientStops = useMemo(
     () => buildMetabolicTimelineGradientStops({
@@ -7101,11 +5788,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlay();
-
-  const closeChat = useCallback(() => {
-    setActiveAction((prev) => (prev === 'ai_chat' ? null : prev));
-    closeOverlayChat();
-  }, [closeOverlayChat]);
+  closeOverlayChatRef.current = closeOverlayChat;
 
   const {
     sendMessage,
@@ -7543,10 +6226,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     );
   }, [generateDailySnapshot, isDiabetesAppMode, openHealthReport, sendMessage]);
 
-  const selectedMealCenterIndex = selectedMealCenter
-    ? mealPieDisplayData.findIndex((e) => e.id === selectedMealCenter.id)
-    : -1;
-
   const handlePrevCalendarMonth = () => {
     const [y, m] = calendarMonthIso.split('-').map(Number);
     const d = new Date(y, m - 2, 1);
@@ -7569,70 +6248,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const handleCloseChoiceModal = () => {
     setShowChoiceModal(false);
     setAddChoiceView('main');
-  };
-
-  const handleSaveChoiceStimulant = () => {
-    const id = Date.now().toString();
-    const sub = String(stimulantSubtype || '').toLowerCase();
-    const isCoffee = sub === 'caffè' || sub === 'caffe';
-    const isTea = sub === 'tè' || sub === 'te' || sub === 'tea';
-    const isEnergy = sub.includes('energy');
-
-    let node;
-    if (isCoffee) {
-      writeLastCoffeeType(coffeeType);
-      node = buildCoffeeStimulantNode(coffeeVariant, stimulantTime, {
-        id,
-        coffeeType,
-        type: coffeeType,
-        sugar: coffeeVariant === COFFEE_VARIANT.ZUCCHERATO,
-      });
-    } else if (isTea) {
-      writeLastTeaType(teaType);
-      node = buildTeaStimulantNode(coffeeVariant, stimulantTime, {
-        id,
-        teaType,
-        type: teaType,
-        sugar: coffeeVariant === COFFEE_VARIANT.ZUCCHERATO,
-      });
-    } else if (isEnergy) {
-      writeLastEnergyType(energyType);
-      node = buildEnergyStimulantNode(energyType, stimulantTime, { id });
-    } else {
-      node = {
-        id,
-        type: 'stimulant',
-        subtype: stimulantSubtype,
-        time: stimulantTime,
-        kcal: 0,
-        carb: 0,
-        breaksFast: false,
-      };
-    }
-
-    const next = [...manualNodes, node];
-    setManualNodes(next);
-    syncDatiFirebase(dailyLog, next);
-    setShowChoiceModal(false);
-    setAddChoiceView('main');
-    setCoffeeVariant(COFFEE_VARIANT.AMARO);
-    const fromChat = returnToChatAfterQuickActionRef.current === true
-      || activeAction === 'ai_chat';
-    const confirmKind = resolveStimulantConfirmKind(node);
-    if (confirmKind) {
-      const subtitle = node.label || undefined;
-      if (fromChat) {
-        appendQuickEventConfirmToChat(confirmKind, { subtitle });
-      } else {
-        setQuickEventConfirm(buildQuickEventConfirmPayload(confirmKind, { subtitle }));
-      }
-    }
-    if (fromChat) {
-      finishQuickActionSurface({ forceChat: true });
-    } else {
-      returnToChatAfterQuickActionRef.current = false;
-      setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : null));
-    }
   };
 
   const sleepDurationLabel = formatSleepDurationParts(
@@ -8164,14 +6779,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
   // ========================================================
   /** Barra Arc Reactor: sempre montata dopo login (anche durante caricamento dati). */
-  const isChatOpen = activeAction === 'ai_chat';
   const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null || isChatOpen;
-
-  const openChat = useCallback(() => {
-    setIsDrawerOpen(false);
-    setIsFabOpen(false);
-    setActiveAction('ai_chat');
-  }, []);
 
   const handleRequestBarcodeScan = useCallback(() => {
     closeChat();
@@ -8280,46 +6888,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     />
   );
 
-  const kentuEmblemFab =
-    isAuthenticated
-    && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
-    && (isChatOpen || !isDrawerOpen)
-    && !trainingBlockCreatorOpen
-    && !showTherapyPlan
-      ? (isChatOpen ? null : (
-        <button
-          type="button"
-          onClick={openChat}
-          className={[
-            'fixed left-1/2 z-[100010] flex h-[72px] w-[72px] -translate-x-1/2 items-center justify-center',
-            'bottom-[calc(0.5rem+env(safe-area-inset-bottom,0px))] top-auto',
-            'overflow-visible border-none bg-transparent p-0 shadow-none focus:outline-none',
-            'transition-transform duration-300 ease-in-out active:scale-95',
-          ].join(' ')}
-          aria-label="Apri chat Kentu"
-          aria-pressed={false}
-        >
-          <div
-            aria-hidden
-            className="lunar-breathe pointer-events-none absolute -inset-5 z-0 rounded-full bg-white/30 blur-2xl"
-          />
-          {kentuChatNotificationBadge ? (
-            <span
-              aria-hidden
-              className="absolute right-1 top-1 z-10 h-2.5 w-2.5 rounded-full bg-amber-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.85)]"
-            />
-          ) : null}
-          <img
-            src="/EmblemaKbianca.png"
-            alt="Kentu"
-            width={72}
-            height={72}
-            decoding="async"
-            className="relative z-[1] h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]"
-          />
-        </button>
-      ))
-      : null;
+  const kentuEmblemFab = (
+    <KentuChatFab
+      visible={
+        isAuthenticated
+        && MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab)
+        && (isChatOpen || !isDrawerOpen)
+        && !trainingBlockCreatorOpen
+        && !showTherapyPlan
+        && !isChatOpen
+      }
+      onOpen={openChat}
+      showNotificationBadge={!!kentuChatNotificationBadge}
+    />
+  );
 
   let salaContent;
 
@@ -8346,96 +6928,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         <div className="delete-text">RILASCIA PER ELIMINARE</div>
       </div>
 
-      {ghostProgramDeleteModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ghost-delete-title"
-          onClick={() => setGhostProgramDeleteModal(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 100025,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 20,
-            background: 'rgba(0, 0, 0, 0.55)',
-            backdropFilter: 'blur(10px)',
-            WebkitBackdropFilter: 'blur(10px)',
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%',
-              maxWidth: 360,
-              padding: '22px 20px',
-              borderRadius: 18,
-              border: '1px solid rgba(0, 229, 255, 0.22)',
-              background: 'linear-gradient(155deg, rgba(28, 32, 40, 0.92) 0%, rgba(14, 16, 22, 0.88) 100%)',
-              boxShadow: '0 24px 48px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
-            }}
-          >
-            <h3 id="ghost-delete-title" style={{ margin: '0 0 8px 0', color: '#e8fdff', fontSize: '1.05rem', fontWeight: 800 }}>
-              Programmazione Kentu
-            </h3>
-            <p style={{ margin: '0 0 18px 0', color: 'rgba(200, 220, 230, 0.88)', fontSize: '0.88rem', lineHeight: 1.5 }}>
-              Questo slot è pianificato dall&apos;AI. Vuoi rimuovere solo questo elemento o tutta la programmazione fantasma di oggi?
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button
-                type="button"
-                onClick={handleConfirmGhostDeleteSingle}
-                style={{
-                  padding: '12px 14px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(0, 229, 255, 0.45)',
-                  background: 'rgba(0, 229, 255, 0.12)',
-                  color: '#00e5ff',
-                  fontWeight: 700,
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancella solo questo
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmGhostDeleteAll}
-                style={{
-                  padding: '12px 14px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(248, 113, 113, 0.35)',
-                  background: 'rgba(248, 113, 113, 0.1)',
-                  color: '#fca5a5',
-                  fontWeight: 700,
-                  fontSize: '0.9rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancella tutta la programmazione
-              </button>
-              <button
-                type="button"
-                onClick={() => setGhostProgramDeleteModal(null)}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.08)',
-                  background: 'transparent',
-                  color: 'rgba(180, 190, 200, 0.95)',
-                  fontWeight: 600,
-                  fontSize: '0.85rem',
-                  cursor: 'pointer',
-                }}
-              >
-                Annulla
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GhostProgramDeleteModal
+        open={!!ghostProgramDeleteModal}
+        onClose={() => setGhostProgramDeleteModal(null)}
+        onConfirmSingle={handleConfirmGhostDeleteSingle}
+        onConfirmAll={handleConfirmGhostDeleteAll}
+      />
 
       {programmingRemovedToast && (
         <div
@@ -8586,546 +7084,114 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : (
       <>
       {activeBottomTab === 'analisi' && (
-      <div
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', width: '100%' }}
-      >
-      <>
-      {/* Cruscotto energetico giornaliero 0-24h */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#0a0a0a', border: '1px solid #1a1a1a', borderRadius: '16px', padding: 'max(10px, 1.5vh) 12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>
-        <div
-          className="analisi-pre-chart-controls"
-          style={{
-            flexShrink: 0,
-            marginBottom: '10px',
-            order: 2,
-          }}
-        >
-          {/* Dashboard Allarmi — Timeline */}
-            <div className="chart-selector-container chart-selector-container--icon-only">
-              {(() => {
-                const activeAlerts = [];
-                if (hasCrashRisk) activeAlerts.push('glicemia');
-                if (hasWaterRisk) activeAlerts.push('idratazione');
-                if (hasCortisolRisk) activeAlerts.push('cortisolo');
-                if (hasDigestionRisk) activeAlerts.push('digestione');
-                return (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('percent')}
-                      aria-pressed={chartUnit === 'percent'}
-                      aria-label="TDEE"
-                      title="TDEE"
-                      className={`chart-selector-btn${chartUnit === 'percent' ? ' active' : ''}${activeAlerts.includes('percent') ? ' chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>⚡</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('calorieTimeline')}
-                      aria-pressed={chartUnit === 'calorieTimeline'}
-                      aria-label="Kcal"
-                      title="Kcal"
-                      className={`chart-selector-btn chart-selector-btn--cumul${chartUnit === 'calorieTimeline' ? ' active' : ''}${activeAlerts.includes('calorieTimeline') ? ' chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>🔥</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('glicemia')}
-                      aria-pressed={chartUnit === 'glicemia'}
-                      aria-label="Glicemia"
-                      title="Glicemia"
-                      className={`chart-selector-btn chart-selector-btn--blood${chartUnit === 'glicemia' ? ' active' : ''}${hasCrashRisk && chartUnit !== 'glicemia' ? ' pulse-alert chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>🩸</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('idratazione')}
-                      aria-pressed={chartUnit === 'idratazione'}
-                      aria-label="Idratazione"
-                      title="Idratazione"
-                      className={`chart-selector-btn chart-selector-btn--water${chartUnit === 'idratazione' ? ' active' : ''}${hasWaterRisk && chartUnit !== 'idratazione' ? ' pulse-alert-water chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>💧</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('neuro')}
-                      aria-pressed={chartUnit === 'neuro'}
-                      aria-label="Neuro"
-                      title="Neuro"
-                      className={`chart-selector-btn chart-selector-btn--neuro${chartUnit === 'neuro' ? ' active' : ''}${activeAlerts.includes('neuro') ? ' chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>🧠</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('cortisolo')}
-                      aria-pressed={chartUnit === 'cortisolo'}
-                      aria-label="Stress"
-                      title="Stress"
-                      className={`chart-selector-btn chart-selector-btn--cortisol${chartUnit === 'cortisolo' ? ' active' : ''}${hasCortisolRisk && chartUnit !== 'cortisolo' ? ' pulse-alert-cortisol chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>😰</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setChartUnit('digestione')}
-                      aria-pressed={chartUnit === 'digestione'}
-                      aria-label="Macro"
-                      title="Macro"
-                      className={`chart-selector-btn chart-selector-btn--digest${chartUnit === 'digestione' ? ' active' : ''}${hasDigestionRisk && chartUnit !== 'digestione' ? ' pulse-alert chart-selector-alarm' : ''}`}
-                    >
-                      <span className="chart-btn-icon" aria-hidden>🥑</span>
-                    </button>
-                  </>
-                );
-              })()}
-            </div>
-        </div>
-        <div
-          className="analisi-top-visual-container"
-          style={{
-            flex: 1,
-            minHeight: 220,
-            order: 1,
-          }}
-        >
-        <div className="chart-wrapper" style={{ flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column' }}>
-          <div className="chartTitle" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-            <span style={{ fontSize: '0.7rem', color: '#666', letterSpacing: '2px', textTransform: 'uppercase' }}>
-              {chartUnit === 'percent' ? 'Energia SNC (%)' : chartUnit === 'calorieTimeline' ? 'Calorie cumulative' : chartUnit === 'glicemia' ? 'Simulatore Glicemico' : chartUnit === 'idratazione' ? 'Simulatore Idratazione' : chartUnit === 'cortisolo' ? 'Cortisolo / Stress' : chartUnit === 'digestione' ? 'Grafico della Digestione' : chartUnit === 'neuro' ? 'Recupero Neurologico' : 'Energia SNC (%)'}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <button type="button" onClick={handleUndo} disabled={historyIndex <= 0} title="Annulla" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex <= 0 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex <= 0 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex <= 0 ? 'not-allowed' : 'pointer' }} aria-label="Annulla">↩</button>
-              <button type="button" onClick={handleRedo} disabled={historyIndex >= historyStack.length - 1} title="Ripeti" style={{ width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: historyIndex >= historyStack.length - 1 ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.06)', border: '1px solid #333', borderRadius: '8px', color: historyIndex >= historyStack.length - 1 ? '#444' : '#00e5ff', fontSize: '1.1rem', cursor: historyIndex >= historyStack.length - 1 ? 'not-allowed' : 'pointer' }} aria-label="Ripeti">↪</button>
-              {chartUnit === 'idratazione' && isWaterHydrationAutoPilot && (
-                <span title="Nessun record acqua: il motore assume idratazione ottimale (100%). Aggiungi acqua dal diario per il tracking reale." style={{ fontSize: '0.65rem', color: '#00e5ff', opacity: 0.9, maxWidth: '140px', lineHeight: 1.2, textAlign: 'right' }}>🤖 Pilota idratazione attivo</span>
-              )}
-            </div>
-          </div>
-          <div style={{ position: 'relative', flex: 1, minHeight: 200, display: 'flex', flexDirection: 'column', transform: 'none' }}>
-            <div className="zoom-vertical-bar" aria-label="Controlli zoom">
-              <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 1.5))} title="Ingrandisci">+</button>
-              <button type="button" className="zoom-btn-vertical" onClick={handleCenterZoomAndPan} title="Centra su ora attuale (12 ore)">🎯</button>
-              <button type="button" className="zoom-btn-vertical" onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.5))} title="Riduci">−</button>
-            </div>
-            <div className={`chart-scroll-container ${draggingNode ? 'dragging' : ''}`} ref={chartScrollRef} onTouchStart={handleChartTouchStart} onTouchMove={handleChartTouchMove} onTouchEnd={handleChartTouchEnd} style={{ display: 'flex', flex: 1, minHeight: 200, background: 'linear-gradient(180deg, #000 0%, #050505 100%)', borderRadius: '15px' }}>
-            <div
-              className={isChartTooltipActive ? 'show-tooltip' : 'hide-tooltip'}
-              onTouchStart={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
-              onTouchMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
-              onTouchEnd={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
-              onMouseDown={() => { chartTouchTimerRef.current = setTimeout(() => setIsChartTooltipActive(true), 400); }}
-              onMouseMove={() => { if (!isChartTooltipActive) clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; }}
-              onMouseUp={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
-              onMouseLeave={() => { clearTimeout(chartTouchTimerRef.current); chartTouchTimerRef.current = null; setIsChartTooltipActive(false); }}
-              style={{
-                flexShrink: 0,
-                width: `${TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1 * zoomLevel}%`,
-                minWidth: `${Math.round(960 * zoomLevel)}px`,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                position: 'relative',
-                transition: 'width 0.3s ease',
-                boxSizing: 'border-box',
-              }}
-            >
-              <div
-                style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}
-              >
-                <Suspense fallback={<KentuLazySectionFallback label="Cruscotto energetico…" />}>
-                <MainDashboardCharts
-                  chartUnit={chartUnit}
-                  mainChartData={mainChartData}
-                  draggingNode={draggingNode}
-                  nodesForEnergySimulation={nodesForEnergySimulation}
-                  displayTime={displayTime}
-                  finalDotY={finalDotY}
-                  isViewingPastDate={isViewingPastDate}
-                  currentTime={currentTime}
-                  targetKcalChart={targetKcalChart}
-                  totalCaloriesTimeline={totalCaloriesTimeline}
-                  metabolicGradientStops={metabolicGradientStops}
-                  metabolicChartGradientStops={metabolicChartGradientStops}
-                  currentMetabolicColor={currentMetabolicColor}
-                  activeLog={activeLog}
-                  metabolicContextOptions={metabolicContextOptions}
-                  showMetabolicOverlay={true}
-                  onMetabolicPhaseClick={() => setShowMetabolicSheet(true)}
-                />
-              <div
-                style={{
-                  flexShrink: 0,
-                  position: 'relative',
-                  width: '100%',
-                  paddingLeft: CHART_AXIS_GUTTER_LEFT_PX,
-                  paddingRight: CHART_AXIS_GUTTER_RIGHT_PX,
-                  boxSizing: 'border-box',
-                  paddingTop: 6,
-                  zIndex: 10,
-                }}
-              >
-                <TimelineNodi
-                  activeNodesWithStack={activeNodesWithStack}
-                  chartUnit={chartUnit}
-                  activeAction={activeAction}
-                  analysisTabActive={true}
-                  idealStrategy={idealStrategy}
-                  realTotals={realTotals}
-                  NODE_IMPORTANCE={NODE_IMPORTANCE}
-                  NODE_TYPE_ICON={NODE_TYPE_ICON}
-                  draggingNode={draggingNode}
-                  touchingNodeId={touchingNodeId}
-                  dragOffsetY={dragOffsetY}
-                  dragLiveTime={dragLiveTime}
-                  timelineContainerRef={timelineContainerRef}
-                  startNodeDrag={startNodeDrag}
-                  releaseNodePointer={releaseNodePointer}
-                  onNodeClick={onTimelineNodeClick}
-                  onTimelineTrackClick={openTimelineQuickAddAtPointer}
-                onTimelineTrackLongPress={openTimelineQuickAddAtPointer}
-                  handleNodeTap={handleNodeTap}
-                  decimalToTimeStr={decimalToTimeStr}
-                  syncDatiFirebase={syncDatiFirebase}
-                  setManualNodes={setManualNodes}
-                  setDailyLog={setDailyLog}
-                  nowLineDecimalHour={!isViewingPastDate ? currentTime : undefined}
-                  timelineEnergySeries={timelineEnergySeries}
-                  timelineQualityChartData={chartData}
-                  updateMealTime={updateMealTime}
-                  onStripDragChartPreviewStart={onTimelineStripPreviewDragStart}
-                  onStripDragChartPreview={scheduleTimelineStripEnergyPreview}
-                  onStripDragChartPreviewEnd={clearTimelineStripEnergyPreview}
-                  onStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
-                  metabolicGradientStops={metabolicGradientStops}
-                />
-                </div>
-                </Suspense>
-              </div>
-            </div>
-            {/* Spacer scroll: margine destro senza pulsantiera laterale */}
-            <div style={{ width: '24px', flexShrink: 0 }} />
-          </div>
-        </div>
-        </div>
-        </div>
-        </div>
-
-      </>
-
-      </div>
+        <AnalisiTimelineTab
+          hasCrashRisk={hasCrashRisk}
+          hasWaterRisk={hasWaterRisk}
+          hasCortisolRisk={hasCortisolRisk}
+          hasDigestionRisk={hasDigestionRisk}
+          chartUnit={chartUnit}
+          setChartUnit={setChartUnit}
+          handleUndo={handleUndo}
+          handleRedo={handleRedo}
+          historyIndex={historyIndex}
+          historyStack={historyStack}
+          isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
+          setZoomLevel={setZoomLevel}
+          handleCenterZoomAndPan={handleCenterZoomAndPan}
+          draggingNode={draggingNode}
+          chartScrollRef={chartScrollRef}
+          handleChartTouchStart={handleChartTouchStart}
+          handleChartTouchMove={handleChartTouchMove}
+          handleChartTouchEnd={handleChartTouchEnd}
+          isChartTooltipActive={isChartTooltipActive}
+          setIsChartTooltipActive={setIsChartTooltipActive}
+          chartTouchTimerRef={chartTouchTimerRef}
+          TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1={TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1}
+          zoomLevel={zoomLevel}
+          mainChartData={mainChartData}
+          nodesForEnergySimulation={nodesForEnergySimulation}
+          displayTime={displayTime}
+          finalDotY={finalDotY}
+          isViewingPastDate={isViewingPastDate}
+          currentTime={currentTime}
+          targetKcalChart={targetKcalChart}
+          totalCaloriesTimeline={totalCaloriesTimeline}
+          metabolicGradientStops={metabolicGradientStops}
+          metabolicChartGradientStops={metabolicChartGradientStops}
+          currentMetabolicColor={currentMetabolicColor}
+          activeLog={activeLog}
+          metabolicContextOptions={metabolicContextOptions}
+          setShowMetabolicSheet={setShowMetabolicSheet}
+          activeNodesWithStack={activeNodesWithStack}
+          activeAction={activeAction}
+          idealStrategy={idealStrategy}
+          realTotals={realTotals}
+          touchingNodeId={touchingNodeId}
+          dragOffsetY={dragOffsetY}
+          dragLiveTime={dragLiveTime}
+          timelineContainerRef={timelineContainerRef}
+          startNodeDrag={startNodeDrag}
+          releaseNodePointer={releaseNodePointer}
+          onTimelineNodeClick={onTimelineNodeClick}
+          openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
+          handleNodeTap={handleNodeTap}
+          syncDatiFirebase={syncDatiFirebase}
+          setManualNodes={setManualNodes}
+          setDailyLog={setDailyLog}
+          timelineEnergySeries={timelineEnergySeries}
+          chartData={chartData}
+          updateMealTime={updateMealTime}
+          onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
+          scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
+          clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
+          onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+        />
       )}
 
       {activeBottomTab === 'oggi' && (
-        <div className="home-oggi-scroll">
-          <div className="home-oggi-column" style={{ paddingLeft: 0, paddingRight: 0 }}>
-          {(() => {
-            const targetProt = userTargets?.prot ?? 150;
-            const targetCarb = userTargets?.carb ?? 200;
-            const targetFat = userTargets?.fatTotal ?? userTargets?.fat ?? 65;
-            const dialPlannedDelta = dogmaticDeltaKcal + dogmaticCompensationKcal;
-            const dialDailyTargetKcal = Math.round(
-              Number(dogmaticTargetKcal)
-              || Number(dynamicDailyKcal)
-              || Number(homeCalorieSplit?.targetKcal)
-              || 0,
-            );
-            const dialConsumedKcal = Math.round(Number(totali?.kcal) || 0);
-            const dialKcalSurplus =
-              dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
-            const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
-            const dialKcalRestLabel =
-              dialKcalSurplus > 0 ? 'OLTRE IL TARGET' : 'RESTANTI';
-            const showKcalTelemetryRings = activeDialMode === 'kcal' && !selectedMealCenter;
-            const telemetry = homeKcalDialTelemetry;
-            const zoneHud = resolveKcalZoneHudLabel(telemetry);
-            const showMaintenanceMarker =
-              activeDialMode === 'kcal'
-              && hasPlannedBlock
-              && dialDailyTargetKcal > 0
-              && !showKcalTelemetryRings;
-            const maintenanceMarkerRatio = showMaintenanceMarker && profileTdeeKcal != null
-              ? profileTdeeKcal / dialDailyTargetKcal
-              : 0;
-            const maintenanceMarkerIsDeficit = dialPlannedDelta < 0;
-            const macroCardBase =
-              'flex-1 rounded-xl border backdrop-blur-sm bg-gradient-to-r from-cyan-950/70 via-slate-800/60 to-orange-950/50 shadow-lg px-3 py-2.5 text-center overflow-hidden cursor-pointer transition-transform active:scale-[0.99]';
-            const macroCardTone = (mode, borderClass, ringClass, shadowClass) =>
-              `${macroCardBase} ${activeDialMode === mode ? `${borderClass} ring-2 ${ringClass} ${shadowClass}` : borderClass}`;
-            return (
-                <div className="nutrition-cluster">
-                <div
-                  className="kcal-dial-shell"
-                  onClick={() => {
-                    setSelectedMealCenter(null);
-                    setActiveDialMode('kcal');
-                  }}
-                >
-                  <div className="kcal-dial-inner">
-                    {/* Layer 1: Centro Interattivo (Totali o Dettaglio Pasto) */}
-                    <div
-                      className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (selectedMealCenter && selectedMealCenter.id && selectedMealCenter.id !== 'rimanenti') {
-                          loadMealToConstructor(String(selectedMealCenter.id));
-                          return;
-                        }
-                        console.log('[Diario] tap centro tachimetro → apertura sheet');
-                        setShowDiarySheet(true);
-                      }}
-                      style={{
-                        position: 'absolute',
-                        top: '50%',
-                        left: '50%',
-                        transform: 'translate(-50%, -50%)',
-                        width: '66%',
-                        height: '66%',
-                        borderRadius: '50%',
-                        background: '#0a0a0a',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '3px solid #111',
-                        zIndex: 15,
-                        boxShadow: `0 0 35px ${(dynamicDailyKcal - (totali?.kcal || 0)) >= 0 ? 'rgba(0,229,255,0.15)' : 'rgba(255,77,77,0.3)'}`,
-                        cursor: 'pointer',
-                        transition: 'box-shadow 0.2s ease, filter 0.2s ease',
-                        pointerEvents: 'auto',
-                      }}
-                      title={!selectedMealCenter ? 'Apri diagnostica nutrizionale' : undefined}
-                    >
-                      {selectedMealCenter ? (
-                        <div className="pieCenterInfo" style={{ textAlign: 'center', cursor: 'pointer' }}>
-                          <div className="pieMealTitle" style={{ fontSize: '1rem', fontWeight: 'bold', color: selectedMealCenter.color ?? selectedMealCenter.fill ?? '#00e5ff' }}>
-                            {selectedMealCenter.name || selectedMealCenter.label}
-                          </div>
-                          {selectedMealCenter.timeValue != null && (
-                            <div style={{ fontSize: '0.85rem', color: '#aaa' }}>
-                              {`${String(Math.floor(selectedMealCenter.timeValue)).padStart(2, '0')}:${String(Math.round((selectedMealCenter.timeValue % 1) * 60)).padStart(2, '0')}`}
-                            </div>
-                          )}
-                          {activeDialMode === 'kcal' && (
-                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#888', marginTop: '2px' }}>
-                              {Math.round(selectedMealCenter.actualKcal ?? selectedMealCenter.kcal ?? selectedMealCenter.value ?? 0)} kcal
-                            </div>
-                          )}
-                          {activeDialMode === 'pro' && (
-                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#b666d2', marginTop: '2px' }}>
-                              {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)} g Proteine
-                            </div>
-                          )}
-                          {activeDialMode === 'cho' && (
-                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#00ff88', marginTop: '2px' }}>
-                              {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)} g Carboidrati
-                            </div>
-                          )}
-                          {activeDialMode === 'fat' && (
-                            <div className="pieMealKcal" style={{ fontSize: '0.8rem', color: '#ffd700', marginTop: '2px' }}>
-                              {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)} g Grassi
-                            </div>
-                          )}
-                          <div className="pieMealMacros">
-                            P {Math.round(selectedMealCenter.prot ?? selectedMealCenter.payload?.macros?.pro ?? 0)}g
-                            C {Math.round(selectedMealCenter.carb ?? selectedMealCenter.payload?.macros?.carb ?? 0)}g
-                            F {Math.round(selectedMealCenter.fat ?? selectedMealCenter.payload?.macros?.fat ?? 0)}g
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none', width: '88%' }}>
-                          <div
-                            className="kcal-dial-center-value"
-                            style={{
-                              color:
-                                activeDialMode === 'kcal' && dialKcalSurplus > 0
-                                  ? '#ef4444'
-                                  : activeDialMode === 'pro'
-                                    ? '#b666d2'
-                                    : activeDialMode === 'cho'
-                                      ? '#00ff88'
-                                      : activeDialMode === 'fat'
-                                        ? '#ffd700'
-                                        : '#ff6b00',
-                              textShadow:
-                                activeDialMode === 'kcal' && dialKcalSurplus > 0
-                                  ? '0 0 18px rgba(239, 68, 68, 0.45)'
-                                  : '0 0 15px rgba(255, 107, 0, 0.35)',
-                            }}
-                          >
-                            {activeDialMode === 'kcal' && dialKcalSurplus > 0 && (
-                              <span className="kcal-dial-center-surplus" style={{ letterSpacing: '0.02em' }}>
-                                + {dialKcalSurplus}{' '}
-                                <span style={{ fontSize: '0.42em', fontWeight: 700 }}>Kcal</span>
-                              </span>
-                            )}
-                            {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && dialKcalRemaining}
-                            {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
-                            {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
-                            {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
-                          </div>
-                          <div
-                            className="kcal-dial-center-label"
-                            style={{
-                              color: activeDialMode === 'kcal' && dialKcalSurplus > 0 ? '#f87171' : '#888',
-                              fontWeight: activeDialMode === 'kcal' && dialKcalSurplus > 0 ? 700 : 400,
-                            }}
-                          >
-                            {activeDialMode === 'kcal' && dialKcalRestLabel}
-                            {activeDialMode === 'pro' && 'g Proteine'}
-                            {activeDialMode === 'cho' && 'g Carboidrati'}
-                            {activeDialMode === 'fat' && 'g Grassi'}
-                          </div>
-                          {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && zoneHud.text ? (
-                            <div
-                              className="kcal-dial-center-sub"
-                              style={{
-                                color: zoneHud.color,
-                                marginTop: '4px',
-                                fontWeight: 600,
-                              }}
-                            >
-                              {zoneHud.text}
-                            </div>
-                          ) : null}
-                          {activeDialMode === 'pro' && (
-                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
-                              {`obiettivo ${Math.round(targetProt)} g`}
-                            </div>
-                          )}
-                          {activeDialMode === 'cho' && (
-                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
-                              {`obiettivo ${Math.round(targetCarb)} g`}
-                            </div>
-                          )}
-                          {activeDialMode === 'fat' && (
-                            <div className="kcal-dial-center-sub" style={{ color: '#555', marginTop: '4px' }}>
-                              {`obiettivo ${Math.round(targetFat)} g`}
-                            </div>
-                          )}
-                          {activeDialMode === 'kcal' && !selectedMealCenter ? (
-                            <button
-                              type="button"
-                              className="kcal-dial-details-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setShowCalorieDetailsSheet(true);
-                              }}
-                            >
-                              DETTAGLI
-                            </button>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>
-                    {/* Layer 2: Telemetria kcal + grafico pasti */}
-                    <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
-                      {showKcalTelemetryRings && telemetry ? (
-                        <KcalFuelTelemetryRing
-                          consumedKcal={telemetry.consumedKcal}
-                          dailyTargetKcal={dialDailyTargetKcal}
-                          maxScaleKcal={telemetry.maxScaleKcal}
-                        />
-                      ) : null}
-                      <Suspense fallback={<KentuLazySectionFallback label="Grafico pasti…" />}>
-                        <HomeMealPieDial
-                          mealPieDisplayData={mealPieDisplayData}
-                          selectedMealCenterIndex={selectedMealCenterIndex}
-                          selectedMealCenter={selectedMealCenter}
-                          onSelectMealCenter={setSelectedMealCenter}
-                          onPieSliceClick={(data, _index, e) => {
-                            if (e && e.stopPropagation) e.stopPropagation();
-                            if (data.id === 'rimanenti' || data.id === 'surplus') return;
-                            const pastoCorrente = mealPieDisplayData.find((m) => m?.id === data.id);
-                            if (!pastoCorrente) {
-                              console.warn('[SalaComandi] meal pie entry not found', { id: data.id });
-                              return;
-                            }
-                            const compositeId = String(pastoCorrente.id);
-                            if (selectedMealCenter && selectedMealCenter.id === data.id) {
-                              loadMealToConstructor(compositeId);
-                              return;
-                            }
-                            setSelectedMealCenter(pastoCorrente);
-                            setSelectedNodeReport(null);
-                          }}
-                        />
-                      </Suspense>
-                      {showMaintenanceMarker ? (
-                        <DialMaintenanceMarker
-                          tdeeRatio={maintenanceMarkerRatio}
-                          isDeficit={maintenanceMarkerIsDeficit}
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-                      </div>
-            );
-          })()}
-
-            <div
-              className="flex w-full flex-col gap-2 box-border shrink-0"
-              style={{ width: '100%', padding: '0 14px', boxSizing: 'border-box' }}
-            >
-              <HomeNutrientStrip
-                totali={totali}
-                targets={effectiveTargetsForCurrentDate}
-                targetProt={effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150}
-                targetCarb={effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200}
-                targetFat={
-                  effectiveTargetsForCurrentDate?.fatTotal
-                  ?? effectiveTargetsForCurrentDate?.fat
-                  ?? userTargets?.fatTotal
-                  ?? userTargets?.fat
-                  ?? 65
-                }
-                onProteinClick={() => setShowProteinSheet(true)}
-                onCarbsClick={() => setShowCarbsSheet(true)}
-                onFatClick={() => setShowFatSheet(true)}
-                onMineralsClick={() => setShowMineralsSheet(true)}
-                onVitaminsClick={() => setShowVitaminsSheet(true)}
-              />
-              <TrainingBlockWidget
-                db={db}
-                userUid={user?.uid ?? null}
-                todayIso={currentTrackerDate || getTodayString()}
-                userProfile={userProfile}
-                fourCylinder={userModel?.fourCylinder ?? null}
-                fullHistory={fullHistory}
-                activeLog={activeLog}
-                userTargets={userTargets}
-                bodyMetricsHistory={bodyMetricsHistory}
-                heightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || null}
-                isSimulationMode={isSimulationMode}
-                onConfirmSession={handleConfirmTrainingBlockSession}
-                onPostponeSession={handlePostponeTrainingBlockSession}
-                onExecuteSession={handleExecuteTrainingBlockSession}
-                onOpenTrendDiag={handleOpenTrendDiag}
-                onOpenLongevity={handleOpenTrendSalute}
-                onOpenProgressione={handleOpenTrendProgressione}
-                creatorOpen={trainingBlockCreatorOpen}
-                onCreatorOpenChange={setTrainingBlockCreatorOpen}
-              />
-              <MetabolicMonitorCard
-                metabolicSnapshot={metabolicSnapshot}
-                missingSleepData={physiologySnapshot?.SLEEP?.status === 'alert'}
-                onClick={() => {
-                  if (physiologySnapshot?.SLEEP?.status === 'alert') {
-                    setShowSleepPrompt(true);
-                    return;
-                  }
-                  setShowMetabolicSheet(true);
-                }}
-                onCenterTap={() => setShowDiarySheet(true)}
-              />
-                      </div>
-                    </div>
-        </div>
+        <HomeOggiDialSection
+          activeDialMode={activeDialMode}
+          setActiveDialMode={setActiveDialMode}
+          dialHud={dialHud}
+          mealPieDisplayData={mealPieDisplayData}
+          selectedMealCenter={selectedMealCenter}
+          selectedMealCenterIndex={selectedMealCenterIndex}
+          setSelectedMealCenter={setSelectedMealCenter}
+          totali={totali}
+          dynamicDailyKcal={dynamicDailyKcal}
+          loadMealToConstructor={loadMealToConstructor}
+          setShowDiarySheet={setShowDiarySheet}
+          setShowCalorieDetailsSheet={setShowCalorieDetailsSheet}
+          setSelectedNodeReport={setSelectedNodeReport}
+          effectiveTargetsForCurrentDate={effectiveTargetsForCurrentDate}
+          userTargets={userTargets}
+          setShowProteinSheet={setShowProteinSheet}
+          setShowCarbsSheet={setShowCarbsSheet}
+          setShowFatSheet={setShowFatSheet}
+          setShowMineralsSheet={setShowMineralsSheet}
+          setShowVitaminsSheet={setShowVitaminsSheet}
+          db={db}
+          user={user}
+          currentTrackerDate={currentTrackerDate}
+          userProfile={userProfile}
+          userModel={userModel}
+          fullHistory={fullHistory}
+          activeLog={activeLog}
+          bodyMetricsHistory={bodyMetricsHistory}
+          isSimulationMode={isSimulationMode}
+          handleConfirmTrainingBlockSession={handleConfirmTrainingBlockSession}
+          handlePostponeTrainingBlockSession={handlePostponeTrainingBlockSession}
+          handleExecuteTrainingBlockSession={handleExecuteTrainingBlockSession}
+          handleOpenTrendDiag={handleOpenTrendDiag}
+          handleOpenTrendSalute={handleOpenTrendSalute}
+          handleOpenTrendProgressione={handleOpenTrendProgressione}
+          trainingBlockCreatorOpen={trainingBlockCreatorOpen}
+          setTrainingBlockCreatorOpen={setTrainingBlockCreatorOpen}
+          metabolicSnapshot={metabolicSnapshot}
+          physiologySnapshot={physiologySnapshot}
+          setShowSleepPrompt={setShowSleepPrompt}
+          setShowMetabolicSheet={setShowMetabolicSheet}
+        />
       )}
 
       {nutrientModal && (
@@ -9153,86 +7219,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </div>
         </div>
       )}
-      {showReport && (
-        <div className="report-modal-overlay" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: '#fff', color: '#000', zIndex: 100020, overflowY: 'auto', padding: '20px' }}>
-          <div className="report-no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', background: '#f0f0f0', padding: '15px', borderRadius: '8px' }}>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              {[
-                { val: '7', label: '1 Settimana' },
-                { val: '30', label: '1 Mese' },
-                { val: '90', label: '3 Mesi' },
-                { val: '180', label: '6 Mesi' },
-                { val: '365', label: '1 Anno' }
-              ].map(p => (
-                <button key={p.val} onClick={() => setReportPeriod(p.val)} style={{ padding: '8px 16px', borderRadius: '20px', border: 'none', background: reportPeriod === p.val ? '#0d47a1' : '#ccc', color: reportPeriod === p.val ? '#fff' : '#000', cursor: 'pointer', fontWeight: 'bold' }}>
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button type="button" onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2e7d32', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                <img src="/icon-pdf-32.png" alt="" width={20} height={20} decoding="async" style={{ objectFit: 'contain' }} />
-                Stampa PDF
-              </button>
-              <button onClick={() => setShowReport(false)} style={{ padding: '8px 16px', background: '#d32f2f', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Chiudi</button>
-            </div>
-          </div>
-
-          <div className="report-print-area">
-            <h1 style={{ borderBottom: '2px solid #0d47a1', paddingBottom: '10px' }}>Analisi Carenze Nutrizionali - Core</h1>
-            <p><strong>Periodo analizzato:</strong> Ultimi {reportPeriod} giorni</p>
-
-            {(() => {
-              const data = generateReportData();
-              if (!data) return <p>Nessun dato sufficiente in questo periodo.</p>;
-
-              const nutrientLabels = { kcal: 'Kcal', prot: 'Proteine (g)', carb: 'Carboidrati (g)', fatTotal: 'Grassi (g)', fibre: 'Fibre (g)', vitc: 'Vit. C (mg)', vitD: 'Vit. D (µg)', omega3: 'Omega 3 (g)', mg: 'Magnesio (mg)', k: 'Potassio (mg)', fe: 'Ferro (mg)', ca: 'Calcio (mg)' };
-              return (
-                <>
-                  <p><strong>Giorni con dati registrati:</strong> {data.daysFound} su {reportPeriod}</p>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-                    <thead>
-                      <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
-                        <th style={{ padding: '12px', textAlign: 'left' }}>Nutriente</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Media Assunta</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Target</th>
-                        <th style={{ padding: '12px', textAlign: 'center' }}>Stato</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {REPORT_NUTRIENT_KEYS.map(key => {
-                        const avg = data.averages[key];
-                        const target = userTargets[key] ?? getTargetForNutrient(key);
-                        if (target == null || target === 0) return null;
-
-                        const percent = (avg / target) * 100;
-                        const isDeficient = percent < 80;
-                        const isWarning = percent >= 80 && percent < 95;
-
-                        let statusColor = '#2e7d32';
-                        let statusText = '✅ Ottimale';
-                        if (isDeficient) { statusColor = '#d32f2f'; statusText = '❌ Carenza'; }
-                        else if (isWarning) { statusColor = '#f57c00'; statusText = '⚠️ Attenzione'; }
-
-                        return (
-                          <tr key={key} style={{ borderBottom: '1px solid #ddd' }}>
-                            <td style={{ padding: '12px', fontWeight: 'bold' }}>{nutrientLabels[key] || key}</td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{avg.toFixed(1)}</td>
-                            <td style={{ padding: '12px', textAlign: 'center' }}>{target}</td>
-                            <td style={{ padding: '12px', textAlign: 'center', color: statusColor, fontWeight: 'bold' }}>
-                              {statusText} ({percent.toFixed(0)}%)
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </>
-              );
-            })()}
-          </div>
-      </div>
-      )}
+      <PeriodReportOverlay
+        open={showReport}
+        reportPeriod={reportPeriod}
+        onReportPeriodChange={setReportPeriod}
+        onClose={() => setShowReport(false)}
+        generateReportData={generateReportData}
+        userTargets={userTargets}
+      />
 
       {showHealthReport ? (
         <Suspense fallback={<KentuLazySectionFallback label="Apertura report medico…" />}>
@@ -9255,63 +7249,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : null}
 
       {activeBottomTab === 'planning' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            padding: '20px 16px',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            width: '100%',
-            boxSizing: 'border-box',
-            gap: 14,
-          }}
-        >
-          <p style={{ margin: 0, fontSize: '0.88rem', color: 'rgba(200,210,220,0.95)', lineHeight: 1.45 }}>
-            Pianifica attività, fasce orarie e pasti (ghost) per oggi. I dati confermati restano su Firebase sotto{' '}
-            <code style={{ fontSize: '0.75rem', color: '#7dd3fc' }}>planning/</code>.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setPlanningWizardHydrateNonce((n) => n + 1);
-              setPlanningWizardOverlayOpen(true);
-            }}
-            style={{
-              padding: '14px 18px',
-              borderRadius: 14,
-              border: '1px solid rgba(0, 229, 255, 0.45)',
-              background: 'rgba(0, 229, 255, 0.15)',
-              color: '#e0faff',
-              fontWeight: 800,
-              fontSize: '0.9rem',
-              cursor: 'pointer',
-            }}
-          >
-            Apri pianificazione guidata
-          </button>
-          <div
-            style={{
-              marginTop: 8,
-              paddingTop: 18,
-              borderTop: '1px solid rgba(255,255,255,0.12)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', color: '#e8f4ff' }}>Piano settimanale</h3>
-            <Suspense fallback={<KentuLazySectionFallback label="Pianificazione…" />}>
-            <WeeklyPlanning
-              value={weeklyPlan}
-              onChange={setWeeklyPlan}
-              anchorDate={new Date(`${currentTrackerDate || getTodayString()}T12:00:00`)}
-              profileDailyKcal={Number(userTargets?.kcal) || 2000}
-            />
-            </Suspense>
-          </div>
-        </div>
+        <PlanningTabPanel
+          weeklyPlan={weeklyPlan}
+          setWeeklyPlan={setWeeklyPlan}
+          currentTrackerDate={currentTrackerDate}
+          userTargets={userTargets}
+          setPlanningWizardHydrateNonce={setPlanningWizardHydrateNonce}
+          setPlanningWizardOverlayOpen={setPlanningWizardOverlayOpen}
+        />
       )}
       {activeBottomTab === 'bussola' && (
         <div
@@ -9341,56 +7286,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       </div>
       )}
       {activeBottomTab === 'longevita' && (
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
-            boxSizing: 'border-box',
-            width: '100%',
-          }}
-        >
-          <div
-            style={{
-              flex: 1,
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              WebkitOverflowScrolling: 'touch',
-              width: '100%',
-            }}
-          >
-            <Suspense fallback={<KentuLazySectionFallback label="Longevità…" />}>
-          <LongevityView
-            data={longevityData}
-            minimalOnly={false}
-            showPriorityFocus
-            userAge={userAge}
-            bodyMetricsHistory={bodyMetricsHistory}
-            scoreHistory={longevityScoreHistory}
-            periodAnchorDate={currentTrackerDate}
-            fullHistory={fullHistory}
-            userTargets={userTargets}
-            userProfile={userProfile}
-            onUpdateTDEE={handleUpdateTDEE}
-            tdeeHistory={tdeeHistory}
-            predictionCalibration={predictiveCalibration}
-            onBalanceCsvImport={handleCSVUpload}
-            onQuickWeighInSubmit={handleQuickWeighInFromHistory}
-            onDeleteBodyMetrics={handleDeleteBodyMetrics}
-            pastDaysStorico={pastDaysStorico}
-            weeklyTrendData={weeklyTrendData}
-            weeklyMicrosTotals={weeklyMicrosTotals}
-            weeklyKcalChartReference={weeklyKcalChartReference}
-          />
-            </Suspense>
-          </div>
-        </div>
+        <LongevityTabShell
+          longevityData={longevityData}
+          userAge={userAge}
+          bodyMetricsHistory={bodyMetricsHistory}
+          longevityScoreHistory={longevityScoreHistory}
+          currentTrackerDate={currentTrackerDate}
+          fullHistory={fullHistory}
+          userTargets={userTargets}
+          userProfile={userProfile}
+          handleUpdateTDEE={handleUpdateTDEE}
+          tdeeHistory={tdeeHistory}
+          predictiveCalibration={predictiveCalibration}
+          handleCSVUpload={handleCSVUpload}
+          handleQuickWeighInFromHistory={handleQuickWeighInFromHistory}
+          handleDeleteBodyMetrics={handleDeleteBodyMetrics}
+          pastDaysStorico={pastDaysStorico}
+          weeklyTrendData={weeklyTrendData}
+          weeklyMicrosTotals={weeklyMicrosTotals}
+          weeklyKcalChartReference={weeklyKcalChartReference}
+        />
       )}
       {/* --- CASSETTO AZIONI (sempre montato: visibile da ogni tab bottom) --- */}
       <MenuDrawerShell
@@ -9610,410 +7525,69 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           document.body,
         )}
 
-        {/* VISTA ZEN — Neural Reset fullscreen (portal su document.body) */}
-        {activeAction === 'focus' && createPortal(
-          <div
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              width: '100dvw',
-              height: '100dvh',
-              maxHeight: '100dvh',
-              margin: 0,
-              padding: 0,
-              borderRadius: 0,
-              zIndex: 100000,
-              boxSizing: 'border-box',
-              background: 'radial-gradient(circle at center, #00e5ff 0%, #004d66 60%, #000000 100%)',
-              display: 'flex',
-              flexDirection: 'column',
-              paddingTop: 'env(safe-area-inset-top)',
-              paddingBottom: 'env(safe-area-inset-bottom)',
-              paddingLeft: 'env(safe-area-inset-left)',
-              paddingRight: 'env(safe-area-inset-right)',
-            }}
-          >
-            <audio
-              ref={neuralResetAudioRef}
-              loop
-              preload="auto"
-              aria-hidden
-              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
-            />
-            <audio
-              ref={neuralResetBellRef}
-              src="/campana.mp3"
-              preload="auto"
-              aria-hidden
-              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
-            />
-            <audio
-              ref={zenAmbientForestRef}
-              src="/foresta.mp3"
-              loop
-              preload="auto"
-              aria-hidden
-              style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
-            />
-            <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px 18px', gap: '12px', position: 'relative', zIndex: 30 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  if (zenEndSessionTimeoutRef.current) {
-                    clearTimeout(zenEndSessionTimeoutRef.current);
-                    zenEndSessionTimeoutRef.current = null;
-                  }
-                  clearZenAmbientFade();
-                  const amb = zenAmbientForestRef.current;
-                  if (amb) {
-                    amb.pause();
-                    amb.currentTime = 0;
-                    amb.volume = 0;
-                  }
-                  setZenForestAmbientOn(false);
-                  setZenGracefulEnd(false);
-                  setIsZenActive(false);
-                  setActiveAction(null);
-                }}
-                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', cursor: 'pointer', letterSpacing: '1px' }}
-              >
-                &lt; INDIETRO
-              </button>
-              <h2 style={{ fontSize: '0.85rem', color: '#FFD700', letterSpacing: '2px', margin: 0, textShadow: '0 0 12px rgba(255,215,0,0.35)', flex: 1, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <img
-                  src="/nuovo%20logo%20trasparente2.png"
-                  alt="Kentuos Logo"
-                  decoding="async"
-                  style={{ maxHeight: 26, width: 'auto', maxWidth: 'min(140px, 38vw)', objectFit: 'contain', display: 'block', filter: 'drop-shadow(0 0 8px rgba(0,0,0,0.45))' }}
-                />
-                <span style={{ whiteSpace: 'nowrap' }}>NEURAL RESET</span>
-              </h2>
-              <div style={{ width: '48px', height: '48px', flexShrink: 0 }} aria-hidden />
-            </div>
-            <div style={{ flexShrink: 0, padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '420px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                Pattern di respirazione
-                <select
-                  value={zenBreathPatternId}
-                  onChange={(e) => setZenBreathPatternId(e.target.value)}
-                  disabled={isZenActive}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.35)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: isZenActive ? 'not-allowed' : 'pointer',
-                    opacity: isZenActive ? 0.55 : 1,
-                  }}
-                >
-                  {Object.values(NEURAL_RESET_PATTERNS).map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.55)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-                Durata sessione
-                <select
-                  value={zenSessionDurationKey}
-                  onChange={(e) => setZenSessionDurationKey(e.target.value)}
-                  disabled={isZenActive}
-                  style={{
-                    padding: '10px 12px',
-                    borderRadius: '10px',
-                    border: '1px solid rgba(255,255,255,0.2)',
-                    background: 'rgba(0,0,0,0.35)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: isZenActive ? 'not-allowed' : 'pointer',
-                    opacity: isZenActive ? 0.55 : 1,
-                  }}
-                >
-                  {ZEN_SESSION_DURATION_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p style={{ flexShrink: 0, textAlign: 'center', color: 'rgba(255,255,255,0.85)', fontSize: '0.75rem', margin: '0 20px 24px', lineHeight: 1.5 }}>
-              {NEURAL_RESET_PATTERNS[zenBreathPatternId]?.hint ?? ''}
-            </p>
-            <div
-              style={{
-                position: 'relative',
-                flex: 1,
-                minHeight: 0,
-                width: '100%',
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                paddingTop: 'clamp(32px, 7.5vh, 56px)',
-                paddingBottom: 'clamp(28px, 6.5vh, 48px)',
-                boxSizing: 'border-box',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  width: '80px',
-                  height: '80px',
-                  marginLeft: '-40px',
-                  marginTop: '-40px',
-                  transform: 'scale(1.25)',
-                  transformOrigin: 'center center',
-                  zIndex: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  pointerEvents: 'none',
-                }}
-              >
-                <div
-                  style={{
-                    width: '80px',
-                    height: '80px',
-                    flexShrink: 0,
-                    position: 'relative',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transform: `scale(${zenSunScale})`,
-                    transformOrigin: 'center center',
-                    transition: `transform ${zenSunTransitionMs}ms ease-in-out, opacity ${zenSunTransitionMs}ms ease-in-out`,
-                    opacity: isZenActive && zenSunDimHold ? 0.07 : 1,
-                  }}
-                >
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: '-6px',
-                      borderRadius: '50%',
-                      border: '1px solid rgba(255, 215, 0, 0.45)',
-                      boxShadow: '0 0 24px rgba(255, 215, 0, 0.2)',
-                    }}
-                  />
-                  <div
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      borderRadius: '50%',
-                      background: '#FFD700',
-                      boxShadow: '0 0 40px 18px rgba(255, 215, 0, 0.55), 0 0 80px 36px rgba(255, 200, 80, 0.22)',
-                    }}
-                  />
-                </div>
-              </div>
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 'max(24px, env(safe-area-inset-bottom))',
-                  left: '20px',
-                  right: '20px',
-                  textAlign: 'center',
-                  fontSize: '0.9rem',
-                  fontWeight: 700,
-                  letterSpacing: '0.2em',
-                  textTransform: 'uppercase',
-                  color: '#fff',
-                  textShadow: '0 2px 12px rgba(0,0,0,0.65)',
-                }}
-              >
-                <span>{isZenActive && zenBreathPhase ? zenBreathPhase : zenGracefulEnd ? 'Completamento…' : 'In attesa'}</span>
-                {zenTimerLine && (
-                  <div style={{ marginTop: '8px', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.35em', color: 'rgba(255,215,0,0.85)' }}>
-                    {zenTimerLine}
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={{ flexShrink: 0, padding: '12px 20px max(20px, env(safe-area-inset-bottom))' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  gap: '20px',
-                  marginBottom: '14px',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setAudioMode(m => (m === 'sea' ? 'muted' : 'sea'))}
-                  title="Suono mare"
-                  aria-label="Suono mare"
-                  aria-pressed={audioMode === 'sea'}
-                  style={{
-                    width: '52px',
-                    height: '52px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '14px',
-                    border: `1px solid ${audioMode === 'sea' ? 'rgba(0,229,255,0.55)' : 'rgba(255,255,255,0.12)'}`,
-                    background: audioMode === 'sea' ? 'rgba(0,229,255,0.1)' : 'rgba(0,0,0,0.2)',
-                    cursor: 'pointer',
-                    transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
-                    filter: audioMode === 'sea' ? 'none' : 'grayscale(100%)',
-                    opacity: audioMode === 'sea' ? 1 : 0.4,
-                    boxShadow: audioMode === 'sea' ? '0 0 18px rgba(0, 229, 255, 0.5), 0 0 32px rgba(0, 229, 255, 0.2)' : 'none',
-                    color: '#00e5ff',
-                  }}
-                >
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    <path d="M2 12c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                    <path d="M2 16c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                    <path d="M2 8c1.5 0 2.5-2 4-2s2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const el = zenAmbientForestRef.current;
-                    if (!el) return;
-                    if (zenForestAmbientOn) {
-                      fadeZenAmbientVolume(0, ZEN_AMBIENT_FADE_MS, () => {
-                        el.pause();
-                        el.currentTime = 0;
-                        setZenForestAmbientOn(false);
-                      });
-                    } else {
-                      setZenForestAmbientOn(true);
-                      el.volume = 0;
-                      el.play().catch(() => {
-                        setZenForestAmbientOn(false);
-                      });
-                      fadeZenAmbientVolume(ZEN_AMBIENT_TARGET_VOL, ZEN_AMBIENT_FADE_MS, null);
-                    }
-                  }}
-                  title={zenForestAmbientOn ? 'Spegni paesaggio foresta' : 'Accendi paesaggio foresta'}
-                  aria-label={zenForestAmbientOn ? 'Spegni paesaggio sonoro foresta' : 'Accendi paesaggio sonoro foresta'}
-                  aria-pressed={zenForestAmbientOn}
-                  style={{
-                    width: '52px',
-                    height: '52px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: '14px',
-                    border: `1px solid ${zenForestAmbientOn ? 'rgba(0,255,136,0.55)' : 'rgba(255,255,255,0.12)'}`,
-                    background: zenForestAmbientOn ? 'rgba(0,255,136,0.08)' : 'rgba(0,0,0,0.2)',
-                    cursor: 'pointer',
-                    transition: 'filter 0.25s ease, opacity 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, background 0.25s ease',
-                    filter: zenForestAmbientOn ? 'none' : 'grayscale(100%)',
-                    opacity: zenForestAmbientOn ? 1 : 0.4,
-                    boxShadow: zenForestAmbientOn ? '0 0 18px rgba(0, 255, 136, 0.45), 0 0 32px rgba(0, 255, 136, 0.18)' : 'none',
-                    color: '#00ff88',
-                  }}
-                >
-                  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                    <path d="M12 2.5L7.2 11.2h9.6L12 2.5z" />
-                    <path d="M12 7.5L5.5 16.5h13L12 7.5z" />
-                    <rect x="10" y="16.2" width="4" height="6.3" rx="0.45" />
-                  </svg>
-                </button>
-              </div>
-              <button
-                type="button"
-                disabled={zenGracefulEnd}
-                onClick={() => {
-                  if (zenGracefulEnd) return;
-                  setIsZenActive(!isZenActive);
-                }}
-                style={{
-                  width: '100%',
-                  padding: '18px',
-                  backgroundColor: zenGracefulEnd ? 'rgba(0,0,0,0.25)' : isZenActive ? 'rgba(0,0,0,0.35)' : '#FFD700',
-                  color: zenGracefulEnd ? 'rgba(255,215,0,0.5)' : isZenActive ? '#FFD700' : '#000',
-                  border: isZenActive || zenGracefulEnd ? '1px solid #FFD700' : 'none',
-                  borderRadius: '15px',
-                  fontSize: '0.9rem',
-                  fontWeight: 'bold',
-                  letterSpacing: '2px',
-                  cursor: zenGracefulEnd ? 'default' : 'pointer',
-                  transition: '0.3s',
-                  boxShadow: isZenActive || zenGracefulEnd ? 'none' : '0 0 24px rgba(255, 215, 0, 0.35)',
-                  opacity: zenGracefulEnd ? 0.85 : 1,
-                }}
-              >
-                {zenGracefulEnd ? 'Completamento…' : isZenActive ? 'TERMINA SESSIONE' : 'AVVIA CICLO'}
-              </button>
-            </div>
-          </div>,
-          document.body
-        )}
+        <NeuralResetZenPortal
+          open={activeAction === 'focus'}
+          onBack={() => setActiveAction(null)}
+          isZenActive={neuralReset.isZenActive}
+          zenBreathPhase={neuralReset.zenBreathPhase}
+          zenSunScale={neuralReset.zenSunScale}
+          audioMode={neuralReset.audioMode}
+          zenForestAmbientOn={neuralReset.zenForestAmbientOn}
+          zenBreathPatternId={neuralReset.zenBreathPatternId}
+          setZenBreathPatternId={neuralReset.setZenBreathPatternId}
+          zenSessionDurationKey={neuralReset.zenSessionDurationKey}
+          setZenSessionDurationKey={neuralReset.setZenSessionDurationKey}
+          zenGracefulEnd={neuralReset.zenGracefulEnd}
+          zenSunTransitionMs={neuralReset.zenSunTransitionMs}
+          zenSunDimHold={neuralReset.zenSunDimHold}
+          zenTimerLine={neuralReset.zenTimerLine}
+          neuralResetAudioRef={neuralReset.neuralResetAudioRef}
+          neuralResetBellRef={neuralReset.neuralResetBellRef}
+          zenAmbientForestRef={neuralReset.zenAmbientForestRef}
+          toggleSeaAudio={neuralReset.toggleSeaAudio}
+          toggleForestAmbient={neuralReset.toggleForestAmbient}
+          toggleZenSession={neuralReset.toggleZenSession}
+          exitZenView={neuralReset.exitZenView}
+          patterns={neuralReset.patterns}
+          durationOptions={neuralReset.durationOptions}
+        />
 
-        {/* Modale Edit quantità */}
-        {selectedFoodForEdit && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }} onClick={() => setSelectedFoodForEdit(null)}>
-            <div style={{ background: '#111', border: '1px solid #333', borderRadius: '16px', maxWidth: '340px', width: '100%', padding: '20px' }} onClick={e => e.stopPropagation()}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', color: '#00e676' }}>Modifica quantità</h3>
-                <button style={{ background: 'none', border: 'none', color: '#888', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setSelectedFoodForEdit(null)}>✕</button>
-              </div>
-              <p style={{ fontSize: '0.85rem', color: '#ccc', marginBottom: '8px' }}>{selectedFoodForEdit.food?.desc || selectedFoodForEdit.food?.name}</p>
-              <input type="number" min="1" step="1" inputMode="decimal" value={editQuantityValue} onChange={(e) => setEditQuantityValue(e.target.value)} style={{ width: '100%', padding: '12px', background: '#222', border: '1px solid #444', borderRadius: '8px', color: '#fff', fontSize: '1rem', marginBottom: '16px' }} placeholder="Grammi" />
-              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                <button style={{ padding: '10px 18px', background: '#333', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer' }} onClick={() => setSelectedFoodForEdit(null)}>Annulla</button>
-                <button style={{ padding: '10px 18px', background: '#00e676', color: '#000', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => {
-                  const qta = parseFloat(editQuantityValue);
-                  if (!Number.isFinite(qta) || qta <= 0) return;
-                  const { food, source } = selectedFoodForEdit;
-                  const newItem = ensureRecipeDiaryFields({
-                    ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType),
-                    id: food.id,
-                    locked: true,
-                    entrySource: 'ui',
-                  });
-                  if (source === 'diary') {
-                    if (isSimulationMode) {
-                      setSimulatedLog(prev => (prev || []).map(f => {
-                        if (f.id !== food.id) return f;
-                        return { ...newItem, mealTime: f.mealTime };
-                      }));
-                    } else {
-                      const newLog = dailyLog.map(f => {
-                        if (f.id !== food.id) return f;
-                        return { ...newItem, mealTime: f.mealTime };
-                      });
-                      setDailyLog(newLog);
-                      syncDatiFirebase(newLog, manualNodes);
-                    }
-                  }
-                  setSelectedFoodForEdit(null);
-                }}>Salva</button>
-              </div>
-            </div>
-          </div>
-        )}
+
+        <EditFoodQuantityModal
+          selectedFoodForEdit={selectedFoodForEdit}
+          initialQuantity={editQuantityValue}
+          onClose={() => setSelectedFoodForEdit(null)}
+          onConfirm={(qta, selected) => {
+            const { food, source } = selected;
+            const newItem = ensureRecipeDiaryFields({
+              ...estraiDatiFoodDb(food.desc || food.name, qta, food.mealType),
+              id: food.id,
+              locked: true,
+              entrySource: 'ui',
+            });
+            if (source === 'diary') {
+              if (isSimulationMode) {
+                setSimulatedLog((prev) => (prev || []).map((f) => {
+                  if (f.id !== food.id) return f;
+                  return { ...newItem, mealTime: f.mealTime };
+                }));
+              } else {
+                const newLog = dailyLog.map((f) => {
+                  if (f.id !== food.id) return f;
+                  return { ...newItem, mealTime: f.mealTime };
+                });
+                setDailyLog(newLog);
+                syncDatiFirebase(newLog, manualNodes);
+              }
+            }
+            setSelectedFoodForEdit(null);
+          }}
+        />
 
       </MenuDrawerShell>
 
       {/* Chat Full-Screen — montata dalla prima apertura; slide dal basso */}
-      {chatShellMounted ? (
-      <div
-        className={[
-          'fixed inset-0 z-[100001] flex h-[100dvh] max-h-[100dvh] w-full flex-col bg-zinc-950',
-          'transform transition-transform duration-300 ease-in-out will-change-transform',
-          activeAction === 'ai_chat' ? 'translate-y-0' : 'translate-y-full pointer-events-none',
-        ].join(' ')}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Chat Kentu"
-        aria-hidden={activeAction !== 'ai_chat'}
-      >
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden h-full"
-          style={{
-            paddingTop: 'env(safe-area-inset-top, 0px)',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-          }}
-        >
+      <KentuChatShell mounted={chatShellMounted} open={isChatOpen}>
           <Suspense fallback={<div className="flex flex-1 items-center justify-center bg-zinc-950" aria-busy />}>
           <KentuChatUI
             chatHistory={chatHistory}
@@ -10037,6 +7611,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             fullHistory={fullHistory}
             dailyLog={activeLog}
             userTargets={effectiveTargetsForCurrentDate || userTargets}
+            diaryReady={isInitialLoadComplete}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}
@@ -10072,14 +7647,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             quickStripItems={chatQuickStripItems}
             preferVoiceChat={isDiabetesAppMode}
             userDisplayName={String(userProfile?.displayName || userProfile?.name || '').trim()}
-            healthScore={healthScore}
+            healthScore={healthScore ?? null}
             isTrainingDay={Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog)}
             onRequestHealthDiagnosis={handleRequestHealthDiagnosis}
           />
           </Suspense>
-        </div>
-      </div>
-      ) : null}
+      </KentuChatShell>
 
       <ChatFoodEnrichmentModal
         session={chatUsdaEnrichmentSession}
@@ -10155,150 +7728,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         document.body
       )}
 
-      {recalibrationProposal?.show && recalibrationProposal?.analysis && (() => {
-        const ra = recalibrationProposal.analysis;
-        const showRecalApply =
-          ra.diagnosisType === 'tdee_mismatch' &&
-          ra.confidence === 'high' &&
-          ra.suggestion?.type !== 'no_change' &&
-          Number.isFinite(Number(ra.suggestion?.kcalAdjustment)) &&
-          Number(ra.suggestion?.kcalAdjustment) !== 0;
-        return (
-        <div
-          className="modal-overlay"
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            background: 'rgba(0,0,0,0.86)',
-            zIndex: 100060,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '18px',
-          }}
-        >
-          <div
-            style={{
-              width: '100%',
-              maxWidth: 460,
-              background: '#161616',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: 14,
-              padding: 18,
-              color: '#f8fafc',
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px', color: '#00e5ff', fontSize: '1rem' }}>
-              Nuova pesata registrata
-            </h3>
-            <p style={{ margin: '0 0 12px', color: '#94a3b8', fontSize: '0.8rem' }}>
-              Analisi sugli ultimi {ra.daysWindow} giorni
-            </p>
-            <div
-              style={{
-                background: 'rgba(0, 229, 255, 0.12)',
-                border: '1px solid rgba(0, 229, 255, 0.28)',
-                borderRadius: 10,
-                padding: '12px 14px',
-                marginBottom: 12,
-                fontSize: '0.92rem',
-                lineHeight: 1.5,
-                color: '#f1f5f9',
-                fontWeight: 600,
-              }}
-            >
-              {ra.diagnosisMessage || ra.suggestion?.explanation}
-            </div>
-            {showRecalibrationDetails && (
-              <div
-                style={{
-                  marginBottom: 12,
-                  background: '#0f172a',
-                  border: '1px solid rgba(148,163,184,0.25)',
-                  borderRadius: 10,
-                  padding: '10px 12px',
-                  fontSize: '0.78rem',
-                  color: '#cbd5e1',
-                  lineHeight: 1.45,
-                }}
-              >
-                <div>Bilancio medio: {Math.round(Number(ra.avgKcalBalance) || 0)} kcal/giorno</div>
-                <div>
-                  Variazione peso: {(Number(ra.weightDelta) >= 0 ? '+' : '')}
-                  {(Number(ra.weightDelta) || 0).toFixed(2)} kg
-                </div>
-                <div>
-                  Variazione attesa: {(Number(ra.expectedWeightDelta) >= 0 ? '+' : '')}
-                  {(Number(ra.expectedWeightDelta) || 0).toFixed(2)} kg
-                </div>
-                <div>
-                  Scostamento: {(Number(ra.discrepancy) >= 0 ? '+' : '')}
-                  {(Number(ra.discrepancy) || 0).toFixed(2)} kg
-                </div>
-                <div>Affidabilita: {String(ra.confidence || 'n/a')}</div>
-              </div>
-            )}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  dismissRecalibrationProposal();
-                }}
-                style={{
-                  padding: '11px 12px',
-                  borderRadius: 10,
-                  border: '1px solid rgba(148,163,184,0.4)',
-                  background: 'transparent',
-                  color: '#cbd5e1',
-                  cursor: 'pointer',
-                  fontWeight: 700,
-                }}
-              >
-                Mantieni target attuali
-              </button>
-              {showRecalApply ? (
-              <button
-                type="button"
-                onClick={() => {
-                  applyRecalibrationProposal();
-                }}
-                style={{
-                  padding: '11px 12px',
-                  borderRadius: 10,
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #00e5ff, #38bdf8)',
-                  color: '#052236',
-                  cursor: 'pointer',
-                  fontWeight: 800,
-                }}
-              >
-                Applica correzione ({Number(ra.suggestion?.kcalAdjustment) >= 0 ? '+' : ''}{Math.round(Number(ra.suggestion?.kcalAdjustment) || 0)} kcal)
-              </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setShowRecalibrationDetails((v) => !v)}
-                style={{
-                  padding: '9px 10px',
-                  borderRadius: 10,
-                  border: '1px dashed rgba(148,163,184,0.45)',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  cursor: 'pointer',
-                  fontWeight: 700,
-                  fontSize: '0.78rem',
-                }}
-              >
-                {showRecalibrationDetails ? 'Nascondi dettagli' : 'Vedi dettagli'}
-              </button>
-            </div>
-          </div>
-        </div>
-        );
-      })()}
+      <RecalibrationProposalModal
+        recalibrationProposal={recalibrationProposal}
+        onDismiss={dismissRecalibrationProposal}
+        onApply={applyRecalibrationProposal}
+      />
 
       {showStrategicPlanner && (
         <Suspense fallback={<KentuLazySectionFallback label="Planner strategico…" />}>
@@ -10737,47 +8171,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         fullHistory={fullHistory}
       />
 
-      {showSncPopup && (
-        <div
-          role="presentation"
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000 }}
-          onClick={() => setShowSncPopup(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="snc-popup-title"
-            style={{
-              background: '#1a1a1c',
-              padding: '24px',
-              borderRadius: '16px',
-              border: sncStressLevel >= 85 ? '1px solid #f44336' : '1px solid #ff9800',
-              width: '90%',
-              maxWidth: '350px',
-              textAlign: 'center'
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>{sncStressLevel >= 85 ? '⚠️' : '⚡'}</div>
-            <h3 id="snc-popup-title" style={{ color: '#fff', marginTop: 0 }}>
-              {sncStressLevel >= 85 ? 'Allarme Overtraining' : 'Affaticamento SNC'}
-            </h3>
-            <p style={{ color: '#b0b0b0', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '20px' }}>
-              Sistema Nervoso Centrale saturo al <strong>{Math.round(sncStressLevel)}%</strong>.<br /><br />
-              {sncStressLevel >= 85
-                ? "Si consigliano 3-5 giorni di scarico attivo (niente allenamenti pesanti) per resettare l'energia massima ed evitare lo stallo metabolico."
-                : 'Il carico allostatico sta aumentando. Presta attenzione al recupero nei prossimi giorni.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => setShowSncPopup(false)}
-              style={{ background: '#333', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}
-            >
-              Ho capito
-            </button>
-          </div>
-        </div>
-      )}
+      <SncStressPopup
+        open={showSncPopup}
+        sncStressLevel={sncStressLevel}
+        onClose={() => setShowSncPopup(false)}
+      />
 
       <AlcoholPopupOverlay
         showAlcoholPopup={showAlcoholPopup}

@@ -283,16 +283,27 @@ export function useDiaryFirebaseSync({
     };
   }, [user]);
 
-  // Fallback: quando fullHistory è popolato ma dailyLog è ancora vuoto (es. primo caricamento), sincronizza il log del giorno corrente
+  // Allinea dailyLog al giorno visualizzato (cambio data o primo idrata da storico).
+  const dailyLogBoundDateRef = useRef(null);
   useEffect(() => {
     if (!fullHistory || typeof fullHistory !== 'object' || !currentTrackerDate) return;
-    if (Object.keys(fullHistory).length === 0) return;
+
+    const node = fullHistory[TRACKER_STORICO_KEY(currentTrackerDate)];
+    const initialLog = getLogFromStoricoTree(fullHistory, currentTrackerDate);
+    const nextLog = applyMealTimes(
+      Array.isArray(initialLog) ? initialLog : [],
+      node?.mealTimes ?? {},
+    );
+    const safeNextLog = Array.isArray(nextLog) ? nextLog : [];
+    const dateChanged = dailyLogBoundDateRef.current !== currentTrackerDate;
+
     setDailyLog((prev) => {
-      if (prev && prev.length > 0) return prev;
-      const node = fullHistory[TRACKER_STORICO_KEY(currentTrackerDate)];
-      const initialLog = getLogFromStoricoTree(fullHistory, currentTrackerDate);
-      return applyMealTimes(initialLog, node?.mealTimes ?? {});
+      const safePrev = Array.isArray(prev) ? prev : [];
+      if (!dateChanged && safePrev.length > 0) return safePrev;
+      return safeNextLog;
     });
+
+    dailyLogBoundDateRef.current = currentTrackerDate;
   }, [fullHistory, currentTrackerDate, setDailyLog]);
 
   /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */

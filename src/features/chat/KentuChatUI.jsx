@@ -1,5 +1,13 @@
 import AiCluster from '../../AiCluster';
 
+function normalizeDailyLog(log) {
+  return Array.isArray(log) ? log : [];
+}
+
+function normalizeUserTargets(targets) {
+  return targets && typeof targets === 'object' ? targets : null;
+}
+
 /**
  * KentuChatUI — vista drawer chat Kentu: messaggi e input.
  */
@@ -24,6 +32,7 @@ export default function KentuChatUI({
   fullHistory = {},
   dailyLog = [],
   userTargets = null,
+  diaryReady = true,
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -64,6 +73,26 @@ export default function KentuChatUI({
   isTrainingDay = false,
   onRequestHealthDiagnosis = null,
 }) {
+  const safeDailyLog = normalizeDailyLog(dailyLog);
+  const safeUserTargets = normalizeUserTargets(userTargets);
+
+  if (!diaryReady) {
+    return (
+      <div
+        className="view-animate flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center overflow-hidden bg-zinc-950"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-cyan-400"
+          aria-hidden
+        />
+        <p className="mt-3 text-sm text-zinc-500">Caricamento diario…</p>
+      </div>
+    );
+  }
+
   return (
     <div
       className="view-animate flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
@@ -96,8 +125,8 @@ export default function KentuChatUI({
         kentuItDatabase={kentuItDatabase}
         globalFoodDatabase={globalFoodDatabase}
         fullHistory={fullHistory}
-        dailyLog={dailyLog}
-        userTargets={userTargets}
+        dailyLog={safeDailyLog}
+        userTargets={safeUserTargets}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}

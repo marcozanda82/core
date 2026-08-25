@@ -15,6 +15,12 @@ export default class GlobalErrorBoundary extends React.Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[GlobalErrorBoundary] React render crash', error, errorInfo);
+    if (error?.stack) {
+      console.error('[GlobalErrorBoundary] stack:', error.stack);
+    }
+    if (errorInfo?.componentStack) {
+      console.error('[GlobalErrorBoundary] component stack:', errorInfo.componentStack);
+    }
   }
 
   handleReload = () => {

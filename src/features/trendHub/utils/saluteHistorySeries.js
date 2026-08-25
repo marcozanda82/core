@@ -433,7 +433,7 @@ export function buildSaluteLongevityWindow({
         if (i < muscleWindowDays) {
           const primaries = longevitySpilloverPrimariesFromWorkout(entry);
           if (primaries.length > 0) {
-            applySpilloverSession(muscleStimulus, primaries);
+            applySpilloverSession(muscleStimulus, primaries, i);
           }
         }
       }

@@ -151,8 +151,9 @@ export function clearPersonalDbCache() {
 }
 
 /**
- * Pulisce chiavi localStorage KentuOS tipiche (cache tracker, versioni DB, ecc.).
- * Best-effort — non interrompe il flusso di eliminazione account.
+ * Pulisce chiavi localStorage KentuOS tipiche (cache tracker, timeline, versioni DB, ecc.).
+ * Best-effort — non interrompe il flusso di logout / eliminazione account.
+ * Privacy multi-utente: nessun dato sanitario residuo sul dispositivo dopo signOut.
  */
 export function clearKentuLocalUserData() {
   if (typeof window === 'undefined' || !window.localStorage) return;
@@ -164,9 +165,11 @@ export function clearKentuLocalUserData() {
       if (!key) continue;
       if (
         key === CACHE_STORAGE_KEY
+        || key === 'reportViewedDates'
         || key.startsWith('kentu_')
         || key.startsWith('trackerStorico_')
         || key.startsWith('ghost_')
+        || key.startsWith('vyta_')
       ) {
         keysToRemove.push(key);
       }

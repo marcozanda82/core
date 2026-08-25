@@ -181,14 +181,18 @@ export const MUSCLE_CYLINDER_DEFS = Object.freeze([
   { id: 'core', label: 'Abs e Core', shortLabel: 'CORE', subtitle: 'Addome · Core' },
 ]);
 
-/** Parametri v2 — stimolo settimanale (1 sessione ≈ 50%, 2 ≈ 100%). Nessuna atrofia giornaliera. */
+/**
+ * Parametri v2 — stimolo settimanale + atrofia da riposo.
+ * decayPerDay in scala 0–1 (0.15 ≈ −15 punti % / giorno di inattività).
+ * catchUpDecayToDate applica questa sottrazione per ogni notte trascorsa.
+ */
 export const DEFAULT_FOUR_CYLINDER_PARAMS = Object.freeze({
   decayPerDay: Object.freeze({
-    legs: 0,
-    chest: 0,
-    back_shoulders: 0,
-    arms: 0,
-    core: 0,
+    legs: 0.15,
+    chest: 0.15,
+    back_shoulders: 0.15,
+    arms: 0.15,
+    core: 0.15,
   }),
   systemicRecoveryPerDay: 0.08,
   maxMuscleBump: 0.50,
@@ -463,13 +467,25 @@ function sanitizeDecayPerDay(paramsDecayPerDay) {
       core: clamp01(legs + 0.04),
     };
   }
-  return {
+  const next = {
     legs: clamp01(src.legs ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs),
     chest: clamp01(src.chest ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.chest),
     back_shoulders: clamp01(src.back_shoulders ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.back_shoulders),
     arms: clamp01(src.arms ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.arms),
     core: clamp01(src.core ?? DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.core),
   };
+  // Snapshot legacy con atrofia disabilitata (tutti 0) → ripristina decadimento attivo.
+  const allZero = MUSCLE_CYLINDER_IDS.every((id) => (Number(next[id]) || 0) <= 0);
+  if (allZero) {
+    return {
+      legs: DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.legs,
+      chest: DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.chest,
+      back_shoulders: DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.back_shoulders,
+      arms: DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.arms,
+      core: DEFAULT_FOUR_CYLINDER_PARAMS.decayPerDay.core,
+    };
+  }
+  return next;
 }
 
 /**
@@ -707,8 +723,8 @@ function addCalendarDaysUtc(iso, deltaDays) {
 
 /**
  * Applica un singolo giorno di riposo virtuale (mezzanotte).
- * I cilindri muscolari NON decadono più giornalmente (stimolo settimanale / finestra 7gg).
- * La fatica sistemica continua a smaltirsi.
+ * Cilindri muscolari: −decayPerDay (scala 0–1); fatica sistemica: −systemicRecoveryPerDay.
+ * Con proteinTargetHit lo scudo riduce l'atrofia (muscleScale < 1).
  *
  * @param {FourCylinderState} state
  * @param {{ proteinTargetHit?: boolean, params?: FourCylinderParams | null }} [options]

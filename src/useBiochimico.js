@@ -109,7 +109,8 @@ function buildEmptyTotali() {
 export function computeTotali(dailyLog) {
   const totali = buildEmptyTotali();
   let workoutKcal = 0;
-  dailyLog.forEach(item => {
+  const log = Array.isArray(dailyLog) ? dailyLog : [];
+  log.forEach(item => {
     if (item.type === 'food' || item.type === 'recipe') {
       totali.kcal += Number(item.kcal || item.cal || 0) || 0;
       ALL_NUTRIENT_KEYS.forEach(k => {
@@ -189,7 +190,8 @@ export function getDefaultNutrientValue(key, trackerData) {
 function computeConsumedPerMeal(dailyLog) {
   const consumed = {};
   MEAL_ORDER.forEach(m => { consumed[m] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { consumed[m][k] = 0; }); });
-  dailyLog.forEach(item => {
+  const log = Array.isArray(dailyLog) ? dailyLog : [];
+  log.forEach(item => {
     if ((item.type !== 'food' && item.type !== 'recipe') || !item.mealType) return;
     const meal = bucketMealTypeForBio(item.mealType);
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
@@ -245,17 +247,20 @@ export function calcolaObiettiviPastoConArray(dailyLog, targetKcal, targetNutrie
  * @returns {{ totali, obiettiviPasti, targetNutrients }}
  */
 export function useBiochimico(dailyLog, targetKcal) {
+  const safeLog = Array.isArray(dailyLog) ? dailyLog : [];
+  const safeTargetKcal = Number.isFinite(Number(targetKcal)) ? Number(targetKcal) : 0;
+
   const targetNutrients = useMemo(() => {
     const t = {};
     ALL_NUTRIENT_KEYS.forEach(k => { t[k] = getTargetForNutrient(k) ?? 0; });
     return t;
   }, []);
 
-  const totali = useMemo(() => computeTotali(dailyLog), [dailyLog]);
+  const totali = useMemo(() => computeTotali(safeLog), [safeLog]);
 
   const obiettiviPasti = useMemo(
-    () => calcolaObiettiviPastoConArray(dailyLog, targetKcal, targetNutrients),
-    [dailyLog, targetKcal, targetNutrients]
+    () => calcolaObiettiviPastoConArray(safeLog, safeTargetKcal, targetNutrients),
+    [safeLog, safeTargetKcal, targetNutrients]
   );
 
   return { totali, obiettiviPasti, targetNutrients };

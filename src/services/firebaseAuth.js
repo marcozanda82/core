@@ -27,11 +27,12 @@ export async function loginWithGoogle() {
 }
 
 /**
- * Termina la sessione corrente.
+ * Termina la sessione corrente e svuota la cache locale (privacy multi-utente).
  * @returns {Promise<void>}
  */
 export async function logout() {
-  return signOut(auth);
+  await signOut(auth);
+  clearKentuLocalUserData();
 }
 
 /**

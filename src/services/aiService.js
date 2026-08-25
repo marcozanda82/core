@@ -84,15 +84,50 @@ export function createAbortError(message = 'Aborted') {
   return error;
 }
 
+/** Timeout client-side per sbloccare l'UI su reti lente/assenti (ms). */
+export const ASK_AI_TIMEOUT_MS = 30_000;
+
+export const ASK_AI_TIMEOUT_MESSAGE =
+  'La connessione è troppo lenta o assente. Riprova.';
+
+/**
+ * @param {number} ms
+ * @param {string} message
+ * @returns {{ promise: Promise<never>, clear: () => void }}
+ */
+function createTimeoutRace(ms, message) {
+  let timerId = null;
+  const promise = new Promise((_, reject) => {
+    timerId = setTimeout(() => {
+      const error = new Error(message);
+      error.name = 'TimeoutError';
+      error.code = 'ASK_AI_TIMEOUT';
+      reject(error);
+    }, ms);
+  });
+  return {
+    promise,
+    clear: () => {
+      if (timerId != null) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    },
+  };
+}
+
 /**
  * Chiamata AI centralizzata via Firebase Cloud Function callGemini (Google Gemini nativo).
  * @param {string} prompt
  * @param {string} [systemInstruction]
- * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model, signal
+ * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model, signal, timeoutMs
  */
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
   const signal = opts.signal instanceof AbortSignal ? opts.signal : null;
+  const timeoutMs = Number.isFinite(Number(opts.timeoutMs)) && Number(opts.timeoutMs) > 0
+    ? Math.floor(Number(opts.timeoutMs))
+    : ASK_AI_TIMEOUT_MS;
 
   if (signal?.aborted) {
     throw createAbortError();
@@ -119,18 +154,25 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
       })
     : null;
 
+  const timeoutRace = createTimeoutRace(timeoutMs, ASK_AI_TIMEOUT_MESSAGE);
+
   let result;
   try {
-    // httpsCallable non espone AbortSignal nativo: race client-side per sbloccare l'UI.
-    result = abortPromise
-      ? await Promise.race([callAiFunction(payload), abortPromise])
-      : await callAiFunction(payload);
+    // httpsCallable non espone AbortSignal nativo: race client-side (abort + timeout 30s).
+    const racers = [callAiFunction(payload), timeoutRace.promise];
+    if (abortPromise) racers.push(abortPromise);
+    result = await Promise.race(racers);
   } catch (error) {
     if (isAbortError(error)) throw error;
+    if (error?.code === 'ASK_AI_TIMEOUT' || error?.name === 'TimeoutError') {
+      console.warn('[askAI] timeout', timeoutMs, 'ms');
+      throw new Error(ASK_AI_TIMEOUT_MESSAGE);
+    }
     console.error('[askAI] callable error', error?.code, error?.message, error?.details);
     void logSystemError(error, 'Gemini API Call');
     unwrapCallableError(error);
   } finally {
+    timeoutRace.clear();
     if (signal && abortListener) {
       signal.removeEventListener('abort', abortListener);
     }

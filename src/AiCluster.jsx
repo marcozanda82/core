@@ -173,6 +173,18 @@ export default function AiCluster({
   /** Click sull'avatar → diagnosi in chat (intent REQUEST_HEALTH_DIAGNOSIS). */
   onRequestHealthDiagnosis = null,
 }) {
+  const safeDailyLog = useMemo(
+    () => (Array.isArray(dailyLog) ? dailyLog : []),
+    [dailyLog],
+  );
+  const safeUserTargets = useMemo(
+    () => (userTargets && typeof userTargets === 'object' ? userTargets : null),
+    [userTargets],
+  );
+  const safeHealthScore = healthScore && typeof healthScore === 'object'
+    ? healthScore
+    : (Number.isFinite(Number(healthScore)) ? { score: Number(healthScore) } : null);
+
   const chatFirstName = useMemo(() => {
     const raw = String(userDisplayName || '').trim();
     if (!raw) return '';
@@ -181,10 +193,10 @@ export default function AiCluster({
 
   const [isNotesMode, setIsNotesMode] = useState(false);
 
-  const healthAvatarSrc = String(healthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
+  const healthAvatarSrc = String(safeHealthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
     || '/cellula_1_ottimale.png';
-  const healthScoreLabel = healthScore?.avatar?.label
-    ? `Health Score ${Math.round(Number(healthScore.score) || 0)} · ${healthScore.avatar.label}`
+  const healthScoreLabel = safeHealthScore?.avatar?.label
+    ? `Health Score ${Math.round(Number(safeHealthScore.score) || 0)} · ${safeHealthScore.avatar.label}`
     : 'Health Score';
 
   const chatEndRef = useRef(null);
@@ -1149,7 +1161,7 @@ export default function AiCluster({
               onClick={() => {
                 if (typeof onRequestHealthDiagnosis === 'function') {
                   setStrategicProcessingLatch(true);
-                  onRequestHealthDiagnosis(healthScore);
+                  onRequestHealthDiagnosis(safeHealthScore);
                 }
               }}
               disabled={typeof onRequestHealthDiagnosis !== 'function' || isProcessing}
@@ -1179,9 +1191,9 @@ export default function AiCluster({
                 <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
                   {introPhrase}
                 </span>
-              ) : healthScore != null ? (
+              ) : safeHealthScore != null ? (
                 <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
-                  Score {Math.round(Number(healthScore.score) || 0)} · {healthScore?.avatar?.label || '—'}
+                  Score {Math.round(Number(safeHealthScore.score) || 0)} · {safeHealthScore?.avatar?.label || '—'}
                 </span>
               ) : null}
             </div>
@@ -1388,9 +1400,9 @@ export default function AiCluster({
                               || REPORT_COVER_SRC
                             }
                             reportData={msg.reportCard?.phantomData || msg.reportCard?.data || null}
-                            dailyLog={dailyLog}
-                            userTargets={userTargets}
-                            healthScore={healthScore}
+                            dailyLog={safeDailyLog}
+                            userTargets={safeUserTargets}
+                            healthScore={safeHealthScore}
                             userDisplayName={userDisplayName || chatFirstName || ''}
                             ready
                           />
@@ -1947,7 +1959,7 @@ export default function AiCluster({
             onOpenPlanView={handlePulsantieraOpenPlan}
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
-            dailyLog={dailyLog}
+            dailyLog={safeDailyLog}
             isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}

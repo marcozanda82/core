@@ -1,8 +1,9 @@
 /**
  * Spillover Biomeccanico + Tracker Stimolo Settimanale (ipertrofia / frequenza).
  *
- * Scala: 100% = target ipertrofico settimanale (≈ 2 sessioni sul gruppo in 7gg).
- * Una sessione primaria ≈ +50%. Nessun decadimento giornaliero: finestra mobile 7 giorni.
+ * Scala: 100% = target ipertrofico settimanale (≈ 2 sessioni sul gruppo).
+ * Una sessione primaria ≈ +50%. Contributo soggetto a decadimento giornaliero
+ * (≈ −18%/giorno di età della sessione) entro la finestra mobile.
  */
 
 /** Finestra mobile: sessioni oltre 7 giorni non contano più. */
@@ -10,6 +11,12 @@ export const MUSCLE_STIMULUS_WINDOW_DAYS = 7;
 
 /** Guadagno per sessione primaria (1ª volta ≈ 50%, 2ª ≈ 100%). */
 export const MUSCLE_SESSION_STIMULUS_PERCENT = 50;
+
+/**
+ * Frazione di contributo persa per ogni giorno di età della sessione (0.18 = −18%/g).
+ * Giorno 0 = 100%; giorno 2 ≈ 67%; oltre la finestra il contributo è escluso a monte.
+ */
+export const MUSCLE_STIMULUS_DAILY_DECAY_FACTOR = 0.18;
 
 /** Soglia "almeno uno stimolo" (stimolo parziale). */
 export const MUSCLE_STIMULUS_PARTIAL_TOTAL = 50;
@@ -47,6 +54,18 @@ export const SPILLOVER_MUSCLE_KEYS = Object.freeze([
   'braccia',
   'core',
 ]);
+
+/**
+ * Moltiplicatore residuo per età sessione (giorni interi ≥ 0).
+ * @param {unknown} daysAgo
+ * @returns {number} 0–1
+ */
+export function muscleStimulusAgeScale(daysAgo) {
+  const age = Math.max(0, Math.floor(Number(daysAgo) || 0));
+  if (age <= 0) return 1;
+  const factor = Math.max(0, Math.min(0.95, Number(MUSCLE_STIMULUS_DAILY_DECAY_FACTOR) || 0));
+  return Math.pow(1 - factor, age);
+}
 
 /**
  * Etichetta triage sismografo da percentuale 0–100.
@@ -116,10 +135,16 @@ export function resolveSpilloverMuscleKey(label) {
 /**
  * Applica una sessione (insieme di primari allenati) allo stimolo accumulato.
  * Ogni sessione primaria aggiunge ≈50% (non 100%): serve la 2ª nella finestra per il MAX.
+ * Il contributo è scalato per età: −MUSCLE_STIMULUS_DAILY_DECAY_FACTOR per ogni giorno trascorso.
+ *
  * @param {Record<string, { direct: number, indirect: number, total: number }>} stimulus
  * @param {Iterable<string>} primaryKeys
+ * @param {number} [daysAgo=0] giorni di calendario dalla sessione (0 = oggi)
  */
-export function applySpilloverSession(stimulus, primaryKeys) {
+export function applySpilloverSession(stimulus, primaryKeys, daysAgo = 0) {
+  const scale = muscleStimulusAgeScale(daysAgo);
+  if (!(scale > 0)) return;
+
   const primaries = new Set();
   for (const raw of primaryKeys) {
     const resolved = resolveSpilloverMuscleKey(raw);
@@ -137,7 +162,7 @@ export function applySpilloverSession(stimulus, primaryKeys) {
     const row = muscleSpilloverMatrix[primary];
     if (!row) continue;
     for (const [target, pct] of Object.entries(row)) {
-      const amount = Number(pct) || 0;
+      const amount = (Number(pct) || 0) * scale;
       if (!(amount > 0) || !stimulus[target]) continue;
       if (target === primary) {
         stimulus[target].direct += amount;
@@ -218,13 +243,21 @@ export function countSufficientlyStimulatedPillars(
 /**
  * Accumula stimolo da liste di primari (una lista = una sessione) e folda ai 5 pilastri.
  * @param {Iterable<Iterable<string>>} sessionPrimaryLists
+ * @param {Iterable<number>} [daysAgoList] età opzionale allineata 1:1 alle sessioni
  * @returns {Record<string, { direct: number, indirect: number, total: number }>}
  */
-export function accumulateWeeklyStimulusFromSessions(sessionPrimaryLists) {
+export function accumulateWeeklyStimulusFromSessions(sessionPrimaryLists, daysAgoList = null) {
   const stimulus = createEmptyMuscleSpilloverStimulus();
+  const ages = daysAgoList != null ? Array.from(daysAgoList) : null;
+  let idx = 0;
   for (const primaries of sessionPrimaryLists || []) {
-    if (!primaries) continue;
-    applySpilloverSession(stimulus, primaries);
+    if (!primaries) {
+      idx += 1;
+      continue;
+    }
+    const age = ages && Number.isFinite(Number(ages[idx])) ? Number(ages[idx]) : 0;
+    applySpilloverSession(stimulus, primaries, age);
+    idx += 1;
   }
   finalizeMuscleSpilloverTotals(stimulus);
   return foldSpilloverStimulusToPillars(stimulus);

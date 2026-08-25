@@ -141,3 +141,25 @@ export function tryAcquireMealConfirmGuard(guardRef) {
 export function releaseMealConfirmGuard(guardRef) {
   guardRef.current.busy = false;
 }
+
+/** Anti-NaN: mai passare valori non finiti a Recharts / divisioni UI. */
+export function safeNum(val) {
+  return Number.isFinite(Number(val)) ? Number(val) : 0;
+}
+
+/**
+ * Parse "HH:mm" o cifre grezze → ora decimale (0–24).
+ * @param {string} value
+ * @returns {number}
+ */
+export function parseTimeStrToDecimal(value) {
+  const digits = (value || '').replace(/\D/g, '');
+  if (digits.length === 0) return 12;
+  const formatted = digits.length > 2 ? digits.slice(0, 2) + ':' + digits.slice(2, 4) : digits;
+  const [hh, mm] = formatted.includes(':')
+    ? formatted.split(':')
+    : [formatted.slice(0, 2) || '0', formatted.slice(2) || '0'];
+  const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
+  const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
+  return h + m / 60;
+}
