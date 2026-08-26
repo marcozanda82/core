@@ -253,6 +253,11 @@ import {
   HEALTH_DIAGNOSIS_SYSTEM_BLOCK,
 } from '../health/HealthScoreEngine.js';
 import {
+  buildClinicalInsightPayload,
+  generateClinicalInsightPrompt,
+  CLINICAL_INSIGHT_SYSTEM_BLOCK,
+} from '../chat/clinicalInsightCoach.js';
+import {
   buildCoffeeLogAckMessage,
   buildCoffeeStimulantNode,
   buildFastingContextForLlm,
@@ -4885,6 +4890,63 @@ export class CommandTerminalController {
   }
 
   /**
+   * Insight Clinico — Medico dello Sport / Readiness su pacchetto dati silenzioso.
+   */
+  async handleClinicalInsightRequest(userText, currentState = {}, options = {}) {
+    let payloadPack;
+    try {
+      const built = buildClinicalInsightPayload(currentState);
+      payloadPack = built.object;
+    } catch (error) {
+      console.error('[CommandTerminalController] buildClinicalInsightPayload failed', error);
+      this.publishSystemMessage(
+        'Non riesco a raccogliere i dati clinici adesso. Riprova tra un attimo.',
+      );
+      return { ok: false, reason: 'clinical_insight_payload_failed', userNotified: true };
+    }
+
+    const displayName = resolveUserDisplayName(currentState?.userProfile)
+      || String(currentState?.userDisplayName || '').trim();
+    const chatHistory = Array.isArray(options?.chatHistory) ? options.chatHistory : [];
+    const systemInstruction = [
+      buildChatPersonaSystemBlock({ displayName }),
+      CLINICAL_INSIGHT_SYSTEM_BLOCK,
+      String(options?.systemInstructionExtra || '').trim(),
+    ].filter(Boolean).join('\n\n');
+    const prompt = generateClinicalInsightPrompt(payloadPack, userText);
+
+    try {
+      const { adviceMessage } = await this.llmClient.generateConsultantResponse({
+        prompt,
+        systemInstruction,
+        temperature: 0.35,
+        chatHistory,
+        ...(options?.signal ? { signal: options.signal } : {}),
+      });
+      const text = String(adviceMessage || '').trim()
+        || 'Semaforo Giallo.\n- Dati insufficienti per un referto completo: completa sonno e pasti di ieri, poi richiama Insight Clinico.';
+
+      return this.publishChatResponse(
+        {
+          uiMessage: text,
+          adviceMessage: text,
+          payload: { message: text, clinicalInsight: true },
+          requiresConfirmation: false,
+        },
+        userText,
+        { local: false },
+      );
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.error('[CommandTerminalController] handleClinicalInsightRequest failed', error);
+      this.publishSystemMessage(
+        'Insight Clinico non disponibile al momento. Riprova tra poco.',
+      );
+      return { ok: false, reason: 'clinical_insight_failed', userNotified: true };
+    }
+  }
+
+  /**
    * Diagnosi avatar Health Score — risposta in prima persona sui malus maggiori.
    */
   async handleHealthDiagnosisRequest(userText, currentState = {}, options = {}) {
@@ -5774,6 +5836,9 @@ export class CommandTerminalController {
     if (forcedIntentEarly === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
     }
+    if (forcedIntentEarly === 'REQUEST_CLINICAL_INSIGHT') {
+      return this.handleClinicalInsightRequest(userText, currentState, options);
+    }
 
     // Intent Router: report/bollettino (ieri / settimana / mese) — prima del food parser.
     {
@@ -5896,6 +5961,10 @@ export class CommandTerminalController {
 
     if (inferredIntent === 'REQUEST_HEALTH_DIAGNOSIS') {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
+    }
+
+    if (inferredIntent === 'REQUEST_CLINICAL_INSIGHT') {
+      return this.handleClinicalInsightRequest(userText, currentState, options);
     }
 
     if (inferredIntent === 'LOG_COFFEE') {

@@ -1,5 +1,5 @@
 /**
- * Ghost Car What-If: commit goal/delta e valori “committed” per la UI.
+ * Ghost Car What-If + Rolling Balance (autopilota debito 48h).
  */
 
 import { useCallback, useMemo } from 'react';
@@ -16,6 +16,12 @@ import {
   clampGhostSimDelta,
   resolveGhostDailyDeltaFromGoal,
 } from '../../utils/metabolicCompensationCurve';
+import {
+  computeRollingCalorieDebt,
+  normalizeGhostAutoPilotEnabled,
+  readGhostAutoPilotFromLocalStorage,
+  writeGhostAutoPilotToLocalStorage,
+} from '../../utils/rollingCalorieBank';
 
 /** Chiavi LS globali — indipendenti dal giorno visualizzato nel tracker. */
 export const KENTU_GHOST_SIM_DELTA_LS_KEY = 'kentu_ghost_sim_delta_global';
@@ -53,7 +59,6 @@ function writeGhostSimLocalStorage(strategy, delta) {
   try {
     localStorage.setItem(KENTU_GHOST_SIM_STRATEGY_LS_KEY, strategy);
     localStorage.setItem(KENTU_GHOST_SIM_DELTA_LS_KEY, String(delta));
-    // Compat: aggiorna anche le chiavi per-data (lettori legacy / SalaComandi hydrate).
     const d = getTodayString();
     localStorage.setItem(`kentu_cal_strategy_${d}`, strategy);
     localStorage.setItem(`kentu_ghost_sim_delta_${d}`, String(delta));
@@ -73,6 +78,8 @@ function writeGhostSimLocalStorage(strategy, delta) {
  *   setUserProfile?: (updater: any) => void,
  *   kentuDailyCalorieStrategy?: string,
  *   setKentuDailyCalorieStrategy?: (v: string) => void,
+ *   fullHistory?: object|null,
+ *   settingsBaseKcal?: number|null,
  * }} params
  */
 export function useGhostSimCompensation({
@@ -85,7 +92,12 @@ export function useGhostSimCompensation({
   setUserProfile = null,
   kentuDailyCalorieStrategy = 'pari',
   setKentuDailyCalorieStrategy = null,
+  fullHistory = null,
+  settingsBaseKcal = null,
 } = {}) {
+  const todayIso = getTodayString();
+  const isViewingToday = String(currentTrackerDate || todayIso).slice(0, 10) === todayIso;
+
   const applyGhostSimGoal = useCallback(
     (deltaRaw) => {
       const delta = clampGhostSimDelta(deltaRaw);
@@ -104,7 +116,6 @@ export function useGhostSimCompensation({
         };
         const uid = auth?.currentUser?.uid || user?.uid;
         if (uid && db) {
-          // Merge non distruttivo: non azzera targets / altri campi di profile_targets.
           update(ref(db, `users/${uid}/profile_targets/profile`), {
             nutritionGoal: goal,
             goal: next.goal,
@@ -119,6 +130,35 @@ export function useGhostSimCompensation({
     [db, user?.uid, auth, setUserProfile, setKentuDailyCalorieStrategy],
   );
 
+  const ghostAutoPilotEnabled = useMemo(() => {
+    if (
+      userProfile != null
+      && Object.prototype.hasOwnProperty.call(userProfile, 'ghostAutoPilotEnabled')
+      && userProfile.ghostAutoPilotEnabled != null
+    ) {
+      return normalizeGhostAutoPilotEnabled(userProfile.ghostAutoPilotEnabled, true);
+    }
+    return readGhostAutoPilotFromLocalStorage();
+  }, [userProfile]);
+
+  const setGhostAutoPilotEnabled = useCallback(
+    (enabledRaw) => {
+      const enabled = enabledRaw === true;
+      writeGhostAutoPilotToLocalStorage(enabled);
+      setUserProfile?.((prev) => {
+        const next = { ...prev, ghostAutoPilotEnabled: enabled };
+        const uid = auth?.currentUser?.uid || user?.uid;
+        if (uid && db) {
+          update(ref(db, `users/${uid}/profile_targets/profile`), {
+            ghostAutoPilotEnabled: enabled,
+          }).catch((err) => console.error('[Ghost Autopilot] salvataggio fallito', err));
+        }
+        return next;
+      });
+    },
+    [auth, db, user?.uid, setUserProfile],
+  );
+
   const committedGhostGoal = useMemo(() => {
     const fromStrategy = normalizeGhostSimGoal(kentuDailyCalorieStrategy);
     if (kentuDailyCalorieStrategy && kentuDailyCalorieStrategy !== 'pari') {
@@ -129,8 +169,8 @@ export function useGhostSimCompensation({
     );
   }, [kentuDailyCalorieStrategy, userProfile?.nutritionGoal, userProfile?.goal]);
 
+  /** Delta manuale (cursore / persistenza globale). */
   const committedGhostDeltaKcal = useMemo(() => {
-    // 1) Continuo da profilo (include 0 solo se il campo è presente / esplicitamente numerico).
     if (
       userProfile != null
       && Object.prototype.hasOwnProperty.call(userProfile, 'ghostSimDeltaKcal')
@@ -143,14 +183,11 @@ export function useGhostSimCompensation({
       }
     }
 
-    // 2) Continuo da LS globale (non dipende dal giorno tracker).
     const fromLs = readGhostSimDeltaFromLocalStorage(currentTrackerDate);
     if (fromLs != null) {
       return fromLs;
     }
 
-    // 3) Fallback discreto solo se la strategy non è "pari" (evita forzare 0
-    //    quando un delta continuo in zona maintain non matcha −500/0/+400).
     const strat = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
     if (
       strat
@@ -168,10 +205,45 @@ export function useGhostSimCompensation({
     committedGhostGoal,
   ]);
 
+  const baseKcalForBank = useMemo(() => {
+    const fromArg = Math.round(Number(settingsBaseKcal) || 0);
+    if (fromArg > 0) return fromArg;
+    const fromProfile = Math.round(Number(userProfile?.targetCalories) || 0);
+    return fromProfile > 0 ? fromProfile : 0;
+  }, [settingsBaseKcal, userProfile?.targetCalories]);
+
+  const rollingDebt = useMemo(
+    () => computeRollingCalorieDebt({
+      fullHistory,
+      userTargets,
+      settingsBaseKcal: baseKcalForBank,
+      // Lookback sempre ancorato a "oggi reale", indipendente dal giorno visualizzato.
+      asOfDate: todayIso,
+    }),
+    [fullHistory, userTargets, baseKcalForBank, todayIso],
+  );
+
+  /** Auto-delta applicato al target SOLO se autopilota ON e vista = oggi. */
+  const autoCompensationDelta = useMemo(() => {
+    if (!ghostAutoPilotEnabled || !isViewingToday) return 0;
+    return Math.round(Number(rollingDebt.autoCompensationDelta) || 0);
+  }, [ghostAutoPilotEnabled, isViewingToday, rollingDebt.autoCompensationDelta]);
+
+  const effectiveGhostDeltaKcal = useMemo(
+    () => Math.round(Number(committedGhostDeltaKcal) || 0) + autoCompensationDelta,
+    [committedGhostDeltaKcal, autoCompensationDelta],
+  );
+
   return {
     applyGhostSimGoal,
     committedGhostGoal,
     committedGhostDeltaKcal,
+    ghostAutoPilotEnabled,
+    setGhostAutoPilotEnabled,
+    rollingDebt,
+    autoCompensationDelta,
+    effectiveGhostDeltaKcal,
+    isViewingToday,
   };
 }
 

@@ -805,6 +805,9 @@ export default function AiCluster({
       ...(Array.isArray(options?.editingFoods) ? { editingFoods: options.editingFoods } : {}),
       ...(options?.editingExactTime != null ? { editingExactTime: options.editingExactTime } : {}),
       ...(options?.skipUserBubble === true ? { skipUserBubble: true } : {}),
+      ...(options?.isHiddenUserMessage === true ? { isHiddenUserMessage: true } : {}),
+      ...(options?.visibleUserText ? { visibleUserText: options.visibleUserText } : {}),
+      ...(intent === 'REQUEST_CLINICAL_INSIGHT' ? { forceStrategic: true } : {}),
     });
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [

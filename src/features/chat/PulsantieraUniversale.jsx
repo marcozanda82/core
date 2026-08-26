@@ -56,6 +56,16 @@ const SUBMENUS = {
       reportKind: 'yesterday',
     },
     {
+      id: 'insight-clinico',
+      icon: '🩺',
+      label: 'Insight Clinico',
+      action: 'send',
+      message: 'Insight Clinico',
+      intent: 'REQUEST_CLINICAL_INSIGHT',
+      isHiddenUserMessage: true,
+      visibleUserText: '🩺 Insight Clinico',
+    },
+    {
       id: 'sintesi-settimanale',
       icon: '📅',
       label: 'Sintesi Settimanale',
@@ -117,6 +127,16 @@ const VOCABULARY_SECTIONS = [
         reportKind: 'yesterday',
       },
       {
+        id: 'insight-clinico',
+        icon: '🩺',
+        label: 'Insight Clinico',
+        action: 'send',
+        message: 'Insight Clinico',
+        intent: 'REQUEST_CLINICAL_INSIGHT',
+        isHiddenUserMessage: true,
+        visibleUserText: '🩺 Insight Clinico',
+      },
+      {
         id: 'sintesi-settimanale',
         icon: '📅',
         label: 'Sintesi Settimanale',
@@ -143,6 +163,16 @@ const VOCABULARY_SECTIONS = [
       { id: 'pisolino', icon: '😴', label: 'Pisolino', action: 'shortcut', shortcutId: 'pisolino' },
       { id: 'meditazione', icon: '🧘', label: 'Meditazione', action: 'send', message: 'Meditazione' },
       { id: 'sonno', icon: '🌙', label: 'Sonno', action: 'send', message: 'Sonno' },
+      {
+        id: 'insight-clinico',
+        icon: '🩺',
+        label: 'Insight Clinico',
+        action: 'send',
+        message: 'Insight Clinico',
+        intent: 'REQUEST_CLINICAL_INSIGHT',
+        isHiddenUserMessage: true,
+        visibleUserText: '🩺 Insight Clinico',
+      },
     ],
   },
 ];
@@ -415,6 +445,9 @@ export default function PulsantieraUniversale({
       const extras = {};
       if (item.intent) extras.intent = item.intent;
       if (item.reportKind) extras.reportKind = item.reportKind;
+      if (item.skipUserBubble === true) extras.skipUserBubble = true;
+      if (item.isHiddenUserMessage === true) extras.isHiddenUserMessage = true;
+      if (item.visibleUserText) extras.visibleUserText = String(item.visibleUserText);
       onSendChatMessage?.(text, Object.keys(extras).length ? extras : undefined);
     }
   }, [

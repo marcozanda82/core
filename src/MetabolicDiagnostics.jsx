@@ -110,6 +110,11 @@ function shouldShowMuscleInactivityAlarm(value, daysSince) {
  *   settingsBaseKcal?: number | null,
  *   committedGhostGoal?: string | null,
  *   committedGhostDeltaKcal?: number | null,
+ *   effectiveGhostDeltaKcal?: number | null,
+ *   autoCompensationDelta?: number,
+ *   rollingDebt?: object | null,
+ *   ghostAutoPilotEnabled?: boolean,
+ *   onToggleGhostAutoPilot?: ((enabled: boolean) => void) | null,
  *   onApplyGhostSimGoal?: (deltaKcal: number) => void | Promise<void>,
  *   activeCompensation?: object | null,
  *   onConfirmCompensation?: (plan: object) => void | Promise<void>,
@@ -126,6 +131,11 @@ export default function MetabolicDiagnostics({
   settingsBaseKcal = null,
   committedGhostGoal = 'maintain',
   committedGhostDeltaKcal = null,
+  effectiveGhostDeltaKcal = null,
+  autoCompensationDelta = 0,
+  rollingDebt = null,
+  ghostAutoPilotEnabled = true,
+  onToggleGhostAutoPilot = null,
   onApplyGhostSimGoal = null,
   activeCompensation = null,
   onConfirmCompensation = null,
@@ -349,6 +359,11 @@ export default function MetabolicDiagnostics({
           settingsBaseKcal={settingsBaseKcal}
           committedGoal={committedGhostGoal}
           committedDeltaKcal={committedGhostDeltaKcal}
+          effectiveDeltaKcal={effectiveGhostDeltaKcal}
+          autoCompensationDelta={autoCompensationDelta}
+          rollingDebt={rollingDebt}
+          ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+          onToggleGhostAutoPilot={onToggleGhostAutoPilot}
           onApplyGoal={onApplyGhostSimGoal}
           activeCompensation={activeCompensation}
           compensationDateIso={activeDate || getTodayString()}

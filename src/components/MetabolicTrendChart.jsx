@@ -99,7 +99,7 @@ function GhostCarTooltip({ active, payload }) {
 }
 
 /**
- * MetabolicTrendChart — simulatore What-If Ghost Car (Diag).
+ * MetabolicTrendChart — simulatore What-If Ghost Car (Diag) + Rolling Balance.
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -109,6 +109,11 @@ function GhostCarTooltip({ active, payload }) {
  *   settingsBaseKcal?: number | null,
  *   committedGoal?: string | null,
  *   committedDeltaKcal?: number | null,
+ *   effectiveDeltaKcal?: number | null,
+ *   autoCompensationDelta?: number,
+ *   rollingDebt?: object | null,
+ *   ghostAutoPilotEnabled?: boolean,
+ *   onToggleGhostAutoPilot?: ((enabled: boolean) => void) | null,
  *   onApplyGoal?: (deltaKcal: number) => void | Promise<void>,
  *   activeCompensation?: object | null,
  *   compensationDateIso?: string | null,
@@ -125,6 +130,11 @@ export default function MetabolicTrendChart({
   settingsBaseKcal = null,
   committedGoal = 'maintain',
   committedDeltaKcal = null,
+  effectiveDeltaKcal = null,
+  autoCompensationDelta = 0,
+  rollingDebt = null,
+  ghostAutoPilotEnabled = true,
+  onToggleGhostAutoPilot = null,
   onApplyGoal = null,
   activeCompensation = null,
   compensationDateIso = null,
@@ -196,6 +206,14 @@ export default function MetabolicTrendChart({
   const isPreview = sliderDelta !== savedDelta;
   const smartLabel = ghostSimDeltaSmartLabel(sliderDelta);
   const deltaDisplay = formatKcal(sliderDelta);
+
+  const autoDelta = Math.round(Number(autoCompensationDelta) || 0);
+  const netDebt = Math.round(Number(rollingDebt?.netDebt48h) || 0);
+  const remainingDebt = Math.round(Number(rollingDebt?.remainingDebtAfterCap) || 0);
+  const effectiveDelta = effectiveDeltaKcal != null && effectiveDeltaKcal !== ''
+    ? Math.round(Number(effectiveDeltaKcal) || 0)
+    : Math.round(Number(savedDelta) || 0) + (ghostAutoPilotEnabled ? autoDelta : 0);
+  const showRollingBadge = netDebt > 0 || autoDelta !== 0;
 
   const deviation = Math.round(Number(latest?.deviation) || 0);
   const absDeviation = Math.abs(deviation);
@@ -397,6 +415,65 @@ export default function MetabolicTrendChart({
             <span className="ml-1 text-slate-600">({formatKcal(ghostDailyDelta)}/g)</span>
           </span>
         ) : null}
+      </div>
+
+      {/* Rolling Balance — debito 48h + Autopilota */}
+      <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/50 px-2.5 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={ghostAutoPilotEnabled === true}
+            aria-label="Autopilota Rolling Balance"
+            onClick={() => onToggleGhostAutoPilot?.(ghostAutoPilotEnabled !== true)}
+            disabled={typeof onToggleGhostAutoPilot !== 'function'}
+            className={[
+              'rounded-md border px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors disabled:opacity-50',
+              ghostAutoPilotEnabled
+                ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-200'
+                : 'border-white/15 bg-slate-900/80 text-slate-400',
+            ].join(' ')}
+          >
+            Autopilota {ghostAutoPilotEnabled ? 'ON' : 'OFF'}
+          </button>
+          {showRollingBadge ? (
+            <p className="min-w-0 flex-1 text-[10px] leading-snug text-slate-300">
+              Debito 48h
+              <span className="ml-1 font-mono tabular-nums text-orange-300">
+                +{netDebt}
+              </span>
+              {ghostAutoPilotEnabled && autoDelta !== 0 ? (
+                <>
+                  <span className="mx-1 text-slate-600">→ oggi</span>
+                  <span className="font-mono tabular-nums text-cyan-300">
+                    {formatKcal(autoDelta)}
+                  </span>
+                </>
+              ) : null}
+              {remainingDebt > 0 && ghostAutoPilotEnabled ? (
+                <span className="ml-1 text-slate-500">
+                  · resto +{remainingDebt}
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="min-w-0 flex-1 text-[10px] text-slate-500">
+              Nessun debito metabolico nelle ultime 48h
+            </p>
+          )}
+        </div>
+        <p className="mt-1.5 font-mono text-[10px] tabular-nums text-slate-400">
+          Manuale {formatKcal(savedDelta)}
+          {ghostAutoPilotEnabled && autoDelta !== 0 ? (
+            <>
+              <span className="text-slate-600"> + Auto </span>
+              {formatKcal(autoDelta)}
+            </>
+          ) : null}
+          <span className="text-slate-600"> = </span>
+          <span className="font-semibold text-cyan-200">{formatKcal(effectiveDelta)}</span>
+          <span className="ml-1 text-slate-600">kcal/g effettive</span>
+        </p>
       </div>
 
       {/* Slider sotto il grafico: la mano non copre le curve su mobile */}

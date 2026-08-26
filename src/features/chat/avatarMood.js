@@ -116,6 +116,7 @@ export function detectStrategicConsultContext(chatHistory = [], opts = {}) {
     const text = String(entry.text || '').trim();
     if (entry.isHiddenUserMessage || entry.skipUserBubble) {
       if (/REQUEST_HEALTH_DIAGNOSIS/i.test(text)) return true;
+      if (/REQUEST_CLINICAL_INSIGHT/i.test(text)) return true;
       return false;
     }
 

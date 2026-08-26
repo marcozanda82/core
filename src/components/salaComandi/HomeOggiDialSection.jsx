@@ -77,6 +77,8 @@ export default function HomeOggiDialSection({
     maintenanceMarkerIsDeficit = false,
   } = hud;
 
+  const homeDayKey = String(currentTrackerDate || getTodayString()).slice(0, 10);
+
   return (
     <div className="home-oggi-scroll">
       <div className="home-oggi-column" style={{ paddingLeft: 0, paddingRight: 0 }}>
@@ -312,7 +314,7 @@ export default function HomeOggiDialSection({
           <TrainingBlockWidget
             db={db}
             userUid={user?.uid ?? null}
-            todayIso={currentTrackerDate || getTodayString()}
+            todayIso={homeDayKey}
             userProfile={userProfile}
             fourCylinder={userModel?.fourCylinder ?? null}
             fullHistory={fullHistory}

@@ -15,6 +15,7 @@ import {
 } from '../activityCatalog';
 import ProgressionScoreWidget from '../features/trendHub/components/ProgressionScoreWidget';
 import SaluteLongevityHero from '../features/trendHub/components/SaluteLongevityHero';
+import useHomeProgressionSwap from '../hooks/salaComandi/useHomeProgressionSwap';
 import {
   calculateLongevityScore,
   calculateProgressionScore,
@@ -106,7 +107,7 @@ export default function TrainingBlockWidget({
   userUid = null,
   todayIso = null,
   userProfile = null,
-  fourCylinder: _fourCylinder = null,
+  fourCylinder = null,
   fullHistory = null,
   activeLog = null,
   userTargets = null,
@@ -150,6 +151,15 @@ export default function TrainingBlockWidget({
   });
 
   const dayKey = String(todayIso || hookTodayIso || '').slice(0, 10);
+  const {
+    mode: leftRingMode,
+    cardioScore,
+  } = useHomeProgressionSwap({
+    fourCylinder,
+    fullHistory,
+    activeLog,
+    todayIso: dayKey,
+  });
   const [toast, setToast] = useState('');
   const [localError, setLocalError] = useState('');
   const [creatorOpenInternal, setCreatorOpenInternal] = useState(false);
@@ -501,13 +511,28 @@ export default function TrainingBlockWidget({
       aria-label="Punteggi Progressione e Longevità"
     >
       <div className="grid w-full max-w-full grid-cols-2 items-center gap-2">
-        <ProgressionScoreWidget
-          compact
-          size={96}
-          score={progressionResult?.finalScore}
-          breakdown={progressionResult?.breakdown}
-          onClick={typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined}
-        />
+        {leftRingMode === 'strength' ? (
+          <ProgressionScoreWidget
+            compact
+            size={96}
+            label="Progressione"
+            score={progressionResult?.finalScore}
+            breakdown={progressionResult?.breakdown}
+            onClick={typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined}
+          />
+        ) : (
+          <ProgressionScoreWidget
+            compact
+            size={96}
+            label="Cardio"
+            score={cardioScore}
+            onClick={
+              typeof onOpenLongevity === 'function'
+                ? onOpenLongevity
+                : (typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined)
+            }
+          />
+        )}
         <SaluteLongevityHero
           compact
           size={96}

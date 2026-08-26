@@ -1216,6 +1216,11 @@ export default function SalaComandi() {
     applyGhostSimGoal,
     committedGhostGoal,
     committedGhostDeltaKcal,
+    ghostAutoPilotEnabled,
+    setGhostAutoPilotEnabled,
+    rollingDebt,
+    autoCompensationDelta,
+    effectiveGhostDeltaKcal,
   } = useGhostSimCompensation({
     currentTrackerDate,
     db,
@@ -1226,6 +1231,8 @@ export default function SalaComandi() {
     setUserProfile,
     kentuDailyCalorieStrategy,
     setKentuDailyCalorieStrategy,
+    fullHistory,
+    settingsBaseKcal: Math.round(Number(userProfile?.targetCalories) || 0) || null,
   });
 
   /** Persistenza piano Compensazione Esplicita (profilo / Firebase). */
@@ -4882,26 +4889,34 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [userProfile?.activeCompensation, dogmaticCompensationDateIso],
   );
 
+  /** Rolling Balance: solo oggi + autopilota ON (già filtrato nell'hook). */
+  const dogmaticAutoCompensationKcal = useMemo(
+    () => Math.round(Number(autoCompensationDelta) || 0),
+    [autoCompensationDelta],
+  );
+
   const dogmaticTargetKcal = useMemo(
     () => Math.max(
       0,
       dogmaticSettingsBaseKcal
         + dogmaticBurnKcal
         + dogmaticDeltaKcal
-        + dogmaticCompensationKcal,
+        + dogmaticCompensationKcal
+        + dogmaticAutoCompensationKcal,
     ),
     [
       dogmaticSettingsBaseKcal,
       dogmaticBurnKcal,
       dogmaticDeltaKcal,
       dogmaticCompensationKcal,
+      dogmaticAutoCompensationKcal,
     ],
   );
 
   const dynamicDailyKcal = dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcal > 0
     ? dogmaticTargetKcal
     : (profileKcalBase != null
-      ? profileKcalBase + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal
+      ? profileKcalBase + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal + dogmaticAutoCompensationKcal
       : null);
 
   const profileTdeeKcal = dogmaticSettingsBaseKcal > 0
@@ -4915,10 +4930,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const baseKcalSplit = dogmaticSettingsBaseKcal > 0
       ? dogmaticSettingsBaseKcal
       : Math.round(Number(profileKcalBase) || Number(userTargets?.kcal) || 0);
-    const deltaKcalSplit = dogmaticDeltaKcal + dogmaticCompensationKcal;
+    const deltaKcalSplit = dogmaticDeltaKcal + dogmaticCompensationKcal + dogmaticAutoCompensationKcal;
     const targetKcalSplit = Math.max(
       0,
-      baseKcalSplit + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal,
+      baseKcalSplit + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal + dogmaticAutoCompensationKcal,
     );
 
     const thresholds = buildMetabolicMapThresholdsFromSplit({
@@ -4932,6 +4947,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       deltaKcal: deltaKcalSplit,
       strategyDeltaKcal: dogmaticDeltaKcal,
       compensationKcal: dogmaticCompensationKcal,
+      autoCompensationKcal: dogmaticAutoCompensationKcal,
       targetKcal: targetKcalSplit,
       burnKcal: dogmaticBurnKcal,
       metabolicMapThresholds: thresholds,
@@ -4940,6 +4956,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     dogmaticSettingsBaseKcal,
     dogmaticDeltaKcal,
     dogmaticCompensationKcal,
+    dogmaticAutoCompensationKcal,
     dogmaticBurnKcal,
     profileKcalBase,
     userTargets?.kcal,
@@ -7062,6 +7079,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               settingsBaseKcal={Math.round(Number(userProfile?.targetCalories) || 0) || null}
               committedGhostGoal={committedGhostGoal}
               committedGhostDeltaKcal={committedGhostDeltaKcal}
+              effectiveGhostDeltaKcal={effectiveGhostDeltaKcal}
+              autoCompensationDelta={autoCompensationDelta}
+              rollingDebt={rollingDebt}
+              ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+              onToggleGhostAutoPilot={setGhostAutoPilotEnabled}
               onApplyGhostSimGoal={applyGhostSimGoal}
               activeCompensation={userProfile?.activeCompensation ?? null}
               onConfirmCompensation={applyActiveCompensationPlan}

@@ -154,6 +154,27 @@ function computeGlobalLoad(cylinders) {
   };
 }
 
+/**
+ * Score Forza 0–100 per lo swap Home: picco tra i cilindri muscolari (SSOT hypertrophy).
+ * @param {object | null | undefined} fourCylinder
+ * @param {object | null | undefined} fullHistory
+ * @param {string} [todayIso]
+ * @returns {{ percent: number, peakLabel: string }}
+ */
+export function computeStrengthScore(fourCylinder = null, fullHistory = null, todayIso = '') {
+  const day = String(todayIso || getTodayString()).slice(0, 10);
+  const levels = resolveHypertrophyLevels01(fourCylinder, fullHistory, day);
+  const cylinders = MUSCLE_CYLINDER_DEFS.map((cyl) => {
+    const level = normalizeLevel(levels?.[cyl.id]);
+    const ratio = level == null ? 0 : level;
+    return {
+      ...cyl,
+      percent: Math.round(ratio * 100),
+    };
+  });
+  return computeGlobalLoad(cylinders);
+}
+
 function ProgressBarRow({
   label,
   percent,

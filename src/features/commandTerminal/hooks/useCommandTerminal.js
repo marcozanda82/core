@@ -1100,6 +1100,7 @@ export function useCommandTerminal({
 
         strategicGenerationRef.current = options?.forceStrategic === true
           || forcedIntent === 'REQUEST_HEALTH_DIAGNOSIS'
+          || forcedIntent === 'REQUEST_CLINICAL_INSIGHT'
           || forcedIntent === 'ASK_DRAFT_ADVICE'
           || forcedIntent === 'ASK_MEAL_ADVICE'
           || forcedIntent === 'CONSULTANT_MEAL'

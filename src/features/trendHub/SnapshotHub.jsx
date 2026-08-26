@@ -32,6 +32,11 @@ function ProgressioneSnapshot({
   settingsBaseKcal = null,
   committedGhostGoal = 'maintain',
   committedGhostDeltaKcal = null,
+  effectiveGhostDeltaKcal = null,
+  autoCompensationDelta = 0,
+  rollingDebt = null,
+  ghostAutoPilotEnabled = true,
+  onToggleGhostAutoPilot = null,
   onApplyGhostSimGoal = null,
   activeCompensation = null,
   onConfirmCompensation = null,
@@ -98,6 +103,11 @@ function ProgressioneSnapshot({
         settingsBaseKcal={settingsBaseKcal}
         committedGhostGoal={committedGhostGoal}
         committedGhostDeltaKcal={committedGhostDeltaKcal}
+        effectiveGhostDeltaKcal={effectiveGhostDeltaKcal}
+        autoCompensationDelta={autoCompensationDelta}
+        rollingDebt={rollingDebt}
+        ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+        onToggleGhostAutoPilot={onToggleGhostAutoPilot}
         onApplyGhostSimGoal={onApplyGhostSimGoal}
         activeCompensation={activeCompensation}
         onConfirmCompensation={onConfirmCompensation}
@@ -121,6 +131,11 @@ export default function SnapshotHub({
   settingsBaseKcal = null,
   committedGhostGoal = 'maintain',
   committedGhostDeltaKcal = null,
+  effectiveGhostDeltaKcal = null,
+  autoCompensationDelta = 0,
+  rollingDebt = null,
+  ghostAutoPilotEnabled = true,
+  onToggleGhostAutoPilot = null,
   onApplyGhostSimGoal = null,
   activeCompensation = null,
   onConfirmCompensation = null,
@@ -248,6 +263,11 @@ export default function SnapshotHub({
               settingsBaseKcal={settingsBaseKcal}
               committedGhostGoal={committedGhostGoal}
               committedGhostDeltaKcal={committedGhostDeltaKcal}
+              effectiveGhostDeltaKcal={effectiveGhostDeltaKcal}
+              autoCompensationDelta={autoCompensationDelta}
+              rollingDebt={rollingDebt}
+              ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+              onToggleGhostAutoPilot={onToggleGhostAutoPilot}
               onApplyGhostSimGoal={onApplyGhostSimGoal}
               activeCompensation={activeCompensation}
               onConfirmCompensation={onConfirmCompensation}

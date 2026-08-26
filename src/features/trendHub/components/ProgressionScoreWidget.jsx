@@ -145,10 +145,13 @@ export default function ProgressionScoreWidget({
   size = 200,
   compact = false,
   onClick = null,
+  /** Etichetta centrale anello (Home swap: Progressione | Cardio). */
+  label = 'Progressione',
 } = {}) {
   const [showDetails, setShowDetails] = useState(false);
   const [expandedItem, setExpandedItem] = useState(null);
   const uid = useId().replace(/:/g, '');
+  const ringLabel = String(label || 'Progressione').trim() || 'Progressione';
   const gradId = `progression-grad-${uid}`;
   const ringSize = compact ? Math.min(Number(size) || 96, 110) : (Number(size) || 200);
   const value = Number.isFinite(Number(score)) ? Math.max(0, Math.min(100, Math.round(Number(score)))) : null;
@@ -202,11 +205,11 @@ export default function ProgressionScoreWidget({
 
   const aria = useMemo(
     () => (value == null
-      ? 'Punteggio Progressione non disponibile'
+      ? `Punteggio ${ringLabel} non disponibile`
       : compact
-        ? `Punteggio Progressione ${value} su 100`
-        : `Punteggio Progressione ${value} su 100. Tocca per ${showDetails ? 'nascondere' : 'mostrare'} il dettaglio.`),
-    [value, showDetails, compact],
+        ? `Punteggio ${ringLabel} ${value} su 100`
+        : `Punteggio ${ringLabel} ${value} su 100. Tocca per ${showDetails ? 'nascondere' : 'mostrare'} il dettaglio.`),
+    [value, showDetails, compact, ringLabel],
   );
 
   const ring = (
@@ -244,7 +247,7 @@ export default function ProgressionScoreWidget({
       </svg>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
         <span className={`font-bold uppercase tracking-[0.14em] text-slate-400 ${compact ? 'text-[0.5rem]' : 'text-[0.65rem]'}`}>
-          Progressione
+          {ringLabel}
         </span>
         <span className={`mt-0.5 font-black tabular-nums leading-none text-slate-50 ${compact ? 'text-2xl' : 'mt-1 text-5xl'}`}>
           {value != null ? value : '—'}
