@@ -21,6 +21,17 @@ import {
   formatCoffeeShopDatabaseForPrompt,
 } from '../../../constants/coffeeShopDatabase.js';
 import { readFavoriteBreakfast } from '../../breakfast/favoriteBreakfastMemory.js';
+import {
+  buildSaluteLongevityWindow,
+  LONGEVITY_WINDOW_DAYS,
+} from '../../trendHub/utils/saluteHistorySeries.js';
+import {
+  calculateLongevityScore,
+  computeAverageDailyFastingWindow,
+  REFERENCE_HEIGHT_CM,
+  resolveProgressionNutritionTargets,
+} from '../../trendHub/utils/saluteDashboardMetrics.js';
+import { buildLongevityContextForAi } from '../../trendHub/utils/longevityInsightGenerator.js';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -306,6 +317,144 @@ function buildDiaryContextBlock(diaryState = {}) {
 }
 
 /**
+ * Longevity Context per la chat (leva strategica Pagella Metabolica).
+ * @param {object} nutritionState
+ * @param {object} diaryState
+ * @param {object} [options]
+ * @returns {object|null}
+ */
+function buildLongevityContextBlock(nutritionState = {}, diaryState = {}, options = {}) {
+  if (options.longevityContext && typeof options.longevityContext === 'object') {
+    return options.longevityContext;
+  }
+
+  try {
+    if (options.longevityResult && typeof options.longevityResult === 'object') {
+      const breakdown = options.longevityResult.breakdown || {};
+      return buildLongevityContextForAi(options.longevityResult.finalScore, {
+        cardioMins: breakdown.cardioMins,
+        uniqueGroups: breakdown.uniqueGroups,
+        sleepAvg: breakdown.sleepAvg,
+        whtrMultiplier: breakdown.whtrMultiplier,
+        criticalThreshold: breakdown.criticalThreshold,
+        userHeight: breakdown.userHeight,
+        cardioScore: breakdown.cardioScore,
+        weightsScore: breakdown.weightsScore,
+        sleepScore: breakdown.sleepScore,
+        whtrScore: breakdown.whtrScore,
+        longevityNutrition: breakdown.longevityNutrition,
+      });
+    }
+
+    const fullHistory = diaryState?.fullHistory
+      || nutritionState?.fullHistory
+      || options.fullHistory
+      || {};
+    const activeLog = Array.isArray(nutritionState?.activeLog)
+      ? nutritionState.activeLog
+      : (Array.isArray(diaryState?.activeLog) ? diaryState.activeLog : []);
+    const activeDate = asTrimmedString(
+      diaryState?.activeDate || nutritionState?.activeDate || options.activeDate || '',
+    ).slice(0, 10) || getTodayString();
+
+    const bodyMetricsHistory = Array.isArray(options.bodyMetricsHistory)
+      ? options.bodyMetricsHistory
+      : (Array.isArray(diaryState?.bodyMetricsHistory)
+        ? diaryState.bodyMetricsHistory
+        : (Array.isArray(nutritionState?.bodyMetricsHistory)
+          ? nutritionState.bodyMetricsHistory
+          : (Array.isArray(options.recentBodyMetrics) ? options.recentBodyMetrics : [])));
+
+    const heightRaw = Number(
+      options.heightCm
+      ?? nutritionState?.userProfile?.height
+      ?? nutritionState?.userProfile?.heightCm
+      ?? diaryState?.userProfile?.height
+      ?? diaryState?.userProfile?.heightCm
+      ?? options.userProfile?.height
+      ?? options.userProfile?.heightCm,
+    );
+    const heightCm = Number.isFinite(heightRaw) && heightRaw > 0 ? heightRaw : REFERENCE_HEIGHT_CM;
+
+    const longevityWindow = buildSaluteLongevityWindow({
+      fullHistory,
+      bodyMetricsHistory,
+      todayDate: activeDate,
+      days: LONGEVITY_WINDOW_DAYS,
+      todayLiveLog: activeLog,
+    });
+
+    const longevityNutrition = options.longevityNutrition
+      || nutritionState?.longevityNutrition
+      || diaryState?.longevityNutrition
+      || null;
+    const recentNutritionScores = Array.isArray(options.recentNutritionScores)
+      ? options.recentNutritionScores
+      : (Array.isArray(nutritionState?.recentNutritionScores)
+        ? nutritionState.recentNutritionScores
+        : (Array.isArray(diaryState?.recentNutritionScores)
+          ? diaryState.recentNutritionScores
+          : null));
+
+    const targets = resolveProgressionNutritionTargets(
+      options.userTargets
+      || nutritionState?.userTargets
+      || diaryState?.userTargets
+      || {},
+    );
+    const totals = computeTotali(Array.isArray(activeLog) ? activeLog : []);
+    const proteinGramsRaw = Number(totals?.prot ?? totals?.pro);
+    const proteinGrams = Number.isFinite(proteinGramsRaw) && proteinGramsRaw > 0
+      ? Math.round(proteinGramsRaw)
+      : null;
+    const fastingTrend = computeAverageDailyFastingWindow({
+      fullHistory,
+      todayDate: activeDate,
+      windowDays: LONGEVITY_WINDOW_DAYS,
+    });
+
+    const longevityResult = calculateLongevityScore({
+      cardioMinutesTotal: longevityWindow.cardioMinutesTotal,
+      uniqueMuscleGroups: longevityWindow.uniqueMuscleGroups,
+      muscleStimulusPillars: longevityWindow.muscleStimulusPillars,
+      pesiSessionCount: longevityWindow.pesiSessionCount,
+      sleepAvgHours: longevityWindow.sleepAvgHours,
+      waistCm: longevityWindow.waistCm,
+      daysSampled: longevityWindow.daysSampled,
+      sleepNights: longevityWindow.sleepNights,
+      cardioDays: longevityWindow.cardioDays,
+      pesiDays: longevityWindow.pesiDays,
+      heightCm,
+      windowDays: LONGEVITY_WINDOW_DAYS,
+      longevityNutrition,
+      recentNutritionScores,
+      proteinGrams,
+      proteinTarget: targets.prot,
+      fastingHoursAvg: fastingTrend.averageHours,
+      dayLog: activeLog,
+    });
+
+    const breakdown = longevityResult?.breakdown || {};
+    return buildLongevityContextForAi(longevityResult?.finalScore, {
+      cardioMins: breakdown.cardioMins,
+      uniqueGroups: breakdown.uniqueGroups,
+      sleepAvg: breakdown.sleepAvg,
+      whtrMultiplier: breakdown.whtrMultiplier,
+      criticalThreshold: breakdown.criticalThreshold,
+      userHeight: breakdown.userHeight,
+      cardioScore: breakdown.cardioScore,
+      weightsScore: breakdown.weightsScore,
+      sleepScore: breakdown.sleepScore,
+      nutritionScore: breakdown.nutritionScore,
+      longevityNutrition: breakdown.longevityNutrition,
+    });
+  } catch (error) {
+    console.warn('[kentuGlobalState] longevityContext build failed', error);
+    return null;
+  }
+}
+
+/**
  * Costruisce l'oggetto strutturato Kentu Global State.
  *
  * @param {object} nutritionState
@@ -379,6 +528,8 @@ export function buildKentuGlobalStateObject(
     || diaryState?.favoriteBreakfast
     || readFavoriteBreakfast();
 
+  const longevityContext = buildLongevityContextBlock(nutritionState, diaryState, options);
+
   return {
     User_Profile: {
       displayName: asTrimmedString(
@@ -423,6 +574,10 @@ export function buildKentuGlobalStateObject(
       promptRule:
         'Se l\'utente chiede «un caffè», «il solito», cappuccino/macchiato/croissant: usa SOLO questi valori (macro + caffeineMg + isFastingSafe). VIETATO inventare.',
     },
+    ...(longevityContext ? {
+      longevityContext,
+      Longevity_Context: longevityContext,
+    } : {}),
     ...(avatarSymbiosis ? { Avatar_Symbiosis: avatarSymbiosis } : {}),
     Diary_Context: {
       scope: 'today_only',
@@ -507,6 +662,7 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       hoursFasted: hoursFromMonitor,
       healthScore: state.healthScore,
       metabolicSnapshot: state.metabolicSnapshot,
+      bodyMetricsHistory: state.bodyMetricsHistory || state.recentBodyMetrics || [],
     },
     cylindersState,
     cardioLogs,
@@ -517,6 +673,7 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       activeDate,
       userPortions: state.userPortions,
       userDisplayName: state.userDisplayName,
+      userProfile: state.userProfile,
       manualNodes: state.manualNodes,
       hoursFasted: hoursFromMonitor,
       fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
@@ -527,6 +684,7 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
         ?? state.fastingData?.phaseName,
       metabolicSnapshot: state.metabolicSnapshot,
       healthScore: state.healthScore,
+      bodyMetricsHistory: state.bodyMetricsHistory || state.recentBodyMetrics || [],
     },
     {
       ...options,
@@ -535,6 +693,7 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
         || state.userProfile?.displayName
         || state.userProfile?.name
         || '',
+      userProfile: state.userProfile,
       manualNodes: state.manualNodes,
       hoursFasted: hoursFromMonitor,
       fastingBrokenBySweetCoffee: state.healthScoreMetrics?.fastingBrokenBySweetCoffee,
@@ -544,6 +703,16 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
         ?? state.metabolicSnapshot?.phase?.label
         ?? state.fastingData?.phaseName,
       metabolicSnapshot: state.metabolicSnapshot,
+      fullHistory,
+      activeDate,
+      bodyMetricsHistory: state.bodyMetricsHistory || state.recentBodyMetrics || [],
+      recentBodyMetrics: state.recentBodyMetrics || state.bodyMetricsHistory || [],
+      heightCm: state.userProfile?.height ?? state.userProfile?.heightCm ?? state.heightCm,
+      longevityContext: state.longevityContext || options.longevityContext || null,
+      longevityResult: state.longevityResult || options.longevityResult || null,
+      longevityNutrition: state.longevityNutrition || options.longevityNutrition || null,
+      recentNutritionScores: state.recentNutritionScores || options.recentNutritionScores || null,
+      userTargets: state.userTargets,
     },
   );
 
@@ -563,6 +732,9 @@ export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
   'Bevande < 10 kcal (caffè amaro, tè, acqua) NON interrompono il digiuno.',
   'REGOLA 0 KCAL (OBBLIGATORIA): Se il pasto ha 0 kcal (es. caffè amaro, tè, acqua; campo kcal:0), IL DIGIUNO NON È INTERROTTO. Non dire che il digiuno è rotto: complimentati per averlo mantenuto.',
   'CAFFERIA / COLAZIONE: usa Coffee_Shop_Context.catalog (e favoriteBreakfast per «il solito»). Macro, caffeineMg e isFastingSafe sono ESATTI — VIETATO inventarli.',
+  'LONGEVITÀ (leva strategica): leggi longevityContext (score, bottleneck, strategicLever, targetAction / chipLabel).',
+  'Se l\'utente chiede cosa fare oggi / come allenarsi / una direzione per la giornata: proponi strategicLever collegandola all\'aumento del punteggio Longevità (motivante, 1-2 frasi).',
+  'Puoi offrire un chip rapido con targetAction/chipLabel (es. «🏃‍♂️ Avvia 30 min Zona 2») in payload.options.',
   '',
 ].join('\n');
 

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import MetabolicMonitorCard from '../../components/MetabolicMonitorCard';
+import MetabolicReportCard from '../trendHub/components/MetabolicReportCard';
 import SaluteLongevityHero from '../trendHub/components/SaluteLongevityHero';
 import useMetabolicPhaseState from '../salaComandi/hooks/useMetabolicPhaseState';
 import { calculateHealthScore, getHealthAvatar } from '../health/HealthScoreEngine';
@@ -171,11 +172,14 @@ export default function MetabolismoRoom({ store }) {
         missingSleepData={!sleepSnapshot.hasSleepData}
       />
       <HealthScoreGlassCard healthScore={healthScore} />
-      <div className={`flex flex-col items-center rounded-2xl px-3 py-5 ${GLASS_SURFACE_CLASS}`}>
+      <div className={`flex flex-col items-center gap-2.5 rounded-2xl px-3 py-4 ${GLASS_SURFACE_CLASS}`}>
         <SaluteLongevityHero
           score={longevityResult.finalScore}
+          size={148}
+        />
+        <MetabolicReportCard
+          score={longevityResult.finalScore}
           breakdown={longevityResult.breakdown}
-          size={188}
         />
       </div>
     </div>

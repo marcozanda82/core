@@ -10,34 +10,25 @@ import MappaRoom from './MappaRoom';
 import RadarRoom from './RadarRoom';
 import PremiumAmbientBackground from './PremiumAmbientBackground';
 import { useCentroAnalisiReadStore } from './useCentroAnalisiReadStore';
-
-const GLASS_CARD_CLASS = [
-  'flex flex-col items-center justify-center gap-2.5 rounded-2xl',
-  'min-h-[6.25rem] px-4 py-4 text-zinc-100',
-  GLASS_SURFACE_CLASS,
-  'transition-all duration-150',
-  'hover:border-white/25 hover:bg-white/[0.08]',
-  'hover:shadow-[0_12px_40px_0_rgba(0,0,0,0.45)]',
-  'active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
-].join(' ');
-
-function GlassCardButton({ icon, label, hint, onClick, wide = false }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={[GLASS_CARD_CLASS, wide ? 'col-span-2 min-h-[5.5rem]' : ''].filter(Boolean).join(' ')}
-    >
-      <span className="text-3xl leading-none" aria-hidden>{icon}</span>
-      <span className="text-center text-xs font-semibold leading-tight sm:text-sm">{label}</span>
-      {hint ? (
-        <span className="max-w-[16rem] text-center text-[0.65rem] font-medium leading-snug text-zinc-400">
-          {hint}
-        </span>
-      ) : null}
-    </button>
-  );
-}
+import { useStrumentazioneMapData } from './useStrumentazioneMapData';
+import {
+  CentroAnalisiLiveCard,
+  LongevityLivePreview,
+  ProgressionLivePreview,
+  StrumentazioneLivePreview,
+  TimelineLivePreview,
+} from './CentroAnalisiLiveCards';
+import {
+  calculateProgressionScore,
+} from '../trendHub/utils/saluteDashboardMetrics';
+import {
+  buildProgressionLogsWindow,
+  LONGEVITY_WINDOW_DAYS,
+  selectTodayLog,
+} from '../trendHub/utils/saluteHistorySeries';
+import { computeTotali } from '../../useBiochimico';
+import { mapMetricsToPillars } from '../metabolic/pillarsMapperLegacy';
+import { getTodayString } from '../../coreEngine';
 
 function PlaceholderRoomPanel({ area, room }) {
   return (
@@ -58,26 +49,23 @@ function PlaceholderRoomPanel({ area, room }) {
 }
 
 /**
- * Centro Analisi — hub.
- * Salute / Progressione → stessa Fotografia della Home (`onOpenFotografia*`).
- * Strumentazione: atterra direttamente sulla Bussola (switch tab Bussola/Radar/Mappa in alto).
+ * Centro Analisi — hub con Live Cards.
+ * Salute / Progressione → Fotografia Home. Strumentazione → Bussola. Timeline → overlay 24h.
  */
 const DEFAULT_STRUMENTAZIONE_ROOM = 'bussola';
 
 export default function CentroAnalisiView({
   onExit = null,
   embedded = false,
-  /** Apre la Fotografia Salute (stesso handler dei widget Home). */
   onOpenFotografiaSalute = null,
-  /** Apre la Fotografia Progressione (stesso handler dei widget Home). */
   onOpenFotografiaProgressione = null,
-  /** Apre Timeline Metabolica 24h (grafico continuo). */
   onOpenTimelineMetabolica = null,
   initialAreaId = null,
+  /** Anteprime live da SalaComandi (SSOT giorno selezionato). */
+  livePreview = null,
 } = {}) {
   const [areaId, setAreaId] = useState(() => {
     const id = String(initialAreaId || '').toLowerCase();
-    // Solo Strumentazione ha ancora drill-down interno
     return id === 'strumentazione' ? id : null;
   });
   const [roomId, setRoomId] = useState(() => {
@@ -85,6 +73,73 @@ export default function CentroAnalisiView({
     return id === 'strumentazione' ? DEFAULT_STRUMENTAZIONE_ROOM : null;
   });
   const centroAnalisiStore = useCentroAnalisiReadStore();
+  const { mapData } = useStrumentazioneMapData(centroAnalisiStore);
+
+  const preview = livePreview && typeof livePreview === 'object' ? livePreview : {};
+
+  const fallbackProgression = useMemo(() => {
+    const {
+      fullHistory,
+      activeLog,
+      userTargets,
+      todayDate,
+    } = centroAnalisiStore || {};
+    const scoreDate = String(preview.scoreDate || todayDate || getTodayString()).slice(0, 10);
+    const todayLiveLog = selectTodayLog(fullHistory, scoreDate, activeLog, scoreDate === getTodayString());
+    const logs = buildProgressionLogsWindow({
+      fullHistory,
+      todayDate: scoreDate,
+      days: LONGEVITY_WINDOW_DAYS,
+      todayLiveLog,
+    });
+    return calculateProgressionScore(
+      {
+        days: logs.days,
+        todayDate: logs.todayDate,
+        sleepAvgHours: logs.sleepAvgHours,
+        workoutSessionsTotal: logs.workoutSessionsTotal,
+      },
+      userTargets || {},
+    );
+  }, [centroAnalisiStore, preview.scoreDate]);
+
+  const fallbackMacroPreview = useMemo(() => {
+    const totals = computeTotali(Array.isArray(centroAnalisiStore?.activeLog) ? centroAnalisiStore.activeLog : []);
+    const targets = centroAnalisiStore?.userTargets || {};
+    return {
+      prot: Number(totals?.prot) || 0,
+      carb: Number(totals?.carb) || 0,
+      fat: Number(totals?.fatTotal ?? totals?.fat) || 0,
+      targetProt: Number(targets?.prot) || 0,
+      targetCarb: Number(targets?.carb) || 0,
+      targetFat: Number(targets?.fatTotal ?? targets?.fat) || 0,
+    };
+  }, [centroAnalisiStore?.activeLog, centroAnalisiStore?.userTargets]);
+
+  const longevityScore = preview.longevityScore ?? null;
+  const longevityBars = preview.longevityBars ?? [];
+  const progressionScore = preview.progressionScore ?? fallbackProgression.finalScore;
+  const macroPreview = preview.macroPreview ?? fallbackMacroPreview;
+  const gradientStops = preview.gradientStops ?? null;
+  const timelinePoints = preview.timelinePoints ?? [];
+  const mealHours = preview.mealHours ?? [];
+  const compassX = Number(mapData?.visualVector?.x ?? mapData?.compassDirection?.x) || 0;
+  const compassY = Number(mapData?.visualVector?.y ?? mapData?.compassDirection?.y) || 0;
+  const mapX = Number(mapData?.mapPositionInertial?.x ?? mapData?.x) || 0;
+  const mapY = Number(mapData?.mapPositionInertial?.y ?? mapData?.y) || 0;
+  const mapZoneColor = mapData?.mapZoneColor || mapData?.mapPresentation?.auraColor || '#22d3ee';
+
+  const radarPillars = useMemo(() => {
+    if (!mapData) return null;
+    return mapMetricsToPillars({
+      energyBalance: mapData.energyBalance,
+      trainingLoadAxis: mapData.metabolicMapInputs?.trainingLoad,
+      meanTraining01: mapData.metabolicMapInputs?.meanTraining01,
+      sleepPenalty: mapData.sleepPenalty,
+      longevityScore: mapData.longevityScore,
+      distance: mapData.distance,
+    });
+  }, [mapData]);
 
   const area = useMemo(() => findCentroAnalisiArea(areaId), [areaId]);
   const room = useMemo(
@@ -95,7 +150,6 @@ export default function CentroAnalisiView({
   const isStrumentazioneRoom = isStrumentazione && Boolean(room);
 
   const handleBack = useCallback(() => {
-    // Da qualsiasi tool di Strumentazione → hub Centro Analisi (niente indice intermedio).
     if (areaId === 'strumentazione') {
       setRoomId(null);
       setAreaId(null);
@@ -114,24 +168,15 @@ export default function CentroAnalisiView({
 
   const openHubItem = useCallback((itemId) => {
     if (itemId === 'salute') {
-      if (typeof onOpenFotografiaSalute === 'function') {
-        onOpenFotografiaSalute();
-        return;
-      }
+      onOpenFotografiaSalute?.();
       return;
     }
     if (itemId === 'progressione') {
-      if (typeof onOpenFotografiaProgressione === 'function') {
-        onOpenFotografiaProgressione();
-        return;
-      }
+      onOpenFotografiaProgressione?.();
       return;
     }
     if (itemId === 'timeline_metabolica') {
-      if (typeof onOpenTimelineMetabolica === 'function') {
-        onOpenTimelineMetabolica();
-        return;
-      }
+      onOpenTimelineMetabolica?.();
       return;
     }
     if (itemId === 'strumentazione') {
@@ -145,6 +190,42 @@ export default function CentroAnalisiView({
   const backLabel = areaId || roomId
     ? '← Indietro'
     : (embedded ? '← Home' : '← Indietro');
+
+  const renderLivePreview = (itemId) => {
+    if (itemId === 'salute') {
+      return <LongevityLivePreview score={longevityScore} bars={longevityBars} />;
+    }
+    if (itemId === 'progressione') {
+      return (
+        <ProgressionLivePreview
+          score={progressionScore}
+          macros={macroPreview}
+        />
+      );
+    }
+    if (itemId === 'strumentazione') {
+      return (
+        <StrumentazioneLivePreview
+          compassX={compassX}
+          compassY={compassY}
+          mapX={mapX}
+          mapY={mapY}
+          mapZoneColor={mapZoneColor}
+          radarPillars={radarPillars}
+        />
+      );
+    }
+    if (itemId === 'timeline_metabolica') {
+      return (
+        <TimelineLivePreview
+          timelinePoints={timelinePoints}
+          mealHours={mealHours}
+          gradientStops={gradientStops}
+        />
+      );
+    }
+    return null;
+  };
 
   return (
     <div
@@ -191,25 +272,21 @@ export default function CentroAnalisiView({
         <div className="mt-4 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-24 [padding-bottom:max(6rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))]">
           {!area ? (
             <div className="grid w-full grid-cols-2 gap-3">
-              {CENTRO_ANALISI_AREAS.map((item) => (
-                <GlassCardButton
-                  key={item.id}
-                  icon={item.icon}
-                  label={item.label}
-                  hint={item.hint}
-                  wide={item.id === 'strumentazione'}
-                  onClick={() => openHubItem(item.id)}
-                />
-              ))}
-              {typeof onOpenTimelineMetabolica === 'function' ? (
-                <GlassCardButton
-                  icon="⏱️"
-                  label="Timeline Metabolica 24h"
-                  hint="Andamento continuo, digestione e finestre metaboliche"
-                  wide
-                  onClick={() => onOpenTimelineMetabolica()}
-                />
-              ) : null}
+              {CENTRO_ANALISI_AREAS.map((item) => {
+                if (item.id === 'timeline_metabolica' && typeof onOpenTimelineMetabolica !== 'function') {
+                  return null;
+                }
+                return (
+                  <CentroAnalisiLiveCard
+                    key={item.id}
+                    title={item.label}
+                    description={item.hint}
+                    wide={item.id === 'strumentazione' || item.id === 'timeline_metabolica'}
+                    preview={renderLivePreview(item.id)}
+                    onClick={() => openHubItem(item.id)}
+                  />
+                );
+              })}
             </div>
           ) : null}
 

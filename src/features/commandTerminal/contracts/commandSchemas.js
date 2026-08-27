@@ -446,13 +446,15 @@ export const chatResponsePayloadSchema = {
       nullable: true,
       description:
         'Analisi testuale BREVE (1-3 frasi, tono coach, adatta a TTS) basata ESCLUSIVAMENTE su KENTU_GLOBAL_STATE. '
+        + 'Su consigli giornata/allenamento: usa longevityContext.strategicLever e collegalo al punteggio Longevità. '
         + 'Puoi anche mettere il testo in uiMessage/adviceMessage.',
     },
     options: {
       type: 'array',
       nullable: true,
       description:
-        'Opzionale: 2-4 scelte rapide se serve un chiarimento leggero. Preferisci ASK_CLARIFICATION per ambiguita forti.',
+        'Opzionale: 1-4 chip rapidi. Su consiglio operativo longevità includi longevityContext.chipLabel '
+        + '(es. «🏃‍♂️ Avvia 30 min Zona 2»). Preferisci ASK_CLARIFICATION per ambiguita forti.',
       items: { type: 'string' },
     },
   },
@@ -727,8 +729,56 @@ export const healthReportSchema = {
       description:
         'Correlazione breve (plain text) cena↔sonno. Se [MORNING_SLEEP_LOG] è null, indica che manca il dato sonno.',
     },
+    longevityNutrition: {
+      type: 'object',
+      description:
+        'Valutazione nutrizione clinica olistica per Pagella Longevità (0–25). '
+        + 'score = Antinfiammatorio≤8 + Glicemia/Fibre≤7 + Proteine funzionali≤5 + Digiuno/timing≤5. '
+        + 'Non dominare lo score con una lieve flessione proteica se qualità e glicemia sono alte.',
+      properties: {
+        score: {
+          type: 'number',
+          description:
+            'Punteggio 0–25 = somma ponderata A≤8 + B≤7 + C≤5 + D≤5 (antinfiammatorio, glicemia, proteine funzionali, digiuno).',
+        },
+        proteinStatus: {
+          type: 'string',
+          description:
+            'LOW | MODERATE | OPTIMAL. OPTIMAL se fonti nobili anche leggermente sotto target numerico.',
+        },
+        fastingWindowEvaluation: {
+          type: 'string',
+          description: 'Finestra digiuno: POOR (<12h) | GOOD (12-14h) | OPTIMAL (>14h).',
+        },
+        clinicalNoteStrength: {
+          type: 'string',
+          description:
+            'Nota positiva sui punti di forza reali (antinfiammatorio, glicemia, grassi buoni). '
+            + 'Vietato "Nutrizione debole" se A+B sono alti.',
+        },
+        clinicalNoteBottleneck: {
+          type: 'string',
+          description:
+            'Gap secondario sintetico (es. proteine) come suggerimento, non come giudizio globale negativo.',
+        },
+      },
+      required: [
+        'score',
+        'proteinStatus',
+        'fastingWindowEvaluation',
+        'clinicalNoteStrength',
+        'clinicalNoteBottleneck',
+      ],
+    },
   },
-  required: ['newLabels', 'dailyScore', 'clinicalBulletinMarkdown', 'inflammationSummary', 'timingFeedback'],
+  required: [
+    'newLabels',
+    'dailyScore',
+    'clinicalBulletinMarkdown',
+    'inflammationSummary',
+    'timingFeedback',
+    'longevityNutrition',
+  ],
 };
 
 // Nuovo alimento da etichetta (Vision): solo dati stampati, per 100g.

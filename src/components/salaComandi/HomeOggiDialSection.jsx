@@ -61,6 +61,7 @@ export default function HomeOggiDialSection({
   setShowSleepPrompt = null,
   setShowMetabolicSheet = null,
   showMissingSleepBanner = false,
+  longevityResult = null,
 }) {
   const hud = dialHud || {};
   const {
@@ -351,6 +352,7 @@ export default function HomeOggiDialSection({
             onOpenProgressione={handleOpenTrendProgressione}
             creatorOpen={trainingBlockCreatorOpen}
             onCreatorOpenChange={setTrainingBlockCreatorOpen}
+            longevityResult={longevityResult}
           />
           <MetabolicMonitorCard
             metabolicSnapshot={metabolicSnapshot}

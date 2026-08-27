@@ -4,13 +4,11 @@ import { isFastingBreakerLogItem } from '../../../utils/fastingBreakRules';
 import { parseDecimalHourFromValue } from './mealConsumedTime';
 import { METABOLIC_PHASES, resolvePhaseColorForHoursSinceMeal } from './metabolicPhaseConfig';
 import {
-  calculateMealKinetics,
-  KINETIC_ABSORPTION_PHASE,
-  KINETIC_GASTRIC_PHASE,
-  mealKineticsWindowEnd,
-  POST_ABSORPTION_PHASES,
-  resolveKineticMetabolicPhase,
-} from '../../metabolic/MetabolicKinetics';
+  getMetabolicPhaseAtTime,
+  POST_MEAL_ABSORPTION_END_HOURS,
+  POST_MEAL_DIGESTION_HOURS,
+  collectPostMealPhaseBoundaryHours,
+} from './metabolicPhaseEngine';
 
 export { isFastingBreakerLogItem, FASTING_BREAK_THRESHOLDS } from '../../../utils/fastingBreakRules';
 
@@ -380,41 +378,26 @@ export function resolveKineticColorAtTimelineHour(hour, options = {}) {
 
   const cacheKey = ctx.fromYesterday ? `y_${ctx.mealHour}` : ctx.mealHour;
   const mealNode = mealAggregateCache?.get(cacheKey) ?? null;
-  const { phase } = resolveKineticMetabolicPhase(ctx.hoursSinceMeal, mealNode);
+  const { phase } = getMetabolicPhaseAtTime(ctx.hoursSinceMeal, mealNode);
   return phase?.iconColor ?? METABOLIC_PHASES[0].iconColor;
 }
 
 function collectKineticBoundaryHours(mealHour, mealNode, domainStart, domainEnd) {
-  const kinetics = calculateMealKinetics(mealNode ?? {});
-  const windowEnd = mealKineticsWindowEnd(kinetics);
-  const boundaries = [mealHour, mealHour + kinetics.onsetDelay, mealHour + windowEnd];
-
-  for (const band of POST_ABSORPTION_PHASES) {
-    if (band.minHours > 0) {
-      boundaries.push(mealHour + windowEnd + band.minHours);
-    }
-  }
-
+  void mealNode;
+  const boundaries = collectPostMealPhaseBoundaryHours(mealHour, domainStart, domainEnd);
   const hours = new Set();
   for (const boundary of boundaries) {
-    if (boundary < domainStart - 1e-9 || boundary > domainEnd + 1e-9) continue;
-    const clamped = Math.max(domainStart, Math.min(domainEnd, boundary));
-    hours.add(clamped);
-    hours.add(Math.max(domainStart, clamped - MEAL_HOUR_EPS));
-    hours.add(Math.min(domainEnd, clamped + MEAL_HOUR_EPS));
+    hours.add(boundary);
+    hours.add(Math.max(domainStart, boundary - MEAL_HOUR_EPS));
+    hours.add(Math.min(domainEnd, boundary + MEAL_HOUR_EPS));
   }
   return hours;
 }
 
 /** Confini cinetici del pasto di ieri proiettati sull'asse 0–24h di oggi (carry-over notturno). */
 function collectYesterdayKineticBoundaryHours(yesterdayMealHour, mealNode, domainStart, domainEndBeforeFirstMeal) {
-  const kinetics = calculateMealKinetics(mealNode ?? {});
-  const windowEnd = mealKineticsWindowEnd(kinetics);
-  const offsets = [
-    kinetics.onsetDelay,
-    windowEnd,
-    ...POST_ABSORPTION_PHASES.filter((band) => band.minHours > 0).map((band) => band.minHours),
-  ];
+  void mealNode;
+  const offsets = METABOLIC_PHASES.map((phase) => Number(phase.minHours)).filter((n) => Number.isFinite(n));
 
   const hours = new Set();
   for (const offset of offsets) {
@@ -431,10 +414,9 @@ function collectYesterdayKineticBoundaryHours(yesterdayMealHour, mealNode, domai
 }
 
 function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStart, domainEnd, offsetDomainEnd, options) {
-  const kinetics = calculateMealKinetics(mealNode ?? {});
-  const windowEnd = mealKineticsWindowEnd(kinetics);
-  const gastricColor = KINETIC_GASTRIC_PHASE.iconColor;
-  const absorptionColor = KINETIC_ABSORPTION_PHASE.iconColor;
+  void mealNode;
+  const digestionColor = METABOLIC_PHASES[0].iconColor;
+  const absorptionColor = METABOLIC_PHASES[1].iconColor;
 
   const beforeHour = Math.max(domainStart, mealHour - MEAL_HOUR_EPS);
   rawStops.push({
@@ -444,10 +426,10 @@ function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStar
 
   rawStops.push({
     offset: hourToOffsetPct(mealHour, domainStart, offsetDomainEnd),
-    color: gastricColor,
+    color: digestionColor,
   });
 
-  const absorptionStart = mealHour + kinetics.onsetDelay;
+  const absorptionStart = mealHour + POST_MEAL_DIGESTION_HOURS;
   if (absorptionStart <= domainEnd + 1e-9) {
     rawStops.push({
       offset: hourToOffsetPct(
@@ -455,7 +437,7 @@ function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStar
         domainStart,
         offsetDomainEnd,
       ),
-      color: gastricColor,
+      color: digestionColor,
     });
     rawStops.push({
       offset: hourToOffsetPct(
@@ -467,9 +449,9 @@ function pushKineticMealTransitionStops(rawStops, mealHour, mealNode, domainStar
     });
   }
 
-  const postStart = mealHour + windowEnd;
+  const postStart = mealHour + POST_MEAL_ABSORPTION_END_HOURS;
   if (postStart <= domainEnd + 1e-9) {
-    const postColor = resolveKineticMetabolicPhase(windowEnd, mealNode).phase.iconColor
+    const postColor = getMetabolicPhaseAtTime(POST_MEAL_ABSORPTION_END_HOURS, null).phase.iconColor
       ?? METABOLIC_PHASES[2].iconColor;
     rawStops.push({
       offset: hourToOffsetPct(
@@ -516,7 +498,7 @@ export function buildMetabolicFastingSnapshot(activeLog, referenceHour, options 
   const hoursFasted = ctx?.hoursSinceMeal ?? computeHoursFastedAtHour(referenceHour, activeLog, options);
   const cacheKey = ctx?.fromYesterday ? `y_${ctx.mealHour}` : ctx?.mealHour;
   const mealNode = cacheKey != null ? mealAggregateCache.get(cacheKey) ?? null : null;
-  const kineticState = resolveKineticMetabolicPhase(hoursFasted, mealNode);
+  const kineticState = getMetabolicPhaseAtTime(hoursFasted, mealNode);
   const h = Math.floor(hoursFasted);
   const m = Math.round((hoursFasted - h) * 60);
   const timeString = `${h}h ${m}m`;
@@ -530,7 +512,7 @@ export function buildMetabolicFastingSnapshot(activeLog, referenceHour, options 
 
 /**
  * Stop orizzontali (0–100%) per gradiente SVG lungo asse X del grafico Energia SNC.
- * Fasi allineate a calculateMealKinetics: svuotamento → assorbimento → post-assorbimento.
+ * Fasi allineate a getMetabolicPhaseAtTime: digestione 90min → assorbimento → post-assorbimento.
  * @param {{ todayMealTimes?: number[], yesterdayLastMealTime?: number | null, activeLog?: Array, mealTimesObj?: object, fullHistory?: object, anchorDate?: string, referenceDateObj?: Date, domainStart?: number, domainEnd?: number, offsetDomainEnd?: number, sampleStep?: number }} options
  * @param {number} [options.offsetDomainEnd] — larghezza mapping offset (24 = timeline CSS; displayTime = bbox area SVG Recharts)
  */

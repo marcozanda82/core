@@ -172,24 +172,50 @@ function buildAcquirePayload(food) {
 function formatSearchResultForDraft(food) {
   const row = food?.row || {};
   const desc = String(food?.desc || food?.name || row.desc || row.name || 'Alimento').trim();
-  const qta = 100;
+  const isCoffeeShop = food?._source === 'coffee_shop'
+    || row.isCoffeeShopItem === true
+    || Boolean(row.coffeeShopProductId);
+  const unitWeight = Number(
+    row.defaultUnitWeight
+    || row.defaultServingWeight
+    || row.defaultUnit?.grams
+    || (isCoffeeShop ? row.servingGrams : 0),
+  ) || 100;
+  const defaultUnit = row.defaultUnit && typeof row.defaultUnit === 'object'
+    ? row.defaultUnit
+    : null;
+  const unitId = defaultUnit && Number(defaultUnit.grams) > 0
+    ? String(defaultUnit.label || 'porzione').toLowerCase().replace(/\s+/g, '_')
+    : 'g';
+  const qta = unitWeight;
   const scaledNutrients = buildScaledNutrientsForWeight(row, qta);
+  const qtyLabel = defaultUnit?.label
+    ? `1 ${defaultUnit.label}`
+    : `${Math.round(qta)}g`;
 
   return attachProvenanceFromLegacySource({
     type: 'food',
     desc,
     name: desc,
-    foodDbKey: food._source === 'personal' ? (food.key || food.id) : undefined,
+    foodDbKey: food._source === 'personal' || isCoffeeShop
+      ? (food.key || food.id || row.foodDbKey)
+      : undefined,
     _searchSource: food._source,
     row,
-    units: row.units,
-    defaultUnit: row.defaultUnit,
+    units: row.units || (defaultUnit ? [defaultUnit, { label: 'g', grams: 1 }] : undefined),
+    defaultUnit: defaultUnit || undefined,
+    defaultUnitWeight: unitWeight,
     qta,
     weight: qta,
-    unit: 'g',
-    selectedUnit: 'g',
-    multiplier: qta,
-    qtyLabel: '100g',
+    unit: unitId === 'g' ? 'g' : unitId,
+    selectedUnit: unitId,
+    multiplier: unitId === 'g' ? qta : 1,
+    qtyLabel,
+    coffeeShopProductId: row.coffeeShopProductId || undefined,
+    caffeineMg: row.caffeineMg,
+    isFastingSafe: row.isFastingSafe,
+    customEmoji: row.customEmoji || row.icon || undefined,
+    icon: row.icon || undefined,
     ...scaledNutrients,
     ...(row.customImage ? { customImage: row.customImage } : {}),
     ...(row.customIcon ? { customIcon: row.customIcon } : {}),
@@ -270,6 +296,37 @@ function resolveSearchResultTileStats(result, personalDb, catalogServingOverride
   const matchFood = buildSearchMatchFood(result, personalDb);
   const personalDbKey = matchFood.foodDbKey;
   const hasPersonalRow = personalDbKey && personalDb?.[personalDbKey];
+  const row = result.row || matchFood.row || {};
+  const isCoffeeShop = result._source === 'coffee_shop'
+    || row.isCoffeeShopItem === true
+    || Boolean(row.coffeeShopProductId);
+
+  if (isCoffeeShop) {
+    const unitWeight = getFoodUnitWeight({ ...matchFood, row, defaultUnitWeight: row.defaultUnitWeight });
+    const unitKcal = getDefaultUnitKcal({ ...matchFood, row, defaultUnitWeight: row.defaultUnitWeight });
+    return {
+      matchFood: {
+        ...matchFood,
+        row,
+        foodDbKey: row.foodDbKey || result.id,
+        defaultUnitWeight: unitWeight,
+        defaultUnit: row.defaultUnit,
+        units: row.units,
+        coffeeShopProductId: row.coffeeShopProductId,
+        customEmoji: row.customEmoji || row.icon,
+        icon: row.icon,
+      },
+      defaultUnitWeight: unitWeight,
+      defaultUnitKcal: unitKcal,
+      displayTile: {
+        desc: name,
+        label: name,
+        row,
+        defaultUnitWeight: unitWeight,
+        customEmoji: row.customEmoji || row.icon,
+      },
+    };
+  }
 
   if (!hasPersonalRow) {
     return {
@@ -478,7 +535,12 @@ function FastMealLoggerContent({
       return;
     }
 
-    if (food._source !== 'personal' && food._source !== 'recipe' && typeof onAcquireExternalFood === 'function') {
+    if (
+      food._source !== 'personal'
+      && food._source !== 'recipe'
+      && food._source !== 'coffee_shop'
+      && typeof onAcquireExternalFood === 'function'
+    ) {
       const acquirePayload = buildAcquirePayload(food);
       if (acquirePayload) {
         try {
@@ -490,7 +552,7 @@ function FastMealLoggerContent({
     }
 
     const draftPayload = formatSearchResultForDraft(food);
-    addOrIncrementDraftFood(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
+    addOrIncrementDraftFood(draftPayload, getFoodUnitWeight(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT));
     setIsSearchModalOpen(false);
     resetVetrinaSearchBar();
     notifyItemAdded(
@@ -512,7 +574,12 @@ function FastMealLoggerContent({
       return;
     }
 
-    if (food._source !== 'personal' && food._source !== 'recipe' && typeof onAcquireExternalFood === 'function') {
+    if (
+      food._source !== 'personal'
+      && food._source !== 'recipe'
+      && food._source !== 'coffee_shop'
+      && typeof onAcquireExternalFood === 'function'
+    ) {
       const acquirePayload = buildAcquirePayload(food);
       if (acquirePayload) {
         try {
@@ -524,8 +591,9 @@ function FastMealLoggerContent({
     }
 
     const draftPayload = formatSearchResultForDraft(food);
+    const unitWeight = getFoodUnitWeight(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
     for (let i = 0; i < portionCount; i += 1) {
-      addOrIncrementDraftFood(draftPayload, SEARCH_DEFAULT_UNIT_WEIGHT);
+      addOrIncrementDraftFood(draftPayload, unitWeight);
     }
     resetVetrinaSearchBar();
     notifyItemAdded(

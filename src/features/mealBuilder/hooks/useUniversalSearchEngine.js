@@ -9,6 +9,10 @@ import {
 } from '../../../foodSearch';
 import { hasUsableOffKcal } from '../../../foodLoader';
 import { searchOpenFoodFactsApi } from '../utils/openFoodFactsSearchApi';
+import {
+  searchCoffeeShopProducts,
+  coffeeShopProductToSearchResult,
+} from '../../../constants/coffeeShopDatabase';
 
 const MEGA_SEARCH_CHUNK_SIZE = 1000;
 
@@ -22,6 +26,8 @@ const OFF_SEARCH_LIMIT = 5;
 const HEAVY_CATALOG_MAX_SCAN = 4000;
 /** Cap assoluto risultati UI / merge (mai renderizzare migliaia di nodi). */
 export const MERGED_SEARCH_RESULT_CAP = 40;
+/** Bonus ranking per hit catalogo caffetteria locale. */
+const COFFEE_SHOP_SOURCE_BONUS = 250;
 
 function catalogDbIsEmpty(db) {
   if (db == null || typeof db !== 'object') return true;
@@ -320,9 +326,12 @@ function computeShortNameBonus(item, query) {
   return Math.max(0, SHORT_NAME_BONUS_MAX - Math.min(SHORT_NAME_BONUS_MAX, extraLen));
 }
 
-/** Score di sort: Master +100, match esatto +10, nome corto, poi relevance lessicale. */
+/** Score di sort: Local coffee shop +250, Master +100, match esatto +10, nome corto, poi relevance. */
 function computeRankingScore(item, query, relevanceScore) {
   let score = Number(relevanceScore) || 0;
+  if (item?._source === 'coffee_shop' || item?.row?.isCoffeeShopItem) {
+    score += COFFEE_SHOP_SOURCE_BONUS;
+  }
   if (isMasterSearchResult(item)) score += MASTER_SOURCE_BONUS;
   if (isExactNameMatch(item, query)) score += EXACT_NAME_BONUS;
   score += computeShortNameBonus(item, query);
@@ -518,6 +527,8 @@ export async function searchMegaDbsOnlyAsync(query, options = {}, signal = null)
   await yieldToMainThread();
   if (isSearchAborted(signal)) return [];
 
+  const coffeeShopResults = searchCoffeeShopDb(trimmedQuery);
+
   const kentuItResults = await searchCatalogDbChunked(
     trimmedQuery,
     kentuItDb,
@@ -556,9 +567,22 @@ export async function searchMegaDbsOnlyAsync(query, options = {}, signal = null)
 
   return mergeAndRankSearchResults(
     trimmedQuery,
-    [...kentuItResults, ...globalResults, ...offResults],
+    [...coffeeShopResults, ...kentuItResults, ...globalResults, ...offResults],
     cap,
   );
+}
+
+/**
+ * Tier 0 — catalogo caffetteria / colazione locale (priorità assoluta).
+ * @param {string} query
+ * @returns {object[]}
+ */
+export function searchCoffeeShopDb(query) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  return searchCoffeeShopProducts(q, { limit: 8 })
+    .map((product) => coffeeShopProductToSearchResult(product, { matchScore: 0.99 }))
+    .filter(Boolean);
 }
 
 /**
@@ -735,6 +759,7 @@ export async function runUnifiedFoodSearch(query, options = {}) {
     signal = null,
   } = options;
 
+  const coffeeShopResults = searchCoffeeShopDb(trimmedQuery);
   const personalResults = searchPersonalDb(personalDb, trimmedQuery);
   const kentuItResults = await searchCatalogDbChunked(
     trimmedQuery,
@@ -766,7 +791,7 @@ export async function runUnifiedFoodSearch(query, options = {}) {
 
   return mergeAndRankSearchResults(
     trimmedQuery,
-    [...personalResults, ...kentuItResults, ...globalResults, ...offResults],
+    [...coffeeShopResults, ...personalResults, ...kentuItResults, ...globalResults, ...offResults],
     cap,
   );
 }
@@ -836,6 +861,10 @@ export async function searchExternalSources(query, masterDb, _legacyUsdaDb, pers
 }
 
 export const SEARCH_SOURCE_BADGE = {
+  coffee_shop: {
+    label: 'Caffetteria',
+    className: 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+  },
   personal: {
     label: 'Personale',
     className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300',
@@ -884,7 +913,10 @@ export function useSplitFoodSearch(liveQuery, personalDb, options = {}) {
 
   const personalResults = useMemo(() => {
     if (!liveTrimmed) return [];
-    return searchPersonalDb(personalDb, liveTrimmed);
+    return [
+      ...searchCoffeeShopDb(liveTrimmed),
+      ...searchPersonalDb(personalDb, liveTrimmed),
+    ];
   }, [liveTrimmed, personalDb]);
 
   const commitMegaSearch = useCallback((overrideQuery) => {

@@ -15,8 +15,11 @@ import {
   parseDecimalHourFromValue,
 } from './mealConsumedTime';
 import {
-  resolveKineticMetabolicPhase,
-} from '../../metabolic/MetabolicKinetics';
+  getMetabolicPhaseAtTime,
+  getMetabolicPhaseIndex,
+  POST_MEAL_ABSORPTION_END_HOURS,
+  POST_MEAL_DIGESTION_HOURS,
+} from './metabolicPhaseEngine';
 import {
   addDays,
   computeAccumuloSNC,
@@ -24,6 +27,13 @@ import {
   getTodayString,
   TRACKER_STORICO_KEY,
 } from '../../../coreEngine';
+
+export {
+  getMetabolicPhaseAtTime,
+  getMetabolicPhaseIndex,
+  POST_MEAL_DIGESTION_HOURS,
+  POST_MEAL_ABSORPTION_END_HOURS,
+} from './metabolicPhaseEngine';
 
 export { METABOLIC_PHASES, METABOLIC_OVERLOAD_PHASE } from './metabolicPhaseConfig';
 
@@ -241,14 +251,6 @@ export function getHoursSinceLastMeal(fullHistory, activeLog, options = {}) {
   return Math.max(0, (referenceMs - lastConsumedMs) / 3600000);
 }
 
-export function getMetabolicPhaseIndex(hoursSinceLastMeal) {
-  const hours = Math.max(0, Number(hoursSinceLastMeal) || 0);
-  const idx = METABOLIC_PHASES.findIndex(
-    (phase) => hours >= phase.minHours && hours < phase.maxHours,
-  );
-  return idx >= 0 ? idx : METABOLIC_PHASES.length - 1;
-}
-
 const NIGHT_SLEEP_MIN_HOURS = 3;
 
 function sleepHoursFromEntry(entry) {
@@ -412,32 +414,7 @@ export function isMetabolicOverload(biometrics, hoursSinceLastMeal = null) {
 }
 
 function buildTimeBasedMetabolicState(hoursSinceLastMeal, lastMealNode = null) {
-  if (lastMealNode && hoursSinceLastMeal != null) {
-    return resolveKineticMetabolicPhase(hoursSinceLastMeal, lastMealNode);
-  }
-
-  const hours = hoursSinceLastMeal == null ? 0 : Math.max(0, Number(hoursSinceLastMeal) || 0);
-  const phaseIndex = getMetabolicPhaseIndex(hours);
-  const phase = METABOLIC_PHASES[phaseIndex];
-  const nextPhase = phaseIndex < METABOLIC_PHASES.length - 1
-    ? METABOLIC_PHASES[phaseIndex + 1]
-    : null;
-
-  const hoursUntilNext = nextPhase
-    ? Math.max(0, nextPhase.minHours - hours)
-    : null;
-
-  return {
-    hoursSinceLastMeal: hours,
-    hasMealLogged: hoursSinceLastMeal != null,
-    phase,
-    phaseIndex,
-    nextPhase,
-    hoursUntilNext,
-    progressInPhase: phase.maxHours === Infinity
-      ? 1
-      : Math.min(1, Math.max(0, (hours - phase.minHours) / (phase.maxHours - phase.minHours))),
-  };
+  return getMetabolicPhaseAtTime(hoursSinceLastMeal, lastMealNode);
 }
 
 /**

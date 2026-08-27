@@ -1244,8 +1244,9 @@ Se l'utente nomina un prodotto che non riconosci / non è in [USER_HABITS] né n
 VIETATO forzare ricerche complesse o inventare schede nutrizionali.
 
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
-L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?').
+L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?', 'Cosa faccio oggi?', 'Come mi alleno?').
 -> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: linguaggio di squadra (noi), leggi Avatar_Symbiosis; zero colpe.
+-> LEVA LONGEVITÀ: se chiede direzione/allenamento/cosa fare oggi, leggi longevityContext.strategicLever e collegalo all'aumento del punteggio Longevità. Puoi mettere longevityContext.chipLabel in payload.options come chip rapido.
 -> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
 
 /**
@@ -1472,7 +1473,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
-        ? 'CASO 2 CONSULTO: commandType CHAT_RESPONSE (o ASK_CLARIFICATION se serve una scelta). Compila uiMessage breve TTS (1-3 frasi) basata SOLO su KENTU_GLOBAL_STATE. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
+        ? 'CASO 2 CONSULTO: commandType CHAT_RESPONSE (o ASK_CLARIFICATION se serve una scelta). Compila uiMessage breve TTS (1-3 frasi) basata SOLO su KENTU_GLOBAL_STATE. Su «cosa faccio oggi» / allenamento: usa longevityContext.strategicLever e collega all\'aumento Longevità; offri chip longevityContext.chipLabel in payload.options. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]

@@ -424,6 +424,14 @@ import RecalibrationProposalModal from './components/salaComandi/RecalibrationPr
 import AnalisiTimelineTab from './components/salaComandi/AnalisiTimelineTab';
 import MetabolicTimelineOverlay from './components/salaComandi/MetabolicTimelineOverlay';
 import { useHealthScoreSnapshot } from './hooks/salaComandi/useHealthScoreSnapshot';
+import { useLongevityScore } from './features/trendHub/hooks/useLongevityScore';
+import { calculateProgressionScore } from './features/trendHub/utils/saluteDashboardMetrics';
+import { buildLongevityPagellaInsight } from './features/trendHub/utils/longevityInsightGenerator';
+import {
+  buildProgressionLogsWindow,
+  selectTodayLog,
+  LONGEVITY_WINDOW_DAYS,
+} from './features/trendHub/utils/saluteHistorySeries';
 import { useLongevityDashboardData } from './hooks/salaComandi/useLongevityDashboardData';
 import { useDailyWeeklyPlanningSync } from './hooks/salaComandi/useDailyWeeklyPlanningSync';
 import { useGhostSimCompensation } from './hooks/salaComandi/useGhostSimCompensation';
@@ -5345,6 +5353,27 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     hasRealWorkoutInActiveLog,
   });
 
+  const {
+    longevityResult,
+    longevityScore: unifiedLongevityScore,
+    longevityNutrition: unifiedLongevityNutrition,
+    recentNutritionScores: unifiedRecentNutritionScores,
+  } = useLongevityScore({
+    scoreDate: currentTrackerDate,
+    fullHistory,
+    bodyMetricsHistory,
+    activeLog,
+    sleepEngineLiveLog: sleepEngineInputLog,
+    activeLogIsToday: isViewingToday,
+    db,
+    uid: userUid,
+    foodDatabase: foodDb,
+    setFoodDb,
+    userTargets,
+    heightCm: Number(userProfile?.height) || Number(userProfile?.altezza) || null,
+    enabled: Boolean(isInitialLoadComplete && userUid && db),
+  });
+
   const metabolicGradientStops = useMemo(
     () => buildMetabolicTimelineGradientStops({
       ...metabolicTimelineMeals,
@@ -5362,6 +5391,91 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }),
     [activeLog, metabolicTimelineMeals, metabolicContextOptions],
   );
+
+  const centroAnalisiLivePreview = useMemo(() => {
+    const scoreDate = String(currentTrackerDate || getTodayString()).slice(0, 10);
+    const todayLiveLog = isViewingToday && Array.isArray(sleepEngineInputLog)
+      ? sleepEngineInputLog
+      : selectTodayLog(fullHistory, scoreDate, activeLog, isViewingToday);
+    const progressionLogs = buildProgressionLogsWindow({
+      fullHistory,
+      todayDate: scoreDate,
+      days: LONGEVITY_WINDOW_DAYS,
+      todayLiveLog,
+    });
+    const progressionResult = calculateProgressionScore(
+      {
+        days: progressionLogs.days,
+        todayDate: progressionLogs.todayDate,
+        sleepAvgHours: progressionLogs.sleepAvgHours,
+        workoutSessionsTotal: progressionLogs.workoutSessionsTotal,
+      },
+      userTargets || {},
+    );
+
+    const breakdown = longevityResult?.breakdown || {};
+    const longevityPagella = buildLongevityPagellaInsight(unifiedLongevityScore, {
+      cardioMins: breakdown.cardioMins,
+      uniqueGroups: breakdown.uniqueGroups,
+      sleepAvg: breakdown.sleepAvg,
+      whtrMultiplier: breakdown.whtrMultiplier,
+      criticalThreshold: breakdown.criticalThreshold,
+      userHeight: breakdown.userHeight,
+      cardioScore: breakdown.cardioScore,
+      weightsScore: breakdown.weightsScore,
+      sleepScore: breakdown.sleepScore,
+      nutritionScore: breakdown.nutritionScore,
+      longevityNutrition: breakdown.longevityNutrition,
+    });
+
+    const timelineSeries = Array.isArray(chartData) && chartData.length >= 2
+      ? chartData.map((p, index) => ({
+        hour: Number(p.hour ?? index),
+        snc: Number(p.energyPast ?? p.energy ?? 0),
+        metabolic: Number(p.riservaFisica ?? p.energy ?? 0),
+      }))
+      : [];
+
+    return {
+      scoreDate,
+      longevityScore: unifiedLongevityScore,
+      longevityBars: longevityPagella?.bars ?? [],
+      progressionScore: progressionResult.finalScore,
+      progressionBreakdown: progressionResult.breakdown,
+      macroPreview: {
+        prot: Number(totali?.prot) || 0,
+        carb: Number(totali?.carb) || 0,
+        fat: Number(totali?.fatTotal ?? totali?.fat) || 0,
+        targetProt: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
+        targetCarb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
+        targetFat: Number(
+          effectiveTargetsForCurrentDate?.fatTotal
+          ?? effectiveTargetsForCurrentDate?.fat
+          ?? userTargets?.fatTotal
+          ?? userTargets?.fat,
+        ) || 0,
+      },
+      gradientStops: metabolicGradientStops,
+      timelinePoints: timelineSeries,
+      mealHours: Array.isArray(metabolicTimelineMeals?.todayMealTimes)
+        ? metabolicTimelineMeals.todayMealTimes.map(Number).filter(Number.isFinite)
+        : [],
+    };
+  }, [
+    currentTrackerDate,
+    isViewingToday,
+    sleepEngineInputLog,
+    fullHistory,
+    activeLog,
+    userTargets,
+    unifiedLongevityScore,
+    longevityResult,
+    metabolicGradientStops,
+    chartData,
+    totali,
+    effectiveTargetsForCurrentDate,
+    metabolicTimelineMeals,
+  ]);
 
   useEffect(() => {
     const referenceHour = isViewingPastDate ? 24 : currentTime;
@@ -6046,6 +6160,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         userUid,
         userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
         healthScore,
+        longevityScore: unifiedLongevityScore,
+        longevityNutrition: unifiedLongevityNutrition,
+        longevityResult,
+        recentNutritionScores: unifiedRecentNutritionScores,
+        bodyMetricsHistory,
         isTrainingDay: Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
         healthScoreMetrics: {
           proteinConsumed: Number(totali?.prot) || 0,
@@ -7128,6 +7247,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             )}
             <EnergyArcWidget
               variant="mini"
+              longevityScore={unifiedLongevityScore}
               recoveryScore={sleepRecoveryScore}
               wakeTime={sleepWakeTime}
               currentHour={currentTime}
@@ -7212,6 +7332,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               enabled={snapshotOverlayOpen}
               lockedHemisphere={snapshotOverlayHemisphere}
               hideHemisphereNav
+              longevityResult={longevityResult}
             />
           </Suspense>
         </div>
@@ -7289,6 +7410,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setShowSleepPrompt={setShowSleepPrompt}
           setShowMetabolicSheet={setShowMetabolicSheet}
           showMissingSleepBanner={showMissingSleepState}
+          longevityResult={longevityResult}
         />
       )}
 
@@ -7376,6 +7498,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               onOpenFotografiaSalute={handleOpenTrendSalute}
               onOpenFotografiaProgressione={handleOpenTrendProgressione}
               onOpenTimelineMetabolica={openMetabolicTimeline}
+              livePreview={centroAnalisiLivePreview}
             />
           </Suspense>
         </div>

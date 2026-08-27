@@ -152,6 +152,7 @@ export default function SnapshotHub({
   enabled = true,
   lockedHemisphere = null,
   hideHemisphereNav = false,
+  longevityResult = null,
 } = {}) {
   const { hemisphere, setHemisphere } = useTrendHubHemisphere();
 
@@ -198,6 +199,8 @@ export default function SnapshotHub({
       sleepEngineLiveLog: Array.isArray(sleepEngineLiveLog) ? sleepEngineLiveLog : activeLog,
       fullHistory,
       heightCm: Number(profileHeightCm) > 0 ? Number(profileHeightCm) : 174,
+      userTargets,
+      longevityResult,
     }),
     [
       healthContext,
@@ -216,6 +219,8 @@ export default function SnapshotHub({
       sleepEngineLiveLog,
       fullHistory,
       profileHeightCm,
+      userTargets,
+      longevityResult,
     ],
   );
 

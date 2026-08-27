@@ -18,20 +18,23 @@ function resolveActiveSegmentId(segments, nowHour) {
   if (nowHour == null || !Number.isFinite(Number(nowHour))) return null;
   const hour = Number(nowHour);
 
-  const sorted = [...segments]
-    .filter((segment) => Number.isFinite(Number(segment.hour)))
-    .sort((a, b) => a.hour - b.hour);
+  const containing = segments
+    .filter((segment) => Number.isFinite(Number(segment.startHour ?? segment.hour)))
+    .filter((segment) => {
+      const start = Number(segment.startHour ?? segment.hour);
+      const end = Number.isFinite(Number(segment.endHour)) ? Number(segment.endHour) : 24;
+      return hour >= start - 0.001 && hour < end - 0.001;
+    });
 
-  for (let i = 0; i < sorted.length; i += 1) {
-    const current = sorted[i];
-    const next = sorted[i + 1];
-    const end = current.endHour ?? (next ? next.hour : 24);
-    if (hour >= current.hour - 0.001 && hour < end - 0.001) {
-      return current.id;
-    }
-  }
+  if (containing.length === 0) return null;
 
-  return null;
+  const active = containing.reduce((best, current) => {
+    const bestStart = Number(best?.startHour ?? best?.hour ?? -1);
+    const curStart = Number(current.startHour ?? current.hour ?? -1);
+    return curStart >= bestStart ? current : best;
+  }, null);
+
+  return active?.id ?? null;
 }
 
 function MetabolicPhaseIcon({ segment, phase, isActive, onPhaseClick }) {

@@ -17,13 +17,10 @@ import ProgressionScoreWidget from '../features/trendHub/components/ProgressionS
 import SaluteLongevityHero from '../features/trendHub/components/SaluteLongevityHero';
 import useHomeProgressionSwap from '../hooks/salaComandi/useHomeProgressionSwap';
 import {
-  calculateLongevityScore,
   calculateProgressionScore,
-  REFERENCE_HEIGHT_CM,
 } from '../features/trendHub/utils/saluteDashboardMetrics';
 import {
   buildProgressionLogsWindow,
-  buildSaluteLongevityWindow,
   LONGEVITY_WINDOW_DAYS,
 } from '../features/trendHub/utils/saluteHistorySeries';
 
@@ -124,6 +121,8 @@ export default function TrainingBlockWidget({
   onOpenTrendDiag: _onOpenTrendDiag = null,
   onOpenLongevity = null,
   onOpenProgressione = null,
+  /** SSOT da useLongevityScore (SalaComandi) — evita ricalcolo locale senza nutrizione AI. */
+  longevityResult: longevityResultProp = null,
 }) {
   const {
     block,
@@ -195,32 +194,7 @@ export default function TrainingBlockWidget({
   }, [block, dayKey]);
   const dayStatus = dayStatusInfo.status;
 
-  const longevityResult = useMemo(() => {
-    const window = buildSaluteLongevityWindow({
-      fullHistory,
-      bodyMetricsHistory,
-      todayDate: dayKey,
-      days: LONGEVITY_WINDOW_DAYS,
-      todayLiveLog: activeLog,
-    });
-    const resolvedHeight = Number(heightCm) > 0
-      ? Number(heightCm)
-      : (Number(userProfile?.height) || Number(userProfile?.altezza) || REFERENCE_HEIGHT_CM);
-    return calculateLongevityScore({
-      cardioMinutesTotal: window.cardioMinutesTotal,
-      uniqueMuscleGroups: window.uniqueMuscleGroups,
-      muscleStimulusPillars: window.muscleStimulusPillars,
-      pesiSessionCount: window.pesiSessionCount,
-      sleepAvgHours: window.sleepAvgHours,
-      waistCm: window.waistCm,
-      daysSampled: window.daysSampled,
-      sleepNights: window.sleepNights,
-      cardioDays: window.cardioDays,
-      pesiDays: window.pesiDays,
-      heightCm: resolvedHeight,
-      windowDays: LONGEVITY_WINDOW_DAYS,
-    });
-  }, [fullHistory, bodyMetricsHistory, dayKey, activeLog, heightCm, userProfile]);
+  const longevityResult = longevityResultProp;
 
   const progressionResult = useMemo(() => {
     const logs = buildProgressionLogsWindow({
@@ -537,7 +511,6 @@ export default function TrainingBlockWidget({
           compact
           size={96}
           score={longevityResult?.finalScore}
-          breakdown={longevityResult?.breakdown}
           onClick={typeof onOpenLongevity === 'function' ? onOpenLongevity : undefined}
         />
       </div>

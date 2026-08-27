@@ -175,6 +175,22 @@ export function buildHealthAnalyzerPrompt(ctx = {}) {
     hasSleep
       ? '   SLEEP_STATUS=AVAILABLE: usa obbligatoriamente hours+quality da MORNING_SLEEP_LOG. Vietato scrivere che il dato sonno manca, è assente o non disponibile.'
       : '   SLEEP_STATUS=MISSING: indica brevemente che manca il dato sonno mattutino.',
+    '6) Compila longevityNutrition (OBBLIGATORIO) per la Pagella Longevità.',
+    '   Calcola score (0–25) come SINTESI OLISTICA PONDERATA — NON usare solo le proteine totali:',
+    '   A) Profilo Antinfiammatorio & Grassi Buoni (max 8 pt): olio EVO, noci/mandorle, pesce, vegetali freschi, assenza ultra-processati (NOVA 4).',
+    '   B) Controllo Glicemico & Fibre (max 7 pt): cereali integrali, legumi, verdure, assenza zuccheri liberi / picchi glicemici.',
+    '   C) Quota Proteica Funzionale (max 5 pt): sufficiente a proteggere la massa magra.',
+    '      Assegna punteggio PIENO (5) se le fonti sono qualitativamente nobili (pesce, uova, latticini, legumi, carne magra)',
+    '      anche se il totale grammi è leggermente sotto il target numerico. NON crollare lo score globale per −10/20g di proteine.',
+    '   D) Timing & Digiuno Notturno (max 5 pt): ≥12–14h digiuno e cena digeribile prima del riposo.',
+    '   score = A+B+C+D (arrotondato, clamp 0–25).',
+    '   - proteinStatus: LOW | MODERATE | OPTIMAL (OPTIMAL anche se leggermente sotto target ma fonti nobili).',
+    '   - fastingWindowEvaluation: POOR (<12h) | GOOD (12-14h) | OPTIMAL (>14h) — stima da timing pasti se ore digiuno non esplicite.',
+    '   - clinicalNoteStrength: 1 frase sui PUNTI DI FORZA reali (antinfiammatorio, glicemia, qualità grassi).',
+    '     Se A+B alti, DEVE celebrarli (es. "Profilo antinfiammatorio eccellente: olio EVO, pesce, antiossidanti; stabilità glicemica solida.").',
+    '     VIETATO scrivere "Nutrizione debole" quando il profilo qualitativo è buono.',
+    '   - clinicalNoteBottleneck: solo il gap SECONDARIO (es. "Margine: incrementa leggermente le proteine per la massa magra.").',
+    '     Se lo score è ≥18, bottleneck = micro-miglioramento, non allarme.',
     '',
     'Tono: analitico, diretto, italiano. Niente motivazionale.',
     'Rispondi SOLO JSON conforme allo schema.',
@@ -202,6 +218,13 @@ export function buildHealthAnalyzerSystemInstruction() {
     '3. STILE: Usa elenchi puntati e **grassetto**. Tono autorevole ma leggibile a colazione. Niente muri di testo.',
     '4. NON includere immagini Markdown, URL Pollinations, né link a generatori di immagini: la copertina è gestita dall\'app.',
     'Il Markdown va dentro la stringa JSON clinicalBulletinMarkdown (escape corretto delle virgolette).',
+    '',
+    'longevityNutrition.score (0–25) = somma olistica: Antinfiammatorio/Grassi buoni ≤8 + Glicemia/Fibre ≤7 + Proteine funzionali ≤5 + Digiuno/timing ≤5.',
+    'NON penalizzare in modo dominante una lieve flessione proteica se A+B sono alti (EVO, pesce, mandorle, fibre).',
+    'proteinStatus ∈ {LOW,MODERATE,OPTIMAL}: OPTIMAL se fonti nobili anche sotto target numerico di poco.',
+    'fastingWindowEvaluation ∈ {POOR,GOOD,OPTIMAL}.',
+    'clinicalNoteStrength: celebra qualità reale; vietato "Nutrizione debole" su giornate anti-infiammatorie solide.',
+    'clinicalNoteBottleneck: gap secondario (es. proteine) come suggerimento, non come giudizio globale.',
   ].join(' ');
 }
 
@@ -244,6 +267,53 @@ export function stripClinicalBulletinImages(markdown) {
 }
 
 /**
+ * Normalizza longevityNutrition dall'LLM (0–25 + enum).
+ * @param {unknown} raw
+ * @returns {{
+ *   score: number,
+ *   proteinStatus: 'LOW'|'MODERATE'|'OPTIMAL',
+ *   fastingWindowEvaluation: 'POOR'|'GOOD'|'OPTIMAL',
+ *   clinicalNoteStrength: string,
+ *   clinicalNoteBottleneck: string,
+ * } | null}
+ */
+export function normalizeLongevityNutrition(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const scoreRaw = Number(raw.score);
+  if (!Number.isFinite(scoreRaw)) return null;
+  const score = Math.max(0, Math.min(25, Math.round(scoreRaw)));
+
+  const proteinRaw = String(raw.proteinStatus || '').trim().toUpperCase();
+  const proteinStatus = proteinRaw === 'LOW' || proteinRaw === 'MODERATE' || proteinRaw === 'OPTIMAL'
+    ? proteinRaw
+    : (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'MODERATE' : 'LOW');
+
+  const fastingRaw = String(raw.fastingWindowEvaluation || '').trim().toUpperCase();
+  const fastingWindowEvaluation = fastingRaw === 'POOR' || fastingRaw === 'GOOD' || fastingRaw === 'OPTIMAL'
+    ? fastingRaw
+    : (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'GOOD' : 'POOR');
+
+  const clinicalNoteStrength = String(raw.clinicalNoteStrength || '').trim()
+    || (score >= 16
+      ? 'Profilo alimentare qualitativamente solido: priorità a stabilità metabolica e densità nutrizionale.'
+      : 'Ci sono elementi nutrizionali recuperabili nella giornata.');
+  const clinicalNoteBottleneck = String(raw.clinicalNoteBottleneck || '').trim()
+    || (proteinStatus === 'LOW' && score >= 16
+      ? 'Margine di miglioramento: incrementa leggermente la quota proteica per sostenere la massa magra.'
+      : score < 14
+        ? 'Priorità: qualità antinfiammatoria, fibre/glicemia o finestra digiuno.'
+        : 'Piccoli aggiustamenti su proteine o timing possono ancora migliorare.');
+
+  return {
+    score,
+    proteinStatus,
+    fastingWindowEvaluation,
+    clinicalNoteStrength,
+    clinicalNoteBottleneck,
+  };
+}
+
+/**
  * @param {string} rawText
  */
 export function parseHealthAnalyzerResponse(rawText) {
@@ -274,6 +344,7 @@ export function parseHealthAnalyzerResponse(rawText) {
   if (!inflammationSummary || !timingFeedback) {
     throw new Error('Health Analyzer: referto incompleto');
   }
+  const longevityNutrition = normalizeLongevityNutrition(parsed?.longevityNutrition);
   return {
     newLabels,
     dailyScore,
@@ -281,6 +352,7 @@ export function parseHealthAnalyzerResponse(rawText) {
     inflammationSummary,
     timingFeedback,
     sleepCorrelationInsight,
+    longevityNutrition,
   };
 }
 
@@ -405,6 +477,7 @@ export function buildHealthReportDocument({
     inflammationSummary: report.inflammationSummary,
     timingFeedback: report.timingFeedback,
     sleepCorrelationInsight: report.sleepCorrelationInsight || null,
+    longevityNutrition: report.longevityNutrition || null,
     morningSleepSnapshot: morningSleepLog || null,
     labeledCount: Array.isArray(report.newLabels) ? report.newLabels.length : 0,
     knownCount: knownFoods.length,

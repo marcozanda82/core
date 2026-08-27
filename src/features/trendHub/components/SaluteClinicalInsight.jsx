@@ -92,6 +92,8 @@ export default function SaluteClinicalInsight({
   isRefreshing = false,
   isUpdatedToday: isUpdatedTodayProp = null,
   onRefresh = null,
+  /** true = niente accordion; insight sempre visibile al 100%. */
+  defaultExpanded = false,
 } = {}) {
   const tone = scoreTone(report?.dailyScore);
   const borderTone =
@@ -118,6 +120,83 @@ export default function SaluteClinicalInsight({
     || isUpdatedToday
     || typeof onRefresh !== 'function';
 
+  const insightBody = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <p className="m-0 text-[11px] text-slate-500">
+          {analysisDate ? `Analisi ${analysisDate}` : 'Bollettino IA'}
+          {isUpdatedToday ? ' · aggiornato oggi' : ''}
+        </p>
+        {typeof onRefresh === 'function' ? (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshDisabled}
+            title={isUpdatedToday ? 'Già aggiornato oggi — riprova domani' : 'Genera di nuovo'}
+            className="rounded-lg border border-white/10 bg-slate-950/40 px-2 py-1 text-[10px] font-semibold text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {isRefreshing ? '…' : isUpdatedToday ? 'Aggiornato' : 'Aggiorna'}
+          </button>
+        ) : null}
+      </div>
+
+      {(status === 'loading' || status === 'idle') && !report ? (
+        <p className="m-0 text-xs text-slate-500">Generazione insight…</p>
+      ) : null}
+      {status === 'empty' && !report ? (
+        <p className="m-0 text-xs text-slate-500">
+          Nessun diario ieri — l&apos;insight comparirà dopo il primo giorno completo.
+        </p>
+      ) : null}
+      {status === 'error' && !report ? (
+        <p className="m-0 text-xs text-rose-400">{errorMessage || 'Insight non disponibile.'}</p>
+      ) : null}
+      {report && markdown ? (
+        <div className={`h-auto max-h-none break-words border-l-2 pl-2.5 ${borderTone}`}>
+          <img
+            src={CLINICAL_INSIGHT_COVER_SRC}
+            alt="Copertina Insight Clinico"
+            className="mb-4 h-32 w-full rounded-lg object-cover shadow-sm"
+            loading="lazy"
+          />
+          {isMarkdownBulletin ? (
+            <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
+          ) : (
+            <p className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">
+              {markdown}
+            </p>
+          )}
+        </div>
+      ) : null}
+      {report && !markdown ? (
+        <p className="m-0 text-xs text-slate-500">Score calcolato · nessun testo aggiuntivo.</p>
+      ) : null}
+    </>
+  );
+
+  if (defaultExpanded) {
+    return (
+      <section
+        className="w-full min-w-0 rounded-2xl border border-cyan-500/20 bg-cyan-950/25"
+        aria-label="Insight Clinico"
+      >
+        <div className="flex min-h-11 items-center justify-between gap-2 border-b border-white/5 px-3.5 py-2.5">
+          <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-300/90">
+            Insight Clinico
+          </span>
+          {report?.dailyScore != null ? (
+            <span className="rounded-md bg-slate-950/50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300">
+              Score {Math.round(Number(report.dailyScore) || 0)}
+            </span>
+          ) : null}
+        </div>
+        <div className="h-auto max-h-none space-y-2 px-3.5 pb-3.5 pt-2.5">
+          {insightBody}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <details className="group w-full min-w-0 rounded-2xl border border-cyan-500/20 bg-cyan-950/20 open:bg-cyan-950/30">
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-300/90 [&::-webkit-details-marker]:hidden">
@@ -134,55 +213,7 @@ export default function SaluteClinicalInsight({
       </summary>
 
       <div className="h-auto max-h-none space-y-2 border-t border-white/5 px-3.5 pb-3.5 pt-2">
-        <div className="flex items-start justify-between gap-2">
-          <p className="m-0 text-[11px] text-slate-500">
-            {analysisDate ? `Analisi ${analysisDate}` : 'Bollettino IA'}
-            {isUpdatedToday ? ' · aggiornato oggi' : ''}
-          </p>
-          {typeof onRefresh === 'function' ? (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshDisabled}
-              title={isUpdatedToday ? 'Già aggiornato oggi — riprova domani' : 'Genera di nuovo'}
-              className="rounded-lg border border-white/10 bg-slate-950/40 px-2 py-1 text-[10px] font-semibold text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {isRefreshing ? '…' : isUpdatedToday ? 'Aggiornato' : 'Aggiorna'}
-            </button>
-          ) : null}
-        </div>
-
-        {(status === 'loading' || status === 'idle') && !report ? (
-          <p className="m-0 text-xs text-slate-500">Generazione insight…</p>
-        ) : null}
-        {status === 'empty' && !report ? (
-          <p className="m-0 text-xs text-slate-500">
-            Nessun diario ieri — l&apos;insight comparirà dopo il primo giorno completo.
-          </p>
-        ) : null}
-        {status === 'error' && !report ? (
-          <p className="m-0 text-xs text-rose-400">{errorMessage || 'Insight non disponibile.'}</p>
-        ) : null}
-        {report && markdown ? (
-          <div className={`h-auto max-h-none break-words border-l-2 pl-2.5 ${borderTone}`}>
-            <img
-              src={CLINICAL_INSIGHT_COVER_SRC}
-              alt="Copertina Insight Clinico"
-              className="mb-4 h-32 w-full rounded-lg object-cover shadow-sm"
-              loading="lazy"
-            />
-            {isMarkdownBulletin ? (
-              <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
-            ) : (
-              <p className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">
-                {markdown}
-              </p>
-            )}
-          </div>
-        ) : null}
-        {report && !markdown ? (
-          <p className="m-0 text-xs text-slate-500">Score calcolato · nessun testo aggiuntivo.</p>
-        ) : null}
+        {insightBody}
       </div>
     </details>
   );

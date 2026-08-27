@@ -1,16 +1,19 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import BiometricsHealthCard from './components/BiometricsHealthCard';
+import MetabolicReportCard from './components/MetabolicReportCard';
 import SaluteClinicalInsight from './components/SaluteClinicalInsight';
 import SaluteDashKpiCard from './components/SaluteDashKpiCard';
 import SaluteFastingTrendCard from './components/SaluteFastingTrendCard';
 import SaluteGlycemicRiskBar from './components/SaluteGlycemicRiskBar';
 import SaluteLongevityHero from './components/SaluteLongevityHero';
+import SalutePillarNavGrid from './components/SalutePillarNavGrid';
 import SaluteSleepGhostCard from './components/SaluteSleepGhostCard';
 import SleepTrackerWidget from './components/SleepTrackerWidget';
 import { useHealthDailyReport } from './hooks/useHealthDailyReport';
 import { useSleepLog } from './hooks/useSleepLog';
 import { computeSleepEngineSnapshot } from '../../hooks/useSleepEngine';
 import { buildBiometricsHealthSnapshot } from './utils/healthBiometrics';
+import { computeTotali } from '../../useBiochimico';
 import {
   averageMuscleResidual,
   calculateLongevityScore,
@@ -21,6 +24,7 @@ import {
   formatFastingHoursLabel,
   REFERENCE_HEIGHT_CM,
   resolveMorningSleepForInsight,
+  resolveProgressionNutritionTargets,
 } from './utils/saluteDashboardMetrics';
 import {
   buildSaluteLongevityWindow,
@@ -31,6 +35,7 @@ import {
   selectTodayLog,
   SLEEP_GHOST_LOOKBACK_DAYS,
 } from './utils/saluteHistorySeries';
+import { pillarPctFromLongevityScore } from './utils/longevityInsightGenerator';
 
 function formatMetric(value, digits = 1) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -38,8 +43,8 @@ function formatMetric(value, digits = 1) {
 }
 
 /**
- * Emisfero Salute — sonno SSOT = stesso diario dell'Arco Energetico
- * (`activeLog` / trackerStorico log, `computeSleepEngineSnapshot`).
+ * Emisfero Salute — gerarchia a cascata:
+ * L1 anello Longevità · L2 Pagella · L3 griglia 4 pilastri · L4 parametri strutturali.
  */
 export default function SaluteView({
   recentBodyMetrics = [],
@@ -56,15 +61,17 @@ export default function SaluteView({
   fourCylinder = null,
   metabolicCompensationDeltaKcal = null,
   longevityScoreOverride = null,
+  /** SSOT da useLongevityScore — se presente, salta il ricalcolo locale. */
+  longevityResult: longevityResultProp = null,
   activeLog = [],
-  /** true quando activeLog è il log del giorno calendario di oggi (come Energy Arc) */
   activeLogIsToday = false,
-  /** Log sonno live (activeLog + nap) — preferito per Ghost/Insight se oggi */
   sleepEngineLiveLog = null,
   fullHistory = null,
   heightCm = REFERENCE_HEIGHT_CM,
+  userTargets = null,
 } = {}) {
-  // Widget opzionale (scrive sleep_logs) — NON alimenta Ghost/Insight/Hero.
+  const [activePillar, setActivePillar] = useState(null);
+
   const sleepWidget = useSleepLog({
     db,
     uid,
@@ -79,7 +86,6 @@ export default function SaluteView({
     return selectTodayLog(fullHistory, todayDate, activeLog, activeLogIsToday);
   }, [fullHistory, todayDate, activeLog, activeLogIsToday, sleepEngineLiveLog]);
 
-  // Speculare Energy Arc: stesso snapshot sul log diario di oggi
   const sleepEngineToday = useMemo(
     () => computeSleepEngineSnapshot(todayLiveLog),
     [todayLiveLog],
@@ -173,8 +179,18 @@ export default function SaluteView({
     return null;
   }, [morningSleep, sleepEngineToday]);
 
-  const longevityResult = useMemo(() => {
-    // Altezza profilo (TrendHub ← userProfile.height); fallback 174 solo se assente
+  const nutritionTargets = useMemo(
+    () => resolveProgressionNutritionTargets(userTargets),
+    [userTargets],
+  );
+
+  const todayProteinGrams = useMemo(() => {
+    const totals = computeTotali(Array.isArray(todayLiveLog) ? todayLiveLog : []);
+    const prot = Number(totals?.prot ?? totals?.pro);
+    return Number.isFinite(prot) && prot > 0 ? Math.round(prot) : null;
+  }, [todayLiveLog]);
+
+  const longevityResultComputed = useMemo(() => {
     const resolvedHeightCm = Number(heightCm) > 0 ? Number(heightCm) : REFERENCE_HEIGHT_CM;
     const computed = calculateLongevityScore({
       cardioMinutesTotal: longevityWindow.cardioMinutesTotal,
@@ -189,6 +205,13 @@ export default function SaluteView({
       pesiDays: longevityWindow.pesiDays,
       heightCm: resolvedHeightCm,
       windowDays: LONGEVITY_WINDOW_DAYS,
+      longevityNutrition: health.longevityNutrition,
+      recentNutritionScores: health.recentNutritionScores,
+      proteinGrams: todayProteinGrams,
+      proteinTarget: nutritionTargets.prot,
+      fastingHoursAvg: fastingTrend14d.averageHours,
+      dayLog: yesterdayLog?.length ? yesterdayLog : todayLiveLog,
+      foodDatabase: relevantFoodDatabase,
     });
     if (longevityScoreOverride != null && Number.isFinite(Number(longevityScoreOverride))) {
       return {
@@ -203,7 +226,17 @@ export default function SaluteView({
     tonightHours,
     biometrics.waistCm,
     heightCm,
+    health.longevityNutrition,
+    health.recentNutritionScores,
+    todayProteinGrams,
+    nutritionTargets.prot,
+    fastingTrend14d.averageHours,
+    yesterdayLog,
+    todayLiveLog,
+    relevantFoodDatabase,
   ]);
+
+  const longevityResult = longevityResultProp || longevityResultComputed;
 
   const longevityScore = longevityResult.finalScore;
   const longevityBreakdown = longevityResult.breakdown;
@@ -257,102 +290,225 @@ export default function SaluteView({
 
   const ghostLabel = ghostBaseline.sampleSize > 0 ? 'Media 7g' : 'Target';
 
+  const pillarNavScores = useMemo(() => ({
+    cardio: pillarPctFromLongevityScore(longevityBreakdown?.cardioScore),
+    strength: pillarPctFromLongevityScore(longevityBreakdown?.weightsScore),
+    sleep: pillarPctFromLongevityScore(longevityBreakdown?.sleepScore),
+    nutrition: pillarPctFromLongevityScore(longevityBreakdown?.nutritionScore),
+  }), [longevityBreakdown]);
+
+  const uniqueGroups = Math.max(0, Math.min(5, Math.round(Number(longevityBreakdown?.uniqueGroups) || 0)));
+  const cardioMins = Math.round(Number(longevityBreakdown?.cardioMins) || 0);
+  const whtrValue = Number.isFinite(Number(glycemic.whtr))
+    ? Number(glycemic.whtr).toFixed(2)
+    : '—';
+
   return (
     <div
-      className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto overscroll-contain px-1 pb-[max(1.5rem,env(safe-area-inset-bottom,0px))] pt-1 [-webkit-overflow-scrolling:touch]"
+      className="snapshot-salute-root trend-salute-view flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-contain px-1 pb-28 pt-0.5 [-webkit-overflow-scrolling:touch]"
       role="region"
       aria-label="Area Salute"
     >
-      <SaluteLongevityHero score={longevityScore} breakdown={longevityBreakdown} />
+      {/* L1 — Hero Longevità (compatto: focus sulla Pagella sotto) */}
+      <div className="shrink-0">
+        <SaluteLongevityHero score={longevityScore} size={148} />
+      </div>
 
-      <SaluteGlycemicRiskBar
-        riskPercent={glycemic.riskPercent}
-        hoursFastedLabel={fastingLabel}
-        muscleLabel={muscleLabel}
-        whtr={glycemic.whtr}
-        breakdown={glycemicBreakdown}
-      />
+      {/* L2 — Pagella Metabolica (sempre espansa) */}
+      <MetabolicReportCard score={longevityScore} breakdown={longevityBreakdown} />
 
-      <div className="grid w-full min-w-0 grid-cols-2 gap-2.5">
-        <SaluteDashKpiCard
-          icon="⚖"
-          title="Peso attuale"
-          value={formatMetric(biometrics.weightKg)}
-          unit="kg"
-          trend={biometrics.weightDelta?.direction || 'none'}
-        />
-        <SaluteDashKpiCard
-          icon="◎"
-          title="Girovita"
-          value={formatMetric(biometrics.waistCm)}
-          unit="cm"
-          trend={biometrics.waistDelta?.direction || 'none'}
-        />
-        <SaluteFastingTrendCard
-          value={fastingTrend14d.averageHours != null
-            ? formatMetric(fastingTrend14d.averageHours, 1)
-            : '—'}
-          unit="h"
-          trend={fastingTrend14d.trend}
-          fastingHistory={fastingTrend14d.fastingHistory}
-        />
-        <SaluteDashKpiCard
-          icon="⌬"
-          title="Compensazione"
-          value={compensationLabel === '—' ? '—' : compensationLabel.replace(' kcal', '')}
-          unit={compensationLabel.includes('kcal') ? 'kcal' : ''}
-          trend={compensationTrend}
-          invertTrendColors
-        />
-
-        <SaluteSleepGhostCard
-          hours={tonightHours}
-          quality={morningSleep?.quality ?? null}
-          ghostHours={ghostBaseline.ghostHours}
-          ghostLabel={ghostLabel}
-          sleepData={sleepTrend14d.sleepData}
-          avg14Days={sleepTrend14d.avg14Days}
+      {/* L3 — Griglia 4 pilastri + pannello dettaglio */}
+      <div className="shrink-0">
+        <SalutePillarNavGrid
+          activeId={activePillar}
+          onSelect={setActivePillar}
+          scores={pillarNavScores}
         />
       </div>
 
-      <details className="w-full min-w-0 rounded-2xl border border-white/10 bg-slate-950/40">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3.5 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 [&::-webkit-details-marker]:hidden">
-          <span>Aggiorna metriche e sonno</span>
-          <span className="text-cyan-400" aria-hidden>+</span>
-        </summary>
-        <div className="flex flex-col gap-3 border-t border-white/5 px-2.5 pb-3 pt-2">
-          <BiometricsHealthCard
-            recentBodyMetrics={recentBodyMetrics}
-            onSaveBiometrics={onSaveBiometrics}
-            todayDate={todayDate}
-          />
-          <p className="m-0 px-1 text-[11px] leading-snug text-slate-500">
-            Il grafico Sonno e l&apos;Insight usano il diario della Timeline (stesso dato dell&apos;Arco Energetico).
-            Registra il sonno dal diario / wearable, non solo da questo pannello.
+      {activePillar === 'cardio' ? (
+        <section
+          className="flex flex-col gap-2 rounded-2xl border border-rose-500/25 bg-rose-950/20 p-2.5"
+          aria-label="Dettaglio Cardio e Mitocondri"
+        >
+          <p className="m-0 px-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-300/90">
+            Cardio · {cardioMins} min / 14gg
           </p>
-          <SleepTrackerWidget
-            entry={sleepWidget.entry}
-            hydrated={sleepWidget.hydrated}
-            saving={sleepWidget.saving}
-            errorMessage={sleepWidget.errorMessage}
-            onSave={sleepWidget.save}
-            onSaved={() => {
-              void health.refresh();
-            }}
+          <SaluteGlycemicRiskBar
+            riskPercent={glycemic.riskPercent}
+            hoursFastedLabel={fastingLabel}
+            muscleLabel={muscleLabel}
+            whtr={glycemic.whtr}
+            breakdown={glycemicBreakdown}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <SaluteFastingTrendCard
+              value={fastingTrend14d.averageHours != null
+                ? formatMetric(fastingTrend14d.averageHours, 1)
+                : '—'}
+              unit="h"
+              trend={fastingTrend14d.trend}
+              fastingHistory={fastingTrend14d.fastingHistory}
+            />
+            <SaluteDashKpiCard
+              icon="⌬"
+              title="Compensazione"
+              value={compensationLabel === '—' ? '—' : compensationLabel.replace(' kcal', '')}
+              unit={compensationLabel.includes('kcal') ? 'kcal' : ''}
+              trend={compensationTrend}
+              invertTrendColors
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {activePillar === 'strength' ? (
+        <section
+          className="flex flex-col gap-2 rounded-2xl border border-amber-500/25 bg-amber-950/20 p-2.5"
+          aria-label="Dettaglio Forza e Massa Magra"
+        >
+          <p className="m-0 px-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-300/90">
+            Forza · {uniqueGroups}/5 pilastri
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <SaluteDashKpiCard
+              icon="🏋️"
+              title="Pilastri stimolati"
+              value={String(uniqueGroups)}
+              unit="/5"
+              trend={uniqueGroups >= 4 ? 'up' : uniqueGroups <= 1 ? 'down' : 'flat'}
+              invertTrendColors
+            />
+            <SaluteDashKpiCard
+              icon="◎"
+              title="Residuo muscolare"
+              value={muscleAvg == null ? '—' : String(Math.round(muscleAvg * 100))}
+              unit="%"
+              trend={muscleAvg == null ? 'none' : muscleAvg >= 0.55 ? 'up' : 'down'}
+              invertTrendColors
+            />
+            <SaluteDashKpiCard
+              icon="⚡"
+              title="Sessioni pesi"
+              value={String(Math.round(Number(longevityWindow.pesiSessionCount) || 0))}
+              unit="14gg"
+              trend="none"
+            />
+            <SaluteDashKpiCard
+              icon="📅"
+              title="Giorni pesi"
+              value={String(Math.round(Number(longevityWindow.pesiDays) || 0))}
+              unit="gg"
+              trend="none"
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {activePillar === 'nutrition' ? (
+        <section
+          className="rounded-2xl border border-emerald-500/25 bg-emerald-950/15 p-1"
+          aria-label="Insight Clinico Nutrizione"
+        >
+          <SaluteClinicalInsight
+            report={health.report}
+            analysisDate={health.analysisDate || analysisDate}
+            todayDate={todayDate}
+            status={health.status}
+            errorMessage={health.errorMessage}
+            isRefreshing={health.isRefreshing}
+            isUpdatedToday={health.isUpdatedToday}
+            onRefresh={health.refresh}
+            defaultExpanded
+          />
+        </section>
+      ) : null}
+
+      {activePillar === 'sleep' ? (
+        <section
+          className="flex flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-cyan-950/20 p-2.5"
+          aria-label="Dettaglio Sonno e Recupero"
+        >
+          <SaluteSleepGhostCard
+            hours={tonightHours}
+            quality={morningSleep?.quality ?? null}
+            ghostHours={ghostBaseline.ghostHours}
+            ghostLabel={ghostLabel}
+            sleepData={sleepTrend14d.sleepData}
+            avg14Days={sleepTrend14d.avg14Days}
+          />
+          <details className="rounded-xl border border-white/10 bg-slate-950/50">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 [&::-webkit-details-marker]:hidden">
+              <span>Registra sonno (opzionale)</span>
+              <span className="text-cyan-400" aria-hidden>+</span>
+            </summary>
+            <div className="border-t border-white/5 px-2 pb-2.5 pt-2">
+              <p className="m-0 mb-2 px-1 text-[11px] leading-snug text-slate-500">
+                Preferisci il diario Timeline / wearable: stesso dato dell&apos;Arco Energetico.
+              </p>
+              <SleepTrackerWidget
+                entry={sleepWidget.entry}
+                hydrated={sleepWidget.hydrated}
+                saving={sleepWidget.saving}
+                errorMessage={sleepWidget.errorMessage}
+                onSave={sleepWidget.save}
+                onSaved={() => {
+                  void health.refresh();
+                }}
+              />
+            </div>
+          </details>
+        </section>
+      ) : null}
+
+      {/* L4 — Parametri strutturali & tool */}
+      <section
+        className="mt-0.5 shrink-0 rounded-2xl border border-white/10 bg-slate-950/45 px-2 py-2.5"
+        aria-label="Parametri strutturali e tool"
+      >
+        <p className="m-0 mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+          Parametri strutturali &amp; tool
+        </p>
+        <div className="grid grid-cols-3 gap-1.5">
+          <SaluteDashKpiCard
+            compact
+            icon="⚖"
+            title="Peso"
+            value={formatMetric(biometrics.weightKg)}
+            unit="kg"
+            trend={biometrics.weightDelta?.direction || 'none'}
+          />
+          <SaluteDashKpiCard
+            compact
+            icon="◎"
+            title="Girovita"
+            value={formatMetric(biometrics.waistCm)}
+            unit="cm"
+            trend={biometrics.waistDelta?.direction || 'none'}
+          />
+          <SaluteDashKpiCard
+            compact
+            icon="⌀"
+            title="WHtR"
+            value={whtrValue}
+            unit=""
+            trend="none"
           />
         </div>
-      </details>
-
-      <SaluteClinicalInsight
-        report={health.report}
-        analysisDate={health.analysisDate || analysisDate}
-        todayDate={todayDate}
-        status={health.status}
-        errorMessage={health.errorMessage}
-        isRefreshing={health.isRefreshing}
-        isUpdatedToday={health.isUpdatedToday}
-        onRefresh={health.refresh}
-      />
+        <details className="mt-2 rounded-xl border border-white/10 bg-slate-950/50">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between px-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 [&::-webkit-details-marker]:hidden">
+            <span>Aggiorna misurazioni</span>
+            <span className="text-cyan-400" aria-hidden>+</span>
+          </summary>
+          <div className="border-t border-white/5 px-2 pb-2.5 pt-2">
+            <BiometricsHealthCard
+              recentBodyMetrics={recentBodyMetrics}
+              onSaveBiometrics={onSaveBiometrics}
+              todayDate={todayDate}
+            />
+          </div>
+        </details>
+      </section>
     </div>
   );
 }

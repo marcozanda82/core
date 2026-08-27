@@ -6,6 +6,7 @@ import {
   isMealWipSessionStart,
 } from '../../wipMealBuilder/mealWipEngine.js';
 import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting.js';
+import { resolveSmartDefaultGrams } from '../../../utils/smartFoodPortions.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -1798,11 +1799,13 @@ function pushUniqueItem(items, seen, foodName, grams, extra = {}) {
 }
 
 function defaultGramsForDraftFood(foodName) {
+  const smart = resolveSmartDefaultGrams(foodName, 100);
+  if (smart && smart !== 100) return smart;
   const normalized = String(foodName || '').trim().toLowerCase();
   for (const [token, grams] of Object.entries(DRAFT_FOOD_DEFAULT_GRAMS)) {
     if (normalized.includes(token)) return grams;
   }
-  return 100;
+  return smart || 100;
 }
 
 function stripDraftSegmentPrefixes(segmentText) {

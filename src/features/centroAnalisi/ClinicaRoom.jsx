@@ -222,6 +222,7 @@ export default function ClinicaRoom({ store }) {
         isRefreshing={health.isRefreshing}
         isUpdatedToday={health.isUpdatedToday}
         onRefresh={health.refresh}
+        defaultExpanded
       />
 
       <section

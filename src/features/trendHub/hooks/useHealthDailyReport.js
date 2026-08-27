@@ -25,6 +25,7 @@ export function useHealthDailyReport({
   morningSleepLog = null,
 } = {}) {
   const [report, setReport] = useState(null);
+  const [recentNutritionScores, setRecentNutritionScores] = useState([]);
   const [cacheHydrated, setCacheHydrated] = useState(false);
   const [status, setStatus] = useState('idle');
   const [errorMessage, setErrorMessage] = useState(null);
@@ -179,6 +180,35 @@ export function useHealthDailyReport({
     return () => unsub();
   }, [enabled, db, uid, analysisDate]);
 
+  // Media Insight nutrizione ultimi 3–7 report (pilastro Longevità).
+  useEffect(() => {
+    if (!enabled || !db || !uid) {
+      setRecentNutritionScores([]);
+      return undefined;
+    }
+    const unsub = onValue(ref(db, `users/${uid}/health_reports`), (snap) => {
+      const val = snap.val();
+      if (!val || typeof val !== 'object') {
+        setRecentNutritionScores([]);
+        return;
+      }
+      const rows = Object.entries(val)
+        .map(([date, doc]) => ({
+          date: String(date || doc?.date || '').slice(0, 10),
+          score: Number(doc?.longevityNutrition?.score),
+          generatedAt: Number(doc?.generatedAt) || 0,
+        }))
+        .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && Number.isFinite(r.score) && r.score >= 0)
+        .sort((a, b) => {
+          if (b.date !== a.date) return b.date.localeCompare(a.date);
+          return b.generatedAt - a.generatedAt;
+        })
+        .slice(0, 7);
+      setRecentNutritionScores(rows.map((r) => r.score));
+    });
+    return () => unsub();
+  }, [enabled, db, uid]);
+
   // Auto-generazione solo a cache miss (niente re-run mid-day).
   useEffect(() => {
     if (!enabled || !db || !uid || !todayDate || !cacheHydrated) return undefined;
@@ -219,6 +249,8 @@ export function useHealthDailyReport({
     needsLabeling: context.needsLabeling,
     foodCount: context.allFoods.length,
     unknownCount: context.unknownFoods.length,
+    longevityNutrition: report?.longevityNutrition || null,
+    recentNutritionScores,
     refresh: () => {
       if (isHealthReportGeneratedToday(report, todayDate)) {
         return Promise.resolve(report);

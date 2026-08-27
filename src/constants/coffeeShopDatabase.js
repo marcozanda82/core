@@ -25,7 +25,7 @@ export const COFFEE_SHOP_PRODUCTS = Object.freeze([
   Object.freeze({
     id: 'espresso_amaro',
     name: 'Caffè espresso amaro',
-    aliases: ['espresso amaro', 'caffè amaro', 'caffe amaro', 'espresso', 'caffè nero'],
+    aliases: ['espresso amaro', 'caffè amaro', 'caffe amaro', 'espresso', 'caffè nero', 'caffè', 'caffe', 'un caffè', 'un caffe'],
     kcal: 0,
     prot: 0,
     carb: 0,
@@ -53,14 +53,14 @@ export const COFFEE_SHOP_PRODUCTS = Object.freeze([
   Object.freeze({
     id: 'espresso_zuccherato',
     name: 'Caffè zuccherato (1 bustina)',
-    aliases: ['caffè zuccherato', 'caffe zuccherato', 'espresso zuccherato', 'caffè con zucchero'],
+    aliases: ['caffè zuccherato', 'caffe zuccherato', 'espresso zuccherato', 'caffè con zucchero', 'caffe con zucchero'],
     kcal: 20,
     prot: 0,
     carb: 5,
     fat: 0,
     caffeineMg: 75,
     isFastingSafe: false,
-    servingLabel: '1 tazza',
+    servingLabel: '1 tazzina (~5g zucchero)',
     servingGrams: 30,
     kind: 'coffee',
   }),
@@ -122,16 +122,16 @@ export const COFFEE_SHOP_PRODUCTS = Object.freeze([
   }),
   Object.freeze({
     id: 'croissant_vuoto',
-    name: 'Croissant vuoto',
-    aliases: ['croissant', 'cornetto vuoto', 'cornetto', 'brioche vuota', 'brioche'],
+    name: 'Croissant / Cornetto (1 pezzo)',
+    aliases: ['croissant', 'cornetto vuoto', 'cornetto', 'brioche vuota', 'brioche', 'croissant vuoto'],
     kcal: 220,
     prot: 4,
     carb: 28,
     fat: 11,
     caffeineMg: 0,
     isFastingSafe: false,
-    servingLabel: '1 pezzo',
-    servingGrams: 55,
+    servingLabel: '1 pezzo (50g)',
+    servingGrams: 50,
     kind: 'pastry',
   }),
 ]);
@@ -165,7 +165,7 @@ export function getCoffeeShopProductById(id) {
 }
 
 /**
- * Match per nome / alias (esatto o contenuto).
+ * Match per nome / alias (esatto o contenuto). Preferisce match esatto.
  * @param {string} rawName
  * @returns {CoffeeShopProduct | null}
  */
@@ -180,15 +180,176 @@ export function findCoffeeShopProductByName(rawName) {
     }
   }
 
+  // Preferisci alias più lunghi SOLO se contenuti nel needle (es. "caffè zuccherato"),
+  // non se il needle corto matcha alias lunghi (evita "caffè" → zuccherato).
+  /** @type {{ product: CoffeeShopProduct, keyLen: number }[]} */
+  const partials = [];
   for (const product of COFFEE_SHOP_PRODUCTS) {
     const candidates = [product.name, ...(product.aliases || [])];
     for (const cand of candidates) {
       const key = normalizeLookupKey(cand);
-      if (key && (needle.includes(key) || key.includes(needle))) return product;
+      if (!key) continue;
+      if (needle === key) {
+        return product;
+      }
+      // Query contiene l'alias completo (es. "vorrei un caffè zuccherato")
+      if (needle.includes(key) && key.length >= 4) {
+        partials.push({ product, keyLen: key.length });
+      }
     }
   }
+  if (partials.length === 0) return null;
+  partials.sort((a, b) => b.keyLen - a.keyLen);
+  return partials[0].product;
+}
 
-  return null;
+/**
+ * Ricerca testuale sul catalogo locale (più hit, ordinati per pertinenza).
+ * @param {string} query
+ * @param {{ limit?: number }} [opts]
+ * @returns {CoffeeShopProduct[]}
+ */
+export function searchCoffeeShopProducts(query, opts = {}) {
+  const needle = normalizeLookupKey(query);
+  if (!needle) return [];
+  const limit = Math.max(1, Math.floor(Number(opts.limit) || 8));
+  const qTokens = needle.split(' ').filter(Boolean);
+
+  /** @type {{ product: CoffeeShopProduct, score: number }[]} */
+  const scored = [];
+  for (const product of COFFEE_SHOP_PRODUCTS) {
+    const candidates = [product.name, product.id, ...(product.aliases || [])]
+      .map((c) => normalizeLookupKey(c))
+      .filter(Boolean);
+    let best = 0;
+    for (const key of candidates) {
+      if (key === needle) {
+        best = Math.max(best, 1000);
+        continue;
+      }
+      if (key.startsWith(needle) || needle.startsWith(key)) {
+        best = Math.max(best, 920);
+        continue;
+      }
+      if (key.includes(needle) || needle.includes(key)) {
+        best = Math.max(best, 840);
+        continue;
+      }
+      if (qTokens.length > 0 && qTokens.every((t) => key.includes(t))) {
+        best = Math.max(best, 780);
+      }
+    }
+    if (best > 0) scored.push({ product, score: best });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.product.name.length - b.product.name.length);
+  const seen = new Set();
+  const out = [];
+  for (const entry of scored) {
+    if (seen.has(entry.product.id)) continue;
+    seen.add(entry.product.id);
+    out.push(entry.product);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * Riga catalogo compatibile meal builder / ricerca (macro per 100g derivate dalla porzione).
+ * @param {CoffeeShopProduct} product
+ * @returns {object}
+ */
+export function coffeeShopProductToCatalogRow(product) {
+  if (!product) return null;
+  const grams = Number(product.servingGrams) > 0 ? Number(product.servingGrams) : 50;
+  const factor = 100 / grams;
+  const unitLabel = String(product.servingLabel || (product.kind === 'pastry' ? '1 pezzo' : '1 tazzina')).trim();
+  const unitId = unitLabel.toLowerCase().replace(/\s+/g, '_').slice(0, 48) || 'porzione';
+  const icon = product.kind === 'pastry' ? '🥐' : '☕';
+
+  return {
+    id: `coffee_shop_${product.id}`,
+    foodDbKey: `coffee_shop_${product.id}`,
+    desc: product.name,
+    name: product.name,
+    kcal: Math.round((Number(product.kcal) || 0) * factor * 10) / 10,
+    cal: Math.round((Number(product.kcal) || 0) * factor * 10) / 10,
+    prot: Math.round((Number(product.prot) || 0) * factor * 100) / 100,
+    carb: Math.round((Number(product.carb) || 0) * factor * 100) / 100,
+    fat: Math.round((Number(product.fat) || 0) * factor * 100) / 100,
+    fatTotal: Math.round((Number(product.fat) || 0) * factor * 100) / 100,
+    defaultUnitWeight: grams,
+    defaultServingWeight: grams,
+    defaultUnit: { label: unitLabel, grams, id: unitId },
+    units: [{ label: unitLabel, grams, id: unitId }, { label: 'g', grams: 1, id: 'g' }],
+    servingLabel: unitLabel,
+    servingGrams: grams,
+    coffeeShopProductId: product.id,
+    caffeineMg: Number(product.caffeineMg) || 0,
+    isFastingSafe: product.isFastingSafe === true,
+    isCoffeeShopItem: true,
+    icon,
+    emoji: icon,
+    customEmoji: icon,
+    foodCategory: product.kind === 'pastry' ? 'sweets_pastry' : 'coffee_beverages',
+    source: 'coffee_shop',
+    /** Macro assolute della porzione di servizio (non per 100g). */
+    servingMacros: {
+      kcal: Number(product.kcal) || 0,
+      prot: Number(product.prot) || 0,
+      carb: Number(product.carb) || 0,
+      fat: Number(product.fat) || 0,
+    },
+  };
+}
+
+/**
+ * Hit ricerca UniversalSearch / meal builder.
+ * @param {CoffeeShopProduct} product
+ * @param {{ matchScore?: number }} [meta]
+ * @returns {object}
+ */
+export function coffeeShopProductToSearchResult(product, meta = {}) {
+  const row = coffeeShopProductToCatalogRow(product);
+  if (!row) return null;
+  const score = Number(meta.matchScore) || 0.99;
+  return {
+    id: row.id,
+    key: row.id,
+    desc: row.desc,
+    name: row.name,
+    row,
+    _source: 'coffee_shop',
+    source: 'KENTU_IT',
+    provenance: 'PERSONAL',
+    matchScore: score,
+    matchType: 'text',
+    textScore: score,
+    coffeeShopProductId: product.id,
+    defaultUnitWeight: row.defaultUnitWeight,
+    icon: row.icon,
+    customEmoji: row.customEmoji,
+  };
+}
+
+/**
+ * Candidato multi-DB / McDrive da prodotto catalogo.
+ * @param {CoffeeShopProduct} product
+ * @returns {object}
+ */
+export function coffeeShopProductToResolverCandidate(product) {
+  const row = coffeeShopProductToCatalogRow(product);
+  if (!row) return null;
+  return {
+    fdcId: row.foodDbKey,
+    name: product.name,
+    confidence: 'high',
+    confidenceScore: 1,
+    reason: 'Catalogo caffetteria locale',
+    source: 'coffee_shop',
+    row,
+    matchKind: 'exact',
+  };
 }
 
 /**

@@ -123,41 +123,68 @@ export default function EnergyArcWidget({
   variant = 'full',
   onClick,
   className = '',
+  /** Punteggio Longevità SSOT (giorno selezionato) — mini header mostra questo al posto della Body Battery. */
+  longevityScore = null,
 }) {
   const isMini = variant === 'mini';
-  const isSleepAlert = physiologySnapshot
+  const longevityDisplay = Number.isFinite(Number(longevityScore))
+    ? Math.max(0, Math.min(100, Math.round(Number(longevityScore))))
+    : null;
+  const useLongevityDisplay = isMini && longevityDisplay != null;
+  const isSleepAlert = !useLongevityDisplay && physiologySnapshot
     ? physiologySnapshot.SLEEP?.status === 'alert'
     : (missingSleep && !hasSleepData);
   const isMissingSleep = isSleepAlert;
-  const phaseColor = isMissingSleep ? '#ef4444' : resolvePhaseColor(metabolicPhase);
+  const phaseColor = useLongevityDisplay
+    ? (longevityDisplay >= 70 ? '#22c55e' : longevityDisplay >= 50 ? '#06b6d4' : '#f97316')
+    : (isMissingSleep ? '#ef4444' : resolvePhaseColor(metabolicPhase));
   const phaseLabel = resolvePhaseLabel(metabolicPhase);
 
   const { maxCharge, currentLevel, fillRatio } = useMemo(
-    () => (isMissingSleep
-      ? { maxCharge: 0, currentLevel: 0, fillRatio: 1 }
-      : computeMetabolicDrain({
-        recoveryScore,
-        wakeTime,
-        currentHour,
-        dynamicDailyKcal,
-        workoutsLog,
-      })),
-    [isMissingSleep, recoveryScore, wakeTime, currentHour, dynamicDailyKcal, workoutsLog],
+    () => (useLongevityDisplay
+      ? {
+        maxCharge: longevityDisplay,
+        currentLevel: longevityDisplay,
+        fillRatio: longevityDisplay / 100,
+      }
+      : (isMissingSleep
+        ? { maxCharge: 0, currentLevel: 0, fillRatio: 1 }
+        : computeMetabolicDrain({
+          recoveryScore,
+          wakeTime,
+          currentHour,
+          dynamicDailyKcal,
+          workoutsLog,
+        }))),
+    [
+      useLongevityDisplay,
+      longevityDisplay,
+      isMissingSleep,
+      recoveryScore,
+      wakeTime,
+      currentHour,
+      dynamicDailyKcal,
+      workoutsLog,
+    ],
   );
 
   const filledLength = isMissingSleep ? ARC_LENGTH : ARC_LENGTH * fillRatio;
   const dashArray = `${filledLength} ${ARC_LENGTH}`;
 
-  const centerValue = isMissingSleep
-    ? null
-    : hasSleepData && maxCharge > 0
-      ? `${Math.round(currentLevel)}%`
-      : '—';
-  const centerSub = isMissingSleep
-    ? 'Registra sonno'
-    : hasSleepData && maxCharge > 0
-      ? `${Math.round(maxCharge)}% al risveglio · ${phaseLabel}`
-      : 'Registra il sonno';
+  const centerValue = useLongevityDisplay
+    ? `${longevityDisplay}%`
+    : isMissingSleep
+      ? null
+      : hasSleepData && maxCharge > 0
+        ? `${Math.round(currentLevel)}%`
+        : '—';
+  const centerSub = useLongevityDisplay
+    ? 'Longevità'
+    : isMissingSleep
+      ? 'Registra sonno'
+      : hasSleepData && maxCharge > 0
+        ? `${Math.round(maxCharge)}% al risveglio · ${phaseLabel}`
+        : 'Registra il sonno';
 
   const rootClassName = [
     'energy-arc-widget',
@@ -167,11 +194,13 @@ export default function EnergyArcWidget({
     className,
   ].filter(Boolean).join(' ');
 
-  const ariaLabel = isMissingSleep
-    ? 'Mancano i dati del sonno: registrali ora per sbloccare l\'indice di recupero'
-    : hasSleepData
-      ? `Batteria energetica ${Math.round(currentLevel)} percento, fase ${phaseLabel}`
-      : 'Batteria energetica, sonno non registrato';
+  const ariaLabel = useLongevityDisplay
+    ? `Longevità ${longevityDisplay} su 100`
+    : isMissingSleep
+      ? 'Mancano i dati del sonno: registrali ora per sbloccare l\'indice di recupero'
+      : hasSleepData
+        ? `Batteria energetica ${Math.round(currentLevel)} percento, fase ${phaseLabel}`
+        : 'Batteria energetica, sonno non registrato';
 
   const content = (
     <>

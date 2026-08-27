@@ -126,6 +126,7 @@ import {
   buildLiveMealTrayPayload,
   buildMcdriveActionQuickReplies,
   parseMcdriveFoodInput,
+  parseMcdriveFoodInputs,
   buildMcDriveItemFromMatch,
   buildMcDriveItemFromSearchResult,
   buildMcDriveRawItem,
@@ -830,11 +831,11 @@ export class CommandTerminalController {
 
     if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM) {
       // Testo libero in conferma: tratta come append se sembra cibo, altrimenti ripropone i chip.
-      const maybeFood = parseMcdriveFoodInput(text);
-      if (maybeFood?.foodName) {
+      const maybeFoods = parseMcdriveFoodInputs(text);
+      if (maybeFoods.length > 0) {
         this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-        const draftItem = buildMcDriveRawItem(maybeFood);
-        this.appendMcDriveDraftItem(draftItem);
+        const draftItems = maybeFoods.map((parsed) => buildMcDriveRawItem(parsed));
+        this.appendMcDriveDraftItems(draftItems);
         this.publishMcdriveTraySync();
         return { ok: true, appended: true, intent: 'MCDRIVE_APPEND_RAW' };
       }
@@ -845,15 +846,15 @@ export class CommandTerminalController {
       return this.promptMcdriveMealType();
     }
 
-    const parsed = parseMcdriveFoodInput(text);
-    if (!parsed?.foodName) {
+    const parsedItems = parseMcdriveFoodInputs(text);
+    if (parsedItems.length === 0) {
       this.publishMcdriveTraySync();
       this.bus.publish(
         DISPATCH_SYSTEM_MESSAGE,
         {
           type: 'system',
-          text: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine».',
-          message: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine».',
+          text: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
+          message: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
           isSystem: true,
         },
         { source: 'CommandTerminalController' },
@@ -861,9 +862,9 @@ export class CommandTerminalController {
       return { ok: false, reason: 'unparsed_food' };
     }
 
-    // Append raw sulla lavagna esistente (nessun reset, nessun match DB, nessuna bolla testuale).
-    const draftItem = buildMcDriveRawItem(parsed);
-    this.appendMcDriveDraftItem(draftItem);
+    // Append raw sulla lavagna (multi-item: «caffè e croissant»).
+    const draftItems = parsedItems.map((parsed) => buildMcDriveRawItem(parsed));
+    this.appendMcDriveDraftItems(draftItems);
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     this.publishMcdriveTraySync();
     return {

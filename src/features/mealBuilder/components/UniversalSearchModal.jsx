@@ -78,6 +78,26 @@ function resolveDraftMatchForResult(result, personalDb) {
   }
 
   const name = result.desc || result.name || 'Alimento';
+  const row = result.row && typeof result.row === 'object' ? result.row : {};
+  const isCoffeeShop = result._source === 'coffee_shop' || row.isCoffeeShopItem === true;
+
+  if (isCoffeeShop) {
+    const matchFood = {
+      foodDbKey: result.key || result.id || row.foodDbKey,
+      desc: name,
+      name,
+      row,
+      defaultUnitWeight: row.defaultUnitWeight,
+      defaultUnit: row.defaultUnit,
+      units: row.units,
+    };
+    return {
+      matchFood,
+      unitWeight: getFoodUnitWeight(matchFood),
+      defaultUnitKcal: getDefaultUnitKcal(matchFood),
+    };
+  }
+
   return {
     matchFood: {
       foodDbKey: result._source === 'personal' ? (result.key || result.id) : undefined,

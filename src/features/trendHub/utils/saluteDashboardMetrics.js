@@ -27,6 +27,15 @@ export { resolveMorningSleepFromHistory as resolveMorningSleepForInsight };
 /** Soglia clinica WHtR: girovita critico = altezza × 0.5 (multi-utente). */
 export const WHTR_LIMIT_RATIO = 0.5;
 
+/** Max punti per pilastro Longevità (4 pilastri × 25 = 100). */
+export const LONGEVITY_PILLAR_MAX = 25;
+
+/** Target cardio (min) nella finestra 14gg per saturare il pilastro. */
+export const LONGEVITY_CARDIO_TARGET_MIN = 150;
+
+/** Target sonno (h) per saturare il pilastro recupero. */
+export const LONGEVITY_SLEEP_TARGET_H = 7;
+
 export {
   MUSCLE_STIMULUS_SUFFICIENT_TOTAL,
   muscleSpilloverMatrix,
@@ -301,10 +310,294 @@ export function buildGlycemicRiskBreakdown(args = {}) {
   };
 }
 
+const ANTI_INFLAM_FOOD_RE = /olio\s*(evo|extra)|extravergine|salmone|merluzzo|tonno|sgombro|pesce|mandorl|noci|nocciol|avocado|spinaci|broccoli|mirtill|curcuma|zenzero|insalata|verdura|verdure|rucola|cavolo|kale|lino|chia|omega/i;
+const GLYCEMIC_GOOD_FOOD_RE = /integrale|avena|legum|lenticch|ceci|fagiol|quinoa|farro|orzo|fibre|broccoli|zucchine|spinaci|insalata|verdura|verdure|patata\s*dolce|riso\s*basmati|yoghurt?\s*greco|yogurt\s*greco/i;
+const ULTRA_PROCESSED_FOOD_RE = /snack|patatin|coca|sprite|fanta|brioche|merendin|nutella|gelato|succo|bibita|hamburger|wurstel|würstel|hot\s*dog|chips|dolcium|caramell|energy\s*drink|bevanda\s*zuccher/i;
+const NOBLE_PROTEIN_FOOD_RE = /merluzzo|salmone|tonno|pesce|uova|uovo|pollo|tacchino|manzo|vitello|yogurt|yoghurt|skyr|ricotta|fiocchi|tofu|tempeh|legum|lenticch|ceci|fagiol|whey|proteine/i;
+
 /**
- * Punteggio Longevità 0–100 — architettura a due stadi:
- * 1) Motore comportamentale (max 100): cardio + pesi (gruppi unici) + sonno, ciascuno max 33.33
- * 2) Filtro strutturale WHtR multi-utente: soglia = altezza_utente × 0.5
+ * Estrae nomi alimento da un dayLog (meal items / food entries).
+ * @param {unknown} dayLog
+ * @returns {string[]}
+ */
+export function collectFoodNamesFromDayLog(dayLog) {
+  const names = [];
+  if (!Array.isArray(dayLog)) return names;
+  for (const entry of dayLog) {
+    if (!entry || typeof entry !== 'object') continue;
+    const type = String(entry.type || '').toLowerCase();
+    if (type === 'meal' && Array.isArray(entry.items)) {
+      for (const item of entry.items) {
+        const n = String(item?.name || item?.foodName || item?.label || '').trim();
+        if (n) names.push(n);
+      }
+      continue;
+    }
+    if (type === 'food' || type === 'recipe' || type === 'single' || !type) {
+      const n = String(entry.name || entry.foodName || entry.label || '').trim();
+      if (n) names.push(n);
+    }
+  }
+  return names;
+}
+
+/**
+ * Stima punti qualità cibo (A≤8 + B≤7) da nomi + eventuali label health in foodDb.
+ * @param {{
+ *   foodNames?: string[],
+ *   dayLog?: unknown,
+ *   foodDatabase?: Record<string, object>|null,
+ * }} [input]
+ * @returns {{ antiInflammatoryPts: number, glycemicPts: number, nobleProteinSignal: boolean }}
+ */
+export function estimateFoodQualityPillarPoints(input = {}) {
+  const names = [
+    ...(Array.isArray(input.foodNames) ? input.foodNames : []),
+    ...collectFoodNamesFromDayLog(input.dayLog),
+  ]
+    .map((n) => String(n || '').trim())
+    .filter(Boolean);
+
+  const db = input.foodDatabase && typeof input.foodDatabase === 'object'
+    ? input.foodDatabase
+    : null;
+
+  let antiHits = 0;
+  let glyHits = 0;
+  let ultraHits = 0;
+  let nobleProteinSignal = false;
+  let labeledAnti = 0;
+  let labeledPro = 0;
+  let labeledNovaPenalty = 0;
+  let labeledCount = 0;
+
+  for (const name of names) {
+    if (ANTI_INFLAM_FOOD_RE.test(name)) antiHits += 1;
+    if (GLYCEMIC_GOOD_FOOD_RE.test(name)) glyHits += 1;
+    if (ULTRA_PROCESSED_FOOD_RE.test(name)) ultraHits += 1;
+    if (NOBLE_PROTEIN_FOOD_RE.test(name)) nobleProteinSignal = true;
+
+    if (!db) continue;
+    const key = Object.keys(db).find((k) => {
+      const row = db[k];
+      const rowName = String(row?.name || row?.foodName || k || '').toLowerCase();
+      return rowName && name.toLowerCase().includes(rowName.slice(0, Math.min(12, rowName.length)));
+    });
+    const row = key ? db[key] : null;
+    if (!row) continue;
+    labeledCount += 1;
+    const inflam = Number(row.inflammationFactor);
+    if (inflam === -1) labeledAnti += 1;
+    if (inflam === 1) labeledPro += 1;
+    const nova = Number(row.novaScore);
+    if (nova >= 4) labeledNovaPenalty += 1;
+    else if (nova <= 2) {
+      antiHits += 0.5;
+      glyHits += 0.35;
+    }
+  }
+
+  // Nessun cibo: baseline neutra (non azzerare A+B → evita crollo a “solo proteine”).
+  if (names.length === 0) {
+    return { antiInflammatoryPts: 4, glycemicPts: 3, nobleProteinSignal: false };
+  }
+
+  let anti = Math.min(8, 2 + antiHits * 1.6 + labeledAnti * 1.2);
+  anti -= ultraHits * 1.5 + labeledPro * 1.2 + labeledNovaPenalty * 1.5;
+  anti = Math.max(0, Math.min(8, Math.round(anti)));
+
+  let gly = Math.min(7, 2 + glyHits * 1.4);
+  gly -= ultraHits * 1.4 + labeledNovaPenalty;
+  if (labeledCount > 0 && labeledAnti >= labeledPro) gly += 1;
+  gly = Math.max(0, Math.min(7, Math.round(gly)));
+
+  return {
+    antiInflammatoryPts: anti,
+    glycemicPts: gly,
+    nobleProteinSignal,
+  };
+}
+
+/**
+ * Stima nutrizione clinica 0–25 senza Insight AI (olistica: A8+B7+C5+D5).
+ * @param {{
+ *   proteinGrams?: number|null,
+ *   proteinTarget?: number|null,
+ *   fastingHoursAvg?: number|null,
+ *   foodNames?: string[],
+ *   dayLog?: unknown,
+ *   foodDatabase?: Record<string, object>|null,
+ * }} [input]
+ */
+export function estimateDeterministicLongevityNutrition(input = {}) {
+  const prot = Number(input.proteinGrams);
+  const target = Number(input.proteinTarget);
+  const fasting = Number(input.fastingHoursAvg);
+  const quality = estimateFoodQualityPillarPoints(input);
+
+  // C) Proteine funzionali — max 5 (pieno se ~≥75% target o fonti nobili)
+  let proteinPoints = 2;
+  let proteinStatus = 'MODERATE';
+  if (Number.isFinite(prot) && Number.isFinite(target) && target > 0) {
+    const ratio = prot / target;
+    if (ratio >= 0.85 || (ratio >= 0.7 && quality.nobleProteinSignal)) {
+      proteinPoints = 5;
+      proteinStatus = 'OPTIMAL';
+    } else if (ratio >= 0.7 || (ratio >= 0.55 && quality.nobleProteinSignal)) {
+      proteinPoints = 4;
+      proteinStatus = 'MODERATE';
+    } else if (ratio >= 0.5) {
+      proteinPoints = 3;
+      proteinStatus = 'MODERATE';
+    } else if (ratio >= 0.35) {
+      proteinPoints = 2;
+      proteinStatus = 'LOW';
+    } else {
+      proteinPoints = 1;
+      proteinStatus = 'LOW';
+    }
+  } else if (quality.nobleProteinSignal) {
+    proteinPoints = 4;
+    proteinStatus = 'MODERATE';
+  } else if (Number.isFinite(prot) && prot >= 90) {
+    proteinPoints = 3;
+    proteinStatus = 'MODERATE';
+  } else if (Number.isFinite(prot) && prot > 0) {
+    proteinPoints = 2;
+    proteinStatus = 'LOW';
+  } else {
+    proteinPoints = 1;
+    proteinStatus = 'LOW';
+  }
+
+  // D) Digiuno / timing — max 5
+  let fastingPoints = 3;
+  let fastingWindowEvaluation = 'GOOD';
+  if (Number.isFinite(fasting) && fasting > 0) {
+    if (fasting >= 14) {
+      fastingPoints = 5;
+      fastingWindowEvaluation = 'OPTIMAL';
+    } else if (fasting >= 12) {
+      fastingPoints = 4;
+      fastingWindowEvaluation = 'GOOD';
+    } else if (fasting >= 10) {
+      fastingPoints = 2;
+      fastingWindowEvaluation = 'POOR';
+    } else {
+      fastingPoints = 1;
+      fastingWindowEvaluation = 'POOR';
+    }
+  }
+
+  const antiPts = quality.antiInflammatoryPts;
+  const glyPts = quality.glycemicPts;
+  const score = Math.max(
+    0,
+    Math.min(LONGEVITY_PILLAR_MAX, Math.round(antiPts + glyPts + proteinPoints + fastingPoints)),
+  );
+
+  const qualityStrong = antiPts + glyPts >= 10;
+  const clinicalNoteStrength = qualityStrong
+    ? 'Profilo antinfiammatorio e glicemico solido dai log (grassi buoni / fibre / alimenti minimamente processati).'
+    : proteinStatus === 'OPTIMAL'
+      ? 'Quota proteica funzionale in linea: supporto alla massa magra.'
+      : 'Base nutrizionale stimata dai log: genera l\'Insight Clinico per un giudizio clinico completo.';
+
+  let clinicalNoteBottleneck = 'Completa l\'Insight Clinico AI per affinare qualità antinfiammatoria e timing.';
+  if (proteinStatus === 'LOW' && qualityStrong) {
+    clinicalNoteBottleneck = 'Margine di miglioramento: incrementa leggermente la quota proteica per sostenere la massa magra.';
+  } else if (fastingWindowEvaluation === 'POOR') {
+    clinicalNoteBottleneck = 'Finestra di digiuno notturno corta: punta a 12–14h.';
+  } else if (proteinStatus === 'LOW') {
+    clinicalNoteBottleneck = 'Aderenza proteica ancora insufficiente rispetto al target funzionale.';
+  } else if (!qualityStrong) {
+    clinicalNoteBottleneck = 'Aumenta alimenti antinfiammatori e fonti di fibre per consolidare il pilastro.';
+  }
+
+  return {
+    score,
+    proteinStatus,
+    fastingWindowEvaluation,
+    clinicalNoteStrength,
+    clinicalNoteBottleneck,
+    source: 'deterministic_fallback',
+    pillarParts: {
+      antiInflammatoryPts: antiPts,
+      glycemicPts: glyPts,
+      proteinPts: proteinPoints,
+      fastingPts: fastingPoints,
+    },
+  };
+}
+
+/**
+ * Risolve lo score nutrizione 0–25: media Insight AI (3–7gg) → singolo Insight → fallback.
+ * @param {{
+ *   longevityNutrition?: object|null,
+ *   recentNutritionScores?: number[],
+ *   proteinGrams?: number|null,
+ *   proteinTarget?: number|null,
+ *   fastingHoursAvg?: number|null,
+ *   foodNames?: string[],
+ *   dayLog?: unknown,
+ *   foodDatabase?: Record<string, object>|null,
+ * }} [input]
+ */
+export function resolveLongevityNutritionPillar(input = {}) {
+  const recent = (Array.isArray(input.recentNutritionScores) ? input.recentNutritionScores : [])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n >= 0);
+  if (recent.length > 0) {
+    const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const score = Math.max(0, Math.min(LONGEVITY_PILLAR_MAX, Math.round(avg)));
+    const fromAi = input.longevityNutrition && typeof input.longevityNutrition === 'object'
+      ? input.longevityNutrition
+      : null;
+    return {
+      score,
+      proteinStatus: fromAi?.proteinStatus || (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'MODERATE' : 'LOW'),
+      fastingWindowEvaluation: fromAi?.fastingWindowEvaluation || (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'GOOD' : 'POOR'),
+      clinicalNoteStrength: fromAi?.clinicalNoteStrength
+        || 'Media nutrizione clinica dagli Insight recenti: profilo alimentare in monitoraggio.',
+      clinicalNoteBottleneck: fromAi?.clinicalNoteBottleneck
+        || 'Continua a generare Insight Clinico per affinare il pilastro nutrizione.',
+      source: 'ai_average',
+      sampleSize: recent.length,
+    };
+  }
+
+  const singleScore = Number(input.longevityNutrition?.score);
+  if (Number.isFinite(singleScore)) {
+    const ln = input.longevityNutrition;
+    return {
+      score: Math.max(0, Math.min(LONGEVITY_PILLAR_MAX, Math.round(singleScore))),
+      proteinStatus: ln.proteinStatus || 'MODERATE',
+      fastingWindowEvaluation: ln.fastingWindowEvaluation || 'GOOD',
+      clinicalNoteStrength: String(ln.clinicalNoteStrength || '').trim()
+        || 'Insight Clinico: nutrizione valutata sul giorno di analisi.',
+      clinicalNoteBottleneck: String(ln.clinicalNoteBottleneck || '').trim()
+        || 'Verifica qualità antinfiammatoria, fibre e finestra digiuno.',
+      source: 'ai_single',
+      sampleSize: 1,
+    };
+  }
+
+  return {
+    ...estimateDeterministicLongevityNutrition({
+      proteinGrams: input.proteinGrams,
+      proteinTarget: input.proteinTarget,
+      fastingHoursAvg: input.fastingHoursAvg,
+      foodNames: input.foodNames,
+      dayLog: input.dayLog,
+      foodDatabase: input.foodDatabase,
+    }),
+    sampleSize: 0,
+  };
+}
+
+/**
+ * Punteggio Longevità 0–100 — 4 pilastri × 25:
+ * Cardio · Forza · Sonno · Nutrizione Clinica & Digiuno (+ filtro WHtR sul totale).
  *
  * @param {{
  *   cardioMinutesTotal?: number,
@@ -320,23 +613,15 @@ export function buildGlycemicRiskBreakdown(args = {}) {
  *   heightCm?: number,
  *   height?: number,
  *   windowDays?: number,
+ *   longevityNutrition?: object|null,
+ *   recentNutritionScores?: number[],
+ *   proteinGrams?: number|null,
+ *   proteinTarget?: number|null,
+ *   fastingHoursAvg?: number|null,
+ *   foodNames?: string[],
+ *   dayLog?: unknown,
+ *   foodDatabase?: Record<string, object>|null,
  * }} input
- * @returns {{
- *   finalScore: number,
- *   baseScore: number,
- *   breakdown: {
- *     cardioScore: number,
- *     weightsScore: number,
- *     sleepScore: number,
- *     whtrMultiplier: number,
- *     cardioMins: number,
- *     uniqueGroups: number,
- *     sleepAvg: number | null,
- *     userHeight: number,
- *     criticalThreshold: number,
- *     muscleStimulusPillars?: Record<string, { direct: number, indirect: number, total: number }>,
- *   },
- * }}
  */
 export function calculateLongevityScore(input = {}) {
   const {
@@ -348,18 +633,24 @@ export function calculateLongevityScore(input = {}) {
     waistCm = null,
     heightCm = null,
     height = null,
+    longevityNutrition = null,
+    recentNutritionScores = null,
+    proteinGrams = null,
+    proteinTarget = null,
+    fastingHoursAvg = null,
+    foodNames = null,
+    dayLog = null,
+    foodDatabase = null,
   } = input && typeof input === 'object' ? input : {};
 
-  // Altezza reale profilo (multi-utente); fallback 174 solo se dati mancanti
   const rawHeight = heightCm ?? height;
   const userHeight = Number(rawHeight) > 0 ? Number(rawHeight) : REFERENCE_HEIGHT_CM;
-  // Soglia clinica personalizzata: WHtR 0.5
   const criticalThreshold = userHeight * WHTR_LIMIT_RATIO;
-  const pillarMax = 100 / 3; // ≈ 33.333…
+  const pillarMax = LONGEVITY_PILLAR_MAX;
 
   // —— Cardio: target 150 min nei 14 giorni ——
   const cardioMins = Math.max(0, Number(cardioMinutesTotal) || 0);
-  const cardioScoreRaw = Math.min((cardioMins / 150) * pillarMax, pillarMax);
+  const cardioScoreRaw = Math.min((cardioMins / LONGEVITY_CARDIO_TARGET_MIN) * pillarMax, pillarMax);
   const cardioScore = Number.isFinite(cardioScoreRaw) ? cardioScoreRaw : 0;
 
   // —— Pesi: pilastri con total (direct+spillover) >= 50 ——
@@ -379,15 +670,28 @@ export function calculateLongevityScore(input = {}) {
   const sleepAvgNum = Number(sleepAvgHours);
   const sleepAvg = Number.isFinite(sleepAvgNum) && sleepAvgNum > 0 ? sleepAvgNum : null;
   const sleepScore = sleepAvg != null
-    ? Math.min((sleepAvg / 7) * pillarMax, pillarMax)
+    ? Math.min((sleepAvg / LONGEVITY_SLEEP_TARGET_H) * pillarMax, pillarMax)
     : 0;
+
+  // —— Nutrizione clinica & digiuno (Insight AI o fallback) ——
+  const nutritionPillar = resolveLongevityNutritionPillar({
+    longevityNutrition,
+    recentNutritionScores,
+    proteinGrams,
+    proteinTarget,
+    fastingHoursAvg,
+    foodNames,
+    dayLog,
+    foodDatabase,
+  });
+  const nutritionScore = Number(nutritionPillar.score) || 0;
 
   const baseScore = Math.max(
     0,
-    Math.min(100, cardioScore + weightsScore + sleepScore),
+    Math.min(100, cardioScore + weightsScore + sleepScore + nutritionScore),
   );
 
-  // —— Filtro strutturale WHtR (soglia dinamica per utente) ——
+  // —— Filtro strutturale WHtR ——
   const waist = Number(waistCm);
   let coefficient = 1.0;
   if (Number.isFinite(waist) && waist > 0) {
@@ -410,12 +714,15 @@ export function calculateLongevityScore(input = {}) {
       cardioScore,
       weightsScore,
       sleepScore,
+      nutritionScore,
+      longevityNutrition: nutritionPillar,
       whtrMultiplier: Math.round(coefficient * 1000) / 1000,
       cardioMins: Math.round(cardioMins),
       uniqueGroups,
       sleepAvg,
       userHeight: Math.round(userHeight * 10) / 10,
       criticalThreshold: Math.round(criticalThreshold * 10) / 10,
+      pillarMax,
       ...(muscleStimulusPillars ? { muscleStimulusPillars } : {}),
     },
   };

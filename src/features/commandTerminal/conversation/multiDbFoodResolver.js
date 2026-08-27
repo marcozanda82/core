@@ -19,6 +19,10 @@ import {
   searchPersonalDb,
 } from '../../mealBuilder/hooks/useUniversalSearchEngine.js';
 import { lookupUserFoodAlias } from './userFoodAliases.js';
+import {
+  findCoffeeShopProductByName,
+  coffeeShopProductToResolverCandidate,
+} from '../../../constants/coffeeShopDatabase.js';
 
 export const AUTO_ACCEPT_CONFIDENCE = 0.85;
 /** Match forte Livello 1 (Personale + Kentu): auto-accept / stop senza cataloghi esterni. */
@@ -42,6 +46,7 @@ const QUERY_STOPWORDS = new Set([
 ]);
 
 export const FOOD_SOURCE_BADGE = Object.freeze({
+  coffee_shop: { key: 'coffee_shop', label: 'Caffetteria', short: '[Local]' },
   personal: { key: 'personal', label: 'Personale', short: '[Personale]' },
   kentu: { key: 'kentu', label: 'CREA', short: '[CREA]' },
   kentu_it: { key: 'kentu_it', label: 'CREA', short: '[CREA]' },
@@ -52,6 +57,7 @@ export const FOOD_SOURCE_BADGE = Object.freeze({
 });
 
 const SOURCE_PRIORITY = Object.freeze({
+  coffee_shop: -1,
   personal: 0,
   kentu: 1,
   kentu_it: 1,
@@ -725,6 +731,25 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
       needsExternalSearch: false,
       fromAlias: true,
     };
+  }
+
+  // Tier 0 — catalogo caffetteria / colazione locale (prima di personale/CREA/USDA).
+  const coffeeProduct = findCoffeeShopProductByName(name);
+  if (coffeeProduct) {
+    const coffeeCandidate = coffeeShopProductToResolverCandidate(coffeeProduct);
+    if (coffeeCandidate) {
+      return {
+        needsDisambiguation: false,
+        match: coffeeCandidate,
+        source: 'coffee_shop',
+        confidenceScore: 1,
+        candidates: [coffeeCandidate],
+        alternatives: [],
+        searchLevel: 1,
+        needsExternalSearch: false,
+        fromCoffeeShop: true,
+      };
+    }
   }
 
   const level1 = await collectLevel1LocalCandidates(name, ctx);

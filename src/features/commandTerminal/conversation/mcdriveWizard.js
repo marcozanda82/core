@@ -10,6 +10,14 @@ import { getDynamicMealTargets, toCanonicalMealType } from '../../../coreEngine.
 import { getLastUsedQuantity } from './userRecentFoods.js';
 import { resolveFoodAcrossDatabases } from './multiDbFoodResolver.js';
 import { attachResolvedFoodIcon } from '../../../utils/foodCategoryIcon.js';
+import {
+  findCoffeeShopProductByName,
+  getCoffeeShopProductById,
+  coffeeShopProductToCatalogRow,
+  coffeeShopExtrasFromProduct,
+} from '../../../constants/coffeeShopDatabase.js';
+import { resolveSmartDefaultPortion } from '../../../utils/smartFoodPortions.js';
+import { resolveFoodVisualEmoji } from '../../../utils/foodVisualResolver.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -60,7 +68,7 @@ export const MCDRIVE_SAVE_CONFIRM_QUICK_REPLIES = Object.freeze([
 
 /** Messaggio di avvio lavagna (dopo scelta pasto). */
 export const MCDRIVE_START_MESSAGE =
-  'Lavagna aperta. Digita gli alimenti pure grezzi (es. «100g pasta»), poi tocca Calcola Valori.';
+  'Lavagna aperta. Digita gli alimenti (es. «un caffè zuccherato e un croissant» o «100g pasta»), poi tocca Calcola Valori.';
 
 export const EMPTY_MCDRIVE_TOTALS = Object.freeze({
   kcal: 0,
@@ -190,35 +198,62 @@ export function createEmptyMcDriveDraft() {
 }
 
 /**
- * Un alimento per ciclo (es. «100g sardine»).
+ * Più alimenti per messaggio (es. «un caffè zuccherato e un croissant»).
  * @param {string} userText
- * @returns {{ foodName: string, grams: number, isEstimated: boolean } | null}
+ * @returns {Array<{ foodName: string, grams: number, isEstimated: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null }>}
  */
-export function parseMcdriveFoodInput(userText) {
+export function parseMcdriveFoodInputs(userText) {
   const text = String(userText || '').trim();
-  if (!text) return null;
+  if (!text) return [];
+
+  /** @type {Array<{ foodName: string, grams: number, isEstimated: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null }>} */
+  const out = [];
+  const seen = new Set();
+
+  const pushItem = (foodName, gramsHint, estimatedHint) => {
+    const name = String(foodName || '').trim();
+    if (!name || name.length < 2) return;
+    const key = name.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const portion = resolveSmartDefaultPortion(name);
+    const hasExplicitGrams = Number.isFinite(Number(gramsHint)) && Number(gramsHint) > 0;
+    const grams = hasExplicitGrams
+      ? Math.max(1, Math.round(Number(gramsHint)))
+      : portion.grams;
+    out.push({
+      foodName: name,
+      grams,
+      isEstimated: hasExplicitGrams ? false : (estimatedHint !== false),
+      coffeeShopProductId: portion.coffeeShopProductId || null,
+      servingLabel: portion.servingLabel || null,
+    });
+  };
 
   const parsed = parseConsumedMealFromNaturalText(text);
   if (parsed?.items?.length) {
-    const item = parsed.items[0];
-    const grams = Math.max(1, Math.round(Number(item.grams) || DEFAULT_GRAMS));
-    return {
-      foodName: String(item.foodName || '').trim(),
-      grams,
-      isEstimated: !Number.isFinite(Number(item.grams)) || Number(item.grams) <= 0,
-    };
+    parsed.items.forEach((item) => {
+      pushItem(item.foodName, item.grams, false);
+    });
   }
 
-  const bare = extractBareFoodNamesFromText(text);
-  if (bare.length > 0) {
-    return {
-      foodName: String(bare[0] || '').trim(),
-      grams: DEFAULT_GRAMS,
-      isEstimated: true,
-    };
+  if (out.length === 0) {
+    const bare = extractBareFoodNamesFromText(text);
+    bare.forEach((name) => pushItem(name, null, true));
   }
 
-  return null;
+  return out;
+}
+
+/**
+ * Un alimento (compat): primo hit di parseMcdriveFoodInputs.
+ * @param {string} userText
+ * @returns {{ foodName: string, grams: number, isEstimated: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null } | null}
+ */
+export function parseMcdriveFoodInput(userText) {
+  const items = parseMcdriveFoodInputs(userText);
+  return items[0] || null;
 }
 
 /**
@@ -366,20 +401,42 @@ export function buildMcDriveAlternatives(matches = [], topMatch = null, limit = 
 }
 
 /**
- * Appunto grezzo sul vassoio (Sandbox): nessun match DB, nessun macro.
- * @param {{ foodName?: string, grams?: number, isEstimated?: boolean }} parsed
- * @returns {{ id: string, foodName: string, grams: number, status: 'raw', isEstimated: boolean }}
+ * Appunto grezzo sul vassoio (Sandbox): nessun match DB remoto.
+ * Se match coffee shop locale → grammi/unità/icona già corretti.
+ * @param {{ foodName?: string, grams?: number, isEstimated?: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null }} parsed
  */
 export function buildMcDriveRawItem(parsed = {}) {
   const foodName = String(parsed?.foodName || '').trim();
-  const grams = Math.max(1, Math.round(Number(parsed?.grams) || DEFAULT_GRAMS));
+  const portion = resolveSmartDefaultPortion(foodName);
+  const product = portion.product
+    || (parsed?.coffeeShopProductId
+      ? findCoffeeShopProductByName(foodName)
+      : findCoffeeShopProductByName(foodName));
+  const grams = Math.max(
+    1,
+    Math.round(
+      Number(parsed?.grams)
+      || portion.grams
+      || DEFAULT_GRAMS,
+    ),
+  );
   const id = `mcdrive_raw_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  const icon = product
+    ? (product.kind === 'pastry' ? '🥐' : '☕')
+    : resolveFoodVisualEmoji(foodName);
+
   return {
     id,
-    foodName,
+    foodName: product?.name || foodName,
+    spokenFoodName: foodName,
     grams,
     status: 'raw',
-    isEstimated: parsed?.isEstimated === true,
+    isEstimated: parsed?.isEstimated === true && !product,
+    servingLabel: parsed?.servingLabel || portion.servingLabel || null,
+    coffeeShopProductId: product?.id || parsed?.coffeeShopProductId || null,
+    icon,
+    emoji: icon,
+    ...(product ? coffeeShopExtrasFromProduct(product) : {}),
   };
 }
 
@@ -474,28 +531,76 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
   const row = match?.row && typeof match.row === 'object' ? match.row : {};
   const officialName = String(match?.name || row.desc || row.name || spokenName || '').trim();
   const foodDbKey = String(match?.fdcId || row.id || row.foodDbKey || '').trim() || null;
-  const weight = Math.max(1, Math.round(Number(grams) || DEFAULT_GRAMS));
-  const per100 = getPer100Macros({ row });
-  const macros = computeMacrosForWeight(per100, weight);
+  const coffeeId = row.coffeeShopProductId || extra.coffeeShopProductId || null;
+  const product = (coffeeId ? getCoffeeShopProductById(coffeeId) : null)
+    || findCoffeeShopProductByName(spokenName)
+    || findCoffeeShopProductByName(officialName);
+
+  const servingGrams = Number(product?.servingGrams || row.servingGrams || row.defaultUnitWeight) || 0;
+  const weight = Math.max(
+    1,
+    Math.round(Number(grams) || servingGrams || DEFAULT_GRAMS),
+  );
+
+  let kcal;
+  let pro;
+  let carbo;
+  let fat;
+
+  if (product && row.servingMacros) {
+    const baseG = Math.max(1, Number(product.servingGrams) || servingGrams || weight);
+    const ratio = weight / baseG;
+    kcal = Math.round((Number(product.kcal) || 0) * ratio);
+    pro = Math.round(((Number(product.prot) || 0) * ratio) * 10) / 10;
+    carbo = Math.round(((Number(product.carb) || 0) * ratio) * 10) / 10;
+    fat = Math.round(((Number(product.fat) || 0) * ratio) * 10) / 10;
+  } else if (row.servingMacros && servingGrams > 0) {
+    const ratio = weight / servingGrams;
+    kcal = Math.round((Number(row.servingMacros.kcal) || 0) * ratio);
+    pro = Math.round(((Number(row.servingMacros.prot) || 0) * ratio) * 10) / 10;
+    carbo = Math.round(((Number(row.servingMacros.carb) || 0) * ratio) * 10) / 10;
+    fat = Math.round(((Number(row.servingMacros.fat) || 0) * ratio) * 10) / 10;
+  } else {
+    const per100 = getPer100Macros({ row });
+    const macros = computeMacrosForWeight(per100, weight);
+    kcal = Math.round(Number(macros.kcal) || 0);
+    pro = Number(macros.prot) || 0;
+    carbo = Number(macros.carb) || 0;
+    fat = Number(macros.fat) || 0;
+  }
+
   const alternatives = Array.isArray(extra?.alternatives)
     ? extra.alternatives.map((alt) => ({ ...alt }))
     : [];
+
+  const icon = product
+    ? (product.kind === 'pastry' ? '🥐' : '☕')
+    : (row.icon || row.emoji || resolveFoodVisualEmoji(officialName || spokenName));
+
+  const catalogRow = product ? coffeeShopProductToCatalogRow(product) : null;
 
   return attachResolvedFoodIcon({
     ...(extra?.id ? { id: extra.id } : {}),
     foodName: officialName || String(spokenName || '').trim(),
     spokenFoodName: String(spokenName || officialName).trim(),
     grams: weight,
-    kcal: Math.round(Number(macros.kcal) || 0),
-    pro: Number(macros.prot) || 0,
-    carbo: Number(macros.carb) || 0,
-    fat: Number(macros.fat) || 0,
-    foodDbKey,
-    source,
+    kcal,
+    pro,
+    carbo,
+    fat,
+    foodDbKey: foodDbKey || (catalogRow?.foodDbKey ?? null),
+    source: product ? 'coffee_shop' : source,
     status: 'resolved',
-    isEstimated: extra.isEstimated === true,
+    isEstimated: extra.isEstimated === true && !product,
     alternatives,
-    ...(Object.keys(row).length > 0 ? { row } : {}),
+    icon,
+    emoji: icon,
+    servingLabel: product?.servingLabel || row.servingLabel || null,
+    coffeeShopProductId: product?.id || coffeeId || null,
+    ...(product ? coffeeShopExtrasFromProduct(product) : {}),
+    ...(catalogRow || Object.keys(row).length > 0
+      ? { row: catalogRow || { ...row } }
+      : {}),
   });
 }
 
@@ -507,7 +612,26 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
  * @returns {number}
  */
 export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, currentState = {}) {
-  const fallback = Math.max(1, Math.round(Number(itemOrParsed?.grams) || DEFAULT_GRAMS));
+  const foodName = String(
+    itemOrParsed?.foodName || matchInfo?.foodName || '',
+  ).trim();
+  const smart = resolveSmartDefaultPortion(foodName);
+  const fallback = Math.max(
+    1,
+    Math.round(
+      Number(itemOrParsed?.grams)
+      || smart.grams
+      || DEFAULT_GRAMS,
+    ),
+  );
+
+  // Catalogo locale / porzione pezzo: non sovrascrivere con 100g storici sbagliati.
+  if (smart.coffeeShopProductId || smart.kind === 'piece' || smart.kind === 'pastry' || smart.kind === 'coffee') {
+    if (itemOrParsed?.isEstimated === true || !Number(itemOrParsed?.grams)) {
+      return smart.grams;
+    }
+  }
+
   if (itemOrParsed?.isEstimated !== true) return fallback;
 
   const keys = [
@@ -580,6 +704,19 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
 
   const row = item.row && typeof item.row === 'object' ? item.row : null;
   if (row) {
+    const servingGrams = Number(row.servingGrams || row.defaultUnitWeight) || 0;
+    if (row.servingMacros && servingGrams > 0) {
+      const ratio = grams / servingGrams;
+      return {
+        ...item,
+        grams,
+        kcal: Math.round((Number(row.servingMacros.kcal) || 0) * ratio),
+        pro: Math.round(((Number(row.servingMacros.prot) || 0) * ratio) * 10) / 10,
+        carbo: Math.round(((Number(row.servingMacros.carb) || 0) * ratio) * 10) / 10,
+        fat: Math.round(((Number(row.servingMacros.fat) || 0) * ratio) * 10) / 10,
+        isEstimated: false,
+      };
+    }
     const per100 = getPer100Macros({ row });
     const macros = computeMacrosForWeight(per100, grams);
     return {

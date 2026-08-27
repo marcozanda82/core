@@ -106,87 +106,8 @@ export const KINETIC_ABSORPTION_PHASE = {
   action: 'Fase attiva',
 };
 
-/**
- * Stato fase metabolica rispetto all'ultimo pasto e alla sua cinetica.
- * @param {number|null} hoursSinceLastMeal
- * @param {object|null} lastMealNode
- */
-export function resolveKineticMetabolicPhase(hoursSinceLastMeal, lastMealNode) {
-  const kinetics = calculateMealKinetics(lastMealNode ?? {});
-  const windowEnd = mealKineticsWindowEnd(kinetics);
-  const h = hoursSinceLastMeal == null ? 0 : Math.max(0, Number(hoursSinceLastMeal) || 0);
-  const hasMeal = hoursSinceLastMeal != null && lastMealNode != null;
-
-  if (!hasMeal) {
-    return {
-      hoursSinceLastMeal: h,
-      hasMealLogged: false,
-      phase: METABOLIC_PHASES[0],
-      phaseIndex: 0,
-      nextPhase: METABOLIC_PHASES[1],
-      hoursUntilNext: null,
-      progressInPhase: 0,
-      kinetics,
-      hoursPostAbsorption: null,
-      nextTransitionHours: null,
-    };
-  }
-
-  if (h < kinetics.onsetDelay) {
-    return {
-      hoursSinceLastMeal: h,
-      hasMealLogged: true,
-      phase: KINETIC_GASTRIC_PHASE,
-      phaseIndex: 0,
-      nextPhase: KINETIC_ABSORPTION_PHASE,
-      hoursUntilNext: Math.max(0, kinetics.onsetDelay - h),
-      progressInPhase: kinetics.onsetDelay > 0 ? h / kinetics.onsetDelay : 1,
-      kinetics,
-      hoursPostAbsorption: null,
-      nextTransitionHours: kinetics.onsetDelay,
-    };
-  }
-
-  if (h < windowEnd) {
-    const elapsed = h - kinetics.onsetDelay;
-    return {
-      hoursSinceLastMeal: h,
-      hasMealLogged: true,
-      phase: KINETIC_ABSORPTION_PHASE,
-      phaseIndex: 1,
-      nextPhase: METABOLIC_PHASES[2],
-      hoursUntilNext: Math.max(0, windowEnd - h),
-      progressInPhase: kinetics.duration > 0 ? elapsed / kinetics.duration : 1,
-      kinetics,
-      hoursPostAbsorption: null,
-      nextTransitionHours: windowEnd,
-    };
-  }
-
-  const hoursPost = h - windowEnd;
-  const postBand = POST_ABSORPTION_PHASES.find(
-    (band) => hoursPost >= band.minHours && hoursPost < band.maxHours,
-  ) ?? POST_ABSORPTION_PHASES[POST_ABSORPTION_PHASES.length - 1];
-  const phaseIndex = postBand.phaseIndex;
-  const phase = METABOLIC_PHASES[phaseIndex];
-  const nextBand = POST_ABSORPTION_PHASES.find((band) => band.phaseIndex === phaseIndex + 1);
-  const nextPhase = nextBand ? METABOLIC_PHASES[nextBand.phaseIndex] : null;
-
-  return {
-    hoursSinceLastMeal: h,
-    hasMealLogged: true,
-    phase,
-    phaseIndex: phaseIndex + 2,
-    nextPhase,
-    hoursUntilNext: nextBand ? Math.max(0, nextBand.minHours - hoursPost) : null,
-    progressInPhase: postBand.maxHours === Infinity
-      ? 1
-      : Math.min(1, Math.max(0, (hoursPost - postBand.minHours) / (postBand.maxHours - postBand.minHours))),
-    kinetics,
-    hoursPostAbsorption: hoursPost,
-    nextTransitionHours: nextBand ? windowEnd + nextBand.minHours : null,
-  };
-}
+/** @deprecated Usa getMetabolicPhaseAtTime da metabolicPhaseEngine */
+export { getMetabolicPhaseAtTime, resolveKineticMetabolicPhase } from '../salaComandi/utils/metabolicPhaseEngine';
 
 /** Fasi post-assorbimento ribasate sull'fine finestra cinetica (glicogeno @ +0h). */
 export const POST_ABSORPTION_PHASES = [
