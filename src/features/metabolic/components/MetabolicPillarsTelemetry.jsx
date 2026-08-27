@@ -42,83 +42,39 @@ export default function MetabolicPillarsTelemetry({ pillars }) {
   return (
     <section
       aria-label="Telemetria pilastri metabolici"
-      className="trend-radar-pillars"
-      style={{
-        padding: '10px 12px',
-        borderRadius: 12,
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        background: 'rgba(10, 12, 18, 0.72)',
-        boxSizing: 'border-box',
-      }}
+      className="trend-radar-pillars relative mb-2 rounded-xl border border-white/[0.08] bg-[rgba(10,12,18,0.72)] px-2.5 py-2"
     >
-      <div
-        style={{
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: 'rgba(148, 163, 184, 0.75)',
-          marginBottom: 8,
-        }}
-      >
+      <div className="mb-1 text-[0.55rem] font-bold uppercase tracking-[0.12em] text-slate-400/80">
         Telemetria pilastri
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <div className="flex flex-col gap-1">
         {PILLARS.map(({ key, label, color, glow, track }) => {
           const raw = Number(values[key]);
           const pct = Number.isFinite(raw) ? Math.max(0, Math.min(100, Math.round(raw))) : 0;
           return (
-            <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'baseline',
-                  gap: 8,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 650,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    color: 'rgba(226, 232, 240, 0.88)',
-                  }}
-                >
+            <div key={key} className="flex flex-col gap-px">
+              <div className="flex items-baseline justify-between gap-1.5">
+                <span className="text-[11px] font-semibold uppercase leading-none tracking-[0.05em] text-zinc-200/90">
                   {label}
                 </span>
                 <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    fontVariantNumeric: 'tabular-nums',
-                    color,
-                    textShadow: `0 0 8px ${glow}`,
-                  }}
+                  className="text-[11px] font-bold tabular-nums leading-none"
+                  style={{ color, textShadow: `0 0 6px ${glow}` }}
                 >
                   {pct}%
                 </span>
               </div>
               <div
                 aria-hidden
-                style={{
-                  height: 4,
-                  width: '100%',
-                  borderRadius: 999,
-                  background: track,
-                  overflow: 'hidden',
-                  boxShadow: 'inset 0 0 4px rgba(0,0,0,0.35)',
-                }}
+                className="h-1 w-full overflow-hidden rounded-full shadow-[inset_0_0_3px_rgba(0,0,0,0.35)]"
+                style={{ background: track }}
               >
                 <div
+                  className="h-full rounded-full transition-[width] duration-300 ease-out"
                   style={{
-                    height: '100%',
                     width: `${pct}%`,
-                    borderRadius: 999,
                     background: `linear-gradient(90deg, ${color} 0%, ${color}cc 100%)`,
                     boxShadow: `0 0 10px ${glow}`,
-                    transition: 'width 0.45s ease',
                   }}
                 />
               </div>

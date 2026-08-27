@@ -115,6 +115,8 @@ export default function TrainingBlockWidget({
   onPostponeSession = null,
   /** Apre scheda attività precompilata (Home «Esegui»). */
   onExecuteSession = null,
+  onMacroGoalCalibrationChange = null,
+  calibrationDeltaKcal = null,
   creatorOpen: creatorOpenProp = undefined,
   onCreatorOpenChange = null,
   onTodaySessionChange = null,
@@ -138,6 +140,8 @@ export default function TrainingBlockWidget({
     postponeSession,
     startNewBlock,
     setSessionCompleted,
+    moveSession,
+    swapSessions,
     clearBlock,
   } = useTrainingBlock({
     db,
@@ -223,7 +227,7 @@ export default function TrainingBlockWidget({
     setLocalError('');
     try {
       await postponeSession();
-      showToast('Rimandato');
+      showToast('Rimandato · oggi riposo');
     } catch (err) {
       setLocalError(String(err?.message || err || 'Rinvio fallito'));
     }
@@ -292,6 +296,10 @@ export default function TrainingBlockWidget({
       weightKg={creatorWeightKg}
       todayIso={dayKey}
       onToggleSessionComplete={setSessionCompleted}
+      onMoveSession={moveSession}
+      onSwapSessions={swapSessions}
+      onMacroGoalCalibrationChange={onMacroGoalCalibrationChange}
+      calibrationDeltaKcal={calibrationDeltaKcal}
     />
   );
 

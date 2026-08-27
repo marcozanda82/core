@@ -112,6 +112,14 @@ function getCurrentDecimalHours() {
   return now.getHours() + now.getMinutes() / 60;
 }
 
+const MEAL_TIME_QUICK_OFFSETS = [
+  { id: 'now', label: 'Adesso', minutes: 0 },
+  { id: 'm15', label: '-15 min', minutes: -15 },
+  { id: 'm30', label: '-30 min', minutes: -30 },
+  { id: 'h1', label: '-1 ora', minutes: -60 },
+  { id: 'h2', label: '-2 ore', minutes: -120 },
+];
+
 function getCurrentTimeRoundedTo15Min() {
   const decimal = getCurrentDecimalHours();
   return Math.min(24, Math.max(0, Math.round(decimal * 4) / 4));
@@ -472,6 +480,17 @@ function FastMealLoggerContent({
     }
   }, [commitDraftMealTime]);
 
+  const applyQuickMealTimeOffset = useCallback((minutesFromNow) => {
+    const nowDec = getCurrentDecimalHours();
+    const deltaHours = Number(minutesFromNow) / 60;
+    commitDraftMealTime(Math.max(0, Math.min(24, nowDec + deltaHours)));
+  }, [commitDraftMealTime]);
+
+  const isEditMode = Boolean(editingMealId);
+  const confirmMealLabel = isEditMode ? 'SALVA MODIFICHE' : 'CONFERMA PASTO';
+  const headerConfirmLabel = isEditMode ? 'Salva' : 'Conferma';
+  const modalTitle = isEditMode ? 'Modifica Pasto' : 'Registra Pasto';
+
   useEffect(() => {
     // Non resettare l'orario se l'utente lo ha già scelto a mano.
     if (mealTimeManualRef.current || mealTimeFromNativeInputRef.current) return;
@@ -792,8 +811,12 @@ function FastMealLoggerContent({
       loadInitialDraft(initialDraft);
       prefillAppliedRef.current = true;
       setActiveTab('riepilogo');
+      const draftMealTime = initialDraft[0]?.mealTime;
+      if (typeof draftMealTime === 'number' && !Number.isNaN(draftMealTime)) {
+        commitDraftMealTime(draftMealTime, { fromNativeInput: true });
+      }
     }
-  }, [initialDraft, loadInitialDraft]);
+  }, [initialDraft, loadInitialDraft, commitDraftMealTime]);
   const mealTargets = useMemo(
     () => getMealTargetsForSlot?.(selectedSlot) ?? {},
     [selectedSlot, getMealTargetsForSlot],
@@ -1551,16 +1574,16 @@ function FastMealLoggerContent({
             <span className="hidden sm:inline">Indietro</span>
           </button>
           <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-slate-100 sm:text-[0.95rem]">
-            Registra Pasto
+            {modalTitle}
           </h1>
           <button
             type="button"
             onClick={handleConfirm}
             disabled={draftFoods.length === 0 || isSavingMeal}
-            aria-label="Conferma pasto"
+            aria-label={isEditMode ? 'Salva modifiche pasto' : 'Conferma pasto'}
             className="inline-flex min-h-9 items-center justify-center justify-self-end rounded-lg bg-cyan-500 px-2.5 py-1.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
           >
-            {isSavingMeal ? '…' : 'Conferma'}
+            {isSavingMeal ? '…' : headerConfirmLabel}
           </button>
         </div>
         <div className="px-4 pb-3">
@@ -1976,34 +1999,6 @@ function FastMealLoggerContent({
                       );
                     })}
                   </div>
-
-                  <div className="flex min-w-0 items-center justify-between gap-2">
-                    <span className="shrink-0 text-[11px] text-slate-400">Orario</span>
-                    <label
-                      htmlFor="fast-logger-cart-meal-time"
-                      onClick={openNativeTimePicker}
-                      className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                    >
-                      <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
-                      <input
-                        ref={mealTimeInputRef}
-                        id="fast-logger-cart-meal-time"
-                        type="time"
-                        value={decimalToTimeStr(mealTime)}
-                        onChange={handleNativeMealTimeInputChange}
-                        onClick={(event) => {
-                          if (typeof event.currentTarget.showPicker === 'function') {
-                            try {
-                              event.currentTarget.showPicker();
-                            } catch {
-                              /* picker già aperto o rifiutato dal browser */
-                            }
-                          }
-                        }}
-                        className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-medium text-white outline-none [color-scheme:dark]"
-                      />
-                    </label>
-                  </div>
                 </div>
               </div>
             ) : null}
@@ -2078,6 +2073,51 @@ function FastMealLoggerContent({
                 </button>
               ) : null}
 
+              <div className="rounded-xl border border-slate-700/80 bg-slate-900/55 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Orario del Pasto
+                </p>
+                <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+                  <span className="shrink-0 text-[11px] text-slate-500">Selezionato</span>
+                  <label
+                    htmlFor="fast-logger-cart-meal-time"
+                    onClick={openNativeTimePicker}
+                    className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                  >
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
+                    <input
+                      ref={mealTimeInputRef}
+                      id="fast-logger-cart-meal-time"
+                      type="time"
+                      value={decimalToTimeStr(mealTime)}
+                      onChange={handleNativeMealTimeInputChange}
+                      onClick={(event) => {
+                        if (typeof event.currentTarget.showPicker === 'function') {
+                          try {
+                            event.currentTarget.showPicker();
+                          } catch {
+                            /* picker già aperto o rifiutato dal browser */
+                          }
+                        }
+                      }}
+                      className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-medium text-white outline-none [color-scheme:dark]"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {MEAL_TIME_QUICK_OFFSETS.map((offset) => (
+                    <button
+                      key={offset.id}
+                      type="button"
+                      onClick={() => applyQuickMealTimeOffset(offset.minutes)}
+                      className="rounded-full border border-slate-700/80 bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800 hover:text-white active:scale-[0.98]"
+                    >
+                      {offset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={handleConfirm}
@@ -2086,7 +2126,7 @@ function FastMealLoggerContent({
               >
                 {isSavingMeal
                   ? 'Salvataggio…'
-                  : `CONFERMA PASTO · ${draftMealKcal} kcal`}
+                  : `${confirmMealLabel} · ${draftMealKcal} kcal`}
               </button>
             </div>
           </div>
@@ -2339,6 +2379,8 @@ export default function FastMealLogger({
     || (editingMealId ? String(editingMealId).split('_')[0] : null)
     || inferMealSlotFromCurrentHour();
 
+  const isEditMode = Boolean(editingMealId);
+
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -2346,7 +2388,7 @@ export default function FastMealLogger({
       className="fixed inset-0 z-[100040] flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-[#050a12] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
       role="dialog"
       aria-modal="true"
-      aria-label="Registra pasto"
+      aria-label={isEditMode ? 'Modifica pasto' : 'Registra pasto'}
     >
       <MealComposerProvider
         initialMealType={composerInitialMealType}

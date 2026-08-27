@@ -680,7 +680,7 @@ export default function MetabolicCompass({
             width: '100%',
             aspectRatio: '1',
             borderRadius: '50%',
-            overflow: 'hidden',
+            overflow: 'visible',
             boxShadow: faceBoxShadow,
           }}
         >
@@ -689,6 +689,7 @@ export default function MetabolicCompass({
               position: 'absolute',
               inset: 0,
               borderRadius: '50%',
+              overflow: 'hidden',
               transformOrigin: '50% 50%',
               transform: `rotate(${compassRotation}deg)`,
               transition: COMPASS_ROTATION_TRANSITION,
@@ -711,6 +712,18 @@ export default function MetabolicCompass({
               }}
             />
             <CompassDialGrid directions={METABOLIC_COMPASS_DIRECTIONS} />
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              transformOrigin: '50% 50%',
+              transform: `rotate(${compassRotation}deg)`,
+              transition: COMPASS_ROTATION_TRANSITION,
+              zIndex: 2,
+              pointerEvents: hideGoalControls ? 'none' : 'auto',
+            }}
+          >
             {METABOLIC_COMPASS_DIRECTIONS.map(({ angle, label }) => (
               <CompassDirectionLabel
                 key={`lbl-${angle}`}
@@ -801,7 +814,7 @@ export default function MetabolicCompass({
           className="metabolic-compass-ambient-debug"
           aria-hidden
           style={{
-            marginTop: 0,
+            marginTop: 14,
             width: '100%',
             textAlign: 'center',
             fontSize: 10,
@@ -823,10 +836,10 @@ export default function MetabolicCompass({
         aria-live="polite"
         aria-atomic="true"
         style={{
-          margin: '8px 0 0',
+          margin: '12px 0 0',
           width: '100%',
           maxWidth: 340,
-          minHeight: '1.25em',
+          minHeight: '1.35em',
           fontSize: 9,
           fontWeight: 500,
           letterSpacing: '0.045em',

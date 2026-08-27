@@ -51,6 +51,8 @@ export default function HomeOggiDialSection({
   handleConfirmTrainingBlockSession = null,
   handlePostponeTrainingBlockSession = null,
   handleExecuteTrainingBlockSession = null,
+  handleTrainingBlockMacroGoalCalibration = null,
+  calibrationDeltaKcal = null,
   handleOpenTrendDiag = null,
   handleOpenTrendSalute = null,
   handleOpenTrendProgressione = null,
@@ -208,7 +210,12 @@ export default function HomeOggiDialSection({
                           <span style={{ fontSize: '0.42em', fontWeight: 700 }}>Kcal</span>
                         </span>
                       )}
-                      {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && dialKcalRemaining}
+                      {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && (
+                        <span className="kcal-dial-center-remaining">
+                          {dialKcalRemaining}{' '}
+                          <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
+                        </span>
+                      )}
                       {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
                       {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
                       {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
@@ -347,6 +354,8 @@ export default function HomeOggiDialSection({
             onConfirmSession={handleConfirmTrainingBlockSession}
             onPostponeSession={handlePostponeTrainingBlockSession}
             onExecuteSession={handleExecuteTrainingBlockSession}
+            onMacroGoalCalibrationChange={handleTrainingBlockMacroGoalCalibration}
+            calibrationDeltaKcal={calibrationDeltaKcal}
             onOpenTrendDiag={handleOpenTrendDiag}
             onOpenLongevity={handleOpenTrendSalute}
             onOpenProgressione={handleOpenTrendProgressione}

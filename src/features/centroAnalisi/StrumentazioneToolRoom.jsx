@@ -12,29 +12,48 @@ const MetabolicUnifiedView = lazy(() => import('../../MetabolicUnifiedView'));
  *
  * Il face collassava perché index.css impone height:100% + width:auto + aspect-ratio senza larghezza risolta.
  */
-const VIEWPORT_CLASS = [
-  'flex flex-col w-full flex-1 min-h-[550px]',
+const VIEWPORT_BASE = [
+  'w-full min-w-0',
   '[&_.trend-tool-segmented]:hidden',
+  '[&_.trend-sticky-controls]:!gap-1.5 [&_.trend-sticky-controls]:!p-2',
+  '[&_.trend-timeframe-tablist]:!gap-0.5',
+];
+
+const VIEWPORT_COMPASS = [
+  'flex flex-col w-full flex-1 min-h-0 pt-1',
   '[&_.trend-unified-root]:flex [&_.trend-unified-root]:min-h-0 [&_.trend-unified-root]:flex-1',
   '[&_.trend-unified-root]:w-full [&_.trend-unified-root]:max-w-none',
+  '[&_.trend-unified-root]:!overflow-visible',
   '[&_.trend-tool-stage]:flex [&_.trend-tool-stage]:min-h-0 [&_.trend-tool-stage]:flex-1',
-  '[&_.trend-tool-stage]:w-full [&_.trend-tool-stage]:items-stretch [&_.trend-tool-stage]:justify-stretch',
-  '[&_.trend-radar-panel]:flex [&_.trend-radar-panel]:min-h-0 [&_.trend-radar-panel]:flex-1',
-  '[&_.trend-radar-panel]:w-full',
-  '[&_.trend-radar-shell]:flex [&_.trend-radar-shell]:min-h-[20rem] [&_.trend-radar-shell]:flex-1',
-  '[&_.trend-radar-shell]:w-full',
-  '[&_.trend-bubble-radar]:flex [&_.trend-bubble-radar]:w-full [&_.trend-bubble-radar]:min-h-[20rem]',
-  '[&_.trend-bubble-radar]:items-center [&_.trend-bubble-radar]:justify-center',
-  /* Override critico: width:auto + height:100% → box 0×0 fuori da tab shell */
-  '[&_.trend-bubble-radar__face]:!relative',
-  '[&_.trend-bubble-radar__face]:!mx-auto',
-  '[&_.trend-bubble-radar__face]:!aspect-square',
-  '[&_.trend-bubble-radar__face]:!h-auto',
-  '[&_.trend-bubble-radar__face]:!w-full',
-  '[&_.trend-bubble-radar__face]:!max-w-[min(100%,20rem)]',
-  '[&_.trend-bubble-radar__face]:!min-h-[16rem]',
-  '[&_.trend-bubble-radar__svg]:!relative',
-].join(' ');
+  '[&_.trend-tool-stage]:w-full [&_.trend-tool-stage]:items-stretch [&_.trend-tool-stage]:justify-start',
+  '[&_.trend-tool-stage]:!overflow-visible [&_.trend-tool-stage]:!pt-2 [&_.trend-tool-stage]:!pb-3',
+  '[&_.metabolic-compass-root]:!mt-1 [&_.metabolic-compass-root]:!overflow-visible',
+  '[&_.metabolic-compass-bezel-wrap]:!overflow-visible [&_.metabolic-compass-bezel-wrap]:!px-3 [&_.metabolic-compass-bezel-wrap]:!pt-2',
+  '[&_.metabolic-compass-interaction-surface]:!gap-4 [&_.metabolic-compass-interaction-surface]:!overflow-visible',
+  '[&_.metabolic-compass-micro-suggestion]:!mt-3 [&_.metabolic-compass-ambient-debug]:!mt-2',
+];
+
+/** Colonna scrollabile: timeframe → telemetria → grafico (nessun overlap). */
+const VIEWPORT_RADAR = [
+  'flex flex-col gap-3 w-full max-w-md mx-auto',
+];
+
+const VIEWPORT_MAP = [
+  'flex flex-col w-full flex-1 min-h-0 pt-1',
+  '[&_.trend-unified-root]:flex [&_.trend-unified-root]:min-h-0 [&_.trend-unified-root]:flex-1',
+  '[&_.trend-unified-root]:w-full [&_.trend-unified-root]:max-w-none',
+  '[&_.trend-unified-root]:!overflow-visible',
+  '[&_.trend-tool-stage]:flex [&_.trend-tool-stage]:min-h-0 [&_.trend-tool-stage]:flex-1',
+  '[&_.trend-tool-stage]:w-full [&_.trend-tool-stage]:items-stretch',
+  '[&_.trend-tool-stage]:!overflow-visible [&_.trend-tool-stage]:!pt-2 [&_.trend-tool-stage]:!pb-3',
+];
+
+function viewportClassForTool(activeTool) {
+  const tool = String(activeTool || 'COMPASS').toUpperCase();
+  if (tool === 'RADAR') return [...VIEWPORT_BASE, ...VIEWPORT_RADAR].join(' ');
+  if (tool === 'MAP') return [...VIEWPORT_BASE, ...VIEWPORT_MAP].join(' ');
+  return [...VIEWPORT_BASE, ...VIEWPORT_COMPASS].join(' ');
+}
 
 function GlassSpinner({ label = 'Sincronizzo strumentazione…' }) {
   return (
@@ -54,21 +73,27 @@ function GlassSpinner({ label = 'Sincronizzo strumentazione…' }) {
 
 const TOOL_TABS = [
   { tool: 'COMPASS', roomId: 'bussola', icon: '🧭', label: 'Bussola' },
-  { tool: 'RADAR', roomId: 'radar', icon: '🕸️', label: 'Radar' },
+  { tool: 'RADAR', roomId: 'radar', icon: '📡', label: 'Radar' },
   { tool: 'MAP', roomId: 'mappa', icon: '🗺️', label: 'Mappa' },
 ];
 
-function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
+export const STRUMENTAZIONE_ROOM_TO_TOOL = Object.freeze(
+  Object.fromEntries(TOOL_TABS.map((t) => [t.roomId, t.tool])),
+);
+
+/** Pulsantiera cabina di pilotaggio — esportata per l'header di CentroAnalisiView. */
+export function StrumentazioneToolTabs({ activeRoomId = 'bussola', onSwitchRoom }) {
   if (typeof onSwitchRoom !== 'function') return null;
+  const active = String(activeRoomId || 'bussola').toLowerCase();
 
   return (
     <div
       role="tablist"
-      aria-label="Strumento"
-      className={`mb-2 flex w-full gap-1 rounded-2xl p-0.5 ${GLASS_SURFACE_CLASS}`}
+      aria-label="Strumenti cabina di pilotaggio"
+      className={`flex w-full gap-1 rounded-2xl p-1 ${GLASS_SURFACE_CLASS}`}
     >
       {TOOL_TABS.map((tab) => {
-        const selected = activeTool === tab.tool;
+        const selected = active === tab.roomId;
         return (
           <button
             key={tab.roomId}
@@ -79,21 +104,15 @@ function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
             title={tab.label}
             onClick={() => onSwitchRoom(tab.roomId)}
             className={[
-              'flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-all duration-150',
+              'flex flex-1 items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-[0.7rem] font-semibold transition-all duration-200',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
               selected
-                ? 'bg-white/15 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,0.28)]'
-                : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
+                ? 'border-cyan-500/40 bg-cyan-500/20 text-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.22)]'
+                : 'border-transparent bg-transparent text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
             ].join(' ')}
           >
-            <span className="text-lg leading-none" aria-hidden>{tab.icon}</span>
-            <span className={[
-              'text-[0.6rem] font-semibold tracking-tight',
-              selected ? 'text-cyan-200' : 'text-zinc-500',
-            ].join(' ')}
-            >
-              {tab.label}
-            </span>
+            <span className="text-base leading-none" aria-hidden>{tab.icon}</span>
+            <span>{tab.label}</span>
           </button>
         );
       })}
@@ -117,7 +136,16 @@ function GlassNotice({ title, body }) {
  * Shell condivisa Bussola / Mappa / Radar — importa MetabolicUnifiedView in sola lettura.
  * Props allineate a SalaComandi.jsx (tab bussola): nessuna prop aggiuntiva esiste sull'API originale.
  */
-export default function StrumentazioneToolRoom({ store, activeTool, label, onSwitchRoom = null }) {
+export default function StrumentazioneToolRoom({
+  store,
+  activeTool,
+  label,
+  onSwitchRoom = null,
+  /** Tab bar gestita dall'header Centro Analisi quando false. */
+  showToolTabs = false,
+  /** SSOT Longevità/Progressione per telemetria radar. */
+  telemetryContext = null,
+}) {
   const {
     ready,
     isAuthenticated,
@@ -152,6 +180,8 @@ export default function StrumentazioneToolRoom({ store, activeTool, label, onSwi
       onTimeframeChange: setSelectedTimeframe,
       activeToolRequest: activeTool,
       onActiveToolRequestHandled: handleToolRequestHandled,
+      telemetryContext,
+      layoutVariant: 'strumentazione',
     }),
     [
       mapData,
@@ -164,6 +194,7 @@ export default function StrumentazioneToolRoom({ store, activeTool, label, onSwi
       setSelectedTimeframe,
       activeTool,
       handleToolRequestHandled,
+      telemetryContext,
     ],
   );
 
@@ -182,15 +213,20 @@ export default function StrumentazioneToolRoom({ store, activeTool, label, onSwi
 
   return (
     <div
-      className="strumentazione-room w-full min-w-0"
+      className="strumentazione-room w-full min-w-0 overflow-visible"
       data-strumentazione-tool={activeTool}
       data-daily-history-days={dailyHistory?.length ?? 0}
       data-has-four-cylinder={Boolean(fourCylinder) ? '1' : '0'}
       data-has-active-log={Array.isArray(activeLog) && activeLog.length > 0 ? '1' : '0'}
       aria-label={label}
     >
-      <ToolSwitchTabs activeTool={activeTool} onSwitchRoom={onSwitchRoom} />
-      <div className={VIEWPORT_CLASS}>
+      {showToolTabs ? (
+        <StrumentazioneToolTabs
+          activeRoomId={TOOL_TABS.find((t) => t.tool === activeTool)?.roomId || 'bussola'}
+          onSwitchRoom={onSwitchRoom}
+        />
+      ) : null}
+      <div className={viewportClassForTool(activeTool)}>
         <Suspense fallback={<GlassSpinner label={`Carico ${label}…`} />}>
           <MetabolicUnifiedView
             key={activeTool}

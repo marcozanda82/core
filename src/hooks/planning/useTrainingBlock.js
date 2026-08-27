@@ -15,6 +15,11 @@ import {
   computeTrainingBlockDailyTargets,
   TRAINING_BLOCK_FALLBACK_BASE_KCAL,
 } from '../../features/planning/trainingBlockTargets';
+import {
+  moveWorkoutSession,
+  postponeWorkoutCascade,
+  swapWorkoutSessions,
+} from '../../features/planning/workoutScheduleService';
 
 /**
  * Training Block a calendario assoluto — Firebase `users/{uid}/current_training_block`.
@@ -153,6 +158,54 @@ export function useTrainingBlock({
     });
   }, [block, todaySession, userProfile]);
 
+  const resolveTodayMetabolicTargets = useCallback((blockData) => {
+    const baseKcal = resolveImmutableBaseKcal({
+      userProfile,
+      fallback: TRAINING_BLOCK_FALLBACK_BASE_KCAL,
+    });
+    const weightKg =
+      Number(userProfile?.weight)
+      || Number(userProfile?.peso)
+      || 75;
+    const session = getTodaysTrainingBlockSession(blockData, todayIso);
+    if (!session) {
+      return computeTrainingBlockDailyTargets({
+        baseKcal,
+        weightKg,
+        macroGoal: blockData.macroGoal,
+        dayType: 'rest',
+      });
+    }
+    return resolveTargetsFromTrainingBlockDay(session, {
+      baseKcal,
+      weightKg,
+      macroGoal: blockData.macroGoal,
+    });
+  }, [todayIso, userProfile]);
+
+  const notifyTodayScheduleTargets = useCallback(async (prevBlock, nextBlock, extra = {}) => {
+    if (typeof onPostponeSessionRef.current !== 'function') return null;
+
+    const prevSession = getTodaysTrainingBlockSession(prevBlock, todayIso);
+    const nextSession = getTodaysTrainingBlockSession(nextBlock, todayIso);
+    const todayChanged = (
+      (prevSession?.dayIndex ?? null) !== (nextSession?.dayIndex ?? null)
+      || Boolean(prevSession) !== Boolean(nextSession)
+      || String(prevSession?.type || '') !== String(nextSession?.type || '')
+    );
+    if (!todayChanged) return null;
+
+    const targets = resolveTodayMetabolicTargets(nextBlock);
+    await onPostponeSessionRef.current({
+      block: nextBlock,
+      todayIso,
+      metabolicTargets: targets,
+      postponedSession: extra.postponedSession ?? null,
+      reason: extra.reason || 'schedule-change',
+    });
+    return targets;
+  }, [resolveTodayMetabolicTargets, todayIso]);
+
   const startNewBlock = useCallback(
     async (blockDefinition) => {
       if (busy) return null;
@@ -239,25 +292,18 @@ export function useTrainingBlock({
     setBusy(true);
     setError(null);
     try {
-      const now = Date.now();
-      const next = {
-        ...current,
-        updatedAt: now,
-        lastAction: { kind: 'postpone', at: now, date: todayIso },
-      };
+      const next = postponeWorkoutCascade(current, todayIso);
       await persistBlock(next);
 
-      const baseKcal = resolveImmutableBaseKcal({
-        userProfile,
-        fallback: TRAINING_BLOCK_FALLBACK_BASE_KCAL,
-      });
-      const weightKg =
-        Number(userProfile?.weight)
-        || Number(userProfile?.peso)
-        || 75;
       const restTargets = computeTrainingBlockDailyTargets({
-        baseKcal,
-        weightKg,
+        baseKcal: resolveImmutableBaseKcal({
+          userProfile,
+          fallback: TRAINING_BLOCK_FALLBACK_BASE_KCAL,
+        }),
+        weightKg:
+          Number(userProfile?.weight)
+          || Number(userProfile?.peso)
+          || 75,
         macroGoal: current.macroGoal,
         dayType: 'rest',
       });
@@ -268,6 +314,7 @@ export function useTrainingBlock({
           todayIso,
           metabolicTargets: restTargets,
           postponedSession: session,
+          reason: 'postpone',
         });
       }
 
@@ -279,6 +326,46 @@ export function useTrainingBlock({
       setBusy(false);
     }
   }, [busy, todayIso, persistBlock, userProfile]);
+
+  const moveSession = useCallback(async (sourceDayIndex, targetDateIso) => {
+    const current = blockRef.current;
+    if (!current?.isActive) throw new Error('Nessun blocco attivo.');
+    if (busy) return null;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const next = moveWorkoutSession(current, sourceDayIndex, targetDateIso, todayIso);
+      await persistBlock(next);
+      const targets = await notifyTodayScheduleTargets(current, next, { reason: 'move' });
+      return { block: next, metabolicTargets: targets };
+    } catch (err) {
+      setError(String(err?.message || err));
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, todayIso, persistBlock, notifyTodayScheduleTargets]);
+
+  const swapSessions = useCallback(async (sourceDayIndex, targetDayIndex) => {
+    const current = blockRef.current;
+    if (!current?.isActive) throw new Error('Nessun blocco attivo.');
+    if (busy) return null;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const next = swapWorkoutSessions(current, sourceDayIndex, targetDayIndex, todayIso);
+      await persistBlock(next);
+      const targets = await notifyTodayScheduleTargets(current, next, { reason: 'swap' });
+      return { block: next, metabolicTargets: targets };
+    } catch (err) {
+      setError(String(err?.message || err));
+      throw err;
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, todayIso, persistBlock, notifyTodayScheduleTargets]);
 
   const confirmSession = useCallback(async (options = {}) => {
     const current = blockRef.current;
@@ -386,6 +473,8 @@ export function useTrainingBlock({
     canConfirm,
     startNewBlock,
     postponeSession,
+    moveSession,
+    swapSessions,
     confirmSession,
     setSessionCompleted,
     clearBlock,

@@ -324,6 +324,21 @@ function buildDiaryContextBlock(diaryState = {}) {
  * @returns {object|null}
  */
 function buildLongevityContextBlock(nutritionState = {}, diaryState = {}, options = {}) {
+  if (options.isEngineReady === false) {
+    const scoreRaw = Number(
+      options.longevityScore
+      ?? options.longevityResult?.finalScore
+      ?? nutritionState?.longevityScore
+      ?? diaryState?.longevityScore,
+    );
+    const safeScore = Number.isFinite(scoreRaw) ? Math.round(scoreRaw) : 50;
+    return {
+      score: safeScore,
+      strategicLever: 'Allineamento parametri in corso…',
+      hydrated: false,
+    };
+  }
+
   if (options.longevityContext && typeof options.longevityContext === 'object') {
     return options.longevityContext;
   }
@@ -710,8 +725,10 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
       heightCm: state.userProfile?.height ?? state.userProfile?.heightCm ?? state.heightCm,
       longevityContext: state.longevityContext || options.longevityContext || null,
       longevityResult: state.longevityResult || options.longevityResult || null,
+      longevityScore: state.longevityScore ?? options.longevityScore ?? null,
       longevityNutrition: state.longevityNutrition || options.longevityNutrition || null,
       recentNutritionScores: state.recentNutritionScores || options.recentNutritionScores || null,
+      isEngineReady: state.isEngineReady ?? options.isEngineReady ?? true,
       userTargets: state.userTargets,
     },
   );

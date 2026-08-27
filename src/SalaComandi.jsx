@@ -1043,6 +1043,8 @@ export default function SalaComandi() {
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
   const [isCoachOpen, setIsCoachOpen] = useState(false);
   const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
+  const [engineAlignToastVisible, setEngineAlignToastVisible] = useState(false);
+  const engineAlignToastTimerRef = useRef(null);
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
   const {
@@ -1417,7 +1419,7 @@ export default function SalaComandi() {
     isSimulationMode,
   });
 
-  const { syncDatiFirebase, isInitialLoadComplete } = useDiaryFirebaseSync({
+  const { syncDatiFirebase, isInitialLoadComplete, isProfileHydrated } = useDiaryFirebaseSync({
     db,
     auth,
     user,
@@ -1716,9 +1718,21 @@ export default function SalaComandi() {
     async (context) => {
       const targets = context?.metabolicTargets;
       if (!targets) return;
-      await applyTrainingBlockDailyTargets(targets, 'training-block-postpone-rest');
+      const source = context?.reason === 'postpone'
+        ? 'training-block-postpone-rest'
+        : 'training-block-schedule-change';
+      await applyTrainingBlockDailyTargets(targets, source);
     },
     [applyTrainingBlockDailyTargets],
+  );
+
+  /** Obiettivo blocco allenamento → delta Calibrazione Target & Bilancio (Ghost Car). */
+  const handleTrainingBlockMacroGoalCalibration = useCallback(
+    async (suggestedDeltaKcal) => {
+      if (typeof applyGhostSimGoal !== 'function') return;
+      await applyGhostSimGoal(suggestedDeltaKcal);
+    },
+    [applyGhostSimGoal],
   );
 
   // --- 4-Cylinder boot: catch-up decadimento al login (physiology_model → stato locale + Firebase) ---
@@ -2697,9 +2711,11 @@ export default function SalaComandi() {
     return () => window.removeEventListener('keydown', onKey);
   }, [timelineInsertUI]);
 
-  const loadMealToConstructor = useCallback((mTypeOrId) => {
+  const openMealEditorForEdit = useCallback((mTypeOrId, preloadedItems = null, mealTimeHint = null) => {
     const log = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
-    let items = getFoodItemsForMealSlot(log, mTypeOrId);
+    let items = Array.isArray(preloadedItems) && preloadedItems.length > 0
+      ? preloadedItems
+      : getFoodItemsForMealSlot(log, mTypeOrId);
 
     // Fallback solo per id canonici (snack), mai per ghost (snack_2) o id timeline (snack_2_16).
     if (items.length === 0 && mTypeOrId != null) {
@@ -2715,6 +2731,12 @@ export default function SalaComandi() {
         );
       }
     }
+
+    const resolvedMealTime = typeof mealTimeHint === 'number' && !Number.isNaN(mealTimeHint)
+      ? mealTimeHint
+      : (typeof items[0]?.mealTime === 'number' && !Number.isNaN(items[0].mealTime)
+        ? items[0].mealTime
+        : null);
 
     const draftItems = items.map((f) => {
       const weight = Number(f.qta ?? f.weight) || 100;
@@ -2741,7 +2763,7 @@ export default function SalaComandi() {
         fatTotal: toPer100(portionFat),
       };
       return {
-      ...f,
+        ...f,
         type: f.type === 'recipe' ? 'recipe' : 'food',
         foodDbKey: dbKey,
         row,
@@ -2757,6 +2779,7 @@ export default function SalaComandi() {
         carb: portionCarb,
         fat: portionFat,
         fatTotal: portionFat,
+        ...(resolvedMealTime != null ? { mealTime: resolvedMealTime } : {}),
       };
     });
 
@@ -2770,6 +2793,7 @@ export default function SalaComandi() {
           ? toCanonicalMealType(String(draftItems[0].mealType).split('_')[0])
           : null
     );
+    setFastLoggerRemountKey((k) => k + 1);
     setShowFastLogger(true);
   }, [
     isSimulationMode,
@@ -2780,6 +2804,13 @@ export default function SalaComandi() {
     toCanonicalMealType,
     getEquivalentMealTypes,
   ]);
+
+  const loadMealToConstructor = useCallback(
+    (mTypeOrId, preloadedItems = null, mealTimeHint = null) => {
+      openMealEditorForEdit(mTypeOrId, preloadedItems, mealTimeHint);
+    },
+    [openMealEditorForEdit],
+  );
 
   const closeFastLogger = useCallback(() => {
     setShowFastLogger(false);
@@ -3905,59 +3936,16 @@ Slot esistente aggiornato (nessun ghost).`;
       const foodsForSlot =
         Array.isArray(node.items) && node.items.length > 0
           ? node.items
-          : mealFoodsRead(node).length > 0
-            ? mealFoodsRead(node)
-            : getFoodItemsForMealSlot(activeLog, slotId);
-      if (foodsForSlot.length > 0) {
-        const toN = (v) => (typeof v === 'number' && !Number.isNaN(v)) ? v : (Number(v) || 0);
-        const kcal = foodsForSlot.reduce((a, f) => a + toN(f.kcal ?? f.cal), 0);
-        const prot = foodsForSlot.reduce((a, f) => a + toN(f.prot ?? f.proteine), 0);
-        const carb = foodsForSlot.reduce((a, f) => a + toN(f.carb ?? f.carboidrati), 0);
-        const fat = foodsForSlot.reduce((a, f) => a + toN(f.fat ?? f.fatTotal ?? f.grassi), 0);
-        const mType = foodsForSlot[0]?.mealType || String(node.id).split('_')[0];
-        const slot = String(mType).split('_')[0] || 'snack';
-        const baseName = MEAL_LABELS_SAVE?.[slot] || mType || 'Pasto';
-        let timeLabel = '';
-        if (typeof node.time === 'number') {
-          const h = Math.floor(node.time).toString().padStart(2, '0');
-          const m = Math.round((node.time % 1) * 60).toString().padStart(2, '0');
-          timeLabel = ` (${h}:${m})`;
-        }
-        setSelectedMealCenter({
-          id: slotId,
-          name: `${baseName}${timeLabel}`,
-          label: `${baseName}${timeLabel}`,
-          value: kcal,
-          kcal,
-          prot,
-          carb,
-          fat,
-          timeValue: node.time,
-          color: '#00e5ff',
-          fill: '#00e5ff',
-          payload: { macros: { pro: prot, carb, fat } }
-        });
-        setSelectedNodeReport(null);
-        loadMealToConstructor(slotId);
-        return;
-      }
-      const slotBase = String(slotId).split('_')[0] || 'snack';
-      setSelectedMealCenter({
-        id: slotId,
-        name: MEAL_LABELS_SAVE?.[slotBase] || slotBase || 'Pasto',
-        label: MEAL_LABELS_SAVE?.[slotBase] || slotBase || 'Pasto',
-        value: 0,
-        kcal: 0,
-        prot: 0,
-        carb: 0,
-        fat: 0,
-        timeValue: node.time,
-        color: '#00e5ff',
-        fill: '#00e5ff',
-        payload: { macros: { pro: 0, carb: 0, fat: 0 } }
-      });
+          : Array.isArray(node.foods) && node.foods.length > 0
+            ? node.foods
+            : mealFoodsRead(node).length > 0
+              ? mealFoodsRead(node)
+              : getFoodItemsForMealSlot(activeLog, slotId);
+      const mealTime = typeof node.time === 'number' && !Number.isNaN(node.time)
+        ? node.time
+        : (typeof foodsForSlot[0]?.mealTime === 'number' ? foodsForSlot[0].mealTime : null);
       setSelectedNodeReport(null);
-      loadMealToConstructor(slotId);
+      openMealEditorForEdit(slotId, foodsForSlot, mealTime);
       return;
     }
 
@@ -4001,6 +3989,7 @@ Slot esistente aggiornato (nessun ghost).`;
     toCanonicalMealType,
     setSelectedNodeReport,
     openGhostMealEditorFromTimelineNode,
+    openMealEditorForEdit,
     loadMealToConstructor,
   ]);
 
@@ -5358,6 +5347,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     longevityScore: unifiedLongevityScore,
     longevityNutrition: unifiedLongevityNutrition,
     recentNutritionScores: unifiedRecentNutritionScores,
+    isEngineReady,
   } = useLongevityScore({
     scoreDate: currentTrackerDate,
     fullHistory,
@@ -5372,7 +5362,33 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     userTargets,
     heightCm: Number(userProfile?.height) || Number(userProfile?.altezza) || null,
     enabled: Boolean(isInitialLoadComplete && userUid && db),
+    isProfileHydrated,
   });
+
+  const showEngineAlignToast = useCallback(() => {
+    setEngineAlignToastVisible(true);
+    if (engineAlignToastTimerRef.current) {
+      window.clearTimeout(engineAlignToastTimerRef.current);
+    }
+    engineAlignToastTimerRef.current = window.setTimeout(() => {
+      setEngineAlignToastVisible(false);
+      engineAlignToastTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  const handleOpenKentuChat = useCallback(() => {
+    if (!isEngineReady) {
+      showEngineAlignToast();
+      return;
+    }
+    openChat();
+  }, [isEngineReady, openChat, showEngineAlignToast]);
+
+  useEffect(() => () => {
+    if (engineAlignToastTimerRef.current) {
+      window.clearTimeout(engineAlignToastTimerRef.current);
+    }
+  }, []);
 
   const metabolicGradientStops = useMemo(
     () => buildMetabolicTimelineGradientStops({
@@ -5439,6 +5455,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return {
       scoreDate,
       longevityScore: unifiedLongevityScore,
+      longevityBreakdown: breakdown,
       longevityBars: longevityPagella?.bars ?? [],
       progressionScore: progressionResult.finalScore,
       progressionBreakdown: progressionResult.breakdown,
@@ -5460,6 +5477,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       mealHours: Array.isArray(metabolicTimelineMeals?.todayMealTimes)
         ? metabolicTimelineMeals.todayMealTimes.map(Number).filter(Number.isFinite)
         : [],
+      calibrazionePreview: {
+        activeDate: scoreDate,
+        settingsBaseKcal: dogmaticSettingsBaseKcal,
+        committedGhostGoal,
+        committedGhostDeltaKcal,
+        effectiveGhostDeltaKcal,
+        ghostAutoPilotEnabled,
+        autoCompensationDelta: dogmaticAutoCompensationKcal,
+      },
     };
   }, [
     currentTrackerDate,
@@ -5475,6 +5501,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     totali,
     effectiveTargetsForCurrentDate,
     metabolicTimelineMeals,
+    dogmaticSettingsBaseKcal,
+    committedGhostGoal,
+    committedGhostDeltaKcal,
+    effectiveGhostDeltaKcal,
+    ghostAutoPilotEnabled,
+    dogmaticAutoCompensationKcal,
   ]);
 
   useEffect(() => {
@@ -6164,6 +6196,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         longevityNutrition: unifiedLongevityNutrition,
         longevityResult,
         recentNutritionScores: unifiedRecentNutritionScores,
+        isEngineReady,
         bodyMetricsHistory,
         isTrainingDay: Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
         healthScoreMetrics: {
@@ -6223,6 +6256,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     // Già aperta in questa sessione UI (evita re-emit su re-render).
     if (prevChatOpenRef.current) return undefined;
 
+    if (!isEngineReady) return undefined;
+
     let cancelled = false;
     const timer = window.setTimeout(() => {
       if (cancelled) return;
@@ -6238,7 +6273,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [activeAction]);
+  }, [activeAction, isEngineReady]);
 
   useEffect(() => {
     registerHandlers({
@@ -7146,7 +7181,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         // Neural Reset / Meditazione: il FAB coprirebbe «AVVIA CICLO»
         && activeAction !== 'focus'
       }
-      onOpen={openChat}
+      onOpen={handleOpenKentuChat}
+      onBlockedOpen={showEngineAlignToast}
+      engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}
     />
   );
@@ -7400,6 +7437,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           handleConfirmTrainingBlockSession={handleConfirmTrainingBlockSession}
           handlePostponeTrainingBlockSession={handlePostponeTrainingBlockSession}
           handleExecuteTrainingBlockSession={handleExecuteTrainingBlockSession}
+          handleTrainingBlockMacroGoalCalibration={handleTrainingBlockMacroGoalCalibration}
+          calibrationDeltaKcal={committedGhostDeltaKcal}
           handleOpenTrendDiag={handleOpenTrendDiag}
           handleOpenTrendSalute={handleOpenTrendSalute}
           handleOpenTrendProgressione={handleOpenTrendProgressione}
@@ -7499,6 +7538,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               onOpenFotografiaProgressione={handleOpenTrendProgressione}
               onOpenTimelineMetabolica={openMetabolicTimeline}
               livePreview={centroAnalisiLivePreview}
+              calibrazioneHandlers={{
+                activeDate: currentTrackerDate || getTodayString(),
+                settingsBaseKcal: dogmaticSettingsBaseKcal,
+                committedGhostGoal,
+                committedGhostDeltaKcal,
+                effectiveGhostDeltaKcal,
+                autoCompensationDelta: dogmaticAutoCompensationKcal,
+                rollingDebt,
+                ghostAutoPilotEnabled,
+                onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
+                onApplyGhostSimGoal: applyGhostSimGoal,
+                activeCompensation: userProfile?.activeCompensation ?? null,
+                onConfirmCompensation: applyActiveCompensationPlan,
+                onClearCompensation: clearActiveCompensationPlan,
+              }}
             />
           </Suspense>
         </div>
@@ -7834,6 +7888,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             dailyLog={activeLog}
             userTargets={effectiveTargetsForCurrentDate || userTargets}
             diaryReady={isInitialLoadComplete}
+            engineReady={isEngineReady}
             onDraftConfirm={handleDraftConfirm}
             onDraftCancel={handleDraftCancel}
             onDraftRemoveItem={handleDraftRemoveItem}
@@ -8170,7 +8225,17 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               return;
             }
             if (node.type === 'meal') {
-              loadMealToConstructor(String(node.mealId || node.id));
+              const slotId = String(node.mealId || node.id);
+              const foodsForSlot =
+                Array.isArray(node.items) && node.items.length > 0
+                  ? node.items
+                  : Array.isArray(node.foods) && node.foods.length > 0
+                    ? node.foods
+                    : getFoodItemsForMealSlot(activeLog, slotId);
+              const mealTime = typeof node.time === 'number' && !Number.isNaN(node.time)
+                ? node.time
+                : (typeof foodsForSlot[0]?.mealTime === 'number' ? foodsForSlot[0].mealTime : null);
+              openMealEditorForEdit(slotId, foodsForSlot, mealTime);
               return;
             }
             // ghost_workout / workout / work / cognitive: stesso idratazione form
@@ -8541,6 +8606,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <WipMealProvider>
         <>
           <FirebaseDataLoadingLayer blocking={startupOverlayBlocking} phrase={introPhrase} />
+          {engineAlignToastVisible ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[100020] -translate-x-1/2 rounded-xl border border-cyan-500/30 bg-zinc-900/95 px-4 py-2 text-center text-xs font-medium text-cyan-100 shadow-[0_8px_24px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+            >
+              Allineamento parametri in corso…
+            </div>
+          ) : null}
           {salaContent}
           {kentuEmblemFab}
         </>

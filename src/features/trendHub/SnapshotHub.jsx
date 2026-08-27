@@ -1,19 +1,11 @@
 import React, { Suspense, lazy, useMemo } from 'react';
 import KentuLazySectionFallback from '../../components/KentuLazySectionFallback';
-import MetabolicDiagnostics from '../../MetabolicDiagnostics';
-import ProgressionScoreWidget from './components/ProgressionScoreWidget';
 import { useHealthContext } from './hooks/useHealthContext';
 import { useTrendHubHemisphere } from './hooks/useTrendHubHemisphere';
-import { calculateProgressionScore } from './utils/saluteDashboardMetrics';
-import {
-  buildProgressionLogsWindow,
-  LONGEVITY_WINDOW_DAYS,
-  selectTodayLog,
-} from './utils/saluteHistorySeries';
-import { getTodayString } from '../../coreEngine';
 
-/** Code-split: Salute solo quando l'emisfero è attivo. */
+/** Code-split: Salute / Progressione solo quando l'emisfero è attivo. */
 const SaluteView = lazy(() => import('./SaluteView'));
+const ProgressioneView = lazy(() => import('./ProgressioneView'));
 
 const HEMISPHERE_OPTIONS = [
   { value: 'progressione', icon: '📈', label: 'Progressione' },
@@ -21,104 +13,7 @@ const HEMISPHERE_OPTIONS = [
 ];
 
 /**
- * Fotografia Progressione — score + diagnostica metabolica.
- */
-function ProgressioneSnapshot({
-  fourCylinder = null,
-  fullHistory = null,
-  activeLog = null,
-  activeDate = null,
-  userTargets = null,
-  settingsBaseKcal = null,
-  committedGhostGoal = 'maintain',
-  committedGhostDeltaKcal = null,
-  effectiveGhostDeltaKcal = null,
-  autoCompensationDelta = 0,
-  rollingDebt = null,
-  ghostAutoPilotEnabled = true,
-  onToggleGhostAutoPilot = null,
-  onApplyGhostSimGoal = null,
-  activeCompensation = null,
-  onConfirmCompensation = null,
-  onClearCompensation = null,
-  sleepEngineLiveLog = null,
-  todayDate = '',
-} = {}) {
-  const progressionTodayIso = String(todayDate || activeDate || getTodayString()).slice(0, 10);
-  const progressionActiveLogIsToday = Boolean(progressionTodayIso)
-    && progressionTodayIso === String(activeDate || '').slice(0, 10);
-
-  const progressionTodayLiveLog = useMemo(() => {
-    if (progressionActiveLogIsToday && Array.isArray(sleepEngineLiveLog) && sleepEngineLiveLog.length > 0) {
-      return sleepEngineLiveLog;
-    }
-    return selectTodayLog(
-      fullHistory,
-      progressionTodayIso,
-      Array.isArray(activeLog) ? activeLog : [],
-      progressionActiveLogIsToday,
-    );
-  }, [
-    progressionActiveLogIsToday,
-    sleepEngineLiveLog,
-    fullHistory,
-    progressionTodayIso,
-    activeLog,
-  ]);
-
-  const progressionResult = useMemo(() => {
-    const logs = buildProgressionLogsWindow({
-      fullHistory,
-      todayDate: progressionTodayIso,
-      days: LONGEVITY_WINDOW_DAYS,
-      todayLiveLog: progressionTodayLiveLog,
-    });
-    return calculateProgressionScore(
-      {
-        days: logs.days,
-        todayDate: logs.todayDate,
-        sleepAvgHours: logs.sleepAvgHours,
-        workoutSessionsTotal: logs.workoutSessionsTotal,
-      },
-      userTargets || {},
-    );
-  }, [fullHistory, progressionTodayIso, progressionTodayLiveLog, userTargets]);
-
-  return (
-    <div className="snapshot-progressione-root">
-      <div className="w-full shrink-0 px-1 pb-2 pt-1">
-        <ProgressionScoreWidget
-          score={progressionResult.finalScore}
-          breakdown={progressionResult.breakdown}
-          size={200}
-        />
-      </div>
-      <MetabolicDiagnostics
-        fourCylinder={fourCylinder}
-        fullHistory={fullHistory}
-        dailyLog={activeLog}
-        activeDate={activeDate || progressionTodayIso}
-        proteinTarget={userTargets?.prot ?? null}
-        userTargets={userTargets}
-        settingsBaseKcal={settingsBaseKcal}
-        committedGhostGoal={committedGhostGoal}
-        committedGhostDeltaKcal={committedGhostDeltaKcal}
-        effectiveGhostDeltaKcal={effectiveGhostDeltaKcal}
-        autoCompensationDelta={autoCompensationDelta}
-        rollingDebt={rollingDebt}
-        ghostAutoPilotEnabled={ghostAutoPilotEnabled}
-        onToggleGhostAutoPilot={onToggleGhostAutoPilot}
-        onApplyGhostSimGoal={onApplyGhostSimGoal}
-        activeCompensation={activeCompensation}
-        onConfirmCompensation={onConfirmCompensation}
-        onClearCompensation={onClearCompensation}
-      />
-    </div>
-  );
-}
-
-/**
- * Shell Fotografia — Progressione (`ProgressioneSnapshot`) | Salute (`SaluteView`).
+ * Shell Fotografia — Progressione (`ProgressioneView`) | Salute (`SaluteView`).
  * Da Home / Centro Analisi: `lockedHemisphere` + `hideHemisphereNav` → videata dedicata.
  */
 export default function SnapshotHub({
@@ -259,24 +154,13 @@ export default function SnapshotHub({
       <div className="trend-hub-stage snapshot-hub-stage">
         <Suspense fallback={<KentuLazySectionFallback label={fallbackLabel} />}>
           {isProgressione ? (
-            <ProgressioneSnapshot
+            <ProgressioneView
               fourCylinder={fourCylinder}
               fullHistory={fullHistory}
               activeLog={activeLog}
               activeDate={activeDate}
               userTargets={userTargets}
               settingsBaseKcal={settingsBaseKcal}
-              committedGhostGoal={committedGhostGoal}
-              committedGhostDeltaKcal={committedGhostDeltaKcal}
-              effectiveGhostDeltaKcal={effectiveGhostDeltaKcal}
-              autoCompensationDelta={autoCompensationDelta}
-              rollingDebt={rollingDebt}
-              ghostAutoPilotEnabled={ghostAutoPilotEnabled}
-              onToggleGhostAutoPilot={onToggleGhostAutoPilot}
-              onApplyGhostSimGoal={onApplyGhostSimGoal}
-              activeCompensation={activeCompensation}
-              onConfirmCompensation={onConfirmCompensation}
-              onClearCompensation={onClearCompensation}
               sleepEngineLiveLog={Array.isArray(sleepEngineLiveLog) ? sleepEngineLiveLog : activeLog}
               todayDate={healthTodayDate}
             />

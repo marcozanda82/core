@@ -32,6 +32,67 @@ export const TARGET_BAND_KCAL = 80;
 export const SURPLUS_MARGIN_KCAL = 140;
 
 /**
+ * Delta calorico suggerito per obiettivo blocco ↔ Calibrazione Target & Bilancio.
+ * @type {Record<string, { suggestedDeltaKcal: number, energyBadgeLabel: string, ghostGoal: 'cut'|'maintain'|'bulk' }>}
+ */
+export const TRAINING_BLOCK_MACRO_GOAL_CALIBRATION = Object.freeze({
+  cut: {
+    suggestedDeltaKcal: -350,
+    energyBadgeLabel: 'Deficit −350 kcal',
+    ghostGoal: 'cut',
+  },
+  bulk: {
+    suggestedDeltaKcal: 275,
+    energyBadgeLabel: 'Surplus +275 kcal',
+    ghostGoal: 'bulk',
+  },
+  recomp: {
+    suggestedDeltaKcal: 0,
+    energyBadgeLabel: 'Mantenimento · focus proteico',
+    ghostGoal: 'maintain',
+  },
+  maintain: {
+    suggestedDeltaKcal: 0,
+    energyBadgeLabel: 'Mantenimento',
+    ghostGoal: 'maintain',
+  },
+});
+
+/**
+ * @param {string | null | undefined} macroGoal
+ * @returns {typeof TRAINING_BLOCK_MACRO_GOAL_CALIBRATION.maintain}
+ */
+export function resolveTrainingBlockMacroGoalCalibration(macroGoal) {
+  const raw = String(macroGoal || 'maintain').trim().toLowerCase();
+  if (raw === 'cut' || raw === 'deficit' || raw === 'dimagrimento') {
+    return TRAINING_BLOCK_MACRO_GOAL_CALIBRATION.cut;
+  }
+  if (raw === 'bulk' || raw === 'surplus' || raw === 'massa') {
+    return TRAINING_BLOCK_MACRO_GOAL_CALIBRATION.bulk;
+  }
+  if (raw === 'recomp' || raw === 'ricomposizione') {
+    return TRAINING_BLOCK_MACRO_GOAL_CALIBRATION.recomp;
+  }
+  return TRAINING_BLOCK_MACRO_GOAL_CALIBRATION.maintain;
+}
+
+/**
+ * @param {string | null | undefined} macroGoal
+ * @param {number | null | undefined} [liveDeltaKcal]
+ * @returns {string}
+ */
+export function formatTrainingBlockEnergyBadge(macroGoal, liveDeltaKcal = null) {
+  const cal = resolveTrainingBlockMacroGoalCalibration(macroGoal);
+  const live = Number(liveDeltaKcal);
+  if (Number.isFinite(live) && Math.abs(live - cal.suggestedDeltaKcal) > 25) {
+    if (live < -25) return `Deficit ${live} kcal`;
+    if (live > 25) return `Surplus +${live} kcal`;
+    return 'Mantenimento';
+  }
+  return cal.energyBadgeLabel;
+}
+
+/**
  * @param {{
  *   weight?: number,
  *   peso?: number,

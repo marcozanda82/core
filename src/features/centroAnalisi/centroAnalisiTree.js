@@ -36,6 +36,16 @@ export const CENTRO_ANALISI_AREAS = Object.freeze([
     ],
   },
   {
+    id: 'calibrazione_target',
+    icon: '⚡',
+    label: 'Calibrazione Target & Bilancio',
+    kicker: 'Pilota energetico',
+    hint: 'Regola deficit, surplus, autopilota e recupero del debito calorico.',
+    opensFotografia: null,
+    opensCalibrazione: true,
+    rooms: [],
+  },
+  {
     id: 'timeline_metabolica',
     icon: '⏱️',
     label: 'Timeline Metabolica 24h',

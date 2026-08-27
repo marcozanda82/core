@@ -1,9 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { getTodayString } from '../../../coreEngine';
 import { computeTotali } from '../../../useBiochimico';
 import { computeSleepEngineSnapshot } from '../../../hooks/useSleepEngine';
 import { useHealthContext } from './useHealthContext';
 import { useHealthDailyReport } from './useHealthDailyReport';
+import {
+  readEngineSnapshot,
+  writeEngineSnapshot,
+} from '../../../utils/longevityBootstrapCache';
 import {
   calculateLongevityScore,
   computeAverageDailyFastingWindow,
@@ -35,6 +39,7 @@ import {
  *   userTargets?: object|null,
  *   heightCm?: number|null,
  *   enabled?: boolean,
+ *   isProfileHydrated?: boolean,
  * }} params
  */
 export function useLongevityScore({
@@ -51,8 +56,14 @@ export function useLongevityScore({
   userTargets = null,
   heightCm = null,
   enabled = true,
+  isProfileHydrated = false,
 } = {}) {
   const resolvedScoreDate = String(scoreDate || getTodayString()).slice(0, 10);
+
+  const bootstrapSnapshot = useMemo(
+    () => (uid ? readEngineSnapshot(uid, resolvedScoreDate) : null),
+    [uid, resolvedScoreDate],
+  );
 
   const healthContext = useHealthContext({
     fullHistory,
@@ -157,8 +168,10 @@ export function useLongevityScore({
       pesiDays: longevityWindow.pesiDays,
       heightCm: resolvedHeightCm,
       windowDays: LONGEVITY_WINDOW_DAYS,
-      longevityNutrition: health.longevityNutrition,
-      recentNutritionScores: health.recentNutritionScores,
+      longevityNutrition: health.longevityNutrition ?? bootstrapSnapshot?.longevityNutrition ?? null,
+      recentNutritionScores: health.recentNutritionScores?.length
+        ? health.recentNutritionScores
+        : (bootstrapSnapshot?.recentNutritionScores ?? []),
       proteinGrams: todayProteinGrams,
       proteinTarget: nutritionTargets.prot,
       fastingHoursAvg: fastingTrend14d.averageHours,
@@ -171,6 +184,8 @@ export function useLongevityScore({
     tonightHours,
     health.longevityNutrition,
     health.recentNutritionScores,
+    bootstrapSnapshot?.longevityNutrition,
+    bootstrapSnapshot?.recentNutritionScores,
     todayProteinGrams,
     nutritionTargets.prot,
     fastingTrend14d.averageHours,
@@ -179,15 +194,63 @@ export function useLongevityScore({
     todayLiveLog,
   ]);
 
+  const resolvedLongevityResult = useMemo(() => {
+    if (Number.isFinite(Number(longevityResult?.finalScore))) return longevityResult;
+    if (bootstrapSnapshot?.longevityResult?.finalScore != null) {
+      return bootstrapSnapshot.longevityResult;
+    }
+    return longevityResult;
+  }, [longevityResult, bootstrapSnapshot?.longevityResult]);
+
+  const resolvedLongevityScore = resolvedLongevityResult?.finalScore ?? null;
+
+  const resolvedLongevityNutrition = health.longevityNutrition
+    ?? bootstrapSnapshot?.longevityNutrition
+    ?? null;
+
+  const nutritionInsightSettled = !healthReportEnabled
+    || (health.cacheHydrated && health.status !== 'loading' && health.status !== 'idle');
+
+  const isEngineReady = Boolean(
+    enabled
+    && isProfileHydrated
+    && Array.isArray(activeLog)
+    && nutritionInsightSettled
+  );
+
+  useEffect(() => {
+    if (!uid || !isEngineReady) return;
+    if (!Number.isFinite(Number(resolvedLongevityScore))) return;
+    writeEngineSnapshot(uid, resolvedScoreDate, {
+      longevityScore: resolvedLongevityScore,
+      longevityResult: resolvedLongevityResult,
+      longevityNutrition: resolvedLongevityNutrition,
+      recentNutritionScores: health.recentNutritionScores,
+    });
+  }, [
+    uid,
+    isEngineReady,
+    resolvedScoreDate,
+    resolvedLongevityScore,
+    resolvedLongevityResult,
+    resolvedLongevityNutrition,
+    health.recentNutritionScores,
+  ]);
+
   return {
     scoreDate: resolvedScoreDate,
-    longevityResult,
-    longevityScore: longevityResult.finalScore,
-    longevityBreakdown: longevityResult.breakdown,
-    longevityNutrition: health.longevityNutrition,
-    recentNutritionScores: health.recentNutritionScores,
+    longevityResult: resolvedLongevityResult,
+    longevityScore: resolvedLongevityScore,
+    longevityBreakdown: resolvedLongevityResult?.breakdown ?? null,
+    longevityNutrition: resolvedLongevityNutrition,
+    recentNutritionScores: health.recentNutritionScores?.length
+      ? health.recentNutritionScores
+      : (bootstrapSnapshot?.recentNutritionScores ?? []),
     longevityWindow,
     healthReportStatus: health.status,
+    healthReportCacheHydrated: health.cacheHydrated,
+    isEngineReady,
+    bootstrapSnapshot,
   };
 }
 

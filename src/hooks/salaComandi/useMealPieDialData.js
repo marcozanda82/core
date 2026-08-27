@@ -136,7 +136,7 @@ export function useMealPieDialData({
       dialConsumedKcal > dialDailyTargetKcal ? dialConsumedKcal - dialDailyTargetKcal : 0;
     const dialKcalRemaining = Math.max(0, dialDailyTargetKcal - dialConsumedKcal);
     const dialKcalRestLabel =
-      dialKcalSurplus > 0 ? 'OLTRE IL TARGET' : 'RESTANTI';
+      dialKcalSurplus > 0 ? 'OLTRE IL TARGET' : 'KCAL RESTANTI';
     const showKcalTelemetryRings = activeDialMode === 'kcal' && !selectedMealCenter;
     const telemetry = homeKcalDialTelemetry;
     const zoneHud = resolveKcalZoneHudLabel(telemetry);

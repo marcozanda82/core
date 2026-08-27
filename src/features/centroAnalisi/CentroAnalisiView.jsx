@@ -5,9 +5,10 @@ import {
   findCentroAnalisiRoom,
 } from './centroAnalisiTree';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
-import BussolaRoom from './BussolaRoom';
-import MappaRoom from './MappaRoom';
-import RadarRoom from './RadarRoom';
+import StrumentazioneToolRoom, {
+  STRUMENTAZIONE_ROOM_TO_TOOL,
+  StrumentazioneToolTabs,
+} from './StrumentazioneToolRoom';
 import PremiumAmbientBackground from './PremiumAmbientBackground';
 import { useCentroAnalisiReadStore } from './useCentroAnalisiReadStore';
 import { useStrumentazioneMapData } from './useStrumentazioneMapData';
@@ -17,7 +18,9 @@ import {
   ProgressionLivePreview,
   StrumentazioneLivePreview,
   TimelineLivePreview,
+  CalibrazioneTargetLivePreview,
 } from './CentroAnalisiLiveCards';
+import CalibrazioneTargetRoom from './CalibrazioneTargetRoom';
 import {
   calculateProgressionScore,
 } from '../trendHub/utils/saluteDashboardMetrics';
@@ -63,6 +66,8 @@ export default function CentroAnalisiView({
   initialAreaId = null,
   /** Anteprime live da SalaComandi (SSOT giorno selezionato). */
   livePreview = null,
+  /** Handler Ghost Car / autopilota (solo da SalaComandi embedded). */
+  calibrazioneHandlers = null,
 } = {}) {
   const [areaId, setAreaId] = useState(() => {
     const id = String(initialAreaId || '').toLowerCase();
@@ -147,11 +152,16 @@ export default function CentroAnalisiView({
     [areaId, roomId],
   );
   const isStrumentazione = area?.id === 'strumentazione';
+  const isCalibrazione = area?.id === 'calibrazione_target';
   const isStrumentazioneRoom = isStrumentazione && Boolean(room);
 
   const handleBack = useCallback(() => {
     if (areaId === 'strumentazione') {
       setRoomId(null);
+      setAreaId(null);
+      return;
+    }
+    if (areaId === 'calibrazione_target') {
       setAreaId(null);
       return;
     }
@@ -182,10 +192,34 @@ export default function CentroAnalisiView({
     if (itemId === 'strumentazione') {
       setAreaId('strumentazione');
       setRoomId(DEFAULT_STRUMENTAZIONE_ROOM);
+      return;
+    }
+    if (itemId === 'calibrazione_target') {
+      setAreaId('calibrazione_target');
+      setRoomId(null);
     }
   }, [onOpenFotografiaProgressione, onOpenFotografiaSalute, onOpenTimelineMetabolica]);
 
-  const title = room?.label || area?.label || 'Centro Analisi';
+  const title = isStrumentazione
+    ? (area?.label || 'Strumentazione')
+    : (room?.label || area?.label || 'Centro Analisi');
+  const activeStrumentazioneRoom = roomId || DEFAULT_STRUMENTAZIONE_ROOM;
+  const telemetryContext = useMemo(() => ({
+    longevityScore: preview.longevityScore ?? null,
+    longevityBreakdown: preview.longevityBreakdown ?? null,
+    progressionScore: preview.progressionScore ?? fallbackProgression.finalScore,
+    progressionBreakdown: preview.progressionBreakdown ?? fallbackProgression.breakdown,
+    activeLog: centroAnalisiStore?.activeLog ?? [],
+    userTargets: centroAnalisiStore?.userTargets ?? null,
+  }), [
+    preview.longevityScore,
+    preview.longevityBreakdown,
+    preview.progressionScore,
+    preview.progressionBreakdown,
+    fallbackProgression,
+    centroAnalisiStore?.activeLog,
+    centroAnalisiStore?.userTargets,
+  ]);
   const showHubTitle = !area;
   const backLabel = areaId || roomId
     ? '← Indietro'
@@ -224,6 +258,23 @@ export default function CentroAnalisiView({
         />
       );
     }
+    if (itemId === 'calibrazione_target') {
+      const cp = preview.calibrazionePreview ?? {};
+      return (
+        <CalibrazioneTargetLivePreview
+          fullHistory={centroAnalisiStore?.fullHistory}
+          userTargets={centroAnalisiStore?.userTargets}
+          activeLog={centroAnalisiStore?.activeLog}
+          activeDate={cp.activeDate ?? preview.scoreDate}
+          settingsBaseKcal={cp.settingsBaseKcal ?? null}
+          committedGhostGoal={cp.committedGhostGoal ?? 'maintain'}
+          committedGhostDeltaKcal={cp.committedGhostDeltaKcal ?? null}
+          effectiveGhostDeltaKcal={cp.effectiveGhostDeltaKcal ?? null}
+          ghostAutoPilotEnabled={cp.ghostAutoPilotEnabled !== false}
+          autoCompensationDelta={cp.autoCompensationDelta ?? 0}
+        />
+      );
+    }
     return null;
   };
 
@@ -234,9 +285,11 @@ export default function CentroAnalisiView({
         embedded ? 'h-full flex-1' : 'h-full max-h-[100dvh] [height:100dvh]',
       ].join(' ')}
     >
-      <PremiumAmbientBackground activeRoomId={room?.id || null} />
+      <PremiumAmbientBackground
+        activeRoomId={isStrumentazione ? activeStrumentazioneRoom : (room?.id || null)}
+      />
 
-      <header className="relative z-10 shrink-0 px-3 pt-3 sm:px-5">
+      <header className="relative z-10 shrink-0 px-3 pt-2 sm:px-5">
         <div className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${GLASS_SURFACE_CLASS}`}>
           <button
             type="button"
@@ -256,10 +309,18 @@ export default function CentroAnalisiView({
             {title}
           </h1>
         </div>
+        {isStrumentazione ? (
+          <div className="mt-2">
+            <StrumentazioneToolTabs
+              activeRoomId={activeStrumentazioneRoom}
+              onSwitchRoom={setRoomId}
+            />
+          </div>
+        ) : null}
       </header>
 
       <main
-        className={`relative z-10 mx-auto flex w-full ${isStrumentazioneRoom ? 'max-w-2xl' : 'max-w-lg'} min-h-0 flex-1 flex-col overflow-hidden px-4 pt-4 sm:px-6`}
+        className={`relative z-10 mx-auto flex w-full ${isStrumentazioneRoom ? 'max-w-2xl' : 'max-w-lg'} min-h-0 flex-1 flex-col overflow-hidden px-4 pt-1 sm:px-6`}
       >
         {showHubTitle ? (
           <div className="shrink-0 text-center">
@@ -269,7 +330,13 @@ export default function CentroAnalisiView({
           </div>
         ) : null}
 
-        <div className="mt-4 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain pb-24 [padding-bottom:max(6rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))]">
+        <div
+          className={[
+            'min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain',
+            showHubTitle ? 'mt-2' : 'mt-1',
+            isStrumentazione ? 'pb-8' : 'pb-24 [padding-bottom:max(6rem,calc(env(safe-area-inset-bottom,0px)+4.5rem))]',
+          ].join(' ')}
+        >
           {!area ? (
             <div className="grid w-full grid-cols-2 gap-3">
               {CENTRO_ANALISI_AREAS.map((item) => {
@@ -281,7 +348,7 @@ export default function CentroAnalisiView({
                     key={item.id}
                     title={item.label}
                     description={item.hint}
-                    wide={item.id === 'strumentazione' || item.id === 'timeline_metabolica'}
+                    wide={item.id === 'strumentazione' || item.id === 'timeline_metabolica' || item.id === 'calibrazione_target'}
                     preview={renderLivePreview(item.id)}
                     onClick={() => openHubItem(item.id)}
                   />
@@ -290,16 +357,22 @@ export default function CentroAnalisiView({
             </div>
           ) : null}
 
-          {isStrumentazione && room ? (
-            room.id === 'bussola' ? (
-              <BussolaRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
-            ) : room.id === 'mappa' ? (
-              <MappaRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
-            ) : room.id === 'radar' ? (
-              <RadarRoom store={centroAnalisiStore} onSwitchRoom={setRoomId} />
-            ) : (
-              <PlaceholderRoomPanel area={area} room={room} />
-            )
+          {isStrumentazione ? (
+            <StrumentazioneToolRoom
+              store={centroAnalisiStore}
+              activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[activeStrumentazioneRoom] || 'COMPASS'}
+              label={room?.label || 'Strumentazione'}
+              onSwitchRoom={setRoomId}
+              showToolTabs={false}
+              telemetryContext={telemetryContext}
+            />
+          ) : null}
+
+          {isCalibrazione ? (
+            <CalibrazioneTargetRoom
+              store={centroAnalisiStore}
+              handlers={calibrazioneHandlers}
+            />
           ) : null}
         </div>
       </main>

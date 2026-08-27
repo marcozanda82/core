@@ -1,11 +1,19 @@
 import AiCluster from '../../AiCluster';
+import { DEFAULT_TARGETS } from '../../useBiochimico';
 
 function normalizeDailyLog(log) {
   return Array.isArray(log) ? log : [];
 }
 
 function normalizeUserTargets(targets) {
-  return targets && typeof targets === 'object' ? targets : null;
+  if (targets && typeof targets === 'object') return targets;
+  return { ...DEFAULT_TARGETS };
+}
+
+function normalizeHealthScore(score) {
+  const n = Number(score);
+  if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
+  return 50;
 }
 
 /**
@@ -33,6 +41,7 @@ export default function KentuChatUI({
   dailyLog = [],
   userTargets = null,
   diaryReady = true,
+  engineReady = true,
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -75,6 +84,7 @@ export default function KentuChatUI({
 }) {
   const safeDailyLog = normalizeDailyLog(dailyLog);
   const safeUserTargets = normalizeUserTargets(userTargets);
+  const safeHealthScore = normalizeHealthScore(healthScore);
 
   if (!diaryReady) {
     return (
@@ -89,6 +99,23 @@ export default function KentuChatUI({
           aria-hidden
         />
         <p className="mt-3 text-sm text-zinc-500">Caricamento diario…</p>
+      </div>
+    );
+  }
+
+  if (!engineReady) {
+    return (
+      <div
+        className="view-animate flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center overflow-hidden bg-zinc-950"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-zinc-600 border-t-cyan-400"
+          aria-hidden
+        />
+        <p className="mt-3 text-sm text-zinc-500">Allineamento parametri in corso…</p>
       </div>
     );
   }
@@ -163,7 +190,7 @@ export default function KentuChatUI({
         quickStripItems={quickStripItems}
         preferVoiceChat={preferVoiceChat}
         userDisplayName={userDisplayName}
-        healthScore={healthScore}
+        healthScore={safeHealthScore}
         isTrainingDay={isTrainingDay}
         onRequestHealthDiagnosis={onRequestHealthDiagnosis}
       />

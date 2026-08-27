@@ -159,13 +159,18 @@ export default function EssentialTodayCruscotto({
                         <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
                       </span>
                     )}
-                    {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && dialKcalRemaining}
+                    {activeDialMode === 'kcal' && dialKcalSurplus <= 0 && (
+                      <span style={{ letterSpacing: '0.02em' }}>
+                        {dialKcalRemaining}{' '}
+                        <span style={{ fontSize: '0.42em', fontWeight: 700 }}>kcal</span>
+                      </span>
+                    )}
                     {activeDialMode === 'pro' && Math.round(totali?.prot || 0)}
                     {activeDialMode === 'cho' && Math.round(totali?.carb || 0)}
                     {activeDialMode === 'fat' && Math.round(totali?.fatTotal ?? totali?.fat ?? 0)}
                   </div>
                   <div style={{ color: '#888', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                    {activeDialMode === 'kcal' && (dialKcalSurplus > 0 ? 'SURPLUS' : 'restanti')}
+                    {activeDialMode === 'kcal' && (dialKcalSurplus > 0 ? 'SURPLUS' : 'KCAL RESTANTI')}
                     {activeDialMode === 'pro' && 'g Proteine'}
                     {activeDialMode === 'cho' && 'g Carboidrati'}
                     {activeDialMode === 'fat' && 'g Grassi'}

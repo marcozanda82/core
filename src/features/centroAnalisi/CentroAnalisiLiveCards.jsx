@@ -1,5 +1,12 @@
 import React, { useId, useMemo } from 'react';
 import { longevityToneFromScore } from '../trendHub/utils/longevityInsightGenerator';
+import {
+  buildMetabolicCompensationSeries,
+  GHOST_CORRIDOR_HALF_WIDTH_KCAL,
+  METABOLIC_TREND_WINDOW_DAYS,
+  resolveGhostDailyDeltaFromGoal,
+  normalizeGhostSimGoal,
+} from '../../utils/metabolicCompensationCurve';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
 
 const LONGEVITY_TONE_STROKE = {
@@ -461,6 +468,147 @@ export function TimelineLivePreview({ timelinePoints = [], mealHours = [], gradi
         mealHours={mealHours}
         gradientStops={gradientStops}
       />
+    </div>
+  );
+}
+
+function buildGhostCarMiniPath(points, key, width, height, yPad = 4) {
+  if (!Array.isArray(points) || points.length < 2) return '';
+  const values = points.map((p) => Number(p[key])).filter(Number.isFinite);
+  if (values.length < 2) return '';
+  const min = Math.min(...values, -300);
+  const max = Math.max(...values, 300);
+  const span = Math.max(1, max - min);
+  const innerH = height - yPad * 2;
+  return points.map((p, i) => {
+    const val = Number(p[key]);
+    if (!Number.isFinite(val)) return null;
+    const x = (i / Math.max(1, points.length - 1)) * width;
+    const y = yPad + innerH - ((val - min) / span) * innerH;
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).filter(Boolean).join(' ');
+}
+
+/** Miniatura Ghost Car 7g — traiettoria reale (cyan/arancio) + badge autopilota/delta. */
+export function CalibrazioneTargetLivePreview({
+  fullHistory = null,
+  userTargets = null,
+  activeLog = null,
+  activeDate = null,
+  settingsBaseKcal = null,
+  committedGhostGoal = 'maintain',
+  committedGhostDeltaKcal = null,
+  effectiveGhostDeltaKcal = null,
+  ghostAutoPilotEnabled = true,
+  autoCompensationDelta = 0,
+} = {}) {
+  const uid = useId().replace(/:/g, '');
+  const width = 280;
+  const height = 52;
+
+  const series = useMemo(() => {
+    const delta = effectiveGhostDeltaKcal != null && effectiveGhostDeltaKcal !== ''
+      ? effectiveGhostDeltaKcal
+      : (committedGhostDeltaKcal != null && committedGhostDeltaKcal !== ''
+        ? committedGhostDeltaKcal
+        : resolveGhostDailyDeltaFromGoal(normalizeGhostSimGoal(committedGhostGoal)));
+    return buildMetabolicCompensationSeries({
+      fullHistory,
+      userTargets,
+      activeLog,
+      activeDate,
+      settingsBaseKcal,
+      windowDays: METABOLIC_TREND_WINDOW_DAYS,
+      simulatedDeltaKcal: delta,
+      simulatedGoal: committedGhostGoal,
+      corridorHalfWidth: GHOST_CORRIDOR_HALF_WIDTH_KCAL,
+    }).points.filter((p) => !p.isOrigin);
+  }, [
+    fullHistory,
+    userTargets,
+    activeLog,
+    activeDate,
+    settingsBaseKcal,
+    committedGhostGoal,
+    committedGhostDeltaKcal,
+    effectiveGhostDeltaKcal,
+  ]);
+
+  const ghostPath = buildGhostCarMiniPath(series, 'ghost', width, height);
+  const realCyanPath = buildGhostCarMiniPath(
+    series.map((p) => ({ ...p, realCyan: p.real >= 0 ? p.real : null })),
+    'realCyan',
+    width,
+    height,
+  );
+  const realOrangePath = buildGhostCarMiniPath(
+    series.map((p) => ({ ...p, realOrange: p.real < 0 ? p.real : null })),
+    'realOrange',
+    width,
+    height,
+  );
+
+  const last = series[series.length - 1];
+  const deltaLabel = effectiveGhostDeltaKcal != null && effectiveGhostDeltaKcal !== ''
+    ? `${Number(effectiveGhostDeltaKcal) > 0 ? '+' : ''}${Math.round(Number(effectiveGhostDeltaKcal))} kcal/d`
+    : (autoCompensationDelta
+      ? `${Number(autoCompensationDelta) > 0 ? '+' : ''}${Math.round(Number(autoCompensationDelta))} kcal auto`
+      : 'Target attivo');
+
+  return (
+    <div className="flex w-full max-w-full flex-col gap-1.5 px-0.5">
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={[
+            'rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+            ghostAutoPilotEnabled
+              ? 'border-cyan-500/35 bg-cyan-500/10 text-cyan-200'
+              : 'border-slate-600/50 bg-slate-800/60 text-slate-400',
+          ].join(' ')}
+        >
+          Autopilota {ghostAutoPilotEnabled ? 'ON' : 'OFF'}
+        </span>
+        <span className="truncate font-mono text-[9px] tabular-nums text-orange-200/90">
+          {deltaLabel}
+        </span>
+      </div>
+      <div className="h-[3.25rem] w-full overflow-hidden rounded-lg border border-white/5 bg-slate-950/50">
+        {series.length >= 2 ? (
+          <svg viewBox={`0 0 ${width} ${height}`} className="h-full w-full" preserveAspectRatio="none" aria-hidden>
+            <defs>
+              <linearGradient id={`ca-ghost-band-${uid}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="rgba(148,163,184,0.22)" />
+                <stop offset="100%" stopColor="rgba(148,163,184,0.06)" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width={width} height={height} fill="rgba(15,23,42,0.6)" />
+            <rect x="0" y={height * 0.35} width={width} height={height * 0.3} fill={`url(#ca-ghost-band-${uid})`} />
+            {ghostPath ? (
+              <path d={ghostPath} fill="none" stroke="rgba(148,163,184,0.55)" strokeWidth="1.2" strokeDasharray="3 3" />
+            ) : null}
+            {realCyanPath ? (
+              <path d={realCyanPath} fill="none" stroke="#22d3ee" strokeWidth="2" strokeLinejoin="round" />
+            ) : null}
+            {realOrangePath ? (
+              <path d={realOrangePath} fill="none" stroke="#fb923c" strokeWidth="1.8" strokeLinejoin="round" />
+            ) : null}
+            {last ? (
+              <circle
+                cx={width}
+                cy={height / 2}
+                r="3"
+                fill="#020617"
+                stroke={Number(last.real) < 0 ? '#fb923c' : '#22d3ee'}
+                strokeWidth="1.5"
+              />
+            ) : null}
+          </svg>
+        ) : (
+          <div className="flex h-full items-center justify-center text-[10px] text-slate-500">
+            Dati 7g in calibrazione…
+          </div>
+        )}
+      </div>
     </div>
   );
 }

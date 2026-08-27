@@ -9,6 +9,7 @@ import {
   calculateMetabolicTrajectory,
 } from './features/salaComandi/engines/adaptiveTDEEEngine';
 import { mapBundleToPillars } from './features/metabolic/pillarsMapperLegacy';
+import { buildStrumentazioneTelemetryPillars } from './features/metabolic/buildStrumentazioneTelemetryPillars';
 import MetabolicPillarsTelemetry from './features/metabolic/components/MetabolicPillarsTelemetry';
 import MetabolicBubbleRadar from './features/metabolic/components/MetabolicBubbleRadar';
 import { useActiveTrendTool } from './features/trendHub/hooks/useActiveTrendTool';
@@ -270,7 +271,12 @@ export default function MetabolicUnifiedView({
   onTimeframeChange,
   activeToolRequest = null,
   onActiveToolRequestHandled = null,
+  /** Longevità/Progressione SSOT per telemetria radar (Centro Analisi / Sala Comandi). */
+  telemetryContext = null,
+  /** `strumentazione` = colonna scrollabile, telemetria + radar in blocchi distinti. */
+  layoutVariant = 'default',
 } = {}) {
+  const isStrumentazioneLayout = layoutVariant === 'strumentazione';
   const dailyHistory = Array.isArray(dailyHistoryProp) ? dailyHistoryProp : [];
   const bodyMetricsHistory = Array.isArray(bodyMetricsHistoryProp) ? bodyMetricsHistoryProp : [];
   const [timeframeInternal, setTimeframeInternal] = useState(DEFAULT_TIMEFRAME);
@@ -346,7 +352,15 @@ export default function MetabolicUnifiedView({
     });
   }, [dailyHistory, bodyMetricsHistory, fullHistory, userTargets, projectionAnchorDate]);
 
-  const pillarTelemetry = useMemo(() => mapBundleToPillars(mapData), [mapData]);
+  const pillarTelemetry = useMemo(() => {
+    if (telemetryContext && typeof telemetryContext === 'object') {
+      return buildStrumentazioneTelemetryPillars({
+        ...telemetryContext,
+        mapData,
+      });
+    }
+    return mapBundleToPillars(mapData);
+  }, [mapData, telemetryContext]);
 
   const targetWeight = useMemo(() => {
     const profileTarget = Number(userTargets?.weight);
@@ -436,8 +450,18 @@ export default function MetabolicUnifiedView({
   const compassVisible = compassScreenActive && activeTool === 'COMPASS';
 
   return (
-    <div className="trend-unified-root">
-      <div className="trend-sticky-controls">
+    <div
+      className={[
+        'trend-unified-root',
+        isStrumentazioneLayout ? 'trend-unified-root--strumentazione' : '',
+      ].filter(Boolean).join(' ')}
+    >
+      <div
+        className={[
+          'trend-sticky-controls',
+          isStrumentazioneLayout ? 'trend-sticky-controls--static' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <div
           role="tablist"
           aria-label="Periodo ago predittivo"
@@ -509,15 +533,22 @@ export default function MetabolicUnifiedView({
         ) : null}
 
         {activeTool === 'RADAR' ? (
-          <div className="trend-radar-panel">
+          <div
+            className={[
+              'trend-radar-panel',
+              isStrumentazioneLayout ? 'trend-radar-panel--stacked' : '',
+            ].filter(Boolean).join(' ')}
+          >
             <MetabolicPillarsTelemetry pillars={pillarTelemetry} />
-            <div className="trend-radar-shell">
-              <MetabolicBubbleRadar
-                pillars={pillarTelemetry}
-                dailyHistory={dailyHistory}
-                selectedTimeframe={selectedTimeframe}
-                fourCylinderStrategic={mapData?.fourCylinderStrategic ?? null}
-              />
+            <div className="trend-radar-chart-card">
+              <div className="trend-radar-shell">
+                <MetabolicBubbleRadar
+                  pillars={pillarTelemetry}
+                  dailyHistory={dailyHistory}
+                  selectedTimeframe={selectedTimeframe}
+                  fourCylinderStrategic={mapData?.fourCylinderStrategic ?? null}
+                />
+              </div>
             </div>
           </div>
         ) : null}

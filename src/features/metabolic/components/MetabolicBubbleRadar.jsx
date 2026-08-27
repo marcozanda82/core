@@ -285,9 +285,9 @@ export function getSmoothPath(points) {
 function EdgeLabel({ position, color, children }) {
   const base = {
     position: 'absolute',
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: 700,
-    letterSpacing: '0.12em',
+    letterSpacing: '0.1em',
     textTransform: 'uppercase',
     color,
     textShadow: `0 0 8px ${color}66`,
@@ -298,12 +298,12 @@ function EdgeLabel({ position, color, children }) {
 
   const pos =
     position === 'top'
-      ? { top: 8, left: '50%', transform: 'translateX(-50%)' }
+      ? { top: 4, left: '50%', transform: 'translateX(-50%)' }
       : position === 'bottom'
-        ? { bottom: 8, left: '50%', transform: 'translateX(-50%)' }
+        ? { bottom: 4, left: '50%', transform: 'translateX(-50%)' }
         : position === 'left'
-          ? { left: 8, top: '50%', transform: 'translateY(-50%)' }
-          : { right: 8, top: '50%', transform: 'translateY(-50%)' };
+          ? { left: 4, top: '50%', transform: 'translateY(-50%)' }
+          : { right: 4, top: '50%', transform: 'translateY(-50%)' };
 
   return <span style={{ ...base, ...pos }}>{children}</span>;
 }

@@ -3,6 +3,10 @@ import { ref, get, set, onValue } from 'firebase/database';
 import { enrichDbRowWithFoodUnits } from '../../foodUnits';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import { writeTodayTrackerLocalCache } from '../../utils/trackerCacheUtils';
+import {
+  readProfileTargetsCache,
+  writeProfileTargetsCache,
+} from '../../utils/longevityBootstrapCache';
 import { stripUndefined } from '../../utils/firebasePayloadUtils';
 import { dayHasFoodLog } from '../../utils/dayTrackingStatus';
 import { scheduleAfterPaint } from '../../utils/scheduleAfterPaint';
@@ -53,6 +57,41 @@ export function useDiaryFirebaseSync({
 }) {
   const lastLogFromFirebaseRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [isProfileHydrated, setIsProfileHydrated] = useState(false);
+
+  const applyProfileTargets = useCallback((data) => {
+    if (!data || typeof data !== 'object') return;
+    const mergedProfile = data?.profile
+      ? mergeProfileNutritionFromServer(data.profile)
+      : null;
+    if (mergedProfile) {
+      setUserProfile((prev) => ({ ...prev, ...mergedProfile }));
+      setBirthDate(typeof mergedProfile?.birthDate === 'string' ? mergedProfile.birthDate : '');
+    }
+    setUserTargets((prev) => {
+      let next = { ...prev };
+      if (data?.targets) {
+        next = {
+          ...next,
+          ...data.targets,
+          autoCalculated: data?.targets?.autoCalculated === true,
+          targetHistory: Array.isArray(data?.targets?.targetHistory)
+            ? data.targets.targetHistory
+            : next.targetHistory || [],
+        };
+      }
+      if (mergedProfile) {
+        if (mergedProfile.targetCalories != null && Number.isFinite(Number(mergedProfile.targetCalories))) {
+          next.kcal = Math.round(Number(mergedProfile.targetCalories));
+        }
+        if (mergedProfile.proteinTarget != null && mergedProfile.proteinTarget !== '') {
+          next.prot = Math.round(Number(mergedProfile.proteinTarget));
+        }
+      }
+      return next;
+    });
+    setIsProfileHydrated(true);
+  }, [setBirthDate, setUserProfile, setUserTargets]);
 
   useEffect(() => {
     if (!fullStorico || typeof fullStorico !== 'object') return;
@@ -72,6 +111,7 @@ export function useDiaryFirebaseSync({
   useEffect(() => {
     if (!user) {
       setIsInitialLoadComplete(false);
+      setIsProfileHydrated(false);
       setWeeklyPlan(createInitialWeeklyPlan());
       weeklyPlanningListenerReadyRef.current = false;
       weeklyPlanningRemoteSigRef.current = '';
@@ -106,6 +146,11 @@ export function useDiaryFirebaseSync({
       }
     } catch (err) {
       console.warn('Bootstrap cache read failed:', err);
+    }
+
+    const cachedProfile = readProfileTargetsCache(user.uid);
+    if (cachedProfile) {
+      applyProfileTargets(cachedProfile);
     }
 
     const attachTodayLiveListener = () => {
@@ -156,35 +201,10 @@ export function useDiaryFirebaseSync({
 
         if (profileSnap.exists()) {
           const data = profileSnap.val();
-          const mergedProfile = data?.profile
-            ? mergeProfileNutritionFromServer(data.profile)
-            : null;
-          if (mergedProfile) {
-            setUserProfile((prev) => ({ ...prev, ...mergedProfile }));
-            setBirthDate(typeof mergedProfile?.birthDate === 'string' ? mergedProfile.birthDate : '');
-          }
-          setUserTargets((prev) => {
-            let next = { ...prev };
-            if (data?.targets) {
-              next = {
-                ...next,
-                ...data.targets,
-                autoCalculated: data?.targets?.autoCalculated === true,
-                targetHistory: Array.isArray(data?.targets?.targetHistory)
-                  ? data.targets.targetHistory
-                  : next.targetHistory || [],
-              };
-            }
-            if (mergedProfile) {
-              if (mergedProfile.targetCalories != null && Number.isFinite(Number(mergedProfile.targetCalories))) {
-                next.kcal = Math.round(Number(mergedProfile.targetCalories));
-              }
-              if (mergedProfile.proteinTarget != null && mergedProfile.proteinTarget !== '') {
-                next.prot = Math.round(Number(mergedProfile.proteinTarget));
-              }
-            }
-            return next;
-          });
+          applyProfileTargets(data);
+          writeProfileTargetsCache(user.uid, data);
+        } else {
+          setIsProfileHydrated(true);
         }
 
         setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
@@ -209,6 +229,7 @@ export function useDiaryFirebaseSync({
       .catch((err) => {
         console.warn('Bootstrap load failed:', err);
         if (cancelled) return;
+        setIsProfileHydrated(true);
         setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
         setIsInitialLoadComplete(true);
         attachTodayLiveListener();
@@ -375,6 +396,7 @@ export function useDiaryFirebaseSync({
   return {
     syncDatiFirebase,
     isInitialLoadComplete,
+    isProfileHydrated,
     lastLogFromFirebaseRef,
   };
 }

@@ -289,7 +289,7 @@ export default function MetabolicTrendChart({
     return (
       <div className={`rounded-xl border border-white/10 bg-slate-900/50 px-3 py-4 ${className}`.trim()}>
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-          Curva di compensazione
+          Calibrazione target
         </p>
         <p className="mt-2 text-xs text-slate-500">Dati insufficienti negli ultimi 7 giorni.</p>
       </div>
@@ -299,12 +299,12 @@ export default function MetabolicTrendChart({
   return (
     <div
       className={`rounded-xl border border-white/10 bg-slate-950/70 px-3 py-3 shadow-lg backdrop-blur-sm ${className}`.trim()}
-      aria-label="Simulatore compensazione metabolica Ghost Car"
+      aria-label="Calibrazione target e bilancio Ghost Car"
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-            Compensazione metabolica · 7g
+            Calibrazione Target &amp; Bilancio · 7g
           </p>
           <p className="mt-0.5 text-[11px] text-slate-400">
             What-If Ghost Car ±{corridorHalfWidth} kcal · cicli chiusi fino a ieri

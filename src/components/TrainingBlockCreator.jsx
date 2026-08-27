@@ -16,10 +16,12 @@ import {
 } from '../features/planning/trainingBlockSchema';
 import {
   buildEmergencyWaveNutritionDays,
+  formatTrainingBlockEnergyBadge,
+  resolveTrainingBlockMacroGoalCalibration,
   TRAINING_BLOCK_FALLBACK_BASE_KCAL,
 } from '../features/planning/trainingBlockTargets';
 import { generatePeriodizedTargets } from '../features/planning/aiNutritionEngine';
-import { normalizeMuscleGroupArray } from '../activityCatalog';
+import { normalizeMuscleGroupArray, WORKOUT_MUSCLE_GROUP_DEFS } from '../activityCatalog';
 import { decimalToTimeStr } from '../coreEngine';
 import WorkoutView from '../drawers/vistas/WorkoutView';
 
@@ -173,6 +175,35 @@ function dayTypeLabel(type) {
   return 'Pesi';
 }
 
+const MUSCLE_ID_TO_LABEL = Object.fromEntries(
+  WORKOUT_MUSCLE_GROUP_DEFS.map((d) => [d.id, d.label]),
+);
+
+function formatMuscleLabels(muscles) {
+  return normalizeMuscleGroupArray(muscles).map(
+    (id) => MUSCLE_ID_TO_LABEL[id] || id,
+  );
+}
+
+const SESSION_ACTION_BTN_CLASS =
+  'shrink-0 rounded-lg border border-slate-600/50 px-2 py-1.5 text-sm text-slate-400 transition hover:border-violet-400/45 hover:text-violet-200 hover:shadow-[0_0_10px_rgba(139,92,246,0.22)] disabled:opacity-40';
+
+const SESSION_DELETE_BTN_CLASS =
+  'shrink-0 rounded-lg border border-slate-600/50 px-2 py-1.5 text-[11px] text-slate-400 transition hover:border-rose-400/45 hover:text-rose-200 hover:shadow-[0_0_10px_rgba(244,63,94,0.18)]';
+
+/**
+ * @param {Array<{ session?: object | null }>} weekDays
+ * @returns {{ completed: number, total: number }}
+ */
+function computeWeekSessionStats(weekDays) {
+  const sessions = (Array.isArray(weekDays) ? weekDays : [])
+    .map((slot) => slot?.session)
+    .filter(Boolean);
+  const total = sessions.length;
+  const completed = sessions.filter((s) => isTrainingSessionCompleted(s)).length;
+  return { completed, total };
+}
+
 /**
  * Drawer: calendario assoluto raggruppato per settimane di mesociclo.
  */
@@ -185,6 +216,10 @@ export default function TrainingBlockCreator({
   tdee = null,
   weightKg = null,
   onToggleSessionComplete = null,
+  onMoveSession = null,
+  onSwapSessions = null,
+  onMacroGoalCalibrationChange = null,
+  calibrationDeltaKcal = null,
   todayIso: todayIsoProp = null,
 }) {
   const todayIso = String(todayIsoProp || getLocalTodayIso()).slice(0, 10);
@@ -205,6 +240,12 @@ export default function TrainingBlockCreator({
   const [editingKey, setEditingKey] = useState(null);
   const [draftScheduledDate, setDraftScheduledDate] = useState(todayIso);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  /** @type {[string | null, Function]} */
+  const [actionMenuKey, setActionMenuKey] = useState(null);
+  /** @type {[object | null, Function]} */
+  const [movePickerDay, setMovePickerDay] = useState(null);
+  /** @type {[object | null, Function]} */
+  const [swapPickerDay, setSwapPickerDay] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -228,6 +269,9 @@ export default function TrainingBlockCreator({
     setDraftScheduledDate(todayIso);
     setSaving(false);
     setIsGeneratingTargets(false);
+    setActionMenuKey(null);
+    setMovePickerDay(null);
+    setSwapPickerDay(null);
     return undefined;
   }, [isOpen, activeBlock?.blockId, activeBlock?.updatedAt, todayIso]);
 
@@ -276,6 +320,51 @@ export default function TrainingBlockCreator({
       && Boolean(normalizeIsoDate(d.scheduledDate))
     ));
   }, [name, days]);
+
+  const openRestDatesForMove = useMemo(() => {
+    if (!movePickerDay) return [];
+    const occupied = new Set(
+      days
+        .filter((d) => d.key !== movePickerDay.key && d.type !== 'rest')
+        .map((d) => d.scheduledDate),
+    );
+    /** @type {string[]} */
+    const open = [];
+    for (const group of calendarWeeks) {
+      for (const slot of group.days) {
+        if (occupied.has(slot.date)) continue;
+        if (slot.date === movePickerDay.scheduledDate) continue;
+        open.push(slot.date);
+      }
+    }
+    return [...new Set(open)].sort();
+  }, [calendarWeeks, days, movePickerDay]);
+
+  const swapCandidates = useMemo(() => {
+    if (!swapPickerDay) return [];
+    return days.filter(
+      (d) => d.key !== swapPickerDay.key && d.type !== 'rest',
+    );
+  }, [days, swapPickerDay]);
+
+  const macroGoalCalibration = useMemo(
+    () => resolveTrainingBlockMacroGoalCalibration(macroGoal),
+    [macroGoal],
+  );
+
+  const energyTargetBadge = useMemo(
+    () => formatTrainingBlockEnergyBadge(macroGoal, calibrationDeltaKcal),
+    [macroGoal, calibrationDeltaKcal],
+  );
+
+  const handleMacroGoalChange = (nextGoalRaw) => {
+    const nextGoal = normalizeMacroGoal(nextGoalRaw);
+    setMacroGoal(nextGoal);
+    const cal = resolveTrainingBlockMacroGoalCalibration(nextGoal);
+    if (typeof onMacroGoalCalibrationChange === 'function') {
+      void onMacroGoalCalibrationChange(cal.suggestedDeltaKcal, nextGoal);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -397,6 +486,103 @@ export default function TrainingBlockCreator({
 
   const removeDay = (key) => {
     setDays((prev) => prev.filter((d) => d.key !== key));
+  };
+
+  const applyLocalMove = (dayKey, targetDateIso) => {
+    const targetDate = normalizeIsoDate(targetDateIso);
+    if (!targetDate) {
+      setError('Data non valida.');
+      return;
+    }
+    const source = days.find((d) => d.key === dayKey);
+    if (!source) return;
+    if (days.some((d) => d.key !== dayKey && d.scheduledDate === targetDate && d.type !== 'rest')) {
+      setError('Giorno occupato — scegli un giorno libero o usa Scambia.');
+      return;
+    }
+    setDays((prev) => prev.map((d) => (
+      d.key === dayKey
+        ? {
+          ...d,
+          scheduledDate: targetDate,
+          mesocycleWeek: computeMesocycleWeek(targetDate, blockStartIso),
+        }
+        : d
+    )).sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate))));
+    setMovePickerDay(null);
+    setActionMenuKey(null);
+    setError('');
+  };
+
+  const applyLocalSwap = (sourceKey, targetKey) => {
+    const source = days.find((d) => d.key === sourceKey);
+    const target = days.find((d) => d.key === targetKey);
+    if (!source || !target) return;
+    setDays((prev) => prev.map((d) => {
+      if (d.key === sourceKey) {
+        return {
+          ...d,
+          scheduledDate: target.scheduledDate,
+          mesocycleWeek: computeMesocycleWeek(target.scheduledDate, blockStartIso),
+        };
+      }
+      if (d.key === targetKey) {
+        return {
+          ...d,
+          scheduledDate: source.scheduledDate,
+          mesocycleWeek: computeMesocycleWeek(source.scheduledDate, blockStartIso),
+        };
+      }
+      return d;
+    }).sort((a, b) => String(a.scheduledDate).localeCompare(String(b.scheduledDate))));
+    setSwapPickerDay(null);
+    setActionMenuKey(null);
+    setError('');
+  };
+
+  const handleMoveToDate = async (day, targetDateIso) => {
+    setError('');
+    const dayIndex = Number(day?.dayIndex);
+    if (
+      typeof onMoveSession === 'function'
+      && isEditMode
+      && Number.isFinite(dayIndex)
+      && dayIndex >= 0
+    ) {
+      try {
+        await onMoveSession(dayIndex, targetDateIso);
+        setMovePickerDay(null);
+        setActionMenuKey(null);
+      } catch (err) {
+        setError(String(err?.message || err || 'Spostamento fallito'));
+      }
+      return;
+    }
+    applyLocalMove(day.key, targetDateIso);
+  };
+
+  const handleSwapWith = async (sourceDay, targetDay) => {
+    setError('');
+    const srcIdx = Number(sourceDay?.dayIndex);
+    const tgtIdx = Number(targetDay?.dayIndex);
+    if (
+      typeof onSwapSessions === 'function'
+      && isEditMode
+      && Number.isFinite(srcIdx)
+      && Number.isFinite(tgtIdx)
+      && srcIdx >= 0
+      && tgtIdx >= 0
+    ) {
+      try {
+        await onSwapSessions(srcIdx, tgtIdx);
+        setSwapPickerDay(null);
+        setActionMenuKey(null);
+      } catch (err) {
+        setError(String(err?.message || err || 'Scambio fallito'));
+      }
+      return;
+    }
+    applyLocalSwap(sourceDay.key, targetDay.key);
   };
 
   const handleToggleComplete = async (day) => {
@@ -616,7 +802,7 @@ export default function TrainingBlockCreator({
             </span>
             <select
               value={macroGoal}
-              onChange={(e) => setMacroGoal(e.target.value)}
+              onChange={(e) => handleMacroGoalChange(e.target.value)}
               className="w-full rounded-xl border border-white/15 bg-black/40 px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-400/60"
             >
               {TRAINING_BLOCK_MACRO_GOALS.map((g) => (
@@ -625,6 +811,22 @@ export default function TrainingBlockCreator({
                 </option>
               ))}
             </select>
+            <p
+              className="mt-2 flex flex-wrap items-center gap-1 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-[10px] leading-snug text-amber-100/90"
+              role="status"
+            >
+              <span aria-hidden>🔥</span>
+              <span>
+                {`Target Energetico: ${energyTargetBadge}`}
+                {' · Collegato a Calibrazione Target'}
+              </span>
+              {Number.isFinite(Number(calibrationDeltaKcal))
+                && Math.abs(Number(calibrationDeltaKcal) - macroGoalCalibration.suggestedDeltaKcal) > 25 ? (
+                  <span className="text-amber-300/80">
+                    {`(suggerito: ${macroGoalCalibration.energyBadgeLabel})`}
+                  </span>
+                ) : null}
+            </p>
           </label>
 
           <div className="mb-2 flex items-center justify-between gap-2">
@@ -681,28 +883,46 @@ export default function TrainingBlockCreator({
           ) : null}
 
           <div className="flex flex-col gap-3">
-            {calendarWeeks.map((group) => (
+            {calendarWeeks.map((group) => {
+              const weekStats = computeWeekSessionStats(group.days);
+              return (
               <section
                 key={group.monday}
-                className="rounded-xl border border-white/10 bg-black/30 p-2.5"
+                className="rounded-xl border border-slate-800/70 bg-slate-950/50 p-2.5"
                 aria-label={group.label}
               >
-                <h3 className="m-0 mb-2 text-xs font-bold uppercase tracking-wide text-cyan-100">
-                  {group.label}
-                </h3>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h3 className="m-0 text-xs font-bold uppercase tracking-wide text-slate-200">
+                    {group.label}
+                  </h3>
+                  {weekStats.total > 0 ? (
+                    <span className={[
+                      'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
+                      weekStats.completed >= weekStats.total
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                        : 'border-violet-500/25 bg-violet-500/10 text-violet-200',
+                    ].join(' ')}
+                    >
+                      {`${weekStats.completed}/${weekStats.total} completate`}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex flex-col gap-1.5">
                   {group.days.map((slot) => {
                     const day = slot.session;
                     if (day) {
                       const done = isTrainingSessionCompleted(day);
+                      const muscleLabels = formatMuscleLabels(day.muscles || []);
                       return (
                         <div
                           key={slot.date}
                           className={[
-                            'flex items-start gap-2 rounded-lg border p-2.5',
-                            slot.isToday
-                              ? 'border-cyan-400/45 bg-cyan-950/35'
-                              : 'border-white/10 bg-black/40',
+                            'flex items-start gap-2 rounded-xl border border-slate-700/60 border-l-4 p-2.5',
+                            done
+                              ? 'border-l-emerald-400 bg-slate-900/80'
+                              : 'border-l-violet-400 bg-slate-900/80',
+                            slot.isToday && !done ? 'ring-1 ring-violet-400/25' : '',
+                            slot.isToday && done ? 'ring-1 ring-emerald-400/20' : '',
                           ].join(' ')}
                         >
                           <label
@@ -732,6 +952,7 @@ export default function TrainingBlockCreator({
                               {slot.isToday ? ' · Oggi' : ''}
                             </p>
                             <p className="m-0 truncate text-sm font-semibold text-white">
+                              {!done ? '🏋️ ' : ''}
                               {day.title}
                             </p>
                             <p className="m-0 text-[11px] text-slate-400">
@@ -740,16 +961,73 @@ export default function TrainingBlockCreator({
                               {day.durationMin ? ` · ${Math.round(Number(day.durationMin))}′` : ''}
                               {done ? ' · Eseguito' : ''}
                             </p>
-                            {(day.muscles || []).length > 0 ? (
-                              <p className="mt-1 m-0 text-[10px] text-cyan-200/70">
-                                {day.muscles.join(', ')}
-                              </p>
+                            {muscleLabels.length > 0 ? (
+                              <div className="mt-1.5 flex flex-wrap gap-1">
+                                {muscleLabels.map((label) => (
+                                  <span
+                                    key={`${day.key}_${label}`}
+                                    className={[
+                                      'rounded border px-2 py-0.5 text-[11px]',
+                                      done
+                                        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
+                                        : 'border-violet-500/20 bg-violet-500/10 text-violet-300',
+                                    ].join(' ')}
+                                  >
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
                             ) : null}
                           </button>
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setActionMenuKey(
+                                actionMenuKey === day.key ? null : day.key,
+                              )}
+                              disabled={busy}
+                              className={SESSION_ACTION_BTN_CLASS}
+                              aria-label={`Azioni ${day.title}`}
+                              aria-expanded={actionMenuKey === day.key}
+                            >
+                              ⋮
+                            </button>
+                            {actionMenuKey === day.key ? (
+                              <div
+                                className="absolute right-0 top-full z-20 mt-1 min-w-[11.5rem] overflow-hidden rounded-lg border border-white/15 bg-slate-950/95 py-1 shadow-xl"
+                                role="menu"
+                              >
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setActionMenuKey(null);
+                                    setSwapPickerDay(null);
+                                    setMovePickerDay(day);
+                                  }}
+                                  className="block w-full border-none bg-transparent px-3 py-2 text-left text-[11px] text-slate-200 hover:bg-cyan-950/60"
+                                >
+                                  Sposta su giorno libero…
+                                </button>
+                                <button
+                                  type="button"
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setActionMenuKey(null);
+                                    setMovePickerDay(null);
+                                    setSwapPickerDay(day);
+                                  }}
+                                  className="block w-full border-none bg-transparent px-3 py-2 text-left text-[11px] text-slate-200 hover:bg-cyan-950/60"
+                                >
+                                  Scambia con un altro allenamento…
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
                           <button
                             type="button"
                             onClick={() => removeDay(day.key)}
-                            className="shrink-0 rounded-lg border border-rose-500/30 px-2 py-1.5 text-[11px] text-rose-300"
+                            className={SESSION_DELETE_BTN_CLASS}
                             aria-label={`Rimuovi ${day.title}`}
                           >
                             ✕
@@ -763,22 +1041,20 @@ export default function TrainingBlockCreator({
                       <div
                         key={slot.date}
                         className={[
-                          'flex items-center gap-2 rounded-lg border border-dashed px-2.5 py-2',
-                          slot.isToday
-                            ? 'border-cyan-400/40 bg-cyan-950/20'
-                            : 'border-white/10 bg-black/20',
+                          'flex items-center gap-2 rounded-xl border border-slate-800/60 bg-slate-900/40 px-2.5 py-2',
+                          slot.isToday ? 'ring-1 ring-slate-600/40' : '',
                         ].join(' ')}
                       >
                         <div className="min-w-0 flex-1">
                           <p className={[
                             'm-0 text-[10px] font-medium uppercase tracking-wide',
-                            slot.isToday ? 'text-cyan-300' : 'text-slate-500',
+                            slot.isToday ? 'text-slate-400' : 'text-slate-500',
                           ].join(' ')}
                           >
                             {slot.label}
                             {slot.isToday ? ' · Oggi' : ''}
                           </p>
-                          <p className="m-0 text-sm font-semibold text-slate-400">
+                          <p className="m-0 text-sm font-medium text-slate-400">
                             🛋️ Riposo
                           </p>
                         </div>
@@ -786,7 +1062,7 @@ export default function TrainingBlockCreator({
                           type="button"
                           onClick={() => openNewSessionOnDate(slot.date)}
                           disabled={busy || days.length >= 28}
-                          className="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-950/50 px-2.5 py-1.5 text-[11px] font-bold text-cyan-100 transition hover:bg-cyan-900/60 disabled:opacity-40"
+                          className="shrink-0 rounded-lg border border-slate-700/50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 transition hover:border-cyan-400/40 hover:text-cyan-300 disabled:opacity-40"
                           aria-label={`Aggiungi allenamento il ${slot.label}`}
                           title="Aggiungi allenamento"
                         >
@@ -797,11 +1073,101 @@ export default function TrainingBlockCreator({
                   })}
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
 
           {error ? (
             <p className="mt-3 text-center text-xs text-rose-300">{error}</p>
+          ) : null}
+
+          {movePickerDay ? (
+            <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+              <div
+                className="max-h-[70vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/15 bg-slate-950 p-4 shadow-2xl"
+                role="dialog"
+                aria-label="Sposta su giorno libero"
+              >
+                <p className="m-0 text-sm font-bold text-white">
+                  Sposta «
+                  {movePickerDay.title}
+                  »
+                </p>
+                <p className="mt-1 mb-3 text-[11px] text-slate-400">
+                  Scegli un giorno libero o di riposo.
+                </p>
+                {openRestDatesForMove.length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessun giorno libero nel calendario.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {openRestDatesForMove.map((date) => (
+                      <button
+                        key={date}
+                        type="button"
+                        onClick={() => { void handleMoveToDate(movePickerDay, date); }}
+                        disabled={busy}
+                        className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-left text-sm text-slate-200 transition hover:border-cyan-400/40 hover:bg-cyan-950/40 disabled:opacity-40"
+                      >
+                        {formatScheduledDateLabelIt(date)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setMovePickerDay(null)}
+                  className="mt-3 w-full rounded-lg border border-white/15 py-2 text-xs text-slate-300"
+                >
+                  Annulla
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {swapPickerDay ? (
+            <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+              <div
+                className="max-h-[70vh] w-full max-w-md overflow-y-auto rounded-2xl border border-white/15 bg-slate-950 p-4 shadow-2xl"
+                role="dialog"
+                aria-label="Scambia allenamento"
+              >
+                <p className="m-0 text-sm font-bold text-white">
+                  Scambia «
+                  {swapPickerDay.title}
+                  »
+                </p>
+                <p className="mt-1 mb-3 text-[11px] text-slate-400">
+                  Seleziona l&apos;altra sessione da invertire.
+                </p>
+                {swapCandidates.length === 0 ? (
+                  <p className="text-xs text-slate-500">Nessun&apos;altra sessione disponibile.</p>
+                ) : (
+                  <div className="flex flex-col gap-1.5">
+                    {swapCandidates.map((candidate) => (
+                      <button
+                        key={candidate.key}
+                        type="button"
+                        onClick={() => { void handleSwapWith(swapPickerDay, candidate); }}
+                        disabled={busy}
+                        className="rounded-lg border border-white/10 bg-black/40 px-3 py-2.5 text-left text-sm text-slate-200 transition hover:border-cyan-400/40 hover:bg-cyan-950/40 disabled:opacity-40"
+                      >
+                        <span className="block text-[10px] uppercase tracking-wide text-slate-500">
+                          {formatScheduledDateLabelIt(candidate.scheduledDate)}
+                        </span>
+                        <span className="font-semibold">{candidate.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSwapPickerDay(null)}
+                  className="mt-3 w-full rounded-lg border border-white/15 py-2 text-xs text-slate-300"
+                >
+                  Annulla
+                </button>
+              </div>
+            </div>
           ) : null}
         </div>
 
