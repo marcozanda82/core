@@ -79,14 +79,21 @@ function ToolSwitchTabs({ activeTool, onSwitchRoom }) {
             title={tab.label}
             onClick={() => onSwitchRoom(tab.roomId)}
             className={[
-              'flex flex-1 items-center justify-center rounded-xl px-2 py-1.5 text-lg leading-none transition-all duration-150',
+              'flex flex-1 flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-1.5 transition-all duration-150',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
               selected
                 ? 'bg-white/15 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,0.28)]'
                 : 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
             ].join(' ')}
           >
-            <span aria-hidden>{tab.icon}</span>
+            <span className="text-lg leading-none" aria-hidden>{tab.icon}</span>
+            <span className={[
+              'text-[0.6rem] font-semibold tracking-tight',
+              selected ? 'text-cyan-200' : 'text-zinc-500',
+            ].join(' ')}
+            >
+              {tab.label}
+            </span>
           </button>
         );
       })}

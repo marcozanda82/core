@@ -220,6 +220,7 @@ export default function AiCluster({
       predictiveIntent: replyObj?.intent || replyObj?.action || null,
       predictiveState: msg.predictiveState || null,
       label: replyLabel,
+      durationHours: replyObj?.durationHours ?? null,
     });
     setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   }, [onSlotQuickReplyClick]);

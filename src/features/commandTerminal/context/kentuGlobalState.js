@@ -16,6 +16,11 @@ import {
 import { sanitizeUserPortionsDict } from '../conversation/userPortionsMemory.js';
 import { buildFastingContextForLlm } from '../../stimulants/coffeeLogEngine.js';
 import { isFastingBreakerItem } from '../../../utils/fastingBreakRules.js';
+import {
+  COFFEE_SHOP_PRODUCTS,
+  formatCoffeeShopDatabaseForPrompt,
+} from '../../../constants/coffeeShopDatabase.js';
+import { readFavoriteBreakfast } from '../../breakfast/favoriteBreakfastMemory.js';
 
 function asTrimmedString(value) {
   return String(value ?? '').trim();
@@ -272,16 +277,30 @@ function buildDiaryContextBlock(diaryState = {}) {
   }
 
   // Annota ogni voce: il caffè amaro / <10 kcal NON conta come interruzione digiuno.
+  // kcal esplicito (anche 0) così il prompt non perde il dato e non inventa un break digiuno.
   return (Array.isArray(meals) ? meals : []).map((meal) => {
     if (!meal || typeof meal !== 'object') return meal;
     const breaksFast = isFastingBreakerItem(meal);
+    const kcal = Number(meal.kcal ?? meal.cal ?? meal.calories);
+    const kcalSafe = Number.isFinite(kcal) ? Math.max(0, Math.round(kcal)) : 0;
     return {
       ...meal,
+      kcal: kcalSafe,
+      cal: kcalSafe,
+      ...(Number.isFinite(Number(meal.caffeineMg))
+        ? { caffeineMg: Math.max(0, Math.round(Number(meal.caffeineMg))) }
+        : {}),
+      ...(typeof meal.isFastingSafe === 'boolean'
+        ? { isFastingSafe: meal.isFastingSafe }
+        : {}),
       breaksFast,
       countsAsLastMeal: breaksFast,
       fastingNote: breaksFast
         ? null
-        : 'NON interrompe il digiuno (kcal < 10 o bevanda safe). Ignora per stato digiuno.',
+        : 'NON interrompe il digiuno (kcal < 10, isFastingSafe o bevanda safe). Ignora per stato digiuno.',
+      fastingDirective: kcalSafe <= 0 || !breaksFast
+        ? 'kcal:0 o sotto soglia → IL DIGIUNO NON È INTERROTTO. Complimentati per averlo mantenuto.'
+        : null,
     };
   });
 }
@@ -355,6 +374,11 @@ export function buildKentuGlobalStateObject(
     || diaryState?.healthScore,
   );
 
+  const favoriteBreakfast = options.favoriteBreakfast
+    || nutritionState?.favoriteBreakfast
+    || diaryState?.favoriteBreakfast
+    || readFavoriteBreakfast();
+
   return {
     User_Profile: {
       displayName: asTrimmedString(
@@ -384,13 +408,28 @@ export function buildKentuGlobalStateObject(
     },
     User_Portions_Dictionary: userPortions,
     Fasting_Context: fastingContext,
+    Coffee_Shop_Context: {
+      catalog: COFFEE_SHOP_PRODUCTS.map((p) => ({
+        id: p.id,
+        name: p.name,
+        kcal: p.kcal,
+        prot: p.prot,
+        carb: p.carb,
+        fat: p.fat,
+        caffeineMg: p.caffeineMg,
+        isFastingSafe: p.isFastingSafe,
+      })),
+      favoriteBreakfast: favoriteBreakfast || null,
+      promptRule:
+        'Se l\'utente chiede «un caffè», «il solito», cappuccino/macchiato/croissant: usa SOLO questi valori (macro + caffeineMg + isFastingSafe). VIETATO inventare.',
+    },
     ...(avatarSymbiosis ? { Avatar_Symbiosis: avatarSymbiosis } : {}),
     Diary_Context: {
       scope: 'today_only',
       meals: buildDiaryContextBlock(diaryState),
       fastingRule:
         'Solo meals con breaksFast/countsAsLastMeal=true (kcal >= 10) contano come ultimo pasto. '
-        + 'Caffè amaro e voci con fastingNote NON interrompono il digiuno: usa Fasting_Context.statusLine.',
+        + 'Caffè amaro e voci con fastingNote / isFastingSafe=true NON interrompono il digiuno: usa Fasting_Context.statusLine.',
     },
   };
 }
@@ -522,6 +561,8 @@ export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
   'REGOLA DIGIUNO (OBBLIGATORIA): usa SOLO Fasting_Context.statusLine / isFasting / aiGuidance.',
   'Il Monitor Metabolico è la fonte di verità. NON dedurre interruzione digiuno dal Diary_Context o dal log pasti.',
   'Bevande < 10 kcal (caffè amaro, tè, acqua) NON interrompono il digiuno.',
+  'REGOLA 0 KCAL (OBBLIGATORIA): Se il pasto ha 0 kcal (es. caffè amaro, tè, acqua; campo kcal:0), IL DIGIUNO NON È INTERROTTO. Non dire che il digiuno è rotto: complimentati per averlo mantenuto.',
+  'CAFFERIA / COLAZIONE: usa Coffee_Shop_Context.catalog (e favoriteBreakfast per «il solito»). Macro, caffeineMg e isFastingSafe sono ESATTI — VIETATO inventarli.',
   '',
 ].join('\n');
 
@@ -534,9 +575,11 @@ export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
 export function appendKentuGlobalStateToSystemInstruction(systemInstruction, globalStateText) {
   const base = asTrimmedString(systemInstruction);
   const pack = asTrimmedString(globalStateText);
-  if (!pack) return base;
-  if (!base) return `${KENTU_GLOBAL_STATE_PROMPT_HEADER.trimStart()}${pack}`;
-  return `${base}${KENTU_GLOBAL_STATE_PROMPT_HEADER}${pack}`;
+  const catalogHint = formatCoffeeShopDatabaseForPrompt();
+  const withCatalog = pack ? `${pack}\n\n${catalogHint}` : catalogHint;
+  if (!pack && !catalogHint) return base;
+  if (!base) return `${KENTU_GLOBAL_STATE_PROMPT_HEADER.trimStart()}${withCatalog}`;
+  return `${base}${KENTU_GLOBAL_STATE_PROMPT_HEADER}${withCatalog}`;
 }
 
 function serializeKentuGlobalState(object) {

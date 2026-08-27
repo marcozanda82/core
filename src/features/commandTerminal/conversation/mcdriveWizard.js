@@ -9,6 +9,7 @@ import {
 import { getDynamicMealTargets, toCanonicalMealType } from '../../../coreEngine.jsx';
 import { getLastUsedQuantity } from './userRecentFoods.js';
 import { resolveFoodAcrossDatabases } from './multiDbFoodResolver.js';
+import { attachResolvedFoodIcon } from '../../../utils/foodCategoryIcon.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -480,7 +481,7 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
     ? extra.alternatives.map((alt) => ({ ...alt }))
     : [];
 
-  return {
+  return attachResolvedFoodIcon({
     ...(extra?.id ? { id: extra.id } : {}),
     foodName: officialName || String(spokenName || '').trim(),
     spokenFoodName: String(spokenName || officialName).trim(),
@@ -495,7 +496,7 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
     isEstimated: extra.isEstimated === true,
     alternatives,
     ...(Object.keys(row).length > 0 ? { row } : {}),
-  };
+  });
 }
 
 /**

@@ -60,8 +60,10 @@ function PlaceholderRoomPanel({ area, room }) {
 /**
  * Centro Analisi — hub.
  * Salute / Progressione → stessa Fotografia della Home (`onOpenFotografia*`).
- * Strumentazione resta a stanze interne (Bussola / Mappa / Radar).
+ * Strumentazione: atterra direttamente sulla Bussola (switch tab Bussola/Radar/Mappa in alto).
  */
+const DEFAULT_STRUMENTAZIONE_ROOM = 'bussola';
+
 export default function CentroAnalisiView({
   onExit = null,
   embedded = false,
@@ -69,6 +71,8 @@ export default function CentroAnalisiView({
   onOpenFotografiaSalute = null,
   /** Apre la Fotografia Progressione (stesso handler dei widget Home). */
   onOpenFotografiaProgressione = null,
+  /** Apre Timeline Metabolica 24h (grafico continuo). */
+  onOpenTimelineMetabolica = null,
   initialAreaId = null,
 } = {}) {
   const [areaId, setAreaId] = useState(() => {
@@ -76,7 +80,10 @@ export default function CentroAnalisiView({
     // Solo Strumentazione ha ancora drill-down interno
     return id === 'strumentazione' ? id : null;
   });
-  const [roomId, setRoomId] = useState(null);
+  const [roomId, setRoomId] = useState(() => {
+    const id = String(initialAreaId || '').toLowerCase();
+    return id === 'strumentazione' ? DEFAULT_STRUMENTAZIONE_ROOM : null;
+  });
   const centroAnalisiStore = useCentroAnalisiReadStore();
 
   const area = useMemo(() => findCentroAnalisiArea(areaId), [areaId]);
@@ -88,6 +95,12 @@ export default function CentroAnalisiView({
   const isStrumentazioneRoom = isStrumentazione && Boolean(room);
 
   const handleBack = useCallback(() => {
+    // Da qualsiasi tool di Strumentazione → hub Centro Analisi (niente indice intermedio).
+    if (areaId === 'strumentazione') {
+      setRoomId(null);
+      setAreaId(null);
+      return;
+    }
     if (roomId) {
       setRoomId(null);
       return;
@@ -114,11 +127,18 @@ export default function CentroAnalisiView({
       }
       return;
     }
+    if (itemId === 'timeline_metabolica') {
+      if (typeof onOpenTimelineMetabolica === 'function') {
+        onOpenTimelineMetabolica();
+        return;
+      }
+      return;
+    }
     if (itemId === 'strumentazione') {
       setAreaId('strumentazione');
-      setRoomId(null);
+      setRoomId(DEFAULT_STRUMENTAZIONE_ROOM);
     }
-  }, [onOpenFotografiaProgressione, onOpenFotografiaSalute]);
+  }, [onOpenFotografiaProgressione, onOpenFotografiaSalute, onOpenTimelineMetabolica]);
 
   const title = room?.label || area?.label || 'Centro Analisi';
   const showHubTitle = !area;
@@ -181,19 +201,15 @@ export default function CentroAnalisiView({
                   onClick={() => openHubItem(item.id)}
                 />
               ))}
-            </div>
-          ) : null}
-
-          {isStrumentazione && !room ? (
-            <div className="grid w-full grid-cols-2 gap-3">
-              {area.rooms.map((item) => (
+              {typeof onOpenTimelineMetabolica === 'function' ? (
                 <GlassCardButton
-                  key={item.id}
-                  icon={item.icon}
-                  label={item.label}
-                  onClick={() => setRoomId(item.id)}
+                  icon="⏱️"
+                  label="Timeline Metabolica 24h"
+                  hint="Andamento continuo, digestione e finestre metaboliche"
+                  wide
+                  onClick={() => onOpenTimelineMetabolica()}
                 />
-              ))}
+              ) : null}
             </div>
           ) : null}
 

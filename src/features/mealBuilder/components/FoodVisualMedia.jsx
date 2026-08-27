@@ -1,10 +1,10 @@
 import React from 'react';
-import { getFoodEmoji } from '../utils/foodIconUtils';
+import { Utensils } from 'lucide-react';
 import { renderIconFromTag } from '../../../utils/iconEngine';
 
 /**
- * Renderer unificato per foto / icona semantica / emoji.
- * Priorità: customImage → semanticIconTag → customEmoji → emoji euristico.
+ * Renderer unificato per foto / icona semantica esplicita / emoji esplicita.
+ * Fallback neutro: Utensils (nessuna euristica sul nome).
  */
 export default function FoodVisualMedia({
   visual,
@@ -32,17 +32,36 @@ export default function FoodVisualMedia({
     );
   }
 
-  if (visual?.semanticIconTag) {
-    return renderIconFromTag(visual.semanticIconTag, {
+  const explicitTag = visual?.semanticIconTag || visual?.iconTag || visual?.iconOverride || visual?.customIcon || null;
+  if (explicitTag) {
+    const rendered = renderIconFromTag(explicitTag, {
       iconClassName: resolvedIconClass,
       wrapperClassName: resolvedWrapperClass,
       className: resolvedSurfaceClass,
     });
+    if (rendered) return rendered;
   }
 
+  const explicitEmoji = String(visual?.customEmoji || '').trim();
+  if (explicitEmoji) {
+    return (
+      <span className={resolvedEmojiClass} aria-hidden>
+        {explicitEmoji}
+      </span>
+    );
+  }
+
+  // Fallback neutro — mai indovinare verdura/insalata dal nome.
   return (
-    <span className={resolvedEmojiClass} aria-hidden>
-      {visual?.customEmoji || getFoodEmoji(displayName)}
-    </span>
+    <div
+      className={`flex items-center justify-center bg-slate-900/80 ${resolvedWrapperClass} ${resolvedSurfaceClass}`}
+      aria-hidden
+      title={displayName}
+    >
+      <Utensils
+        className={`text-slate-400 ${resolvedIconClass}`}
+        strokeWidth={2}
+      />
+    </div>
   );
 }

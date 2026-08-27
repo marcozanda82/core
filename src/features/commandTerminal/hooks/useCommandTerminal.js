@@ -45,6 +45,11 @@ import {
   resolveEffectivePredictiveState,
   resolvePredictiveIntentAction,
 } from '../../predictive/predictiveGreeting.js';
+import {
+  readFavoriteBreakfast,
+  resolveUsualBreakfastAction,
+} from '../../breakfast/favoriteBreakfastMemory.js';
+import { COFFEE_VARIANT } from '../../stimulants/coffeeLogEngine.js';
 
 const MCDRIVE_TRAY_SESSION_ID = 'mcdrive_tray_singleton';
 
@@ -190,6 +195,7 @@ export function useCommandTerminal({
   onUserFoodAliasesMerge = null,
   onChatClose = null,
   onManualShortcutFromChat = null,
+  onOpenSleepPrompt = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -289,6 +295,7 @@ export function useCommandTerminal({
   const onLogSleepRef = useRef(onLogSleepCommand);
   const onLogStimulantRef = useRef(onLogStimulantCommand);
   const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
+  const onOpenSleepPromptRef = useRef(onOpenSleepPrompt);
   const handleAcceptMealProposalRef = useRef(null);
 
   useEffect(() => {
@@ -323,6 +330,10 @@ export function useCommandTerminal({
   useEffect(() => {
     onLogSleepRef.current = onLogSleepCommand;
   }, [onLogSleepCommand]);
+
+  useEffect(() => {
+    onOpenSleepPromptRef.current = onOpenSleepPrompt;
+  }, [onOpenSleepPrompt]);
 
   useEffect(() => {
     onLogStimulantRef.current = onLogStimulantCommand;
@@ -1194,28 +1205,124 @@ export function useCommandTerminal({
     sendMessageRef.current = sendMessage;
   }, [sendMessage]);
 
-  const handlePredictiveIntent = useCallback((intent, extra = {}) => {
+  const handlePredictiveIntent = useCallback(async (intent, extra = {}) => {
     const resolved = resolvePredictiveIntentAction(String(intent || ''), {
       predictiveState: extra?.predictiveState,
       label: extra?.label,
+      durationHours: extra?.durationHours,
     });
     if (!resolved) {
-      return Promise.resolve({ ok: false, reason: 'unknown_predictive_intent' });
+      return { ok: false, reason: 'unknown_predictive_intent' };
     }
     if (resolved.options?.snoozeOnly) {
       appendAiMessage('Ok, ti ricorderò più tardi. 💪', { type: 'system' });
-      return Promise.resolve({ ok: true, snoozed: true });
+      return { ok: true, snoozed: true };
+    }
+    if (resolved.options?.openSleepPrompt) {
+      if (typeof onOpenSleepPromptRef.current === 'function') {
+        onOpenSleepPromptRef.current();
+      }
+      return { ok: true, openedSleepPrompt: true };
+    }
+    if (resolved.options?.logUsualBreakfast) {
+      const currentState =
+        typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+      const fav = currentState.favoriteBreakfast || readFavoriteBreakfast();
+      const action = resolveUsualBreakfastAction(fav);
+      if (!action) {
+        appendAiMessage(
+          'Non ho ancora un «solito» salvato. Registra un caffè o una colazione dalla caffetteria e lo ricordo.',
+          { type: 'system' },
+        );
+        return { ok: false, reason: 'no_favorite_breakfast' };
+      }
+      if (action.mode === 'coffee') {
+        const now = new Date();
+        const time = Number.isFinite(Number(currentState.decimalHour))
+          ? Number(currentState.decimalHour)
+          : now.getHours() + now.getMinutes() / 60;
+        const variant = action.coffeeVariant === COFFEE_VARIANT.ZUCCHERATO
+          ? COFFEE_VARIANT.ZUCCHERATO
+          : COFFEE_VARIANT.AMARO;
+        try {
+          const result = controller.commitCoffeeLog(variant, time, currentState, {
+            coffeeType: action.coffeeType,
+          });
+          if (typeof setChatHistoryRef.current === 'function') {
+            setChatHistoryRef.current((prev) => markPredictiveGreetingsSuperseded(prev));
+          }
+          setActiveQuickReplies([]);
+          return { ok: true, usualBreakfast: true, ...(result || {}) };
+        } catch (error) {
+          appendAiMessage(
+            'Non sono riuscito a registrare il solito. Riprova tra poco.',
+            { type: 'ERROR', isError: true },
+          );
+          return { ok: false, reason: error?.message || 'usual_coffee_failed' };
+        }
+      }
+      // Pasticceria / combo → ADD_FOOD con macro esatte dal catalogo (nel testo, no inventiva).
+      const payload = action.foodPayload;
+      const send = sendMessageRef.current;
+      if (typeof send !== 'function' || !payload?.foodName) {
+        return { ok: false, reason: 'usual_food_unavailable' };
+      }
+      const m = payload.userProvidedMacros || {};
+      const grams = Number(payload.grams) || 50;
+      const macroHint = [
+        `${Math.round(Number(m.kcal) || 0)} kcal`,
+        `P ${Number(m.prot) || 0}`,
+        `C ${Number(m.carb) || 0}`,
+        `F ${Number(m.fat) || 0}`,
+      ].join(', ');
+      return send(
+        `Ho preso il solito: ${payload.foodName} ${grams}g (${macroHint})`,
+        {
+          intent: 'ADD_FOOD',
+          mealTypeHint: 'colazione',
+          fromPredictiveGreeting: true,
+          fromQuickReply: true,
+        },
+      );
+    }
+    if (resolved.options?.quickLogSleepHours != null) {
+      const hours = Number(resolved.options.quickLogSleepHours);
+      const wakeTime = Number(resolved.options.wakeTime);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        return { ok: false, reason: 'invalid_sleep_hours' };
+      }
+      try {
+        if (typeof onLogSleepRef.current === 'function') {
+          await onLogSleepRef.current({
+            durationHours: hours,
+            wakeTime: Number.isFinite(wakeTime) ? wakeTime : 6.5,
+            sleepQuality: 3,
+          });
+        }
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => markPredictiveGreetingsSuperseded(prev));
+        }
+        appendAiMessage('Sonno registrato! Motore calibrato per oggi ⚡', { type: 'system' });
+        setActiveQuickReplies([]);
+        return { ok: true, quickLoggedSleep: true, durationHours: hours };
+      } catch (error) {
+        appendAiMessage(
+          'Non sono riuscito a registrare il sonno. Riprova o usa Personalizza.',
+          { type: 'ERROR', isError: true },
+        );
+        return { ok: false, reason: error?.message || 'quick_log_sleep_failed' };
+      }
     }
     const send = sendMessageRef.current;
     if (typeof send !== 'function') {
-      return Promise.resolve({ ok: false, reason: 'send_message_unavailable' });
+      return { ok: false, reason: 'send_message_unavailable' };
     }
     return send(resolved.userText, {
       ...resolved.options,
       fromPredictiveGreeting: true,
       fromQuickReply: true,
     });
-  }, [appendAiMessage]);
+  }, [appendAiMessage, controller]);
 
   const tryEmitPredictiveGreeting = useCallback(() => {
     if (isLoading) return { ok: false, reason: 'processing' };
@@ -1225,12 +1332,16 @@ export function useCommandTerminal({
     const anchorDate = String(currentState.activeDate || getTodayString()).trim() || getTodayString();
     const history = chatHistoryRef.current || [];
 
-    const ctx = getCurrentPredictiveContext({
-      fullHistory: currentState.fullHistory || {},
-      dailyLog: currentState.activeLog || [],
-      manualNodes: currentState.manualNodes || [],
-      anchorDate,
-    });
+    const ctx = {
+      ...getCurrentPredictiveContext({
+        fullHistory: currentState.fullHistory || {},
+        dailyLog: currentState.activeLog || [],
+        manualNodes: currentState.manualNodes || [],
+        anchorDate,
+      }),
+      hasSleepData: currentState.hasSleepData === true,
+      favoriteBreakfast: currentState.favoriteBreakfast || readFavoriteBreakfast(),
+    };
 
     const decision = evaluatePredictiveGreetingDecision(history, ctx, { anchorDate });
     if (decision.action === 'skip') {

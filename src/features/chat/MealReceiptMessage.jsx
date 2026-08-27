@@ -237,7 +237,7 @@ function ReceiptItemRow({
   const listId = useId();
   const name = String(item?.foodName || item?.name || 'Alimento').trim();
   const grams = Math.round(Number(item?.grams) || 0);
-  const icon = String(item?.icon || '🥗').trim() || '🥗';
+  const icon = String(item?.icon || '🍽️').trim() || '🍽️';
   const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
   const canSwap = typeof onSelectAlternative === 'function' && alternatives.length > 1;
   const needsResolution = String(item?.status || '') === NEEDS_RESOLUTION;

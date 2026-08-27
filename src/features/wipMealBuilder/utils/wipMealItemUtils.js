@@ -1,3 +1,5 @@
+import { getResolvedFoodCategoryIcon } from '../../../utils/foodCategoryIcon.js';
+
 function createWipItemId() {
   return `wip_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -302,31 +304,13 @@ export function coerceWipItemForDedup(raw = {}) {
 }
 
 /**
- * Emoji nativa coerente per alimento (resoconto CONFIRM).
+ * Emoji nativa coerente per alimento (resoconto CONFIRM) — post-risoluzione.
+ * Fallback utensils (niente 🥗 generica).
  * @param {string} foodName
  * @returns {string}
  */
 export function foodEmojiForWipName(foodName) {
-  const n = normalizeWipFoodNameKey(foodName);
-  if (!n) return '🥗';
-  if (/yogurt|kefir|skyr/.test(n)) return '🥣';
-  if (/noc[ei]|mandorl|pistacchi|anacardi|arachidi|semi\b|lino|chia|girasole/.test(n)) return '🌰';
-  if (/mel[ae]\b|mela\b/.test(n)) return '🍎';
-  if (/banan/.test(n)) return '🍌';
-  if (/aranc|mandarin|pompelmo|limone/.test(n)) return '🍊';
-  if (/fragol|mirtill|lampone|frutti\s+di\s+bosco/.test(n)) return '🫐';
-  if (/uov/.test(n)) return '🥚';
-  if (/latte|latte\s+vegetale|bevanda/.test(n)) return '🥛';
-  if (/pane|toast|cracker|fette|biscott/.test(n)) return '🥖';
-  if (/riso|pasta|avena|fiocchi|cereali|couscous|quinoa/.test(n)) return '🍚';
-  if (/pollo|tacchino|carne|manzo|maiale|prosciutto/.test(n)) return '🍗';
-  if (/pesce|tonno|salmone|merluzzo|sgombro/.test(n)) return '🐟';
-  if (/formaggio|parmigiano|mozzarella|ricotta/.test(n)) return '🧀';
-  if (/insalat|verdura|broccoli|spinaci|zucchina|pomodor/.test(n)) return '🥗';
-  if (/olio|burro|avocado/.test(n)) return '🫒';
-  if (/cioccolat|cacao/.test(n)) return '🍫';
-  if (/caff[eè]|espresso/.test(n)) return '☕';
-  return '🥗';
+  return getResolvedFoodCategoryIcon(foodName);
 }
 
 /**

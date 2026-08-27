@@ -86,6 +86,7 @@ export function isStimulantFastingBreaker(item) {
  */
 export function isZeroCalorieFastSafeItem(item) {
   if (!item || typeof item !== 'object') return false;
+  if (item.isFastingSafe === true) return true;
   if (item.breaksFast === false) return true;
 
   const type = String(item.type || '').toLowerCase();
@@ -120,6 +121,10 @@ export function isFastingBreakerItem(item) {
 
   if (type === 'workout' || type === 'sleep' || type === 'nap') return false;
   if (type === 'water') return false;
+
+  // Schema esplicito caffetteria / pasto (caffeineMg + isFastingSafe).
+  if (item.isFastingSafe === true) return false;
+  if (item.isFastingSafe === false && itemHasFastingRelevantCalories(item)) return true;
 
   if (item.breaksFast === false) return false;
   if (item.breaksFast === true) return true;

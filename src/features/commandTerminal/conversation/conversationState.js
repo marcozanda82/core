@@ -325,6 +325,15 @@ export function normalizeFoodPayload(payload, currentState = {}, options = {}) {
       ...(item.userProvidedMacros && typeof item.userProvidedMacros === 'object'
         ? { userProvidedMacros: item.userProvidedMacros }
         : {}),
+      ...(Number.isFinite(Number(item.caffeineMg))
+        ? { caffeineMg: Math.max(0, Number(item.caffeineMg)) }
+        : {}),
+      ...(typeof item.isFastingSafe === 'boolean'
+        ? { isFastingSafe: item.isFastingSafe }
+        : {}),
+      ...(item.coffeeShopProductId
+        ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
+        : {}),
     }))
     .filter((item) => item.foodName);
   const explicitMeal =

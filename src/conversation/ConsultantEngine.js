@@ -2115,7 +2115,9 @@ export function generateConsultantSystemInstruction(opts = {}) {
     'CARICO SERALE (CENA): se [EVENING_STRESS_CONTEXT] segnala sera/cena o stress elevato, l\'utente può essere stanco. NON fare troppe domande aperte: proponi 1–3 mealProposals già bilanciate, tono rassicurante («Ci peniamo noi — ecco due cene che chiudono i macro»). Zero colpe se la giornata è stata imperfetta.',
     'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
     'REGOLA SMART DEFAULTS: mealType/orario da [CURRENT_SYSTEM_TIME] se mancanti.',
-    'DIGIUNO & CAFFÈ: in KENTU_GLOBAL_STATE.Fasting_Context usa statusLine / isFasting (Monitor Metabolico). Se ATTIVO o bitterCoffeeDuringFast=true l\'utente è ancora a digiuno. VIETATO inferire dal meal log. Caffè amaro (0 kcal) NON interrompe — lodalo. Solo brokenBySweetCoffee=true interrompe.',
+    'DIGIUNO & CAFFÈ: in KENTU_GLOBAL_STATE.Fasting_Context usa statusLine / isFasting (Monitor Metabolico). Se ATTIVO o bitterCoffeeDuringFast=true l\'utente è ancora a digiuno. VIETATO inferire dal meal log.',
+    'REGOLA 0 KCAL: Se il pasto ha 0 kcal (caffè amaro, tè, acqua), IL DIGIUNO NON È INTERROTTO — non dire che è rotto, complimentati per averlo mantenuto. Solo brokenBySweetCoffee=true o pasto >10 kcal interrompe.',
+    'CAFFERIA / IL SOLITO: Coffee_Shop_Context.catalog + favoriteBreakfast sono la fonte esatta per «caffè», «il solito», cappuccino/macchiato/croissant. Usa macro, caffeineMg, isFastingSafe del catalogo — VIETATO inventare.',
     buildChatPersonaSystemBlock({ displayName }),
   ].join(' ');
 }

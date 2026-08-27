@@ -28,6 +28,7 @@ export default function HomeOggiDialSection({
   totali = null,
   dynamicDailyKcal = 0,
   loadMealToConstructor = null,
+  onOpenDiario = null,
   setShowDiarySheet = null,
   setShowCalorieDetailsSheet = null,
   setSelectedNodeReport = null,
@@ -59,6 +60,7 @@ export default function HomeOggiDialSection({
   physiologySnapshot = null,
   setShowSleepPrompt = null,
   setShowMetabolicSheet = null,
+  showMissingSleepBanner = false,
 }) {
   const hud = dialHud || {};
   const {
@@ -78,10 +80,27 @@ export default function HomeOggiDialSection({
   } = hud;
 
   const homeDayKey = String(currentTrackerDate || getTodayString()).slice(0, 10);
+  const missingSleep =
+    showMissingSleepBanner
+    || physiologySnapshot?.SLEEP?.status === 'alert';
 
   return (
     <div className="home-oggi-scroll">
       <div className="home-oggi-column" style={{ paddingLeft: 0, paddingRight: 0 }}>
+        {missingSleep ? (
+          <button
+            type="button"
+            className="home-oggi-rigid mb-3 flex w-full shrink-0 items-center gap-2.5 rounded-xl border border-indigo-400/35 bg-gradient-to-r from-indigo-950/80 via-slate-900/75 to-slate-900/55 px-3.5 py-3 text-left shadow-lg backdrop-blur-sm transition-transform active:scale-[0.99]"
+            onClick={() => setShowSleepPrompt?.(true)}
+            aria-label="Registra il sonno di stanotte"
+          >
+            <span className="text-xl leading-none" aria-hidden="true">🌙</span>
+            <span className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-100">
+              Registra il sonno di stanotte per calibrare il motore metabolico
+            </span>
+            <span className="shrink-0 text-xs font-medium text-indigo-300/90">Apri →</span>
+          </button>
+        ) : null}
         <div className="nutrition-cluster">
           <div
             className="kcal-dial-shell"
@@ -99,8 +118,9 @@ export default function HomeOggiDialSection({
                     loadMealToConstructor?.(String(selectedMealCenter.id));
                     return;
                   }
-                  console.log('[Diario] tap centro tachimetro → apertura sheet');
-                  setShowDiarySheet?.(true);
+                  console.log('[Diario] tap centro tachimetro → apertura Diario Lista');
+                  if (typeof onOpenDiario === 'function') onOpenDiario();
+                  else setShowDiarySheet?.(true);
                 }}
                 style={{
                   position: 'absolute',
@@ -334,15 +354,22 @@ export default function HomeOggiDialSection({
           />
           <MetabolicMonitorCard
             metabolicSnapshot={metabolicSnapshot}
-            missingSleepData={physiologySnapshot?.SLEEP?.status === 'alert'}
+            missingSleepData={missingSleep}
             onClick={() => {
-              if (physiologySnapshot?.SLEEP?.status === 'alert') {
+              if (missingSleep) {
                 setShowSleepPrompt?.(true);
                 return;
               }
               setShowMetabolicSheet?.(true);
             }}
-            onCenterTap={() => setShowDiarySheet?.(true)}
+            onCenterTap={() => {
+              if (missingSleep) {
+                setShowSleepPrompt?.(true);
+                return;
+              }
+              if (typeof onOpenDiario === 'function') onOpenDiario();
+              else setShowDiarySheet?.(true);
+            }}
           />
         </div>
       </div>

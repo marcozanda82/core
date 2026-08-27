@@ -40,8 +40,9 @@ export function readMealMacroGrams(mealItem) {
 export function calculateMealKinetics(mealItem) {
   const { prot, fat, fibre } = readMealMacroGrams(mealItem ?? {});
 
-  let onsetDelay = 0.3 + Math.floor(fat / 10) * 0.1 + Math.floor(fibre / 10) * 0.1;
-  onsetDelay = Math.min(1.5, Math.max(0, onsetDelay));
+  // t0 digestione = timestamp pasto esatto: niente latenza gastrica artificiale
+  // (il vecchio 0.3h + grassi/fibre spingeva la curva di ~1h sul campionamento orario).
+  const onsetDelay = 0;
 
   let duration = 1.5
     + Math.floor(prot / 15) * 0.5

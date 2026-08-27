@@ -1,49 +1,19 @@
-const EMOJI_RULES = [
-  { keywords: ['pollo', 'tacchino', 'chicken', 'turkey', 'cotoletta', 'cotolette', 'cutlet', 'schnitzel', 'impanat'], emoji: '🍗' },
-  { keywords: ['manzo', 'vitello', 'maiale', 'carne', 'bistecca', 'hamburger', 'beef', 'pork', 'costoletta'], emoji: '🥩' },
-  { keywords: ['salmone', 'tonno', 'pesce', 'merluzzo', 'gamber', 'calam', 'fish', 'sushi'], emoji: '🐟' },
-  { keywords: ['uovo', 'uova', 'egg'], emoji: '🥚' },
-  { keywords: ['latte', 'yogurt', 'kefir', 'milk'], emoji: '🥛' },
-  { keywords: ['formaggio', 'mozzarella', 'parmigiano', 'feta', 'cheese'], emoji: '🧀' },
-  { keywords: ['pane', 'fetta', 'toast', 'grissino', 'bread'], emoji: '🍞' },
-  { keywords: ['pasta', 'spaghetti', 'penne', 'rigatoni', 'lasagne', 'noodle'], emoji: '🍝' },
-  { keywords: ['riso', 'risotto', 'rice'], emoji: '🍚' },
-  { keywords: ['pizza'], emoji: '🍕' },
-  { keywords: ['mela', 'apple'], emoji: '🍎' },
-  { keywords: ['banana'], emoji: '🍌' },
-  { keywords: ['arancia', 'agrume', 'orange'], emoji: '🍊' },
-  { keywords: ['fragola', 'berry', 'mirtill'], emoji: '🍓' },
-  { keywords: ['verdura', 'insalata', 'lattuga', 'spinac', 'broccol', 'zucchin', 'carota', 'salad'], emoji: '🥗' },
-  { keywords: ['patata', 'potato'], emoji: '🥔' },
-  { keywords: ['avocado'], emoji: '🥑' },
-  { keywords: ['olio', 'olive'], emoji: '🫒' },
-  { keywords: ['dolce', 'biscott', 'cookie', 'torta', 'cioccolat', 'gelato', 'dessert'], emoji: '🍪' },
-  { keywords: ['caffè', 'espresso', 'coffee', 'cappuccino'], emoji: '☕' },
-  { keywords: ['tè', 'tea'], emoji: '🍵' },
-  { keywords: ['acqua', 'water'], emoji: '💧' },
-  { keywords: ['birra', 'vino', 'wine', 'beer'], emoji: '🍷' },
-  { keywords: ['proteine', 'whey', 'shake'], emoji: '🥤' },
-  { keywords: ['noci', 'mandorl', 'nut', 'almond'], emoji: '🥜' },
-];
+import {
+  getMealBuilderFoodIcon,
+  resolveExplicitFoodEmoji,
+  resolveExplicitFoodIconTag,
+} from './mealBuilderFoodIcon.js';
 
-const FALLBACK_EMOJI = '🍲';
+/** Emoji neutra (nessuna euristica sul nome). */
+const GENERIC_FOOD_ICON_EMOJI = '🍽️';
 
-export function getFoodEmoji(foodName) {
-  const normalized = String(foodName || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
-  if (!normalized) return FALLBACK_EMOJI;
-
-  for (const rule of EMOJI_RULES) {
-    if (rule.keywords.some((keyword) => normalized.includes(keyword))) {
-      return rule.emoji;
-    }
-  }
-
-  return FALLBACK_EMOJI;
+/**
+ * @deprecated Preferire getMealBuilderFoodIcon / fallback Utensils.
+ * Non indovina dal nome: restituisce solo emoji neutra.
+ */
+export function getFoodEmoji(_foodName) {
+  void _foodName;
+  return GENERIC_FOOD_ICON_EMOJI;
 }
 
 function pickVisualField(sources, key) {
@@ -56,27 +26,42 @@ function pickVisualField(sources, key) {
   return null;
 }
 
+/**
+ * Visuali meal builder: solo tag/emoji/immagine espliciti.
+ * Nessuna euristica sul nome → semanticIconTag null → UI usa Utensils.
+ * @param {object} food
+ * @param {object|null} personalDb
+ */
 export function resolveFoodVisual(food, personalDb) {
-  const name = String(food?.desc || food?.name || food?.label || 'Alimento').trim();
+  const name = String(food?.desc || food?.name || food?.label || food?.foodName || 'Alimento').trim();
   const dbKey = food?.foodDbKey ?? food?.key ?? food?.id;
   const dbEntry = dbKey && personalDb?.[dbKey] ? personalDb[dbKey] : null;
   const sources = [food, food?.row, dbEntry].filter(Boolean);
 
-  const customImage = pickVisualField(sources, 'customImage');
-  const customEmoji = pickVisualField(sources, 'customEmoji');
-  const iconOverride = pickVisualField(sources, 'iconOverride');
-  const iconTag = pickVisualField(sources, 'iconTag');
-  const customIcon = pickVisualField(sources, 'customIcon');
-  const semanticIconTag = iconOverride || iconTag || customIcon || null;
+  const customImage = pickVisualField(sources, 'customImage')
+    || pickVisualField(sources, 'imageUrl')
+    || pickVisualField(sources, 'photoUrl');
+
+  const mergedForIcon = {
+    ...food,
+    ...(dbEntry && typeof dbEntry === 'object' ? dbEntry : {}),
+    row: food?.row || dbEntry || food?.row,
+  };
+  const iconInfo = getMealBuilderFoodIcon(mergedForIcon);
+  const semanticIconTag = iconInfo.tag
+    || resolveExplicitFoodIconTag(mergedForIcon);
+  const customEmoji = iconInfo.emoji || resolveExplicitFoodEmoji(mergedForIcon);
 
   return {
     name,
     customImage,
     customEmoji,
-    customIcon,
-    iconOverride,
-    iconTag,
+    customIcon: pickVisualField(sources, 'customIcon'),
+    iconOverride: pickVisualField(sources, 'iconOverride'),
+    iconTag: semanticIconTag,
     semanticIconTag,
+    fallbackEmoji: null,
+    useNeutralIcon: !customImage && !semanticIconTag && !customEmoji,
   };
 }
 
@@ -114,3 +99,5 @@ export function formatMiniCartMealLabel(slot) {
   const prefix = gender === 'f' ? 'Vedi la tua' : 'Vedi il tuo';
   return `${prefix} ${label}`;
 }
+
+export { getMealBuilderFoodIcon, resolveExplicitFoodIconTag };

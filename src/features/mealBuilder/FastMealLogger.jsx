@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MealComposerProvider,
   useMealComposer,
@@ -15,8 +16,8 @@ import FoodDeepEditModal from './components/FoodDeepEditModal';
 import FoodDetailModal from './components/FoodDetailModal';
 import QtyBadge from './components/QtyBadge';
 import QuickFoodTile from './components/QuickFoodTile';
-import LiveMacroHud from './components/LiveMacroHud';
-import { formatCheckoutMealTitle, formatMiniCartMealLabel, getFoodEmoji, resolveFoodVisual } from './utils/foodIconUtils';
+import LiveMacroHud, { CompactMealMacroStrip } from './components/LiveMacroHud';
+import { formatCheckoutMealTitle, formatMiniCartMealLabel, resolveFoodVisual } from './utils/foodIconUtils';
 import {
   findDraftItemForFood,
   getDefaultUnitKcal,
@@ -49,7 +50,7 @@ import {
   saveCatalogServingOverrides,
 } from './utils/masterFoodResync';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles } from 'lucide-react';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { draftFoodsToSolverItems, solverProposalToDraftFood } from '../../utils/solverEngine';
 import { clampFoodGrams } from '../../utils/inputSanity';
@@ -338,7 +339,7 @@ function FastMealLoggerContent({
   const [activeVetrinaTab, setActiveVetrinaTab] = useState('foods');
   const [catalogViewMode, setCatalogViewMode] = useState('grid');
   const [viewMode, setViewMode] = useState('expanded');
-  const [isBuilderHeaderCollapsed, setIsBuilderHeaderCollapsed] = useState(false);
+  const [isBuilderHeaderCollapsed, setIsBuilderHeaderCollapsed] = useState(true);
   const [vetrinaSearchQuery, setVetrinaSearchQuery] = useState('');
   const [isSavingRecipe, setIsSavingRecipe] = useState(false);
   const [saveRecipeError, setSaveRecipeError] = useState('');
@@ -377,6 +378,8 @@ function FastMealLoggerContent({
   const mealTimeManualRef = useRef(false);
   /** true = l'utente ha impostato l'orario dall'<input type="time"> (source of truth). */
   const mealTimeFromNativeInputRef = useRef(false);
+  const checkoutListScrollRef = useRef(null);
+  const checkoutScrollCollapsedRef = useRef(false);
   const {
     draftFoods,
     draftTotals,
@@ -876,8 +879,17 @@ function FastMealLoggerContent({
       ? 'grid w-full grid-cols-3 gap-2.5 md:grid-cols-4 md:gap-3'
       : 'flex w-full flex-col gap-2.5';
 
-  const showBuilderSummaryBar = viewMode === 'compact'
-    || (viewMode === 'expanded' && isBuilderHeaderCollapsed);
+  const showBuilderSummaryBar = true;
+
+  const handleCheckoutListScroll = useCallback((event) => {
+    const top = Number(event?.currentTarget?.scrollTop) || 0;
+    const shouldCollapse = top > 20;
+    if (shouldCollapse === checkoutScrollCollapsedRef.current) return;
+    checkoutScrollCollapsedRef.current = shouldCollapse;
+    if (shouldCollapse) {
+      setIsBuilderHeaderCollapsed(true);
+    }
+  }, []);
 
   const filteredSavedRecipes = useMemo(
     () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, liveVetrinaQuery)),
@@ -1457,24 +1469,30 @@ function FastMealLoggerContent({
   };
 
   return (
-    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100">
+    <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100 sm:max-w-xl">
       <header className="shrink-0 border-b border-slate-800/80">
-        <div className="flex min-w-0 items-center justify-between px-4 pb-2 pt-3">
-          <img
-            src="/nuovo%20logo%20trasparente2.png"
-            alt="KentuOS"
-            decoding="async"
-            draggable={false}
-            className="h-9 w-auto max-w-[140px] object-contain object-left"
-          />
+        <div className="grid grid-cols-[minmax(4.5rem,auto)_1fr_minmax(4.5rem,auto)] items-center gap-1 px-2 pb-2 pt-3 sm:px-3">
           <button
             type="button"
             onClick={onClose}
             disabled={isSavingMeal}
-            aria-label="Chiudi"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition-colors hover:border-slate-500 hover:text-white disabled:opacity-40"
+            aria-label="Indietro"
+            className="inline-flex min-h-9 items-center gap-1 justify-self-start rounded-lg px-2 py-1.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-800/80 hover:text-white disabled:opacity-40"
           >
-            <X className="h-5 w-5" aria-hidden />
+            <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="hidden sm:inline">Indietro</span>
+          </button>
+          <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-slate-100 sm:text-[0.95rem]">
+            Registra Pasto
+          </h1>
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={draftFoods.length === 0 || isSavingMeal}
+            aria-label="Conferma pasto"
+            className="inline-flex min-h-9 items-center justify-center justify-self-end rounded-lg bg-cyan-500 px-2.5 py-1.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+          >
+            {isSavingMeal ? '…' : 'Conferma'}
           </button>
         </div>
         <div className="px-4 pb-3">
@@ -1771,13 +1789,13 @@ function FastMealLoggerContent({
           </div>
         ) : (
           <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-slate-900/40">
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4 py-3">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-violet-300/80">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-violet-300/80">
                   Riepilogo
                 </p>
-                {viewMode === 'expanded' ? (
-                  <h2 className="truncate text-base font-semibold text-slate-100">{checkoutMealTitle}</h2>
+                {viewMode === 'expanded' && !isBuilderHeaderCollapsed ? (
+                  <h2 className="truncate text-sm font-semibold text-slate-100">{checkoutMealTitle}</h2>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-1">
@@ -1787,6 +1805,7 @@ function FastMealLoggerContent({
                     onClick={() => {
                       setViewMode('expanded');
                       setIsBuilderHeaderCollapsed(false);
+                      checkoutScrollCollapsedRef.current = false;
                     }}
                     aria-label="Vista espansa"
                     aria-pressed={viewMode === 'expanded'}
@@ -1820,41 +1839,57 @@ function FastMealLoggerContent({
                 {viewMode === 'expanded' ? (
                   <button
                     type="button"
-                    onClick={() => setIsBuilderHeaderCollapsed((prev) => !prev)}
-                    className="rounded-lg border border-slate-700 p-2 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
+                    onClick={() => {
+                      setIsBuilderHeaderCollapsed((prev) => {
+                        const next = !prev;
+                        if (!next) checkoutScrollCollapsedRef.current = false;
+                        return next;
+                      });
+                    }}
+                    className="rounded-lg border border-slate-700 p-1.5 text-slate-300 transition-colors hover:border-slate-500 hover:text-white"
                     aria-label={isBuilderHeaderCollapsed ? 'Espandi dettagli pasto' : 'Comprimi dettagli pasto'}
                     title={isBuilderHeaderCollapsed ? 'Espandi dettagli' : 'Comprimi dettagli'}
                   >
                     {isBuilderHeaderCollapsed ? (
-                      <ChevronDown className="h-5 w-5" />
+                      <ChevronDown className="h-4 w-4" />
                     ) : (
-                      <ChevronUp className="h-5 w-5" />
+                      <ChevronUp className="h-4 w-4" />
                     )}
                   </button>
                 ) : null}
               </div>
             </div>
 
+            {/* Sticky micro-strip: sempre visibile, ~44px */}
             {showBuilderSummaryBar ? (
-              <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 px-4 py-2">
-                <span className="truncate text-sm font-semibold text-slate-100">{checkoutMealTitle}</span>
-                <span className="shrink-0 font-mono text-sm font-bold tabular-nums text-cyan-400">
-                  {draftMealKcal} kcal
-                </span>
-              </div>
+              <CompactMealMacroStrip
+                title={checkoutMealTitle}
+                draftTotals={draftTotals}
+                mealConsumed={mealConsumed}
+                className="sticky top-0 z-10"
+                onExpand={
+                  viewMode === 'expanded' && isBuilderHeaderCollapsed
+                    ? () => {
+                      setIsBuilderHeaderCollapsed(false);
+                      checkoutScrollCollapsedRef.current = false;
+                    }
+                    : null
+                }
+              />
             ) : null}
 
             {viewMode === 'expanded' && !isBuilderHeaderCollapsed ? (
-              <>
+              <div className="shrink-0 border-b border-slate-800/80 px-3 pb-2 pt-1.5 transition-all duration-200">
                 <LiveMacroHud
                   mealTargets={mealTargets}
                   mealConsumed={mealConsumed}
                   draftTotals={draftTotals}
-                  className="mx-4 mt-2 shrink-0 border-slate-700/80 bg-slate-900 shadow-none"
+                  compact
+                  className="border-slate-700/80 bg-slate-900 shadow-none"
                 />
 
-                <div className="shrink-0 space-y-3 border-b border-slate-800 px-4 pb-3 pt-2">
-                  <div className="flex min-w-0 rounded-xl border border-slate-700/80 bg-slate-900/60 p-1">
+                <div className="mt-2 space-y-2">
+                  <div className="flex min-w-0 rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
                     {MEAL_SLOTS.map((slot) => {
                       const isActive = selectedSlot === slot.id;
                       return (
@@ -1862,7 +1897,7 @@ function FastMealLoggerContent({
                           key={slot.id}
                           type="button"
                           onClick={() => setSelectedSlot(slot.id)}
-                          className={`min-w-0 flex-1 truncate rounded-lg px-2 py-2 text-sm font-medium transition-colors sm:px-3 ${
+                          className={`min-w-0 flex-1 truncate rounded-md px-1.5 py-1.5 text-xs font-medium transition-colors sm:px-2 ${
                             isActive
                               ? 'bg-cyan-500 text-slate-950'
                               : 'text-slate-400 hover:text-slate-200'
@@ -1874,14 +1909,14 @@ function FastMealLoggerContent({
                     })}
                   </div>
 
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <span className="shrink-0 text-xs text-slate-400">Orario pasto</span>
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <span className="shrink-0 text-[11px] text-slate-400">Orario</span>
                     <label
                       htmlFor="fast-logger-cart-meal-time"
                       onClick={openNativeTimePicker}
-                      className="inline-flex shrink-0 cursor-pointer items-center gap-2 rounded-full border border-slate-700/80 bg-slate-800 px-3 py-1.5 text-sm font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                      className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
                     >
-                      <Clock className="h-4 w-4 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
+                      <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
                       <input
                         ref={mealTimeInputRef}
                         id="fast-logger-cart-meal-time"
@@ -1897,17 +1932,19 @@ function FastMealLoggerContent({
                             }
                           }
                         }}
-                        className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-sm font-medium text-white outline-none [color-scheme:dark]"
+                        className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-medium text-white outline-none [color-scheme:dark]"
                       />
                     </label>
                   </div>
                 </div>
-              </>
+              </div>
             ) : null}
 
             <div
-              className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-4 ${
-                viewMode === 'compact' ? 'py-2' : 'py-3'
+              ref={checkoutListScrollRef}
+              onScroll={handleCheckoutListScroll}
+              className={`flex min-h-0 flex-1 flex-col overflow-y-auto px-3 ${
+                viewMode === 'compact' ? 'py-1.5' : 'py-2'
               }`}
             >
               {draftFoods.length === 0 ? (
@@ -1952,11 +1989,11 @@ function FastMealLoggerContent({
               )}
             </div>
 
-            <div className="shrink-0 space-y-2 border-t border-slate-800 px-4 py-4">
+            <div className="shrink-0 space-y-2 border-t border-slate-800 px-3 py-3">
               <button
                 type="button"
                 onClick={() => setShowSolverModal(true)}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/35 bg-violet-500/10 px-4 py-2.5 text-sm font-medium text-violet-200 transition-colors hover:border-violet-300/50 hover:bg-violet-500/20 active:scale-[0.98]"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-400/35 bg-violet-500/10 px-4 py-2 text-sm font-medium text-violet-200 transition-colors hover:border-violet-300/50 hover:bg-violet-500/20 active:scale-[0.98]"
               >
                 <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
                 Bilancia Pasto
@@ -1967,7 +2004,7 @@ function FastMealLoggerContent({
                   type="button"
                   onClick={handleOpenSaveRecipe}
                   disabled={isSavingMeal}
-                  className="w-full rounded-xl border border-violet-500/30 px-4 py-2.5 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30 disabled:opacity-50"
+                  className="w-full rounded-xl border border-violet-500/30 px-4 py-2 text-sm font-medium text-violet-300 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30 disabled:opacity-50"
                 >
                   Salva come ricetta
                 </button>
@@ -1977,7 +2014,7 @@ function FastMealLoggerContent({
                 type="button"
                 onClick={handleConfirm}
                 disabled={draftFoods.length === 0 || isSavingMeal}
-                className="w-full rounded-xl bg-cyan-500 px-4 py-3.5 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+                className="w-full rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {isSavingMeal
                   ? 'Salvataggio…'
@@ -2234,42 +2271,45 @@ export default function FastMealLogger({
     || (editingMealId ? String(editingMealId).split('_')[0] : null)
     || inferMealSlotFromCurrentHour();
 
-  return (
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100040] flex h-[100dvh] max-w-full flex-col overflow-hidden bg-black/75 backdrop-blur-sm"
+      className="fixed inset-0 z-[100040] flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-[#050a12] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
       role="dialog"
       aria-modal="true"
-      aria-label="Log rapido pasti"
+      aria-label="Registra pasto"
     >
       <MealComposerProvider
         initialMealType={composerInitialMealType}
         initialMealTime={composerInitialMealTime}
       >
         <div className="flex min-h-0 flex-1 justify-center overflow-hidden">
-        <FastMealLoggerContent
-          fullHistory={fullHistory}
-          todayLog={todayLog}
-          onClose={onClose}
-          onSave={onSave}
-          personalDb={personalDb}
-          kentuItDb={resolvedKentuItDb}
-          globalDb={resolvedGlobalDb}
-          offDb={resolvedOffDb}
-          masterDb={resolvedGlobalDb}
-          onAcquireExternalFood={onAcquireExternalFood}
-          onSaveRecipe={onSaveRecipe}
-          onPatchFoodDbEntry={onPatchFoodDbEntry}
-          getMealTargetsForSlot={getMealTargetsForSlot}
-          getMealConsumedForSlot={getMealConsumedForSlot}
-          initialDraft={initialDraft}
-          editingMealId={editingMealId}
-          initialMealSlot={initialMealSlot}
-          initialMealTime={initialMealTime}
-          autoOpenBarcodeScanner={autoOpenBarcodeScanner}
-          onAutoOpenBarcodeScannerConsumed={onAutoOpenBarcodeScannerConsumed}
-        />
+          <FastMealLoggerContent
+            fullHistory={fullHistory}
+            todayLog={todayLog}
+            onClose={onClose}
+            onSave={onSave}
+            personalDb={personalDb}
+            kentuItDb={resolvedKentuItDb}
+            globalDb={resolvedGlobalDb}
+            offDb={resolvedOffDb}
+            masterDb={resolvedGlobalDb}
+            onAcquireExternalFood={onAcquireExternalFood}
+            onSaveRecipe={onSaveRecipe}
+            onPatchFoodDbEntry={onPatchFoodDbEntry}
+            getMealTargetsForSlot={getMealTargetsForSlot}
+            getMealConsumedForSlot={getMealConsumedForSlot}
+            initialDraft={initialDraft}
+            editingMealId={editingMealId}
+            initialMealSlot={initialMealSlot}
+            initialMealTime={initialMealTime}
+            autoOpenBarcodeScanner={autoOpenBarcodeScanner}
+            onAutoOpenBarcodeScannerConsumed={onAutoOpenBarcodeScannerConsumed}
+          />
         </div>
       </MealComposerProvider>
-    </div>
+    </div>,
+    document.body,
   );
 }

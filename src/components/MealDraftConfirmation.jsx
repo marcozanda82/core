@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import { buildFoodNameSelectOptions } from '../features/commandTerminal/conversation/recentFoodNames.js';
 import { clampFoodGrams } from '../utils/inputSanity';
-import { getFoodIcon } from '../utils/getFoodIcon';
+import { resolveMealItemDisplayIcon } from '../utils/foodCategoryIcon';
 import { withMealSavingOverlay } from '../utils/mealSavingOverlayController';
 
 const MEAL_OPTIONS = [
@@ -124,13 +124,7 @@ export default function MealDraftConfirmation({
           const grams = Math.round(Number(item.grams ?? item.qty) || 0);
           const isEstimated = item?.isEstimated === true;
           const isEditing = editingIndex === index;
-          const icon = String(item?.icon || '').trim()
-            || getFoodIcon(name, {
-              kcal: item?.kcal,
-              prot: item?.pro ?? item?.prot,
-              carb: item?.carbo ?? item?.carb,
-              fat: item?.fat,
-            });
+          const icon = resolveMealItemDisplayIcon(item);
           const nameOptions = buildFoodNameSelectOptions(
             name,
             Array.isArray(item?.historicalVariations) ? item.historicalVariations : [],

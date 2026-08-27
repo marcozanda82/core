@@ -4,12 +4,12 @@ export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 /** Tab bottom bar persistibili in localStorage (Menu apre un drawer, non una tab). */
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
-/** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome).
- *  Layout: Oggi | Timeline | [Emblema] | Analisi | Menu (ex slot Piano). */
+/** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome / KentuChatFab).
+ *  Layout: Home | Diario (lista) | [Emblema Kentu AI] | Salute (Timeline 24h da hub) | Menu. */
 export const BOTTOM_NAV_ITEMS = [
-  { id: 'oggi', label: 'Oggi', icon: '🏠' },
-  { id: 'analisi', label: 'Timeline', icon: '🕒' },
-  { id: 'bussola', label: 'Analisi', icon: '📊' },
+  { id: 'oggi', label: 'Home', icon: '🏠' },
+  { id: 'analisi', label: 'Diario', icon: '📖' },
+  { id: 'bussola', label: 'Salute', icon: '📊' },
   { id: 'menu', label: 'Menu', icon: '☰' },
 ];
 

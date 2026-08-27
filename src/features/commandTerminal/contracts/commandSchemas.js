@@ -67,6 +67,20 @@ export const foodItemSchema = {
         fat: { type: 'number', nullable: true },
       },
     },
+    caffeineMg: {
+      type: 'number',
+      nullable: true,
+      description:
+        'Milligrammi di caffeina della porzione se noti (catalogo caffetteria / utente). '
+        + '0 o ometti se assente. VIETATO inventare.',
+    },
+    isFastingSafe: {
+      type: 'boolean',
+      nullable: true,
+      description:
+        'true se la voce non interrompe il digiuno (es. caffè espresso amaro, americano). '
+        + 'false per zuccherato/latte/pasticceria. Usa [COFFEE_SHOP_DATABASE] se applicabile.',
+    },
   },
   required: ['foodName', 'icon'],
 };
@@ -94,6 +108,16 @@ export const resultingFoodItemSchema = {
     pro: { type: 'number' },
     carbo: { type: 'number' },
     fat: { type: 'number' },
+    caffeineMg: {
+      type: 'number',
+      nullable: true,
+      description: 'Caffeina mg della porzione (opzionale).',
+    },
+    isFastingSafe: {
+      type: 'boolean',
+      nullable: true,
+      description: 'true se non interrompe il digiuno metabolico.',
+    },
   },
   required: ['foodName', 'grams'],
 };

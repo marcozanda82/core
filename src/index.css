@@ -3772,6 +3772,17 @@ html, body, #root {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+/* Vista DiarioHub (tab Lista): riempie lo slot senza overlay sheet. */
+.diary-details-panel--embedded {
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
 .diary-details-panel__chrome {
   position: relative;
   flex-shrink: 0;
@@ -3974,6 +3985,13 @@ html, body, #root {
   -webkit-tap-highlight-color: transparent;
 }
 
+.diary-details-meal__edit--muted {
+  border-color: rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.45);
+  color: rgba(148, 163, 184, 0.9);
+  cursor: default;
+}
+
 .diary-details-food-list {
   list-style: none;
   margin: 0;
@@ -4009,6 +4027,45 @@ html, body, #root {
   font-size: 0.86rem;
   font-weight: 600;
   color: #e2e8f0;
+}
+
+.diary-details-food-row__identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diary-details-food-row__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.diary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.diary-badge--fasting {
+  color: #a5f3fc;
+  background: rgba(6, 182, 212, 0.14);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+}
+
+.diary-badge--caffeine {
+  color: #fde68a;
+  background: rgba(180, 83, 9, 0.18);
+  border: 1px solid rgba(251, 191, 36, 0.28);
 }
 
 .diary-details-food-row__qty {

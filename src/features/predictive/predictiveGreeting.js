@@ -11,6 +11,12 @@ export const PREDICTIVE_INTENT = Object.freeze({
   LOG_COFFEE_SWEET: 'LOG_COFFEE_SWEET',
   LOG_BREAKFAST: 'LOG_BREAKFAST',
   LOG_SLEEP_STATUS: 'LOG_SLEEP_STATUS',
+  /** Quick-log ore sonno (chip 6h / 7h / 8h). */
+  LOG_SLEEP_HOURS: 'LOG_SLEEP_HOURS',
+  /** Apre modale orari completi. */
+  OPEN_SLEEP_PROMPT: 'OPEN_SLEEP_PROMPT',
+  /** Riesegue l’ultima colazione/caffè salvata («il solito»). */
+  LOG_USUAL_BREAKFAST: 'LOG_USUAL_BREAKFAST',
   START_WORKOUT: 'START_WORKOUT',
   SNOOZE: 'SNOOZE',
   DAY_REVIEW: 'DAY_REVIEW',
@@ -19,6 +25,70 @@ export const PREDICTIVE_INTENT = Object.freeze({
   LOG_SNACK: 'LOG_SNACK',
   START_MCDRIVE_WIZARD: 'START_MCDRIVE_WIZARD',
 });
+
+/** Fascia mattutina proattiva sonno mancante (05:00–13:00). */
+export const SLEEP_MORNING_PROMPT_WINDOW = Object.freeze({ start: 5, end: 13 });
+
+/** Fascia «il solito» colazione/caffè (06:00–11:00). */
+export const USUAL_BREAKFAST_PROMPT_WINDOW = Object.freeze({ start: 6, end: 11 });
+
+/**
+ * @param {number} [decimalHour]
+ * @returns {boolean}
+ */
+export function isSleepMorningPromptWindow(decimalHour) {
+  const h = Number(decimalHour);
+  return Number.isFinite(h) && h >= SLEEP_MORNING_PROMPT_WINDOW.start && h < SLEEP_MORNING_PROMPT_WINDOW.end;
+}
+
+/**
+ * @param {number} [decimalHour]
+ * @returns {boolean}
+ */
+export function isUsualBreakfastPromptWindow(decimalHour) {
+  const h = Number(decimalHour);
+  return Number.isFinite(h) && h >= USUAL_BREAKFAST_PROMPT_WINDOW.start && h < USUAL_BREAKFAST_PROMPT_WINDOW.end;
+}
+
+/**
+ * @param {object[]} quickReplies
+ * @param {object} ctx
+ * @returns {object[]}
+ */
+function withUsualBreakfastChip(quickReplies, ctx = {}) {
+  const list = Array.isArray(quickReplies) ? [...quickReplies] : [];
+  if (!isUsualBreakfastPromptWindow(ctx.decimalHour)) return list;
+  const fav = ctx.favoriteBreakfast;
+  const name = String(fav?.name || '').trim();
+  if (!name) return list;
+  const label = `☕ Il tuo solito: ${name}`;
+  if (list.some((r) => String(r?.label || '') === label || r?.intent === PREDICTIVE_INTENT.LOG_USUAL_BREAKFAST)) {
+    return list;
+  }
+  return [
+    { label, intent: PREDICTIVE_INTENT.LOG_USUAL_BREAKFAST, variant: 'primary' },
+    ...list,
+  ];
+}
+
+/**
+ * Saluto + chip rapidi quando manca il sonno della notte precedente.
+ * @param {string} predictiveState
+ * @returns {{ text: string, avatarAsset: string, quickReplies: object[], predictiveState: string }}
+ */
+function buildMissingSleepMorningGreeting(predictiveState) {
+  return {
+    text: 'Buongiorno! Come hai dormito stanotte?',
+    avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
+    predictiveState: String(predictiveState || '').trim() || COURTESY_CHECKIN_STATE.MORNING,
+    quickReplies: [
+      { label: '😴 6h', intent: PREDICTIVE_INTENT.LOG_SLEEP_HOURS, durationHours: 6, variant: 'primary' },
+      { label: '🌙 7h', intent: PREDICTIVE_INTENT.LOG_SLEEP_HOURS, durationHours: 7 },
+      { label: '⚡ 8h', intent: PREDICTIVE_INTENT.LOG_SLEEP_HOURS, durationHours: 8 },
+      { label: '✏️ Personalizza (Orari)', intent: PREDICTIVE_INTENT.OPEN_SLEEP_PROMPT },
+    ],
+  };
+}
 
 /** Saluti di cortesia quando HabitEngine è IDLE (check-in per fascia oraria). */
 export const COURTESY_CHECKIN_STATE = Object.freeze({
@@ -82,18 +152,18 @@ export function resolveEffectivePredictiveState(ctx = {}) {
  * @param {string} courtesyState
  * @returns {{ text: string, avatarAsset: string, quickReplies: object[], predictiveState: string } | null}
  */
-function buildCourtesyCheckInGreeting(courtesyState) {
+function buildCourtesyCheckInGreeting(courtesyState, ctx = {}) {
   switch (courtesyState) {
     case COURTESY_CHECKIN_STATE.MORNING:
       return {
         text: 'Buongiorno! Come posso aiutarti in questo momento?',
         avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
         predictiveState: courtesyState,
-        quickReplies: [
+        quickReplies: withUsualBreakfastChip([
           { label: '☕ Caffè', intent: PREDICTIVE_INTENT.LOG_COFFEE, variant: 'primary' },
           { label: '🍳 Colazione', intent: PREDICTIVE_INTENT.LOG_BREAKFAST },
           { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
-        ],
+        ], ctx),
       };
     case COURTESY_CHECKIN_STATE.MIDDAY:
       return {
@@ -244,8 +314,16 @@ export function buildPredictiveGreeting(ctx) {
   if (!ctx) return null;
 
   const effectiveState = resolveEffectivePredictiveState(ctx);
+  const hasSleepData = ctx.hasSleepData === true;
+  const decimalHour = Number(ctx.decimalHour);
+
+  // Priorità assoluta al mattino (05–13) se manca il sonno della notte precedente.
+  if (!hasSleepData && isSleepMorningPromptWindow(decimalHour)) {
+    return buildMissingSleepMorningGreeting(effectiveState);
+  }
+
   if (effectiveState.startsWith('COURTESY_')) {
-    return buildCourtesyCheckInGreeting(effectiveState);
+    return buildCourtesyCheckInGreeting(effectiveState, ctx);
   }
 
   switch (effectiveState) {
@@ -254,12 +332,12 @@ export function buildPredictiveGreeting(ctx) {
         text: MORNING_GREETING_TEXT,
         avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
         predictiveState: ctx.state,
-        quickReplies: [
+        quickReplies: withUsualBreakfastChip([
           { label: '☕ Caffè Amaro (Digiuno OK)', intent: PREDICTIVE_INTENT.LOG_COFFEE_AMARO, variant: 'primary' },
           { label: '☕ Caffè Zuccherato', intent: PREDICTIVE_INTENT.LOG_COFFEE_SWEET },
-          { label: '😴 Riposo Ottimale', intent: PREDICTIVE_INTENT.LOG_SLEEP_STATUS },
-          { label: '🥱 Stanchezza', intent: PREDICTIVE_INTENT.LOG_SLEEP_STATUS },
-        ],
+          { label: '🍳 Colazione', intent: PREDICTIVE_INTENT.LOG_BREAKFAST },
+          { label: '📊 Resoconto', intent: PREDICTIVE_INTENT.DAY_REVIEW },
+        ], ctx),
       };
 
     case PREDICTIVE_STATE.LUNCH_APPROACHING:
@@ -312,6 +390,46 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
   const label = String(ctx.label || '').trim().toLowerCase();
 
   switch (intent) {
+    case PREDICTIVE_INTENT.LOG_SLEEP_HOURS: {
+      const fromCtx = Number(ctx.durationHours);
+      const fromLabel = (() => {
+        const m = String(ctx.label || '').match(/(\d+(?:[.,]\d+)?)\s*h/i);
+        if (!m) return NaN;
+        return Number(String(m[1]).replace(',', '.'));
+      })();
+      const hours = Number.isFinite(fromCtx) && fromCtx > 0
+        ? fromCtx
+        : (Number.isFinite(fromLabel) && fromLabel > 0 ? fromLabel : NaN);
+      if (!Number.isFinite(hours) || hours <= 0) return null;
+      return {
+        userText: '',
+        options: {
+          quickLogSleepHours: hours,
+          // Sveglia tipica 06:30 → addormentamento = wake − ore (es. 7h → 23:30).
+          wakeTime: 6.5,
+          skipUserBubble: true,
+          fromPredictiveGreeting: true,
+        },
+      };
+    }
+    case PREDICTIVE_INTENT.OPEN_SLEEP_PROMPT:
+      return {
+        userText: '',
+        options: {
+          openSleepPrompt: true,
+          skipUserBubble: true,
+          fromPredictiveGreeting: true,
+        },
+      };
+    case PREDICTIVE_INTENT.LOG_USUAL_BREAKFAST:
+      return {
+        userText: '',
+        options: {
+          logUsualBreakfast: true,
+          skipUserBubble: true,
+          fromPredictiveGreeting: true,
+        },
+      };
     case PREDICTIVE_INTENT.START_MEAL_WIZARD: {
       const mealFromLabel = /colazione/.test(label)
         ? 'colazione'

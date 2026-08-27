@@ -33,6 +33,16 @@ import {
   sumSweetCoffeeMacros,
 } from './features/stimulants/coffeeLogEngine.js';
 import {
+  coffeeShopNodeToDiaryFoodRow,
+  findCoffeeShopProductByName,
+  getCoffeeShopProductById,
+} from './constants/coffeeShopDatabase.js';
+import {
+  rememberFavoriteFromCoffeeNode,
+  rememberFavoriteFromFoodItem,
+  readFavoriteBreakfast,
+} from './features/breakfast/favoriteBreakfastMemory.js';
+import {
   readLastTeaType,
 } from './features/stimulants/teaLogEngine.js';
 import {
@@ -227,6 +237,7 @@ import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverl
 import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
 import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
+import { markPredictiveGreetingsSuperseded } from './features/predictive/predictiveGreeting';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
 import KentuLazySectionFallback from './components/KentuLazySectionFallback';
@@ -411,6 +422,7 @@ import LongevityTabShell from './components/salaComandi/LongevityTabShell';
 import PlanningTabPanel from './components/salaComandi/PlanningTabPanel';
 import RecalibrationProposalModal from './components/salaComandi/RecalibrationProposalModal';
 import AnalisiTimelineTab from './components/salaComandi/AnalisiTimelineTab';
+import MetabolicTimelineOverlay from './components/salaComandi/MetabolicTimelineOverlay';
 import { useHealthScoreSnapshot } from './hooks/salaComandi/useHealthScoreSnapshot';
 import { useLongevityDashboardData } from './hooks/salaComandi/useLongevityDashboardData';
 import { useDailyWeeklyPlanningSync } from './hooks/salaComandi/useDailyWeeklyPlanningSync';
@@ -889,12 +901,7 @@ export default function SalaComandi() {
     setIsDrawerOpen(false);
   }, []);
 
-  const bottomNavItems = useMemo(() => (
-    BOTTOM_NAV_ITEMS.map((item) => {
-      if (item.id !== 'menu') return item;
-      return { ...item, label: 'Menu', icon: '☰' };
-    })
-  ), []);
+  const bottomNavItems = useMemo(() => BOTTOM_NAV_ITEMS, []);
 
   const handleBottomNavTabSelect = useCallback(
     (tabId) => {
@@ -921,6 +928,7 @@ export default function SalaComandi() {
         if (toIdx > fromIdx) setSlideDirection('slide-left');
         else if (toIdx < fromIdx) setSlideDirection('slide-right');
       }
+      setShowMetabolicTimeline(false);
       setSnapshotOverlayOpen(false);
       setActiveBottomTab(tabId);
     },
@@ -1111,10 +1119,27 @@ export default function SalaComandi() {
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
   const [showCalorieDetailsSheet, setShowCalorieDetailsSheet] = useState(false);
   const [showDiarySheet, setShowDiarySheet] = useState(false);
+  /** Timeline metabolica 24h aperta da Salute (overlay fullscreen). */
+  const [showMetabolicTimeline, setShowMetabolicTimeline] = useState(false);
   const [showEnergySheet, setShowEnergySheet] = useState(false);
   useEffect(() => {
     console.log('Stato diario:', showDiarySheet);
   }, [showDiarySheet]);
+
+  const openDiarioLista = useCallback(() => {
+    setShowDiarySheet(false);
+    setShowMetabolicTimeline(false);
+    setSnapshotOverlayOpen(false);
+    setActiveBottomTab('analisi');
+    setIsDrawerOpen(false);
+    setActiveAction(null);
+  }, []);
+
+  const openMetabolicTimeline = useCallback(() => {
+    setShowMetabolicTimeline(true);
+    setSnapshotOverlayOpen(false);
+    setIsDrawerOpen(false);
+  }, []);
   const [showFatSheet, setShowFatSheet] = useState(false);
   const [showCarbsSheet, setShowCarbsSheet] = useState(false);
   const [showProteinSheet, setShowProteinSheet] = useState(false);
@@ -2882,7 +2907,7 @@ export default function SalaComandi() {
       case 'diary':
         if (fromModal) setShowChoiceModal(false);
         closeDrawer();
-        setShowDiarySheet(true);
+        openDiarioLista();
         break;
       case 'menu':
         if (fromModal) setShowChoiceModal(false);
@@ -3081,6 +3106,41 @@ export default function SalaComandi() {
           const name = item.name;
           const qty = Math.max(1, Number(item.qty));
           const preferredKey = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
+          const shopProduct = getCoffeeShopProductById(item.coffeeShopProductId)
+            || findCoffeeShopProductByName(name);
+          if (shopProduct) {
+            const grams = Number.isFinite(Number(item.qty)) && Number(item.qty) > 0
+              ? Number(item.qty)
+              : (shopProduct.servingGrams || 50);
+            const scale = grams / (shopProduct.servingGrams || grams || 1);
+            const row = {
+              id: `ai_coffee_${batchIdFood}_${index}`,
+              type: 'food',
+              mealType: batchMealType,
+              desc: shopProduct.name,
+              name: shopProduct.name,
+              qta: grams,
+              weight: grams,
+              servingLabel: shopProduct.servingLabel,
+              kcal: Math.round((shopProduct.kcal * scale) * 100) / 100,
+              cal: Math.round((shopProduct.kcal * scale) * 100) / 100,
+              prot: Math.round((shopProduct.prot * scale) * 100) / 100,
+              carb: Math.round((shopProduct.carb * scale) * 100) / 100,
+              fat: Math.round((shopProduct.fat * scale) * 100) / 100,
+              fatTotal: Math.round((shopProduct.fat * scale) * 100) / 100,
+              caffeineMg: Math.round((shopProduct.caffeineMg * scale) * 100) / 100,
+              isFastingSafe: shopProduct.isFastingSafe === true,
+              coffeeShopProductId: shopProduct.id,
+              isCoffeeShopItem: true,
+              mealTime: mealDec,
+              batchId: batchIdFood,
+              isEstimated: false,
+              entrySource: 'chat',
+              ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
+            };
+            rememberFavoriteFromFoodItem(row);
+            return row;
+          }
           // Sempre cascata personale → Kentu (anche senza preferredKey sul solo DB personale).
           const dati = estraiDatiFoodDb(name, qty, batchMealType, preferredKey || null);
           if (dati && String(dati.status || '') !== 'NEEDS_RESOLUTION') {
@@ -3093,6 +3153,12 @@ export default function SalaComandi() {
               batchId: batchIdFood,
               isEstimated: false,
               type: isRecipe ? 'recipe' : 'food',
+              ...(Number.isFinite(Number(item.caffeineMg))
+                ? { caffeineMg: Math.max(0, Number(item.caffeineMg)) }
+                : {}),
+              ...(typeof item.isFastingSafe === 'boolean'
+                ? { isFastingSafe: item.isFastingSafe }
+                : {}),
               ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
               entrySource: 'chat',
             });
@@ -3102,9 +3168,12 @@ export default function SalaComandi() {
           let prot = Number(item.estPro ?? item.prot);
           let carb = Number(item.estCar ?? item.carb);
           let fat = Number(item.estFat ?? item.fat);
-          if (!Number.isFinite(kcal) || kcal <= 0) {
+          const allowZeroKcal = item.isFastingSafe === true
+            || (Number.isFinite(Number(item.caffeineMg)) && Number(item.caffeineMg) > 0);
+          if (!Number.isFinite(kcal) || (kcal <= 0 && !allowZeroKcal)) {
             kcal = Math.max(10, Math.round((getAverageEstimate('kcal', name) / 100) * qSafe));
           }
+          if (!Number.isFinite(kcal) || kcal < 0) kcal = 0;
           if (!Number.isFinite(prot) || prot < 0) {
             prot = (getAverageEstimate('prot', name) / 100) * qSafe;
           }
@@ -3133,6 +3202,12 @@ export default function SalaComandi() {
             mealTime: mealDec,
             batchId: batchIdFood,
             isEstimated: true,
+            ...(Number.isFinite(Number(item.caffeineMg))
+              ? { caffeineMg: Math.max(0, Number(item.caffeineMg)) }
+              : {}),
+            ...(typeof item.isFastingSafe === 'boolean'
+              ? { isFastingSafe: item.isFastingSafe }
+              : {}),
             ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
             entrySource: 'chat',
           };
@@ -4222,12 +4297,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     : 0;
   
   const foodsLog = (activeLog || []).filter(item => item.type === 'food' || item.type === 'recipe');
-  const groupedFoods = foodsLog.reduce((acc, food) => {
-    const typeKey = food.mealType || 'pasto';
+  const coffeeShopDiaryRows = (manualNodes || [])
+    .filter((n) => {
+      if (!n || n.type !== 'stimulant') return false;
+      const subtype = String(n.subtype || '').toLowerCase();
+      return subtype === 'caffè' || subtype === 'caffe' || n.coffeeShopProductId || Number(n.caffeineMg) > 0;
+    })
+    .map((n) => coffeeShopNodeToDiaryFoodRow(n));
+  const groupedFoods = [...foodsLog, ...coffeeShopDiaryRows].reduce((acc, food) => {
+    // Includi anche 0 kcal (caffè amaro): non filtrare per calorie.
+    const typeKey = food.mealType || (food.isCoffeeShopItem ? 'colazione' : 'pasto');
     const timeKey =
       typeof food.mealTime === 'number' && !Number.isNaN(food.mealTime)
         ? String(food.mealTime)
-        : 'unknown';
+        : (typeof food.time === 'number' && !Number.isNaN(food.time) ? String(food.time) : 'unknown');
     const slotKey = `${typeKey}_${timeKey}`;
     (acc[slotKey] = acc[slotKey] || []).push(food);
     return acc;
@@ -4509,6 +4592,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     simulationMode,
     isSimulationMode,
     sleepStatus,
+    metabolicTimelineOpen: showMetabolicTimeline,
   });
 
   const activeWaterIntake = simulationMode
@@ -5700,7 +5784,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && qualityScore <= 5
           ? Math.round(qualityScore)
           : null;
-      const wake = 7;
+      const wakeRaw = Number(payload?.wakeTime);
+      const wake = Number.isFinite(wakeRaw) && wakeRaw >= 0 && wakeRaw < 24
+        ? Math.round(wakeRaw * 100) / 100
+        : 7;
       let bed = wake - roundedHours;
       if (bed < 0) bed += 24;
       bed = Math.round(bed * 100) / 100;
@@ -5771,6 +5858,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }
       }
       dismissKentuSleepTrigger();
+      if (typeof setChatHistory === 'function') {
+        setChatHistory((prev) => markPredictiveGreetingsSuperseded(prev));
+      }
     },
     [
       dismissKentuSleepTrigger,
@@ -5784,6 +5874,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       db,
       userUid,
       lastCalibrationWeek,
+      setChatHistory,
+      fullHistory,
+      userTargets,
+      userProfile,
+      dailyLog,
     ],
   );
 
@@ -5798,6 +5893,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       setManualNodes(next);
       syncDatiFirebase(dailyLog, next);
       trackEventUsage('stimulant');
+      rememberFavoriteFromCoffeeNode(node);
       // Conferma media già pubblicata da commitCoffeeLog via QUICK_EVENT_CONFIRM —
       // evita secondo ciclo caffe1→2 e overlay che chiude la chat.
     },
@@ -5871,6 +5967,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
     onLogStimulantCommand: commitLogStimulantCommand,
+    onOpenSleepPrompt: () => {
+      setShowSleepPrompt(true);
+    },
     getMealBuilderState: () => mealBuilderRef.current,
     onDraftMealItems: handleDraftMealItems,
     onCommitMealBuilder: () => commitMealBuilder({ announce: false }),
@@ -5937,6 +6036,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         hasRealWorkoutToday: hasRealWorkoutInActiveLog,
         isWorkoutDoneToday: hasRealWorkoutInActiveLog,
         scheduledWorkout: scheduledWorkoutContextRef.current,
+        hasSleepData: !showMissingSleepState,
+        favoriteBreakfast: readFavoriteBreakfast(),
         timelineNodes: allNodes,
         manualNodes: manualNodesForTimeline,
         fastingData,
@@ -6375,6 +6476,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
     }
     dismissKentuSleepTrigger();
+    if (typeof setChatHistory === 'function') {
+      setChatHistory((prev) => markPredictiveGreetingsSuperseded(prev));
+    }
     setShowSleepPrompt(false);
     setSleepModal(null);
   };
@@ -6789,14 +6893,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       syncDatiFirebase(next, manualNodes || []);
     }
     dismissKentuSleepTrigger();
+    if (typeof setChatHistory === 'function') {
+      setChatHistory((prev) => markPredictiveGreetingsSuperseded(prev));
+    }
     setShowSleepPrompt(false);
   };
-
-  // ========================================================
-  // Contenuto principale (un solo return finale per mantenere montato l’overlay caricamento Firebase)
-  // ========================================================
   /** Barra Arc Reactor: sempre montata dopo login (anche durante caricamento dati). */
-  const shouldHideBottomChatBar = isCoachOpen || biochemicalDetailModal != null || isChatOpen;
+  const shouldHideBottomChatBar =
+    isCoachOpen
+    || biochemicalDetailModal != null
+    || isChatOpen
+    || showMetabolicTimeline
+    || showFastLogger;
 
   const handleRequestBarcodeScan = useCallback(() => {
     closeChat();
@@ -6914,6 +7022,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && !trainingBlockCreatorOpen
         && !showTherapyPlan
         && !isChatOpen
+        && !showMetabolicTimeline
+        && !showFastLogger
+        // Neural Reset / Meditazione: il FAB coprirebbe «AVVIA CICLO»
+        && activeAction !== 'focus'
       }
       onOpen={openChat}
       showNotificationBadge={!!kentuChatNotificationBadge}
@@ -6957,7 +7069,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           role="status"
           style={{
             position: 'fixed',
-            bottom: 'calc(72px + env(safe-area-inset-bottom, 0px))',
+            bottom: 'calc(80px + env(safe-area-inset-bottom, 0px))',
             left: '50%',
             transform: 'translateX(-50%)',
             zIndex: 100026,
@@ -7035,7 +7147,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <div
         key={snapshotOverlayOpen ? 'snapshot' : activeBottomTab}
         className={`main-tab-swipe-area ${slideDirection}`}
-        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(72px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', width: '100%' }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingBottom: 'calc(80px + env(safe-area-inset-bottom, 0px))', boxSizing: 'border-box', width: '100%' }}
         onTouchStart={snapshotOverlayOpen ? undefined : handleMainTabTouchStart}
         onTouchMove={snapshotOverlayOpen ? undefined : handleMainTabTouchMove}
         onTouchEnd={snapshotOverlayOpen ? undefined : handleMainTabTouchEnd}
@@ -7106,67 +7218,29 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : (
       <>
       {activeBottomTab === 'analisi' && (
-        <AnalisiTimelineTab
-          hasCrashRisk={hasCrashRisk}
-          hasWaterRisk={hasWaterRisk}
-          hasCortisolRisk={hasCortisolRisk}
-          hasDigestionRisk={hasDigestionRisk}
-          chartUnit={chartUnit}
-          setChartUnit={setChartUnit}
-          handleUndo={handleUndo}
-          handleRedo={handleRedo}
-          historyIndex={historyIndex}
-          historyStack={historyStack}
-          isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
-          setZoomLevel={setZoomLevel}
-          handleCenterZoomAndPan={handleCenterZoomAndPan}
-          draggingNode={draggingNode}
-          chartScrollRef={chartScrollRef}
-          handleChartTouchStart={handleChartTouchStart}
-          handleChartTouchMove={handleChartTouchMove}
-          handleChartTouchEnd={handleChartTouchEnd}
-          isChartTooltipActive={isChartTooltipActive}
-          setIsChartTooltipActive={setIsChartTooltipActive}
-          chartTouchTimerRef={chartTouchTimerRef}
-          TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1={TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1}
-          zoomLevel={zoomLevel}
-          mainChartData={mainChartData}
-          nodesForEnergySimulation={nodesForEnergySimulation}
-          displayTime={displayTime}
-          finalDotY={finalDotY}
-          isViewingPastDate={isViewingPastDate}
-          currentTime={currentTime}
-          targetKcalChart={targetKcalChart}
-          totalCaloriesTimeline={totalCaloriesTimeline}
-          metabolicGradientStops={metabolicGradientStops}
-          metabolicChartGradientStops={metabolicChartGradientStops}
-          currentMetabolicColor={currentMetabolicColor}
+        <DiaryDetailsSheet
+          embedded
+          isOpen
+          onClose={() => {}}
           activeLog={activeLog}
-          metabolicContextOptions={metabolicContextOptions}
-          setShowMetabolicSheet={setShowMetabolicSheet}
-          activeNodesWithStack={activeNodesWithStack}
-          activeAction={activeAction}
-          idealStrategy={idealStrategy}
-          realTotals={realTotals}
-          touchingNodeId={touchingNodeId}
-          dragOffsetY={dragOffsetY}
-          dragLiveTime={dragLiveTime}
-          timelineContainerRef={timelineContainerRef}
-          startNodeDrag={startNodeDrag}
-          releaseNodePointer={releaseNodePointer}
-          onTimelineNodeClick={onTimelineNodeClick}
-          openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
-          handleNodeTap={handleNodeTap}
-          syncDatiFirebase={syncDatiFirebase}
-          setManualNodes={setManualNodes}
-          setDailyLog={setDailyLog}
-          timelineEnergySeries={timelineEnergySeries}
-          chartData={chartData}
-          updateMealTime={updateMealTime}
-          onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
-          scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
-          clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
-          onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+          groupedFoods={groupedFoods}
+          workoutsLog={workoutsLog}
+          totali={totali}
+          dynamicDailyKcal={dynamicDailyKcal}
+          decimalToTimeStr={decimalToTimeStr}
+          fastingData={fastingData}
+          currentHour={isViewingPastDate ? 24 : currentTime}
+          isIntentionalFast={currentDayIntentionalFast}
+          onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
+          onClearIntentionalFast={() => handleSetIntentionalFast(false)}
+          onEditMeal={(slotKey) => {
+            loadMealToConstructor(slotKey);
+          }}
+          onEditWorkout={openWorkoutEditorFromLogItem}
+          onDeleteItem={removeLogItem}
+          onInspectFood={setSelectedFoodForInfo}
+          onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
+          onSaveSleep={handleSaveSleepFromDiary}
         />
       )}
 
@@ -7182,6 +7256,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           totali={totali}
           dynamicDailyKcal={dynamicDailyKcal}
           loadMealToConstructor={loadMealToConstructor}
+          onOpenDiario={openDiarioLista}
           setShowDiarySheet={setShowDiarySheet}
           setShowCalorieDetailsSheet={setShowCalorieDetailsSheet}
           setSelectedNodeReport={setSelectedNodeReport}
@@ -7213,6 +7288,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           physiologySnapshot={physiologySnapshot}
           setShowSleepPrompt={setShowSleepPrompt}
           setShowMetabolicSheet={setShowMetabolicSheet}
+          showMissingSleepBanner={showMissingSleepState}
         />
       )}
 
@@ -7299,6 +7375,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               onExit={() => setActiveBottomTab('oggi')}
               onOpenFotografiaSalute={handleOpenTrendSalute}
               onOpenFotografiaProgressione={handleOpenTrendProgressione}
+              onOpenTimelineMetabolica={openMetabolicTimeline}
             />
           </Suspense>
         </div>
@@ -8109,6 +8186,79 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onSaveSleep={handleSaveSleepFromDiary}
       />
 
+      <MetabolicTimelineOverlay
+        open={showMetabolicTimeline}
+        onClose={() => setShowMetabolicTimeline(false)}
+        dateLabel={
+          currentTrackerDate
+            ? `Giorno selezionato: ${currentTrackerDate}${isViewingPastDate ? ' (storico)' : ''}`
+            : ''
+        }
+      >
+        <AnalisiTimelineTab
+          hasCrashRisk={hasCrashRisk}
+          hasWaterRisk={hasWaterRisk}
+          hasCortisolRisk={hasCortisolRisk}
+          hasDigestionRisk={hasDigestionRisk}
+          chartUnit={chartUnit}
+          setChartUnit={setChartUnit}
+          handleUndo={handleUndo}
+          handleRedo={handleRedo}
+          historyIndex={historyIndex}
+          historyStack={historyStack}
+          isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
+          setZoomLevel={setZoomLevel}
+          handleCenterZoomAndPan={handleCenterZoomAndPan}
+          draggingNode={draggingNode}
+          chartScrollRef={chartScrollRef}
+          handleChartTouchStart={handleChartTouchStart}
+          handleChartTouchMove={handleChartTouchMove}
+          handleChartTouchEnd={handleChartTouchEnd}
+          isChartTooltipActive={isChartTooltipActive}
+          setIsChartTooltipActive={setIsChartTooltipActive}
+          chartTouchTimerRef={chartTouchTimerRef}
+          TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1={TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1}
+          zoomLevel={zoomLevel}
+          mainChartData={mainChartData}
+          nodesForEnergySimulation={nodesForEnergySimulation}
+          displayTime={displayTime}
+          finalDotY={finalDotY}
+          isViewingPastDate={isViewingPastDate}
+          currentTime={currentTime}
+          targetKcalChart={targetKcalChart}
+          totalCaloriesTimeline={totalCaloriesTimeline}
+          metabolicGradientStops={metabolicGradientStops}
+          metabolicChartGradientStops={metabolicChartGradientStops}
+          currentMetabolicColor={currentMetabolicColor}
+          activeLog={activeLog}
+          metabolicContextOptions={metabolicContextOptions}
+          setShowMetabolicSheet={setShowMetabolicSheet}
+          activeNodesWithStack={activeNodesWithStack}
+          activeAction={activeAction}
+          idealStrategy={idealStrategy}
+          realTotals={realTotals}
+          touchingNodeId={touchingNodeId}
+          dragOffsetY={dragOffsetY}
+          dragLiveTime={dragLiveTime}
+          timelineContainerRef={timelineContainerRef}
+          startNodeDrag={startNodeDrag}
+          releaseNodePointer={releaseNodePointer}
+          onTimelineNodeClick={onTimelineNodeClick}
+          openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
+          handleNodeTap={handleNodeTap}
+          syncDatiFirebase={syncDatiFirebase}
+          setManualNodes={setManualNodes}
+          setDailyLog={setDailyLog}
+          timelineEnergySeries={timelineEnergySeries}
+          chartData={chartData}
+          updateMealTime={updateMealTime}
+          onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
+          scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
+          clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
+          onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+        />
+      </MetabolicTimelineOverlay>
+
       <EnergyBalanceSheet
         isOpen={showEnergySheet}
         onClose={() => setShowEnergySheet(false)}
@@ -8212,7 +8362,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       />
 
       {showFastLogger ? (
-        <Suspense fallback={<KentuLazySectionFallback label="Logger pasti…" />}>
+        <Suspense
+          fallback={
+            <KentuLazySectionFallback label="Logger pasti…" variant="fullscreen" />
+          }
+        >
         <FastMealLogger
           key={`${editingMealId ?? pendingGhostMealId ?? 'new-meal'}-${fastLoggerRemountKey}`}
           fullHistory={fullHistory}

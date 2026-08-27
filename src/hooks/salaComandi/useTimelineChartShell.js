@@ -33,6 +33,8 @@ export function useTimelineChartShell({
   simulationMode = false,
   isSimulationMode = false,
   sleepStatus = null,
+  /** true quando la Timeline è aperta da Salute (overlay). */
+  metabolicTimelineOpen = false,
 } = {}) {
   const [chartUnit, setChartUnit] = useState('percent');
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -86,11 +88,11 @@ export function useTimelineChartShell({
   }, [currentTime, zoomLevel, centerCurrentTime]);
 
   useEffect(() => {
-    if (activeBottomTab === 'analisi' || userProfileLevel === 'pro') {
+    if (activeBottomTab === 'analisi' || metabolicTimelineOpen || userProfileLevel === 'pro') {
       const timer = setTimeout(() => centerCurrentTime(), 100);
       return () => clearTimeout(timer);
     }
-  }, [userProfileLevel, currentTrackerDate, zoomLevel, centerCurrentTime, activeBottomTab]);
+  }, [userProfileLevel, currentTrackerDate, zoomLevel, centerCurrentTime, activeBottomTab, metabolicTimelineOpen]);
 
   useEffect(() => {
     if (currentTrackerDate !== getTodayString()) {

@@ -67,7 +67,9 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, missingSleepDa
   }, [isMissingSleep, isOverload, hasMealLogged, phase.label]);
 
   const sinceLastMealLabel = useMemo(() => {
-    if (isMissingSleep) return '⚠ Sonno non registrato — inserisci la notte per sbloccare il monitor';
+    if (isMissingSleep) {
+      return 'Mancano i dati del sonno: registrali ora per sbloccare l\'indice di recupero';
+    }
     return hasMealLogged
       ? formatSinceLastMealLabel(hoursSinceLastMeal)
       : 'Registra un pasto per attivare il monitor';
@@ -96,8 +98,12 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, missingSleepDa
             e.stopPropagation();
             onCenterTap?.(e);
           }}
-          aria-label={`Fase ${phaseLabel}. Apri diario giornaliero.`}
-          title="Apri diario"
+          aria-label={
+            isMissingSleep
+              ? 'Mancano i dati del sonno. Tocca per registrarli.'
+              : `Fase ${phaseLabel}. Apri diario giornaliero.`
+          }
+          title={isMissingSleep ? 'Registra il sonno' : 'Apri diario'}
         >
           <MetabolicPhaseIcon phase={phase} size="sm" className="pointer-events-none" />
         </button>
@@ -132,7 +138,11 @@ export default function MetabolicMonitorCard({ metabolicSnapshot, missingSleepDa
             onClick(e);
           }
         }}
-        aria-label={`Monitor metabolico: ${phaseLabel}. Apri cruscotto metabolico.`}
+        aria-label={
+          isMissingSleep
+            ? 'Mancano i dati del sonno: registrali ora per sbloccare l\'indice di recupero'
+            : `Monitor metabolico: ${phaseLabel}. Apri cruscotto metabolico.`
+        }
         className={cardClassName}
       >
         {body}

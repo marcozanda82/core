@@ -138,6 +138,7 @@ import {
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
 } from './conversation/mcdriveWizard.js';
+import { attachResolvedFoodIcon } from '../../utils/foodCategoryIcon.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
 import { getFoodItemsForMealSlotFromLog } from '../../utils/mealProposalBuilders.js';
 import { findNutritionalDonor, inheritMicrosFromDonor } from '../../utils/findNutritionalDonor.js';
@@ -757,7 +758,7 @@ export class CommandTerminalController {
         const foodDbKey = f.foodDbKey ?? f.matchedKey ?? f.foodDbKey;
         const id = String(f.itemId || f.id || f.key || `mcdrive_edit_${idx}`).trim();
 
-        return {
+        return attachResolvedFoodIcon({
           id,
           foodName,
           spokenFoodName: foodName,
@@ -771,7 +772,7 @@ export class CommandTerminalController {
           isEstimated: false,
           alternatives: Array.isArray(f.alternatives) ? f.alternatives.slice(0, 4) : [],
           row: f.row && typeof f.row === 'object' ? { ...f.row } : undefined,
-        };
+        });
       })
       .filter(Boolean);
 

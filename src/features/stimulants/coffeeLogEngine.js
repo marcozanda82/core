@@ -7,6 +7,9 @@ import {
   isStimulantFastingBreaker as isStimulantFastingBreakerShared,
   isZeroCalorieFastSafeItem,
 } from '../../utils/fastingBreakRules.js';
+import {
+  resolveCoffeeShopProductForLog,
+} from '../../constants/coffeeShopDatabase.js';
 
 export const COFFEE_VARIANT = Object.freeze({
   AMARO: 'amaro',
@@ -17,6 +20,7 @@ export const COFFEE_VARIANT = Object.freeze({
 export const COFFEE_TYPE = Object.freeze({
   ESPRESSO: 'espresso',
   AMERICANO: 'americano',
+  MACCHIATO: 'macchiato',
   CAPPUCCINO: 'cappuccino',
   CORTADO: 'cortado',
   MOCACCINO: 'mocaccino',
@@ -25,6 +29,7 @@ export const COFFEE_TYPE = Object.freeze({
 export const COFFEE_TYPE_OPTIONS = Object.freeze([
   { id: COFFEE_TYPE.ESPRESSO, label: 'Espresso' },
   { id: COFFEE_TYPE.AMERICANO, label: 'Americano' },
+  { id: COFFEE_TYPE.MACCHIATO, label: 'Macchiato' },
   { id: COFFEE_TYPE.CAPPUCCINO, label: 'Cappuccino' },
   { id: COFFEE_TYPE.CORTADO, label: 'Cortado' },
   { id: COFFEE_TYPE.MOCACCINO, label: 'Mocaccino' },
@@ -258,7 +263,9 @@ export function buildFastingContextForLlm(params = {}) {
     } : null),
     aiGuidance: `${statusLine} ${aiGuidance} `
       + 'FONTE DI VERITÀ = Monitor Metabolico (statusLine/isFasting). '
-      + 'VIETATO dedurre interruzione digiuno dal Diary_Context / log pasti se statusLine dice ATTIVO.',
+      + 'VIETATO dedurre interruzione digiuno dal Diary_Context / log pasti se statusLine dice ATTIVO. '
+      + 'REGOLA 0 KCAL: se il pasto ha kcal:0 (caffè amaro, tè, acqua), IL DIGIUNO NON È INTERROTTO — '
+      + 'non dire che è rotto, complimentati per averlo mantenuto.',
   };
 }
 
@@ -269,13 +276,26 @@ export function buildFastingContextForLlm(params = {}) {
  * @returns {object}
  */
 export function buildCoffeeStimulantNode(variant, timeDecimal, options = {}) {
-  const coffeeVariant = variant === COFFEE_VARIANT.ZUCCHERATO
-    ? COFFEE_VARIANT.ZUCCHERATO
-    : COFFEE_VARIANT.AMARO;
   const coffeeType = resolveCoffeeType(options.coffeeType || options.type);
+  // Bevande lattee (cappuccino/macchiato/…) usano il catalogo caffetteria e non la biforcazione amaro/zuccherato.
+  const milkyTypes = new Set([
+    COFFEE_TYPE.MACCHIATO,
+    COFFEE_TYPE.CAPPUCCINO,
+    COFFEE_TYPE.CORTADO,
+    COFFEE_TYPE.MOCACCINO,
+  ]);
+  const coffeeVariant = milkyTypes.has(coffeeType)
+    ? COFFEE_VARIANT.AMARO
+    : (variant === COFFEE_VARIANT.ZUCCHERATO
+      ? COFFEE_VARIANT.ZUCCHERATO
+      : COFFEE_VARIANT.AMARO);
+  const product = resolveCoffeeShopProductForLog(coffeeType, coffeeVariant);
   const time = Number.isFinite(Number(timeDecimal)) ? Number(timeDecimal) : 8;
-  const isSweet = coffeeVariant === COFFEE_VARIANT.ZUCCHERATO;
-  const typeLabel = getCoffeeTypeLabel(coffeeType);
+  const isFastingSafe = product?.isFastingSafe === true;
+  const label = product?.name
+    || (coffeeVariant === COFFEE_VARIANT.ZUCCHERATO
+      ? `${getCoffeeTypeLabel(coffeeType)} zuccherato`
+      : `${getCoffeeTypeLabel(coffeeType)} amaro`);
 
   return {
     id: String(options.id || `stimulant_${Date.now()}`),
@@ -283,11 +303,16 @@ export function buildCoffeeStimulantNode(variant, timeDecimal, options = {}) {
     subtype: 'caffè',
     coffeeType,
     coffeeVariant,
-    breaksFast: isSweet,
-    kcal: isSweet ? SWEET_COFFEE_KCAL : 0,
-    carb: isSweet ? SWEET_COFFEE_CARB : 0,
+    coffeeShopProductId: product?.id || null,
+    breaksFast: !isFastingSafe,
+    isFastingSafe,
+    caffeineMg: Number(product?.caffeineMg) || 0,
+    kcal: Number(product?.kcal) || 0,
+    prot: Number(product?.prot) || 0,
+    carb: Number(product?.carb) || 0,
+    fat: Number(product?.fat) || 0,
     time,
-    label: isSweet ? `${typeLabel} zuccherato` : `${typeLabel} amaro`,
+    label,
   };
 }
 

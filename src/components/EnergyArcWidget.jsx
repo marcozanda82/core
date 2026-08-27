@@ -154,7 +154,7 @@ export default function EnergyArcWidget({
       ? `${Math.round(currentLevel)}%`
       : '—';
   const centerSub = isMissingSleep
-    ? 'Quantifica Recupero'
+    ? 'Registra sonno'
     : hasSleepData && maxCharge > 0
       ? `${Math.round(maxCharge)}% al risveglio · ${phaseLabel}`
       : 'Registra il sonno';
@@ -168,7 +168,7 @@ export default function EnergyArcWidget({
   ].filter(Boolean).join(' ');
 
   const ariaLabel = isMissingSleep
-    ? 'Sonno non registrato. Tocca per quantificare il recupero.'
+    ? 'Mancano i dati del sonno: registrali ora per sbloccare l\'indice di recupero'
     : hasSleepData
       ? `Batteria energetica ${Math.round(currentLevel)} percento, fase ${phaseLabel}`
       : 'Batteria energetica, sonno non registrato';

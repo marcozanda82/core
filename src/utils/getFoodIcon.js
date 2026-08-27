@@ -1,6 +1,16 @@
 /**
  * Icona emoji + stime macro standard per alimenti senza match DB.
+ * Icone specifiche: solo post-risoluzione via foodCategory (vedi foodCategoryIcon.js).
+ * In bozza lavagna usare DRAFT_FOOD_ICON_EMOJI / resolveMealItemDisplayIcon.
  */
+
+import {
+  DRAFT_FOOD_ICON_EMOJI,
+  GENERIC_FOOD_ICON_EMOJI,
+  attachResolvedFoodIcon,
+  getResolvedFoodCategoryIcon,
+  resolveFoodCategory,
+} from './foodCategoryIcon.js';
 
 function normalizeFoodText(value) {
   return String(value || '')
@@ -15,55 +25,20 @@ function includesAny(text, keywords) {
 }
 
 /**
+ * Icona post-calcolo / risoluzione (categoria affidabile o utensils).
+ * Non usare durante digitazione bozza — preferire DRAFT_FOOD_ICON_EMOJI.
  * @param {string} foodName
  * @param {{ kcal?: number, prot?: number, carb?: number, fat?: number } | null} [macros]
  * @returns {string} emoji
  */
 export function getFoodIcon(foodName, macros = null) {
+  void macros; // non usare hint macro per forzare categorie (evita falsi positivi)
   const n = normalizeFoodText(foodName);
-  if (!n) return '🍽️';
-
-  if (includesAny(n, ['pomodoro', 'passata', 'passato', 'tomato'])) return '🍅';
-  if (includesAny(n, ['insalata', 'salad', 'lattuga', 'verdura', 'verdure', 'spinac', 'zucchina', 'carota', 'peperone', 'melanzana', 'broccoli'])) {
-    return '🥗';
-  }
-  if (includesAny(n, ['riso', 'rice', 'risotto'])) return '🍚';
-  if (includesAny(n, ['pasta', 'spaghetti', 'penne', 'fusilli', 'cous cous', 'couscous', 'farro', 'orzo', 'avena', 'cereali', 'quinoa', 'grano'])) {
-    return '🌾';
-  }
-  if (includesAny(n, ['fagiol', 'ceci', 'lenticch', 'legum', 'piselli', 'edamame'])) return '🫘';
-  if (includesAny(n, ['pollo', 'tacchino', 'chicken', 'turkey', 'cotoletta'])) return '🍗';
-  if (includesAny(n, ['carne', 'manzo', 'vitello', 'maiale', 'bistecca', 'prosciutto', 'bresaola', 'hamburger', 'beef', 'pork'])) {
-    return '🥩';
-  }
-  if (includesAny(n, ['pesce', 'tonno', 'salmone', 'merluzzo', 'orata', 'branzino', 'fish', 'tuna', 'salmon'])) {
-    return '🐟';
-  }
-  if (includesAny(n, [
-    'mela', 'banana', 'arancia', 'fragola', 'pera', 'pesca', 'kiwi', 'uva', 'frutta',
-    'apple', 'orange', 'berry', 'fruit',
-  ])) {
-    return '🍎';
-  }
-  if (includesAny(n, ['uovo', 'uova', 'egg'])) return '🥚';
-  if (includesAny(n, ['latte', 'yogurt', 'formaggio', 'mozzarella', 'parmigiano', 'cheese', 'milk'])) return '🧀';
-  if (includesAny(n, ['pane', 'toast', 'focaccia', 'brioche', 'bread'])) return '🍞';
-  if (includesAny(n, ['olio', 'burro', 'olive', 'oil', 'butter'])) return '🫒';
-
-  // Hint dai macro se il nome è generico
-  const kcal = Number(macros?.kcal);
-  const prot = Number(macros?.prot ?? macros?.pro);
-  const carb = Number(macros?.carb ?? macros?.carbo);
-  const fat = Number(macros?.fat);
-  if (Number.isFinite(prot) && Number.isFinite(carb) && Number.isFinite(fat)) {
-    if (prot >= 15 && prot >= carb && prot >= fat) return '🥩';
-    if (carb >= 20 && carb >= prot) return '🌾';
-    if (fat >= 15 && fat >= prot && fat >= carb) return '🫒';
-  }
-  if (Number.isFinite(kcal) && kcal < 40) return '🥗';
-
-  return '🍽️';
+  if (!n) return GENERIC_FOOD_ICON_EMOJI;
+  return getResolvedFoodCategoryIcon(foodName);
 }
+
+export { DRAFT_FOOD_ICON_EMOJI, GENERIC_FOOD_ICON_EMOJI, resolveFoodCategory, attachResolvedFoodIcon };
 
 /**
  * Macro indicative per 100g quando manca un match DB fedele.
@@ -86,6 +61,7 @@ export function estimateStandardMacrosPer100g(foodName) {
   if (includesAny(n, ['uovo', 'uova'])) return { kcal: 143, prot: 13, carb: 1, fat: 10 };
   if (includesAny(n, ['formaggio', 'parmigiano', 'mozzarella'])) return { kcal: 300, prot: 22, carb: 2, fat: 23 };
   if (includesAny(n, ['yogurt', 'latte'])) return { kcal: 60, prot: 4, carb: 5, fat: 2 };
+  if (includesAny(n, ['fette biscott', 'biscottate', 'cracker'])) return { kcal: 400, prot: 10, carb: 72, fat: 7 };
   if (includesAny(n, ['pane'])) return { kcal: 265, prot: 9, carb: 49, fat: 3 };
   if (includesAny(n, ['pasta', 'spaghetti', 'penne'])) return { kcal: 350, prot: 12, carb: 72, fat: 1.5 };
   if (includesAny(n, ['riso', 'risotto'])) return { kcal: 350, prot: 7, carb: 78, fat: 0.6 };
@@ -107,6 +83,7 @@ export function estimateStandardMacrosPer100g(foodName) {
 
 /**
  * Voce McDrive / draft custom temporanea (niente foodDbKey forzato).
+ * Icona assegnata solo perché lo status è già resolved (post-stima).
  * @param {string} spokenName
  * @param {number} [grams]
  * @param {object} [extra]
@@ -120,9 +97,8 @@ export function buildProvisionalCustomFoodItem(spokenName, grams = 100, extra = 
   const prot = Math.round(per100.prot * factor * 10) / 10;
   const carb = Math.round(per100.carb * factor * 10) / 10;
   const fat = Math.round(per100.fat * factor * 10) / 10;
-  const icon = getFoodIcon(name, { kcal: per100.kcal, prot: per100.prot, carb: per100.carb, fat: per100.fat });
 
-  return {
+  return attachResolvedFoodIcon({
     ...(extra?.id ? { id: extra.id } : {}),
     foodName: name,
     spokenFoodName: name,
@@ -139,7 +115,6 @@ export function buildProvisionalCustomFoodItem(spokenName, grams = 100, extra = 
     status: 'resolved',
     isEstimated: true,
     isCustom: true,
-    icon,
     alternatives: [],
-  };
+  });
 }

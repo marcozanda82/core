@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
 import AmountStepper from '../features/mealBuilder/components/AmountStepper';
-import { getFoodIcon } from '../utils/getFoodIcon';
+import { resolveMealItemDisplayIcon } from '../utils/foodCategoryIcon';
 import { withMealSavingOverlay } from '../utils/mealSavingOverlayController';
 
 const MEAL_OPTIONS = [
@@ -116,13 +116,7 @@ export default function MealDraftTrayBubble({
       <ul className="kentu-meal-tray__list">
         {items.map((item, index) => {
           const name = String(item.foodName || item.name || 'Alimento').trim();
-          const icon = String(item?.icon || '').trim()
-            || getFoodIcon(name, {
-              kcal: item?.kcal,
-              prot: item?.pro ?? item?.prot,
-              carb: item?.carbo ?? item?.carb,
-              fat: item?.fat,
-            });
+          const icon = resolveMealItemDisplayIcon(item);
           const grams = Math.max(1, Math.round(Number(item.grams ?? item.qty) || 0));
           const kcal = Math.round(Number(item?.kcal) || 0);
           const isEstimated = item?.isEstimated === true;

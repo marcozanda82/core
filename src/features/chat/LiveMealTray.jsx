@@ -1,11 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, Info, MoreVertical, Pencil, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Info, MoreVertical, Pencil, Sparkles, Trash2, Utensils } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
-import { getFoodIcon } from '../../utils/getFoodIcon';
+import { resolveMealItemDisplayIcon } from '../../utils/foodCategoryIcon';
 import { withMealSavingOverlay } from '../../utils/mealSavingOverlayController';
 import {
   draftFoodsToSolverItems,
@@ -38,7 +38,7 @@ function resolveMcDriveVisualStatus(item) {
   return 'raw';
 }
 
-function McDriveStatusIcon({ visualStatus, foodName, macros }) {
+function McDriveStatusIcon({ visualStatus, item = null, foodName = '' }) {
   if (visualStatus === 'processing') {
     return (
       <span
@@ -50,9 +50,13 @@ function McDriveStatusIcon({ visualStatus, foodName, macros }) {
     );
   }
   if (visualStatus === 'resolved') {
+    const emoji = resolveMealItemDisplayIcon(
+      item || { foodName, status: 'resolved' },
+      { isDraft: false },
+    );
     return (
       <span className="kentu-meal-tray__status-icon shrink-0 text-base leading-none" aria-hidden>
-        {getFoodIcon(foodName, macros)}
+        {emoji}
       </span>
     );
   }
@@ -70,10 +74,14 @@ function McDriveStatusIcon({ visualStatus, foodName, macros }) {
       </span>
     );
   }
-  // raw — icona categoria soft o pallino vuoto
+  // raw — placeholder neutro (niente euristica nome → insalata/foglia)
   return (
-    <span className="kentu-meal-tray__status-icon shrink-0 text-base leading-none opacity-70" aria-hidden>
-      {getFoodIcon(foodName, macros)}
+    <span
+      className="kentu-meal-tray__status-icon inline-flex h-4 w-4 shrink-0 items-center justify-center text-slate-400 opacity-80"
+      aria-hidden
+      title="In bozza"
+    >
+      <Utensils className="h-3.5 w-3.5" strokeWidth={2} />
     </span>
   );
 }
@@ -535,13 +543,8 @@ function LiveMealTray({
                   <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center gap-2">
                     <McDriveStatusIcon
                       visualStatus={visualStatus}
+                      item={item}
                       foodName={name}
-                      macros={{
-                        kcal: Number(item?.kcal) || 0,
-                        prot: Number(item?.pro ?? item?.prot) || 0,
-                        carb: Number(item?.carbo ?? item?.carb) || 0,
-                        fat: Number(item?.fat) || 0,
-                      }}
                     />
                     <span
                       className={[

@@ -2,6 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { get, ref, set } from 'firebase/database';
+import {
+  Dumbbell,
+  Footprints,
+  Scale,
+  Sofa,
+  TrendingDown,
+  Zap,
+} from 'lucide-react';
 import { db } from '../../firebaseConfig';
 import { BODY_WEIGHT_KG_MAX, BODY_WEIGHT_KG_MIN, clampBodyWeightKg } from '../../utils/inputSanity';
 import { calculateAge } from '../../utils/profileAge';
@@ -33,22 +41,22 @@ const PAL_OPTIONS = [
     id: '1.2',
     pal: 1.2,
     title: 'Base di ricarica',
-    subtitle: 'Sedentario — PAL 1.2',
     description: 'Lavoro da scrivania, poca attività strutturata.',
+    Icon: Sofa,
   },
   {
     id: '1.4',
     pal: 1.4,
     title: 'Operativo',
-    subtitle: 'Moderato — PAL 1.4',
     description: 'Camminate regolari o 2–3 sessioni di allenamento.',
+    Icon: Footprints,
   },
   {
     id: '1.6',
     pal: 1.6,
     title: 'Assalto',
-    subtitle: 'Molto attivo — PAL 1.6',
     description: 'Allenamento frequente o lavoro fisico intenso.',
+    Icon: Zap,
   },
 ];
 
@@ -56,26 +64,26 @@ const GOAL_OPTIONS = [
   {
     id: 'cut',
     title: 'Perdita di peso / Definizione',
-    subtitle: '−300 kcal',
     delta: -300,
     nutritionGoal: 'cut',
     goal: 'lose',
+    Icon: TrendingDown,
   },
   {
     id: 'maintain',
     title: 'Mantenimento / Ricomposizione',
-    subtitle: '0 kcal',
     delta: 0,
     nutritionGoal: 'maintain',
     goal: 'maintain',
+    Icon: Scale,
   },
   {
     id: 'bulk',
     title: 'Aumento massa / Forza',
-    subtitle: '+250 kcal',
     delta: 250,
     nutritionGoal: 'bulk',
     goal: 'gain',
+    Icon: Dumbbell,
   },
 ];
 
@@ -232,6 +240,35 @@ function FieldLabel({ children }) {
   );
 }
 
+/** Domanda colloquiale per step a scelta (PAL / obiettivo). */
+function QuestionLabel({ children }) {
+  return (
+    <p className="mb-1.5 text-base font-semibold leading-snug text-zinc-100">
+      {children}
+    </p>
+  );
+}
+
+function CheckIcon({ className = '' }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden
+      className={className}
+    >
+      <circle cx="10" cy="10" r="9" fill="currentColor" fillOpacity="0.18" stroke="currentColor" strokeWidth="1.5" />
+      <path
+        d="M6.2 10.2 8.7 12.7 13.8 7.4"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function PillButton({ selected, onClick, children, className = '' }) {
   return (
     <button
@@ -266,23 +303,49 @@ function SummaryEditRow({ label, value, onEdit }) {
   );
 }
 
-function OptionCard({ selected, onClick, title, subtitle, description }) {
+function OptionCard({ selected, onClick, title, description, Icon = null }) {
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={selected}
       onClick={onClick}
       className={[
-        'w-full rounded-xl border px-4 py-3.5 text-left transition',
+        'w-full rounded-xl border px-4 py-3.5 text-left transition duration-200',
         selected
-          ? 'border-cyan-400/55 bg-cyan-400/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
-          : 'border-white/10 bg-white/[0.03] hover:border-white/20',
+          ? 'border-cyan-400 bg-cyan-400/10 opacity-100 ring-2 ring-cyan-400/70 shadow-[0_0_24px_rgba(34,211,238,0.18)]'
+          : 'border-white/10 bg-white/[0.03] opacity-60 hover:border-white/20 hover:opacity-80',
       ].join(' ')}
     >
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-semibold text-white">{title}</p>
-        {subtitle ? <p className="shrink-0 text-xs text-cyan-300/90">{subtitle}</p> : null}
+      <div className="flex items-start gap-3">
+        {Icon ? (
+          <span
+            aria-hidden
+            className={[
+              'mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition',
+              selected
+                ? 'border-cyan-400/55 bg-cyan-400/15 text-cyan-200'
+                : 'border-white/10 bg-black/40 text-zinc-400',
+            ].join(' ')}
+          >
+            <Icon className="h-5 w-5" strokeWidth={1.9} />
+          </span>
+        ) : null}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-white">{title}</p>
+          {description ? (
+            <p className="mt-1 text-xs leading-relaxed text-zinc-400">{description}</p>
+          ) : null}
+        </div>
+        {selected ? (
+          <CheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" />
+        ) : (
+          <span
+            aria-hidden
+            className="mt-0.5 h-5 w-5 shrink-0 rounded-full border border-white/20"
+          />
+        )}
       </div>
-      {description ? <p className="mt-1 text-xs leading-relaxed text-zinc-400">{description}</p> : null}
     </button>
   );
 }
@@ -481,7 +544,7 @@ function MacroSummaryCard({ summary, goalLabel }) {
           <dd className="font-medium text-zinc-100">{summary.fat} g</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-zinc-500">Direttiva</dt>
+          <dt className="text-zinc-500">Obiettivo</dt>
           <dd className="font-medium text-zinc-100">{goalLabel}</dd>
         </div>
       </dl>
@@ -650,9 +713,9 @@ export default function UserOnboardingWizard({
       : step === 2
         ? 'Inserisci un peso valido tra 30 e 300 kg.'
         : step === 3
-          ? 'Seleziona uno stile di vita (PAL).'
+          ? 'Dimmi quanto ti muovi durante il giorno.'
           : step === 4
-            ? 'Seleziona un obiettivo / direttiva.'
+            ? 'Scegli il tuo obiettivo.'
             : 'Completa tutti i parametri vitali prima di procedere.';
 
   const bumpWeight = (delta) => {
@@ -1097,8 +1160,8 @@ export default function UserOnboardingWizard({
           )}
 
           {step === 3 && (
-            <div className="space-y-3">
-              <FieldLabel>Stile di vita (PAL)</FieldLabel>
+            <div className="space-y-3" role="radiogroup" aria-label="Quanto ti muovi durante il giorno?">
+              <QuestionLabel>Quanto ti muovi durante il giorno?</QuestionLabel>
               {showStepHints && !canContinueStep3 ? (
                 <p className="text-xs text-rose-300">Seleziona un&apos;opzione per continuare.</p>
               ) : null}
@@ -1108,16 +1171,16 @@ export default function UserOnboardingWizard({
                   selected={form.pal === opt.pal}
                   onClick={() => setForm((p) => ({ ...p, pal: opt.pal }))}
                   title={opt.title}
-                  subtitle={opt.subtitle}
                   description={opt.description}
+                  Icon={opt.Icon}
                 />
               ))}
             </div>
           )}
 
           {step === 4 && (
-            <div className="space-y-3">
-              <FieldLabel>Direttiva primaria</FieldLabel>
+            <div className="space-y-3" role="radiogroup" aria-label="Qual è il tuo obiettivo?">
+              <QuestionLabel>Qual è il tuo obiettivo?</QuestionLabel>
               {showStepHints && !canContinueStep4 ? (
                 <p className="text-xs text-rose-300">Seleziona un obiettivo per continuare.</p>
               ) : null}
@@ -1127,7 +1190,7 @@ export default function UserOnboardingWizard({
                   selected={form.goalId === opt.id}
                   onClick={() => setForm((p) => ({ ...p, goalId: opt.id }))}
                   title={opt.title}
-                  subtitle={opt.subtitle}
+                  Icon={opt.Icon}
                 />
               ))}
               {preview ? (
@@ -1180,13 +1243,13 @@ export default function UserOnboardingWizard({
                 onEdit={() => jumpToStep(2)}
               />
               <SummaryEditRow
-                label="Stile di vita (PAL)"
-                value={selectedPal ? `${selectedPal.title} · ${selectedPal.subtitle}` : '—'}
+                label="Quanto ti muovi"
+                value={selectedPal ? selectedPal.title : '—'}
                 onEdit={() => jumpToStep(3)}
               />
               <SummaryEditRow
                 label="Obiettivo"
-                value={selectedGoal ? `${selectedGoal.title} (${selectedGoal.subtitle})` : '—'}
+                value={selectedGoal ? selectedGoal.title : '—'}
                 onEdit={() => jumpToStep(4)}
               />
 

@@ -16,7 +16,38 @@ function formatGrams(value) {
 }
 
 function formatKcal(value) {
+  // Sempre mostra le kcal (anche 0) — caffè amaro / digiuno-safe restano in lista.
   return `${Math.round(Number(value) || 0)} kcal`;
+}
+
+function resolveItemQtyLabel(food) {
+  if (food?.servingLabel) return String(food.servingLabel);
+  if (food?.isCoffeeShopItem || food?.type === 'stimulant') {
+    return food?.servingLabel || '1×';
+  }
+  return formatGrams(food?.qta ?? food?.weight);
+}
+
+function FoodMetaBadges({ food }) {
+  const isFastingSafe = food?.isFastingSafe === true
+    || (food?.breaksFast === false && (Number(food?.kcal ?? food?.cal) || 0) < 10);
+  const caffeineMg = Number(food?.caffeineMg);
+  const showCaffeine = Number.isFinite(caffeineMg) && caffeineMg > 0;
+  if (!isFastingSafe && !showCaffeine) return null;
+  return (
+    <span className="diary-details-food-row__badges">
+      {isFastingSafe ? (
+        <span className="diary-badge diary-badge--fasting" title="Non interrompe il digiuno">
+          ⚡ Digiuno attivo
+        </span>
+      ) : null}
+      {showCaffeine ? (
+        <span className="diary-badge diary-badge--caffeine" title="Caffeina">
+          {`☕ ${Math.round(caffeineMg)}mg`}
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 function formatBurnedKcal(value) {
@@ -99,6 +130,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
         subtotalFat,
         items,
         sortTime,
+        stimulantOnly: items.length > 0 && items.every((f) => f?.type === 'stimulant'),
       };
     })
     .filter(Boolean)
@@ -362,11 +394,13 @@ function FastingTabPanel({
 }
 
 /**
- * Bottom sheet — diario giornaliero unificato a 4 pilastri.
+ * Bottom sheet / vista embedded — diario giornaliero unificato a 4 pilastri.
+ * @param {boolean} [embedded=false] — se true, rende inline (niente portal overlay) per DiarioHub.
  */
 export default function DiaryDetailsSheet({
   isOpen,
   onClose,
+  embedded = false,
   activeLog = [],
   groupedFoods = {},
   workoutsLog = [],
@@ -388,13 +422,13 @@ export default function DiaryDetailsSheet({
   const [activePillarTab, setActivePillarTab] = useState('NUTRITION');
 
   useEffect(() => {
-    if (!isOpen) return undefined;
+    if (embedded || !isOpen) return undefined;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [isOpen]);
+  }, [embedded, isOpen]);
 
   useEffect(() => {
     if (isOpen) setActivePillarTab('NUTRITION');
@@ -455,21 +489,18 @@ export default function DiaryDetailsSheet({
     workout.id != null ? `workout-${String(workout.id)}` : `workout-${index}`
   );
 
-  return createPortal(
+  const panel = (
     <div
-      className="diary-details-overlay"
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      role={embedded ? 'region' : 'dialog'}
+      aria-modal={embedded ? undefined : true}
+      aria-labelledby="diary-details-title"
+      className={[
+        'diary-details-panel',
+        embedded ? 'diary-details-panel--embedded' : 'vetrina-sheet-enter',
+      ].join(' ')}
+      onMouseDown={embedded ? undefined : (e) => e.stopPropagation()}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="diary-details-title"
-        className="diary-details-panel vetrina-sheet-enter"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+      {!embedded ? (
         <div className="diary-details-panel__chrome">
           <div className="diary-details-panel__handle" aria-hidden />
           <button
@@ -481,82 +512,84 @@ export default function DiaryDetailsSheet({
             ✕
           </button>
         </div>
+      ) : null}
 
-        <header className="diary-details-summary">
-          <h2 id="diary-details-title" className="diary-details-summary__title">
-            Diario Giornaliero
-          </h2>
-          <p className="diary-details-summary__kcal">
-            {consumedKcal}
-            {targetKcal > 0 ? ` / ${targetKcal}` : ''}
-            <span className="diary-details-summary__unit"> kcal</span>
-          </p>
-          <div className="diary-details-summary__macros">
-            <span>P {Math.round(Number(totali?.prot) || 0)}g</span>
-            <span>C {Math.round(Number(totali?.carb) || 0)}g</span>
-            <span>G {Math.round(Number(totali?.fatTotal) || 0)}g</span>
-            {workoutBurnTotal > 0 ? (
-              <span className="diary-details-summary__burn">−{workoutBurnTotal} kcal out</span>
+      <header className="diary-details-summary">
+        <h2 id="diary-details-title" className="diary-details-summary__title">
+          Diario Giornaliero
+        </h2>
+        <p className="diary-details-summary__kcal">
+          {consumedKcal}
+          {targetKcal > 0 ? ` / ${targetKcal}` : ''}
+          <span className="diary-details-summary__unit"> kcal</span>
+        </p>
+        <div className="diary-details-summary__macros">
+          <span>P {Math.round(Number(totali?.prot) || 0)}g</span>
+          <span>C {Math.round(Number(totali?.carb) || 0)}g</span>
+          <span>G {Math.round(Number(totali?.fatTotal) || 0)}g</span>
+          {workoutBurnTotal > 0 ? (
+            <span className="diary-details-summary__burn">−{workoutBurnTotal} kcal out</span>
+          ) : null}
+        </div>
+
+        <div className="diary-pillar-tabs" role="tablist" aria-label="Pilastri diario">
+          {PILLAR_IDS.map((pillarId) => {
+            const meta = KENTU_PILLARS[pillarId];
+            const active = activePillarTab === pillarId;
+            return (
+              <button
+                key={pillarId}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`diary-pillar-tab${active ? ' is-active' : ''}`}
+                style={{
+                  color: meta.color,
+                  borderBottomColor: active ? meta.color : 'transparent',
+                  background: active ? pillarColorToRgba(meta.color, 0.14) : 'transparent',
+                  opacity: active ? 1 : 0.5,
+                }}
+                onClick={() => setActivePillarTab(pillarId)}
+                title={meta.label}
+              >
+                <span className="diary-pillar-tab__icon" aria-hidden>{meta.icon}</span>
+                <span className="diary-pillar-tab__label">{meta.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </header>
+
+      <div className="diary-details-scroll">
+        {activePillarTab === 'NUTRITION' ? (
+          <>
+            {!hasMeals ? (
+              <EmptyDayTrackingPrompt
+                isIntentionalFast={isIntentionalFast}
+                onMarkIntentionalFast={onMarkIntentionalFast}
+                onClearIntentionalFast={onClearIntentionalFast}
+              />
             ) : null}
-          </div>
-
-          <div className="diary-pillar-tabs" role="tablist" aria-label="Pilastri diario">
-            {PILLAR_IDS.map((pillarId) => {
-              const meta = KENTU_PILLARS[pillarId];
-              const active = activePillarTab === pillarId;
-              return (
-                <button
-                  key={pillarId}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  className={`diary-pillar-tab${active ? ' is-active' : ''}`}
-                  style={{
-                    color: meta.color,
-                    borderBottomColor: active ? meta.color : 'transparent',
-                    background: active ? pillarColorToRgba(meta.color, 0.14) : 'transparent',
-                    opacity: active ? 1 : 0.5,
-                  }}
-                  onClick={() => setActivePillarTab(pillarId)}
-                  title={meta.label}
-                >
-                  <span className="diary-pillar-tab__icon" aria-hidden>{meta.icon}</span>
-                  <span className="diary-pillar-tab__label">{meta.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </header>
-
-        <div className="diary-details-scroll">
-          {activePillarTab === 'NUTRITION' ? (
-            <>
-              {!hasMeals ? (
-                <EmptyDayTrackingPrompt
-                  isIntentionalFast={isIntentionalFast}
-                  onMarkIntentionalFast={onMarkIntentionalFast}
-                  onClearIntentionalFast={onClearIntentionalFast}
-                />
-              ) : null}
-              {hasMeals
-                ? mealSections.map((section) => (
-                    <section key={section.slotKey} className="diary-details-meal">
-                      <header className="diary-details-meal__header">
-                        <div className="diary-details-meal__title-wrap">
-                          <h3 className="diary-details-meal__title">
-                            {section.label}
-                            {section.timeLabel ? (
-                              <span className="diary-details-meal__time"> · {section.timeLabel}</span>
-                            ) : null}
-                          </h3>
-                          <p className="diary-details-meal__subtotals">
-                            {formatKcal(section.subtotalKcal)}
-                            <span className="diary-details-meal__macro-mini">
-                              {' '}
-                              · P {Math.round(section.subtotalProt)}g · C {Math.round(section.subtotalCarb)}g · G {Math.round(section.subtotalFat)}g
-                            </span>
-                          </p>
-                        </div>
+            {hasMeals
+              ? mealSections.map((section) => (
+                  <section key={section.slotKey} className="diary-details-meal">
+                    <header className="diary-details-meal__header">
+                      <div className="diary-details-meal__title-wrap">
+                        <h3 className="diary-details-meal__title">
+                          {section.label}
+                          {section.timeLabel ? (
+                            <span className="diary-details-meal__time"> · {section.timeLabel}</span>
+                          ) : null}
+                        </h3>
+                        <p className="diary-details-meal__subtotals">
+                          {formatKcal(section.subtotalKcal)}
+                          <span className="diary-details-meal__macro-mini">
+                            {' '}
+                            · P {Math.round(section.subtotalProt)}g · C {Math.round(section.subtotalCarb)}g · G {Math.round(section.subtotalFat)}g
+                          </span>
+                        </p>
+                      </div>
+                      {!section.stimulantOnly ? (
                         <button
                           type="button"
                           className="diary-details-meal__edit"
@@ -565,182 +598,203 @@ export default function DiaryDetailsSheet({
                         >
                           Modifica
                         </button>
-                      </header>
+                      ) : (
+                        <span className="diary-details-meal__edit diary-details-meal__edit--muted" aria-hidden="true">
+                          Caffetteria
+                        </span>
+                      )}
+                    </header>
 
-                      <ul className="diary-details-food-list">
-                        {section.items.map((food) => {
-                          const foodId = food.id != null ? String(food.id) : `${section.slotKey}-${food.desc}`;
-                          const name = food.desc || food.name || 'Alimento';
-                          const rowKey = resolveFoodRowKey(food, section);
-                          const menuOpensUp = rowKey === lastScrollItemKey
-                            || food === section.items[section.items.length - 1];
-                          return (
-                            <li
-                              key={foodId}
-                              className={`diary-details-food-row${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
-                            >
-                              <div className="diary-details-food-row__main">
+                    <ul className="diary-details-food-list">
+                      {section.items.map((food) => {
+                        const foodId = food.id != null ? String(food.id) : `${section.slotKey}-${food.desc}`;
+                        const name = food.desc || food.name || 'Alimento';
+                        const rowKey = resolveFoodRowKey(food, section);
+                        const menuOpensUp = rowKey === lastScrollItemKey
+                          || food === section.items[section.items.length - 1];
+                        return (
+                          <li
+                            key={foodId}
+                            className={`diary-details-food-row${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
+                          >
+                            <div className="diary-details-food-row__main">
+                              <div className="diary-details-food-row__identity">
                                 <span className="diary-details-food-row__name" title={name}>
                                   {name}
                                 </span>
-                                <span className="diary-details-food-row__qty">
-                                  {formatGrams(food.qta ?? food.weight)}
-                                </span>
-                                <span className="diary-details-food-row__kcal">
-                                  {formatKcal(food.kcal ?? food.cal)}
-                                </span>
+                                <FoodMetaBadges food={food} />
                               </div>
-
-                              <details className="diary-details-food-menu">
-                                <summary className="diary-details-food-menu__trigger" aria-label={`Azioni per ${name}`}>
-                                  ⋮
-                                </summary>
-                                <menu className="diary-details-food-menu__panel">
-                                  <li>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        onInspectFood?.(food);
-                                      }}
-                                    >
-                                      Info macro
-                                    </button>
-                                  </li>
-                                  <li>
-                                    <button
-                                      type="button"
-                                      className="diary-details-food-menu__danger"
-                                      onClick={() => {
-                                        if (food.id != null) onDeleteItem?.(String(food.id));
-                                      }}
-                                    >
-                                      Elimina
-                                    </button>
-                                  </li>
-                                </menu>
-                              </details>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </section>
-                  ))
-                : null}
-            </>
-          ) : null}
-
-          {activePillarTab === 'TRAINING' ? (
-            <>
-              {!hasWorkouts ? (
-                <p className="diary-details-empty">Nessun allenamento registrato oggi.</p>
-              ) : (
-                <section className="diary-sheet-workout-group">
-                  <header className="diary-sheet-workout-group__header">
-                    <div className="diary-sheet-workout-group__title-wrap">
-                      <h3 className="diary-sheet-workout-group__title">Output Energetico</h3>
-                      <p className="diary-sheet-workout-group__subtotals">
-                        {formatBurnedKcal(workoutBurnTotal)}
-                        <span className="diary-sheet-workout-group__count">
-                          {' '}
-                          · {workoutEntries.length} {workoutEntries.length === 1 ? 'sessione' : 'sessioni'}
-                        </span>
-                      </p>
-                    </div>
-                  </header>
-
-                  <ul className="diary-details-food-list">
-                    {workoutEntries.map(({ workout, name, meta, timeLabel, burnedKcal }, index) => {
-                      const workoutId = workout.id != null ? String(workout.id) : name;
-                      const rowKey = resolveWorkoutRowKey(workout, index);
-                      const menuOpensUp = rowKey === lastScrollItemKey
-                        || index === workoutEntries.length - 1;
-                      return (
-                        <li
-                          key={workoutId}
-                          className={`diary-details-food-row diary-details-food-row--workout${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
-                        >
-                          <div className="diary-details-food-row__stack">
-                            <div className="diary-details-food-row__main">
-                              <span className="diary-details-food-row__name" title={name}>
-                                {name}
-                                {timeLabel ? (
-                                  <span className="diary-details-food-row__time-inline"> · {timeLabel}</span>
-                                ) : null}
+                              <span className="diary-details-food-row__qty">
+                                {resolveItemQtyLabel(food)}
                               </span>
-                              <span className="diary-details-food-row__qty diary-details-food-row__meta">
-                                {meta}
-                              </span>
-                              <span className="diary-details-food-row__kcal diary-details-food-row__kcal--burn">
-                                {formatBurnedKcal(burnedKcal)}
+                              <span className="diary-details-food-row__kcal">
+                                {formatKcal(food.kcal ?? food.cal)}
                               </span>
                             </div>
 
-                            <WorkoutQuestionnaireForm
-                              workout={workout}
-                              onSave={onUpdateWorkoutQuestionnaire}
-                            />
+                            <details className="diary-details-food-menu">
+                              <summary className="diary-details-food-menu__trigger" aria-label={`Azioni per ${name}`}>
+                                ⋮
+                              </summary>
+                              <menu className="diary-details-food-menu__panel">
+                                <li>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onInspectFood?.(food);
+                                    }}
+                                  >
+                                    Info macro
+                                  </button>
+                                </li>
+                                <li>
+                                  <button
+                                    type="button"
+                                    className="diary-details-food-menu__danger"
+                                    onClick={() => {
+                                      if (food.id != null) onDeleteItem?.(String(food.id));
+                                    }}
+                                  >
+                                    Elimina
+                                  </button>
+                                </li>
+                              </menu>
+                            </details>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                ))
+              : null}
+          </>
+        ) : null}
+
+        {activePillarTab === 'TRAINING' ? (
+          <>
+            {!hasWorkouts ? (
+              <p className="diary-details-empty">Nessun allenamento registrato oggi.</p>
+            ) : (
+              <section className="diary-sheet-workout-group">
+                <header className="diary-sheet-workout-group__header">
+                  <div className="diary-sheet-workout-group__title-wrap">
+                    <h3 className="diary-sheet-workout-group__title">Output Energetico</h3>
+                    <p className="diary-sheet-workout-group__subtotals">
+                      {formatBurnedKcal(workoutBurnTotal)}
+                      <span className="diary-sheet-workout-group__count">
+                        {' '}
+                        · {workoutEntries.length} {workoutEntries.length === 1 ? 'sessione' : 'sessioni'}
+                      </span>
+                    </p>
+                  </div>
+                </header>
+
+                <ul className="diary-details-food-list">
+                  {workoutEntries.map(({ workout, name, meta, timeLabel, burnedKcal }, index) => {
+                    const workoutId = workout.id != null ? String(workout.id) : name;
+                    const rowKey = resolveWorkoutRowKey(workout, index);
+                    const menuOpensUp = rowKey === lastScrollItemKey
+                      || index === workoutEntries.length - 1;
+                    return (
+                      <li
+                        key={workoutId}
+                        className={`diary-details-food-row diary-details-food-row--workout${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
+                      >
+                        <div className="diary-details-food-row__stack">
+                          <div className="diary-details-food-row__main">
+                            <span className="diary-details-food-row__name" title={name}>
+                              {name}
+                              {timeLabel ? (
+                                <span className="diary-details-food-row__time-inline"> · {timeLabel}</span>
+                              ) : null}
+                            </span>
+                            <span className="diary-details-food-row__qty diary-details-food-row__meta">
+                              {meta}
+                            </span>
+                            <span className="diary-details-food-row__kcal diary-details-food-row__kcal--burn">
+                              {formatBurnedKcal(burnedKcal)}
+                            </span>
                           </div>
 
-                          <details className="diary-details-food-menu">
-                            <summary className="diary-details-food-menu__trigger" aria-label={`Azioni per ${name}`}>
-                              ⋮
-                            </summary>
-                            <menu className="diary-details-food-menu__panel">
-                              <li>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onEditWorkout?.(workout);
-                                  }}
-                                >
-                                  Modifica
-                                </button>
-                              </li>
-                              <li>
-                                <button
-                                  type="button"
-                                  className="diary-details-food-menu__danger"
-                                  onClick={() => {
-                                    if (workout.id != null) onDeleteItem?.(String(workout.id));
-                                  }}
-                                >
-                                  Elimina
-                                </button>
-                              </li>
-                            </menu>
-                          </details>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </section>
-              )}
-            </>
-          ) : null}
+                          <WorkoutQuestionnaireForm
+                            workout={workout}
+                            onSave={onUpdateWorkoutQuestionnaire}
+                          />
+                        </div>
 
-          {activePillarTab === 'SLEEP' ? (
-            <SleepTabPanel
-              sleepEntry={todaySleepEntry}
-              decimalToTimeStr={decimalToTimeStr}
-              onSaveSleep={onSaveSleep}
-            />
-          ) : null}
+                        <details className="diary-details-food-menu">
+                          <summary className="diary-details-food-menu__trigger" aria-label={`Azioni per ${name}`}>
+                            ⋮
+                          </summary>
+                          <menu className="diary-details-food-menu__panel">
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onEditWorkout?.(workout);
+                                }}
+                              >
+                                Modifica
+                              </button>
+                            </li>
+                            <li>
+                              <button
+                                type="button"
+                                className="diary-details-food-menu__danger"
+                                onClick={() => {
+                                  if (workout.id != null) onDeleteItem?.(String(workout.id));
+                                }}
+                              >
+                                Elimina
+                              </button>
+                            </li>
+                          </menu>
+                        </details>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+          </>
+        ) : null}
 
-          {activePillarTab === 'FASTING' ? (
-            <FastingTabPanel
-              fastingData={fastingData}
-              currentHour={currentHour}
-              decimalToTimeStr={decimalToTimeStr}
-              hasMeals={hasMeals}
-              isIntentionalFast={isIntentionalFast}
-              onMarkIntentionalFast={onMarkIntentionalFast}
-              onClearIntentionalFast={onClearIntentionalFast}
-            />
-          ) : null}
+        {activePillarTab === 'SLEEP' ? (
+          <SleepTabPanel
+            sleepEntry={todaySleepEntry}
+            decimalToTimeStr={decimalToTimeStr}
+            onSaveSleep={onSaveSleep}
+          />
+        ) : null}
 
-          <div className="diary-details-scroll__spacer" aria-hidden />
-        </div>
+        {activePillarTab === 'FASTING' ? (
+          <FastingTabPanel
+            fastingData={fastingData}
+            currentHour={currentHour}
+            decimalToTimeStr={decimalToTimeStr}
+            hasMeals={hasMeals}
+            isIntentionalFast={isIntentionalFast}
+            onMarkIntentionalFast={onMarkIntentionalFast}
+            onClearIntentionalFast={onClearIntentionalFast}
+          />
+        ) : null}
+
+        <div className="diary-details-scroll__spacer" aria-hidden />
       </div>
+    </div>
+  );
+
+  if (embedded) return panel;
+
+  return createPortal(
+    <div
+      className="diary-details-overlay"
+      role="presentation"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose?.();
+      }}
+    >
+      {panel}
     </div>,
     document.body,
   );

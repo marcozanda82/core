@@ -695,10 +695,12 @@ function generateRealEnergyData(timelineNodes, dailyLog, idealStrategy, waterInt
       if (!node || node.type !== 'meal' || !Number.isFinite(Number(node.time))) return;
       const nodeTime = safePhysNum(node.time);
       const diff = h - nodeTime;
-      const { onsetDelay, duration } = calculateMealKinetics(node);
-      const windowEnd = onsetDelay + duration;
-      if (diff >= onsetDelay && diff <= windowEnd) {
-        const elapsed = diff - onsetDelay;
+      // Curva digestione: t0 = orario pasto (nessun onsetDelay / niente push all'ora successiva).
+      const { duration } = calculateMealKinetics(node);
+      const digOnset = 0;
+      const windowEnd = digOnset + duration;
+      if (diff >= digOnset && diff <= windowEnd) {
+        const elapsed = diff - digOnset;
         const digestionFactor = duration > 0 ? 1 - elapsed / duration : 0;
         const mealKcal = safePhysNum(node.kcal ?? node.cal, 500);
         const mealLoad = Math.max(0, Math.min(3, mealKcal / 600));

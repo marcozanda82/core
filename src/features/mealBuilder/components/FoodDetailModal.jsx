@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Edit2, X } from 'lucide-react';
 import { findDraftItemForFood } from '../utils/draftFoodMatchUtils';
-import { getFoodEmoji } from '../utils/foodIconUtils';
-import { renderIconFromTag } from '../../../utils/iconEngine';
+import { resolveFoodVisual } from '../utils/foodIconUtils';
+import FoodVisualMedia from './FoodVisualMedia';
 import { computeMacrosForWeight, getPer100Macros, scaleNutrientsForWeight } from '../utils/foodMacroUtils';
 import AdvancedNutrientsAccordion from './AdvancedNutrientsAccordion';
 import FoodSemanticProfile from '../../../components/FoodSemanticProfile';
@@ -139,18 +139,15 @@ export default function FoodDetailModal({
 
           {tileVisual?.customImage ? (
             <img src={tileVisual.customImage} alt={name} className="h-44 w-full object-cover" />
-          ) : tileVisual?.semanticIconTag ? (
-            <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-slate-800/90 to-slate-900">
-              {renderIconFromTag(tileVisual.semanticIconTag, {
-                iconClassName: 'h-16 w-16',
-                wrapperClassName: 'h-28 w-28',
-              })}
-            </div>
           ) : (
-            <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-slate-800/90 to-slate-900 text-7xl">
-              <span aria-hidden>
-                {tileVisual?.customEmoji || getFoodEmoji(tileVisual?.name || name)}
-              </span>
+            <div className="flex h-44 w-full items-center justify-center bg-gradient-to-br from-slate-800/90 to-slate-900">
+              <FoodVisualMedia
+                visual={resolveFoodVisual(tileVisual || { name }, null)}
+                name={name}
+                iconClassName="h-16 w-16"
+                wrapperClassName="h-28 w-28"
+                emojiClassName="text-7xl"
+              />
             </div>
           )}
         </div>
