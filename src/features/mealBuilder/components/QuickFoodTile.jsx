@@ -5,6 +5,7 @@ import FoodVisualMedia from './FoodVisualMedia';
 import FoodProvenanceBadge from './FoodProvenanceBadge';
 import QtyBadge from './QtyBadge';
 import { triggerSelectionHaptic } from '../utils/hapticFeedback';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 
 export default function QuickFoodTile({
   displayTile,
@@ -27,7 +28,9 @@ export default function QuickFoodTile({
   const [isPressed, setIsPressed] = useState(false);
 
   const isList = viewMode === 'list';
-  const name = displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento';
+  const name = sanitizeFoodDisplayName(
+    displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento',
+  );
   const brandLabel = String(
     brand
     || displayTile?.brand
@@ -244,7 +247,7 @@ export default function QuickFoodTile({
           : 'h-full w-full rounded-t-2xl'
       }`}
     >
-      <div className={`flex items-center justify-center ${compact ? 'h-12 w-12' : 'h-14 w-14'}`}>
+      <div className={`flex items-center justify-center ${compact ? 'h-14 w-14' : 'h-[4.5rem] w-[4.5rem]'}`}>
         <FoodVisualMedia visual={visual} name={name} compact={compact} />
       </div>
     </div>

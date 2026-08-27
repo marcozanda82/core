@@ -1,7 +1,12 @@
 /**
  * Categorie alimento → icona (lavagna / costruttore pasti).
- * Bozza: placeholder neutro. Post-calcolo: solo categorie affidabili, altrimenti utensils.
+ * Bozza: placeholder neutro. Post-calcolo: emoji granulare da nome, altrimenti categoria.
  */
+
+import {
+  NEUTRAL_FOOD_VISUAL_EMOJI,
+  resolveFoodVisualEmoji,
+} from './foodVisualResolver.js';
 
 export const FOOD_CATEGORY = Object.freeze({
   BREAD_GRAINS: 'bread_grains',
@@ -20,7 +25,7 @@ export const FOOD_CATEGORY = Object.freeze({
 export const DRAFT_FOOD_ICON_EMOJI = '🍽️';
 
 /** Fallback sicuro per piatti composti / ambigui (niente insalata). */
-export const GENERIC_FOOD_ICON_EMOJI = '🍽️';
+export const GENERIC_FOOD_ICON_EMOJI = NEUTRAL_FOOD_VISUAL_EMOJI;
 
 /** @type {Readonly<Record<string, string>>} */
 export const FOOD_CATEGORY_ICON = Object.freeze({
@@ -173,12 +178,14 @@ export function resolveFoodCategory(foodName, opts = {}) {
 }
 
 /**
- * Icona post-risoluzione da categoria (o nome). Mai usata in bozza grezza.
+ * Icona post-risoluzione: prima keyword granulare sul nome, poi categoria.
  * @param {string} foodName
  * @param {{ foodCategory?: string|null, macros?: object|null }} [opts]
  * @returns {string} emoji
  */
 export function getResolvedFoodCategoryIcon(foodName, opts = {}) {
+  const granular = resolveFoodVisualEmoji(foodName, opts.foodCategory);
+  if (granular && granular !== NEUTRAL_FOOD_VISUAL_EMOJI) return granular;
   const category = resolveFoodCategory(foodName, { foodCategory: opts.foodCategory });
   return iconForFoodCategory(category);
 }

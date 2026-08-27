@@ -4,6 +4,7 @@ import useUniversalSearchEngine, { SEARCH_SOURCE_BADGE } from '../hooks/useUnive
 import FoodThumbnail from './FoodThumbnail';
 import QtyBadge from './QtyBadge';
 import { resolveFoodVisual } from '../utils/foodIconUtils';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 import {
   getDefaultUnitKcal,
   getDraftQtyForFood,
@@ -423,7 +424,7 @@ export default function UniversalSearchModal({
             {results.filter(Boolean).map((result, index) => {
               const visual = resolveFoodVisual(result, personalDb);
               const macros = resolveMacrosPer100(result);
-              const name = result.desc || result.name || 'Alimento';
+              const name = sanitizeFoodDisplayName(result.desc || result.name || visual?.name || 'Alimento');
               const isRecipe = result._source === 'recipe';
               const { matchFood, unitWeight, defaultUnitKcal } = resolveDraftMatchForResult(
                 result,

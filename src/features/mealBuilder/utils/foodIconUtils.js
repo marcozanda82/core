@@ -3,17 +3,18 @@ import {
   resolveExplicitFoodEmoji,
   resolveExplicitFoodIconTag,
 } from './mealBuilderFoodIcon.js';
-
-/** Emoji neutra (nessuna euristica sul nome). */
-const GENERIC_FOOD_ICON_EMOJI = '🍽️';
+import {
+  NEUTRAL_FOOD_VISUAL_EMOJI,
+  resolveFoodVisualEmoji,
+  sanitizeFoodDisplayName,
+} from '../../../utils/foodVisualResolver.js';
 
 /**
- * @deprecated Preferire getMealBuilderFoodIcon / fallback Utensils.
- * Non indovina dal nome: restituisce solo emoji neutra.
+ * @deprecated Preferire resolveFoodVisual / resolveFoodVisualEmoji.
+ * Euristica sul nome → emoji granulare.
  */
-export function getFoodEmoji(_foodName) {
-  void _foodName;
-  return GENERIC_FOOD_ICON_EMOJI;
+export function getFoodEmoji(foodName) {
+  return resolveFoodVisualEmoji(foodName);
 }
 
 function pickVisualField(sources, key) {
@@ -27,13 +28,13 @@ function pickVisualField(sources, key) {
 }
 
 /**
- * Visuali meal builder: solo tag/emoji/immagine espliciti.
- * Nessuna euristica sul nome → semanticIconTag null → UI usa Utensils.
+ * Visuali meal builder: immagine/tag/emoji espliciti, altrimenti keyword sul nome.
  * @param {object} food
  * @param {object|null} personalDb
  */
 export function resolveFoodVisual(food, personalDb) {
-  const name = String(food?.desc || food?.name || food?.label || food?.foodName || 'Alimento').trim();
+  const rawName = String(food?.desc || food?.name || food?.label || food?.foodName || 'Alimento').trim();
+  const name = sanitizeFoodDisplayName(rawName);
   const dbKey = food?.foodDbKey ?? food?.key ?? food?.id;
   const dbEntry = dbKey && personalDb?.[dbKey] ? personalDb[dbKey] : null;
   const sources = [food, food?.row, dbEntry].filter(Boolean);
@@ -50,7 +51,20 @@ export function resolveFoodVisual(food, personalDb) {
   const iconInfo = getMealBuilderFoodIcon(mergedForIcon);
   const semanticIconTag = iconInfo.tag
     || resolveExplicitFoodIconTag(mergedForIcon);
-  const customEmoji = iconInfo.emoji || resolveExplicitFoodEmoji(mergedForIcon);
+  const explicitEmoji = iconInfo.emoji || resolveExplicitFoodEmoji(mergedForIcon);
+
+  const categoryHint = pickVisualField(sources, 'foodCategory')
+    || pickVisualField(sources, 'category')
+    || pickVisualField(sources, 'iconKey');
+
+  const nameEmoji = resolveFoodVisualEmoji(rawName, categoryHint);
+  const hasSpecificNameEmoji = Boolean(nameEmoji && nameEmoji !== NEUTRAL_FOOD_VISUAL_EMOJI);
+
+  // Priorità: foto → emoji esplicita → keyword sul nome → tag SVG categoria → neutro
+  const customEmoji = explicitEmoji
+    || (hasSpecificNameEmoji ? nameEmoji : null);
+
+  const useNeutralIcon = !customImage && !customEmoji && !semanticIconTag;
 
   return {
     name,
@@ -58,10 +72,10 @@ export function resolveFoodVisual(food, personalDb) {
     customEmoji,
     customIcon: pickVisualField(sources, 'customIcon'),
     iconOverride: pickVisualField(sources, 'iconOverride'),
-    iconTag: semanticIconTag,
-    semanticIconTag,
-    fallbackEmoji: null,
-    useNeutralIcon: !customImage && !semanticIconTag && !customEmoji,
+    iconTag: hasSpecificNameEmoji || explicitEmoji ? null : semanticIconTag,
+    semanticIconTag: hasSpecificNameEmoji || explicitEmoji ? null : semanticIconTag,
+    fallbackEmoji: NEUTRAL_FOOD_VISUAL_EMOJI,
+    useNeutralIcon,
   };
 }
 
@@ -100,4 +114,4 @@ export function formatMiniCartMealLabel(slot) {
   return `${prefix} ${label}`;
 }
 
-export { getMealBuilderFoodIcon, resolveExplicitFoodIconTag };
+export { getMealBuilderFoodIcon, resolveExplicitFoodIconTag, sanitizeFoodDisplayName };

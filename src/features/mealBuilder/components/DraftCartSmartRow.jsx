@@ -17,6 +17,7 @@ import FoodThumbnail from './FoodThumbnail';
 import UnitChips from './UnitChips';
 import AmountStepper from './AmountStepper';
 import { resolveFoodVisual } from '../utils/foodIconUtils';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 
 export default function DraftCartSmartRow({
   item,
@@ -27,7 +28,7 @@ export default function DraftCartSmartRow({
   embedded = false,
   variant = 'card',
 }) {
-  const name = item.desc || item.name || 'Alimento';
+  const name = sanitizeFoodDisplayName(item.desc || item.name || 'Alimento');
   const provenance = resolveProvenanceFromDraftItem(item);
   const provenanceMeta = FOOD_PROVENANCE_META[provenance];
   const visual = resolveFoodVisual(item, personalDb);
