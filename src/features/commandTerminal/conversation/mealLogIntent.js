@@ -1782,8 +1782,13 @@ export function resolveExactTimeForMeal(payload = {}, userText = '') {
 function cleanFoodName(raw) {
   return String(raw || '')
     .trim()
+    .replace(/^(?:come\s+)?(?:per\s+)?(?:la\s+|il\s+|lo\s+|l['’])?(?:colazione|pranzo|cena|snack|spuntino)\s+/i, '')
+    .replace(/^(?:ho\s+)?(?:mangiat[oa]|consumat[oa]|assunt[oa]|preso|presa|bevut[oa])\s+/i, '')
+    .replace(/^(?:e|ed)\s+/i, '')
+    .replace(/^(?:una?|uno|un['’])\s+/i, '')
     .replace(/\s+(?:e|ed)\s*$/i, '')
     .replace(/^di\s+/i, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -1922,7 +1927,8 @@ export function parseMealDraftProjectionFromText(userText) {
 }
 
 /**
- * Parser locale di fallback per frasi tipo "230g di gnocchi, 100g di passato di pomodoro".
+ * Parser locale di fallback per frasi tipo "230g di gnocchi, 100g di passato di pomodoro"
+ * e "mandorle 20 g e una mela 150 g". Ogni alimento tiene la PROPRIA grammatura.
  * @param {string} userText
  * @returns {{ mealType: string | null, items: Array<{ foodName: string, grams: number }> } | null}
  */
@@ -1934,17 +1940,46 @@ export function parseConsumedMealFromNaturalText(userText) {
   const items = [];
   const seen = new Set();
 
-  const gramsFirstPattern =
-    /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b(?:\s+di\s+|\s+)([^,;]+?)(?=\s*,|\s*;\s*|\s+e\s+\d|\s*$)/gi;
-  let match = gramsFirstPattern.exec(text);
-  while (match) {
-    pushUniqueItem(items, seen, match[2], Number(String(match[1]).replace(',', '.')));
-    match = gramsFirstPattern.exec(text);
+  const stripped = text
+    .replace(/^(?:come\s+)?(?:per\s+)?(?:la\s+|il\s+|lo\s+|l['’])?(?:colazione|pranzo|cena|snack|spuntino)\s*,?\s*/i, '')
+    .replace(/^(?:ho\s+)?(?:mangiat[oa]|consumat[oa]|assunt[oa]|preso|presa|bevut[oa])\s+/i, '')
+    .replace(/\b(?:alle|ore|h)\s*\d{1,2}[:h.,]?\d{0,2}\b/gi, ' ')
+    .trim();
+
+  const segments = String(stripped || text)
+    .split(/\s*(?:,|;|\s+e\s+|\s+ed\s+)\s*/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  for (const segment of segments) {
+    const gramsFirst = segment.match(
+      /^(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b(?:\s+di\s+|\s+)(.+)$/i,
+    );
+    if (gramsFirst) {
+      pushUniqueItem(items, seen, gramsFirst[2], Number(String(gramsFirst[1]).replace(',', '.')));
+      continue;
+    }
+    const nameFirst = segment.match(
+      /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/i,
+    );
+    if (nameFirst) {
+      pushUniqueItem(items, seen, nameFirst[1], Number(String(nameFirst[2]).replace(',', '.')));
+    }
+  }
+
+  if (items.length === 0) {
+    const gramsFirstPattern =
+      /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b(?:\s+di\s+|\s+)([^,;]+?)(?=\s*,|\s*;\s*|\s+e\s+\d|\s*$)/gi;
+    let match = gramsFirstPattern.exec(text);
+    while (match) {
+      pushUniqueItem(items, seen, match[2], Number(String(match[1]).replace(',', '.')));
+      match = gramsFirstPattern.exec(text);
+    }
   }
 
   if (items.length === 0) {
     const nameFirstPattern = /([^,;]+?)\s+(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/gi;
-    match = nameFirstPattern.exec(text);
+    let match = nameFirstPattern.exec(text);
     while (match) {
       pushUniqueItem(items, seen, match[1], Number(String(match[2]).replace(',', '.')));
       match = nameFirstPattern.exec(text);
@@ -1956,4 +1991,51 @@ export function parseConsumedMealFromNaturalText(userText) {
   const exactTime = parseExactTimeFromUserText(text);
 
   return { mealType, items, exactTime };
+}
+
+function namesLikelyMatch(a, b) {
+  const left = String(a || '').trim().toLowerCase();
+  const right = String(b || '').trim().toLowerCase();
+  if (!left || !right) return false;
+  return left === right || left.includes(right) || right.includes(left);
+}
+
+/**
+ * Applica le grammature esplicite del testo utente a items[] senza copiare
+ * i grammi del primo alimento sugli altri.
+ * @param {Array<object>} items
+ * @param {string} userText
+ * @returns {Array<object>}
+ */
+export function overlayExplicitGramsOntoItems(items, userText) {
+  const list = Array.isArray(items) ? items.map((item) => ({ ...item })) : [];
+  if (list.length === 0) return list;
+  const parsed = parseConsumedMealFromNaturalText(userText);
+  const local = Array.isArray(parsed?.items) ? parsed.items : [];
+  if (local.length === 0) return list;
+
+  const used = new Set();
+  list.forEach((item) => {
+    const foodName = item.foodName || item.name;
+    const idx = local.findIndex((localItem, i) => (
+      !used.has(i) && namesLikelyMatch(foodName, localItem.foodName)
+    ));
+    if (idx < 0) return;
+    const grams = Math.round(Number(local[idx].grams));
+    if (!Number.isFinite(grams) || grams <= 0) return;
+    used.add(idx);
+    item.grams = grams;
+    item.isEstimated = false;
+  });
+
+  if (used.size === 0 && local.length === list.length) {
+    list.forEach((item, i) => {
+      const grams = Math.round(Number(local[i]?.grams));
+      if (!Number.isFinite(grams) || grams <= 0) return;
+      item.grams = grams;
+      item.isEstimated = false;
+    });
+  }
+
+  return list;
 }

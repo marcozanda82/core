@@ -24,6 +24,7 @@ import {
   normalizeExactTime,
   parseConsumedMealFromNaturalText,
   parseExactTimeFromUserText,
+  overlayExplicitGramsOntoItems,
 } from '../conversation/mealLogIntent.js';
 import {
   inferWorkoutTypeFromText,
@@ -1007,6 +1008,12 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     delete payload.foodName;
     delete payload.grams;
     delete payload.searchKeywords;
+  }
+
+  try {
+    payload.items = overlayExplicitGramsOntoItems(payload.items, combinedText);
+  } catch (error) {
+    console.warn('[GeminiStructuredClient] overlayExplicitGramsOntoItems failed', error);
   }
 
   const mealRaw = asTrimmedString(payload.mealType).toLowerCase();

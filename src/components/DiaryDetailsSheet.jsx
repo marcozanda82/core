@@ -312,7 +312,7 @@ function SleepTabPanel({
 function EmptyDayTrackingPrompt({ isIntentionalFast, onMarkIntentionalFast, onClearIntentionalFast }) {
   if (isIntentionalFast) {
     return (
-      <div className="diary-intentional-fast">
+      <div className="diary-intentional-fast bg-slate-900/40 backdrop-blur-sm border border-slate-800/80 rounded-xl p-4">
         <p className="diary-intentional-fast__title">Digiuno intenzionale 24h</p>
         <p className="diary-intentional-fast__hint">
           Questo giorno conta come digiuno tracciato (0 kcal) e può estendere la catena metabolica.
@@ -327,13 +327,17 @@ function EmptyDayTrackingPrompt({ isIntentionalFast, onMarkIntentionalFast, onCl
   }
 
   return (
-    <div className="diary-intentional-fast">
+    <div className="diary-intentional-fast bg-slate-900/40 backdrop-blur-sm border border-slate-800/80 rounded-xl p-4">
       <p className="diary-intentional-fast__title">Nessun pasto registrato</p>
       <p className="diary-intentional-fast__hint">
         È un buco di tracciamento o un digiuno intenzionale?
       </p>
       {typeof onMarkIntentionalFast === 'function' ? (
-        <button type="button" className="diary-intentional-fast__btn" onClick={onMarkIntentionalFast}>
+        <button
+          type="button"
+          className="diary-intentional-fast__btn bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 transition-all"
+          onClick={onMarkIntentionalFast}
+        >
           Segna come Digiuno 24h
         </button>
       ) : null}
@@ -495,11 +499,17 @@ export default function DiaryDetailsSheet({
       aria-modal={embedded ? undefined : true}
       aria-labelledby="diary-details-title"
       className={[
-        'diary-details-panel',
-        embedded ? 'diary-details-panel--embedded' : 'vetrina-sheet-enter',
+        'diary-details-panel relative isolate overflow-hidden',
+        'bg-slate-900/60 backdrop-blur-xl border border-white/10',
+        'shadow-2xl shadow-cyan-950/20',
+        embedded ? 'diary-details-panel--embedded rounded-3xl' : 'vetrina-sheet-enter',
       ].join(' ')}
       onMouseDown={embedded ? undefined : (e) => e.stopPropagation()}
     >
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden" aria-hidden>
+        <div className="absolute -left-10 -top-12 h-44 w-44 rounded-full bg-cyan-400 blur-3xl opacity-20" />
+        <div className="absolute -bottom-10 -right-8 h-52 w-52 rounded-full bg-indigo-500 blur-3xl opacity-20" />
+      </div>
       {!embedded ? (
         <div className="diary-details-panel__chrome">
           <div className="diary-details-panel__handle" aria-hidden />
@@ -545,9 +555,12 @@ export default function DiaryDetailsSheet({
                 className={`diary-pillar-tab${active ? ' is-active' : ''}`}
                 style={{
                   color: meta.color,
-                  borderBottomColor: active ? meta.color : 'transparent',
-                  background: active ? pillarColorToRgba(meta.color, 0.14) : 'transparent',
-                  opacity: active ? 1 : 0.5,
+                  background: active ? pillarColorToRgba(meta.color, 0.18) : undefined,
+                  borderColor: active ? pillarColorToRgba(meta.color, 0.45) : undefined,
+                  boxShadow: active
+                    ? `0 0 18px ${pillarColorToRgba(meta.color, 0.28)}, 0 0 28px rgba(34, 211, 238, 0.12)`
+                    : undefined,
+                  opacity: active ? 1 : 0.62,
                 }}
                 onClick={() => setActivePillarTab(pillarId)}
                 title={meta.label}
@@ -673,7 +686,9 @@ export default function DiaryDetailsSheet({
         {activePillarTab === 'TRAINING' ? (
           <>
             {!hasWorkouts ? (
-              <p className="diary-details-empty">Nessun allenamento registrato oggi.</p>
+              <p className="diary-details-empty bg-slate-900/40 backdrop-blur-sm border border-slate-800/80 rounded-xl p-4">
+                Nessun allenamento registrato oggi.
+              </p>
             ) : (
               <section className="diary-sheet-workout-group">
                 <header className="diary-sheet-workout-group__header">
@@ -784,7 +799,13 @@ export default function DiaryDetailsSheet({
     </div>
   );
 
-  if (embedded) return panel;
+  if (embedded) {
+    return (
+      <div className="flex h-full min-h-0 flex-col px-3 pb-2 pt-2">
+        {panel}
+      </div>
+    );
+  }
 
   return createPortal(
     <div

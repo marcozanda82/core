@@ -3497,7 +3497,7 @@ export function computeDayEvaluations(log, userTargets) {
   if (fastingHours < 12) { fastStars = 0; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
   else if (fastingHours < 14) { fastStars = 1; fastReason = 'Finestra di alimentazione troppo ampia. L\'autofagia (pulizia cellulare) non si è attivata.'; }
   else if (fastingHours < 16) { fastStars = 3; fastReason = 'Buon inizio di riciclo cellulare. Il sistema ha iniziato a eliminare le proteine danneggiate.'; }
-  else { fastStars = 5; fastReason = 'Protocollo Gold: 16+ ore di digiuno hanno garantito una rigenerazione cellulare profonda.'; }
+  else { fastStars = 5; fastReason = 'Digiuno Gold: 16+ ore di digiuno hanno garantito una rigenerazione cellulare profonda.'; }
 
   return {
     ready: true,

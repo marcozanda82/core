@@ -71,8 +71,6 @@ export default function MainMenuDrawer({
   closeDrawer,
   setIsDrawerOpen,
   setShowProfile,
-  onOpenStrategicPlanner,
-  onOpenTacticalCoach,
   onSanitizeFoodDb = null,
 }) {
   const showHome = !activeAction || activeAction === 'home';
@@ -190,20 +188,7 @@ export default function MainMenuDrawer({
                       onClick={() => runAndClose(() => onOpenTherapyPlan?.())}
                     />
                     <MenuGlassButton
-                      icon="🎯"
-                      label="Protocollo"
-                      labelClassName="text-[#00e5ff]"
-                      iconFilter="drop-shadow(0 0 8px rgba(0, 229, 255, 0.4))"
-                      onClick={() => runAndClose(() => onOpenStrategicPlanner?.())}
-                    />
-                    <MenuGlassButton
-                      icon="🤖"
-                      label="Navigatore Tattico"
-                      labelClassName="text-[#a5b4fc]"
-                      iconFilter="drop-shadow(0 0 8px rgba(99, 102, 241, 0.5))"
-                      onClick={() => runAndClose(() => onOpenTacticalCoach?.())}
-                    />
-                    <MenuGlassButton
+                      span={import.meta.env.DEV ? 1 : 2}
                       icon={(
                         <Leaf
                           size={28}
@@ -258,7 +243,7 @@ export default function MainMenuDrawer({
                       />
                     ) : null}
                     <MenuGlassButton
-                      span={2}
+                      span={import.meta.env.DEV && typeof onSanitizeFoodDb === 'function' ? 1 : 2}
                       icon="🛠️"
                       label="Dev Console"
                       labelClassName="text-[#cbd5e1]"

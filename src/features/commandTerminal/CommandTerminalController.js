@@ -95,6 +95,7 @@ import {
   findLatestMealDraftProjectionFromChatHistory,
   parseRemovedFoodQueryFromSubstituteText,
   parseExactTimeFromUserText,
+  overlayExplicitGramsOntoItems,
   isClarificationFollowUpReply,
   parseMealLogFromChatThread,
   buildApproximateMealLogForRecovery,
@@ -387,6 +388,47 @@ function buildConfirmationSummary(commandType, payload) {
   return 'Confermi l\'inserimento?';
 }
 
+const GUIDED_MEAL_LABELS = {
+  colazione: 'Colazione',
+  snack: 'Snack',
+  pranzo: 'Pranzo',
+  cena: 'Cena',
+};
+
+function guidedMealLabel(mealType) {
+  const key = String(mealType || '').split('_')[0].toLowerCase();
+  return GUIDED_MEAL_LABELS[key] || 'pasto';
+}
+
+function buildGuidedLoggerTransitionMessage(mealType) {
+  return `Ho preparato il tuo ${guidedMealLabel(mealType)} nella modalità guidata. Verifica i grammi e conferma.`;
+}
+
+function mapItemsForGuidedLogger(items) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const foodName = String(item?.foodName || item?.name || item?.spokenFoodName || '').trim();
+      const grams = Math.round(Number(item?.grams ?? item?.qty ?? item?.weight) || 0);
+      if (!foodName) return null;
+      return {
+        foodName,
+        name: foodName,
+        grams: grams > 0 ? grams : undefined,
+        qty: grams > 0 ? grams : undefined,
+        foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+        matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+        icon: item?.icon,
+        spokenFoodName: item?.spokenFoodName,
+        kcal: item?.kcal,
+        prot: item?.prot ?? item?.pro,
+        carb: item?.carb ?? item?.carbo,
+        fat: item?.fat ?? item?.fatTotal,
+        type: item?.type,
+      };
+    })
+    .filter(Boolean);
+}
+
 export class CommandTerminalController {
   constructor({
     bus = commandBus,
@@ -400,7 +442,7 @@ export class CommandTerminalController {
     this.bus = bus;
     this.llmClient = llmClient;
     this.composer = composer;
-    /** @type {((payload: object) => boolean|void)|null} Voice → FastMealLogger draft (no diary save). */
+    /** @type {((payload: object) => boolean|void)|null} Chat/voce → FastMealLogger (Modalità Guidata AI). */
     this.onPopulateMealLavagna = typeof onPopulateMealLavagna === 'function' ? onPopulateMealLavagna : null;
     /** @type {((entry: object, options?: object) => Promise<{ key?: string, row?: object }|void>)|null} Chat new food → DB personale. */
     this.onSaveFoodEntryPer100ToFoodDb = typeof onSaveFoodEntryPer100ToFoodDb === 'function'
@@ -2817,6 +2859,59 @@ export class CommandTerminalController {
     return this.finishSuspendedMealPublication();
   }
 
+  /**
+   * Apre FastMealLogger (Modalità Guidata AI) pre-popolato.
+   * Nessuna card Sì/Modifica/Annulla nel thread: solo feedback di transizione.
+   */
+  tryOpenGuidedAiMealLogger({
+    items,
+    mealType = null,
+    exactTime = null,
+    timeString = null,
+    userText = '',
+    fromVoice = false,
+  } = {}) {
+    if (typeof this.onPopulateMealLavagna !== 'function') return null;
+
+    const overlaid = overlayExplicitGramsOntoItems(items, userText);
+    const lavagnaItems = mapItemsForGuidedLogger(overlaid);
+    if (lavagnaItems.length === 0) return null;
+
+    const resolvedMealType = String(mealType || '').split('_')[0].toLowerCase() || null;
+    const transition = buildGuidedLoggerTransitionMessage(resolvedMealType);
+    const lavagnaOk = this.onPopulateMealLavagna({
+      mode: 'GUIDED_AI',
+      items: lavagnaItems,
+      mealType: resolvedMealType,
+      exactTime: exactTime || timeString || null,
+      timeString: timeString || exactTime || null,
+      message: transition,
+    });
+    if (lavagnaOk === false) return null;
+
+    if (typeof this.clearPendingMealDraft === 'function') {
+      this.clearPendingMealDraft();
+    }
+    this.conversationState = CONVERSATION_STATE.IDLE;
+    this.publishAdviceMessage({
+      text: transition,
+      spokenText: transition,
+      mealProposals: null,
+      quickReplies: [],
+    });
+    return {
+      ok: true,
+      intent: 'ADD_FOOD',
+      mealLavagna: true,
+      mode: 'GUIDED_AI',
+      userNotified: true,
+      sourceText: String(userText || '').trim() || null,
+      fastPath: true,
+      awaitingConfirmation: false,
+      fromVoice: fromVoice === true,
+    };
+  }
+
   async finishSuspendedMealPublication() {
     const state = this.suspendedMealPublication;
     if (!state) {
@@ -2839,46 +2934,15 @@ export class CommandTerminalController {
     this.mealDraftInteractiveEdit = false;
     const items = expandFoodPayloadItems(enrichedPayload);
 
-    if (fromVoice && typeof this.onPopulateMealLavagna === 'function') {
-      const lavagnaItems = (proposal?.items || items).map((item, idx) => ({
-        foodName: item.foodName,
-        name: item.foodName,
-        grams: item.grams,
-        qty: item.grams,
-        foodDbKey: item.foodDbKey ?? null,
-        matchedKey: item.foodDbKey ?? null,
-        icon: item.icon,
-        spokenFoodName: item.spokenFoodName,
-      }));
-      const lavagnaOk = this.onPopulateMealLavagna({
-        items: lavagnaItems,
-        mealType: enrichedPayload?.mealType || null,
-        exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || null,
-        message: summaryText,
-      });
-      if (lavagnaOk !== false) {
-        if (typeof this.clearPendingMealDraft === 'function') {
-          this.clearPendingMealDraft();
-        }
-        this.conversationState = CONVERSATION_STATE.IDLE;
-        this.publishAdviceMessage({
-          text: summaryText,
-          spokenText,
-          mealProposals: null,
-          quickReplies: [],
-        });
-        return {
-          ok: true,
-          intent: 'ADD_FOOD',
-          mealLavagna: true,
-          userNotified: true,
-          sourceText: String(userText || '').trim() || null,
-          fastPath: true,
-          awaitingConfirmation: false,
-          fromVoice: true,
-        };
-      }
-    }
+    const guided = this.tryOpenGuidedAiMealLogger({
+      items: proposal?.items?.length ? proposal.items : items,
+      mealType: proposal?.mealType || enrichedPayload?.mealType,
+      exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || proposal?.exactTime,
+      timeString: enrichedPayload?.timeString || enrichedPayload?.exactTime,
+      userText,
+      fromVoice,
+    });
+    if (guided) return guided;
 
     const stagedItems = draftItemsFromProposalItems(proposal?.items);
     this.stagePendingMealDraft({
@@ -3045,39 +3109,17 @@ export class CommandTerminalController {
 
     this.mealDraftInteractiveEdit = false;
 
-    // Nota vocale + lavagna aperta: popola FastMealLogger, NESSUN auto-save / pending confirm.
-    if (fromVoice && typeof this.onPopulateMealLavagna === 'function') {
-      const lavagnaOk = this.onPopulateMealLavagna({
-        items,
-        mealType: enrichedPayload?.mealType || null,
-        exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || null,
-        message: summaryText,
-      });
-      if (lavagnaOk !== false) {
-        if (typeof this.clearPendingMealDraft === 'function') {
-          this.clearPendingMealDraft();
-        }
-        this.conversationState = CONVERSATION_STATE.IDLE;
-        this.publishAdviceMessage({
-          text: summaryText,
-          spokenText,
-          mealProposals: null,
-          quickReplies: [],
-        });
-        return {
-          ok: true,
-          intent: 'ADD_FOOD',
-          mealLavagna: true,
-          userNotified: true,
-          sourceText: String(userText || '').trim() || null,
-          fastPath: true,
-          awaitingConfirmation: false,
-          fromVoice: true,
-        };
-      }
-    }
+    const guided = this.tryOpenGuidedAiMealLogger({
+      items,
+      mealType: proposal?.mealType || enrichedPayload?.mealType,
+      exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || proposal?.exactTime,
+      timeString: enrichedPayload?.timeString || enrichedPayload?.exactTime,
+      userText,
+      fromVoice,
+    });
+    if (guided) return guided;
 
-    // McDrive: bozza in sospeso — allinea pending agli item della proposal (macro + foodDbKey).
+    // Fallback: se il logger guidato non è disponibile, resta la bozza in chat.
     const stagedItems = draftItemsFromProposalItems(proposal?.items);
     this.stagePendingMealDraft({
       ...enrichedPayload,
@@ -6331,12 +6373,25 @@ export class CommandTerminalController {
       });
     }
 
+    if (commandType === 'ADD_FOOD') {
+      const guidedItems = expandFoodPayloadItems(payload);
+      if (guidedItems.length > 0) {
+        const guided = this.tryOpenGuidedAiMealLogger({
+          items: guidedItems,
+          mealType: payload.mealType,
+          exactTime: payload.exactTime || payload.timeString,
+          timeString: payload.timeString || payload.exactTime,
+          userText,
+          fromVoice: options?.fromVoice === true,
+        });
+        if (guided) return guided;
+      }
+    }
+
     if (commandType === 'ADD_WORKOUT') {
       return this.beginWorkoutRegistration(payload, currentState, userText);
     }
 
-    // ADD_FOOD draft: solo card locale — niente budget Gemini; il residuo esce alla conferma.
-    // Multi-item viene intercettato dentro stagePendingAction → wizard.
     return this.stagePendingAction(commandType, payload, {
       confidence: commandResponse.command.confidence ?? null,
       requiresConfirmation: true,

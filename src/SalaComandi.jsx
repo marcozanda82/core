@@ -86,7 +86,7 @@ import { withDefaultUsageStats, recordDraftFoodsUsageStats, getCurrentTimeSlot }
 import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
 import { isHealthDiabetesChatMode } from './features/chat/healthChatMode.js';
-import { getTodayPlannedKcal, useStrategicPlanner } from './hooks/useStrategicPlanner';
+import { useStrategicPlanner } from './hooks/useStrategicPlanner';
 import { UserNutritionGoalsProvider } from './UserNutritionGoalsContext';
 import { mergeProfileNutritionFromServer, buildNutritionGoalsSnapshot } from './userNutritionGoals';
 import {
@@ -449,8 +449,6 @@ const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnal
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
-const StrategicPlannerOverlay = lazy(() => import('./features/planning/StrategicPlannerOverlay'));
-const TacticalCoach = lazy(() => import('./features/coach/TacticalCoach'));
 const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
 const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
 const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
@@ -769,7 +767,6 @@ export default function SalaComandi() {
   }, []);
 
   const [planningWizardOverlayOpen, setPlanningWizardOverlayOpen] = useState(false);
-  const [showStrategicPlanner, setShowStrategicPlanner] = useState(false);
   /** Incrementato ad ogni apertura wizard: consente idratazione da Firebase senza sovrascrivere durante l’editing. */
   const [planningWizardHydrateNonce, setPlanningWizardHydrateNonce] = useState(0);
 
@@ -961,7 +958,7 @@ export default function SalaComandi() {
     await update(ref(db, `users/${uid}/profile_targets/profile`), { appMode: mode });
   }, [auth, db, userProfile, userUid]);
 
-  const { strategicPlan, isPlannerLoading, updateDayPlan, updateSettings, saveCalorieMemory, shiftPlanForward } = useStrategicPlanner(
+  const { strategicPlan } = useStrategicPlanner(
     db,
     userProfile?.uid || user?.uid
   );
@@ -990,11 +987,6 @@ export default function SalaComandi() {
     isSimulationMode,
     onConfirmSession: invokeTrainingBlockOnConfirm,
   });
-
-  const plannedWorkoutKcal = useMemo(
-    () => getTodayPlannedKcal(strategicPlan, currentTrackerDate),
-    [strategicPlan, currentTrackerDate]
-  );
 
   const effectiveTargetsForCurrentDate = useMemo(
     () =>
@@ -1041,7 +1033,6 @@ export default function SalaComandi() {
 
   // AI ASSISTANT
   const [showBiochemicalDiagnostics, setShowBiochemicalDiagnostics] = useState(false);
-  const [isCoachOpen, setIsCoachOpen] = useState(false);
   const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
   const [engineAlignToastVisible, setEngineAlignToastVisible] = useState(false);
   const engineAlignToastTimerRef = useRef(null);
@@ -3332,13 +3323,21 @@ export default function SalaComandi() {
         || predictMealType(mealDec)
         || 'pranzo';
 
-      const addFoodItems = items.map((item) => ({
-        name: String(item?.foodName || item?.name || item?.spokenFoodName || '').trim(),
-        qty: Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 100)),
-        foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
-        matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
-        type: item?.type === 'recipe' ? 'recipe' : undefined,
-      })).filter((i) => i.name);
+      const addFoodItems = items.map((item) => {
+        const rawQty = Number(item?.grams ?? item?.qty ?? item?.weight);
+        const qty = Number.isFinite(rawQty) && rawQty > 0 ? Math.round(rawQty) : 100;
+        return {
+          name: String(item?.foodName || item?.name || item?.spokenFoodName || '').trim(),
+          qty,
+          foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+          matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
+          type: item?.type === 'recipe' ? 'recipe' : undefined,
+          kcal: item?.kcal,
+          prot: item?.prot ?? item?.pro,
+          carb: item?.carb ?? item?.carbo,
+          fat: item?.fat ?? item?.fatTotal,
+        };
+      }).filter((i) => i.name);
 
       if (!addFoodItems.length) return false;
 
@@ -7054,8 +7053,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   };
   /** Barra Arc Reactor: sempre montata dopo login (anche durante caricamento dati). */
   const shouldHideBottomChatBar =
-    isCoachOpen
-    || biochemicalDetailModal != null
+    biochemicalDetailModal != null
     || isChatOpen
     || showMetabolicTimeline
     || showFastLogger;
@@ -7608,8 +7606,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           closeDrawer={closeDrawer}
           setIsDrawerOpen={setIsDrawerOpen}
           setShowProfile={setShowProfile}
-          onOpenStrategicPlanner={() => setShowStrategicPlanner(true)}
-          onOpenTacticalCoach={() => setIsCoachOpen(true)}
           onSanitizeFoodDb={import.meta.env.DEV ? runHistoricalFoodDbSanitize : null}
         />
 
@@ -7954,41 +7950,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </Suspense>
       ) : null}
 
-      {isCoachOpen ? (
-        <Suspense fallback={<KentuLazySectionFallback label="Coach tattico…" />}>
-        <TacticalCoach
-          totals={{
-            kcal: Number(totali?.kcal) || 0,
-            prot: Number(totali?.prot) || 0,
-            carb: Number(totali?.carb) || 0,
-            fatTotal: Number(totali?.fatTotal ?? totali?.fat) || 0,
-          }}
-          targets={{
-            kcal: Number(dynamicDailyKcal ?? targetKcal) || 0,
-            prot: Number(effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot) || 0,
-            carb: Number(effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb) || 0,
-            fatTotal: Number(
-              effectiveTargetsForCurrentDate?.fatTotal
-              ?? effectiveTargetsForCurrentDate?.fat
-              ?? userTargets?.fatTotal
-              ?? userTargets?.fat,
-            ) || 0,
-          }}
-          currentCoordinates={{
-            x: Number(metabolicMapData?.mapPositionInertial?.x ?? metabolicMapData?.x) || 0,
-            y: Number(metabolicMapData?.mapPositionInertial?.y ?? metabolicMapData?.y) || 0,
-          }}
-          userStats={{
-            weight: Number(userProfile?.weight) || 75,
-            tdee: Number(dynamicDailyKcal ?? targetKcal) || 2480,
-            plannedWorkoutKcal,
-          }}
-          isDayEnded={isViewingPastDate}
-          onClose={() => setIsCoachOpen(false)}
-        />
-        </Suspense>
-      ) : null}
-
       {createPortal(
         <>
           <DailyMacroSheet
@@ -8011,19 +7972,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onApply={applyRecalibrationProposal}
       />
 
-      {showStrategicPlanner && (
-        <Suspense fallback={<KentuLazySectionFallback label="Planner strategico…" />}>
-      <StrategicPlannerOverlay
-        isOpen={showStrategicPlanner}
-        onClose={() => setShowStrategicPlanner(false)}
-        strategicPlan={strategicPlan}
-        isPlannerLoading={isPlannerLoading}
-        updateDayPlan={updateDayPlan}
-        updateSettings={updateSettings}
-        saveCalorieMemory={saveCalorieMemory}
-      />
-        </Suspense>
-      )}
       <TargetSettingsModal
         open={showProfile}
         onClose={() => setShowProfile(false)}

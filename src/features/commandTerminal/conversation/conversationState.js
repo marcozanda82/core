@@ -277,6 +277,28 @@ export function applyGramsSlotResponse(pendingPayload = {}, userText = '') {
     return { ok: false, payload: pending, applied: false };
   }
 
+  const gramNumbers = [...String(userText).matchAll(/(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr)\b/gi)]
+    .map((match) => Math.round(Number(String(match[1]).replace(',', '.'))))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  // Più grammature esplicite → associa 1:1 in ordine, mai copiare il primo valore su tutti.
+  if (gramNumbers.length >= 2 && gramNumbers.length === missingGramsItems.length) {
+    const assigned = new Map();
+    missingGramsItems.forEach((item, index) => {
+      assigned.set(String(item.foodName || '').trim().toLowerCase(), gramNumbers[index]);
+    });
+    const nextItems = pendingItems.map((item) => {
+      const key = String(item.foodName || '').trim().toLowerCase();
+      if (!assigned.has(key)) return { ...item };
+      return { ...item, grams: assigned.get(key) };
+    });
+    return {
+      ok: true,
+      payload: { ...pending, items: nextItems },
+      applied: true,
+    };
+  }
+
   const missingKeys = new Set(
     missingGramsItems.map((item) => String(item.foodName || '').trim().toLowerCase()),
   );

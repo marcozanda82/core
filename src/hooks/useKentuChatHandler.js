@@ -686,7 +686,7 @@ export function useKentuChatHandler(ctx) {
         const energyResult = generateRealEnergyData(nodesForEnergySimulation, dailyLogForEnergy, idealStrategy, 0, 2500, null, null, userModel, nervousSystemLoad, currentTime, accumuloSNC);
         const chartData = energyResult?.chartData || [];
         const energyAt20 = chartData[20]?.energy;
-        const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Kentu' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'strategia' ? 'Protocollo / Strategia' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
+        const paginaAttuale = (!activeAction || activeAction === 'home') ? 'Menu principale' : activeAction === 'pasto' ? `Costruttore pasto (${MEAL_LABELS_SAVE[mealType] || mealType})` : activeAction === 'allenamento' ? 'Costruttore allenamento' : activeAction === 'acqua' ? 'Idratazione' : activeAction === 'ai_chat' ? 'Chat Kentu' : activeAction === 'diario_giornaliero' ? 'Diario giornaliero' : activeAction === 'storico' ? 'Archivio storico' : activeAction === 'focus' ? 'Neural Reset' : activeAction;
 
         const currentDecimalTime = new Date().getHours() + (new Date().getMinutes() / 60);
         const roundedTime = Math.round(currentDecimalTime * 2) / 2;
