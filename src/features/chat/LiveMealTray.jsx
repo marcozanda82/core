@@ -1,22 +1,26 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeftRight, Info, MoreVertical, Pencil, Sparkles, Trash2, Utensils } from 'lucide-react';
+import { ArrowLeftRight, Info, MoreVertical, Pencil, ScanBarcode, Sparkles, Trash2, Utensils } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
+import BarcodeScannerOverlay from '../mealBuilder/components/BarcodeScannerOverlay';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { KentuButton } from '../../components/kentuos/KentuOSUI';
+import KentuTimeSelector from '../../components/kentuos/KentuTimeSelector';
 import { resolveMealItemDisplayIcon } from '../../utils/foodCategoryIcon';
 import { withMealSavingOverlay } from '../../utils/mealSavingOverlayController';
 import {
   draftFoodsToSolverItems,
   solverProposalToMcDriveItem,
 } from '../../utils/solverEngine';
+import useBarcodeScanner from '../mealBuilder/hooks/useBarcodeScanner';
 import {
   EMPTY_MCDRIVE_TOTALS,
   MCDRIVE_ADD_MORE_CHIP,
   MCDRIVE_CANCEL_CHIP,
   MCDRIVE_FINISH_CHIP,
   MCDRIVE_SAVE_CONFIRM_CHIP,
+  buildMcDriveItemFromSearchResult,
   classifyMcdriveMacroVsTarget,
   draftHasRawMcDriveItems,
   formatMcdriveMealTypeLabel,
@@ -249,6 +253,8 @@ function LiveMealTray({
   kentuItDb = null,
   globalDb = null,
   offDb = null,
+  openScannerNonce = 0,
+  onAcquireExternalFood = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
@@ -270,6 +276,49 @@ function LiveMealTray({
   const [solverHighlightIds, setSolverHighlightIds] = useState(() => new Set());
   const solverFeedbackTimerRef = useRef(null);
   const solverHighlightTimerRef = useRef(null);
+  const lastScannerNonceRef = useRef(0);
+  const [addSearchOpen, setAddSearchOpen] = useState(false);
+  const [preferManualSearch, setPreferManualSearch] = useState(false);
+  const [preferManualBarcode, setPreferManualBarcode] = useState('');
+
+  const appendSearchResultToTray = useCallback((result) => {
+    if (!result) return;
+    const grams = Math.max(
+      1,
+      Math.round(Number(result?.grams ?? result?.row?.defaultUnitWeight) || 100),
+    );
+    const item = buildMcDriveItemFromSearchResult(result, grams);
+    onAppendSolverItems?.([item]);
+  }, [onAppendSolverItems]);
+
+  const {
+    isOpen: isScannerOpen,
+    open: openScanner,
+    close: closeScanner,
+    videoRef: barcodeVideoRef,
+    error: scannerError,
+    isResolving: isScannerResolving,
+    notFound: scannerNotFound,
+  } = useBarcodeScanner({
+    personalDb,
+    onAcquireExternalFood,
+    onFoodResolved: (food) => {
+      appendSearchResultToTray(food);
+      setAddSearchOpen(false);
+      setSearchIndex(null);
+      setPreferManualSearch(false);
+      setPreferManualBarcode('');
+    },
+  });
+
+  useEffect(() => {
+    const nonce = Number(openScannerNonce) || 0;
+    if (!nonce || nonce === lastScannerNonceRef.current) return;
+    lastScannerNonceRef.current = nonce;
+    if (disabled) return;
+    openScanner();
+  }, [openScannerNonce, openScanner, disabled]);
+
   const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
 
   const mealTargets = useMemo(() => {
@@ -390,32 +439,13 @@ function LiveMealTray({
             <span className="kentu-meal-tray__badge">Calibrazione</span>
             <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
           </div>
-          <label
-            htmlFor="mcdrive-meal-time"
-            className="kentu-meal-tray__time-chip inline-flex shrink-0 items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800/70 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition-colors hover:border-cyan-500/35"
-          >
-            <span aria-hidden>🕒</span>
-            <input
-              id="mcdrive-meal-time"
-              type="time"
-              value={exactTimeValue}
-              onChange={(e) => {
-                const next = String(e?.target?.value || '').trim();
-                onUpdateMealTime?.(next);
-              }}
-              onClick={(e) => {
-                if (typeof e?.currentTarget?.showPicker === 'function') {
-                  try {
-                    e.currentTarget.showPicker();
-                  } catch {
-                    /* ignored */
-                  }
-                }
-              }}
-              className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-semibold leading-none text-cyan-200 outline-none [color-scheme:dark]"
-            />
-          </label>
         </div>
+        <KentuTimeSelector
+          value={exactTimeValue}
+          disabled={disabled}
+          onChange={(next) => onUpdateMealTime?.(next)}
+          className="mt-2"
+        />
         {hasTargets ? (
           <div className="kentu-meal-tray__target-grid" aria-label="Confronto vassoio / target pasto">
             <MacroCompareRow label="Kcal" actual={resolvedTotals.kcal} target={mealTargets.kcal} unit="kcal" />
@@ -691,14 +721,26 @@ function LiveMealTray({
             })}
             {active ? (
               <li className="kentu-meal-tray__row kentu-meal-tray__row--add">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
-                  disabled={disabled || isSaving}
-                  onClick={() => onAddMore?.()}
-                >
-                  + Aggiungi un altro alimento
-                </button>
+                <div className="flex w-full items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+                    disabled={disabled || isSaving}
+                    onClick={() => onAddMore?.()}
+                  >
+                    + Aggiungi un altro alimento
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/20 disabled:opacity-50"
+                    disabled={disabled || isSaving}
+                    onClick={() => openScanner()}
+                    aria-label="Scansiona barcode"
+                    title="Scanner barcode"
+                  >
+                    <ScanBarcode className="h-5 w-5" />
+                  </button>
+                </div>
               </li>
             ) : null}
           </ul>
@@ -769,7 +811,7 @@ function LiveMealTray({
                   try {
                     await withMealSavingOverlay(async () => {
                       setIsSaving(true);
-                      await Promise.resolve(onSave?.());
+                      await Promise.resolve(onSave?.(items));
                     });
                   } catch (err) {
                     console.error('[LiveMealTray] salvataggio fallito', err);
@@ -809,8 +851,13 @@ function LiveMealTray({
       />
 
       <UniversalSearchModal
-        isOpen={searchIndex != null}
-        onClose={() => setSearchIndex(null)}
+        isOpen={searchIndex != null || addSearchOpen}
+        onClose={() => {
+          setSearchIndex(null);
+          setAddSearchOpen(false);
+          setPreferManualSearch(false);
+          setPreferManualBarcode('');
+        }}
         initialQuery={
           searchIndex != null
             ? String(
@@ -825,11 +872,38 @@ function LiveMealTray({
         kentuItDb={kentuItDb}
         globalDb={globalDb}
         offDb={offDb}
+        onOpenScanner={() => openScanner()}
+        onSaveManualFood={onAcquireExternalFood}
+        scannerError={scannerError}
+        isScannerResolving={isScannerResolving}
+        preferManualEntry={preferManualSearch}
+        preferManualBarcode={preferManualBarcode}
         onSelectFood={(result) => {
-          if (searchIndex == null) return;
-          onReplaceFromSearch?.(searchIndex, result);
-          setSearchIndex(null);
-          setEditingIndex(null);
+          if (searchIndex != null) {
+            onReplaceFromSearch?.(searchIndex, result);
+            setSearchIndex(null);
+            setEditingIndex(null);
+            return;
+          }
+          appendSearchResultToTray(result);
+          setAddSearchOpen(false);
+          setPreferManualSearch(false);
+          setPreferManualBarcode('');
+        }}
+      />
+
+      <BarcodeScannerOverlay
+        isOpen={isScannerOpen}
+        onClose={closeScanner}
+        videoRef={barcodeVideoRef}
+        error={scannerError}
+        isResolving={isScannerResolving}
+        notFound={scannerNotFound}
+        onInsertManually={(ean) => {
+          closeScanner();
+          setPreferManualBarcode(String(ean || '').trim());
+          setPreferManualSearch(true);
+          setAddSearchOpen(true);
         }}
       />
 

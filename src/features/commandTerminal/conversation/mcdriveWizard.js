@@ -441,9 +441,91 @@ export function buildMcDriveRawItem(parsed = {}) {
 }
 
 /**
- * @param {object} item
- * @returns {boolean}
+ * Normalizza orario pasto in HH:mm (accetta "8:05", "08:05" o ora decimale).
+ * @param {string|number|null|undefined} raw
+ * @param {string|null} [fallbackHHmm]
+ * @returns {string|null}
  */
+export function normalizeMcdriveExactTimeHHmm(raw, fallbackHHmm = null) {
+  const s = String(raw ?? '').trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) {
+    const [h, m] = s.split(':');
+    const hours = Math.min(23, Math.max(0, Number(h)));
+    const minutes = Math.min(59, Math.max(0, Number(m)));
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+  const n = Number(raw);
+  if (Number.isFinite(n) && n >= 0 && n <= 24) {
+    const hours = Math.min(23, Math.floor(n));
+    const minutes = Math.min(59, Math.round((n - Math.floor(n)) * 60));
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+  const fb = String(fallbackHHmm || '').trim();
+  return /^\d{2}:\d{2}$/.test(fb) ? fb : null;
+}
+
+/**
+ * Converte alimenti estratti da chat (ADD_FOOD) in righe lavagna McDrive.
+ * Grammi espliciti per item; con kcal/chiave DB → resolved (revisione), altrimenti raw.
+ * @param {object[]} items
+ * @returns {object[]}
+ */
+export function buildMcDriveDraftFromParsedFoods(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((f, idx) => {
+      if (!f || typeof f !== 'object') return null;
+      const foodName = String(
+        f.foodName || f.name || f.spokenFoodName || f.desc || f.label || '',
+      ).trim();
+      if (!foodName) return null;
+
+      const gramsRaw = Number(f.grams ?? f.qty ?? f.qta ?? f.weight);
+      const hasExplicitGrams = Number.isFinite(gramsRaw) && gramsRaw > 0;
+      const kcal = Math.round(Number(f.kcal ?? f.cal) || 0);
+      const pro = Number(f.pro ?? f.prot) || 0;
+      const carbo = Number(f.carbo ?? f.carb ?? f.cho) || 0;
+      const fat = Number(f.fatTotal ?? f.fat) || 0;
+      const foodDbKeyRaw = f.foodDbKey ?? f.matchedKey ?? f.dbKey ?? f.fdcId ?? null;
+      const foodDbKey = foodDbKeyRaw != null && String(foodDbKeyRaw).trim()
+        ? String(foodDbKeyRaw).trim()
+        : null;
+      const hasMacros = kcal > 0 || pro > 0 || carbo > 0 || fat > 0;
+
+      if (foodDbKey || hasMacros) {
+        const smartGrams = resolveSmartDefaultPortion(foodName).grams;
+        const grams = hasExplicitGrams
+          ? Math.round(gramsRaw)
+          : Math.max(1, Math.round(Number(smartGrams) || DEFAULT_GRAMS));
+        return attachResolvedFoodIcon({
+          id: String(f.id || f.itemId || `mcdrive_ai_${Date.now()}_${idx}`).trim(),
+          foodName,
+          spokenFoodName: String(f.spokenFoodName || foodName).trim(),
+          grams,
+          kcal,
+          pro,
+          carbo,
+          fat,
+          foodDbKey,
+          status: 'resolved',
+          isEstimated: f.isEstimated === true,
+          alternatives: Array.isArray(f.alternatives) ? f.alternatives.slice(0, 4) : [],
+          row: f.row && typeof f.row === 'object' ? { ...f.row } : undefined,
+        });
+      }
+
+      return buildMcDriveRawItem({
+        foodName,
+        grams: hasExplicitGrams ? Math.round(gramsRaw) : undefined,
+        isEstimated: f.isEstimated === true,
+        servingLabel: f.servingLabel || null,
+        coffeeShopProductId: f.coffeeShopProductId || null,
+      });
+    })
+    .filter(Boolean);
+}
+
 /**
  * @param {string|object} statusOrItem
  * @returns {boolean}
@@ -680,6 +762,78 @@ export function buildMcDriveItemFromSearchResult(searchResult, grams, extra = {}
       alternatives: extra.alternatives || [],
     },
   );
+}
+
+/**
+ * Voci lavagna pronte per la scrittura diario (niente rematch sul nome parlato).
+ */
+const MCDRIVE_COMMIT_SKIP_STATUSES = new Set([
+  'skipped',
+  'raw',
+  'pending_enrichment',
+  'requires_disambiguation',
+  'processing',
+  'validating',
+]);
+
+export function isMcDriveItemCommitEligible(item) {
+  const status = String(item?.status || '').toLowerCase();
+  if (MCDRIVE_COMMIT_SKIP_STATUSES.has(status)) return false;
+  return status === 'resolved' || Number(item?.kcal) > 0 || Boolean(item?.foodDbKey);
+}
+
+/**
+ * Snapshot UI → payload UPSERT. Usa nome/grammi/macro del vassoio corrente,
+ * non il testo originale della chat (`spokenFoodName` allineato al foodName visibile).
+ */
+export function mapMcDriveItemsToCommitPayload(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter(isMcDriveItemCommitEligible)
+    .map((item) => {
+      const foodName = String(item?.foodName || item?.name || '').trim();
+      const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
+      if (!foodName || grams <= 0) return null;
+      const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
+      const kcal = Number(item?.kcal);
+      const pro = Number(item?.pro ?? item?.prot);
+      const carbo = Number(item?.carbo ?? item?.carb);
+      const fat = Number(item?.fat ?? item?.fatTotal);
+      return {
+        foodName,
+        name: foodName,
+        grams,
+        qty: grams,
+        spokenFoodName: foodName,
+        ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
+        ...(Number.isFinite(kcal) ? { kcal: Math.round(kcal) } : {}),
+        ...(Number.isFinite(pro) ? { pro } : {}),
+        ...(Number.isFinite(carbo) ? { carbo } : {}),
+        ...(Number.isFinite(fat) ? { fat } : {}),
+        ...(item?.isEstimated === true ? { isEstimated: true } : {}),
+        ...(item?.coffeeShopProductId
+          ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
+          : {}),
+      };
+    })
+    .filter(Boolean);
+}
+
+/** Allinea la bozza controller allo snapshot della lavagna (ordine / id). */
+export function mergeMcDriveDraftWithTraySnapshot(draftItems, trayItems) {
+  if (!Array.isArray(trayItems) || trayItems.length === 0) {
+    return Array.isArray(draftItems) ? [...draftItems] : [];
+  }
+  const prev = Array.isArray(draftItems) ? draftItems : [];
+  const prevById = new Map(
+    prev
+      .filter((item) => item?.id != null && String(item.id).trim())
+      .map((item) => [String(item.id), item]),
+  );
+  return trayItems.map((item, index) => {
+    const id = item?.id != null ? String(item.id).trim() : '';
+    const base = (id && prevById.get(id)) || prev[index] || {};
+    return { ...base, ...item };
+  });
 }
 
 /**

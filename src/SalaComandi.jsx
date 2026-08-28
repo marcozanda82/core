@@ -2817,6 +2817,7 @@ export default function SalaComandi() {
     setEditingMealId(null);
     setFastLoggerInitialSlot(null);
     setPendingGhostMealId(null);
+    setFastLoggerRemountKey((k) => k + 1);
     setShowFastLogger(true);
   }, []);
 
@@ -3133,8 +3134,8 @@ export default function SalaComandi() {
       const batchIdFood = `batch_${Date.now()}`;
       return addFoodItems
         .map((item, index) => {
-          const name = item.name;
-          const qty = Math.max(1, Number(item.qty));
+          const name = String(item?.name || item?.foodName || '').trim();
+          const qty = Math.max(1, Number(item?.qty ?? item?.grams));
           const preferredKey = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
           const shopProduct = getCoffeeShopProductById(item.coffeeShopProductId)
             || findCoffeeShopProductByName(name);
@@ -3291,6 +3292,7 @@ export default function SalaComandi() {
       setEditingMealId(null);
       setPendingGhostMealId(src.id ?? node.id ?? null);
       setFastLoggerInitialSlot(mealSlot);
+      setFastLoggerRemountKey((k) => k + 1);
       setShowFastLogger(true);
     },
     [
@@ -5663,6 +5665,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
         const dbKey = item?.foodDbKey ?? item?.matchedKey;
         const icon = sanitizeFoodIcon(item?.icon);
+        const kcal = Number(item?.kcal);
+        const pro = Number(item?.pro ?? item?.prot);
+        const carbo = Number(item?.carbo ?? item?.carb);
+        const fat = Number(item?.fat ?? item?.fatTotal);
         return {
           name,
           foodName: name,
@@ -5674,6 +5680,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           ...(dbKey != null && String(dbKey).trim() !== ''
             ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
             : {}),
+          ...(Number.isFinite(kcal) ? { kcal: Math.round(kcal), estKcal: Math.round(kcal) } : {}),
+          ...(Number.isFinite(pro) ? { prot: pro, estPro: pro } : {}),
+          ...(Number.isFinite(carbo) ? { carb: carbo, estCar: carbo } : {}),
+          ...(Number.isFinite(fat) ? { fat, estFat: fat } : {}),
         };
       });
 
@@ -8504,7 +8514,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           }
         >
         <FastMealLogger
-          key={`${editingMealId ?? pendingGhostMealId ?? 'new-meal'}-${fastLoggerRemountKey}`}
+          key={`fast-logger-${fastLoggerRemountKey}`}
           fullHistory={fullHistory}
           todayLog={activeLog}
           personalDb={foodDb}

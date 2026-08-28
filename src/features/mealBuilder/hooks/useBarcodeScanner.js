@@ -6,7 +6,8 @@ import { calculateAutoIconTag } from '../../../utils/iconEngine';
 import { triggerSelectionHaptic } from '../utils/hapticFeedback';
 import {
   BARCODE_NO_MATCH_MESSAGE,
-  fetchOpenFoodFactsByBarcode,
+  mapOpenFoodFactsProduct,
+  searchBarcode,
 } from '../utils/barcodeOpenFoodFacts';
 
 /**
@@ -29,10 +30,11 @@ export default function useBarcodeScanner({
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState('');
   const [isResolving, setIsResolving] = useState(false);
+  const [notFound, setNotFound] = useState(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const scanIntervalRef = useRef(null);
-  const resolvingRef = useRef(false);
+  const isScanningRef = useRef(false);
 
   const stopCamera = useCallback(() => {
     if (scanIntervalRef.current) {
@@ -51,11 +53,17 @@ export default function useBarcodeScanner({
   const close = useCallback(() => {
     setIsOpen(false);
     setError('');
+    setNotFound(null);
+    setIsResolving(false);
+    isScanningRef.current = false;
     stopCamera();
   }, [stopCamera]);
 
   const open = useCallback(() => {
     setError('');
+    setNotFound(null);
+    setIsResolving(false);
+    isScanningRef.current = false;
     setIsOpen(true);
   }, []);
 
@@ -82,7 +90,6 @@ export default function useBarcodeScanner({
 
       let entryPer100 = existingDbKey ? { ...(personalDb[existingDbKey] || {}) } : null;
       let generatedIconTag = null;
-      let fromOpenFoodFacts = false;
 
       if (!entryPer100) {
         const localOv = getBarcodeNutritionOverride(code);
@@ -96,12 +103,24 @@ export default function useBarcodeScanner({
             barcode: code,
           };
         } else {
-          entryPer100 = await fetchOpenFoodFactsByBarcode(code);
-          if (entryPer100) {
-            entryPer100 = applyLocalOverride({ ...entryPer100, barcode: code });
-            generatedIconTag = calculateAutoIconTag(entryPer100.desc, '');
-            fromOpenFoodFacts = true;
+          const lookup = await searchBarcode(code);
+          if (!lookup.success) {
+            const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
+            fail.reason = lookup.reason || 'not_found';
+            fail.barcode = code;
+            throw fail;
           }
+          entryPer100 = applyLocalOverride({
+            ...(mapOpenFoodFactsProduct(code, lookup.product) || {}),
+            barcode: code,
+          });
+          if (!entryPer100?.desc) {
+            const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
+            fail.reason = 'not_found';
+            fail.barcode = code;
+            throw fail;
+          }
+          generatedIconTag = calculateAutoIconTag(entryPer100.desc, '');
         }
       }
 
@@ -109,7 +128,10 @@ export default function useBarcodeScanner({
         Number.isFinite(Number(entryPer100?.[k])),
       );
       if (!entryPer100 || !hasStrictMacros) {
-        throw new Error(BARCODE_NO_MATCH_MESSAGE);
+        const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
+        fail.reason = 'not_found';
+        fail.barcode = code;
+        throw fail;
       }
 
       const name = String(entryPer100.desc || '').trim() || `Barcode ${code}`;
@@ -127,35 +149,33 @@ export default function useBarcodeScanner({
         };
       }
 
-      // OFF → arricchimento USDA (opzionale) prima del salvataggio personale
-      if (fromOpenFoodFacts && typeof enrichOffProduct === 'function') {
-        try {
-          const enriched = await enrichOffProduct({ ...entryPer100, desc: name, barcode: code });
-          if (enriched && typeof enriched === 'object') {
-            entryPer100 = { ...enriched, desc: enriched.desc || name, barcode: code };
-          }
-        } catch (enrichErr) {
-          console.warn('[useBarcodeScanner] enrichOffProduct failed — uso solo OFF', enrichErr);
-        }
-      }
-
       let dbKey = `food_${Date.now()}_${code}`;
       let row = { ...entryPer100, desc: name, barcode: code };
 
       if (typeof onAcquireExternalFood === 'function') {
-        const saved = await onAcquireExternalFood({
-          ...row,
-          desc: String(row.desc || name).trim() || name,
-          barcode: code,
-          ...(generatedIconTag ? { iconTag: generatedIconTag } : {}),
-        });
-        if (saved?.key && saved?.row) {
-          dbKey = saved.key;
-          row = saved.row;
-        } else if (saved?.key) {
-          dbKey = saved.key;
-          row = personalDb?.[dbKey] || enrichDbRowWithFoodUnits(row, dbKey);
-        } else {
+        try {
+          const saved = await Promise.race([
+            onAcquireExternalFood({
+              ...row,
+              desc: String(row.desc || name).trim() || name,
+              barcode: code,
+              ...(generatedIconTag ? { iconTag: generatedIconTag } : {}),
+            }),
+            new Promise((_, reject) => {
+              setTimeout(() => reject(new Error('acquire_timeout')), 6000);
+            }),
+          ]);
+          if (saved?.key && saved?.row) {
+            dbKey = saved.key;
+            row = saved.row;
+          } else if (saved?.key) {
+            dbKey = saved.key;
+            row = personalDb?.[dbKey] || enrichDbRowWithFoodUnits(row, dbKey);
+          } else {
+            row = enrichDbRowWithFoodUnits(row, dbKey);
+          }
+        } catch (acquireErr) {
+          console.warn('[useBarcodeScanner] onAcquireExternalFood failed/timeout', acquireErr);
           row = enrichDbRowWithFoodUnits(row, dbKey);
         }
       } else {
@@ -172,41 +192,41 @@ export default function useBarcodeScanner({
         barcode: code,
       };
     },
-    [personalDb, onAcquireExternalFood, enrichOffProduct],
+    [personalDb, onAcquireExternalFood],
   );
 
   const handleBarcodeDetected = useCallback(
     async (barcode) => {
-      if (resolvingRef.current) return;
-      resolvingRef.current = true;
+      if (isScanningRef.current) return;
+      isScanningRef.current = true;
       setIsResolving(true);
       setError('');
+      setNotFound(null);
       stopCamera();
-      setIsOpen(false);
       const code = String(barcode ?? '').trim();
       try {
         if (!code) throw new Error(BARCODE_NO_MATCH_MESSAGE);
         const food = await resolveBarcodeToFood(code);
         setError('');
+        setNotFound(null);
         triggerSelectionHaptic(18);
+        setIsOpen(false);
         onFoodResolved?.(food);
       } catch (err) {
-        const msg = err?.message || BARCODE_NO_MATCH_MESSAGE;
-        setError(msg);
-        // Termina loading e apri inserimento manuale (niente loop di retry).
-        if (typeof onBarcodeNotFound === 'function') {
-          onBarcodeNotFound({ barcode: code, message: msg });
-        }
+        const reason = err?.reason || (err?.name === 'AbortError' ? 'timeout' : 'not_found');
+        setIsResolving(false);
+        setNotFound({ barcode: code, reason });
+        setError('');
       } finally {
-        resolvingRef.current = false;
+        isScanningRef.current = false;
         setIsResolving(false);
       }
     },
-    [resolveBarcodeToFood, stopCamera, onFoodResolved, onBarcodeNotFound],
+    [resolveBarcodeToFood, stopCamera, onFoodResolved],
   );
 
   useEffect(() => {
-    if (!isOpen || !videoRef.current) return;
+    if (!isOpen || notFound || isResolving) return undefined;
 
     if (!('BarcodeDetector' in window)) {
       setError('Il browser non supporta la scansione barcode. Prova Chrome su Android.');
@@ -249,7 +269,7 @@ export default function useBarcodeScanner({
     return () => {
       stopCamera();
     };
-  }, [isOpen, handleBarcodeDetected, stopCamera]);
+  }, [isOpen, notFound, isResolving, handleBarcodeDetected, stopCamera]);
 
   return {
     isOpen,
@@ -259,5 +279,6 @@ export default function useBarcodeScanner({
     error,
     setError,
     isResolving,
+    notFound,
   };
 }

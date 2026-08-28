@@ -1144,6 +1144,7 @@ export function useCommandTerminal({
           wizardSelection: options?.wizardSelection && typeof options.wizardSelection === 'object'
             ? options.wizardSelection
             : null,
+          ...(Array.isArray(options?.mcdriveItems) ? { mcdriveItems: options.mcdriveItems } : {}),
         });
 
         if (
@@ -1488,6 +1489,7 @@ export function useCommandTerminal({
             intent: 'SAVE_MCDRIVE_MEAL',
             skipUserBubble: true,
             fromQuickReply: true,
+            ...(Array.isArray(extra?.mcdriveItems) ? { mcdriveItems: extra.mcdriveItems } : {}),
           });
         }
         if (

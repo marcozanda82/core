@@ -139,6 +139,10 @@ import {
   isMcDriveDisambiguationStatus,
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
+  buildMcDriveDraftFromParsedFoods,
+  normalizeMcdriveExactTimeHHmm,
+  mapMcDriveItemsToCommitPayload,
+  mergeMcDriveDraftWithTraySnapshot,
 } from './conversation/mcdriveWizard.js';
 import { attachResolvedFoodIcon } from '../../utils/foodCategoryIcon.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
@@ -404,31 +408,6 @@ function buildGuidedLoggerTransitionMessage(mealType) {
   return `Ho preparato il tuo ${guidedMealLabel(mealType)} nella modalità guidata. Verifica i grammi e conferma.`;
 }
 
-function mapItemsForGuidedLogger(items) {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => {
-      const foodName = String(item?.foodName || item?.name || item?.spokenFoodName || '').trim();
-      const grams = Math.round(Number(item?.grams ?? item?.qty ?? item?.weight) || 0);
-      if (!foodName) return null;
-      return {
-        foodName,
-        name: foodName,
-        grams: grams > 0 ? grams : undefined,
-        qty: grams > 0 ? grams : undefined,
-        foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
-        matchedKey: item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null,
-        icon: item?.icon,
-        spokenFoodName: item?.spokenFoodName,
-        kcal: item?.kcal,
-        prot: item?.prot ?? item?.pro,
-        carb: item?.carb ?? item?.carbo,
-        fat: item?.fat ?? item?.fatTotal,
-        type: item?.type,
-      };
-    })
-    .filter(Boolean);
-}
-
 export class CommandTerminalController {
   constructor({
     bus = commandBus,
@@ -442,7 +421,7 @@ export class CommandTerminalController {
     this.bus = bus;
     this.llmClient = llmClient;
     this.composer = composer;
-    /** @type {((payload: object) => boolean|void)|null} Chat/voce → FastMealLogger (Modalità Guidata AI). */
+    /** @type {((payload: object) => boolean|void)|null} Legacy FastMealLogger (non usato per ADD_FOOD chat). */
     this.onPopulateMealLavagna = typeof onPopulateMealLavagna === 'function' ? onPopulateMealLavagna : null;
     /** @type {((entry: object, options?: object) => Promise<{ key?: string, row?: object }|void>)|null} Chat new food → DB personale. */
     this.onSaveFoodEntryPer100ToFoodDb = typeof onSaveFoodEntryPer100ToFoodDb === 'function'
@@ -660,6 +639,7 @@ export class CommandTerminalController {
         text,
         message: text,
         displayText: text,
+        ...(text ? { spokenText: text } : {}),
         quickReplies,
         liveMealTray: this.buildMcdriveTrayPayload(),
         mcdriveWizard: true,
@@ -861,12 +841,12 @@ export class CommandTerminalController {
     }
 
     if (forcedIntent === 'SAVE_MCDRIVE_MEAL' || isMcdriveSaveConfirmCommand(text)) {
-      return this.commitMcdriveValidatedMeal(currentState);
+      return this.commitMcdriveValidatedMeal(currentState, options);
     }
 
     if (forcedIntent === 'FINISH_MCDRIVE_WIZARD' || isMcdriveFinishCommand(text)) {
       if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM) {
-        return this.commitMcdriveValidatedMeal(currentState);
+        return this.commitMcdriveValidatedMeal(currentState, options);
       }
       return this.finishMcdriveWizard(currentState);
     }
@@ -1036,7 +1016,7 @@ export class CommandTerminalController {
       });
     }
     const built = buildMcDriveItemFromMatch(
-      prev.spokenFoodName || prev.foodName || match.name,
+      match.name || prev.foodName,
       grams,
       match,
       prev.source || 'kentu',
@@ -1077,9 +1057,12 @@ export class CommandTerminalController {
     }
     const prev = list[idx] || {};
     const grams = Math.max(1, Math.round(Number(prev.grams) || 100));
+    const nextSpokenName = String(
+      searchResult?.desc || searchResult?.name || searchResult?.row?.desc || searchResult?.row?.name || '',
+    ).trim() || String(prev.foodName || '').trim();
     const built = buildMcDriveItemFromSearchResult(searchResult, grams, {
       id: prev.id,
-      spokenFoodName: prev.spokenFoodName || prev.foodName,
+      spokenFoodName: nextSpokenName,
       alternatives: Array.isArray(prev.alternatives) ? prev.alternatives : [],
     });
     const next = [...list];
@@ -1495,26 +1478,27 @@ export class CommandTerminalController {
   }
 
   /**
-   * Chip 🏁 Salva Pasto → DISPATCH_UPSERT_MEAL (solo resolved; skipped a zero / esclusi).
+   * Chip 🏁 Salva Pasto → DISPATCH_UPSERT_MEAL con lo snapshot corrente della lavagna.
+   * Non ricalcola gli alimenti dal payload chat originale (spokenFoodName).
    */
-  commitMcdriveValidatedMeal(currentState = {}) {
+  commitMcdriveValidatedMeal(currentState = {}, options = {}) {
+    const traySnapshot = Array.isArray(options?.mcdriveItems) ? options.mcdriveItems : null;
+    if (traySnapshot?.length) {
+      this.pendingMcDriveDraft = mergeMcDriveDraftWithTraySnapshot(
+        this.pendingMcDriveDraft,
+        traySnapshot,
+      );
+    }
+
     const draftItems = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
     const state = currentState || this.mcdriveValidationContext?.currentState || {};
-    const editingMealId = this.mcdriveEditingMealId;
+    const editingMealId = String(this.mcdriveEditingMealId || options?.editingMealId || '').trim()
+      || null;
     const isEditingLoggedMeal = Boolean(editingMealId);
 
-    // Solo voci verificate; skipped esclusi dal commit (zero macro / scartati).
-    const commitSource = draftItems.filter((item) => {
-      const status = String(item?.status || '').toLowerCase();
-      if (status === 'skipped' || status === 'raw' || status === 'pending_enrichment'
-        || status === 'requires_disambiguation'
-        || status === 'processing' || status === 'validating') {
-        return false;
-      }
-      return status === 'resolved' || Number(item?.kcal) > 0 || item?.foodDbKey;
-    });
+    const itemsForCommit = mapMcDriveItemsToCommitPayload(draftItems);
 
-    if (commitSource.length === 0) {
+    if (itemsForCommit.length === 0) {
       this.bus.publish(
         DISPATCH_SYSTEM_MESSAGE,
         {
@@ -1543,17 +1527,7 @@ export class CommandTerminalController {
 
     let payload = normalizeFoodPayload(
       {
-        items: commitSource.map((item) => ({
-          foodName: String(item?.foodName || item?.name || '').trim(),
-          grams: Math.max(1, Math.round(Number(item?.grams) || 0)),
-          kcal: Math.round(Number(item?.kcal) || 0),
-          pro: Number(item?.pro ?? item?.prot) || 0,
-          carbo: Number(item?.carbo ?? item?.carb) || 0,
-          fat: Number(item?.fat ?? item?.fatTotal) || 0,
-          ...(item?.foodDbKey != null ? { foodDbKey: item.foodDbKey, matchedKey: item.foodDbKey } : {}),
-          ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
-          ...(item?.isEstimated === true ? { isEstimated: true } : {}),
-        })),
+        items: itemsForCommit,
         mealType: mealTypeForPayload,
         exactTime: selectedExactTime,
         timeString: selectedExactTime,
@@ -1562,42 +1536,6 @@ export class CommandTerminalController {
       { inferMealTypeFromContext: false },
     );
     payload = applyMealTimingDefaultsOnly(payload);
-
-    const proposal = buildMealLogProposalFromPayload(
-      { ...payload, forceNewMealSlot: !isEditingLoggedMeal },
-      state,
-      { userText: 'McDrive Salva Pasto' },
-    );
-    const itemsForCommit = (proposal?.items || expandFoodPayloadItems(payload))
-      .map((item) => {
-        const foodName = String(item?.foodName || item?.name || '').trim();
-        const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
-        const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
-        if (!foodName || grams <= 0) return null;
-        return {
-          foodName,
-          grams,
-          ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
-          ...(Number.isFinite(Number(item?.kcal)) ? { kcal: Math.round(Number(item.kcal)) } : {}),
-          ...(Number.isFinite(Number(item?.pro ?? item?.prot))
-            ? { pro: Number(item.pro ?? item.prot) }
-            : {}),
-          ...(Number.isFinite(Number(item?.carbo ?? item?.carb))
-            ? { carbo: Number(item.carbo ?? item.carb) }
-            : {}),
-          ...(Number.isFinite(Number(item?.fat ?? item?.fatTotal))
-            ? { fat: Number(item.fat ?? item.fatTotal) }
-            : {}),
-        };
-      })
-      .filter(Boolean);
-
-    if (itemsForCommit.length === 0) {
-      return {
-        ok: false,
-        reason: 'empty_commit',
-      };
-    }
 
     const exactTime = String(payload?.exactTime || payload?.timeString || selectedExactTime || timeCtx.timeHHmm).trim();
     const resolvedMealType = String(payload?.mealType || mealTypeForPayload).trim().toLowerCase() || mealTypeForPayload;
@@ -1612,9 +1550,9 @@ export class CommandTerminalController {
       {
         mealType: resolvedMealType,
         items: itemsForCommit,
-        action: isEditingLoggedMeal ? 'replace' : 'add',
-        upsertAction: isEditingLoggedMeal ? 'replace' : 'add',
-        forceNewMealSlot: isEditingLoggedMeal ? false : true,
+        action: isEditingLoggedMeal ? 'replace' : 'append',
+        upsertAction: isEditingLoggedMeal ? 'replace' : 'append',
+        forceNewMealSlot: !isEditingLoggedMeal,
         ...(isEditingLoggedMeal ? { targetNodeId: editingMealId } : {}),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(exactTime ? { exactTime, timeString: exactTime } : {}),
@@ -1627,7 +1565,7 @@ export class CommandTerminalController {
 
     this.publishProjectedMealLogFeedback(
       {
-        items: proposal?.items || itemsForCommit,
+        items: itemsForCommit,
         mealType: resolvedMealType,
         exactTime,
         timeString: exactTime,
@@ -2860,8 +2798,8 @@ export class CommandTerminalController {
   }
 
   /**
-   * Apre FastMealLogger (Modalità Guidata AI) pre-popolato.
-   * Nessuna card Sì/Modifica/Annulla nel thread: solo feedback di transizione.
+   * Apre la Modalità Guidata AI (McDrive / LiveMealTray) pre-popolata.
+   * Non apre FastMealLogger. Nessuna card Sì/Modifica/Annulla nel thread.
    */
   tryOpenGuidedAiMealLogger({
     items,
@@ -2870,45 +2808,53 @@ export class CommandTerminalController {
     timeString = null,
     userText = '',
     fromVoice = false,
+    currentState = {},
   } = {}) {
-    if (typeof this.onPopulateMealLavagna !== 'function') return null;
-
     const overlaid = overlayExplicitGramsOntoItems(items, userText);
-    const lavagnaItems = mapItemsForGuidedLogger(overlaid);
-    if (lavagnaItems.length === 0) return null;
+    const draftItems = buildMcDriveDraftFromParsedFoods(overlaid);
+    if (draftItems.length === 0) return null;
 
-    const resolvedMealType = String(mealType || '').split('_')[0].toLowerCase() || null;
-    const transition = buildGuidedLoggerTransitionMessage(resolvedMealType);
-    const lavagnaOk = this.onPopulateMealLavagna({
-      mode: 'GUIDED_AI',
-      items: lavagnaItems,
-      mealType: resolvedMealType,
-      exactTime: exactTime || timeString || null,
-      timeString: timeString || exactTime || null,
-      message: transition,
-    });
-    if (lavagnaOk === false) return null;
+    const timeCtx = formatCurrentSystemTimeContext();
+    const resolvedMealType = normalizeMcdriveMealType(mealType)
+      || normalizeMcdriveMealType(parseMealTypeFromUserText(userText))
+      || deduceMealTypeFromDecimalHour(timeCtx.decimalHour);
+
+    const nextTime = normalizeMcdriveExactTimeHHmm(exactTime || timeString, timeCtx.timeHHmm)
+      || timeCtx.timeHHmm;
+
+    this.clearChipWaitingState();
+    this.clearMealBuilderWizard();
+    this.pendingFreeMealLogContext = null;
+    this.mcdriveValidationContext = null;
+    this.mcdriveValidationRunning = false;
+    this.mcdriveEditingMealId = null;
+    this.rememberMcdriveContextState(currentState);
+
+    this.mcdriveMealType = resolvedMealType;
+    this.mcdriveExactTime = nextTime;
+    this.mcdriveTimeString = nextTime;
+    this.pendingMcDriveDraft = draftItems;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
 
     if (typeof this.clearPendingMealDraft === 'function') {
       this.clearPendingMealDraft();
     }
-    this.conversationState = CONVERSATION_STATE.IDLE;
-    this.publishAdviceMessage({
-      text: transition,
-      spokenText: transition,
-      mealProposals: null,
-      quickReplies: [],
-    });
+
+    const transition = buildGuidedLoggerTransitionMessage(resolvedMealType);
+    this.publishMcdriveTrayMessage(transition);
     return {
       ok: true,
       intent: 'ADD_FOOD',
-      mealLavagna: true,
-      mode: 'GUIDED_AI',
+      mealLavagna: false,
+      mcdriveGuided: true,
+      mode: 'AI_GUIDED_MEAL',
       userNotified: true,
       sourceText: String(userText || '').trim() || null,
       fastPath: true,
       awaitingConfirmation: false,
       fromVoice: fromVoice === true,
+      liveMealTray: this.buildMcdriveTrayPayload(),
     };
   }
 
@@ -2929,6 +2875,7 @@ export class CommandTerminalController {
       summaryText,
       spokenText,
       fromVoice,
+      currentState = {},
     } = state;
 
     this.mealDraftInteractiveEdit = false;
@@ -2941,6 +2888,7 @@ export class CommandTerminalController {
       timeString: enrichedPayload?.timeString || enrichedPayload?.exactTime,
       userText,
       fromVoice,
+      currentState,
     });
     if (guided) return guided;
 
@@ -3110,12 +3058,13 @@ export class CommandTerminalController {
     this.mealDraftInteractiveEdit = false;
 
     const guided = this.tryOpenGuidedAiMealLogger({
-      items,
+      items: proposal?.items?.length ? proposal.items : items,
       mealType: proposal?.mealType || enrichedPayload?.mealType,
       exactTime: enrichedPayload?.exactTime || enrichedPayload?.timeString || proposal?.exactTime,
       timeString: enrichedPayload?.timeString || enrichedPayload?.exactTime,
       userText,
       fromVoice,
+      currentState,
     });
     if (guided) return guided;
 
@@ -5730,7 +5679,7 @@ export class CommandTerminalController {
       return this.finishMcdriveWizard(currentState);
     }
     if (forcedIntentEarly === 'SAVE_MCDRIVE_MEAL') {
-      return this.commitMcdriveValidatedMeal(currentState);
+      return this.commitMcdriveValidatedMeal(currentState, options);
     }
     if (forcedIntentEarly === 'ADD_MORE_MCDRIVE') {
       return this.continueMcdriveAddMore();
@@ -5984,7 +5933,7 @@ export class CommandTerminalController {
     }
 
     if (inferredIntent === 'SAVE_MCDRIVE_MEAL') {
-      return this.commitMcdriveValidatedMeal(currentState);
+      return this.commitMcdriveValidatedMeal(currentState, options);
     }
 
     if (inferredIntent === 'ADD_MORE_MCDRIVE') {
@@ -6383,6 +6332,7 @@ export class CommandTerminalController {
           timeString: payload.timeString || payload.exactTime,
           userText,
           fromVoice: options?.fromVoice === true,
+          currentState,
         });
         if (guided) return guided;
       }

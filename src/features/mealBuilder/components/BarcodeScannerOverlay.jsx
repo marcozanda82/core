@@ -1,13 +1,26 @@
 import React from 'react';
 
+function notFoundCopy(barcode) {
+  const ean = String(barcode || '').trim();
+  if (ean) {
+    return `Prodotto non trovato online (o connessione lenta). Vuoi inserirlo manualmente con codice ${ean}?`;
+  }
+  return 'Prodotto non trovato online (o connessione lenta). Vuoi inserirlo manualmente?';
+}
+
 export default function BarcodeScannerOverlay({
   isOpen,
   onClose,
   videoRef,
   error,
   isResolving,
+  notFound = null,
+  onInsertManually,
 }) {
   if (!isOpen) return null;
+
+  const notFoundBarcode = String(notFound?.barcode || '').trim();
+  const showNotFound = Boolean(notFound);
 
   return (
     <div
@@ -31,20 +44,37 @@ export default function BarcodeScannerOverlay({
       </header>
 
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-6">
-        <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-black">
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            className="block max-h-[50vh] w-full object-cover"
-          />
-        </div>
+        {!showNotFound ? (
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-700 bg-black">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className="block max-h-[50vh] w-full object-cover"
+            />
+          </div>
+        ) : null}
 
         {isResolving ? (
           <p className="mt-4 flex items-center gap-2 text-sm text-cyan-300">
             <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
-            Ricerca prodotto...
+            Ricerca in corso...
           </p>
+        ) : showNotFound ? (
+          <div className="mt-2 w-full max-w-md space-y-3 rounded-2xl border border-amber-500/30 bg-amber-950/30 p-4 text-center">
+            <p className="text-sm leading-relaxed text-amber-100">
+              {notFoundCopy(notFoundBarcode)}
+            </p>
+            <button
+              type="button"
+              onClick={() => onInsertManually?.(notFoundBarcode)}
+              className="w-full rounded-xl bg-cyan-500 px-4 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-400"
+            >
+              Inserisci Manualmente
+            </button>
+          </div>
+        ) : error ? (
+          <p className="mt-4 max-w-md text-center text-sm text-red-300">{error}</p>
         ) : (
           <p className="mt-4 text-center text-xs text-slate-500">
             EAN-13 · EAN-8 · UPC-A · UPC-E

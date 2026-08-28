@@ -342,11 +342,9 @@ export function useTimelineDiaryActions({
         await Promise.resolve(syncDatiFirebase(nuovoLog, manualNodes || []));
       }
 
-      // Cleanup UI: il logger chiude dopo overlay; qui resettiamo i seed.
-      setMealToEdit(null);
-      setEditingMealId(null);
-      setFastLoggerInitialSlot(null);
-      setPendingGhostMealId(null);
+      // Cleanup UI: il logger chiude dopo overlay (closeFastLogger resetta i seed).
+      // Non azzerare editingMealId/pendingGhostMealId qui: cambierebbe la key del
+      // FastMealLogger ancora montato e lo rimonterebbe come pasto nuovo.
       return true;
     },
     [
@@ -361,10 +359,6 @@ export function useTimelineDiaryActions({
       parseFlexibleTimeToDecimal,
       setDailyLog,
       setSimulatedLog,
-      setMealToEdit,
-      setEditingMealId,
-      setFastLoggerInitialSlot,
-      setPendingGhostMealId,
     ],
   );
 

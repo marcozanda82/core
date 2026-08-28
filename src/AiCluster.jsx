@@ -192,6 +192,7 @@ export default function AiCluster({
   }, [userDisplayName]);
 
   const [isNotesMode, setIsNotesMode] = useState(false);
+  const [mcdriveBarcodeOpenNonce, setMcdriveBarcodeOpenNonce] = useState(0);
 
   const healthAvatarSrc = String(safeHealthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
     || '/cellula_1_ottimale.png';
@@ -959,11 +960,13 @@ export default function AiCluster({
   }, [onRequestReport]);
 
   const handleBarcodeTool = useCallback(() => {
-    // 1. Chiudi menu Tools
     setShowToolsMenu(false);
-    // 2–3. Chiudi chat + apri FastMealLogger con scanner (SalaComandi)
+    if (dockedMcDriveTray) {
+      setMcdriveBarcodeOpenNonce((n) => n + 1);
+      return;
+    }
     onRequestBarcodeScan?.();
-  }, [onRequestBarcodeScan]);
+  }, [dockedMcDriveTray, onRequestBarcodeScan]);
 
   const handleComposerSubmit = useCallback(async (rawText) => {
     if (isProcessing) return;
@@ -1822,6 +1825,8 @@ export default function AiCluster({
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
               onAppendSolverItems={onMcDriveAppendSolverItems}
               onRequestDisambiguation={onMcDriveRequestDisambiguation}
+              openScannerNonce={mcdriveBarcodeOpenNonce}
+              onAcquireExternalFood={onSaveNewFoodEntry}
               onCancel={() => {
                 onSendMessage?.('', {
                   intent: 'CANCEL_MCDRIVE_WIZARD',
@@ -1836,13 +1841,12 @@ export default function AiCluster({
                   fromQuickReply: true,
                 });
               }}
-              onSave={() => {
-                onSendMessage?.('', {
-                  intent: 'SAVE_MCDRIVE_MEAL',
-                  skipUserBubble: true,
-                  fromQuickReply: true,
-                });
-              }}
+              onSave={(trayItems) => onSendMessage?.('', {
+                intent: 'SAVE_MCDRIVE_MEAL',
+                skipUserBubble: true,
+                fromQuickReply: true,
+                mcdriveItems: Array.isArray(trayItems) ? trayItems : undefined,
+              })}
               onAddMore={() => {
                 onSendMessage?.('', {
                   intent: 'ADD_MORE_MCDRIVE',
@@ -2085,7 +2089,19 @@ export default function AiCluster({
             onCancelGeneration={onCancelGeneration}
             tools={(
               <>
-                <KentuButton variant="ghost" className="kentu-btn--icon" type="button" onClick={() => chatFileInputRef.current?.click()} aria-label="Allega immagine">
+                <KentuButton
+                  variant="ghost"
+                  className="kentu-btn--icon"
+                  type="button"
+                  onClick={() => {
+                    if (dockedMcDriveTray) {
+                      setMcdriveBarcodeOpenNonce((n) => n + 1);
+                      return;
+                    }
+                    chatFileInputRef.current?.click();
+                  }}
+                  aria-label={dockedMcDriveTray ? 'Scansiona barcode' : 'Allega immagine'}
+                >
                   <KentuIcon name="camera" size={22} />
                 </KentuButton>
                 {voiceNoteSupported ? (

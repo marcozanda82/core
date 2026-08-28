@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { KentuButton } from './kentuos/KentuOSUI';
+import KentuTimeSelector from './kentuos/KentuTimeSelector';
 import { buildFoodNameSelectOptions } from '../features/commandTerminal/conversation/recentFoodNames.js';
 import { clampFoodGrams } from '../utils/inputSanity';
 import { resolveMealItemDisplayIcon } from '../utils/foodCategoryIcon';
@@ -98,19 +99,14 @@ export default function MealDraftConfirmation({
               ))}
             </select>
           </label>
-          <label className="kentu-meal-draft__meta-field">
-            <span className="kentu-meal-draft__meta-label">Orario</span>
-            <input
-              type="time"
-              className="kentu-meal-draft__time-input"
-              value={timeValue}
-              disabled={isSaving}
-              onChange={(e) => onUpdateMealMeta?.(draftId, { exactTime: e.target.value })}
-              aria-label="Orario del pasto"
-            />
-          </label>
         </div>
       </div>
+      <KentuTimeSelector
+        value={timeValue}
+        disabled={isSaving}
+        onChange={(next) => onUpdateMealMeta?.(draftId, { exactTime: next })}
+        className="mb-2"
+      />
 
       {hasEstimatedWeights ? (
         <p className="kentu-meal-draft__estimate-banner" role="status">

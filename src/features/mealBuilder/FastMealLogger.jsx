@@ -50,7 +50,8 @@ import {
   saveCatalogServingOverrides,
 } from './utils/masterFoodResync';
 import { resolveUnitWeight } from './utils/draftFoodUnits';
-import { ArrowLeft, ChevronDown, ChevronUp, Clock, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles } from 'lucide-react';
+import KentuTimeSelector from '../../components/kentuos/KentuTimeSelector';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
 import { draftFoodsToSolverItems, solverProposalToDraftFood } from '../../utils/solverEngine';
 import { clampFoodGrams } from '../../utils/inputSanity';
@@ -111,14 +112,6 @@ function getCurrentDecimalHours() {
   const now = new Date();
   return now.getHours() + now.getMinutes() / 60;
 }
-
-const MEAL_TIME_QUICK_OFFSETS = [
-  { id: 'now', label: 'Adesso', minutes: 0 },
-  { id: 'm15', label: '-15 min', minutes: -15 },
-  { id: 'm30', label: '-30 min', minutes: -30 },
-  { id: 'h1', label: '-1 ora', minutes: -60 },
-  { id: 'h2', label: '-2 ore', minutes: -120 },
-];
 
 function getCurrentTimeRoundedTo15Min() {
   const decimal = getCurrentDecimalHours();
@@ -395,6 +388,7 @@ function FastMealLoggerContent({
   );
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [preferManualSearchEntry, setPreferManualSearchEntry] = useState(false);
+  const [preferManualBarcode, setPreferManualBarcode] = useState('');
   const [isSavingMeal, setIsSavingMeal] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
@@ -439,9 +433,8 @@ function FastMealLoggerContent({
   const prefillAppliedRef = useRef(false);
   const cartPulseTimerRef = useRef(null);
   const addFeedbackTimerRef = useRef(null);
-  const mealTimeInputRef = useRef(null);
   const mealTimeManualRef = useRef(false);
-  /** true = l'utente ha impostato l'orario dall'<input type="time"> (source of truth). */
+  /** true = l'utente ha impostato l'orario dal selettore Kentu (source of truth). */
   const mealTimeFromNativeInputRef = useRef(false);
   const checkoutListScrollRef = useRef(null);
   const checkoutScrollCollapsedRef = useRef(false);
@@ -469,21 +462,11 @@ function FastMealLoggerContent({
     setMealTime(bounded);
   }, [setMealTime]);
 
-  /** Orario solo da input nativo nel tab Riepilogo. */
-
-  const handleNativeMealTimeInputChange = useCallback((event) => {
-    const raw = event?.target?.value;
-    const parsed = parseTimeStrToDecimal(raw);
-    // Aggiornamento incondizionato del valore scelto dall'utente (nessun confronto con ultimo log).
+  const handleMealTimeChange = useCallback((hhmm) => {
+    const parsed = parseTimeStrToDecimal(hhmm);
     if (typeof parsed === 'number' && !Number.isNaN(parsed)) {
       commitDraftMealTime(parsed, { fromNativeInput: true });
     }
-  }, [commitDraftMealTime]);
-
-  const applyQuickMealTimeOffset = useCallback((minutesFromNow) => {
-    const nowDec = getCurrentDecimalHours();
-    const deltaHours = Number(minutesFromNow) / 60;
-    commitDraftMealTime(Math.max(0, Math.min(24, nowDec + deltaHours)));
   }, [commitDraftMealTime]);
 
   const isEditMode = Boolean(editingMealId);
@@ -777,7 +760,8 @@ function FastMealLoggerContent({
     finishEnrichment(enrichmentOffRef.current || null);
   }, [finishEnrichment]);
 
-  const handleBarcodeNotFound = useCallback(() => {
+  const handleBarcodeNotFound = useCallback(({ barcode } = {}) => {
+    setPreferManualBarcode(String(barcode || '').trim());
     setPreferManualSearchEntry(true);
     setIsSearchModalOpen(true);
   }, []);
@@ -790,12 +774,12 @@ function FastMealLoggerContent({
     error: scannerError,
     setError: setScannerError,
     isResolving: isScannerResolving,
+    notFound: scannerNotFound,
   } = useBarcodeScanner({
     personalDb,
     onAcquireExternalFood,
     onFoodResolved: handleFoodSelection,
     enrichOffProduct,
-    onBarcodeNotFound: handleBarcodeNotFound,
   });
 
   useEffect(() => {
@@ -1266,6 +1250,7 @@ function FastMealLoggerContent({
 
     try {
       // Overlay chef: prima azione (flushSync) dentro withMealSavingOverlay, prima del save.
+      let savedOk = false;
       await withMealSavingOverlay(async () => {
         setIsSavingMeal(true);
         recordDraftFoodsUsageStats(
@@ -1274,12 +1259,15 @@ function FastMealLoggerContent({
           onPatchFoodDbEntry,
           getTimeSlotForDecimalHour(mealTimeToSave),
         );
-        await Promise.resolve(
+        const result = await Promise.resolve(
           onSave?.(foodsSnapshot, mealSlotToSave, editId, mealTimeToSave),
         );
+        savedOk = result !== false;
       });
-      clearDraft();
-      onClose?.();
+      if (savedOk) {
+        clearDraft();
+        onClose?.();
+      }
     } catch (err) {
       console.error('[FastMealLogger] salvataggio pasto fallito', err);
     } finally {
@@ -1544,20 +1532,6 @@ function FastMealLoggerContent({
   };
 
   const activeDeepEditItem = deepEditFood ?? editingCatalogFood;
-
-  const openNativeTimePicker = () => {
-    const input = mealTimeInputRef.current;
-    if (!input) return;
-    if (typeof input.showPicker === 'function') {
-      try {
-        input.showPicker();
-        return;
-      } catch {
-        /* picker già aperto o rifiutato dal browser */
-      }
-    }
-    input.focus();
-  };
 
   return (
     <div className="relative mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden bg-[#050a12] text-slate-100 sm:max-w-xl">
@@ -2073,50 +2047,11 @@ function FastMealLoggerContent({
                 </button>
               ) : null}
 
-              <div className="rounded-xl border border-slate-700/80 bg-slate-900/55 px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  Orario del Pasto
-                </p>
-                <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-                  <span className="shrink-0 text-[11px] text-slate-500">Selezionato</span>
-                  <label
-                    htmlFor="fast-logger-cart-meal-time"
-                    onClick={openNativeTimePicker}
-                    className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-slate-700/80 bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-100 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                  >
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-cyan-400" strokeWidth={2} aria-hidden />
-                    <input
-                      ref={mealTimeInputRef}
-                      id="fast-logger-cart-meal-time"
-                      type="time"
-                      value={decimalToTimeStr(mealTime)}
-                      onChange={handleNativeMealTimeInputChange}
-                      onClick={(event) => {
-                        if (typeof event.currentTarget.showPicker === 'function') {
-                          try {
-                            event.currentTarget.showPicker();
-                          } catch {
-                            /* picker già aperto o rifiutato dal browser */
-                          }
-                        }
-                      }}
-                      className="min-w-0 cursor-pointer border-none bg-transparent p-0 text-xs font-medium text-white outline-none [color-scheme:dark]"
-                    />
-                  </label>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {MEAL_TIME_QUICK_OFFSETS.map((offset) => (
-                    <button
-                      key={offset.id}
-                      type="button"
-                      onClick={() => applyQuickMealTimeOffset(offset.minutes)}
-                      className="rounded-full border border-slate-700/80 bg-slate-800/80 px-2.5 py-1 text-[11px] font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800 hover:text-white active:scale-[0.98]"
-                    >
-                      {offset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <KentuTimeSelector
+                value={decimalToTimeStr(mealTime)}
+                onChange={handleMealTimeChange}
+                disabled={isSavingMeal}
+              />
 
               <button
                 type="button"
@@ -2195,6 +2130,7 @@ function FastMealLoggerContent({
         onClose={() => {
           setIsSearchModalOpen(false);
           setPreferManualSearchEntry(false);
+          setPreferManualBarcode('');
         }}
         personalDb={personalDb}
         kentuItDb={kentuItDb}
@@ -2211,6 +2147,7 @@ function FastMealLoggerContent({
         scannerError={scannerError}
         isScannerResolving={isScannerResolving}
         preferManualEntry={preferManualSearchEntry}
+        preferManualBarcode={preferManualBarcode}
       />
 
       <BarcodeScannerOverlay
@@ -2219,6 +2156,11 @@ function FastMealLoggerContent({
         videoRef={videoRef}
         error={scannerError}
         isResolving={isScannerResolving}
+        notFound={scannerNotFound}
+        onInsertManually={(ean) => {
+          closeScanner();
+          handleBarcodeNotFound({ barcode: ean });
+        }}
       />
 
       <MicronutrientEnrichmentModal

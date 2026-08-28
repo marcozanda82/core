@@ -17,6 +17,7 @@ const SEARCH_UNIT_WEIGHT = 100;
 
 const EMPTY_MANUAL_FORM = {
   name: '',
+  barcode: '',
   kcal: '',
   prot: '',
   carb: '',
@@ -129,6 +130,8 @@ export default function UniversalSearchModal({
   initialQuery = '',
   /** Se true all'apertura, mostra subito il form manuale (es. barcode non trovato). */
   preferManualEntry = false,
+  /** EAN da precompilare nel form manuale. */
+  preferManualBarcode = '',
 }) {
   const {
     query,
@@ -164,11 +167,14 @@ export default function UniversalSearchModal({
     if (seed) runSearch(seed);
     if (preferManualEntry) {
       setIsManualEntryOpen(true);
-      setManualForm(EMPTY_MANUAL_FORM);
+      setManualForm({
+        ...EMPTY_MANUAL_FORM,
+        barcode: String(preferManualBarcode || '').trim(),
+      });
     }
     // Solo all'apertura / cambio seed — non a ogni keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearSearch/runSearch sono stabili
-  }, [isOpen, initialQuery, preferManualEntry]);
+  }, [isOpen, initialQuery, preferManualEntry, preferManualBarcode]);
 
   if (!isOpen) return null;
 
@@ -201,6 +207,9 @@ export default function UniversalSearchModal({
       prot: Number(manualForm.prot) || 0,
       carb: Number(manualForm.carb) || 0,
       fatTotal: Number(manualForm.fat) || 0,
+      ...(String(manualForm.barcode || '').trim()
+        ? { barcode: String(manualForm.barcode).trim() }
+        : {}),
     };
 
     setIsSavingManual(true);
@@ -343,6 +352,19 @@ export default function UniversalSearchModal({
                 className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </label>
+
+            {manualForm.barcode ? (
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-300">Codice a barre</span>
+                <input
+                  type="text"
+                  value={manualForm.barcode}
+                  onChange={handleManualFieldChange('barcode')}
+                  inputMode="numeric"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 font-mono text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                />
+              </label>
+            ) : null}
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
