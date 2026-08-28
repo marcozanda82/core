@@ -35,6 +35,7 @@ const BAR_FILL = {
   good: 'bg-emerald-400',
   mid: 'bg-amber-400',
   low: 'bg-rose-400',
+  info: 'bg-cyan-400',
 };
 
 /**
@@ -74,7 +75,12 @@ export default function ProgressioneMacroPillarGrid({
                 <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-[13px] ${styles.iconBg}`} aria-hidden>
                   {pillar.icon}
                 </span>
-                <span className="text-[10px] font-bold tabular-nums text-slate-300">{pillar.pct}%</span>
+                <span className={`text-[10px] font-bold tabular-nums ${
+                  pillar.isInProgress ? 'text-cyan-300' : 'text-slate-300'
+                }`}
+                >
+                  {pillar.pct}%
+                </span>
               </div>
               <div className="mt-1.5 min-w-0 w-full">
                 <p className="m-0 text-[10px] font-semibold leading-tight text-slate-100">{pillar.title}</p>
@@ -101,7 +107,11 @@ export default function ProgressioneMacroPillarGrid({
             {' '}
             {active.title}
           </p>
-          <p className="m-0 text-[11px] leading-relaxed text-slate-200">{active.feedback}</p>
+          <p className="m-0 text-[11px] leading-relaxed text-slate-200">
+            {active.isInProgress ? (
+              <span className="text-cyan-100">{active.feedback}</span>
+            ) : active.feedback}
+          </p>
           <div className="rounded-xl border border-white/10 bg-slate-950/50 px-2.5 py-2">
             <p className="m-0 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Tip pratico</p>
             <p className="m-0 mt-1 text-[11px] leading-relaxed text-cyan-100/95">💡 {active.tip}</p>

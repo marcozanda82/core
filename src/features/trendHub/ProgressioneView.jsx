@@ -10,6 +10,7 @@ import {
   buildMacroPillarInsights,
   buildProgressionPagellaInsight,
   buildProgressionTrendSnapshots,
+  resolveProgressionDayEvaluationContext,
 } from './utils/progressionInsightGenerator';
 import {
   buildProgressionLogsWindow,
@@ -34,36 +35,36 @@ export default function ProgressioneView({
 } = {}) {
   const [activePillar, setActivePillar] = useState(null);
 
-  const progressionTodayIso = String(todayDate || activeDate || getTodayString()).slice(0, 10);
-  const progressionActiveLogIsToday = Boolean(progressionTodayIso)
-    && progressionTodayIso === String(activeDate || '').slice(0, 10);
+  const todayIso = String(todayDate || getTodayString()).slice(0, 10);
+  const analyzedDateIso = String(activeDate || todayIso).slice(0, 10);
+  const isAnalyzingToday = analyzedDateIso === todayIso;
 
-  const progressionTodayLiveLog = useMemo(() => {
-    if (progressionActiveLogIsToday && Array.isArray(sleepEngineLiveLog) && sleepEngineLiveLog.length > 0) {
+  const analyzedLiveLog = useMemo(() => {
+    if (isAnalyzingToday && Array.isArray(sleepEngineLiveLog) && sleepEngineLiveLog.length > 0) {
       return sleepEngineLiveLog;
     }
     return selectTodayLog(
       fullHistory,
-      progressionTodayIso,
+      analyzedDateIso,
       Array.isArray(activeLog) ? activeLog : [],
-      progressionActiveLogIsToday,
+      isAnalyzingToday,
     );
   }, [
-    progressionActiveLogIsToday,
+    isAnalyzingToday,
     sleepEngineLiveLog,
     fullHistory,
-    progressionTodayIso,
+    analyzedDateIso,
     activeLog,
   ]);
 
   const progressionLogs = useMemo(
     () => buildProgressionLogsWindow({
       fullHistory,
-      todayDate: progressionTodayIso,
+      todayDate: todayIso,
       days: LONGEVITY_WINDOW_DAYS,
-      todayLiveLog: progressionTodayLiveLog,
+      todayLiveLog: isAnalyzingToday ? analyzedLiveLog : null,
     }),
-    [fullHistory, progressionTodayIso, progressionTodayLiveLog],
+    [fullHistory, todayIso, isAnalyzingToday, analyzedLiveLog],
   );
 
   const progressionResult = useMemo(
@@ -79,14 +80,30 @@ export default function ProgressioneView({
     [progressionLogs, userTargets],
   );
 
-  const todayTotals = useMemo(
-    () => computeTotali(Array.isArray(progressionTodayLiveLog) ? progressionTodayLiveLog : []),
-    [progressionTodayLiveLog],
+  const analyzedTotals = useMemo(
+    () => computeTotali(Array.isArray(analyzedLiveLog) ? analyzedLiveLog : []),
+    [analyzedLiveLog],
+  );
+
+  const dayEvaluationContext = useMemo(
+    () => resolveProgressionDayEvaluationContext({
+      analyzedDateIso,
+      todayIso,
+      totals: analyzedTotals,
+      targets: userTargets,
+      dayLog: analyzedLiveLog,
+    }),
+    [analyzedDateIso, todayIso, analyzedTotals, userTargets, analyzedLiveLog],
   );
 
   const macroPillars = useMemo(
-    () => buildMacroPillarInsights(todayTotals, userTargets, settingsBaseKcal),
-    [todayTotals, userTargets, settingsBaseKcal],
+    () => buildMacroPillarInsights(
+      analyzedTotals,
+      userTargets,
+      settingsBaseKcal,
+      dayEvaluationContext,
+    ),
+    [analyzedTotals, userTargets, settingsBaseKcal, dayEvaluationContext],
   );
 
   const pagellaInsight = useMemo(
@@ -94,8 +111,9 @@ export default function ProgressioneView({
       progressionResult.finalScore,
       progressionResult.breakdown,
       macroPillars,
+      dayEvaluationContext,
     ),
-    [progressionResult, macroPillars],
+    [progressionResult, macroPillars, dayEvaluationContext],
   );
 
   const trendSnapshots = useMemo(
@@ -123,6 +141,7 @@ export default function ProgressioneView({
         score={progressionResult.finalScore}
         breakdown={breakdown}
         macroPillars={macroPillars}
+        dayEvaluationContext={dayEvaluationContext}
       />
 
       <ProgressioneMacroPillarGrid
@@ -135,7 +154,7 @@ export default function ProgressioneView({
         fourCylinder={fourCylinder}
         fullHistory={fullHistory}
         activeLog={activeLog}
-        activeDate={activeDate || progressionTodayIso}
+        activeDate={activeDate || analyzedDateIso}
       />
 
       <ProgressioneTrendFooter

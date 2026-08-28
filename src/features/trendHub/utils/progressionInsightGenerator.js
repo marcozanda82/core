@@ -1,5 +1,203 @@
 import { resolveProgressionNutritionTargets } from './saluteDashboardMetrics';
 
+/** Ora locale oltre cui la giornata odierna è considerata chiusa per i freni macro. */
+export const PROGRESSION_DAY_CLOSE_HOUR = 21.5;
+
+/** Sotto questa quota calorica (vs target) la giornata odierna resta «in corso» prima della chiusura. */
+export const PROGRESSION_INTRADAY_OPEN_KCAL_RATIO = 0.7;
+
+/** Prima di quest'ora si valutano surplus calorici/lipidici precoci. */
+export const PROGRESSION_MIDDAY_HOUR = 14;
+
+/**
+ * @param {object | null | undefined} entry
+ * @returns {number | null} ore decimali locali 0–24
+ */
+export function parseProgressionLogEntryHour(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const raw = entry.time ?? entry.mealTime ?? entry.startTimeDec ?? entry.sleepStart;
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'string' && raw.includes(':')) {
+    const parts = raw.split(':');
+    const h = Number(parts[0]);
+    const m = Number(parts[1]);
+    if (Number.isFinite(h)) return h + (Number.isFinite(m) ? m / 60 : 0);
+    return null;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0 || n >= 24) return null;
+  return n;
+}
+
+/**
+ * @param {Array<object>} dayLog
+ * @returns {boolean}
+ */
+export function detectProgressionEveningMealLogged(dayLog = []) {
+  return (Array.isArray(dayLog) ? dayLog : []).some((entry) => {
+    const type = String(entry?.type || '').toLowerCase();
+    if (type !== 'meal' && type !== 'food' && type !== 'recipe' && type !== 'single') return false;
+    const hour = parseProgressionLogEntryHour(entry);
+    return hour != null && hour >= 18;
+  });
+}
+
+/**
+ * @param {Array<object>} dayLog
+ * @returns {boolean}
+ */
+export function detectProgressionMorningWorkout(dayLog = []) {
+  return (Array.isArray(dayLog) ? dayLog : []).some((entry) => {
+    if (String(entry?.type || '').toLowerCase() !== 'workout') return false;
+    const hour = parseProgressionLogEntryHour(entry);
+    return hour != null && hour < 12;
+  });
+}
+
+/**
+ * @param {Array<object>} dayLog
+ * @param {Date} [now]
+ * @returns {number}
+ */
+export function computeProgressionHoursSinceLastMeal(dayLog = [], now = new Date()) {
+  const mealHours = (Array.isArray(dayLog) ? dayLog : [])
+    .filter((entry) => {
+      const type = String(entry?.type || '').toLowerCase();
+      return type === 'meal' || type === 'food' || type === 'recipe' || type === 'single';
+    })
+    .map((entry) => parseProgressionLogEntryHour(entry))
+    .filter((h) => h != null);
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  if (mealHours.length === 0) return currentHour;
+  return Math.max(0, currentHour - Math.max(...mealHours));
+}
+
+/**
+ * Intraday vs giorno chiuso — decide se i macro sotto target sono «freni» o obiettivi in corso.
+ * @param {{
+ *   analyzedDateIso?: string,
+ *   todayIso?: string,
+ *   now?: Date,
+ *   totals?: object,
+ *   targets?: object,
+ *   dayLog?: Array<object>,
+ *   nutritionDayComplete?: boolean,
+ * }} [params]
+ */
+export function resolveProgressionDayEvaluationContext({
+  analyzedDateIso = '',
+  todayIso = '',
+  now = new Date(),
+  totals = {},
+  targets = {},
+  dayLog = [],
+  nutritionDayComplete = false,
+} = {}) {
+  const analyzed = String(analyzedDateIso || todayIso || '').slice(0, 10);
+  const today = String(todayIso || '').slice(0, 10);
+  const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(analyzed) && /^\d{4}-\d{2}-\d{2}$/.test(today);
+  const isToday = dateOk && analyzed === today;
+  const isPastDay = dateOk && analyzed < today;
+
+  const t = resolveProgressionNutritionTargets(targets);
+  const intakeKcal = Math.max(0, Number(totals?.kcal) || 0);
+  const targetKcal = Math.max(0, Number(t.kcal) || 0);
+  const intakeRatio = targetKcal > 0 ? intakeKcal / targetKcal : 0;
+  const currentHour = now.getHours() + now.getMinutes() / 60;
+  const beforeCloseTime = currentHour < PROGRESSION_DAY_CLOSE_HOUR;
+  const hasEveningMeal = detectProgressionEveningMealLogged(dayLog);
+
+  const dayClosed = isPastDay
+    || Boolean(nutritionDayComplete)
+    || (isToday && (
+      !beforeCloseTime
+      || hasEveningMeal
+      || (intakeRatio >= 0.85 && intakeKcal >= 300)
+    ));
+
+  const isDayOpenForEvaluation = isToday && !dayClosed;
+
+  const morningWorkoutDone = detectProgressionMorningWorkout(dayLog);
+  const hoursSinceLastMeal = computeProgressionHoursSinceLastMeal(dayLog, now);
+  const intakeFat = Math.max(0, Number(totals?.fatTotal ?? totals?.fat) || 0);
+  const targetFat = Math.max(0, Number(t.fat) || 0);
+
+  const intradayRealtimePenalties = {
+    earlyCalorieSurplus: isDayOpenForEvaluation
+      && currentHour < PROGRESSION_MIDDAY_HOUR
+      && targetKcal > 0
+      && intakeKcal >= targetKcal * 0.85,
+    earlyLipidSurplus: isDayOpenForEvaluation
+      && currentHour < PROGRESSION_MIDDAY_HOUR
+      && targetFat > 0
+      && intakeFat >= targetFat * 0.85,
+    fullDayCalorieSurplus: isDayOpenForEvaluation
+      && targetKcal > 0
+      && intakeKcal > targetKcal * 1.05,
+    unplannedProlongedFast: isDayOpenForEvaluation
+      && morningWorkoutDone
+      && hoursSinceLastMeal >= 4
+      && intakeKcal < targetKcal * 0.25,
+  };
+
+  return {
+    analyzedDateIso: analyzed,
+    todayIso: today,
+    isToday,
+    isPastDay,
+    dayClosed,
+    isDayOpenForEvaluation,
+    dayInProgress: isDayOpenForEvaluation,
+    currentHour,
+    intakeRatio,
+    intakeKcal,
+    targetKcal,
+    intradayRealtimePenalties,
+  };
+}
+
+/**
+ * @param {string} pillarId
+ * @param {object} intake
+ * @param {object} targets
+ * @returns {string}
+ */
+function buildIntradayObjectiveFeedback(pillarId, intake, targets) {
+  const protTarget = Math.round(Number(targets.prot) || 0);
+  const kcalTarget = Math.round(Number(targets.kcal) || 0);
+  switch (pillarId) {
+    case 'protein':
+      return protTarget > 0
+        ? `Da completare: ${protTarget}g totali previsti per sostenere la sintesi proteica.`
+        : 'Obiettivo proteico da definire nelle impostazioni.';
+    case 'calories':
+      return kcalTarget > 0
+        ? `Target giornaliero: ${kcalTarget} kcal da distribuire.`
+        : 'Target calorico da definire nelle impostazioni.';
+    case 'carbs':
+      return 'Finestra energetica aperta per i prossimi pasti.';
+    case 'fats':
+      return 'Finestra lipidica aperta per i prossimi pasti.';
+    default:
+      return 'Giornata nutrizionale ancora in corso.';
+  }
+}
+
+/**
+ * @param {object} intake
+ * @param {object} targets
+ * @returns {Array<{ id: string, badge: string, title: string, body: string }>}
+ */
+export function buildProgressionTodayObjectives(intake = {}, targets = {}) {
+  const t = resolveProgressionNutritionTargets(targets);
+  return MACRO_PILLARS.map((pillar) => ({
+    id: pillar.id,
+    badge: pillar.icon,
+    title: pillar.title.split('&')[0].trim(),
+    body: buildIntradayObjectiveFeedback(pillar.id, intake, t),
+  }));
+}
+
 /**
  * @param {number|null|undefined} score
  * @returns {string}
@@ -43,7 +241,8 @@ export function macroAdherencePct(consumed, target) {
   return Math.max(0, Math.round(50 - (dev - 0.28) * 100));
 }
 
-function toneFromPct(pct) {
+function toneFromPct(pct, { isInProgress = false } = {}) {
+  if (isInProgress) return 'info';
   if (pct == null) return 'mid';
   if (pct >= 75) return 'good';
   if (pct >= 50) return 'mid';
@@ -109,9 +308,18 @@ const MACRO_PILLARS = [
  * @param {object} totals
  * @param {object} targets
  * @param {number|null} settingsBaseKcal
+ * @param {ReturnType<typeof resolveProgressionDayEvaluationContext>|null} [dayContext]
  */
-export function buildMacroPillarInsights(totals = {}, targets = {}, settingsBaseKcal = null) {
+export function buildMacroPillarInsights(
+  totals = {},
+  targets = {},
+  settingsBaseKcal = null,
+  dayContext = null,
+) {
   const t = resolveProgressionNutritionTargets(targets);
+  const ctx = dayContext && typeof dayContext === 'object'
+    ? dayContext
+    : { isDayOpenForEvaluation: false, dayClosed: true };
   const intake = {
     kcal: Number(totals?.kcal) || 0,
     prot: Number(totals?.prot ?? totals?.pro) || 0,
@@ -125,6 +333,13 @@ export function buildMacroPillarInsights(totals = {}, targets = {}, settingsBase
     calories: macroAdherencePct(intake.kcal, t.kcal),
     carbs: macroAdherencePct(intake.carb, t.carb),
     fats: macroAdherencePct(intake.fat, t.fat),
+  };
+
+  const progressMap = {
+    protein: t.prot > 0 ? Math.min(100, Math.round((intake.prot / t.prot) * 100)) : 0,
+    calories: t.kcal > 0 ? Math.min(100, Math.round((intake.kcal / t.kcal) * 100)) : 0,
+    carbs: t.carb > 0 ? Math.min(100, Math.round((intake.carb / t.carb) * 100)) : 0,
+    fats: t.fat > 0 ? Math.min(100, Math.round((intake.fat / t.fat) * 100)) : 0,
   };
 
   const valueMap = {
@@ -142,22 +357,62 @@ export function buildMacroPillarInsights(totals = {}, targets = {}, settingsBase
   };
 
   return MACRO_PILLARS.map((pillar) => {
-    const pct = pctMap[pillar.id];
-    const tone = toneFromPct(pct);
-    const isPositive = pct != null && pct >= 70;
-    const detail = formatMacroLine(valueMap[pillar.id], targetMap[pillar.id], pillar.unit);
+    const adherencePct = pctMap[pillar.id];
+    const consumed = valueMap[pillar.id];
+    const target = targetMap[pillar.id];
+    const underTarget = Number(target) > 0 && Number(consumed) < Number(target) * 0.92;
+    const realtime = ctx.intradayRealtimePenalties || {};
+    const forcePenalty = (
+      pillar.id === 'calories'
+      && (realtime.earlyCalorieSurplus || realtime.fullDayCalorieSurplus)
+    ) || (
+      pillar.id === 'fats'
+      && realtime.earlyLipidSurplus
+    );
+
+    if (ctx.isDayOpenForEvaluation && underTarget && !forcePenalty) {
+      const progressPct = progressMap[pillar.id];
+      const detail = formatMacroLine(consumed, target, pillar.unit);
+      return {
+        ...pillar,
+        pct: progressPct,
+        tone: 'info',
+        detail,
+        feedback: buildIntradayObjectiveFeedback(pillar.id, intake, t),
+        tip: pillar.tip,
+        isPositive: false,
+        isInProgress: true,
+        skipPenalty: true,
+      };
+    }
+
+    const pct = adherencePct;
+    const tone = toneFromPct(pct, { isInProgress: false });
+    const isPositive = pct != null && pct >= 70 && !forcePenalty;
+    const detail = formatMacroLine(consumed, target, pillar.unit);
     const tdeeNote = pillar.id === 'calories' && tdee !== t.kcal
       ? ` · TDEE ref. ${tdee} kcal`
       : '';
 
+    let feedback = isPositive ? pillar.positive : pillar.corrective;
+    if (forcePenalty && pillar.id === 'calories') {
+      feedback = realtime.fullDayCalorieSurplus
+        ? 'Surplus calorico già oltre il target giornaliero: riduci densità calorica nei prossimi pasti.'
+        : 'Superamento precoce del tetto calorico a metà giornata: rallenta introito e preferisci volumi maggiori.';
+    } else if (forcePenalty && pillar.id === 'fats') {
+      feedback = 'Superamento precoce del tetto lipidico a metà giornata: riduci condimenti e frutta secca.';
+    }
+
     return {
       ...pillar,
       pct: pct ?? 0,
-      tone,
+      tone: forcePenalty ? 'low' : tone,
       detail: `${detail}${tdeeNote}`,
-      feedback: isPositive ? pillar.positive : pillar.corrective,
+      feedback,
       tip: pillar.tip,
       isPositive,
+      isInProgress: false,
+      skipPenalty: false,
     };
   });
 }
@@ -167,14 +422,24 @@ export function buildMacroPillarInsights(totals = {}, targets = {}, settingsBase
  * @param {number|null} score
  * @param {object} breakdown
  * @param {Array} macroPillars
+ * @param {ReturnType<typeof resolveProgressionDayEvaluationContext>|null} [dayContext]
  */
-export function buildProgressionPagellaInsight(score, breakdown = {}, macroPillars = []) {
+export function buildProgressionPagellaInsight(
+  score,
+  breakdown = {},
+  macroPillars = [],
+  dayContext = null,
+) {
   const value = Number.isFinite(Number(score)) ? Math.round(Number(score)) : null;
   const statusLabel = progressionStatusLabel(value);
   const b = breakdown && typeof breakdown === 'object' ? breakdown : {};
+  const ctx = dayContext && typeof dayContext === 'object'
+    ? dayContext
+    : { isDayOpenForEvaluation: false, dayClosed: true, intradayRealtimePenalties: {} };
 
   const strengths = [];
   const penalties = [];
+  const todayObjectives = [];
 
   macroPillars.filter((p) => p.isPositive).forEach((p) => {
     strengths.push({
@@ -185,15 +450,51 @@ export function buildProgressionPagellaInsight(score, breakdown = {}, macroPilla
     });
   });
 
-  macroPillars.filter((p) => !p.isPositive).forEach((p) => {
-    penalties.push({
-      id: p.id,
-      badge: p.pct < 40 ? '🔴' : '🟡',
-      title: p.title,
-      body: p.feedback,
-      severity: p.pct < 40 ? 'red' : 'amber',
+  if (ctx.isDayOpenForEvaluation) {
+    macroPillars
+      .filter((p) => p.isInProgress || p.skipPenalty)
+      .forEach((p) => {
+        todayObjectives.push({
+          id: p.id,
+          badge: p.icon,
+          title: p.title.split('&')[0].trim(),
+          body: p.feedback,
+        });
+      });
+
+    macroPillars
+      .filter((p) => !p.isPositive && !p.skipPenalty)
+      .forEach((p) => {
+        penalties.push({
+          id: p.id,
+          badge: p.pct < 40 ? '🔴' : '🟡',
+          title: p.title,
+          body: p.feedback,
+          severity: p.pct < 40 ? 'red' : 'amber',
+        });
+      });
+
+    const rt = ctx.intradayRealtimePenalties || {};
+    if (rt.unplannedProlongedFast) {
+      penalties.push({
+        id: 'unplanned_fast',
+        badge: '⏱️',
+        title: 'Digiuno non pianificato',
+        body: 'Allenamento mattutino svolto ma finestra alimentare ancora chiusa: priorità refuel proteico entro 2 ore.',
+        severity: 'amber',
+      });
+    }
+  } else {
+    macroPillars.filter((p) => !p.isPositive).forEach((p) => {
+      penalties.push({
+        id: p.id,
+        badge: p.pct < 40 ? '🔴' : '🟡',
+        title: p.title,
+        body: p.feedback,
+        severity: p.pct < 40 ? 'red' : 'amber',
+      });
     });
-  });
+  }
 
   if (Number(b.trainingPct) >= 75) {
     strengths.push({
@@ -248,9 +549,13 @@ export function buildProgressionPagellaInsight(score, breakdown = {}, macroPilla
   return {
     statusLabel,
     scoreLabel: value != null ? `${value}/100 — ${statusLabel}` : '—/100',
-    microLabel: value != null ? `${statusLabel.toUpperCase()} • TARGET ATTIVO` : 'IN CALIBRAZIONE',
+    microLabel: ctx.isDayOpenForEvaluation
+      ? 'GIORNATA IN CORSO • OBIETTIVI ATTIVI'
+      : (value != null ? `${statusLabel.toUpperCase()} • TARGET ATTIVO` : 'IN CALIBRAZIONE'),
     strengths,
     penalties,
+    todayObjectives,
+    isDayInProgress: Boolean(ctx.isDayOpenForEvaluation),
     cta,
     bars: macroPillars.map((p) => ({
       id: p.id,

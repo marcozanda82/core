@@ -5,7 +5,20 @@ const BAR_FILL = {
   good: 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.45)]',
   mid: 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]',
   low: 'bg-rose-400 shadow-[0_0_8px_rgba(248,113,113,0.4)]',
+  info: 'bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.35)]',
 };
+
+function ObjectiveBullet({ item }) {
+  return (
+    <li className="rounded-xl border border-cyan-500/25 bg-cyan-950/30 px-3 py-2">
+      <p className="text-[12px] font-semibold leading-snug text-cyan-100">
+        <span className="mr-1.5" aria-hidden>{item.badge}</span>
+        {item.title}
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-slate-300/95">{item.body}</p>
+    </li>
+  );
+}
 
 function InsightBullet({ item, variant }) {
   const shell = variant === 'strength'
@@ -35,7 +48,9 @@ function PagellaSection({ title, tone, children }) {
     ? 'text-emerald-300/90'
     : tone === 'warn'
       ? 'text-amber-300/90'
-      : 'text-slate-400';
+      : tone === 'info'
+        ? 'text-cyan-300/90'
+        : 'text-slate-400';
   return (
     <div className="mt-2.5 first:mt-0">
       <p className={`mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${titleTone}`}>{title}</p>
@@ -51,10 +66,11 @@ export default function ProgressionePagellaCard({
   score = null,
   breakdown = null,
   macroPillars = [],
+  dayEvaluationContext = null,
 } = {}) {
   const insight = useMemo(
-    () => buildProgressionPagellaInsight(score, breakdown, macroPillars),
-    [score, breakdown, macroPillars],
+    () => buildProgressionPagellaInsight(score, breakdown, macroPillars, dayEvaluationContext),
+    [score, breakdown, macroPillars, dayEvaluationContext],
   );
 
   return (
@@ -84,17 +100,32 @@ export default function ProgressionePagellaCard({
           </PagellaSection>
         ) : null}
 
+        {insight.isDayInProgress && insight.todayObjectives?.length > 0 ? (
+          <PagellaSection title="Obiettivi di oggi (in corso)" tone="info">
+            {insight.todayObjectives.map((item) => (
+              <ObjectiveBullet key={item.id} item={item} />
+            ))}
+          </PagellaSection>
+        ) : null}
+
         {insight.penalties.length > 0 ? (
           <PagellaSection title="Freni da correggere" tone="warn">
             {insight.penalties.map((item) => (
               <InsightBullet key={item.id} item={item} variant="penalty" />
             ))}
           </PagellaSection>
-        ) : (
+        ) : !insight.isDayInProgress ? (
           <div className="mt-2.5 rounded-xl border border-emerald-500/20 bg-emerald-950/25 px-3 py-2">
             <p className="text-[12px] font-semibold text-emerald-200">✅ Nessun freno critico oggi</p>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
               I macro sono in linea: mantieni la costanza sul prossimo pasto.
+            </p>
+          </div>
+        ) : (
+          <div className="mt-2.5 rounded-xl border border-cyan-500/20 bg-cyan-950/25 px-3 py-2">
+            <p className="text-[12px] font-semibold text-cyan-100">ℹ️ Giornata ancora aperta</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
+              I deficit macro non ancora coperti non sono allarmi finché non chiudi la finestra alimentare.
             </p>
           </div>
         )}
@@ -114,7 +145,7 @@ export default function ProgressionePagellaCard({
         {insight.bars?.length > 0 ? (
           <div className="mt-2.5 space-y-1.5 border-t border-white/5 pt-2.5">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-              Macro oggi
+              {insight.isDayInProgress ? 'Macro oggi (in corso)' : 'Macro oggi'}
             </p>
             {insight.bars.map((bar) => (
               <div key={bar.id} className="space-y-0.5">
