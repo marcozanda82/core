@@ -8,6 +8,7 @@ import {
 } from '../../mealBuilder/utils/foodMacroUtils.js';
 import { getDynamicMealTargets, toCanonicalMealType } from '../../../coreEngine.jsx';
 import { getLastUsedQuantity } from './userRecentFoods.js';
+import { lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 import { resolveFoodAcrossDatabases } from './multiDbFoodResolver.js';
 import { attachResolvedFoodIcon } from '../../../utils/foodCategoryIcon.js';
 import {
@@ -219,13 +220,15 @@ export function parseMcdriveFoodInputs(userText) {
 
     const portion = resolveSmartDefaultPortion(name);
     const hasExplicitGrams = Number.isFinite(Number(gramsHint)) && Number(gramsHint) > 0;
+    const recentGrams = lookupRecentFoodPortionGrams({ name });
     const grams = hasExplicitGrams
       ? Math.max(1, Math.round(Number(gramsHint)))
-      : portion.grams;
+      : (recentGrams > 0 ? recentGrams : portion.grams);
     out.push({
       foodName: name,
       grams,
-      isEstimated: hasExplicitGrams ? false : (estimatedHint !== false),
+      isEstimated: hasExplicitGrams ? false : true,
+      habitualPortion: !hasExplicitGrams && recentGrams > 0,
       coffeeShopProductId: portion.coffeeShopProductId || null,
       servingLabel: portion.servingLabel || null,
     });
@@ -697,11 +700,17 @@ export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, cur
   const foodName = String(
     itemOrParsed?.foodName || matchInfo?.foodName || '',
   ).trim();
+  const recent = lookupRecentFoodPortionGrams({
+    id: matchInfo?.foodDbKey,
+    name: foodName,
+    servingSize: matchInfo?.row?.servingSize,
+  });
   const smart = resolveSmartDefaultPortion(foodName);
   const fallback = Math.max(
     1,
     Math.round(
       Number(itemOrParsed?.grams)
+      || recent
       || smart.grams
       || DEFAULT_GRAMS,
     ),
@@ -710,11 +719,13 @@ export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, cur
   // Catalogo locale / porzione pezzo: non sovrascrivere con 100g storici sbagliati.
   if (smart.coffeeShopProductId || smart.kind === 'piece' || smart.kind === 'pastry' || smart.kind === 'coffee') {
     if (itemOrParsed?.isEstimated === true || !Number(itemOrParsed?.grams)) {
+      if (recent > 0) return recent;
       return smart.grams;
     }
   }
 
-  if (itemOrParsed?.isEstimated !== true) return fallback;
+  if (itemOrParsed?.isEstimated !== true && Number(itemOrParsed?.grams) > 0) return fallback;
+  if (recent > 0) return recent;
 
   const keys = [
     matchInfo?.foodDbKey,

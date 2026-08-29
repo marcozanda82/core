@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import BiometricsHealthCard from './components/BiometricsHealthCard';
+import CardioAnalysisCard from './components/CardioAnalysisCard';
 import MetabolicReportCard from './components/MetabolicReportCard';
+import MuscleTelemetryHub from './components/MuscleTelemetryHub';
 import SaluteClinicalInsight from './components/SaluteClinicalInsight';
 import SaluteDashKpiCard from './components/SaluteDashKpiCard';
 import SaluteFastingTrendCard from './components/SaluteFastingTrendCard';
@@ -17,6 +19,7 @@ import { computeTotali } from '../../useBiochimico';
 import {
   averageMuscleResidual,
   calculateLongevityScore,
+  calculateProgressionScore,
   buildGlycemicRiskBreakdown,
   computeAverageDailyFastingWindow,
   computeGlycemicRiskPercent,
@@ -27,6 +30,7 @@ import {
   resolveProgressionNutritionTargets,
 } from './utils/saluteDashboardMetrics';
 import {
+  buildProgressionLogsWindow,
   buildSaluteLongevityWindow,
   buildSleepTrendChartData,
   buildUnifiedSleepSeries,
@@ -36,6 +40,7 @@ import {
   SLEEP_GHOST_LOOKBACK_DAYS,
 } from './utils/saluteHistorySeries';
 import { pillarPctFromLongevityScore } from './utils/longevityInsightGenerator';
+import { buildProgressionTrendSnapshots } from './utils/progressionInsightGenerator';
 
 function formatMetric(value, digits = 1) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -69,8 +74,13 @@ export default function SaluteView({
   fullHistory = null,
   heightCm = REFERENCE_HEIGHT_CM,
   userTargets = null,
+  todayBurnKcal = 0,
+  initialOpenMuscleTelemetry = false,
 } = {}) {
   const [activePillar, setActivePillar] = useState(null);
+  const [showMuscleTelemetryHub, setShowMuscleTelemetryHub] = useState(
+    () => Boolean(initialOpenMuscleTelemetry),
+  );
 
   const sleepWidget = useSleepLog({
     db,
@@ -303,6 +313,57 @@ export default function SaluteView({
     ? Number(glycemic.whtr).toFixed(2)
     : '—';
 
+  const progressionLogs = useMemo(
+    () => buildProgressionLogsWindow({
+      fullHistory,
+      todayDate,
+      days: LONGEVITY_WINDOW_DAYS,
+      todayLiveLog: activeLogIsToday ? todayLiveLog : null,
+    }),
+    [fullHistory, todayDate, activeLogIsToday, todayLiveLog],
+  );
+
+  const progressionResult = useMemo(
+    () => calculateProgressionScore(
+      {
+        days: progressionLogs.days,
+        todayDate: progressionLogs.todayDate,
+        sleepAvgHours: progressionLogs.sleepAvgHours,
+        workoutSessionsTotal: progressionLogs.workoutSessionsTotal,
+      },
+      userTargets || {},
+    ),
+    [progressionLogs, userTargets],
+  );
+
+  const trendSnapshots = useMemo(
+    () => buildProgressionTrendSnapshots(progressionLogs.days, userTargets),
+    [progressionLogs.days, userTargets],
+  );
+
+  if (showMuscleTelemetryHub) {
+    return (
+      <div
+        className="snapshot-salute-root trend-salute-view flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-contain px-1 pb-28 pt-0.5 [-webkit-overflow-scrolling:touch]"
+        role="region"
+        aria-label="Telemetria muscolare"
+      >
+        <MuscleTelemetryHub
+          fourCylinder={fourCylinder}
+          fullHistory={fullHistory}
+          activeLog={activeLog}
+          activeDate={todayDate}
+          adherence7d={trendSnapshots.adherence7d}
+          adherence14d={trendSnapshots.adherence14d}
+          daysLogged={trendSnapshots.daysLogged}
+          trainingPct={progressionResult.breakdown?.trainingPct}
+          sleepPct={progressionResult.breakdown?.sleepPct}
+          onBack={() => setShowMuscleTelemetryHub(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="snapshot-salute-root trend-salute-view flex min-h-0 w-full min-w-0 flex-1 flex-col gap-2.5 overflow-x-hidden overflow-y-auto overscroll-contain px-1 pb-28 pt-0.5 [-webkit-overflow-scrolling:touch]"
@@ -316,6 +377,27 @@ export default function SaluteView({
 
       {/* L2 — Pagella Metabolica (sempre espansa) */}
       <MetabolicReportCard score={longevityScore} breakdown={longevityBreakdown} />
+
+      <CardioAnalysisCard
+        fullHistory={fullHistory}
+        activeLog={todayLiveLog}
+        activeDate={todayDate}
+        todayBurnKcal={todayBurnKcal}
+      />
+
+      <button
+        type="button"
+        onClick={() => setShowMuscleTelemetryHub(true)}
+        className="flex w-full flex-col items-start gap-1 rounded-2xl border border-violet-500/35 bg-gradient-to-r from-violet-950/50 to-slate-950/90 px-3 py-3 text-left transition hover:border-violet-400/55 hover:shadow-[0_0_18px_rgba(167,139,250,0.18)]"
+        aria-label="Apri telemetria muscolare e volume"
+      >
+        <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-300/90">
+          Telemetria Muscolare &amp; Volume
+        </span>
+        <span className="text-[12px] leading-snug text-slate-300">
+          Stato recupero distretti, fatica sistemica e curve a 14g/30g
+        </span>
+      </button>
 
       {/* L3 — Griglia 4 pilastri + pannello dettaglio */}
       <div className="shrink-0">

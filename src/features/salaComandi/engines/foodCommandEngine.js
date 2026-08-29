@@ -4,6 +4,7 @@
 
 import { findRecentFoodHabit } from '@/features/salaComandi/utils/foodUtils';
 import { toConceptTokenList } from '@/features/salaComandi/engines/foodCommandConcepts';
+import { splitFoodListSegments } from '@/features/commandTerminal/conversation/foodPhraseSplit';
 
 const ACCENT_REGEX = /[\u0300-\u036f]/g;
 
@@ -232,27 +233,13 @@ function splitFoodCommandText(text) {
   const s = typeof text === 'string' ? text.trim() : '';
   if (!s) return [];
 
-  let chunks = s
+  const lineChunks = s
     .replace(/\r\n/g, '\n')
-    .split(/\n|,|;/)
+    .split(/\n/)
     .map((x) => x.trim())
     .filter(Boolean);
 
-  chunks = chunks.flatMap((c) =>
-    c
-      .split('+')
-      .map((x) => x.trim())
-      .filter(Boolean),
-  );
-
-  chunks = chunks.flatMap((c) =>
-    c
-      .split(/\s+e\s+/i)
-      .map((x) => x.trim())
-      .filter(Boolean),
-  );
-
-  return chunks;
+  return lineChunks.flatMap((c) => splitFoodListSegments(c));
 }
 
 /**

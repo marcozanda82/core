@@ -4,6 +4,8 @@
  * Non collegato al runtime esistente: solo preparazione architetturale.
  */
 
+import { splitFoodListSegments, isCompositeFoodDescriptorName } from '../../commandTerminal/conversation/foodPhraseSplit.js';
+
 /** Stopword minime per contare token “significativi” (allineate allo spirito food command). */
 const SIGNIFICANT_TOKEN_STOP = new Set([
   'a',
@@ -117,11 +119,13 @@ export function deriveClassicSearchQuery(query) {
   let s = original.replace(STRIP_QTY_FOR_CLASSIC, ' ');
   s = s.replace(/\s+/g, ' ').trim();
 
-  const segments = s.split(/\s+e\s+|,|\+|\//i);
+  const segments = splitFoodListSegments(s);
   let seg = (segments[0] ?? '').trim();
 
   const words = seg.split(/\s+/).filter(Boolean);
-  if (words.length >= 3) seg = words[0] ?? '';
+  if (words.length >= 3 && !isCompositeFoodDescriptorName(seg)) {
+    seg = words[0] ?? '';
+  }
 
   seg = String(seg).trim();
   return seg || original;

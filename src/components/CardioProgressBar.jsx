@@ -194,7 +194,9 @@ export default function CardioProgressBar({
               Include spillover pesi (30%) · {fillPercent}% · tocca per i dettagli
             </p>
           ) : (
-            <p className="mt-1.5 text-[9px] text-slate-600">Tocca per l&apos;estratto conto</p>
+            <p className="mt-1.5 text-[9px] text-slate-500">
+              {accumulated}/{target} min aerobici · tocca per l&apos;estratto conto
+            </p>
           )}
         </div>
 

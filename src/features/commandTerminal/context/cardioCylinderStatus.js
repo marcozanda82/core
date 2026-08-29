@@ -13,15 +13,33 @@ const PURE_CARDIO_TYPES = new Set([
   'liss',
   'corsa',
   'running',
+  'run',
   'bike',
+  'cycling',
+  'cyclette',
+  'spinning',
+  'indoor_bike',
+  'tapis',
+  'tapis_roulant',
+  'treadmill',
+  'ellittica',
+  'elliptical',
   'nuoto',
   'swim',
+  'remo',
+  'rowing',
   'camminata',
   'walking',
   'passi',
   'walk',
   'passeggio',
+  'zona2',
+  'z2',
 ]);
+
+/** Match su tipo/etichetta quando l'id non è nel set (es. "Tapis Roulant", "Cyclette"). */
+const CARDIO_LABEL_PATTERN =
+  /\b(cardio|hiit|liss|corsa|correr|running|run|bike|cicl|cyclette|spinning|nuoto|swim|camminat|walking|walk|passi|tapis|treadmill|ellitt|remo|rowing|zona\s?2|\bz2\b)\b/i;
 
 /** Tipi / keyword trattati come quota «passi / camminate» nello scontrino. */
 const WALKING_OR_STEPS_TYPES = new Set([
@@ -143,7 +161,67 @@ export function resolveWorkoutEventMs(entry, dateKey = null) {
 export function isPureCardioWorkoutType(typeId) {
   const t = asTrimmedString(typeId).toLowerCase();
   if (!t || t === 'workout') return false;
-  return PURE_CARDIO_TYPES.has(t);
+  if (PURE_CARDIO_TYPES.has(t)) return true;
+  return CARDIO_LABEL_PATTERN.test(t.replace(/[_-]+/g, ' '));
+}
+
+function cardioEntryHaystack(entry) {
+  if (!entry || typeof entry !== 'object') return '';
+  return [
+    resolveWorkoutTypeId(entry),
+    entry.desc,
+    entry.name,
+    entry.title,
+    entry.label,
+    entry.activityType,
+    entry.equipment,
+    entry.machine,
+  ].map((v) => asTrimmedString(v).toLowerCase()).join(' ');
+}
+
+/**
+ * True se l'entry è cardio puro (tipo noto o etichetta tapis/cyclette/corsa…).
+ * @param {object} entry
+ * @returns {boolean}
+ */
+export function isPureCardioEntry(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (isPureCardioWorkoutType(resolveWorkoutTypeId(entry))) return true;
+  return CARDIO_LABEL_PATTERN.test(cardioEntryHaystack(entry));
+}
+
+/**
+ * Macchinario riconosciuto dalla sessione.
+ * @param {object} entry
+ * @returns {'tapis'|'cyclette'|'ellittica'|'nuoto'|'remo'|null}
+ */
+export function classifyCardioEquipment(entry) {
+  const hay = cardioEntryHaystack(entry);
+  if (/\b(tapis|treadmill)\b/.test(hay)) return 'tapis';
+  if (/\b(cyclette|spinning|indoor[_\s-]?bike|bike|cicl)\b/.test(hay)) return 'cyclette';
+  if (/\b(ellitt)/.test(hay)) return 'ellittica';
+  if (/\b(nuoto|swim)\b/.test(hay)) return 'nuoto';
+  if (/\b(remo|rowing)\b/.test(hay)) return 'remo';
+  return null;
+}
+
+/**
+ * Zona di intensità stimata (senza HR: da tipo sessione).
+ * @param {object} entry
+ * @returns {{ id: 'z2'|'z3'|'z4', label: string }}
+ */
+export function classifyCardioIntensityZone(entry) {
+  const hay = cardioEntryHaystack(entry);
+  if (/\b(hiit|sprint|vo2|zona\s?[45]|z[45])\b/.test(hay)) {
+    return { id: 'z4', label: 'Z4–Z5 · alta' };
+  }
+  if (isWalkingOrStepsWorkout(entry) || /\b(liss|zona\s?2|\bz2\b|neat)\b/.test(hay)) {
+    return { id: 'z2', label: 'Z2 · aerobica' };
+  }
+  if (/\b(corsa|running|run|tapis|treadmill|joggin)\b/.test(hay)) {
+    return { id: 'z3', label: 'Z3 · moderata-alta' };
+  }
+  return { id: 'z3', label: 'Z2–Z3 · moderata' };
 }
 
 /**
@@ -191,7 +269,13 @@ function mergeWorkoutPools(cardioLogs = [], workoutLogs = []) {
     if (!entry || typeof entry !== 'object') return;
     const type = asTrimmedString(entry.type || '').toLowerCase();
     // Accetta entry workout esplicite, oppure entry già tipizzate (cardio/hiit/pesi…)
-    if (type && type !== 'workout' && !PURE_CARDIO_TYPES.has(type) && !STRENGTH_TYPES.has(type)) {
+    if (
+      type
+      && type !== 'workout'
+      && !isPureCardioWorkoutType(type)
+      && !isStrengthWorkoutType(type)
+      && !isPureCardioEntry(entry)
+    ) {
       return;
     }
     const id = asTrimmedString(entry.id || entry.nodeId);
@@ -257,7 +341,7 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
     const minutes = resolveWorkoutDurationMinutes(entry);
     if (!(minutes > 0)) continue;
 
-    if (isPureCardioWorkoutType(typeId)) {
+    if (isPureCardioWorkoutType(typeId) || isPureCardioEntry(entry)) {
       pureCardioMinutes += minutes;
       continue;
     }
@@ -360,15 +444,23 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
     };
 
     if (isWalkingOrStepsWorkout(entry)) {
-      walkingSessions.push(row);
+      walkingSessions.push({
+        ...row,
+        equipment: classifyCardioEquipment(entry),
+        intensity: classifyCardioIntensityZone(entry),
+      });
       walkingMinutes += minutes;
       walkingSteps += row.steps;
       walkingKcal += row.kcal;
       continue;
     }
 
-    if (isPureCardioWorkoutType(typeId)) {
-      cardioSessions.push(row);
+    if (isPureCardioWorkoutType(typeId) || isPureCardioEntry(entry)) {
+      cardioSessions.push({
+        ...row,
+        equipment: classifyCardioEquipment(entry),
+        intensity: classifyCardioIntensityZone(entry),
+      });
       structuredCardioMinutes += minutes;
       structuredCardioKcal += row.kcal;
       continue;
@@ -413,5 +505,84 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
       sessions: strengthSessions,
       ruleLabel: `${Math.round(spilloverRatio * 100)}% della durata pesi conta come cardio`,
     },
+  };
+}
+
+const EQUIPMENT_LABELS = Object.freeze({
+  tapis: 'Tapis roulant',
+  cyclette: 'Cyclette',
+  ellittica: 'Ellittica',
+  nuoto: 'Nuoto',
+  remo: 'Remo',
+});
+
+/**
+ * Riepilogo UI per Centro Analisi / Salute: minuti, kcal, zone, macchinari.
+ * Le kcal settimanali restano le stesse che alimentano il TDEE (burn del diario).
+ *
+ * @param {object | null} breakdown
+ * @param {{ todayBurnKcal?: number }} [options]
+ */
+export function summarizeCardioAnalysis(breakdown, options = {}) {
+  const weeklyMinutes = Math.round(Number(breakdown?.accumulatedMinutes) || 0);
+  const weeklyTarget = Math.max(
+    1,
+    Math.round(Number(breakdown?.weeklyTargetMinutes) || CARDIO_WEEKLY_TARGET_MINUTES),
+  );
+  const weeklyKcal = Math.round(
+    (Number(breakdown?.walking?.kcal) || 0)
+    + (Number(breakdown?.structuredCardio?.kcal) || 0),
+  );
+  const todayBurnKcal = Math.max(0, Math.round(Number(options.todayBurnKcal) || 0));
+
+  const zoneMinutes = { z2: Number(breakdown?.walking?.minutes) || 0, z3: 0, z4: 0 };
+  const equipmentCount = {
+    tapis: 0,
+    cyclette: 0,
+    ellittica: 0,
+    nuoto: 0,
+    remo: 0,
+  };
+
+  const structuredSessions = Array.isArray(breakdown?.structuredCardio?.sessions)
+    ? breakdown.structuredCardio.sessions
+    : [];
+  const walkingSessions = Array.isArray(breakdown?.walking?.sessions)
+    ? breakdown.walking.sessions
+    : [];
+
+  for (const session of structuredSessions) {
+    const zoneId = session?.intensity?.id || 'z3';
+    if (zoneMinutes[zoneId] != null) {
+      zoneMinutes[zoneId] += Number(session.minutes) || 0;
+    }
+  }
+
+  for (const session of [...structuredSessions, ...walkingSessions]) {
+    const eq = session?.equipment;
+    if (eq && equipmentCount[eq] != null) equipmentCount[eq] += 1;
+  }
+
+  const equipment = Object.entries(equipmentCount)
+    .filter(([, count]) => count > 0)
+    .map(([id, count]) => ({
+      id,
+      label: EQUIPMENT_LABELS[id] || id,
+      sessions: count,
+    }));
+
+  return {
+    weeklyMinutes,
+    weeklyTarget,
+    fillPercent: Math.max(0, Math.min(100, Math.round((weeklyMinutes / weeklyTarget) * 100))),
+    remainingMinutes: Math.max(0, weeklyTarget - weeklyMinutes),
+    weeklyKcal,
+    todayBurnKcal,
+    zoneMinutes: {
+      z2: Math.round(zoneMinutes.z2 * 10) / 10,
+      z3: Math.round(zoneMinutes.z3 * 10) / 10,
+      z4: Math.round(zoneMinutes.z4 * 10) / 10,
+    },
+    equipment,
   };
 }

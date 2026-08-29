@@ -2,10 +2,11 @@ import { FOOD_DB_SOURCE } from './foodDbSource';
 import { resolveIconTagId } from './features/mealBuilder/utils/FoodIcons';
 import { enrichDbRowWithFoodUnits } from './foodUnits';
 import { ensureMasterDbVersion } from './features/mealBuilder/utils/masterFoodResync';
-import { KENTU_MASTER_DB_VERSION } from './constants/foodDbVersion';
+import { KENTU_MASTER_DB_VERSION, USDA_DB_VERSION } from './constants/foodDbVersion';
 
+const USDA_DB_FILENAME = 'kentu_smart_master_usda_FINAL.json';
 const KENTU_IT_DB_URL = '/kentu_smart_master_db.json';
-const GLOBAL_DB_URL = '/kentu_smart_master_usda.json';
+const GLOBAL_DB_URL = `/${USDA_DB_FILENAME}`;
 
 function toNumber(value) {
   if (typeof value === 'number') {
@@ -60,6 +61,7 @@ function resolveItalianName(record) {
   return String(
     pickFirst(record, [
       'italianName',
+      'name_it',
       'desc_it',
       'nome_it',
       'nome',
@@ -74,7 +76,11 @@ function resolveItalianName(record) {
 }
 
 function resolveRecordKey(record, index) {
-  const rawId = pickFirst(record, ['dedupKey', 'id', 'fdcId', 'creaCode', 'food_code', 'code'], '');
+  const rawId = pickFirst(
+    record,
+    ['dedupKey', 'id', 'fdcId', 'fdc_id', 'creaCode', 'food_code', 'code'],
+    '',
+  );
   if (rawId) return String(rawId).trim();
   return `kentu_${index}`;
 }
@@ -116,7 +122,9 @@ function preserveSemanticTags(record) {
  */
 function normalizeRecordForDb(record, source) {
   const italianName = resolveItalianName(record);
-  const englishName = String(pickFirst(record, ['name', 'description'], '')).trim();
+  const englishName = String(
+    pickFirst(record, ['name', 'description', 'name_en', 'englishName'], ''),
+  ).trim();
   const rawIconTag = pickFirst(record, ['iconTag', 'icon_tag'], '');
   const resolvedIconTag = rawIconTag ? resolveIconTagId(rawIconTag) : null;
   const brand = String(pickFirst(record, ['brand', 'brands', 'marca'], '')).trim();
@@ -140,7 +148,7 @@ function normalizeRecordForDb(record, source) {
 
   if (normalized.kcal == null) {
     normalized.kcal = toNumber(
-      pickFirst(record, ['kcal', 'cal', 'energy_kcal', 'energy', 'kcalPer100g']),
+      pickFirst(record, ['kcal', 'cal', 'calories', 'energy_kcal', 'energy', 'kcalPer100g']),
     );
   }
   if (normalized.cal == null && normalized.kcal != null) {
@@ -166,6 +174,16 @@ function normalizeRecordForDb(record, source) {
   }
   if (normalized.fatTot == null && normalized.fatTotal != null) {
     normalized.fatTot = normalized.fatTotal;
+  }
+
+  const servingGrams = toNumber(
+    pickFirst(record, ['servingSize', 'serving_size', 'defaultQty', 'portionGrams', 'defaultGrams']),
+  );
+  if (normalized.servingSize == null || normalized.servingSize === '') {
+    normalized.servingSize = servingGrams > 0 ? servingGrams : 100;
+  }
+  if (servingGrams > 0 && normalized.defaultQty == null) {
+    normalized.defaultQty = servingGrams;
   }
 
   applyCanonicalNutrientKeys(normalized, record);
@@ -237,19 +255,20 @@ function indexRecords(records, source) {
 /** Kcal utilizzabili (> 0) per record OFF grezzo o normalizzato. */
 export function hasUsableOffKcal(record) {
   if (!record || typeof record !== 'object') return false;
-  const raw = record.kcal ?? record.cal ?? record.energy_kcal ?? record.energy ?? record.kcalPer100g;
+  const raw = record.kcal ?? record.cal ?? record.calories ?? record.energy_kcal ?? record.energy ?? record.kcalPer100g;
   if (raw == null || raw === '') return false;
   const n = typeof raw === 'number' ? raw : Number(String(raw).trim().replace(',', '.'));
   return Number.isFinite(n) && n > 0;
 }
 
-function withDbCacheBust(url) {
+function withDbCacheBust(url, version) {
+  const cacheVersion = version || KENTU_MASTER_DB_VERSION;
   const sep = url.includes('?') ? '&' : '?';
-  return `${url}${sep}v=${encodeURIComponent(KENTU_MASTER_DB_VERSION)}`;
+  return `${url}${sep}v=${encodeURIComponent(cacheVersion)}`;
 }
 
-async function fetchKentuJson(url, { cacheBust = false } = {}) {
-  const fetchUrl = cacheBust ? withDbCacheBust(url) : url;
+async function fetchKentuJson(url, { cacheBust = false, version } = {}) {
+  const fetchUrl = cacheBust ? withDbCacheBust(url, version) : url;
   const res = await fetch(fetchUrl);
   if (!res.ok) {
     throw new Error(`Failed to load ${fetchUrl}: ${res.status}`);
@@ -260,7 +279,7 @@ async function fetchKentuJson(url, { cacheBust = false } = {}) {
 /**
  * Carica i pilastri del database KentuOS:
  * - Kentu DB IT (CREA unificato): `/kentu_smart_master_db.json`
- * - Kentu DB USDA arricchito: `/kentu_smart_master_usda.json`
+ * - Kentu DB USDA arricchito: `/kentu_smart_master_usda_FINAL.json`
  * - Open Food Facts: solo REST API (non più in bundle/RAM)
  *
  * @returns {Promise<{
@@ -293,7 +312,7 @@ async function loadKentuDatabasesUncached() {
         console.warn('[foodLoader] Kentu DB IT unavailable', error);
         return null;
       }),
-      fetchKentuJson(GLOBAL_DB_URL, { cacheBust: true }).catch((error) => {
+      fetchKentuJson(GLOBAL_DB_URL, { cacheBust: true, version: USDA_DB_VERSION }).catch((error) => {
         console.warn('[foodLoader] Kentu DB global unavailable', error);
         return null;
       }),
@@ -321,6 +340,10 @@ async function loadKentuDatabasesUncached() {
     });
 
     console.timeEnd('[perf] foodLoader:total');
+    console.log(
+      '[FoodDB] Caricato nuovo database USDA: kentu_smart_master_usda_FINAL.json - Totale alimenti:',
+      Object.keys(globalDbRaw).length,
+    );
     console.log('[foodLoader] loaded Kentu databases', {
       kentuIt: Object.keys(kentuItDb).length,
       global: Object.keys(globalDb).length,

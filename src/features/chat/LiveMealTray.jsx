@@ -28,6 +28,7 @@ import {
   isMcDriveDisambiguationStatus,
   isMcDriveRawItem,
 } from '../commandTerminal/conversation/mcdriveWizard.js';
+import { lookupRecentFoodPortionGrams } from '../commandTerminal/conversation/userPortionsMemory.js';
 
 /** Normalizza status lavagna per UI (validating → processing). */
 function resolveMcDriveVisualStatus(item) {
@@ -283,11 +284,18 @@ function LiveMealTray({
 
   const appendSearchResultToTray = useCallback((result) => {
     if (!result) return;
-    const grams = Math.max(
-      1,
-      Math.round(Number(result?.grams ?? result?.row?.defaultUnitWeight) || 100),
-    );
+    const name = String(result?.desc || result?.name || result?.row?.name || '').trim();
+    const foodId = String(result?.key || result?.id || result?.foodDbKey || result?.row?.id || '').trim();
+    const recentGrams = lookupRecentFoodPortionGrams({
+      id: foodId,
+      name,
+    });
+    const serving = Math.round(Number(
+      result?.servingSize ?? result?.row?.servingSize ?? result?.grams ?? result?.row?.defaultUnitWeight,
+    ) || 0);
+    const grams = Math.max(1, recentGrams || serving || 100);
     const item = buildMcDriveItemFromSearchResult(result, grams);
+    if (recentGrams > 0) item.habitualPortion = true;
     onAppendSolverItems?.([item]);
   }, [onAppendSolverItems]);
 
@@ -514,6 +522,12 @@ function LiveMealTray({
               const isLatestInsert = displayIndex === 0;
               const highlightLatest = isLatestInsert && isRaw;
               const highlightSolver = solverHighlightIds.has(String(item?.id || ''));
+              const habitualGrams = lookupRecentFoodPortionGrams({
+                id: item?.foodDbKey,
+                name,
+              });
+              const showHabitualBadge = item?.habitualPortion === true
+                || (habitualGrams > 0 && grams === habitualGrams && item?.isEstimated === true);
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
@@ -594,9 +608,15 @@ function LiveMealTray({
                             ? 'text-sm text-slate-500'
                             : 'text-sm font-medium text-white',
                       ].filter(Boolean).join(' ')}
+                      title={showHabitualBadge ? `Porzione abituale ${grams} g` : undefined}
                     >
                       {grams} g
                     </span>
+                    {showHabitualBadge ? (
+                      <span className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300/90">
+                        abituale
+                      </span>
+                    ) : null}
                     {isPending ? (
                       <span className="kentu-meal-tray__kcal shrink-0 text-[0.65rem] text-amber-300/90 max-w-[5.5rem] truncate">
                         Scegli

@@ -996,6 +996,11 @@ html, body, #root {
 }
 
 /* Ghost Car What-If — cursore analogico obiettivo */
+.ghost-today-radar {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
 .ghost-sim-slider {
   width: 100%;
 }

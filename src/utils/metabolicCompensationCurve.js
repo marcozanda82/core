@@ -1,7 +1,8 @@
 /**
  * Curva di Compensazione Metabolica (Ghost Car) — rolling 7 giorni.
- * Ghost (simulabile) = Σ delta giornaliero fisso da obiettivo What-If.
- * Reale = Σ (intake − TDEE/base operativa), indipendente dalla simulazione.
+ * Y = target giornaliero (delta/g), non cumulato.
+ * Passato: targetManuale. Finestra Autopilota (oggi incluso): targetManuale − dailyCorrection.
+ * Dopo il recupero: di nuovo targetManuale. Reale solo sui cicli chiusi (fino a ieri).
  */
 
 import { addDays } from '../calendarDateUtils';
@@ -141,17 +142,21 @@ export function ghostSimDeltaToKentuStrategy(delta) {
 }
 
 /**
- * Ancora della finestra Ghost Car: sempre ieri (cicli metabolici chiusi).
+ * Ancora della finestra Ghost Car.
+ * Default: ieri (cicli chiusi). Con includeToday: fino a oggi (punto radar).
  * @param {string | null | undefined} requestedEndIso
- * @returns {string} ISO YYYY-MM-DD ≤ ieri
+ * @param {{ includeToday?: boolean }} [opts]
+ * @returns {string} ISO YYYY-MM-DD
  */
-export function resolveMetabolicTrendEndDate(requestedEndIso) {
+export function resolveMetabolicTrendEndDate(requestedEndIso, opts = {}) {
   const yesterday = getYesterdayString();
   const today = getTodayString();
+  const includeToday = opts.includeToday === true;
+  const cap = includeToday ? today : yesterday;
   const requested = String(requestedEndIso || '').slice(0, 10);
-  if (!requested || requested >= today || requested > yesterday) {
-    return yesterday;
-  }
+  if (!requested) return cap;
+  if (requested > cap) return cap;
+  if (!includeToday && requested >= today) return yesterday;
   return requested;
 }
 
@@ -164,6 +169,98 @@ function shortDayLabel(iso) {
   const [, m, day] = d.split('-');
   if (!m || !day) return d || '—';
   return `${day}/${m}`;
+}
+
+function corridorFields(ghostTarget, corridor) {
+  const center = Math.round(Number(ghostTarget) || 0);
+  const ghostLower = center - corridor;
+  return {
+    ghostLower,
+    ghostUpper: center + corridor,
+    corridorBase: ghostLower,
+    corridorWidth: corridor * 2,
+  };
+}
+
+/**
+ * True se il punto è un ciclo chiuso (storico fino a ieri) con bilancio reale plottabile.
+ * @param {object | null | undefined} point
+ * @returns {boolean}
+ */
+export function isClosedRealCyclePoint(point) {
+  if (!point || typeof point !== 'object') return false;
+  if (point.isOrigin || point.isToday || point.isProjection) return false;
+  return point.real != null && Number.isFinite(Number(point.real));
+}
+
+/**
+ * Ultimo punto a ciclo chiuso (fino a ieri) — SSOT per ΣΔ e fascia.
+ * @param {Array<object>} points
+ * @returns {object | null}
+ */
+export function pickClosedSigmaPoint(points = []) {
+  if (!Array.isArray(points) || points.length === 0) return null;
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    if (isClosedRealCyclePoint(points[i])) return points[i];
+  }
+  return null;
+}
+
+/**
+ * Dominio Y: Ghost + fascia ±corridor + reale chiuso. Esclude cicli aperti (oggi).
+ * @param {Array<object>} points
+ * @param {number} [corridor]
+ * @returns {[number, number]}
+ */
+export function resolveMetabolicTrendYDomain(points = [], corridor = GHOST_CORRIDOR_HALF_WIDTH_KCAL) {
+  const band = Math.max(50, Math.round(Number(corridor) || GHOST_CORRIDOR_HALF_WIDTH_KCAL));
+  let min = -band;
+  let max = band;
+  const list = Array.isArray(points) ? points : [];
+  for (const p of list) {
+    const candidates = [p?.ghost, p?.ghostLower, p?.ghostUpper];
+    if (isClosedRealCyclePoint(p)) candidates.push(p.real);
+    for (const raw of candidates) {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) continue;
+      if (n < min) min = n;
+      if (n > max) max = n;
+    }
+  }
+  const pad = 40;
+  const lo = Math.floor((min - pad) / 50) * 50;
+  const hi = Math.ceil((max + pad) / 50) * 50;
+  if (hi <= lo) return [lo, lo + band * 2];
+  return [lo, hi];
+}
+
+/**
+ * Proiezione Ghost Car a scalini (delta giornaliero, non cumulato).
+ * Giorni restanti nella finestra Autopilota: `targetManuale − dailyCorrection`.
+ * Primo giorno dopo la strategia: `targetManuale`.
+ *
+ * Es. TM=0, correzione=204, N=2 → [−204, 0]
+ *
+ * @param {{
+ *   targetManuale?: number,
+ *   dailyCorrection?: number,
+ *   strategyDays?: number,
+ * }} [opts]
+ * @returns {number[]}
+ */
+export function projectGhostRientroPath(opts = {}) {
+  const targetManuale = Math.round(Number(opts.targetManuale) || 0);
+  const dailyCorrection = Math.round(Number(opts.dailyCorrection) || 0);
+  const n = Math.max(0, Math.round(Number(opts.strategyDays) || 0));
+  if (n < 1) return [];
+
+  const inWindow = Math.round(targetManuale - dailyCorrection);
+  const out = [];
+  for (let i = 1; i < n; i += 1) {
+    out.push(inWindow);
+  }
+  out.push(targetManuale);
+  return out;
 }
 
 /**
@@ -191,7 +288,7 @@ export function resolveDayCalorieSplit(targetsResolved, fallbackBase = 2000) {
 }
 
 /**
- * Serie cumulativa Ghost (What-If) / traiettoria reale.
+ * Serie Ghost Car (delta giornaliero) / reale cicli chiusi.
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -204,6 +301,12 @@ export function resolveDayCalorieSplit(targetsResolved, fallbackBase = 2000) {
  *   simulatedDeltaKcal?: number | null,
  *   simulatedGoal?: string | null,
  *   settingsBaseKcal?: number | null,
+ *   includeToday?: boolean,
+ *   ghostAutoPilotEnabled?: boolean,
+ *   autoCompensationDelta?: number | null,
+ *   effectiveDeltaKcal?: number | null,
+ *   autopilotDays?: number | null,
+ *   autopilotFullRecovery?: boolean,
  * }} input
  */
 export function buildMetabolicCompensationSeries(input = {}) {
@@ -219,9 +322,17 @@ export function buildMetabolicCompensationSeries(input = {}) {
     ? clampGhostSimDelta(input.simulatedDeltaKcal)
     : resolveGhostDailyDeltaFromGoal(input.simulatedGoal);
   const simulatedGoal = ghostSimDeltaToGoal(ghostDailyDelta);
+  const includeToday = input.includeToday !== false;
+  const autopilotOn = input.ghostAutoPilotEnabled === true;
+  const autoDelta = Math.round(Number(input.autoCompensationDelta) || 0);
+  const effectiveTodayDelta = input.effectiveDeltaKcal != null && input.effectiveDeltaKcal !== ''
+    ? Math.round(Number(input.effectiveDeltaKcal) || 0)
+    : ghostDailyDelta + (autopilotOn ? autoDelta : 0);
+  const autopilotDays = Math.max(0, Math.round(Number(input.autopilotDays) || 0));
+  const autopilotFullRecovery = input.autopilotFullRecovery !== false;
 
   const todayIso = getTodayString();
-  const endIso = resolveMetabolicTrendEndDate(input.endDateIso);
+  const endIso = resolveMetabolicTrendEndDate(input.endDateIso, { includeToday: false });
   const tree = input.fullHistory && typeof input.fullHistory === 'object'
     ? input.fullHistory
     : {};
@@ -232,8 +343,7 @@ export function buildMetabolicCompensationSeries(input = {}) {
   const activeLog = Array.isArray(input.activeLog) ? input.activeLog : [];
   const canUseActiveLog = Boolean(
     activeDate
-    && activeDate !== todayIso
-    && activeDate <= endIso
+    && activeDate <= todayIso
     && activeLog.length,
   );
 
@@ -248,34 +358,35 @@ export function buildMetabolicCompensationSeries(input = {}) {
 
   /** @type {Array<object>} */
   const points = [];
-  let cumGhost = 0;
   let cumReal = 0;
+  let closedDays = 0;
+  const targetManuale = ghostDailyDelta;
+  const dailyCorrection = autopilotOn ? Math.round(targetManuale - effectiveTodayDelta) : 0;
+  const inWindowTarget = Math.round(targetManuale - dailyCorrection);
+  const applyAutopilot = autopilotOn && autopilotDays >= 1 && dailyCorrection !== 0;
 
-  // Punto Zero (Giorno 0): origine comune Ghost + Reale prima della finestra.
   const windowStartIso = addDays(endIso, -(windowDays - 1));
   const originIso = addDays(windowStartIso, -1);
-  const originGhostLower = 0 - corridor;
   points.push({
     date: originIso,
     label: shortDayLabel(originIso),
     dayIndex: 0,
     isOrigin: true,
+    isToday: false,
+    isProjection: false,
     baseKcal: profileFallback,
     targetKcal: profileFallback,
-    plannedDelta: 0,
-    actualDelta: 0,
+    plannedDelta: targetManuale,
+    actualDelta: null,
     intakeKcal: 0,
-    ghost: 0,
-    real: 0,
-    ghostLower: originGhostLower,
-    ghostUpper: 0 + corridor,
-    corridorBase: originGhostLower,
-    corridorWidth: corridor * 2,
+    ghost: targetManuale,
+    real: null,
+    ...corridorFields(targetManuale, corridor),
     deviation: 0,
     inCorridor: true,
     hasTrackable: false,
     simulatedGoal,
-    ghostDailyDelta,
+    ghostDailyDelta: targetManuale,
     stroke: '#22d3ee',
   });
 
@@ -297,7 +408,6 @@ export function buildMetabolicCompensationSeries(input = {}) {
       date: dateKey,
       todayDate: todayIso,
     });
-    // Base operativa per la REALE (impostazioni se disponibili, altrimenti history).
     const split = resolveDayCalorieSplit(
       settingsBase > 0 ? { ...dayTargets, baseKcal: settingsBase } : dayTargets,
       profileFallback,
@@ -310,61 +420,145 @@ export function buildMetabolicCompensationSeries(input = {}) {
       isIntentionalFast: intentional,
     });
 
-    // Ghost What-If: delta fisso dal cursore, MAI da targetHistory.
-    const plannedDelta = ghostDailyDelta;
-
     const hasTrackable = hasFood || intentional || snapshot.hasTrackableData;
-    // Traiettoria reale: solo cronaca. Giorni vuoti = 0 (non agganciati alla Ghost simulata).
-    let actualDelta;
-    if (hasTrackable) {
-      actualDelta = Math.round(Number(snapshot.intakeKcal) || 0) - split.baseKcal;
-    } else {
-      actualDelta = 0;
-    }
+    const actualDelta = hasTrackable
+      ? Math.round(Number(snapshot.intakeKcal) || 0) - split.baseKcal
+      : 0;
 
-    cumGhost += plannedDelta;
     cumReal += actualDelta;
-
-    const deviation = cumReal - cumGhost;
+    closedDays += 1;
+    const ghostY = targetManuale;
+    const deviation = actualDelta - ghostY;
     const inCorridor = Math.abs(deviation) <= corridor;
-    const ghostLower = cumGhost - corridor;
 
     points.push({
       date: dateKey,
       label: shortDayLabel(dateKey),
       dayIndex: windowDays - back,
+      isToday: false,
+      isProjection: false,
       baseKcal: split.baseKcal,
       targetKcal: split.targetKcal,
-      plannedDelta,
+      plannedDelta: ghostY,
       actualDelta,
       intakeKcal: Math.round(Number(snapshot.intakeKcal) || 0),
-      ghost: cumGhost,
-      real: cumReal,
-      ghostLower,
-      ghostUpper: cumGhost + corridor,
-      corridorBase: ghostLower,
-      corridorWidth: corridor * 2,
+      ghost: ghostY,
+      real: actualDelta,
+      ...corridorFields(ghostY, corridor),
       deviation,
+      cumulativeDeviation: cumReal - closedDays * targetManuale,
       inCorridor,
       hasTrackable,
       simulatedGoal,
-      ghostDailyDelta,
+      ghostDailyDelta: targetManuale,
       stroke: inCorridor ? '#22d3ee' : '#fb923c',
     });
   }
 
-  const latest = [...points].reverse().find((p) => !p.isOrigin) || points[points.length - 1] || null;
-  const adherenceOk = Boolean(latest?.inCorridor);
+  if (includeToday) {
+    const dayNode = tree[TRACKER_STORICO_KEY(todayIso)];
+    const log = (
+      (activeDate === todayIso || !activeDate) && activeLog.length
+        ? activeLog
+        : (getLogFromStoricoTree(tree, todayIso) || [])
+    );
+    const intentional = isDayIntentionalFast(dayNode);
+    const hasFood = dayHasFoodLog(log);
+    const dayTargets = resolveTargetConfigForDate({
+      targets: userTargets,
+      date: todayIso,
+      todayDate: todayIso,
+    });
+    const split = resolveDayCalorieSplit(
+      settingsBase > 0 ? { ...dayTargets, baseKcal: settingsBase } : dayTargets,
+      profileFallback,
+    );
+    const snapshot = computeDayEnergySnapshot({
+      log,
+      targetKcal: split.targetKcal,
+      date: todayIso,
+      isIntentionalFast: intentional,
+    });
+    const hasTrackable = hasFood || intentional || snapshot.hasTrackableData;
+    const ghostY = applyAutopilot ? inWindowTarget : targetManuale;
+    const inCorridor = Math.abs(ghostY - targetManuale) <= corridor;
+
+    points.push({
+      date: todayIso,
+      label: 'Oggi',
+      dayIndex: windowDays + 1,
+      isToday: true,
+      isProjection: false,
+      openCycle: true,
+      baseKcal: split.baseKcal,
+      targetKcal: split.targetKcal,
+      plannedDelta: ghostY,
+      actualDelta: null,
+      intakeKcal: Math.round(Number(snapshot.intakeKcal) || 0),
+      ghost: ghostY,
+      real: null,
+      ...corridorFields(ghostY, corridor),
+      deviation: ghostY - targetManuale,
+      inCorridor,
+      hasTrackable,
+      simulatedGoal,
+      ghostDailyDelta: targetManuale,
+      stroke: '#06b6d4',
+    });
+  }
+
+  if (applyAutopilot && includeToday) {
+    const futureGhosts = projectGhostRientroPath({
+      targetManuale,
+      dailyCorrection,
+      strategyDays: autopilotDays,
+    });
+    futureGhosts.forEach((ghostY, idx) => {
+      const dateKey = addDays(todayIso, idx + 1);
+      const inCorridor = Math.abs(ghostY - targetManuale) <= corridor;
+      points.push({
+        date: dateKey,
+        label: shortDayLabel(dateKey),
+        dayIndex: windowDays + idx + 2,
+        isToday: false,
+        isProjection: true,
+        baseKcal: profileFallback,
+        targetKcal: profileFallback,
+        plannedDelta: ghostY,
+        actualDelta: null,
+        intakeKcal: 0,
+        ghost: ghostY,
+        real: null,
+        ...corridorFields(ghostY, corridor),
+        deviation: ghostY - targetManuale,
+        inCorridor,
+        hasTrackable: false,
+        simulatedGoal,
+        ghostDailyDelta: targetManuale,
+        stroke: '#06b6d4',
+      });
+    });
+  }
+
+  const latestClosed = pickClosedSigmaPoint(points);
+  const latestToday = points.find((p) => p.isToday) || null;
+  const latest = latestToday || latestClosed || points[points.length - 1] || null;
+  const sigmaDelta = latestClosed != null ? Math.round(cumReal) : null;
+  const adherenceOk = Boolean(latestClosed?.inCorridor);
 
   return {
     points,
     windowDays,
     corridorHalfWidth: corridor,
     latest,
+    latestClosed,
+    sigmaDelta,
     adherenceOk,
     endIso,
     simulatedGoal,
-    ghostDailyDelta,
+    ghostDailyDelta: targetManuale,
+    targetManuale,
+    targetEffettivo: applyAutopilot ? inWindowTarget : targetManuale,
   };
 }
 
@@ -375,6 +569,7 @@ export function buildMetabolicCompensationSeries(input = {}) {
 export function withCompensationStrokeFields(points = []) {
   if (!Array.isArray(points) || points.length === 0) return [];
   return points.map((p, i) => {
+    const realY = isClosedRealCyclePoint(p) ? p.real : (p.isOrigin ? p.real : null);
     const prev = points[i - 1];
     const next = points[i + 1];
     const cyanHere = p.inCorridor;
@@ -389,8 +584,8 @@ export function withCompensationStrokeFields(points = []) {
     );
     return {
       ...p,
-      realCyan: cyanHere || cyanBridge ? p.real : null,
-      realOrange: orangeHere || orangeBridge ? p.real : null,
+      realCyan: realY != null && (cyanHere || cyanBridge) ? realY : null,
+      realOrange: realY != null && (orangeHere || orangeBridge) ? realY : null,
     };
   });
 }

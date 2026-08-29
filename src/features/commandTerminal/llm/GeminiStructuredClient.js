@@ -25,7 +25,9 @@ import {
   parseConsumedMealFromNaturalText,
   parseExactTimeFromUserText,
   overlayExplicitGramsOntoItems,
+  extractBareFoodNamesFromText,
 } from '../conversation/mealLogIntent.js';
+import { isCompositeFoodDescriptorName } from '../conversation/foodPhraseSplit.js';
 import {
   inferWorkoutTypeFromText,
   normalizeChatWorkoutType,
@@ -435,6 +437,29 @@ function pickMergedFoodName(nameA, nameB) {
   if (normA.includes(normB)) return cleanA;
   if (normB.includes(normA)) return cleanB;
   return cleanA.length >= cleanB.length ? cleanA : cleanB;
+}
+
+function collapseSpuriousCompositeSplits(items, userText) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (list.length < 2) return list;
+
+  const local = parseConsumedMealFromNaturalText(userText);
+  if (local?.items?.length === 1 && isCompositeFoodDescriptorName(local.items[0].foodName)) {
+    const keep = { ...list[0], foodName: local.items[0].foodName };
+    const g = Math.round(Number(local.items[0].grams) || 0);
+    if (g > 0) {
+      keep.grams = g;
+      keep.isEstimated = false;
+    }
+    return [keep];
+  }
+
+  const bare = extractBareFoodNamesFromText(userText);
+  if (bare.length === 1 && isCompositeFoodDescriptorName(bare[0])) {
+    return [{ ...list[0], foodName: bare[0] }];
+  }
+
+  return list;
 }
 
 /** Pulisce congiunzioni iniziali e fonde duplicati sommando grammi (mai max). */
@@ -983,10 +1008,13 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
       console.warn('[GeminiStructuredClient] filterItemsToUserMentions failed', error);
     }
     try {
-      return deduplicateAndCleanFoodItems(filtered);
+      return collapseSpuriousCompositeSplits(
+        deduplicateAndCleanFoodItems(filtered),
+        combinedText,
+      );
     } catch (error) {
       console.warn('[GeminiStructuredClient] deduplicateAndCleanFoodItems failed', error);
-      return filtered;
+      return collapseSpuriousCompositeSplits(filtered, combinedText);
     }
   };
 
@@ -1359,10 +1387,10 @@ VIETATO inventare pane+carne+olio se il DB ha già Cotoletta.
 ESEMPIO PRIORITÀ 2 — FALLBACK SCOMPOSIZIONE (solo se assente da recenti e DB):
 User: "Ho mangiato xyz-ricetta-sconosciuta" (nessun match)
 Output: 2-4 ingredienti base con grams medi e isEstimated:true.
-REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alimento da cercare nel database. Rimuovi le congiunzioni (e, con, ed) e rimuovi le quantità dal nome. VIETATO: "e 160 g di pane integrale".`,
-        "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB (es. \"pane integrale\"). NO grammi, NO congiunzioni.",
+REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alimento da cercare nel database. Rimuovi le quantità dal nome. NON rimuovere descrittori "con/ai/al". VIETATO: "e 160 g di pane integrale". "pane integrale con semi e noci" resta un unico foodName.`,
+        "HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = stringa pulita DB. NO grammi in testa. I descrittori con/ai/al RESTANO nel nome (es. \"pane integrale con semi e noci\").",
         "HARD CONSTRAINT — MAPPATURA GRAMMI 1:1: ogni alimento ha i PROPRI grammi. Mai copiare i grammi del primo sui successivi.",
-        "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'con' separano alimenti, non entrano nel foodName.",
+        "HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE: 'e'/'ed'/'+' separano alimenti SOLO se il secondo ha grammatura propria o e un alimento autonomo. 'con'/'ai'/'al' NON separano: restano nel foodName. Esempio: pane con noci 160g = UN item.",
         "REGOLA ADD_FOOD (searchKeywords — ESPANSIONE SEMANTICA): Per ogni alimento estratto, genera searchKeywords[] con: (1) il termine esatto detto dall utente (o l'ingrediente scomposto in fallback); (2) l opposto singolare/plurale (noci→noce, mela→mele); (3) i sinonimi italiani piu comuni (cocomero→anguria, arachidi→noccioline, brioche→cornetto). Max 8 voci. foodName resta il termine primario / nome DB.",
         "MAGGIORDOMO — PROPOSTA DEL SOLITO (SOLO mono-alimento): se l'utente cita UN solo termine (es. «pane», «cotoletta») e in [USER_HABITS] / DB personale c'è una variante frequente, usa quella in foodName. Preferisci il match DB integro alla scomposizione. VIETATO «Che tipo di pane?». VIETATO inventare marchi non presenti nello storico. VIETATO scomporre se esiste match DB.",
         "REGOLA ADD_FOOD (multi-alimento): Se l'utente elenca PIU alimenti O hai applicato il fallback scomposizione (nessun match DB), estrai TUTTI in payload.items[] (uno per alimento). VIETATO menzionare grammi/varianti di piu alimenti in un unico messaggio di chat.",

@@ -216,11 +216,13 @@ export function useGhostSimCompensation({
     () => computeRollingCalorieDebt({
       fullHistory,
       userTargets,
+      userProfile,
       settingsBaseKcal: baseKcalForBank,
+      tdee: userProfile?.tdee,
       // Lookback sempre ancorato a "oggi reale", indipendente dal giorno visualizzato.
       asOfDate: todayIso,
     }),
-    [fullHistory, userTargets, baseKcalForBank, todayIso],
+    [fullHistory, userTargets, userProfile, baseKcalForBank, todayIso],
   );
 
   /** Auto-delta applicato al target SOLO se autopilota ON e vista = oggi. */

@@ -10,7 +10,7 @@ import {
   normalizeSearchKeywords,
   shouldDiscloseSynonymMapping,
 } from '../../../foodSearch.js';
-import { normalizePortionFoodKey } from './userPortionsMemory.js';
+import { normalizePortionFoodKey, lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 
 export const BUTLER_MEAL_QUICK_REPLIES = Object.freeze([
   'Sì, va bene',
@@ -110,6 +110,8 @@ export function findMostFrequentPersonalFood(personalDb, genericName, searchKeyw
  * @returns {number | null}
  */
 export function lookupHabitualGrams(foodName, userPortions = {}, habitItems = []) {
+  const fromRecent = lookupRecentFoodPortionGrams({ name: foodName }, userPortions);
+  if (fromRecent > 0) return fromRecent;
   const key = normalizePortionFoodKey(foodName);
   if (key && userPortions && typeof userPortions === 'object') {
     const direct = Number(userPortions[key]);

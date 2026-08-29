@@ -6,6 +6,7 @@ import {
 } from './workoutRegistrationSlots.js';
 import { deduplicateWipItems } from '../../wipMealBuilder/utils/wipMealItemUtils.js';
 import { resolveUserDisplayName } from '../../chat/chatPersona.js';
+import { splitFoodListSegments } from './foodPhraseSplit.js';
 
 export const CONVERSATION_STATE = Object.freeze({
   IDLE: 'IDLE',
@@ -65,7 +66,7 @@ export function parseMultiItemGramsFromUserText(text, pendingItems = []) {
   const raw = String(text || '').trim();
   if (!raw) return null;
 
-  const segments = raw.split(/[,;]+|\s+e\s+/i).map((s) => s.trim()).filter(Boolean);
+  const segments = splitFoodListSegments(raw);
   const updates = [];
 
   for (const segment of segments) {

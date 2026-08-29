@@ -2,14 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { computeTotali } from '../../useBiochimico';
 import ProgressioneHero from './components/ProgressioneHero';
 import ProgressioneMacroPillarGrid from './components/ProgressioneMacroPillarGrid';
-import ProgressioneMuscleTelemetry from './components/ProgressioneMuscleTelemetry';
+import MuscleTelemetryPreview from './components/MuscleTelemetryPreview';
 import ProgressionePagellaCard from './components/ProgressionePagellaCard';
-import ProgressioneTrendFooter from './components/ProgressioneTrendFooter';
 import { calculateProgressionScore } from './utils/saluteDashboardMetrics';
 import {
   buildMacroPillarInsights,
   buildProgressionPagellaInsight,
-  buildProgressionTrendSnapshots,
   resolveProgressionDayEvaluationContext,
 } from './utils/progressionInsightGenerator';
 import {
@@ -21,7 +19,7 @@ import { getTodayString } from '../../coreEngine';
 
 /**
  * Emisfero Progressione — gerarchia a cascata (stile SaluteView):
- * L1 Hero · L2 Pagella · L3 pilastri macro · telemetria muscolare · L4 trend.
+ * L1 Hero · L2 Pagella · L3 pilastri macro · anteprima telemetria.
  */
 export default function ProgressioneView({
   fourCylinder = null,
@@ -32,6 +30,7 @@ export default function ProgressioneView({
   settingsBaseKcal = null,
   sleepEngineLiveLog = null,
   todayDate = '',
+  onOpenMuscleTelemetry = null,
 } = {}) {
   const [activePillar, setActivePillar] = useState(null);
 
@@ -116,11 +115,6 @@ export default function ProgressioneView({
     [progressionResult, macroPillars, dayEvaluationContext],
   );
 
-  const trendSnapshots = useMemo(
-    () => buildProgressionTrendSnapshots(progressionLogs.days, userTargets),
-    [progressionLogs.days, userTargets],
-  );
-
   const breakdown = progressionResult.breakdown || {};
 
   return (
@@ -150,19 +144,12 @@ export default function ProgressioneView({
         onSelect={setActivePillar}
       />
 
-      <ProgressioneMuscleTelemetry
+      <MuscleTelemetryPreview
         fourCylinder={fourCylinder}
         fullHistory={fullHistory}
         activeLog={activeLog}
         activeDate={activeDate || analyzedDateIso}
-      />
-
-      <ProgressioneTrendFooter
-        adherence7d={trendSnapshots.adherence7d}
-        adherence14d={trendSnapshots.adherence14d}
-        daysLogged={trendSnapshots.daysLogged}
-        trainingPct={breakdown.trainingPct}
-        sleepPct={breakdown.sleepPct}
+        onOpenFullTelemetry={onOpenMuscleTelemetry}
       />
     </div>
   );

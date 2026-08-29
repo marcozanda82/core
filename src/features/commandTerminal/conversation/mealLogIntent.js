@@ -7,6 +7,8 @@ import {
 } from '../../wipMealBuilder/mealWipEngine.js';
 import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting.js';
 import { resolveSmartDefaultGrams } from '../../../utils/smartFoodPortions.js';
+import { splitFoodListSegments } from './foodPhraseSplit.js';
+import { lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -1656,10 +1658,9 @@ export function extractBareFoodNamesFromText(text) {
     .replace(/[?!.]/g, ' ')
     .trim();
   if (!body) return [];
-  const parts = body
-    .split(/\s*(?:,|;|\be\b|\bed\b|\bcon\b)\s*/i)
+  const parts = splitFoodListSegments(body)
     .map((p) => p.trim().replace(/^(?:di|un|una|il|lo|la|i|gli|le)\s+/i, '').trim())
-    .filter((p) => p.length >= 2 && p.length <= 40 && !/^\d+$/.test(p));
+    .filter((p) => p.length >= 2 && p.length <= 80 && !/^\d+$/.test(p));
   return parts.slice(0, 6);
 }
 
@@ -1804,6 +1805,8 @@ function pushUniqueItem(items, seen, foodName, grams, extra = {}) {
 }
 
 function defaultGramsForDraftFood(foodName) {
+  const recent = lookupRecentFoodPortionGrams({ name: foodName });
+  if (recent > 0) return recent;
   const smart = resolveSmartDefaultGrams(foodName, 100);
   if (smart && smart !== 100) return smart;
   const normalized = String(foodName || '').trim().toLowerCase();
@@ -1863,8 +1866,7 @@ function extractBareFoodItemsFromSegment(segmentText, role, items, seen) {
   const cleaned = stripDraftSegmentPrefixes(segmentText);
   if (!cleaned) return;
 
-  const parts = cleaned
-    .split(/\s+e\s+|\s*,\s*/)
+  const parts = splitFoodListSegments(cleaned)
     .map((part) => part.trim())
     .filter(Boolean);
 
@@ -1946,10 +1948,7 @@ export function parseConsumedMealFromNaturalText(userText) {
     .replace(/\b(?:alle|ore|h)\s*\d{1,2}[:h.,]?\d{0,2}\b/gi, ' ')
     .trim();
 
-  const segments = String(stripped || text)
-    .split(/\s*(?:,|;|\s+e\s+|\s+ed\s+)\s*/i)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const segments = splitFoodListSegments(String(stripped || text));
 
   for (const segment of segments) {
     const gramsFirst = segment.match(

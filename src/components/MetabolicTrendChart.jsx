@@ -12,6 +12,7 @@ import {
 import {
   buildMetabolicCompensationSeries,
   withCompensationStrokeFields,
+  resolveMetabolicTrendYDomain,
   GHOST_CORRIDOR_HALF_WIDTH_KCAL,
   GHOST_SIM_DELTA_MIN,
   GHOST_SIM_DELTA_MAX,
@@ -59,34 +60,38 @@ function GhostCarTooltip({ active, payload }) {
           Punto Zero
           <span className="ml-2 font-mono text-[10px] text-slate-500">{row.date}</span>
         </p>
-        <p className="text-[10px] text-slate-400">Origine comune Σ — Ghost e Reale a 0</p>
+        <p className="text-[10px] text-slate-400">Origine finestra — Ghost = target giornaliero di regime</p>
       </div>
     );
   }
 
+  const title = row.isToday
+    ? 'Oggi (target Autopilota)'
+    : (row.isProjection ? 'Proiezione Ghost Car' : row.label);
+
   return (
     <div className="rounded-lg border border-white/12 bg-[rgba(8,10,14,0.96)] px-3 py-2.5 text-xs shadow-[0_10px_28px_rgba(0,0,0,0.45)]">
       <p className="mb-2 font-semibold tracking-wide text-slate-100">
-        {row.label}
+        {title}
         <span className="ml-2 font-mono text-[10px] text-slate-500">{row.date}</span>
       </p>
       <div className="flex flex-col gap-1.5">
         <div className="flex justify-between gap-4">
-          <span className="text-slate-400">Ghost (Σ What-If)</span>
-          <span className="font-mono tabular-nums text-slate-200">{formatKcal(row.ghost)}</span>
+          <span className="text-cyan-300">Ghost Car (kcal/g)</span>
+          <span className="font-mono tabular-nums text-cyan-100">{formatKcal(row.ghost)}</span>
         </div>
-        <div className="flex justify-between gap-4">
-          <span className="text-cyan-300">Reale (Σ vs TDEE)</span>
-          <span className="font-mono tabular-nums text-cyan-100">{formatKcal(row.real)}</span>
-        </div>
-        <div className="flex justify-between gap-4">
-          <span className="text-slate-500">Δ giorno Ghost</span>
-          <span className="font-mono tabular-nums text-slate-400">{formatKcal(row.plannedDelta)}</span>
-        </div>
-        <div className="flex justify-between gap-4">
-          <span className="text-slate-500">Δ giorno reale</span>
-          <span className="font-mono tabular-nums text-slate-400">{formatKcal(row.actualDelta)}</span>
-        </div>
+        {row.real != null && !row.isToday && !row.isProjection ? (
+          <div className="flex justify-between gap-4">
+            <span className="text-orange-300">Reale (kcal/g)</span>
+            <span className="font-mono tabular-nums text-orange-100">{formatKcal(row.real)}</span>
+          </div>
+        ) : null}
+        {row.ghostDailyDelta != null && row.ghost !== row.ghostDailyDelta ? (
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500">Target regime</span>
+            <span className="font-mono tabular-nums text-slate-400">{formatKcal(row.ghostDailyDelta)}</span>
+          </div>
+        ) : null}
         <p className={`mt-1 text-[10px] font-semibold uppercase tracking-wider ${
           row.inCorridor ? 'text-emerald-400' : 'text-orange-400'
         }`}
@@ -96,6 +101,34 @@ function GhostCarTooltip({ active, payload }) {
       </div>
     </div>
   );
+}
+
+function GhostTodayDot({ cx, cy, payload }) {
+  if (cx == null || cy == null || !payload?.isToday) return null;
+  return (
+    <g>
+      <circle
+        cx={cx}
+        cy={cy}
+        r={6}
+        className="ghost-today-radar animate-ping"
+        fill="#06b6d4"
+        opacity={0.7}
+      />
+      <circle cx={cx} cy={cy} r={5} fill="#06b6d4" stroke="#ffffff" strokeWidth={2} />
+    </g>
+  );
+}
+
+function GhostLineDot(props) {
+  const { cx, cy, payload } = props;
+  if (payload?.isToday) return <GhostTodayDot cx={cx} cy={cy} payload={payload} />;
+  if (payload?.isProjection) {
+    return (
+      <circle cx={cx} cy={cy} r={2.5} fill="#06b6d4" stroke="rgba(255,255,255,0.5)" strokeWidth={1} />
+    );
+  }
+  return null;
 }
 
 /**
@@ -183,6 +216,18 @@ export default function MetabolicTrendChart({
     setSliderDelta((prev) => clampGhostSimDelta(Number(prev) + deltaStep));
   };
 
+  const autoDelta = ghostAutoPilotEnabled
+    ? Math.round(Number(rollingDebt?.autoCompensationDelta ?? autoCompensationDelta) || 0)
+    : 0;
+  const netDebt = Math.round(Number(rollingDebt?.netDebt48h) || 0);
+  const remainingDebt = Math.round(Number(rollingDebt?.remainingDebtAfterCap) || 0);
+  const autopilotStrategy = rollingDebt?.strategy && typeof rollingDebt.strategy === 'object'
+    ? rollingDebt.strategy
+    : null;
+  const autopilotZone = Math.round(Number(rollingDebt?.zone) || 0);
+  const autopilotIcon = autopilotStrategy?.icon
+    || (autopilotZone === 1 ? '⚡' : '🛡️');
+
   const series = useMemo(
     () => buildMetabolicCompensationSeries({
       fullHistory,
@@ -193,8 +238,25 @@ export default function MetabolicTrendChart({
       corridorHalfWidth: GHOST_CORRIDOR_HALF_WIDTH_KCAL,
       simulatedDeltaKcal: sliderDelta,
       settingsBaseKcal,
+      includeToday: true,
+      ghostAutoPilotEnabled,
+      autoCompensationDelta: autoDelta,
+      effectiveDeltaKcal: Math.round(Number(sliderDelta) || 0) + autoDelta,
+      autopilotDays: rollingDebt?.strategy?.days || 0,
+      autopilotFullRecovery: rollingDebt?.strategy?.fullRecovery !== false,
     }),
-    [fullHistory, userTargets, activeLog, activeDate, sliderDelta, settingsBaseKcal],
+    [
+      fullHistory,
+      userTargets,
+      activeLog,
+      activeDate,
+      sliderDelta,
+      settingsBaseKcal,
+      ghostAutoPilotEnabled,
+      autoDelta,
+      rollingDebt?.strategy?.days,
+      rollingDebt?.strategy?.fullRecovery,
+    ],
   );
 
   const chartPoints = useMemo(
@@ -202,20 +264,22 @@ export default function MetabolicTrendChart({
     [series.points],
   );
 
-  const { adherenceOk, latest, corridorHalfWidth, ghostDailyDelta } = series;
+  const { adherenceOk, latest, latestClosed, sigmaDelta, corridorHalfWidth, ghostDailyDelta } = series;
   const isPreview = sliderDelta !== savedDelta;
   const smartLabel = ghostSimDeltaSmartLabel(sliderDelta);
   const deltaDisplay = formatKcal(sliderDelta);
 
-  const autoDelta = Math.round(Number(autoCompensationDelta) || 0);
-  const netDebt = Math.round(Number(rollingDebt?.netDebt48h) || 0);
-  const remainingDebt = Math.round(Number(rollingDebt?.remainingDebtAfterCap) || 0);
-  const effectiveDelta = effectiveDeltaKcal != null && effectiveDeltaKcal !== ''
-    ? Math.round(Number(effectiveDeltaKcal) || 0)
-    : Math.round(Number(savedDelta) || 0) + (ghostAutoPilotEnabled ? autoDelta : 0);
-  const showRollingBadge = netDebt > 0 || autoDelta !== 0;
+  const effectiveDelta = Math.round(Number(savedDelta) || 0) + autoDelta;
+  const showRollingBadge = netDebt !== 0 || autoDelta !== 0;
 
-  const deviation = Math.round(Number(latest?.deviation) || 0);
+  const yDomain = useMemo(
+    () => resolveMetabolicTrendYDomain(chartPoints, corridorHalfWidth),
+    [chartPoints, corridorHalfWidth],
+  );
+
+  const deviation = Math.round(
+    Number(latestClosed?.cumulativeDeviation ?? latestClosed?.deviation ?? latest?.deviation) || 0,
+  );
   const absDeviation = Math.abs(deviation);
   const showRientroTrigger = absDeviation >= COMPENSATION_DEVIATION_TRIGGER_KCAL;
   const compensationStatus = resolveActiveCompensationOnDate(
@@ -307,7 +371,10 @@ export default function MetabolicTrendChart({
             Calibrazione Target &amp; Bilancio · 7g
           </p>
           <p className="mt-0.5 text-[11px] text-slate-400">
-            What-If Ghost Car ±{corridorHalfWidth} kcal · cicli chiusi fino a ieri
+            What-If Ghost Car ±{corridorHalfWidth} kcal · oggi sul radar
+              {ghostAutoPilotEnabled && autopilotStrategy?.days
+                ? ` · rientro ${autopilotStrategy.days}g`
+                : ''}
           </p>
         </div>
         <span
@@ -340,6 +407,7 @@ export default function MetabolicTrendChart({
               tickLine={false}
             />
             <YAxis
+              domain={yDomain}
               tick={{ fill: '#64748b', fontSize: 10 }}
               axisLine={false}
               tickLine={false}
@@ -349,7 +417,7 @@ export default function MetabolicTrendChart({
             <Tooltip content={<GhostCarTooltip />} />
 
             <Area
-              type="monotone"
+              type="linear"
               dataKey="corridorBase"
               stackId="ghostBand"
               stroke="none"
@@ -357,7 +425,7 @@ export default function MetabolicTrendChart({
               isAnimationActive={false}
             />
             <Area
-              type="monotone"
+              type="linear"
               dataKey="corridorWidth"
               stackId="ghostBand"
               stroke="none"
@@ -367,17 +435,20 @@ export default function MetabolicTrendChart({
             />
 
             <Line
-              type="monotone"
+              type="linear"
               dataKey="ghost"
-              stroke="rgba(148, 163, 184, 0.55)"
-              strokeWidth={1.25}
-              strokeDasharray="4 4"
-              dot={false}
+              name="Ghost Car"
+              stroke="#22d3ee"
+              strokeWidth={2}
+              strokeDasharray="5 4"
+              dot={GhostLineDot}
+              activeDot={false}
+              connectNulls
               isAnimationActive={false}
             />
 
             <Line
-              type="monotone"
+              type="linear"
               dataKey="realCyan"
               stroke="#22d3ee"
               strokeWidth={2.5}
@@ -387,7 +458,7 @@ export default function MetabolicTrendChart({
               isAnimationActive={false}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="realOrange"
               stroke="#fb923c"
               strokeWidth={2.25}
@@ -406,12 +477,28 @@ export default function MetabolicTrendChart({
           Fascia Ghost
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-4 rounded-sm bg-cyan-400" />
-          Traiettoria
+          <span
+            className="inline-block h-0 w-4 border-t-2 border-dashed border-cyan-400"
+            aria-hidden
+          />
+          Traiettoria Ghost Car
         </span>
-        {latest ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-0.5 w-4 rounded-sm bg-orange-400" />
+          Reale (fino a ieri)
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="relative inline-flex h-2.5 w-2.5">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-60" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full border border-white bg-cyan-400" />
+          </span>
+          Oggi
+        </span>
+        {latestClosed || latest ? (
           <span className="ml-auto font-mono tabular-nums text-slate-400">
-            ΣΔ {formatKcal(latest.real)} · Ghost {formatKcal(latest.ghost)}
+            ΣΔ {sigmaDelta != null ? formatKcal(sigmaDelta) : '—'}
+            {' · Ghost '}
+            {formatKcal(latest?.ghost ?? ghostDailyDelta)}
             <span className="ml-1 text-slate-600">({formatKcal(ghostDailyDelta)}/g)</span>
           </span>
         ) : null}
@@ -438,27 +525,52 @@ export default function MetabolicTrendChart({
           </button>
           {showRollingBadge ? (
             <p className="min-w-0 flex-1 text-[10px] leading-snug text-slate-300">
-              Debito 48h
-              <span className="ml-1 font-mono tabular-nums text-orange-300">
-                +{netDebt}
-              </span>
-              {ghostAutoPilotEnabled && autoDelta !== 0 ? (
+              {ghostAutoPilotEnabled ? (
                 <>
-                  <span className="mx-1 text-slate-600">→ oggi</span>
-                  <span className="font-mono tabular-nums text-cyan-300">
-                    {formatKcal(autoDelta)}
+                  <span className="mr-1" aria-hidden>{autopilotIcon}</span>
+                  AUTOPILOTA ON: Debito 48h
+                  <span className="ml-1 font-mono tabular-nums text-orange-300">
+                    {formatKcal(netDebt)}
+                  </span>
+                  {autoDelta !== 0 ? (
+                    <>
+                      <span className="mx-1 text-slate-500">→ Oggi:</span>
+                      <span className="font-mono tabular-nums text-cyan-300">
+                        {formatKcal(autoDelta)} kcal/g
+                      </span>
+                      {autopilotStrategy?.label ? (
+                        <span className="text-slate-500">
+                          {' '}({autopilotStrategy.label})
+                        </span>
+                      ) : null}
+                      <span className="text-slate-600"> | Effettivo: </span>
+                      <span className="font-mono font-semibold tabular-nums text-cyan-200">
+                        {formatKcal(effectiveDelta)} kcal
+                      </span>
+                    </>
+                  ) : (
+                    <span className="ml-1 text-slate-500">· in fascia</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  Debito 48h
+                  <span className="ml-1 font-mono tabular-nums text-orange-300">
+                    {formatKcal(netDebt)}
                   </span>
                 </>
-              ) : null}
+              )}
               {remainingDebt > 0 && ghostAutoPilotEnabled ? (
                 <span className="ml-1 text-slate-500">
-                  · resto +{remainingDebt}
+                  · resto {formatKcal(remainingDebt)}
                 </span>
               ) : null}
             </p>
           ) : (
             <p className="min-w-0 flex-1 text-[10px] text-slate-500">
-              Nessun debito metabolico nelle ultime 48h
+              {ghostAutoPilotEnabled
+                ? `${autopilotIcon} AUTOPILOTA ON: nessun debito metabolico nelle ultime 48h`
+                : 'Nessun debito metabolico nelle ultime 48h'}
             </p>
           )}
         </div>

@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useMemo } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import KentuLazySectionFallback from '../../components/KentuLazySectionFallback';
 import { useHealthContext } from './hooks/useHealthContext';
 import { useTrendHubHemisphere } from './hooks/useTrendHubHemisphere';
@@ -48,6 +48,10 @@ export default function SnapshotHub({
   lockedHemisphere = null,
   hideHemisphereNav = false,
   longevityResult = null,
+  saluteFocus = null,
+  onRequestMuscleTelemetry = null,
+  onConsumeSaluteFocus = null,
+  todayBurnKcal = 0,
 } = {}) {
   const { hemisphere, setHemisphere } = useTrendHubHemisphere();
 
@@ -57,6 +61,33 @@ export default function SnapshotHub({
     return hemisphere === 'salute' ? 'salute' : 'progressione';
   }, [lockedHemisphere, hemisphere]);
 
+  const [localMuscleTelemetry, setLocalMuscleTelemetry] = useState(false);
+
+  const handleOpenMuscleTelemetry = useCallback(() => {
+    if (lockedHemisphere && lockedHemisphere !== 'salute') {
+      onRequestMuscleTelemetry?.();
+      return;
+    }
+    setHemisphere('salute');
+    setLocalMuscleTelemetry(true);
+    onRequestMuscleTelemetry?.();
+  }, [lockedHemisphere, onRequestMuscleTelemetry, setHemisphere]);
+
+  useEffect(() => {
+    if (saluteFocus === 'muscle_telemetry') {
+      setLocalMuscleTelemetry(true);
+    }
+  }, [saluteFocus]);
+
+  useEffect(() => {
+    if (effectiveHemisphere !== 'salute') {
+      setLocalMuscleTelemetry(false);
+      return undefined;
+    }
+    if (saluteFocus !== 'muscle_telemetry') return undefined;
+    onConsumeSaluteFocus?.();
+    return undefined;
+  }, [effectiveHemisphere, saluteFocus, onConsumeSaluteFocus]);
   const isProgressione = effectiveHemisphere === 'progressione';
   const isSalute = effectiveHemisphere === 'salute';
   const showHemisphereNav = !hideHemisphereNav && !lockedHemisphere;
@@ -96,6 +127,9 @@ export default function SnapshotHub({
       heightCm: Number(profileHeightCm) > 0 ? Number(profileHeightCm) : 174,
       userTargets,
       longevityResult,
+      todayBurnKcal,
+      initialOpenMuscleTelemetry:
+        saluteFocus === 'muscle_telemetry' || localMuscleTelemetry,
     }),
     [
       healthContext,
@@ -116,6 +150,9 @@ export default function SnapshotHub({
       profileHeightCm,
       userTargets,
       longevityResult,
+      todayBurnKcal,
+      saluteFocus,
+      localMuscleTelemetry,
     ],
   );
 
@@ -163,6 +200,7 @@ export default function SnapshotHub({
               settingsBaseKcal={settingsBaseKcal}
               sleepEngineLiveLog={Array.isArray(sleepEngineLiveLog) ? sleepEngineLiveLog : activeLog}
               todayDate={healthTodayDate}
+              onOpenMuscleTelemetry={handleOpenMuscleTelemetry}
             />
           ) : (
             <SaluteView {...saluteProps} />

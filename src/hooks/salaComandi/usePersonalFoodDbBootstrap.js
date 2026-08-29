@@ -7,6 +7,7 @@ import { useFoodDb } from '../../useFoodDb';
 import {
   fetchUserPortionsDict,
   sanitizeUserPortionsDict,
+  readRecentFoodPortions,
 } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
 import {
   fetchUserFoodAliasesDict,
@@ -40,7 +41,7 @@ export function usePersonalFoodDbBootstrap({
   activeAction = null,
 } = {}) {
   const [foodDb, setFoodDb] = useState(() => loadPersonalDbFromCache());
-  const [userPortions, setUserPortions] = useState({});
+  const [userPortions, setUserPortions] = useState(() => readRecentFoodPortions());
   const userPortionsRef = useRef(userPortions);
   userPortionsRef.current = userPortions;
 
@@ -112,12 +113,17 @@ export function usePersonalFoodDbBootstrap({
 
   useEffect(() => {
     if (!userUid || !db || !isAuthenticated) {
-      setUserPortions({});
+      setUserPortions(readRecentFoodPortions());
       return undefined;
     }
     let cancelled = false;
     fetchUserPortionsDict(db, userUid).then((dict) => {
-      if (!cancelled) setUserPortions(sanitizeUserPortionsDict(dict));
+      if (!cancelled) {
+        setUserPortions({
+          ...sanitizeUserPortionsDict(dict),
+          ...readRecentFoodPortions(),
+        });
+      }
     });
     return () => {
       cancelled = true;

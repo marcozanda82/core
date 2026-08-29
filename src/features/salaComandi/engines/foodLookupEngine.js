@@ -529,7 +529,7 @@ function flattenFoodDb(db) {
 
 function rowPrimaryLabel(item) {
   if (!item || typeof item !== 'object') return '';
-  const d = item.desc ?? item.name ?? item.description ?? item.foodName ?? item.lowercaseDescription ?? '';
+  const d = item.desc ?? item.name ?? item.name_it ?? item.italianName ?? item.description ?? item.foodName ?? item.lowercaseDescription ?? '';
   return String(d || '').trim();
 }
 
@@ -643,10 +643,10 @@ function buildCandidateSnapshot(key, item, source) {
   );
   if (carb != null) snap.carb = carb;
 
-  const fat = pickFiniteFirst(item.fat, item.fatTotal, item.totalFat, item.lipid, item.fat_g);
+  const fat = pickFiniteFirst(item.fat, item.fats, item.fatTot, item.fatTotal, item.totalFat, item.lipid, item.fat_g);
   if (fat != null) snap.fat = fat;
 
-  const dq = pickFiniteFirst(item.defaultQty, item.portionGrams, item.servingSize);
+  const dq = pickFiniteFirst(item.defaultQty, item.portionGrams, item.servingSize, item.serving_size);
   if (dq != null && dq > 0) snap.defaultQty = Math.round(dq);
 
   return snap;

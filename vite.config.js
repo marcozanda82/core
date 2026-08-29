@@ -12,6 +12,7 @@ const PWA_GLOB_IGNORES = [
   '**/crea_*.json',
   '**/*_master_db.json',
   '**/*_master_usda.json',
+  '**/*_master_usda_FINAL.json',
   '**/*.mp4',
   '**/*.png',
   '**/*.webp',
@@ -24,7 +25,7 @@ const FOOD_DB_RUNTIME_CACHING = {
   urlPattern: ({ url }) => /\/(kentu_|crea_).*\.json$/i.test(url.pathname),
   handler: 'StaleWhileRevalidate',
   options: {
-    cacheName: 'kentu-food-databases',
+    cacheName: 'kentu-food-databases-v2-final',
     expiration: {
       maxEntries: 12,
       maxAgeSeconds: 60 * 60 * 24 * 30,

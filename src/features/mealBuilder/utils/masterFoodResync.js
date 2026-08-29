@@ -128,6 +128,7 @@ export function findMasterRowForFood(item, masterContext = {}) {
     item?.foodDbKey,
     item?.fdcId,
     row?.fdcId,
+    row?.fdc_id,
     row?.id,
     row?.dedupKey,
     row?.creaCode,

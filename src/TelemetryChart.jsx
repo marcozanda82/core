@@ -78,9 +78,9 @@ const AXIS_TICK = {
 /**
  * Grafici storici: fatica sistemica + 5 macro-aree muscolari (syncId).
  *
- * @param {{ data?: Array<Record<string, unknown>> }} props
+ * @param {{ data?: Array<Record<string, unknown>>, mode?: 'lines' | 'areas' }} props
  */
-export default function TelemetryChart({ data = [] }) {
+export default function TelemetryChart({ data = [], mode = 'lines' }) {
   const series = useMemo(
     () => (Array.isArray(data) ? data : []),
     [data],
@@ -162,46 +162,99 @@ export default function TelemetryChart({ data = [] }) {
 
       <div className="h-[168px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart
-            data={series}
-            syncId={SYNC_ID}
-            margin={{ ...CHART_MARGIN, bottom: 2 }}
-          >
-            <XAxis
-              dataKey="date"
-              tickFormatter={formatDateLabel}
-              tick={AXIS_TICK}
-              axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-              tickLine={false}
-              interval="preserveStartEnd"
-              minTickGap={24}
-            />
-            <YAxis
-              domain={[0, 1]}
-              tickFormatter={(v) => `${Math.round(v * 100)}`}
-              tick={AXIS_TICK}
-              axisLine={false}
-              tickLine={false}
-              width={28}
-              ticks={[0, 0.5, 1]}
-            />
-            <Tooltip
-              content={<DarkTelemetryTooltip />}
-              cursor={TOOLTIP_CURSOR}
-            />
-            {MUSCLE_LINES.map(({ key, color }) => (
-              <Line
-                key={key}
-                type="monotone"
-                dataKey={key}
-                stroke={color}
-                strokeWidth={1.75}
-                dot={false}
-                isAnimationActive={false}
-                activeDot={{ r: 3, strokeWidth: 1, stroke: '#0f172a' }}
+          {mode === 'areas' ? (
+            <AreaChart
+              data={series}
+              syncId={SYNC_ID}
+              margin={{ ...CHART_MARGIN, bottom: 2 }}
+            >
+              <defs>
+                {MUSCLE_LINES.map(({ key, color }) => (
+                  <linearGradient key={key} id={`muscleFill-${key}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={color} stopOpacity={0.38} />
+                    <stop offset="100%" stopColor={color} stopOpacity={0.03} />
+                  </linearGradient>
+                ))}
+              </defs>
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDateLabel}
+                tick={AXIS_TICK}
+                axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={24}
               />
-            ))}
-          </LineChart>
+              <YAxis
+                domain={[0, 1]}
+                tickFormatter={(v) => `${Math.round(v * 100)}`}
+                tick={AXIS_TICK}
+                axisLine={false}
+                tickLine={false}
+                width={28}
+                ticks={[0, 0.5, 1]}
+              />
+              <Tooltip
+                content={<DarkTelemetryTooltip />}
+                cursor={TOOLTIP_CURSOR}
+              />
+              {MUSCLE_LINES.map(({ key, color }) => (
+                <Area
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={color}
+                  strokeWidth={1.6}
+                  fill={`url(#muscleFill-${key})`}
+                  fillOpacity={1}
+                  isAnimationActive={false}
+                  dot={false}
+                  activeDot={{ r: 3, strokeWidth: 1, stroke: '#0f172a' }}
+                />
+              ))}
+            </AreaChart>
+          ) : (
+            <LineChart
+              data={series}
+              syncId={SYNC_ID}
+              margin={{ ...CHART_MARGIN, bottom: 2 }}
+            >
+              <XAxis
+                dataKey="date"
+                tickFormatter={formatDateLabel}
+                tick={AXIS_TICK}
+                axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={24}
+              />
+              <YAxis
+                domain={[0, 1]}
+                tickFormatter={(v) => `${Math.round(v * 100)}`}
+                tick={AXIS_TICK}
+                axisLine={false}
+                tickLine={false}
+                width={28}
+                ticks={[0, 0.5, 1]}
+              />
+              <Tooltip
+                content={<DarkTelemetryTooltip />}
+                cursor={TOOLTIP_CURSOR}
+              />
+              {MUSCLE_LINES.map(({ key, color }) => (
+                <Line
+                  key={key}
+                  type="monotone"
+                  dataKey={key}
+                  stroke={color}
+                  strokeWidth={1.75}
+                  dot={false}
+                  isAnimationActive={false}
+                  activeDot={{ r: 3, strokeWidth: 1, stroke: '#0f172a' }}
+                />
+              ))}
+            </LineChart>
+          )}
         </ResponsiveContainer>
       </div>
 

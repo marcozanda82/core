@@ -483,6 +483,7 @@ export default function SalaComandi() {
   const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
   /** Emisfero bloccato quando l'overlay è aperto da un widget Home. */
   const [snapshotOverlayHemisphere, setSnapshotOverlayHemisphere] = useState('progressione');
+  const [snapshotOverlayFocus, setSnapshotOverlayFocus] = useState(null);
   const [eventUsage, setEventUsage] = useState(readPersistedEventUsage);
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [showFastLogger, setShowFastLogger] = useState(false);
@@ -545,6 +546,7 @@ export default function SalaComandi() {
   const handleOpenTrendDiag = useCallback(() => {
     persistTrendHubHemisphere('progressione');
     setSnapshotOverlayHemisphere('progressione');
+    setSnapshotOverlayFocus(null);
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -554,6 +556,7 @@ export default function SalaComandi() {
   const handleOpenTrendSalute = useCallback(() => {
     persistTrendHubHemisphere('salute');
     setSnapshotOverlayHemisphere('salute');
+    setSnapshotOverlayFocus(null);
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -563,6 +566,7 @@ export default function SalaComandi() {
   const handleOpenTrendProgressione = useCallback(() => {
     persistTrendHubHemisphere('progressione');
     setSnapshotOverlayHemisphere('progressione');
+    setSnapshotOverlayFocus(null);
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -570,18 +574,36 @@ export default function SalaComandi() {
 
   const handleCloseSnapshotOverlay = useCallback(() => {
     setSnapshotOverlayOpen(false);
+    setSnapshotOverlayFocus(null);
+  }, []);
+
+  /** Progressione / Salute → vista completa telemetria muscolare. */
+  const handleOpenMuscleTelemetry = useCallback(() => {
+    persistTrendHubHemisphere('salute');
+    setSnapshotOverlayHemisphere('salute');
+    setSnapshotOverlayFocus('muscle_telemetry');
+    setSnapshotOverlayOpen(true);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  const handleConsumeSaluteFocus = useCallback(() => {
+    setSnapshotOverlayFocus(null);
   }, []);
 
   /** Deep-link da `/centro-analisi` → stessa Fotografia dei widget Home. */
   useEffect(() => {
     const target = String(location.state?.openFotografia || '').toLowerCase();
     if (target !== 'salute' && target !== 'progressione') return undefined;
+    const panel = String(location.state?.openFotografiaPanel || '').toLowerCase();
     if (target === 'salute') {
       persistTrendHubHemisphere('salute');
       setSnapshotOverlayHemisphere('salute');
+      setSnapshotOverlayFocus(panel === 'muscle_telemetry' ? 'muscle_telemetry' : null);
     } else {
       persistTrendHubHemisphere('progressione');
       setSnapshotOverlayHemisphere('progressione');
+      setSnapshotOverlayFocus(null);
     }
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
@@ -5687,19 +5709,17 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         };
       });
 
-      if (userUid && db) {
-        learnUserPortionsFromConfirmedMeal({
-          db,
-          uid: userUid,
-          items,
-          onLocalMerge: (patch) => {
-            setUserPortions((prev) => ({
-              ...sanitizeUserPortionsDict(prev),
-              ...sanitizeUserPortionsDict(patch),
-            }));
-          },
-        });
-      }
+      learnUserPortionsFromConfirmedMeal({
+        db: userUid && db ? db : null,
+        uid: userUid || '',
+        items,
+        onLocalMerge: (patch) => {
+          setUserPortions((prev) => ({
+            ...sanitizeUserPortionsDict(prev),
+            ...sanitizeUserPortionsDict(patch),
+          }));
+        },
+      });
 
       // Abitudini: bulk patch usage stats (una write Firebase, non N sequenziali).
       recordDraftFoodsUsageStats(
@@ -7378,6 +7398,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               lockedHemisphere={snapshotOverlayHemisphere}
               hideHemisphereNav
               longevityResult={longevityResult}
+              saluteFocus={snapshotOverlayFocus}
+              onRequestMuscleTelemetry={handleOpenMuscleTelemetry}
+              onConsumeSaluteFocus={handleConsumeSaluteFocus}
+              todayBurnKcal={dogmaticBurnKcal}
             />
           </Suspense>
         </div>

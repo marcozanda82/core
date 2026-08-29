@@ -5,7 +5,7 @@
 
 import { addDays } from '../../../calendarDateUtils.js';
 import { getLogFromStoricoTree } from '../../../coreEngine';
-import { normalizePortionFoodKey } from './userPortionsMemory.js';
+import { normalizePortionFoodKey, lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 
 export const USER_RECENT_FOODS_DEFAULT_LIMIT = 20;
 export const USER_RECENT_FOODS_LOOKBACK_DAYS = 45;
@@ -281,6 +281,12 @@ export function buildUserRecentFoods(currentState = {}, options = {}) {
 export function getLastUsedQuantity(foodDbKeyOrName, currentState = {}) {
   const needle = toSafeString(foodDbKeyOrName);
   if (!needle) return null;
+
+  const fromRecent = lookupRecentFoodPortionGrams({
+    id: needle,
+    name: needle,
+  });
+  if (fromRecent > 0) return fromRecent;
   const needleName = normalizePortionFoodKey(needle);
   const needleId = needle;
 

@@ -522,6 +522,7 @@ export function CalibrazioneTargetLivePreview({
       simulatedDeltaKcal: delta,
       simulatedGoal: committedGhostGoal,
       corridorHalfWidth: GHOST_CORRIDOR_HALF_WIDTH_KCAL,
+      includeToday: false,
     }).points.filter((p) => !p.isOrigin);
   }, [
     fullHistory,
