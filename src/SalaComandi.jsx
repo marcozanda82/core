@@ -8455,6 +8455,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             ? dogmaticCompensationStatus.daysRemaining
             : null
         }
+        autopilotOffset={dogmaticAutoCompensationKcal}
+        ghostAutoPilotEnabled={ghostAutoPilotEnabled}
         targetKcal={dogmaticTargetKcal}
         consumedKcal={Math.round(Number(totali?.kcal) || 0)}
         proteinConsumed={Number(totali?.prot) || 0}

@@ -3151,6 +3151,15 @@ html, body, #root {
   color: rgba(196, 181, 253, 0.92);
 }
 
+.calorie-receipt__row--autopilot .calorie-receipt__label {
+  color: rgba(103, 232, 249, 0.92);
+}
+
+.calorie-receipt__value--autopilot {
+  color: #22d3ee;
+  font-weight: 700;
+}
+
 .calorie-receipt__hint {
   display: inline-block;
   margin-left: 0.35rem;

@@ -50,6 +50,8 @@ function resolveTacticalCopy(remainingKcal) {
  *   deltaKcal?: number | null,
  *   compensationKcal?: number | null,
  *   compensationDaysRemaining?: number | null,
+ *   autopilotOffset?: number | null,
+ *   ghostAutoPilotEnabled?: boolean,
  *   targetKcal?: number,
  *   consumedKcal?: number,
  *   proteinConsumed?: number,
@@ -64,6 +66,8 @@ export default function CalorieDetailsModal({
   deltaKcal = null,
   compensationKcal = null,
   compensationDaysRemaining = null,
+  autopilotOffset = null,
+  ghostAutoPilotEnabled = false,
   targetKcal = 0,
   consumedKcal = 0,
   proteinConsumed = 0,
@@ -82,12 +86,13 @@ export default function CalorieDetailsModal({
     const tdee = roundKcal(tdeeBaseKcal);
     const burn = roundKcal(workoutBurnKcal);
     const compensation = roundKcal(compensationKcal);
+    const autopilot = roundKcal(autopilotOffset);
     const target = roundKcal(targetKcal);
     const delta = Number.isFinite(Number(deltaKcal))
       ? roundKcal(deltaKcal)
-      : target - tdee - burn - compensation;
-    return { tdee, burn, delta, compensation, target };
-  }, [tdeeBaseKcal, workoutBurnKcal, deltaKcal, compensationKcal, targetKcal]);
+      : target - tdee - burn - compensation - autopilot;
+    return { tdee, burn, delta, compensation, autopilot, target };
+  }, [tdeeBaseKcal, workoutBurnKcal, deltaKcal, compensationKcal, autopilotOffset, targetKcal]);
 
   const consumed = roundKcal(consumedKcal);
   // Firmato: negativo = surplus rispetto al target (serve alle proiezioni tattiche).
@@ -99,6 +104,10 @@ export default function CalorieDetailsModal({
   const protOver = protTarget > 0 && protNow > protTarget;
   const tactical = resolveTacticalCopy(remainingSigned);
   const hasCompensation = receipt.compensation !== 0;
+  const hasAutopilot = ghostAutoPilotEnabled === true && receipt.autopilot !== 0;
+  const autopilotDisplay = receipt.autopilot > 0
+    ? `+${receipt.autopilot}`
+    : String(receipt.autopilot);
 
   if (!isOpen || typeof document === 'undefined') return null;
 
@@ -178,6 +187,20 @@ export default function CalorieDetailsModal({
                   {Math.abs(receipt.delta)}
                 </span>
               </div>
+              {hasAutopilot ? (
+                <div
+                  className="calorie-receipt__row calorie-receipt__row--autopilot"
+                  role="listitem"
+                >
+                  <span className="calorie-receipt__label">
+                    <span className="calorie-receipt__op" aria-hidden>⚡</span>
+                    Compensazione Autopilota
+                  </span>
+                  <span className="calorie-receipt__value calorie-receipt__value--autopilot">
+                    {autopilotDisplay}
+                  </span>
+                </div>
+              ) : null}
               {hasCompensation ? (
                 <div
                   className="calorie-receipt__row calorie-receipt__row--compensation"
