@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { Info } from 'lucide-react';
 
 function roundKcal(value) {
   const n = Number(value);
@@ -52,6 +53,7 @@ function resolveTacticalCopy(remainingKcal) {
  *   compensationDaysRemaining?: number | null,
  *   autopilotOffset?: number | null,
  *   ghostAutoPilotEnabled?: boolean,
+ *   onOpenCalibrazione?: () => void,
  *   targetKcal?: number,
  *   consumedKcal?: number,
  *   proteinConsumed?: number,
@@ -68,6 +70,7 @@ export default function CalorieDetailsModal({
   compensationDaysRemaining = null,
   autopilotOffset = null,
   ghostAutoPilotEnabled = false,
+  onOpenCalibrazione = null,
   targetKcal = 0,
   consumedKcal = 0,
   proteinConsumed = 0,
@@ -104,7 +107,7 @@ export default function CalorieDetailsModal({
   const protOver = protTarget > 0 && protNow > protTarget;
   const tactical = resolveTacticalCopy(remainingSigned);
   const hasCompensation = receipt.compensation !== 0;
-  const hasAutopilot = ghostAutoPilotEnabled === true && receipt.autopilot !== 0;
+  const showAutopilotRow = ghostAutoPilotEnabled === true;
   const autopilotDisplay = receipt.autopilot > 0
     ? `+${receipt.autopilot}`
     : String(receipt.autopilot);
@@ -187,7 +190,7 @@ export default function CalorieDetailsModal({
                   {Math.abs(receipt.delta)}
                 </span>
               </div>
-              {hasAutopilot ? (
+              {showAutopilotRow ? (
                 <div
                   className="calorie-receipt__row calorie-receipt__row--autopilot"
                   role="listitem"
@@ -195,6 +198,20 @@ export default function CalorieDetailsModal({
                   <span className="calorie-receipt__label">
                     <span className="calorie-receipt__op" aria-hidden>⚡</span>
                     Compensazione Autopilota
+                    {typeof onOpenCalibrazione === 'function' ? (
+                      <button
+                        type="button"
+                        className="calorie-receipt__info-btn ml-2 cursor-pointer text-gray-400 transition-colors hover:text-cyan-400"
+                        aria-label="Apri Pilota Energetico"
+                        title="Apri calibrazione Autopilota"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenCalibrazione();
+                        }}
+                      >
+                        <Info className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                    ) : null}
                   </span>
                   <span className="calorie-receipt__value calorie-receipt__value--autopilot">
                     {autopilotDisplay}

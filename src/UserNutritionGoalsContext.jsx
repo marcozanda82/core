@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from 'react';
 
-const UserNutritionGoalsContext = createContext(null);
+export const UserNutritionGoalsContext = createContext(null);
 
 export function UserNutritionGoalsProvider({ value, children }) {
   return (

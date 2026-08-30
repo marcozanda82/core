@@ -5,6 +5,7 @@
 
 import { addDays } from '../../../calendarDateUtils.js';
 import { getLogFromStoricoTree } from '../../../coreEngine';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 import { normalizePortionFoodKey, lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 
 export const USER_RECENT_FOODS_DEFAULT_LIMIT = 20;
@@ -21,7 +22,7 @@ function isFoodLogEntry(item) {
 }
 
 function foodNameFromEntry(item) {
-  return toSafeString(item?.desc || item?.name || item?.foodName);
+  return sanitizeFoodDisplayName(item?.desc || item?.name || item?.foodName, '');
 }
 
 function gramsFromEntry(item) {
@@ -132,7 +133,7 @@ export function buildUserRecentFoods(currentState = {}, options = {}) {
     lastUsed = 0,
     fromPersonalDb = false,
   }) => {
-    const name = toSafeString(foodName);
+    const name = sanitizeFoodDisplayName(foodName, '');
     if (!name) return;
     const dbKey = foodDbKey ? toSafeString(foodDbKey) : null;
     const mapKey = dbKey

@@ -1,5 +1,6 @@
-import { buildQtyLabel } from './draftFoodUnits';
+import { buildQtyLabel, formatCountQtyLabel } from './draftFoodUnits';
 import { resolveFoodIdentityKey } from './draftFoodMatchUtils';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 import {
   applyPer100ToRow,
   buildBaseMacroFields,
@@ -16,6 +17,16 @@ import {
   hasStaleNutrientsVsMaster,
   resyncRowNutrientsFromMaster,
 } from './masterFoodResync';
+
+function resolveCleanFoodName(source = {}) {
+  const raw = source.desc
+    || source.name
+    || source.row?.desc
+    || source.row?.name
+    || '';
+  const cleaned = sanitizeFoodDisplayName(raw);
+  return cleaned && cleaned !== 'Alimento' ? cleaned : sanitizeFoodDisplayName(source.label || 'Alimento');
+}
 
 function roundMacro(value, asInt = false) {
   const n = Number(value);
@@ -38,7 +49,7 @@ function buildRowFromPortion(item, weight) {
   const safeWeight = Math.max(0, Number(weight) || 0);
   const ratio = safeWeight > 0 ? 100 / safeWeight : 1;
   const row = {
-    desc: String(item.desc || item.name || 'Alimento').trim(),
+    desc: resolveCleanFoodName(item),
     kcal: roundMacro((Number(item.kcal ?? item.cal) || 0) * ratio, true),
     cal: roundMacro((Number(item.kcal ?? item.cal) || 0) * ratio, true),
     prot: roundMacro((Number(item.prot) || 0) * ratio),
@@ -56,9 +67,7 @@ function enrichRowFromPersonalDb(row, personalDb, foodDbKey) {
 }
 
 function buildCatalogEditItemBase(source, personalDb, options = {}) {
-  const desc = String(
-    source.desc || source.name || source.label || source.row?.desc || 'Alimento',
-  ).trim();
+  const desc = resolveCleanFoodName(source);
   const foodDbKey =
     options.foodDbKey ??
     source.foodDbKey ??
@@ -101,8 +110,8 @@ function buildCatalogEditItemBase(source, personalDb, options = {}) {
     multiplier: 1,
     qta: defaultUnitWeight,
     weight: defaultUnitWeight,
-    qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(defaultUnitWeight)}g`,
-    label: source.label || desc,
+    qtyLabel: formatCountQtyLabel(unitName, 1, defaultUnitWeight),
+    label: desc,
     ...portion,
     ...(row.customImage || source.customImage
       ? { customImage: row.customImage || source.customImage }
@@ -189,7 +198,7 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}, mas
       defaultUnitWeight: unitWeight,
       qta: unitWeight,
       weight: unitWeight,
-      qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(unitWeight)}g`,
+      qtyLabel: formatCountQtyLabel(unitName, 1, unitWeight),
       ...portion,
       ...(row.customImage ? { customImage: row.customImage } : {}),
       ...(row.customIcon ? { customIcon: row.customIcon } : {}),
@@ -197,9 +206,10 @@ export function mergeCatalogDisplay(item, personalDb, catalogOverrides = {}, mas
       ...(row.iconOverride ? { iconOverride: row.iconOverride } : {}),
       ...(row.customEmoji ? { customEmoji: row.customEmoji } : {}),
     };
-    if (merged.desc) {
-      merged.label = `${merged.desc} (${merged.qtyLabel})`;
-    }
+    const cleanName = resolveCleanFoodName(merged);
+    merged.desc = cleanName;
+    merged.name = cleanName;
+    merged.label = cleanName;
   }
 
   return merged;
@@ -222,6 +232,10 @@ export function applyCatalogEditToDraftItem(draftItem, updatedCatalog, options =
     ...buildBaseMacroFields(per100),
     qtyLabel: buildQtyLabel(draftItem, selectedUnit, multiplier, weight),
   };
+  const cleanName = resolveCleanFoodName({ ...draftItem, ...updatedCatalog, ...next });
+  next.desc = cleanName;
+  next.name = cleanName;
+  next.label = cleanName;
 
   if (options.manualOverride !== false) {
     next._manualOverride = true;
@@ -323,8 +337,7 @@ export function buildCatalogOverrideFromEdit(updatedItem) {
       qta: unitWeight,
       weight: unitWeight,
       qtyLabel: updatedItem.qtyLabel || `${Math.round(unitWeight)}g`,
-      label: updatedItem.label
-        || `${updatedItem.desc || updatedItem.name} (${updatedItem.qtyLabel || `${Math.round(unitWeight)}g`})`,
+      label: sanitizeFoodDisplayName(updatedItem.desc || updatedItem.name),
       ...portion,
       cal: portion.kcal,
       fatTotal: portion.fat,

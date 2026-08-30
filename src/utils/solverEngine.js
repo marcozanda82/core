@@ -1,6 +1,8 @@
 /** @typedef {{ kcal?: number, prot?: number, proteins?: number, carb?: number, carbs?: number, fat?: number, fatTotal?: number }} NutrientBag */
 /** @typedef {{ id?: string, foodId?: string, uid?: string, name?: string, emoji?: string, grams?: number, kcal?: number, prot?: number, carb?: number, fat?: number, locked?: boolean }} SolverItem */
 
+import { sanitizeFoodDisplayName } from './foodVisualResolver.js';
+
 /** @typedef {'main' | 'breakfast' | 'snack'} SolverSlotType */
 
 export const SOLVER_FOOD_DB = Object.freeze([
@@ -422,7 +424,7 @@ export function solverProposalToDraftFood(proposal, { mealType, mealTime } = {})
         carb: readNumber(proposal?.carb),
         fat: readNumber(proposal?.fat),
       };
-  const name = String(proposal?.name ?? dbFood?.name ?? 'Alimento').trim();
+  const name = sanitizeFoodDisplayName(proposal?.name ?? dbFood?.name ?? 'Alimento');
   const emoji = proposal?.emoji ?? dbFood?.emoji ?? '🍽️';
 
   return {

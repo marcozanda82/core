@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { FOOD_PROVENANCE } from '../../../foodDbSource';
 import { addDays } from '../../../calendarDateUtils';
 import { resolveEntryMealConsumedAtMs } from '../../salaComandi/utils/mealConsumedTime';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 
 const TRACKER_STORICO_KEY = (date) => `trackerStorico_${date}`;
 const DEFAULT_LOOKBACK_DAYS = 30;
@@ -22,9 +23,9 @@ function resolveFoodKey(entry) {
   if (entry?.foodDbKey != null && String(entry.foodDbKey).trim() !== '') {
     return String(entry.foodDbKey).trim();
   }
-  const desc = entry?.desc ?? entry?.name;
-  if (desc != null && String(desc).trim() !== '') {
-    return String(desc).trim().toLowerCase();
+  const desc = sanitizeFoodDisplayName(entry?.desc ?? entry?.name);
+  if (desc && desc !== 'Alimento') {
+    return desc.toLowerCase();
   }
   return null;
 }
@@ -59,12 +60,6 @@ function buildQtyLabel(entry, qta) {
   if (entry?.qtyLabel) return entry.qtyLabel;
   if (qta > 0) return `${qta}g`;
   return '—';
-}
-
-function buildLabel(desc, qtyLabel) {
-  if (!desc) return qtyLabel || 'Alimento';
-  if (!qtyLabel || qtyLabel === '—') return desc;
-  return `${desc} (${qtyLabel})`;
 }
 
 function resolveEntryLoggedAtMs(entry, dayKey, mealTimesObj = null) {
@@ -218,7 +213,7 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
       groups.set(key, {
         key,
         foodDbKey: entry.foodDbKey ?? null,
-        desc: String(entry.desc ?? entry.name ?? key).trim(),
+        desc: sanitizeFoodDisplayName(entry.desc ?? entry.name ?? key),
         count: 0,
         quantities: [],
         entries: [],
@@ -265,7 +260,7 @@ function aggregatePredictiveFoodBlocks(allFoodEntries, targetMealType, limit) {
         fat: Number(template?.fat ?? template?.fatTotal) || 0,
         fatTotal: Number(template?.fatTotal ?? template?.fat) || 0,
         qtyLabel,
-        label: buildLabel(group.desc, qtyLabel),
+        label: group.desc,
         lastUsed: group.lastUsed,
         timestamp: group.lastUsed,
       };

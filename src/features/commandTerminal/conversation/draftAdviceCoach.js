@@ -7,11 +7,9 @@ import {
   buildNutritionContextForState,
   sumMealItemsMacros,
 } from '../../../conversation/ConsultantEngine.js';
-import {
-  normalizeWipFoodNameKey,
-  sanitizeWipFoodDisplayName,
-} from '../../wipMealBuilder/utils/wipMealItemUtils.js';
+import { normalizeWipFoodNameKey } from '../../wipMealBuilder/utils/wipMealItemUtils.js';
 import { expandFoodPayloadItems } from './conversationState.js';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 import {
   filterHistoricalBlocksByUserText,
   getHistoricalFoodBlocks,
@@ -123,23 +121,7 @@ const REPLY_CHIP_HINT_RE =
  * @returns {string}
  */
 function stripPortionAnnotations(raw) {
-  let s = String(raw || '').trim();
-  if (!s) return '';
-
-  s = s.replace(/(?:\s*\(\s*\d+\s+Porzione\s*\([^)]*\)\s*\))+/gi, ' ');
-  s = s.replace(/(?:\s*\(\s*~?\s*\d+[.,]?\d*\s*g\s*\))+/gi, ' ');
-
-  for (let i = 0; i < 6; i += 1) {
-    const next = s
-      .replace(/\([^()]*\)/g, ' ')
-      .replace(/\[[^\]]*\]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (next === s) break;
-    s = next;
-  }
-
-  return sanitizeWipFoodDisplayName(s);
+  return sanitizeFoodDisplayName(raw, '');
 }
 
 /**

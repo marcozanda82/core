@@ -6,6 +6,7 @@ import {
 import { usePredictiveFoodBlocks } from '../hooks/usePredictiveFoodBlocks';
 import { usePredictiveMealCombos } from '../hooks/usePredictiveMealCombos';
 import { buildComboDraftPayload } from '../utils/recipePayloadUtils';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
@@ -462,10 +463,11 @@ function formatDraftQuantity(food) {
 }
 
 function formatComboItemPreview(item) {
-  if (item.qtyLabel) return `${item.desc} · ${item.qtyLabel}`;
-  if (item.unit === 'g' && item.qta) return `${item.desc} · ${item.qta}g`;
-  if (item.qta) return `${item.desc} · ${item.qta}`;
-  return item.desc;
+  const name = sanitizeFoodDisplayName(item.desc || item.name || 'Alimento');
+  if (item.qtyLabel) return `${name} · ${item.qtyLabel}`;
+  if (item.unit === 'g' && item.qta) return `${name} · ${item.qta}g`;
+  if (item.qta) return `${name} · ${item.qta}`;
+  return name;
 }
 
 function MealBlocksSandboxContent() {

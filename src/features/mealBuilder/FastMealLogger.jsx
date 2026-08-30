@@ -49,7 +49,7 @@ import {
   loadCatalogServingOverrides,
   saveCatalogServingOverrides,
 } from './utils/masterFoodResync';
-import { resolveUnitWeight } from './utils/draftFoodUnits';
+import { formatCountQtyLabel, resolveUnitWeight } from './utils/draftFoodUnits';
 import { ArrowLeft, ChevronDown, ChevronUp, LayoutGrid, List, Minus, Plus, Search, ScanBarcode, Settings, ShoppingBag, Sparkles } from 'lucide-react';
 import KentuTimeSelector from '../../components/kentuos/KentuTimeSelector';
 import KentuSolverModal from '../../components/solver/KentuSolverModal';
@@ -78,6 +78,8 @@ import {
   SEARCH_SOURCE_BADGE,
 } from './hooks/useUniversalSearchEngine';
 import { decimalToTimeStr } from '../../coreEngine';
+import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
+import { rememberRecentFoodPortion } from '../commandTerminal/conversation/userPortionsMemory';
 import {
   getTimeSlotForDecimalHour,
   mergePredictiveWithPersonalDb,
@@ -172,7 +174,7 @@ function buildAcquirePayload(food) {
 
 function formatSearchResultForDraft(food) {
   const row = food?.row || {};
-  const desc = String(food?.desc || food?.name || row.desc || row.name || 'Alimento').trim();
+  const desc = sanitizeFoodDisplayName(food?.desc || food?.name || row.desc || row.name || 'Alimento');
   const isCoffeeShop = food?._source === 'coffee_shop'
     || row.isCoffeeShopItem === true
     || Boolean(row.coffeeShopProductId);
@@ -190,9 +192,7 @@ function formatSearchResultForDraft(food) {
     : 'g';
   const qta = unitWeight;
   const scaledNutrients = buildScaledNutrientsForWeight(row, qta);
-  const qtyLabel = defaultUnit?.label
-    ? `1 ${defaultUnit.label}`
-    : `${Math.round(qta)}g`;
+  const qtyLabel = formatCountQtyLabel(defaultUnit?.label, 1, qta);
 
   return attachProvenanceFromLegacySource({
     type: 'food',
@@ -1259,6 +1259,14 @@ function FastMealLoggerContent({
           onPatchFoodDbEntry,
           getTimeSlotForDecimalHour(mealTimeToSave),
         );
+        foodsSnapshot.forEach((food) => {
+          rememberRecentFoodPortion({
+            id: food.foodDbKey || food.id || food.key,
+            foodDbKey: food.foodDbKey,
+            name: sanitizeFoodDisplayName(food.desc || food.name, ''),
+            grams: food.weight ?? food.qta ?? food.grams,
+          });
+        });
         const result = await Promise.resolve(
           onSave?.(foodsSnapshot, mealSlotToSave, editId, mealTimeToSave),
         );
@@ -1303,7 +1311,7 @@ function FastMealLoggerContent({
     const weight = roundToOneDecimal(targetWeight);
     const row = payload.row || {};
     const scaledNutrients = buildScaledNutrientsForWeight(row, weight);
-    const desc = String(payload.label || payload.desc || 'Alimento').trim();
+    const desc = sanitizeFoodDisplayName(payload.desc || payload.name || 'Alimento');
 
     return attachProvenanceFromLegacySource({
       type: 'food',
@@ -1384,6 +1392,12 @@ function FastMealLoggerContent({
     );
 
     notifyItemAdded(String(payload.desc || payload.name));
+    rememberRecentFoodPortion({
+      id: payload.foodDbKey || detailFood?.tile?.id || detailFood?.tile?.key,
+      foodDbKey: payload.foodDbKey,
+      name: payload.desc || payload.name,
+      grams,
+    });
     setDetailFood(null);
   };
 

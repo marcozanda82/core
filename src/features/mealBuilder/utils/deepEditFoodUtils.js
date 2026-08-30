@@ -1,4 +1,5 @@
 import {
+  formatCountQtyLabel,
   getItemUnits,
   resolveUnitIdFromUnit,
   resolveUnitWeight,
@@ -195,7 +196,7 @@ export function applyDeepEditFormToItem(item, form, iconState, options = {}) {
     carb: portion.carb,
     fat: portion.fat,
     fatTotal: portion.fat,
-    qtyLabel: unitName ? `1 ${unitName}` : `${Math.round(defaultUnitWeight)}g`,
+    qtyLabel: formatCountQtyLabel(unitName, 1, defaultUnitWeight),
   };
 
   if (options.manualOverride !== false) {

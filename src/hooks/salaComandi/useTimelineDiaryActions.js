@@ -6,6 +6,8 @@ import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPred
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
 import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
+import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
+import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -299,8 +301,18 @@ export function useTimelineDiaryActions({
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
         const weight = Number(f.weight ?? f.qta) || 100;
+        const cleanName = sanitizeFoodDisplayName(f.desc || f.name || f.label || 'Alimento');
+        rememberRecentFoodPortion({
+          id: f.foodDbKey || f.id || f.key,
+          foodDbKey: f.foodDbKey,
+          name: cleanName,
+          grams: weight,
+        });
         return ensureRecipeDiaryFields({
           ...f,
+          desc: cleanName,
+          name: cleanName,
+          label: cleanName,
           type: f.type === 'recipe' ? 'recipe' : 'food',
           mealType: mealTypeToUse,
           mealTime: mealTimeToUse,

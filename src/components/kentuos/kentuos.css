@@ -1884,7 +1884,7 @@
 .kentu-meal-tray__calibration-title-row {
   display: flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }

@@ -29,7 +29,7 @@ export default function QuickFoodTile({
 
   const isList = viewMode === 'list';
   const name = sanitizeFoodDisplayName(
-    displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento',
+    displayTile?.desc || displayTile?.name || tileVisual?.name || 'Alimento',
   );
   const brandLabel = String(
     brand

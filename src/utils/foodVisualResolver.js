@@ -72,25 +72,82 @@ export function normalizeFoodVisualText(value) {
     .replace(/\s+/g, ' ');
 }
 
+const PORTION_HINT_RE =
+  /\b(?:porzion[ei]|porz\.?|servings?|unita|unità|pezzo|pezzi|fett[ae]|slices?|cucchiaio|cucchiai|cucchiaino|bicchiere|tazza|scoop)\b/i;
+
+function isPortionLikeParenInner(inner) {
+  const body = String(inner || '').trim();
+  if (!body) return true;
+  if (PORTION_HINT_RE.test(body)) return true;
+  if (/[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\b/i.test(body)) return true;
+  if (/^\d+[.,]?\d*(?:\s+\d+[.,]?\d*)+\s*$/.test(body)) return true;
+  return false;
+}
+
+function splitTrailingBalancedParen(s) {
+  const t = String(s || '').trimEnd();
+  if (!t.endsWith(')')) return null;
+  let depth = 0;
+  for (let i = t.length - 1; i >= 0; i -= 1) {
+    const ch = t[i];
+    if (ch === ')') depth += 1;
+    else if (ch === '(') {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          before: t.slice(0, i).trimEnd(),
+          inner: t.slice(i + 1, t.length - 1),
+        };
+      }
+    }
+  }
+  return null;
+}
+
 /**
- * Pulisce titoli DB con parentesi rotte / refusi (es. "pomodoro ) ) (1 100 g)").
+ * Nome alimento senza etichette porzione concatenate.
+ * Es. "pomodoro (1 Porzione) (1 Porzione)" → "Pomodoro".
+ * Es. "Pane integrale con semi e noci (1 1 fetta (~25 g))" → "Pane integrale con semi e noci".
+ * Non toglie parentesi scientifiche/catalogo (es. "Milk (2%)").
  * @param {unknown} raw
+ * @param {string} [fallback='Alimento']
  * @returns {string}
  */
-export function sanitizeFoodDisplayName(raw) {
+export function sanitizeFoodDisplayName(raw, fallback = 'Alimento') {
   let s = String(raw || '').trim();
-  if (!s) return 'Alimento';
+  if (!s) return fallback;
 
   s = s.replace(/\s+/g, ' ');
-  // Collassa parentesi chiuse ripetute: ") )" / "))"
+
+  let prev = '';
+  let guard = 0;
+  while (s !== prev && guard < 16) {
+    prev = s;
+    s = s.replace(/\s*\(\d*\s*Porzione.*?\)/gi, ' ');
+    s = s.replace(/\s*\(\d*\s*\d*\s*fett[ae].*?\)/gi, ' ');
+    s = s.replace(
+      /\s*\(\s*(?:\d+[.,]?\d*\s+)?(?:porzion[ei]|porz\.?|serving|servings|unita|unità|pezzo|pezzi)\b[^)]*\)/gi,
+      ' ',
+    );
+    s = s.replace(
+      /\s*\(\s*(?:\d+\s+)?[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\s*\)/gi,
+      ' ',
+    );
+    s = s.replace(/\s*\(\s*[~≈]?\s*\d+[.,]?\d*\s*g\s*\)/gi, ' ');
+
+    const trail = splitTrailingBalancedParen(s);
+    if (trail && isPortionLikeParenInner(trail.inner)) {
+      s = trail.before;
+    }
+
+    s = s.replace(/\s+/g, ' ').trim();
+    guard += 1;
+  }
+
+  s = s.replace(/\s*[-–—,]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi)\s*$/i, ' ');
   s = s.replace(/\)\s*\)+/g, ')');
-  // Spazi orfani prima di ")" → ")"
   s = s.replace(/\s+\)/g, ')');
-  // Parentesi vuote
   s = s.replace(/\(\s*\)/g, '');
-  // "(1 100 g)" / "(100 g)" / "(100 grams)" → "(100g)"
-  s = s.replace(/\(\s*(?:\d+\s+)?(\d+(?:[.,]\d+)?)\s*g(?:rams?|rammi)?\s*\)/gi, '($1g)');
-  // Rimuovi ")" orfane finali senza "(" corrispondente
   {
     let open = 0;
     let cleaned = '';
@@ -110,7 +167,7 @@ export function sanitizeFoodDisplayName(raw) {
     s = cleaned.replace(/\(\s*$/g, '').trim();
   }
   s = s.replace(/\s+/g, ' ').trim();
-  if (!s) return 'Alimento';
+  if (!s) return fallback;
 
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

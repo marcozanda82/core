@@ -9,6 +9,19 @@ import {
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
 
+const MEAL_VETRINO_CLASS = {
+  colazione: 'bg-gradient-to-r from-amber-500/10 to-transparent border-l-2 border-amber-500/50',
+  snack: 'bg-gradient-to-r from-teal-500/10 to-transparent border-l-2 border-teal-500/50',
+  pranzo: 'bg-gradient-to-r from-blue-500/10 to-transparent border-l-2 border-blue-500/50',
+  cena: 'bg-gradient-to-r from-indigo-500/10 to-transparent border-l-2 border-indigo-500/50',
+};
+
+function mealVetrinoClass(mealKind) {
+  const key = String(mealKind || '').toLowerCase();
+  if (key === 'spuntino' || key === 'merenda') return MEAL_VETRINO_CLASS.snack;
+  return MEAL_VETRINO_CLASS[key] || MEAL_VETRINO_CLASS.pranzo;
+}
+
 function formatGrams(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return '—';
@@ -131,6 +144,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
         items,
         sortTime,
         stimulantOnly: items.length > 0 && items.every((f) => f?.type === 'stimulant'),
+        mealKind: toCanonicalMealType(baseType) || 'snack',
       };
     })
     .filter(Boolean)
@@ -585,7 +599,10 @@ export default function DiaryDetailsSheet({
             ) : null}
             {hasMeals
               ? mealSections.map((section) => (
-                  <section key={section.slotKey} className="diary-details-meal">
+                  <section
+                    key={section.slotKey}
+                    className={`diary-details-meal ${mealVetrinoClass(section.mealKind)}`}
+                  >
                     <header className="diary-details-meal__header">
                       <div className="diary-details-meal__title-wrap">
                         <h3 className="diary-details-meal__title">

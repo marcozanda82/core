@@ -70,6 +70,7 @@ import {
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
 } from './features/commandTerminal/conversation/userPortionsMemory.js';
+import { sanitizeFoodDisplayName } from './utils/foodVisualResolver';
 import {
   sanitizeUserFoodAliasesDict,
   saveUserFoodAliasesToCache,
@@ -477,6 +478,9 @@ export default function SalaComandi() {
   const returnToChatAfterQuickActionRef = useRef(false);
   const closeOverlayChatRef = useRef(null);
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
+  /** Deep-link Centro Analisi (es. calibrazione da modale calorie). */
+  const [centroAnalisiEntryArea, setCentroAnalisiEntryArea] = useState(null);
+  const centroAnalisiReturnTabRef = useRef('oggi');
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
@@ -957,6 +961,10 @@ export default function SalaComandi() {
       }
       setShowMetabolicTimeline(false);
       setSnapshotOverlayOpen(false);
+      if (tabId === 'bussola' && activeBottomTab !== 'bussola') {
+        centroAnalisiReturnTabRef.current = activeBottomTab;
+        setCentroAnalisiEntryArea(null);
+      }
       setActiveBottomTab(tabId);
     },
     [activeBottomTab, isDiabetesAppMode, openTherapyPlan, openTrainingPlan],
@@ -1162,6 +1170,21 @@ export default function SalaComandi() {
     setShowMetabolicTimeline(true);
     setSnapshotOverlayOpen(false);
     setIsDrawerOpen(false);
+  }, []);
+
+  const openCalibrazioneFromCalorieModal = useCallback(() => {
+    const current = activeBottomTab;
+    centroAnalisiReturnTabRef.current = current === 'bussola' ? 'oggi' : current;
+    setShowCalorieDetailsSheet(false);
+    setShowDiarySheet(false);
+    setCentroAnalisiEntryArea('calibrazione_target');
+    setActiveBottomTab('bussola');
+  }, [activeBottomTab]);
+
+  const exitCentroAnalisi = useCallback(() => {
+    const ret = centroAnalisiReturnTabRef.current || 'oggi';
+    setCentroAnalisiEntryArea(null);
+    setActiveBottomTab(ret === 'bussola' ? 'oggi' : ret);
   }, []);
   const [showFatSheet, setShowFatSheet] = useState(false);
   const [showCarbsSheet, setShowCarbsSheet] = useState(false);
@@ -5681,7 +5704,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const personalDbForUsage = promotion.mergedPersonalDb;
 
       const items = itemsSource.map((item) => {
-        const name = String(item?.foodName || item?.name || '').trim();
+        const name = sanitizeFoodDisplayName(item?.foodName || item?.name || '');
         const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 0));
         if (!name) throw new Error('foodName mancante');
         if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
@@ -7565,7 +7588,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
             <CentroAnalisiView
               embedded
-              onExit={() => setActiveBottomTab('oggi')}
+              initialAreaId={centroAnalisiEntryArea}
+              onExit={exitCentroAnalisi}
               onOpenFotografiaSalute={handleOpenTrendSalute}
               onOpenFotografiaProgressione={handleOpenTrendProgressione}
               onOpenTimelineMetabolica={openMetabolicTimeline}
@@ -8457,6 +8481,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }
         autopilotOffset={dogmaticAutoCompensationKcal}
         ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+        onOpenCalibrazione={openCalibrazioneFromCalorieModal}
         targetKcal={dogmaticTargetKcal}
         consumedKcal={Math.round(Number(totali?.kcal) || 0)}
         proteinConsumed={Number(totali?.prot) || 0}

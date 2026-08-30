@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const STEP_MINUTES = 5;
 const MINUTES_PER_DAY = 24 * 60;
 
 const QUICK_OFFSETS = [
@@ -8,7 +7,6 @@ const QUICK_OFFSETS = [
   { id: 'm15', label: '-15m', minutes: -15 },
   { id: 'm30', label: '-30m', minutes: -30 },
   { id: 'h1', label: '-1h', minutes: -60 },
-  { id: 'h2', label: '-2h', minutes: -120 },
 ];
 
 function pad2(n) {
@@ -24,10 +22,6 @@ function minutesToHHmm(totalMinutes) {
   const hours = Math.floor(wrapped / 60);
   const minutes = wrapped % 60;
   return `${pad2(hours)}:${pad2(minutes)}`;
-}
-
-function roundToNearestStep(totalMinutes, step = STEP_MINUTES) {
-  return Math.round(wrapMinutes(totalMinutes) / step) * step;
 }
 
 function nowMinutes() {
@@ -73,16 +67,8 @@ export function parseTimeValueToMinutes(value) {
   return nowMinutes();
 }
 
-function stepFromCurrent(currentMinutes, direction) {
-  const step = STEP_MINUTES;
-  if (direction > 0) {
-    return Math.floor(currentMinutes / step) * step + step;
-  }
-  return Math.ceil(currentMinutes / step) * step - step;
-}
-
 /**
- * Selettore orario pasto (24h, step 5 min, offset rapidi). Nessun picker nativo OS.
+ * Selettore orario pasto: pill compatta, input nativo, offset cumulativi.
  * @param {{ value?: string|number|Date|null, onChange?: (hhmm: string) => void, disabled?: boolean, className?: string }} props
  */
 export default function KentuTimeSelector({
@@ -91,6 +77,8 @@ export default function KentuTimeSelector({
   disabled = false,
   className = '',
 }) {
+  const rootRef = useRef(null);
+  const [isTimeEditorOpen, setIsTimeEditorOpen] = useState(false);
   const currentMinutes = useMemo(() => parseTimeValueToMinutes(value), [value]);
   const display = minutesToHHmm(currentMinutes);
 
@@ -99,69 +87,112 @@ export default function KentuTimeSelector({
     onChange?.(minutesToHHmm(totalMinutes));
   }, [disabled, onChange]);
 
-  const handleStep = useCallback((direction) => {
-    emit(stepFromCurrent(currentMinutes, direction));
+  const handleTimeInput = useCallback((event) => {
+    const next = String(event.target.value || '').trim();
+    if (!next) return;
+    emit(parseTimeValueToMinutes(next));
+  }, [emit]);
+
+  const handleQuick = useCallback((offset) => {
+    if (offset.id === 'now') {
+      emit(nowMinutes());
+      return;
+    }
+    emit(wrapMinutes(currentMinutes + Number(offset.minutes || 0)));
   }, [currentMinutes, emit]);
 
-  const handleOffset = useCallback((offsetMinutes) => {
-    const roundedNow = roundToNearestStep(nowMinutes());
-    emit(roundedNow + Number(offsetMinutes || 0));
-  }, [emit]);
+  const toggleEditor = useCallback(() => {
+    if (disabled) return;
+    setIsTimeEditorOpen((open) => !open);
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!isTimeEditorOpen) return undefined;
+    const onPointerDown = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setIsTimeEditorOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('touchstart', onPointerDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('touchstart', onPointerDown);
+    };
+  }, [isTimeEditorOpen]);
 
   return (
     <div
+      ref={rootRef}
       className={[
-        'bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-2xl p-3',
+        'relative inline-flex flex-col items-end',
         disabled ? 'pointer-events-none opacity-40' : '',
         className,
       ].filter(Boolean).join(' ')}
-      role="group"
-      aria-label="Orario del pasto"
     >
-      <div className="flex items-center justify-center gap-3">
+      <div
+        className={[
+          'inline-flex items-center gap-1 rounded-full border px-2 py-0.5',
+          'border-white/15 bg-slate-900/80 backdrop-blur-sm',
+          isTimeEditorOpen ? 'border-cyan-400/40' : '',
+        ].filter(Boolean).join(' ')}
+      >
         <button
           type="button"
           disabled={disabled}
-          aria-label="Indietro di 5 minuti"
-          onClick={() => handleStep(-1)}
-          className="w-9 h-9 rounded-full bg-slate-800/80 text-white hover:bg-cyan-500/20 active:scale-95 transition-all touch-manipulation select-none"
+          onClick={toggleEditor}
+          aria-expanded={isTimeEditorOpen}
+          aria-label={isTimeEditorOpen ? 'Chiudi modifica orario' : 'Apri modifica orario'}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-base leading-none text-cyan-300 hover:bg-white/5"
         >
-          −
+          🕒
         </button>
-        <p
-          className="text-2xl font-bold font-mono text-cyan-300 tracking-wider tabular-nums"
-          aria-live="polite"
-        >
-          {display}
-        </p>
-        <button
-          type="button"
+        <input
+          type="time"
+          value={display}
           disabled={disabled}
-          aria-label="Avanza di 5 minuti"
-          onClick={() => handleStep(1)}
-          className="w-9 h-9 rounded-full bg-slate-800/80 text-white hover:bg-cyan-500/20 active:scale-95 transition-all touch-manipulation select-none"
-        >
-          +
-        </button>
+          onChange={handleTimeInput}
+          onFocus={() => {
+            if (!disabled) setIsTimeEditorOpen(true);
+          }}
+          aria-label="Orario del pasto"
+          className={[
+            'w-[5.6rem] bg-transparent border-none outline-none appearance-none',
+            'cursor-pointer text-cyan-400 font-bold text-lg tabular-nums',
+            'p-0 m-0 leading-none',
+            '[color-scheme:dark]',
+            '[&::-webkit-calendar-picker-indicator]:opacity-0',
+            '[&::-webkit-calendar-picker-indicator]:absolute',
+            '[&::-webkit-datetime-edit]:p-0',
+            '[&::-webkit-datetime-edit-fields-wrapper]:p-0',
+          ].join(' ')}
+        />
       </div>
 
-      <div
-        className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5"
-        role="group"
-        aria-label="Offset orario rapido"
-      >
-        {QUICK_OFFSETS.map((offset) => (
-          <button
-            key={offset.id}
-            type="button"
-            disabled={disabled}
-            onClick={() => handleOffset(offset.minutes)}
-            className="px-2.5 py-1 text-xs font-medium rounded-lg bg-slate-800/60 text-slate-300 hover:text-white hover:bg-slate-700 active:bg-cyan-500/30 transition-all border border-slate-700/50 touch-manipulation select-none"
-          >
-            {offset.label}
-          </button>
-        ))}
-      </div>
+      {isTimeEditorOpen ? (
+        <div
+          className="z-20 mt-1.5 flex flex-wrap items-center justify-end gap-1"
+          role="group"
+          aria-label="Offset orario rapido"
+        >
+          {QUICK_OFFSETS.map((offset) => (
+            <button
+              key={offset.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => handleQuick(offset)}
+              className={[
+                'rounded-lg border border-slate-700/50 bg-slate-800/80 px-2 py-1',
+                'text-[11px] font-medium text-slate-300',
+                'hover:bg-slate-700 hover:text-white active:bg-cyan-500/30',
+                'touch-manipulation select-none',
+              ].join(' ')}
+            >
+              {offset.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

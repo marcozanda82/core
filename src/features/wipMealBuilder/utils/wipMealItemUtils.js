@@ -1,4 +1,5 @@
 import { getResolvedFoodCategoryIcon } from '../../../utils/foodCategoryIcon.js';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 
 function createWipItemId() {
   return `wip_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -19,17 +20,9 @@ function normalizeMacros(macros = {}) {
  * @returns {string}
  */
 export function sanitizeWipFoodDisplayName(name) {
-  let s = String(name || '').trim();
-  if (!s) return '';
-
-  // Tutto ciò che sta tra parentesi / parentesi quadre
-  s = s.replace(/\([^)]*\)/g, ' ');
-  s = s.replace(/\[[^\]]*\]/g, ' ');
-  // Coda quantitativa tipica LLM: « - 100g», « 1 porzione», ecc.
-  s = s.replace(/\s*[-–—,]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml|kcal|calorie)\b.*$/i, ' ');
-  s = s.replace(/\s*[-–—,]?\s*(?:\d+[.,]?\d*\s*)?(?:porzion[ei]|porz\.?|serving|servings)\b.*$/i, ' ');
-  s = s.replace(/\s+/g, ' ').trim();
-  return s;
+  const raw = String(name || '').trim();
+  if (!raw) return '';
+  return sanitizeFoodDisplayName(raw, '');
 }
 
 /**

@@ -15,6 +15,11 @@ import { roundToOneDecimal } from '../utils/numberFormatUtils';
 import AmountStepper from './AmountStepper';
 import UnitChips from './UnitChips';
 import { FOOD_GRAMS_MAX, clampFoodGrams } from '../../../utils/inputSanity';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
+import {
+  lookupRecentFoodPortionGrams,
+  rememberRecentFoodPortion,
+} from '../../commandTerminal/conversation/userPortionsMemory';
 
 const MACRO_BOXES = [
   { id: 'kcal', label: 'Kcal', accent: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/25' },
@@ -38,9 +43,34 @@ export default function FoodDetailModal({
 
   const displayTile = food?.displayTile;
   const tileVisual = food?.tileVisual;
-  const defaultUnitWeight = Math.round(Number(food?.defaultUnitWeight) || 100);
-  const name = displayTile?.label || displayTile?.desc || tileVisual?.name || 'Alimento';
+  const catalogUnitWeight = Math.round(Number(food?.defaultUnitWeight) || 100);
+  const name = sanitizeFoodDisplayName(
+    displayTile?.desc
+    || displayTile?.name
+    || displayTile?.row?.desc
+    || displayTile?.row?.name
+    || tileVisual?.name
+    || displayTile?.label
+    || 'Alimento',
+  );
   const units = getItemUnits(displayTile || {});
+  const foodId = String(
+    displayTile?.foodDbKey
+    || displayTile?.id
+    || displayTile?.key
+    || food?.tile?.foodDbKey
+    || food?.tile?.id
+    || food?.tile?.key
+    || '',
+  ).trim();
+  const rememberedGrams = lookupRecentFoodPortionGrams({
+    id: foodId,
+    foodDbKey: displayTile?.foodDbKey,
+    name,
+    foodName: name,
+    servingSize: catalogUnitWeight,
+  });
+  const defaultUnitWeight = rememberedGrams > 0 ? rememberedGrams : catalogUnitWeight;
 
   const draftItem = useMemo(
     () => (displayTile ? findDraftItemForFood(draftFoods, displayTile) : null),
@@ -100,6 +130,14 @@ export default function FoodDetailModal({
     if (selectedWeight <= 0) return;
     const grams = clampFoodGrams(selectedWeight);
     if (grams == null || grams <= 0) return;
+    rememberRecentFoodPortion({
+      id: foodId,
+      foodId,
+      foodDbKey: displayTile?.foodDbKey,
+      name,
+      foodName: name,
+      grams,
+    });
     onConfirm?.(grams);
     setJustConfirmed(true);
     window.setTimeout(() => setJustConfirmed(false), 500);
@@ -155,7 +193,9 @@ export default function FoodDetailModal({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <h2 className="text-xl font-bold leading-snug tracking-tight text-slate-50">{name}</h2>
           <p className="mt-1 text-xs font-medium text-slate-500">
-            Porzione base · <span className="font-mono tabular-nums text-slate-400">{defaultUnitWeight}g</span>
+            {rememberedGrams > 0 ? 'Ultima porzione' : 'Porzione base'}
+            {' · '}
+            <span className="font-mono tabular-nums text-slate-400">{defaultUnitWeight}g</span>
           </p>
 
           {isInCart ? (

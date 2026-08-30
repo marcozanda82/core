@@ -4015,7 +4015,7 @@ export class CommandTerminalController {
     if (!this.pendingAction || this.pendingAction.commandType !== 'ADD_FOOD') return null;
     const items = expandFoodPayloadItems(this.pendingAction.payload);
     const index = Number(itemIndex);
-    const nextName = String(foodName || '').trim();
+    const nextName = sanitizeWizardFoodName(foodName);
     if (!nextName || !Number.isFinite(index) || index < 0 || index >= items.length) {
       return null;
     }

@@ -1,5 +1,7 @@
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
+
 export function formatComboIngredientLine(item) {
-  const name = String(item?.desc || item?.name || 'Alimento').trim();
+  const name = sanitizeFoodDisplayName(item?.desc || item?.name || 'Alimento');
   const weight = Number(item?.weight ?? item?.qta);
   if (Number.isFinite(weight) && weight > 0) {
     return `${name} (${Math.round(weight)}g)`;

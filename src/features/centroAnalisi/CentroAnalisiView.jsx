@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CENTRO_ANALISI_AREAS,
   findCentroAnalisiArea,
@@ -69,9 +69,15 @@ export default function CentroAnalisiView({
   /** Handler Ghost Car / autopilota (solo da SalaComandi embedded). */
   calibrazioneHandlers = null,
 } = {}) {
+  const deepLinkedAreaRef = useRef((() => {
+    const id = String(initialAreaId || '').toLowerCase();
+    return id === 'strumentazione' || id === 'calibrazione_target' ? id : null;
+  })());
+
   const [areaId, setAreaId] = useState(() => {
     const id = String(initialAreaId || '').toLowerCase();
-    return id === 'strumentazione' ? id : null;
+    if (id === 'strumentazione' || id === 'calibrazione_target') return id;
+    return null;
   });
   const [roomId, setRoomId] = useState(() => {
     const id = String(initialAreaId || '').toLowerCase();
@@ -79,6 +85,21 @@ export default function CentroAnalisiView({
   });
   const centroAnalisiStore = useCentroAnalisiReadStore();
   const { mapData } = useStrumentazioneMapData(centroAnalisiStore);
+
+  useEffect(() => {
+    const id = String(initialAreaId || '').toLowerCase();
+    if (id === 'calibrazione_target') {
+      setAreaId('calibrazione_target');
+      setRoomId(null);
+      deepLinkedAreaRef.current = 'calibrazione_target';
+      return;
+    }
+    if (id === 'strumentazione') {
+      setAreaId('strumentazione');
+      setRoomId(DEFAULT_STRUMENTAZIONE_ROOM);
+      deepLinkedAreaRef.current = 'strumentazione';
+    }
+  }, [initialAreaId]);
 
   const preview = livePreview && typeof livePreview === 'object' ? livePreview : {};
 
@@ -157,11 +178,19 @@ export default function CentroAnalisiView({
 
   const handleBack = useCallback(() => {
     if (areaId === 'strumentazione') {
+      if (deepLinkedAreaRef.current === 'strumentazione') {
+        onExit?.();
+        return;
+      }
       setRoomId(null);
       setAreaId(null);
       return;
     }
     if (areaId === 'calibrazione_target') {
+      if (deepLinkedAreaRef.current === 'calibrazione_target') {
+        onExit?.();
+        return;
+      }
       setAreaId(null);
       return;
     }
@@ -221,9 +250,7 @@ export default function CentroAnalisiView({
     centroAnalisiStore?.userTargets,
   ]);
   const showHubTitle = !area;
-  const backLabel = areaId || roomId
-    ? '← Indietro'
-    : (embedded ? '← Home' : '← Indietro');
+  const backLabel = '← Indietro';
 
   const renderLivePreview = (itemId) => {
     if (itemId === 'salute') {

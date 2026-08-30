@@ -1,12 +1,14 @@
 /**
  * Memoria a lungo termine — porzioni utente (Stadio 1 Motore Ibrido).
  * Firebase: users/{uid}/user_portions  →  { "pomodoro": 150, "pane": 30, ... }
- * Locale: recentFoodPortions in LocalStorage (ultima quantità confermata).
+ * Locale: kentu_recent_portions (ultima quantità confermata per id/nome).
  */
 
 import { ref, update, get } from 'firebase/database';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver';
 
-export const RECENT_FOOD_PORTIONS_LS_KEY = 'kentu_recent_food_portions';
+export const RECENT_FOOD_PORTIONS_LS_KEY = 'kentu_recent_portions';
+const LEGACY_RECENT_FOOD_PORTIONS_LS_KEY = 'kentu_recent_food_portions';
 
 /**
  * Chiave stabile per il dizionario (minuscolo, senza accenti).
@@ -14,7 +16,7 @@ export const RECENT_FOOD_PORTIONS_LS_KEY = 'kentu_recent_food_portions';
  * @returns {string}
  */
 export function normalizePortionFoodKey(name) {
-  return String(name ?? '')
+  return sanitizeFoodDisplayName(name, '')
     .trim()
     .toLowerCase()
     .normalize('NFD')
@@ -51,9 +53,20 @@ export function sanitizeUserPortionsDict(raw) {
 export function readRecentFoodPortions() {
   if (typeof localStorage === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(RECENT_FOOD_PORTIONS_LS_KEY);
-    if (!raw) return {};
-    return sanitizeUserPortionsDict(JSON.parse(raw));
+    const primary = localStorage.getItem(RECENT_FOOD_PORTIONS_LS_KEY);
+    const legacy = localStorage.getItem(LEGACY_RECENT_FOOD_PORTIONS_LS_KEY);
+    const parsedPrimary = primary ? JSON.parse(primary) : {};
+    const parsedLegacy = legacy ? JSON.parse(legacy) : {};
+    const merged = {
+      ...(parsedLegacy && typeof parsedLegacy === 'object' ? parsedLegacy : {}),
+      ...(parsedPrimary && typeof parsedPrimary === 'object' ? parsedPrimary : {}),
+    };
+    const dict = sanitizeUserPortionsDict(merged);
+    const hasCorruptKeys = Object.keys(merged).some((k) =>
+      /\(|porzion|fett[ae]/i.test(String(k)),
+    );
+    if (hasCorruptKeys) writeRecentFoodPortions(dict);
+    return dict;
   } catch {
     return {};
   }
@@ -65,10 +78,9 @@ export function readRecentFoodPortions() {
 export function writeRecentFoodPortions(dict) {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(
-      RECENT_FOOD_PORTIONS_LS_KEY,
-      JSON.stringify(sanitizeUserPortionsDict(dict)),
-    );
+    const payload = JSON.stringify(sanitizeUserPortionsDict(dict));
+    localStorage.setItem(RECENT_FOOD_PORTIONS_LS_KEY, payload);
+    localStorage.setItem(LEGACY_RECENT_FOOD_PORTIONS_LS_KEY, payload);
   } catch {
     /* quota / private mode */
   }

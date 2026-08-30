@@ -3151,8 +3151,30 @@ html, body, #root {
   color: rgba(196, 181, 253, 0.92);
 }
 
+.calorie-receipt__row--autopilot {
+  align-items: center;
+}
+
 .calorie-receipt__row--autopilot .calorie-receipt__label {
   color: rgba(103, 232, 249, 0.92);
+}
+
+.calorie-receipt__info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  line-height: 0;
+  flex-shrink: 0;
+}
+
+.calorie-receipt__info-btn:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.55);
+  outline-offset: 2px;
 }
 
 .calorie-receipt__value--autopilot {
@@ -4070,7 +4092,7 @@ html, body, #root {
   margin-bottom: 16px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(15, 23, 42, 0.4);
+  background-color: rgba(15, 23, 42, 0.28);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   overflow: visible;

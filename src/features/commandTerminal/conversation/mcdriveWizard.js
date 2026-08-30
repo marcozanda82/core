@@ -18,7 +18,7 @@ import {
   coffeeShopExtrasFromProduct,
 } from '../../../constants/coffeeShopDatabase.js';
 import { resolveSmartDefaultPortion } from '../../../utils/smartFoodPortions.js';
-import { resolveFoodVisualEmoji } from '../../../utils/foodVisualResolver.js';
+import { resolveFoodVisualEmoji, sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -212,7 +212,7 @@ export function parseMcdriveFoodInputs(userText) {
   const seen = new Set();
 
   const pushItem = (foodName, gramsHint, estimatedHint) => {
-    const name = String(foodName || '').trim();
+    const name = sanitizeFoodDisplayName(foodName, '');
     if (!name || name.length < 2) return;
     const key = name.toLowerCase();
     if (seen.has(key)) return;
@@ -390,7 +390,7 @@ export function buildMcDriveAlternatives(matches = [], topMatch = null, limit = 
   for (const m of list) {
     if (out.length >= Math.max(1, limit)) break;
     const id = String(m?.fdcId || m?.row?.id || m?.row?.foodDbKey || '').trim();
-    const name = String(m?.name || m?.row?.desc || m?.row?.name || '').trim();
+    const name = sanitizeFoodDisplayName(m?.name || m?.row?.desc || m?.row?.name || '', '');
     if (topId && id && id === topId) continue;
     if (!topId && topName && name.toLowerCase() === topName) continue;
     out.push({
@@ -479,9 +479,10 @@ export function buildMcDriveDraftFromParsedFoods(items = []) {
   return (Array.isArray(items) ? items : [])
     .map((f, idx) => {
       if (!f || typeof f !== 'object') return null;
-      const foodName = String(
+      const foodName = sanitizeFoodDisplayName(
         f.foodName || f.name || f.spokenFoodName || f.desc || f.label || '',
-      ).trim();
+        '',
+      );
       if (!foodName) return null;
 
       const gramsRaw = Number(f.grams ?? f.qty ?? f.qta ?? f.weight);
@@ -750,9 +751,9 @@ export function buildMcDriveItemFromSearchResult(searchResult, grams, extra = {}
   const row = searchResult?.row && typeof searchResult.row === 'object'
     ? searchResult.row
     : (searchResult && typeof searchResult === 'object' ? searchResult : {});
-  const name = String(
+  const name = sanitizeFoodDisplayName(
     searchResult?.desc || searchResult?.name || row.desc || row.name || 'Alimento',
-  ).trim();
+  );
   const foodDbKey = String(
     searchResult?.key
     || searchResult?.id
@@ -801,7 +802,7 @@ export function mapMcDriveItemsToCommitPayload(items) {
   return (Array.isArray(items) ? items : [])
     .filter(isMcDriveItemCommitEligible)
     .map((item) => {
-      const foodName = String(item?.foodName || item?.name || '').trim();
+      const foodName = sanitizeFoodDisplayName(item?.foodName || item?.name || '', '');
       const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
       if (!foodName || grams <= 0) return null;
       const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
@@ -843,7 +844,14 @@ export function mergeMcDriveDraftWithTraySnapshot(draftItems, trayItems) {
   return trayItems.map((item, index) => {
     const id = item?.id != null ? String(item.id).trim() : '';
     const base = (id && prevById.get(id)) || prev[index] || {};
-    return { ...base, ...item };
+    const merged = { ...base, ...item };
+    const clean = sanitizeFoodDisplayName(merged.foodName || merged.name || merged.desc || '', '');
+    if (clean) {
+      merged.foodName = clean;
+      if (merged.name) merged.name = clean;
+      if (merged.desc) merged.desc = clean;
+    }
+    return merged;
   });
 }
 

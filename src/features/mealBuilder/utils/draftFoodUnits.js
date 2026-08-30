@@ -57,12 +57,27 @@ export function buildInitialAmount(foodItem) {
   };
 }
 
+/**
+ * Etichetta quantità (solo display). Non anteporre "1 " se l'unità
+ * inizia già con un numero (es. "1 fetta (~25 g)" → non "1 1 fetta…").
+ */
+export function formatCountQtyLabel(unitLabel, multiplier = 1, totalWeight = 0) {
+  const gramsFallback = `${Math.round(Number(totalWeight) || 0)}g`;
+  const raw = String(unitLabel || '').trim();
+  if (!raw) return gramsFallback;
+  const m = Number(multiplier);
+  const count = Number.isFinite(m) && m > 0 ? m : 1;
+  const unitBody = raw.replace(/^\d+[.,]?\d*\s+/, '').trim() || raw;
+  if (count === 1 && /^\d/.test(raw)) return raw;
+  return `${count} ${unitBody}`;
+}
+
 export function buildQtyLabel(item, unitId, multiplier, totalWeight) {
   if (unitId === 'g') return `${totalWeight}g`;
 
   const units = getItemUnits(item);
   const unit = units.find((entry) => resolveUnitIdFromUnit(entry) === unitId);
-  if (unit?.label) return `${multiplier} ${unit.label}`;
+  if (unit?.label) return formatCountQtyLabel(unit.label, multiplier, totalWeight);
   return `${totalWeight}g`;
 }
 

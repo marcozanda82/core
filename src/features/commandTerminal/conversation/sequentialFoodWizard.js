@@ -14,6 +14,7 @@ import {
   italianSingularPluralForms,
 } from '../../../foodSearch.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 
 export const MEAL_WIZARD_STATE = 'AWAITING_MEAL_WIZARD_ITEM';
 export const MEAL_WIZARD_CONFIRM = 'AWAITING_MEAL_WIZARD_CONFIRM';
@@ -468,37 +469,14 @@ export function sanitizeWizardFoodName(raw) {
   if (!name) return '';
 
   name = name.replace(/\(\s*solito\s*\)/gi, ' ');
+  const cleaned = sanitizeFoodDisplayName(name, '');
+  if (!cleaned) return '';
 
-  // Taglia alla prima parentesi di serving-size (anche nested).
-  const cut = name.search(/\(\s*(?:\d+\s*)?(?:porzion|[~]?\s*\d)/i);
-  if (cut > 0) {
-    name = name.slice(0, cut).trim();
-  }
-
-  let prev = '';
-  let guard = 0;
-  while (prev !== name && guard < 16) {
-    prev = name;
-    guard += 1;
-    // Innermost (...) che sembrano porzioni / grammi
-    name = name.replace(/\(([^()]*)\)/g, (full, inner) => {
-      const body = String(inner || '');
-      if (/\bporzion[ei]\b/i.test(body)) return ' ';
-      if (/~\s*\d/i.test(body)) return ' ';
-      if (/\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b/i.test(body)) return ' ';
-      if (/^\s*\d+\s+\d+(?:[.,]\d+)?\s*g?\s*$/i.test(body)) return ' ';
-      return full;
-    });
-    name = name
-      .replace(/\s+\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b(?:\s*\(.*\))?/gi, ' ')
-      .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|gr|grammi)\b\s*$/gi, ' ')
-      // Residui tipo "1 porzione" / "2 porzioni" fuori da parentesi
-      .replace(/\b\d+\s*porzion[ei]\b/gi, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-  }
-
-  return name.replace(/^[,;\-–—\s]+|[,;\-–—\s]+$/g, '').trim();
+  return cleaned
+    .replace(/\b\d+\s*porzion[ei]\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[,;\-–—\s]+|[,;\-–—\s]+$/g, '')
+    .trim();
 }
 function cleanFoodPhrase(raw) {
   return sanitizeWizardFoodName(

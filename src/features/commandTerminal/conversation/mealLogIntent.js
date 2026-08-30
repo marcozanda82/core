@@ -9,6 +9,7 @@ import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting
 import { resolveSmartDefaultGrams } from '../../../utils/smartFoodPortions.js';
 import { splitFoodListSegments } from './foodPhraseSplit.js';
 import { lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -1781,16 +1782,19 @@ export function resolveExactTimeForMeal(payload = {}, userText = '') {
 }
 
 function cleanFoodName(raw) {
-  return String(raw || '')
-    .trim()
-    .replace(/^(?:come\s+)?(?:per\s+)?(?:la\s+|il\s+|lo\s+|l['’])?(?:colazione|pranzo|cena|snack|spuntino)\s+/i, '')
-    .replace(/^(?:ho\s+)?(?:mangiat[oa]|consumat[oa]|assunt[oa]|preso|presa|bevut[oa])\s+/i, '')
-    .replace(/^(?:e|ed)\s+/i, '')
-    .replace(/^(?:una?|uno|un['’])\s+/i, '')
-    .replace(/\s+(?:e|ed)\s*$/i, '')
-    .replace(/^di\s+/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return sanitizeFoodDisplayName(
+    String(raw || '')
+      .trim()
+      .replace(/^(?:come\s+)?(?:per\s+)?(?:la\s+|il\s+|lo\s+|l['’])?(?:colazione|pranzo|cena|snack|spuntino)\s+/i, '')
+      .replace(/^(?:ho\s+)?(?:mangiat[oa]|consumat[oa]|assunt[oa]|preso|presa|bevut[oa])\s+/i, '')
+      .replace(/^(?:e|ed)\s+/i, '')
+      .replace(/^(?:una?|uno|un['’])\s+/i, '')
+      .replace(/\s+(?:e|ed)\s*$/i, '')
+      .replace(/^di\s+/i, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+    '',
+  );
 }
 
 function pushUniqueItem(items, seen, foodName, grams, extra = {}) {

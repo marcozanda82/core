@@ -46,8 +46,8 @@ function buildAvatarSymbiosisBlock(healthScore) {
   if (!healthScore || typeof healthScore !== 'object') return null;
   const score = Math.round(Number(healthScore.score) || 0);
   let symbiosisMode = 'steady_team_progress';
-  if (score >= 70) symbiosisMode = 'high_energy_celebrate_together';
-  else if (score < 45) symbiosisMode = 'low_energy_ask_user_help';
+  if (score >= 75) symbiosisMode = 'high_energy_celebrate_together';
+  else if (score < 50) symbiosisMode = 'low_energy_ask_user_help';
 
   return {
     score,

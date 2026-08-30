@@ -100,13 +100,13 @@ export default function MealDraftConfirmation({
             </select>
           </label>
         </div>
+        <KentuTimeSelector
+          value={timeValue}
+          disabled={isSaving}
+          onChange={(next) => onUpdateMealMeta?.(draftId, { exactTime: next })}
+          className="ml-auto"
+        />
       </div>
-      <KentuTimeSelector
-        value={timeValue}
-        disabled={isSaving}
-        onChange={(next) => onUpdateMealMeta?.(draftId, { exactTime: next })}
-        className="mb-2"
-      />
 
       {hasEstimatedWeights ? (
         <p className="kentu-meal-draft__estimate-banner" role="status">

@@ -33,6 +33,8 @@ import ChatInputBar from './features/chat/ChatInputBar.jsx';
 import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
+import VitalityAvatarRing from './features/chat/VitalityAvatarRing.jsx';
+import { buildVitalityIndexFromScore } from './features/chat/vitalityIndex.js';
 import ChatReportCard from './features/chat/ChatReportCard.jsx';
 import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
@@ -199,6 +201,18 @@ export default function AiCluster({
   const healthScoreLabel = safeHealthScore?.avatar?.label
     ? `Health Score ${Math.round(Number(safeHealthScore.score) || 0)} · ${safeHealthScore.avatar.label}`
     : 'Health Score';
+
+  const vitality = useMemo(
+    () => buildVitalityIndexFromScore(safeHealthScore?.score),
+    [safeHealthScore?.score],
+  );
+  const vitalitySubtitle = vitality.phrase;
+  const vitalityBandClass =
+    vitality.band === 'full'
+      ? 'text-cyan-400/90'
+      : vitality.band === 'focus'
+        ? 'text-amber-400/90'
+        : 'text-red-400/90';
 
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -711,7 +725,7 @@ export default function AiCluster({
     });
   }, []);
 
-  const headerAvatarLabel = healthScoreLabel;
+  const headerAvatarLabel = `${healthScoreLabel}. Score ${vitality.score}`;
 
   /** Fingerprint lavagna attiva (dock): scroll cronologia resta indipendente. */
   const scrollChatToBottom = useCallback((behavior = 'smooth') => {
@@ -1089,9 +1103,9 @@ export default function AiCluster({
     >
       <header
         className={[
-          'relative flex shrink-0 flex-col overflow-hidden border-b border-zinc-800 bg-zinc-950',
+          'relative flex shrink-0 flex-col border-b border-zinc-800 bg-zinc-950',
           'transition-[height,opacity] duration-500 ease-in-out',
-          headerCinemaExpanded ? 'h-64' : 'h-20',
+          headerCinemaExpanded ? 'h-64 overflow-hidden' : 'h-[6.75rem] overflow-visible',
         ].join(' ')}
       >
         {hoistedVideo ? (
@@ -1182,27 +1196,32 @@ export default function AiCluster({
                   : 'cursor-default opacity-80',
               ].join(' ')}
             >
-              <KentuAvatar
-                size="header"
-                src={healthAvatarSrc}
-                fit="contain"
-                alt=""
-                className="bg-transparent"
-              />
+              <VitalityAvatarRing
+                score={vitality.score}
+                ringColor={vitality.ringColor}
+                circumference={vitality.circumference}
+                strokeDashoffset={vitality.strokeDashoffset}
+                className="h-[90px] w-[90px]"
+              >
+                <KentuAvatar
+                  size="header"
+                  src={healthAvatarSrc}
+                  fit="contain"
+                  alt=""
+                  className="bg-transparent"
+                />
+              </VitalityAvatarRing>
             </button>
             <div className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
               <span className="truncate text-sm font-semibold tracking-wide text-zinc-100">
                 Kentu AI Workspace
               </span>
-              {introPhrase ? (
-                <span className="max-w-full truncate text-[0.65rem] text-zinc-500" title={introPhrase}>
-                  {introPhrase}
-                </span>
-              ) : safeHealthScore != null ? (
-                <span className="max-w-full truncate text-[0.65rem] text-zinc-500">
-                  Score {Math.round(Number(safeHealthScore.score) || 0)} · {safeHealthScore?.avatar?.label || '—'}
-                </span>
-              ) : null}
+              <span
+                className={`max-w-full truncate text-[0.65rem] ${vitalityBandClass}`}
+                title={vitalitySubtitle}
+              >
+                {vitalitySubtitle}
+              </span>
             </div>
             <div className="flex shrink-0 items-center">
               {typeof onBack === 'function' ? (

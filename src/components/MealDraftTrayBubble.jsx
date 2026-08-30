@@ -95,13 +95,13 @@ export default function MealDraftTrayBubble({
             </select>
           </label>
         </div>
+        <KentuTimeSelector
+          value={timeValue}
+          disabled={isSaving}
+          onChange={(next) => onUpdateMealMeta?.(draftId, { exactTime: next })}
+          className="ml-auto"
+        />
       </div>
-      <KentuTimeSelector
-        value={timeValue}
-        disabled={isSaving}
-        onChange={(next) => onUpdateMealMeta?.(draftId, { exactTime: next })}
-        className="mb-2"
-      />
 
       {hasEstimatedWeights ? (
         <p className="kentu-meal-tray__estimate-banner" role="status">

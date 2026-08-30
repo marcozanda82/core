@@ -11,9 +11,10 @@ function normalizeUserTargets(targets) {
 }
 
 function normalizeHealthScore(score) {
+  if (score && typeof score === 'object') return score;
   const n = Number(score);
-  if (Number.isFinite(n)) return Math.max(0, Math.min(100, Math.round(n)));
-  return 50;
+  if (Number.isFinite(n)) return { score: Math.max(0, Math.min(100, Math.round(n))) };
+  return null;
 }
 
 /**

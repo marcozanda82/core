@@ -29,6 +29,7 @@ import {
   isMcDriveRawItem,
 } from '../commandTerminal/conversation/mcdriveWizard.js';
 import { lookupRecentFoodPortionGrams } from '../commandTerminal/conversation/userPortionsMemory.js';
+import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 
 /** Normalizza status lavagna per UI (validating → processing). */
 function resolveMcDriveVisualStatus(item) {
@@ -174,7 +175,7 @@ function MealTrayRowActionsMenu({
 }
 
 function buildInspectFoodPayload(item) {
-  const name = String(item?.foodName || item?.name || 'Alimento').trim();
+  const name = sanitizeFoodDisplayName(item?.foodName || item?.name || 'Alimento');
   const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 100));
   const row = item?.row && typeof item.row === 'object'
     ? item.row
@@ -284,7 +285,7 @@ function LiveMealTray({
 
   const appendSearchResultToTray = useCallback((result) => {
     if (!result) return;
-    const name = String(result?.desc || result?.name || result?.row?.name || '').trim();
+    const name = sanitizeFoodDisplayName(result?.desc || result?.name || result?.row?.name || '');
     const foodId = String(result?.key || result?.id || result?.foodDbKey || result?.row?.id || '').trim();
     const recentGrams = lookupRecentFoodPortionGrams({
       id: foodId,
@@ -412,7 +413,7 @@ function LiveMealTray({
       setSolverHighlightIds(nextHighlightIds);
 
       const label = mcItems.length === 1
-        ? `Consulto: ${mcItems[0].foodName}`
+        ? `Consulto: ${sanitizeFoodDisplayName(mcItems[0].foodName || '', '') || 'Alimento'}`
         : `Consulto: ${mcItems.length} alimenti aggiunti`;
       setSolverFeedback(label);
 
@@ -447,13 +448,12 @@ function LiveMealTray({
             <span className="kentu-meal-tray__badge">Calibrazione</span>
             <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
           </div>
+          <KentuTimeSelector
+            value={exactTimeValue}
+            disabled={disabled}
+            onChange={(next) => onUpdateMealTime?.(next)}
+          />
         </div>
-        <KentuTimeSelector
-          value={exactTimeValue}
-          disabled={disabled}
-          onChange={(next) => onUpdateMealTime?.(next)}
-          className="mt-2"
-        />
         {hasTargets ? (
           <div className="kentu-meal-tray__target-grid" aria-label="Confronto vassoio / target pasto">
             <MacroCompareRow label="Kcal" actual={resolvedTotals.kcal} target={mealTargets.kcal} unit="kcal" />
@@ -508,7 +508,7 @@ function LiveMealTray({
         ) : (
           <ul className="kentu-meal-tray__list">
             {displayItems.map(({ item, index }, displayIndex) => {
-              const name = String(item?.foodName || item?.name || 'Alimento').trim();
+              const name = sanitizeFoodDisplayName(item?.foodName || item?.name || 'Alimento');
               const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
               const visualStatus = resolveMcDriveVisualStatus(item);
               const isRaw = visualStatus === 'raw';
@@ -694,7 +694,7 @@ function LiveMealTray({
                             <option value="">Cambia alimento…</option>
                             {alternatives.map((alt, altIdx) => (
                               <option key={`${alt.foodDbKey || alt.foodName}-${altIdx}`} value={altIdx}>
-                                {alt.foodName || 'Alternativa'}
+                                {sanitizeFoodDisplayName(alt.foodName || '', '') || 'Alternativa'}
                               </option>
                             ))}
                           </select>
@@ -880,12 +880,13 @@ function LiveMealTray({
         }}
         initialQuery={
           searchIndex != null
-            ? String(
+            ? sanitizeFoodDisplayName(
               items[searchIndex]?.spokenFoodName
               || items[searchIndex]?.foodName
               || items[searchIndex]?.name
               || '',
-            ).trim()
+              '',
+            )
             : ''
         }
         personalDb={personalDb}

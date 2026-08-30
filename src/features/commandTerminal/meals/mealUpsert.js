@@ -2,7 +2,15 @@
  * Meal UPSERT — writer unificato append | replace | merge per CRUD pasti via chat.
  */
 
+import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
+
 export const MEAL_UPSERT_ACTIONS = Object.freeze(['append', 'replace', 'merge']);
+
+function cleanStoredFoodName(...candidates) {
+  const raw = candidates.map((c) => String(c || '').trim()).find(Boolean) || '';
+  if (!raw) return '';
+  return sanitizeFoodDisplayName(raw, '');
+}
 
 /**
  * @param {unknown} raw
@@ -25,7 +33,7 @@ export function normalizeMealUpsertAction(raw) {
 export function applyMealOperations(baselineItems = [], operations = []) {
   const items = (Array.isArray(baselineItems) ? baselineItems : [])
     .map((item, index) => {
-      const foodName = String(item?.foodName || item?.name || '').trim();
+      const foodName = cleanStoredFoodName(item?.foodName, item?.name, item?.desc);
       const grams = Math.max(0, Math.round(Number(item?.grams ?? item?.qta ?? item?.weight) || 0));
       const itemId = String(item?.itemId || item?.id || '').trim() || `base_${index}`;
       return {
@@ -50,7 +58,7 @@ export function applyMealOperations(baselineItems = [], operations = []) {
       const byId = next.findIndex((it) => String(it.itemId || it.id || '') === targetId);
       if (byId >= 0) return byId;
     }
-    const hint = String(op?.matchHint || op?.updatedFood?.foodName || '').trim().toLowerCase();
+    const hint = cleanStoredFoodName(op?.matchHint, op?.updatedFood?.foodName).toLowerCase();
     if (!hint) return -1;
     return next.findIndex((it) => {
       const name = String(it.foodName || it.name || '').trim().toLowerCase();
@@ -62,7 +70,7 @@ export function applyMealOperations(baselineItems = [], operations = []) {
     if (!op || typeof op !== 'object') continue;
     const action = String(op.action || '').trim().toLowerCase();
     if (action === 'add') {
-      const foodName = String(op?.updatedFood?.foodName || op?.foodName || '').trim();
+      const foodName = cleanStoredFoodName(op?.updatedFood?.foodName, op?.foodName);
       const grams = Math.max(1, Math.round(Number(op?.updatedFood?.grams ?? op?.grams) || 0));
       if (!foodName || grams <= 0) continue;
       const foodDbKey = op?.updatedFood?.foodDbKey ?? op?.foodDbKey;
@@ -86,7 +94,7 @@ export function applyMealOperations(baselineItems = [], operations = []) {
     if (action === 'update') {
       const idx = findIndex(op);
       if (idx < 0) continue;
-      const foodName = String(op?.updatedFood?.foodName || next[idx].foodName || '').trim();
+      const foodName = cleanStoredFoodName(op?.updatedFood?.foodName, next[idx].foodName);
       const gramsRaw = Number(op?.updatedFood?.grams);
       const grams = Number.isFinite(gramsRaw) && gramsRaw > 0
         ? Math.round(gramsRaw)
@@ -113,14 +121,14 @@ export function applyMealOperations(baselineItems = [], operations = []) {
 export function mergeMealItems(baselineItems = [], incomingItems = []) {
   const base = (Array.isArray(baselineItems) ? baselineItems : []).map((item, index) => ({
     ...item,
-    foodName: String(item?.foodName || item?.name || '').trim(),
+    foodName: cleanStoredFoodName(item?.foodName, item?.name, item?.desc),
     grams: Math.max(1, Math.round(Number(item?.grams ?? item?.qta ?? item?.weight) || 0)),
     itemId: String(item?.itemId || item?.id || '').trim() || `base_${index}`,
   })).filter((it) => it.foodName);
 
   const incoming = (Array.isArray(incomingItems) ? incomingItems : [])
     .map((item, index) => {
-      const foodName = String(item?.foodName || item?.name || '').trim();
+      const foodName = cleanStoredFoodName(item?.foodName, item?.name, item?.desc);
       const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta ?? item?.weight) || 0));
       if (!foodName || grams <= 0) return null;
       const foodDbKey = item?.foodDbKey ?? item?.matchedKey;
@@ -192,7 +200,7 @@ export function buildMealCommitFingerprint(payload = {}, trackerDate = '') {
       : [];
   const itemKey = rawItems
     .map((item) => {
-      const name = String(item?.foodName || item?.name || '').trim().toLowerCase();
+      const name = cleanStoredFoodName(item?.foodName, item?.name).toLowerCase();
       const grams = Math.max(0, Math.round(Number(item?.grams ?? item?.qty) || 0));
       return name ? `${name}:${grams}` : '';
     })
