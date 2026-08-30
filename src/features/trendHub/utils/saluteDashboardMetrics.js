@@ -19,6 +19,7 @@ import {
   resolveMorningSleepForInsight as resolveMorningSleepFromHistory,
 } from './saluteHistorySeries';
 import { countSufficientlyStimulatedPillars } from './muscleSpillover.js';
+import { computeAverageMuscleStimulus } from './muscleTelemetryModel.js';
 
 export const SLEEP_TARGET_HOURS = DEFAULT_SLEEP_HOURS;
 export { REFERENCE_HEIGHT_CM, PROGRESSION_MIN_NUTRITION_DAY_KCAL };
@@ -882,7 +883,10 @@ export function formatCompensationDelta(deltaKcal) {
 /** Max punti per pilastro Progressione (Nutrizione / Allenamento / Riposo). */
 export const PROGRESSION_PILLAR_MAX = 100 / 3;
 
-/** Target sessioni training in 14 giorni (≈ 4/settimana). */
+/**
+ * @deprecated Il pilastro Allenamento usa la media telemetria 7g, non il conteggio sessioni.
+ * Conservato per breakdown diagnostico (sessioni grezze).
+ */
 export const PROGRESSION_SESSION_TARGET_14D = 8;
 
 /** Target ore sonno per pilastro Riposo. */
@@ -966,15 +970,25 @@ function dayQualifiesForNutritionScore(day) {
 }
 
 /**
- * Punteggio Progressione 0–100 — aderenza 14gg su Nutrizione, Allenamento, Sonno.
+ * Punteggio Progressione 0–100 — Nutrizione (14gg) + Allenamento (telemetria 7g) + Sonno.
+ *
+ * Allenamento: media stimolo attuale dei 5 distretti (Abs, Petto, Braccia, Gambe, Schiena).
+ * Non usa più workoutsCompleted / workoutsScheduled: un rest day non vale 100%.
  *
  * Nutrizione: media solo su giorni COMPLETATI (non oggi) con hasNutrition / kcal >= 300.
  * Se nessun giorno valido → stato neutro (pilastro pieno + awaitingData).
  *
  * @param {Array<object> | object} logs
  * @param {object} [userTargets]
+ * @param {{
+ *   fourCylinder?: object | null,
+ *   fullHistory?: object | null,
+ *   activeLog?: Array | null,
+ *   activeDate?: string | null,
+ *   averageStimulus?: number | null,
+ * }} [muscleTelemetry]
  */
-export function calculateProgressionScore(logs, userTargets = {}) {
+export function calculateProgressionScore(logs, userTargets = {}, muscleTelemetry = null) {
   const targets = resolveProgressionNutritionTargets(userTargets);
   const sleepTarget = Number(userTargets?.sleepHours ?? userTargets?.sleepTarget)
     > 0
@@ -1039,17 +1053,25 @@ export function calculateProgressionScore(logs, userTargets = {}) {
     );
   }
 
-  // —— Allenamento ——
+  // —— Allenamento: media stimolo 5 distretti (telemetria 7g), non calendario ——
   const workoutSessions = precomputedSessions != null
     ? precomputedSessions
     : days.reduce((sum, day) => sum + (Math.max(0, Math.round(Number(day?.workoutSessions) || 0))), 0);
-  const trainingRatio = sessionTarget > 0 ? workoutSessions / sessionTarget : 0;
+  const telemetryCtx = {
+    ...(logsObj && typeof logsObj === 'object' ? logsObj : {}),
+    ...(muscleTelemetry && typeof muscleTelemetry === 'object' ? muscleTelemetry : {}),
+  };
+  const averageStimulus = computeAverageMuscleStimulus({
+    fourCylinder: telemetryCtx.fourCylinder ?? null,
+    fullHistory: telemetryCtx.fullHistory ?? null,
+    activeLog: telemetryCtx.activeLog ?? telemetryCtx.todayLiveLog ?? null,
+    activeDate: telemetryCtx.activeDate ?? telemetryCtx.todayDate ?? todayIso ?? null,
+    averageStimulus: telemetryCtx.averageStimulus,
+  });
+  const trainingPct = Math.round(Math.max(0, Math.min(100, averageStimulus)));
   const trainingScore = Math.min(
     PROGRESSION_PILLAR_MAX,
-    Math.max(0, trainingRatio) * PROGRESSION_PILLAR_MAX,
-  );
-  const trainingPct = Math.round(
-    Math.max(0, Math.min(100, (trainingScore / PROGRESSION_PILLAR_MAX) * 100)),
+    (trainingPct / 100) * PROGRESSION_PILLAR_MAX,
   );
 
   // —— Riposo ——
@@ -1096,6 +1118,7 @@ export function calculateProgressionScore(logs, userTargets = {}) {
       nutritionTargetProt: targets.prot,
       workoutSessions,
       workoutTarget: sessionTarget,
+      averageStimulus: trainingPct,
       sleepAvg: sleepAvg != null ? Math.round(sleepAvg * 10) / 10 : null,
       sleepTarget: Math.round(sleepTarget * 10) / 10,
     },

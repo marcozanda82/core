@@ -75,8 +75,14 @@ export default function ProgressioneView({
         workoutSessionsTotal: progressionLogs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog: analyzedLiveLog,
+        activeDate: analyzedDateIso,
+      },
     ),
-    [progressionLogs, userTargets],
+    [progressionLogs, userTargets, fourCylinder, fullHistory, analyzedLiveLog, analyzedDateIso],
   );
 
   const analyzedTotals = useMemo(

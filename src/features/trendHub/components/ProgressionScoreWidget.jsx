@@ -49,17 +49,18 @@ function buildNutritionDetail(b, nutritionPct) {
 }
 
 function buildTrainingDetail(b, trainingPct) {
-  const sessions = Math.max(0, Math.round(Number(b.workoutSessions) || 0));
-  const target = Math.max(1, Math.round(Number(b.workoutTarget) || 8));
-  const raw = `Sessioni completate: ${sessions} / Target: ${target}`;
+  const stimulus = Number.isFinite(Number(b.averageStimulus))
+    ? Math.round(Number(b.averageStimulus))
+    : trainingPct;
+  const raw = `Stimolo muscolare medio (7g): ${stimulus}% sui 5 distretti`;
 
   let analysis;
-  if (trainingPct >= 100) {
-    analysis = 'Hai raggiunto o superato il volume previsto. Ottimo lavoro, ma ascolta il corpo per evitare overtraining.';
-  } else if (trainingPct >= 70) {
-    analysis = 'Sei vicino al target di volume. Completa le sessioni mancanti per consolidare lo stimolo.';
+  if (trainingPct >= 70) {
+    analysis = 'Volume ottimale: lo stimolo muscolare è costante e ben distribuito.';
+  } else if (trainingPct >= 40) {
+    analysis = 'Stimolo parziale: alcuni gruppi muscolari stanno entrando in fase di recupero totale, valuta un richiamo.';
   } else {
-    analysis = 'Il volume di allenamento è sotto target. Programma le sessioni mancanti nella settimana per non perdere adattamento.';
+    analysis = 'Detraining in corso: lo stimolo meccanico è insufficiente per mantenere la sintesi proteica, a prescindere dall\'alimentazione.';
   }
 
   return { raw, analysis };
@@ -131,6 +132,7 @@ const EMPTY_BREAKDOWN = Object.freeze({
   nutritionTargetProt: null,
   workoutSessions: 0,
   workoutTarget: 8,
+  averageStimulus: null,
   sleepAvg: null,
   sleepTarget: 7.5,
 });
@@ -175,8 +177,9 @@ export default function ProgressionScoreWidget({
   const sleepPct = Number.isFinite(Number(b.sleepPct))
     ? Math.round(Number(b.sleepPct))
     : pillarPctFromScore(b.sleepScore);
-  const workoutSessions = Math.max(0, Math.round(Number(b.workoutSessions) || 0));
-  const workoutTarget = Math.max(1, Math.round(Number(b.workoutTarget) || 8));
+  const averageStimulus = Number.isFinite(Number(b.averageStimulus))
+    ? Math.round(Number(b.averageStimulus))
+    : trainingPct;
   const sleepAvg = Number.isFinite(Number(b.sleepAvg)) && Number(b.sleepAvg) > 0
     ? Number(b.sleepAvg)
     : null;
@@ -358,7 +361,7 @@ export default function ProgressionScoreWidget({
                 <span className="min-w-0 text-right tabular-nums text-slate-100">
                   <span className="font-semibold text-slate-50">{trainingPct}%</span>
                   <span className="ml-1.5 text-slate-500">
-                    ({workoutSessions} / {workoutTarget} completate)
+                    (stimolo {averageStimulus}%)
                   </span>
                 </span>
               </button>

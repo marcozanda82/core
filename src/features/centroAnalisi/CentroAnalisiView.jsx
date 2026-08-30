@@ -109,6 +109,7 @@ export default function CentroAnalisiView({
       activeLog,
       userTargets,
       todayDate,
+      fourCylinder,
     } = centroAnalisiStore || {};
     const scoreDate = String(preview.scoreDate || todayDate || getTodayString()).slice(0, 10);
     const todayLiveLog = selectTodayLog(fullHistory, scoreDate, activeLog, scoreDate === getTodayString());
@@ -126,6 +127,12 @@ export default function CentroAnalisiView({
         workoutSessionsTotal: logs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog: todayLiveLog,
+        activeDate: scoreDate,
+      },
     );
   }, [centroAnalisiStore, preview.scoreDate]);
 

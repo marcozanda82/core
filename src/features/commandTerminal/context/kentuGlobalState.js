@@ -47,7 +47,7 @@ function buildAvatarSymbiosisBlock(healthScore) {
   const score = Math.round(Number(healthScore.score) || 0);
   let symbiosisMode = 'steady_team_progress';
   if (score >= 75) symbiosisMode = 'high_energy_celebrate_together';
-  else if (score < 50) symbiosisMode = 'low_energy_ask_user_help';
+  else if (score < 40) symbiosisMode = 'low_energy_ask_user_help';
 
   return {
     score,
@@ -561,6 +561,11 @@ export function buildKentuGlobalStateObject(
       fullHistory: diaryState?.fullHistory || nutritionState?.fullHistory,
       activeDate: diaryState?.activeDate || nutritionState?.activeDate,
     }),
+    Training_Context: {
+      calendarRole: 'organizational_reminder_only',
+      calendarRule: TRAINING_CALENDAR_AI_RULE,
+      evaluateUsing: 'Muscular_Cylinders',
+    },
     Cardio_Cylinder: {
       window: 'rolling_7_days_168h',
       pureCardioMinutes: cardio.pureCardioMinutes,
@@ -739,6 +744,13 @@ export function buildKentuGlobalStateFromAppState(currentState = {}, options = {
   };
 }
 
+/** Calendario = promemoria organizzativo. Lo score fisico legge solo la telemetria. */
+export const TRAINING_CALENDAR_AI_RULE = [
+  'REGOLA ALLENAMENTO: Il calendario degli allenamenti dell\'utente ha funzione di puro promemoria organizzativo.',
+  'Non giudicare e non fare commenti sull\'aderenza al calendario (es. \'hai saltato un allenamento\').',
+  'Valuta lo stato fisico dell\'utente ESCLUSIVAMENTE basandoti sui dati della Telemetria Muscolare (stimolo biologico reale accumulato).',
+].join(' ');
+
 /** Intestazione richiesta per l'iniezione nel system_instruction. */
 export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
   '',
@@ -748,6 +760,7 @@ export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
   'Il Monitor Metabolico è la fonte di verità. NON dedurre interruzione digiuno dal Diary_Context o dal log pasti.',
   'Bevande < 10 kcal (caffè amaro, tè, acqua) NON interrompono il digiuno.',
   'REGOLA 0 KCAL (OBBLIGATORIA): Se il pasto ha 0 kcal (es. caffè amaro, tè, acqua; campo kcal:0), IL DIGIUNO NON È INTERROTTO. Non dire che il digiuno è rotto: complimentati per averlo mantenuto.',
+  TRAINING_CALENDAR_AI_RULE,
   'CAFFERIA / COLAZIONE: usa Coffee_Shop_Context.catalog (e favoriteBreakfast per «il solito»). Macro, caffeineMg e isFastingSafe sono ESATTI — VIETATO inventarli.',
   'LONGEVITÀ (leva strategica): leggi longevityContext (score, bottleneck, strategicLever, targetAction / chipLabel).',
   'Se l\'utente chiede cosa fare oggi / come allenarsi / una direzione per la giornata: proponi strategicLever collegandola all\'aumento del punteggio Longevità (motivante, 1-2 frasi).',

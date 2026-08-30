@@ -504,7 +504,7 @@ export default function MetabolicTrendChart({
         ) : null}
       </div>
 
-      {/* Rolling Balance — debito 48h + Autopilota */}
+      {/* Rolling Balance — debito 3 cicli chiusi + Autopilota */}
       <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/50 px-2.5 py-2">
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -528,7 +528,7 @@ export default function MetabolicTrendChart({
               {ghostAutoPilotEnabled ? (
                 <>
                   <span className="mr-1" aria-hidden>{autopilotIcon}</span>
-                  AUTOPILOTA ON: Debito 48h
+                  AUTOPILOTA ON: Debito 3g
                   <span className="ml-1 font-mono tabular-nums text-orange-300">
                     {formatKcal(netDebt)}
                   </span>
@@ -549,12 +549,14 @@ export default function MetabolicTrendChart({
                       </span>
                     </>
                   ) : (
-                    <span className="ml-1 text-slate-500">· in fascia</span>
+                    <span className="ml-1 text-slate-500">
+                      · {autopilotStrategy?.label || 'zona neutra'}
+                    </span>
                   )}
                 </>
               ) : (
                 <>
-                  Debito 48h
+                  Debito 3g
                   <span className="ml-1 font-mono tabular-nums text-orange-300">
                     {formatKcal(netDebt)}
                   </span>
@@ -569,8 +571,8 @@ export default function MetabolicTrendChart({
           ) : (
             <p className="min-w-0 flex-1 text-[10px] text-slate-500">
               {ghostAutoPilotEnabled
-                ? `${autopilotIcon} AUTOPILOTA ON: nessun debito metabolico nelle ultime 48h`
-                : 'Nessun debito metabolico nelle ultime 48h'}
+                ? `${autopilotIcon} AUTOPILOTA ON: nessun debito metabolico oltre la zona neutra (3 cicli chiusi)`
+                : 'Nessun debito metabolico oltre la zona neutra (3 cicli chiusi)'}
             </p>
           )}
         </div>

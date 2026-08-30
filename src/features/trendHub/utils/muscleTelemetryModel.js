@@ -19,6 +19,51 @@ import { getTodayString } from '../../../coreEngine';
 /** Target volume normalizzato (100% = stimolo ottimale nel ciclo). */
 export const MUSCLE_VOLUME_TARGET = 100;
 
+/** Finestra biologica per lo stimolo residuo usato nel Progression Score. */
+export const MUSCLE_STIMULUS_LOOKBACK_DAYS = 7;
+
+/**
+ * Media 0–100 dello stimolo attuale sui 5 distretti (Abs, Petto, Braccia, Gambe, Schiena).
+ * Stesso modello della Telemetria Muscolare (accumulo 7g), non aderenza da calendario.
+ *
+ * @param {{
+ *   fourCylinder?: object | null,
+ *   fullHistory?: object | null,
+ *   activeLog?: Array | null,
+ *   activeDate?: string | null,
+ *   averageStimulus?: number | null,
+ * }} [input]
+ * @returns {number}
+ */
+export function computeAverageMuscleStimulus(input = {}) {
+  const src = input && typeof input === 'object' ? input : {};
+  const rawDirect = src.averageStimulus ?? src.muscleStimulusAvg;
+  if (rawDirect != null && rawDirect !== '') {
+    const direct = Number(rawDirect);
+    if (Number.isFinite(direct)) {
+      return Math.max(0, Math.min(100, direct));
+    }
+  }
+
+  const { muscleRows } = buildMuscleTelemetryRows({
+    fourCylinder: input?.fourCylinder ?? null,
+    fullHistory: input?.fullHistory ?? null,
+    activeLog: input?.activeLog ?? null,
+    activeDate: input?.activeDate ?? input?.todayDate ?? null,
+    historyDays: MUSCLE_STIMULUS_LOOKBACK_DAYS,
+  });
+
+  const byId = new Map(
+    (Array.isArray(muscleRows) ? muscleRows : []).map((row) => [
+      row.id,
+      Math.max(0, Math.min(100, Number(row.pct) || 0)),
+    ]),
+  );
+  const values = MUSCLE_CYLINDER_DEFS.map((cyl) => byId.get(cyl.id) ?? 0);
+  if (values.length === 0) return 0;
+  return values.reduce((sum, n) => sum + n, 0) / values.length;
+}
+
 /**
  * Etichetta triage UI: PRIORITÀ / DA STIMOLARE / IN RECUPERO / OTTIMALE.
  * @param {number} percent0to100

@@ -496,20 +496,28 @@ export function buildProgressionPagellaInsight(
     });
   }
 
-  if (Number(b.trainingPct) >= 75) {
+  if (Number(b.trainingPct) >= 70) {
     strengths.push({
       id: 'training',
       badge: '💪',
       title: 'Volume allenamento',
-      body: 'Stai rispettando il volume previsto: lo stimolo muscolare resta costante.',
+      body: 'Volume ottimale: lo stimolo muscolare è costante e ben distribuito.',
     });
-  } else if (Number(b.trainingPct) < 50) {
+  } else if (Number(b.trainingPct) >= 40) {
     penalties.push({
       id: 'training',
       badge: '🏋️',
-      title: 'Volume sotto target',
-      body: 'Le sessioni completate sono insufficienti rispetto al piano 14 giorni.',
+      title: 'Volume allenamento',
+      body: 'Stimolo parziale: alcuni gruppi muscolari stanno entrando in fase di recupero totale, valuta un richiamo.',
       severity: 'amber',
+    });
+  } else {
+    penalties.push({
+      id: 'training',
+      badge: '⚠️',
+      title: 'Volume allenamento',
+      body: 'Detraining in corso: lo stimolo meccanico è insufficiente per mantenere la sintesi proteica, a prescindere dall\'alimentazione.',
+      severity: 'red',
     });
   }
 

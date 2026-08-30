@@ -48,9 +48,11 @@ function PagellaSection({ title, tone, children }) {
     ? 'text-emerald-300/90'
     : tone === 'warn'
       ? 'text-amber-300/90'
-      : tone === 'info'
-        ? 'text-cyan-300/90'
-        : 'text-slate-400';
+      : tone === 'alarm'
+        ? 'text-rose-300/90'
+        : tone === 'info'
+          ? 'text-cyan-300/90'
+          : 'text-slate-400';
   return (
     <div className="mt-2.5 first:mt-0">
       <p className={`mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] ${titleTone}`}>{title}</p>
@@ -108,27 +110,35 @@ export default function ProgressionePagellaCard({
           </PagellaSection>
         ) : null}
 
-        {insight.penalties.length > 0 ? (
-          <PagellaSection title="Freni da correggere" tone="warn">
-            {insight.penalties.map((item) => (
+        {insight.penalties.filter((item) => item.severity !== 'red').length > 0 ? (
+          <PagellaSection title="Aree di miglioramento" tone="warn">
+            {insight.penalties.filter((item) => item.severity !== 'red').map((item) => (
               <InsightBullet key={item.id} item={item} variant="penalty" />
             ))}
           </PagellaSection>
-        ) : !insight.isDayInProgress ? (
+        ) : null}
+
+        {insight.penalties.filter((item) => item.severity === 'red').length > 0 ? (
+          <PagellaSection title="Aree di Allarme" tone="alarm">
+            {insight.penalties.filter((item) => item.severity === 'red').map((item) => (
+              <InsightBullet key={item.id} item={item} variant="penalty" />
+            ))}
+          </PagellaSection>
+        ) : !insight.isDayInProgress && insight.penalties.length === 0 ? (
           <div className="mt-2.5 rounded-xl border border-emerald-500/20 bg-emerald-950/25 px-3 py-2">
             <p className="text-[12px] font-semibold text-emerald-200">✅ Nessun freno critico oggi</p>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
               I macro sono in linea: mantieni la costanza sul prossimo pasto.
             </p>
           </div>
-        ) : (
+        ) : insight.isDayInProgress && insight.penalties.length === 0 ? (
           <div className="mt-2.5 rounded-xl border border-cyan-500/20 bg-cyan-950/25 px-3 py-2">
             <p className="text-[12px] font-semibold text-cyan-100">ℹ️ Giornata ancora aperta</p>
             <p className="mt-1 text-[11px] leading-relaxed text-slate-300">
               I deficit macro non ancora coperti non sono allarmi finché non chiudi la finestra alimentare.
             </p>
           </div>
-        )}
+        ) : null}
 
         <div className="mt-2.5 rounded-xl border border-violet-500/30 bg-gradient-to-br from-violet-950/45 to-slate-950/60 px-3 py-2.5 shadow-[0_0_20px_rgba(139,92,246,0.1)]">
           <p className="text-[12px] font-semibold leading-snug text-violet-100">

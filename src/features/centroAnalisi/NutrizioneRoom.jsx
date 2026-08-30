@@ -93,6 +93,7 @@ export default function NutrizioneRoom({ store }) {
     fullHistory,
     userTargets,
     todayDate,
+    fourCylinder,
   } = store || {};
 
   const todayTotals = useMemo(
@@ -147,8 +148,14 @@ export default function NutrizioneRoom({ store }) {
         workoutSessionsTotal: windowLogs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog,
+        activeDate: todayDate,
+      },
     ),
-    [windowLogs, userTargets],
+    [windowLogs, userTargets, fourCylinder, fullHistory, activeLog, todayDate],
   );
 
   const adherence = useMemo(() => {

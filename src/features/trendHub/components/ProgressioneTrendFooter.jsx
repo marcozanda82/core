@@ -14,13 +14,14 @@ function TrendCard({ label, value, unit = '%', sub }) {
       value={display}
       unit={unit}
       trend={trend}
-      invertTrendColors={false}
+      invertTrendColors={true}
     />
   );
 }
 
 /**
  * L4 — Trend 7G/14G e aderenza storica (compatto).
+ * Allenamento = media stimolo telemetria 7g, non completamento del calendario.
  */
 export default function ProgressioneTrendFooter({
   adherence7d = null,
@@ -40,7 +41,7 @@ export default function ProgressioneTrendFooter({
       <div className="grid grid-cols-2 gap-1.5">
         <TrendCard label="Aderenza 7G" value={adherence7d} sub="media macro" />
         <TrendCard label="Aderenza 14G" value={adherence14d} sub="finestra" />
-        <TrendCard label="Allenamento" value={trainingPct} />
+        <TrendCard label="Stimolo muscolare" value={trainingPct} />
         <TrendCard label="Sonno" value={sleepPct} />
       </div>
       <p className="m-0 mt-2 text-center text-[10px] text-slate-500">

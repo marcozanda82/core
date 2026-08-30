@@ -193,15 +193,13 @@ const SESSION_DELETE_BTN_CLASS =
 
 /**
  * @param {Array<{ session?: object | null }>} weekDays
- * @returns {{ completed: number, total: number }}
+ * @returns {{ total: number }}
  */
 function computeWeekSessionStats(weekDays) {
   const sessions = (Array.isArray(weekDays) ? weekDays : [])
     .map((slot) => slot?.session)
     .filter(Boolean);
-  const total = sessions.length;
-  const completed = sessions.filter((s) => isTrainingSessionCompleted(s)).length;
-  return { completed, total };
+  return { total: sessions.length };
 }
 
 /**
@@ -896,14 +894,8 @@ export default function TrainingBlockCreator({
                     {group.label}
                   </h3>
                   {weekStats.total > 0 ? (
-                    <span className={[
-                      'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold',
-                      weekStats.completed >= weekStats.total
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-                        : 'border-violet-500/25 bg-violet-500/10 text-violet-200',
-                    ].join(' ')}
-                    >
-                      {`${weekStats.completed}/${weekStats.total} completate`}
+                    <span className="shrink-0 rounded-full border border-slate-600/40 bg-slate-800/50 px-2 py-0.5 text-[10px] font-semibold text-slate-300">
+                      {`${weekStats.total} in agenda`}
                     </span>
                   ) : null}
                 </div>
@@ -912,17 +904,20 @@ export default function TrainingBlockCreator({
                     const day = slot.session;
                     if (day) {
                       const done = isTrainingSessionCompleted(day);
+                      const isPastOpen = Boolean(slot.isPast) && !done;
                       const muscleLabels = formatMuscleLabels(day.muscles || []);
                       return (
                         <div
                           key={slot.date}
                           className={[
-                            'flex items-start gap-2 rounded-xl border border-slate-700/60 border-l-4 p-2.5',
+                            'flex items-start gap-2 rounded-xl border p-2.5',
                             done
-                              ? 'border-l-emerald-400 bg-slate-900/80'
-                              : 'border-l-violet-400 bg-slate-900/80',
-                            slot.isToday && !done ? 'ring-1 ring-violet-400/25' : '',
-                            slot.isToday && done ? 'ring-1 ring-emerald-400/20' : '',
+                              ? 'border-slate-700/60 border-l-4 border-l-emerald-400 bg-slate-900/80'
+                              : isPastOpen
+                                ? 'border-slate-800/70 bg-slate-900/40'
+                                : slot.isToday
+                                  ? 'border-slate-700/60 border-l-4 border-l-cyan-400 bg-slate-900/80 ring-1 ring-cyan-400/20'
+                                  : 'border-slate-700/60 border-l-4 border-l-slate-500 bg-slate-900/70',
                           ].join(' ')}
                         >
                           <label
@@ -949,17 +944,21 @@ export default function TrainingBlockCreator({
                             ].join(' ')}
                             >
                               {slot.label}
-                              {slot.isToday ? ' · Oggi' : ''}
+                              {slot.isToday ? ' · Oggi · Promemoria' : ''}
                             </p>
-                            <p className="m-0 truncate text-sm font-semibold text-white">
-                              {!done ? '🏋️ ' : ''}
+                            <p className={[
+                              'm-0 truncate text-sm font-semibold',
+                              isPastOpen ? 'text-slate-400' : 'text-white',
+                            ].join(' ')}
+                            >
+                              {slot.isToday && !done ? '🗓️ ' : ''}
                               {day.title}
                             </p>
                             <p className="m-0 text-[11px] text-slate-400">
                               {dayTypeLabel(day.type)}
                               {` · ${formatDayTime(day.plannedTime)}`}
                               {day.durationMin ? ` · ${Math.round(Number(day.durationMin))}′` : ''}
-                              {done ? ' · Eseguito' : ''}
+                              {done ? ' · Eseguito' : (slot.isToday ? ' · Pianificato' : '')}
                             </p>
                             {muscleLabels.length > 0 ? (
                               <div className="mt-1.5 flex flex-wrap gap-1">
@@ -970,7 +969,9 @@ export default function TrainingBlockCreator({
                                       'rounded border px-2 py-0.5 text-[11px]',
                                       done
                                         ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                                        : 'border-violet-500/20 bg-violet-500/10 text-violet-300',
+                                        : isPastOpen
+                                          ? 'border-slate-600/30 bg-slate-800/40 text-slate-400'
+                                          : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-300',
                                     ].join(' ')}
                                   >
                                     {label}

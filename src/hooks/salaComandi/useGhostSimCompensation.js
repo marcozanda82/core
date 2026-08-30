@@ -1,13 +1,14 @@
 /**
- * Ghost Car What-If + Rolling Balance (autopilota debito 48h).
+ * Ghost Car What-If + Rolling Balance (autopilota: 3 cicli chiusi, deadband 5%, cap 11%).
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ref, update } from 'firebase/database';
 import {
   getTodayString,
   normalizeCalorieStrategyTarget,
   CALORIE_STRATEGY_KCAL_DELTA,
+  TRACKER_STORICO_KEY,
 } from '../../coreEngine';
 import {
   normalizeGhostSimGoal,
@@ -21,6 +22,7 @@ import {
   normalizeGhostAutoPilotEnabled,
   readGhostAutoPilotFromLocalStorage,
   writeGhostAutoPilotToLocalStorage,
+  readAutopilotCorrectionForDate,
 } from '../../utils/rollingCalorieBank';
 
 /** Chiavi LS globali — indipendenti dal giorno visualizzato nel tracker. */
@@ -79,7 +81,9 @@ function writeGhostSimLocalStorage(strategy, delta) {
  *   kentuDailyCalorieStrategy?: string,
  *   setKentuDailyCalorieStrategy?: (v: string) => void,
  *   fullHistory?: object|null,
+ *   setFullHistory?: (updater: any) => void,
  *   settingsBaseKcal?: number|null,
+ *   isSimulationMode?: boolean,
  * }} params
  */
 export function useGhostSimCompensation({
@@ -93,7 +97,9 @@ export function useGhostSimCompensation({
   kentuDailyCalorieStrategy = 'pari',
   setKentuDailyCalorieStrategy = null,
   fullHistory = null,
+  setFullHistory = null,
   settingsBaseKcal = null,
+  isSimulationMode = false,
 } = {}) {
   const todayIso = getTodayString();
   const isViewingToday = String(currentTrackerDate || todayIso).slice(0, 10) === todayIso;
@@ -225,11 +231,59 @@ export function useGhostSimCompensation({
     [fullHistory, userTargets, userProfile, baseKcalForBank, todayIso],
   );
 
-  /** Auto-delta applicato al target SOLO se autopilota ON e vista = oggi. */
-  const autoCompensationDelta = useMemo(() => {
-    if (!ghostAutoPilotEnabled || !isViewingToday) return 0;
+  /** Live: solo oggi. Passato: snapshot salvato sul nodo giorno (fallback 0). */
+  const liveAutoCompensationDelta = useMemo(() => {
+    if (!ghostAutoPilotEnabled) return 0;
     return Math.round(Number(rollingDebt.autoCompensationDelta) || 0);
-  }, [ghostAutoPilotEnabled, isViewingToday, rollingDebt.autoCompensationDelta]);
+  }, [ghostAutoPilotEnabled, rollingDebt.autoCompensationDelta]);
+
+  const storedAutopilotCorrection = useMemo(
+    () => readAutopilotCorrectionForDate(fullHistory, currentTrackerDate || todayIso),
+    [fullHistory, currentTrackerDate, todayIso],
+  );
+
+  const autoCompensationDelta = useMemo(() => {
+    if (isViewingToday) return liveAutoCompensationDelta;
+    return storedAutopilotCorrection;
+  }, [isViewingToday, liveAutoCompensationDelta, storedAutopilotCorrection]);
+
+  const lastPersistedAutopilotRef = useRef(null);
+  const liveAutopilotCorrectionRef = useRef(0);
+  liveAutopilotCorrectionRef.current = liveAutoCompensationDelta;
+  useEffect(() => {
+    if (!isViewingToday || isSimulationMode) return;
+    const value = liveAutoCompensationDelta;
+    const stamp = `${todayIso}:${value}`;
+    if (lastPersistedAutopilotRef.current === stamp) return;
+    lastPersistedAutopilotRef.current = stamp;
+
+    const storicoKey = TRACKER_STORICO_KEY(todayIso);
+    setFullHistory?.((prev) => {
+      const node = prev?.[storicoKey] && typeof prev[storicoKey] === 'object'
+        ? prev[storicoKey]
+        : { data: todayIso };
+      if (Math.round(Number(node.autopilotCorrection) || 0) === value
+        && Object.prototype.hasOwnProperty.call(node, 'autopilotCorrection')) {
+        return prev;
+      }
+      return { ...(prev || {}), [storicoKey]: { ...node, autopilotCorrection: value } };
+    });
+
+    const uid = auth?.currentUser?.uid || user?.uid;
+    if (!uid || !db) return;
+    update(ref(db, `users/${uid}/tracker_data/${storicoKey}`), {
+      autopilotCorrection: value,
+    }).catch((err) => console.warn('[Autopilot] snapshot giornaliero non salvato', err));
+  }, [
+    isViewingToday,
+    isSimulationMode,
+    liveAutoCompensationDelta,
+    todayIso,
+    db,
+    user?.uid,
+    auth,
+    setFullHistory,
+  ]);
 
   const effectiveGhostDeltaKcal = useMemo(
     () => Math.round(Number(committedGhostDeltaKcal) || 0) + autoCompensationDelta,
@@ -245,6 +299,7 @@ export function useGhostSimCompensation({
     rollingDebt,
     autoCompensationDelta,
     effectiveGhostDeltaKcal,
+    liveAutopilotCorrectionRef,
     isViewingToday,
   };
 }

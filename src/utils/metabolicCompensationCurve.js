@@ -17,6 +17,7 @@ import {
 import { computeDayEnergySnapshot } from '../features/energyBalance/energyBalanceMath';
 import { resolveTargetConfigForDate } from '../features/salaComandi/engines/bodyMetricsEngine';
 import { dayHasFoodLog, isDayIntentionalFast } from './dayTrackingStatus';
+import { readAutopilotCorrectionFromDayNode } from './rollingCalorieBank';
 
 export const METABOLIC_TREND_WINDOW_DAYS = 7;
 export const GHOST_CORRIDOR_HALF_WIDTH_KCAL = 300;
@@ -413,9 +414,10 @@ export function buildMetabolicCompensationSeries(input = {}) {
       profileFallback,
     );
 
+    const storedAuto = readAutopilotCorrectionFromDayNode(dayNode);
     const snapshot = computeDayEnergySnapshot({
       log,
-      targetKcal: split.targetKcal,
+      targetKcal: split.targetKcal + storedAuto,
       date: dateKey,
       isIntentionalFast: intentional,
     });
@@ -427,7 +429,7 @@ export function buildMetabolicCompensationSeries(input = {}) {
 
     cumReal += actualDelta;
     closedDays += 1;
-    const ghostY = targetManuale;
+    const ghostY = targetManuale + storedAuto;
     const deviation = actualDelta - ghostY;
     const inCorridor = Math.abs(deviation) <= corridor;
 
@@ -438,7 +440,7 @@ export function buildMetabolicCompensationSeries(input = {}) {
       isToday: false,
       isProjection: false,
       baseKcal: split.baseKcal,
-      targetKcal: split.targetKcal,
+      targetKcal: split.targetKcal + storedAuto,
       plannedDelta: ghostY,
       actualDelta,
       intakeKcal: Math.round(Number(snapshot.intakeKcal) || 0),

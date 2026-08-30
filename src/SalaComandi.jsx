@@ -1292,6 +1292,7 @@ export default function SalaComandi() {
     rollingDebt,
     autoCompensationDelta,
     effectiveGhostDeltaKcal,
+    liveAutopilotCorrectionRef,
   } = useGhostSimCompensation({
     currentTrackerDate,
     db,
@@ -1303,7 +1304,9 @@ export default function SalaComandi() {
     kentuDailyCalorieStrategy,
     setKentuDailyCalorieStrategy,
     fullHistory,
+    setFullHistory,
     settingsBaseKcal: Math.round(Number(userProfile?.targetCalories) || 0) || null,
+    isSimulationMode,
   });
 
   /** Persistenza piano Compensazione Esplicita (profilo / Firebase). */
@@ -1478,6 +1481,7 @@ export default function SalaComandi() {
     setWeeklyPlan,
     weeklyPlanningListenerReadyRef,
     weeklyPlanningRemoteSigRef,
+    autopilotCorrectionRef: liveAutopilotCorrectionRef,
   });
 
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
@@ -5016,7 +5020,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [userProfile?.activeCompensation, dogmaticCompensationDateIso],
   );
 
-  /** Rolling Balance: solo oggi + autopilota ON (già filtrato nell'hook). */
+  /** Oggi: calcolo live. Passato: snapshot `autopilotCorrection` sul nodo giorno. */
   const dogmaticAutoCompensationKcal = useMemo(
     () => Math.round(Number(autoCompensationDelta) || 0),
     [autoCompensationDelta],
@@ -5473,6 +5477,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         workoutSessionsTotal: progressionLogs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder: userModel?.fourCylinder ?? null,
+        fullHistory,
+        activeLog: todayLiveLog,
+        activeDate: scoreDate,
+      },
     );
 
     const breakdown = longevityResult?.breakdown || {};
@@ -5540,6 +5550,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     fullHistory,
     activeLog,
     userTargets,
+    userModel,
     unifiedLongevityScore,
     longevityResult,
     metabolicGradientStops,
@@ -6974,6 +6985,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       log: nextLog,
       manualNodes: manualNodesForDay,
       mealTimes,
+      existingDayNode: storico[dayKey] || null,
     });
 
     setFullHistory((prev) => ({ ...(prev || {}), [dayKey]: payload }));

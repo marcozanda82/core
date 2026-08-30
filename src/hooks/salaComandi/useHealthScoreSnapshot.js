@@ -19,7 +19,7 @@ import { calculateHealthScore, detectPrematureFastBreak } from '../../features/h
  *   totali?: object|null,
  *   sweetCoffeeMacros?: { kcal?: number, carb?: number },
  *   coffeeHealthSignals?: { fastingBrokenBySweetCoffee?: boolean, bitterCoffeeDuringFast?: boolean },
- *   hasPlannedBlock?: boolean,
+ *   hasPlannedBlock?: boolean, // ignorato: il calendario non pesa sullo score
  *   hasRealWorkoutInActiveLog?: boolean,
  * }} params
  */
@@ -36,7 +36,7 @@ export function useHealthScoreSnapshot({
   totali = null,
   sweetCoffeeMacros = { kcal: 0, carb: 0 },
   coffeeHealthSignals = {},
-  hasPlannedBlock = false,
+  hasPlannedBlock: _hasPlannedBlock = false,
   hasRealWorkoutInActiveLog = false,
 } = {}) {
   const healthScore = useMemo(() => {
@@ -86,7 +86,7 @@ export function useHealthScoreSnapshot({
         metabolicProgressInPhase: metabolicSnapshot?.progressInPhase ?? null,
         currentHour: new Date().getHours(),
       },
-      Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog),
+      Boolean(hasRealWorkoutInActiveLog),
     );
   }, [
     effectiveTargetsForCurrentDate?.prot,
@@ -112,7 +112,6 @@ export function useHealthScoreSnapshot({
     sweetCoffeeMacros?.carb,
     coffeeHealthSignals?.fastingBrokenBySweetCoffee,
     coffeeHealthSignals?.bitterCoffeeDuringFast,
-    hasPlannedBlock,
     hasRealWorkoutInActiveLog,
   ]);
 

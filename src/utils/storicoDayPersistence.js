@@ -5,6 +5,7 @@ import {
 } from '../coreEngine';
 import { stripUndefined } from './firebasePayloadUtils';
 import { dayHasFoodLog } from './dayTrackingStatus';
+import { withPreservedAutopilotCorrection } from './rollingCalorieBank';
 
 /**
  * Salva il log di un giorno specifico su Firebase (oggi o passato).
@@ -36,14 +37,14 @@ export async function saveDiaryLogForDate({
     intentionalFlag = false;
   }
 
-  const payload = stripUndefined({
+  const payload = stripUndefined(withPreservedAutopilotCorrection({
     data: dateStr,
     log: sanitizedLog,
     mealTimes: mealTimes || {},
     manualNodes: sanitizedNodes,
     hasEditedNodes: true,
     ...(intentionalFlag ? { isIntentionalFast: true } : {}),
-  });
+  }, existingDayNode));
 
   const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
   await set(ref(db, dbPath), payload);
@@ -69,14 +70,14 @@ export async function setDayIntentionalFastFlag({
   const nextFlag = Boolean(value);
 
   if (!existing.log && !existing.data) {
-    const payload = stripUndefined({
+    const payload = stripUndefined(withPreservedAutopilotCorrection({
       data: dateStr,
       log: [],
       mealTimes: {},
       manualNodes: [],
       hasEditedNodes: true,
       ...(nextFlag ? { isIntentionalFast: true } : {}),
-    });
+    }, existing));
     await set(ref(db, dbPath), payload);
     return payload;
   }

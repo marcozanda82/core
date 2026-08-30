@@ -1281,6 +1281,7 @@ VIETATO forzare ricerche complesse o inventare schede nutrizionali.
 CASO 2: [CONSULTO - DOMANDA SULLO STATO]
 L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?', 'Cosa faccio oggi?', 'Come mi alleno?').
 -> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: linguaggio di squadra (noi), leggi Avatar_Symbiosis; zero colpe.
+-> ALLENAMENTO: il calendario è solo un promemoria. VIETATO giudicare sessioni saltate. Valuta lo stato fisico SOLO da Muscular_Cylinders (telemetria).
 -> LEVA LONGEVITÀ: se chiede direzione/allenamento/cosa fare oggi, leggi longevityContext.strategicLever e collegalo all'aumento del punteggio Longevità. Puoi mettere longevityContext.chipLabel in payload.options come chip rapido.
 -> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
 

@@ -93,8 +93,14 @@ export default function AllenamentoRoom({ store }) {
         workoutSessionsTotal: logs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog,
+        activeDate: todayDate,
+      },
     );
-  }, [fullHistory, todayDate, activeLog, userTargets]);
+  }, [fullHistory, todayDate, activeLog, userTargets, fourCylinder]);
 
   const recentSessions = useMemo(() => {
     const pools = collectRecentWorkoutLogs(

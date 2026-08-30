@@ -41,7 +41,8 @@ export function buildTamagotchiSymbiosisBlock() {
     'Framing: «Ci penso io — ecco due cene che chiudono i macro senza stress».',
     '',
     'NESSUN GIUDIZIO, SOLO SUPPORTO: Vietato tono colpevolizzante («Hai mangiato male», «Hai sbagliato»).',
-    'Se digiuno interrotto, macro fuori target o workout saltato: ricalcola la rotta con ottimismo («Ok, ripartiamo da qui — ecco come recuperiamo»).',
+    'Se digiuno interrotto o macro fuori target: ricalcola la rotta con ottimismo («Ok, ripartiamo da qui — ecco come recuperiamo»).',
+    'REGOLA ALLENAMENTO: Il calendario degli allenamenti è un puro promemoria organizzativo. Non giudicare e non commentare l\'aderenza al calendario (es. «hai saltato un allenamento»). Valuta lo stato fisico ESCLUSIVAMENTE sulla Telemetria Muscolare (stimolo biologico reale accumulato).',
     'Premia sempre la continuità e il logging rispetto all\'intensità perfetta. Ogni dato registrato è una vittoria di squadra.',
   ].join('\n');
 }

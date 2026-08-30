@@ -34,7 +34,7 @@ import PulsantieraUniversale from './features/chat/PulsantieraUniversale.jsx';
 import TypingIndicator from './features/chat/TypingIndicator.jsx';
 import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import VitalityAvatarRing from './features/chat/VitalityAvatarRing.jsx';
-import { buildVitalityIndexFromScore } from './features/chat/vitalityIndex.js';
+import { buildVitalityIndexFromScore, readGlobalHealthScore } from './features/chat/vitalityIndex.js';
 import ChatReportCard from './features/chat/ChatReportCard.jsx';
 import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
@@ -203,16 +203,11 @@ export default function AiCluster({
     : 'Health Score';
 
   const vitality = useMemo(
-    () => buildVitalityIndexFromScore(safeHealthScore?.score),
-    [safeHealthScore?.score],
+    () => buildVitalityIndexFromScore(readGlobalHealthScore(safeHealthScore)),
+    [safeHealthScore],
   );
   const vitalitySubtitle = vitality.phrase;
-  const vitalityBandClass =
-    vitality.band === 'full'
-      ? 'text-cyan-400/90'
-      : vitality.band === 'focus'
-        ? 'text-amber-400/90'
-        : 'text-red-400/90';
+  const vitalityBandClass = vitality.textClass;
 
   const chatEndRef = useRef(null);
   const chatFileInputRef = useRef(null);
@@ -1199,8 +1194,7 @@ export default function AiCluster({
               <VitalityAvatarRing
                 score={vitality.score}
                 ringColor={vitality.ringColor}
-                circumference={vitality.circumference}
-                strokeDashoffset={vitality.strokeDashoffset}
+                ringClass={vitality.ringClass}
                 className="h-[90px] w-[90px]"
               >
                 <KentuAvatar

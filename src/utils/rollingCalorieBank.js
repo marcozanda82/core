@@ -1,6 +1,6 @@
 /**
- * Rolling Balance — Banca delle Calorie (debito/surplus metabolico 48h).
- * Autopilota a 3 zone: rientro rapido 48h, protetto 72h, cap max di sicurezza.
+ * Rolling Balance — Banca delle Calorie (finestra mobile 3 cicli chiusi).
+ * Autopilota: deadband 5% TDEE → standby; oltre, rientro a zero con cap 11% TDEE.
  */
 
 import { addDays } from '../calendarDateUtils';
@@ -12,10 +12,13 @@ import {
 import { computeDayEnergySnapshot } from '../features/energyBalance/energyBalanceMath';
 import { dayHasFoodLog, isDayIntentionalFast } from './dayTrackingStatus';
 
-/** Lookback: ieri + avantieri (cicli chiusi). Mai il giorno in corso. */
-export const ROLLING_LOOKBACK_DAYS = 2;
+/** Lookback: ieri, avantieri, 3 giorni fa (cicli chiusi). Mai il giorno in corso. */
+export const ROLLING_LOOKBACK_DAYS = 3;
 
-/** ~10–12% TDEE: tetto die non stressogeno. */
+/** Zona neutra: sotto questa frazione di TDEE l'Autopilota resta in standby. */
+export const AUTOPILOT_DEADBAND_FRACTION = 0.05;
+
+/** Tetto die non stressogeno (~11% TDEE). */
 export const AUTOPILOT_MAX_DAILY_TDEE_FRACTION = 0.11;
 
 /** Fallback TDEE se il profilo non lo espone. */
@@ -67,6 +70,17 @@ export function resolveMaxDailyDelta(tdee) {
 }
 
 /**
+ * Soglia deadband (~5% TDEE): sotto, correzione = 0.
+ * @param {unknown} tdee
+ * @returns {number}
+ */
+export function resolveDeadbandDelta(tdee) {
+  const base = Math.round(Number(tdee) || 0);
+  const safe = base > 0 ? base : AUTOPILOT_TDEE_FALLBACK_KCAL;
+  return Math.max(0, Math.round(safe * AUTOPILOT_DEADBAND_FRACTION));
+}
+
+/**
  * Tetto safety legacy (valore negativo o 0): −min(30% base, 600).
  * @param {number} settingsBaseKcal
  * @returns {number}
@@ -81,12 +95,14 @@ export function resolveRollingAutoCapKcal(settingsBaseKcal) {
 }
 
 /**
- * Strategia Autopilota a 3 zone sul debito/surplus 48h.
+ * Strategia Autopilota: deadband 5% TDEE, poi rientro a zero in 2–3 giorni
+ * con clamp giornaliero ±cap (11% TDEE).
  * dailyCorrection ha il segno del debito; autoCompensationDelta = −dailyCorrection
  * (targetEffettivo = targetManuale − dailyCorrection).
  *
- * @param {unknown} debito48h
+ * @param {unknown} netDebt
  * @param {unknown} maxDailyDelta
+ * @param {unknown} [deadbandDelta]
  * @returns {{
  *   zone: number,
  *   days: number,
@@ -97,52 +113,62 @@ export function resolveRollingAutoCapKcal(settingsBaseKcal) {
  *   strategy: { days: number, label: string, fullRecovery: boolean, icon: string },
  * }}
  */
-export function resolveAutopilotZoneStrategy(debito48h, maxDailyDelta) {
-  const debt = Math.round(Number(debito48h) || 0);
+export function resolveAutopilotZoneStrategy(netDebt, maxDailyDelta, deadbandDelta = 0) {
+  const debt = Math.round(Number(netDebt) || 0);
   const cap = Math.max(0, Math.round(Number(maxDailyDelta) || 0));
+  const deadband = Math.max(0, Math.round(Number(deadbandDelta) || 0));
   const absDebt = Math.abs(debt);
 
-  if (absDebt === 0 || cap <= 0) {
-    return {
-      zone: AUTOPILOT_ZONE.NONE,
+  const standby = () => ({
+    zone: AUTOPILOT_ZONE.NONE,
+    days: 0,
+    dailyCorrection: 0,
+    autoCompensationDelta: 0,
+    fullRecovery: true,
+    remainingDebtAfterCap: 0,
+    strategy: {
       days: 0,
-      dailyCorrection: 0,
-      autoCompensationDelta: 0,
+      label: 'Zona neutra · standby (≤5% TDEE)',
       fullRecovery: true,
-      remainingDebtAfterCap: 0,
-      strategy: {
-        days: 0,
-        label: 'In fascia',
-        fullRecovery: true,
-        icon: '🛡️',
-      },
-    };
+      icon: '🛡️',
+    },
+  });
+
+  if (cap <= 0 || absDebt <= deadband) {
+    return standby();
   }
 
+  const signed = (absDaily) => (debt > 0 ? absDaily : -absDaily);
   let zone = AUTOPILOT_ZONE.CAP_MAX;
-  let dailyCorrection = debt > 0 ? cap : -cap;
+  let days = 3;
+  let dailyCorrection = signed(cap);
   let strategy = {
     days: 3,
-    label: 'Rientro controllato al tetto di sicurezza',
+    label: 'Rientro a zero al tetto di sicurezza',
     fullRecovery: false,
     icon: '🛡️',
   };
 
-  if (absDebt <= cap * 2) {
+  const half = Math.abs(Math.round(debt / 2));
+  const third = Math.abs(Math.round(debt / 3));
+
+  if (half > 0 && half <= cap) {
     zone = AUTOPILOT_ZONE.FAST_48H;
-    dailyCorrection = Math.round(debt / 2);
+    days = 2;
+    dailyCorrection = signed(half);
     strategy = {
       days: 2,
-      label: 'Rientro rapido (48h)',
+      label: 'Rientro a zero (48h)',
       fullRecovery: true,
       icon: '⚡',
     };
-  } else if (absDebt <= cap * 3) {
+  } else if (third > 0 && third <= cap) {
     zone = AUTOPILOT_ZONE.PROTECTED_72H;
-    dailyCorrection = Math.round(debt / 3);
+    days = 3;
+    dailyCorrection = signed(third);
     strategy = {
       days: 3,
-      label: 'Rientro protetto (72h - Anti-stress)',
+      label: 'Rientro a zero (72h)',
       fullRecovery: true,
       icon: '🛡️',
     };
@@ -156,7 +182,7 @@ export function resolveAutopilotZoneStrategy(debito48h, maxDailyDelta) {
 
   return {
     zone,
-    days: strategy.days,
+    days,
     dailyCorrection,
     autoCompensationDelta,
     fullRecovery: strategy.fullRecovery,
@@ -183,7 +209,8 @@ function resolveLookbackOperationalTarget(settingsBaseKcal, userTargets) {
 }
 
 /**
- * Calcola debito 48h (segno: + surplus, − deficit) e strategia Autopilota 3 zone.
+ * Calcola il debito sulla finestra mobile (3 cicli chiusi) e la strategia Autopilota.
+ * `netDebt48h` resta il nome API del saldo netto lookback (ora 3 giorni).
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -200,6 +227,7 @@ function resolveLookbackOperationalTarget(settingsBaseKcal, userTargets) {
  *   netDebt48h: number,
  *   tdee: number,
  *   maxDailyDelta: number,
+ *   deadbandDelta: number,
  *   autoCapKcal: number,
  *   autoCompensationDelta: number,
  *   dailyCorrection: number,
@@ -228,6 +256,7 @@ export function computeRollingCalorieDebt(input = {}) {
     settingsBaseKcal: input.settingsBaseKcal,
   });
   const maxDailyDelta = resolveMaxDailyDelta(tdee);
+  const deadbandDelta = resolveDeadbandDelta(tdee);
   const autoCapKcal = -maxDailyDelta;
 
   /** @type {string[]} */
@@ -270,7 +299,7 @@ export function computeRollingCalorieDebt(input = {}) {
   }
 
   netDebt48h = Math.round(netDebt48h);
-  const zonePlan = resolveAutopilotZoneStrategy(netDebt48h, maxDailyDelta);
+  const zonePlan = resolveAutopilotZoneStrategy(netDebt48h, maxDailyDelta, deadbandDelta);
 
   return {
     asOfDate,
@@ -279,6 +308,7 @@ export function computeRollingCalorieDebt(input = {}) {
     netDebt48h,
     tdee,
     maxDailyDelta,
+    deadbandDelta,
     autoCapKcal,
     autoCompensationDelta: zonePlan.autoCompensationDelta,
     dailyCorrection: zonePlan.dailyCorrection,
@@ -322,6 +352,53 @@ export function writeGhostAutoPilotToLocalStorage(enabled) {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Snapshot immutabile della correzione Autopilota sul nodo diario del giorno.
+ * Fallback 0 se il campo non esiste (giorni pre-migrazione).
+ * @param {unknown} raw
+ * @returns {number}
+ */
+export function normalizeAutopilotCorrection(raw) {
+  if (raw == null || raw === '') return 0;
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * @param {object | null | undefined} dayNode
+ * @returns {number}
+ */
+export function readAutopilotCorrectionFromDayNode(dayNode) {
+  if (!dayNode || typeof dayNode !== 'object') return 0;
+  if (!Object.prototype.hasOwnProperty.call(dayNode, 'autopilotCorrection')) return 0;
+  return normalizeAutopilotCorrection(dayNode.autopilotCorrection);
+}
+
+/**
+ * @param {object | null | undefined} fullHistory
+ * @param {string | null | undefined} dateIso
+ * @returns {number}
+ */
+export function readAutopilotCorrectionForDate(fullHistory, dateIso) {
+  const dateKey = String(dateIso || '').slice(0, 10);
+  if (!dateKey || !fullHistory || typeof fullHistory !== 'object') return 0;
+  return readAutopilotCorrectionFromDayNode(fullHistory[TRACKER_STORICO_KEY(dateKey)]);
+}
+
+/**
+ * Preserva `autopilotCorrection` nei payload che fanno `set()` sull'intero nodo giorno.
+ * @param {object} payload
+ * @param {object | null | undefined} existingDayNode
+ * @returns {object}
+ */
+export function withPreservedAutopilotCorrection(payload, existingDayNode) {
+  const next = payload && typeof payload === 'object' ? { ...payload } : {};
+  if (Object.prototype.hasOwnProperty.call(existingDayNode || {}, 'autopilotCorrection')) {
+    next.autopilotCorrection = readAutopilotCorrectionFromDayNode(existingDayNode);
+  }
+  return next;
 }
 
 export default computeRollingCalorieDebt;

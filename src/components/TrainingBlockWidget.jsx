@@ -65,7 +65,7 @@ function formatMuscleLabels(muscles) {
  * @returns {string}
  */
 function sessionHeadline(session, plannedTime) {
-  if (!session) return 'Da eseguire';
+  if (!session) return 'Promemoria';
 
   const type = String(session.type || '').trim().toLowerCase();
   const timeStr = Number.isFinite(Number(plannedTime))
@@ -215,8 +215,14 @@ export default function TrainingBlockWidget({
         workoutSessionsTotal: logs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog,
+        activeDate: dayKey,
+      },
     );
-  }, [fullHistory, dayKey, activeLog, userTargets]);
+  }, [fullHistory, dayKey, activeLog, userTargets, fourCylinder]);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -430,8 +436,8 @@ export default function TrainingBlockWidget({
             className="min-w-0 flex-1 border-0 bg-transparent p-0 text-left"
             aria-label="Apri piano allenamento"
           >
-            <p className="truncate text-[10px] font-medium uppercase tracking-wider text-amber-300/80">
-              Da eseguire
+            <p className="truncate text-[10px] font-medium uppercase tracking-wider text-cyan-300/80">
+              Pianificato per oggi
             </p>
             <p
               className="text-base font-bold leading-snug text-cyan-50"

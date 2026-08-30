@@ -332,8 +332,14 @@ export default function SaluteView({
         workoutSessionsTotal: progressionLogs.workoutSessionsTotal,
       },
       userTargets || {},
+      {
+        fourCylinder,
+        fullHistory,
+        activeLog: todayLiveLog,
+        activeDate: todayDate,
+      },
     ),
-    [progressionLogs, userTargets],
+    [progressionLogs, userTargets, fourCylinder, fullHistory, todayLiveLog, todayDate],
   );
 
   const trendSnapshots = useMemo(

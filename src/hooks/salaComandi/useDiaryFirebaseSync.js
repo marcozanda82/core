@@ -9,6 +9,7 @@ import {
 } from '../../utils/longevityBootstrapCache';
 import { stripUndefined } from '../../utils/firebasePayloadUtils';
 import { dayHasFoodLog } from '../../utils/dayTrackingStatus';
+import { withPreservedAutopilotCorrection } from '../../utils/rollingCalorieBank';
 import { scheduleAfterPaint } from '../../utils/scheduleAfterPaint';
 import {
   mergePersonalDbRemoteOverLocal,
@@ -54,6 +55,7 @@ export function useDiaryFirebaseSync({
   setWeeklyPlan,
   weeklyPlanningListenerReadyRef,
   weeklyPlanningRemoteSigRef,
+  autopilotCorrectionRef = null,
 }) {
   const lastLogFromFirebaseRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
@@ -355,14 +357,17 @@ export function useDiaryFirebaseSync({
         const existingNode = fullHistory?.[TRACKER_STORICO_KEY(dateStr)];
         const keepIntentionalFast =
           !dayHasFoodLog(sanitizedLog) && existingNode?.isIntentionalFast === true;
-        const payload = {
+        const payload = withPreservedAutopilotCorrection({
           data: dateStr,
           log: sanitizedLog,
           mealTimes,
           manualNodes: sanitizedNodes,
           hasEditedNodes: true,
           ...(keepIntentionalFast ? { isIntentionalFast: true } : {}),
-        };
+        }, existingNode);
+        if (dateStr === getTodayString() && autopilotCorrectionRef) {
+          payload.autopilotCorrection = Math.round(Number(autopilotCorrectionRef.current) || 0);
+        }
         const sanitized = stripUndefined(payload);
         const storicoKey = TRACKER_STORICO_KEY(dateStr);
 
@@ -390,7 +395,7 @@ export function useDiaryFirebaseSync({
         return Promise.reject(error);
       }
     },
-    [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory],
+    [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory, autopilotCorrectionRef],
   );
 
   return {

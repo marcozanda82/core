@@ -596,7 +596,7 @@ export function hasConfirmedToday(block, todayIso) {
 /**
  * Stato Home SSOT:
  * - nessuna sessione con scheduledDate === oggi → Riposo
- * - sessione, lastCompletedDate !== oggi → Da eseguire
+ * - sessione, lastCompletedDate !== oggi → Promemoria (pianificato)
  * - sessione, lastCompletedDate === oggi → Eseguito
  *
  * @param {TrainingBlock | null | undefined} block
@@ -699,6 +699,7 @@ export function addLocalCalendarDaysIso(iso, deltaDays) {
  *     date: string,
  *     label: string,
  *     isToday: boolean,
+ *     isPast: boolean,
  *     isRest: boolean,
  *     session: object | null,
  *   }>,
@@ -741,7 +742,7 @@ export function buildTrainingBlockCalendarWeeks({
   let guard = 0;
   while (monday && monday <= endMonday && guard < 52) {
     guard += 1;
-    /** @type {Array<{ date: string, label: string, isToday: boolean, isRest: boolean, session: object | null }>} */
+    /** @type {Array<{ date: string, label: string, isToday: boolean, isPast: boolean, isRest: boolean, session: object | null }>} */
     const days = [];
     for (let i = 0; i < 7; i += 1) {
       const date = addLocalCalendarDaysIso(monday, i);
@@ -751,6 +752,7 @@ export function buildTrainingBlockCalendarWeeks({
         date,
         label: formatScheduledDateLabelIt(date),
         isToday: date === today,
+        isPast: date < today,
         isRest: !session,
         session,
       });

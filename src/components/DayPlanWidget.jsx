@@ -91,7 +91,7 @@ export default function DayPlanWidget({ todayPlanBlock, isWorkoutDoneToday, onOp
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-cyan-100">{pendingLabel}</p>
-          <p className="text-[10px] uppercase tracking-wider text-orange-300/80">Da fare · Tocca per azioni</p>
+          <p className="text-[10px] uppercase tracking-wider text-cyan-300/80">Promemoria · Pianificato per oggi</p>
         </div>
       </div>
     </button>

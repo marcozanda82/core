@@ -51,7 +51,7 @@ function resolveTacticalCopy(remainingKcal) {
  *   deltaKcal?: number | null,
  *   compensationKcal?: number | null,
  *   compensationDaysRemaining?: number | null,
- *   autopilotOffset?: number | null,
+ *   autopilotOffset?: number | null — live oggi; snapshot `autopilotCorrection` se data passata,
  *   ghostAutoPilotEnabled?: boolean,
  *   onOpenCalibrazione?: () => void,
  *   targetKcal?: number,
@@ -107,7 +107,7 @@ export default function CalorieDetailsModal({
   const protOver = protTarget > 0 && protNow > protTarget;
   const tactical = resolveTacticalCopy(remainingSigned);
   const hasCompensation = receipt.compensation !== 0;
-  const showAutopilotRow = ghostAutoPilotEnabled === true;
+  const showAutopilotRow = ghostAutoPilotEnabled === true || roundKcal(autopilotOffset) !== 0;
   const autopilotDisplay = receipt.autopilot > 0
     ? `+${receipt.autopilot}`
     : String(receipt.autopilot);

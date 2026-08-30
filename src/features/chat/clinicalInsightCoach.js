@@ -364,7 +364,7 @@ export function formatClinicalInsightContextBlock(pack) {
       ? muscles.cylinders.map((c) => `- ${c.label}: ${c.percent}%`)
       : ['- n/d']),
     '',
-    '## COMPENSAZIONE / DEBITO CALORICO (Rolling 48h · Ghost Car)',
+    '## COMPENSAZIONE / DEBITO CALORICO (Rolling 3g · deadband 5% · Ghost Car)',
     `netDebt48h=${comp.netDebt48h ?? 0} kcal`,
     `autoCompensationDelta=${comp.autoCompensationDelta ?? 0} kcal`,
     `remainingDebtAfterCap=${comp.remainingDebtAfterCap ?? 0} kcal`,
