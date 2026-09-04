@@ -1,7 +1,7 @@
 import { askAI } from './aiService.js';
 
 /** Allineato a callGemini (GEMINI_MODEL server); override via options.model se la CF lo supporta. */
-const VISION_MODEL = 'gemini-3.7-flash';
+const VISION_MODEL = 'gemini-3.8-flash';
 
 const LABEL_VISION_SYSTEM = [
   'Sei un estrattore dati.',
