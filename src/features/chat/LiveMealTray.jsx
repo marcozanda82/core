@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, ChevronRight, Info, Pencil, ScanBarcode, Sparkles, Trash2, Utensils } from 'lucide-react';
+import { ArrowLeftRight, ChevronRight, Info, Pencil, ScanBarcode, Search, Sparkles, Trash2, Utensils } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
@@ -159,11 +159,21 @@ function buildTrayDetailDraftFoods(item) {
   }];
 }
 
+function isUnassociatedTrayItem(item, visualStatus) {
+  const status = visualStatus || resolveMcDriveVisualStatus(item);
+  return status === 'raw'
+    || status === 'pending_enrichment'
+    || status === 'requires_disambiguation'
+    || status === 'processing';
+}
+
 function MealItemActionSheet({
   open = false,
   item = null,
   onClose = null,
+  onChoose = null,
   onEditGrams = null,
+  onRename = null,
   onReplace = null,
   onInspect = null,
   onRemove = null,
@@ -190,6 +200,12 @@ function MealItemActionSheet({
   const kcal = Math.round(Number(item.kcal) || 0);
   const emoji = resolveMealItemDisplayIcon(item, { isDraft: false });
   const qtyLine = `${grams} g${kcal > 0 ? ` • ${kcal} kcal` : ''}`;
+  const visualStatus = resolveMcDriveVisualStatus(item);
+  const unassociated = isUnassociatedTrayItem(item, visualStatus);
+  const canChoose = visualStatus === 'pending_enrichment'
+    || visualStatus === 'requires_disambiguation'
+    || isMcDriveDisambiguationStatus(item);
+  const canInspect = visualStatus === 'resolved' || kcal > 0 || Boolean(item?.foodDbKey);
 
   const run = (handler) => () => {
     onClose?.();
@@ -235,6 +251,18 @@ function MealItemActionSheet({
         <div className="border-t border-white/10 pt-2" />
 
         <div className="flex flex-col gap-1.5 pb-1" role="menu">
+          {canChoose ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[15px] font-medium text-amber-100 transition active:bg-amber-500/15 hover:bg-amber-500/10"
+              onClick={run(onChoose)}
+            >
+              <Search className="h-5 w-5 shrink-0 text-amber-300" aria-hidden />
+              Scegli alimento
+            </button>
+          ) : null}
+
           <button
             type="button"
             role="menuitem"
@@ -245,6 +273,18 @@ function MealItemActionSheet({
             Modifica quantità
           </button>
 
+          {unassociated ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[15px] font-medium text-slate-100 transition active:bg-white/10 hover:bg-white/5"
+              onClick={run(onRename)}
+            >
+              <Pencil className="h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
+              Modifica nome
+            </button>
+          ) : null}
+
           <button
             type="button"
             role="menuitem"
@@ -252,18 +292,20 @@ function MealItemActionSheet({
             onClick={run(onReplace)}
           >
             <ArrowLeftRight className="h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
-            Cambia associazione
+            Sostituisci con alimento DB
           </button>
 
-          <button
-            type="button"
-            role="menuitem"
-            className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[15px] font-medium text-slate-100 transition active:bg-white/10 hover:bg-white/5"
-            onClick={run(onInspect)}
-          >
-            <Info className="h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
-            Scheda Alimento
-          </button>
+          {canInspect ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[15px] font-medium text-slate-100 transition active:bg-white/10 hover:bg-white/5"
+              onClick={run(onInspect)}
+            >
+              <Info className="h-5 w-5 shrink-0 text-cyan-300" aria-hidden />
+              Scheda Alimento
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -321,6 +363,7 @@ function LiveMealTray({
   onAddMore,
   onRemoveItem,
   onUpdateGrams,
+  onUpdateItemName = null,
   onUpdateMealTime = null,
   onApplyAlternative = null,
   onReplaceFromSearch = null,
@@ -345,6 +388,8 @@ function LiveMealTray({
   const hasDisambiguationPending = hasPendingMcDriveEnrichment(items);
   const needsCalculate = hasRaw || hasDisambiguationPending;
   const [editingIndex, setEditingIndex] = useState(null);
+  const [renamingIndex, setRenamingIndex] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
   const [searchIndex, setSearchIndex] = useState(null);
   const [actionSheetIndex, setActionSheetIndex] = useState(null);
   const [inspectIndex, setInspectIndex] = useState(null);
@@ -355,6 +400,7 @@ function LiveMealTray({
   const solverFeedbackTimerRef = useRef(null);
   const solverHighlightTimerRef = useRef(null);
   const lastScannerNonceRef = useRef(0);
+  const skipRenameBlurRef = useRef(false);
   const [addSearchOpen, setAddSearchOpen] = useState(false);
   const [preferManualSearch, setPreferManualSearch] = useState(false);
   const [preferManualBarcode, setPreferManualBarcode] = useState('');
@@ -405,10 +451,10 @@ function LiveMealTray({
   }, [openScannerNonce, openScanner, disabled]);
 
   useEffect(() => {
-    if (editingIndex != null || searchIndex != null || isScannerOpen || inspectIndex != null) {
+    if (editingIndex != null || searchIndex != null || isScannerOpen || inspectIndex != null || renamingIndex != null) {
       setActionSheetIndex(null);
     }
-  }, [editingIndex, searchIndex, isScannerOpen, inspectIndex]);
+  }, [editingIndex, searchIndex, isScannerOpen, inspectIndex, renamingIndex]);
 
   useEffect(() => {
     if (actionSheetIndex == null) return;
@@ -423,6 +469,33 @@ function LiveMealTray({
       setInspectIndex(null);
     }
   }, [inspectIndex, items.length]);
+
+  useEffect(() => {
+    if (renamingIndex == null) return;
+    if (renamingIndex < 0 || renamingIndex >= items.length) {
+      setRenamingIndex(null);
+    }
+  }, [renamingIndex, items.length]);
+
+  const commitItemName = useCallback((index, nextName) => {
+    const cleaned = sanitizeFoodDisplayName(nextName, '');
+    setRenamingIndex(null);
+    setRenameDraft('');
+    if (!cleaned) return;
+    const current = sanitizeFoodDisplayName(
+      items[index]?.foodName || items[index]?.name || '',
+      '',
+    );
+    if (cleaned === current) return;
+    onUpdateItemName?.(index, cleaned);
+  }, [items, onUpdateItemName]);
+
+  const startRename = useCallback((index, currentName) => {
+    setRenameDraft(currentName || '');
+    setRenamingIndex(index);
+    setActionSheetIndex(null);
+    setEditingIndex(null);
+  }, []);
 
   const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
 
@@ -627,6 +700,8 @@ function LiveMealTray({
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
+              const isRenaming = renamingIndex === index && active;
+              const canEditName = active && !disabled && isUnassociatedTrayItem(item, visualStatus);
               const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
 
               const rowStatusClass = highlightSolver
@@ -659,14 +734,10 @@ function LiveMealTray({
                           ? 'text-amber-200'
                           : '';
 
-              const rowClickable = active && !isEditing && !disabled;
+              const rowClickable = active && !isEditing && !isRenaming && !disabled;
 
               const handleRowActivate = () => {
                 if (!rowClickable) return;
-                if (isPending) {
-                  onRequestDisambiguation?.(index);
-                  return;
-                }
                 setActionSheetIndex(index);
               };
 
@@ -699,15 +770,64 @@ function LiveMealTray({
                       item={item}
                       foodName={name}
                     />
-                    <span
-                      className={[
-                        'kentu-meal-tray__name truncate min-w-0 flex-1 text-left',
-                        nameStatusClass,
-                      ].filter(Boolean).join(' ')}
-                      title={name}
-                    >
-                      {name}
-                    </span>
+                    {isRenaming ? (
+                      <input
+                        type="text"
+                        value={renameDraft}
+                        disabled={disabled}
+                        aria-label={`Correggi nome ${name}`}
+                        className="kentu-meal-tray__name min-w-0 flex-1 rounded-md border border-cyan-500/50 bg-slate-900 px-2 py-1 text-sm text-slate-100 outline-none focus:border-cyan-400"
+                        autoFocus
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => setRenameDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            skipRenameBlurRef.current = true;
+                            commitItemName(index, renameDraft);
+                          }
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            skipRenameBlurRef.current = true;
+                            setRenamingIndex(null);
+                            setRenameDraft('');
+                          }
+                        }}
+                        onBlur={() => {
+                          if (skipRenameBlurRef.current) {
+                            skipRenameBlurRef.current = false;
+                            return;
+                          }
+                          commitItemName(index, renameDraft);
+                        }}
+                      />
+                    ) : (
+                      <span
+                        className={[
+                          'kentu-meal-tray__name min-w-0 flex-1 text-left',
+                          canEditName ? 'flex items-center gap-1' : 'truncate',
+                          nameStatusClass,
+                        ].filter(Boolean).join(' ')}
+                        title={name}
+                      >
+                        <span className="min-w-0 truncate">{name}</span>
+                        {canEditName ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-cyan-300/80 transition hover:bg-white/10 hover:text-cyan-200"
+                            aria-label={`Modifica nome ${name}`}
+                            title="Correggi nome"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              startRename(index, name);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" strokeWidth={2} />
+                          </button>
+                        ) : null}
+                      </span>
+                    )}
                     <span
                       className={[
                         'kentu-meal-tray__grams font-mono shrink-0 transition-all duration-300',
@@ -1032,11 +1152,22 @@ function LiveMealTray({
       />
 
       <MealItemActionSheet
-        open={actionSheetIndex != null && editingIndex == null && searchIndex == null && inspectIndex == null && !isScannerOpen}
+        open={actionSheetIndex != null && editingIndex == null && searchIndex == null && inspectIndex == null && renamingIndex == null && !isScannerOpen}
         item={actionSheetIndex != null ? items[actionSheetIndex] : null}
         onClose={() => setActionSheetIndex(null)}
+        onChoose={() => {
+          if (actionSheetIndex != null) onRequestDisambiguation?.(actionSheetIndex);
+        }}
         onEditGrams={() => {
           if (actionSheetIndex != null) setEditingIndex(actionSheetIndex);
+        }}
+        onRename={() => {
+          if (actionSheetIndex == null) return;
+          const target = items[actionSheetIndex];
+          startRename(
+            actionSheetIndex,
+            sanitizeFoodDisplayName(target?.foodName || target?.name || '', ''),
+          );
         }}
         onReplace={() => {
           if (actionSheetIndex != null) setSearchIndex(actionSheetIndex);

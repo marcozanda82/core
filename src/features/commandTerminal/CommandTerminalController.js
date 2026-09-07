@@ -968,6 +968,50 @@ export class CommandTerminalController {
     };
   }
 
+  /**
+   * Corregge il nome parlato di una voce non ancora associata al DB.
+   * @param {number} index
+   * @param {string} foodName
+   */
+  updateMcDriveDraftItemName(index, foodName) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const idx = Math.round(Number(index));
+    if (!Number.isFinite(idx) || idx < 0 || idx >= list.length) {
+      return { ok: false, reason: 'invalid_index', liveMealTray: this.buildMcdriveTrayPayload() };
+    }
+    const nextName = String(foodName || '').trim();
+    if (!nextName) {
+      return { ok: false, reason: 'empty_name', liveMealTray: this.buildMcdriveTrayPayload() };
+    }
+    const prev = list[idx] || {};
+    const status = String(prev.status || '').toLowerCase();
+    const associated = status === 'resolved';
+    const next = [...list];
+    next[idx] = associated
+      ? {
+        ...prev,
+        foodName: nextName,
+        name: nextName,
+      }
+      : {
+        ...prev,
+        foodName: nextName,
+        name: nextName,
+        spokenFoodName: nextName,
+        candidates: [],
+        needsExternalSearch: true,
+      };
+    this.pendingMcDriveDraft = next;
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    this.publishMcdriveTraySync();
+    return {
+      ok: true,
+      liveMealTray: this.buildMcdriveTrayPayload(),
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
   updateMcDriveMealTime(exactTimeStr) {
     const raw = String(exactTimeStr || '').trim();
     if (!raw) return { ok: false, reason: 'empty_time' };
@@ -1056,7 +1100,16 @@ export class CommandTerminalController {
       return { ok: false, reason: 'invalid_search_result', liveMealTray: this.buildMcdriveTrayPayload() };
     }
     const prev = list[idx] || {};
-    const grams = Math.max(1, Math.round(Number(prev.grams) || 100));
+    const prevGrams = Math.max(0, Math.round(Number(prev.grams ?? prev.qta) || 0));
+    const defaultServing = Math.round(Number(
+      searchResult?.servingSize
+      ?? searchResult?.grams
+      ?? searchResult?.row?.servingSize
+      ?? searchResult?.row?.defaultUnitWeight
+      ?? searchResult?.row?.servingGrams
+      ?? 0,
+    ) || 0);
+    const grams = Math.max(1, prevGrams > 0 ? prevGrams : (defaultServing || 100));
     const nextSpokenName = String(
       searchResult?.desc || searchResult?.name || searchResult?.row?.desc || searchResult?.row?.name || '',
     ).trim() || String(prev.foodName || '').trim();

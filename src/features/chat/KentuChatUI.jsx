@@ -38,6 +38,7 @@ export default function KentuChatUI({
   foodDatabase = {},
   kentuItDatabase = {},
   globalFoodDatabase = {},
+  offDb = {},
   fullHistory = {},
   dailyLog = [],
   userTargets = null,
@@ -54,7 +55,9 @@ export default function KentuChatUI({
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
+  onMcDriveUpdateItemName = null,
   onMcDriveAppendSolverItems = null,
+  onMcDriveRequestDisambiguation = null,
   getMcDriveMealTargets = null,
   onWorkoutDraftUpdateMeta,
   onWorkoutDraftUpdateExercise,
@@ -152,6 +155,7 @@ export default function KentuChatUI({
         foodDatabase={foodDatabase}
         kentuItDatabase={kentuItDatabase}
         globalFoodDatabase={globalFoodDatabase}
+        offDb={offDb}
         fullHistory={fullHistory}
         dailyLog={safeDailyLog}
         userTargets={safeUserTargets}
@@ -166,7 +170,9 @@ export default function KentuChatUI({
         onMcDriveUpdateMealTime={onMcDriveUpdateMealTime}
         onMcDriveApplyAlternative={onMcDriveApplyAlternative}
         onMcDriveReplaceFromSearch={onMcDriveReplaceFromSearch}
+        onMcDriveUpdateItemName={onMcDriveUpdateItemName}
         onMcDriveAppendSolverItems={onMcDriveAppendSolverItems}
+        onMcDriveRequestDisambiguation={onMcDriveRequestDisambiguation}
         getMcDriveMealTargets={getMcDriveMealTargets}
         onWorkoutDraftUpdateMeta={onWorkoutDraftUpdateMeta}
         onWorkoutDraftUpdateExercise={onWorkoutDraftUpdateExercise}

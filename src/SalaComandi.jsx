@@ -2560,6 +2560,12 @@ export default function SalaComandi() {
     setWorkoutStrengthDetail,
     workoutMuscles,
     setWorkoutMuscles,
+    workoutGoal,
+    setWorkoutGoal,
+    workoutRpe,
+    setWorkoutRpe,
+    workoutNotes,
+    setWorkoutNotes,
     editingWorkoutId,
     setEditingWorkoutId,
     workoutDurationHours,
@@ -6138,6 +6144,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
+    handleMcDriveUpdateItemName,
     handleMcDriveAppendSolverItems,
     handleMcDriveRequestDisambiguation,
     handleWorkoutDraftUpdateMeta,
@@ -6371,6 +6378,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
       onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
       onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
+      onMcDriveUpdateItemName: handleMcDriveUpdateItemName,
       onMcDriveAppendSolverItems: handleMcDriveAppendSolverItems,
       onMcDriveRequestDisambiguation: handleMcDriveRequestDisambiguation,
       getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
@@ -6423,6 +6431,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
+    handleMcDriveUpdateItemName,
     handleMcDriveAppendSolverItems,
     handleMcDriveRequestDisambiguation,
     getFastLoggerMealTargetsForSlot,
@@ -7775,6 +7784,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 dismissPostWorkoutReview();
                 return;
               }
+              setEditingWorkoutId(null);
+              setWorkoutGoal('');
+              setWorkoutRpe(null);
+              setWorkoutNotes('');
               clearWorkoutPlanDraft();
               if (returnToChatAfterQuickActionRef.current) {
                 closeWorkoutSurface();
@@ -7809,6 +7822,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             setWorkoutStrengthDetail={setWorkoutStrengthDetail}
             workoutKcal={workoutKcal}
             setWorkoutKcal={setWorkoutKcal}
+            workoutGoal={workoutGoal}
+            setWorkoutGoal={setWorkoutGoal}
+            workoutRpe={workoutRpe}
+            setWorkoutRpe={setWorkoutRpe}
+            workoutNotes={workoutNotes}
+            setWorkoutNotes={setWorkoutNotes}
             handleSaveWorkout={handleSaveWorkout}
             workoutsLog={workoutsLog}
             removeLogItem={removeLogItem}
@@ -7966,6 +7985,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onMcDriveUpdateMealTime={handleMcDriveUpdateMealTime}
             onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
             onMcDriveReplaceFromSearch={handleMcDriveReplaceFromSearch}
+            onMcDriveUpdateItemName={handleMcDriveUpdateItemName}
             onMcDriveAppendSolverItems={handleMcDriveAppendSolverItems}
             onMcDriveRequestDisambiguation={handleMcDriveRequestDisambiguation}
             getMcDriveMealTargets={getFastLoggerMealTargetsForSlot}
@@ -8190,6 +8210,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setWorkoutEndTime(Math.min(24, hour + 0.5));
           setWorkoutDurationMin('45');
           setWorkoutStrengthDetail('');
+          setWorkoutGoal('');
+          setWorkoutRpe(null);
+          setWorkoutNotes('');
           setActiveAction('allenamento');
           setIsDrawerOpen(true);
         }}

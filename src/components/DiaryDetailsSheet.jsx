@@ -727,13 +727,23 @@ export default function DiaryDetailsSheet({
                     const rowKey = resolveWorkoutRowKey(workout, index);
                     const menuOpensUp = rowKey === lastScrollItemKey
                       || index === workoutEntries.length - 1;
+                    const canEditSession = Boolean(workout?.id) && typeof onEditWorkout === 'function';
                     return (
                       <li
                         key={workoutId}
                         className={`diary-details-food-row diary-details-food-row--workout${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
                       >
                         <div className="diary-details-food-row__stack">
-                          <div className="diary-details-food-row__main">
+                          <button
+                            type="button"
+                            className="diary-details-food-row__main diary-details-food-row__main--clickable"
+                            disabled={!canEditSession}
+                            title={canEditSession ? `Modifica ${name}` : undefined}
+                            aria-label={canEditSession ? `Modifica sessione ${name}` : undefined}
+                            onClick={() => {
+                              if (canEditSession) onEditWorkout(workout);
+                            }}
+                          >
                             <span className="diary-details-food-row__name" title={name}>
                               {name}
                               {timeLabel ? (
@@ -746,7 +756,7 @@ export default function DiaryDetailsSheet({
                             <span className="diary-details-food-row__kcal diary-details-food-row__kcal--burn">
                               {formatBurnedKcal(burnedKcal)}
                             </span>
-                          </div>
+                          </button>
 
                           <WorkoutQuestionnaireForm
                             workout={workout}

@@ -132,6 +132,7 @@ export default function AiCluster({
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
   onMcDriveReplaceFromSearch = null,
+  onMcDriveUpdateItemName = null,
   onMcDriveAppendSolverItems = null,
   onMcDriveRequestDisambiguation = null,
   getMcDriveMealTargets = null,
@@ -1833,6 +1834,7 @@ export default function AiCluster({
               getMealTargets={getMcDriveMealTargets}
               onRemoveItem={onMcDriveRemoveItem}
               onUpdateGrams={onMcDriveUpdateGrams}
+              onUpdateItemName={onMcDriveUpdateItemName}
               onUpdateMealTime={onMcDriveUpdateMealTime}
               onApplyAlternative={onMcDriveApplyAlternative}
               onReplaceFromSearch={onMcDriveReplaceFromSearch}

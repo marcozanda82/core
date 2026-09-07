@@ -2085,6 +2085,15 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  const handleMcDriveUpdateItemName = useCallback((index, foodName) => {
+    if (typeof controller.updateMcDriveDraftItemName !== 'function') {
+      return { ok: false, reason: 'mcdrive_rename_unavailable' };
+    }
+    const result = controller.updateMcDriveDraftItemName(index, foodName);
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat]);
+
   const handleMcDriveUpdateMealTime = useCallback((exactTime) => {
     if (typeof controller.updateMcDriveMealTime !== 'function') {
       return { ok: false, reason: 'mcdrive_time_unavailable' };
@@ -2182,6 +2191,7 @@ export function useCommandTerminal({
     handleSaveNewFoodEntry,
     handleMcDriveRemoveItem,
     handleMcDriveUpdateGrams,
+    handleMcDriveUpdateItemName,
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,

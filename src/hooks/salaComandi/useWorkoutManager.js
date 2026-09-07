@@ -105,6 +105,9 @@ export function useWorkoutManager({
   const [workoutDurationMin, setWorkoutDurationMin] = useState(String(WORKOUT_DURATION_DEFAULT));
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
   const [workoutMuscles, setWorkoutMuscles] = useState([]);
+  const [workoutGoal, setWorkoutGoal] = useState('');
+  const [workoutRpe, setWorkoutRpe] = useState(/** @type {number | null} */ (null));
+  const [workoutNotes, setWorkoutNotes] = useState('');
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
   /** Dopo conferma sessione: scheda revisione carichi/ripetizioni senza chiudere il drawer. */
   const [postWorkoutReviewActive, setPostWorkoutReviewActive] = useState(false);
@@ -160,6 +163,9 @@ export function useWorkoutManager({
     setWorkoutKcal(Number(draft.workoutKcal) || 300);
     setWorkoutDurationMin(String(durationMin));
     setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
+    setWorkoutGoal('');
+    setWorkoutRpe(null);
+    setWorkoutNotes('');
     setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
     setWorkoutPlanDraft(draft);
     setIsPlanActionSheetOpen(false);
@@ -201,6 +207,9 @@ export function useWorkoutManager({
       setWorkoutKcal(Number(draft.workoutKcal) || 300);
       setWorkoutDurationMin(String(durationMin));
       setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
+      setWorkoutGoal('');
+      setWorkoutRpe(null);
+      setWorkoutNotes('');
       setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
       setWorkoutPlanDraft({ trainingBlockExecute: true, sessionTitle: session?.title || null });
       setIsPlanActionSheetOpen(false);
@@ -243,6 +252,21 @@ export function useWorkoutManager({
       setWorkoutKcal(Number(workout.kcal || workout.cal) || 300);
       setWorkoutStrengthDetail(String(workout.workoutDetailNote || '').trim());
       setWorkoutMuscles(resolveWorkoutMusclesForForm(workout));
+      setWorkoutGoal(String(
+        workout.trainingGoal || workout.workoutGoal || workout.questionnaire?.goal || '',
+      ).trim());
+      {
+        const rpeRaw = Number(workout.rpe ?? workout.questionnaire?.rpe);
+        setWorkoutRpe(
+          Number.isFinite(rpeRaw) && rpeRaw >= 1 && rpeRaw <= 10 ? Math.round(rpeRaw) : null,
+        );
+      }
+      setWorkoutNotes(String(
+        workout.progressionNote
+        ?? workout.note
+        ?? workout.questionnaire?.notes
+        ?? '',
+      ).trim());
       setWorkoutPlanDraft(null);
       setShowDiarySheet(false);
       setActiveAction('allenamento');
@@ -273,6 +297,9 @@ export function useWorkoutManager({
     setWorkoutType(tab);
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
+    setWorkoutGoal('');
+    setWorkoutRpe(null);
+    setWorkoutNotes('');
     setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
     setWorkoutKcal(300);
   }, []);
@@ -282,6 +309,9 @@ export function useWorkoutManager({
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
     setWorkoutStrengthDetail('');
+    setWorkoutGoal('');
+    setWorkoutRpe(null);
+    setWorkoutNotes('');
     setWorkoutPlanDraft(null);
     endWorkoutSurface();
   }, [endWorkoutSurface]);
@@ -438,6 +468,25 @@ export function useWorkoutManager({
         ? Math.round(getCognitiveMetForActivity(workoutType) * 70 * duration)
         : workoutKcal;
       const iconNode = isCognitive ? (def?.icon || '📚') : isWork ? '💼' : def?.icon || '🏋️';
+      const goalTrim = String(workoutGoal || '').trim();
+      const notesTrim = String(workoutNotes || '').trim();
+      const rpeNum = Number(workoutRpe);
+      const rpeValid = Number.isFinite(rpeNum) && rpeNum >= 1 && rpeNum <= 10;
+      const questionnairePatch = (isWork || isCognitive)
+        ? {}
+        : {
+          trainingGoal: goalTrim,
+          workoutGoal: goalTrim,
+          progressionNote: notesTrim,
+          note: notesTrim,
+          details: notesTrim,
+          ...(rpeValid ? { rpe: Math.round(rpeNum) } : {}),
+          questionnaire: {
+            goal: goalTrim || null,
+            rpe: rpeValid ? Math.round(rpeNum) : null,
+            notes: notesTrim,
+          },
+        };
       const nodeData = {
         id: finalId,
         type: isCognitive ? 'cognitive' : isWork ? 'work' : 'workout',
@@ -463,6 +512,7 @@ export function useWorkoutManager({
         mealTime: Number(startDec),
         muscles: musclesCanon,
         ...(detailTrim ? { workoutDetailNote: detailTrim } : {}),
+        ...questionnairePatch,
       };
 
       const baseLog = dailyLog || [];
@@ -514,6 +564,9 @@ export function useWorkoutManager({
           setEditingWorkoutId(null);
           setWorkoutMuscles([]);
           setWorkoutStrengthDetail('');
+          setWorkoutGoal('');
+          setWorkoutRpe(null);
+          setWorkoutNotes('');
           endWorkoutSurface();
           return;
         }
@@ -522,6 +575,9 @@ export function useWorkoutManager({
           setEditingWorkoutId(null);
           setWorkoutMuscles([]);
           setWorkoutStrengthDetail('');
+          setWorkoutGoal('');
+          setWorkoutRpe(null);
+          setWorkoutNotes('');
           endWorkoutSurface();
           return;
         }
@@ -533,6 +589,9 @@ export function useWorkoutManager({
         setEditingWorkoutId(null);
         setWorkoutMuscles([]);
         setWorkoutStrengthDetail('');
+        setWorkoutGoal('');
+        setWorkoutRpe(null);
+        setWorkoutNotes('');
         endWorkoutSurface();
       };
 
@@ -636,6 +695,9 @@ export function useWorkoutManager({
     postWorkoutReviewActive,
     workoutMuscles,
     workoutKcal,
+    workoutGoal,
+    workoutRpe,
+    workoutNotes,
     isSimulationMode,
     setSimulatedLog,
     dailyLog,
@@ -824,6 +886,12 @@ export function useWorkoutManager({
     setWorkoutStrengthDetail,
     workoutMuscles,
     setWorkoutMuscles,
+    workoutGoal,
+    setWorkoutGoal,
+    workoutRpe,
+    setWorkoutRpe,
+    workoutNotes,
+    setWorkoutNotes,
     editingWorkoutId,
     setEditingWorkoutId,
     workoutDurationHours,

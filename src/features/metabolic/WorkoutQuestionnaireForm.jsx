@@ -13,10 +13,11 @@ export const TRAINING_GOALS = [
  * @param {{
  *   workout: Record<string, unknown>,
  *   onSave?: (workoutId: string, patch: Record<string, unknown>) => void,
+ *   allowDraft?: boolean,
  * }} props
  */
-export function WorkoutQuestionnaireForm({ workout, onSave }) {
-  const workoutId = workout?.id != null ? String(workout.id) : '';
+export function WorkoutQuestionnaireForm({ workout, onSave, allowDraft = false }) {
+  const workoutId = workout?.id != null ? String(workout.id) : (allowDraft ? 'draft' : '');
   const [goal, setGoal] = useState(() => String(workout?.trainingGoal || workout?.workoutGoal || '').trim());
   const [rpe, setRpe] = useState(() => {
     const n = Number(workout?.rpe);

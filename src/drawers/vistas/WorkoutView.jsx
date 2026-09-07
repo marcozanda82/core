@@ -19,6 +19,7 @@ import {
   peekActivitySheetTempTab,
   clearActivitySheetTempTab,
 } from '../../activityCatalog';
+import { WorkoutQuestionnaireForm } from '../../features/metabolic/WorkoutQuestionnaireForm';
 
 /**
  * @typedef {object} PlannerComboHistoryEntry
@@ -392,9 +393,15 @@ export default function WorkoutView({
   setWorkoutStrengthDetail: setWorkoutStrengthDetailProp,
   workoutKcal: workoutKcalProp,
   setWorkoutKcal: setWorkoutKcalProp,
+  workoutGoal = '',
+  setWorkoutGoal = null,
+  workoutRpe = null,
+  setWorkoutRpe = null,
+  workoutNotes = '',
+  setWorkoutNotes = null,
   handleSaveWorkout,
   workoutsLog: _workoutsLog = [],
-  removeLogItem: _removeLogItem,
+  removeLogItem = null,
   postWorkoutReview = false,
   onDismissPostWorkoutReview,
 }) {
@@ -575,6 +582,11 @@ export default function WorkoutView({
 
   const selectorIds = isPlannerMode ? PLANNER_WORKOUT_SELECTOR_IDS : WORKOUT_ACTIVITY_SELECTOR_IDS;
   const isRestDay = workoutType === 'riposo';
+  const activityDef = getWorkoutActivityTypeDef(workoutType);
+  const showTrainingQuestionnaire = !isPlannerMode
+    && !isRestDay
+    && activityDef?.nodeKind !== 'work'
+    && activityDef?.nodeKind !== 'cognitive';
   const isPlanDraftMode = !isPlannerMode && draftFromPlan;
 
   const [trackerPhase, setTrackerPhase] = useState(
@@ -662,6 +674,14 @@ export default function WorkoutView({
     }
   };
 
+  const handleDeleteSession = () => {
+    if (!editingWorkoutId || typeof removeLogItem !== 'function') return;
+    const confirmed = window.confirm('Eliminare questa sessione dal diario?');
+    if (!confirmed) return;
+    removeLogItem(String(editingWorkoutId));
+    if (typeof onBack === 'function') onBack();
+  };
+
   const planDraftLabel = (() => {
     if (!planDraft || typeof planDraft !== 'object') return null;
     if (planDraft.planActionName) return String(planDraft.planActionName);
@@ -691,6 +711,12 @@ export default function WorkoutView({
     color: '#ff6d00',
     border: '1px solid rgba(255, 109, 0, 0.55)',
     boxShadow: 'none',
+  };
+
+  const dangerButtonStyle = {
+    ...secondaryButtonStyle,
+    color: '#fca5a5',
+    border: '1px solid rgba(248, 113, 113, 0.45)',
   };
 
   return (
@@ -1227,6 +1253,35 @@ export default function WorkoutView({
           <span>750</span>
         </div>
       </div>
+      {showTrainingQuestionnaire ? (
+        <div style={{ marginTop: 18 }}>
+          <WorkoutQuestionnaireForm
+            allowDraft
+            workout={{
+              id: editingWorkoutId || 'draft',
+              trainingGoal: workoutGoal,
+              workoutGoal,
+              rpe: workoutRpe,
+              progressionNote: workoutNotes,
+              note: workoutNotes,
+            }}
+            onSave={(_, patch) => {
+              if (typeof setWorkoutGoal === 'function') {
+                setWorkoutGoal(String(patch?.trainingGoal || '').trim());
+              }
+              if (typeof setWorkoutRpe === 'function') {
+                const n = Number(patch?.rpe);
+                setWorkoutRpe(
+                  Number.isFinite(n) && n >= 1 && n <= 10 ? Math.round(n) : null,
+                );
+              }
+              if (typeof setWorkoutNotes === 'function') {
+                setWorkoutNotes(String(patch?.progressionNote ?? patch?.note ?? '').trim());
+              }
+            }}
+          />
+        </div>
+      ) : null}
       </div>
 
       <div
@@ -1263,13 +1318,27 @@ export default function WorkoutView({
             {isSubmitting ? 'SALVATAGGIO…' : 'TERMINA E REGISTRA'}
           </button>
         ) : (
-          <button type="button" onClick={handleSaveClick} style={primaryButtonStyle} disabled={isSubmitting}>
-            {isSubmitting
-              ? 'SALVATAGGIO…'
-              : isPlannerMode
-                ? (plannerSaveLabel || 'APPLICA AZIONE')
-                : 'SALVA ATTIVITÀ'}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button type="button" onClick={handleSaveClick} style={primaryButtonStyle} disabled={isSubmitting}>
+              {isSubmitting
+                ? 'SALVATAGGIO…'
+                : isPlannerMode
+                  ? (plannerSaveLabel || 'APPLICA AZIONE')
+                  : editingWorkoutId
+                    ? 'SALVA MODIFICHE'
+                    : 'SALVA ATTIVITÀ'}
+            </button>
+            {editingWorkoutId && !isPlannerMode && typeof removeLogItem === 'function' ? (
+              <button
+                type="button"
+                onClick={handleDeleteSession}
+                style={dangerButtonStyle}
+                disabled={isSubmitting}
+              >
+                ELIMINA SESSIONE
+              </button>
+            ) : null}
+          </div>
         )}
       </div>
     </div>

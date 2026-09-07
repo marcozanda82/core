@@ -4185,6 +4185,40 @@ html, body, #root {
   flex: 1;
 }
 
+.diary-details-food-row__main--clickable {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diary-details-food-row__main--clickable:hover,
+.diary-details-food-row__main--clickable:focus-visible {
+  background: rgba(251, 146, 60, 0.1);
+}
+
+.diary-details-food-row__main--clickable:focus-visible {
+  outline: 2px solid rgba(251, 146, 60, 0.55);
+  outline-offset: 1px;
+}
+
+.diary-details-food-row__main--clickable:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.diary-details-food-row__main--clickable:disabled:hover,
+.diary-details-food-row__main--clickable:disabled:focus-visible {
+  background: transparent;
+  outline: none;
+}
+
 .diary-details-food-row__name {
   min-width: 0;
   overflow: hidden;
