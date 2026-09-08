@@ -4632,6 +4632,24 @@ html, body, #root {
   font-size: 0.75rem !important;
 }
 
+.diary-fasting-metric-label {
+  margin: 0 0 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.9);
+}
+
+.diary-fasting-duration {
+  margin: 0 0 8px;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #e2e8f0;
+}
+
 .diary-pillar-field {
   display: flex;
   flex-direction: column;

@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getWorkoutActivityLogDescription } from '../activityCatalog';
+import { getTodayString } from '../coreEngine';
 import { KENTU_PILLARS, PILLAR_IDS, pillarColorToRgba } from '../features/metabolic/pillarsMapper';
 import { TRAINING_GOALS, WorkoutQuestionnaireForm } from '../features/metabolic/WorkoutQuestionnaireForm';
-import { buildMetabolicFastingSnapshot } from '../features/salaComandi/utils/metabolicPhaseColors';
 import {
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
+import {
+  computeMaxCompletedFastForDate,
+  formatFastingHoursLabel,
+  formatFastingRangeLabel,
+  MIN_FASTING_INTERVAL_HOURS,
+} from '../utils/fastingDiaryMetrics';
 
 function formatTimeLabel(decimalHour, decimalToTimeStr) {
   if (typeof decimalToTimeStr === 'function') {
@@ -220,14 +226,20 @@ export default function ArchivioStoricoView({
     [dayLog],
   );
 
-  const fastingData = useMemo(() => {
-    if (!selectedHistoryDate || !dayLog.length) return null;
-    return buildMetabolicFastingSnapshot(dayLog, 24, {
-      fullHistory,
-      anchorDate: selectedHistoryDate,
-      referenceDateObj: new Date(`${selectedHistoryDate}T12:00:00`),
-    });
-  }, [dayLog, fullHistory, selectedHistoryDate]);
+  const fastingSummary = useMemo(
+    () => {
+      const now = new Date();
+      return computeMaxCompletedFastForDate({
+        selectedDate: selectedHistoryDate,
+        dayLog,
+        fullHistory,
+        mealTimesObj: selectedDayData?.mealTimes,
+        isToday: selectedHistoryDate === getTodayString(),
+        currentHour: now.getHours() + now.getMinutes() / 60,
+      });
+    },
+    [dayLog, fullHistory, selectedDayData?.mealTimes, selectedHistoryDate],
+  );
 
   const renderNutrition = () => {
     if (!nutritionEntries.length) {
@@ -297,25 +309,28 @@ export default function ArchivioStoricoView({
   };
 
   const renderFasting = () => {
-    const hoursFasted = Math.max(0, Number(fastingData?.hoursFasted) || 0);
-    const durationLabel = fastingData?.timeString
-      || `${Math.floor(hoursFasted)}h ${Math.round((hoursFasted % 1) * 60)}m`;
-    const lastMealHour = 24 - hoursFasted;
-    const startedLabel = hoursFasted > 0.25 && Number.isFinite(lastMealHour)
-      ? formatTimeLabel(((lastMealHour % 24) + 24) % 24, decimalToTimeStr)
-      : null;
+    const hoursFasted = Math.max(0, Number(fastingSummary?.hours) || 0);
+    const durationLabel = formatFastingHoursLabel(hoursFasted);
+    const rangeLabel = formatFastingRangeLabel(
+      fastingSummary,
+      selectedHistoryDate,
+      decimalToTimeStr,
+    );
+    const isInProgress = fastingSummary?.mode === 'in_progress';
+    const hasRelevantFast = hoursFasted >= MIN_FASTING_INTERVAL_HOURS;
 
     return (
       <div className="diary-pillar-card" style={{ borderColor: pillarColorToRgba(KENTU_PILLARS.FASTING.color, 0.4) }}>
         <h3 style={{ color: KENTU_PILLARS.FASTING.color }}>Digiuno del giorno</h3>
-        {hoursFasted < 0.25 ? (
-          <p className="diary-pillar-hint">Nessuna finestra di digiuno rilevante (o dati pasti mancanti).</p>
+        {!hasRelevantFast ? (
+          <p className="diary-pillar-hint">Nessuna finestra di digiuno completata rilevante (o dati pasti mancanti).</p>
         ) : (
           <>
-            {startedLabel ? <p>Iniziato alle <strong>{startedLabel}</strong></p> : null}
-            <p>Durata (a fine giornata) <strong>{durationLabel}</strong></p>
-            {fastingData?.phaseName ? <p>Fase <strong>{fastingData.phaseName}</strong></p> : null}
-            {fastingData?.phaseDesc ? <p className="diary-pillar-hint">{fastingData.phaseDesc}</p> : null}
+            <p className="diary-fasting-metric-label">
+              {isInProgress ? 'Digiuno in corso' : 'Digiuno massimo completato'}
+            </p>
+            <p className="diary-fasting-duration">{durationLabel}</p>
+            {rangeLabel ? <p className="diary-pillar-hint">{rangeLabel}</p> : null}
           </>
         )}
       </div>

@@ -7464,6 +7464,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           decimalToTimeStr={decimalToTimeStr}
           fastingData={fastingData}
           currentHour={isViewingPastDate ? 24 : currentTime}
+          selectedDate={currentTrackerDate || getTodayString()}
+          isToday={!isViewingPastDate}
+          fullHistory={fullHistory}
           isIntentionalFast={currentDayIntentionalFast}
           onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
           onClearIntentionalFast={() => handleSetIntentionalFast(false)}
@@ -8401,6 +8404,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         decimalToTimeStr={decimalToTimeStr}
         fastingData={fastingData}
         currentHour={isViewingPastDate ? 24 : currentTime}
+        selectedDate={currentTrackerDate || getTodayString()}
+        isToday={!isViewingPastDate}
+        fullHistory={fullHistory}
         isIntentionalFast={currentDayIntentionalFast}
         onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
         onClearIntentionalFast={() => handleSetIntentionalFast(false)}

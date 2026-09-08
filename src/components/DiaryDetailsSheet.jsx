@@ -8,6 +8,12 @@ import {
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
+import {
+  computeMaxCompletedFastForDate,
+  formatFastingHoursLabel,
+  formatFastingRangeLabel,
+  MIN_FASTING_INTERVAL_HOURS,
+} from '../utils/fastingDiaryMetrics';
 
 const MEAL_VETRINO_CLASS = {
   colazione: 'bg-gradient-to-r from-amber-500/10 to-transparent border-l-2 border-amber-500/50',
@@ -360,24 +366,19 @@ function EmptyDayTrackingPrompt({ isIntentionalFast, onMarkIntentionalFast, onCl
 }
 
 function FastingTabPanel({
-  fastingData,
-  currentHour,
+  fastingSummary = null,
   decimalToTimeStr,
+  selectedDate = '',
   hasMeals = false,
   isIntentionalFast = false,
   onMarkIntentionalFast,
   onClearIntentionalFast,
 }) {
-  const hoursFasted = Math.max(0, Number(fastingData?.hoursFasted) || 0);
-  const phaseName = String(fastingData?.phaseName || '').trim();
-  const durationLabel = fastingData?.timeString
-    || `${Math.floor(hoursFasted)}h ${Math.round((hoursFasted % 1) * 60)}m`;
-  const lastMealHour = Number.isFinite(Number(currentHour))
-    ? Number(currentHour) - hoursFasted
-    : NaN;
-  const startedLabel = Number.isFinite(lastMealHour)
-    ? formatTimeLabel(((lastMealHour % 24) + 24) % 24, decimalToTimeStr)
-    : null;
+  const hoursFasted = Math.max(0, Number(fastingSummary?.hours) || 0);
+  const durationLabel = formatFastingHoursLabel(hoursFasted);
+  const rangeLabel = formatFastingRangeLabel(fastingSummary, selectedDate, decimalToTimeStr);
+  const isInProgress = fastingSummary?.mode === 'in_progress';
+  const hasRelevantFast = hoursFasted >= MIN_FASTING_INTERVAL_HOURS;
 
   return (
     <div className="diary-pillar-panel">
@@ -390,20 +391,19 @@ function FastingTabPanel({
       ) : null}
       <div className="diary-pillar-card" style={{ borderColor: pillarColorToRgba(KENTU_PILLARS.FASTING.color, 0.4) }}>
         <h3 style={{ color: KENTU_PILLARS.FASTING.color }}>Digiuno odierno</h3>
-        {hoursFasted < 0.25 ? (
+        {!hasRelevantFast ? (
           <p className="diary-pillar-hint">
             {hasMeals
-              ? 'Nessuna finestra di digiuno rilevante al momento (pasto recente).'
-              : 'Dati insufficienti: senza pasti e senza digiuno intenzionale non si calcola una catena trans-giornaliera.'}
+              ? 'Nessuna finestra di digiuno completata rilevante in questa giornata.'
+              : 'Dati insufficienti: senza pasti e senza un pasto precedente non si calcola il digiuno massimo.'}
           </p>
         ) : (
           <>
-            {startedLabel ? <p>Iniziato alle <strong>{startedLabel}</strong></p> : null}
-            <p>Durata attuale <strong>{durationLabel}</strong></p>
-            {phaseName ? <p>Fase metabolica <strong>{phaseName}</strong></p> : null}
-            {fastingData?.phaseDesc ? (
-              <p className="diary-pillar-hint">{fastingData.phaseDesc}</p>
-            ) : null}
+            <p className="diary-fasting-metric-label">
+              {isInProgress ? 'Digiuno in corso' : 'Digiuno massimo completato'}
+            </p>
+            <p className="diary-fasting-duration">{durationLabel}</p>
+            {rangeLabel ? <p className="diary-pillar-hint">{rangeLabel}</p> : null}
           </>
         )}
       </div>
@@ -427,6 +427,9 @@ export default function DiaryDetailsSheet({
   decimalToTimeStr,
   fastingData = null,
   currentHour = 12,
+  selectedDate = '',
+  isToday = true,
+  fullHistory = null,
   isIntentionalFast = false,
   onMarkIntentionalFast,
   onClearIntentionalFast,
@@ -460,6 +463,17 @@ export default function DiaryDetailsSheet({
   const workoutEntries = useMemo(
     () => buildWorkoutEntries(workoutsLog, decimalToTimeStr),
     [workoutsLog, decimalToTimeStr],
+  );
+
+  const fastingSummary = useMemo(
+    () => computeMaxCompletedFastForDate({
+      selectedDate,
+      dayLog: activeLog,
+      fullHistory,
+      isToday,
+      currentHour,
+    }),
+    [selectedDate, activeLog, fullHistory, isToday, currentHour],
   );
 
   const todaySleepEntry = useMemo(
@@ -811,9 +825,9 @@ export default function DiaryDetailsSheet({
 
         {activePillarTab === 'FASTING' ? (
           <FastingTabPanel
-            fastingData={fastingData}
-            currentHour={currentHour}
+            fastingSummary={fastingSummary}
             decimalToTimeStr={decimalToTimeStr}
+            selectedDate={selectedDate}
             hasMeals={hasMeals}
             isIntentionalFast={isIntentionalFast}
             onMarkIntentionalFast={onMarkIntentionalFast}
