@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { stashActivitySheetTempTab } from '../../activityCatalog';
+import { stashActivitySheetTempTab, getMuscleGroupsForMacro } from '../../activityCatalog';
 import { decimalToTimeStr } from '../../coreEngine';
+import CardioProgressBar from '../../components/CardioProgressBar';
+import MuscleStimulusDistrictList from '../trendHub/components/MuscleStimulusDistrictList';
+import { buildMuscleTelemetryRows } from '../trendHub/utils/muscleTelemetryModel';
 
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti' },
@@ -355,6 +358,8 @@ export default function PulsantieraUniversale({
   onManualShortcut,
   onSendChatMessage,
   dailyLog = [],
+  fullHistory = {},
+  fourCylinder = null,
   disabled = false,
   isDiabetesAppMode = false,
   isAiGuidedModeActive = false,
@@ -407,7 +412,11 @@ export default function PulsantieraUniversale({
     if (item.action === 'openActivity') {
       closeMenus();
       const defaultTab = stashActivitySheetTempTab(item.defaultTab || 'pesi');
-      onOpenActivityView?.({ defaultTab });
+      const payload = { defaultTab };
+      if (Array.isArray(item.muscles) && item.muscles.length > 0) {
+        payload.muscles = item.muscles;
+      }
+      onOpenActivityView?.(payload);
       return;
     }
     if (item.action === 'openPlan') {
@@ -498,8 +507,8 @@ export default function PulsantieraUniversale({
       };
     }
 
-    // "Pasti" gestito con overlay custom (2 sezioni + lista).
-    if (activeCategory === 'pasti') return null;
+    // "Pasti" e "Attività" usano overlay custom (lista pasti / sismografi stimolo).
+    if (activeCategory === 'pasti' || activeCategory === 'attivita') return null;
 
     const items = (SUBMENUS[activeCategory] || []).map((rawItem) => ({
       ...resolveItemPresentation(rawItem),
@@ -560,6 +569,25 @@ export default function PulsantieraUniversale({
         title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
       }));
   }, [dailyLog]);
+
+  const openStimulusCylinder = useCallback((row) => {
+    const workoutMuscles = getMuscleGroupsForMacro(row?.id).map((d) => d.id);
+    dispatchItem({
+      id: `stimulus-${row?.id || 'pesi'}`,
+      action: 'openActivity',
+      defaultTab: 'pesi',
+      muscles: workoutMuscles,
+    });
+  }, [dispatchItem]);
+
+  const muscleRows = useMemo(
+    () => buildMuscleTelemetryRows({
+      fourCylinder,
+      fullHistory,
+      activeLog: dailyLog,
+    }).muscleRows,
+    [fourCylinder, fullHistory, dailyLog],
+  );
 
   const pastiOverlay = activeCategory === 'pasti' ? (
     createPortal(
@@ -688,7 +716,100 @@ export default function PulsantieraUniversale({
     )
   ) : null;
 
-  const submenuOverlay = pastiOverlay || (overlayConfig ? (
+  const attivitaOverlay = activeCategory === 'attivita' ? (
+    createPortal(
+      <>
+        <div
+          className="kentu-submenu-focus-backdrop fixed inset-0 z-[100040] bg-black/60 backdrop-blur-md"
+          aria-hidden
+          onClick={handleOverlayClose}
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Cruscotto dello stimolo muscolare e cardio"
+          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 py-6 sm:px-6 sm:py-8"
+        >
+          <div
+            className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[90dvh] w-full max-w-lg flex-col items-center gap-4 overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="shrink-0 text-center">
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Semaforo metabolico
+              </p>
+              <h2 className="mt-1 text-xl font-semibold text-zinc-50">
+                Cruscotto dello stimolo
+              </h2>
+            </div>
+
+            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 pb-1">
+              <MuscleStimulusDistrictList
+                muscleRows={muscleRows}
+                onSelectRow={openStimulusCylinder}
+              />
+
+              <section className="mt-5">
+                <h3 className="mb-2.5 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  Monitoraggio Cardio
+                </h3>
+                <CardioProgressBar
+                  compact
+                  fullHistory={fullHistory}
+                  activeLog={dailyLog}
+                  onActivate={() => dispatchItem({
+                    id: 'cardio-monitor',
+                    action: 'openActivity',
+                    defaultTab: 'cardio',
+                  })}
+                />
+              </section>
+
+              <div className="mt-5 grid w-full grid-cols-3 gap-2 [&>button]:w-full">
+                <OverlayActionButton
+                  compact
+                  icon={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.icon || '🚶'}
+                  label={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.label || 'Camminata'}
+                  disabled={disabled}
+                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'camminata'))}
+                />
+                <OverlayActionButton
+                  compact
+                  icon={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.icon || '🏃'}
+                  label={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.label || 'Corsa'}
+                  disabled={disabled}
+                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'corsa'))}
+                />
+                <OverlayActionButton
+                  compact
+                  icon={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.icon || '🗓️'}
+                  label={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.label || 'Piano'}
+                  disabled={disabled}
+                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'piano'))}
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleOverlayClose}
+              className={[
+                'mt-auto flex-shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
+                'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
+                'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+              ].join(' ')}
+            >
+              Annulla
+            </button>
+          </div>
+        </div>
+      </>,
+      document.body,
+    )
+  ) : null;
+
+  const submenuOverlay = pastiOverlay || attivitaOverlay || (overlayConfig ? (
     <SubmenuFocusOverlay
       key={activeCategory}
       categoryLabel={overlayConfig.categoryLabel}

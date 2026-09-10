@@ -289,13 +289,13 @@ export function useWorkoutManager({
   }, []);
 
   /** Reset form per nuova sessione (non edit): evita che editingWorkoutId blocchi il 4-cylinder. */
-  const resetWorkoutFormForNewSession = useCallback((defaultTab = 'pesi') => {
+  const resetWorkoutFormForNewSession = useCallback((defaultTab = 'pesi', preselectedMuscles = []) => {
     const tab = resolveActivitySheetTab(defaultTab);
     setEditingWorkoutId(null);
     setPostWorkoutReviewActive(false);
     setWorkoutPlanDraft(null);
     setWorkoutType(tab);
-    setWorkoutMuscles([]);
+    setWorkoutMuscles(normalizeMuscleGroupArray(preselectedMuscles));
     setWorkoutStrengthDetail('');
     setWorkoutGoal('');
     setWorkoutRpe(null);

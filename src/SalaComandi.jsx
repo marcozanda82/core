@@ -7159,7 +7159,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const defaultTab = stashActivitySheetTempTab(raw || 'pesi');
     returnToChatAfterQuickActionRef.current = true;
     closeChat();
-    resetWorkoutFormForNewSession(defaultTab);
+    resetWorkoutFormForNewSession(defaultTab, payload?.muscles);
     setWorkoutType(defaultTab);
     setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
     const nonce = Date.now();
@@ -7974,6 +7974,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             offDb={offFoodDb}
             fullHistory={fullHistory}
             dailyLog={activeLog}
+            fourCylinder={userModel?.fourCylinder ?? null}
             userTargets={effectiveTargetsForCurrentDate || userTargets}
             diaryReady={isInitialLoadComplete}
             engineReady={isEngineReady}

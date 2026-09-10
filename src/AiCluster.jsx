@@ -143,6 +143,7 @@ export default function AiCluster({
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   userTargets = null,
+  fourCylinder = null,
   onBack,
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
   introPhrase = '',
@@ -1983,6 +1984,8 @@ export default function AiCluster({
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
             dailyLog={safeDailyLog}
+            fullHistory={fullHistory}
+            fourCylinder={fourCylinder}
             isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}

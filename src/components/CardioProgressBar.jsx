@@ -58,6 +58,7 @@ export default function CardioProgressBar({
   cardioStatus: cardioStatusProp = null,
   className = '',
   compact = false,
+  onActivate = null,
 } = {}) {
   const liveDayKey = useLiveCalendarDayKey();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -117,7 +118,13 @@ export default function CardioProgressBar({
     Math.min(100, Math.round(Number(status.fillPercent) ?? (accumulated / target) * 100)),
   );
 
-  const openDetails = () => setDetailsOpen(true);
+  const openDetails = () => {
+    if (typeof onActivate === 'function') {
+      onActivate();
+      return;
+    }
+    setDetailsOpen(true);
+  };
 
   return (
     <>
@@ -209,7 +216,7 @@ export default function CardioProgressBar({
       </div>
 
       <CardioDetailsModal
-        isOpen={detailsOpen}
+        isOpen={typeof onActivate === 'function' ? false : detailsOpen}
         onClose={() => setDetailsOpen(false)}
         breakdown={breakdown}
       />

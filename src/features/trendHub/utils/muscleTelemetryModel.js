@@ -16,6 +16,19 @@ import {
 } from '../../../utils/hypertrophyMath';
 import { getTodayString } from '../../../coreEngine';
 
+/**
+ * Giorni dall'ultimo stimolo → numero per sort (mai allenato in fondo alla coda urgente = in cima).
+ * @param {number | '> 30' | '∞' | null | undefined} daysSince
+ * @returns {number}
+ */
+function daysSinceAsNumber(daysSince) {
+  if (daysSince === '∞' || daysSince === '> 30' || daysSince == null) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const n = Number(daysSince);
+  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+}
+
 /** Target volume normalizzato (100% = stimolo ottimale nel ciclo). */
 export const MUSCLE_VOLUME_TARGET = 100;
 
@@ -84,7 +97,7 @@ export function muscleTriageLevel(value) {
 }
 
 /**
- * Distretti ordinati per priorità (stimolo più basso in cima).
+ * Distretti ordinati per giorni dall'ultimo stimolo (più giorni in cima).
  */
 export function buildMuscleTelemetryRows({
   fourCylinder = null,
@@ -123,13 +136,16 @@ export function buildMuscleTelemetryRows({
       daysSinceStimulus: getDaysSinceLastStimulus(fullHistory, cyl.id, {
         todayIso,
         fourCylinder: state,
+        todayLiveLog,
       }),
     };
   });
 
-  const sorted = [...rows].sort(
-    (a, b) => a.completionRatio - b.completionRatio || a.label.localeCompare(b.label, 'it'),
-  );
+  const sorted = [...rows].sort((a, b) => {
+    const daysDelta = daysSinceAsNumber(b.daysSinceStimulus) - daysSinceAsNumber(a.daysSinceStimulus);
+    if (daysDelta !== 0) return daysDelta;
+    return a.completionRatio - b.completionRatio || a.label.localeCompare(b.label, 'it');
+  });
 
   return {
     state,

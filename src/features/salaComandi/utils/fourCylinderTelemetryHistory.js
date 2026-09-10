@@ -382,7 +382,7 @@ function readPositiveStimulusForCylinder(entry, cylinderKey) {
  *
  * @param {object | null | undefined} fullHistory albero tracker_data
  * @param {MuscleCylinderKey} cylinderKey
- * @param {{ todayIso?: string, maxScanDays?: number, fourCylinder?: object | null }} [options]
+ * @param {{ todayIso?: string, maxScanDays?: number, fourCylinder?: object | null, todayLiveLog?: Array | null }} [options]
  * @returns {number | '> 30' | '∞'}
  */
 export function getDaysSinceLastStimulus(fullHistory, cylinderKey, options = {}) {
@@ -420,9 +420,13 @@ export function getDaysSinceLastStimulus(fullHistory, cylinderKey, options = {})
     Math.min(STIMULUS_SCAN_MAX_DAYS, Math.floor(Number(options.maxScanDays) || STIMULUS_SCAN_MAX_DAYS)),
   );
 
+  const todayLiveLog = Array.isArray(options.todayLiveLog) ? options.todayLiveLog : null;
+
   for (let back = 0; back <= maxScan; back += 1) {
     const date = addDays(today, -back);
-    const log = getLogFromStoricoTree(tree, date);
+    const log = todayLiveLog && date === today
+      ? todayLiveLog
+      : getLogFromStoricoTree(tree, date);
     for (const entry of log) {
       if (readPositiveStimulusForCylinder(entry, key) <= 0) continue;
       const diff = diffCalendarDaysUtc(date, today);
