@@ -14,6 +14,7 @@ import {
   isInboxDraftEntry,
   normalizeInboxDraftBlock,
   serializeUnassignedDraftsForFirebase,
+  asCollectionArray,
 } from './utils/mealDraftStatus';
 
 const RADIAN = Math.PI / 180;
@@ -1688,9 +1689,8 @@ function normalizeLogData(rawLog) {
     if (!entry || typeof entry !== 'object') return;
     if (isInboxDraftEntry(entry)) {
       if (entry.type === 'unassigned_drafts') {
-        const nested = Array.isArray(entry.blocks) ? entry.blocks : [];
-        nested.forEach((block) => {
-          const normalized = normalizeInboxDraftBlock(block);
+        asCollectionArray(entry.blocks).forEach((block, index) => {
+          const normalized = normalizeInboxDraftBlock(block, index);
           if (normalized) out.push(normalized);
         });
         return;

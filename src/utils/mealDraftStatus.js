@@ -31,6 +31,32 @@ export function isInboxDraftEntry(entry) {
   return t === INBOX_DRAFT_TYPE || t === UNASSIGNED_DRAFTS_TYPE;
 }
 
+/** Firebase può serializzare gli array come oggetto `{0:…,1:…}`. */
+export function asCollectionArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => value[key])
+      .filter((item) => item != null);
+  }
+  return [];
+}
+
+export function resolveInboxDraftIdentity(block, fallbackIndex = 0) {
+  const explicit = String(block?.id || '').trim();
+  if (explicit) return explicit;
+  const createdAt = Number(block?.createdAt);
+  const stamp = Number.isFinite(createdAt) && createdAt > 0 ? Math.round(createdAt) : 'na';
+  const foods = asCollectionArray(block?.items)
+    .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
+    .filter(Boolean)
+    .join('_')
+    .slice(0, 28)
+    .replace(/\s+/g, '-');
+  return `inbox_${stamp}_${fallbackIndex}_${foods || 'draft'}`;
+}
+
 export function serializeInboxDraftItem(item) {
   if (!item || typeof item !== 'object') return null;
   const foodName = String(item.foodName || item.name || item.desc || item.label || '').trim();
@@ -65,9 +91,9 @@ export function serializeInboxDraftItem(item) {
   };
 }
 
-export function normalizeInboxDraftBlock(block) {
+export function normalizeInboxDraftBlock(block, fallbackIndex = 0) {
   if (!block || typeof block !== 'object') return null;
-  const items = (Array.isArray(block.items) ? block.items : [])
+  const items = asCollectionArray(block.items)
     .map(serializeInboxDraftItem)
     .filter(Boolean);
   if (items.length === 0) return null;
@@ -76,7 +102,7 @@ export function normalizeInboxDraftBlock(block) {
     ? Math.round(createdAtRaw)
     : Date.now();
   const timeHHmm = String(block.timeHHmm || block.timeString || '').trim();
-  const id = String(block.id || '').trim() || `inbox_${createdAt}`;
+  const id = resolveInboxDraftIdentity({ ...block, items, createdAt }, fallbackIndex);
   return {
     type: INBOX_DRAFT_TYPE,
     id,
@@ -89,19 +115,25 @@ export function normalizeInboxDraftBlock(block) {
 
 export function extractUnassignedDraftBlocks(log) {
   const blocks = [];
-  (Array.isArray(log) ? log : []).forEach((entry) => {
+  const seen = new Set();
+  let index = 0;
+  (Array.isArray(log) ? log : asCollectionArray(log)).forEach((entry) => {
     if (!entry || typeof entry !== 'object') return;
+    const pushBlock = (raw) => {
+      const normalized = normalizeInboxDraftBlock(raw, index);
+      if (!normalized) return;
+      let { id } = normalized;
+      if (seen.has(id)) id = `${id}__${index}`;
+      seen.add(id);
+      index += 1;
+      blocks.push({ ...normalized, id });
+    };
     if (entry.type === UNASSIGNED_DRAFTS_TYPE) {
-      const nested = Array.isArray(entry.blocks) ? entry.blocks : [];
-      nested.forEach((block) => {
-        const normalized = normalizeInboxDraftBlock(block);
-        if (normalized) blocks.push(normalized);
-      });
+      asCollectionArray(entry.blocks).forEach(pushBlock);
       return;
     }
     if (entry.type === INBOX_DRAFT_TYPE) {
-      const normalized = normalizeInboxDraftBlock(entry);
-      if (normalized) blocks.push(normalized);
+      pushBlock(entry);
     }
   });
   return blocks.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
@@ -125,8 +157,8 @@ export function removeUnassignedDraftBlock(log, blockId) {
   (Array.isArray(log) ? log : []).forEach((entry) => {
     if (!entry) return;
     if (entry.type === INBOX_DRAFT_TYPE && String(entry.id) === id) return;
-    if (entry.type === UNASSIGNED_DRAFTS_TYPE && Array.isArray(entry.blocks)) {
-      const blocks = entry.blocks.filter((block) => String(block?.id) !== id);
+    if (entry.type === UNASSIGNED_DRAFTS_TYPE && entry.blocks) {
+      const blocks = asCollectionArray(entry.blocks).filter((block) => String(block?.id) !== id);
       if (blocks.length === 0) return;
       next.push({ ...entry, blocks });
       return;
@@ -141,6 +173,66 @@ export function restoreUnassignedDraftBlock(log, block) {
   if (!normalized) return Array.isArray(log) ? [...log] : [];
   const without = removeUnassignedDraftBlock(log, normalized.id);
   return [...without, normalized];
+}
+
+function uniquifyInboxDraftItems(items) {
+  const used = new Set();
+  const stamp = Date.now();
+  return (Array.isArray(items) ? items : [])
+    .map((raw, index) => {
+      const item = serializeInboxDraftItem(raw);
+      if (!item) return null;
+      let id = String(item.id || '').trim() || `item_${stamp}_${index}`;
+      while (used.has(id)) id = `${id}_${used.size}`;
+      used.add(id);
+      return { ...item, id };
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Accorpa la bozza `sourceDraftId` dentro `targetDraftId`.
+ * Concatena gli items, tiene l'id del target, orario/createdAt dal più recente, rimuove la source.
+ */
+export function replaceUnassignedDraftBlocks(log, blocks) {
+  const rest = (Array.isArray(log) ? log : []).filter((entry) => !isInboxDraftEntry(entry));
+  const nextBlocks = (Array.isArray(blocks) ? blocks : [])
+    .map((block, index) => normalizeInboxDraftBlock(block, index))
+    .filter(Boolean);
+  return [...rest, ...nextBlocks];
+}
+
+export function mergeUnassignedDraftBlocks(log, sourceDraftId, targetDraftId) {
+  const sourceId = String(sourceDraftId || '').trim();
+  const targetId = String(targetDraftId || '').trim();
+  const current = Array.isArray(log) ? log : [];
+  if (!sourceId || !targetId || sourceId === targetId) return current;
+
+  const blocks = extractUnassignedDraftBlocks(current);
+  const source = blocks.find((block) => String(block.id) === sourceId);
+  const target = blocks.find((block) => String(block.id) === targetId);
+  if (!source || !target) return current;
+
+  const sourceCreated = Number(source.createdAt) || 0;
+  const targetCreated = Number(target.createdAt) || 0;
+  const newer = sourceCreated >= targetCreated ? source : target;
+  const older = newer === source ? target : source;
+  const mergedItems = uniquifyInboxDraftItems([
+    ...(Array.isArray(target.items) ? target.items : []),
+    ...(Array.isArray(source.items) ? source.items : []),
+  ]);
+  const merged = normalizeInboxDraftBlock({
+    id: target.id,
+    createdAt: Math.max(sourceCreated, targetCreated) || Date.now(),
+    timeHHmm: String(newer.timeHHmm || older.timeHHmm || '').trim(),
+    items: mergedItems,
+  }, 0);
+  if (!merged) return current;
+
+  const nextBlocks = blocks
+    .filter((block) => String(block.id) !== sourceId)
+    .map((block) => (String(block.id) === targetId ? merged : block));
+  return replaceUnassignedDraftBlocks(current, nextBlocks);
 }
 
 export function removeLogItemsByIds(log, ids) {

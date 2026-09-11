@@ -180,10 +180,11 @@ import {
   resolveUpsertActionFromPayload,
   buildMealCommitFingerprint,
 } from './features/commandTerminal/meals/mealUpsert';
-import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, appendUnassignedDraftBlock, removeUnassignedDraftBlock, restoreUnassignedDraftBlock, removeLogItemsByIds, normalizeInboxDraftBlock, serializeInboxDraftItem, INBOX_UNDO_TOAST_MS } from './utils/mealDraftStatus';
+import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, appendUnassignedDraftBlock, removeUnassignedDraftBlock, restoreUnassignedDraftBlock, mergeUnassignedDraftBlocks, extractUnassignedDraftBlocks, removeLogItemsByIds, normalizeInboxDraftBlock, serializeInboxDraftItem, INBOX_UNDO_TOAST_MS } from './utils/mealDraftStatus';
 import { injectMealClockIntoCommandPayload, parseTimeStringToDecimalHour } from './features/commandTerminal/conversation/mealSmartDefaults';
 import InboxTriageSheet from './components/InboxTriageSheet';
 import InboxUndoToast from './components/InboxUndoToast';
+import { registerInboxDraftAppendHandler } from './platform/inboxDraftAppendBus';
 import { useMealTrash } from './hooks/salaComandi/useMealTrash';
 import {
   buildDailyPlanGhostLogEntries,
@@ -3567,6 +3568,11 @@ export default function SalaComandi() {
     return { text: 'Inbox aggiornata.', inbox: true };
   }, [isSimulationMode, setSimulatedLog, commitDiaryLogWrite]);
 
+  useEffect(
+    () => registerInboxDraftAppendHandler(commitAppendInboxDraft),
+    [commitAppendInboxDraft],
+  );
+
   const commitAddFoodChatPayload = useCallback(
     (payload) => {
       const {
@@ -4626,6 +4632,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       .sort((a, b) => a.mealTime - b.mealTime)
   ), [groupedFoods, decimalToTimeStr, toCanonicalMealType]);
 
+  const inboxTriageDrafts = useMemo(
+    () => extractUnassignedDraftBlocks(activeLog),
+    [activeLog],
+  );
+
   const writeAssignedInboxLog = useCallback((nextLog) => {
     dailyLogRef.current = nextLog;
     if (isSimulationMode) {
@@ -4691,7 +4702,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleSelectInboxDraft = useCallback((block) => {
     if (!block) return;
-    setInboxTriageBlock(block);
+    const blocks = extractUnassignedDraftBlocks(dailyLogRef.current || []);
+    const matched = blocks.find((item) => String(item.id) === String(block.id))
+      || block;
+    setInboxTriageBlock(matched);
   }, []);
 
   const handleCreateMealFromInbox = useCallback((block, mealTypeRaw = 'snack') => {
@@ -4794,6 +4808,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const handleDropInboxOntoMeal = useCallback((block, meal) => {
     return assignInboxDraftToExistingMeal(block, meal, { openTray: false });
   }, [assignInboxDraftToExistingMeal]);
+
+  const handleMergeInboxDrafts = useCallback((sourceBlock, targetBlock) => {
+    const sourceId = String(sourceBlock?.id || sourceBlock || '').trim();
+    const targetId = String(targetBlock?.id || targetBlock || '').trim();
+    if (!sourceId || !targetId || sourceId === targetId) return false;
+    const logSnap = dailyLogRef.current || [];
+    const nextLog = mergeUnassignedDraftBlocks(logSnap, sourceId, targetId);
+    if (nextLog === logSnap) return false;
+    writeAssignedInboxLog(nextLog);
+    setInboxTriageBlock(null);
+    return true;
+  }, [writeAssignedInboxLog]);
 
   const handleDeleteInboxDraft = useCallback((block) => {
     if (!block?.id) return;
@@ -6888,6 +6914,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
       onSelectInboxDraft: handleSelectInboxDraft,
       onDropInboxOntoMeal: handleDropInboxOntoMeal,
+      onDropInboxOntoDraft: handleMergeInboxDrafts,
       onTrashMeal: handleTrashMeal,
       trashMeals,
       onRestoreTrashMeal: handleRestoreTrashMeal,
@@ -6947,6 +6974,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     userProfile,
     handleSelectInboxDraft,
     handleDropInboxOntoMeal,
+    handleMergeInboxDrafts,
     handleTrashMeal,
     trashMeals,
     handleRestoreTrashMeal,
@@ -8521,6 +8549,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onOpenPlanView={handleOpenPlanFromChat}
             onSelectInboxDraft={handleSelectInboxDraft}
             onDropInboxOntoMeal={handleDropInboxOntoMeal}
+            onDropInboxOntoDraft={handleMergeInboxDrafts}
             onTrashMeal={handleTrashMeal}
             trashMeals={trashMeals}
             onRestoreTrashMeal={handleRestoreTrashMeal}
@@ -8948,8 +8977,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       <InboxTriageSheet
         block={inboxTriageBlock}
         todayMeals={inboxTriageMeals}
+        inboxDrafts={inboxTriageDrafts}
+        dailyLog={activeLog}
         onCreateNewMeal={handleCreateMealFromInbox}
         onMergeIntoMeal={handleMergeInboxIntoMeal}
+        onMergeIntoDraft={handleMergeInboxDrafts}
         onDeleteDraft={handleDeleteInboxDraft}
         onClose={() => setInboxTriageBlock(null)}
       />

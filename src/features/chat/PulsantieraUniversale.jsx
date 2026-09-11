@@ -381,6 +381,7 @@ export default function PulsantieraUniversale({
   onSendChatMessage,
   onSelectInboxDraft = null,
   onDropInboxOntoMeal = null,
+  onDropInboxOntoDraft = null,
   onTrashMeal = null,
   trashMeals = [],
   onRestoreTrashMeal = null,
@@ -617,10 +618,23 @@ export default function PulsantieraUniversale({
 
   const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
 
-  const resolveInboxDropSlot = useCallback((x, y) => {
-    const el = typeof document !== 'undefined' ? document.elementFromPoint(x, y) : null;
-    const row = el?.closest?.('[data-inbox-drop-slot]');
-    return row?.getAttribute('data-inbox-drop-slot') || '';
+  const resolveInboxDropTarget = useCallback((x, y, ignoreDraftId = '') => {
+    if (typeof document === 'undefined') return null;
+    const skipId = String(ignoreDraftId || '').trim();
+    const stack = typeof document.elementsFromPoint === 'function'
+      ? document.elementsFromPoint(x, y)
+      : [document.elementFromPoint(x, y)];
+    for (const el of stack) {
+      if (!el || typeof el.closest !== 'function') continue;
+      const row = el.closest('[data-inbox-drop-kind]');
+      if (!row) continue;
+      const kind = String(row.getAttribute('data-inbox-drop-kind') || '').trim();
+      const id = String(row.getAttribute('data-inbox-drop-id') || '').trim();
+      if (!kind || !id) continue;
+      if (kind === 'draft' && skipId && id === skipId) continue;
+      return { kind, id };
+    }
+    return null;
   }, []);
 
   const isInboxDragging = inboxDrag != null;
@@ -644,10 +658,10 @@ export default function PulsantieraUniversale({
     const onMove = (event) => {
       if (event.cancelable) event.preventDefault();
       const { x, y } = pointFromPointerOrTouch(event);
-      const dropSlotId = resolveInboxDropSlot(x, y);
+      const dropTarget = resolveInboxDropTarget(x, y, inboxDragRef.current.block?.id);
       setInboxDrag((prev) => (
         prev
-          ? { ...prev, x, y, dropSlotId }
+          ? { ...prev, x, y, dropTarget }
           : prev
       ));
     };
@@ -655,15 +669,23 @@ export default function PulsantieraUniversale({
       if (finished) return;
       finished = true;
       const { x, y } = pointFromPointerOrTouch(event);
-      const dropSlotId = resolveInboxDropSlot(x, y);
+      const dropTarget = resolveInboxDropTarget(x, y, inboxDragRef.current.block?.id);
       const block = inboxDragRef.current.block;
       inboxDragRef.current.armed = false;
       inboxDragRef.current.block = null;
       inboxDragRef.current.pointerId = null;
       inboxDragRef.current.suppressTapUntil = Date.now() + 500;
       setInboxDrag(null);
-      if (!dropSlotId || !block) return;
-      const meal = pastiToday.find((item) => item.slotId === dropSlotId);
+      if (!dropTarget?.id || !block) return;
+      if (dropTarget.kind === 'draft') {
+        if (String(dropTarget.id) === String(block.id)) return;
+        const other = inboxBlocks.find((item) => String(item.id) === String(dropTarget.id));
+        if (!other) return;
+        onDropInboxOntoDraft?.(block, other);
+        return;
+      }
+      if (dropTarget.kind !== 'meal') return;
+      const meal = pastiToday.find((item) => item.slotId === dropTarget.id);
       if (!meal) return;
       onDropInboxOntoMeal?.(block, {
         slotKey: meal.slotId,
@@ -688,7 +710,7 @@ export default function PulsantieraUniversale({
       window.removeEventListener('touchend', finish);
       window.removeEventListener('touchcancel', finish);
     };
-  }, [isInboxDragging, pastiToday, onDropInboxOntoMeal, resolveInboxDropSlot]);
+  }, [isInboxDragging, pastiToday, inboxBlocks, onDropInboxOntoMeal, onDropInboxOntoDraft, resolveInboxDropTarget]);
 
   const startInboxHandleDrag = useCallback((event, block) => {
     if (disabled || event.button === 2) return;
@@ -705,7 +727,7 @@ export default function PulsantieraUniversale({
     inboxDragRef.current.pointerId = event.pointerId ?? 'touch';
     inboxDragRef.current.armed = true;
     try {
-      event.currentTarget?.setPointerCapture?.(event.pointerId);
+      event.currentTarget?.releasePointerCapture?.(event.pointerId);
     } catch {
       /* ignore */
     }
@@ -718,7 +740,7 @@ export default function PulsantieraUniversale({
       block,
       x,
       y,
-      dropSlotId: '',
+      dropTarget: null,
     });
   }, [disabled]);
 
@@ -808,21 +830,29 @@ export default function PulsantieraUniversale({
                 <section className="inbox-pasti-top mb-3 max-h-[38%] shrink-0 overflow-y-auto overscroll-contain">
                   <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
                   <p className="mb-2 text-[0.68rem] text-slate-500">
-                    Tocco per smistare · trascina dalla maniglia
+                    Tocco per smistare · trascina dalla maniglia su un pasto o su un'altra bozza
                   </p>
                   <div className="inbox-drafts__list">
-                    {inboxBlocks.map((block) => (
+                    {inboxBlocks.map((block) => {
+                      const isDragging = inboxDrag?.block?.id === block.id;
+                      const isDraftDropTarget = !isDragging
+                        && inboxDrag?.dropTarget?.kind === 'draft'
+                        && inboxDrag.dropTarget.id === block.id;
+                      return (
                       <div
                         key={block.id}
+                        data-inbox-drop-kind="draft"
+                        data-inbox-drop-id={block.id}
                         className={[
                           'inbox-drafts__card',
-                          inboxDrag?.block?.id === block.id ? 'inbox-drafts__card--dragging' : '',
+                          isDragging ? 'inbox-drafts__card--dragging' : '',
+                          isDraftDropTarget ? 'inbox-drafts__card--drop-target' : '',
                         ].join(' ')}
                       >
                         <button
                           type="button"
                           className="inbox-drafts__drag-handle"
-                          aria-label="Trascina bozza sul pasto"
+                          aria-label="Trascina bozza su un pasto o su un'altra bozza"
                           onPointerDown={(event) => startInboxHandleDrag(event, block)}
                           onTouchStart={(event) => startInboxHandleDrag(event, block)}
                           onContextMenu={(event) => event.preventDefault()}
@@ -842,7 +872,8 @@ export default function PulsantieraUniversale({
                           <span className="inbox-drafts__card-cta">Smista</span>
                         </button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               ) : null}
@@ -871,12 +902,14 @@ export default function PulsantieraUniversale({
                           servingLabel: f.servingLabel || null,
                           coffeeShopProductId: f.coffeeShopProductId || null,
                         }));
-                        const isDropTarget = inboxDrag?.dropSlotId === meal.slotId;
+                        const isDropTarget = inboxDrag?.dropTarget?.kind === 'meal'
+                          && inboxDrag.dropTarget.id === meal.slotId;
 
                         return (
                           <div
                             key={meal.slotId}
-                            data-inbox-drop-slot={meal.slotId}
+                            data-inbox-drop-kind="meal"
+                            data-inbox-drop-id={meal.slotId}
                             className={[
                               'flex items-center justify-between gap-3 rounded-xl border bg-slate-900/40 px-3 py-2',
                               isDropTarget

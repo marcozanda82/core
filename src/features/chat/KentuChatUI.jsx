@@ -83,6 +83,7 @@ export default function KentuChatUI({
   onOpenPlanView = null,
   onSelectInboxDraft = null,
   onDropInboxOntoMeal = null,
+  onDropInboxOntoDraft = null,
   onTrashMeal = null,
   trashMeals = [],
   onRestoreTrashMeal = null,
@@ -208,6 +209,7 @@ export default function KentuChatUI({
         onOpenPlanView={onOpenPlanView}
         onSelectInboxDraft={onSelectInboxDraft}
         onDropInboxOntoMeal={onDropInboxOntoMeal}
+        onDropInboxOntoDraft={onDropInboxOntoDraft}
         onTrashMeal={onTrashMeal}
         trashMeals={trashMeals}
         onRestoreTrashMeal={onRestoreTrashMeal}

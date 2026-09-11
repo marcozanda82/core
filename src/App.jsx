@@ -12,6 +12,7 @@ import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
+import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListener.jsx';
 import { db } from './firebaseConfig';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
@@ -143,6 +144,7 @@ export default function App() {
       <ChatOverlayProvider>
         <BrowserRouter>
           <NativeAndroidBackHandler />
+          <GoogleAssistantInboxListener />
           <AuthenticatedApp />
         </BrowserRouter>
       </ChatOverlayProvider>

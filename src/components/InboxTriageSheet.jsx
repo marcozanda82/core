@@ -1,6 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { formatInboxDraftCardLabel } from '../utils/mealDraftStatus';
+import {
+  extractUnassignedDraftBlocks,
+  formatInboxDraftCardLabel,
+} from '../utils/mealDraftStatus';
 
 const NEW_MEAL_TYPES = [
   { id: 'colazione', label: 'Colazione' },
@@ -11,15 +14,39 @@ const NEW_MEAL_TYPES = [
 
 const BACKDROP_ARM_MS = 450;
 
+function OtherDraftButtons({ drafts, sourceBlock, onMergeIntoDraft }) {
+  if (!Array.isArray(drafts) || drafts.length === 0) return null;
+  return (
+    <div className="inbox-triage-sheet__meals">
+      <p className="inbox-triage-sheet__hint">Accorpa a un&apos;altra bozza</p>
+      {drafts.map((draft) => (
+        <button
+          key={draft.id}
+          type="button"
+          className="inbox-triage-sheet__meal inbox-triage-sheet__meal--draft"
+          onClick={() => onMergeIntoDraft?.(sourceBlock, draft)}
+        >
+          <span className="inbox-triage-sheet__meal-label">
+            {formatInboxDraftCardLabel(draft)}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
- * Bottom sheet di smistamento: anteprima cibi, accorpa, crea pasto, elimina.
+ * Bottom sheet di smistamento: altre bozze + tipi pasto visibili insieme.
  * Portal su document.body per stare sopra overlay PASTI / Diario.
  */
 export default function InboxTriageSheet({
   block = null,
   todayMeals = [],
+  inboxDrafts = [],
+  dailyLog = [],
   onCreateNewMeal = null,
   onMergeIntoMeal = null,
+  onMergeIntoDraft = null,
   onDeleteDraft = null,
   onClose = null,
 }) {
@@ -33,6 +60,22 @@ export default function InboxTriageSheet({
     const timer = window.setTimeout(() => setBackdropArmed(true), BACKDROP_ARM_MS);
     return () => window.clearTimeout(timer);
   }, [block?.id]);
+
+  const otherDrafts = useMemo(() => {
+    const sourceId = String(block?.id || '').trim();
+    const fromProp = Array.isArray(inboxDrafts) ? inboxDrafts : [];
+    const fromLog = extractUnassignedDraftBlocks(dailyLog);
+    const merged = [...fromProp, ...fromLog];
+    const seen = new Set();
+    return merged.filter((draft) => {
+      if (!draft) return false;
+      const id = String(draft.id || '').trim();
+      if (!id || id === sourceId) return false;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [block?.id, inboxDrafts, dailyLog]);
 
   if (!block || typeof document === 'undefined') return null;
 
@@ -84,15 +127,30 @@ export default function InboxTriageSheet({
           })}
         </ul>
 
-        {step === 'home' ? (
-          <div className="inbox-triage-sheet__actions">
-            <button
-              type="button"
-              className="inbox-triage-sheet__btn inbox-triage-sheet__btn--primary"
-              onClick={() => setStep('create')}
-            >
-              Crea nuovo pasto
-            </button>
+        {step === 'home' || step === 'create' ? (
+          <>
+            <OtherDraftButtons
+              drafts={otherDrafts}
+              sourceBlock={block}
+              onMergeIntoDraft={onMergeIntoDraft}
+            />
+
+            <div className="inbox-triage-sheet__meals">
+              <p className="inbox-triage-sheet__hint">Crea nuovo pasto</p>
+              <div className="inbox-triage-sheet__types">
+                {NEW_MEAL_TYPES.map((mealType) => (
+                  <button
+                    key={mealType.id}
+                    type="button"
+                    className="inbox-triage-sheet__btn"
+                    onClick={() => onCreateNewMeal?.(block, mealType.id)}
+                  >
+                    {mealType.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {hasMeals ? (
               <button
                 type="button"
@@ -102,11 +160,16 @@ export default function InboxTriageSheet({
                 Accorpa a pasto esistente
               </button>
             ) : null}
-          </div>
+          </>
         ) : null}
 
         {step === 'merge' ? (
           <div className="inbox-triage-sheet__meals">
+            <OtherDraftButtons
+              drafts={otherDrafts}
+              sourceBlock={block}
+              onMergeIntoDraft={onMergeIntoDraft}
+            />
             <p className="inbox-triage-sheet__hint">Pasti aperti oggi</p>
             {meals.map((meal) => (
               <button
@@ -121,31 +184,6 @@ export default function InboxTriageSheet({
                 ) : null}
               </button>
             ))}
-            <button
-              type="button"
-              className="inbox-triage-sheet__btn inbox-triage-sheet__btn--ghost"
-              onClick={() => setStep('home')}
-            >
-              Indietro
-            </button>
-          </div>
-        ) : null}
-
-        {step === 'create' ? (
-          <div className="inbox-triage-sheet__meals">
-            <p className="inbox-triage-sheet__hint">Che pasto vuoi aprire?</p>
-            <div className="inbox-triage-sheet__types">
-              {NEW_MEAL_TYPES.map((mealType) => (
-                <button
-                  key={mealType.id}
-                  type="button"
-                  className="inbox-triage-sheet__btn"
-                  onClick={() => onCreateNewMeal?.(block, mealType.id)}
-                >
-                  {mealType.label}
-                </button>
-              ))}
-            </div>
             <button
               type="button"
               className="inbox-triage-sheet__btn inbox-triage-sheet__btn--ghost"

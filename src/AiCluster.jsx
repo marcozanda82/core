@@ -165,6 +165,7 @@ export default function AiCluster({
   onOpenPlanView = null,
   onSelectInboxDraft = null,
   onDropInboxOntoMeal = null,
+  onDropInboxOntoDraft = null,
   onTrashMeal = null,
   trashMeals = [],
   onRestoreTrashMeal = null,
@@ -1995,6 +1996,7 @@ export default function AiCluster({
             onSendChatMessage={handlePulsantieraSend}
             onSelectInboxDraft={onSelectInboxDraft}
             onDropInboxOntoMeal={onDropInboxOntoMeal}
+            onDropInboxOntoDraft={onDropInboxOntoDraft}
             onTrashMeal={onTrashMeal}
             trashMeals={trashMeals}
             onRestoreTrashMeal={onRestoreTrashMeal}
