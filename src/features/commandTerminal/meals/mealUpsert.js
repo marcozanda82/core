@@ -3,6 +3,7 @@
  */
 
 import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
+import { toCanonicalMealType } from '../../../coreEngine.jsx';
 
 export const MEAL_UPSERT_ACTIONS = Object.freeze(['append', 'replace', 'merge']);
 
@@ -202,13 +203,16 @@ export function buildMealCommitFingerprint(payload = {}, trackerDate = '') {
     .map((item) => {
       const name = cleanStoredFoodName(item?.foodName, item?.name).toLowerCase();
       const grams = Math.max(0, Math.round(Number(item?.grams ?? item?.qty) || 0));
-      return name ? `${name}:${grams}` : '';
+      const status = String(item?.status || '').toLowerCase();
+      const itemId = item?.id != null ? String(item.id).trim() : '';
+      return name ? `${name}:${grams}:${status}:${itemId}` : '';
     })
     .filter(Boolean)
     .sort()
     .join('|');
+  const exact = String(payload?.exactTime || payload?.timeString || '').trim();
   // Action omessa: stesso pasto via card (UPSERT) e quick reply (ADD_FOOD) → stessa impronta.
-  return `${day}|${mealType}|${target}|${itemKey}`;
+  return `${day}|${mealType}|${target}|${itemKey}|${exact}`;
 }
 
 /**
@@ -235,15 +239,21 @@ export function mealUpsertBadgeLabel(action, mealType = '') {
  * @returns {{ mealType: string, mealTime: number|null, slotId: string } | null}
  */
 export function findExistingCanonicalMealSlot(log, mealTypeCanonical) {
-  const canonical = String(mealTypeCanonical || '').trim().toLowerCase().split('_')[0];
-  if (!canonical) return null;
-  const foods = (Array.isArray(log) ? log : []).filter(
-    (item) => (item?.type === 'food' || item?.type === 'recipe')
-      && String(item?.mealType || '').split('_')[0].toLowerCase() === canonical,
+  const canonical = toCanonicalMealType(
+    String(mealTypeCanonical || '').trim().toLowerCase().split('_')[0],
   );
+  if (!canonical) return null;
+  const foods = (Array.isArray(log) ? log : []).filter((item) => {
+    if (item?.type !== 'food' && item?.type !== 'recipe') return false;
+    const itemCanon = toCanonicalMealType(String(item?.mealType || '').split('_')[0]);
+    return itemCanon === canonical;
+  });
   if (!foods.length) return null;
 
-  const exact = foods.find((item) => String(item.mealType || '').toLowerCase() === canonical);
+  const exact = foods.find((item) => {
+    const mt = String(item.mealType || '').toLowerCase();
+    return mt === canonical || toCanonicalMealType(mt.split('_')[0]) === canonical;
+  });
   const pick = exact || foods[0];
   const mealType = String(pick.mealType || canonical);
   const mealTime = typeof pick.mealTime === 'number' && !Number.isNaN(pick.mealTime)

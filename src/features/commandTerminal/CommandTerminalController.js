@@ -139,11 +139,11 @@ import {
   isMcDriveDisambiguationStatus,
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
-  buildMcDriveDraftFromParsedFoods,
   normalizeMcdriveExactTimeHHmm,
   mapMcDriveItemsToCommitPayload,
   mergeMcDriveDraftWithTraySnapshot,
 } from './conversation/mcdriveWizard.js';
+import { isUnresolvedMealDraftItem } from '../../utils/mealDraftStatus.js';
 import { attachResolvedFoodIcon } from '../../utils/foodCategoryIcon.js';
 import { getChatFallbackQuickReplies } from '../chat/chatFallbackMenu.js';
 import { getFoodItemsForMealSlotFromLog } from '../../utils/mealProposalBuilders.js';
@@ -156,7 +156,7 @@ import {
   promptForMissingMealRegistrationSlot,
   registrationSlotToConversationState,
 } from './conversation/mealRegistrationSlots.js';
-import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly, deduceMealTypeFromDecimalHour, formatCurrentSystemTimeContext } from './conversation/mealSmartDefaults.js';
+import { applyMealRegistrationSmartDefaults, applyMealTimingDefaultsOnly, deduceMealTypeFromDecimalHour, formatCurrentSystemTimeContext, parseTimeStringToDecimalHour } from './conversation/mealSmartDefaults.js';
 import {
   BUTLER_MEAL_QUICK_REPLIES,
   REQUEST_FOOD_PHOTO_QUICK_REPLIES,
@@ -392,20 +392,8 @@ function buildConfirmationSummary(commandType, payload) {
   return 'Confermi l\'inserimento?';
 }
 
-const GUIDED_MEAL_LABELS = {
-  colazione: 'Colazione',
-  snack: 'Snack',
-  pranzo: 'Pranzo',
-  cena: 'Cena',
-};
-
-function guidedMealLabel(mealType) {
-  const key = String(mealType || '').split('_')[0].toLowerCase();
-  return GUIDED_MEAL_LABELS[key] || 'pasto';
-}
-
-function buildGuidedLoggerTransitionMessage(mealType) {
-  return `Ho preparato il tuo ${guidedMealLabel(mealType)} nella modalità guidata. Verifica i grammi e conferma.`;
+function buildPassiveMealDraftConfirmMessage() {
+  return 'Ho salvato gli appunti nella tua Inbox. Puoi smistarli dal Diario.';
 }
 
 export class CommandTerminalController {
@@ -478,6 +466,10 @@ export class CommandTerminalController {
     this.pendingMcDriveUnknown = null;
     /** @type {{ currentState?: object } | null} Contesto validazione sequenziale post-Termina. */
     this.mcdriveValidationContext = null;
+    /** @type {string|null} Slot diario in editing (McDrive). */
+    this.mcdriveEditingMealId = null;
+    /** Bozze raw già scritte sul Diario: il Salva aggiorna per id, non crea un nuovo slot. */
+    this.mcdriveDraftPersisted = false;
     /** Evita overlap se processNext viene richiamato mentre è in corso. */
     this.mcdriveValidationRunning = false;
   }
@@ -548,6 +540,8 @@ export class CommandTerminalController {
     this.mcdriveMealType = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
+    this.mcdriveDraftPersisted = false;
+    this.mcdriveEditingMealId = null;
   }
 
   clearChipWaitingState() {
@@ -583,6 +577,7 @@ export class CommandTerminalController {
     this.mcdriveContextState = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
+    this.mcdriveDraftPersisted = false;
     if (
       this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP
       || this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_MEAL_TYPE
@@ -731,17 +726,16 @@ export class CommandTerminalController {
       return this.promptMcdriveMealType();
     }
 
-    // Default tempo: ora corrente, a meno di override (editing).
     const timeCtx = formatCurrentSystemTimeContext();
-    const nextTime = isEditing
-      ? String(
-        options?.editingExactTime
-        || options?.exactTime
-        || options?.timeString
-        || options?.mealTime
-        || timeCtx.timeHHmm,
-      ).trim()
-      : timeCtx.timeHHmm;
+    const nextTime = normalizeMcdriveExactTimeHHmm(
+      isEditing
+        ? (options?.editingExactTime
+          || options?.exactTime
+          || options?.timeString
+          || options?.mealTime)
+        : timeCtx.timeHHmm,
+      timeCtx.timeHHmm,
+    ) || timeCtx.timeHHmm;
     this.mcdriveExactTime = nextTime;
     this.mcdriveTimeString = nextTime;
 
@@ -762,6 +756,10 @@ export class CommandTerminalController {
         fat: f.fat ?? f.fatTotal ?? 0,
         foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
         itemId: f.itemId ?? f.id ?? null,
+        status: f.status || null,
+        spokenFoodName: f.spokenFoodName || f.foodName || f.name || f.desc || '',
+        servingLabel: f.servingLabel || null,
+        coffeeShopProductId: f.coffeeShopProductId || null,
       }));
     }
     const hydratedDraft = editingFoods
@@ -774,12 +772,38 @@ export class CommandTerminalController {
         );
         if (!foodName) return null;
 
+        const id = String(f.itemId || f.id || f.key || `mcdrive_edit_${idx}`).trim();
+        const status = String(f.status || '').toLowerCase();
+        if (isUnresolvedMealDraftItem(f) || status === 'raw') {
+          const alternatives = Array.isArray(f.alternatives) ? f.alternatives.slice(0, 4) : [];
+          const hydratedStatus = status === 'requires_disambiguation' && alternatives.length === 0
+            ? 'raw'
+            : (status || 'raw');
+          return {
+            id,
+            foodName,
+            spokenFoodName: String(f.spokenFoodName || foodName).trim(),
+            grams,
+            status: hydratedStatus,
+            kcal: 0,
+            pro: 0,
+            carbo: 0,
+            fat: 0,
+            foodDbKey: null,
+            isEstimated: true,
+            servingLabel: f.servingLabel || null,
+            coffeeShopProductId: f.coffeeShopProductId || null,
+            alternatives,
+            icon: f.icon || f.emoji || null,
+            emoji: f.icon || f.emoji || null,
+          };
+        }
+
         const kcal = Math.round(Number(f.kcal ?? f.cal ?? 0) || 0);
         const pro = Number(f.pro ?? f.prot ?? 0) || 0;
         const carbo = Number(f.carbo ?? f.carb ?? f.cho ?? 0) || 0;
         const fat = Number(f.fatTotal ?? f.fat ?? 0) || 0;
         const foodDbKey = f.foodDbKey ?? f.matchedKey ?? f.foodDbKey;
-        const id = String(f.itemId || f.id || f.key || `mcdrive_edit_${idx}`).trim();
 
         return attachResolvedFoodIcon({
           id,
@@ -903,6 +927,7 @@ export class CommandTerminalController {
     this.pendingMcDriveDraft = [...list, item];
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    this.persistMcDriveDraftItemsToDiary([item]);
   }
 
   appendMcDriveDraftItems(items = []) {
@@ -918,12 +943,88 @@ export class CommandTerminalController {
     this.pendingMcDriveDraft = [...list, ...toAdd];
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    this.persistMcDriveDraftItemsToDiary(toAdd);
     return {
       ok: true,
       liveMealTray: this.buildMcdriveTrayPayload(),
       pendingMcDriveDraft: [...this.pendingMcDriveDraft],
       addedCount: toAdd.length,
     };
+  }
+
+  /**
+   * Dettatura passiva: raw items solo in Inbox, senza indovinare il pasto.
+   */
+  persistMcDriveDraftItemsToInbox(items = [], timeHHmm = '') {
+    const toPersist = (Array.isArray(items) ? items : []).filter((item) => (
+      item?.foodName && isUnresolvedMealDraftItem(item)
+    ));
+    if (toPersist.length === 0) return;
+
+    const persistItems = mapMcDriveItemsToCommitPayload(toPersist);
+    if (persistItems.length === 0) return;
+
+    const timeCtx = formatCurrentSystemTimeContext();
+    const exactTime = String(timeHHmm || timeCtx.timeHHmm).trim();
+
+    this.bus.publish(
+      DISPATCH_UPSERT_MEAL,
+      {
+        items: persistItems,
+        source: 'meal_inbox_persist',
+        exactTime,
+        timeString: exactTime,
+        createdAt: Date.now(),
+      },
+      {
+        source: 'CommandTerminalController',
+        correlationId: 'meal_inbox_persist',
+      },
+    );
+  }
+
+  /**
+   * Append silenzioso delle voci raw sul pasto di oggi (Firebase), senza chiudere la chat.
+   * Solo se McDrive è già aperto su uno slot scelto dall'utente.
+   */
+  persistMcDriveDraftItemsToDiary(items = []) {
+    const toPersist = (Array.isArray(items) ? items : []).filter((item) => (
+      item?.foodName && isUnresolvedMealDraftItem(item)
+    ));
+    if (toPersist.length === 0) return;
+
+    const persistItems = mapMcDriveItemsToCommitPayload(toPersist);
+    if (persistItems.length === 0) return;
+
+    const timeCtx = formatCurrentSystemTimeContext();
+    const mealType = normalizeMcdriveMealType(
+      this.mcdriveMealType
+      || inferDefaultMealType(this.mcdriveContextState || {}),
+    ) || 'pranzo';
+    const exactTime = String(
+      this.mcdriveExactTime || this.mcdriveTimeString || timeCtx.timeHHmm,
+    ).trim();
+    const editingMealId = String(this.mcdriveEditingMealId || '').trim();
+
+    this.mcdriveDraftPersisted = true;
+    this.bus.publish(
+      DISPATCH_UPSERT_MEAL,
+      {
+        mealType,
+        items: persistItems,
+        action: 'append',
+        upsertAction: 'append',
+        forceNewMealSlot: false,
+        upsertById: true,
+        source: 'mcdrive_draft_persist',
+        ...(editingMealId ? { targetNodeId: editingMealId } : {}),
+        ...(exactTime ? { exactTime, timeString: exactTime } : {}),
+      },
+      {
+        source: 'CommandTerminalController',
+        correlationId: 'mcdrive_draft_persist',
+      },
+    );
   }
 
   removeMcDriveDraftItem(index) {
@@ -943,6 +1044,75 @@ export class CommandTerminalController {
       ok: true,
       liveMealTray: this.buildMcdriveTrayPayload(),
       pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  removeMcDriveDraftItemsByIds(ids = []) {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).map((id) => String(id)).filter(Boolean));
+    if (idSet.size === 0) {
+      return {
+        ok: false,
+        reason: 'empty_ids',
+        liveMealTray: this.buildMcdriveTrayPayload(),
+      };
+    }
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    this.pendingMcDriveDraft = list.filter((item) => {
+      const id = String(item?.id || item?.itemId || '');
+      return !idSet.has(id);
+    });
+    if (this.pendingMcDriveDraft.length === 0) {
+      this.clearMcdriveWizard();
+      return {
+        ok: true,
+        cleared: true,
+        liveMealTray: null,
+        pendingMcDriveDraft: [],
+      };
+    }
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    return {
+      ok: true,
+      cleared: false,
+      liveMealTray: this.buildMcdriveTrayPayload(),
+      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+    };
+  }
+
+  returnMcDriveItemToInbox(index) {
+    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+    const idx = Math.round(Number(index));
+    if (!Number.isFinite(idx) || idx < 0 || idx >= list.length) {
+      return {
+        ok: false,
+        reason: 'invalid_index',
+        liveMealTray: this.buildMcdriveTrayPayload(),
+      };
+    }
+    const item = list[idx];
+    if (String(item?.status || '').toLowerCase() !== 'raw') {
+      return {
+        ok: false,
+        reason: 'not_raw',
+        liveMealTray: this.buildMcdriveTrayPayload(),
+      };
+    }
+    this.removeMcDriveDraftItem(idx);
+    if ((this.pendingMcDriveDraft || []).length === 0) {
+      this.clearMcdriveWizard();
+      return {
+        ok: true,
+        item,
+        liveMealTray: null,
+        pendingMcDriveDraft: [],
+      };
+    }
+    return {
+      ok: true,
+      item,
+      liveMealTray: this.buildMcdriveTrayPayload(),
+      pendingMcDriveDraft: [...(this.pendingMcDriveDraft || [])],
     };
   }
 
@@ -1013,11 +1183,8 @@ export class CommandTerminalController {
   }
 
   updateMcDriveMealTime(exactTimeStr) {
-    const raw = String(exactTimeStr || '').trim();
-    if (!raw) return { ok: false, reason: 'empty_time' };
-    // Validazione base: HH:mm
-    const ok = /^\d{2}:\d{2}$/.test(raw);
-    if (!ok) return { ok: false, reason: 'invalid_time_format' };
+    const raw = normalizeMcdriveExactTimeHHmm(exactTimeStr, null);
+    if (!raw) return { ok: false, reason: 'invalid_time_format' };
     this.mcdriveExactTime = raw;
     this.mcdriveTimeString = raw;
     this.publishMcdriveTraySync();
@@ -1556,18 +1723,26 @@ export class CommandTerminalController {
         DISPATCH_SYSTEM_MESSAGE,
         {
           type: 'system',
-          text: 'Nessun alimento verificato da salvare. Aggiungi voci o risolvi quelle in sospeso.',
-          message: 'Nessun alimento verificato da salvare. Aggiungi voci o risolvi quelle in sospeso.',
+          text: 'Nessun alimento da salvare. Aggiungi voci o risolvi quelle in sospeso.',
+          message: 'Nessun alimento da salvare. Aggiungi voci o risolvi quelle in sospeso.',
           isSystem: true,
           quickReplies: getChatFallbackQuickReplies(),
         },
         { source: 'CommandTerminalController' },
       );
-      return { ok: false, reason: 'no_resolved_items' };
+      return { ok: false, reason: 'no_items' };
     }
 
     const timeCtx = formatCurrentSystemTimeContext();
-    const selectedExactTime = String(this.mcdriveExactTime || this.mcdriveTimeString || timeCtx.timeHHmm).trim();
+    const selectedExactTime = normalizeMcdriveExactTimeHHmm(
+      options?.exactTime
+      || options?.timeString
+      || this.mcdriveExactTime
+      || this.mcdriveTimeString,
+      timeCtx.timeHHmm,
+    ) || timeCtx.timeHHmm;
+    this.mcdriveExactTime = selectedExactTime;
+    this.mcdriveTimeString = selectedExactTime;
     const mealType = String(
       normalizeMcdriveMealType(this.mcdriveMealType)
       || inferDefaultMealType(state)
@@ -1575,8 +1750,9 @@ export class CommandTerminalController {
       || 'pranzo',
     ).trim().toLowerCase();
     const mealTypeForPayload = isEditingLoggedMeal
-      ? String(editingMealId).split('_')[0].trim().toLowerCase() || mealType
+      ? (normalizeMcdriveMealType(this.mcdriveMealType) || mealType)
       : mealType;
+    const draftPersisted = this.mcdriveDraftPersisted === true;
 
     let payload = normalizeFoodPayload(
       {
@@ -1589,8 +1765,15 @@ export class CommandTerminalController {
       { inferMealTypeFromContext: false },
     );
     payload = applyMealTimingDefaultsOnly(payload);
+    payload = {
+      ...payload,
+      exactTime: selectedExactTime,
+      timeString: selectedExactTime,
+      timeHHmm: selectedExactTime,
+      mealTime: parseTimeStringToDecimalHour(selectedExactTime),
+    };
 
-    const exactTime = String(payload?.exactTime || payload?.timeString || selectedExactTime || timeCtx.timeHHmm).trim();
+    const exactTime = selectedExactTime;
     const resolvedMealType = String(payload?.mealType || mealTypeForPayload).trim().toLowerCase() || mealTypeForPayload;
 
     this.clearMcdriveWizard();
@@ -1603,12 +1786,18 @@ export class CommandTerminalController {
       {
         mealType: resolvedMealType,
         items: itemsForCommit,
-        action: isEditingLoggedMeal ? 'replace' : 'append',
-        upsertAction: isEditingLoggedMeal ? 'replace' : 'append',
-        forceNewMealSlot: !isEditingLoggedMeal,
+        action: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
+        upsertAction: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
+        upsertById: draftPersisted && !isEditingLoggedMeal,
+        forceNewMealSlot: !isEditingLoggedMeal && !draftPersisted,
         ...(isEditingLoggedMeal ? { targetNodeId: editingMealId } : {}),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
-        ...(exactTime ? { exactTime, timeString: exactTime } : {}),
+        ...(exactTime ? {
+          exactTime,
+          timeString: exactTime,
+          timeHHmm: exactTime,
+          mealTime: parseTimeStringToDecimalHour(exactTime),
+        } : {}),
       },
       {
         source: 'CommandTerminalController',
@@ -2851,8 +3040,8 @@ export class CommandTerminalController {
   }
 
   /**
-   * Apre la Modalità Guidata AI (McDrive / LiveMealTray) pre-popolata.
-   * Non apre FastMealLogger. Nessuna card Sì/Modifica/Annulla nel thread.
+   * Bozza passiva da testo chat: estrae i nomi, scrive i raw su Firebase, conferma in chat.
+   * Non apre LiveMealTray (si apre solo dal Diario o da START_MCDRIVE_WIZARD esplicito).
    */
   tryOpenGuidedAiMealLogger({
     items,
@@ -2864,50 +3053,85 @@ export class CommandTerminalController {
     currentState = {},
   } = {}) {
     const overlaid = overlayExplicitGramsOntoItems(items, userText);
-    const draftItems = buildMcDriveDraftFromParsedFoods(overlaid);
+    const draftItems = (Array.isArray(overlaid) ? overlaid : [])
+      .map((item) => {
+        const foodName = String(
+          item?.foodName || item?.name || item?.spokenFoodName || item?.desc || item?.label || '',
+        ).trim();
+        if (!foodName) return null;
+        const gramsRaw = Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight);
+        return buildMcDriveRawItem({
+          foodName,
+          grams: Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : undefined,
+          isEstimated: item?.isEstimated === true,
+          servingLabel: item?.servingLabel || null,
+          coffeeShopProductId: item?.coffeeShopProductId || null,
+        });
+      })
+      .filter(Boolean);
     if (draftItems.length === 0) return null;
 
-    const timeCtx = formatCurrentSystemTimeContext();
-    const resolvedMealType = normalizeMcdriveMealType(mealType)
-      || normalizeMcdriveMealType(parseMealTypeFromUserText(userText))
-      || deduceMealTypeFromDecimalHour(timeCtx.decimalHour);
+    // Lavagna già aperta (Diario / Guidami): append sulla card, non silenziare.
+    if (this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
+      this.appendMcDriveDraftItems(draftItems);
+      this.publishMcdriveTraySync();
+      return {
+        ok: true,
+        appended: true,
+        intent: 'MCDRIVE_APPEND_RAW',
+        liveMealTray: this.buildMcdriveTrayPayload(),
+      };
+    }
 
+    const timeCtx = formatCurrentSystemTimeContext();
     const nextTime = normalizeMcdriveExactTimeHHmm(exactTime || timeString, timeCtx.timeHHmm)
       || timeCtx.timeHHmm;
 
+    this.rememberMcdriveContextState(currentState);
+
+    const explicitMealType = normalizeMcdriveMealType(parseMealTypeFromUserText(userText));
+    if (explicitMealType) {
+      this.mcdriveMealType = explicitMealType;
+      this.mcdriveExactTime = nextTime;
+      this.mcdriveTimeString = nextTime;
+      this.persistMcDriveDraftItemsToDiary(draftItems);
+    } else {
+      this.persistMcDriveDraftItemsToInbox(draftItems, nextTime);
+    }
+
+    const mealLabels = {
+      colazione: 'Colazione',
+      snack: 'Spuntino',
+      pranzo: 'Pranzo',
+      cena: 'Cena',
+    };
+    const confirmText = explicitMealType
+      ? `Ho salvato gli appunti in ${mealLabels[explicitMealType] || explicitMealType}. Puoi calcolarli dal Diario.`
+      : buildPassiveMealDraftConfirmMessage();
+
+    this.clearMcdriveWizard();
     this.clearChipWaitingState();
     this.clearMealBuilderWizard();
     this.pendingFreeMealLogContext = null;
-    this.mcdriveValidationContext = null;
-    this.mcdriveValidationRunning = false;
-    this.mcdriveEditingMealId = null;
-    this.rememberMcdriveContextState(currentState);
-
-    this.mcdriveMealType = resolvedMealType;
-    this.mcdriveExactTime = nextTime;
-    this.mcdriveTimeString = nextTime;
-    this.pendingMcDriveDraft = draftItems;
-    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
-    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-
     if (typeof this.clearPendingMealDraft === 'function') {
       this.clearPendingMealDraft();
     }
 
-    const transition = buildGuidedLoggerTransitionMessage(resolvedMealType);
-    this.publishMcdriveTrayMessage(transition);
+    this.publishAdviceMessage({
+      text: confirmText,
+      spokenText: confirmText,
+    });
     return {
       ok: true,
       intent: 'ADD_FOOD',
       mealLavagna: false,
-      mcdriveGuided: true,
-      mode: 'AI_GUIDED_MEAL',
+      mcdriveGuided: false,
+      mode: 'PASSIVE_MEAL_DRAFT',
       userNotified: true,
       sourceText: String(userText || '').trim() || null,
       fastPath: true,
       awaitingConfirmation: false,
       fromVoice: fromVoice === true,
-      liveMealTray: this.buildMcdriveTrayPayload(),
     };
   }
 
@@ -4092,10 +4316,8 @@ export class CommandTerminalController {
     }
 
     if (exactTime != null && String(exactTime).trim()) {
-      const raw = String(exactTime).trim();
-      const match = raw.match(/^(\d{1,2}):(\d{2})$/);
-      if (match) {
-        const formatted = `${String(match[1]).padStart(2, '0')}:${match[2]}`;
+      const formatted = normalizeMcdriveExactTimeHHmm(exactTime, null);
+      if (formatted) {
         next.exactTime = formatted;
         next.timeString = formatted;
       }
@@ -6262,8 +6484,6 @@ export class CommandTerminalController {
       commandResponse.command = this.muteAddFoodLlmCopy(commandResponse.command);
       rawPayload = commandResponse.command?.payload || rawPayload;
 
-      this.publishAddFoodContextAdvice(commandResponse.command);
-
       let normalized = normalizeFoodPayload(rawPayload, currentState, {
         inferMealTypeFromContext: false,
       });
@@ -6277,6 +6497,11 @@ export class CommandTerminalController {
         ...(options?.signal ? { signal: options.signal } : {}),
         ...(options?.fromVoice === true ? { fromVoice: true } : {}),
       };
+
+      // Bozza passiva: niente avviso legacy sui pesi stimati (si calcolano dopo dal Diario).
+      if (!hasFood) {
+        this.publishAddFoodContextAdvice(commandResponse.command);
+      }
 
       // Nota vocale → lavagna FastMealLogger (nessun auto-save), se ci sono alimenti.
       if (options?.fromVoice === true && hasFood) {

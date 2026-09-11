@@ -8,6 +8,7 @@ import { buildPer100TargetNutrientsFromRow } from '../features/mealBuilder/utils
 import { withDefaultUsageStats } from '../features/mealBuilder/utils/timeSlotUtils';
 import { enrichDbRowWithFoodUnits } from '../foodUnits';
 import { buildLearnedFoodEntryPer100 } from '../services/userFoodLearning';
+import { isUnresolvedMealDraftItem } from './mealDraftStatus';
 
 function normalizeFoodDesc(value) {
   return String(value ?? '')
@@ -205,6 +206,7 @@ export function promoteForeignMealItemsForSave(items, ctx = {}) {
 
   const promotedItems = list.map((item, index) => {
     if (!item || typeof item !== 'object') return item;
+    if (isUnresolvedMealDraftItem(item)) return item;
 
     const name = itemDisplayName(item);
     if (!name) return item;

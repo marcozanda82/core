@@ -128,6 +128,7 @@ export default function AiCluster({
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
+  onMcDriveReturnItemToInbox = null,
   onMcDriveUpdateGrams = null,
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
@@ -162,6 +163,12 @@ export default function AiCluster({
   onOpenManualView = null,
   onOpenActivityView = null,
   onOpenPlanView = null,
+  onSelectInboxDraft = null,
+  onDropInboxOntoMeal = null,
+  onTrashMeal = null,
+  trashMeals = [],
+  onRestoreTrashMeal = null,
+  onPurgeTrashMeal = null,
   isDiabetesAppMode = false,
   onRequestReport,
   onRequestBarcodeScan,
@@ -1834,6 +1841,7 @@ export default function AiCluster({
               offDb={offDb}
               getMealTargets={getMcDriveMealTargets}
               onRemoveItem={onMcDriveRemoveItem}
+              onReturnItemToInbox={onMcDriveReturnItemToInbox}
               onUpdateGrams={onMcDriveUpdateGrams}
               onUpdateItemName={onMcDriveUpdateItemName}
               onUpdateMealTime={onMcDriveUpdateMealTime}
@@ -1857,11 +1865,13 @@ export default function AiCluster({
                   fromQuickReply: true,
                 });
               }}
-              onSave={(trayItems) => onSendMessage?.('', {
+              onSave={(trayItems, meta) => onSendMessage?.('', {
                 intent: 'SAVE_MCDRIVE_MEAL',
                 skipUserBubble: true,
                 fromQuickReply: true,
                 mcdriveItems: Array.isArray(trayItems) ? trayItems : undefined,
+                exactTime: meta?.exactTime || meta?.timeString || '',
+                timeString: meta?.timeString || meta?.exactTime || '',
               })}
               onAddMore={() => {
                 onSendMessage?.('', {
@@ -1983,6 +1993,12 @@ export default function AiCluster({
             onOpenPlanView={handlePulsantieraOpenPlan}
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
+            onSelectInboxDraft={onSelectInboxDraft}
+            onDropInboxOntoMeal={onDropInboxOntoMeal}
+            onTrashMeal={onTrashMeal}
+            trashMeals={trashMeals}
+            onRestoreTrashMeal={onRestoreTrashMeal}
+            onPurgeTrashMeal={onPurgeTrashMeal}
             dailyLog={safeDailyLog}
             fullHistory={fullHistory}
             fourCylinder={fourCylinder}

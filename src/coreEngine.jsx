@@ -9,6 +9,12 @@ import {
   readMealMacroGrams,
 } from './features/metabolic/MetabolicKinetics';
 import { resolveOvernightCarryMeal } from './utils/dayTrackingStatus';
+import {
+  isUnresolvedMealDraftItem,
+  isInboxDraftEntry,
+  normalizeInboxDraftBlock,
+  serializeUnassignedDraftsForFirebase,
+} from './utils/mealDraftStatus';
 
 const RADIAN = Math.PI / 180;
 
@@ -1679,6 +1685,20 @@ function computeAccumuloSNC(trackerData, daysBack = 60) {
 function normalizeLogData(rawLog) {
   const out = [];
   (rawLog || []).forEach(entry => {
+    if (!entry || typeof entry !== 'object') return;
+    if (isInboxDraftEntry(entry)) {
+      if (entry.type === 'unassigned_drafts') {
+        const nested = Array.isArray(entry.blocks) ? entry.blocks : [];
+        nested.forEach((block) => {
+          const normalized = normalizeInboxDraftBlock(block);
+          if (normalized) out.push(normalized);
+        });
+        return;
+      }
+      const normalized = normalizeInboxDraftBlock(entry);
+      if (normalized) out.push(normalized);
+      return;
+    }
     if (entry.type === 'ghost_meal') {
       // Preserva snack_2 / pranzo_3: non strippare il suffisso ghost in idratazione.
       const mt = String(entry.mealType || entry.mealId || 'pranzo').trim() || 'pranzo';
@@ -1852,6 +1872,7 @@ function sumMacroAllFood(log, macro) {
   for (let i = 0; i < L.length; i++) {
     const e = L[i];
     if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    if (isUnresolvedMealDraftItem(e)) continue;
     if (macro === 'kcal') s += Number(e.kcal ?? e.cal) || 0;
     else if (macro === 'prot') s += Number(e.prot ?? e.proteine) || 0;
     else if (macro === 'carb') s += Number(e.carb ?? e.carboidrati) || 0;
@@ -1866,6 +1887,7 @@ function countLoggedProteinMealSlots(log) {
   const seen = new Set();
   for (const e of log || []) {
     if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
+    if (isUnresolvedMealDraftItem(e)) continue;
     const mt = String(e.mealType || 'pasto');
     const base = mt.split('_')[0];
     if (toCanonicalMealType(base) === 'colazione') continue;
@@ -2566,6 +2588,10 @@ function denormalizeLogForFirebase(flatLog) {
   const ghostMeals = [];
 
   (flatLog || []).forEach(entry => {
+    if (!entry || typeof entry !== 'object') return;
+    if (isInboxDraftEntry(entry)) {
+      return;
+    }
     if (entry.type === 'ghost_meal') {
       const gm = {
         type: 'ghost_meal',
@@ -2645,6 +2671,7 @@ function denormalizeLogForFirebase(flatLog) {
         type: itemType,
         // Persisti mealType anche sull'item: idratazione robusta se mealId cartella manca.
         mealType,
+        mealTime: Number.isFinite(Number(entry.mealTime)) ? Number(entry.mealTime) : entry.mealTime,
         kcal: rest.kcal ?? rest.cal ?? 0,
         cal: rest.cal ?? rest.kcal ?? 0
       });
@@ -2679,6 +2706,8 @@ function denormalizeLogForFirebase(flatLog) {
   result.push(...workouts);
   result.push(...sleeps);
   result.push(...ghostMeals);
+  const inboxNode = serializeUnassignedDraftsForFirebase(flatLog);
+  if (inboxNode) result.push(inboxNode);
   return result;
 }
 
@@ -2687,6 +2716,10 @@ function applyMealTimes(logArray, timesObj) {
   if (!logArray || !Array.isArray(logArray)) return logArray || [];
   return logArray.map((item) => {
     if ((item.type !== 'food' && item.type !== 'recipe') || !timesObj) return item;
+    const own = Number(item.mealTime);
+    if (Number.isFinite(own) && own >= 0 && own <= 24) {
+      return { ...item, mealTime: own };
+    }
     // Chiave esatta (snack_2) prima del base (snack): non fondere orari di slot ghost.
     const exact = timesObj[item.mealType];
     if (exact !== undefined) return { ...item, mealTime: exact };
@@ -2738,6 +2771,7 @@ function sumFoodKcalFromLogForBattery(log) {
   for (const e of log || []) {
     if (!e) continue;
     if (e.type === 'food' || e.type === 'recipe' || e.type === 'meal') {
+      if (isUnresolvedMealDraftItem(e)) continue;
       total += Number(e.kcal ?? e.cal ?? 0) || 0;
     }
   }
@@ -5098,6 +5132,7 @@ export function sumFoodKcalAndProtein(dailyLog) {
   for (let i = 0; i < L.length; i++) {
     const e = L[i];
     if (e.type !== 'food' && e.type !== 'recipe') continue;
+    if (isUnresolvedMealDraftItem(e)) continue;
     kcal += Number(e.kcal ?? e.cal) || 0;
     prot += Number(e.prot ?? e.proteine) || 0;
   }

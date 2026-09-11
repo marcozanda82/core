@@ -1,7 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stashActivitySheetTempTab, getMuscleGroupsForMacro } from '../../activityCatalog';
-import { decimalToTimeStr } from '../../coreEngine';
+import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
+import {
+  countUnresolvedMealDraftItems,
+  extractUnassignedDraftBlocks,
+  formatInboxDraftCardLabel,
+} from '../../utils/mealDraftStatus';
+import MealTrashSection from '../../components/MealTrashSection';
+import MealTrashSheet from '../../components/MealTrashSheet';
 import CardioProgressBar from '../../components/CardioProgressBar';
 import MuscleStimulusDistrictList from '../trendHub/components/MuscleStimulusDistrictList';
 import { buildMuscleTelemetryRows } from '../trendHub/utils/muscleTelemetryModel';
@@ -24,6 +31,21 @@ const CATEGORY_LABELS = {
 };
 
 const GUIDED_MEAL_PICKER_ID = 'guidato-pasto';
+
+function pointFromPointerOrTouch(event) {
+  if (event?.touches?.length) {
+    return { x: event.touches[0].clientX, y: event.touches[0].clientY };
+  }
+  if (event?.changedTouches?.length) {
+    return { x: event.changedTouches[0].clientX, y: event.changedTouches[0].clientY };
+  }
+  const x = Number(event?.clientX);
+  const y = Number(event?.clientY);
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+  };
+}
 
 const GUIDED_MEAL_ITEMS = [
   { id: 'colazione', icon: '🍳', label: 'Colazione', action: 'startGuidedMeal', mealType: 'colazione' },
@@ -357,6 +379,12 @@ export default function PulsantieraUniversale({
   onOpenPlanView = null,
   onManualShortcut,
   onSendChatMessage,
+  onSelectInboxDraft = null,
+  onDropInboxOntoMeal = null,
+  onTrashMeal = null,
+  trashMeals = [],
+  onRestoreTrashMeal = null,
+  onPurgeTrashMeal = null,
   dailyLog = [],
   fullHistory = {},
   fourCylinder = null,
@@ -366,10 +394,26 @@ export default function PulsantieraUniversale({
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
+  const [inboxDrag, setInboxDrag] = useState(null);
+  const [showMealTrash, setShowMealTrash] = useState(false);
+  const inboxDragRef = useRef({
+    timer: null,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    block: null,
+    armed: false,
+    suppressTapUntil: 0,
+  });
 
   const closeMenus = useCallback(() => {
     setActiveCategory(null);
     setGuidedMealOrigin(null);
+    setShowMealTrash(false);
+    setInboxDrag(null);
+    inboxDragRef.current.armed = false;
+    inboxDragRef.current.block = null;
+    inboxDragRef.current.pointerId = null;
   }, []);
 
   const handleOverlayClose = useCallback(() => {
@@ -528,8 +572,6 @@ export default function PulsantieraUniversale({
     const log = Array.isArray(dailyLog) ? dailyLog : [];
     const items = log.filter(
       (e) => (e?.type === 'food' || e?.type === 'recipe')
-        && typeof e?.mealTime === 'number'
-        && Number.isFinite(e.mealTime)
         && String(e?.mealType || '').trim().length > 0,
     );
 
@@ -545,15 +587,17 @@ export default function PulsantieraUniversale({
     // quindi emettiamo `editingMealId` nello stesso formato.
     const groups = new Map();
     items.forEach((it) => {
-      const mealTypeBase = String(it.mealType || '').split('_')[0].trim().toLowerCase();
-      const base = mealTypeBase;
-      const t = Number(it.mealTime);
-      const slotId = `${base}_${t}`;
+      const mealTypeBase = toCanonicalMealType(String(it.mealType || '').split('_')[0])
+        || String(it.mealType || '').split('_')[0].trim().toLowerCase();
+      const t = typeof it.mealTime === 'number' && Number.isFinite(it.mealTime)
+        ? Number(it.mealTime)
+        : 12;
+      const slotId = `${mealTypeBase}_${t}`;
 
       if (!groups.has(slotId)) {
         groups.set(slotId, {
           slotId,
-          mealTypeBase: base,
+          mealTypeBase,
           mealTime: t,
           foods: [],
         });
@@ -565,10 +609,126 @@ export default function PulsantieraUniversale({
       .sort((a, b) => (Number(b.mealTime) || 0) - (Number(a.mealTime) || 0))
       .map((g) => ({
         ...g,
+        pendingCount: countUnresolvedMealDraftItems(g.foods),
         timeStr: decimalToTimeStr(g.mealTime),
         title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
       }));
   }, [dailyLog]);
+
+  const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
+
+  const resolveInboxDropSlot = useCallback((x, y) => {
+    const el = typeof document !== 'undefined' ? document.elementFromPoint(x, y) : null;
+    const row = el?.closest?.('[data-inbox-drop-slot]');
+    return row?.getAttribute('data-inbox-drop-slot') || '';
+  }, []);
+
+  const isInboxDragging = inboxDrag != null;
+
+  const releaseInboxDrag = useCallback(() => {
+    inboxDragRef.current.armed = false;
+    inboxDragRef.current.block = null;
+    inboxDragRef.current.pointerId = null;
+    setInboxDrag(null);
+  }, []);
+
+  useEffect(() => {
+    if (activeCategory === 'pasti') return undefined;
+    if (inboxDragRef.current.armed) releaseInboxDrag();
+    return undefined;
+  }, [activeCategory, releaseInboxDrag]);
+
+  useEffect(() => {
+    if (!isInboxDragging) return undefined;
+    let finished = false;
+    const onMove = (event) => {
+      if (event.cancelable) event.preventDefault();
+      const { x, y } = pointFromPointerOrTouch(event);
+      const dropSlotId = resolveInboxDropSlot(x, y);
+      setInboxDrag((prev) => (
+        prev
+          ? { ...prev, x, y, dropSlotId }
+          : prev
+      ));
+    };
+    const finish = (event) => {
+      if (finished) return;
+      finished = true;
+      const { x, y } = pointFromPointerOrTouch(event);
+      const dropSlotId = resolveInboxDropSlot(x, y);
+      const block = inboxDragRef.current.block;
+      inboxDragRef.current.armed = false;
+      inboxDragRef.current.block = null;
+      inboxDragRef.current.pointerId = null;
+      inboxDragRef.current.suppressTapUntil = Date.now() + 500;
+      setInboxDrag(null);
+      if (!dropSlotId || !block) return;
+      const meal = pastiToday.find((item) => item.slotId === dropSlotId);
+      if (!meal) return;
+      onDropInboxOntoMeal?.(block, {
+        slotKey: meal.slotId,
+        slotId: meal.slotId,
+        mealType: meal.foods[0]?.mealType || meal.mealTypeBase,
+        mealTime: meal.mealTime,
+        foods: meal.foods,
+        label: meal.title,
+      });
+    };
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', finish);
+    window.addEventListener('touchcancel', finish);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', finish);
+      window.removeEventListener('touchcancel', finish);
+    };
+  }, [isInboxDragging, pastiToday, onDropInboxOntoMeal, resolveInboxDropSlot]);
+
+  const startInboxHandleDrag = useCallback((event, block) => {
+    if (disabled || event.button === 2) return;
+    if (event.type === 'touchstart' && typeof window !== 'undefined' && window.PointerEvent) {
+      return;
+    }
+    if (inboxDragRef.current.armed) return;
+    if (event.cancelable) event.preventDefault();
+    event.stopPropagation();
+    const { x, y } = pointFromPointerOrTouch(event);
+    inboxDragRef.current.startX = x;
+    inboxDragRef.current.startY = y;
+    inboxDragRef.current.block = block;
+    inboxDragRef.current.pointerId = event.pointerId ?? 'touch';
+    inboxDragRef.current.armed = true;
+    try {
+      event.currentTarget?.setPointerCapture?.(event.pointerId);
+    } catch {
+      /* ignore */
+    }
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      /* ignore */
+    }
+    setInboxDrag({
+      block,
+      x,
+      y,
+      dropSlotId: '',
+    });
+  }, [disabled]);
+
+  const onInboxCardClick = useCallback((event, block) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (inboxDragRef.current.armed) return;
+    if (Date.now() < (inboxDragRef.current.suppressTapUntil || 0)) return;
+    onSelectInboxDraft?.(block);
+  }, [onSelectInboxDraft]);
 
   const openStimulusCylinder = useCallback((row) => {
     const workoutMuscles = getMuscleGroupsForMacro(row?.id).map((d) => d.id);
@@ -607,11 +767,27 @@ export default function PulsantieraUniversale({
             className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[90dvh] w-full max-w-lg flex-col items-center gap-4 overflow-hidden"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="shrink-0 text-center">
+            <div className="relative w-full shrink-0 text-center">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Scegli pasto
               </p>
               <h2 className="mt-1 text-xl font-semibold text-zinc-50">Pasti</h2>
+              {Array.isArray(trashMeals) && trashMeals.length > 0 ? (
+                <button
+                  type="button"
+                  className="meal-trash-badge-btn"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setShowMealTrash(true);
+                  }}
+                  aria-label={`Apri cestino, ${trashMeals.length} pasti`}
+                  title="Cestino"
+                >
+                  🗑️
+                  <span className="meal-trash-badge-btn__count">{trashMeals.length}</span>
+                </button>
+              ) : null}
             </div>
 
             <div className="mx-auto grid w-full max-w-sm shrink-0 grid-cols-2 gap-3 px-4 [&>button]:w-full">
@@ -627,75 +803,171 @@ export default function PulsantieraUniversale({
               />
             </div>
 
-            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 pb-1">
-              {pastiToday.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
-                  Nessun pasto registrato oggi.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {pastiToday.map((meal) => {
-                    const foodsForMcDrive = meal.foods.map((f) => ({
-                      foodName: f.foodName || f.name || f.desc || f.label || '',
-                      grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
-                      kcal: f.kcal ?? f.cal ?? 0,
-                      pro: f.pro ?? f.prot ?? 0,
-                      carb: f.carb ?? f.carbo ?? f.cho ?? 0,
-                      fat: f.fat ?? f.fatTotal ?? 0,
-                      foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
-                      itemId: f.itemId ?? f.id ?? null,
-                    }));
-
-                    return (
+            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
+              {inboxBlocks.length > 0 ? (
+                <section className="inbox-pasti-top mb-3 max-h-[38%] shrink-0 overflow-y-auto overscroll-contain">
+                  <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
+                  <p className="mb-2 text-[0.68rem] text-slate-500">
+                    Tocco per smistare · trascina dalla maniglia
+                  </p>
+                  <div className="inbox-drafts__list">
+                    {inboxBlocks.map((block) => (
                       <div
-                        key={meal.slotId}
-                        className="flex items-center justify-between gap-3 rounded-xl border border-slate-800/80 bg-slate-900/40 px-3 py-2"
+                        key={block.id}
+                        className={[
+                          'inbox-drafts__card',
+                          inboxDrag?.block?.id === block.id ? 'inbox-drafts__card--dragging' : '',
+                        ].join(' ')}
                       >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-slate-100">
-                            {meal.title}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              closeMenus();
-                              onOpenManualView?.({ editingMealId: meal.slotId });
-                            }}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                            aria-label="Modifica pasto"
-                            title="Modifica"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              closeMenus();
-                              onSendChatMessage?.('', {
-                                intent: 'START_MCDRIVE_WIZARD',
-                                mealType: meal.mealTypeBase,
-                                editingMealId: meal.slotId,
-                                editingFoods: foodsForMcDrive,
-                                editingExactTime: meal.timeStr,
-                                skipUserBubble: true,
-                              });
-                            }}
-                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                            aria-label="Guidami modifica"
-                            title="Guidato AI"
-                          >
-                            ✨
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          className="inbox-drafts__drag-handle"
+                          aria-label="Trascina bozza sul pasto"
+                          onPointerDown={(event) => startInboxHandleDrag(event, block)}
+                          onTouchStart={(event) => startInboxHandleDrag(event, block)}
+                          onContextMenu={(event) => event.preventDefault()}
+                        >
+                          <span className="inbox-drafts__grip" aria-hidden>
+                            <span /><span /><span /><span /><span /><span />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className="inbox-drafts__card-main"
+                          onClick={(event) => onInboxCardClick(event, block)}
+                        >
+                          <span className="inbox-drafts__card-label">
+                            {formatInboxDraftCardLabel(block)}
+                          </span>
+                          <span className="inbox-drafts__card-cta">Smista</span>
+                        </button>
                       </div>
-                    );
-                  })}
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
+                <h3 className="inbox-drafts__title inbox-drafts__title--muted">I tuoi Pasti</h3>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  {pastiToday.length === 0 ? (
+                    <p className="rounded-xl border border-dashed border-slate-700/80 px-4 py-8 text-center text-sm text-slate-500">
+                      Nessun pasto registrato oggi.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {pastiToday.map((meal) => {
+                        const foodsForMcDrive = meal.foods.map((f) => ({
+                          foodName: f.foodName || f.name || f.desc || f.label || '',
+                          grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
+                          kcal: f.kcal ?? f.cal ?? 0,
+                          pro: f.pro ?? f.prot ?? 0,
+                          carb: f.carb ?? f.carbo ?? f.cho ?? 0,
+                          fat: f.fat ?? f.fatTotal ?? 0,
+                          foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
+                          itemId: f.itemId ?? f.id ?? null,
+                          status: f.status || null,
+                          spokenFoodName: f.spokenFoodName || f.foodName || f.name || f.desc || '',
+                          servingLabel: f.servingLabel || null,
+                          coffeeShopProductId: f.coffeeShopProductId || null,
+                        }));
+                        const isDropTarget = inboxDrag?.dropSlotId === meal.slotId;
+
+                        return (
+                          <div
+                            key={meal.slotId}
+                            data-inbox-drop-slot={meal.slotId}
+                            className={[
+                              'flex items-center justify-between gap-3 rounded-xl border bg-slate-900/40 px-3 py-2',
+                              isDropTarget
+                                ? 'border-amber-400/80 ring-2 ring-amber-400/50'
+                                : 'border-slate-800/80',
+                            ].join(' ')}
+                          >
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 items-center gap-2">
+                                <div className="truncate text-sm font-semibold text-slate-100">
+                                  {meal.title}
+                                </div>
+                                {meal.pendingCount > 0 ? (
+                                  <span className="inline-flex shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-400">
+                                    {meal.pendingCount} da calcolare
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  closeMenus();
+                                  onOpenManualView?.({ editingMealId: meal.slotId });
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                                aria-label="Modifica pasto"
+                                title="Modifica"
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  onTrashMeal?.({
+                                    slotKey: meal.slotId,
+                                    slotId: meal.slotId,
+                                    mealType: meal.foods[0]?.mealType || meal.mealTypeBase,
+                                    mealTime: meal.mealTime,
+                                    foods: meal.foods,
+                                    label: meal.title,
+                                  });
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-rose-300 transition-colors hover:border-rose-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                                aria-label="Sposta pasto nel cestino"
+                                title="Cestino"
+                              >
+                                🗑️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  closeMenus();
+                                  onSendChatMessage?.('', {
+                                    intent: 'START_MCDRIVE_WIZARD',
+                                    mealType: meal.mealTypeBase,
+                                    editingMealId: meal.slotId,
+                                    editingFoods: foodsForMcDrive,
+                                    editingExactTime: meal.timeStr,
+                                    skipUserBubble: true,
+                                  });
+                                }}
+                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
+                                aria-label="Guidami modifica"
+                                title="Guidato AI"
+                              >
+                                ✨
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+              </section>
             </div>
+
+            {inboxDrag ? createPortal(
+              <div
+                className="inbox-drag-ghost"
+                style={{ left: inboxDrag.x, top: inboxDrag.y }}
+              >
+                {formatInboxDraftCardLabel(inboxDrag.block || {})}
+              </div>,
+              document.body,
+            ) : null}
 
             <button
               type="button"
@@ -829,6 +1101,13 @@ export default function PulsantieraUniversale({
   return (
     <div className="relative z-[100045] flex w-full shrink-0 flex-col gap-2 py-2">
       {submenuOverlay}
+      <MealTrashSheet
+        open={showMealTrash && activeCategory === 'pasti'}
+        items={trashMeals}
+        onRestore={onRestoreTrashMeal}
+        onPurge={onPurgeTrashMeal}
+        onClose={() => setShowMealTrash(false)}
+      />
 
       <div
         className="grid w-full grid-cols-5 gap-1.5 sm:gap-2"

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isUnresolvedMealDraftItem } from './utils/mealDraftStatus';
 
 /**
  * TARGET BIOCHIMICI — Tutti i 40+ parametri (macro, aminoacidi, vitamine, minerali, omega).
@@ -112,6 +113,7 @@ export function computeTotali(dailyLog) {
   const log = Array.isArray(dailyLog) ? dailyLog : [];
   log.forEach(item => {
     if (item.type === 'food' || item.type === 'recipe') {
+      if (isUnresolvedMealDraftItem(item)) return;
       totali.kcal += Number(item.kcal || item.cal || 0) || 0;
       ALL_NUTRIENT_KEYS.forEach(k => {
         const raw = readLogItemNutrient(item, k);
@@ -193,6 +195,7 @@ function computeConsumedPerMeal(dailyLog) {
   const log = Array.isArray(dailyLog) ? dailyLog : [];
   log.forEach(item => {
     if ((item.type !== 'food' && item.type !== 'recipe') || !item.mealType) return;
+    if (isUnresolvedMealDraftItem(item)) return;
     const meal = bucketMealTypeForBio(item.mealType);
     if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;

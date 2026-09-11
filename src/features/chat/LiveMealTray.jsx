@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, ChevronRight, Info, Pencil, ScanBarcode, Search, Sparkles, Trash2, Utensils } from 'lucide-react';
+import { ArrowLeftRight, ChevronRight, Inbox, Info, Pencil, ScanBarcode, Search, Sparkles, Trash2, Utensils } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
@@ -177,6 +177,7 @@ function MealItemActionSheet({
   onReplace = null,
   onInspect = null,
   onRemove = null,
+  onReturnToInbox = null,
 }) {
 
   useEffect(() => {
@@ -307,6 +308,18 @@ function MealItemActionSheet({
             </button>
           ) : null}
 
+          {onReturnToInbox ? (
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-[15px] font-medium text-amber-100 transition active:bg-amber-500/15 hover:bg-amber-500/10"
+              onClick={run(onReturnToInbox)}
+            >
+              <Inbox className="h-5 w-5 shrink-0 text-amber-300" aria-hidden />
+              Rimanda in Inbox
+            </button>
+          ) : null}
+
           <button
             type="button"
             role="menuitem"
@@ -362,6 +375,7 @@ function LiveMealTray({
   onSave,
   onAddMore,
   onRemoveItem,
+  onReturnItemToInbox = null,
   onUpdateGrams,
   onUpdateItemName = null,
   onUpdateMealTime = null,
@@ -498,6 +512,29 @@ function LiveMealTray({
   }, []);
 
   const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
+  const [localExactTime, setLocalExactTime] = useState(exactTimeValue);
+  const localExactTimeRef = useRef(exactTimeValue);
+  const timeDirtyRef = useRef(false);
+
+  useEffect(() => {
+    if (!exactTimeValue) return undefined;
+    if (timeDirtyRef.current && localExactTimeRef.current && localExactTimeRef.current !== exactTimeValue) {
+      return undefined;
+    }
+    timeDirtyRef.current = false;
+    setLocalExactTime(exactTimeValue);
+    localExactTimeRef.current = exactTimeValue;
+    return undefined;
+  }, [exactTimeValue]);
+
+  const handleTrayTimeChange = useCallback((next) => {
+    const normalized = String(next || '').trim();
+    if (!normalized) return;
+    timeDirtyRef.current = true;
+    setLocalExactTime(normalized);
+    localExactTimeRef.current = normalized;
+    onUpdateMealTime?.(normalized);
+  }, [onUpdateMealTime]);
 
   const mealTargets = useMemo(() => {
     if (typeof getMealTargets === 'function' && mealType) {
@@ -618,9 +655,9 @@ function LiveMealTray({
             <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
           </div>
           <KentuTimeSelector
-            value={exactTimeValue}
+            value={localExactTime || exactTimeValue}
             disabled={disabled}
-            onChange={(next) => onUpdateMealTime?.(next)}
+            onChange={handleTrayTimeChange}
           />
         </div>
         {hasTargets ? (
@@ -864,6 +901,20 @@ function LiveMealTray({
                         {kcal} kcal
                       </span>
                     ) : null}
+                    {active && !isEditing && isRaw && onReturnItemToInbox ? (
+                      <button
+                        type="button"
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-amber-300/90 transition hover:bg-amber-500/15 hover:text-amber-200"
+                        aria-label={`Rimanda ${name} in Inbox`}
+                        title="Rimanda in Inbox"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onReturnItemToInbox(index);
+                        }}
+                      >
+                        <Inbox className="h-4 w-4" strokeWidth={2.2} />
+                      </button>
+                    ) : null}
                     {active && !isEditing ? (
                       <ChevronRight
                         className="h-4 w-4 shrink-0 text-white/25"
@@ -943,6 +994,21 @@ function LiveMealTray({
                         >
                           Applica
                         </KentuButton>
+                        {isRaw ? (
+                          <button
+                            type="button"
+                            className="kentu-meal-tray__remove"
+                            disabled={disabled || !onReturnItemToInbox}
+                            onClick={() => {
+                              setEditingIndex(null);
+                              onReturnItemToInbox?.(index);
+                            }}
+                            aria-label={`Rimanda ${name} in Inbox`}
+                            title="Rimanda in Inbox"
+                          >
+                            📥
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="kentu-meal-tray__remove"
@@ -1054,7 +1120,13 @@ function LiveMealTray({
                   try {
                     await withMealSavingOverlay(async () => {
                       setIsSaving(true);
-                      await Promise.resolve(onSave?.(items));
+                      const timeToSave = String(
+                        localExactTimeRef.current || localExactTime || exactTimeValue || '',
+                      ).trim();
+                      await Promise.resolve(onSave?.(items, {
+                        exactTime: timeToSave,
+                        timeString: timeToSave,
+                      }));
                     });
                   } catch (err) {
                     console.error('[LiveMealTray] salvataggio fallito', err);
@@ -1178,6 +1250,12 @@ function LiveMealTray({
         onRemove={() => {
           if (actionSheetIndex != null) onRemoveItem?.(actionSheetIndex);
         }}
+        onReturnToInbox={
+          actionSheetIndex != null
+          && String(items[actionSheetIndex]?.status || '').toLowerCase() === 'raw'
+            ? () => onReturnItemToInbox?.(actionSheetIndex)
+            : null
+        }
       />
 
       {inspectIndex != null && items[inspectIndex] && typeof document !== 'undefined' ? createPortal(

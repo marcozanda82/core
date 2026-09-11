@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import MealSavingOverlay from './MealSavingOverlay';
 import {
   clearMealSavingToast,
+  dismissMealSavingOverlayUi,
   registerMealSavingOverlaySetter,
 } from '../utils/mealSavingOverlayController';
 
@@ -51,6 +52,8 @@ export default function MealSavingOverlayHost() {
       <MealSavingOverlay
         open={state.open}
         message={state.message || 'Salvataggio in corso, attendere...'}
+        onClose={dismissMealSavingOverlayUi}
+        onVideoEnd={dismissMealSavingOverlayUi}
       />
       {state.toast ? (
         <div

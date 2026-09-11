@@ -1,9 +1,11 @@
-/** Rimuove undefined ricorsivamente per payload Firebase. */
+/** Rimuove undefined / NaN / funzioni ricorsivamente per payload Firebase. */
 export function stripUndefined(obj, depth = 0) {
   const MAX_STRIP_DEPTH = 25;
   if (depth > MAX_STRIP_DEPTH) return obj;
   if (obj === undefined) return null;
   if (obj === null) return null;
+  if (typeof obj === 'number' && !Number.isFinite(obj)) return null;
+  if (typeof obj === 'function') return undefined;
   if (Array.isArray(obj)) {
     return obj.map((v) => stripUndefined(v, depth + 1)).filter((v) => v !== undefined);
   }

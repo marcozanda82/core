@@ -5,6 +5,7 @@ import {
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_SYSTEM_MESSAGE,
 } from '../contracts/eventTypes.js';
+import { injectMealClockIntoCommandPayload } from '../conversation/mealSmartDefaults.js';
 
 const SKIP_SYSTEM_MESSAGE_CORRELATION_IDS = new Set([
   'advice_accept',
@@ -13,6 +14,8 @@ const SKIP_SYSTEM_MESSAGE_CORRELATION_IDS = new Set([
   'meal_proposal_merge',
   'meal_upsert_accept',
   'mcdrive_save_confirm',
+  'mcdrive_draft_persist',
+  'meal_inbox_persist',
 ]);
 
 /**
@@ -36,12 +39,13 @@ export function initNutritionHandlers({
 
   const handleUpsert = async (envelope, label = 'UPSERT_MEAL') => {
     try {
+      const payload = injectMealClockIntoCommandPayload(envelope?.payload || {});
       console.log(`🔵 DEBUG - OUTPUT TOOL ${label} (dispatch ricevuto):`, {
-        payload: envelope?.payload || {},
+        payload,
         correlationId: envelope?.meta?.correlationId || null,
         source: envelope?.meta?.source || null,
       });
-      const result = await writer(envelope?.payload || {}, envelope);
+      const result = await writer(payload, envelope);
       console.log(`🔵 DEBUG - OUTPUT TOOL ${label} (result commit):`, result);
       if (typeof onMealCommitSuccess === 'function') {
         onMealCommitSuccess(envelope, result);

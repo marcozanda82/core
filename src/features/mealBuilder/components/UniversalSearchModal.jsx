@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Minus, Plus, Search, ScanBarcode, Settings, X } from 'lucide-react';
 import useUniversalSearchEngine, { SEARCH_SOURCE_BADGE } from '../hooks/useUniversalSearchEngine';
 import FoodThumbnail from './FoodThumbnail';
@@ -153,6 +153,19 @@ export default function UniversalSearchModal({
   const [manualForm, setManualForm] = useState(EMPTY_MANUAL_FORM);
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualError, setManualError] = useState('');
+  const searchInputRef = useRef(null);
+
+  useEffect(() => {
+    const el = searchInputRef.current;
+    if (!el) return;
+    const next = String(query ?? '');
+    if (el.value !== next) {
+      el.value = next;
+    }
+    if (!next.trim() && document.activeElement === el) {
+      el.blur();
+    }
+  }, [query]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -278,7 +291,9 @@ export default function UniversalSearchModal({
               aria-hidden
             />
             <input
-              type="search"
+              ref={searchInputRef}
+              type="text"
+              inputMode="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -288,6 +303,9 @@ export default function UniversalSearchModal({
                 }
               }}
               enterKeyHint="search"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               autoFocus={!isManualEntryOpen}
               placeholder="Nome, ricetta o barcode... (Invio per cercare)"
               className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-12 text-sm text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"

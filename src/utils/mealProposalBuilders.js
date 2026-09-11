@@ -1,35 +1,163 @@
 import { getSlotKey } from '../coreEngine.jsx';
 
+function isDiaryFood(item) {
+  return item?.type === 'food' || item?.type === 'recipe';
+}
+
+/** Accetta ora decimale, stringa numerica o HH:mm[:ss]. */
+export function coerceDiaryMealTime(value) {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 24) {
+    return value;
+  }
+  if (value == null || value === '') return null;
+  const asNum = Number(String(value).trim().replace(',', '.'));
+  if (Number.isFinite(asNum) && asNum >= 0 && asNum <= 24 && !String(value).includes(':')) {
+    return asNum;
+  }
+  const s = String(value).trim();
+  const m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+  const hours = Number(m[1]);
+  const minutes = Number(m[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours + minutes / 60;
+}
+
+function foodsOfMealType(list, mealType) {
+  const mt = String(mealType || '');
+  if (!mt) return [];
+  return (list || []).filter((item) => isDiaryFood(item) && String(item.mealType || '') === mt);
+}
+
+function pickClosestMealTimeCluster(foods, parsedTime) {
+  if (!Array.isArray(foods) || foods.length === 0) return [];
+  if (!Number.isFinite(parsedTime)) return foods;
+  const timed = foods
+    .map((item) => ({ item, t: coerceDiaryMealTime(item.mealTime) }))
+    .filter((row) => row.t != null);
+  if (timed.length === 0) return foods;
+  let bestDelta = Infinity;
+  let bestT = timed[0].t;
+  timed.forEach((row) => {
+    const delta = Math.abs(row.t - parsedTime);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestT = row.t;
+    }
+  });
+  const cluster = timed.filter((row) => Math.abs(row.t - bestT) < 1e-4).map((row) => row.item);
+  return cluster.length > 0 ? cluster : foods;
+}
+
 /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime). */
 export function getFoodItemsForMealSlotFromLog(log, slotId) {
   if (slotId == null || slotId === 'rimanenti') return [];
   const idStr = String(slotId);
-  const list = log || [];
+  const list = Array.isArray(log) ? log : [];
   let items = list.filter((item) => getSlotKey(item) === idStr);
-  if (items.length === 0) {
-    const u = idStr.lastIndexOf('_');
-    if (u > 0) {
-      const baseMealType = idStr.slice(0, u);
-      const parsedTime = Number(idStr.slice(u + 1));
-      if (!Number.isNaN(parsedTime)) {
-        items = list.filter(
-          (item) =>
-            (item.type === 'food' || item.type === 'recipe')
-            && item.mealType === baseMealType
-            && typeof item.mealTime === 'number'
-            && Math.abs(item.mealTime - parsedTime) < 1e-4,
-        );
-      }
+  if (items.length > 0) return items;
+
+  const foods = list.filter(isDiaryFood);
+  const mealTypes = [...new Set(foods.map((f) => String(f.mealType || '')).filter(Boolean))];
+  mealTypes.sort((a, b) => b.length - a.length);
+
+  let prefixMatchType = '';
+  let parsedTime = NaN;
+  for (const mt of mealTypes) {
+    if (idStr === mt) {
+      return foods.filter((item) => item.mealType === mt);
+    }
+    const prefix = `${mt}_`;
+    if (!idStr.startsWith(prefix)) continue;
+    const timePart = idStr.slice(prefix.length);
+    const t = Number(timePart);
+    prefixMatchType = mt;
+    if (Number.isFinite(t)) parsedTime = t;
+    const timed = foods.filter((item) => {
+      if (item.mealType !== mt) return false;
+      const mealTime = coerceDiaryMealTime(item.mealTime);
+      return mealTime != null && Number.isFinite(t) && Math.abs(mealTime - t) < 1e-4;
+    });
+    if (timed.length > 0) return timed;
+  }
+
+  if (prefixMatchType) {
+    return pickClosestMealTimeCluster(foodsOfMealType(list, prefixMatchType), parsedTime);
+  }
+
+  const u = idStr.lastIndexOf('_');
+  if (u > 0) {
+    const baseMealType = idStr.slice(0, u);
+    const parsed = Number(idStr.slice(u + 1));
+    return pickClosestMealTimeCluster(
+      foodsOfMealType(list, baseMealType),
+      Number.isFinite(parsed) ? parsed : NaN,
+    );
+  }
+  return foodsOfMealType(list, idStr);
+}
+
+/**
+ * Trova le voci da sostituire in un update assistito: slot id, id alimenti, oppure tipo pasto.
+ * @returns {{ slotId: string, existing: object[] }}
+ */
+export function resolveMealFoodsForSlotUpdate(log, slotId, incomingItems = [], lookupFn = null) {
+  const list = Array.isArray(log) ? log : [];
+  const idStr = String(slotId || '').trim();
+  const lookup = typeof lookupFn === 'function' ? lookupFn : getFoodItemsForMealSlotFromLog;
+
+  let existing = idStr ? lookup(list, idStr) : [];
+  if (existing.length === 0 && idStr && lookup !== getFoodItemsForMealSlotFromLog) {
+    existing = getFoodItemsForMealSlotFromLog(list, idStr);
+  }
+  if (existing.length > 0) {
+    return { slotId: idStr, existing };
+  }
+
+  const incomingIds = new Set(
+    (Array.isArray(incomingItems) ? incomingItems : [])
+      .map((item) => String(item?.id || '').trim())
+      .filter(Boolean),
+  );
+  if (incomingIds.size > 0) {
+    const byId = list.filter((item) => isDiaryFood(item) && incomingIds.has(String(item.id || '')));
+    if (byId.length > 0) {
+      const seed = byId[0];
+      const siblings = list.filter((item) => {
+        if (!isDiaryFood(item)) return false;
+        if (String(item.mealType || '') !== String(seed.mealType || '')) return false;
+        const seedTime = coerceDiaryMealTime(seed.mealTime);
+        if (seedTime != null) {
+          const itemTime = coerceDiaryMealTime(item.mealTime);
+          if (itemTime == null) return false;
+          return Math.abs(itemTime - seedTime) < 1e-4;
+        }
+        return true;
+      });
+      return {
+        slotId: idStr || String(seed.mealType || ''),
+        existing: siblings.length > 0 ? siblings : byId,
+      };
     }
   }
-  return items;
+
+  return { slotId: idStr, existing: [] };
 }
 
 /** Sostituisce tutte le voci di uno slot pasto con nuove entries (overwrite, non append). */
-export function replaceMealSlotInLog(log, slotId, newEntries) {
-  const foodsToRemove = getFoodItemsForMealSlotFromLog(log, slotId);
-  const removeSet = new Set(foodsToRemove);
-  const filtered = (log || []).filter((item) => !removeSet.has(item));
+export function replaceMealSlotInLog(log, slotId, newEntries, foodsToRemoveOverride = null) {
+  const foodsToRemove = Array.isArray(foodsToRemoveOverride) && foodsToRemoveOverride.length > 0
+    ? foodsToRemoveOverride
+    : getFoodItemsForMealSlotFromLog(log, slotId);
+  const removeRefs = new Set(foodsToRemove);
+  const removeIds = new Set(
+    foodsToRemove.map((item) => String(item?.id || '')).filter(Boolean),
+  );
+  const filtered = (log || []).filter((item) => {
+    if (removeRefs.has(item)) return false;
+    const id = String(item?.id || '');
+    return !(id && removeIds.has(id));
+  });
   return [...(Array.isArray(newEntries) ? newEntries : []), ...filtered];
 }
 

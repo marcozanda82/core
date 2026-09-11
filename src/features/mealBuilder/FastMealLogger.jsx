@@ -135,10 +135,12 @@ function inferMealSlotFromCurrentHour() {
 function parseTimeStrToDecimal(value) {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  const [hh, mm] = raw.split(':');
-  const h = Math.min(23, Math.max(0, parseInt(hh, 10) || 0));
-  const m = Math.min(59, Math.max(0, parseInt(mm, 10) || 0));
-  return h + m / 60;
+  const match = raw.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return Math.min(23, Math.max(0, h)) + Math.min(59, Math.max(0, m)) / 60;
 }
 
 function resolveInitialMealTime(initialMealTime, initialDraft) {
@@ -361,6 +363,81 @@ function resolveInitialMealSlot(initialDraft, editingMealId) {
   return inferMealSlotFromCurrentHour();
 }
 
+function VetrinaSearchBar({
+  value,
+  onChange,
+  onSubmit,
+  onOpenAdvanced,
+  inputRef,
+  resetEpoch = 0,
+}) {
+  useEffect(() => {
+    const el = inputRef?.current;
+    if (!el) return;
+    const next = String(value ?? '');
+    if (el.value !== next) {
+      el.value = next;
+    }
+    if (!next && document.activeElement === el) {
+      el.blur();
+    }
+  }, [value, resetEpoch, inputRef]);
+
+  return (
+    <form
+      className="relative"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit?.();
+      }}
+    >
+      <Search
+        className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+        aria-hidden
+      />
+      <input
+        key={resetEpoch}
+        ref={inputRef}
+        type="text"
+        inputMode="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            onSubmit?.();
+          }
+        }}
+        enterKeyHint="search"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        placeholder="Cerca alimento o ricetta..."
+        className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-24 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
+      />
+      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+        <button
+          type="submit"
+          aria-label="Cerca"
+          title="Cerca"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-cyan-300 transition-all hover:border-cyan-500/40 hover:text-cyan-200 active:scale-95"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenAdvanced?.()}
+          aria-label="Ricerca avanzata Kentu DB"
+          title="Ricerca avanzata"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
+        >
+          <ScanBarcode className="h-4 w-4" />
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function FastMealLoggerContent({
   fullHistory,
   todayLog = null,
@@ -438,6 +515,8 @@ function FastMealLoggerContent({
   const mealTimeFromNativeInputRef = useRef(false);
   const checkoutListScrollRef = useRef(null);
   const checkoutScrollCollapsedRef = useRef(false);
+  const vetrinaSearchInputRef = useRef(null);
+  const [vetrinaSearchEpoch, setVetrinaSearchEpoch] = useState(0);
   const {
     draftFoods,
     draftTotals,
@@ -522,10 +601,17 @@ function FastMealLoggerContent({
 
   const resetVetrinaSearchBar = useCallback(() => {
     setVetrinaSearchQuery('');
+    setVetrinaSearchEpoch((n) => n + 1);
+    const el = vetrinaSearchInputRef.current;
+    if (el) {
+      el.value = '';
+      el.blur();
+    }
   }, []);
 
   const handleFoodSelection = async (food) => {
     if (!food) return;
+    resetVetrinaSearchBar();
 
     if (food._source === 'recipe') {
       const payload = buildRecipeDraftPayloadFromSearchResult(food, personalDb);
@@ -564,6 +650,7 @@ function FastMealLoggerContent({
 
   const handleAddSearchResult = async (food, portionCount = 1) => {
     if (!food || portionCount <= 0) return;
+    resetVetrinaSearchBar();
 
     if (food._source === 'recipe') {
       const payload = buildRecipeDraftPayloadFromSearchResult(food, personalDb);
@@ -1071,6 +1158,7 @@ function FastMealLoggerContent({
   const handleSavedRecipeAdd = (recipe) => {
     const payload = buildRecipeDraftPayloadFromDb(recipe.key, recipe.row);
     if (!payload) return;
+    resetVetrinaSearchBar();
     addOrIncrementDraftFood(payload, getFoodUnitWeight(payload));
     notifyItemAdded(recipe.name);
   };
@@ -1249,7 +1337,6 @@ function FastMealLoggerContent({
     const editId = editingMealId ?? undefined;
 
     try {
-      // Overlay chef: prima azione (flushSync) dentro withMealSavingOverlay, prima del save.
       let savedOk = false;
       await withMealSavingOverlay(async () => {
         setIsSavingMeal(true);
@@ -1371,6 +1458,7 @@ function FastMealLoggerContent({
 
   const handleDetailCartConfirm = (selectedWeight) => {
     if (!detailFood?.tile || selectedWeight <= 0) return;
+    resetVetrinaSearchBar();
 
     const grams = clampFoodGrams(selectedWeight);
     if (grams == null || grams <= 0) return;
@@ -1403,6 +1491,7 @@ function FastMealLoggerContent({
 
   const handleAddPredictiveBlock = (tile, portionCount = 1) => {
     if (!tile || portionCount <= 0) return;
+    resetVetrinaSearchBar();
 
     const displayTile = resolveDisplayTile(tile);
     let payload = displayTile;
@@ -1630,53 +1719,14 @@ function FastMealLoggerContent({
           >
             <div className="space-y-3 px-0.5">
               <div>
-                <form
-                  className="relative"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    submitVetrinaSearch();
-                  }}
-                >
-                  <Search
-                    className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                    aria-hidden
-                  />
-                  <input
-                    type="search"
-                    value={vetrinaSearchQuery}
-                    onChange={(event) => {
-                      setVetrinaSearchQuery(event.target.value);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        submitVetrinaSearch();
-                      }
-                    }}
-                    enterKeyHint="search"
-                    placeholder="Cerca alimento o ricetta..."
-                    className="w-full rounded-2xl border border-slate-700/80 bg-slate-900/80 py-3.5 pl-11 pr-24 text-sm text-slate-100 shadow-lg shadow-black/20 placeholder:text-slate-500 transition-all focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/15"
-                  />
-                  <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
-                    <button
-                      type="submit"
-                      aria-label="Cerca"
-                      title="Cerca"
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-cyan-300 transition-all hover:border-cyan-500/40 hover:text-cyan-200 active:scale-95"
-                    >
-                      <Search className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsSearchModalOpen(true)}
-                      aria-label="Ricerca avanzata Kentu DB"
-                      title="Ricerca avanzata"
-                      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
-                    >
-                      <ScanBarcode className="h-4 w-4" />
-                    </button>
-                  </div>
-                </form>
+                <VetrinaSearchBar
+                  value={vetrinaSearchQuery}
+                  onChange={setVetrinaSearchQuery}
+                  onSubmit={submitVetrinaSearch}
+                  onOpenAdvanced={() => setIsSearchModalOpen(true)}
+                  inputRef={vetrinaSearchInputRef}
+                  resetEpoch={vetrinaSearchEpoch}
+                />
                 <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
                   {isVetrinaSearching
                     ? 'Il tuo DB si aggiorna mentre digiti · Invio per cercare nei cataloghi'

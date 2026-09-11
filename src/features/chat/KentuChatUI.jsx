@@ -51,6 +51,7 @@ export default function KentuChatUI({
   onDraftUpdateMealMeta,
   onDraftUpdateFoodItemName,
   onMcDriveRemoveItem = null,
+  onMcDriveReturnItemToInbox = null,
   onMcDriveUpdateGrams = null,
   onMcDriveUpdateMealTime = null,
   onMcDriveApplyAlternative = null,
@@ -77,6 +78,15 @@ export default function KentuChatUI({
   cancelMealBuilder,
   commitMealBuilder,
   onManualShortcut,
+  onOpenManualView = null,
+  onOpenActivityView = null,
+  onOpenPlanView = null,
+  onSelectInboxDraft = null,
+  onDropInboxOntoMeal = null,
+  onTrashMeal = null,
+  trashMeals = [],
+  onRestoreTrashMeal = null,
+  onPurgeTrashMeal = null,
   onRequestReport,
   onRequestBarcodeScan,
   quickStripItems = null,
@@ -166,6 +176,7 @@ export default function KentuChatUI({
         onDraftUpdateMealMeta={onDraftUpdateMealMeta}
         onDraftUpdateFoodItemName={onDraftUpdateFoodItemName}
         onMcDriveRemoveItem={onMcDriveRemoveItem}
+        onMcDriveReturnItemToInbox={onMcDriveReturnItemToInbox}
         onMcDriveUpdateGrams={onMcDriveUpdateGrams}
         onMcDriveUpdateMealTime={onMcDriveUpdateMealTime}
         onMcDriveApplyAlternative={onMcDriveApplyAlternative}
@@ -192,6 +203,15 @@ export default function KentuChatUI({
         cancelMealBuilder={cancelMealBuilder}
         commitMealBuilder={commitMealBuilder}
         onManualShortcut={onManualShortcut}
+        onOpenManualView={onOpenManualView}
+        onOpenActivityView={onOpenActivityView}
+        onOpenPlanView={onOpenPlanView}
+        onSelectInboxDraft={onSelectInboxDraft}
+        onDropInboxOntoMeal={onDropInboxOntoMeal}
+        onTrashMeal={onTrashMeal}
+        trashMeals={trashMeals}
+        onRestoreTrashMeal={onRestoreTrashMeal}
+        onPurgeTrashMeal={onPurgeTrashMeal}
         onRequestReport={onRequestReport}
         onRequestBarcodeScan={onRequestBarcodeScan}
         quickStripItems={quickStripItems}

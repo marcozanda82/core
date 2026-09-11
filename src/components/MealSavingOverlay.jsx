@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { X } from 'lucide-react';
 
 /**
  * Asset statici in /public (Vite li serve dalla root).
@@ -13,12 +14,31 @@ const CHEF_SAVE_POSTER_SRC = `${PUBLIC_BASE}Chef2.png`;
  * Overlay full-screen durante il salvataggio pasto (video chef in loop).
  * Blocca interazioni sullo sfondo per evitare doppi invii.
  * Renderizzato in portal su body così sopravvive allo smontaggio del logger/tray.
+ * Skip / onEnded chiudono solo questa UI: il write Firebase resta in background.
  */
 export default function MealSavingOverlay({
   open = false,
   message = 'Salvataggio in corso, attendere...',
+  onClose = null,
+  onVideoEnd = null,
 }) {
   const videoRef = useRef(null);
+  const closeUiRef = useRef(onVideoEnd || onClose);
+  closeUiRef.current = onVideoEnd || onClose;
+
+  const handleVideoEnd = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.pause();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    if (typeof closeUiRef.current === 'function') {
+      closeUiRef.current();
+    }
+  }, []);
 
   // Forzatura totale: ad ogni apertura/montaggio del player.
   useEffect(() => {
@@ -87,34 +107,50 @@ export default function MealSavingOverlay({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="pointer-events-none flex w-full max-w-md flex-col items-center text-center">
-        <div className="relative aspect-square w-full max-w-sm overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0b1220] shadow-2xl sm:h-96 sm:w-96 sm:max-w-none">
-          <img
-            src={CHEF_SAVE_POSTER_SRC}
-            alt=""
-            aria-hidden
-            className="absolute inset-0 h-full w-full object-cover"
-            draggable={false}
-          />
-          <video
-            ref={videoRef}
-            className="relative z-[1] h-full w-full rounded-2xl object-cover [transform:translateZ(0)] transform-gpu will-change-transform"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            poster={CHEF_SAVE_POSTER_SRC}
-            controls={false}
-            disablePictureInPicture
-            onLoadedMetadata={() => console.log('Video metadata loaded')}
-            onCanPlay={() => console.log('Video can play')}
-            onPlaying={() => console.log('Video playing')}
-            onError={(e) => console.error('Video error:', e.target?.error)}
+      <div className="flex w-full max-w-md flex-col items-center text-center">
+        <div className="relative aspect-square w-full max-w-sm sm:h-96 sm:w-96 sm:max-w-none">
+          <div className="absolute inset-0 overflow-hidden rounded-2xl border border-emerald-500/40 bg-[#0b1220] shadow-2xl">
+            <img
+              src={CHEF_SAVE_POSTER_SRC}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
+            />
+            <video
+              ref={videoRef}
+              className="relative z-[1] h-full w-full rounded-2xl object-cover [transform:translateZ(0)] transform-gpu will-change-transform"
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              poster={CHEF_SAVE_POSTER_SRC}
+              controls={false}
+              disablePictureInPicture
+              onEnded={handleVideoEnd}
+              onLoadedMetadata={() => console.log('Video metadata loaded')}
+              onCanPlay={() => console.log('Video can play')}
+              onPlaying={() => console.log('Video playing')}
+              onError={(e) => console.error('Video error:', e.target?.error)}
+            >
+              <source src={CHEF_SAVE_VIDEO_SRC} type="video/mp4" />
+              Il tuo browser non supporta il video.
+            </video>
+          </div>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleVideoEnd();
+            }}
+            aria-label="Salta video"
+            title="Salta"
+            className="absolute right-2 top-2 z-30 inline-flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full border border-white/25 bg-black/70 px-3 text-white shadow-lg shadow-black/40 backdrop-blur-md transition active:scale-95 hover:bg-black/85"
           >
-            <source src={CHEF_SAVE_VIDEO_SRC} type="video/mp4" />
-            Il tuo browser non supporta il video.
-          </video>
+            <X className="h-5 w-5" strokeWidth={2.4} aria-hidden />
+            <span className="pr-0.5 text-xs font-semibold tracking-wide">Salta</span>
+          </button>
         </div>
         <p className="mt-6 text-base font-semibold tracking-wide text-cyan-50 animate-pulse sm:text-lg">
           {message}

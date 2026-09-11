@@ -29,11 +29,18 @@ function nowMinutes() {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+function minutesFromClockParts(hours, minutes) {
+  const h = Math.min(23, Math.max(0, Math.round(Number(hours))));
+  const m = Math.min(59, Math.max(0, Math.round(Number(minutes))));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
 /**
  * @param {string|number|Date|null|undefined} value
- * @returns {number} minuti da mezzanotte
+ * @returns {number|null} minuti da mezzanotte, oppure null se non interpretabile
  */
-export function parseTimeValueToMinutes(value) {
+export function parseTimeValueToMinutes(value, fallbackMinutes = null) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.getHours() * 60 + value.getMinutes();
   }
@@ -41,11 +48,11 @@ export function parseTimeValueToMinutes(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value > 1e11) {
       const d = new Date(value);
-      return d.getHours() * 60 + d.getMinutes();
+      if (!Number.isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes();
     }
     if (value > 1e9) {
       const d = new Date(value * 1000);
-      return d.getHours() * 60 + d.getMinutes();
+      if (!Number.isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes();
     }
     if (value >= 0 && value <= 24) {
       const hours = Math.min(23, Math.floor(value));
@@ -57,18 +64,17 @@ export function parseTimeValueToMinutes(value) {
   const raw = String(value ?? '').trim();
   const match = raw.match(/^(\d{1,2}):(\d{2})/);
   if (match) {
-    const hours = Math.min(23, Math.max(0, Number(match[1])));
-    const minutes = Math.min(59, Math.max(0, Number(match[2])));
-    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
-      return hours * 60 + minutes;
-    }
+    return minutesFromClockParts(match[1], match[2]);
   }
 
-  return nowMinutes();
+  if (fallbackMinutes != null && Number.isFinite(Number(fallbackMinutes))) {
+    return wrapMinutes(fallbackMinutes);
+  }
+  return null;
 }
 
 /**
- * Selettore orario pasto: pill compatta, input nativo, offset cumulativi.
+ * Selettore orario pasto: pill + input nativo `type=time`.
  * @param {{ value?: string|number|Date|null, onChange?: (hhmm: string) => void, disabled?: boolean, className?: string }} props
  */
 export default function KentuTimeSelector({
@@ -78,19 +84,35 @@ export default function KentuTimeSelector({
   className = '',
 }) {
   const rootRef = useRef(null);
+  const lastValidMinutesRef = useRef(null);
   const [isTimeEditorOpen, setIsTimeEditorOpen] = useState(false);
-  const currentMinutes = useMemo(() => parseTimeValueToMinutes(value), [value]);
-  const display = minutesToHHmm(currentMinutes);
+  const parsedMinutes = useMemo(
+    () => parseTimeValueToMinutes(value, null),
+    [value],
+  );
+  if (parsedMinutes != null) {
+    lastValidMinutesRef.current = wrapMinutes(parsedMinutes);
+  }
+  const currentMinutes = parsedMinutes != null
+    ? wrapMinutes(parsedMinutes)
+    : lastValidMinutesRef.current;
+  const display = minutesToHHmm(
+    currentMinutes != null ? currentMinutes : 0,
+  );
 
   const emit = useCallback((totalMinutes) => {
     if (disabled) return;
+    if (totalMinutes == null || !Number.isFinite(Number(totalMinutes))) return;
     onChange?.(minutesToHHmm(totalMinutes));
   }, [disabled, onChange]);
 
   const handleTimeInput = useCallback((event) => {
     const next = String(event.target.value || '').trim();
-    if (!next) return;
-    emit(parseTimeValueToMinutes(next));
+    const match = next.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (!match) return;
+    const parsed = minutesFromClockParts(match[1], match[2]);
+    if (parsed == null) return;
+    emit(parsed);
   }, [emit]);
 
   const handleQuick = useCallback((offset) => {
@@ -98,7 +120,8 @@ export default function KentuTimeSelector({
       emit(nowMinutes());
       return;
     }
-    emit(wrapMinutes(currentMinutes + Number(offset.minutes || 0)));
+    const base = currentMinutes != null ? currentMinutes : 0;
+    emit(wrapMinutes(base + Number(offset.minutes || 0)));
   }, [currentMinutes, emit]);
 
   const toggleEditor = useCallback(() => {
@@ -152,6 +175,7 @@ export default function KentuTimeSelector({
           value={display}
           disabled={disabled}
           onChange={handleTimeInput}
+          onBlur={handleTimeInput}
           onFocus={() => {
             if (!disabled) setIsTimeEditorOpen(true);
           }}

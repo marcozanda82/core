@@ -62,6 +62,55 @@ export function parseTimeStringToDecimalHour(hhmm) {
   return hours + (Number.isFinite(minutes) ? minutes / 60 : 0);
 }
 
+/**
+ * Inietta exactTime / timeString / timeHHmm / mealTime da qualunque campo orario presente.
+ * Evita UPSERT senza clock quando l'utente ha scelto un orario in McDrive.
+ */
+export function injectMealClockIntoCommandPayload(payload = {}) {
+  if (!payload || typeof payload !== 'object') return {};
+  const next = { ...payload };
+  const rawClock = next.exactTime ?? next.timeString ?? next.timeHHmm ?? '';
+  const clock = normalizePayloadClockTime(rawClock) || String(rawClock || '').trim();
+  if (clock) {
+    next.exactTime = normalizePayloadClockTime(next.exactTime) || clock;
+    next.timeString = normalizePayloadClockTime(next.timeString) || clock;
+    next.timeHHmm = normalizePayloadClockTime(next.timeHHmm) || clock;
+  }
+  const existingMealTime = Number(next.mealTime);
+  if (!Number.isFinite(existingMealTime) || existingMealTime < 0 || existingMealTime > 24) {
+    const parsed = parseTimeStringToDecimalHour(next.exactTime || next.timeString || next.timeHHmm);
+    if (parsed != null && Number.isFinite(parsed)) {
+      next.mealTime = parsed;
+    }
+  }
+  if (Number.isFinite(Number(next.mealTime)) && Array.isArray(next.items) && next.items.length > 0) {
+    const mealTime = Number(next.mealTime);
+    next.items = next.items.map((item) => (
+      item && typeof item === 'object' ? { ...item, mealTime } : item
+    ));
+  }
+  return next;
+}
+
+function normalizePayloadClockTime(raw) {
+  const s = String(raw ?? '').trim();
+  if (/^\d{1,2}:\d{2}/.test(s)) {
+    const [h, m] = s.split(':');
+    const hours = Math.min(23, Math.max(0, Number(h)));
+    const minutes = Math.min(59, Math.max(0, Number(String(m).slice(0, 2))));
+    if (Number.isFinite(hours) && Number.isFinite(minutes)) {
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+  }
+  const n = Number(String(s).replace(',', '.'));
+  if (Number.isFinite(n) && n >= 0 && n <= 24) {
+    const hours = Math.min(23, Math.floor(n));
+    const minutes = Math.min(59, Math.round((n - Math.floor(n)) * 60));
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+  }
+  return null;
+}
+
 function resolveMealTypeFromPayloadAndTexts(payload = {}, conversationTexts = []) {
   const fromPayload = String(payload?.mealType || '').trim().toLowerCase();
   if (MEAL_TYPES.includes(fromPayload)) return fromPayload;
@@ -97,7 +146,8 @@ function resolveExactTimeFromPayloadAndTexts(payload = {}, conversationTexts = [
 export function applyMealTimingDefaultsOnly(payload = {}, options = {}) {
   const ctx = formatCurrentSystemTimeContext(options.now);
 
-  let exactTime = resolveExactTimeForMeal(payload, '');
+  let exactTime = normalizePayloadClockTime(payload?.exactTime || payload?.timeString)
+    || resolveExactTimeForMeal(payload, '');
   if (!exactTime) {
     exactTime = ctx.timeHHmm;
   }
@@ -115,6 +165,8 @@ export function applyMealTimingDefaultsOnly(payload = {}, options = {}) {
     mealType,
     exactTime,
     timeString: exactTime,
+    timeHHmm: exactTime,
+    mealTime: parseTimeStringToDecimalHour(exactTime) ?? payload?.mealTime,
   };
 }
 
@@ -128,7 +180,8 @@ export function applyMealRegistrationSmartDefaults(payload = {}, conversationTex
   const ctx = formatCurrentSystemTimeContext(options.now);
   const texts = Array.isArray(conversationTexts) ? conversationTexts : [];
 
-  let exactTime = resolveExactTimeFromPayloadAndTexts(payload, texts);
+  let exactTime = normalizePayloadClockTime(payload?.exactTime || payload?.timeString)
+    || resolveExactTimeFromPayloadAndTexts(payload, texts);
   if (!exactTime) {
     exactTime = ctx.timeHHmm;
   }
@@ -146,6 +199,8 @@ export function applyMealRegistrationSmartDefaults(payload = {}, conversationTex
     mealType,
     exactTime,
     timeString: exactTime,
+    timeHHmm: exactTime,
+    mealTime: parseTimeStringToDecimalHour(exactTime) ?? payload?.mealTime,
   };
 }
 

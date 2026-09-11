@@ -196,6 +196,7 @@ export function useCommandTerminal({
   onChatClose = null,
   onManualShortcutFromChat = null,
   onOpenSleepPrompt = null,
+  onReturnRawToDiaryInbox = null,
 } = {}) {
   const [chatInput, setChatInput] = useState('');
   const [chatImages, setChatImages] = useState([]);
@@ -207,6 +208,7 @@ export function useCommandTerminal({
   const getCurrentStateRef = useRef(getCurrentState);
   const getWipMealSnapshotRef = useRef(getWipMealSnapshot);
   const onManualShortcutFromChatRef = useRef(onManualShortcutFromChat);
+  const onReturnRawToDiaryInboxRef = useRef(onReturnRawToDiaryInbox);
   const pendingMealUpdateRef = useRef(null);
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(0);
@@ -223,7 +225,8 @@ export function useCommandTerminal({
     getCurrentStateRef.current = getCurrentState;
     getWipMealSnapshotRef.current = getWipMealSnapshot;
     onManualShortcutFromChatRef.current = onManualShortcutFromChat;
-  }, [getCurrentState, getWipMealSnapshot, onManualShortcutFromChat]);
+    onReturnRawToDiaryInboxRef.current = onReturnRawToDiaryInbox;
+  }, [getCurrentState, getWipMealSnapshot, onManualShortcutFromChat, onReturnRawToDiaryInbox]);
 
   const buildAvatarSnapshotContext = useCallback((forceStrategic = false) => {
     const currentState =
@@ -501,7 +504,9 @@ export function useCommandTerminal({
           if (typeof onAddFoodRef.current !== 'function') return null;
           return onAddFoodRef.current(payload, envelope);
         },
-        onMealCommitSuccess: () => {
+        onMealCommitSuccess: (envelope) => {
+          const skipCloseId = String(envelope?.meta?.correlationId || '');
+          if (skipCloseId === 'mcdrive_draft_persist' || skipCloseId === 'meal_inbox_persist') return;
           scheduleChatCloseAfterMealCommit();
         },
       }),
@@ -1145,6 +1150,12 @@ export function useCommandTerminal({
             ? options.wizardSelection
             : null,
           ...(Array.isArray(options?.mcdriveItems) ? { mcdriveItems: options.mcdriveItems } : {}),
+          ...(options?.exactTime != null && String(options.exactTime).trim()
+            ? { exactTime: String(options.exactTime).trim(), timeString: String(options.exactTime).trim() }
+            : {}),
+          ...(options?.timeString != null && String(options.timeString).trim() && !options?.exactTime
+            ? { timeString: String(options.timeString).trim(), exactTime: String(options.timeString).trim() }
+            : {}),
         });
 
         if (
@@ -1490,6 +1501,9 @@ export function useCommandTerminal({
             skipUserBubble: true,
             fromQuickReply: true,
             ...(Array.isArray(extra?.mcdriveItems) ? { mcdriveItems: extra.mcdriveItems } : {}),
+            ...(extra?.exactTime != null && String(extra.exactTime).trim()
+              ? { exactTime: String(extra.exactTime).trim(), timeString: String(extra.exactTime).trim() }
+              : {}),
           });
         }
         if (
@@ -2076,6 +2090,45 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  const dismissMcDriveTrayInChat = useCallback(() => {
+    if (typeof setChatHistoryRef.current !== 'function') return;
+    setChatHistoryRef.current((prev) => (
+      (Array.isArray(prev) ? prev : []).map((entry) => (
+        isActiveMcDriveTrayEntry(entry)
+          ? { ...entry, liveMealTrayResolved: true }
+          : entry
+      ))
+    ));
+  }, []);
+
+  const handleMcDriveRevertAssignedIds = useCallback((ids) => {
+    if (typeof controller.removeMcDriveDraftItemsByIds !== 'function') {
+      return { ok: false, reason: 'mcdrive_revert_unavailable' };
+    }
+    const result = controller.removeMcDriveDraftItemsByIds(ids);
+    if (result?.cleared) {
+      dismissMcDriveTrayInChat();
+      return result;
+    }
+    if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat, dismissMcDriveTrayInChat]);
+
+  const handleMcDriveReturnItemToInbox = useCallback((index) => {
+    if (typeof controller.returnMcDriveItemToInbox !== 'function') {
+      return { ok: false, reason: 'mcdrive_return_unavailable' };
+    }
+    const result = controller.returnMcDriveItemToInbox(index);
+    if (result?.ok && result.item && typeof onReturnRawToDiaryInboxRef.current === 'function') {
+      onReturnRawToDiaryInboxRef.current(result.item);
+    }
+    const remaining = Array.isArray(result?.liveMealTray?.items) ? result.liveMealTray.items : [];
+    if (!result?.ok) return result;
+    if (!result.liveMealTray || remaining.length === 0) dismissMcDriveTrayInChat();
+    else syncMcDriveTrayInChat(result.liveMealTray);
+    return result;
+  }, [controller, syncMcDriveTrayInChat, dismissMcDriveTrayInChat]);
+
   const handleMcDriveUpdateGrams = useCallback((index, grams) => {
     if (typeof controller.updateMcDriveDraftItemGrams !== 'function') {
       return { ok: false, reason: 'mcdrive_update_unavailable' };
@@ -2190,6 +2243,8 @@ export function useCommandTerminal({
     handleWorkoutDraftRemoveExercise,
     handleSaveNewFoodEntry,
     handleMcDriveRemoveItem,
+    handleMcDriveReturnItemToInbox,
+    handleMcDriveRevertAssignedIds,
     handleMcDriveUpdateGrams,
     handleMcDriveUpdateItemName,
     handleMcDriveUpdateMealTime,

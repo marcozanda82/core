@@ -8,6 +8,9 @@ import {
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
+import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, extractUnassignedDraftBlocks } from '../utils/mealDraftStatus';
+import InboxDraftsSection from './InboxDraftsSection';
+import MealTrashSection from './MealTrashSection';
 import {
   computeMaxCompletedFastForDate,
   formatFastingHoursLabel,
@@ -132,10 +135,12 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
       const sortTime = Number.isFinite(mealTime) ? mealTime : 12;
       const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffix}`;
       const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
-      const subtotalKcal = items.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
-      const subtotalProt = items.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
-      const subtotalCarb = items.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
-      const subtotalFat = items.reduce(
+      const pendingCount = countUnresolvedMealDraftItems(items);
+      const resolvedItems = items.filter((f) => !isUnresolvedMealDraftItem(f));
+      const subtotalKcal = resolvedItems.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
+      const subtotalProt = resolvedItems.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
+      const subtotalCarb = resolvedItems.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
+      const subtotalFat = resolvedItems.reduce(
         (sum, f) => sum + (Number(f.fatTotal ?? f.fat) || 0),
         0,
       );
@@ -147,6 +152,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
         subtotalProt,
         subtotalCarb,
         subtotalFat,
+        pendingCount,
         items,
         sortTime,
         stimulantOnly: items.length > 0 && items.every((f) => f?.type === 'stimulant'),
@@ -439,6 +445,12 @@ export default function DiaryDetailsSheet({
   onInspectFood,
   onUpdateWorkoutQuestionnaire,
   onSaveSleep,
+  onSelectInboxDraft = null,
+  onReturnRawToInbox = null,
+  onTrashMeal = null,
+  trashMeals = [],
+  onRestoreTrashMeal = null,
+  onPurgeTrashMeal = null,
 }) {
   const [activePillarTab, setActivePillarTab] = useState('NUTRITION');
 
@@ -509,6 +521,7 @@ export default function DiaryDetailsSheet({
   const consumedKcal = Math.round(Number(totali?.kcal) || 0);
   const targetKcal = Math.round(Number(dynamicDailyKcal) || 0);
   const hasMeals = mealSections.length > 0;
+  const hasInboxDrafts = extractUnassignedDraftBlocks(activeLog).length > 0;
   const hasWorkouts = workoutEntries.length > 0;
 
   const resolveFoodRowKey = (food, section) => (
@@ -604,7 +617,11 @@ export default function DiaryDetailsSheet({
       <div className="diary-details-scroll">
         {activePillarTab === 'NUTRITION' ? (
           <>
-            {!hasMeals ? (
+            <InboxDraftsSection
+              log={activeLog}
+              onSelectDraft={onSelectInboxDraft}
+            />
+            {!hasMeals && !hasInboxDrafts ? (
               <EmptyDayTrackingPrompt
                 isIntentionalFast={isIntentionalFast}
                 onMarkIntentionalFast={onMarkIntentionalFast}
@@ -617,12 +634,21 @@ export default function DiaryDetailsSheet({
                     key={section.slotKey}
                     className={`diary-details-meal ${mealVetrinoClass(section.mealKind)}`}
                   >
-                    <header className="diary-details-meal__header">
+                    <header
+                      className="diary-details-meal__header"
+                      onClick={!section.stimulantOnly ? () => onEditMeal?.(section.slotKey) : undefined}
+                      style={!section.stimulantOnly ? { cursor: 'pointer' } : undefined}
+                    >
                       <div className="diary-details-meal__title-wrap">
                         <h3 className="diary-details-meal__title">
                           {section.label}
                           {section.timeLabel ? (
                             <span className="diary-details-meal__time"> · {section.timeLabel}</span>
+                          ) : null}
+                          {section.pendingCount > 0 ? (
+                            <span className="diary-badge diary-badge--pending ml-0 inline-flex rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-400">
+                              {section.pendingCount} da calcolare
+                            </span>
                           ) : null}
                         </h3>
                         <p className="diary-details-meal__subtotals">
@@ -634,14 +660,38 @@ export default function DiaryDetailsSheet({
                         </p>
                       </div>
                       {!section.stimulantOnly ? (
-                        <button
-                          type="button"
-                          className="diary-details-meal__edit"
-                          onClick={() => onEditMeal?.(section.slotKey)}
-                          aria-label={`Modifica ${section.label}`}
-                        >
-                          Modifica
-                        </button>
+                        <div className="diary-details-meal__actions">
+                          <button
+                            type="button"
+                            className="diary-details-meal__edit"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEditMeal?.(section.slotKey);
+                            }}
+                            aria-label={`Modifica ${section.label}`}
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            type="button"
+                            className="diary-details-meal__edit diary-details-meal__edit--trash"
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              onTrashMeal?.({
+                                slotKey: section.slotKey,
+                                slotId: section.slotKey,
+                                mealType: section.items[0]?.mealType,
+                                mealTime: section.sortTime,
+                                foods: section.items,
+                                label: section.label,
+                              });
+                            }}
+                            aria-label={`Sposta ${section.label} nel cestino`}
+                          >
+                            Cestino
+                          </button>
+                        </div>
                       ) : (
                         <span className="diary-details-meal__edit diary-details-meal__edit--muted" aria-hidden="true">
                           Caffetteria
@@ -671,8 +721,10 @@ export default function DiaryDetailsSheet({
                               <span className="diary-details-food-row__qty">
                                 {resolveItemQtyLabel(food)}
                               </span>
-                              <span className="diary-details-food-row__kcal">
-                                {formatKcal(food.kcal ?? food.cal)}
+                              <span className={`diary-details-food-row__kcal${isUnresolvedMealDraftItem(food) ? ' text-amber-400' : ''}`}>
+                                {isUnresolvedMealDraftItem(food)
+                                  ? 'da calcolare'
+                                  : formatKcal(food.kcal ?? food.cal)}
                               </span>
                             </div>
 
@@ -691,6 +743,18 @@ export default function DiaryDetailsSheet({
                                     Info macro
                                   </button>
                                 </li>
+                                {String(food?.status || '').toLowerCase() === 'raw' ? (
+                                  <li>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onReturnRawToInbox?.(food);
+                                      }}
+                                    >
+                                      Rimanda in Inbox
+                                    </button>
+                                  </li>
+                                ) : null}
                                 <li>
                                   <button
                                     type="button"
@@ -711,6 +775,11 @@ export default function DiaryDetailsSheet({
                   </section>
                 ))
               : null}
+            <MealTrashSection
+              items={trashMeals}
+              onRestore={onRestoreTrashMeal}
+              onPurge={onPurgeTrashMeal}
+            />
           </>
         ) : null}
 

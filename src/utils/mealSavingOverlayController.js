@@ -63,7 +63,11 @@ function waitForNextPaint() {
  */
 export async function withMealSavingOverlay(saveFn, opts = {}) {
   if (mealSaveInFlight) {
-    return undefined;
+    const started = Date.now();
+    while (mealSaveInFlight && Date.now() - started < 8000) {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    }
+    mealSaveInFlight = false;
   }
   mealSaveInFlight = true;
 
@@ -82,6 +86,7 @@ export async function withMealSavingOverlay(saveFn, opts = {}) {
   await waitForNextPaint();
 
   try {
+    // Skip overlay (dismissMealSavingOverlayUi) chiude solo la UI: questa Promise resta in volo.
     const result = await runMealSaveWithMinDuration(saveFn, minMs);
     // Completamento: chiusura istantanea + toast (niente hold sul video).
     applyOverlay({
@@ -104,6 +109,14 @@ export async function withMealSavingOverlay(saveFn, opts = {}) {
   } finally {
     mealSaveInFlight = false;
   }
+}
+
+/**
+ * Chiude solo l'overlay grafico (skip video).
+ * Non tocca `mealSaveInFlight` e non abortisce `saveFn`: il write Firebase continua.
+ */
+export function dismissMealSavingOverlayUi() {
+  applyOverlay({ open: false }, { sync: true });
 }
 
 /** Chiude solo il toast (usato dall'host dopo timeout). */

@@ -8,6 +8,7 @@ import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/f
 import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
+import { coerceDiaryMealTime } from '../../utils/mealProposalBuilders';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -119,12 +120,12 @@ export function useTimelineDiaryActions({
       const timePart = idStr.slice(prefix.length);
       const parsedTime = Number(timePart);
       if (!Number.isFinite(parsedTime)) continue;
-      return foods.filter(
-        (item) =>
-          item.mealType === mt
-          && typeof item.mealTime === 'number'
-          && Math.abs(item.mealTime - parsedTime) < 1e-4,
-      );
+      const timed = foods.filter((item) => {
+        if (item.mealType !== mt) return false;
+        const mealTime = coerceDiaryMealTime(item.mealTime);
+        return mealTime != null && Math.abs(mealTime - parsedTime) < 1e-4;
+      });
+      if (timed.length > 0) return timed;
     }
     return [];
   }, []);
@@ -251,7 +252,7 @@ export function useTimelineDiaryActions({
 
   const handleFastLoggerSave = useCallback(
     async (draftFoods, targetMealType, editMealId, customMealTime) => {
-      if (!isInitialLoadComplete || !Array.isArray(draftFoods) || draftFoods.length === 0) return false;
+      if (!Array.isArray(draftFoods) || draftFoods.length === 0) return false;
 
       const mealTimeBySlot = {
         colazione: 8.0,
@@ -263,22 +264,18 @@ export function useTimelineDiaryActions({
       const batchId = Date.now();
       const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
 
-      // Edit su slot esistente → riusa quell'ID. Nuovo pasto → ghost (snack_2…) come McDrive.
-      let mealTypeToUse = editMealId
-        ? String(editMealId)
-        : getGhostMealType(slot, logToUse);
+      let mealTypeToUse = getGhostMealType(slot, logToUse);
       let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
 
-      if (typeof customMealTime === 'number' && !Number.isNaN(customMealTime)) {
-        mealTimeToUse = customMealTime;
-      } else if (editMealId) {
+      if (editMealId) {
         const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
         if (existing.length > 0) {
           const existingType = String(existing[0]?.mealType || '').trim();
           if (existingType) mealTypeToUse = existingType;
-          if (typeof existing[0].mealTime === 'number' && !Number.isNaN(existing[0].mealTime)) {
-            mealTimeToUse = existing[0].mealTime;
-          }
+          const existingTime = coerceDiaryMealTime(existing[0]?.mealTime);
+          if (existingTime != null) mealTimeToUse = existingTime;
+        } else {
+          mealTypeToUse = slot;
         }
       } else if (pendingGhostMealId) {
         const ghost = logToUse.find(
@@ -290,13 +287,19 @@ export function useTimelineDiaryActions({
         if (ghost) {
           let t = ghost.mealTime;
           if (typeof t !== 'number' || Number.isNaN(t)) t = ghost.time;
-          if (typeof t === 'number' && !Number.isNaN(t)) {
-            mealTimeToUse = t;
+          const coerced = coerceDiaryMealTime(t);
+          if (coerced != null) {
+            mealTimeToUse = coerced;
           } else {
             const parsed = parseFlexibleTimeToDecimal(String(t ?? ''));
             if (parsed != null) mealTimeToUse = parsed;
           }
         }
+      }
+
+      const customDec = coerceDiaryMealTime(customMealTime);
+      if (customDec != null) {
+        mealTimeToUse = customDec;
       }
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
@@ -308,8 +311,18 @@ export function useTimelineDiaryActions({
           name: cleanName,
           grams: weight,
         });
+        const {
+          row,
+          units,
+          defaultUnit,
+          multiplier,
+          selectedUnit,
+          qtyLabel,
+          _searchSource,
+          ...rest
+        } = f || {};
         return ensureRecipeDiaryFields({
-          ...f,
+          ...rest,
           desc: cleanName,
           name: cleanName,
           label: cleanName,
@@ -321,6 +334,10 @@ export function useTimelineDiaryActions({
           weight,
           kcal: Number(f.kcal ?? f.cal) || 0,
           cal: Number(f.cal ?? f.kcal) || 0,
+          prot: Number(f.prot) || 0,
+          carb: Number(f.carb ?? f.cho) || 0,
+          fat: Number(f.fatTotal ?? f.fat) || 0,
+          fatTotal: Number(f.fatTotal ?? f.fat) || 0,
           entrySource: 'ui',
         });
       });
@@ -328,8 +345,15 @@ export function useTimelineDiaryActions({
       let nuovoLog;
       if (editMealId) {
         const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(editMealId));
-        const removeSet = new Set(foodsToRemove);
-        nuovoLog = logToUse.filter((item) => !removeSet.has(item));
+        const removeRefs = new Set(foodsToRemove);
+        const removeIds = new Set(
+          foodsToRemove.map((item) => String(item?.id || '')).filter(Boolean),
+        );
+        nuovoLog = logToUse.filter((item) => {
+          if (removeRefs.has(item)) return false;
+          const id = String(item?.id || '');
+          return !(id && removeIds.has(id));
+        });
         nuovoLog = [...nuoviAlimenti, ...nuovoLog];
       } else {
         nuovoLog = [...logToUse, ...nuoviAlimenti];
@@ -345,18 +369,17 @@ export function useTimelineDiaryActions({
         }
       }
 
-      // Stato locale subito; ricalcoli pesanti (SNC / Ghost Car) via re-render React deferiti.
-      if (isSimulationMode) {
-        setSimulatedLog(nuovoLog);
-      } else {
-        setDailyLog(nuovoLog);
-        // Write atomico giornaliero (tutte le voci in un unico set).
-        await Promise.resolve(syncDatiFirebase(nuovoLog, manualNodes || []));
+      try {
+        if (isSimulationMode) {
+          setSimulatedLog(nuovoLog);
+        } else {
+          setDailyLog(nuovoLog);
+          await Promise.resolve(syncDatiFirebase(nuovoLog, manualNodes || []));
+        }
+      } catch (err) {
+        console.error('[handleFastLoggerSave] sync fallita, pasto comunque in locale', err);
       }
 
-      // Cleanup UI: il logger chiude dopo overlay (closeFastLogger resetta i seed).
-      // Non azzerare editingMealId/pendingGhostMealId qui: cambierebbe la key del
-      // FastMealLogger ancora montato e lo rimonterebbe come pasto nuovo.
       return true;
     },
     [
@@ -365,10 +388,10 @@ export function useTimelineDiaryActions({
       manualNodes,
       syncDatiFirebase,
       isSimulationMode,
-      isInitialLoadComplete,
       getFoodItemsForMealSlot,
       pendingGhostMealId,
       parseFlexibleTimeToDecimal,
+      coerceDiaryMealTime,
       setDailyLog,
       setSimulatedLog,
     ],

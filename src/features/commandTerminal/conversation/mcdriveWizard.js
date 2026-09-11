@@ -18,6 +18,7 @@ import {
   coffeeShopExtrasFromProduct,
 } from '../../../constants/coffeeShopDatabase.js';
 import { resolveSmartDefaultPortion } from '../../../utils/smartFoodPortions.js';
+import { isUnresolvedMealDraftItem } from '../../../utils/mealDraftStatus.js';
 import { resolveFoodVisualEmoji, sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
@@ -99,6 +100,9 @@ export const MCDRIVE_DISAMBIGUATION_STATUSES = Object.freeze([
  */
 export function normalizeMcdriveMealType(raw) {
   const t = String(raw || '').trim().toLowerCase().split('_')[0];
+  if (!t) return null;
+  const canon = toCanonicalMealType(t);
+  if (MCDRIVE_MEAL_TYPES.has(canon)) return canon;
   if (t === 'spuntino' || t === 'merenda') return 'snack';
   return MCDRIVE_MEAL_TYPES.has(t) ? t : null;
 }
@@ -451,7 +455,7 @@ export function buildMcDriveRawItem(parsed = {}) {
  */
 export function normalizeMcdriveExactTimeHHmm(raw, fallbackHHmm = null) {
   const s = String(raw ?? '').trim();
-  if (/^\d{1,2}:\d{2}$/.test(s)) {
+  if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(s)) {
     const [h, m] = s.split(':');
     const hours = Math.min(23, Math.max(0, Number(h)));
     const minutes = Math.min(59, Math.max(0, Number(m)));
@@ -778,25 +782,23 @@ export function buildMcDriveItemFromSearchResult(searchResult, grams, extra = {}
 
 /**
  * Voci lavagna pronte per la scrittura diario (niente rematch sul nome parlato).
+ * Le bozze `raw` / disambiguazione restano persistibili (macro a 0).
  */
 const MCDRIVE_COMMIT_SKIP_STATUSES = new Set([
   'skipped',
-  'raw',
-  'pending_enrichment',
-  'requires_disambiguation',
-  'processing',
-  'validating',
 ]);
 
 export function isMcDriveItemCommitEligible(item) {
   const status = String(item?.status || '').toLowerCase();
   if (MCDRIVE_COMMIT_SKIP_STATUSES.has(status)) return false;
-  return status === 'resolved' || Number(item?.kcal) > 0 || Boolean(item?.foodDbKey);
+  const foodName = sanitizeFoodDisplayName(item?.foodName || item?.name || '', '');
+  return Boolean(foodName);
 }
 
 /**
  * Snapshot UI → payload UPSERT. Usa nome/grammi/macro del vassoio corrente,
  * non il testo originale della chat (`spokenFoodName` allineato al foodName visibile).
+ * Le voci unresolved vanno su Firebase con status e kcal 0 (non sporcano i totali).
  */
 export function mapMcDriveItemsToCommitPayload(items) {
   return (Array.isArray(items) ? items : [])
@@ -810,12 +812,37 @@ export function mapMcDriveItemsToCommitPayload(items) {
       const pro = Number(item?.pro ?? item?.prot);
       const carbo = Number(item?.carbo ?? item?.carb);
       const fat = Number(item?.fat ?? item?.fatTotal);
+      const unresolved = isUnresolvedMealDraftItem(item);
+      const status = String(item?.status || '').toLowerCase();
+      const itemId = item?.id != null ? String(item.id).trim() : '';
+      if (unresolved) {
+        return {
+          foodName,
+          name: foodName,
+          grams,
+          qty: grams,
+          spokenFoodName: foodName,
+          status: status || 'raw',
+          kcal: 0,
+          pro: 0,
+          carbo: 0,
+          fat: 0,
+          ...(itemId ? { id: itemId } : {}),
+          ...(item?.servingLabel ? { servingLabel: String(item.servingLabel) } : {}),
+          ...(item?.coffeeShopProductId
+            ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
+            : {}),
+          ...(item?.icon ? { icon: item.icon } : {}),
+        };
+      }
       return {
         foodName,
         name: foodName,
         grams,
         qty: grams,
         spokenFoodName: foodName,
+        status: 'resolved',
+        ...(itemId ? { id: itemId } : {}),
         ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
         ...(Number.isFinite(kcal) ? { kcal: Math.round(kcal) } : {}),
         ...(Number.isFinite(pro) ? { pro } : {}),

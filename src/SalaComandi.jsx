@@ -169,7 +169,9 @@ import {
   buildMealProposalConfirmMessage,
   buildMealProposalLogEntries,
   buildMealUpdateConfirmMessage,
+  coerceDiaryMealTime,
   replaceMealSlotInLog,
+  resolveMealFoodsForSlotUpdate,
   sumMealProposalMacroTotals,
 } from './utils/mealProposalBuilders';
 import {
@@ -178,6 +180,11 @@ import {
   resolveUpsertActionFromPayload,
   buildMealCommitFingerprint,
 } from './features/commandTerminal/meals/mealUpsert';
+import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, appendUnassignedDraftBlock, removeUnassignedDraftBlock, restoreUnassignedDraftBlock, removeLogItemsByIds, normalizeInboxDraftBlock, serializeInboxDraftItem, INBOX_UNDO_TOAST_MS } from './utils/mealDraftStatus';
+import { injectMealClockIntoCommandPayload, parseTimeStringToDecimalHour } from './features/commandTerminal/conversation/mealSmartDefaults';
+import InboxTriageSheet from './components/InboxTriageSheet';
+import InboxUndoToast from './components/InboxUndoToast';
+import { useMealTrash } from './hooks/salaComandi/useMealTrash';
 import {
   buildDailyPlanGhostLogEntries,
   collectRealMealTitlesFromLog,
@@ -477,6 +484,7 @@ export default function SalaComandi() {
   /** Se un drawer/modale rapido è partito dalla chat, al salvataggio si torna in ai_chat (niente Home). */
   const returnToChatAfterQuickActionRef = useRef(false);
   const closeOverlayChatRef = useRef(null);
+  const sendMessageRef = useRef(null);
   const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
   /** Deep-link Centro Analisi (es. calibrazione da modale calorie). */
   const [centroAnalisiEntryArea, setCentroAnalisiEntryArea] = useState(null);
@@ -1150,6 +1158,13 @@ export default function SalaComandi() {
   const [showMetabolicSheet, setShowMetabolicSheet] = useState(false);
   const [showCalorieDetailsSheet, setShowCalorieDetailsSheet] = useState(false);
   const [showDiarySheet, setShowDiarySheet] = useState(false);
+  const [inboxTriageBlock, setInboxTriageBlock] = useState(null);
+  const [inboxUndoToast, setInboxUndoToast] = useState(null);
+  const inboxUndoRef = useRef({ token: 0, timer: null, snapshot: null });
+  const revertMcDriveAssignedIdsRef = useRef(null);
+  useEffect(() => () => {
+    if (inboxUndoRef.current.timer) window.clearTimeout(inboxUndoRef.current.timer);
+  }, []);
   /** Timeline metabolica 24h aperta da Salute (overlay fullscreen). */
   const [showMetabolicTimeline, setShowMetabolicTimeline] = useState(false);
   const [showEnergySheet, setShowEnergySheet] = useState(false);
@@ -2784,6 +2799,37 @@ export default function SalaComandi() {
         ? items[0].mealTime
         : null);
 
+    if (countUnresolvedMealDraftItems(items) > 0 && typeof sendMessageRef.current === 'function') {
+      const mealType = toCanonicalMealType(String(items[0]?.mealType || mTypeOrId || '').split('_')[0])
+        || 'pranzo';
+      const editingExactTime = resolvedMealTime != null ? decimalToTimeStr(resolvedMealTime) : undefined;
+      const editingFoods = items.map((f) => ({
+        foodName: f.foodName || f.name || f.desc || f.label || '',
+        grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
+        kcal: f.kcal ?? f.cal ?? 0,
+        pro: f.pro ?? f.prot ?? 0,
+        carb: f.carb ?? f.carbo ?? f.cho ?? 0,
+        fat: f.fat ?? f.fatTotal ?? 0,
+        foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
+        itemId: f.itemId ?? f.id ?? null,
+        status: f.status || null,
+        spokenFoodName: f.spokenFoodName || f.foodName || f.name || f.desc || '',
+        servingLabel: f.servingLabel || null,
+        coffeeShopProductId: f.coffeeShopProductId || null,
+      }));
+      setShowDiarySheet(false);
+      openChat();
+      void sendMessageRef.current('', {
+        intent: 'START_MCDRIVE_WIZARD',
+        mealType,
+        editingMealId: mTypeOrId != null ? String(mTypeOrId) : null,
+        editingFoods,
+        editingExactTime,
+        skipUserBubble: true,
+      });
+      return;
+    }
+
     const draftItems = items.map((f) => {
       const weight = Number(f.qta ?? f.weight) || 100;
       const dbKey = f.foodDbKey;
@@ -2849,6 +2895,8 @@ export default function SalaComandi() {
     foodDb,
     toCanonicalMealType,
     getEquivalentMealTypes,
+    openChat,
+    decimalToTimeStr,
   ]);
 
   const loadMealToConstructor = useCallback(
@@ -3190,8 +3238,42 @@ export default function SalaComandi() {
       return addFoodItems
         .map((item, index) => {
           const name = String(item?.name || item?.foodName || '').trim();
-          const qty = Math.max(1, Number(item?.qty ?? item?.grams));
+          if (!name) return null;
+          const preservedId = item?.id != null && String(item.id).trim() ? String(item.id).trim() : null;
+          const qtyRaw = Number(item?.qty ?? item?.grams);
+          const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
           const preferredKey = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
+
+          if (isUnresolvedMealDraftItem(item)) {
+            const status = String(item.status || 'raw').toLowerCase();
+            return {
+              id: preservedId || `draft_${batchIdFood}_${index}`,
+              type: 'food',
+              mealType: batchMealType,
+              desc: name,
+              name,
+              qta: qty,
+              weight: qty,
+              kcal: 0,
+              cal: 0,
+              prot: 0,
+              carb: 0,
+              fat: 0,
+              fatTotal: 0,
+              mealTime: mealDec,
+              batchId: batchIdFood,
+              status,
+              isEstimated: false,
+              entrySource: 'chat_draft',
+              spokenFoodName: item.spokenFoodName || name,
+              ...(item.servingLabel ? { servingLabel: String(item.servingLabel) } : {}),
+              ...(item.coffeeShopProductId
+                ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
+                : {}),
+              ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
+            };
+          }
+
           const shopProduct = getCoffeeShopProductById(item.coffeeShopProductId)
             || findCoffeeShopProductByName(name);
           if (shopProduct) {
@@ -3200,7 +3282,7 @@ export default function SalaComandi() {
               : (shopProduct.servingGrams || 50);
             const scale = grams / (shopProduct.servingGrams || grams || 1);
             const row = {
-              id: `ai_coffee_${batchIdFood}_${index}`,
+              id: preservedId || `ai_coffee_${batchIdFood}_${index}`,
               type: 'food',
               mealType: batchMealType,
               desc: shopProduct.name,
@@ -3233,7 +3315,7 @@ export default function SalaComandi() {
             const isRecipe = dati.type === 'recipe';
             return ensureRecipeDiaryFields({
               ...dati,
-              id: dati.id || `ai_${batchIdFood}_${index}`,
+              id: preservedId || dati.id || `ai_${batchIdFood}_${index}`,
               mealType: batchMealType,
               mealTime: mealDec,
               batchId: batchIdFood,
@@ -3272,7 +3354,7 @@ export default function SalaComandi() {
           const baseEst = estraiDatiFoodDb(name, qty, batchMealType);
           return {
             ...baseEst,
-            id: `ai_food_${batchIdFood}_${index}`,
+            id: preservedId || `ai_food_${batchIdFood}_${index}`,
             type: 'food',
             mealType: batchMealType,
             desc: name,
@@ -3448,6 +3530,43 @@ export default function SalaComandi() {
     });
   }, [isSimulationMode, setSimulatedLog, setDailyLog, syncDatiFirebase]);
 
+  const {
+    trashMeals,
+    trashToast,
+    trashMeal: handleTrashMeal,
+    restoreTrashMeal: handleRestoreTrashMeal,
+    purgeTrashMeal: handlePurgeTrashMeal,
+    undoLastTrash: handleMealTrashUndo,
+    clearTrashToast,
+  } = useMealTrash({
+    db,
+    userUid,
+    isSimulationMode,
+    currentTrackerDate,
+    dailyLogRef,
+    commitDiaryLogWrite,
+    setSimulatedLog,
+    getFoodItemsForMealSlot,
+    setFullHistory,
+    onRemoveLiveMealIds: (ids) => revertMcDriveAssignedIdsRef.current?.(ids),
+  });
+
+  const commitAppendInboxDraft = useCallback((payload = {}) => {
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (!items.length) return { text: '', skipped: true };
+    const createdAt = Number(payload?.createdAt) || Date.now();
+    const timeHHmm = String(payload?.timeString || payload?.exactTime || '').trim();
+    const logSnap = dailyLogRef.current || [];
+    const nextLog = appendUnassignedDraftBlock(logSnap, { items, createdAt, timeHHmm });
+    dailyLogRef.current = nextLog;
+    if (isSimulationMode) {
+      setSimulatedLog(nextLog);
+    } else {
+      commitDiaryLogWrite(nextLog);
+    }
+    return { text: 'Inbox aggiornata.', inbox: true };
+  }, [isSimulationMode, setSimulatedLog, commitDiaryLogWrite]);
+
   const commitAddFoodChatPayload = useCallback(
     (payload) => {
       const {
@@ -3610,26 +3729,38 @@ Slot esistente aggiornato (nessun ghost).`;
         timeString: oraStringFood,
         mealDec: mealDecFood,
         items: addFoodItems,
+        mealType: mealTypeHint,
       } = payload || {};
-      const slotId = String(targetNodeId || '').trim();
-      if (!slotId || !Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
 
       const logSnap = dailyLogRef.current || [];
-      const existing = getFoodItemsForMealSlot(logSnap, slotId);
-      if (!existing.length) return null;
+      const resolved = resolveMealFoodsForSlotUpdate(
+        logSnap,
+        targetNodeId,
+        addFoodItems,
+        getFoodItemsForMealSlot,
+      );
+      let slotId = resolved.slotId;
+      const existing = resolved.existing;
 
+      const parsedFromString = parseTimeStringToDecimalHour(oraStringFood);
+      const mealTimeToWrite = coerceDiaryMealTime(mealDecFood)
+        ?? coerceDiaryMealTime(parsedFromString)
+        ?? coerceDiaryMealTime(existing[0]?.mealTime)
+        ?? coerceDiaryMealTime(oraStringFood)
+        ?? 13;
+      const mealTypeToWrite = existing[0]?.mealType
+        || String(mealTypeHint || targetNodeId || 'pranzo').split('_')[0];
       const forcedMealSlot = {
-        mealType: existing[0]?.mealType,
-        mealTime: typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
-          ? existing[0].mealTime
-          : mealDecFood,
+        mealType: mealTypeToWrite,
+        mealTime: mealTimeToWrite,
       };
       const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
         addFoodItems,
-        forcedMealSlot.mealTime,
+        mealTimeToWrite,
         toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
         forcedMealSlot,
-      );
+      ).map((food) => ({ ...food, mealTime: mealTimeToWrite }));
       if (!alimentiProcessatiFood.length) return null;
 
       const totKcal = Math.round(
@@ -3650,10 +3781,14 @@ Slot esistente aggiornato (nessun ghost).`;
         fat: totFat,
       });
 
+      const nextLog = existing.length
+        ? replaceMealSlotInLog(logSnap, slotId, alimentiProcessatiFood, existing)
+        : replaceMealSlotInLog(logSnap, slotId, alimentiProcessatiFood);
+
       if (isSimulationMode) {
-        setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, alimentiProcessatiFood));
+        setSimulatedLog(nextLog);
       } else {
-        commitDiaryLogWrite(replaceMealSlotInLog(dailyLogRef.current || [], slotId, alimentiProcessatiFood));
+        commitDiaryLogWrite(nextLog);
       }
       return testoRispostaFood;
     },
@@ -3665,7 +3800,107 @@ Slot esistente aggiornato (nessun ghost).`;
       commitDiaryLogWrite,
       decimalToTimeStr,
       toCanonicalMealType,
+      parseTimeStringToDecimalHour,
+      coerceDiaryMealTime,
     ]
+  );
+
+  /** Aggiorna per id le voci di uno slot (bozza raw → resolved) senza cancellare gli altri alimenti. */
+  const commitUpsertMealItemsById = useCallback(
+    (payload) => {
+      const {
+        targetNodeId,
+        mealType: mealTypeHint,
+        timeString: oraStringFood,
+        mealDec: mealDecFood,
+        items: addFoodItems,
+      } = payload || {};
+      if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
+
+      const logSnap = dailyLogRef.current || [];
+      let slotId = String(targetNodeId || '').trim();
+      let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
+
+      if (!existing.length) {
+        const canonical = toCanonicalMealType(String(mealTypeHint || '').split('_')[0]);
+        const found = findExistingCanonicalMealSlot(logSnap, canonical);
+        if (found) {
+          slotId = found.slotId;
+          existing = getFoodItemsForMealSlot(logSnap, slotId);
+        }
+      }
+
+      if (!existing.length || !slotId) {
+        return commitAddFoodChatPayload({
+          timeString: oraStringFood,
+          mealDec: mealDecFood,
+          items: addFoodItems,
+          mealType: mealTypeHint,
+        });
+      }
+
+      const mealTimeToWrite = (typeof mealDecFood === 'number' && !Number.isNaN(mealDecFood))
+        ? mealDecFood
+        : (typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
+          ? existing[0].mealTime
+          : mealDecFood);
+      const forcedMealSlot = {
+        mealType: existing[0]?.mealType || slotId,
+        mealTime: mealTimeToWrite,
+      };
+      const incomingFoods = mapProposalItemsToDiaryFoods(
+        addFoodItems,
+        forcedMealSlot.mealTime,
+        toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
+        forcedMealSlot,
+      );
+      if (!incomingFoods.length) return null;
+
+      const usedIncoming = new Set();
+      const nextEntries = existing.map((food) => {
+        const match = incomingFoods.find((incoming) => String(incoming.id) === String(food.id));
+        if (!match) {
+          return mealTimeToWrite != null && Number.isFinite(Number(mealTimeToWrite))
+            ? { ...food, mealTime: mealTimeToWrite }
+            : food;
+        }
+        usedIncoming.add(String(match.id));
+        return {
+          ...match,
+          mealType: food.mealType,
+          mealTime: mealTimeToWrite,
+        };
+      });
+      incomingFoods.forEach((incoming) => {
+        if (!usedIncoming.has(String(incoming.id))) nextEntries.push(incoming);
+      });
+
+      const resolvedOnly = nextEntries.filter((f) => !isUnresolvedMealDraftItem(f));
+      const totKcal = Math.round(
+        resolvedOnly.reduce((s, f) => s + (Number(f.kcal) || Number(f.cal) || 0), 0),
+      );
+      const confirmTime = oraStringFood || decimalToTimeStr(forcedMealSlot.mealTime);
+      const testoRispostaFood = `✅ **Diario aggiornato (${String(forcedMealSlot.mealType || 'pasto').split('_')[0]})**
+- **Orario:** ${confirmTime}
+- **Kcal (calcolate):** ${totKcal}`;
+
+      if (isSimulationMode) {
+        setSimulatedLog((prev) => replaceMealSlotInLog(prev || [], slotId, nextEntries));
+      } else {
+        commitDiaryLogWrite(replaceMealSlotInLog(dailyLogRef.current || [], slotId, nextEntries));
+      }
+      return testoRispostaFood;
+    },
+    [
+      mapProposalItemsToDiaryFoods,
+      getFoodItemsForMealSlot,
+      commitAddFoodChatPayload,
+      isSimulationMode,
+      setSimulatedLog,
+      commitDiaryLogWrite,
+      decimalToTimeStr,
+      toCanonicalMealType,
+    ],
   );
 
   const saveCustomRecipeToFoodDb = useCallback(async ({ desc, kcal, prot, carb, fatTotal, ingredients }, existingKey) => {
@@ -4368,6 +4603,204 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     (acc[slotKey] = acc[slotKey] || []).push(food);
     return acc;
   }, {});
+
+  const inboxTriageMeals = useMemo(() => (
+    Object.entries(groupedFoods || {})
+      .map(([slotKey, items]) => {
+        if (!Array.isArray(items) || items.length === 0) return null;
+        if (items.every((food) => food?.type === 'stimulant')) return null;
+        const mealType = items[0]?.mealType || slotKey.split('_')[0];
+        const baseType = String(mealType).split('_')[0];
+        const suffix = String(mealType).includes('_') ? ` ${String(mealType).split('_')[1]}` : '';
+        const mealTimeRaw = Number(items[0]?.mealTime ?? items[0]?.time ?? 12);
+        const mealTime = Number.isFinite(mealTimeRaw) ? mealTimeRaw : 12;
+        return {
+          slotKey,
+          mealType,
+          mealTime,
+          label: `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffix}`,
+          timeLabel: decimalToTimeStr(mealTime),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.mealTime - b.mealTime)
+  ), [groupedFoods, decimalToTimeStr, toCanonicalMealType]);
+
+  const writeAssignedInboxLog = useCallback((nextLog) => {
+    dailyLogRef.current = nextLog;
+    if (isSimulationMode) {
+      setSimulatedLog(nextLog);
+      return;
+    }
+    commitDiaryLogWrite(nextLog);
+  }, [isSimulationMode, setSimulatedLog, commitDiaryLogWrite]);
+
+  const clearInboxUndoToast = useCallback(() => {
+    if (inboxUndoRef.current.timer) {
+      window.clearTimeout(inboxUndoRef.current.timer);
+      inboxUndoRef.current.timer = null;
+    }
+    inboxUndoRef.current.token = 0;
+    inboxUndoRef.current.snapshot = null;
+    setInboxUndoToast(null);
+  }, []);
+
+  const armInboxUndo = useCallback((snapshot, message) => {
+    const token = Date.now();
+    inboxUndoRef.current.token = token;
+    inboxUndoRef.current.snapshot = snapshot;
+    setInboxUndoToast({ token, message });
+    if (inboxUndoRef.current.timer) window.clearTimeout(inboxUndoRef.current.timer);
+    inboxUndoRef.current.timer = window.setTimeout(() => {
+      if (inboxUndoRef.current.token === token) {
+        inboxUndoRef.current.snapshot = null;
+        inboxUndoRef.current.token = 0;
+        setInboxUndoToast(null);
+      }
+    }, INBOX_UNDO_TOAST_MS);
+  }, []);
+
+  const handleInboxUndo = useCallback(() => {
+    const snapshot = inboxUndoRef.current.snapshot;
+    clearInboxUndoToast();
+    if (!snapshot?.originalBlock || !Array.isArray(snapshot.assignedItemIds)) return;
+    const logSnap = dailyLogRef.current || [];
+    const withoutAssigned = removeLogItemsByIds(logSnap, snapshot.assignedItemIds);
+    writeAssignedInboxLog(restoreUnassignedDraftBlock(withoutAssigned, snapshot.originalBlock));
+    revertMcDriveAssignedIdsRef.current?.(snapshot.assignedItemIds);
+  }, [clearInboxUndoToast, writeAssignedInboxLog]);
+
+  const handleReturnRawToDiaryInbox = useCallback((item) => {
+    const serialized = serializeInboxDraftItem(item);
+    if (!serialized) return;
+    const itemId = serialized.id != null ? String(serialized.id) : '';
+    if (!itemId) return;
+    clearInboxUndoToast();
+    const logSnap = dailyLogRef.current || [];
+    const timeHHmm = decimalToTimeStr(getCurrentTimeRoundedTo15Min());
+    writeAssignedInboxLog(appendUnassignedDraftBlock(
+      removeLogItemsByIds(logSnap, [itemId]),
+      {
+        items: [serialized],
+        createdAt: Date.now(),
+        timeHHmm,
+      },
+    ));
+    revertMcDriveAssignedIdsRef.current?.([itemId]);
+  }, [clearInboxUndoToast, writeAssignedInboxLog, decimalToTimeStr, getCurrentTimeRoundedTo15Min]);
+
+  const handleSelectInboxDraft = useCallback((block) => {
+    if (!block) return;
+    setInboxTriageBlock(block);
+  }, []);
+
+  const handleCreateMealFromInbox = useCallback((block, mealTypeRaw = 'snack') => {
+    if (!block) return;
+    const originalBlock = normalizeInboxDraftBlock(block);
+    const logSnap = dailyLogRef.current || [];
+    const without = removeUnassignedDraftBlock(logSnap, block.id);
+    const mealDec = parseTimeStringToDecimalHour(block.timeHHmm)
+      ?? parseFlexibleTimeToDecimal(String(block.timeHHmm || ''))
+      ?? getCurrentTimeRoundedTo15Min();
+    const baseType = toCanonicalMealType(String(mealTypeRaw || '').split('_')[0]) || 'snack';
+    const newMealType = getGhostMealType(baseType, without);
+    const foods = mapProposalItemsToDiaryFoods(
+      block.items,
+      mealDec,
+      baseType,
+      { mealType: newMealType, mealTime: mealDec },
+    );
+    if (!foods.length) return;
+    writeAssignedInboxLog([...without, ...foods]);
+    setInboxTriageBlock(null);
+    setShowDiarySheet(false);
+    const mealLabel = MEAL_LABELS_SAVE[baseType] || baseType;
+    armInboxUndo(
+      {
+        originalBlock,
+        assignedItemIds: foods.map((food) => String(food.id)).filter(Boolean),
+      },
+      `Bozza assegnata a ${mealLabel}`,
+    );
+    openMealEditorForEdit(`${newMealType}_${mealDec}`, foods, mealDec);
+  }, [
+    mapProposalItemsToDiaryFoods,
+    parseFlexibleTimeToDecimal,
+    getCurrentTimeRoundedTo15Min,
+    getGhostMealType,
+    toCanonicalMealType,
+    writeAssignedInboxLog,
+    openMealEditorForEdit,
+    armInboxUndo,
+  ]);
+
+  const assignInboxDraftToExistingMeal = useCallback((block, meal, { openTray = true } = {}) => {
+    if (!block || !(meal?.slotKey || meal.slotId)) return false;
+    const originalBlock = normalizeInboxDraftBlock(block);
+    const slotKey = String(meal.slotKey || meal.slotId);
+    const logSnap = dailyLogRef.current || [];
+    const without = removeUnassignedDraftBlock(logSnap, block.id);
+    let existing = getFoodItemsForMealSlot(without, slotKey);
+    if (!existing.length && Array.isArray(meal.foods) && meal.foods.length > 0) {
+      existing = meal.foods.filter((item) => item && (item.type === 'food' || item.type === 'recipe' || !item.type));
+    }
+    const forcedMealSlot = {
+      mealType: existing[0]?.mealType || meal.mealType || meal.mealTypeBase || 'snack',
+      mealTime: typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
+        ? existing[0].mealTime
+        : (Number.isFinite(Number(meal.mealTime)) ? Number(meal.mealTime) : getCurrentTimeRoundedTo15Min()),
+    };
+    const incoming = mapProposalItemsToDiaryFoods(
+      block.items,
+      forcedMealSlot.mealTime,
+      toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
+      forcedMealSlot,
+    );
+    if (!incoming.length) return false;
+    const merged = [...existing, ...incoming];
+    const existingIds = new Set(existing.map((item) => String(item?.id)).filter((id) => id && id !== 'undefined'));
+    const nextLog = existingIds.size > 0
+      ? [...without.filter((item) => !existingIds.has(String(item?.id))), ...merged]
+      : [...without, ...incoming];
+    writeAssignedInboxLog(nextLog);
+    setInboxTriageBlock(null);
+    const mealLabel = String(meal.label || meal.title || meal.mealTypeBase || 'pasto').split(' - ')[0];
+    armInboxUndo(
+      {
+        originalBlock,
+        assignedItemIds: incoming.map((food) => String(food.id)).filter(Boolean),
+      },
+      `Bozza assegnata a ${mealLabel}`,
+    );
+    if (openTray) {
+      setShowDiarySheet(false);
+      openMealEditorForEdit(slotKey, merged, forcedMealSlot.mealTime);
+    }
+    return true;
+  }, [
+    getFoodItemsForMealSlot,
+    mapProposalItemsToDiaryFoods,
+    toCanonicalMealType,
+    getCurrentTimeRoundedTo15Min,
+    writeAssignedInboxLog,
+    openMealEditorForEdit,
+    armInboxUndo,
+  ]);
+
+  const handleMergeInboxIntoMeal = useCallback((block, meal) => {
+    assignInboxDraftToExistingMeal(block, meal, { openTray: true });
+  }, [assignInboxDraftToExistingMeal]);
+
+  const handleDropInboxOntoMeal = useCallback((block, meal) => {
+    return assignInboxDraftToExistingMeal(block, meal, { openTray: false });
+  }, [assignInboxDraftToExistingMeal]);
+
+  const handleDeleteInboxDraft = useCallback((block) => {
+    if (!block?.id) return;
+    const logSnap = dailyLogRef.current || [];
+    writeAssignedInboxLog(removeUnassignedDraftBlock(logSnap, block.id));
+    setInboxTriageBlock(null);
+  }, [writeAssignedInboxLog]);
   
   const workoutsLog = (activeLog || []).filter(item => item.type === 'workout');
 
@@ -5621,7 +6054,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const commitAddFoodCommand = useCallback(
     (payloadRaw = {}) => {
-      const payload = payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {};
+      const payload = injectMealClockIntoCommandPayload(
+        payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {},
+      );
+      if (String(payload?.source || '') === 'meal_inbox_persist') {
+        return commitAppendInboxDraft(payload);
+      }
       const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
       const logSnap = dailyLogRef.current || [];
       let action = resolveUpsertActionFromPayload(payload);
@@ -5660,8 +6098,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       const fingerprint = buildMealCommitFingerprint(commitPayload, currentTrackerDateRef.current || '');
       const now = Date.now();
+      const skipDedupe = payload?.upsertById === true
+        || String(payload?.source || '') === 'mcdrive_draft_persist'
+        || String(payload?.source || '') === 'meal_inbox_persist'
+        || String(payload?.source || '') === 'mcdrive_wizard_edit'
+        || String(payload?.source || '') === 'mcdrive_wizard';
       if (
-        fingerprint
+        !skipDedupe
+        && fingerprint
         && mealCommitGuardRef.current.fingerprint === fingerprint
         && now - mealCommitGuardRef.current.at < MEAL_COMMIT_DEDUPE_MS
       ) {
@@ -5678,10 +6122,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         pranzo: 13,
         cena: 20,
       };
-      let mealDec = null;
-      const exact = String(payload?.exactTime || payload?.timeString || '').trim();
-      if (exact) {
-        mealDec = parseFlexibleTimeToDecimal(exact);
+      let mealDec = coerceDiaryMealTime(payload?.mealTime);
+      const exact = String(payload?.exactTime || payload?.timeString || payload?.timeHHmm || '').trim();
+      if (mealDec == null && exact) {
+        mealDec = parseTimeStringToDecimalHour(exact) ?? parseFlexibleTimeToDecimal(exact);
       }
       if (mealDec == null) {
         mealDec =
@@ -5698,7 +6142,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           : [];
       if (!rawItems.length) throw new Error('Nessun alimento nel payload');
 
-      const promotion = promoteForeignMealItemsForSave(rawItems, {
+      const isDraftPersist = String(payload?.source || '') === 'mcdrive_draft_persist'
+        || payload?.upsertById === true;
+      const resolvedForPromotion = rawItems.filter((item) => !isUnresolvedMealDraftItem(item));
+      const unresolvedItems = rawItems.filter((item) => isUnresolvedMealDraftItem(item));
+
+      const promotion = promoteForeignMealItemsForSave(resolvedForPromotion, {
         personalDb: foodDb,
         kentuItDb: kentuCatalogItDbRef.current || {},
         globalDb: csvFoodDbRef.current || {},
@@ -5717,7 +6166,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }
       }
 
-      const itemsSource = promotion.items;
+      const itemsSource = [...(promotion.items || []), ...unresolvedItems];
       const personalDbForUsage = promotion.mergedPersonalDb;
 
       const items = itemsSource.map((item) => {
@@ -5731,6 +6180,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         const pro = Number(item?.pro ?? item?.prot);
         const carbo = Number(item?.carbo ?? item?.carb);
         const fat = Number(item?.fat ?? item?.fatTotal);
+        const itemId = item?.id != null ? String(item.id).trim() : '';
+        const status = String(item?.status || '').toLowerCase();
         return {
           name,
           foodName: name,
@@ -5738,6 +6189,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           grams,
           isEstimated: item?.isEstimated === true,
           wasEstimated: item?.wasEstimated === true || item?.isEstimated === true,
+          ...(itemId ? { id: itemId } : {}),
+          ...(status ? { status } : {}),
+          ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
+          ...(item?.servingLabel ? { servingLabel: item.servingLabel } : {}),
+          ...(item?.coffeeShopProductId
+            ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
+            : {}),
           ...(icon ? { icon } : {}),
           ...(dbKey != null && String(dbKey).trim() !== ''
             ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
@@ -5749,29 +6207,43 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         };
       });
 
-      learnUserPortionsFromConfirmedMeal({
-        db: userUid && db ? db : null,
-        uid: userUid || '',
-        items,
-        onLocalMerge: (patch) => {
-          setUserPortions((prev) => ({
-            ...sanitizeUserPortionsDict(prev),
-            ...sanitizeUserPortionsDict(patch),
-          }));
-        },
-      });
+      const resolvedItems = items.filter((item) => !isUnresolvedMealDraftItem(item));
+      if (!isDraftPersist && resolvedItems.length > 0) {
+        learnUserPortionsFromConfirmedMeal({
+          db: userUid && db ? db : null,
+          uid: userUid || '',
+          items: resolvedItems,
+          onLocalMerge: (patch) => {
+            setUserPortions((prev) => ({
+              ...sanitizeUserPortionsDict(prev),
+              ...sanitizeUserPortionsDict(patch),
+            }));
+          },
+        });
 
-      // Abitudini: bulk patch usage stats (una write Firebase, non N sequenziali).
-      recordDraftFoodsUsageStats(
-        items.map((it) => ({ foodDbKey: it.foodDbKey || it.matchedKey || null })),
-        personalDbForUsage,
-        patchFoodDbEntry,
-        getCurrentTimeSlot(),
-        { batchPatch: patchFoodDbEntriesBatch, batchSourceDb: personalDbForUsage },
-      );
+        // Abitudini: bulk patch usage stats (una write Firebase, non N sequenziali).
+        recordDraftFoodsUsageStats(
+          resolvedItems.map((it) => ({ foodDbKey: it.foodDbKey || it.matchedKey || null })),
+          personalDbForUsage,
+          patchFoodDbEntry,
+          getCurrentTimeSlot(),
+          { batchPatch: patchFoodDbEntriesBatch, batchSourceDb: personalDbForUsage },
+        );
+      }
 
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
       const existingSlotResolved = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
+
+      if (payload?.upsertById === true || String(payload?.source || '') === 'mcdrive_draft_persist') {
+        const message = commitUpsertMealItemsById({
+          targetNodeId: targetNodeId || existingSlotResolved?.slotId || '',
+          mealType: mealTypeCanonical,
+          timeString,
+          mealDec: existingSlotResolved?.mealTime ?? mealDec,
+          items,
+        });
+        if (message) return message;
+      }
 
       // Replace / targetNodeId: sovrascrivi lo slot (niente [...existing, ...incoming]).
       if (action === 'replace' || (targetNodeId && action !== 'merge')) {
@@ -5782,9 +6254,16 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             timeString,
             mealDec,
             items,
+            mealType: mealTypeCanonical,
           });
           if (message) return message;
-          throw new Error('Aggiornamento pasto fallito');
+          const appendMsg = commitAddFoodChatPayload({
+            timeString,
+            mealDec,
+            items,
+            mealType: mealTypeCanonical,
+          });
+          if (appendMsg) return appendMsg;
         }
       }
 
@@ -5830,9 +6309,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       commitAddFoodChatPayload,
       commitUpdateMealChatPayload,
       commitMergeMealChatPayload,
+      commitUpsertMealItemsById,
+      commitAppendInboxDraft,
       decimalToTimeStr,
       getCurrentTimeRoundedTo15Min,
       parseFlexibleTimeToDecimal,
+      parseTimeStringToDecimalHour,
+      injectMealClockIntoCommandPayload,
+      coerceDiaryMealTime,
       toCanonicalMealType,
       getGhostMealType,
       userUid,
@@ -6140,6 +6624,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
+    handleMcDriveReturnItemToInbox,
+    handleMcDriveRevertAssignedIds,
     handleMcDriveUpdateGrams,
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
@@ -6180,6 +6666,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     getWipMealSnapshot: getWipMealSnapshotFromBridge,
     onWipMealSeed: seedWipMealFromBridge,
     onAddFoodCommand: commitAddFoodCommand,
+    onReturnRawToDiaryInbox: handleReturnRawToDiaryInbox,
     onAddWorkoutCommand: commitAddWorkoutCommand,
     onLogSleepCommand: commitLogSleepCommand,
     onLogStimulantCommand: commitLogStimulantCommand,
@@ -6296,6 +6783,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   });
 
   tryEmitPredictiveGreetingRef.current = tryEmitPredictiveGreeting;
+  sendMessageRef.current = sendMessage;
+  revertMcDriveAssignedIdsRef.current = handleMcDriveRevertAssignedIds;
 
   const handleRequestHealthDiagnosis = useCallback(() => {
     if (typeof sendMessage !== 'function') return;
@@ -6374,6 +6863,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       onDraftUpdateMealMeta: handleDraftUpdateMealMeta,
       onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
       onMcDriveRemoveItem: handleMcDriveRemoveItem,
+      onMcDriveReturnItemToInbox: handleMcDriveReturnItemToInbox,
       onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
       onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
       onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
@@ -6396,6 +6886,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       commitMealBuilder,
       preferVoiceChat: isDiabetesAppMode,
       userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
+      onSelectInboxDraft: handleSelectInboxDraft,
+      onDropInboxOntoMeal: handleDropInboxOntoMeal,
+      onTrashMeal: handleTrashMeal,
+      trashMeals,
+      onRestoreTrashMeal: handleRestoreTrashMeal,
+      onPurgeTrashMeal: handlePurgeTrashMeal,
     });
   }, [
     registerHandlers,
@@ -6427,6 +6923,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateMealMeta,
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
+    handleMcDriveReturnItemToInbox,
+    handleMcDriveRevertAssignedIds,
     handleMcDriveUpdateGrams,
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,
@@ -6447,6 +6945,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     commitMealBuilder,
     isDiabetesAppMode,
     userProfile,
+    handleSelectInboxDraft,
+    handleDropInboxOntoMeal,
+    handleTrashMeal,
+    trashMeals,
+    handleRestoreTrashMeal,
+    handlePurgeTrashMeal,
   ]);
 
   const generateDailySnapshot = useCallback(() => {
@@ -7478,6 +7982,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onInspectFood={setSelectedFoodForInfo}
           onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
           onSaveSleep={handleSaveSleepFromDiary}
+          onSelectInboxDraft={handleSelectInboxDraft}
+          onReturnRawToInbox={handleReturnRawToDiaryInbox}
+          onTrashMeal={handleTrashMeal}
+          trashMeals={trashMeals}
+          onRestoreTrashMeal={handleRestoreTrashMeal}
+          onPurgeTrashMeal={handlePurgeTrashMeal}
         />
       )}
 
@@ -7985,6 +8495,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onDraftUpdateMealMeta={handleDraftUpdateMealMeta}
             onDraftUpdateFoodItemName={handleDraftUpdateFoodItemName}
             onMcDriveRemoveItem={handleMcDriveRemoveItem}
+            onMcDriveReturnItemToInbox={handleMcDriveReturnItemToInbox}
             onMcDriveUpdateGrams={handleMcDriveUpdateGrams}
             onMcDriveUpdateMealTime={handleMcDriveUpdateMealTime}
             onMcDriveApplyAlternative={handleMcDriveApplyAlternative}
@@ -8008,6 +8519,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onOpenManualView={handleOpenManualMealFromChat}
             onOpenActivityView={handleOpenActivityFromChat}
             onOpenPlanView={handleOpenPlanFromChat}
+            onSelectInboxDraft={handleSelectInboxDraft}
+            onDropInboxOntoMeal={handleDropInboxOntoMeal}
+            onTrashMeal={handleTrashMeal}
+            trashMeals={trashMeals}
+            onRestoreTrashMeal={handleRestoreTrashMeal}
+            onPurgeTrashMeal={handlePurgeTrashMeal}
             isDiabetesAppMode={isDiabetesAppMode}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
@@ -8420,6 +8937,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onInspectFood={setSelectedFoodForInfo}
         onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
         onSaveSleep={handleSaveSleepFromDiary}
+        onSelectInboxDraft={handleSelectInboxDraft}
+        onReturnRawToInbox={handleReturnRawToDiaryInbox}
+        onTrashMeal={handleTrashMeal}
+        trashMeals={trashMeals}
+        onRestoreTrashMeal={handleRestoreTrashMeal}
+        onPurgeTrashMeal={handlePurgeTrashMeal}
+      />
+
+      <InboxTriageSheet
+        block={inboxTriageBlock}
+        todayMeals={inboxTriageMeals}
+        onCreateNewMeal={handleCreateMealFromInbox}
+        onMergeIntoMeal={handleMergeInboxIntoMeal}
+        onDeleteDraft={handleDeleteInboxDraft}
+        onClose={() => setInboxTriageBlock(null)}
+      />
+
+      <InboxUndoToast
+        message={trashToast?.message || inboxUndoToast?.message || ''}
+        undoLabel={trashToast ? 'Ripristina' : 'Annulla'}
+        onUndo={trashToast ? handleMealTrashUndo : handleInboxUndo}
+        onDismiss={trashToast ? clearTrashToast : clearInboxUndoToast}
       />
 
       <MetabolicTimelineOverlay
