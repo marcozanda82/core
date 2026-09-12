@@ -9,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/nuova%20icon_fixed_192.png",
+      "src": "/192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
-      "src": "/nuova%20icon_fixed_512.png",
+      "src": "/512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

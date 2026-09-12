@@ -59,7 +59,7 @@ const VIDEO_RUNTIME_CACHING = {
 const MASCOT_IMAGE_RUNTIME_CACHING = {
   urlPattern: ({ url }) => (
     /\.(png|webp|jpe?g)$/i.test(url.pathname)
-    && !/(icon|favicon|emblema)/i.test(url.pathname)
+    && !/(icon|favicon|emblema|\/192\.png$|\/512\.png$)/i.test(url.pathname)
   ),
   handler: 'StaleWhileRevalidate',
   options: {
@@ -109,10 +109,9 @@ export default defineConfig({
       strategies: 'generateSW',
       injectRegister: 'auto',
       includeAssets: [
-        'EmblemaKbianca.png',
-        'nuova icon_fixed_192.png',
-        'nuova icon_fixed_512.png',
-        'icon_512.svg',
+        'EmblemaKbianca2.png',
+        '192.png',
+        '512.png',
       ],
       manifest: false,
       workbox: {

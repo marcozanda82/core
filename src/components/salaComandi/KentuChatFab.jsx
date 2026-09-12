@@ -1,3 +1,6 @@
+/** Emblema K in `public/` — tasto centrale bottom bar / Kentu AI Workspace. */
+const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
+
 /**
  * Pulsante flottante Emblema Kentu — apre la chat (slot centrale bottom nav).
  */
@@ -57,13 +60,13 @@ export default function KentuChatFab({
           />
         ) : null}
         <img
-          src="/EmblemaKbianca.png"
+          src={KENTU_CHAT_EMBLEM_SRC}
           alt=""
           width={58}
           height={58}
           decoding="async"
           className={[
-            'relative z-[1] h-full w-full object-contain drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]',
+            'relative z-[1] h-full w-full object-contain object-center drop-shadow-[0_0_15px_rgba(0,150,255,0.8)]',
             !engineReady ? 'opacity-75' : '',
           ].join(' ')}
         />

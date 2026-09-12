@@ -18,13 +18,7 @@ import { db } from './firebaseConfig';
 const SalaComandi = lazy(() => import('./SalaComandi'));
 
 function AppBootFallback() {
-  return (
-    <div
-      style={{ minHeight: '100dvh', width: '100%', background: '#050a12' }}
-      aria-busy
-      aria-label="Caricamento KentuOS"
-    />
-  );
+  return <AuthLoadingScreen />;
 }
 
 /**

@@ -1,5 +1,8 @@
 import React from 'react';
 
+/** Logo wordmark in `public/` (spazio nel filename → path URL-encoded). */
+const KENTU_HEADER_LOGO_SRC = encodeURI('/nuovo logo trasparente3.png');
+
 /**
  * Testata dashboard: logo | navigazione data | accessory + SNC.
  * Banner simulazione opzionale sotto la prima riga.
@@ -28,11 +31,11 @@ export default function AppHeader({
             className="m-0 flex max-w-[min(46vw,168px)] shrink-0 cursor-pointer items-center justify-start border-none bg-transparent p-0.5 px-1"
           >
             <img
-              src="/nuovo%20logo%20trasparente2.png"
-              alt="Kentuos Logo"
+              src={KENTU_HEADER_LOGO_SRC}
+              alt="Kentu"
               decoding="async"
               draggable={false}
-              className="block h-auto max-h-[52px] w-auto max-w-full object-contain object-left"
+              className="block h-auto max-h-[52px] w-auto max-w-full bg-transparent object-contain object-left"
             />
           </button>
           <div className="flex min-w-0 flex-nowrap items-center gap-1">

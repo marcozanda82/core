@@ -1,6 +1,8 @@
 import React from 'react';
 
-/** Spinner minimale mentre Firebase determina lo stato auth. */
+const BOOT_ICON_SRC = '/512.png';
+
+/** Splash di boot mentre Firebase determina lo stato auth. */
 export default function AuthLoadingScreen() {
   return (
     <div
@@ -9,12 +11,27 @@ export default function AuthLoadingScreen() {
         width: '100%',
         background: '#050a12',
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 20,
       }}
       aria-busy
       aria-label="Verifica accesso KentuOS"
     >
+      <img
+        src={BOOT_ICON_SRC}
+        alt=""
+        width={128}
+        height={128}
+        decoding="async"
+        style={{
+          width: 128,
+          height: 128,
+          objectFit: 'contain',
+          background: 'transparent',
+        }}
+      />
       <div
         style={{
           width: 28,
