@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import GlobalChatOverlay from './components/GlobalChatOverlay';
 import LoginScreen from './components/auth/LoginScreen';
 import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
+import KentuBootSplash from './components/KentuBootSplash.jsx';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
@@ -132,6 +133,11 @@ function AuthenticatedApp() {
   );
 }
 
+function BootSplashLayer() {
+  const { authReady } = useAuth();
+  return <KentuBootSplash ready={authReady} />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -140,6 +146,7 @@ export default function App() {
           <NativeAndroidBackHandler />
           <GoogleAssistantInboxListener />
           <AuthenticatedApp />
+          <BootSplashLayer />
         </BrowserRouter>
       </ChatOverlayProvider>
     </AuthProvider>
