@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { get, ref } from 'firebase/database';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
@@ -9,7 +9,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import GlobalChatOverlay from './components/GlobalChatOverlay';
 import LoginScreen from './components/auth/LoginScreen';
 import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
-import KentuBootSplash from './components/KentuBootSplash.jsx';
+import KentuWebSplash from './components/KentuWebSplash.jsx';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
@@ -134,12 +134,19 @@ function AuthenticatedApp() {
   );
 }
 
+function isCapacitorAndroid() {
+  try {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+  } catch {
+    return false;
+  }
+}
+
 function BootSplashLayer() {
-  const { authReady } = useAuth();
-  if (Capacitor.isNativePlatform()) {
+  if (isCapacitorAndroid()) {
     return null;
   }
-  return <KentuBootSplash ready={authReady} />;
+  return <KentuWebSplash />;
 }
 
 export default function App() {

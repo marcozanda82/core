@@ -1,0 +1,1 @@
+<animated-vector xmlns:android="http://schemas.android.com/apk/res/android" android:drawable="@drawable/kentu_enso_stroke"><target android:name="ensoStroke" android:animation="@animator/kentu_enso_draw"/></animated-vector>

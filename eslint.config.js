@@ -5,7 +5,13 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'android/**',
+      'consulto/**',
+      'Nuova cartella/**',
+    ],
   },
   {
     files: ['**/*.{js,jsx}'],

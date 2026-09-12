@@ -1,0 +1,150 @@
+/* Kentu Web Splash — solo animazione vettoriale. */
+
+.kentu-web-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000000;
+  opacity: 1;
+  pointer-events: auto;
+  animation: kentu-web-splash-exit 250ms ease-out 1750ms forwards;
+}
+
+.kentu-web-splash__cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(56vw, 240px);
+}
+
+.kentu-web-splash__symbol {
+  display: block;
+  width: min(42vw, 38vh, 216px);
+  height: min(42vw, 38vh, 216px);
+  overflow: visible;
+}
+
+.kentu-web-splash__enso-stroke {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 248;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: kentu-enso-draw 550ms cubic-bezier(0.22, 1, 0.36, 1) 200ms forwards;
+}
+
+.kentu-web-splash__k {
+  opacity: 0;
+  transform: scale(0.92);
+  transform-origin: 688.5px 728.5px;
+  animation: kentu-k-reveal 300ms cubic-bezier(0.22, 1, 0.36, 1) 600ms forwards;
+}
+
+.kentu-web-splash__os {
+  opacity: 0;
+  animation: kentu-os-fade 200ms ease-out 800ms forwards;
+}
+
+.kentu-web-splash__wordmark {
+  display: flex;
+  align-items: flex-end;
+  margin-top: 4.5%;
+  opacity: 0;
+  transform: translate3d(-12px, 0, 0);
+  animation: kentu-wordmark-in 350ms cubic-bezier(0.22, 1, 0.36, 1) 950ms forwards;
+}
+
+.kentu-web-splash__wordmark-kentu {
+  color: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(1.15rem, 4.6vw, 1.4rem);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.kentu-web-splash__wordmark-os {
+  color: #1769ff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(0.7rem, 2.6vw, 0.82rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  margin-left: 0.28em;
+  transform: translateY(-0.42em);
+}
+
+.kentu-web-splash--hold {
+  animation: none;
+  opacity: 1;
+}
+
+@keyframes kentu-enso-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes kentu-k-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes kentu-os-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes kentu-wordmark-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-12px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes kentu-web-splash-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kentu-web-splash {
+    animation: kentu-web-splash-exit 200ms linear 400ms forwards;
+  }
+
+  .kentu-web-splash__enso-stroke,
+  .kentu-web-splash__k,
+  .kentu-web-splash__os,
+  .kentu-web-splash__wordmark {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    stroke-dashoffset: 0;
+  }
+}
