@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { ref, set, update, get } from 'firebase/database';
 import { buildWorkoutDraftFromPlanBlock } from '../../features/weeklyBlocks/activityCatalog';
 import {
@@ -18,8 +18,14 @@ import {
   normalizeMuscleGroupArray,
   resolveWorkoutActivityTypeId,
   resolveWorkoutMusclesForForm,
+  generateWorkoutComboSignature,
   resolveActivitySheetTab,
 } from '../../activityCatalog';
+import {
+  DEFAULT_WORKOUT_KCAL,
+  collectLoggedWorkoutsNewestFirst,
+  resolveLastWorkoutMemory,
+} from '../../features/workout/lastWorkoutMemory';
 import {
   parseDurationMinutesInput,
   WORKOUT_DURATION_DEFAULT,
@@ -100,7 +106,7 @@ export function useWorkoutManager({
     /** @type {import('../../drawers/vistas/WorkoutView').WorkoutPlanDraft | null} */ (null),
   );
   const [workoutType, setWorkoutType] = useState('pesi');
-  const [workoutKcal, setWorkoutKcal] = useState(300);
+  const [workoutKcal, setWorkoutKcal] = useState(DEFAULT_WORKOUT_KCAL);
   const [workoutEndTime, setWorkoutEndTime] = useState(19);
   const [workoutDurationMin, setWorkoutDurationMin] = useState(String(WORKOUT_DURATION_DEFAULT));
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
@@ -117,6 +123,31 @@ export function useWorkoutManager({
   /** Home Training Block «Esegui»: salva reale in scheda, poi commit blocco in background. */
   const trainingBlockExecuteRef = useRef(false);
   const onTrainingBlockWorkoutCommittedRef = useRef(/** @type {(() => void | Promise<void>) | null} */ (null));
+
+  const lastAppliedMemorySigRef = useRef(/** @type {string | null} */ (null));
+
+  const workoutMemoryIndex = useMemo(
+    () => collectLoggedWorkoutsNewestFirst({
+      dailyLog,
+      fullHistory,
+      todayIso: currentTrackerDate || getTodayString(),
+    }),
+    [dailyLog, fullHistory, currentTrackerDate],
+  );
+
+  const applyLastWorkoutMemory = useCallback((tab, muscles) => {
+    const typeId = resolveActivitySheetTab(tab);
+    const musclesCanon = normalizeMuscleGroupArray(muscles);
+    const memory = resolveLastWorkoutMemory({
+      workoutType: typeId,
+      muscles: musclesCanon,
+      index: workoutMemoryIndex,
+    });
+    setWorkoutDurationMin(String(memory.durationMin));
+    setWorkoutKcal(memory.kcal);
+    lastAppliedMemorySigRef.current = generateWorkoutComboSignature(typeId, musclesCanon);
+    return memory;
+  }, [workoutMemoryIndex]);
 
   const workoutDurationHours = useMemo(
     () =>
@@ -160,7 +191,7 @@ export function useWorkoutManager({
     setPostWorkoutReviewActive(false);
     setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
     setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
-    setWorkoutKcal(Number(draft.workoutKcal) || 300);
+    setWorkoutKcal(Number(draft.workoutKcal) || DEFAULT_WORKOUT_KCAL);
     setWorkoutDurationMin(String(durationMin));
     setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
     setWorkoutGoal('');
@@ -204,7 +235,7 @@ export function useWorkoutManager({
       setPostWorkoutReviewActive(false);
       setWorkoutType(resolveWorkoutActivityTypeId(typeVal) ?? typeVal);
       setWorkoutMuscles(normalizeMuscleGroupArray(draft.workoutMuscles));
-      setWorkoutKcal(Number(draft.workoutKcal) || 300);
+      setWorkoutKcal(Number(draft.workoutKcal) || DEFAULT_WORKOUT_KCAL);
       setWorkoutDurationMin(String(durationMin));
       setWorkoutStrengthDetail(String(draft.workoutStrengthDetail || ''));
       setWorkoutGoal('');
@@ -249,7 +280,7 @@ export function useWorkoutManager({
       setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
       setWorkoutEndTime(Math.min(24, startT + durH));
       setWorkoutDurationMin(String(Math.max(15, Math.min(600, Math.round(durH * 60)))));
-      setWorkoutKcal(Number(workout.kcal || workout.cal) || 300);
+      setWorkoutKcal(Number(workout.kcal || workout.cal) || DEFAULT_WORKOUT_KCAL);
       setWorkoutStrengthDetail(String(workout.workoutDetailNote || '').trim());
       setWorkoutMuscles(resolveWorkoutMusclesForForm(workout));
       setWorkoutGoal(String(
@@ -288,21 +319,40 @@ export function useWorkoutManager({
     setWorkoutPlanDraft(null);
   }, []);
 
-  /** Reset form per nuova sessione (non edit): evita che editingWorkoutId blocchi il 4-cylinder. */
+  /** Reset form per nuova sessione (non edit): kcal/durata dall'ultimo match, fallback 300/30. */
   const resetWorkoutFormForNewSession = useCallback((defaultTab = 'pesi', preselectedMuscles = []) => {
     const tab = resolveActivitySheetTab(defaultTab);
+    const musclesCanon = normalizeMuscleGroupArray(preselectedMuscles);
     setEditingWorkoutId(null);
     setPostWorkoutReviewActive(false);
     setWorkoutPlanDraft(null);
     setWorkoutType(tab);
-    setWorkoutMuscles(normalizeMuscleGroupArray(preselectedMuscles));
+    setWorkoutMuscles(musclesCanon);
     setWorkoutStrengthDetail('');
     setWorkoutGoal('');
     setWorkoutRpe(null);
     setWorkoutNotes('');
-    setWorkoutDurationMin(String(WORKOUT_DURATION_DEFAULT));
-    setWorkoutKcal(300);
-  }, []);
+    applyLastWorkoutMemory(tab, musclesCanon);
+  }, [applyLastWorkoutMemory]);
+
+  useEffect(() => {
+    const tab = resolveActivitySheetTab(workoutType);
+    const musclesCanon = normalizeMuscleGroupArray(workoutMuscles);
+    const sig = generateWorkoutComboSignature(tab, musclesCanon);
+    if (editingWorkoutId || postWorkoutReviewActive || workoutPlanDraft) {
+      lastAppliedMemorySigRef.current = sig;
+      return;
+    }
+    if (lastAppliedMemorySigRef.current === sig) return;
+    applyLastWorkoutMemory(tab, musclesCanon);
+  }, [
+    applyLastWorkoutMemory,
+    editingWorkoutId,
+    postWorkoutReviewActive,
+    workoutMuscles,
+    workoutPlanDraft,
+    workoutType,
+  ]);
 
   const dismissPostWorkoutReview = useCallback(() => {
     setPostWorkoutReviewActive(false);

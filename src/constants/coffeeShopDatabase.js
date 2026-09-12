@@ -421,17 +421,19 @@ export function coffeeShopNodeToDiaryFoodRow(node) {
     || findCoffeeShopProductByName(node?.label || node?.desc || node?.name)
     || null;
   const kcal = Number(node?.kcal ?? product?.kcal ?? 0) || 0;
+  const carb = Number(node?.carb ?? product?.carb ?? 0) || 0;
   const caffeineMg = Number(node?.caffeineMg ?? product?.caffeineMg ?? 0) || 0;
   const isFastingSafe = node?.isFastingSafe === true
     || (node?.isFastingSafe == null && product?.isFastingSafe === true)
-    || (node?.breaksFast === false && kcal < 10);
+    || (node?.breaksFast === false && kcal <= 5 && carb <= 0);
+  const countsAsMeal = isFastingSafe !== true && (kcal > 5 || carb > 0 || node?.breaksFast === true);
   const name = String(node?.label || node?.desc || node?.name || product?.name || 'Caffè').trim();
   const time = Number(node?.time ?? node?.mealTime);
   const mealTime = Number.isFinite(time) ? time : 8;
 
   return {
     id: node?.id || `coffee_${Date.now()}`,
-    type: node?.type === 'stimulant' ? 'stimulant' : 'food',
+    type: countsAsMeal ? 'food' : (node?.type === 'stimulant' ? 'stimulant' : 'food'),
     desc: name,
     name,
     qta: product?.servingGrams ?? node?.qta ?? null,
@@ -440,12 +442,14 @@ export function coffeeShopNodeToDiaryFoodRow(node) {
     kcal,
     cal: kcal,
     prot: Number(node?.prot ?? product?.prot ?? 0) || 0,
-    carb: Number(node?.carb ?? product?.carb ?? 0) || 0,
+    carb,
     fat: Number(node?.fat ?? product?.fat ?? 0) || 0,
     fatTotal: Number(node?.fat ?? product?.fat ?? 0) || 0,
     caffeineMg,
     isFastingSafe,
+    breaksFast: countsAsMeal,
     coffeeShopProductId: product?.id || node?.coffeeShopProductId || null,
+    coffeeVariant: node?.coffeeVariant || null,
     mealType: node?.mealType || 'colazione',
     mealTime,
     isCoffeeShopItem: true,

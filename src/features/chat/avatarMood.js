@@ -75,9 +75,10 @@ export const AVATAR_MOOD_LABEL = Object.freeze({
 export function isStrategicAvatarIntent(userText, chatHistory = []) {
   const text = String(userText || '').trim();
   if (!text) return false;
+  const history = Array.isArray(chatHistory) ? chatHistory : [];
 
-  if (isMealAdviceIntent(text, chatHistory)) return true;
-  if (isConsultantMealIntent(text, chatHistory)) return true;
+  if (isMealAdviceIntent(text, history)) return true;
+  if (isConsultantMealIntent(text, history)) return true;
   if (isAskDraftAdviceIntent(text)) return true;
   if (isDayReviewIntent(text)) return true;
   if (isMealDraftEvaluationIntent(text)) return true;
@@ -92,8 +93,9 @@ export function isStrategicAvatarIntent(userText, chatHistory = []) {
  * @returns {string}
  */
 export function getLastUserMessageText(chatHistory = []) {
-  for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
-    const entry = chatHistory[i];
+  const list = Array.isArray(chatHistory) ? chatHistory : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i];
     if (!entry || entry.isTyping || entry.sender !== 'user') continue;
     return String(entry.text || '').trim();
   }
@@ -109,8 +111,9 @@ export function getLastUserMessageText(chatHistory = []) {
 export function detectStrategicConsultContext(chatHistory = [], opts = {}) {
   if (opts.forceStrategic === true) return true;
 
-  for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
-    const entry = chatHistory[i];
+  const list = Array.isArray(chatHistory) ? chatHistory : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i];
     if (!entry || entry.isTyping || entry.sender !== 'user') continue;
 
     const text = String(entry.text || '').trim();
@@ -120,7 +123,7 @@ export function detectStrategicConsultContext(chatHistory = [], opts = {}) {
       return false;
     }
 
-    return isStrategicAvatarIntent(text, chatHistory);
+    return isStrategicAvatarIntent(text, list);
   }
 
   return false;
@@ -298,7 +301,7 @@ export function detectActiveMealTray({
 } = {}) {
   if (mealBuilder && typeof mealBuilder === 'object' && mealBuilder.active === true) return true;
   if (Array.isArray(wipMealItems) && wipMealItems.length > 0) return true;
-  return (chatHistory || []).some((m) => {
+  return (Array.isArray(chatHistory) ? chatHistory : []).some((m) => {
     if (!m || m.isTyping || m.draftResolved) return false;
     if (m.mealDraft && !m.draftResolved) return true;
     if (Array.isArray(m.mealProposals) && m.mealProposals.length > 0) {

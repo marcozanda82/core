@@ -1,19 +1,29 @@
 import React from 'react';
 
+function formatErrorMessage(error) {
+  if (error == null) return 'Errore sconosciuto';
+  if (typeof error === 'string') return error;
+  const name = error?.name ? String(error.name) : 'Error';
+  const message = error?.message ? String(error.message) : error.toString();
+  return `${name}: ${message}`;
+}
+
 /**
  * Root error boundary — evita schermate bianche su crash React (requisito store).
+ * I dettagli tecnici sono temporanei per diagnosticare il crash Chat al primo avvio del giorno.
  */
 export default class GlobalErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null, errorInfo: null };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
+    this.setState({ error, errorInfo });
     console.error('[GlobalErrorBoundary] React render crash', error, errorInfo);
     if (error?.stack) {
       console.error('[GlobalErrorBoundary] stack:', error.stack);
@@ -29,6 +39,13 @@ export default class GlobalErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      const { error, errorInfo } = this.state;
+      const details = [
+        formatErrorMessage(error),
+        error?.stack ? `\n\n— stack —\n${error.stack}` : '',
+        errorInfo?.componentStack ? `\n\n— componentStack —\n${errorInfo.componentStack}` : '',
+      ].join('');
+
       return (
         <div
           role="alert"
@@ -92,6 +109,47 @@ export default class GlobalErrorBoundary extends React.Component {
           >
             Ricarica App
           </button>
+          <details
+            open
+            style={{
+              marginTop: 22,
+              width: '100%',
+              maxWidth: 560,
+              textAlign: 'left',
+              borderRadius: 12,
+              border: '1px solid rgba(248, 113, 113, 0.35)',
+              background: 'rgba(15, 23, 42, 0.85)',
+              padding: '10px 12px',
+            }}
+          >
+            <summary
+              style={{
+                cursor: 'pointer',
+                color: '#fda4af',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Dettagli tecnici (debug temporaneo)
+            </summary>
+            <pre
+              style={{
+                margin: '10px 0 0',
+                maxHeight: '40vh',
+                overflow: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                fontSize: '0.68rem',
+                lineHeight: 1.45,
+                color: '#fecaca',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              }}
+            >
+              {details.trim() || 'Nessuno stack disponibile'}
+            </pre>
+          </details>
         </div>
       );
     }

@@ -1318,6 +1318,18 @@
   overflow: hidden;
 }
 
+.kentu-cinema-banner--dismissible {
+  cursor: pointer;
+}
+
+.kentu-cinema-banner--dismissible .kentu-cinema-banner__frame {
+  cursor: pointer;
+}
+
+.kentu-cinema-banner__skip {
+  pointer-events: auto;
+}
+
 .kentu-cinema-banner__media {
   display: block;
   width: 100%;

@@ -97,6 +97,10 @@ export default function KentuProcessingBanner({
   tailLoopWhileActive = false,
   /** Limite superiore di riproduzione (es. 6.3): pausa e stop senza arrivare a fine file. */
   maxClampSeconds = null,
+  /** Chiude il player (skip / tap). Se assente, nessun controllo di dismiss. */
+  onDismiss = null,
+  /** Forza visibilità skip. Default: true se `onDismiss` è valorizzato. */
+  dismissible = null,
 }) {
   const ariaLabel = String(label || 'Kentu sta elaborando...').trim();
   const poster = String(posterSrc || '').trim() || '/Hacker4.png';
@@ -106,9 +110,32 @@ export default function KentuProcessingBanner({
   const isLoopFadingRef = useRef(false);
   const isTailLoopingRef = useRef(false);
   const isMaxClampReachedRef = useRef(false);
+  const dismissedRef = useRef(false);
   const onVideoEndedRef = useRef(onVideoEnded);
   onVideoEndedRef.current = onVideoEnded;
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const canDismiss = dismissible === true
+    || (dismissible !== false && typeof onDismiss === 'function');
   const [mediaOpacity, setMediaOpacity] = useState(1);
+
+  const dismissPlayback = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!canDismiss) return;
+    dismissedRef.current = true;
+    const el = videoRef.current;
+    if (el) {
+      try {
+        el.pause();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (typeof onDismissRef.current === 'function') {
+      onDismissRef.current();
+    }
+  }, [canDismiss]);
   const showCaption = !hideCaption && variant !== 'header';
   const clampSeconds = Number(clampToFirstSeconds);
   const tailLoopSec = Number(tailLoopFromSeconds);
@@ -227,6 +254,7 @@ export default function KentuProcessingBanner({
   }, [shouldClampProcessingLoop, shouldTailLoop]);
 
   useEffect(() => {
+    dismissedRef.current = false;
     isMaxClampReachedRef.current = false;
     if (!video) return undefined;
     const el = videoRef.current;
@@ -234,6 +262,7 @@ export default function KentuProcessingBanner({
     let cancelled = false;
     const play = async () => {
       try {
+        if (dismissedRef.current || cancelled) return;
         el.muted = true;
         el.playsInline = true;
         el.currentTime = 0;
@@ -258,11 +287,20 @@ export default function KentuProcessingBanner({
 
   useEffect(() => {
     const el = videoRef.current;
-    if (!el || !video || el.ended || isMaxClampReachedRef.current) return;
+    if (!el || !video || dismissedRef.current || el.ended || isMaxClampReachedRef.current) return;
     if (el.paused) {
       void el.play().catch(() => {});
     }
   }, [video, shouldClampProcessingLoop, shouldTailLoop, isPenultimateOrLater, hasMaxClamp]);
+
+  useEffect(() => {
+    if (!canDismiss) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') dismissPlayback(event);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [canDismiss, dismissPlayback]);
 
   if (!video && !poster) return null;
 
@@ -271,11 +309,13 @@ export default function KentuProcessingBanner({
       className={[
         'kentu-cinema-banner',
         variant === 'header' ? 'kentu-cinema-banner--header' : '',
+        canDismiss ? 'kentu-cinema-banner--dismissible' : '',
       ].filter(Boolean).join(' ')}
       role="status"
       aria-live="polite"
       aria-busy={Boolean(video)}
       aria-label={ariaLabel}
+      onClick={canDismiss ? dismissPlayback : undefined}
     >
       <div className="kentu-cinema-banner__frame">
         {video ? (
@@ -315,6 +355,26 @@ export default function KentuProcessingBanner({
             <span className="kentu-cinema-banner__caption-dot" />
             <span className="kentu-cinema-banner__caption-text">{ariaLabel}</span>
           </div>
+        ) : null}
+        {canDismiss ? (
+          <button
+            type="button"
+            className={[
+              'kentu-cinema-banner__skip',
+              'absolute right-3 top-3 z-50 inline-flex items-center gap-1',
+              'rounded-full bg-black/60 p-2 text-white',
+              'hover:bg-black/80 active:scale-95',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+            ].join(' ')}
+            aria-label="Salta video"
+            title="Salta"
+            onClick={dismissPlayback}
+          >
+            <span className="inline-flex h-5 w-5 items-center justify-center text-sm font-semibold leading-none" aria-hidden>
+              ✕
+            </span>
+            <span className="pr-1 text-xs font-semibold tracking-wide">Salta</span>
+          </button>
         ) : null}
       </div>
     </div>

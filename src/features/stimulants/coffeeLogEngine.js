@@ -8,6 +8,7 @@ import {
   isZeroCalorieFastSafeItem,
 } from '../../utils/fastingBreakRules.js';
 import {
+  coffeeShopNodeToDiaryFoodRow,
   resolveCoffeeShopProductForLog,
 } from '../../constants/coffeeShopDatabase.js';
 
@@ -317,16 +318,93 @@ export function buildCoffeeStimulantNode(variant, timeDecimal, options = {}) {
 }
 
 /**
+ * Stimolante calorico (caffè zuccherato, energy, tè dolce) da scrivere anche nei pasti.
+ * @param {object | null | undefined} node
+ * @returns {boolean}
+ */
+export function stimulantShouldCountAsDailyFood(node) {
+  if (!node || typeof node !== 'object') return false;
+  const type = String(node.type || '').toLowerCase();
+  if (type !== 'stimulant' && type !== 'energizer') return false;
+  if (node.isFastingSafe === true) return false;
+  if (node.breaksFast === false) return false;
+  const kcal = Number(node.kcal ?? node.cal ?? node.calories) || 0;
+  const carb = Number(node.carb ?? node.carbs) || 0;
+  if (node.breaksFast === true) return true;
+  if (String(node.coffeeVariant || node.teaVariant || '').toLowerCase() === 'zuccherato') {
+    return true;
+  }
+  return kcal > 5 || carb > 0;
+}
+
+/**
+ * Riga `food` per il dailyLog, così il dial kcal e il diario vedono l'apporto.
+ * @param {object} node
+ * @returns {object | null}
+ */
+export function caloricStimulantToDiaryFoodRow(node) {
+  if (!stimulantShouldCountAsDailyFood(node)) return null;
+  const row = coffeeShopNodeToDiaryFoodRow(node);
+  const id = String(node?.id || row.id || `coffee_${Date.now()}`);
+  return {
+    ...row,
+    id,
+    type: 'food',
+    breaksFast: true,
+    isFastingSafe: false,
+    coffeeVariant: node.coffeeVariant || row.coffeeVariant || null,
+    linkedStimulantId: id,
+    source: 'stimulant_quick_log',
+  };
+}
+
+/**
+ * Aggiunge al log i caffè/tè calorici ancora solo in timeline (manualNodes).
+ * @param {Array<object>} dailyLog
+ * @param {Array<object>} manualNodes
+ * @returns {Array<object>}
+ */
+export function mergeCaloricStimulantsIntoLog(dailyLog = [], manualNodes = []) {
+  const log = Array.isArray(dailyLog) ? [...dailyLog] : [];
+  const existing = new Set();
+  for (const entry of log) {
+    const id = String(entry?.id || '').trim();
+    const linked = String(entry?.linkedStimulantId || '').trim();
+    if (id) existing.add(id);
+    if (linked) existing.add(linked);
+  }
+  for (const node of Array.isArray(manualNodes) ? manualNodes : []) {
+    const row = caloricStimulantToDiaryFoodRow(node);
+    if (!row) continue;
+    const id = String(row.linkedStimulantId || row.id || '').trim();
+    if (id && existing.has(id)) continue;
+    log.push(row);
+    if (id) existing.add(id);
+  }
+  return log;
+}
+
+/**
  * @param {Array<object>} manualNodes
  * @returns {{ kcal: number, carb: number }}
  */
-export function sumSweetCoffeeMacros(manualNodes = []) {
+export function sumSweetCoffeeMacros(manualNodes = [], dailyLog = []) {
+  const alreadyInLog = new Set();
+  for (const entry of Array.isArray(dailyLog) ? dailyLog : []) {
+    if (!entry) continue;
+    const id = String(entry.id || '').trim();
+    const linked = String(entry.linkedStimulantId || '').trim();
+    if (id) alreadyInLog.add(id);
+    if (linked) alreadyInLog.add(linked);
+  }
   let kcal = 0;
   let carb = 0;
   for (const node of manualNodes || []) {
     if (node?.type !== 'stimulant') continue;
     if (String(node?.subtype || '').toLowerCase() !== 'caffè') continue;
     if (node?.coffeeVariant !== COFFEE_VARIANT.ZUCCHERATO && !node?.breaksFast) continue;
+    const nodeId = String(node?.id || '').trim();
+    if (nodeId && alreadyInLog.has(nodeId)) continue;
     kcal += Number(node?.kcal) || SWEET_COFFEE_KCAL;
     carb += Number(node?.carb) || SWEET_COFFEE_CARB;
   }
@@ -436,6 +514,9 @@ export default {
   isZeroCalorieFastSafeNode,
   buildFastingContextForLlm,
   buildCoffeeStimulantNode,
+  caloricStimulantToDiaryFoodRow,
+  mergeCaloricStimulantsIntoLog,
+  stimulantShouldCountAsDailyFood,
   sumSweetCoffeeMacros,
   analyzeCoffeeForHealthScore,
   buildCoffeeLogAckMessage,

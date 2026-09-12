@@ -119,6 +119,15 @@ export function computeTotali(dailyLog) {
         const raw = readLogItemNutrient(item, k);
         if (raw != null) totali[k] += raw;
       });
+    } else if (item.type === 'stimulant' || item.type === 'energizer') {
+      const kcal = Number(item.kcal || item.cal || 0) || 0;
+      const carb = Number(item.carb || item.carbs || 0) || 0;
+      if (item.isFastingSafe === true || (kcal <= 5 && carb <= 0)) return;
+      totali.kcal += kcal;
+      ALL_NUTRIENT_KEYS.forEach(k => {
+        const raw = readLogItemNutrient(item, k);
+        if (raw != null) totali[k] += raw;
+      });
     } else if (item.type === 'workout') {
       workoutKcal += Number(item.kcal || item.cal || 0) || 0;
     }

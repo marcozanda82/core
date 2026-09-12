@@ -11,6 +11,7 @@ import SaluteLongevityHero from './components/SaluteLongevityHero';
 import SalutePillarNavGrid from './components/SalutePillarNavGrid';
 import SaluteSleepGhostCard from './components/SaluteSleepGhostCard';
 import SleepTrackerWidget from './components/SleepTrackerWidget';
+import { METABOLIC_FOCUS_LABEL } from '../chat/metabolicFocus.js';
 import { useHealthDailyReport } from './hooks/useHealthDailyReport';
 import { useSleepLog } from './hooks/useSleepLog';
 import { computeSleepEngineSnapshot } from '../../hooks/useSleepEngine';
@@ -76,8 +77,11 @@ export default function SaluteView({
   userTargets = null,
   todayBurnKcal = 0,
   initialOpenMuscleTelemetry = false,
+  initialOpenNutrition = false,
 } = {}) {
-  const [activePillar, setActivePillar] = useState(null);
+  const [activePillar, setActivePillar] = useState(
+    () => (initialOpenNutrition ? 'nutrition' : null),
+  );
   const [showMuscleTelemetryHub, setShowMuscleTelemetryHub] = useState(
     () => Boolean(initialOpenMuscleTelemetry),
   );
@@ -496,7 +500,7 @@ export default function SaluteView({
       {activePillar === 'nutrition' ? (
         <section
           className="rounded-2xl border border-emerald-500/25 bg-emerald-950/15 p-1"
-          aria-label="Insight Clinico Nutrizione"
+          aria-label={METABOLIC_FOCUS_LABEL}
         >
           <SaluteClinicalInsight
             report={health.report}

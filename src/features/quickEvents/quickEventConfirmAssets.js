@@ -274,6 +274,52 @@ export function isQuickEventCinemaFresh(timestamp, freshMs = QUICK_EVENT_CINEMA_
   return Date.now() - raw < freshMs;
 }
 
+/** Chiavi cinema one-shot già viste/saltate in questa sessione browser. */
+export const CHAT_CINEMA_SEEN_SS_KEY = 'kentu_chat_cinema_seen';
+
+/**
+ * @returns {string[]}
+ */
+export function readSeenCinemaKeys() {
+  try {
+    const raw = window.sessionStorage.getItem(CHAT_CINEMA_SEEN_SS_KEY);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((value) => String(value || '').trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * @param {string|number|null|undefined} key
+ */
+export function markCinemaKeySeen(key) {
+  const id = key == null ? '' : String(key).trim();
+  if (!id) return;
+  try {
+    const next = new Set(readSeenCinemaKeys());
+    next.add(id);
+    window.sessionStorage.setItem(CHAT_CINEMA_SEEN_SS_KEY, JSON.stringify([...next]));
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+/**
+ * @param {string|number|null|undefined} key
+ */
+export function forgetCinemaKeySeen(key) {
+  const id = key == null ? '' : String(key).trim();
+  if (!id) return;
+  try {
+    const next = readSeenCinemaKeys().filter((value) => value !== id);
+    window.sessionStorage.setItem(CHAT_CINEMA_SEEN_SS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Ultimo messaggio chat idoneo per la fascia cinema (video di stato / conferma).
  * @param {Array<object>} [chatHistory]

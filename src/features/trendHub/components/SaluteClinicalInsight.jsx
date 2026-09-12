@@ -4,6 +4,7 @@ import {
   isHealthReportGeneratedToday,
   stripClinicalBulletinImages,
 } from '../engines/HealthAnalyzerEngine';
+import { METABOLIC_FOCUS_LABEL } from '../../chat/metabolicFocus.js';
 
 /** Copertina fissa del bollettino (niente immagini generate dall'AI). */
 const CLINICAL_INSIGHT_COVER_SRC = '/analisi_macro.png';
@@ -81,7 +82,7 @@ const markdownComponents = {
 };
 
 /**
- * Insight Clinico — bollettino Markdown + copertina fissa, max 1 aggiornamento/giorno.
+ * Focus Metabolico — bollettino Markdown + copertina fissa, max 1 aggiornamento/giorno.
  */
 export default function SaluteClinicalInsight({
   report = null,
@@ -155,7 +156,7 @@ export default function SaluteClinicalInsight({
         <div className={`h-auto max-h-none break-words border-l-2 pl-2.5 ${borderTone}`}>
           <img
             src={CLINICAL_INSIGHT_COVER_SRC}
-            alt="Copertina Insight Clinico"
+            alt={`Copertina ${METABOLIC_FOCUS_LABEL}`}
             className="mb-4 h-32 w-full rounded-lg object-cover shadow-sm"
             loading="lazy"
           />
@@ -178,11 +179,11 @@ export default function SaluteClinicalInsight({
     return (
       <section
         className="w-full min-w-0 rounded-2xl border border-cyan-500/20 bg-cyan-950/25"
-        aria-label="Insight Clinico"
+        aria-label={METABOLIC_FOCUS_LABEL}
       >
         <div className="flex min-h-11 items-center justify-between gap-2 border-b border-white/5 px-3.5 py-2.5">
           <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-300/90">
-            Insight Clinico
+            {METABOLIC_FOCUS_LABEL}
           </span>
           {report?.dailyScore != null ? (
             <span className="rounded-md bg-slate-950/50 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-300">
@@ -200,7 +201,7 @@ export default function SaluteClinicalInsight({
   return (
     <details className="group w-full min-w-0 rounded-2xl border border-cyan-500/20 bg-cyan-950/20 open:bg-cyan-950/30">
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-2.5 text-[10px] font-bold uppercase tracking-[0.12em] text-cyan-300/90 [&::-webkit-details-marker]:hidden">
-        <span>Insight Clinico</span>
+        <span>{METABOLIC_FOCUS_LABEL}</span>
         <span className="flex items-center gap-2 normal-case tracking-normal">
           {report?.dailyScore != null ? (
             <span className="rounded-md bg-slate-950/50 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-300">

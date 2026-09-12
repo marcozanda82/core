@@ -17,16 +17,40 @@ import {
 import { getTodayString } from '../../../coreEngine';
 
 /**
- * Giorni dall'ultimo stimolo → numero per sort (mai allenato in fondo alla coda urgente = in cima).
- * @param {number | '> 30' | '∞' | null | undefined} daysSince
+ * Rank badge cruscotto: PRIORITÀ / DA STIMOLARE prima di IN RECUPERO / OTTIMALE.
+ * @param {string | null | undefined} hubLabel
  * @returns {number}
  */
-function daysSinceAsNumber(daysSince) {
-  if (daysSince === '∞' || daysSince === '> 30' || daysSince == null) {
-    return Number.POSITIVE_INFINITY;
-  }
-  const n = Number(daysSince);
-  return Number.isFinite(n) ? n : Number.POSITIVE_INFINITY;
+export function stimulusPriorityRank(hubLabel) {
+  const label = String(hubLabel || '').trim().toUpperCase();
+  if (label === 'PRIORITÀ') return 0;
+  if (label === 'DA STIMOLARE') return 1;
+  if (label === 'IN RECUPERO') return 2;
+  return 3;
+}
+
+/**
+ * Sort deterministico: stato (badge) → percentuale crescente → nome.
+ * @param {object} a
+ * @param {object} b
+ * @returns {number}
+ */
+export function compareMuscleRowsByStimulusPriority(a, b) {
+  const rankA = stimulusPriorityRank(a?.hubLabel || a?.triageLabel);
+  const rankB = stimulusPriorityRank(b?.hubLabel || b?.triageLabel);
+  if (rankA !== rankB) return rankA - rankB;
+  const pctA = Math.round(Number(a?.pct) || 0);
+  const pctB = Math.round(Number(b?.pct) || 0);
+  if (pctA !== pctB) return pctA - pctB;
+  return String(a?.label || a?.id || '').localeCompare(String(b?.label || b?.id || ''), 'it');
+}
+
+/**
+ * @param {unknown} rows
+ * @returns {object[]}
+ */
+export function sortMuscleRowsByStimulusPriority(rows) {
+  return [...(Array.isArray(rows) ? rows : [])].sort(compareMuscleRowsByStimulusPriority);
 }
 
 /** Target volume normalizzato (100% = stimolo ottimale nel ciclo). */
@@ -97,7 +121,8 @@ export function muscleTriageLevel(value) {
 }
 
 /**
- * Distretti ordinati per giorni dall'ultimo stimolo (più giorni in cima).
+ * Distretti ordinati per priorità reale: badge (PRIORITÀ / DA STIMOLARE → recupero → ottimale),
+ * poi percentuale crescente. PRIORITÀ = stimolo minimo nella fascia ≤15%.
  */
 export function buildMuscleTelemetryRows({
   fourCylinder = null,
@@ -141,24 +166,29 @@ export function buildMuscleTelemetryRows({
     };
   });
 
-  const sorted = [...rows].sort((a, b) => {
-    const daysDelta = daysSinceAsNumber(b.daysSinceStimulus) - daysSinceAsNumber(a.daysSinceStimulus);
-    if (daysDelta !== 0) return daysDelta;
-    return a.completionRatio - b.completionRatio || a.label.localeCompare(b.label, 'it');
+  const stimulatePcts = rows
+    .map((row) => Math.round(Number(row.pct) || 0))
+    .filter((pct) => pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX);
+  const minStimulatePct = stimulatePcts.length > 0
+    ? Math.min(...stimulatePcts)
+    : null;
+
+  const labeled = rows.map((row) => {
+    const pct = Math.round(Number(row.pct) || 0);
+    const isPriority = minStimulatePct != null
+      && pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX
+      && pct === minStimulatePct;
+    return {
+      ...row,
+      isTopPriority: isPriority,
+      hubLabel: muscleHubTriageLabel(pct, isPriority),
+    };
   });
 
   return {
     state,
     telemetrySeries,
-    muscleRows: sorted.map((row, index) => {
-      const isTopPriority = index === 0
-        || (index === 1 && row.pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX);
-      return {
-        ...row,
-        isTopPriority,
-        hubLabel: muscleHubTriageLabel(row.pct, isTopPriority && row.pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX),
-      };
-    }),
+    muscleRows: sortMuscleRowsByStimulusPriority(labeled),
   };
 }
 

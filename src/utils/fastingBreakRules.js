@@ -2,13 +2,16 @@
  * Regole uniche: cosa interrompe il digiuno metabolico.
  * Usato da Monitor Metabolico, timeline, Health Score e prompt avatar.
  *
- * Fonte di verità last-meal: solo voci con calorie rilevanti (>= 10 kcal),
- * più stimolanti esplicitamente breaksFast=true (es. caffè zuccherato).
+ * Fonte di verità last-meal: qualsiasi apporto con zuccheri/CHO o kcal sopra soglia
+ * (caffè zuccherato, snack, pasti), più stimolanti con breaksFast=true.
+ * Caffè amaro / acqua / tè unsweetened restano fasting-safe.
  */
 
 export const FASTING_BREAK_THRESHOLDS = Object.freeze({
-  kcal: 10,
-  carbs: 1,
+  /** Qualsiasi apporto sopra 5 kcal interrompe il digiuno. */
+  kcal: 5,
+  /** Qualsiasi CHO > 0 (es. bustina di zucchero) interrompe il digiuno. */
+  carbs: 0,
   protein: 1,
 });
 
@@ -16,6 +19,11 @@ const MEAL_LIKE_TYPES = new Set(['food', 'recipe', 'ghost_meal', 'meal', 'single
 
 function readKcal(item) {
   const n = Number(item?.kcal ?? item?.cal ?? item?.calories ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function readCarbs(item) {
+  const n = Number(item?.carb ?? item?.carbs ?? item?.cho ?? item?.carbohydrates ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -60,9 +68,14 @@ export function isLikelyZeroCalorieDrinkName(rawName) {
   return false;
 }
 
-/** True se le calorie della voce sono rilevanti per interrompere il digiuno (>= 10 kcal). */
+/**
+ * True se l'apporto è metabolicamente rilevante per interrompere il digiuno:
+ * kcal > 5, oppure CHO > 0, oppure nome tipico di bevanda zuccherata.
+ */
 export function itemHasFastingRelevantCalories(item) {
-  return readKcal(item) >= FASTING_BREAK_THRESHOLDS.kcal;
+  if (readKcal(item) > FASTING_BREAK_THRESHOLDS.kcal) return true;
+  if (readCarbs(item) > FASTING_BREAK_THRESHOLDS.carbs) return true;
+  return hasSweetOrCaloricDrinkMarkers(itemDisplayName(item));
 }
 
 /**
@@ -148,12 +161,12 @@ export function isFastingBreakerItem(item) {
   const isMealLike = !type || MEAL_LIKE_TYPES.has(type);
   if (!isMealLike) return false;
 
-  // Gate primario richiesto: solo pasti con calorie rilevanti (>= 10 kcal).
+  // Gate primario: kcal > 5, CHO > 0, o bevanda zuccherata nel nome.
   return itemHasFastingRelevantCalories(item);
 }
 
 /**
- * Filtra solo le voci che contano come last-meal (kcal >= 10 / breaksFast).
+ * Filtra solo le voci che contano come last-meal (kcal/CHO / breaksFast).
  * @param {Array<object>|null|undefined} meals
  * @returns {Array<object>}
  */

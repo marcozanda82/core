@@ -29,6 +29,7 @@ import { detectPrematureFastBreak } from './features/health/HealthScoreEngine.js
 import {
   analyzeCoffeeForHealthScore,
   COFFEE_VARIANT,
+  mergeCaloricStimulantsIntoLog,
   readLastCoffeeType,
   sumSweetCoffeeMacros,
 } from './features/stimulants/coffeeLogEngine.js';
@@ -407,7 +408,6 @@ import {
 } from './features/chat/aiPromptBuilders';
 import {
   migrateIdealStrategy,
-  readPersistedActiveBottomTab,
   readPersistedEventUsage,
   computeSleepDurationHours,
   computeBedtimeFromWakeAndDuration,
@@ -486,7 +486,7 @@ export default function SalaComandi() {
   const returnToChatAfterQuickActionRef = useRef(false);
   const closeOverlayChatRef = useRef(null);
   const sendMessageRef = useRef(null);
-  const [activeBottomTab, setActiveBottomTab] = useState(readPersistedActiveBottomTab);
+  const [activeBottomTab, setActiveBottomTab] = useState('oggi');
   /** Deep-link Centro Analisi (es. calibrazione da modale calorie). */
   const [centroAnalisiEntryArea, setCentroAnalisiEntryArea] = useState(null);
   const centroAnalisiReturnTabRef = useRef('oggi');
@@ -541,13 +541,12 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
-    if (!PERSISTED_BOTTOM_TAB_IDS.includes(activeBottomTab)) return;
     try {
-      localStorage.setItem(ACTIVE_BOTTOM_TAB_LS_KEY, activeBottomTab);
+      localStorage.setItem(ACTIVE_BOTTOM_TAB_LS_KEY, 'oggi');
     } catch {
       /* ignore */
     }
-  }, [activeBottomTab]);
+  }, []);
 
   useEffect(() => {
     if (!PERSISTED_BOTTOM_TAB_IDS.includes(activeBottomTab)) {
@@ -2320,7 +2319,11 @@ export default function SalaComandi() {
 
   // Motore biochimico
   const baseKcal = (effectiveTargetsForCurrentDate?.kcal ?? STRATEGY_PROFILES[dayProfile].kcal) + calorieTuning;
-  const { totali, obiettiviPasti } = useBiochimico(activeLog, baseKcal);
+  const intakeLogForTotals = useMemo(
+    () => mergeCaloricStimulantsIntoLog(activeLog, manualNodes),
+    [activeLog, manualNodes],
+  );
+  const { totali, obiettiviPasti } = useBiochimico(intakeLogForTotals, baseKcal);
   const realFatData = useMemo(
     () => buildFatDetailsData(activeLog, userTargets),
     [activeLog, userTargets],
@@ -2506,6 +2509,7 @@ export default function SalaComandi() {
     manualNodes,
     setManualNodes,
     dailyLog,
+    setDailyLog,
     syncDatiFirebase,
     setShowChoiceModal,
     setAddChoiceView,
@@ -5565,13 +5569,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const totalMacrosTimeline = { prot: totali?.prot ?? 0, carb: totali?.carb ?? 0, fat: totali?.fatTotal ?? totali?.fat ?? 0 };
 
   const physiologySnapshot = useMemo(
-    () => evaluateDailyPillars(activeLog, fullHistory, {
+    () => evaluateDailyPillars(intakeLogForTotals, fullHistory, {
       userTargets,
       dynamicDailyKcal,
       anchorDate: currentTrackerDate,
       biometrics: metabolicBiometrics,
+      manualNodes,
     }),
-    [activeLog, fullHistory, userTargets, dynamicDailyKcal, currentTrackerDate, metabolicBiometrics],
+    [intakeLogForTotals, fullHistory, userTargets, dynamicDailyKcal, currentTrackerDate, metabolicBiometrics, manualNodes],
   );
 
   useEffect(() => {
@@ -5828,8 +5833,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const sweetCoffeeMacros = useMemo(
-    () => sumSweetCoffeeMacros(manualNodes),
-    [manualNodes],
+    () => sumSweetCoffeeMacros(manualNodes, dailyLog),
+    [manualNodes, dailyLog],
   );
 
   const coffeeHealthSignals = useMemo(
@@ -6614,15 +6619,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
       const node = { ...payload };
       if (!node.id) node.id = `stimulant_${Date.now()}`;
-      const next = [...manualNodes, node];
-      setManualNodes(next);
-      syncDatiFirebase(dailyLog, next);
+      const nextNodes = [...manualNodes, node];
+      const nextLog = mergeCaloricStimulantsIntoLog(dailyLog, nextNodes);
+      setManualNodes(nextNodes);
+      if (nextLog.length !== dailyLog.length) {
+        setDailyLog(nextLog);
+      }
+      syncDatiFirebase(nextLog, nextNodes);
       trackEventUsage('stimulant');
       rememberFavoriteFromCoffeeNode(node);
       // Conferma media già pubblicata da commitCoffeeLog via QUICK_EVENT_CONFIRM —
       // evita secondo ciclo caffe1→2 e overlay che chiude la chat.
     },
-    [dailyLog, manualNodes, setManualNodes, syncDatiFirebase, trackEventUsage],
+    [dailyLog, manualNodes, setDailyLog, setManualNodes, syncDatiFirebase, trackEventUsage],
   );
 
   const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlay();
@@ -7695,7 +7704,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setWorkoutType(defaultTab);
     setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
     const nonce = Date.now();
-    setActivitySheetIntent({ tab: defaultTab, nonce });
+    setActivitySheetIntent({
+      tab: defaultTab,
+      nonce,
+      targetMuscle: payload?.targetMuscle || null,
+      category: payload?.category || (defaultTab === 'pesi' ? 'strength' : null),
+    });
     console.log('DEBUG: padre openActivity', { defaultTab, nonce, payload });
     setActiveAction('allenamento');
     setIsDrawerOpen(true);

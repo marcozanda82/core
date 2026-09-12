@@ -84,7 +84,7 @@ export default function SnapshotHub({
       setLocalMuscleTelemetry(false);
       return undefined;
     }
-    if (saluteFocus !== 'muscle_telemetry') return undefined;
+    if (saluteFocus !== 'muscle_telemetry' && saluteFocus !== 'nutrition') return undefined;
     onConsumeSaluteFocus?.();
     return undefined;
   }, [effectiveHemisphere, saluteFocus, onConsumeSaluteFocus]);
@@ -130,6 +130,7 @@ export default function SnapshotHub({
       todayBurnKcal,
       initialOpenMuscleTelemetry:
         saluteFocus === 'muscle_telemetry' || localMuscleTelemetry,
+      initialOpenNutrition: saluteFocus === 'nutrition',
     }),
     [
       healthContext,

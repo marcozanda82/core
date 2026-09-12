@@ -232,8 +232,9 @@ export function isPredictiveGreetingMessage(message) {
  * @returns {object | null}
  */
 export function getLastConversationMessage(chatHistory = []) {
-  for (let i = chatHistory.length - 1; i >= 0; i -= 1) {
-    const entry = chatHistory[i];
+  const list = Array.isArray(chatHistory) ? chatHistory : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i];
     if (!entry || entry.isTyping) continue;
     return entry;
   }
@@ -296,7 +297,7 @@ export function evaluatePredictiveGreetingDecision(chatHistory = [], ctx = {}, o
  * @returns {Array<object>}
  */
 export function markPredictiveGreetingsSuperseded(prev = []) {
-  return (prev || []).map((entry) => {
+  return (Array.isArray(prev) ? prev : []).map((entry) => {
     if (!isPredictiveGreetingMessage(entry) || entry.predictiveSuperseded === true) return entry;
     return {
       ...entry,

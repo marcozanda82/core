@@ -827,6 +827,9 @@ export function useCommandTerminal({
           ? payload.mealReceipt
           : null,
         purgeMcDriveTray: payload.resolveMcDriveTray === true,
+        clinicalInsight: payload.clinicalInsight === true,
+        metabolicFocus: payload.metabolicFocus === true || payload.clinicalInsight === true
+          || payloadType === 'METABOLIC_FOCUS',
         ...(lightQuickReplies.length > 0
           ? { quickReplies: lightQuickReplies, clarification: payload.clarification === true }
           : {}),
@@ -1339,16 +1342,19 @@ export function useCommandTerminal({
   const tryEmitPredictiveGreeting = useCallback(() => {
     if (isLoading) return { ok: false, reason: 'processing' };
 
+    try {
     const currentState =
       typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
     const anchorDate = String(currentState.activeDate || getTodayString()).trim() || getTodayString();
-    const history = chatHistoryRef.current || [];
+    const history = Array.isArray(chatHistoryRef.current) ? chatHistoryRef.current : [];
 
     const ctx = {
       ...getCurrentPredictiveContext({
-        fullHistory: currentState.fullHistory || {},
-        dailyLog: currentState.activeLog || [],
-        manualNodes: currentState.manualNodes || [],
+        fullHistory: currentState.fullHistory && typeof currentState.fullHistory === 'object'
+          ? currentState.fullHistory
+          : {},
+        dailyLog: Array.isArray(currentState.activeLog) ? currentState.activeLog : [],
+        manualNodes: Array.isArray(currentState.manualNodes) ? currentState.manualNodes : [],
         anchorDate,
       }),
       hasSleepData: currentState.hasSleepData === true,
@@ -1378,7 +1384,7 @@ export function useCommandTerminal({
           type: PREDICTIVE_GREETING_TYPE,
           text: greeting.text,
           avatarAsset: greeting.avatarAsset,
-          quickReplies: greeting.quickReplies,
+          quickReplies: Array.isArray(greeting.quickReplies) ? greeting.quickReplies : [],
           predictiveState: greeting.predictiveState,
           predictiveGreeting: true,
           anchorDate,
@@ -1415,6 +1421,10 @@ export function useCommandTerminal({
       superseded: decision.action === 'supersede',
       cleared: decision.action === 'clear_stale',
     };
+    } catch (error) {
+      console.warn('[Chat] predictive greeting failed', error);
+      return { ok: false, reason: 'exception', error };
+    }
   }, [isLoading]);
 
   const cancelGeneration = useCallback(() => {

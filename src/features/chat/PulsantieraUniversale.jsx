@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { stashActivitySheetTempTab, getMuscleGroupsForMacro } from '../../activityCatalog';
+import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
 import {
   countUnresolvedMealDraftItems,
@@ -82,13 +83,13 @@ const SUBMENUS = {
     },
     {
       id: 'insight-clinico',
-      icon: '🩺',
-      label: 'Insight Clinico',
+      icon: '⚡',
+      label: METABOLIC_FOCUS_LABEL,
       action: 'send',
-      message: 'Insight Clinico',
+      message: METABOLIC_FOCUS_LABEL,
       intent: 'REQUEST_CLINICAL_INSIGHT',
       isHiddenUserMessage: true,
-      visibleUserText: '🩺 Insight Clinico',
+      visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
     },
     {
       id: 'sintesi-settimanale',
@@ -153,13 +154,13 @@ const VOCABULARY_SECTIONS = [
       },
       {
         id: 'insight-clinico',
-        icon: '🩺',
-        label: 'Insight Clinico',
+        icon: '⚡',
+        label: METABOLIC_FOCUS_LABEL,
         action: 'send',
-        message: 'Insight Clinico',
+        message: METABOLIC_FOCUS_LABEL,
         intent: 'REQUEST_CLINICAL_INSIGHT',
         isHiddenUserMessage: true,
-        visibleUserText: '🩺 Insight Clinico',
+        visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
       },
       {
         id: 'sintesi-settimanale',
@@ -190,13 +191,13 @@ const VOCABULARY_SECTIONS = [
       { id: 'sonno', icon: '🌙', label: 'Sonno', action: 'send', message: 'Sonno' },
       {
         id: 'insight-clinico',
-        icon: '🩺',
-        label: 'Insight Clinico',
+        icon: '⚡',
+        label: METABOLIC_FOCUS_LABEL,
         action: 'send',
-        message: 'Insight Clinico',
+        message: METABOLIC_FOCUS_LABEL,
         intent: 'REQUEST_CLINICAL_INSIGHT',
         isHiddenUserMessage: true,
-        visibleUserText: '🩺 Insight Clinico',
+        visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
       },
     ],
   },
@@ -231,15 +232,20 @@ function PillarButton({ icon, label, active, onClick }) {
   );
 }
 
-function OverlayActionButton({ icon, label, onClick, disabled, compact = false }) {
+function OverlayActionButton({ icon, label, onClick, disabled, compact = false, dense = false }) {
+  const sizeClass = dense
+    ? 'min-h-[3.35rem] gap-1 px-2 py-1.5'
+    : compact
+      ? 'min-h-[4.75rem] gap-2 px-3 py-3'
+      : 'min-h-[5.5rem] gap-2.5 px-4 py-4';
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
       className={[
-        'flex flex-col items-center justify-center gap-2 rounded-2xl border',
-        compact ? 'min-h-[4.75rem] px-3 py-3' : 'min-h-[5.5rem] gap-2.5 px-4 py-4',
+        'flex flex-col items-center justify-center rounded-2xl border',
+        sizeClass,
         'border-white/12 bg-white/[0.06] text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)]',
         'backdrop-blur-sm transition-all duration-150',
         'hover:border-cyan-400/45 hover:bg-cyan-500/10 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)]',
@@ -247,8 +253,10 @@ function OverlayActionButton({ icon, label, onClick, disabled, compact = false }
         'disabled:pointer-events-none disabled:opacity-45',
       ].join(' ')}
     >
-      <span className={`leading-none ${compact ? 'text-2xl' : 'text-3xl'}`} aria-hidden>{icon}</span>
-      <span className="text-center text-xs font-semibold leading-tight sm:text-sm">{label}</span>
+      <span className={`leading-none ${dense ? 'text-xl' : compact ? 'text-2xl' : 'text-3xl'}`} aria-hidden>{icon}</span>
+      <span className={`text-center font-semibold leading-tight whitespace-nowrap ${dense ? 'text-[10px]' : 'text-xs sm:text-sm'}`}>
+        {label}
+      </span>
     </button>
   );
 }
@@ -457,7 +465,11 @@ export default function PulsantieraUniversale({
     if (item.action === 'openActivity') {
       closeMenus();
       const defaultTab = stashActivitySheetTempTab(item.defaultTab || 'pesi');
-      const payload = { defaultTab };
+      const payload = {
+        defaultTab,
+        category: item.category || (defaultTab === 'pesi' ? 'strength' : null),
+      };
+      if (item.targetMuscle) payload.targetMuscle = item.targetMuscle;
       if (Array.isArray(item.muscles) && item.muscles.length > 0) {
         payload.muscles = item.muscles;
       }
@@ -753,23 +765,31 @@ export default function PulsantieraUniversale({
   }, [onSelectInboxDraft]);
 
   const openStimulusCylinder = useCallback((row) => {
-    const workoutMuscles = getMuscleGroupsForMacro(row?.id).map((d) => d.id);
+    const groupId = String(row?.id || '').trim();
+    const workoutMuscles = getMuscleGroupsForMacro(groupId).map((d) => d.id);
     dispatchItem({
-      id: `stimulus-${row?.id || 'pesi'}`,
+      id: `stimulus-${groupId || 'pesi'}`,
       action: 'openActivity',
       defaultTab: 'pesi',
+      category: 'strength',
+      targetMuscle: groupId,
       muscles: workoutMuscles,
     });
   }, [dispatchItem]);
 
-  const muscleRows = useMemo(
-    () => buildMuscleTelemetryRows({
-      fourCylinder,
-      fullHistory,
-      activeLog: dailyLog,
-    }).muscleRows,
-    [fourCylinder, fullHistory, dailyLog],
-  );
+  const muscleRows = useMemo(() => {
+    try {
+      const rows = buildMuscleTelemetryRows({
+        fourCylinder: fourCylinder && typeof fourCylinder === 'object' ? fourCylinder : null,
+        fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
+        activeLog: Array.isArray(dailyLog) ? dailyLog : [],
+      })?.muscleRows;
+      return Array.isArray(rows) ? rows : [];
+    } catch (error) {
+      console.warn('[PulsantieraUniversale] muscle telemetry failed', error);
+      return [];
+    }
+  }, [fourCylinder, fullHistory, dailyLog]);
 
   const pastiOverlay = activeCategory === 'pasti' ? (
     createPortal(
@@ -1033,33 +1053,36 @@ export default function PulsantieraUniversale({
           role="dialog"
           aria-modal="true"
           aria-label="Cruscotto dello stimolo muscolare e cardio"
-          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-4 py-6 sm:px-6 sm:py-8"
+          className="pointer-events-none fixed inset-0 z-[100041] flex items-center justify-center px-3 py-3 sm:px-6"
         >
           <div
-            className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[90dvh] w-full max-w-lg flex-col items-center gap-4 overflow-hidden"
+            className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[100dvh] w-full max-w-lg flex-col items-center gap-2 overflow-hidden"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="shrink-0 text-center">
-              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              <p className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                 Semaforo metabolico
               </p>
-              <h2 className="mt-1 text-xl font-semibold text-zinc-50">
+              <h2 className="mt-0.5 text-base font-semibold text-zinc-50 sm:text-lg">
                 Cruscotto dello stimolo
               </h2>
             </div>
 
-            <div className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-4 pb-1">
+            <div className="w-full min-h-0 px-3">
               <MuscleStimulusDistrictList
                 muscleRows={muscleRows}
                 onSelectRow={openStimulusCylinder}
               />
+            </div>
 
-              <section className="mt-5">
-                <h3 className="mb-2.5 px-1 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <div className="w-full shrink-0 px-3">
+              <section className="my-2">
+                <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
                   Monitoraggio Cardio
                 </h3>
                 <CardioProgressBar
                   compact
+                  dense
                   fullHistory={fullHistory}
                   activeLog={dailyLog}
                   onActivate={() => dispatchItem({
@@ -1070,43 +1093,59 @@ export default function PulsantieraUniversale({
                 />
               </section>
 
-              <div className="mt-5 grid w-full grid-cols-3 gap-2 [&>button]:w-full">
+              <div className="mt-2 grid w-full grid-cols-4 gap-1.5 [&>button]:w-full">
                 <OverlayActionButton
-                  compact
+                  dense
+                  icon={SUBMENUS.attivita.find((i) => i.id === 'allenamento')?.icon || '🏋️'}
+                  label="Forza"
+                  disabled={disabled}
+                  onClick={() => dispatchItem({
+                    ...(SUBMENUS.attivita.find((i) => i.id === 'allenamento') || {}),
+                    id: 'forza',
+                    label: 'Forza',
+                    action: 'openActivity',
+                    defaultTab: 'pesi',
+                    category: 'strength',
+                  })}
+                />
+                <OverlayActionButton
+                  dense
                   icon={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.icon || '🚶'}
                   label={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.label || 'Camminata'}
                   disabled={disabled}
                   onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'camminata'))}
                 />
                 <OverlayActionButton
-                  compact
+                  dense
                   icon={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.icon || '🏃'}
                   label={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.label || 'Corsa'}
                   disabled={disabled}
                   onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'corsa'))}
                 />
                 <OverlayActionButton
-                  compact
+                  dense
                   icon={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.icon || '🗓️'}
                   label={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.label || 'Piano'}
                   disabled={disabled}
                   onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'piano'))}
                 />
               </div>
-            </div>
 
-            <button
-              type="button"
-              onClick={handleOverlayClose}
-              className={[
-                'mt-auto flex-shrink-0 rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2.5',
-                'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
-                'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
-              ].join(' ')}
-            >
-              Annulla
-            </button>
+              <div className="mt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={handleOverlayClose}
+                className={[
+                  'rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-1.5',
+                  'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
+                  'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+                ].join(' ')}
+              >
+                Annulla
+              </button>
+              </div>
+            </div>
           </div>
         </div>
       </>,

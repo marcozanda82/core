@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { loginWithGoogle } from '../../services/firebaseAuth';
+import { isAuthCancelled, loginWithGoogle } from '../../services/firebaseAuth';
 import { takeNextKentuIntroPhrase } from '../../kentuIntroPhrases';
 import LegalTextModal from '../legal/LegalTextModal.jsx';
 import {
@@ -34,8 +34,7 @@ export default function LoginScreen() {
     try {
       await loginWithGoogle();
     } catch (err) {
-      const code = err?.code || '';
-      if (code !== 'auth/popup-closed-by-user' && code !== 'auth/cancelled-popup-request') {
+      if (!isAuthCancelled(err)) {
         console.warn('[Auth] Google sign-in failed', err);
         setError('Accesso non riuscito. Verifica la connessione e riprova.');
       }

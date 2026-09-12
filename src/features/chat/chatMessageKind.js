@@ -14,6 +14,7 @@ const RICH_TYPES = new Set([
   'QUICK_EVENT_CONFIRM',
   'PERIOD_REPORT',
   'REPORT_LOADING',
+  'METABOLIC_FOCUS',
 ]);
 
 const SUCCESS_RE =

@@ -502,9 +502,9 @@ export function estimateDeterministicLongevityNutrition(input = {}) {
     ? 'Profilo antinfiammatorio e glicemico solido dai log (grassi buoni / fibre / alimenti minimamente processati).'
     : proteinStatus === 'OPTIMAL'
       ? 'Quota proteica funzionale in linea: supporto alla massa magra.'
-      : 'Base nutrizionale stimata dai log: genera l\'Insight Clinico per un giudizio clinico completo.';
+      : 'Base nutrizionale stimata dai log: genera il Focus Metabolico per una sintesi completa.';
 
-  let clinicalNoteBottleneck = 'Completa l\'Insight Clinico AI per affinare qualità antinfiammatoria e timing.';
+  let clinicalNoteBottleneck = 'Completa il Focus Metabolico per affinare qualità antinfiammatoria e timing.';
   if (proteinStatus === 'LOW' && qualityStrong) {
     clinicalNoteBottleneck = 'Margine di miglioramento: incrementa leggermente la quota proteica per sostenere la massa magra.';
   } else if (fastingWindowEvaluation === 'POOR') {
@@ -559,9 +559,9 @@ export function resolveLongevityNutritionPillar(input = {}) {
       proteinStatus: fromAi?.proteinStatus || (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'MODERATE' : 'LOW'),
       fastingWindowEvaluation: fromAi?.fastingWindowEvaluation || (score >= 18 ? 'OPTIMAL' : score >= 10 ? 'GOOD' : 'POOR'),
       clinicalNoteStrength: fromAi?.clinicalNoteStrength
-        || 'Media nutrizione clinica dagli Insight recenti: profilo alimentare in monitoraggio.',
+        || 'Media nutrizione dai Focus Metabolico recenti: profilo alimentare in monitoraggio.',
       clinicalNoteBottleneck: fromAi?.clinicalNoteBottleneck
-        || 'Continua a generare Insight Clinico per affinare il pilastro nutrizione.',
+        || 'Continua a generare il Focus Metabolico per affinare il pilastro nutrizione.',
       source: 'ai_average',
       sampleSize: recent.length,
     };
@@ -575,7 +575,7 @@ export function resolveLongevityNutritionPillar(input = {}) {
       proteinStatus: ln.proteinStatus || 'MODERATE',
       fastingWindowEvaluation: ln.fastingWindowEvaluation || 'GOOD',
       clinicalNoteStrength: String(ln.clinicalNoteStrength || '').trim()
-        || 'Insight Clinico: nutrizione valutata sul giorno di analisi.',
+        || 'Focus Metabolico: nutrizione valutata sul giorno di analisi.',
       clinicalNoteBottleneck: String(ln.clinicalNoteBottleneck || '').trim()
         || 'Verifica qualità antinfiammatoria, fibre e finestra digiuno.',
       source: 'ai_single',
@@ -598,7 +598,7 @@ export function resolveLongevityNutritionPillar(input = {}) {
 
 /**
  * Punteggio Longevità 0–100 — 4 pilastri × 25:
- * Cardio · Forza · Sonno · Nutrizione Clinica & Digiuno (+ filtro WHtR sul totale).
+ * Cardio · Forza · Sonno · Focus Metabolico & Digiuno (+ filtro WHtR sul totale).
  *
  * @param {{
  *   cardioMinutesTotal?: number,

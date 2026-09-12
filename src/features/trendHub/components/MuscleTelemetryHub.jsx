@@ -60,7 +60,7 @@ export default function MuscleTelemetryHub({
           Accumulo stimolo per distretto
         </p>
         <p className="m-0 mt-1 text-[11px] text-slate-400">
-          Card graduate · PRIORITÀ / DA STIMOLARE / IN RECUPERO / OTTIMALE
+          Card graduate · PRIORITÀ (stimolo più basso) / DA STIMOLARE / IN RECUPERO / OTTIMALE
         </p>
 
         <div className="mt-2.5">

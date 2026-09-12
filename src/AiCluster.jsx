@@ -36,12 +36,20 @@ import KentuAvatar from './features/chat/KentuAvatar.jsx';
 import VitalityAvatarRing from './features/chat/VitalityAvatarRing.jsx';
 import { buildVitalityIndexFromScore, readGlobalHealthScore } from './features/chat/vitalityIndex.js';
 import ChatReportCard from './features/chat/ChatReportCard.jsx';
+import MetabolicFocusChatCard from './features/chat/MetabolicFocusChatCard.jsx';
+import { isMetabolicFocusMessage } from './features/chat/metabolicFocus.js';
 import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
 import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
 import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
-import { resolveCinemaBannerFromChat, resolveQuickEventVideoMaxClampSeconds } from './features/quickEvents/quickEventConfirmAssets.js';
+import {
+  forgetCinemaKeySeen,
+  markCinemaKeySeen,
+  readSeenCinemaKeys,
+  resolveCinemaBannerFromChat,
+  resolveQuickEventVideoMaxClampSeconds,
+} from './features/quickEvents/quickEventConfirmAssets.js';
 import { draftHasRawMcDriveItems, isMcDriveValidationPenultimateOrLater } from './features/commandTerminal/conversation/mcdriveWizard.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
@@ -83,6 +91,13 @@ function stripInvisibleContextFromBubble(text) {
     .replace(/\[CONTEXT_LIVE:[^\]]*\]\s*/gi, '')
     .replace(/\[CONTESTO DI SISTEMA INVISIBILE:[^\]]*\]\s*/gi, '')
     .trim();
+}
+
+/** Chiave cinema stabile tra state in-memory e sessionStorage. */
+function asCinemaKey(key) {
+  if (key == null) return null;
+  const id = String(key).trim();
+  return id || null;
 }
 
 /** Sezioni separate da doppio a capo → HERO + insight cards. */
@@ -189,6 +204,11 @@ export default function AiCluster({
     () => (Array.isArray(dailyLog) ? dailyLog : []),
     [dailyLog],
   );
+  const safeMessages = useMemo(
+    () => (Array.isArray(chatHistory) ? chatHistory.filter((m) => m && typeof m === 'object') : []),
+    [chatHistory],
+  );
+  const safeImages = Array.isArray(chatImages) ? chatImages : [];
   const safeUserTargets = useMemo(
     () => (userTargets && typeof userTargets === 'object' ? userTargets : null),
     [userTargets],
@@ -266,7 +286,7 @@ export default function AiCluster({
     noteTextInteraction,
     markVoiceSubmitForTts,
   } = useVoiceChat({
-    chatHistory,
+    chatHistory: safeMessages,
     isProcessing,
     defaultTtsEnabled: preferVoiceChat === true,
     userDisplayName,
@@ -301,29 +321,29 @@ export default function AiCluster({
   }, [isProcessing, isTranscribingVoiceNote]);
 
   const isStrategicConsult = useMemo(
-    () => detectStrategicConsultContext(chatHistory, {
+    () => detectStrategicConsultContext(safeMessages, {
       forceStrategic: strategicProcessingLatch,
     }),
-    [chatHistory, strategicProcessingLatch],
+    [safeMessages, strategicProcessingLatch],
   );
 
   const hasActiveWorkoutDraft = useMemo(
-    () => (chatHistory || []).some((m) => m.workoutDraft && !m.draftResolved),
-    [chatHistory],
+    () => safeMessages.some((m) => m.workoutDraft && !m.draftResolved),
+    [safeMessages],
   );
 
   const hasActiveMealTray = useMemo(
     () => detectActiveMealTray({
-      chatHistory,
+      chatHistory: safeMessages,
       wipMealItems,
       mealBuilder,
     }),
-    [chatHistory, wipMealItems, mealBuilder],
+    [safeMessages, wipMealItems, mealBuilder],
   );
 
   /** Lavagna McDrive attiva: esce dalla cronologia scroll e va nel dock sopra l'input. */
   const dockedMcDriveTrayMsg = useMemo(() => {
-    const messages = Array.isArray(chatHistory) ? chatHistory : [];
+    const messages = safeMessages;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const msg = messages[i];
       if (msg?.liveMealTrayResolved === true) continue;
@@ -339,10 +359,10 @@ export default function AiCluster({
   const chatInputPlaceholder = useMemo(
     () => resolveChatInputPlaceholder({
       isNotesMode,
-      hasImages: chatImages.length > 0,
+      hasImages: safeImages.length > 0,
       isAiGuidedMode: Boolean(dockedMcDriveTray),
     }),
-    [isNotesMode, chatImages.length, dockedMcDriveTray],
+    [isNotesMode, safeImages.length, dockedMcDriveTray],
   );
 
   const mcdriveTrayItems = useMemo(
@@ -364,7 +384,7 @@ export default function AiCluster({
   const reportHeaderExitTimerRef = useRef(null);
 
   const lastUserReportIntent = useMemo(() => {
-    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    const list = safeMessages;
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const msg = list[i];
       if (!msg || msg.sender !== 'user') continue;
@@ -374,7 +394,7 @@ export default function AiCluster({
   }, [chatHistory]);
 
   const reportSessionKey = useMemo(() => {
-    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    const list = safeMessages;
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const msg = list[i];
       if (!msg || msg.sender !== 'ai') continue;
@@ -446,7 +466,7 @@ export default function AiCluster({
       return;
     }
 
-    const list = Array.isArray(chatHistory) ? chatHistory : [];
+    const list = safeMessages;
     const hasLoading = list.some(
       (msg) => msg?.type === 'REPORT_LOADING' || msg?.reportLoading === true,
     );
@@ -511,7 +531,9 @@ export default function AiCluster({
     : '';
 
   /** Chiavi quick-event già riprodotte in fascia (one-shot). */
-  const [dismissedCinemaKeys, setDismissedCinemaKeys] = useState(() => new Set());
+  const [dismissedCinemaKeys, setDismissedCinemaKeys] = useState(
+    () => new Set(readSeenCinemaKeys()),
+  );
   /** Video sollevato nell'header (sostituisce mascotte + titolo). */
   const [hoistedVideo, setHoistedVideo] = useState(null);
   /** Utente ha chiuso manualmente il video di elaborazione (typing). */
@@ -520,7 +542,7 @@ export default function AiCluster({
   const [cinemaClock, setCinemaClock] = useState(0);
 
   const quickEventCinema = useMemo(
-    () => resolveCinemaBannerFromChat(chatHistory),
+    () => resolveCinemaBannerFromChat(safeMessages),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- cinemaClock forza re-check freschezza
     [chatHistory, cinemaClock],
   );
@@ -534,17 +556,17 @@ export default function AiCluster({
   }, [quickEventCinema?.messageKey]);
 
   const cinemaBannerCandidate = useMemo(() => {
+    const quickEventCinemaKey = asCinemaKey(quickEventCinema?.messageKey);
     if (
       quickEventCinema
-      && (quickEventCinema.messageKey == null
-        || !dismissedCinemaKeys.has(quickEventCinema.messageKey))
+      && (quickEventCinemaKey == null || !dismissedCinemaKeys.has(quickEventCinemaKey))
     ) {
       return {
         posterSrc: quickEventCinema.posterSrc,
         videoSrc: quickEventCinema.videoSrc,
         label: quickEventCinema.label,
         loop: false,
-        messageKey: quickEventCinema.messageKey,
+        messageKey: quickEventCinemaKey,
         maxClampSeconds: quickEventCinema.maxClampSeconds ?? null,
         source: 'quick_event',
       };
@@ -630,8 +652,8 @@ export default function AiCluster({
       return;
     }
     if (
-      cinemaBannerCandidate.messageKey != null
-      && dismissedCinemaKeys.has(cinemaBannerCandidate.messageKey)
+      asCinemaKey(cinemaBannerCandidate.messageKey) != null
+      && dismissedCinemaKeys.has(asCinemaKey(cinemaBannerCandidate.messageKey))
     ) {
       setHoistedVideo(null);
       return;
@@ -672,6 +694,18 @@ export default function AiCluster({
     }
   }, [showTypingIndicator]);
 
+  const rememberDismissedCinemaKey = useCallback((key) => {
+    const id = asCinemaKey(key);
+    if (!id) return;
+    markCinemaKeySeen(id);
+    setDismissedCinemaKeys((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
+
   const dismissHoistedVideo = useCallback(() => {
     if (hoistedVideo?.source === 'report') {
       finishReportHeaderVideo();
@@ -679,41 +713,43 @@ export default function AiCluster({
     if (hoistedVideo?.source === 'processing') {
       setProcessingVideoDismissed(true);
     }
-    const key = hoistedVideo?.messageKey;
-    if (key != null) {
-      setDismissedCinemaKeys((prev) => {
-        if (prev.has(key)) return prev;
-        const next = new Set(prev);
-        next.add(key);
-        return next;
-      });
+    rememberDismissedCinemaKey(hoistedVideo?.messageKey);
+    if (hoistedVideo?.source === 'quick_event') {
+      rememberDismissedCinemaKey(quickEventCinema?.messageKey);
     }
     setHoistedVideo(null);
-  }, [finishReportHeaderVideo, hoistedVideo?.messageKey, hoistedVideo?.source]);
+  }, [
+    finishReportHeaderVideo,
+    hoistedVideo?.messageKey,
+    hoistedVideo?.source,
+    quickEventCinema?.messageKey,
+    rememberDismissedCinemaKey,
+  ]);
 
   const handleHoistedVideoEnded = useCallback(() => {
     if (hoistedVideo?.source === 'report') {
+      rememberDismissedCinemaKey(hoistedVideo?.messageKey);
       beginReportHeaderExit();
       return;
     }
-    const key = hoistedVideo?.messageKey;
-    if (key == null) return;
-    setDismissedCinemaKeys((prev) => {
-      if (prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.add(key);
-      return next;
-    });
-    setHoistedVideo(null);
-  }, [beginReportHeaderExit, hoistedVideo?.messageKey, hoistedVideo?.source]);
+    dismissHoistedVideo();
+  }, [
+    beginReportHeaderExit,
+    dismissHoistedVideo,
+    hoistedVideo?.messageKey,
+    hoistedVideo?.source,
+    rememberDismissedCinemaKey,
+  ]);
 
   const handleHoistVideoFromMessage = useCallback((payload) => {
     if (!payload?.videoSrc) return;
     if (payload.messageKey != null) {
+      const id = asCinemaKey(payload.messageKey);
+      forgetCinemaKeySeen(id);
       setDismissedCinemaKeys((prev) => {
-        if (!prev.has(payload.messageKey)) return prev;
+        if (!id || !prev.has(id)) return prev;
         const next = new Set(prev);
-        next.delete(payload.messageKey);
+        next.delete(id);
         return next;
       });
     }
@@ -751,7 +787,7 @@ export default function AiCluster({
   }, [chatHistory, showTypingIndicator, scrollChatToBottom]);
 
   const suppressQuickReplies = useMemo(
-    () => (chatHistory || []).some(
+    () => safeMessages.some(
       (m) => m.mealProposal
         || m.dailyPlan
         || (m.mealDraft && !m.draftResolved)
@@ -933,7 +969,7 @@ export default function AiCluster({
 
   const handleFlagAnomaly = useCallback(async () => {
     try {
-      const lastMessages = (chatHistory || []).slice(-2);
+      const lastMessages = safeMessages.slice(-2);
       if (!lastMessages.length) {
         showDevToast('Nessuno scambio da segnalare');
         setShowToolsMenu(false);
@@ -954,7 +990,7 @@ export default function AiCluster({
 
   const handleSaveChat = useCallback(async () => {
     try {
-      const messages = Array.isArray(chatHistory) ? chatHistory : [];
+      const messages = safeMessages;
       if (!messages.length) {
         showDevToast('Nessuna chat da salvare');
         setShowToolsMenu(false);
@@ -1116,15 +1152,17 @@ export default function AiCluster({
         {hoistedVideo ? (
           <div
             className={[
-              'relative h-full min-h-0 w-full transition-opacity duration-500 ease-in-out',
+              'relative h-full min-h-0 w-full cursor-pointer transition-opacity duration-500 ease-in-out',
               reportHeaderExiting ? 'opacity-0' : 'opacity-100',
             ].join(' ')}
+            onClick={dismissHoistedVideo}
           >
             <KentuProcessingBanner
               variant="header"
               posterSrc={hoistedVideo.posterSrc}
               videoSrc={hoistedVideo.videoSrc}
               label={hoistedVideo.label}
+              onDismiss={dismissHoistedVideo}
               loop={
                 hoistedVideo.source === 'report'
                   ? false
@@ -1161,11 +1199,15 @@ export default function AiCluster({
               }
               onVideoEnded={handleHoistedVideoEnded}
             />
-            <div className="absolute right-3 top-3 z-10 flex shrink-0 items-center">
+            <div className="absolute left-3 top-3 z-50 flex shrink-0 items-center">
               {typeof onBack === 'function' ? (
                 <button
                   type="button"
-                  onClick={handleWorkspaceHomeClick}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleWorkspaceHomeClick();
+                  }}
                   aria-label="Torna alla Home"
                   title="Home"
                   className={[
@@ -1284,7 +1326,7 @@ export default function AiCluster({
         ) : null}
         {!isAiGuidedImmersive ? (
         <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
-          {chatHistory.filter((msg) => {
+          {safeMessages.filter((msg) => {
             if (msg?.predictiveSuperseded === true) return false;
             // Lavagna attiva: solo nel dock sopra l'input, non in cronologia.
             if (dockedMcDriveTrayMsg && msg === dockedMcDriveTrayMsg) return false;
@@ -1299,11 +1341,12 @@ export default function AiCluster({
             const isQuickEventConfirm = Boolean(
               msg?.quickEventConfirm || msg?.type === 'QUICK_EVENT_CONFIRM',
             );
+            const isMetabolicFocus = isMetabolicFocusMessage(msg);
             return (
             <div
               key={idx}
               className={`flex w-full flex-col gap-1.5 ${
-                isQuickEventConfirm
+                isQuickEventConfirm || isMetabolicFocus
                   ? 'items-stretch px-0'
                   : msg.sender === 'ai'
                     ? 'items-start'
@@ -1465,7 +1508,21 @@ export default function AiCluster({
                             === String(msg.quickEventConfirm?.videoSrc || msg.videoSrc || '').trim()
                         )
                       }
-                      onHoistVideo={handleHoistVideoFromMessage}
+                      onHoistVideo={(payload) => {
+                        handleHoistVideoFromMessage({
+                          ...payload,
+                          messageKey: payload?.messageKey
+                            ?? msg.quickEventConfirm?.messageKey
+                            ?? msg.id
+                            ?? idx,
+                          maxClampSeconds: payload?.maxClampSeconds
+                            ?? msg.quickEventConfirm?.maxClampSeconds
+                            ?? resolveQuickEventVideoMaxClampSeconds(
+                              payload?.videoSrc || msg.quickEventConfirm?.videoSrc || msg.videoSrc,
+                            ),
+                          source: payload?.source || 'quick_event',
+                        });
+                      }}
                       onReopenVideo={() => {
                         handleHoistVideoFromMessage({
                           videoSrc: msg.quickEventConfirm?.videoSrc || msg.videoSrc || null,
@@ -1521,6 +1578,13 @@ export default function AiCluster({
                   </div>
                 ) : isSystemNoticeMessage(msg) ? (
                   <SystemNoticeMessage message={msg} />
+                ) : isMetabolicFocus ? (
+                  <div className="w-full max-w-full box-border px-1">
+                    <MetabolicFocusChatCard
+                      text={msg.text || msg.displayText || ''}
+                      avatarSrc={resolveMessageAvatarSrc(msg)}
+                    />
+                  </div>
                 ) : (
                   <div
                     className={[
@@ -1666,7 +1730,7 @@ export default function AiCluster({
                   {stripInvisibleContextFromBubble(msg.text)}
                 </div>
               )}
-              {msg.quickReplies && msg.quickReplies.length > 0 && !msg.isTyping && !messageHasInteractiveDraftWidget(msg) && (() => {
+              {Array.isArray(msg.quickReplies) && msg.quickReplies.length > 0 && !msg.isTyping && !messageHasInteractiveDraftWidget(msg) && (() => {
                 if (isPredictiveGreetingMessage(msg)) return null;
 
                 const clarificationKey = `clr-${idx}`;
@@ -1775,7 +1839,7 @@ export default function AiCluster({
                 </div>
                 );
               })()}
-              {msg.dinnerOptions && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
+              {Array.isArray(msg.dinnerOptions) && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
                 <div className="kentu-quick-row" style={{ justifyContent: 'flex-end' }}>
                   {msg.dinnerOptions.map((opt, oIdx) => (
                     <KentuButton
@@ -1792,7 +1856,7 @@ export default function AiCluster({
                   ))}
                 </div>
               )}
-              {msg.agendaOptions && msg.agendaOptions.length > 0 && !msg.isTyping && typeof onLoadAgenda === 'function' && (
+              {Array.isArray(msg.agendaOptions) && msg.agendaOptions.length > 0 && !msg.isTyping && typeof onLoadAgenda === 'function' && (
                 <div className="kentu-quick-row" style={{ justifyContent: 'flex-start' }}>
                   <KentuButton
                     variant="secondary"
@@ -1896,9 +1960,9 @@ export default function AiCluster({
           ].join(' ')}
           aria-hidden={collapseComposerForHoisted ? true : undefined}
         >
-        {chatImages.length > 0 && (
+        {safeImages.length > 0 && (
           <div style={{ display: 'flex', gap: 10, marginBottom: 10, marginLeft: 4, overflowX: 'auto' }}>
-            {chatImages.map((imgSrc, index) => (
+            {safeImages.map((imgSrc, index) => (
               <div key={index} style={{ position: 'relative', display: 'inline-block', flexShrink: 0 }}>
                 <img src={imgSrc} alt="" style={{ height: 60, borderRadius: 10, border: '1px solid rgba(255,255,255,0.12)' }} />
                 <KentuButton
@@ -1916,7 +1980,7 @@ export default function AiCluster({
                     borderColor: 'rgba(248,113,113,0.35)',
                     color: '#fca5a5',
                   }}
-                  onClick={() => setChatImages((prev) => prev.filter((_, i) => i !== index))}
+                  onClick={() => setChatImages((prev) => (Array.isArray(prev) ? prev : []).filter((_, i) => i !== index))}
                   aria-label="Rimuovi immagine"
                 >
                   <KentuIcon name="x" size={14} />
@@ -2107,7 +2171,7 @@ export default function AiCluster({
                       })
                   )
                 ).then((newBase64Images) => {
-                  setChatImages((prev) => [...prev, ...newBase64Images]);
+                  setChatImages((prev) => [...(Array.isArray(prev) ? prev : []), ...newBase64Images]);
                 });
                 e.target.value = '';
               }
@@ -2120,7 +2184,7 @@ export default function AiCluster({
             disabled={isProcessing && !isNotesMode}
             isProcessing={isProcessing}
             isNotesMode={isNotesMode}
-            canSendWithImages={!isNotesMode && Array.isArray(chatImages) && chatImages.length > 0}
+            canSendWithImages={!isNotesMode && safeImages.length > 0}
             onSubmit={handleComposerSubmit}
             onCancelGeneration={onCancelGeneration}
             tools={(

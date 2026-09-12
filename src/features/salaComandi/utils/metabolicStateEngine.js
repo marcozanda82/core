@@ -63,7 +63,8 @@ function resolveReferenceMs(anchorDate, now) {
 
 /**
  * Timestamp ms dell'ultimo pasto consumato (mealTime/time, non loggedAt).
- * Esclude bevande/voci < 10 kcal (caffè amaro, tè, acqua) — non ripartono il timer.
+ * Esclude bevande fasting-safe (caffè amaro, tè, acqua). Caffè zuccherato e
+ * qualsiasi apporto con CHO > 0 o kcal > 5 ripartono il timer.
  * @returns {number|null}
  */
 export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}) {
@@ -107,7 +108,7 @@ export function resolveLastMealConsumedAtMs(fullHistory, activeLog, options = {}
     });
   });
 
-  // Solo pasti caloricamente rilevanti (>= 10 kcal / breaksFast).
+  // Solo pasti/bevande che rompono il digiuno (kcal > 5, CHO > 0, breaksFast).
   const pastiValidi = filterFastingRelevantMeals(candidates);
 
   let lastConsumedMs = null;

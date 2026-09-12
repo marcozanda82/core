@@ -22,8 +22,8 @@ const PILLARS = [
   {
     id: 'nutrition',
     icon: '🥗',
-    title: 'Nutrizione Clinica',
-    hint: 'Insight AI giornaliero',
+    title: 'Focus Metabolico',
+    hint: 'Sintesi del mattino',
     accent: 'border-emerald-500/35 hover:border-emerald-400/55 hover:shadow-[0_0_18px_rgba(52,211,153,0.16)]',
     active: 'border-emerald-400/70 bg-emerald-950/35 shadow-[0_0_22px_rgba(52,211,153,0.2)]',
     iconBg: 'bg-emerald-500/15 text-emerald-300',

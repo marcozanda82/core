@@ -1,5 +1,11 @@
 {
   "appId": "com.marcozanda.kentuos",
   "appName": "KentuOS",
-  "webDir": "dist"
+  "webDir": "dist",
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": true,
+      "providers": ["google.com"]
+    }
+  }
 }

@@ -8,6 +8,8 @@ import {
   kentuChatStorageKey,
   readKentuChatHistoryFromLocalStorage,
   kentuChatHistoryForPersistence,
+  coerceLiveChatHistory,
+  seedKentuChatHistory,
 } from '../../utils/salaComandiUtils';
 
 /**
@@ -31,17 +33,26 @@ export function useKentuChatShell({
   closeOverlayChatRef = null,
 } = {}) {
   const [chatShellMounted, setChatShellMounted] = useState(false);
-  const [chatHistory, setChatHistory] = useState(() => {
+  const [chatHistory, setChatHistoryState] = useState(() => {
     try {
       const stored = readKentuChatHistoryFromLocalStorage(getTodayString());
       if (stored) return stored;
     } catch {
       /* noop */
     }
-    return [{ sender: 'ai', text: introPhrase }];
+    return seedKentuChatHistory(introPhrase);
   });
   const skipKentuChatPersistRef = useRef(false);
   const kentuChatBoundDateRef = useRef(null);
+
+  const setChatHistory = useCallback((updater) => {
+    setChatHistoryState((prev) => {
+      const base = coerceLiveChatHistory(prev);
+      const next = typeof updater === 'function' ? updater(base) : updater;
+      const coerced = coerceLiveChatHistory(next);
+      return coerced;
+    });
+  }, []);
 
   useEffect(() => {
     if (activeAction === 'ai_chat') setChatShellMounted(true);
@@ -54,9 +65,10 @@ export function useKentuChatShell({
     const prevBound = kentuChatBoundDateRef.current;
     kentuChatBoundDateRef.current = d;
     if (stored) {
-      setChatHistory(stored);
-    } else if (prevBound != null && prevBound !== d) {
-      setChatHistory([{ sender: 'ai', text: introPhrase }]);
+      setChatHistoryState(stored);
+    } else if (prevBound == null || prevBound !== d) {
+      // Nuovo giorno / primo bind: niente storico → seed, evita stato undefined/stale.
+      setChatHistoryState(seedKentuChatHistory(introPhrase));
     }
   }, [currentTrackerDate, introPhrase]);
 
@@ -92,10 +104,12 @@ export function useKentuChatShell({
     }
   }, [setActiveAction, closeOverlayChatRef]);
 
+  const liveHistory = coerceLiveChatHistory(chatHistory);
+
   return {
     chatShellMounted,
     setChatShellMounted,
-    chatHistory,
+    chatHistory: liveHistory.length > 0 ? liveHistory : seedKentuChatHistory(introPhrase),
     setChatHistory,
     isChatOpen,
     openChat,

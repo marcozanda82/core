@@ -669,7 +669,7 @@ Ottimo! Diario aggiornato. 🥗`;
   );
 
   const handleMealProposalCancel = useCallback(() => {
-    setChatHistory((prev) => prev.filter((m) => !m.mealProposal));
+    setChatHistory((prev) => (Array.isArray(prev) ? prev : []).filter((m) => !m?.mealProposal));
   }, [setChatHistory]);
 
   const handleDailyPlanConfirm = useCallback(
@@ -815,7 +815,7 @@ Ottimo! Diario aggiornato. 🥗`;
   );
 
   const handleDailyPlanCancel = useCallback(() => {
-    setChatHistory((prev) => prev.filter((m) => !m.dailyPlan));
+    setChatHistory((prev) => (Array.isArray(prev) ? prev : []).filter((m) => !m?.dailyPlan));
   }, [setChatHistory]);
 
   return {

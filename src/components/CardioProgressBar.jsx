@@ -49,6 +49,7 @@ function useLiveCalendarDayKey() {
  *   cardioStatus?: object | null,
  *   className?: string,
  *   compact?: boolean,
+ *   dense?: boolean,
  * }} props
  */
 export default function CardioProgressBar({
@@ -58,6 +59,7 @@ export default function CardioProgressBar({
   cardioStatus: cardioStatusProp = null,
   className = '',
   compact = false,
+  dense = false,
   onActivate = null,
 } = {}) {
   const liveDayKey = useLiveCalendarDayKey();
@@ -147,10 +149,10 @@ export default function CardioProgressBar({
             'cursor-pointer transition-all duration-200',
             'hover:border-cyan-400/55 hover:bg-slate-900/95 hover:shadow-[0_0_20px_rgba(34,211,238,0.22)]',
             'active:scale-[0.99]',
-            compact ? 'p-2.5' : 'p-3',
+            dense ? 'p-2' : compact ? 'p-2.5' : 'p-3',
           ].join(' ')}
         >
-          <div className="mb-2.5 flex items-center justify-between gap-2">
+          <div className={`${dense ? 'mb-1' : 'mb-2.5'} flex items-center justify-between gap-2`}>
             <span className="text-[10px] font-bold tracking-wider text-cyan-400">
               CARDIO (7G)
             </span>
@@ -160,7 +162,7 @@ export default function CardioProgressBar({
             </span>
           </div>
 
-          <div className="relative h-5 w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10">
+          <div className={`relative w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10 ${dense ? 'h-2' : 'h-5'}`}>
             <div
               className="absolute left-0 top-0 h-full bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400 transition-all duration-1000 ease-out"
               style={{
@@ -196,7 +198,7 @@ export default function CardioProgressBar({
             />
           </div>
 
-          {!compact ? (
+          {dense ? null : !compact ? (
             <p className="mt-1.5 text-[10px] text-slate-500">
               Include spillover pesi (30%) · {fillPercent}% · tocca per i dettagli
             </p>

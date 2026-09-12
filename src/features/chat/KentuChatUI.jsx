@@ -21,10 +21,10 @@ function normalizeHealthScore(score) {
  * KentuChatUI — vista drawer chat Kentu: messaggi e input.
  */
 export default function KentuChatUI({
-  chatHistory,
+  chatHistory = [],
   chatInput,
   setChatInput,
-  chatImages,
+  chatImages = [],
   setChatImages,
   handleChatSubmit,
   activeQuickReplies = [],
@@ -100,6 +100,8 @@ export default function KentuChatUI({
   const safeDailyLog = normalizeDailyLog(dailyLog);
   const safeUserTargets = normalizeUserTargets(userTargets);
   const safeHealthScore = normalizeHealthScore(healthScore);
+  const safeChatHistory = Array.isArray(chatHistory) ? chatHistory.filter((m) => m && typeof m === 'object') : [];
+  const safeChatImages = Array.isArray(chatImages) ? chatImages : [];
 
   if (!diaryReady) {
     return (
@@ -149,10 +151,10 @@ export default function KentuChatUI({
       }}
     >
       <AiCluster
-        chatHistory={chatHistory}
+        chatHistory={safeChatHistory}
         chatInput={chatInput}
         setChatInput={setChatInput}
-        chatImages={chatImages}
+        chatImages={safeChatImages}
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
         activeQuickReplies={activeQuickReplies}

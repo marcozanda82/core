@@ -3406,6 +3406,10 @@ export class CommandTerminalController {
     const explicit = String(options.intent || '').trim().toUpperCase();
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
+    if (/^(focus\s*metabolico|insight\s*clinico|nutrizione\s*clinica)\b/i.test(String(userText || '').trim())) {
+      return 'REQUEST_CLINICAL_INSIGHT';
+    }
+
     if (this.pendingMealUpdate?.targetMealType) return 'UPDATE_LOGGED_MEAL';
 
     if (this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) {
@@ -3917,6 +3921,13 @@ export class CommandTerminalController {
         local: isLocal,
         sourceTag: isLocal ? 'local_receptionist' : 'gemini',
         ...(quickReplies.length > 0 ? { quickReplies, clarification: true } : {}),
+        ...(payload.clinicalInsight === true || payload.metabolicFocus === true
+          ? {
+            clinicalInsight: true,
+            metabolicFocus: true,
+            type: 'METABOLIC_FOCUS',
+          }
+          : {}),
         // Nessuna proposta / bozza: solo bollo AI in chat.
         mealProposals: null,
         suggestedAction: null,
@@ -5158,7 +5169,7 @@ export class CommandTerminalController {
   }
 
   /**
-   * Insight Clinico — Medico dello Sport / Readiness su pacchetto dati silenzioso.
+   * Focus Metabolico — readiness e sintesi del mattino sul pacchetto dati silenzioso.
    */
   async handleClinicalInsightRequest(userText, currentState = {}, options = {}) {
     let payloadPack;
@@ -5168,7 +5179,7 @@ export class CommandTerminalController {
     } catch (error) {
       console.error('[CommandTerminalController] buildClinicalInsightPayload failed', error);
       this.publishSystemMessage(
-        'Non riesco a raccogliere i dati clinici adesso. Riprova tra un attimo.',
+        'Non riesco a raccogliere i dati adesso. Riprova tra un attimo.',
       );
       return { ok: false, reason: 'clinical_insight_payload_failed', userNotified: true };
     }
@@ -5192,7 +5203,7 @@ export class CommandTerminalController {
         ...(options?.signal ? { signal: options.signal } : {}),
       });
       const text = String(adviceMessage || '').trim()
-        || 'Semaforo Giallo.\n- Dati insufficienti per un referto completo: completa sonno e pasti di ieri, poi richiama Insight Clinico.';
+        || 'Semaforo Giallo.\n- Dati insufficienti per una sintesi completa: completa sonno e pasti di ieri, poi richiama Focus Metabolico.';
 
       return this.publishChatResponse(
         {
@@ -5208,7 +5219,7 @@ export class CommandTerminalController {
       if (isAbortError(error)) throw error;
       console.error('[CommandTerminalController] handleClinicalInsightRequest failed', error);
       this.publishSystemMessage(
-        'Insight Clinico non disponibile al momento. Riprova tra poco.',
+        'Focus Metabolico non disponibile al momento. Riprova tra poco.',
       );
       return { ok: false, reason: 'clinical_insight_failed', userNotified: true };
     }

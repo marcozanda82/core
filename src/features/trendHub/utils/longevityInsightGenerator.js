@@ -1,7 +1,7 @@
 /**
  * Generatore insight «Pagella Metabolica» — parlante e prescrittivo.
  * Tre blocchi: punti di forza · penalità · leva strategica (CTA).
- * Pilastri Longevità: 4 × 25 (Cardio, Forza, Sonno, Nutrizione Clinica).
+ * Pilastri Longevità: 4 × 25 (Cardio, Forza, Sonno, Focus Metabolico).
  */
 
 import { LONGEVITY_PILLAR_MAX } from './saluteDashboardMetrics.js';
@@ -223,7 +223,7 @@ export function buildLongevityPagellaInsight(score, metrics = {}) {
       id: 'nutrition',
       badge: '✅',
       title: nutritionPct >= 72
-        ? `Nutrizione Clinica (${nutritionPts}/${PILLAR_MAX} pt)`
+        ? `Focus Metabolico (${nutritionPts}/${PILLAR_MAX} pt)`
         : `Profilo Antinfiammatorio / Glicemico (${nutritionPts}/${PILLAR_MAX} pt)`,
       body: strengthNote
         || 'Quota proteica e profilo alimentare protettivi per massa magra e recupero cellulare.',
@@ -247,14 +247,14 @@ export function buildLongevityPagellaInsight(score, metrics = {}) {
     penalties.push({
       id: 'nutrition',
       badge: '⚠️',
-      title: 'Nutrizione Clinica non calibrata',
-      body: 'Genera l\'Insight Clinico AI o registra pasti/proteine e digiuno: senza dati il pilastro resta basso.',
+      title: 'Focus Metabolico non calibrato',
+      body: 'Apri il Focus Metabolico o registra pasti/proteine e digiuno: senza dati il pilastro resta basso.',
       severity: 'amber',
     });
   } else {
     const softTitle = nutritionPts >= 10
-      ? `Nutrizione Clinica da consolidare (${nutritionPts}/${PILLAR_MAX} pt)`
-      : `Nutrizione Clinica insufficiente (${nutritionPts}/${PILLAR_MAX} pt)`;
+      ? `Focus Metabolico da consolidare (${nutritionPts}/${PILLAR_MAX} pt)`
+      : `Focus Metabolico insufficiente (${nutritionPts}/${PILLAR_MAX} pt)`;
     penalties.push({
       id: 'nutrition',
       badge: '⚠️',
@@ -334,7 +334,7 @@ export function buildLongevityPagellaInsight(score, metrics = {}) {
     },
     {
       id: 'nutrition',
-      label: '🥗 Nutrizione Clinica',
+      label: '🥗 Focus Metabolico',
       detail: `${nutritionPts}/${PILLAR_MAX} pt`,
       pct: nutritionPct,
       tone: barTone(nutritionPct),

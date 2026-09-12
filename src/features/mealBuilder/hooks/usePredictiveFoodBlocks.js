@@ -113,6 +113,21 @@ export function flattenLogToFoodEntries(rawLog) {
       continue;
     }
 
+    if (entry.type === 'stimulant' || entry.type === 'energizer') {
+      const kcal = Number(entry.kcal || entry.cal || 0) || 0;
+      const carb = Number(entry.carb || entry.carbs || 0) || 0;
+      const safe = entry.isFastingSafe === true
+        || (entry.breaksFast === false && kcal <= 5 && carb <= 0);
+      if (safe) continue;
+      if (kcal <= 5 && carb <= 0 && entry.breaksFast !== true) continue;
+      out.push({
+        ...entry,
+        type: 'food',
+        mealType: inferMealType(entry),
+      });
+      continue;
+    }
+
     if (entry.type === 'single' || entry.type == null) {
       out.push({
         ...entry,

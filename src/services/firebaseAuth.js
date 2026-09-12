@@ -1,13 +1,21 @@
 /**
  * Firebase Authentication — Google sign-in per KentuOS beta testers.
+ *
+ * Web/PWA: Firebase JS `signInWithPopup`.
+ * Android/iOS Capacitor: Google Sign-In nativo (account picker di sistema)
+ * poi `signInWithCredential` sul JS SDK, così onAuthStateChanged / RTDB restano invariati.
  */
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import {
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   signOut,
   onAuthStateChanged,
   deleteUser,
   reauthenticateWithPopup,
+  reauthenticateWithCredential,
 } from 'firebase/auth';
 import { remove, ref } from 'firebase/database';
 import { auth, db } from '../firebaseConfig';
@@ -18,11 +26,53 @@ export { auth };
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+const NATIVE_GOOGLE_SIGNIN_OPTS = { skipNativeAuth: true };
+
+function isNativeRuntime() {
+  return Capacitor.isNativePlatform();
+}
+
+export function isAuthCancelled(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code === 'auth/popup-closed-by-user' ||
+    code === 'auth/cancelled-popup-request' ||
+    message.includes('cancel')
+  );
+}
+
 /**
- * Accede con account Google (popup).
+ * Account picker nativo → ID token Google → credential Firebase JS.
+ * @returns {Promise<import('firebase/auth').AuthCredential>}
+ */
+async function nativeGoogleCredential() {
+  const result = await FirebaseAuthentication.signInWithGoogle(NATIVE_GOOGLE_SIGNIN_OPTS);
+  const idToken = result?.credential?.idToken;
+  if (!idToken) {
+    throw new Error('Google Sign-In nativo non ha restituito un idToken');
+  }
+  return GoogleAuthProvider.credential(idToken, result.credential?.accessToken);
+}
+
+async function signOutNativeGoogleSession() {
+  if (!isNativeRuntime()) return;
+  try {
+    await FirebaseAuthentication.signOut();
+  } catch {
+    // skipNativeAuth: la sessione nativa Firebase può essere vuota.
+  }
+}
+
+/**
+ * Accede con account Google.
  * @returns {Promise<import('firebase/auth').UserCredential>}
  */
 export async function loginWithGoogle() {
+  if (isNativeRuntime()) {
+    const credential = await nativeGoogleCredential();
+    return signInWithCredential(auth, credential);
+  }
   return signInWithPopup(auth, googleProvider);
 }
 
@@ -31,8 +81,18 @@ export async function loginWithGoogle() {
  * @returns {Promise<void>}
  */
 export async function logout() {
+  await signOutNativeGoogleSession();
   await signOut(auth);
   clearKentuLocalUserData();
+}
+
+async function reauthenticateCurrentUser(user) {
+  if (isNativeRuntime()) {
+    const credential = await nativeGoogleCredential();
+    await reauthenticateWithCredential(user, credential);
+    return;
+  }
+  await reauthenticateWithPopup(user, googleProvider);
 }
 
 /**
@@ -55,7 +115,7 @@ export async function deleteAccountAndUserData() {
     await deleteUser(user);
   } catch (error) {
     if (error?.code === 'auth/requires-recent-login') {
-      await reauthenticateWithPopup(user, googleProvider);
+      await reauthenticateCurrentUser(user);
       const refreshed = auth.currentUser;
       if (!refreshed) {
         throw new Error('Re-autenticazione non riuscita');

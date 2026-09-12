@@ -1,6 +1,5 @@
 import {
   MAIN_BOTTOM_TAB_ORDER,
-  PERSISTED_BOTTOM_TAB_IDS,
   ACTIVE_BOTTOM_TAB_LS_KEY,
   EVENT_USAGE_LS_KEY,
   EVENT_USAGE_DEFAULT,
@@ -27,11 +26,11 @@ export function migrateIdealStrategy(raw) {
   return next;
 }
 
+/** Landing sempre Home (`oggi`). Non ripristina Diario/Salute da localStorage. */
 export function readPersistedActiveBottomTab() {
   if (typeof localStorage === 'undefined') return 'oggi';
   try {
-    const v = localStorage.getItem(ACTIVE_BOTTOM_TAB_LS_KEY);
-    if (v && PERSISTED_BOTTOM_TAB_IDS.includes(v)) return v;
+    localStorage.setItem(ACTIVE_BOTTOM_TAB_LS_KEY, 'oggi');
   } catch {
     /* ignore */
   }
@@ -93,15 +92,48 @@ export function kentuChatStorageKey(dateStr) {
   return `kentu_chat_${dateStr}`;
 }
 
+function asArrayOrEmpty(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Normalizza la cronologia chat: mai null, mai oggetto Firebase-style.
+ * @param {unknown} messages
+ * @param {{ keepTyping?: boolean }} [opts]
+ */
+export function sanitizeKentuChatMessages(messages, opts = {}) {
+  const keepTyping = opts.keepTyping === true;
+  return asArrayOrEmpty(messages)
+    .filter((m) => m && typeof m === 'object' && (m.sender === 'user' || m.sender === 'ai'))
+    .map((m) => {
+      if (!keepTyping && m.isTyping) return null;
+      const next = { ...m };
+      if (next.quickReplies != null && !Array.isArray(next.quickReplies)) next.quickReplies = [];
+      if (next.dinnerOptions != null && !Array.isArray(next.dinnerOptions)) next.dinnerOptions = [];
+      if (next.agendaOptions != null && !Array.isArray(next.agendaOptions)) next.agendaOptions = [];
+      if (next.mealProposals != null && !Array.isArray(next.mealProposals)) next.mealProposals = [];
+      if (next.wipSuggestions != null && !Array.isArray(next.wipSuggestions)) next.wipSuggestions = [];
+      return next;
+    })
+    .filter(Boolean);
+}
+
+export function coerceLiveChatHistory(messages) {
+  return sanitizeKentuChatMessages(messages, { keepTyping: true });
+}
+
+export function seedKentuChatHistory(introPhrase = '') {
+  const text = String(introPhrase || '').trim();
+  return [{ sender: 'ai', text: text || 'Ciao, come posso aiutarti?' }];
+}
+
 export function readKentuChatHistoryFromLocalStorage(dateStr) {
   try {
+    if (!dateStr || typeof localStorage === 'undefined') return null;
     const raw = localStorage.getItem(kentuChatStorageKey(dateStr));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    const cleaned = parsed.filter(
-      (m) => m && (m.sender === 'user' || m.sender === 'ai') && !m.isTyping
-    );
+    const cleaned = sanitizeKentuChatMessages(parsed);
     return cleaned.length > 0 ? cleaned : null;
   } catch {
     return null;
@@ -121,7 +153,7 @@ function isKentuChatPersistableMessage(m) {
 }
 
 export function kentuChatHistoryForPersistence(messages) {
-  return (messages || []).filter(isKentuChatPersistableMessage);
+  return sanitizeKentuChatMessages(messages).filter(isKentuChatPersistableMessage);
 }
 
 export function getNowDecimalHourForPlanMerge() {

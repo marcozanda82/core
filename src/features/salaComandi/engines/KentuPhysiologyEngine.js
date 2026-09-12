@@ -6,6 +6,7 @@ import { buildNutritionContextForState } from '../../../conversation/ConsultantE
 import { computeSleepEngineSnapshot } from '../../../hooks/useSleepEngine.js';
 import {
   buildMetabolicSnapshot,
+  formatLocalClockTime,
   formatMetabolicRelativeDuration,
 } from '../utils/metabolicStateEngine.js';
 
@@ -35,7 +36,13 @@ function num(value, fallback) {
 function hasMealLogged(log) {
   return log.some((entry) => {
     const type = String(entry?.type || '').toLowerCase();
-    return type === 'meal' || type === 'ghost_meal';
+    if (type === 'meal' || type === 'ghost_meal' || type === 'food' || type === 'recipe') return true;
+    if (type === 'stimulant' || type === 'energizer') {
+      const kcal = Number(entry?.kcal ?? entry?.cal) || 0;
+      const carb = Number(entry?.carb ?? entry?.carbs) || 0;
+      return entry?.isFastingSafe !== true && (kcal > 5 || carb > 0 || entry?.breaksFast === true);
+    }
+    return false;
   });
 }
 
@@ -210,16 +217,27 @@ function evaluateFastingPillar(metabolic) {
 
   const h = Math.max(0, Number(hours));
   const durationLabel = formatMetabolicRelativeDuration(h);
-  const summary = `${durationLabel} digiuno in corso`;
+  const isFastingActive = metabolic?.activeFastingStatus?.isFastingActive === true
+    || (metabolic?.activeFastingStatus?.isFastingActive !== false && h >= 4);
+  const lastMealClock = formatLocalClockTime(metabolic?.lastMealConsumedAtMs);
+
+  if (!isFastingActive) {
+    return {
+      status: h < 2 ? 'warning' : 'ok',
+      summary: lastMealClock && lastMealClock !== '—'
+        ? `Finestra di alimentazione aperta · ultimo apporto ${lastMealClock}`
+        : 'Finestra di alimentazione aperta',
+      value: lastMealClock && lastMealClock !== '—' ? lastMealClock : durationLabel,
+    };
+  }
 
   let status = /** @type {PillarStatus} */ ('ok');
-  if (h < 2) status = 'warning';
-  else if (h > 20) status = 'alert';
+  if (h > 20) status = 'alert';
   else if (h > 16) status = 'warning';
 
   return {
     status,
-    summary,
+    summary: `${durationLabel} digiuno in corso`,
     value: `${Math.round(h * 10) / 10}h`,
   };
 }
@@ -249,6 +267,7 @@ export function evaluateDailyPillars(activeLog, history = {}, options = {}) {
     now: options.now,
     anchorDate: options.anchorDate,
     referenceMs: options.referenceMs,
+    manualNodes: Array.isArray(options.manualNodes) ? options.manualNodes : [],
   });
 
   return {

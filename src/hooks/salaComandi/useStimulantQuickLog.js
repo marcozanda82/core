@@ -6,6 +6,7 @@ import { useCallback, useState } from 'react';
 import {
   buildCoffeeStimulantNode,
   COFFEE_VARIANT,
+  mergeCaloricStimulantsIntoLog,
   readLastCoffeeType,
   writeLastCoffeeType,
 } from '../../features/stimulants/coffeeLogEngine.js';
@@ -29,6 +30,7 @@ import {
  *   manualNodes?: object[],
  *   setManualNodes?: (nodes: object[]) => void,
  *   dailyLog?: object[],
+ *   setDailyLog?: (log: object[]) => void,
  *   syncDatiFirebase?: (log: object[], nodes: object[]) => void,
  *   setShowChoiceModal?: (v: boolean) => void,
  *   setAddChoiceView?: (v: string) => void,
@@ -44,6 +46,7 @@ export function useStimulantQuickLog({
   manualNodes = [],
   setManualNodes = null,
   dailyLog = [],
+  setDailyLog = null,
   syncDatiFirebase = null,
   setShowChoiceModal = null,
   setAddChoiceView = null,
@@ -100,9 +103,13 @@ export function useStimulantQuickLog({
       };
     }
 
-    const next = [...(manualNodes || []), node];
-    setManualNodes?.(next);
-    syncDatiFirebase?.(dailyLog, next);
+    const nextNodes = [...(manualNodes || []), node];
+    const nextLog = mergeCaloricStimulantsIntoLog(dailyLog, nextNodes);
+    setManualNodes?.(nextNodes);
+    if (nextLog.length !== (dailyLog || []).length) {
+      setDailyLog?.(nextLog);
+    }
+    syncDatiFirebase?.(nextLog, nextNodes);
     setShowChoiceModal?.(false);
     setAddChoiceView?.('main');
     setCoffeeVariant(COFFEE_VARIANT.AMARO);
@@ -132,6 +139,7 @@ export function useStimulantQuickLog({
     stimulantTime,
     manualNodes,
     setManualNodes,
+    setDailyLog,
     dailyLog,
     syncDatiFirebase,
     setShowChoiceModal,
