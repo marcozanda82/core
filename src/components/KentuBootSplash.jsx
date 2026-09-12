@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import './kentuBootSplash.css';
 
-const EMBLEM_SRC = '/EmblemaKbianca2.png';
+const SPLASH_SRC = '/512.png';
 const APPEAR_MS = 450;
 const HOLD_MS = 300;
 const EXIT_MS = 250;
@@ -86,7 +86,7 @@ export default function KentuBootSplash({ ready = false }) {
         <div className="kentu-boot-splash__glow" />
         <img
           className="kentu-boot-splash__mark"
-          src={EMBLEM_SRC}
+          src={SPLASH_SRC}
           alt=""
           width={128}
           height={128}
