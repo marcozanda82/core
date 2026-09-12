@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <path
+        android:name="enso"
+        android:fillColor="#19D7F5"
+        android:pathData="M 391 111 C 348 76 289 58 225 67 C 130 80 63 160 63 256 C 63 353 135 431 226 445 C 286 454 345 437 391 402 C 345 416 302 421 260 414 C 184 401 126 336 126 256 C 126 175 184 111 260 98 C 306 91 350 96 391 111 Z"/>
+</vector>

@@ -15,6 +15,7 @@ import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
 import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListener.jsx';
 import { db } from './firebaseConfig';
+import { Capacitor } from '@capacitor/core';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
 
@@ -135,6 +136,9 @@ function AuthenticatedApp() {
 
 function BootSplashLayer() {
   const { authReady } = useAuth();
+  if (Capacitor.isNativePlatform()) {
+    return null;
+  }
   return <KentuBootSplash ready={authReady} />;
 }
 
