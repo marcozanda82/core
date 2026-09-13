@@ -341,6 +341,7 @@ import {
   getEquivalentMealTypes,
   getMealIcon,
   getGhostMealType,
+  formatMealSlotLabel,
   getSlotKey,
   decimalToTimeStr,
   computeDigestiveLoad,
@@ -455,6 +456,7 @@ import KentuChatShell from './components/salaComandi/KentuChatShell';
 export { calculateAge } from './utils/profileAge';
 
 const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
+const HealthCockpitScreen = lazy(() => import('./features/healthEngine/components/HealthCockpitScreen'));
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
@@ -490,6 +492,8 @@ export default function SalaComandi() {
   /** Deep-link Centro Analisi (es. calibrazione da modale calorie). */
   const [centroAnalisiEntryArea, setCentroAnalisiEntryArea] = useState(null);
   const centroAnalisiReturnTabRef = useRef('oggi');
+  /** Tab Salute: cockpit v1 vs Centro Analisi / SaluteView legacy. */
+  const [saluteSurface, setSaluteSurface] = useState('cockpit');
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
@@ -969,8 +973,11 @@ export default function SalaComandi() {
       }
       setShowMetabolicTimeline(false);
       setSnapshotOverlayOpen(false);
-      if (tabId === 'bussola' && activeBottomTab !== 'bussola') {
-        centroAnalisiReturnTabRef.current = activeBottomTab;
+      if (tabId === 'bussola') {
+        setSaluteSurface('cockpit');
+        if (activeBottomTab !== 'bussola') {
+          centroAnalisiReturnTabRef.current = activeBottomTab;
+        }
         setCentroAnalisiEntryArea(null);
       }
       setActiveBottomTab(tabId);
@@ -1192,6 +1199,7 @@ export default function SalaComandi() {
     centroAnalisiReturnTabRef.current = current === 'bussola' ? 'oggi' : current;
     setShowCalorieDetailsSheet(false);
     setShowDiarySheet(false);
+    setSaluteSurface('legacy');
     setCentroAnalisiEntryArea('calibrazione_target');
     setActiveBottomTab('bussola');
   }, [activeBottomTab]);
@@ -1199,8 +1207,20 @@ export default function SalaComandi() {
   const exitCentroAnalisi = useCallback(() => {
     const ret = centroAnalisiReturnTabRef.current || 'oggi';
     setCentroAnalisiEntryArea(null);
+    setSaluteSurface('cockpit');
     setActiveBottomTab(ret === 'bussola' ? 'oggi' : ret);
   }, []);
+
+  const openLegacyCentroAnalisi = useCallback(() => {
+    centroAnalisiReturnTabRef.current = activeBottomTab === 'bussola' ? 'oggi' : activeBottomTab;
+    setSnapshotOverlayOpen(false);
+    setShowMetabolicTimeline(false);
+    setSaluteSurface('legacy');
+    setCentroAnalisiEntryArea(null);
+    setActiveBottomTab('bussola');
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, [activeBottomTab]);
   const [showFatSheet, setShowFatSheet] = useState(false);
   const [showCarbsSheet, setShowCarbsSheet] = useState(false);
   const [showProteinSheet, setShowProteinSheet] = useState(false);
@@ -4620,21 +4640,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         if (!Array.isArray(items) || items.length === 0) return null;
         if (items.every((food) => food?.type === 'stimulant')) return null;
         const mealType = items[0]?.mealType || slotKey.split('_')[0];
-        const baseType = String(mealType).split('_')[0];
-        const suffix = String(mealType).includes('_') ? ` ${String(mealType).split('_')[1]}` : '';
         const mealTimeRaw = Number(items[0]?.mealTime ?? items[0]?.time ?? 12);
         const mealTime = Number.isFinite(mealTimeRaw) ? mealTimeRaw : 12;
         return {
           slotKey,
           mealType,
           mealTime,
-          label: `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffix}`,
+          label: formatMealSlotLabel(mealType),
           timeLabel: decimalToTimeStr(mealTime),
         };
       })
       .filter(Boolean)
       .sort((a, b) => a.mealTime - b.mealTime)
-  ), [groupedFoods, decimalToTimeStr, toCanonicalMealType]);
+  ), [groupedFoods, decimalToTimeStr]);
 
   const inboxTriageDrafts = useMemo(
     () => extractUnassignedDraftBlocks(activeLog),
@@ -6095,7 +6113,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const logSnap = dailyLogRef.current || [];
       let action = resolveUpsertActionFromPayload(payload);
       const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
-      const forceNewSlot = payload?.forceNewMealSlot === true;
       const targetNodeIdEarly = String(payload?.targetNodeId || '').trim();
       const ops = Array.isArray(payload?.operations) ? payload.operations : [];
       const isDeltaOnlyMerge =
@@ -6108,11 +6125,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         action = 'replace';
       }
 
-      // Slot canonico già presente → merge (evita cena_2), SALVO forceNewMealSlot
-      // (McDrive / pasto libero autonomo → getGhostMealType crea snack_2, pranzo_2, …).
-      if (action === 'append' && existingSlot?.slotId && !forceNewSlot) {
-        action = 'merge';
-      }
+      // Nuovo inserimento: mai fondere nello slot canonico (snack già presente → snack_2).
+      // Merge solo se esplicito (action merge / targetNodeId di modifica).
+      const forceNewSlot =
+        payload?.forceNewMealSlot === true
+        || (action === 'append' && !targetNodeIdEarly);
 
       const commitPayload = {
         ...payload,
@@ -6317,8 +6334,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         throw new Error('Merge pasto fallito');
       }
 
-      // Nuovo slot (forceNewMealSlot): materializza snack_2… prima della scrittura Firebase.
-      const ghostMealType = forceNewSlot
+      // Nuovo slot: materializza snack_2… prima della scrittura Firebase (nodo e orario indipendenti).
+      const ghostMealType = forceNewSlot || (action === 'append' && !targetNodeId)
         ? getGhostMealType(mealTypeCanonical, logSnap)
         : null;
       const message = commitAddFoodChatPayload({
@@ -6928,6 +6945,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       trashMeals,
       onRestoreTrashMeal: handleRestoreTrashMeal,
       onPurgeTrashMeal: handlePurgeTrashMeal,
+      onDeleteWorkout: removeLogItem,
     });
   }, [
     registerHandlers,
@@ -6988,6 +7006,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     trashMeals,
     handleRestoreTrashMeal,
     handlePurgeTrashMeal,
+    removeLogItem,
   ]);
 
   const generateDailySnapshot = useCallback(() => {
@@ -8161,32 +8180,66 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             boxSizing: 'border-box',
           }}
         >
-          <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
-            <CentroAnalisiView
-              embedded
-              initialAreaId={centroAnalisiEntryArea}
-              onExit={exitCentroAnalisi}
-              onOpenFotografiaSalute={handleOpenTrendSalute}
-              onOpenFotografiaProgressione={handleOpenTrendProgressione}
-              onOpenTimelineMetabolica={openMetabolicTimeline}
-              livePreview={centroAnalisiLivePreview}
-              calibrazioneHandlers={{
-                activeDate: currentTrackerDate || getTodayString(),
-                settingsBaseKcal: dogmaticSettingsBaseKcal,
-                committedGhostGoal,
-                committedGhostDeltaKcal,
-                effectiveGhostDeltaKcal,
-                autoCompensationDelta: dogmaticAutoCompensationKcal,
-                rollingDebt,
-                ghostAutoPilotEnabled,
-                onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
-                onApplyGhostSimGoal: applyGhostSimGoal,
-                activeCompensation: userProfile?.activeCompensation ?? null,
-                onConfirmCompensation: applyActiveCompensationPlan,
-                onClearCompensation: clearActiveCompensationPlan,
-              }}
-            />
-          </Suspense>
+          {saluteSurface === 'legacy' || centroAnalisiEntryArea ? (
+            <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
+              <CentroAnalisiView
+                embedded
+                initialAreaId={centroAnalisiEntryArea}
+                onExit={exitCentroAnalisi}
+                onOpenFotografiaSalute={handleOpenTrendSalute}
+                onOpenFotografiaProgressione={handleOpenTrendProgressione}
+                onOpenTimelineMetabolica={openMetabolicTimeline}
+                livePreview={centroAnalisiLivePreview}
+                calibrazioneHandlers={{
+                  activeDate: currentTrackerDate || getTodayString(),
+                  settingsBaseKcal: dogmaticSettingsBaseKcal,
+                  committedGhostGoal,
+                  committedGhostDeltaKcal,
+                  effectiveGhostDeltaKcal,
+                  autoCompensationDelta: dogmaticAutoCompensationKcal,
+                  rollingDebt,
+                  ghostAutoPilotEnabled,
+                  onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
+                  onApplyGhostSimGoal: applyGhostSimGoal,
+                  activeCompensation: userProfile?.activeCompensation ?? null,
+                  onConfirmCompensation: applyActiveCompensationPlan,
+                  onClearCompensation: clearActiveCompensationPlan,
+                }}
+              />
+            </Suspense>
+          ) : (
+            <Suspense fallback={<KentuLazySectionFallback label="Health Cockpit…" />}>
+              <HealthCockpitScreen
+                dailyLog={activeLog}
+                manualNodes={manualNodes}
+                fullHistory={fullHistory}
+                fourCylinder={userModel?.fourCylinder ?? null}
+                userTargets={userTargets}
+                dateStr={currentTrackerDate || getTodayString()}
+                glycemicPenalty={sleepMetabolicPenalty}
+                hoursSinceLastMeal={metabolicSnapshot?.hoursSinceLastMeal ?? null}
+                metabolicPhaseId={metabolicSnapshot?.phase?.id ?? null}
+                enabled={isInitialLoadComplete}
+                isHydrated={isInitialLoadComplete}
+                onOpenTimeline={openMetabolicTimeline}
+                calibrazioneHandlers={{
+                  activeDate: currentTrackerDate || getTodayString(),
+                  settingsBaseKcal: dogmaticSettingsBaseKcal,
+                  committedGhostGoal,
+                  committedGhostDeltaKcal,
+                  effectiveGhostDeltaKcal,
+                  autoCompensationDelta: dogmaticAutoCompensationKcal,
+                  rollingDebt,
+                  ghostAutoPilotEnabled,
+                  onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
+                  onApplyGhostSimGoal: applyGhostSimGoal,
+                  activeCompensation: userProfile?.activeCompensation ?? null,
+                  onConfirmCompensation: applyActiveCompensationPlan,
+                  onClearCompensation: clearActiveCompensationPlan,
+                }}
+              />
+            </Suspense>
+          )}
         </div>
       )}
       </>
@@ -8236,6 +8289,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onOpenHealthReport={isDiabetesAppMode ? openHealthReport : null}
           onOpenTherapyPlan={openTherapyPlan}
           onOpenTrainingPlan={openTrainingPlan}
+          onOpenLegacyCentroAnalisi={openLegacyCentroAnalisi}
           isDiabetesAppMode={isDiabetesAppMode}
           closeDrawer={closeDrawer}
           setIsDrawerOpen={setIsDrawerOpen}
@@ -8568,6 +8622,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             trashMeals={trashMeals}
             onRestoreTrashMeal={handleRestoreTrashMeal}
             onPurgeTrashMeal={handlePurgeTrashMeal}
+            onDeleteWorkout={removeLogItem}
             isDiabetesAppMode={isDiabetesAppMode}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}

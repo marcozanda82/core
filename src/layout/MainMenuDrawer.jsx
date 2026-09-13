@@ -67,6 +67,7 @@ export default function MainMenuDrawer({
   onOpenHealthReport = null,
   onOpenTherapyPlan = null,
   onOpenTrainingPlan = null,
+  onOpenLegacyCentroAnalisi = null,
   isDiabetesAppMode = false,
   closeDrawer,
   setIsDrawerOpen,
@@ -157,6 +158,13 @@ export default function MainMenuDrawer({
                       labelClassName="text-[#b0bec5]"
                       iconFilter="drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))"
                       onClick={() => openDrawerAction('storico')}
+                    />
+                    <MenuGlassButton
+                      icon="🧭"
+                      label="Centro Analisi (Legacy)"
+                      labelClassName="text-[#7dd3fc]"
+                      iconFilter="drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))"
+                      onClick={() => runAndClose(() => onOpenLegacyCentroAnalisi?.())}
                     />
                     {isDiabetesAppMode ? (
                       <MenuGlassButton

@@ -185,6 +185,7 @@ export default function AiCluster({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onDeleteWorkout = null,
   isDiabetesAppMode = false,
   onRequestReport,
   onRequestBarcodeScan,
@@ -2065,6 +2066,7 @@ export default function AiCluster({
             trashMeals={trashMeals}
             onRestoreTrashMeal={onRestoreTrashMeal}
             onPurgeTrashMeal={onPurgeTrashMeal}
+            onDeleteWorkout={onDeleteWorkout}
             dailyLog={safeDailyLog}
             fullHistory={fullHistory}
             fourCylinder={fourCylinder}

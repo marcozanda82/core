@@ -1763,11 +1763,11 @@ const MEAL_ORDER_SAVE = ['colazione', 'snack', 'pranzo', 'cena', 'merenda1', 'me
 const MEAL_LABELS_SAVE = {
   colazione: 'Colazione',
   merenda1: 'Colazione',
-  snack: 'Snack',
-  merenda_am: 'Snack',
-  merenda_pm: 'Snack',
-  merenda2: 'Snack',
-  spuntino: 'Snack',
+  snack: 'Spuntino',
+  merenda_am: 'Spuntino',
+  merenda_pm: 'Spuntino',
+  merenda2: 'Spuntino',
+  spuntino: 'Spuntino',
   pranzo: 'Pranzo',
   cena: 'Cena',
 };
@@ -1775,10 +1775,23 @@ const MEAL_LABELS_SAVE = {
 /** Quattro pasti ufficiali (id salvati nel diario). */
 export const MEAL_TYPES = [
   { id: 'colazione', label: 'Colazione' },
-  { id: 'snack', label: 'Snack' },
+  { id: 'snack', label: 'Spuntino' },
   { id: 'pranzo', label: 'Pranzo' },
   { id: 'cena', label: 'Cena' },
 ];
+
+/** Label UI: primo snack → "Spuntino", secondo → "Spuntino 2". */
+function formatMealSlotLabel(mealType) {
+  const str = String(mealType || '').trim();
+  const base = getMealTypeBase(str);
+  const canonical = toCanonicalMealType(base) || base;
+  const name = MEAL_LABELS_SAVE[canonical] || MEAL_LABELS_SAVE[base] || base || 'Pasto';
+  if (isGhostInstanceMealType(str)) {
+    const n = parseInt(str.slice(str.indexOf('_') + 1), 10);
+    if (Number.isFinite(n) && n >= 2) return `${name} ${n}`;
+  }
+  return name;
+}
 
 /** Pasti proteici massimi al giorno (colazione esclusa dal conteggio). */
 const PROTEIN_MEALS_PER_DAY = 4;
@@ -2684,13 +2697,10 @@ function denormalizeLogForFirebase(flatLog) {
   
   [...order, ...otherMeals].forEach(mealId => {
     if (!meals[mealId] || meals[mealId].length === 0) return;
-    const baseId = mealId.split('_')[0];
-    const suffix = mealId.includes('_') ? ` ${mealId.split('_')[1]}` : '';
-    const descName = MEAL_LABELS_SAVE[baseId] || baseId;
     result.push({
       type: 'meal',
       mealId,
-      desc: descName + suffix,
+      desc: formatMealSlotLabel(mealId),
       items: meals[mealId].map(it => ({ 
         id: it.id, 
         desc: it.desc || it.name, 
@@ -5564,6 +5574,7 @@ export {
   getEquivalentMealTypes,
   getMealIcon,
   getGhostMealType,
+  formatMealSlotLabel,
   isGhostInstanceMealType,
   getMealTypeBase,
   getSlotKey,

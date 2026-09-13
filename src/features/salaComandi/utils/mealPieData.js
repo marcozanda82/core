@@ -3,7 +3,7 @@
  * Funzioni pure: nessun accesso a React state.
  */
 
-import { MEAL_LABELS_SAVE } from '../../../coreEngine';
+import { formatMealSlotLabel } from '../../../coreEngine';
 import { safeNum } from '../../../utils/salaComandiUtils';
 
 const PIE_COLORS = ['#00e5ff', '#b388ff', '#00e676', '#ffea00', '#ff9800', '#f48fb1', '#4fc3f7', '#aed581', '#ffb74d'];
@@ -40,12 +40,9 @@ export function buildMealPieData({
         timeLabel = ` (${h}:${m})`;
       }
 
-      const slot = item.mealType ? (item.mealType.split('_')[0] || 'snack') : 'snack';
-      const baseName = MEAL_LABELS_SAVE?.[slot] || item.mealType || 'Pasto';
-
       mealsById[uniqueMealId] = {
         id: uniqueMealId,
-        name: `${baseName}${timeLabel}`,
+        name: `${formatMealSlotLabel(item.mealType)}${timeLabel}`,
         value: 0,
         prot: 0,
         carb: 0,

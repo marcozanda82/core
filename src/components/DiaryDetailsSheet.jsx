@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getWorkoutActivityLogDescription } from '../activityCatalog';
-import { MEAL_LABELS_SAVE, toCanonicalMealType } from '../coreEngine';
+import { formatMealSlotLabel, toCanonicalMealType } from '../coreEngine';
 import { KENTU_PILLARS, PILLAR_IDS, pillarColorToRgba } from '../features/metabolic/pillarsMapper';
 import { TRAINING_GOALS, WorkoutQuestionnaireForm } from '../features/metabolic/WorkoutQuestionnaireForm';
 import {
@@ -129,11 +129,10 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
       if (items.length === 0) return null;
       const mealType = items[0]?.mealType || slotKey.split('_')[0];
       const baseType = String(mealType).split('_')[0];
-      const suffix = String(mealType).includes('_') ? ` ${String(mealType).split('_')[1]}` : '';
       const mealTimeRaw = items[0]?.mealTime ?? items[0]?.time ?? 12;
       const mealTime = Number(mealTimeRaw);
       const sortTime = Number.isFinite(mealTime) ? mealTime : 12;
-      const label = `${MEAL_LABELS_SAVE[toCanonicalMealType(baseType)] || baseType}${suffix}`;
+      const label = formatMealSlotLabel(mealType);
       const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
       const pendingCount = countUnresolvedMealDraftItems(items);
       const resolvedItems = items.filter((f) => !isUnresolvedMealDraftItem(f));

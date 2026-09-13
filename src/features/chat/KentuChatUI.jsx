@@ -41,6 +41,7 @@ export default function KentuChatUI({
   offDb = {},
   fullHistory = {},
   dailyLog = [],
+  fourCylinder = null,
   userTargets = null,
   diaryReady = true,
   engineReady = true,
@@ -88,6 +89,7 @@ export default function KentuChatUI({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onDeleteWorkout = null,
   onRequestReport,
   onRequestBarcodeScan,
   quickStripItems = null,
@@ -171,6 +173,7 @@ export default function KentuChatUI({
         offDb={offDb}
         fullHistory={fullHistory}
         dailyLog={safeDailyLog}
+        fourCylinder={fourCylinder}
         userTargets={safeUserTargets}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
@@ -216,6 +219,7 @@ export default function KentuChatUI({
         trashMeals={trashMeals}
         onRestoreTrashMeal={onRestoreTrashMeal}
         onPurgeTrashMeal={onPurgeTrashMeal}
+        onDeleteWorkout={onDeleteWorkout}
         onRequestReport={onRequestReport}
         onRequestBarcodeScan={onRequestBarcodeScan}
         quickStripItems={quickStripItems}

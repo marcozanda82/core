@@ -6,6 +6,7 @@ import {
 } from '../features/commandTerminal/context/cardioCylinderStatus.js';
 import { collectRecentWorkoutLogs } from '../features/commandTerminal/context/kentuGlobalState.js';
 import { getTodayString } from '../coreEngine';
+import { UNIFIED_STIMULUS_TRACK_CLASS, unifiedStimulusBarClass } from '../utils/unifiedStimulusBar';
 import CardioDetailsModal from './CardioDetailsModal';
 
 /**
@@ -50,6 +51,7 @@ function useLiveCalendarDayKey() {
  *   className?: string,
  *   compact?: boolean,
  *   dense?: boolean,
+ *   unifiedBars?: boolean,
  * }} props
  */
 export default function CardioProgressBar({
@@ -60,6 +62,7 @@ export default function CardioProgressBar({
   className = '',
   compact = false,
   dense = false,
+  unifiedBars = false,
   onActivate = null,
 } = {}) {
   const liveDayKey = useLiveCalendarDayKey();
@@ -162,18 +165,19 @@ export default function CardioProgressBar({
             </span>
           </div>
 
-          <div className={`relative w-full overflow-hidden rounded bg-slate-950 ring-1 ring-white/10 ${dense ? 'h-2' : 'h-5'}`}>
+          <div className={`relative w-full ${unifiedBars ? UNIFIED_STIMULUS_TRACK_CLASS : `overflow-hidden rounded bg-slate-950 ring-1 ring-white/10 ${dense ? 'h-2' : 'h-5'}`}`}>
             <div
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400 transition-all duration-1000 ease-out"
+              className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ease-out ${unifiedBars ? unifiedStimulusBarClass(fillPercent) : 'bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400'}`}
               style={{
                 width: `${fillPercent}%`,
-                boxShadow:
-                  fillPercent > 0
+                boxShadow: unifiedBars
+                  ? 'none'
+                  : fillPercent > 0
                     ? '0 0 14px rgba(56, 189, 248, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)'
                     : 'none',
               }}
             />
-            {fillPercent > 0 ? (
+            {!unifiedBars && fillPercent > 0 ? (
               <div
                 className="pointer-events-none absolute left-0 top-0 h-full overflow-hidden"
                 style={{ width: `${fillPercent}%` }}
@@ -189,6 +193,7 @@ export default function CardioProgressBar({
                 />
               </div>
             ) : null}
+            {unifiedBars ? null : (
             <div
               className="absolute inset-0 opacity-25 mix-blend-overlay"
               style={{
@@ -196,6 +201,7 @@ export default function CardioProgressBar({
                   'repeating-linear-gradient(to right, transparent, transparent 3px, #000 3px, #000 4px)',
               }}
             />
+            )}
           </div>
 
           {dense ? null : !compact ? (
