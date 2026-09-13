@@ -2,6 +2,7 @@ import { TARGETS } from '../../../useBiochimico';
 import { buildFoodUnits, enrichPortionItemWithDbUnits } from '../../../foodUnits';
 import {
   foodNameMatchesQuery,
+  foodNameCoversAllQueryTokens,
   getFoodUsageCount,
   MATCH_TIER_RANK,
   normalizeSearchText,
@@ -163,6 +164,7 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeyword
   const keywords = normalizeSearchKeywords(nome, searchKeywords);
   const hits = keywords.length > 1
     ? searchFoodsWithKeywords(foodDb, keywords, {
+      originalQuery: nome,
       limit: 24,
       includeUserHistory: false,
       enableFuzzy: true,
@@ -174,14 +176,21 @@ export function findFoodDbKey(foodDb, nome, preferredDbKey = null, searchKeyword
     });
   if (!hits.length) return null;
 
+  const queryWords = needle.split(' ').filter(Boolean);
+  const isSpecificQuery = queryWords.length >= 2;
+
   // Match forti + includes/stem (banana → Banane / Bananas, raw).
   const acceptable = hits.filter((hit) => {
     const tier = String(hit.matchTier || '');
     const score = Number(hit.strictScore) || 0;
-    const nameOk = foodNameMatchesQuery(hit?.name || hit?.desc || '', nome);
-    if (tier === 'exact') return true;
+    const hitName = hit?.name || hit?.desc || '';
+    if (isSpecificQuery && !foodNameCoversAllQueryTokens(hitName, nome)) {
+      return false;
+    }
+    const nameOk = foodNameMatchesQuery(hitName, nome);
+    if (tier === 'exact' && nameOk) return true;
     if (!nameOk) return false;
-    if (tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') {
+    if (tier === 'prefix' || tier === 'compound' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') {
       return true;
     }
     if (tier === 'fuzzy' && score >= 80) return true;

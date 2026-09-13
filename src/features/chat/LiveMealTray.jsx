@@ -26,6 +26,8 @@ import {
   classifyMcdriveMacroVsTarget,
   draftHasRawMcDriveItems,
   formatMcdriveMealTypeLabel,
+  normalizeMcdriveMealType,
+  MCDRIVE_MEAL_TYPE_OPTIONS,
   hasPendingMcDriveEnrichment,
   isMcDriveDisambiguationStatus,
   isMcDriveRawItem,
@@ -390,6 +392,7 @@ function LiveMealTray({
   offDb = null,
   openScannerNonce = 0,
   onAcquireExternalFood = null,
+  onChangeMealType = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
@@ -652,7 +655,29 @@ function LiveMealTray({
         <div className="kentu-meal-tray__calibration-title-row">
           <div className="kentu-meal-tray__calibration-title-group">
             <span className="kentu-meal-tray__badge">Calibrazione</span>
-            <h3 className="kentu-meal-tray__calibration-title">{mealTypeLabel}</h3>
+            <h3 className="kentu-meal-tray__calibration-title">
+              {typeof onChangeMealType === 'function' ? (
+                <label className="inline-flex min-w-0 items-center">
+                  <span className="sr-only">Tipo pasto</span>
+                  <select
+                    value={normalizeMcdriveMealType(mealType) || 'pranzo'}
+                    disabled={disabled}
+                    aria-label="Tipo pasto"
+                    className="max-w-[11rem] truncate rounded-md border border-white/15 bg-zinc-900/80 px-1.5 py-0.5 text-inherit font-inherit outline-none focus:border-cyan-400/80 disabled:opacity-50"
+                    onChange={(event) => {
+                      const next = String(event.target.value || '').trim();
+                      if (next) onChangeMealType(next);
+                    }}
+                  >
+                    {MCDRIVE_MEAL_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : mealTypeLabel}
+            </h3>
           </div>
           <KentuTimeSelector
             value={localExactTime || exactTimeValue}
@@ -1202,7 +1227,6 @@ function LiveMealTray({
             return;
           }
           appendSearchResultToTray(result);
-          setAddSearchOpen(false);
           setPreferManualSearch(false);
           setPreferManualBarcode('');
         }}

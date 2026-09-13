@@ -1147,8 +1147,11 @@ export default function AiCluster({
         className={[
           'relative flex shrink-0 flex-col border-b border-zinc-800 bg-zinc-950',
           'transition-[height,opacity] duration-500 ease-in-out',
-          headerCinemaExpanded ? 'h-64 overflow-hidden' : 'h-[6.75rem] overflow-visible',
+          isAiGuidedImmersive && !headerCinemaExpanded
+            ? 'hidden h-0 overflow-hidden border-0 opacity-0 kentu-workspace-header--immersive-hidden'
+            : headerCinemaExpanded ? 'h-64 overflow-hidden' : 'h-[6.75rem] overflow-visible',
         ].join(' ')}
+        aria-hidden={isAiGuidedImmersive && !headerCinemaExpanded ? true : undefined}
       >
         {hoistedVideo ? (
           <div
@@ -1917,6 +1920,14 @@ export default function AiCluster({
               onRequestDisambiguation={onMcDriveRequestDisambiguation}
               openScannerNonce={mcdriveBarcodeOpenNonce}
               onAcquireExternalFood={onSaveNewFoodEntry}
+              onChangeMealType={(nextMealType) => {
+                onSendMessage?.('', {
+                  intent: 'SET_MCDRIVE_MEAL_TYPE',
+                  mealType: nextMealType,
+                  skipUserBubble: true,
+                  fromQuickReply: true,
+                });
+              }}
               onCancel={() => {
                 onSendMessage?.('', {
                   intent: 'CANCEL_MCDRIVE_WIZARD',

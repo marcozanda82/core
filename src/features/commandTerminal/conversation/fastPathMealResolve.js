@@ -99,6 +99,7 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
   // Sequenziale bloccante: niente bestFallback debole tra layer.
   for (let i = 0; i < layers.length; i += 1) {
     const hits = searchFoodsWithKeywords(layers[i].db, keywords, {
+      originalQuery: spokenName,
       limit: 8,
       includeUserHistory: false,
       enableFuzzy: true,
@@ -108,7 +109,8 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
       const tier = String(top.matchTier || '');
       const score = Number(top.strictScore) || 0;
       const stemOk = foodNameMatchesQuery(top.name, spokenName);
-      if (tier === 'exact' || top.keywordExact || score >= 100) return true;
+      if (!stemOk) return false;
+      if (tier === 'exact' || tier === 'compound' || top.keywordExact || score >= 100) return true;
       if ((tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') && stemOk) {
         return true;
       }

@@ -162,9 +162,6 @@ export default function UniversalSearchModal({
     if (el.value !== next) {
       el.value = next;
     }
-    if (!next.trim() && document.activeElement === el) {
-      el.blur();
-    }
   }, [query]);
 
   useEffect(() => {
@@ -194,6 +191,9 @@ export default function UniversalSearchModal({
   const handleSelect = (result) => {
     onSelectFood?.(result);
     clearSearch();
+    requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
   };
 
   const handleManualFieldChange = (field) => (event) => {

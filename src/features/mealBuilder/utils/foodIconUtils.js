@@ -89,7 +89,7 @@ const MEAL_SLOT_GRAMMAR = {
   colazione: { gender: 'f', label: 'Colazione' },
   cena: { gender: 'f', label: 'Cena' },
   pranzo: { gender: 'm', label: 'Pranzo' },
-  snack: { gender: 'm', label: 'Snack' },
+  snack: { gender: 'm', label: 'Spuntino' },
 };
 
 function resolveMealSlotGrammar(slot) {

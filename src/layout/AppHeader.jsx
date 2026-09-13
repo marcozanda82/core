@@ -8,6 +8,7 @@ const KENTU_HEADER_LOGO_SRC = encodeURI('/nuovo logo trasparente3.png');
  * Banner simulazione opzionale sotto la prima riga.
  */
 export default function AppHeader({
+  hidden = false,
   onLogoClick,
   dateLabel,
   onPrevDay,
@@ -20,8 +21,10 @@ export default function AppHeader({
   onExitSimulation,
   accessory,
 }) {
+  if (hidden) return null;
+
   return (
-    <>
+    <div className="kentu-app-header" data-hidden={hidden ? 'true' : 'false'}>
       <div className="mb-2 box-border flex w-full items-center justify-between gap-2 px-1 pb-2">
         {/* Sinistra: logo + navigazione data */}
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
@@ -123,6 +126,6 @@ export default function AppHeader({
           </button>
         </div>
       )}
-    </>
+    </div>
   );
 }

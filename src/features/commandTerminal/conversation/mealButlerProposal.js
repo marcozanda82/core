@@ -61,6 +61,7 @@ export function findMostFrequentPersonalFood(personalDb, genericName, searchKeyw
 
   const keywords = normalizeSearchKeywords(needle, searchKeywords);
   const hits = searchFoodsWithKeywords(personalDb, keywords, {
+    originalQuery: needle,
     limit: 12,
     includeUserHistory: false,
     enableFuzzy: true,
@@ -195,6 +196,7 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
     // Exact su searchKeywords (es. cocomero → Anguria) prima dell'habit «solito».
     if (personalDb) {
       const hits = searchFoodsWithKeywords(personalDb, keywords, {
+        originalQuery: originalName,
         limit: 8,
         includeUserHistory: false,
         enableFuzzy: true,
@@ -255,6 +257,7 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
     // Se dopo enrich il nome è ancora generico e non c'è match DB utile → unresolved
     if (!proposedFromHabit && !synonymMapped && personalDb) {
       const hits = searchFoodsWithKeywords(personalDb, keywords, {
+        originalQuery: originalName,
         limit: 3,
         includeUserHistory: false,
         enableFuzzy: true,

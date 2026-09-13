@@ -271,11 +271,22 @@ export function useTimelineDiaryActions({
         const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
         if (existing.length > 0) {
           const existingType = String(existing[0]?.mealType || '').trim();
-          if (existingType) mealTypeToUse = existingType;
+          const existingCanon = normalizeMealSlotType(String(existingType).split('_')[0]);
+          if (existingCanon === slot && existingType) {
+            // Stesso tipo canonico: conserva snack_2 / ghost slot originale.
+            mealTypeToUse = existingType;
+          } else {
+            const existingSlotKey = existingType || String(editMealId);
+            const logWithoutThisMeal = logToUse.filter((item) => {
+              if (item?.type !== 'food' && item?.type !== 'recipe') return true;
+              return String(item?.mealType || '') !== String(existingSlotKey);
+            });
+            mealTypeToUse = getGhostMealType(slot, logWithoutThisMeal);
+          }
           const existingTime = coerceDiaryMealTime(existing[0]?.mealTime);
           if (existingTime != null) mealTimeToUse = existingTime;
         } else {
-          mealTypeToUse = slot;
+          mealTypeToUse = getGhostMealType(slot, logToUse);
         }
       } else if (pendingGhostMealId) {
         const ghost = logToUse.find(

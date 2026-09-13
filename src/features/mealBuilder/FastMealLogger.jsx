@@ -89,6 +89,7 @@ import {
 import {
   getLearnedMealSlot,
   getLearnedMealSlotLabel,
+  normalizeMealSlotType,
 } from './utils/slotPredictor';
 
 const QUICK_FOODS_LIMIT = 30;
@@ -98,9 +99,9 @@ const VETRINA_SEARCH_RESULT_LIMIT = 50;
 
 const MEAL_SLOTS = [
   { id: 'colazione', label: 'Colazione' },
-  { id: 'snack', label: 'Snack' },
   { id: 'pranzo', label: 'Pranzo' },
   { id: 'cena', label: 'Cena' },
+  { id: 'snack', label: 'Spuntino' },
 ];
 
 const MEAL_TIME_BY_SLOT = {
@@ -378,10 +379,13 @@ function VetrinaSearchBar({
     if (el.value !== next) {
       el.value = next;
     }
-    if (!next && document.activeElement === el) {
-      el.blur();
-    }
   }, [value, resetEpoch, inputRef]);
+
+  useEffect(() => {
+    const el = inputRef?.current;
+    if (!el) return;
+    el.focus();
+  }, [resetEpoch, inputRef]);
 
   return (
     <form
@@ -522,6 +526,7 @@ function FastMealLoggerContent({
     draftTotals,
     mealTime,
     setMealTime,
+    setMealType,
     addFoodToDraft,
     addFoodsToDraft,
     removeFoodFromDraft,
@@ -530,6 +535,15 @@ function FastMealLoggerContent({
     clearDraft,
     loadInitialDraft,
   } = useMealComposer();
+
+  const canonicalSelectedSlot = normalizeMealSlotType(selectedSlot);
+  const mealTypeManualRef = useRef(false);
+  const handleMealTypeChange = useCallback((nextSlot) => {
+    const next = normalizeMealSlotType(nextSlot);
+    mealTypeManualRef.current = true;
+    setSelectedSlot(next);
+    setMealType(next);
+  }, [setMealType]);
 
   /** Imposta l'orario bozza senza vincoli rispetto ai pasti già loggati (solo bound 0–24). */
   const commitDraftMealTime = useCallback((hour, { fromNativeInput = false } = {}) => {
@@ -575,6 +589,7 @@ function FastMealLoggerContent({
   );
 
   useEffect(() => {
+    if (mealTypeManualRef.current) return;
     if (!Number.isFinite(Number(mealTime))) return;
     const nextSlot = getLearnedMealSlot(mealTime, fullHistory);
     setSelectedSlot((prev) => (prev === nextSlot ? prev : nextSlot));
@@ -602,11 +617,12 @@ function FastMealLoggerContent({
   const resetVetrinaSearchBar = useCallback(() => {
     setVetrinaSearchQuery('');
     setVetrinaSearchEpoch((n) => n + 1);
-    const el = vetrinaSearchInputRef.current;
-    if (el) {
+    requestAnimationFrame(() => {
+      const el = vetrinaSearchInputRef.current;
+      if (!el) return;
       el.value = '';
-      el.blur();
-    }
+      el.focus();
+    });
   }, []);
 
   const handleFoodSelection = async (food) => {
@@ -1650,9 +1666,22 @@ function FastMealLoggerContent({
             <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
             <span className="hidden sm:inline">Indietro</span>
           </button>
-          <h1 className="min-w-0 truncate text-center text-sm font-semibold tracking-tight text-slate-100 sm:text-[0.95rem]">
-            {modalTitle}
-          </h1>
+          <label className="flex min-w-0 flex-col items-center justify-center">
+            <h1 className="sr-only">{modalTitle}</h1>
+            <span className="sr-only">Tipo pasto</span>
+            <select
+              value={canonicalSelectedSlot}
+              onChange={(event) => handleMealTypeChange(event.target.value)}
+              aria-label="Tipo pasto"
+              className="max-w-full truncate rounded-lg border border-slate-700/80 bg-slate-900/80 px-2 py-1 text-center text-sm font-semibold tracking-tight text-slate-100 outline-none transition focus:border-cyan-400/80"
+            >
+              {MEAL_SLOTS.map((slot) => (
+                <option key={slot.id} value={slot.id}>
+                  {slot.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={handleConfirm}
@@ -2020,12 +2049,12 @@ function FastMealLoggerContent({
                 <div className="mt-2 space-y-2">
                   <div className="flex min-w-0 rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
                     {MEAL_SLOTS.map((slot) => {
-                      const isActive = selectedSlot === slot.id;
+                      const isActive = canonicalSelectedSlot === slot.id;
                       return (
                         <button
                           key={slot.id}
                           type="button"
-                          onClick={() => setSelectedSlot(slot.id)}
+                          onClick={() => handleMealTypeChange(slot.id)}
                           className={`min-w-0 flex-1 truncate rounded-md px-1.5 py-1.5 text-xs font-medium transition-colors sm:px-2 ${
                             isActive
                               ? 'bg-cyan-500 text-slate-950'
@@ -2391,7 +2420,7 @@ export default function FastMealLogger({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100040] flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-[#050a12] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
+      className="kentu-meal-entry--foreground fixed inset-0 z-[100040] flex h-[100dvh] w-full max-w-full flex-col overflow-hidden bg-[#050a12] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]"
       role="dialog"
       aria-modal="true"
       aria-label={isEditMode ? 'Modifica pasto' : 'Registra pasto'}

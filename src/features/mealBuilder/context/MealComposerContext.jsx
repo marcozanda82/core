@@ -204,6 +204,7 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       clearDraft,
       loadInitialDraft,
       setMealTime,
+      setMealType,
     }),
     [
       draftFoods,
@@ -221,6 +222,7 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       clearDraft,
       loadInitialDraft,
       setMealTime,
+      setMealType,
     ],
   );
 }

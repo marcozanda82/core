@@ -222,6 +222,7 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
   const queries = expandSearchQueries(needle, searchKeywords);
   // Una sola passata multi-keyword: exact su qualsiasi termine = Livello 1.
   const hits = searchFoodsWithKeywords(personalDb, queries, {
+    originalQuery: needle,
     limit: 24,
     includeUserHistory: false,
     enableFuzzy: true,
@@ -245,12 +246,19 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
         || [...keywordNorms].some((kw) => kw && (nameNorm === kw || italianSingularPluralForms(kw).includes(nameNorm)));
       const usageCount = Number(hit.usageCount) || getFoodUsageCount(food) || 0;
       const lastUsedAt = getFoodLastUsedAt(food);
+      const isSpecificQuery = needleTokens.length >= 2;
       let strict = Number(hit.strictScore) || 0;
       let matchTier = String(hit.matchTier || 'none');
-      // Exact full-name su foodName O su qualsiasi searchKeyword → Livello 1.
-      if (synonymExact || hit.keywordExact || matchTier === 'exact') {
+      // Exact full-name / sinonimo: solo se copre tutta la query (niente «pasta» → pasta integrale).
+      if (!isSpecificQuery && (synonymExact || hit.keywordExact || matchTier === 'exact')) {
         strict = Math.max(strict, 100);
         matchTier = 'exact';
+      } else if (isSpecificQuery && contains && (nameNorm === needleNorm || matchTier === 'exact')) {
+        strict = Math.max(strict, 100);
+        matchTier = 'exact';
+      } else if (isSpecificQuery && !contains) {
+        strict = Math.min(strict, 50);
+        if (matchTier === 'exact' || matchTier === 'prefix') matchTier = 'token_exact';
       }
       const familyBoost = familyHit && !contains && matchTier !== 'exact' ? 5 : 0;
       return {
@@ -265,7 +273,11 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
         score: strict + familyBoost,
       };
     })
-    .filter((row) => row.name && (row.contains || row.familyHit || row.strictScore >= 50))
+    .filter((row) => {
+      if (!row.name) return false;
+      if (needleTokens.length >= 2) return row.contains === true;
+      return row.contains || row.familyHit || row.strictScore >= 50;
+    })
     .sort((a, b) => compareFoodSearchHits(a, b));
 
   // Dedup per nome normalizzato

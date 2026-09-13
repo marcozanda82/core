@@ -701,6 +701,25 @@ export class CommandTerminalController {
     return this.publishMcdriveTrayMessage('');
   }
 
+  /**
+   * Cambia il tipo pasto della lavagna aperta senza azzerare gli alimenti in bozza.
+   * Usato dal select nell'header McDrive.
+   */
+  applyMcdriveMealType(mealTypeRaw) {
+    const mealType = normalizeMcdriveMealType(mealTypeRaw);
+    if (!mealType) {
+      return this.promptMcdriveMealType();
+    }
+    const alreadyOpen = this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP
+      || this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP
+      || this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM;
+    if (alreadyOpen) {
+      this.mcdriveMealType = mealType;
+      return this.publishMcdriveTrayMessage('');
+    }
+    return this.setMcdriveMealTypeAndOpen(mealType);
+  }
+
   startMcdriveWizard(currentState = {}, options = {}) {
     this.rememberMcdriveContextState(currentState);
     void currentState;
@@ -857,7 +876,7 @@ export class CommandTerminalController {
       if (!mealType) {
         return this.promptMcdriveMealType();
       }
-      return this.setMcdriveMealTypeAndOpen(mealType);
+      return this.applyMcdriveMealType(mealType);
     }
 
     if (forcedIntent === 'ADD_MORE_MCDRIVE') {
@@ -5971,7 +5990,7 @@ export class CommandTerminalController {
       return this.continueMcdriveAddMore();
     }
     if (forcedIntentEarly === 'SET_MCDRIVE_MEAL_TYPE') {
-      return this.setMcdriveMealTypeAndOpen(options?.mealType || userText);
+      return this.applyMcdriveMealType(options?.mealType || userText);
     }
     if (forcedIntentEarly === 'CANCEL_MCDRIVE_WIZARD') {
       return this.cancelMcdriveWizard();
@@ -6227,7 +6246,7 @@ export class CommandTerminalController {
     }
 
     if (inferredIntent === 'SET_MCDRIVE_MEAL_TYPE') {
-      return this.setMcdriveMealTypeAndOpen(options?.mealType || userText);
+      return this.applyMcdriveMealType(options?.mealType || userText);
     }
 
     if (inferredIntent === 'CANCEL_MCDRIVE_WIZARD') {

@@ -34,6 +34,8 @@ const SEARCH_SYNONYMS = {
 const SCORE_EXACT_OR_PREFIX = 100;
 /** Nome inizia con la query intera ma non è uguale (es. «noci» → «noci tostate»). */
 const SCORE_PREFIX = 99;
+/** Query composta contenuta nel nome (es. «pasta sfoglia» in «pasta sfoglia fresca»). */
+const SCORE_COMPOUND_CONTAINED = 92;
 /** Query = una parola intera dentro un nome multi-parola (es. «noci» in «pane … noci»). */
 const SCORE_TOKEN_EXACT = 80;
 const SCORE_WORD_BOUNDARY = 75;
@@ -49,6 +51,7 @@ const USAGE_COUNT_SCORE_WEIGHT = 0.35;
 export const MATCH_TIER_RANK = Object.freeze({
   exact: 100,
   prefix: 90,
+  compound: 85,
   token_exact: 80,
   word_boundary: 70,
   substring: 50,
@@ -366,8 +369,53 @@ export function tokenSharesStem(nameToken, queryToken) {
 }
 
 /**
+ * Quanti token della query sono coperti dal nome alimento (includes / stem).
+ * @param {string} foodName
+ * @param {string} query
+ * @returns {number}
+ */
+export function countQueryTokenCoverage(foodName, query) {
+  const nameNorm = normalizeSearchText(foodName);
+  const queryNorm = normalizeSearchText(query);
+  if (!nameNorm || !queryNorm) return 0;
+  const queryWords = queryNorm.split(' ').filter(Boolean);
+  if (queryWords.length === 0) return 0;
+  const nameWords = nameNorm.split(' ').filter(Boolean);
+  let covered = 0;
+  for (let i = 0; i < queryWords.length; i += 1) {
+    const token = queryWords[i];
+    if (!token) continue;
+    if (nameNorm.includes(token)) {
+      covered += 1;
+      continue;
+    }
+    const forms = italianSingularPluralForms(token);
+    if (forms.some((f) => f && nameNorm.includes(f))) {
+      covered += 1;
+      continue;
+    }
+    if (nameWords.some((word) => tokenSharesStem(word, token))) covered += 1;
+  }
+  return covered;
+}
+
+/**
+ * True se ogni token della query è presente nel nome (query specifica).
+ * @param {string} foodName
+ * @param {string} query
+ * @returns {boolean}
+ */
+export function foodNameCoversAllQueryTokens(foodName, query) {
+  const queryWords = normalizeSearchText(query).split(' ').filter(Boolean);
+  if (queryWords.length === 0) return false;
+  return countQueryTokenCoverage(foodName, query) >= queryWords.length;
+}
+
+/**
  * True se il nome alimento è un match lessicale affidabile della query.
  * Tollerante su desinenze: banana ↔ banane / bananas.
+ * Query multi-parola: tutti i token devono comparire nel nome
+ * (mai «pasta sfoglia» → «pasta» / «pasta integrale» via subset).
  * @param {string} foodName
  * @param {string} query
  * @returns {boolean}
@@ -377,9 +425,21 @@ export function foodNameMatchesQuery(foodName, query) {
   const queryNorm = normalizeSearchText(query);
   if (!nameNorm || !queryNorm) return false;
   if (nameNorm === queryNorm) return true;
+
+  const tokens = queryNorm.split(/\s+/).filter(Boolean);
+  if (tokens.length >= 2) {
+    if (nameNorm.includes(queryNorm)) return true;
+    const nameWords = nameNorm.split(/\s+/).filter(Boolean);
+    return tokens.every((token) => {
+      if (nameNorm.includes(token)) return true;
+      const forms = italianSingularPluralForms(token);
+      if (forms.some((f) => f && nameNorm.includes(f))) return true;
+      return nameWords.some((word) => tokenSharesStem(word, token));
+    });
+  }
+
   if (nameNorm.startsWith(queryNorm) || queryNorm.startsWith(nameNorm)) return true;
   if (nameNorm.includes(queryNorm) || queryNorm.includes(nameNorm)) return true;
-  const tokens = queryNorm.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return false;
   const nameWords = nameNorm.split(/\s+/).filter(Boolean);
   return tokens.every((token) => {
@@ -509,9 +569,9 @@ function calculateMatchScore(normalizedName, itemWords, queryWords) {
     return { strictScore: SCORE_WORD_BOUNDARY, matchTier: 'word_boundary', allTokensMatch: true };
   }
 
-  if (normalizedName.includes(fullQuery) && fullQuery.length >= 3) {
-    // Query multi-parola o frase contenuta: non è exact full-name.
-    return { strictScore: SCORE_SUBSTRING, matchTier: 'substring', allTokensMatch: true };
+  if (normalizedName.includes(fullQuery) && fullQuery.includes(' ')) {
+    // Query composta contenuta: sopra token-exact/habit, sotto uguaglianza/prefisso.
+    return { strictScore: SCORE_COMPOUND_CONTAINED, matchTier: 'compound', allTokensMatch: true };
   }
 
   if (queryWords.length === 1) {
@@ -725,6 +785,7 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       strictScore,
       matchTier,
       allTokensMatch,
+      queryTokenCoverage: countQueryTokenCoverage(name, trimmedQuery),
       lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
     });
 
@@ -822,7 +883,8 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
         score: fuzzyStrict + usageBoost * 0.01,
         strictScore: fuzzyStrict,
         matchTier: fuzzyTier,
-        allTokensMatch: true,
+        allTokensMatch: foodNameCoversAllQueryTokens(name, trimmedQuery),
+        queryTokenCoverage: countQueryTokenCoverage(name, trimmedQuery),
         fuzzyDistance: fuzzy.distance,
         lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
       });
@@ -837,7 +899,20 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
   results.sort(compareFoodSearchHits);
 
   return results.slice(0, limit).map(
-    ({ id, name, matchScore, recencyScore, frequencyScore, usageCount, score, strictScore, matchTier }) => ({
+    ({
+      id,
+      name,
+      matchScore,
+      recencyScore,
+      frequencyScore,
+      usageCount,
+      score,
+      strictScore,
+      matchTier,
+      allTokensMatch,
+      queryTokenCoverage,
+      lastUsedAt,
+    }) => ({
       id,
       name,
       matchScore,
@@ -847,6 +922,9 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       textScore: score / 100,
       strictScore,
       matchTier,
+      allTokensMatch,
+      queryTokenCoverage,
+      lastUsedAt,
     }),
   );
 }
@@ -858,6 +936,14 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
  * @returns {number}
  */
 export function compareFoodSearchHits(a, b) {
+  const aAll = a?.allTokensMatch === true;
+  const bAll = b?.allTokensMatch === true;
+  if (aAll !== bAll) return aAll ? -1 : 1;
+
+  const aCov = Number(a?.queryTokenCoverage) || 0;
+  const bCov = Number(b?.queryTokenCoverage) || 0;
+  if (bCov !== aCov) return bCov - aCov;
+
   const aStrict = Number(a?.strictScore) || 0;
   const bStrict = Number(b?.strictScore) || 0;
   if (bStrict !== aStrict) return bStrict - aStrict;
@@ -866,7 +952,7 @@ export function compareFoodSearchHits(a, b) {
   const bTier = MATCH_TIER_RANK[String(b?.matchTier || 'none')] || 0;
   if (bTier !== aTier) return bTier - aTier;
 
-  // Tie-breaker: frequenza e recency.
+  // Tie-breaker SOLO in vera ambiguità (stesso coverage + stesso score lessicale).
   const aUsage = Number(a?.usageCount) || 0;
   const bUsage = Number(b?.usageCount) || 0;
   if (bUsage !== aUsage) return bUsage - aUsage;
@@ -918,20 +1004,30 @@ export function normalizeSearchKeywords(foodName, searchKeywords) {
 }
 
 /**
- * Two-tier semantico: cicla searchKeywords; match esatto su QUALSIASI keyword = Livello 1.
- * Altrimenti vince lo score fuzzy/lessicale più alto tra le keyword.
+ * Two-tier semantico: la query intera / match composto batte sempre
+ * i hit su keyword parziali (es. «pasta» da «pasta sfoglia»).
+ * L'abitudine (usage) è solo spareggio a parità lessicale.
  * @param {object} foodDb
  * @param {string|string[]} keywordsOrQuery
  * @param {object} [options]
  * @returns {Array<object>}
  */
 export function searchFoodsWithKeywords(foodDb, keywordsOrQuery, options = {}) {
+  const originalQuery = String(
+    options.originalQuery
+    || (Array.isArray(keywordsOrQuery) ? (keywordsOrQuery[0] || '') : (keywordsOrQuery || '')),
+  ).trim();
+  const originalNorm = normalizeSearchText(originalQuery);
+  const originalWords = originalNorm.split(' ').filter(Boolean);
+  const isSpecificQuery = originalWords.length >= 2;
+
   const keywords = Array.isArray(keywordsOrQuery)
     ? keywordsOrQuery.map((k) => String(k || '').trim()).filter(Boolean)
     : normalizeSearchKeywords(keywordsOrQuery, options.searchKeywords);
 
-  if (keywords.length === 0) return [];
-  if (keywords.length === 1) {
+  if (keywords.length === 0 && !originalNorm) return [];
+
+  if (!isSpecificQuery && keywords.length === 1) {
     return searchFoodsDetailed(foodDb, keywords[0], options);
   }
 
@@ -941,47 +1037,89 @@ export function searchFoodsWithKeywords(foodDb, keywordsOrQuery, options = {}) {
   const perQueryLimit = Math.max(limit, 12);
   const byId = new Map();
 
+  const mergeHit = (hit, kw, fromFullQuery) => {
+    const id = String(hit.id);
+    const kwNorm = normalizeSearchText(kw);
+    const isFullQueryKw = Boolean(originalNorm) && kwNorm === originalNorm;
+    const coverage = countQueryTokenCoverage(hit.name, originalQuery || kw);
+    const coversAll = isSpecificQuery
+      ? coverage >= originalWords.length
+      : hit.allTokensMatch !== false;
+
+    let next = {
+      ...hit,
+      matchedKeyword: kw,
+      queryTokenCoverage: coverage,
+      allTokensMatch: coversAll,
+    };
+
+    if (isSpecificQuery && !fromFullQuery && !isFullQueryKw) {
+      // Keyword sottoinsieme (es. «pasta»): mai promuovere a exact / Livello 1.
+      next.keywordExact = false;
+      next.matchTier = (hit.matchTier === 'exact' || hit.matchTier === 'prefix')
+        ? 'token_exact'
+        : hit.matchTier;
+      next.strictScore = Math.min(
+        Number(hit.strictScore) || 0,
+        coversAll ? SCORE_COMPOUND_CONTAINED : SCORE_SUBSTRING,
+      );
+    } else {
+      const isExact = coversAll && (
+        String(hit.matchTier || '') === 'exact'
+        || Number(hit.strictScore) >= SCORE_EXACT_OR_PREFIX
+      );
+      next.keywordExact = isExact;
+      next.strictScore = isExact ? SCORE_EXACT_OR_PREFIX : Number(hit.strictScore) || 0;
+      next.matchTier = isExact ? 'exact' : hit.matchTier;
+    }
+
+    const prev = byId.get(id);
+    if (!prev) {
+      byId.set(id, next);
+      return;
+    }
+    const betterCoverage = (Number(next.queryTokenCoverage) || 0) > (Number(prev.queryTokenCoverage) || 0);
+    const betterStrict = (Number(next.strictScore) || 0) > (Number(prev.strictScore) || 0);
+    if (betterCoverage || (next.allTokensMatch && !prev.allTokensMatch) || (!betterCoverage && betterStrict && next.allTokensMatch === prev.allTokensMatch)) {
+      byId.set(id, {
+        ...next,
+        keywordExact: Boolean(prev.keywordExact && coversAll) || next.keywordExact,
+      });
+    }
+  };
+
+  if (originalNorm) {
+    const fullHits = searchFoodsDetailed(foodDb, originalQuery, {
+      ...options,
+      limit: perQueryLimit,
+    });
+    for (let h = 0; h < fullHits.length; h += 1) {
+      mergeHit(fullHits[h], originalQuery, true);
+    }
+  }
+
+  const seenKw = new Set(originalNorm ? [originalNorm] : []);
   for (let i = 0; i < keywords.length; i += 1) {
     const kw = keywords[i];
+    const kwNorm = normalizeSearchText(kw);
+    if (!kwNorm || seenKw.has(kwNorm)) continue;
+    seenKw.add(kwNorm);
     const hits = searchFoodsDetailed(foodDb, kw, {
       ...options,
       limit: perQueryLimit,
     });
     for (let h = 0; h < hits.length; h += 1) {
-      const hit = hits[h];
-      const id = String(hit.id);
-      const isExact = String(hit.matchTier || '') === 'exact'
-        || Number(hit.strictScore) >= SCORE_EXACT_OR_PREFIX;
-      const next = {
-        ...hit,
-        matchedKeyword: kw,
-        keywordExact: isExact,
-        // Exact su qualsiasi keyword → priorità assoluta Livello 1.
-        strictScore: isExact ? SCORE_EXACT_OR_PREFIX : Number(hit.strictScore) || 0,
-        matchTier: isExact ? 'exact' : hit.matchTier,
-      };
-      const prev = byId.get(id);
-      if (!prev) {
-        byId.set(id, next);
-        continue;
-      }
-      if (next.keywordExact && !prev.keywordExact) {
-        byId.set(id, next);
-        continue;
-      }
-      if (!next.keywordExact && prev.keywordExact) continue;
-      if ((Number(next.strictScore) || 0) > (Number(prev.strictScore) || 0)) {
-        byId.set(id, {
-          ...next,
-          keywordExact: prev.keywordExact || next.keywordExact,
-        });
-      } else if (next.keywordExact) {
-        byId.set(id, { ...prev, keywordExact: true, matchTier: 'exact', strictScore: SCORE_EXACT_OR_PREFIX });
-      }
+      mergeHit(hits[h], kw, false);
     }
   }
 
-  return [...byId.values()]
+  let list = [...byId.values()];
+  if (isSpecificQuery) {
+    const complete = list.filter((hit) => hit.allTokensMatch === true);
+    if (complete.length > 0) list = complete;
+  }
+
+  return list
     .sort(compareFoodSearchHits)
     .slice(0, limit);
 }

@@ -21,6 +21,13 @@ export default function ChatInputBar({
   const [value, setValue] = useState('');
   const textareaRef = useRef(null);
   const lastSeedRef = useRef('');
+  const pendingFocusRef = useRef(false);
+
+  const focusInput = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el || el.disabled) return;
+    el.focus();
+  }, []);
 
   useEffect(() => {
     const seed = String(seedText || '');
@@ -56,9 +63,21 @@ export default function ChatInputBar({
     if (disabled) return;
     const trimmed = String(value || '').trim();
     if (!trimmed && !canSendWithImages) return;
+    pendingFocusRef.current = true;
     onSubmit?.(trimmed);
     clear();
-  }, [disabled, value, canSendWithImages, onSubmit, clear]);
+    requestAnimationFrame(() => {
+      focusInput();
+    });
+  }, [disabled, value, canSendWithImages, onSubmit, clear, focusInput]);
+
+  useEffect(() => {
+    if (!pendingFocusRef.current || disabled || isProcessing) return;
+    pendingFocusRef.current = false;
+    requestAnimationFrame(() => {
+      focusInput();
+    });
+  }, [disabled, isProcessing, focusInput]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

@@ -62,6 +62,13 @@ export const MCDRIVE_MEAL_TYPE_LABELS = Object.freeze({
   cena: 'Cena',
 });
 
+export const MCDRIVE_MEAL_TYPE_OPTIONS = Object.freeze([
+  { id: 'colazione', label: 'Colazione' },
+  { id: 'pranzo', label: 'Pranzo' },
+  { id: 'cena', label: 'Cena' },
+  { id: 'snack', label: 'Spuntino' },
+]);
+
 export const MCDRIVE_SAVE_CONFIRM_QUICK_REPLIES = Object.freeze([
   { label: MCDRIVE_CANCEL_CHIP.label, intent: MCDRIVE_CANCEL_CHIP.intent },
   { label: MCDRIVE_ADD_MORE_CHIP.label, intent: MCDRIVE_ADD_MORE_CHIP.intent },

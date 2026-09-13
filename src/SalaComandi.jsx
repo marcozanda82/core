@@ -7879,6 +7879,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
 
       <AppHeader
+        hidden={Boolean(showFastLogger || isChatOpen)}
         onLogoClick={() => {
           handleCoreOsClick();
           setActiveAction(null);
