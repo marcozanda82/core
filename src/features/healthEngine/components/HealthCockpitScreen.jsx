@@ -17,6 +17,9 @@ const EVIDENCE_TOOL_BY_PILLAR = {
  * Schermo connesso: riceve i dati Sala Comandi e li passa all'hook, senza logica fisiologica.
  */
 export default function HealthCockpitScreen({
+  dateStr = '',
+  onNavigatePrevDay = null,
+  onNavigateNextDay = null,
   onOpenTimeline = null,
   calibrazioneHandlers = null,
   ...engineProps
@@ -24,6 +27,8 @@ export default function HealthCockpitScreen({
   const { healthState, isReady, isLoading } = useHealthSystemState(engineProps);
   const [labTool, setLabTool] = useState(null);
   const [selectedPillarId, setSelectedPillarId] = useState(null);
+  
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const handleOpenLabTool = useCallback((toolId) => {
     const id = String(toolId || '').toUpperCase();
@@ -46,6 +51,10 @@ export default function HealthCockpitScreen({
         healthState={healthState}
         isReady={isReady}
         isLoading={isLoading}
+        dateStr={dateStr}
+        todayStr={todayStr}
+        onNavigatePrevDay={onNavigatePrevDay}
+        onNavigateNextDay={onNavigateNextDay}
         onOpenLabTool={handleOpenLabTool}
         onOpenPillarAnalysis={setSelectedPillarId}
       />

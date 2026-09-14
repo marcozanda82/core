@@ -4,11 +4,20 @@
 
 import { CERTAINTY_LEVELS, METABOLIC_PHASE_IDS } from '../contracts/healthSnapshot.types.js';
 import {
+  ACTIVITY_PENDING_HOUR_END,
   DRIVER_DIRECTIONS,
   DRIVER_IDS,
+  NEUTRAL_SCORE_BASELINE,
+  NUTRITION_INCOMPLETE_TARGET_RATIO,
   PILLAR_STATES,
 } from '../contracts/healthSystem.types.js';
 import { phraseByCertainty, weakestCertainty } from './epistemicLanguage.js';
+
+export const NUTRITION_DAY_PENDING_INSIGHT =
+  'Giornata appena iniziata. Registra i primi pasti per calibrare l\'analisi nutrizionale.';
+
+export const ACTIVITY_DAY_PENDING_INSIGHT =
+  'In attesa del primo stimolo odierno. Il carico settimanale sta guidando l\'analisi.';
 
 function clamp01(n) {
   const x = Number(n);
@@ -71,7 +80,7 @@ export function scoreFromDrivers(drivers) {
 }
 
 function makePillar(drivers, insight, evidence, insufficient) {
-  const score = insufficient ? 50 : scoreFromDrivers(drivers);
+  const score = insufficient ? NEUTRAL_SCORE_BASELINE : scoreFromDrivers(drivers);
   return {
     state: stateFromScore(score, insufficient),
     score,
@@ -79,6 +88,59 @@ function makePillar(drivers, insight, evidence, insufficient) {
     insight,
     evidence,
   };
+}
+
+function localHourFromTimestamp(nowMs) {
+  const t = Number(nowMs);
+  if (!Number.isFinite(t) || t <= 0) return null;
+  const d = new Date(t);
+  return d.getHours() + d.getMinutes() / 60;
+}
+
+function meanMuscleDecay(activity = {}) {
+  const decay = activity.muscleDecay && typeof activity.muscleDecay === 'object'
+    ? activity.muscleDecay
+    : {};
+  const districts = Object.values(decay).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  if (districts.length === 0) return { districts, mean: 0, min: 0 };
+  return {
+    districts,
+    mean: districts.reduce((a, b) => a + b, 0) / districts.length,
+    min: Math.min(...districts),
+  };
+}
+
+/**
+ * Nutrizione incompleta: niente pasti, oppure calorie sotto il 10% del target.
+ * Non è un fallimento dietetico: la giornata è ancora da compilare.
+ */
+export function isNutritionDayIncomplete(nutrition = {}) {
+  const kcal = Number(nutrition.calories) || 0;
+  const protein = Number(nutrition.proteinGrams) || 0;
+  const fiber = Number(nutrition.fiberGrams) || 0;
+  const target = Number(nutrition.targetCalories) || 0;
+  const mealsAbsent = kcal <= 0 && protein <= 0 && fiber <= 0;
+  if (mealsAbsent) return true;
+  if (target > 0 && kcal < target * NUTRITION_INCOMPLETE_TARGET_RATIO) return true;
+  return false;
+}
+
+function hasWeeklyActivityTrend(activity = {}) {
+  const minutes = Number(activity.cardioMinutes7d) || 0;
+  const { mean } = meanMuscleDecay(activity);
+  const lastTs = Number(activity.lastWorkoutTimestamp);
+  return minutes > 0 || mean >= 0.05 || (Number.isFinite(lastTs) && lastTs > 0);
+}
+
+/**
+ * Attività in attesa: nessun allenamento oggi e (mattina, oppure nessuno storico 7g).
+ */
+export function isActivityDayPending(activity = {}, nowMs = null) {
+  const today = Array.isArray(activity.todayWorkouts) ? activity.todayWorkouts : [];
+  if (today.length > 0) return false;
+  if (!hasWeeklyActivityTrend(activity)) return true;
+  const hour = localHourFromTimestamp(nowMs);
+  return hour != null && hour < ACTIVITY_PENDING_HOUR_END;
 }
 
 export function evaluateRecovery(sleep = {}, systemic = {}) {
@@ -163,17 +225,31 @@ export function evaluateRecovery(sleep = {}, systemic = {}) {
   }
 
   const certainty = weakestCertainty(drivers, hoursCert);
+  const hours = Number(sleep.hours);
+  const quality = Number(sleep.quality) || 0;
+  
+  let sleepQualityPhrase = '';
+  if (quality >= 4) sleepQualityPhrase = 'Hai dormito bene';
+  else if (quality >= 3) sleepQualityPhrase = 'Il sonno è stato discreto';
+  else if (quality > 0) sleepQualityPhrase = 'Il riposo non è stato ottimale';
+  
   const insight = phraseByCertainty(certainty, {
     measured: hasSleep
-      ? `Il recupero della notte è ${Number(sleep.hours).toFixed(1)} h con qualità ${sleep.quality}/5.`
-      : 'Manca il sonno di stanotte: il recupero non è misurabile.',
+      ? (hours >= 7 && hours <= 8.5 && quality >= 4
+        ? `${sleepQualityPhrase}: ${hours.toFixed(1)} ore sono perfette per recuperare.`
+        : hours < 6
+          ? `Hai dormito solo ${hours.toFixed(1)} ore. Il corpo ha bisogno di più riposo.`
+          : hours > 9
+            ? `${hours.toFixed(1)} ore sono tante. Forse dormire un po' meno ti darebbe più energia.`
+            : `${sleepQualityPhrase}, ma potresti migliorare la qualità o la durata del sonno.`)
+      : 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
     calculated: hasSleep
-      ? 'Il recupero potrebbe essere influenzato dal timing cena–sonno e dalle ore registrate.'
-      : 'Senza un log sonno il recupero resta una stima debole.',
+      ? 'Il recupero dipende anche da quando hai cenato e dalla regolarità del risveglio.'
+      : 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
     inferred: hasSleep
-      ? 'I segnali di recupero suggeriscono attenzione al riposo, ma l’evidenza è indiretta.'
-      : 'I segnali indicano che il sonno non è stato registrato.',
-    estimated: 'Con i dati attuali il recupero non è confermabile; serve almeno il log della notte.',
+      ? 'Alcuni segnali suggeriscono che il riposo potrebbe essere migliorato.'
+      : 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
+    estimated: 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
   });
 
   return makePillar(
@@ -198,12 +274,41 @@ export function evaluateNutrition(nutrition = {}) {
   const kcal = Number(nutrition.calories) || 0;
   const protein = Number(nutrition.proteinGrams) || 0;
   const fiber = Number(nutrition.fiberGrams) || 0;
-  const logged = kcal > 0 || protein > 0 || fiber > 0;
+  const target = Number(nutrition.targetCalories) || 0;
+  const targetProtein = Number(nutrition.targetProteinGrams) || 0;
+  const dayIncomplete = isNutritionDayIncomplete(nutrition);
   const kcalCert = nutrition?.certainty?.calories || CERTAINTY_LEVELS.ESTIMATED;
   const targetCert = nutrition?.certainty?.targets || CERTAINTY_LEVELS.ESTIMATED;
   const histCert = nutrition?.certainty?.history7d || CERTAINTY_LEVELS.ESTIMATED;
+  const daysLogged = Number(nutrition.history7d?.daysLogged) || 0;
 
-  const cal = ratioGap(kcal, nutrition.targetCalories);
+  if (dayIncomplete) {
+    drivers.push(driver(
+      DRIVER_IDS.CALORIE_ADHERENCE,
+      DRIVER_DIRECTIONS.NEUTRAL,
+      0.2,
+      CERTAINTY_LEVELS.ESTIMATED,
+    ));
+    return makePillar(
+      drivers,
+      { text: NUTRITION_DAY_PENDING_INSIGHT, certainty: CERTAINTY_LEVELS.ESTIMATED },
+      {
+        type: 'nutrition.day',
+        data: {
+          calories: kcal,
+          proteinGrams: protein,
+          fiberGrams: fiber,
+          targetCalories: target,
+          targetProteinGrams: targetProtein,
+          daysLogged,
+          dayInProgress: true,
+        },
+      },
+      true,
+    );
+  }
+
+  const cal = ratioGap(kcal, target);
   if (cal) {
     if (cal.ratio >= 0.9 && cal.ratio <= 1.1) {
       drivers.push(driver(DRIVER_IDS.CALORIE_ADHERENCE, DRIVER_DIRECTIONS.POSITIVE, 0.75, kcalCert));
@@ -214,7 +319,7 @@ export function evaluateNutrition(nutrition = {}) {
     }
   }
 
-  const pro = ratioGap(protein, nutrition.targetProteinGrams);
+  const pro = ratioGap(protein, targetProtein);
   if (pro) {
     if (pro.ratio >= 0.9) {
       drivers.push(driver(DRIVER_IDS.PROTEIN_ADHERENCE, DRIVER_DIRECTIONS.POSITIVE, clamp01(Math.min(1, pro.ratio)), targetCert));
@@ -232,7 +337,6 @@ export function evaluateNutrition(nutrition = {}) {
     }
   }
 
-  const daysLogged = Number(nutrition.history7d?.daysLogged) || 0;
   if (daysLogged >= 5) {
     drivers.push(driver(DRIVER_IDS.NUTRITION_CONSISTENCY, DRIVER_DIRECTIONS.POSITIVE, clamp01(daysLogged / 7), histCert));
   } else if (daysLogged > 0) {
@@ -245,13 +349,29 @@ export function evaluateNutrition(nutrition = {}) {
   }
 
   const certainty = weakestCertainty(drivers, kcalCert);
+  
+  // Interpreta i dati per dare feedback comprensibile
+  let kcalStatus = '';
+  if (cal) {
+    if (cal.ratio > 1.15) kcalStatus = `Hai mangiato più del previsto (${Math.round(kcal)} kcal su ${Math.round(target)} target)`;
+    else if (cal.ratio < 0.85) kcalStatus = `Sei sotto le calorie necessarie (${Math.round(kcal)} su ${Math.round(target)} target)`;
+    else kcalStatus = `Le calorie sono nel range giusto (${Math.round(kcal)} kcal)`;
+  } else {
+    kcalStatus = `Oggi hai mangiato ${Math.round(kcal)} kcal`;
+  }
+
+  let proteinStatus = '';
+  if (pro) {
+    if (pro.ratio >= 0.9) proteinStatus = ', le proteine sono ottime';
+    else if (pro.ratio >= 0.7) proteinStatus = ', ma potresti aggiungere ancora qualche proteina';
+    else proteinStatus = ', però le proteine sono troppo poche';
+  }
+
   const insight = phraseByCertainty(certainty, {
-    measured: logged
-      ? `Oggi ${Math.round(kcal)} kcal e ${Math.round(protein)} g di proteine rispetto al target.`
-      : 'Non risultano pasti misurati oggi.',
-    calculated: 'La copertura calorica e proteica potrebbe restare sotto il target odierno.',
-    inferred: 'I pattern della settimana suggeriscono una copertura nutrizionale incompleta.',
-    estimated: 'Senza un diario pasti più completo la nutrizione resta una stima.',
+    measured: `${kcalStatus}${proteinStatus}.`,
+    calculated: 'Sei sulla buona strada, ma manca ancora qualche pasto. Continua così!',
+    inferred: 'La settimana va bene, ma oggi prova a completare tutti i pasti previsti.',
+    estimated: 'Registra i pasti per vedere come stai andando con la nutrizione.',
   });
 
   return makePillar(
@@ -263,30 +383,58 @@ export function evaluateNutrition(nutrition = {}) {
         calories: kcal,
         proteinGrams: protein,
         fiberGrams: fiber,
-        targetCalories: Number(nutrition.targetCalories) || 0,
-        targetProteinGrams: Number(nutrition.targetProteinGrams) || 0,
+        targetCalories: target,
+        targetProteinGrams: targetProtein,
         daysLogged,
+        dayInProgress: false,
       },
     },
-    !logged,
+    false,
   );
 }
 
-export function evaluateActivity(activity = {}) {
+export function evaluateActivity(activity = {}, nowMs = null) {
   const drivers = [];
   const minutes = Number(activity.cardioMinutes7d) || 0;
   const target = Number(activity.cardioTarget7d) || 0;
   const cardioCert = activity?.certainty?.cardioMinutes7d || CERTAINTY_LEVELS.ESTIMATED;
   const decayCert = activity?.certainty?.muscleDecay || CERTAINTY_LEVELS.ESTIMATED;
   const today = Array.isArray(activity.todayWorkouts) ? activity.todayWorkouts : [];
-  const decay = activity.muscleDecay && typeof activity.muscleDecay === 'object'
-    ? activity.muscleDecay
-    : {};
-  const districts = Object.values(decay).map((n) => Number(n)).filter((n) => Number.isFinite(n));
-  const meanDecay = districts.length > 0
-    ? districts.reduce((a, b) => a + b, 0) / districts.length
-    : 0;
-  const minDecay = districts.length > 0 ? Math.min(...districts) : 0;
+  const { districts, mean: meanDecay, min: minDecay } = meanMuscleDecay(activity);
+  const dayPending = isActivityDayPending(activity, nowMs);
+  const weeklyTrend = hasWeeklyActivityTrend(activity);
+
+  const evidenceData = {
+    cardioMinutes7d: minutes,
+    cardioTarget7d: target,
+    meanMuscleDecay: round1(meanDecay * 100) / 100,
+    minMuscleDecay: round1(minDecay * 100) / 100,
+    todayWorkoutCount: today.length,
+    dayInProgress: dayPending,
+  };
+
+  if (dayPending) {
+    drivers.push(driver(
+      DRIVER_IDS.TRAINING_TODAY,
+      DRIVER_DIRECTIONS.NEUTRAL,
+      0.25,
+      CERTAINTY_LEVELS.ESTIMATED,
+    ));
+    if (weeklyTrend && minutes > 0 && target > 0) {
+      drivers.push(driver(
+        DRIVER_IDS.CARDIO_LOAD_7D,
+        DRIVER_DIRECTIONS.NEUTRAL,
+        0.3,
+        cardioCert,
+      ));
+    }
+    return makePillar(
+      drivers,
+      { text: ACTIVITY_DAY_PENDING_INSIGHT, certainty: CERTAINTY_LEVELS.ESTIMATED },
+      { type: 'activity.week', data: evidenceData },
+      true,
+    );
+  }
 
   if (target > 0) {
     const ratio = minutes / target;
@@ -316,30 +464,26 @@ export function evaluateActivity(activity = {}) {
     drivers.push(driver(DRIVER_IDS.TRAINING_TODAY, DRIVER_DIRECTIONS.NEUTRAL, 0.3, CERTAINTY_LEVELS.MEASURED));
   }
 
-  const insufficient = minutes <= 0 && today.length === 0 && meanDecay <= 0
-    && (activity?.certainty?.muscleDecay === CERTAINTY_LEVELS.ESTIMATED);
+  const insufficient = !weeklyTrend;
 
   const certainty = weakestCertainty(drivers, cardioCert);
-  const insight = phraseByCertainty(certainty, {
-    measured: `Cardio 7g: ${Math.round(minutes)}/${Math.round(target)} min; stimolo muscolare medio ${Math.round(meanDecay * 100)}%.`,
-    calculated: 'Il carico della settimana potrebbe restare sotto la soglia cardio e di stimolo.',
-    inferred: 'I distretti poco stimolati suggeriscono un vuoto di allenamento, con evidenza indiretta.',
-    estimated: 'Senza storico attività sufficiente il carico resta una stima.',
-  });
+  const insight = today.length === 0
+    ? ACTIVITY_DAY_PENDING_INSIGHT
+    : phraseByCertainty(certainty, {
+      measured: target > 0 && minutes >= target * 0.85
+        ? `Ottimo! Hai fatto ${Math.round(minutes)} minuti di cardio questa settimana (target: ${Math.round(target)} min).`
+        : target > 0
+          ? `Hai fatto ${Math.round(minutes)} minuti di cardio su ${Math.round(target)} previsti. Un po' di movimento in più farebbe bene!`
+          : `Questa settimana hai fatto ${Math.round(minutes)} minuti di cardio. Continua così!`,
+      calculated: 'Sei sulla buona strada. Un po\' di movimento nei prossimi giorni aiuta a chiudere il target.',
+      inferred: 'Alcuni muscoli aspettano ancora stimolo. Il carico settimanale resta la bussola.',
+      estimated: 'Registra i tuoi allenamenti per vedere come stai andando con l\'attività fisica.',
+    });
 
   const pillar = makePillar(
     drivers,
-    { text: insight, certainty },
-    {
-      type: 'activity.week',
-      data: {
-        cardioMinutes7d: minutes,
-        cardioTarget7d: target,
-        meanMuscleDecay: round1(meanDecay * 100) / 100,
-        minMuscleDecay: round1(minDecay * 100) / 100,
-        todayWorkoutCount: today.length,
-      },
-    },
+    { text: insight, certainty: today.length === 0 ? CERTAINTY_LEVELS.ESTIMATED : certainty },
+    { type: 'activity.week', data: evidenceData },
     insufficient,
   );
 
@@ -401,11 +545,26 @@ export function evaluateMetabolism(metabolic = {}, sleep = {}) {
 
   const insufficient = !Number.isFinite(penalty) && !phase;
   const certainty = weakestCertainty(drivers, penaltyCert);
+  
+  // Linguaggio umano per metabolismo
+  let metabolicText = '';
+  if (phase === METABOLIC_PHASE_IDS.DIGESTION) {
+    metabolicText = 'Il corpo sta ancora smaltendo gli ultimi pasti. Meglio aspettare un po\' prima di mangiare ancora.';
+  } else if (phase === METABOLIC_PHASE_IDS.FASTING && fasting >= 12) {
+    metabolicText = `Ottimo livello di digiuno (${Math.round(fasting)} ore): il metabolismo sta riposando bene.`;
+  } else if (phase === METABOLIC_PHASE_IDS.FASTING) {
+    metabolicText = `Digiuno in corso (${Math.round(fasting)} ore): il corpo sta iniziando a bruciare le riserve.`;
+  } else if (phase === METABOLIC_PHASE_IDS.ABSORPTION) {
+    metabolicText = 'Il corpo sta assorbendo i nutrienti dall\'ultimo pasto.';
+  } else {
+    metabolicText = 'In attesa di più dati per capire come sta andando il metabolismo.';
+  }
+
   const insight = phraseByCertainty(certainty, {
-    measured: `Fase ${phase || 'n/d'}; penalità glicemica ×${Number.isFinite(penalty) ? penalty.toFixed(2) : '1.00'}.`,
-    calculated: 'La cinetica glicemica potrebbe essere leggermente alzata rispetto al baseline.',
-    inferred: 'La fase metabolica è inferita dalle ore dal pasto: va letta con cautela.',
-    estimated: 'Senza cinetiche affidabili lo stato metabolico resta una stima neutra.',
+    measured: metabolicText,
+    calculated: 'Il metabolismo sta lavorando, ma dipende anche da quando e cosa hai mangiato.',
+    inferred: 'Alcuni segnali suggeriscono di prestare attenzione al timing dei pasti.',
+    estimated: 'Registra i pasti per capire come sta lavorando il tuo metabolismo.',
   });
 
   return makePillar(

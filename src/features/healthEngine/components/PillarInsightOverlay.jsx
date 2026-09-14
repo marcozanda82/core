@@ -41,7 +41,7 @@ function stateVisual(state) {
     return { tone: 'text-rose-400', label: 'Da migliorare' };
   }
   if (state === PILLAR_STATES.NEUTRAL) {
-    return { tone: 'text-amber-300', label: 'Parziale' };
+    return { tone: 'text-amber-300', label: 'In attesa' };
   }
   return { tone: 'text-amber-300', label: 'In flessione' };
 }

@@ -86,6 +86,15 @@ export const PILLAR_SCORE_WEIGHTS = Object.freeze({
   metabolism: 0.22,
 });
 
+/** Baseline usata per pilastri NEUTRAL (dati in attesa) e fallback dello score globale. */
+export const NEUTRAL_SCORE_BASELINE = 75;
+
+/** Sotto questa frazione del target calorico la giornata nutrizionale è ancora incompleta. */
+export const NUTRITION_INCOMPLETE_TARGET_RATIO = 0.1;
+
+/** Prima di quest'ora (locale) l'assenza di allenamento odierno non è un deficit. */
+export const ACTIVITY_PENDING_HOUR_END = 16;
+
 /**
  * @typedef {import('./healthSnapshot.types.js').CertaintyLevel} CertaintyLevel
  */

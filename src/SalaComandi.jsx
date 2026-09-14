@@ -176,7 +176,6 @@ import {
   sumMealProposalMacroTotals,
 } from './utils/mealProposalBuilders';
 import {
-  findExistingCanonicalMealSlot,
   normalizeMealUpsertAction,
   resolveUpsertActionFromPayload,
   buildMealCommitFingerprint,
@@ -341,6 +340,8 @@ import {
   getEquivalentMealTypes,
   getMealIcon,
   getGhostMealType,
+  createSessionMealSlotId,
+  isTimestampMealSlot,
   formatMealSlotLabel,
   getSlotKey,
   decimalToTimeStr,
@@ -3692,14 +3693,8 @@ export default function SalaComandi() {
       let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
 
       if (!existing.length) {
-        const canonical = toCanonicalMealType(String(mealTypeHint || '').split('_')[0]);
-        const found = findExistingCanonicalMealSlot(logSnap, canonical);
-        if (found) {
-          slotId = found.slotId;
-          existing = getFoodItemsForMealSlot(logSnap, slotId);
-        }
+        return null;
       }
-      if (!existing.length || !slotId) return null;
 
       const forcedMealSlot = {
         mealType: existing[0]?.mealType || slotId,
@@ -3848,24 +3843,16 @@ Slot esistente aggiornato (nessun ghost).`;
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
 
       const logSnap = dailyLogRef.current || [];
-      let slotId = String(targetNodeId || '').trim();
+      let slotId = String(targetNodeId || payload?.sessionMealSlot || '').trim();
       let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
 
       if (!existing.length) {
-        const canonical = toCanonicalMealType(String(mealTypeHint || '').split('_')[0]);
-        const found = findExistingCanonicalMealSlot(logSnap, canonical);
-        if (found) {
-          slotId = found.slotId;
-          existing = getFoodItemsForMealSlot(logSnap, slotId);
-        }
-      }
-
-      if (!existing.length || !slotId) {
         return commitAddFoodChatPayload({
           timeString: oraStringFood,
           mealDec: mealDecFood,
           items: addFoodItems,
           mealType: mealTypeHint,
+          ...(slotId ? { forcedMealSlot: { mealType: slotId, mealTime: mealDecFood } } : {}),
         });
       }
 
@@ -4467,7 +4454,6 @@ Slot esistente aggiornato (nessun ghost).`;
         mealTime: getDefaultMealTime(pastoStorage),
         entrySource: 'other',
       }));
-      ghostTypesCache[pastoStorage] = getGhostMealType(pastoStorage, [...(dailyLog || []), ...nuoviAlimenti]);
     }
 
     const regexWorkout = /\[ALLENAMENTO:\s*([^|\]]+?)\s*\|\s*([0-9.,]+)\]/gi;
@@ -6110,10 +6096,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         return commitAppendInboxDraft(payload);
       }
       const mealTypeCanonical = toCanonicalMealType(String(payload?.mealType || '').trim()) || 'pranzo';
-      const logSnap = dailyLogRef.current || [];
       let action = resolveUpsertActionFromPayload(payload);
-      const existingSlot = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
       const targetNodeIdEarly = String(payload?.targetNodeId || '').trim();
+      const sessionMealSlot = String(payload?.sessionMealSlot || '').trim();
       const ops = Array.isArray(payload?.operations) ? payload.operations : [];
       const isDeltaOnlyMerge =
         action === 'merge'
@@ -6125,8 +6110,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         action = 'replace';
       }
 
-      // Nuovo inserimento: mai fondere nello slot canonico (snack già presente → snack_2).
-      // Merge solo se esplicito (action merge / targetNodeId di modifica).
+      // Merge/replace sul diario SOLO con ID univoco esplicito.
+      // Senza targetNodeId un "merge" è un nuovo nodo, non l'accorpamento sullo slot canonico.
+      if ((action === 'merge' || action === 'replace') && !targetNodeIdEarly) {
+        action = 'append';
+      }
+
       const forceNewSlot =
         payload?.forceNewMealSlot === true
         || (action === 'append' && !targetNodeIdEarly);
@@ -6136,12 +6125,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         mealType: mealTypeCanonical,
         action,
         upsertAction: action,
-        ...(action === 'merge' && existingSlot?.slotId && !targetNodeIdEarly
-          ? { targetNodeId: existingSlot.slotId }
-          : {}),
-        ...(action === 'replace' && !targetNodeIdEarly && existingSlot?.slotId
-          ? { targetNodeId: existingSlot.slotId }
-          : {}),
+        ...(sessionMealSlot ? { sessionMealSlot } : {}),
       };
 
       const fingerprint = buildMealCommitFingerprint(commitPayload, currentTrackerDateRef.current || '');
@@ -6280,71 +6264,64 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
 
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
-      const existingSlotResolved = findExistingCanonicalMealSlot(logSnap, mealTypeCanonical);
 
       if (payload?.upsertById === true || String(payload?.source || '') === 'mcdrive_draft_persist') {
-        const message = commitUpsertMealItemsById({
-          targetNodeId: targetNodeId || existingSlotResolved?.slotId || '',
-          mealType: mealTypeCanonical,
-          timeString,
-          mealDec: existingSlotResolved?.mealTime ?? mealDec,
-          items,
-        });
-        if (message) return message;
+        const persistSlot = targetNodeId || sessionMealSlot;
+        if (persistSlot) {
+          const message = commitUpsertMealItemsById({
+            targetNodeId: persistSlot,
+            mealType: mealTypeCanonical,
+            sessionMealSlot: persistSlot,
+            timeString,
+            mealDec,
+            items,
+          });
+          if (message) return message;
+        }
       }
 
-      // Replace / targetNodeId: sovrascrivi lo slot (niente [...existing, ...incoming]).
+      // Replace / targetNodeId: sovrascrivi SOLO lo slot indicato (mai lo slot canonico omonimo).
       if (action === 'replace' || (targetNodeId && action !== 'merge')) {
-        const slot = targetNodeId || existingSlotResolved?.slotId || '';
-        if (slot) {
+        if (targetNodeId) {
           const message = commitUpdateMealChatPayload({
-            targetNodeId: slot,
+            targetNodeId,
             timeString,
             mealDec,
             items,
             mealType: mealTypeCanonical,
           });
           if (message) return message;
-          const appendMsg = commitAddFoodChatPayload({
-            timeString,
-            mealDec,
-            items,
-            mealType: mealTypeCanonical,
-          });
-          if (appendMsg) return appendMsg;
         }
       }
 
       if (action === 'merge') {
-        const message = commitMergeMealChatPayload({
-          targetNodeId: targetNodeId || existingSlotResolved?.slotId || '',
-          mealType: mealTypeCanonical,
-          timeString,
-          mealDec: existingSlotResolved?.mealTime ?? mealDec,
-          items,
-        });
-        if (message) return message;
-        const appendMsg = commitAddFoodChatPayload({
-          timeString,
-          mealDec,
-          items,
-          mealType: mealTypeCanonical,
-        });
-        if (appendMsg) return appendMsg;
-        throw new Error('Merge pasto fallito');
+        if (targetNodeId) {
+          const message = commitMergeMealChatPayload({
+            targetNodeId,
+            mealType: mealTypeCanonical,
+            timeString,
+            mealDec,
+            items,
+          });
+          if (message) return message;
+        }
       }
 
-      // Nuovo slot: materializza snack_2… prima della scrittura Firebase (nodo e orario indipendenti).
-      const ghostMealType = forceNewSlot || (action === 'append' && !targetNodeId)
-        ? getGhostMealType(mealTypeCanonical, logSnap)
-        : null;
+      // Nuovo nodo: id di sessione `${type}_${Date.now()}` — indipendente da altri spuntini.
+      const newSlotId = sessionMealSlot
+        || (isTimestampMealSlot(String(payload?.mealType || ''))
+          ? String(payload.mealType).trim()
+          : null)
+        || (forceNewSlot || (action === 'append' && !targetNodeId)
+          ? createSessionMealSlotId(mealTypeCanonical)
+          : null);
       const message = commitAddFoodChatPayload({
         timeString,
         mealDec,
         items,
         mealType: mealTypeCanonical,
-        ...(ghostMealType
-          ? { forcedMealSlot: { mealType: ghostMealType, mealTime: mealDec } }
+        ...(newSlotId
+          ? { forcedMealSlot: { mealType: newSlotId, mealTime: mealDec } }
           : {}),
       });
       if (message) return message;
@@ -6366,7 +6343,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       injectMealClockIntoCommandPayload,
       coerceDiaryMealTime,
       toCanonicalMealType,
-      getGhostMealType,
+      createSessionMealSlotId,
+      isTimestampMealSlot,
       userUid,
       db,
       isSimulationMode,
@@ -8222,6 +8200,19 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 metabolicPhaseId={metabolicSnapshot?.phase?.id ?? null}
                 enabled={isInitialLoadComplete}
                 isHydrated={isInitialLoadComplete}
+                onNavigatePrevDay={() => {
+                  const currentDate = new Date((currentTrackerDate || getTodayString()) + 'T12:00:00');
+                  currentDate.setDate(currentDate.getDate() - 1);
+                  navigateToDate(currentDate.toISOString().slice(0, 10));
+                }}
+                onNavigateNextDay={() => {
+                  const currentDate = new Date((currentTrackerDate || getTodayString()) + 'T12:00:00');
+                  currentDate.setDate(currentDate.getDate() + 1);
+                  const nextDay = currentDate.toISOString().slice(0, 10);
+                  if (nextDay <= getTodayString()) {
+                    navigateToDate(nextDay);
+                  }
+                }}
                 onOpenTimeline={openMetabolicTimeline}
                 calibrazioneHandlers={{
                   activeDate: currentTrackerDate || getTodayString(),

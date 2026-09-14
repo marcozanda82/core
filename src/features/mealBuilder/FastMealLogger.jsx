@@ -91,6 +91,12 @@ import {
   getLearnedMealSlotLabel,
   normalizeMealSlotType,
 } from './utils/slotPredictor';
+import {
+  createSessionMealSlotId,
+  retargetSessionMealSlotId,
+  isTimestampMealSlot,
+  isGhostInstanceMealType,
+} from '../../coreEngine';
 
 const QUICK_FOODS_LIMIT = 30;
 const SUGGESTED_FOODS_LIMIT = 6;
@@ -464,9 +470,12 @@ function FastMealLoggerContent({
   autoOpenBarcodeScanner = false,
   onAutoOpenBarcodeScannerConsumed,
 }) {
-  const [selectedSlot, setSelectedSlot] = useState(
-    () => initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId),
-  );
+  const [selectedSlot, setSelectedSlot] = useState(() => {
+    const initial = initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId);
+    if (editingMealId) return initial;
+    if (isTimestampMealSlot(initial) || isGhostInstanceMealType(initial)) return initial;
+    return createSessionMealSlotId(initial);
+  });
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [preferManualSearchEntry, setPreferManualSearchEntry] = useState(false);
   const [preferManualBarcode, setPreferManualBarcode] = useState('');
@@ -541,7 +550,11 @@ function FastMealLoggerContent({
   const handleMealTypeChange = useCallback((nextSlot) => {
     const next = normalizeMealSlotType(nextSlot);
     mealTypeManualRef.current = true;
-    setSelectedSlot(next);
+    setSelectedSlot((prev) => (
+      isTimestampMealSlot(prev) || isGhostInstanceMealType(prev)
+        ? retargetSessionMealSlotId(prev, next)
+        : createSessionMealSlotId(next)
+    ));
     setMealType(next);
   }, [setMealType]);
 
@@ -592,7 +605,13 @@ function FastMealLoggerContent({
     if (mealTypeManualRef.current) return;
     if (!Number.isFinite(Number(mealTime))) return;
     const nextSlot = getLearnedMealSlot(mealTime, fullHistory);
-    setSelectedSlot((prev) => (prev === nextSlot ? prev : nextSlot));
+    setSelectedSlot((prev) => {
+      if (isTimestampMealSlot(prev) || isGhostInstanceMealType(prev)) {
+        const nextId = retargetSessionMealSlotId(prev, nextSlot);
+        return nextId === prev ? prev : nextId;
+      }
+      return prev === nextSlot ? prev : nextSlot;
+    });
   }, [mealTime, fullHistory]);
 
   const notifyItemAdded = (label) => {

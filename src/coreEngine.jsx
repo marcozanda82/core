@@ -149,7 +149,8 @@ function getMealIcon(label) {
 }
 
 /**
- * True se mealType è uno slot ghost (`snack_2`, `pranzo_3`), non un id composito orario (`snack_16.5`).
+ * True se mealType è uno slot ghost (`snack_2`, `pranzo_3`), non un id composito orario (`snack_16.5`)
+ * né un id di sessione timestamp (`snack_1757840000000`).
  */
 function isGhostInstanceMealType(mealType) {
   const str = String(mealType || '').trim();
@@ -158,36 +159,77 @@ function isGhostInstanceMealType(mealType) {
   const suffix = str.slice(str.indexOf('_') + 1);
   if (!base || !/^\d+$/.test(suffix)) return false;
   const n = parseInt(suffix, 10);
-  return Number.isFinite(n) && n >= 2;
+  if (!Number.isFinite(n) || n < 2) return false;
+  if (n >= TIMESTAMP_MEAL_SLOT_MIN) return false;
+  return true;
 }
 
-/** Base mealType senza suffisso ghost/orario (`snack_2` → `snack`, `snack_16.5` → `snack`). */
+/** Suffisso Date.now() (~1.7e12). Distingue snack_2 da snack_1757840000000. */
+const TIMESTAMP_MEAL_SLOT_MIN = 1e11;
+
+/**
+ * True se lo slot è un id di sessione temporale (`snack_1757840000000`).
+ * @param {string} mealType
+ * @returns {boolean}
+ */
+function isTimestampMealSlot(mealType) {
+  const str = String(mealType || '').trim();
+  if (!str.includes('_')) return false;
+  const suffix = str.slice(str.indexOf('_') + 1);
+  if (!/^\d+$/.test(suffix)) return false;
+  const n = parseInt(suffix, 10);
+  return Number.isFinite(n) && n >= TIMESTAMP_MEAL_SLOT_MIN;
+}
+
+/**
+ * Id univoco di sessione inserimento: `${type}_${Date.now()}`.
+ * Stessa schermata → stesso id; nuovo modulo → nuovo timestamp → nodo indipendente.
+ * @param {string} baseType
+ * @param {number} [timestamp]
+ * @returns {string}
+ */
+function createSessionMealSlotId(baseType, timestamp = Date.now()) {
+  const canonical = toCanonicalMealType(getMealTypeBase(baseType)) || 'snack';
+  const ts = Number(timestamp);
+  const safeTs = Number.isFinite(ts) && ts >= TIMESTAMP_MEAL_SLOT_MIN
+    ? Math.floor(ts)
+    : Date.now();
+  return `${canonical}_${safeTs}`;
+}
+
+/**
+ * Cambia il tipo canonico conservando il timestamp di sessione.
+ * @param {string} slotId
+ * @param {string} nextBaseType
+ * @returns {string}
+ */
+function retargetSessionMealSlotId(slotId, nextBaseType) {
+  const canonical = toCanonicalMealType(getMealTypeBase(nextBaseType)) || 'snack';
+  const str = String(slotId || '').trim();
+  if (isTimestampMealSlot(str)) {
+    const ts = str.slice(str.indexOf('_') + 1);
+    return `${canonical}_${ts}`;
+  }
+  return createSessionMealSlotId(canonical);
+}
+
+/** Base mealType senza suffisso ghost/orario/sessione (`snack_2` → `snack`, `snack_16.5` → `snack`). */
 function getMealTypeBase(mealType) {
   const str = String(mealType || '').trim();
   if (!str.includes('_')) return str;
   return str.slice(0, str.indexOf('_'));
 }
 
-function getGhostMealType(baseType, log) {
-  const base = getMealTypeBase(baseType);
-  const canonical = toCanonicalMealType(base);
-  const existingFoods = (log || []).filter(i => i.type === 'food' || i.type === 'recipe');
-  let maxSuffix = 0;
-  let baseExists = false;
-  existingFoods.forEach(f => {
-    const mType = String(f.mealType || '');
-    const mBase = getMealTypeBase(mType);
-    if (toCanonicalMealType(mBase) !== canonical) return;
-    baseExists = true;
-    if (isGhostInstanceMealType(mType)) {
-      const num = parseInt(mType.slice(mType.indexOf('_') + 1), 10);
-      if (!isNaN(num) && num > maxSuffix) maxSuffix = num;
-    } else if (!mType.includes('_') && maxSuffix === 0) {
-      maxSuffix = 1;
-    }
-  });
-  if (!baseExists) return base;
-  return `${base}_${maxSuffix + 1}`;
+/**
+ * Nuovo inserimento: sempre uno slot di sessione univoco (orario = etichetta).
+ * Non riutilizza `snack` / `snack_2` già presenti nel diario.
+ * @param {string} baseType
+ * @param {Array<object>} [_log]
+ * @returns {string}
+ */
+function getGhostMealType(baseType, _log) {
+  void _log;
+  return createSessionMealSlotId(baseType);
 }
 
 function getSlotKey(item) {
@@ -1780,12 +1822,14 @@ export const MEAL_TYPES = [
   { id: 'cena', label: 'Cena' },
 ];
 
-/** Label UI: primo snack → "Spuntino", secondo → "Spuntino 2". */
+/** Label UI: primo snack → "Spuntino", secondo sequenziale → "Spuntino 2".
+ * Slot timestamp (`snack_1757…`) restano "Spuntino" (l'orario è sul nodo timeline). */
 function formatMealSlotLabel(mealType) {
   const str = String(mealType || '').trim();
   const base = getMealTypeBase(str);
   const canonical = toCanonicalMealType(base) || base;
   const name = MEAL_LABELS_SAVE[canonical] || MEAL_LABELS_SAVE[base] || base || 'Pasto';
+  if (isTimestampMealSlot(str)) return name;
   if (isGhostInstanceMealType(str)) {
     const n = parseInt(str.slice(str.indexOf('_') + 1), 10);
     if (Number.isFinite(n) && n >= 2) return `${name} ${n}`;
@@ -5574,6 +5618,9 @@ export {
   getEquivalentMealTypes,
   getMealIcon,
   getGhostMealType,
+  createSessionMealSlotId,
+  retargetSessionMealSlotId,
+  isTimestampMealSlot,
   formatMealSlotLabel,
   isGhostInstanceMealType,
   getMealTypeBase,

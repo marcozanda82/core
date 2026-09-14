@@ -6,8 +6,10 @@
 import { CERTAINTY_LEVELS } from '../contracts/healthSnapshot.types.js';
 import {
   GLOBAL_DRIVER_LIMIT,
+  NEUTRAL_SCORE_BASELINE,
   PILLAR_IDS,
   PILLAR_SCORE_WEIGHTS,
+  PILLAR_STATES,
 } from '../contracts/healthSystem.types.js';
 import { freezeDeep } from '../adapters/healthSnapshotExtractors.js';
 import { pickGlobalDrivers, rankDrivers } from './driverRanking.js';
@@ -24,29 +26,41 @@ function tagDrivers(pillarId, pillar) {
 }
 
 function weightedGlobalScore(pillars) {
-  const rec = Number(pillars.recovery?.score) || 0;
-  const nut = Number(pillars.nutrition?.score) || 0;
-  const act = Number(pillars.activity?.score) || 0;
-  const met = Number(pillars.metabolism?.score) || 0;
   const w = PILLAR_SCORE_WEIGHTS;
-  const score = rec * w.recovery + nut * w.nutrition + act * w.activity + met * w.metabolism;
-  return Math.round(score * 10) / 10;
+  const keys = ['recovery', 'nutrition', 'activity', 'metabolism'];
+  let weighted = 0;
+  let mass = 0;
+  keys.forEach((key) => {
+    const pillar = pillars?.[key];
+    if (!pillar || pillar.state === PILLAR_STATES.NEUTRAL) return;
+    const score = Number(pillar.score);
+    if (!Number.isFinite(score)) return;
+    weighted += score * w[key];
+    mass += w[key];
+  });
+  if (mass <= 0) return NEUTRAL_SCORE_BASELINE;
+  return Math.round((weighted / mass) * 10) / 10;
+}
+
+function tagActionableDrivers(pillarId, pillar) {
+  if (pillar?.evidence?.data?.dayInProgress === true) return [];
+  return tagDrivers(pillarId, pillar);
 }
 
 function emptySnapshotGuard() {
   const emptyInsight = {
-    text: 'Snapshot assente: stato di salute non valutabile.',
+    text: 'In attesa dei dati: lo stato di salute sarà visibile dopo i primi registri.',
     certainty: CERTAINTY_LEVELS.ESTIMATED,
   };
   const emptyPillar = {
     state: 'NEUTRAL',
-    score: 50,
+    score: NEUTRAL_SCORE_BASELINE,
     drivers: [],
     insight: emptyInsight,
     evidence: { type: 'missing', data: null },
   };
   return freezeDeep({
-    score: 50,
+    score: NEUTRAL_SCORE_BASELINE,
     pillars: {
       metabolism: { ...emptyPillar },
       nutrition: { ...emptyPillar },
@@ -60,10 +74,10 @@ function emptySnapshotGuard() {
       selectedActionId: null,
       rejectedActions: [],
       pillarScores: {
-        metabolism: 50,
-        nutrition: 50,
-        activity: 50,
-        recovery: 50,
+        metabolism: NEUTRAL_SCORE_BASELINE,
+        nutrition: NEUTRAL_SCORE_BASELINE,
+        activity: NEUTRAL_SCORE_BASELINE,
+        recovery: NEUTRAL_SCORE_BASELINE,
       },
     },
   });
@@ -80,7 +94,7 @@ export function getHealthSystemState(snapshot) {
 
   const recovery = evaluateRecovery(snapshot.sleep, snapshot.systemic);
   const nutrition = evaluateNutrition(snapshot.nutrition);
-  const activity = evaluateActivity(snapshot.activity);
+  const activity = evaluateActivity(snapshot.activity, snapshot.timestamp);
   const metabolism = evaluateMetabolism(snapshot.metabolic, snapshot.sleep);
 
   const pillars = {
@@ -91,10 +105,10 @@ export function getHealthSystemState(snapshot) {
   };
 
   const tagged = [
-    ...tagDrivers(PILLAR_IDS.RECOVERY, recovery),
-    ...tagDrivers(PILLAR_IDS.NUTRITION, nutrition),
-    ...tagDrivers(PILLAR_IDS.ACTIVITY, activity),
-    ...tagDrivers(PILLAR_IDS.METABOLISM, metabolism),
+    ...tagActionableDrivers(PILLAR_IDS.RECOVERY, recovery),
+    ...tagActionableDrivers(PILLAR_IDS.NUTRITION, nutrition),
+    ...tagActionableDrivers(PILLAR_IDS.ACTIVITY, activity),
+    ...tagActionableDrivers(PILLAR_IDS.METABOLISM, metabolism),
   ];
 
   const driverScores = rankDrivers(tagged);

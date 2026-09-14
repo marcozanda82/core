@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTimelineDrag } from '../useTimelineDrag';
 import { NODE_DRAG_ARM_CANCEL_MOVE_PX } from '../../constants/salaComandiConstants';
-import { getSlotKey, getGhostMealType } from '../../coreEngine';
+import { getSlotKey, createSessionMealSlotId, retargetSessionMealSlotId, isTimestampMealSlot, isGhostInstanceMealType } from '../../coreEngine';
 import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPredictor';
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
@@ -260,33 +260,33 @@ export function useTimelineDiaryActions({
         cena: 20.0,
         snack: 10.5,
       };
-      const slot = normalizeMealSlotType(String(targetMealType || 'pranzo').split('_')[0]);
+      const rawSlot = String(targetMealType || 'pranzo').trim();
+      const slotCanon = normalizeMealSlotType(rawSlot.split('_')[0]);
       const batchId = Date.now();
       const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
 
-      let mealTypeToUse = getGhostMealType(slot, logToUse);
-      let mealTimeToUse = mealTimeBySlot[slot] ?? 13.0;
+      let mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
+        ? rawSlot
+        : createSessionMealSlotId(slotCanon);
+      let mealTimeToUse = mealTimeBySlot[slotCanon] ?? 13.0;
 
       if (editMealId) {
         const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
         if (existing.length > 0) {
           const existingType = String(existing[0]?.mealType || '').trim();
           const existingCanon = normalizeMealSlotType(String(existingType).split('_')[0]);
-          if (existingCanon === slot && existingType) {
-            // Stesso tipo canonico: conserva snack_2 / ghost slot originale.
+          if (existingCanon === slotCanon && existingType) {
+            // Stesso tipo canonico: conserva snack_2 / slot timestamp originale.
             mealTypeToUse = existingType;
           } else {
-            const existingSlotKey = existingType || String(editMealId);
-            const logWithoutThisMeal = logToUse.filter((item) => {
-              if (item?.type !== 'food' && item?.type !== 'recipe') return true;
-              return String(item?.mealType || '') !== String(existingSlotKey);
-            });
-            mealTypeToUse = getGhostMealType(slot, logWithoutThisMeal);
+            mealTypeToUse = createSessionMealSlotId(slotCanon);
           }
           const existingTime = coerceDiaryMealTime(existing[0]?.mealTime);
           if (existingTime != null) mealTimeToUse = existingTime;
         } else {
-          mealTypeToUse = getGhostMealType(slot, logToUse);
+          mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
+            ? rawSlot
+            : createSessionMealSlotId(slotCanon);
         }
       } else if (pendingGhostMealId) {
         const ghost = logToUse.find(

@@ -192,8 +192,8 @@ export function resolveUpsertActionFromPayload(payload = {}) {
  */
 export function buildMealCommitFingerprint(payload = {}, trackerDate = '') {
   const day = String(trackerDate || '').trim();
-  const mealType = String(payload?.mealType || '').trim().toLowerCase().split('_')[0];
-  const target = String(payload?.targetNodeId || '').trim();
+  const mealType = String(payload?.sessionMealSlot || payload?.mealType || '').trim().toLowerCase();
+  const target = String(payload?.targetNodeId || payload?.sessionMealSlot || '').trim();
   const rawItems = Array.isArray(payload?.items) && payload.items.length > 0
     ? payload.items
     : payload?.foodName

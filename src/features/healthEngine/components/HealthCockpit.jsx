@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { DRIVER_DIRECTIONS, PILLAR_STATES } from '../contracts/healthSystem.types.js';
+import React from 'react';
+import { ChevronRight } from 'lucide-react';
+import { PILLAR_STATES } from '../contracts/healthSystem.types.js';
 
 const PILLAR_ORDER = ['metabolism', 'nutrition', 'activity', 'recovery'];
 
@@ -9,24 +9,6 @@ const PILLAR_META = {
   nutrition: { label: 'Nutrizione', icon: '🥗' },
   activity: { label: 'Attività', icon: '🏋️' },
   recovery: { label: 'Recupero', icon: '🌙' },
-};
-
-const DRIVER_LABELS = {
-  SLEEP_DATA_MISSING: 'Sonno mancante',
-  SLEEP_DURATION: 'Durata sonno',
-  SLEEP_QUALITY: 'Qualità sonno',
-  WAKE_REGULARITY: 'Regolarità sveglia',
-  DINNER_SLEEP_BUFFER: 'Finestra cena–sonno',
-  SYSTEMIC_FATIGUE: 'Fatica sistemica',
-  CALORIE_ADHERENCE: 'Copertura calorica',
-  PROTEIN_ADHERENCE: 'Copertura proteica',
-  FIBER_ADHERENCE: 'Copertura fibre',
-  NUTRITION_CONSISTENCY: 'Costanza nutrizionale',
-  CARDIO_LOAD_7D: 'Carico cardio 7g',
-  MUSCLE_STIMULUS: 'Stimolo muscolare',
-  TRAINING_TODAY: 'Allenamento oggi',
-  GLYCEMIC_PENALTY: 'Penalità glicemica',
-  METABOLIC_PHASE: 'Fase metabolica',
 };
 
 const LAB_TOOLS = [
@@ -43,7 +25,7 @@ function stateVisual(state) {
     return { lamp: '🔴', tone: 'overload', label: 'Da migliorare' };
   }
   if (state === PILLAR_STATES.NEUTRAL) {
-    return { lamp: '🟡', tone: 'flexion', label: 'Parziale' };
+    return { lamp: '🟡', tone: 'flexion', label: 'In attesa' };
   }
   return { lamp: '🟡', tone: 'flexion', label: 'In flessione' };
 }
@@ -53,25 +35,6 @@ function scoreTone(score) {
   if (n >= 75) return 'optimal';
   if (n >= 50) return 'flexion';
   return 'overload';
-}
-
-function driverMark(direction) {
-  if (direction === DRIVER_DIRECTIONS.POSITIVE) return { icon: '✓', tone: 'positive' };
-  if (direction === DRIVER_DIRECTIONS.NEGATIVE) return { icon: '⚠', tone: 'negative' };
-  return { icon: '•', tone: 'neutral' };
-}
-
-function driverCaption(driver, pillars) {
-  const id = String(driver?.id || '').trim();
-  const label = DRIVER_LABELS[id] || id.replaceAll('_', ' ').toLowerCase();
-  let insight = '';
-  Object.values(pillars || {}).some((pillar) => {
-    const hit = (pillar?.drivers || []).some((row) => row?.id === id);
-    if (!hit) return false;
-    insight = String(pillar?.insight?.text || '').trim();
-    return Boolean(insight);
-  });
-  return { label, insight };
 }
 
 const TONE_TEXT = {
@@ -98,22 +61,44 @@ export default function HealthCockpit({
   healthState = null,
   isReady = false,
   isLoading = false,
+  dateStr = '',
+  todayStr = '',
+  onNavigatePrevDay = null,
+  onNavigateNextDay = null,
   onOpenLabTool = null,
   onOpenPillarAnalysis = null,
 } = {}) {
   const score = Number(healthState?.score);
   const globalTone = Number.isFinite(score) ? scoreTone(score) : 'flexion';
   const pillars = healthState?.pillars || {};
-  const drivers = Array.isArray(healthState?.globalDrivers) ? healthState.globalDrivers : [];
   const actionText = String(healthState?.primaryAction?.text || '').trim();
-  const [expandedDriverId, setExpandedDriverId] = useState(null);
+  
+  const isToday = String(dateStr || '').slice(0, 10) === String(todayStr || '').slice(0, 10);
+  const isNextDayDisabled = isToday;
+  
+  function formatDisplayDate(isoDate) {
+    if (!isoDate) return '';
+    const [y, m, d] = isoDate.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const today = todayStr ? new Date(todayStr + 'T00:00:00') : new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (isoDate === todayStr) return 'OGGI';
+    if (isoDate === yesterday.toISOString().slice(0, 10)) return 'Ieri';
+    
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
+    return `${dayNames[date.getDay()]} ${d} ${['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'][m - 1]}`;
+  }
+  
+  const displayDate = formatDisplayDate(dateStr);
 
   return (
     <section
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       aria-label="Health Cockpit"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2">
         {isLoading || !isReady || !healthState ? (
           <div className={`${CARD_CLASS} mx-auto mt-10 w-full max-w-md px-6 py-12 text-center`}>
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-500">
@@ -123,6 +108,32 @@ export default function HealthCockpit({
           </div>
         ) : (
           <div className="mx-auto flex w-full max-w-md flex-col gap-5">
+            {displayDate && (
+              <div className="flex items-center justify-between gap-3 px-1">
+                <button
+                  type="button"
+                  onClick={() => onNavigatePrevDay?.()}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:border-white/20 hover:bg-white/10 active:scale-95 disabled:opacity-30"
+                  aria-label="Giorno precedente"
+                >
+                  <span className="text-lg">‹</span>
+                </button>
+                <div className="min-w-0 flex-1 text-center">
+                  <p className={`${isToday ? 'text-2xl font-bold' : 'text-lg font-semibold'} leading-tight text-zinc-100`}>
+                    {displayDate}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigateNextDay?.()}
+                  disabled={isNextDayDisabled}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:border-white/20 hover:bg-white/10 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
+                  aria-label="Giorno successivo"
+                >
+                  <span className="text-lg">›</span>
+                </button>
+              </div>
+            )}
             <header className="text-center">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-zinc-500">
                 Health Cockpit
@@ -168,75 +179,6 @@ export default function HealthCockpit({
                   </button>
                 );
               })}
-            </div>
-
-            <div className={CARD_CLASS}>
-              <h2 className="px-4 pt-4 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
-                Cosa sta guidando il risultato
-              </h2>
-              <ul className="mt-1 px-2 pb-3">
-                {drivers.length === 0 ? (
-                  <li className="px-2 py-3 text-sm text-zinc-500">Nessun driver dominante.</li>
-                ) : (
-                  drivers.map((driver) => {
-                    const mark = driverMark(driver.direction);
-                    const caption = driverCaption(driver, pillars);
-                    const expanded = expandedDriverId === driver.id;
-                    return (
-                      <li key={driver.id}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDriverId(expanded ? null : driver.id)}
-                          aria-expanded={expanded}
-                          className="flex w-full cursor-pointer items-start gap-3 rounded-xl px-2 py-2.5 text-left transition-colors hover:bg-white/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40"
-                        >
-                          <span
-                            className={[
-                              'mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold',
-                              mark.tone === 'positive'
-                                ? 'bg-emerald-500/15 text-emerald-300'
-                                : mark.tone === 'negative'
-                                  ? 'bg-amber-500/15 text-amber-300'
-                                  : 'bg-white/10 text-zinc-400',
-                            ].join(' ')}
-                            aria-hidden
-                          >
-                            {mark.icon}
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2">
-                              <span className="min-w-0 flex-1 text-sm font-medium text-zinc-200">
-                                {caption.label}
-                              </span>
-                              <ChevronDown
-                                size={16}
-                                strokeWidth={2.2}
-                                className={[
-                                  'shrink-0 text-zinc-500 transition-transform duration-200',
-                                  expanded ? 'rotate-180' : 'rotate-0',
-                                ].join(' ')}
-                                aria-hidden
-                              />
-                            </span>
-                            <span
-                              className={[
-                                'grid transition-all duration-200 ease-out',
-                                expanded ? 'mt-1.5 grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
-                              ].join(' ')}
-                            >
-                              <span className="overflow-hidden">
-                                <span className="block text-sm leading-snug text-zinc-400">
-                                  {caption.insight || 'Nessun dettaglio aggiuntivo per questo driver.'}
-                                </span>
-                              </span>
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
             </div>
 
             {actionText ? (

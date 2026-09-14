@@ -113,6 +113,7 @@ import {
   formatPeriodReportMarkdown,
   matchReportCommand,
 } from './conversation/reportCommandIntent.js';
+import { createSessionMealSlotId, retargetSessionMealSlotId } from '../../coreEngine.jsx';
 import {
   MCDRIVE_CANCEL_CHIP,
   MCDRIVE_FINISH_CHIP,
@@ -468,6 +469,8 @@ export class CommandTerminalController {
     this.mcdriveValidationContext = null;
     /** @type {string|null} Slot diario in editing (McDrive). */
     this.mcdriveEditingMealId = null;
+    /** @type {string|null} Id univoco di sessione (`snack_1757…`) per non fondere spuntini. */
+    this.mcdriveSessionSlotId = null;
     /** Bozze raw già scritte sul Diario: il Salva aggiorna per id, non crea un nuovo slot. */
     this.mcdriveDraftPersisted = false;
     /** Evita overlap se processNext viene richiamato mentre è in corso. */
@@ -542,6 +545,7 @@ export class CommandTerminalController {
     this.mcdriveValidationRunning = false;
     this.mcdriveDraftPersisted = false;
     this.mcdriveEditingMealId = null;
+    this.mcdriveSessionSlotId = null;
   }
 
   clearChipWaitingState() {
@@ -572,6 +576,7 @@ export class CommandTerminalController {
     this.pendingMcDriveUnknown = null;
     this.mcdriveMealType = null;
     this.mcdriveEditingMealId = null;
+    this.mcdriveSessionSlotId = null;
     this.mcdriveExactTime = null;
     this.mcdriveTimeString = null;
     this.mcdriveContextState = null;
@@ -690,6 +695,7 @@ export class CommandTerminalController {
     }
     this.mcdriveMealType = mealType;
     this.pendingMcDriveDraft = createEmptyMcDriveDraft();
+    this.mcdriveSessionSlotId = createSessionMealSlotId(mealType);
     if (!String(this.mcdriveExactTime || '').trim()) {
       const timeCtx = formatCurrentSystemTimeContext();
       this.mcdriveExactTime = timeCtx.timeHHmm;
@@ -715,6 +721,11 @@ export class CommandTerminalController {
       || this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM;
     if (alreadyOpen) {
       this.mcdriveMealType = mealType;
+      if (this.mcdriveSessionSlotId) {
+        this.mcdriveSessionSlotId = retargetSessionMealSlotId(this.mcdriveSessionSlotId, mealType);
+      } else if (!this.mcdriveEditingMealId) {
+        this.mcdriveSessionSlotId = createSessionMealSlotId(mealType);
+      }
       return this.publishMcdriveTrayMessage('');
     }
     return this.setMcdriveMealTypeAndOpen(mealType);
@@ -844,6 +855,7 @@ export class CommandTerminalController {
 
     this.mcdriveMealType = mealType;
     this.pendingMcDriveDraft = hydratedDraft;
+    this.mcdriveSessionSlotId = editingMealId;
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     return this.publishMcdriveTrayMessage('');
@@ -1024,19 +1036,25 @@ export class CommandTerminalController {
       this.mcdriveExactTime || this.mcdriveTimeString || timeCtx.timeHHmm,
     ).trim();
     const editingMealId = String(this.mcdriveEditingMealId || '').trim();
+    const sessionSlotId = editingMealId
+      || this.mcdriveSessionSlotId
+      || createSessionMealSlotId(mealType);
+    this.mcdriveSessionSlotId = sessionSlotId;
 
+    const alreadyPersisted = this.mcdriveDraftPersisted === true;
     this.mcdriveDraftPersisted = true;
     this.bus.publish(
       DISPATCH_UPSERT_MEAL,
       {
         mealType,
+        sessionMealSlot: sessionSlotId,
         items: persistItems,
-        action: 'append',
-        upsertAction: 'append',
-        forceNewMealSlot: false,
-        upsertById: true,
+        action: alreadyPersisted || editingMealId ? (editingMealId ? 'replace' : 'merge') : 'append',
+        upsertAction: alreadyPersisted || editingMealId ? (editingMealId ? 'replace' : 'merge') : 'append',
+        forceNewMealSlot: !alreadyPersisted && !editingMealId,
+        upsertById: alreadyPersisted && !editingMealId,
         source: 'mcdrive_draft_persist',
-        ...(editingMealId ? { targetNodeId: editingMealId } : {}),
+        ...(editingMealId || alreadyPersisted ? { targetNodeId: sessionSlotId } : {}),
         ...(exactTime ? { exactTime, timeString: exactTime } : {}),
       },
       {
@@ -1772,6 +1790,9 @@ export class CommandTerminalController {
       ? (normalizeMcdriveMealType(this.mcdriveMealType) || mealType)
       : mealType;
     const draftPersisted = this.mcdriveDraftPersisted === true;
+    const sessionSlotId = isEditingLoggedMeal
+      ? editingMealId
+      : (this.mcdriveSessionSlotId || createSessionMealSlotId(mealTypeForPayload));
 
     let payload = normalizeFoodPayload(
       {
@@ -1804,12 +1825,13 @@ export class CommandTerminalController {
       DISPATCH_UPSERT_MEAL,
       {
         mealType: resolvedMealType,
+        sessionMealSlot: sessionSlotId,
         items: itemsForCommit,
         action: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
         upsertAction: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
         upsertById: draftPersisted && !isEditingLoggedMeal,
         forceNewMealSlot: !isEditingLoggedMeal && !draftPersisted,
-        ...(isEditingLoggedMeal ? { targetNodeId: editingMealId } : {}),
+        ...(isEditingLoggedMeal || draftPersisted ? { targetNodeId: sessionSlotId } : {}),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(exactTime ? {
           exactTime,
