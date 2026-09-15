@@ -56,6 +56,8 @@ const CARD_CLASS = [
 
 /**
  * Genera una frase di sintesi umana basata sugli stati dei 4 pilastri.
+ * Funzione PURA spostata fuori dal componente per evitare ricreazione a ogni render.
+ * 
  * @param {object} pillars - I 4 pilastri (metabolism, nutrition, activity, recovery)
  * @returns {string} - Frase di 1 riga che descrive lo stato complessivo
  */
@@ -118,6 +120,7 @@ function generateHealthSummary(pillars = {}) {
 
 /**
  * Livello 1 — Health Cockpit. Solo presentazione di `HealthSystemState`.
+ * Performance: generateHealthSummary è PURA e definita fuori (no re-creation).
  */
 export default function HealthCockpit({
   healthState = null,
@@ -243,8 +246,14 @@ export default function HealthCockpit({
                 onClick={() => onOpenLabTool?.('STRUMENTI_LEGACY')}
                 className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
               >
-                {/* Immagine di sfondo */}
-                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/bussola.png')" }}></div>
+                {/* Immagine di sfondo ottimizzata */}
+                <img 
+                  src="/strumenti/bussola.png" 
+                  alt="Bussola metabolica" 
+                  loading="lazy" 
+                  decoding="async" 
+                  className="absolute inset-0 w-full h-full object-cover opacity-80" 
+                />
                 {/* Gradiente Oblò */}
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
                 {/* Testo in primo piano */}
@@ -263,7 +272,13 @@ export default function HealthCockpit({
                 onClick={() => onOpenLabTool?.('TIMELINE')}
                 className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
               >
-                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/timeline.png')" }}></div>
+                <img 
+                  src="/strumenti/timeline.png" 
+                  alt="Timeline 24H" 
+                  loading="lazy" 
+                  decoding="async" 
+                  className="absolute inset-0 w-full h-full object-cover opacity-80" 
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 p-4 w-full">
                   <div className="flex items-center gap-2 mb-0.5">
@@ -280,7 +295,13 @@ export default function HealthCockpit({
                 onClick={() => onOpenLabTool?.('AUTOPILOTA')}
                 className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
               >
-                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/calibrazione.png')" }}></div>
+                <img 
+                  src="/strumenti/calibrazione.png" 
+                  alt="Calibrazione" 
+                  loading="lazy" 
+                  decoding="async" 
+                  className="absolute inset-0 w-full h-full object-cover opacity-80" 
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
                 <div className="absolute bottom-0 left-0 p-4 w-full">
                   <div className="flex items-center gap-2 mb-0.5">
