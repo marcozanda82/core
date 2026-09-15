@@ -13,8 +13,7 @@ import {
   WORKOUT_MUSCLE_GROUP_DEFS,
   normalizeMuscleGroupArray,
 } from '../activityCatalog';
-import ProgressionScoreWidget from '../features/trendHub/components/ProgressionScoreWidget';
-import SaluteLongevityHero from '../features/trendHub/components/SaluteLongevityHero';
+import HomeHealthIndicators from './HomeHealthIndicators';
 import useHomeProgressionSwap from '../hooks/salaComandi/useHomeProgressionSwap';
 import {
   calculateProgressionScore,
@@ -495,39 +494,19 @@ export default function TrainingBlockWidget({
 
   const scoresSlide = (
     <div
-      className={`${CARD_CLASS} !py-2`}
+      className="home-oggi-rigid mb-0"
       aria-label="Punteggi Progressione e Longevità"
     >
-      <div className="grid w-full max-w-full grid-cols-2 items-center gap-2">
-        {leftRingMode === 'strength' ? (
-          <ProgressionScoreWidget
-            compact
-            size={96}
-            label="Progressione"
-            score={progressionResult?.finalScore}
-            breakdown={progressionResult?.breakdown}
-            onClick={typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined}
-          />
-        ) : (
-          <ProgressionScoreWidget
-            compact
-            size={96}
-            label="Cardio"
-            score={cardioScore}
-            onClick={
-              typeof onOpenLongevity === 'function'
-                ? onOpenLongevity
-                : (typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined)
-            }
-          />
-        )}
-        <SaluteLongevityHero
-          compact
-          size={96}
-          score={longevityResult?.finalScore}
-          onClick={typeof onOpenLongevity === 'function' ? onOpenLongevity : undefined}
-        />
-      </div>
+      <HomeHealthIndicators
+        fullHistory={fullHistory}
+        todayIso={dayKey}
+        fourCylinder={fourCylinder}
+        progressionScore={progressionResult?.finalScore}
+        cardioScore={cardioScore}
+        longevityScore={longevityResult?.finalScore}
+        onOpenProgressione={typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined}
+        onOpenLongevity={typeof onOpenLongevity === 'function' ? onOpenLongevity : undefined}
+      />
     </div>
   );
 

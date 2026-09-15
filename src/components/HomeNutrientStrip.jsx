@@ -35,6 +35,7 @@ function blockTabSwipeBubble(e) {
 /**
  * @param {{
  *   label: string,
+ *   emoji: string,
  *   color: string,
  *   borderClass: string,
  *   value: number | string,
@@ -43,7 +44,7 @@ function blockTabSwipeBubble(e) {
  *   onClick: () => void,
  * }} props
  */
-function NutrientChip({ label, color, borderClass, value, target, unit, onClick }) {
+function NutrientChip({ label, emoji, color, borderClass, value, target, unit, onClick }) {
   const blockTouchStartEnd = useCallback((e) => {
     blockTabSwipeBubble(e);
   }, []);
@@ -52,11 +53,15 @@ function NutrientChip({ label, color, borderClass, value, target, unit, onClick 
     blockTabSwipeBubble(e);
   }, []);
 
+  const numValue = Number(value) || 0;
+  const numTarget = Number(target) || 1;
+  const pct = Math.min(100, (numValue / numTarget) * 100);
+
   return (
     <div
       role="button"
       tabIndex={0}
-      className={`${CHIP_CLASS} ${borderClass}`}
+      className={`${CHIP_CLASS} ${borderClass} relative`}
       onKeyDown={(ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
           ev.preventDefault();
@@ -72,6 +77,7 @@ function NutrientChip({ label, color, borderClass, value, target, unit, onClick 
       onTouchEnd={blockTouchStartEnd}
       onTouchCancel={blockTouchStartEnd}
     >
+      {/* Header: emoji + label */}
       <div
         style={{
           color,
@@ -80,15 +86,36 @@ function NutrientChip({ label, color, borderClass, value, target, unit, onClick 
           textTransform: 'uppercase',
           marginBottom: '4px',
           whiteSpace: 'nowrap',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
         }}
       >
+        <span style={{ fontSize: '0.9rem' }}>{emoji}</span>
         {label}
       </div>
-      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+
+      {/* Value */}
+      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap', marginBottom: '8px' }}>
         {value}{' '}
         <span style={{ color: '#555', fontSize: '0.75rem' }}>
           / {target} {unit}
         </span>
+      </div>
+
+      {/* Progress bar (footer) */}
+      <div
+        className="absolute bottom-0 left-0 right-0 h-1 rounded-full bg-white/10"
+        style={{ margin: '0' }}
+      >
+        <div
+          className="h-full rounded-full transition-all duration-300"
+          style={{
+            width: `${pct}%`,
+            backgroundColor: color,
+            boxShadow: `0 0 6px ${color}99`,
+          }}
+        />
       </div>
     </div>
   );
@@ -168,6 +195,7 @@ export default function HomeNutrientStrip({
     >
       <NutrientChip
         label="Proteine"
+        emoji="🥩"
         color="#b666d2"
         borderClass="border-[#b666d2]/35"
         value={Math.round(totali.prot || 0)}
@@ -177,6 +205,7 @@ export default function HomeNutrientStrip({
       />
       <NutrientChip
         label="Carboidrati"
+        emoji="🌾"
         color="#00ff88"
         borderClass="border-[#00ff88]/35"
         value={Math.round(totali.carb || 0)}
@@ -186,6 +215,7 @@ export default function HomeNutrientStrip({
       />
       <NutrientChip
         label="Grassi"
+        emoji="🥑"
         color="#ffd700"
         borderClass="border-[#ffd700]/35"
         value={Math.round(totali.fatTotal ?? totali.fat ?? 0)}

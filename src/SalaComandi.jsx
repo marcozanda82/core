@@ -7870,7 +7870,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setSelectedNodeReport(null);
           setShowReportModal(false);
         }}
-        dateLabel={currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' })}
+        dateLabel={(() => {
+          const todayStr = getTodayString();
+          if (currentTrackerDate === todayStr) return 'OGGI';
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().slice(0, 10);
+          if (currentTrackerDate === yesterdayStr) return 'IERI';
+          return currentDateObj.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
+        })()}
         onPrevDay={() => changeDate(-1)}
         onNextDay={() => changeDate(1)}
         onOpenCalendar={() => {

@@ -41,7 +41,7 @@ export default function AppHeader({
               className="block h-auto max-h-[52px] w-auto max-w-full bg-transparent object-contain object-left"
             />
           </button>
-          <div className="flex min-w-0 flex-nowrap items-center gap-1">
+          <div className="flex flex-1 flex-nowrap items-center justify-center gap-1 min-w-max">
             <button
               type="button"
               onClick={onPrevDay}
@@ -53,7 +53,9 @@ export default function AppHeader({
             <button
               type="button"
               onClick={onOpenCalendar}
-              className="cursor-pointer truncate border-none bg-transparent px-1.5 text-center text-[0.85rem] font-bold whitespace-nowrap text-white"
+              className={`cursor-pointer border-none bg-transparent px-1.5 text-center whitespace-nowrap text-white ${
+                dateLabel === 'OGGI' ? 'text-[1rem] font-extrabold' : 'text-[0.85rem] font-bold'
+              }`}
               aria-label="Apri calendario storico"
               title="Apri calendario storico"
             >

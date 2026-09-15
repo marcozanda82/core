@@ -55,16 +55,74 @@ const CARD_CLASS = [
 ].join(' ');
 
 /**
+ * Genera una frase di sintesi umana basata sugli stati dei 4 pilastri.
+ * @param {object} pillars - I 4 pilastri (metabolism, nutrition, activity, recovery)
+ * @returns {string} - Frase di 1 riga che descrive lo stato complessivo
+ */
+function generateHealthSummary(pillars = {}) {
+  const states = PILLAR_ORDER.map((id) => ({
+    id,
+    state: pillars[id]?.state,
+    label: PILLAR_META[id]?.label || id,
+  }));
+
+  const optimal = states.filter((p) => p.state === PILLAR_STATES.OPTIMAL);
+  const overload = states.filter((p) => p.state === PILLAR_STATES.OVERLOAD);
+  const flexion = states.filter((p) => p.state === PILLAR_STATES.FLEXION);
+  const neutral = states.filter((p) => p.state === PILLAR_STATES.NEUTRAL);
+
+  // Giornata appena iniziata (Nutrizione e Attività in attesa)
+  if (neutral.length >= 2 && neutral.some((p) => p.id === 'nutrition') && neutral.some((p) => p.id === 'activity')) {
+    return 'Giornata appena iniziata, attendiamo nuovi dati.';
+  }
+
+  // Tutto ottimale
+  if (optimal.length === 4) {
+    return 'Tutto in equilibrio, mantieni la rotta.';
+  }
+
+  // Almeno un ottimale e almeno un problema
+  if (optimal.length > 0 && (overload.length > 0 || flexion.length > 0)) {
+    const bestPillar = optimal[0].label.toLowerCase();
+    const worstPillar = overload.length > 0 ? overload[0] : flexion[0];
+    const worstLabel = worstPillar.label.toLowerCase();
+    
+    if (worstPillar.id === 'activity') {
+      return `Ottimo ${bestPillar}, ma l'attività fisica scarseggia.`;
+    }
+    if (worstPillar.id === 'nutrition') {
+      return `Ottimo ${bestPillar}, ma la nutrizione ha margini di miglioramento.`;
+    }
+    if (worstPillar.id === 'recovery') {
+      return `Ottimo ${bestPillar}, ma il recupero necessita attenzione.`;
+    }
+    if (worstPillar.id === 'metabolism') {
+      return `Ottimo ${bestPillar}, ma il metabolismo è sotto pressione.`;
+    }
+    return `Ottimo ${bestPillar}, ma ${worstLabel} richiede attenzione.`;
+  }
+
+  // Prevalentemente problemi
+  if (overload.length >= 2) {
+    return 'Diversi aspetti da migliorare: ascolta i suggerimenti.';
+  }
+
+  // Mix di stati intermedi
+  if (flexion.length >= 2) {
+    return 'In fase di assestamento, continua a monitorare.';
+  }
+
+  // Fallback generico
+  return 'Sistema in analisi, consulta i dettagli dei pilastri.';
+}
+
+/**
  * Livello 1 — Health Cockpit. Solo presentazione di `HealthSystemState`.
  */
 export default function HealthCockpit({
   healthState = null,
   isReady = false,
   isLoading = false,
-  dateStr = '',
-  todayStr = '',
-  onNavigatePrevDay = null,
-  onNavigateNextDay = null,
   onOpenLabTool = null,
   onOpenPillarAnalysis = null,
 } = {}) {
@@ -72,33 +130,13 @@ export default function HealthCockpit({
   const globalTone = Number.isFinite(score) ? scoreTone(score) : 'flexion';
   const pillars = healthState?.pillars || {};
   const actionText = String(healthState?.primaryAction?.text || '').trim();
-  
-  const isToday = String(dateStr || '').slice(0, 10) === String(todayStr || '').slice(0, 10);
-  const isNextDayDisabled = isToday;
-  
-  function formatDisplayDate(isoDate) {
-    if (!isoDate) return '';
-    const [y, m, d] = isoDate.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    const today = todayStr ? new Date(todayStr + 'T00:00:00') : new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (isoDate === todayStr) return 'OGGI';
-    if (isoDate === yesterday.toISOString().slice(0, 10)) return 'Ieri';
-    
-    const dayNames = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
-    return `${dayNames[date.getDay()]} ${d} ${['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'][m - 1]}`;
-  }
-  
-  const displayDate = formatDisplayDate(dateStr);
 
   return (
     <section
       className="flex min-h-0 flex-1 flex-col overflow-hidden"
       aria-label="Health Cockpit"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-4 pt-2">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-2">
         {isLoading || !isReady || !healthState ? (
           <div className={`${CARD_CLASS} mx-auto mt-10 w-full max-w-md px-6 py-12 text-center`}>
             <p className="text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-500">
@@ -108,32 +146,6 @@ export default function HealthCockpit({
           </div>
         ) : (
           <div className="mx-auto flex w-full max-w-md flex-col gap-5">
-            {displayDate && (
-              <div className="flex items-center justify-between gap-3 px-1">
-                <button
-                  type="button"
-                  onClick={() => onNavigatePrevDay?.()}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:border-white/20 hover:bg-white/10 active:scale-95 disabled:opacity-30"
-                  aria-label="Giorno precedente"
-                >
-                  <span className="text-lg">‹</span>
-                </button>
-                <div className="min-w-0 flex-1 text-center">
-                  <p className={`${isToday ? 'text-2xl font-bold' : 'text-lg font-semibold'} leading-tight text-zinc-100`}>
-                    {displayDate}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onNavigateNextDay?.()}
-                  disabled={isNextDayDisabled}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition hover:border-white/20 hover:bg-white/10 active:scale-95 disabled:cursor-not-allowed disabled:opacity-30"
-                  aria-label="Giorno successivo"
-                >
-                  <span className="text-lg">›</span>
-                </button>
-              </div>
-            )}
             <header className="text-center">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-zinc-500">
                 Health Cockpit
@@ -144,8 +156,8 @@ export default function HealthCockpit({
               >
                 {Math.round(score)}
               </div>
-              <p className="mt-2 text-xs font-medium uppercase tracking-[0.16em] text-zinc-500">
-                Score sistema
+              <p className="mt-2 px-4 text-sm font-medium leading-snug text-zinc-400">
+                {generateHealthSummary(pillars)}
               </p>
             </header>
 
@@ -181,9 +193,36 @@ export default function HealthCockpit({
               })}
             </div>
 
+            <div className="grid grid-cols-2 gap-3 mt-6 mb-4 w-full">
+              {/* Cardio */}
+              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
+                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">🏃 CARDIO</span></div>
+                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">45</span> <span className="text-xs text-zinc-500">/ 150 min</span></div>
+                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-cyan-500" style={{ width: '30%' }}></div></div>
+              </div>
+              {/* Forza */}
+              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
+                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">🏋️ FORZA</span></div>
+                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">4</span> <span className="text-xs text-zinc-500">/ 5 distr.</span></div>
+                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-purple-500" style={{ width: '80%' }}></div></div>
+              </div>
+              {/* Sonno */}
+              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
+                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">😴 SONNO</span></div>
+                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">7.2</span> <span className="text-xs text-zinc-500">h</span></div>
+                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-amber-400" style={{ width: '90%' }}></div></div>
+              </div>
+              {/* Digiuno */}
+              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
+                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">⏱️ DIGIUNO</span></div>
+                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">14</span> <span className="text-xs text-zinc-500">h</span></div>
+                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-emerald-500" style={{ width: '85%' }}></div></div>
+              </div>
+            </div>
+
             {actionText ? (
               <div
-                className={`${CARD_CLASS} border-cyan-400/25 bg-gradient-to-br from-cyan-950/50 via-zinc-950/70 to-zinc-950/80 px-4 py-4`}
+                className={`${CARD_CLASS} border-cyan-400/25 bg-gradient-to-br from-cyan-950/50 via-zinc-950/70 to-zinc-950/80 px-4 py-4 mt-6`}
                 aria-label="Azione primaria"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-cyan-400/80">
@@ -194,33 +233,67 @@ export default function HealthCockpit({
                 </p>
               </div>
             ) : null}
+
+            {/* Carosello Widget Laboratorio - Effetto Oblò */}
+            <div className="flex overflow-x-auto gap-4 snap-x snap-mandatory px-4 pb-12 pt-2 mt-12 -mx-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              
+              {/* Card 1: STRUMENTI */}
+              <button
+                type="button"
+                onClick={() => onOpenLabTool?.('STRUMENTI_LEGACY')}
+                className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
+              >
+                {/* Immagine di sfondo */}
+                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/bussola.png')" }}></div>
+                {/* Gradiente Oblò */}
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
+                {/* Testo in primo piano */}
+                <div className="absolute bottom-0 left-0 p-4 w-full">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-lg">🧰</span>
+                    <h3 className="font-bold text-zinc-100 text-sm tracking-widest uppercase">Strumenti</h3>
+                  </div>
+                  <p className="text-xs text-zinc-400 font-medium">Bussola metabolica</p>
+                </div>
+              </button>
+
+              {/* Card 2: TIMELINE */}
+              <button
+                type="button"
+                onClick={() => onOpenLabTool?.('TIMELINE')}
+                className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
+              >
+                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/timeline.png')" }}></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
+                <div className="absolute bottom-0 left-0 p-4 w-full">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-lg">📈</span>
+                    <h3 className="font-bold text-zinc-100 text-sm tracking-widest uppercase">Timeline 24H</h3>
+                  </div>
+                  <p className="text-xs text-zinc-400 font-medium">Dinamiche in tempo reale</p>
+                </div>
+              </button>
+
+              {/* Card 3: CALIBRAZIONE */}
+              <button
+                type="button"
+                onClick={() => onOpenLabTool?.('AUTOPILOTA')}
+                className="relative w-[260px] h-36 shrink-0 rounded-3xl overflow-hidden snap-center group border border-white/5 text-left transition-transform active:scale-95"
+              >
+                <div className="absolute inset-0 bg-cover bg-center opacity-80" style={{ backgroundImage: "url('/strumenti/calibrazione.png')" }}></div>
+                <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/70 to-transparent"></div>
+                <div className="absolute bottom-0 left-0 p-4 w-full">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className="text-lg">⚙️</span>
+                    <h3 className="font-bold text-zinc-100 text-sm tracking-widest uppercase">Calibrazione</h3>
+                  </div>
+                  <p className="text-xs text-zinc-400 font-medium">Target & Bilancio</p>
+                </div>
+              </button>
+
+            </div>
           </div>
         )}
-      </div>
-
-      <div
-        className="shrink-0 border-t border-white/5 bg-zinc-950/90 pt-2"
-        style={{ paddingBottom: 'calc(4.25rem + env(safe-area-inset-bottom, 0px))' }}
-      >
-        <div
-          className="flex w-full gap-2 px-3 pb-3"
-          role="toolbar"
-          aria-label="Laboratorio"
-        >
-          {LAB_TOOLS.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              onClick={() => onOpenLabTool?.(tool.id)}
-              className="flex flex-1 flex-col items-center justify-center gap-1 rounded-2xl border border-white/5 bg-zinc-900/80 py-3 transition-colors hover:border-white/10 hover:bg-zinc-800/90 active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40"
-            >
-              <span className="text-xl leading-none" aria-hidden>{tool.icon}</span>
-              <span className="px-0.5 text-center text-[10px] font-bold uppercase leading-tight tracking-widest text-zinc-400">
-                {tool.label}
-              </span>
-            </button>
-          ))}
-        </div>
       </div>
     </section>
   );
