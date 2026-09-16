@@ -75,17 +75,33 @@ export function useHealthSystemState({
   const historySubset = useMemo(() => {
     if (!fullHistory || typeof fullHistory !== 'object') return {};
     
-    const iso = String(dateStr || '').slice(0, 10);
-    const currentDayKey = trackerStoricoKey(iso);
+    // 1. Parsing sicuro della data (paracadute per initial render)
+    let currentDate = new Date(); // Fallback a oggi
+    if (dateStr) {
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        currentDate = parsedDate; // Usa dateStr solo se è una data valida
+      }
+    }
+    
+    const iso = currentDate.toISOString().slice(0, 10);
+    const currentDayKey = typeof trackerStoricoKey === 'function' 
+      ? trackerStoricoKey(iso) 
+      : `trackerStorico_${iso}`; // Fallback se non è una funzione
     
     // Estrai solo il giorno corrente e gli ultimi 14 giorni (per il calcolo settimanale)
     const relevantKeys = [currentDayKey];
-    const currentDate = new Date(iso);
     
+    // 2. Creazione chiavi per i 14 giorni precedenti
     for (let i = 1; i <= 14; i++) {
       const pastDate = new Date(currentDate);
       pastDate.setDate(pastDate.getDate() - i);
-      const pastKey = trackerStoricoKey(pastDate.toISOString().slice(0, 10));
+      const pastIso = pastDate.toISOString().slice(0, 10);
+      
+      const pastKey = typeof trackerStoricoKey === 'function'
+        ? trackerStoricoKey(pastIso)
+        : `trackerStorico_${pastIso}`;
+      
       relevantKeys.push(pastKey);
     }
     
@@ -121,6 +137,13 @@ export function useHealthSystemState({
   const snapshot = useMemo(() => {
     if (!isReady) return null;
     const iso = String(dateStr || '').slice(0, 10);
+    
+    // 🔍 DEBUG LOG 1: Verifica ingresso dati al hook
+    console.log('1️⃣ HOOK - dailyLog types:', (dailyLog || []).map(i => i?.type).join(', '));
+    console.log('1️⃣ HOOK - manualNodes types:', (manualNodes || []).map(i => i?.type).join(', '));
+    console.log('1️⃣ HOOK - Has sleep in dailyLog?', (dailyLog || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
+    console.log('1️⃣ HOOK - Has sleep in manualNodes?', (manualNodes || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
+    
     return getHealthSnapshot({
       trackerStoricoDay: buildTrackerStoricoDay({
         dailyLog,

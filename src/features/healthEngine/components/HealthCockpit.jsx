@@ -128,6 +128,7 @@ export default function HealthCockpit({
   isLoading = false,
   onOpenLabTool = null,
   onOpenPillarAnalysis = null,
+  onCopyDebugJson = null,
 } = {}) {
   const score = Number(healthState?.score);
   const globalTone = Number.isFinite(score) ? scoreTone(score) : 'flexion';
@@ -163,6 +164,30 @@ export default function HealthCockpit({
                 {generateHealthSummary(pillars)}
               </p>
             </header>
+
+            {/* 🎯 DIRETTIVA DI SISTEMA - Azione Prioritaria */}
+            {healthState?.primaryAction?.text && (
+              <div className="mx-6 mt-2 mb-8 p-4 bg-zinc-900/60 backdrop-blur-md border border-white/10 rounded-2xl flex items-center gap-4 shadow-lg">
+                {/* Icona Target */}
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <circle cx="12" cy="12" r="6"></circle>
+                    <circle cx="12" cy="12" r="2"></circle>
+                  </svg>
+                </div>
+                
+                {/* Testo dell'azione */}
+                <div className="flex-1">
+                  <h3 className="text-xs font-bold tracking-wider text-cyan-500 uppercase mb-1">
+                    Obiettivo Primario
+                  </h3>
+                  <p className="text-sm text-zinc-200 font-medium leading-snug">
+                    {healthState.primaryAction.text}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3" aria-label="Quattro pilastri">
               {PILLAR_ORDER.map((id) => {
@@ -313,6 +338,21 @@ export default function HealthCockpit({
               </button>
 
             </div>
+
+            {/* 🐞 Pulsante Debug JSON (solo quando dati disponibili) */}
+            {healthState && onCopyDebugJson && (
+              <div className="mt-8 px-4">
+                <button
+                  type="button"
+                  onClick={onCopyDebugJson}
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl border border-zinc-700/50 bg-zinc-900/50 px-4 py-3 text-xs font-semibold text-zinc-400 transition-all hover:border-zinc-600 hover:bg-zinc-800/70 hover:text-zinc-300 active:scale-[0.98]"
+                  aria-label="Copia dati debug in formato JSON"
+                >
+                  <span className="text-base">🐞</span>
+                  <span>Copia JSON Debug</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

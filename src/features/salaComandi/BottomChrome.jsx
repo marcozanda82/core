@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, BookOpen } from 'lucide-react';
+import { Gauge, BookOpen } from 'lucide-react';
 
 /**
  * Bottom Navigation "Arc Reactor": tab con icona + label + slot centrale (Emblema flottante da SalaComandi).
@@ -37,7 +37,7 @@ export default function BottomChrome({
           aria-hidden
         >
           {t.id === 'bussola' ? (
-            <Activity size={18} strokeWidth={2.2} />
+            <Gauge size={18} strokeWidth={2.2} />
           ) : t.id === 'analisi' ? (
             <BookOpen size={18} strokeWidth={2.2} />
           ) : (

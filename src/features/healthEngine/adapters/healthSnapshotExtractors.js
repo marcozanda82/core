@@ -180,23 +180,42 @@ function msFromDayAndDecimalHour(dayKey, decimalHour) {
 
 function isFoodEntry(entry) {
   const type = String(entry?.type || '').toLowerCase();
-  return type === 'food' || type === 'recipe';
+  // FIX: Riconosce cibi singoli, ricette E pasti aggregati
+  return type === 'food' || type === 'recipe' || type === 'meal' || entry?.mealType;
 }
 
 function isUnresolvedDraft(entry) {
   return entry?.isDraft === true || entry?.unresolved === true || entry?.status === 'unassigned';
 }
 
+/**
+ * FIX CRITICO: Somma nutrizione da cibi singoli E pasti aggregati (con array items).
+ * Accetta: type='food', type='meal', o qualsiasi item con mealType.
+ */
 export function sumNutritionFromLog(log) {
   let calories = 0;
   let proteinGrams = 0;
   let fiberGrams = 0;
+  
   (Array.isArray(log) ? log : []).forEach((item) => {
     if (!isFoodEntry(item) || isUnresolvedDraft(item)) return;
-    calories += Number(item.kcal ?? item.cal ?? 0) || 0;
-    proteinGrams += Number(item.prot ?? item.protein ?? item.proteine ?? 0) || 0;
-    fiberGrams += Number(item.fibre ?? item.fiber ?? item.fibreTotali ?? 0) || 0;
+    
+    // CASO 1: Pasto aggregato con array items (es. colazione con 3 cibi)
+    if (Array.isArray(item.items) && item.items.length > 0) {
+      item.items.forEach(subItem => {
+        calories += Number(subItem.kcal ?? subItem.cal ?? 0) || 0;
+        proteinGrams += Number(subItem.prot ?? subItem.protein ?? subItem.proteine ?? 0) || 0;
+        fiberGrams += Number(subItem.fibre ?? subItem.fiber ?? subItem.fibreTotali ?? 0) || 0;
+      });
+    }
+    // CASO 2: Cibo singolo o pasto con valori aggregati diretti
+    else {
+      calories += Number(item.kcal ?? item.cal ?? 0) || 0;
+      proteinGrams += Number(item.prot ?? item.protein ?? item.proteine ?? 0) || 0;
+      fiberGrams += Number(item.fibre ?? item.fiber ?? item.fibreTotali ?? 0) || 0;
+    }
   });
+  
   return {
     calories: round2(calories),
     proteinGrams: round2(proteinGrams),
@@ -257,12 +276,32 @@ export function sleepHoursFromEntry(entry) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+/**
+ * FIX CRITICO: Cerca il nodo sleep con pattern di intercettazione forzata.
+ * Aggancia direttamente il record con type='sleep' senza filtri intermedi.
+ */
 export function pickMainNightSleep(log) {
-  const sleeps = (Array.isArray(log) ? log : []).filter((e) => e && e.type === 'sleep');
-  if (sleeps.length === 0) return null;
-  const longNights = sleeps.filter((e) => sleepHoursFromEntry(e) >= NIGHT_SLEEP_MIN_HOURS);
-  const pool = longNights.length > 0 ? longNights : sleeps;
-  return pool.reduce((best, entry) => {
+  // INTERCETTA ESPLICITAMENTE: ricerca diretta senza filtri complessi
+  const sleepNode = (Array.isArray(log) ? log : []).find((item) => {
+    if (!item || typeof item !== 'object') return false;
+    const type = String(item.type || '').toLowerCase().trim();
+    return type === 'sleep';
+  });
+  
+  // Se trovato almeno un nodo sleep, ritornalo immediatamente
+  if (sleepNode) return sleepNode;
+  
+  // Fallback: se ci sono più nodi sleep, prendi quello con più ore
+  const allSleeps = (Array.isArray(log) ? log : []).filter((e) => {
+    if (!e) return false;
+    const type = String(e.type || '').toLowerCase().trim();
+    return type === 'sleep';
+  });
+  
+  if (allSleeps.length === 0) return null;
+  
+  // Ritorna il nodo con più ore (o il primo se tutte le ore sono uguali)
+  return allSleeps.reduce((best, entry) => {
     const hours = sleepHoursFromEntry(entry);
     if (!best || hours > sleepHoursFromEntry(best)) return entry;
     return best;
@@ -485,6 +524,88 @@ export function cloneFourCylinders(fourCylinderData) {
   } catch {
     return { ...fourCylinderData };
   }
+}
+
+/**
+ * Calcola la penalità glicemica analizzando il log dei pasti del giorno.
+ * Applica un reset di mezzanotte (solo pasti di oggi) e ignora bevande zero-cal e caffè.
+ * @param {Array} dailyLog - log pasti del giorno corrente
+ * @returns {{ value: number, certainty: string }}
+ */
+export function calculateGlycemicPenaltyFromLog(dailyLog) {
+  // 1. FILTRO DEL DOMINIO ODIERNO: estrai solo i pasti veri di OGGI
+  const validMealsToday = (dailyLog || []).filter(item => {
+    // Verifica che sia un nodo pasto
+    const isMealNode = item?.type === 'meal' || item?.type === 'snack' || item?.mealType;
+    if (!isMealNode) return false;
+    
+    // Regola fondamentale: ignora acqua, caffè e bevande sotto le 10 kcal
+    const isZeroCal = item.kcal !== undefined && Number(item.kcal) < 10;
+    const isCoffee = item.name && String(item.name).toLowerCase().includes('caffè');
+    
+    return !(isZeroCal || isCoffee);
+  });
+
+  // 2. RESET DI MEZZANOTTE: penalità = 0 se non ci sono almeno 2 pasti veri OGGI
+  let computedGlycemicPenalty = 0;
+
+  if (validMealsToday.length >= 2) {
+    // Estrai i timestamp dei pasti validi
+    const mealTimestamps = validMealsToday
+      .map(meal => {
+        const ts = meal.timestamp || meal.ts || meal.mealTime;
+        return Number.isFinite(Number(ts)) ? Number(ts) : null;
+      })
+      .filter(ts => ts !== null)
+      .sort((a, b) => a - b);
+
+    if (mealTimestamps.length >= 2) {
+      let penaltyAccumulator = 0;
+      let pairCount = 0;
+
+      // Calcola le distanze tra pasti consecutivi
+      for (let i = 1; i < mealTimestamps.length; i++) {
+        const hoursBetween = (mealTimestamps[i] - mealTimestamps[i - 1]) / 3600000;
+        
+        // Penalità per pasti troppo ravvicinati (< 4 ore)
+        if (hoursBetween < 4) {
+          const spacingFactor = Math.max(0, (4 - hoursBetween) / 4); // 0-1
+          penaltyAccumulator += spacingFactor * 0.15; // Max 0.15 per coppia
+          pairCount++;
+        }
+        
+        // Penalità lieve per pasti molto ravvicinati (< 2 ore)
+        if (hoursBetween < 2) {
+          penaltyAccumulator += 0.1;
+        }
+      }
+
+      // Considera anche i macronutrienti: zuccheri isolati (carbo alti, fibre basse)
+      validMealsToday.forEach(meal => {
+        const carb = Number(meal.carb || meal.carboidrati || 0);
+        const fiber = Number(meal.fibre || meal.fiber || meal.fibra || 0);
+        
+        if (carb > 30 && fiber < 5) {
+          // Zuccheri isolati senza fibre: +0.05 alla penalità
+          penaltyAccumulator += 0.05;
+        }
+      });
+
+      // Normalizza e applica limiti: parte da 1.0 (nessuna penalità) e arriva a 1.3 (massima)
+      if (pairCount > 0) {
+        computedGlycemicPenalty = 1 + penaltyAccumulator / Math.sqrt(pairCount);
+      } else {
+        computedGlycemicPenalty = 1 + penaltyAccumulator;
+      }
+      computedGlycemicPenalty = Math.max(1, Math.min(1.3, computedGlycemicPenalty));
+    }
+  }
+
+  // Se 0 pasti o 1 solo pasto: penalità rimane a 0 (nessun impatto sul metabolismo)
+  return {
+    value: round2(computedGlycemicPenalty * 100) / 100,
+    certainty: validMealsToday.length >= 2 ? CERTAINTY_LEVELS.CALCULATED : CERTAINTY_LEVELS.ESTIMATED,
+  };
 }
 
 export function resolveGlycemicPenalty(kineticsData) {

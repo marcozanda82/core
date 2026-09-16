@@ -26,6 +26,65 @@ const DRIVER_LABELS = {
   METABOLIC_PHASE: 'Fase metabolica',
 };
 
+/**
+ * Dizionario delle spiegazioni: trasforma i driver tecnici in guide azionabili.
+ * Ogni entry contiene PERCHÉ (causa) e COME (azione pratica).
+ */
+const DRIVER_EXPLANATIONS = {
+  GLYCEMIC_PENALTY: {
+    cause: 'Hai fatto pasti troppo ravvicinati o consumato zuccheri isolati, tenendo l\'insulina alta.',
+    action: 'Oggi lascia passare almeno 4 ore tra un pasto e l\'altro, e abbina i carbo alle fibre.',
+  },
+  DINNER_SLEEP_BUFFER: {
+    cause: 'Hai cenato troppo tardi, impedendo al corpo di abbassare la temperatura per il sonno.',
+    action: 'Cerca di chiudere la finestra alimentare almeno 3 ore prima di dormire.',
+  },
+  CARDIO_LOAD_7D: {
+    cause: 'Il dispendio energetico di questa settimana è sotto la soglia minima.',
+    action: 'Fai una camminata di 20-30 minuti per sbloccare il metabolismo.',
+  },
+  MUSCLE_STIMULUS: {
+    cause: 'Non hai fatto allenamenti di forza recentemente, perdendo tono muscolare.',
+    action: 'Inserisci 2-3 sessioni di pesi o corpo libero questa settimana.',
+  },
+  TRAINING_TODAY: {
+    cause: 'Non hai ancora registrato attività fisica oggi.',
+    action: 'Anche una camminata veloce o 15 minuti di esercizi aiutano il sistema.',
+  },
+  SLEEP_DURATION: {
+    cause: 'Hai dormito meno delle ore necessarie per il recupero completo.',
+    action: 'Punta ad almeno 7-8 ore consecutive. Vai a letto 30 minuti prima stasera.',
+  },
+  SLEEP_QUALITY: {
+    cause: 'Il sonno è stato frammentato o superficiale, riducendo il recupero.',
+    action: 'Evita schermi 1 ora prima di dormire e mantieni la stanza fresca.',
+  },
+  CALORIE_ADHERENCE: {
+    cause: 'Le calorie totali sono troppo lontane dal target giornaliero.',
+    action: 'Riequilibra i pasti rimanenti per avvicinarti al fabbisogno.',
+  },
+  PROTEIN_ADHERENCE: {
+    cause: 'Le proteine assunte sono insufficienti per il mantenimento muscolare.',
+    action: 'Aggiungi una fonte proteica (carne, pesce, legumi, uova) al prossimo pasto.',
+  },
+  FIBER_ADHERENCE: {
+    cause: 'Le fibre sono scarse, rallentando il transito intestinale.',
+    action: 'Integra verdure a foglia verde o legumi nei pasti di oggi.',
+  },
+  SYSTEMIC_FATIGUE: {
+    cause: 'Il carico di stress accumulato (allenamenti + vita) è alto.',
+    action: 'Considera un giorno di riposo attivo (stretching, camminata leggera).',
+  },
+  WAKE_REGULARITY: {
+    cause: 'L\'orario di sveglia varia troppo, destabilizzando il ritmo circadiano.',
+    action: 'Cerca di svegliarti alla stessa ora anche nei weekend (±30 min).',
+  },
+  SLEEP_DATA_MISSING: {
+    cause: 'Non hai registrato i dati del sonno, limitando l\'analisi del recupero.',
+    action: 'Indossa il tracker o registra manualmente orario sonno e sveglia.',
+  },
+};
+
 const CERTAINTY_BADGE = {
   [CERTAINTY_LEVELS.MEASURED]: { label: 'Rilevato', className: 'border-cyan-400/40 bg-cyan-500/15 text-cyan-200' },
   [CERTAINTY_LEVELS.CALCULATED]: { label: 'Calcolato', className: 'border-sky-400/35 bg-sky-500/12 text-sky-200' },
@@ -122,26 +181,61 @@ export default function PillarInsightOverlay({
             </span>
           </div>
 
-          <h3 className="m-0 mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
+          <h3 className="m-0 mb-3 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">
             Driver
           </h3>
           {drivers.length === 0 ? (
             <p className="m-0 text-sm text-zinc-500">Nessun driver per questo pilastro.</p>
           ) : (
-            <ul className="m-0 flex list-none flex-col gap-1 p-0">
+            <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {drivers.map((driver) => {
                 const mark = driverMark(driver.direction);
+                const explanation = DRIVER_EXPLANATIONS[driver.id] || null;
+                const showExplanation = explanation && driver.direction === DRIVER_DIRECTIONS.NEGATIVE;
+                
                 return (
-                  <li key={driver.id} className="flex items-center gap-3 rounded-xl px-1 py-2">
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${mark.tone}`}
-                      aria-hidden
-                    >
-                      {mark.icon}
-                    </span>
-                    <span className="min-w-0 flex-1 text-sm font-medium text-zinc-200">
-                      {driverLabel(driver)}
-                    </span>
+                  <li 
+                    key={driver.id} 
+                    className={`flex flex-col rounded-xl border px-3 py-3 ${
+                      showExplanation 
+                        ? 'border-amber-400/20 bg-amber-500/5' 
+                        : 'border-white/5 bg-white/[0.02]'
+                    }`}
+                  >
+                    {/* Header del driver: icona + label */}
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-sm font-bold ${mark.tone}`}
+                        aria-hidden
+                      >
+                        {mark.icon}
+                      </span>
+                      <span className="min-w-0 flex-1 text-sm font-semibold text-zinc-200">
+                        {driverLabel(driver)}
+                      </span>
+                    </div>
+                    
+                    {/* Spiegazione: PERCHÉ + COME */}
+                    {showExplanation && (
+                      <div className="mt-3 flex flex-col gap-2 border-t border-white/5 pt-3">
+                        <div className="flex items-start gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-amber-400/80">
+                            Perché:
+                          </span>
+                          <p className="m-0 flex-1 text-xs leading-relaxed text-zinc-400">
+                            {explanation.cause}
+                          </p>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-cyan-400/80">
+                            Come:
+                          </span>
+                          <p className="m-0 flex-1 text-xs leading-relaxed text-zinc-300">
+                            {explanation.action}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </li>
                 );
               })}

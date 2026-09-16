@@ -5,11 +5,11 @@ export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
 /** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome / KentuChatFab).
- *  Layout: Home | Diario (lista) | [Emblema Kentu AI] | Salute (Timeline 24h da hub) | Menu. */
+ *  Layout: Home | Diario (lista) | [Emblema Kentu AI] | Stato (System Status) | Menu. */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Home', icon: '🏠' },
   { id: 'analisi', label: 'Diario', icon: '📖' },
-  { id: 'bussola', label: 'Salute', icon: '📊' },
+  { id: 'bussola', label: 'Stato', icon: '⚡' },
   { id: 'menu', label: 'Menu', icon: '☰' },
 ];
 

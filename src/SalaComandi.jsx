@@ -8507,6 +8507,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 <DevConsoleView
                   uid={userUid}
                   onBack={() => { setIsDrawerOpen(false); setActiveAction('menu_secondary'); }}
+                  dailyLog={dailyLog}
+                  healthState={currentHealthSystemState}
+                  dateStr={currentTrackerDate}
               />
             </div>
             </Suspense>

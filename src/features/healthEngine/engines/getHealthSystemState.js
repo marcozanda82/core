@@ -92,9 +92,11 @@ export function getHealthSystemState(snapshot) {
     return emptySnapshotGuard();
   }
 
+  // FIX DATE SCOPING: Passa dateStr agli evaluators per unificare il contesto temporale
+  const targetDate = snapshot.dateStr || null;
   const recovery = evaluateRecovery(snapshot.sleep, snapshot.systemic);
-  const nutrition = evaluateNutrition(snapshot.nutrition);
-  const activity = evaluateActivity(snapshot.activity, snapshot.timestamp);
+  const nutrition = evaluateNutrition(snapshot.nutrition, targetDate);
+  const activity = evaluateActivity(snapshot.activity, snapshot.timestamp, targetDate);
   const metabolism = evaluateMetabolism(snapshot.metabolic, snapshot.sleep);
 
   const pillars = {

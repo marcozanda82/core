@@ -29,41 +29,71 @@ export default function HealthCockpitLabOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-20 flex flex-col bg-[#050a12] text-zinc-100"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label={meta.title}
+      onClick={(e) => {
+        // Click sul backdrop (non sul foglio) chiude l'overlay
+        if (e.target === e.currentTarget) {
+          onClose?.();
+        }
+      }}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 px-3 py-2.5">
-        <button
-          type="button"
-          onClick={() => onClose?.()}
-          className="flex h-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm font-semibold text-cyan-200 transition hover:border-white/25 hover:bg-white/[0.08]"
-          aria-label="Chiudi laboratorio"
-        >
-          ← Indietro
-        </button>
-        <h2 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
-          {meta.title}
-        </h2>
-      </header>
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 pb-[calc(4.25rem+env(safe-area-inset-bottom,0px))] pt-2">
-        <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
-          {meta.kind === 'autopilota' ? (
-            <CalibrazioneTargetRoom
-              store={store}
-              handlers={calibrazioneHandlers}
-            />
-          ) : (
-            <StrumentazioneToolRoom
-              store={store}
-              activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
-              label={meta.title}
-              onSwitchRoom={setRoomId}
-              showToolTabs
-            />
-          )}
-        </Suspense>
+      {/* Bottom Sheet Container */}
+      <div
+        className="w-full h-[85vh] bg-zinc-950 border-t border-white/10 rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden transform transition-transform animate-in slide-in-from-bottom duration-300"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* iOS-style Drag Handle */}
+        <div className="w-12 h-1.5 bg-zinc-700 rounded-full mx-auto mt-4 mb-4 flex-shrink-0"></div>
+
+        {/* Header */}
+        <header className="flex shrink-0 items-center justify-between px-6 mb-2">
+          <h2 className="text-xl font-bold tracking-tight text-white">
+            {meta.title}
+          </h2>
+          <button
+            type="button"
+            onClick={() => onClose?.()}
+            className="p-2 bg-white/5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-all active:scale-95"
+            aria-label="Chiudi laboratorio"
+          >
+            <svg 
+              className="w-5 h-5" 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                strokeWidth={2.5} 
+                d="M6 18L18 6M6 6l12 12" 
+              />
+            </svg>
+          </button>
+        </header>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-6 pb-12 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
+            {meta.kind === 'autopilota' ? (
+              <CalibrazioneTargetRoom
+                store={store}
+                handlers={calibrazioneHandlers}
+              />
+            ) : (
+              <StrumentazioneToolRoom
+                store={store}
+                activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
+                label={meta.title}
+                onSwitchRoom={setRoomId}
+                showToolTabs
+              />
+            )}
+          </Suspense>
+        </div>
       </div>
     </div>
   );

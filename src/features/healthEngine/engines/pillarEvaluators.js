@@ -113,15 +113,31 @@ function meanMuscleDecay(activity = {}) {
 /**
  * Nutrizione incompleta: niente pasti, oppure calorie sotto il 10% del target.
  * Non è un fallimento dietetico: la giornata è ancora da compilare.
+ * FIX DATE SCOPING: se dateStr (data visualizzata) NON è oggi, il giorno è completo.
+ * FIX CRITICO: se calories = 0, il giorno è SEMPRE incompleto (nessun dato).
  */
-export function isNutritionDayIncomplete(nutrition = {}) {
+export function isNutritionDayIncomplete(nutrition = {}, dateStr = null) {
   const kcal = Number(nutrition.calories) || 0;
   const protein = Number(nutrition.proteinGrams) || 0;
   const fiber = Number(nutrition.fiberGrams) || 0;
   const target = Number(nutrition.targetCalories) || 0;
+  
+  // REGOLA 1: Se NON ci sono dati (calorie = 0), il giorno è SEMPRE incompleto
+  // Questo previene driver negativi su giorni passati senza registrazioni
   const mealsAbsent = kcal <= 0 && protein <= 0 && fiber <= 0;
   if (mealsAbsent) return true;
-  if (target > 0 && kcal < target * NUTRITION_INCOMPLETE_TARGET_RATIO) return true;
+  
+  // REGOLA 2: Se ci sono pochi dati (< 10% target), dipende dalla data
+  // - Se oggi: giorno in progress (mattina)
+  // - Se passato: giorno completo ma scarso (verrà valutato)
+  if (target > 0 && kcal < target * NUTRITION_INCOMPLETE_TARGET_RATIO) {
+    if (dateStr) {
+      const today = new Date().toISOString().slice(0, 10);
+      if (dateStr !== today) return false; // Giorno passato con pochi dati = completo
+    }
+    return true; // Oggi con pochi dati = in progress
+  }
+  
   return false;
 }
 
@@ -134,8 +150,15 @@ function hasWeeklyActivityTrend(activity = {}) {
 
 /**
  * Attività in attesa: nessun allenamento oggi e (mattina, oppure nessuno storico 7g).
+ * FIX DATE SCOPING: se dateStr (data visualizzata) NON è oggi, il giorno è completo.
  */
-export function isActivityDayPending(activity = {}, nowMs = null) {
+export function isActivityDayPending(activity = {}, nowMs = null, dateStr = null) {
+  // FIX CRITICO: se stiamo guardando una data passata, il giorno NON è mai "in progress"
+  if (dateStr) {
+    const today = new Date().toISOString().slice(0, 10);
+    if (dateStr !== today) return false; // Giorno passato = sempre completo
+  }
+  
   const today = Array.isArray(activity.todayWorkouts) ? activity.todayWorkouts : [];
   if (today.length > 0) return false;
   if (!hasWeeklyActivityTrend(activity)) return true;
@@ -176,11 +199,14 @@ export function evaluateRecovery(sleep = {}, systemic = {}) {
       drivers.push(driver(DRIVER_IDS.SLEEP_DURATION, DRIVER_DIRECTIONS.NEGATIVE, clamp01((hours - 8.5) / 2), hoursCert));
     }
 
+    // Quality in scala 0-100: >= 60 = buona, < 40 = scarsa
     const quality = Number(sleep.quality) || 0;
-    if (quality >= 4) {
-      drivers.push(driver(DRIVER_IDS.SLEEP_QUALITY, DRIVER_DIRECTIONS.POSITIVE, (quality - 3) / 2, qualityCert));
+    if (quality >= 60) {
+      drivers.push(driver(DRIVER_IDS.SLEEP_QUALITY, DRIVER_DIRECTIONS.POSITIVE, clamp01((quality - 40) / 60), qualityCert));
+    } else if (quality >= 40) {
+      drivers.push(driver(DRIVER_IDS.SLEEP_QUALITY, DRIVER_DIRECTIONS.NEUTRAL, 0.3, qualityCert));
     } else if (quality > 0) {
-      drivers.push(driver(DRIVER_IDS.SLEEP_QUALITY, DRIVER_DIRECTIONS.NEGATIVE, (4 - quality) / 3, qualityCert));
+      drivers.push(driver(DRIVER_IDS.SLEEP_QUALITY, DRIVER_DIRECTIONS.NEGATIVE, clamp01((40 - quality) / 40), qualityCert));
     }
 
     const buffer = sleep.dinnerSleepBuffer;
@@ -228,21 +254,42 @@ export function evaluateRecovery(sleep = {}, systemic = {}) {
   const hours = Number(sleep.hours);
   const quality = Number(sleep.quality) || 0;
   
-  let sleepQualityPhrase = '';
-  if (quality >= 4) sleepQualityPhrase = 'Hai dormito bene';
-  else if (quality >= 3) sleepQualityPhrase = 'Il sonno è stato discreto';
-  else if (quality > 0) sleepQualityPhrase = 'Il riposo non è stato ottimale';
+  // 🎯 INSIGHT DINAMICI: Interroga i driver per feedback specifici
+  let insightText = 'Recupero nella norma.';
+  
+  if (hasSleep) {
+    const durationDriver = drivers.find(d => d.id === DRIVER_IDS.SLEEP_DURATION);
+    const qualityDriver = drivers.find(d => d.id === DRIVER_IDS.SLEEP_QUALITY);
+    
+    const durationPos = durationDriver?.direction === DRIVER_DIRECTIONS.POSITIVE;
+    const durationNeg = durationDriver?.direction === DRIVER_DIRECTIONS.NEGATIVE;
+    const qualityPos = qualityDriver?.direction === DRIVER_DIRECTIONS.POSITIVE;
+    const qualityNeg = qualityDriver?.direction === DRIVER_DIRECTIONS.NEGATIVE;
+    
+    // Matrice 2x2: durata × quality
+    if (durationPos && qualityPos) {
+      insightText = `Sonno perfetto: ${hours.toFixed(1)}h con alta percentuale di sonno ristoratore (${Math.round(quality)}%). Mantieni questa routine!`;
+    } else if (durationPos && qualityNeg) {
+      insightText = `La durata del sonno è ottima (${hours.toFixed(1)}h), ma la qualità ristorativa è risultata bassa (${Math.round(quality)}%). Riduci stress e schermi prima di dormire.`;
+    } else if (durationPos && !qualityNeg && !qualityPos) {
+      insightText = `Hai dormito ${hours.toFixed(1)} ore con qualità discreta. Puoi migliorare ulteriormente il recupero.`;
+    } else if (durationNeg && qualityPos) {
+      insightText = `Hai dormito con buona qualità ristorativa (${Math.round(quality)}%), ma ${hours.toFixed(1)}h sono poche: punta ad almeno 7 ore stanotte.`;
+    } else if (durationNeg && qualityNeg) {
+      insightText = `Il sonno è stato breve (${hours.toFixed(1)}h) e poco ristoratore (${Math.round(quality)}%). Priorità assoluta: recupera stanotte.`;
+    } else if (durationNeg && !qualityNeg) {
+      insightText = `Hai dormito solo ${hours.toFixed(1)} ore. Il corpo ha bisogno di più riposo per recuperare completamente.`;
+    } else if (hours > 9) {
+      insightText = `${hours.toFixed(1)} ore sono molte. Forse dormire un po' meno ti darebbe più energia durante il giorno.`;
+    } else {
+      insightText = `Hai dormito ${hours.toFixed(1)} ore con qualità ${Math.round(quality)}%. Il recupero è nella norma, ma c'è margine di miglioramento.`;
+    }
+  } else {
+    insightText = 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.';
+  }
   
   const insight = phraseByCertainty(certainty, {
-    measured: hasSleep
-      ? (hours >= 7 && hours <= 8.5 && quality >= 4
-        ? `${sleepQualityPhrase}: ${hours.toFixed(1)} ore sono perfette per recuperare.`
-        : hours < 6
-          ? `Hai dormito solo ${hours.toFixed(1)} ore. Il corpo ha bisogno di più riposo.`
-          : hours > 9
-            ? `${hours.toFixed(1)} ore sono tante. Forse dormire un po' meno ti darebbe più energia.`
-            : `${sleepQualityPhrase}, ma potresti migliorare la qualità o la durata del sonno.`)
-      : 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
+    measured: insightText,
     calculated: hasSleep
       ? 'Il recupero dipende anche da quando hai cenato e dalla regolarità del risveglio.'
       : 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
@@ -252,7 +299,7 @@ export function evaluateRecovery(sleep = {}, systemic = {}) {
     estimated: 'Segna quanto hai dormito stanotte: serve per capire come stai recuperando.',
   });
 
-  return makePillar(
+  const pillar = makePillar(
     drivers,
     { text: insight, certainty },
     {
@@ -267,16 +314,48 @@ export function evaluateRecovery(sleep = {}, systemic = {}) {
     },
     !hasSleep,
   );
+  
+  // 🔥 FIX CALIBRAZIONE: Hard cap sullo score se durata insufficiente
+  // REGOLA FISIOLOGICA: < 7h sonno → Recovery non può essere OPTIMAL
+  if (hasSleep) {
+    const hours = Number(sleep.hours);
+    let cappedScore = pillar.score;
+    
+    if (hours < 6.5) {
+      cappedScore = Math.min(cappedScore, 70); // Cap a 70 (< 6.5h)
+    } else if (hours < 7.0) {
+      cappedScore = Math.min(cappedScore, 80); // Cap a 80 (6.5-7h)
+    }
+    
+    // Ricalcola lo stato basandosi sullo score cappato
+    let cappedState = pillar.state;
+    if (cappedScore < 75) {
+      cappedState = cappedScore >= 50 ? PILLAR_STATES.FLEXION : PILLAR_STATES.OVERLOAD;
+    } else if (cappedScore < 90) {
+      cappedState = PILLAR_STATES.FLEXION;
+    }
+    
+    // Ritorna pillar con score e stato calibrati
+    if (cappedScore !== pillar.score || cappedState !== pillar.state) {
+      return {
+        ...pillar,
+        score: cappedScore,
+        state: cappedState,
+      };
+    }
+  }
+  
+  return pillar;
 }
 
-export function evaluateNutrition(nutrition = {}) {
+export function evaluateNutrition(nutrition = {}, dateStr = null) {
   const drivers = [];
   const kcal = Number(nutrition.calories) || 0;
   const protein = Number(nutrition.proteinGrams) || 0;
   const fiber = Number(nutrition.fiberGrams) || 0;
   const target = Number(nutrition.targetCalories) || 0;
   const targetProtein = Number(nutrition.targetProteinGrams) || 0;
-  const dayIncomplete = isNutritionDayIncomplete(nutrition);
+  const dayIncomplete = isNutritionDayIncomplete(nutrition, dateStr);
   const kcalCert = nutrition?.certainty?.calories || CERTAINTY_LEVELS.ESTIMATED;
   const targetCert = nutrition?.certainty?.targets || CERTAINTY_LEVELS.ESTIMATED;
   const histCert = nutrition?.certainty?.history7d || CERTAINTY_LEVELS.ESTIMATED;
@@ -393,7 +472,7 @@ export function evaluateNutrition(nutrition = {}) {
   );
 }
 
-export function evaluateActivity(activity = {}, nowMs = null) {
+export function evaluateActivity(activity = {}, nowMs = null, dateStr = null) {
   const drivers = [];
   const minutes = Number(activity.cardioMinutes7d) || 0;
   const target = Number(activity.cardioTarget7d) || 0;
@@ -401,7 +480,7 @@ export function evaluateActivity(activity = {}, nowMs = null) {
   const decayCert = activity?.certainty?.muscleDecay || CERTAINTY_LEVELS.ESTIMATED;
   const today = Array.isArray(activity.todayWorkouts) ? activity.todayWorkouts : [];
   const { districts, mean: meanDecay, min: minDecay } = meanMuscleDecay(activity);
-  const dayPending = isActivityDayPending(activity, nowMs);
+  const dayPending = isActivityDayPending(activity, nowMs, dateStr);
   const weeklyTrend = hasWeeklyActivityTrend(activity);
 
   const evidenceData = {
@@ -445,7 +524,13 @@ export function evaluateActivity(activity = {}, nowMs = null) {
     }
   }
 
-  if (districts.length > 0) {
+  // FIX ISOLAMENTO TEMPORALE: Il muscleDecay è uno stato globale/persistente.
+  // Se stiamo guardando una data passata, non possiamo fidarci del decay globale
+  // perché potrebbe includere workout futuri. Usiamo il decay solo per oggi.
+  const isToday = dateStr ? (dateStr === new Date().toISOString().slice(0, 10)) : true;
+  const shouldUseMuscleDecay = isToday || today.length > 0;
+  
+  if (districts.length > 0 && shouldUseMuscleDecay) {
     if (meanDecay >= 0.45) {
       drivers.push(driver(DRIVER_IDS.MUSCLE_STIMULUS, DRIVER_DIRECTIONS.POSITIVE, clamp01(meanDecay), decayCert));
     } else {

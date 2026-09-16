@@ -367,7 +367,13 @@ function ItemsPanel({ title, loading, items, emptyLabel, renderItem }) {
   );
 }
 
-export default function DevConsoleView({ onBack, uid = null }) {
+export default function DevConsoleView({ 
+  onBack, 
+  uid = null,
+  dailyLog = null,
+  healthState = null,
+  dateStr = null,
+}) {
   const isDesktop = useIsDesktop(900);
   const [activeTab, setActiveTab] = useState('notes');
   const [notes, setNotes] = useState([]);
@@ -450,6 +456,22 @@ export default function DevConsoleView({ onBack, uid = null }) {
     }
   }, [uid, showToast]);
 
+  const handleCopyDebugJson = useCallback(async () => {
+    try {
+      const debugData = {
+        data: dateStr || new Date().toISOString().slice(0, 10),
+        diario: dailyLog || [],
+        salute: healthState || null,
+      };
+      const jsonString = JSON.stringify(debugData, null, 2);
+      await copyText(jsonString);
+      showToast('JSON Debug copiato negli appunti!');
+    } catch (err) {
+      console.error('[DevConsole] copy debug JSON', err);
+      showToast('Copia fallita');
+    }
+  }, [dailyLog, healthState, dateStr, showToast]);
+
   const notesPanel = (
     <ItemsPanel
       title={isDesktop ? '💡 Dev Notes' : null}
@@ -487,6 +509,36 @@ export default function DevConsoleView({ onBack, uid = null }) {
     />
   );
 
+  const debugPanel = (
+    <section style={STYLES.column}>
+      {isDesktop ? <h3 style={STYLES.columnTitle}>🔬 Debug Data</h3> : null}
+      <article style={STYLES.card}>
+        <div style={STYLES.cardTop}>
+          <div style={STYLES.meta}>
+            <span>Data: {dateStr || '—'}</span>
+            <span>Diario: {Array.isArray(dailyLog) ? dailyLog.length : 0} entry</span>
+            <span>Salute: {healthState ? 'Disponibile' : 'Non disponibile'}</span>
+          </div>
+        </div>
+        <div style={STYLES.body}>
+          <p style={{ margin: '0 0 12px', fontSize: '0.85rem', color: '#94a3b8' }}>
+            Esporta i dati completi del giorno corrente (diario + stato salute) in formato JSON per analisi avanzate e debugging dell'algoritmo.
+          </p>
+          <button 
+            type="button" 
+            style={{
+              ...STYLES.actionBtn('copy'),
+              width: '100%',
+            }}
+            onClick={handleCopyDebugJson}
+          >
+            📋 Copia JSON Debug Completo
+          </button>
+        </div>
+      </article>
+    </section>
+  );
+
   return (
     <div className="view-animate" style={STYLES.root}>
       <div style={STYLES.header}>
@@ -506,7 +558,7 @@ export default function DevConsoleView({ onBack, uid = null }) {
             style={STYLES.tab(activeTab === 'notes', 'rgba(250, 204, 21, 0.55)')}
             onClick={() => setActiveTab('notes')}
           >
-            💡 Dev Notes
+            💡 Notes
           </button>
           <button
             type="button"
@@ -515,18 +567,28 @@ export default function DevConsoleView({ onBack, uid = null }) {
             style={STYLES.tab(activeTab === 'chats', 'rgba(96, 165, 250, 0.55)')}
             onClick={() => setActiveTab('chats')}
           >
-            💬 Storico Chat
+            💬 Chat
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'debug'}
+            style={STYLES.tab(activeTab === 'debug', 'rgba(34, 211, 238, 0.55)')}
+            onClick={() => setActiveTab('debug')}
+          >
+            🔬 Debug
           </button>
         </div>
       ) : null}
 
       {isDesktop ? (
-        <div style={STYLES.desktopGrid}>
+        <div style={{ ...STYLES.desktopGrid, gridTemplateColumns: '1fr 1fr 1fr' }}>
           {notesPanel}
           {chatsPanel}
+          {debugPanel}
         </div>
       ) : (
-        activeTab === 'notes' ? notesPanel : chatsPanel
+        activeTab === 'notes' ? notesPanel : activeTab === 'chats' ? chatsPanel : debugPanel
       )}
 
       {toast ? (
