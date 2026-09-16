@@ -6092,6 +6092,25 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       const payload = injectMealClockIntoCommandPayload(
         payloadRaw && typeof payloadRaw === 'object' ? payloadRaw : {},
       );
+      
+      // 🔥 FIX GHOST NODE BUG: Gestisci azione delete (per cambio mealType)
+      if (String(payload?.action || payload?.upsertAction || '').trim().toLowerCase() === 'delete') {
+        const targetNodeId = String(payload?.targetNodeId || '').trim();
+        if (targetNodeId) {
+          const logSnap = dailyLogRef.current || [];
+          const itemsToDelete = logSnap.filter(item => item && item.mealType === targetNodeId);
+          if (itemsToDelete.length > 0) {
+            const nextLog = logSnap.filter(item => !item || item.mealType !== targetNodeId);
+            if (isSimulationMode) {
+              setSimulatedLog(nextLog);
+            } else {
+              commitDiaryLogWrite(nextLog);
+            }
+          }
+        }
+        return { text: '', deleted: true };
+      }
+      
       if (String(payload?.source || '') === 'meal_inbox_persist') {
         return commitAppendInboxDraft(payload);
       }

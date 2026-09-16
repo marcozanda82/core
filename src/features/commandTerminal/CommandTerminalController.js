@@ -1790,7 +1790,15 @@ export class CommandTerminalController {
       ? (normalizeMcdriveMealType(this.mcdriveMealType) || mealType)
       : mealType;
     const draftPersisted = this.mcdriveDraftPersisted === true;
-    const sessionSlotId = isEditingLoggedMeal
+    
+    // 🔥 FIX GHOST NODE BUG: Rileva cambio di mealType durante edit
+    const originalMealType = editingMealId ? String(editingMealId || '').split('_')[0] : null;
+    const mealTypeChanged = isEditingLoggedMeal 
+      && originalMealType 
+      && originalMealType !== mealTypeForPayload;
+    
+    // Se il mealType è cambiato, forza creazione nuovo slot (delete + create)
+    const sessionSlotId = isEditingLoggedMeal && !mealTypeChanged
       ? editingMealId
       : (this.mcdriveSessionSlotId || createSessionMealSlotId(mealTypeForPayload));
 
@@ -1821,17 +1829,34 @@ export class CommandTerminalController {
       this.onRequestUsdaEnrichment({ foodName: '', resume: null });
     }
 
+    // 🔥 FIX GHOST NODE BUG: Se mealType è cambiato, elimina il vecchio slot prima
+    if (mealTypeChanged && editingMealId) {
+      this.bus.publish(
+        DISPATCH_UPSERT_MEAL,
+        {
+          targetNodeId: editingMealId,
+          action: 'delete',
+          upsertAction: 'delete',
+          source: 'mcdrive_wizard_mealtype_changed_cleanup',
+        },
+        {
+          source: 'CommandTerminalController',
+          correlationId: 'mcdrive_delete_old_slot',
+        },
+      );
+    }
+
     this.bus.publish(
       DISPATCH_UPSERT_MEAL,
       {
         mealType: resolvedMealType,
         sessionMealSlot: sessionSlotId,
         items: itemsForCommit,
-        action: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
-        upsertAction: isEditingLoggedMeal ? 'replace' : (draftPersisted ? 'merge' : 'append'),
+        action: isEditingLoggedMeal && !mealTypeChanged ? 'replace' : (draftPersisted ? 'merge' : 'append'),
+        upsertAction: isEditingLoggedMeal && !mealTypeChanged ? 'replace' : (draftPersisted ? 'merge' : 'append'),
         upsertById: draftPersisted && !isEditingLoggedMeal,
-        forceNewMealSlot: !isEditingLoggedMeal && !draftPersisted,
-        ...(isEditingLoggedMeal || draftPersisted ? { targetNodeId: sessionSlotId } : {}),
+        forceNewMealSlot: (!isEditingLoggedMeal && !draftPersisted) || mealTypeChanged,
+        ...(isEditingLoggedMeal && !mealTypeChanged || draftPersisted ? { targetNodeId: sessionSlotId } : {}),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(exactTime ? {
           exactTime,
