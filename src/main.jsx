@@ -4,6 +4,12 @@ import App from './App';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
 import './index.css';
 
+// ============================================================
+// PERFORMANCE PROFILING: App Start
+// ============================================================
+performance.mark('app-start');
+console.log('[PERF] APP START marked at', performance.now());
+
 /** 1% of real inner height — fallback when `100dvh` alone is off (e.g. some iOS toolbars). */
 function syncViewportHeightVar() {
   if (typeof window === 'undefined') return;

@@ -136,9 +136,13 @@ export function useMealTrash({
     const tree = { [storicoKey]: node };
     const existingLog = getLogFromStoricoTree(tree, targetDate);
     const nextLog = mergeFoodsWithoutDuplicates(existingLog, foods);
+    // 🔥 FIX FIREBASE KEY: Sanitizza mealType rimuovendo caratteri illegali per Firebase
     const mealTimes = (nextLog || [])
       .filter((item) => item?.type === 'food' || item.type === 'recipe')
-      .reduce((acc, food) => ({ ...acc, [food.mealType]: food.mealTime ?? 12 }), { ...(node.mealTimes || {}) });
+      .reduce((acc, food) => {
+        const safeMealKey = String(food.mealType || 'meal').replace(/[.#$/[\]]/g, '_');
+        return { ...acc, [safeMealKey]: food.mealTime ?? 12 };
+      }, { ...(node.mealTimes || {}) });
     const payload = stripUndefined({
       ...node,
       data: targetDate,

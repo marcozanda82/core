@@ -99,10 +99,11 @@ export function extractMealTimesFromLog(log) {
   return (Array.isArray(log) ? log : [])
     .filter((item) => item?.type === 'food' || item?.type === 'recipe')
     .reduce((acc, food) => {
-      const mealType = String(food.mealType || 'pranzo');
+      // 🔥 FIX FIREBASE KEY: Sanitizza mealType rimuovendo caratteri illegali per Firebase
+      const safeMealKey = String(food.mealType || 'pranzo').replace(/[.#$/[\]]/g, '_');
       const mealTime = Number(food.mealTime ?? food.time);
       if (Number.isFinite(mealTime)) {
-        acc[mealType] = mealTime;
+        acc[safeMealKey] = mealTime;
       }
       return acc;
     }, {});

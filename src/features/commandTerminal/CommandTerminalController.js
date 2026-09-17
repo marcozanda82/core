@@ -1846,14 +1846,17 @@ export class CommandTerminalController {
       );
     }
 
+    // 🔥 FIX AI ADD TO EXISTING MEAL: usa 'merge' invece di 'replace' per preservare items esistenti
+    const actionForEdit = isEditingLoggedMeal && !mealTypeChanged ? 'merge' : (draftPersisted ? 'merge' : 'append');
+    
     this.bus.publish(
       DISPATCH_UPSERT_MEAL,
       {
         mealType: resolvedMealType,
         sessionMealSlot: sessionSlotId,
         items: itemsForCommit,
-        action: isEditingLoggedMeal && !mealTypeChanged ? 'replace' : (draftPersisted ? 'merge' : 'append'),
-        upsertAction: isEditingLoggedMeal && !mealTypeChanged ? 'replace' : (draftPersisted ? 'merge' : 'append'),
+        action: actionForEdit,
+        upsertAction: actionForEdit,
         upsertById: draftPersisted && !isEditingLoggedMeal,
         forceNewMealSlot: (!isEditingLoggedMeal && !draftPersisted) || mealTypeChanged,
         ...(isEditingLoggedMeal && !mealTypeChanged || draftPersisted ? { targetNodeId: sessionSlotId } : {}),

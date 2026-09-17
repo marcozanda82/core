@@ -14,6 +14,7 @@ import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
 import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListener.jsx';
+import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
 import { Capacitor } from '@capacitor/core';
 
@@ -143,10 +144,14 @@ function isCapacitorAndroid() {
 }
 
 function BootSplashLayer() {
+  const isAppReady = useAppReadyState();
+  
   if (isCapacitorAndroid()) {
     return null;
   }
-  return <KentuWebSplash />;
+  
+  // 🔥 FIX UX: Splash scompare solo quando app è pronta
+  return <KentuWebSplash ready={isAppReady} />;
 }
 
 export default function App() {

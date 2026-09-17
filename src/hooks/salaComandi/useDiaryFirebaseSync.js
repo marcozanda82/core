@@ -343,13 +343,18 @@ export function useDiaryFirebaseSync({
       try {
         const dateStr = currentTrackerDate;
         const logForFirebase = denormalizeLogForFirebase(nuovoLog || []);
+        // 🔥 FIX FIREBASE KEY: Sanitizza mealType rimuovendo caratteri illegali per Firebase
         const mealTimes = (nuovoLog || [])
           .filter((i) => i.type === 'food' || i.type === 'recipe')
           .reduce(
-            (acc, f) => ({
-              ...acc,
-              [f.mealType]: f.mealTime ?? 12,
-            }),
+            (acc, f) => {
+              // Firebase blocca chiavi con: . # $ / [ ]
+              const safeMealKey = String(f.mealType || 'meal').replace(/[.#$/[\]]/g, '_');
+              return {
+                ...acc,
+                [safeMealKey]: f.mealTime ?? 12,
+              };
+            },
             {},
           );
         const sanitizedLog = stripUndefined(logForFirebase);

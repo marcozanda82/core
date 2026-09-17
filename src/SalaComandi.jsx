@@ -10,6 +10,7 @@
  */
 import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useSignalAppReady } from './hooks/useAppReadyState';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
 import { ref, get, set, update, push, onValue, remove } from 'firebase/database';
@@ -1519,6 +1520,9 @@ export default function SalaComandi() {
     weeklyPlanningRemoteSigRef,
     autopilotCorrectionRef: liveAutopilotCorrectionRef,
   });
+
+  // 🔥 FIX UX: Segnala ad App.jsx che i dati sono pronti (per splash screen)
+  useSignalAppReady(isInitialLoadComplete && isProfileHydrated);
 
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
   const applyTrainingBlockDailyTargets = useCallback(
@@ -6883,69 +6887,68 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     };
   }, [activeAction, isEngineReady]);
 
-  useEffect(() => {
-    registerHandlers({
-      chatHistory,
-      chatInput: commandChatInput,
-      setChatInput: setCommandChatInput,
-      chatImages: commandChatImages,
-      setChatImages: setCommandChatImages,
-      onSendMessage: sendMessage,
-      activeQuickReplies,
-      onSlotQuickReplyClick: handleQuickReplyClick,
-      onAcceptAdvice: handleAcceptAdvice,
-      onAcceptMealProposal: handleAcceptMealProposal,
-      onEnableMealDraftInteractiveEdit: handleEnableMealDraftInteractiveEdit,
-      onRequestMealItemEdit: handleRequestMealItemEdit,
-      onCancelMealDraftProposal: handleCancelMealDraftProposal,
-      onLearnUnresolvedFood: learnUnresolvedFoodEntry,
-      foodDatabase: foodDb,
-      kentuItDatabase: kentuCatalogItDb,
-      globalFoodDatabase: csvFoodDb,
-      offDb: offFoodDb,
-      fullHistory,
-      dailyLog: activeLog,
-      onDraftConfirm: handleDraftConfirm,
-      onDraftCancel: handleDraftCancel,
-      onDraftRemoveItem: handleDraftRemoveItem,
-      onDraftUpdateItemGrams: handleDraftUpdateItemGrams,
-      onDraftUpdateMealMeta: handleDraftUpdateMealMeta,
-      onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
-      onMcDriveRemoveItem: handleMcDriveRemoveItem,
-      onMcDriveReturnItemToInbox: handleMcDriveReturnItemToInbox,
-      onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
-      onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
-      onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
-      onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
-      onMcDriveUpdateItemName: handleMcDriveUpdateItemName,
-      onMcDriveAppendSolverItems: handleMcDriveAppendSolverItems,
-      onMcDriveRequestDisambiguation: handleMcDriveRequestDisambiguation,
-      getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
-      onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
-      onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
-      onWorkoutDraftRemoveExercise: handleWorkoutDraftRemoveExercise,
-      onSaveNewFoodEntry: handleSaveNewFoodEntry,
-      introPhrase,
-      isProcessing: isChatProcessing,
-      onCancelGeneration: cancelGeneration,
-      tryEmitPredictiveGreeting,
-      mealBuilder,
-      setMealBuilder,
-      cancelMealBuilder,
-      commitMealBuilder,
-      preferVoiceChat: isDiabetesAppMode,
-      userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
-      onSelectInboxDraft: handleSelectInboxDraft,
-      onDropInboxOntoMeal: handleDropInboxOntoMeal,
-      onDropInboxOntoDraft: handleMergeInboxDrafts,
-      onTrashMeal: handleTrashMeal,
-      trashMeals,
-      onRestoreTrashMeal: handleRestoreTrashMeal,
-      onPurgeTrashMeal: handlePurgeTrashMeal,
-      onDeleteWorkout: removeLogItem,
-    });
-  }, [
-    registerHandlers,
+  // 🔥 FIX LOOP: Memoizza l'oggetto handlers per evitare ricreazione ad ogni render
+  const chatHandlers = useMemo(() => ({
+    chatHistory,
+    chatInput: commandChatInput,
+    setChatInput: setCommandChatInput,
+    chatImages: commandChatImages,
+    setChatImages: setCommandChatImages,
+    onSendMessage: sendMessage,
+    activeQuickReplies,
+    onSlotQuickReplyClick: handleQuickReplyClick,
+    onAcceptAdvice: handleAcceptAdvice,
+    onAcceptMealProposal: handleAcceptMealProposal,
+    onEnableMealDraftInteractiveEdit: handleEnableMealDraftInteractiveEdit,
+    onRequestMealItemEdit: handleRequestMealItemEdit,
+    onCancelMealDraftProposal: handleCancelMealDraftProposal,
+    onLearnUnresolvedFood: learnUnresolvedFoodEntry,
+    foodDatabase: foodDb,
+    kentuItDatabase: kentuCatalogItDb,
+    globalFoodDatabase: csvFoodDb,
+    offDb: offFoodDb,
+    fullHistory,
+    dailyLog: activeLog,
+    onDraftConfirm: handleDraftConfirm,
+    onDraftCancel: handleDraftCancel,
+    onDraftRemoveItem: handleDraftRemoveItem,
+    onDraftUpdateItemGrams: handleDraftUpdateItemGrams,
+    onDraftUpdateMealMeta: handleDraftUpdateMealMeta,
+    onDraftUpdateFoodItemName: handleDraftUpdateFoodItemName,
+    onMcDriveRemoveItem: handleMcDriveRemoveItem,
+    onMcDriveReturnItemToInbox: handleMcDriveReturnItemToInbox,
+    onMcDriveUpdateGrams: handleMcDriveUpdateGrams,
+    onMcDriveUpdateMealTime: handleMcDriveUpdateMealTime,
+    onMcDriveApplyAlternative: handleMcDriveApplyAlternative,
+    onMcDriveReplaceFromSearch: handleMcDriveReplaceFromSearch,
+    onMcDriveUpdateItemName: handleMcDriveUpdateItemName,
+    onMcDriveAppendSolverItems: handleMcDriveAppendSolverItems,
+    onMcDriveRequestDisambiguation: handleMcDriveRequestDisambiguation,
+    getMcDriveMealTargets: getFastLoggerMealTargetsForSlot,
+    onWorkoutDraftUpdateMeta: handleWorkoutDraftUpdateMeta,
+    onWorkoutDraftUpdateExercise: handleWorkoutDraftUpdateExercise,
+    onWorkoutDraftRemoveExercise: handleWorkoutDraftRemoveExercise,
+    onSaveNewFoodEntry: handleSaveNewFoodEntry,
+    introPhrase,
+    isProcessing: isChatProcessing,
+    onCancelGeneration: cancelGeneration,
+    tryEmitPredictiveGreeting,
+    mealBuilder,
+    setMealBuilder,
+    cancelMealBuilder,
+    commitMealBuilder,
+    preferVoiceChat: isDiabetesAppMode,
+    userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
+    onSelectInboxDraft: handleSelectInboxDraft,
+    onDropInboxOntoMeal: handleDropInboxOntoMeal,
+    onDropInboxOntoDraft: handleMergeInboxDrafts,
+    onTrashMeal: handleTrashMeal,
+    trashMeals,
+    onRestoreTrashMeal: handleRestoreTrashMeal,
+    onPurgeTrashMeal: handlePurgeTrashMeal,
+    onDeleteWorkout: removeLogItem,
+  }), [
+    // ⚠️ RIMOSSO registerHandlers: causava loop perché non usato nell'oggetto!
     chatHistory,
     commandChatInput,
     setCommandChatInput,
@@ -7005,6 +7008,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handlePurgeTrashMeal,
     removeLogItem,
   ]);
+
+  // 🔥 FIX LOOP: Registra handlers solo quando il memoized object cambia
+  useEffect(() => {
+    registerHandlers(chatHandlers);
+  }, [registerHandlers, chatHandlers]);
 
   const generateDailySnapshot = useCallback(() => {
     const date = String(currentTrackerDate || getTodayString());

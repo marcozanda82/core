@@ -59,6 +59,8 @@ function hoursSinceMs(thenMs, nowMs) {
  * @returns {import('../contracts/healthSnapshot.types.js').HealthSnapshot}
  */
 export function getHealthSnapshot(sourceData = {}) {
+  console.time('⏱️ [PERF] getHealthSnapshot-total');
+  
   const {
     trackerStoricoDay = null,
     trackerStoricoWeek = null,
@@ -93,7 +95,12 @@ export function getHealthSnapshot(sourceData = {}) {
   console.log('2️⃣ ENGINE ROOT - Has sleep in dayLog?', (dayLog || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
   console.log('2️⃣ ENGINE ROOT - Has sleep in manualNodes?', (manualNodes || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
 
+  // 🎯 DISACCOPPIAMENTO: normalizeWeekDays gestisce gracefully trackerStoricoWeek vuoto/null
+  // Se trackerStoricoWeek è {}, weekDays conterrà solo il giorno corrente
+  console.time('⏱️ [PERF] normalizeWeekDays');
   const weekDays = normalizeWeekDays(trackerStoricoWeek, trackerStoricoDay, dateStr);
+  console.timeEnd('⏱️ [PERF] normalizeWeekDays');
+  console.log('📊 [PERF] weekDays.length:', weekDays.length);
   const todayNutrition = sumNutritionFromLog(dayLog);
   const targets = resolveTargets(userTargets);
   const lastMeal = findLastMeal(dayLog, mealTimes, dateStr);
@@ -352,6 +359,9 @@ export function getHealthSnapshot(sourceData = {}) {
     },
   };
 
+  console.timeEnd('⏱️ [PERF] getHealthSnapshot-total');
+  console.log('✅ [PERF] Snapshot built | globalScore:', snapshot.globalScore, '| dateStr:', snapshot.dateStr);
+  
   return freezeDeep(snapshot);
 }
 

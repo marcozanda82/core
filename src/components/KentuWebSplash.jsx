@@ -35,8 +35,9 @@ function isDevHold() {
 /**
  * Overlay splash Web (Vite/Vercel). Su Capacitor Android non montare.
  * Solo animazione vettoriale ricostruita dal master. Debug: `/?kentuSplash=hold`
+ * 🔥 FIX UX: Resta visibile fino a `ready` (o timeout max 6s per sicurezza)
  */
-export default function KentuWebSplash() {
+export default function KentuWebSplash({ ready = false }) {
   const reactId = useId();
   const maskId = `kentu-enso-mask-${reactId.replace(/:/g, '')}`;
   const gradientId = `kentu-enso-fill-${reactId.replace(/:/g, '')}`;
@@ -47,10 +48,45 @@ export default function KentuWebSplash() {
     const reduceMotion = typeof window !== 'undefined'
       && window.matchMedia
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const total = reduceMotion ? REDUCED_TOTAL_MS : TOTAL_MS;
-    const timer = window.setTimeout(() => setGone(true), total);
-    return () => window.clearTimeout(timer);
-  }, []);
+    
+    // 🔥 FIX: Aumentato timeout max + controllo ready
+    const minBeforeExit = reduceMotion ? 500 : 1200; // Minimo 1.2s per animazione
+    const maxTotal = reduceMotion ? 2000 : 6000; // Max 6s (fallback di sicurezza)
+    const fadeOut = reduceMotion ? 200 : 400;
+    
+    const startedAt = Date.now();
+    let checkInterval;
+    let hardCapTimer;
+    
+    const beginExit = () => {
+      if (gone) return;
+      setGone(true);
+    };
+    
+    // Controlla ogni 100ms se ready o se è passato il tempo massimo
+    checkInterval = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      if (elapsed >= maxTotal) {
+        clearInterval(checkInterval);
+        beginExit();
+      } else if (elapsed >= minBeforeExit && ready) {
+        clearInterval(checkInterval);
+        // Piccolo delay per fade-out smooth
+        setTimeout(beginExit, fadeOut);
+      }
+    }, 100);
+    
+    // Hard cap di sicurezza
+    hardCapTimer = setTimeout(() => {
+      clearInterval(checkInterval);
+      beginExit();
+    }, maxTotal);
+    
+    return () => {
+      clearInterval(checkInterval);
+      clearTimeout(hardCapTimer);
+    };
+  }, [ready, gone]);
 
   if (gone || isCapacitorAndroid()) return null;
 

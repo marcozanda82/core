@@ -68,6 +68,9 @@ export function useHealthSystemState({
 } = {}) {
   const isLoading = !enabled || !isHydrated;
   const isReady = Boolean(enabled && isHydrated);
+  
+  // 📊 [PERF] Log inizializzazione hook
+  console.log('🔄 [PERF] useHealthSystemState called | enabled:', enabled, '| isHydrated:', isHydrated, '| isReady:', isReady, '| fullHistory keys:', fullHistory ? Object.keys(fullHistory).length : 0);
 
   // ⚡ PERFORMANCE FIX: Stabilizza fullHistory per evitare re-render a cascata
   // Estrae solo i dati rilevanti (giorno corrente + ultimi 14 giorni) e li memorizza
@@ -134,8 +137,18 @@ export function useHealthSystemState({
     return subset;
   }, [fullHistory, dateStr]);
 
+  // ⚡ OTTIMIZZAZIONE CALCOLO A DUE LIVELLI:
+  // 1. Snapshot OGGI (immediato): scatta SUBITO con fullHistory={} se non caricato
+  // 2. Dati storici (background): quando fullHistory si popola, snapshot si aggiorna
   const snapshot = useMemo(() => {
-    if (!isReady) return null;
+    console.time('⏱️ [PERF] snapshot-calculation');
+    
+    if (!isReady) {
+      console.log('❌ [PERF] Snapshot blocked: isReady =', isReady, '| enabled =', enabled, '| isHydrated =', isHydrated);
+      console.timeEnd('⏱️ [PERF] snapshot-calculation');
+      return null;
+    }
+    
     const iso = String(dateStr || '').slice(0, 10);
     
     // 🔍 DEBUG LOG 1: Verifica ingresso dati al hook
@@ -144,14 +157,21 @@ export function useHealthSystemState({
     console.log('1️⃣ HOOK - Has sleep in dailyLog?', (dailyLog || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
     console.log('1️⃣ HOOK - Has sleep in manualNodes?', (manualNodes || []).some(i => String(i?.type).toLowerCase() === 'sleep'));
     
-    return getHealthSnapshot({
+    // 🎯 DISACCOPPIAMENTO CRITICO: Usa historySubset se disponibile, altrimenti {}
+    // Questo garantisce che il calcolo scatti IMMEDIATAMENTE anche se fullHistory è vuoto
+    // I trend storici (longevità, grafici) verranno popolati dopo quando fullHistory arriva
+    const safeHistorySubset = historySubset || {}; // ← Sempre definito, mai null/undefined
+    const historyKeys = Object.keys(safeHistorySubset).length;
+    console.log('📊 [PERF] historySubset keys:', historyKeys, '| empty?', historyKeys === 0);
+    
+    const result = getHealthSnapshot({
       trackerStoricoDay: buildTrackerStoricoDay({
         dailyLog,
         manualNodes,
-        fullHistory: historySubset, // Usa il subset stabilizzato
+        fullHistory: safeHistorySubset,
         dateStr: iso,
       }),
-      trackerStoricoWeek: historySubset, // Usa il subset stabilizzato
+      trackerStoricoWeek: safeHistorySubset, // ← Opzionale: {} per calcolo immediato, si arricchisce dopo
       kineticsData: {
         glycemicPenalty,
         metabolicPenalty: glycemicPenalty,
@@ -164,13 +184,19 @@ export function useHealthSystemState({
       nowMs: Number.isFinite(Number(nowMs)) ? Number(nowMs) : undefined,
       dateStr: iso,
     });
+    
+    console.timeEnd('⏱️ [PERF] snapshot-calculation');
+    console.log('✅ [PERF] Snapshot calculated | globalScore:', result?.globalScore);
+    return result;
   }, [
     isReady,
-    dailyLog,
-    manualNodes,
-    historySubset, // 🎯 Dipendenza stabilizzata invece di fullHistory
-    fourCylinder,
-    userTargets,
+    enabled,          // ← Per log diagnostici
+    isHydrated,       // ← Per log diagnostici
+    dailyLog,         // ← Disponibile SUBITO (cache SWR, 0ms)
+    manualNodes,      // ← Disponibile SUBITO (cache SWR, 0ms)
+    historySubset,    // ← {} all'inizio (0ms), si popola dopo (~2-10s)
+    fourCylinder,     // ← Disponibile SUBITO (cache locale)
+    userTargets,      // ← Disponibile SUBITO (cache locale)
     dateStr,
     glycemicPenalty,
     hoursSinceLastMeal,

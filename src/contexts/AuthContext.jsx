@@ -15,6 +15,18 @@ export function AuthProvider({ children }) {
     return subscribeToAuth((firebaseUser) => {
       setUser(firebaseUser);
       setAuthReady(true);
+      
+      // ============================================================
+      // PERFORMANCE PROFILING: Auth Ready
+      // ============================================================
+      performance.mark('auth-ready');
+      try {
+        performance.measure('app-to-auth', 'app-start', 'auth-ready');
+        const measure = performance.getEntriesByName('app-to-auth')[0];
+        console.log(`[PERF] AUTH READY: ${Math.round(measure.duration)}ms`);
+      } catch (e) {
+        console.warn('[PERF] Could not measure app-to-auth', e);
+      }
     });
   }, []);
 
