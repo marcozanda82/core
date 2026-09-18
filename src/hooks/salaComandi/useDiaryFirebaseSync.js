@@ -2,7 +2,12 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { ref, get, set, onValue } from 'firebase/database';
 import { enrichDbRowWithFoodUnits } from '../../foodUnits';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
-import { writeTodayTrackerLocalCache } from '../../utils/trackerCacheUtils';
+import {
+  writeTodayTrackerLocalCache,
+  readRecentHistoryCache,
+  writeRecentHistoryCache,
+  patchRecentHistoryDay,
+} from '../../utils/trackerCacheUtils';
 import {
   readProfileTargetsCache,
   writeProfileTargetsCache,
@@ -150,6 +155,16 @@ export function useDiaryFirebaseSync({
       console.warn('Bootstrap cache read failed:', err);
     }
 
+    const recentHistory = readRecentHistoryCache(user.uid, today);
+    if (recentHistory && Object.keys(recentHistory).length > 0) {
+      setFullHistory((prev) => (
+        prev && typeof prev === 'object' && Object.keys(prev).length > 0 ? prev : recentHistory
+      ));
+      setFullStorico((prev) => (
+        prev && typeof prev === 'object' ? prev : recentHistory
+      ));
+    }
+
     const cachedProfile = readProfileTargetsCache(user.uid);
     if (cachedProfile) {
       applyProfileTargets(cachedProfile);
@@ -223,6 +238,7 @@ export function useDiaryFirebaseSync({
               const tree = histSnap.exists() ? histSnap.val() : null;
               setFullStorico(tree);
               setFullHistory(tree || {});
+              writeRecentHistoryCache(user.uid, tree || {}, getTodayString());
             })
             .catch((err) => console.warn('tracker_data background load:', err));
         }, { timeout: 4000 });
@@ -377,6 +393,7 @@ export function useDiaryFirebaseSync({
         const storicoKey = TRACKER_STORICO_KEY(dateStr);
 
         writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
+        patchRecentHistoryDay(uid, dateStr, sanitized);
 
         const normalizedLocal = normalizeLogData(nuovoLog || []);
         lastLogFromFirebaseRef.current = JSON.stringify(normalizedLocal);

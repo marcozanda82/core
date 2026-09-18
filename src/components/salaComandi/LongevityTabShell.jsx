@@ -4,6 +4,7 @@
 
 import { lazy, Suspense } from 'react';
 import KentuLazySectionFallback from '../KentuLazySectionFallback';
+import SimulationJsonCopyButton from '../SimulationJsonCopyButton';
 
 const LongevityView = lazy(() => import('../../LongevityView'));
 
@@ -26,9 +27,11 @@ export default function LongevityTabShell({
   weeklyTrendData = null,
   weeklyMicrosTotals = null,
   weeklyKcalChartReference = null,
+  longevityResult = null,
 }) {
   return (
     <div
+      className="relative"
       style={{
         flex: 1,
         minHeight: 0,
@@ -40,6 +43,10 @@ export default function LongevityTabShell({
         width: '100%',
       }}
     >
+      <SimulationJsonCopyButton
+        payload={longevityResult}
+        ariaLabel="Copia JSON longevità"
+      />
       <div
         style={{
           flex: 1,

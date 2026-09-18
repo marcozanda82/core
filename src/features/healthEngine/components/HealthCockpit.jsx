@@ -128,7 +128,6 @@ export default function HealthCockpit({
   isLoading = false,
   onOpenLabTool = null,
   onOpenPillarAnalysis = null,
-  onCopyDebugJson = null,
 } = {}) {
   const score = Number(healthState?.score);
   const globalTone = Number.isFinite(score) ? scoreTone(score) : 'flexion';
@@ -338,21 +337,6 @@ export default function HealthCockpit({
               </button>
 
             </div>
-
-            {/* 🐞 Pulsante Debug JSON (solo quando dati disponibili) */}
-            {healthState && onCopyDebugJson && (
-              <div className="mt-8 px-4">
-                <button
-                  type="button"
-                  onClick={onCopyDebugJson}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl border border-zinc-700/50 bg-zinc-900/50 px-4 py-3 text-xs font-semibold text-zinc-400 transition-all hover:border-zinc-600 hover:bg-zinc-800/70 hover:text-zinc-300 active:scale-[0.98]"
-                  aria-label="Copia dati debug in formato JSON"
-                >
-                  <span className="text-base">🐞</span>
-                  <span>Copia JSON Debug</span>
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>

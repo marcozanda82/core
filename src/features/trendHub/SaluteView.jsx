@@ -42,6 +42,7 @@ import {
 } from './utils/saluteHistorySeries';
 import { pillarPctFromLongevityScore } from './utils/longevityInsightGenerator';
 import { buildProgressionTrendSnapshots } from './utils/progressionInsightGenerator';
+import SimulationJsonCopyButton from '../../components/SimulationJsonCopyButton';
 
 function formatMetric(value, digits = 1) {
   if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -380,6 +381,10 @@ export default function SaluteView({
       role="region"
       aria-label="Area Salute"
     >
+      <SimulationJsonCopyButton
+        payload={longevityResult}
+        ariaLabel="Copia JSON longevità"
+      />
       {/* L1 — Hero Longevità (compatto: focus sulla Pagella sotto) */}
       <div className="shrink-0">
         <SaluteLongevityHero score={longevityScore} size={148} />

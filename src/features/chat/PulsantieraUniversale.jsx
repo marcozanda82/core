@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { stashActivitySheetTempTab, getMuscleGroupsForMacro } from '../../activityCatalog';
+import { stashActivitySheetTempTab } from '../../activityCatalog';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
 import {
@@ -10,11 +10,7 @@ import {
 } from '../../utils/mealDraftStatus';
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
-import CardioProgressBar from '../../components/CardioProgressBar';
-import MuscleStimulusDistrictList from '../trendHub/components/MuscleStimulusDistrictList';
-import { buildMuscleTelemetryRows } from '../trendHub/utils/muscleTelemetryModel';
-import { buildAttivitaWorkoutSummary } from './attivitaWorkoutSummary';
-import AttivitaWorkoutHistoryModal from './AttivitaWorkoutHistoryModal';
+import StimulusCockpitOverlay from './StimulusCockpitOverlay';
 
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti' },
@@ -408,7 +404,6 @@ export default function PulsantieraUniversale({
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
   const [inboxDrag, setInboxDrag] = useState(null);
   const [showMealTrash, setShowMealTrash] = useState(false);
-  const [showWorkoutHistory, setShowWorkoutHistory] = useState(false);
   const inboxDragRef = useRef({
     timer: null,
     pointerId: null,
@@ -423,7 +418,6 @@ export default function PulsantieraUniversale({
     setActiveCategory(null);
     setGuidedMealOrigin(null);
     setShowMealTrash(false);
-    setShowWorkoutHistory(false);
     setInboxDrag(null);
     inboxDragRef.current.armed = false;
     inboxDragRef.current.block = null;
@@ -769,41 +763,6 @@ export default function PulsantieraUniversale({
     onSelectInboxDraft?.(block);
   }, [onSelectInboxDraft]);
 
-  const openStimulusCylinder = useCallback((row) => {
-    const groupId = String(row?.id || '').trim();
-    const workoutMuscles = getMuscleGroupsForMacro(groupId).map((d) => d.id);
-    dispatchItem({
-      id: `stimulus-${groupId || 'pesi'}`,
-      action: 'openActivity',
-      defaultTab: 'pesi',
-      category: 'strength',
-      targetMuscle: groupId,
-      muscles: workoutMuscles,
-    });
-  }, [dispatchItem]);
-
-  const muscleRows = useMemo(() => {
-    try {
-      const rows = buildMuscleTelemetryRows({
-        fourCylinder: fourCylinder && typeof fourCylinder === 'object' ? fourCylinder : null,
-        fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
-        activeLog: Array.isArray(dailyLog) ? dailyLog : [],
-      })?.muscleRows;
-      return Array.isArray(rows) ? rows : [];
-    } catch (error) {
-      console.warn('[PulsantieraUniversale] muscle telemetry failed', error);
-      return [];
-    }
-  }, [fourCylinder, fullHistory, dailyLog]);
-
-  const workoutSummary = useMemo(
-    () => buildAttivitaWorkoutSummary({
-      dailyLog,
-      fullHistory,
-    }),
-    [dailyLog, fullHistory],
-  );
-
   const pastiOverlay = activeCategory === 'pasti' ? (
     createPortal(
       <>
@@ -1054,167 +1013,25 @@ export default function PulsantieraUniversale({
     )
   ) : null;
 
-  const attivitaOverlay = activeCategory === 'attivita' ? (
-    createPortal(
-      <>
-        <div
-          className="kentu-submenu-focus-backdrop fixed inset-0 z-[100040] bg-black/60 backdrop-blur-md"
-          aria-hidden
-          onClick={handleOverlayClose}
-        />
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Cruscotto dello stimolo muscolare e cardio"
-          className="pointer-events-none fixed inset-0 z-[100041] flex items-end justify-center px-3 pb-3 pt-6 sm:items-center sm:px-6 sm:py-6"
-        >
-          <div
-            className="kentu-submenu-focus-panel pointer-events-auto flex max-h-[96dvh] min-h-[min(92dvh,720px)] w-full max-w-lg flex-col overflow-hidden"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="shrink-0 px-1 pb-2 pt-1 text-center">
-              <p className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Semaforo metabolico
-              </p>
-              <h2 className="mt-0.5 text-base font-semibold text-zinc-50 sm:text-lg">
-                Cruscotto dello stimolo
-              </h2>
-            </div>
-
-            <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-3">
-              <MuscleStimulusDistrictList
-                muscleRows={muscleRows}
-                onSelectRow={openStimulusCylinder}
-                unifiedBars
-              />
-
-              <section className="mt-3">
-                <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Monitoraggio Cardio
-                </h3>
-                <CardioProgressBar
-                  compact
-                  dense
-                  unifiedBars
-                  fullHistory={fullHistory}
-                  activeLog={dailyLog}
-                  onActivate={() => dispatchItem({
-                    id: 'cardio-monitor',
-                    action: 'openActivity',
-                    defaultTab: 'cardio',
-                  })}
-                />
-              </section>
-
-              <section className="mt-3" aria-label="Allenamenti di oggi">
-                <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Allenamenti di oggi
-                </h3>
-                <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                  {workoutSummary.todayWorkouts.length === 0 ? (
-                    <p className="m-0 text-[12px] italic text-zinc-500">
-                      Nessun allenamento registrato oggi
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {workoutSummary.todayWorkouts.map((item) => (
-                        <span
-                          key={item.id}
-                          className="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2.5 py-1 text-[11px] font-medium text-zinc-100"
-                        >
-                          <span aria-hidden>{item.icon}</span>
-                          <span className="truncate">
-                            {item.typeLabel}
-                            {item.minutes > 0 ? ` • ${item.minutes} min` : ''}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
-            </div>
-
-            <div className="w-full shrink-0 px-3 pb-1 pt-3">
-              <div className="grid w-full grid-cols-3 gap-2 [&>button]:w-full">
-                <OverlayActionButton
-                  compact
-                  icon={SUBMENUS.attivita.find((i) => i.id === 'allenamento')?.icon || '🏋️'}
-                  label="Forza"
-                  disabled={disabled}
-                  onClick={() => dispatchItem({
-                    ...(SUBMENUS.attivita.find((i) => i.id === 'allenamento') || {}),
-                    id: 'forza',
-                    label: 'Forza',
-                    action: 'openActivity',
-                    defaultTab: 'pesi',
-                    category: 'strength',
-                  })}
-                />
-                <OverlayActionButton
-                  compact
-                  icon={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.icon || '🚶'}
-                  label={SUBMENUS.attivita.find((i) => i.id === 'camminata')?.label || 'Camminata'}
-                  disabled={disabled}
-                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'camminata'))}
-                />
-                <OverlayActionButton
-                  compact
-                  icon={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.icon || '🏃'}
-                  label={SUBMENUS.attivita.find((i) => i.id === 'corsa')?.label || 'Corsa'}
-                  disabled={disabled}
-                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'corsa'))}
-                />
-              </div>
-              <div className="mt-2 grid w-full grid-cols-2 gap-2 [&>button]:w-full">
-                <OverlayActionButton
-                  compact
-                  icon={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.icon || '🗓️'}
-                  label={resolveItemPresentation(SUBMENUS.attivita.find((i) => i.id === 'piano'))?.label || 'Piano'}
-                  disabled={disabled}
-                  onClick={() => dispatchItem(SUBMENUS.attivita.find((i) => i.id === 'piano'))}
-                />
-                <OverlayActionButton
-                  compact
-                  icon="📊"
-                  label="Storico"
-                  disabled={disabled}
-                  onClick={() => setShowWorkoutHistory(true)}
-                />
-              </div>
-
-              <div className="mt-3 flex justify-center">
-                <button
-                  type="button"
-                  onClick={handleOverlayClose}
-                  className={[
-                    'rounded-full border border-zinc-600/80 bg-zinc-900/80 px-5 py-2',
-                    'text-sm font-medium text-zinc-300 backdrop-blur-sm transition-colors',
-                    'hover:border-zinc-500 hover:bg-zinc-800 hover:text-white',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
-                  ].join(' ')}
-                >
-                  Annulla
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </>,
-      document.body,
-    )
-  ) : null;
-
-  const workoutHistoryModal = (activeCategory === 'attivita' && showWorkoutHistory) ? (
-    <AttivitaWorkoutHistoryModal
-      open
-      summary={workoutSummary}
-      onClose={() => setShowWorkoutHistory(false)}
+  const attivitaCockpit = (
+    <StimulusCockpitOverlay
+      open={activeCategory === 'attivita'}
+      onClose={handleOverlayClose}
+      fourCylinder={fourCylinder}
+      fullHistory={fullHistory}
+      dailyLog={dailyLog}
+      disabled={disabled}
+      isDiabetesAppMode={isDiabetesAppMode}
+      onOpenActivity={(payload) => dispatchItem({
+        action: 'openActivity',
+        ...payload,
+      })}
+      onOpenPlan={() => dispatchItem({ action: 'openPlan' })}
       onDeleteWorkout={onDeleteWorkout}
     />
-  ) : null;
+  );
 
-  const submenuOverlay = pastiOverlay || attivitaOverlay || (overlayConfig ? (
+  const submenuOverlay = pastiOverlay || (overlayConfig ? (
     <SubmenuFocusOverlay
       key={activeCategory}
       categoryLabel={overlayConfig.categoryLabel}
@@ -1234,7 +1051,7 @@ export default function PulsantieraUniversale({
   return (
     <div className="relative z-[100045] flex w-full shrink-0 flex-col gap-2 py-2">
       {submenuOverlay}
-      {workoutHistoryModal}
+      {attivitaCockpit}
       <MealTrashSheet
         open={showMealTrash && activeCategory === 'pasti'}
         items={trashMeals}

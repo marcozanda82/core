@@ -9,7 +9,6 @@ import KcalFuelTelemetryRing from '../KcalFuelTelemetryRing';
 import HomeNutrientStrip from '../HomeNutrientStrip';
 import TrainingBlockWidget from '../TrainingBlockWidget';
 import MetabolicMonitorCard from '../MetabolicMonitorCard';
-import KentuLazySectionFallback from '../KentuLazySectionFallback';
 import { getTodayString } from '../../coreEngine';
 
 const HomeMealPieDial = lazy(() => import('../charts/HomeMealPieDial'));
@@ -56,6 +55,7 @@ export default function HomeOggiDialSection({
   handleOpenTrendDiag = null,
   handleOpenTrendSalute = null,
   handleOpenTrendProgressione = null,
+  handleOpenStimulusCockpit = null,
   trainingBlockCreatorOpen = false,
   setTrainingBlockCreatorOpen = null,
   metabolicSnapshot = null,
@@ -282,7 +282,7 @@ export default function HomeOggiDialSection({
                     maxScaleKcal={telemetry.maxScaleKcal}
                   />
                 ) : null}
-                <Suspense fallback={<KentuLazySectionFallback label="Grafico pasti…" />}>
+                <Suspense fallback={null}>
                   <HomeMealPieDial
                     mealPieDisplayData={mealPieDisplayData}
                     selectedMealCenterIndex={selectedMealCenterIndex}
@@ -358,7 +358,7 @@ export default function HomeOggiDialSection({
             calibrationDeltaKcal={calibrationDeltaKcal}
             onOpenTrendDiag={handleOpenTrendDiag}
             onOpenLongevity={handleOpenTrendSalute}
-            onOpenProgressione={handleOpenTrendProgressione}
+            onOpenProgressione={handleOpenStimulusCockpit || handleOpenTrendProgressione}
             creatorOpen={trainingBlockCreatorOpen}
             onCreatorOpenChange={setTrainingBlockCreatorOpen}
             longevityResult={longevityResult}

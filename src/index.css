@@ -2523,10 +2523,10 @@ html, body, #root {
   overflow: visible;
 }
 
-/* Strumentazione Radar — usa l'altezza del foglio; se eccede, scrolla il parent. */
+/* Strumentazione Radar — altezza naturale, zero compressione, scroll sul foglio. */
 .trend-unified-root--strumentazione {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: none;
+  min-height: auto;
   max-width: 28rem;
   width: 100%;
   margin-left: auto;
@@ -2542,15 +2542,15 @@ html, body, #root {
 }
 
 .trend-unified-root--strumentazione .trend-tool-stage {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: none;
+  min-height: auto;
   overflow: visible;
   margin-top: 0;
 }
 
 .trend-radar-panel--stacked {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: none;
+  min-height: auto;
   overflow: visible;
   gap: 0.5rem;
   align-self: stretch;
@@ -2564,13 +2564,14 @@ html, body, #root {
 
 .trend-radar-chart-card {
   position: relative;
-  width: min(100%, 360px);
+  width: 100%;
   max-width: 360px;
   margin-left: auto;
   margin-right: auto;
   aspect-ratio: 1 / 1;
-  flex: 1 1 auto;
-  min-height: min(360px, 100%);
+  flex: none;
+  flex-shrink: 0;
+  min-height: 280px;
   box-sizing: border-box;
   border-radius: 14px;
   overflow: visible;
@@ -2578,10 +2579,11 @@ html, body, #root {
 
 .trend-radar-panel--stacked .trend-radar-shell {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
+  flex: none;
+  min-height: 280px;
+  height: auto;
   width: 100%;
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;

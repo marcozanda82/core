@@ -145,7 +145,7 @@ import {
   WORKOUT_DURATION_MIN,
   WORKOUT_DURATION_MAX,
 } from './utils/durationMinutesInput';
-import { writeTodayTrackerLocalCache } from './utils/trackerCacheUtils';
+import { readRecentHistoryCache } from './utils/trackerCacheUtils';
 import {
   savePersonalDbToCache,
 } from './utils/offlineCacheUtils';
@@ -159,6 +159,7 @@ import {
   resolveOvernightCarryMeal,
 } from './utils/dayTrackingStatus';
 import { useChatOverlay } from './contexts/ChatOverlayContext';
+import { SimulationModeProvider } from './contexts/SimulationModeContext';
 import { getCurrentTimeRoundedTo15Min, getDefaultWorkoutEndTimeDecimal } from './utils/decimalTimeUtils';
 import {
   getStrategyKey,
@@ -454,6 +455,7 @@ import { useTimelineChartShell } from './hooks/salaComandi/useTimelineChartShell
 import { useKentuChatShell } from './hooks/salaComandi/useKentuChatShell';
 import KentuChatFab from './components/salaComandi/KentuChatFab';
 import KentuChatShell from './components/salaComandi/KentuChatShell';
+import StimulusCockpitOverlay from './features/chat/StimulusCockpitOverlay';
 
 export { calculateAge } from './utils/profileAge';
 
@@ -500,6 +502,8 @@ export default function SalaComandi() {
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
   const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
+  /** Cruscotto dello stimolo — stesso overlay della chat Attività, aperto dalla card Home. */
+  const [stimulusCockpitOpen, setStimulusCockpitOpen] = useState(false);
   /** Emisfero bloccato quando l'overlay è aperto da un widget Home. */
   const [snapshotOverlayHemisphere, setSnapshotOverlayHemisphere] = useState('progressione');
   const [snapshotOverlayFocus, setSnapshotOverlayFocus] = useState(null);
@@ -588,6 +592,14 @@ export default function SalaComandi() {
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
+  }, []);
+
+  const handleOpenStimulusCockpit = useCallback(() => {
+    setStimulusCockpitOpen(true);
+  }, []);
+
+  const handleCloseStimulusCockpit = useCallback(() => {
+    setStimulusCockpitOpen(false);
   }, []);
 
   const handleCloseSnapshotOverlay = useCallback(() => {
@@ -1119,8 +1131,8 @@ export default function SalaComandi() {
     return () => window.clearTimeout(t);
   }, [userUid]);
 
-  const [fullStorico, setFullStorico] = useState(null);
-  const [fullHistory, setFullHistory] = useState({});
+  const [fullStorico, setFullStorico] = useState(() => readRecentHistoryCache(userUid) || null);
+  const [fullHistory, setFullHistory] = useState(() => readRecentHistoryCache(userUid) || {});
   const {
     bodyMetricsHistory,
     predictiveCalibration,
@@ -5991,6 +6003,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       longevityScore: unifiedLongevityScore,
       longevityBreakdown: breakdown,
       longevityBars: longevityPagella?.bars ?? [],
+      // Punteggio composito (nutrizione+allenamento+sonno) per Centro Analisi / pagelle.
+      // Il widget Home "Stimolo Muscolare" NON usa questo valore: legge computeAverageMuscleStimulus.
       progressionScore: progressionResult.finalScore,
       progressionBreakdown: progressionResult.breakdown,
       macroPreview: {
@@ -7754,6 +7768,40 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     openTrainingPlan();
   }, [closeChat, isDiabetesAppMode, openTherapyPlan, openTrainingPlan]);
 
+  const handleOpenActivityFromStimulusCockpit = useCallback((payload = {}) => {
+    let raw = String(payload?.defaultTab ?? payload?.tab ?? '').toLowerCase().trim();
+    if (!raw) {
+      raw = peekActivitySheetTempTab() || '';
+    }
+    const defaultTab = stashActivitySheetTempTab(raw || 'pesi');
+    returnToChatAfterQuickActionRef.current = false;
+    resetWorkoutFormForNewSession(defaultTab, payload?.muscles);
+    setWorkoutType(defaultTab);
+    setWorkoutEndTime(getDefaultWorkoutEndTimeDecimal());
+    const nonce = Date.now();
+    setActivitySheetIntent({
+      tab: defaultTab,
+      nonce,
+      targetMuscle: payload?.targetMuscle || null,
+      category: payload?.category || (defaultTab === 'pesi' ? 'strength' : null),
+    });
+    setActiveAction('allenamento');
+    setIsDrawerOpen(true);
+  }, [
+    resetWorkoutFormForNewSession,
+    setWorkoutType,
+    setWorkoutEndTime,
+  ]);
+
+  const handleOpenPlanFromStimulusCockpit = useCallback(() => {
+    returnToChatAfterQuickActionRef.current = false;
+    if (isDiabetesAppMode) {
+      openTherapyPlan();
+      return;
+    }
+    openTrainingPlan();
+  }, [isDiabetesAppMode, openTherapyPlan, openTrainingPlan]);
+
   const handleChatManualShortcut = useCallback(
     (actionId) => {
       if (actionId === 'menu') {
@@ -8106,6 +8154,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           handleOpenTrendDiag={handleOpenTrendDiag}
           handleOpenTrendSalute={handleOpenTrendSalute}
           handleOpenTrendProgressione={handleOpenTrendProgressione}
+          handleOpenStimulusCockpit={handleOpenStimulusCockpit}
           trainingBlockCreatorOpen={trainingBlockCreatorOpen}
           setTrainingBlockCreatorOpen={setTrainingBlockCreatorOpen}
           metabolicSnapshot={metabolicSnapshot}
@@ -8275,6 +8324,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
       {activeBottomTab === 'longevita' && (
         <LongevityTabShell
+          longevityResult={longevityResult}
           longevityData={longevityData}
           userAge={userAge}
           bodyMetricsHistory={bodyMetricsHistory}
@@ -8670,6 +8720,18 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         session={chatUsdaEnrichmentSession}
         onSelectMatch={handleChatUsdaEnrichmentSelect}
         onSkip={handleChatUsdaEnrichmentSkip}
+      />
+
+      <StimulusCockpitOverlay
+        open={stimulusCockpitOpen}
+        onClose={handleCloseStimulusCockpit}
+        fourCylinder={userModel?.fourCylinder ?? null}
+        fullHistory={fullHistory}
+        dailyLog={activeLog}
+        isDiabetesAppMode={isDiabetesAppMode}
+        onOpenActivity={handleOpenActivityFromStimulusCockpit}
+        onOpenPlan={handleOpenPlanFromStimulusCockpit}
+        onDeleteWorkout={removeLogItem}
       />
 
       {showBiochemicalDiagnostics ? (
@@ -9323,6 +9385,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     !startupSafetyBypass && !isDataLoaded;
 
   return (
+    <SimulationModeProvider value={isSimulationMode}>
     <UserNutritionGoalsProvider value={nutritionGoalsValue}>
       <WipMealProvider>
         <>
@@ -9341,5 +9404,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </>
       </WipMealProvider>
     </UserNutritionGoalsProvider>
+    </SimulationModeProvider>
   );
 }

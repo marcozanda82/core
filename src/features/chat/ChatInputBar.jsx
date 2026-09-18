@@ -16,6 +16,7 @@ export default function ChatInputBar({
   onSubmit,
   onCancelGeneration = null,
   tools = null,
+  centerAction = null,
   textareaClassName = 'chat-input resize-none overflow-hidden min-h-[44px] max-h-[150px] w-full',
 }) {
   const [value, setValue] = useState('');
@@ -106,30 +107,33 @@ export default function ChatInputBar({
           onKeyDown={handleKeyDown}
         />
       </div>
-      <div className="kentu-input-strip__actions">
-        <div className="kentu-input-strip__tools overflow-visible">
+      <div className="kentu-input-strip__actions relative flex w-full items-center justify-between">
+        <div className="kentu-input-strip__tools z-10 overflow-visible">
           {tools}
         </div>
-        {isProcessing && !isNotesMode && typeof onCancelGeneration === 'function' ? (
-          <KentuButton
-            variant="secondary"
-            className="kentu-send-btn"
-            aria-label="Interrompi generazione"
-            onClick={() => onCancelGeneration()}
-          >
-            <KentuIcon name="stop" size={16} />
-          </KentuButton>
-        ) : (
-          <KentuButton
-            variant="primary"
-            className={`kentu-send-btn ${!canSubmit ? 'kentu-send-btn--idle' : ''}`}
-            aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
-            disabled={isProcessing && !isNotesMode}
-            onClick={submit}
-          >
-            <KentuIcon name="send" size={18} />
-          </KentuButton>
-        )}
+        {centerAction}
+        <div className="z-10 shrink-0">
+          {isProcessing && !isNotesMode && typeof onCancelGeneration === 'function' ? (
+            <KentuButton
+              variant="secondary"
+              className="kentu-send-btn"
+              aria-label="Interrompi generazione"
+              onClick={() => onCancelGeneration()}
+            >
+              <KentuIcon name="stop" size={16} />
+            </KentuButton>
+          ) : (
+            <KentuButton
+              variant="primary"
+              className={`kentu-send-btn ${!canSubmit ? 'kentu-send-btn--idle' : ''}`}
+              aria-label={isNotesMode ? 'Salva nota' : 'Invia'}
+              disabled={isProcessing && !isNotesMode}
+              onClick={submit}
+            >
+              <KentuIcon name="send" size={18} />
+            </KentuButton>
+          )}
+        </div>
       </div>
     </>
   );

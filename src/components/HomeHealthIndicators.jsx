@@ -1,45 +1,9 @@
 /**
- * Indicatori di salute Home — Progressione/Cardio + Longevità.
+ * Indicatori di salute Home — Stimolo Muscolare + Longevità.
  * Design premium allineato alle card macro (bg-zinc-900/50, barre di riempimento).
  */
 
-import React, { useMemo } from 'react';
-
-/**
- * Verifica se l'utente ha registrato pesi/forza negli ultimi N giorni.
- * @param {object[]} fullHistory
- * @param {string} todayIso
- * @param {number} windowDays
- * @returns {boolean}
- */
-function hasRecentStrengthTraining(fullHistory, todayIso, windowDays = 10) {
-  if (!fullHistory || typeof fullHistory !== 'object') return false;
-  
-  const today = new Date(todayIso + 'T00:00:00');
-  const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() - windowDays);
-  
-  const keys = Object.keys(fullHistory).filter((key) => {
-    if (!key.startsWith('trackerStorico_')) return false;
-    const dateStr = key.replace('trackerStorico_', '');
-    const d = new Date(dateStr + 'T00:00:00');
-    return d >= cutoff && d <= today;
-  });
-  
-  for (const key of keys) {
-    const day = fullHistory[key];
-    const log = Array.isArray(day?.log) ? day.log : [];
-    const hasStrength = log.some((entry) => {
-      if (entry?.type !== 'workout') return false;
-      const type = String(entry.workoutType || '').toLowerCase();
-      return type.includes('pesi') || type.includes('forza') || type.includes('strength') || type.includes('sollevamento');
-    });
-    if (hasStrength) return true;
-  }
-  
-  return false;
-}
-
+import React from 'react';
 
 /**
  * Colore tema per metrica.
@@ -104,7 +68,7 @@ function HealthIndicatorCard({
         px-3 py-2.5
         backdrop-blur-sm
         shadow-lg shadow-black/20
-        ${isClickable ? 'cursor-pointer transition-transform active:scale-[0.98] hover:shadow-xl' : 'cursor-default'}
+        ${isClickable ? 'cursor-pointer active:scale-95 transition-transform hover:shadow-xl' : 'cursor-default'}
         disabled:cursor-not-allowed
       `}
       aria-label={`${title} ${value != null ? value : '—'} su ${maxScore}`}
@@ -146,52 +110,32 @@ function HealthIndicatorCard({
 }
 
 /**
- * Sezione indicatori salute Home: Progressione/Cardio (adattivo) + Longevità.
- * 
+ * Sezione indicatori salute Home: Stimolo Muscolare (sempre) + Longevità.
+ *
  * @param {{
- *   fullHistory: object | null,
- *   todayIso: string,
- *   fourCylinder: object | null,
  *   progressionScore: number | null,
- *   cardioScore: number | null,
  *   longevityScore: number | null,
  *   onOpenProgressione: (() => void) | null,
  *   onOpenLongevity: (() => void) | null,
  * }} props
  */
 export default function HomeHealthIndicators({
-  fullHistory = null,
-  todayIso = '',
-  fourCylinder = null,
   progressionScore = null,
-  cardioScore = null,
   longevityScore = null,
   onOpenProgressione = null,
   onOpenLongevity = null,
 } = {}) {
-  // Logica adattiva: verifica se ha fatto pesi negli ultimi 10 giorni
-  const hasRecentStrength = useMemo(
-    () => hasRecentStrengthTraining(fullHistory, todayIso, 10),
-    [fullHistory, todayIso],
-  );
-  
-  // Se ha fatto pesi → PROGRESSIONE, altrimenti → CARDIO
-  const leftCardMode = hasRecentStrength ? 'strength' : 'cardio';
-  const leftCardIcon = leftCardMode === 'strength' ? '🏋️' : '🫀';
-  const leftCardTitle = leftCardMode === 'strength' ? 'PROGRESSIONE' : 'CARDIO';
-  const leftCardScore = leftCardMode === 'strength' ? progressionScore : cardioScore;
-  
   return (
-    <div 
+    <div
       className="grid w-full grid-cols-2 gap-3"
       aria-label="Indicatori di salute"
     >
       <HealthIndicatorCard
-        icon={leftCardIcon}
-        title={leftCardTitle}
-        score={leftCardScore}
+        icon="🏋️"
+        title="STIMOLO MUSCOLARE"
+        score={progressionScore}
         maxScore={100}
-        metricType={leftCardMode}
+        metricType="strength"
         onClick={onOpenProgressione}
       />
       <HealthIndicatorCard

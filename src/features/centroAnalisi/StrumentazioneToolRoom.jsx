@@ -33,14 +33,11 @@ const VIEWPORT_COMPASS = [
   '[&_.metabolic-compass-micro-suggestion]:!mt-3 [&_.metabolic-compass-ambient-debug]:!mt-2',
 ];
 
-/** Colonna Radar: riempie l'altezza del foglio; se il grafico eccede, scrolla il parent. */
+/** Colonna Radar: altezza naturale del grafico; lo scroll è sul foglio. */
 const VIEWPORT_RADAR = [
-  'flex flex-col flex-1 min-h-0 gap-3 w-full max-w-md mx-auto',
-  '[&_.trend-unified-root]:flex [&_.trend-unified-root]:min-h-0 [&_.trend-unified-root]:flex-1',
-  '[&_.trend-unified-root]:w-full [&_.trend-unified-root]:max-w-none',
+  'flex flex-col gap-3 w-full max-w-md mx-auto pb-8',
   '[&_.trend-unified-root]:!overflow-visible',
-  '[&_.trend-tool-stage]:flex [&_.trend-tool-stage]:min-h-0 [&_.trend-tool-stage]:flex-1',
-  '[&_.trend-tool-stage]:w-full [&_.trend-tool-stage]:!overflow-visible',
+  '[&_.trend-tool-stage]:!overflow-visible',
   '[&_.trend-radar-panel]:!overflow-visible',
 ];
 
@@ -219,7 +216,7 @@ export default function StrumentazioneToolRoom({
 
   return (
     <div
-      className="strumentazione-room flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-visible"
+      className="strumentazione-room w-full min-w-0 overflow-visible"
       data-strumentazione-tool={activeTool}
       data-daily-history-days={dailyHistory?.length ?? 0}
       data-has-four-cylinder={Boolean(fourCylinder) ? '1' : '0'}

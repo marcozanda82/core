@@ -14,14 +14,7 @@ import {
   normalizeMuscleGroupArray,
 } from '../activityCatalog';
 import HomeHealthIndicators from './HomeHealthIndicators';
-import useHomeProgressionSwap from '../hooks/salaComandi/useHomeProgressionSwap';
-import {
-  calculateProgressionScore,
-} from '../features/trendHub/utils/saluteDashboardMetrics';
-import {
-  buildProgressionLogsWindow,
-  LONGEVITY_WINDOW_DAYS,
-} from '../features/trendHub/utils/saluteHistorySeries';
+import { computeAverageMuscleStimulus } from '../features/trendHub/utils/muscleTelemetryModel';
 
 /** Stesso shell del MetabolicMonitorCard (padding, raggio, bordo). */
 const CARD_CLASS =
@@ -153,15 +146,6 @@ export default function TrainingBlockWidget({
   });
 
   const dayKey = String(todayIso || hookTodayIso || '').slice(0, 10);
-  const {
-    mode: leftRingMode,
-    cardioScore,
-  } = useHomeProgressionSwap({
-    fourCylinder,
-    fullHistory,
-    activeLog,
-    todayIso: dayKey,
-  });
   const [toast, setToast] = useState('');
   const [localError, setLocalError] = useState('');
   const [creatorOpenInternal, setCreatorOpenInternal] = useState(false);
@@ -199,29 +183,15 @@ export default function TrainingBlockWidget({
 
   const longevityResult = longevityResultProp;
 
-  const progressionResult = useMemo(() => {
-    const logs = buildProgressionLogsWindow({
+  const muscleStimulusScore = useMemo(
+    () => Math.round(computeAverageMuscleStimulus({
+      fourCylinder,
       fullHistory,
-      todayDate: dayKey,
-      days: LONGEVITY_WINDOW_DAYS,
-      todayLiveLog: activeLog,
-    });
-    return calculateProgressionScore(
-      {
-        days: logs.days,
-        todayDate: logs.todayDate,
-        sleepAvgHours: logs.sleepAvgHours,
-        workoutSessionsTotal: logs.workoutSessionsTotal,
-      },
-      userTargets || {},
-      {
-        fourCylinder,
-        fullHistory,
-        activeLog,
-        activeDate: dayKey,
-      },
-    );
-  }, [fullHistory, dayKey, activeLog, userTargets, fourCylinder]);
+      activeLog,
+      activeDate: dayKey,
+    })),
+    [fourCylinder, fullHistory, activeLog, dayKey],
+  );
 
   const showToast = (msg) => {
     setToast(msg);
@@ -495,14 +465,10 @@ export default function TrainingBlockWidget({
   const scoresSlide = (
     <div
       className="home-oggi-rigid mb-0"
-      aria-label="Punteggi Progressione e Longevità"
+      aria-label="Punteggi Stimolo Muscolare e Longevità"
     >
       <HomeHealthIndicators
-        fullHistory={fullHistory}
-        todayIso={dayKey}
-        fourCylinder={fourCylinder}
-        progressionScore={progressionResult?.finalScore}
-        cardioScore={cardioScore}
+        progressionScore={muscleStimulusScore}
         longevityScore={longevityResult?.finalScore}
         onOpenProgressione={typeof onOpenProgressione === 'function' ? onOpenProgressione : undefined}
         onOpenLongevity={typeof onOpenLongevity === 'function' ? onOpenLongevity : undefined}

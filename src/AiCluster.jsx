@@ -3,7 +3,7 @@
  */
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Home } from 'lucide-react';
+import { Home, X } from 'lucide-react';
 import { matchReportCommand, REPORT_ANIMATION_SRC, REPORT_COVER_SRC } from './features/commandTerminal/conversation/reportCommandIntent.js';
 import MenuProposalCard from './MenuProposalCard';
 import DailyPlanCard from './DailyPlanCard';
@@ -1212,8 +1212,8 @@ export default function AiCluster({
                     event.stopPropagation();
                     handleWorkspaceHomeClick();
                   }}
-                  aria-label="Torna alla Home"
-                  title="Home"
+                  aria-label="Chiudi chat"
+                  title="Chiudi"
                   className={[
                     'inline-flex h-10 w-10 items-center justify-center rounded-full border',
                     'border-zinc-700/80 bg-zinc-950/75 text-cyan-200 backdrop-blur-sm transition',
@@ -1221,7 +1221,7 @@ export default function AiCluster({
                     'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
                   ].join(' ')}
                 >
-                  <Home className="h-4 w-4" aria-hidden />
+                  <X className="h-4 w-4" aria-hidden />
                 </button>
               ) : null}
             </div>
@@ -1278,8 +1278,8 @@ export default function AiCluster({
                 <button
                   type="button"
                   onClick={handleWorkspaceHomeClick}
-                  aria-label="Torna alla Home"
-                  title="Home"
+                  aria-label="Chiudi chat"
+                  title="Chiudi"
                   className={[
                     'inline-flex h-10 w-10 items-center justify-center rounded-full border',
                     'border-zinc-700 bg-zinc-900 text-cyan-200 transition',
@@ -1287,7 +1287,7 @@ export default function AiCluster({
                     'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
                   ].join(' ')}
                 >
-                  <Home className="h-4 w-4" aria-hidden />
+                  <X className="h-4 w-4" aria-hidden />
                 </button>
               ) : null}
             </div>
@@ -2084,26 +2084,6 @@ export default function AiCluster({
             isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}
-        {typeof onBack === 'function' ? (
-          <div className="flex shrink-0 items-center justify-center px-3 pb-1 pt-1">
-            <button
-              type="button"
-              onClick={handleWorkspaceHomeClick}
-              aria-label="Torna alla Home"
-              title="Home"
-              className={[
-                'inline-flex h-12 min-w-[8.5rem] items-center justify-center gap-2 rounded-full border',
-                'border-cyan-500/40 bg-zinc-900/95 px-5 text-sm font-semibold text-cyan-100',
-                'shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm transition',
-                'hover:border-cyan-400/60 hover:text-white',
-                'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
-              ].join(' ')}
-            >
-              <Home className="h-4 w-4" aria-hidden />
-              Home
-            </button>
-          </div>
-        ) : null}
         {isVoiceNoteActive ? (
           <div className="kentu-voice-vetrina" role="region" aria-label="Nota vocale">
             <div className="kentu-voice-vetrina__status">
@@ -2220,6 +2200,19 @@ export default function AiCluster({
             canSendWithImages={!isNotesMode && safeImages.length > 0}
             onSubmit={handleComposerSubmit}
             onCancelGeneration={onCancelGeneration}
+            centerAction={
+              typeof onBack === 'function' ? (
+                <button
+                  type="button"
+                  className="kentu-btn--icon absolute left-1/2 top-1/2 z-20 inline-flex h-10 w-10 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-transparent text-zinc-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+                  aria-label="Torna alla Home"
+                  title="Home"
+                  onClick={handleWorkspaceHomeClick}
+                >
+                  <Home className="h-[18px] w-[18px]" aria-hidden />
+                </button>
+              ) : null
+            }
             tools={(
               <>
                 <KentuButton

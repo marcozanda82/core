@@ -3,6 +3,7 @@ import { useHealthSystemState } from '../hooks/useHealthSystemState.js';
 import HealthCockpit from './HealthCockpit.jsx';
 import PillarInsightOverlay from './PillarInsightOverlay.jsx';
 import KentuLazySectionFallback from '../../../components/KentuLazySectionFallback.jsx';
+import SimulationJsonCopyButton from '../../../components/SimulationJsonCopyButton.jsx';
 
 const HealthCockpitLabOverlay = lazy(() => import('./HealthCockpitLabOverlay.jsx'));
 
@@ -25,47 +26,19 @@ export default function HealthCockpitScreen({
   dailyLog = null,
   ...engineProps
 } = {}) {
-  // 🔥 FIX CRITICO: Passa dailyLog all'hook (era perso prima!)
-  const { healthState, isReady, isLoading } = useHealthSystemState({
+  const { healthState, snapshot, isReady, isLoading } = useHealthSystemState({
     ...engineProps,
-    dailyLog, // ← Ora il diario grezzo viene passato all'engine
+    dailyLog,
   });
   const [labTool, setLabTool] = useState(null);
   const [selectedPillarId, setSelectedPillarId] = useState(null);
-  
-  const todayStr = new Date().toISOString().slice(0, 10);
 
-  const handleCopyDebugJson = useCallback(() => {
-    try {
-      const debugData = {
-        data: dateStr || new Date().toISOString().slice(0, 10),
-        diario: dailyLog || [],
-        salute: healthState || null,
-      };
-      const jsonString = JSON.stringify(debugData, null, 2);
-      
-      navigator.clipboard.writeText(jsonString)
-        .then(() => {
-          alert('✅ JSON di Debug copiato negli appunti!');
-        })
-        .catch(err => {
-          console.error('Errore copia:', err);
-          // Fallback per browser senza Clipboard API
-          const ta = document.createElement('textarea');
-          ta.value = jsonString;
-          ta.style.position = 'fixed';
-          ta.style.left = '-9999px';
-          document.body.appendChild(ta);
-          ta.select();
-          document.execCommand('copy');
-          document.body.removeChild(ta);
-          alert('✅ JSON di Debug copiato negli appunti!');
-        });
-    } catch (err) {
-      console.error('Errore export JSON:', err);
-      alert('❌ Errore durante l\'export del JSON');
-    }
-  }, [dateStr, dailyLog, healthState]);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const salutePayload = {
+    date: dateStr || todayStr,
+    snapshot: snapshot || null,
+    salute: healthState || null,
+  };
 
   const handleOpenLabTool = useCallback((toolId) => {
     const id = String(toolId || '').toUpperCase();
@@ -84,6 +57,10 @@ export default function HealthCockpitScreen({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <SimulationJsonCopyButton
+        payload={salutePayload}
+        ariaLabel="Copia JSON salute"
+      />
       <HealthCockpit
         healthState={healthState}
         isReady={isReady}
@@ -94,7 +71,6 @@ export default function HealthCockpitScreen({
         onNavigateNextDay={onNavigateNextDay}
         onOpenLabTool={handleOpenLabTool}
         onOpenPillarAnalysis={setSelectedPillarId}
-        onCopyDebugJson={handleCopyDebugJson}
       />
       {selectedPillarId ? (
         <PillarInsightOverlay

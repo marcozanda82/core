@@ -76,28 +76,26 @@ export default function HealthCockpitLabOverlay({
           </button>
         </header>
 
-        {/* Scrollable Content */}
+        {/* Scrollable Content — altezza naturale, niente compressione del Radar */}
         <div
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-6 pb-[max(2rem,env(safe-area-inset-bottom,0px))] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 pb-[max(2.5rem,env(safe-area-inset-bottom,0px))] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
-          <div className="flex h-full min-h-0 flex-1 flex-col">
-            <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
-              {meta.kind === 'autopilota' ? (
-                <CalibrazioneTargetRoom
-                  store={store}
-                  handlers={calibrazioneHandlers}
-                />
-              ) : (
-                <StrumentazioneToolRoom
-                  store={store}
-                  activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
-                  label={meta.title}
-                  onSwitchRoom={setRoomId}
-                  showToolTabs
-                />
-              )}
-            </Suspense>
-          </div>
+          <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
+            {meta.kind === 'autopilota' ? (
+              <CalibrazioneTargetRoom
+                store={store}
+                handlers={calibrazioneHandlers}
+              />
+            ) : (
+              <StrumentazioneToolRoom
+                store={store}
+                activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
+                label={meta.title}
+                onSwitchRoom={setRoomId}
+                showToolTabs
+              />
+            )}
+          </Suspense>
         </div>
       </div>
     </div>
