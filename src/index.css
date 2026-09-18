@@ -2523,10 +2523,10 @@ html, body, #root {
   overflow: visible;
 }
 
-/* Strumentazione Radar — colonna a blocchi, scroll naturale, zero overlap */
+/* Strumentazione Radar — usa l'altezza del foglio; se eccede, scrolla il parent. */
 .trend-unified-root--strumentazione {
-  flex: none;
-  min-height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   max-width: 28rem;
   width: 100%;
   margin-left: auto;
@@ -2542,15 +2542,15 @@ html, body, #root {
 }
 
 .trend-unified-root--strumentazione .trend-tool-stage {
-  flex: none;
-  min-height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: visible;
   margin-top: 0;
 }
 
 .trend-radar-panel--stacked {
-  flex: none;
-  min-height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: visible;
   gap: 0.5rem;
   align-self: stretch;
@@ -2564,21 +2564,22 @@ html, body, #root {
 
 .trend-radar-chart-card {
   position: relative;
-  width: 100%;
-  max-width: 320px;
+  width: min(100%, 360px);
+  max-width: 360px;
   margin-left: auto;
   margin-right: auto;
   aspect-ratio: 1 / 1;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-height: min(360px, 100%);
   box-sizing: border-box;
   border-radius: 14px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .trend-radar-panel--stacked .trend-radar-shell {
   position: relative;
-  flex: none;
-  min-height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   height: 100%;
   width: 100%;
   display: flex;

@@ -33,9 +33,15 @@ const VIEWPORT_COMPASS = [
   '[&_.metabolic-compass-micro-suggestion]:!mt-3 [&_.metabolic-compass-ambient-debug]:!mt-2',
 ];
 
-/** Colonna scrollabile: timeframe → telemetria → grafico (nessun overlap). */
+/** Colonna Radar: riempie l'altezza del foglio; se il grafico eccede, scrolla il parent. */
 const VIEWPORT_RADAR = [
-  'flex flex-col gap-3 w-full max-w-md mx-auto',
+  'flex flex-col flex-1 min-h-0 gap-3 w-full max-w-md mx-auto',
+  '[&_.trend-unified-root]:flex [&_.trend-unified-root]:min-h-0 [&_.trend-unified-root]:flex-1',
+  '[&_.trend-unified-root]:w-full [&_.trend-unified-root]:max-w-none',
+  '[&_.trend-unified-root]:!overflow-visible',
+  '[&_.trend-tool-stage]:flex [&_.trend-tool-stage]:min-h-0 [&_.trend-tool-stage]:flex-1',
+  '[&_.trend-tool-stage]:w-full [&_.trend-tool-stage]:!overflow-visible',
+  '[&_.trend-radar-panel]:!overflow-visible',
 ];
 
 const VIEWPORT_MAP = [
@@ -213,7 +219,7 @@ export default function StrumentazioneToolRoom({
 
   return (
     <div
-      className="strumentazione-room w-full min-w-0 overflow-visible"
+      className="strumentazione-room flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-visible"
       data-strumentazione-tool={activeTool}
       data-daily-history-days={dailyHistory?.length ?? 0}
       data-has-four-cylinder={Boolean(fourCylinder) ? '1' : '0'}
@@ -221,10 +227,12 @@ export default function StrumentazioneToolRoom({
       aria-label={label}
     >
       {showToolTabs ? (
-        <StrumentazioneToolTabs
-          activeRoomId={TOOL_TABS.find((t) => t.tool === activeTool)?.roomId || 'bussola'}
-          onSwitchRoom={onSwitchRoom}
-        />
+        <div className="mb-3 shrink-0">
+          <StrumentazioneToolTabs
+            activeRoomId={TOOL_TABS.find((t) => t.tool === activeTool)?.roomId || 'bussola'}
+            onSwitchRoom={onSwitchRoom}
+          />
+        </div>
       ) : null}
       <div className={viewportClassForTool(activeTool)}>
         <Suspense fallback={<GlassSpinner label={`Carico ${label}…`} />}>

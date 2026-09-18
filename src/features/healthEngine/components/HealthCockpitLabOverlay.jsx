@@ -40,16 +40,17 @@ export default function HealthCockpitLabOverlay({
         }
       }}
     >
-      {/* Bottom Sheet Container */}
+      {/* Full-height sheet: il Radar deve stare nello spazio verticale disponibile, non in 85vh. */}
       <div
-        className="w-full h-[85vh] bg-zinc-950 border-t border-white/10 rounded-t-[2.5rem] shadow-2xl flex flex-col overflow-hidden transform transition-transform animate-in slide-in-from-bottom duration-300"
+        className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden border-t border-white/10 bg-zinc-950 shadow-2xl transform transition-transform animate-in slide-in-from-bottom duration-300"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* iOS-style Drag Handle */}
-        <div className="w-12 h-1.5 bg-zinc-700 rounded-full mx-auto mt-4 mb-4 flex-shrink-0"></div>
+        <div className="mx-auto mb-3 mt-3 h-1.5 w-12 flex-shrink-0 rounded-full bg-zinc-700"></div>
 
         {/* Header */}
-        <header className="flex shrink-0 items-center justify-between px-6 mb-2">
+        <header className="mb-2 flex shrink-0 items-center justify-between px-6">
           <h2 className="text-xl font-bold tracking-tight text-white">
             {meta.title}
           </h2>
@@ -76,23 +77,27 @@ export default function HealthCockpitLabOverlay({
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto px-6 pb-12 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
-            {meta.kind === 'autopilota' ? (
-              <CalibrazioneTargetRoom
-                store={store}
-                handlers={calibrazioneHandlers}
-              />
-            ) : (
-              <StrumentazioneToolRoom
-                store={store}
-                activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
-                label={meta.title}
-                onSwitchRoom={setRoomId}
-                showToolTabs
-              />
-            )}
-          </Suspense>
+        <div
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-6 pb-[max(2rem,env(safe-area-inset-bottom,0px))] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        >
+          <div className="flex h-full min-h-0 flex-1 flex-col">
+            <Suspense fallback={<KentuLazySectionFallback label={`Carico ${meta.title}…`} />}>
+              {meta.kind === 'autopilota' ? (
+                <CalibrazioneTargetRoom
+                  store={store}
+                  handlers={calibrazioneHandlers}
+                />
+              ) : (
+                <StrumentazioneToolRoom
+                  store={store}
+                  activeTool={STRUMENTAZIONE_ROOM_TO_TOOL[roomId] || 'COMPASS'}
+                  label={meta.title}
+                  onSwitchRoom={setRoomId}
+                  showToolTabs
+                />
+              )}
+            </Suspense>
+          </div>
         </div>
       </div>
     </div>

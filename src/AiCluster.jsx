@@ -2084,6 +2084,26 @@ export default function AiCluster({
             isDiabetesAppMode={isDiabetesAppMode}
           />
         ) : null}
+        {typeof onBack === 'function' ? (
+          <div className="flex shrink-0 items-center justify-center px-3 pb-1 pt-1">
+            <button
+              type="button"
+              onClick={handleWorkspaceHomeClick}
+              aria-label="Torna alla Home"
+              title="Home"
+              className={[
+                'inline-flex h-12 min-w-[8.5rem] items-center justify-center gap-2 rounded-full border',
+                'border-cyan-500/40 bg-zinc-900/95 px-5 text-sm font-semibold text-cyan-100',
+                'shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-sm transition',
+                'hover:border-cyan-400/60 hover:text-white',
+                'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+              ].join(' ')}
+            >
+              <Home className="h-4 w-4" aria-hidden />
+              Home
+            </button>
+          </div>
+        ) : null}
         {isVoiceNoteActive ? (
           <div className="kentu-voice-vetrina" role="region" aria-label="Nota vocale">
             <div className="kentu-voice-vetrina__status">
