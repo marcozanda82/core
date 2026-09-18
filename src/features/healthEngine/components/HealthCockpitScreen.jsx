@@ -1,6 +1,7 @@
 import React, { lazy, Suspense, useCallback, useState } from 'react';
 import { useHealthSystemState } from '../hooks/useHealthSystemState.js';
 import HealthCockpit from './HealthCockpit.jsx';
+import HealthCockpitLongevityPreviewGate from './HealthCockpitLongevityPreviewGate.jsx';
 import PillarInsightOverlay from './PillarInsightOverlay.jsx';
 import KentuLazySectionFallback from '../../../components/KentuLazySectionFallback.jsx';
 import SimulationJsonCopyButton from '../../../components/SimulationJsonCopyButton.jsx';
@@ -22,8 +23,11 @@ export default function HealthCockpitScreen({
   onNavigatePrevDay = null,
   onNavigateNextDay = null,
   onOpenTimeline = null,
+  onOpenStimulusCockpit = null,
+  onOpenMetabolicFocus = null,
   calibrazioneHandlers = null,
   dailyLog = null,
+  longevityResult = null,
   ...engineProps
 } = {}) {
   const { healthState, snapshot, isReady, isLoading } = useHealthSystemState({
@@ -61,17 +65,26 @@ export default function HealthCockpitScreen({
         payload={salutePayload}
         ariaLabel="Copia JSON salute"
       />
-      <HealthCockpit
-        healthState={healthState}
-        isReady={isReady}
-        isLoading={isLoading}
-        dateStr={dateStr}
-        todayStr={todayStr}
-        onNavigatePrevDay={onNavigatePrevDay}
-        onNavigateNextDay={onNavigateNextDay}
-        onOpenLabTool={handleOpenLabTool}
-        onOpenPillarAnalysis={setSelectedPillarId}
-      />
+      <HealthCockpitLongevityPreviewGate
+        longevityResult={longevityResult}
+        onOpenStimulusCockpit={onOpenStimulusCockpit}
+        onOpenMetabolicFocus={onOpenMetabolicFocus}
+      >
+        <HealthCockpit
+          healthState={healthState}
+          isReady={isReady}
+          isLoading={isLoading}
+          dateStr={dateStr}
+          todayStr={todayStr}
+          onNavigatePrevDay={onNavigatePrevDay}
+          onNavigateNextDay={onNavigateNextDay}
+          onOpenLabTool={handleOpenLabTool}
+          onOpenPillarAnalysis={setSelectedPillarId}
+          onOpenStimulusCockpit={onOpenStimulusCockpit}
+          onOpenMetabolicFocus={onOpenMetabolicFocus}
+          longevityResult={longevityResult}
+        />
+      </HealthCockpitLongevityPreviewGate>
       {selectedPillarId ? (
         <PillarInsightOverlay
           pillarId={selectedPillarId}

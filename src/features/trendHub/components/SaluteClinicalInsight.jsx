@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import {
   isHealthReportGeneratedToday,
@@ -95,6 +95,8 @@ export default function SaluteClinicalInsight({
   onRefresh = null,
   /** true = niente accordion; insight sempre visibile al 100%. */
   defaultExpanded = false,
+  /** true = solo corpo (Markdown/copertina), senza header «Score». */
+  embedded = false,
 } = {}) {
   const tone = scoreTone(report?.dailyScore);
   const borderTone =
@@ -169,11 +171,24 @@ export default function SaluteClinicalInsight({
           )}
         </div>
       ) : null}
-      {report && !markdown ? (
+      {report && !markdown && !embedded ? (
         <p className="m-0 text-xs text-slate-500">Score calcolato · nessun testo aggiuntivo.</p>
+      ) : null}
+      {report && !markdown && embedded ? (
+        <p className="m-0 text-xs text-slate-500">
+          Nessun testo del bollettino. I dati dell&apos;analisi sono sotto.
+        </p>
       ) : null}
     </>
   );
+
+  if (embedded) {
+    return (
+      <div className="w-full min-w-0 space-y-2" aria-label={METABOLIC_FOCUS_LABEL}>
+        {insightBody}
+      </div>
+    );
+  }
 
   if (defaultExpanded) {
     return (

@@ -604,7 +604,8 @@ export default function PulsantieraUniversale({
       const t = typeof it.mealTime === 'number' && Number.isFinite(it.mealTime)
         ? Number(it.mealTime)
         : 12;
-      const slotId = `${mealTypeBase}_${t}`;
+      const typeKey = String(it.mealType || '').trim() || mealTypeBase;
+      const slotId = `${typeKey}_${t}`;
 
       if (!groups.has(slotId)) {
         groups.set(slotId, {

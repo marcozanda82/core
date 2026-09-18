@@ -460,7 +460,7 @@ import StimulusCockpitOverlay from './features/chat/StimulusCockpitOverlay';
 export { calculateAge } from './utils/profileAge';
 
 const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
-const HealthCockpitScreen = lazy(() => import('./features/healthEngine/components/HealthCockpitScreen'));
+const SaluteExperience = lazy(() => import('./features/salute/components/SaluteExperience'));
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
@@ -612,6 +612,15 @@ export default function SalaComandi() {
     persistTrendHubHemisphere('salute');
     setSnapshotOverlayHemisphere('salute');
     setSnapshotOverlayFocus('muscle_telemetry');
+    setSnapshotOverlayOpen(true);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+  }, []);
+
+  const handleOpenMetabolicFocus = useCallback(() => {
+    persistTrendHubHemisphere('salute');
+    setSnapshotOverlayHemisphere('salute');
+    setSnapshotOverlayFocus('nutrition');
     setSnapshotOverlayOpen(true);
     setActiveAction(null);
     setIsDrawerOpen(false);
@@ -2921,11 +2930,9 @@ export default function SalaComandi() {
     setEditingMealId(mTypeOrId != null ? String(mTypeOrId) : null);
     setPendingGhostMealId(null);
     setFastLoggerInitialSlot(
-      mTypeOrId != null
-        ? toCanonicalMealType(String(mTypeOrId).split('_')[0])
-        : draftItems[0]?.mealType
-          ? toCanonicalMealType(String(draftItems[0].mealType).split('_')[0])
-          : null
+      items[0]?.mealType
+        ? String(items[0].mealType)
+        : (mTypeOrId != null ? String(mTypeOrId) : null)
     );
     setFastLoggerRemountKey((k) => k + 1);
     setShowFastLogger(true);
@@ -5887,6 +5894,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     longevityScore: unifiedLongevityScore,
     longevityNutrition: unifiedLongevityNutrition,
     recentNutritionScores: unifiedRecentNutritionScores,
+    longevityWindow: unifiedLongevityWindow,
+    healthReportStatus: unifiedHealthReportStatus,
     isEngineReady,
   } = useLongevityScore({
     scoreDate: currentTrackerDate,
@@ -8243,6 +8252,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             boxSizing: 'border-box',
           }}
         >
+          {/* Default Stato: SaluteExperience. Centro Analisi resta il fallback legacy. */}
           {saluteSurface === 'legacy' || centroAnalisiEntryArea ? (
             <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
               <CentroAnalisiView
@@ -8271,47 +8281,27 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               />
             </Suspense>
           ) : (
-            <Suspense fallback={<KentuLazySectionFallback label="Health Cockpit…" />}>
-              <HealthCockpitScreen
-                dailyLog={activeLog}
-                manualNodes={manualNodes}
-                fullHistory={fullHistory}
-                fourCylinder={userModel?.fourCylinder ?? null}
-                userTargets={userTargets}
-                dateStr={currentTrackerDate || getTodayString()}
-                glycemicPenalty={sleepMetabolicPenalty}
-                hoursSinceLastMeal={metabolicSnapshot?.hoursSinceLastMeal ?? null}
-                metabolicPhaseId={metabolicSnapshot?.phase?.id ?? null}
-                enabled={isInitialLoadComplete}
-                isHydrated={isInitialLoadComplete}
-                onNavigatePrevDay={() => {
-                  const currentDate = new Date((currentTrackerDate || getTodayString()) + 'T12:00:00');
-                  currentDate.setDate(currentDate.getDate() - 1);
-                  navigateToDate(currentDate.toISOString().slice(0, 10));
-                }}
-                onNavigateNextDay={() => {
-                  const currentDate = new Date((currentTrackerDate || getTodayString()) + 'T12:00:00');
-                  currentDate.setDate(currentDate.getDate() + 1);
-                  const nextDay = currentDate.toISOString().slice(0, 10);
-                  if (nextDay <= getTodayString()) {
-                    navigateToDate(nextDay);
-                  }
-                }}
-                onOpenTimeline={openMetabolicTimeline}
-                calibrazioneHandlers={{
-                  activeDate: currentTrackerDate || getTodayString(),
-                  settingsBaseKcal: dogmaticSettingsBaseKcal,
-                  committedGhostGoal,
-                  committedGhostDeltaKcal,
-                  effectiveGhostDeltaKcal,
-                  autoCompensationDelta: dogmaticAutoCompensationKcal,
-                  rollingDebt,
-                  ghostAutoPilotEnabled,
-                  onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
-                  onApplyGhostSimGoal: applyGhostSimGoal,
-                  activeCompensation: userProfile?.activeCompensation ?? null,
-                  onConfirmCompensation: applyActiveCompensationPlan,
-                  onClearCompensation: clearActiveCompensationPlan,
+            <Suspense fallback={<KentuLazySectionFallback label="Salute…" />}>
+              <SaluteExperience
+                embedded
+                host={{
+                  ready: Boolean(isInitialLoadComplete),
+                  db,
+                  uid: userUid,
+                  todayDate: currentTrackerDate || getTodayString(),
+                  fullHistory,
+                  activeLog,
+                  userTargets,
+                  userProfile,
+                  fourCylinder: userModel?.fourCylinder ?? null,
+                  bodyMetricsHistory,
+                  fastingData,
+                  longevityResult,
+                  longevityWindow: unifiedLongevityWindow,
+                  longevityNutrition: unifiedLongevityNutrition,
+                  recentNutritionScores: unifiedRecentNutritionScores,
+                  healthReportStatus: unifiedHealthReportStatus,
+                  isEngineReady,
                 }}
               />
             </Suspense>
@@ -9350,12 +9340,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           editingMealId={editingMealId}
           initialMealSlot={
             fastLoggerInitialSlot
-            ?? (mealToEdit?.[0]?.mealType
-              ? toCanonicalMealType(String(mealToEdit[0].mealType).split('_')[0])
-              : undefined)
-            ?? (editingMealId
-              ? toCanonicalMealType(String(editingMealId).split('_')[0])
-              : undefined)
+            ?? (mealToEdit?.[0]?.mealType ? String(mealToEdit[0].mealType) : undefined)
+            ?? (editingMealId ? String(editingMealId) : undefined)
           }
           initialMealTime={fastLoggerInitialMealTime}
           autoOpenBarcodeScanner={fastLoggerAutoOpenScanner}
@@ -9365,6 +9351,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}
           onPatchFoodDbEntry={patchFoodDbEntry}
           onSaveRecipe={saveCustomRecipeToFoodDb}
+          onDeleteRecipe={deleteRecipeFromFoodDb}
         />
         </Suspense>
       ) : null}

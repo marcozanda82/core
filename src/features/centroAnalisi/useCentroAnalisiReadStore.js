@@ -18,7 +18,7 @@ import { buildMetabolicFastingSnapshot } from '../salaComandi/utils/metabolicPha
  * Stessi path di Sala Comandi: tracker_data, profile_targets, physiology_model, body_metrics.
  * Nessuna scrittura, nessun boot catch-up 4 cilindri.
  */
-export function useCentroAnalisiReadStore() {
+export function useCentroAnalisiReadStore({ enabled = true } = {}) {
   const { db, user, authReady } = useFirebase();
   const [ready, setReady] = useState(false);
   const [fullHistory, setFullHistory] = useState({});
@@ -29,6 +29,7 @@ export function useCentroAnalisiReadStore() {
   const [bodyMetricsHistory, setBodyMetricsHistory] = useState([]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     if (!authReady) return undefined;
     if (!user) {
       setReady(true);
@@ -113,7 +114,7 @@ export function useCentroAnalisiReadStore() {
       cancelled = true;
       unsubToday?.();
     };
-  }, [authReady, user, db]);
+  }, [enabled, authReady, user, db]);
 
   const fastingData = useMemo(
     () => buildMetabolicFastingSnapshot(activeLog, new Date().getHours(), {}),
@@ -123,7 +124,7 @@ export function useCentroAnalisiReadStore() {
   return {
     authReady,
     isAuthenticated: Boolean(user),
-    ready: authReady && ready,
+    ready: enabled && authReady && ready,
     db,
     uid: user?.uid ?? null,
     todayDate: getTodayString(),

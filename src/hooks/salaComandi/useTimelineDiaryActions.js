@@ -1,14 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useTimelineDrag } from '../useTimelineDrag';
 import { NODE_DRAG_ARM_CANCEL_MOVE_PX } from '../../constants/salaComandiConstants';
-import { getSlotKey, createSessionMealSlotId, retargetSessionMealSlotId, isTimestampMealSlot, isGhostInstanceMealType } from '../../coreEngine';
+import { createSessionMealSlotId, retargetSessionMealSlotId, isTimestampMealSlot, isGhostInstanceMealType } from '../../coreEngine';
 import { normalizeMealSlotType } from '../../features/mealBuilder/utils/slotPredictor';
 import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPhaseColors';
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
 import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
-import { coerceDiaryMealTime } from '../../utils/mealProposalBuilders';
+import { coerceDiaryMealTime, getFoodItemsForMealSlotFromLog, parseCompositeMealSlotId } from '../../utils/mealProposalBuilders';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -97,38 +97,9 @@ export function useTimelineDiaryActions({
   });
 
   /** Alimenti del diario che appartengono allo slot pasto (mealType o composito mealType_decimalTime come nel Pie). */
-  const getFoodItemsForMealSlot = useCallback((log, slotId) => {
-    if (slotId == null || slotId === 'rimanenti') return [];
-    const idStr = String(slotId);
-    const list = log || [];
-    // 1) Match esatto su mealType (snack, snack_2, …)
-    let items = list.filter((item) => getSlotKey(item) === idStr);
-    if (items.length > 0) return items;
-
-    // 2) Id timeline composito `{mealType}_{hour}` dove mealType può contenere ghost (`snack_2_16.5`).
-    //    Non usare lastIndexOf+Number: `snack_2` verrebbe letto come mealType=snack, time=2.
-    const foods = list.filter((item) => item.type === 'food' || item.type === 'recipe');
-    const mealTypes = [...new Set(foods.map((f) => String(f.mealType || '')).filter(Boolean))];
-    // Preferisci il prefisso più lungo (snack_2 prima di snack).
-    mealTypes.sort((a, b) => b.length - a.length);
-    for (const mt of mealTypes) {
-      if (idStr === mt) {
-        return foods.filter((item) => item.mealType === mt);
-      }
-      const prefix = `${mt}_`;
-      if (!idStr.startsWith(prefix)) continue;
-      const timePart = idStr.slice(prefix.length);
-      const parsedTime = Number(timePart);
-      if (!Number.isFinite(parsedTime)) continue;
-      const timed = foods.filter((item) => {
-        if (item.mealType !== mt) return false;
-        const mealTime = coerceDiaryMealTime(item.mealTime);
-        return mealTime != null && Math.abs(mealTime - parsedTime) < 1e-4;
-      });
-      if (timed.length > 0) return timed;
-    }
-    return [];
-  }, []);
+  const getFoodItemsForMealSlot = useCallback((log, slotId) => (
+    getFoodItemsForMealSlotFromLog(log, slotId)
+  ), []);
 
   /** Commit orario nodo timeline (pasto aggregato, ghost_meal, manualNodes: work/cognitive/water/…). */
   const updateMealTime = useCallback(
@@ -264,31 +235,42 @@ export function useTimelineDiaryActions({
       const slotCanon = normalizeMealSlotType(rawSlot.split('_')[0]);
       const batchId = Date.now();
       const logToUse = isSimulationMode ? (simulatedLog ?? dailyLog ?? []) : (dailyLog ?? []);
+      const existingMealFoods = editMealId
+        ? getFoodItemsForMealSlot(logToUse, String(editMealId))
+        : [];
+      const isUpdatingExistingMeal = Boolean(editMealId) && existingMealFoods.length > 0;
 
-      let mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
-        ? rawSlot
-        : createSessionMealSlotId(slotCanon);
+      let mealTypeToUse;
       let mealTimeToUse = mealTimeBySlot[slotCanon] ?? 13.0;
 
-      if (editMealId) {
-        const existing = getFoodItemsForMealSlot(logToUse, String(editMealId));
-        if (existing.length > 0) {
-          const existingType = String(existing[0]?.mealType || '').trim();
-          const existingCanon = normalizeMealSlotType(String(existingType).split('_')[0]);
-          if (existingCanon === slotCanon && existingType) {
-            // Stesso tipo canonico: conserva snack_2 / slot timestamp originale.
-            mealTypeToUse = existingType;
-          } else {
-            mealTypeToUse = createSessionMealSlotId(slotCanon);
-          }
-          const existingTime = coerceDiaryMealTime(existing[0]?.mealTime);
-          if (existingTime != null) mealTimeToUse = existingTime;
+      if (isUpdatingExistingMeal) {
+        const existingType = String(existingMealFoods[0]?.mealType || '').trim();
+        const existingCanon = normalizeMealSlotType(String(existingType).split('_')[0]);
+        if (existingType && existingCanon !== slotCanon && (
+          isTimestampMealSlot(existingType) || isGhostInstanceMealType(existingType)
+        )) {
+          mealTypeToUse = retargetSessionMealSlotId(existingType, slotCanon);
         } else {
-          mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
-            ? rawSlot
-            : createSessionMealSlotId(slotCanon);
+          mealTypeToUse = existingType || rawSlot;
         }
-      } else if (pendingGhostMealId) {
+        const existingTime = coerceDiaryMealTime(existingMealFoods[0]?.mealTime);
+        if (existingTime != null) mealTimeToUse = existingTime;
+      } else if (editMealId) {
+        // Riferimento presente ma lookup vuoto: non mintare un nuovo slot timestamp.
+        const fromEditId = parseCompositeMealSlotId(String(editMealId));
+        mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
+          ? rawSlot
+          : (fromEditId.typePart || rawSlot);
+        const customDec = coerceDiaryMealTime(customMealTime);
+        if (customDec != null) mealTimeToUse = customDec;
+        else if (Number.isFinite(fromEditId.timePart)) mealTimeToUse = fromEditId.timePart;
+      } else {
+        mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
+          ? rawSlot
+          : createSessionMealSlotId(slotCanon);
+      }
+
+      if (!editMealId && pendingGhostMealId) {
         const ghost = logToUse.find(
           (e) =>
             e?.type === 'ghost_meal'
@@ -308,9 +290,11 @@ export function useTimelineDiaryActions({
         }
       }
 
-      const customDec = coerceDiaryMealTime(customMealTime);
-      if (customDec != null) {
-        mealTimeToUse = customDec;
+      if (!editMealId) {
+        const customDec = coerceDiaryMealTime(customMealTime);
+        if (customDec != null) {
+          mealTimeToUse = customDec;
+        }
       }
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
@@ -355,17 +339,30 @@ export function useTimelineDiaryActions({
 
       let nuovoLog;
       if (editMealId) {
-        const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(editMealId));
-        const removeRefs = new Set(foodsToRemove);
-        const removeIds = new Set(
+        const foodsToRemove = existingMealFoods.length > 0
+          ? existingMealFoods
+          : getFoodItemsForMealSlot(logToUse, String(editMealId));
+        const existingIds = new Set(
           foodsToRemove.map((item) => String(item?.id || '')).filter(Boolean),
         );
-        nuovoLog = logToUse.filter((item) => {
-          if (removeRefs.has(item)) return false;
-          const id = String(item?.id || '');
-          return !(id && removeIds.has(id));
-        });
-        nuovoLog = [...nuoviAlimenti, ...nuovoLog];
+        const draftTouchesExisting = draftFoods.some((food) => (
+          existingIds.has(String(food?.id || ''))
+        ));
+
+        if (foodsToRemove.length > 0 && !draftTouchesExisting) {
+          // Aggiunta a pasto già registrato: accoda, non crea un nuovo nodo.
+          nuovoLog = [...logToUse, ...nuoviAlimenti];
+        } else if (foodsToRemove.length > 0) {
+          const removeRefs = new Set(foodsToRemove);
+          nuovoLog = logToUse.filter((item) => {
+            if (removeRefs.has(item)) return false;
+            const id = String(item?.id || '');
+            return !(id && existingIds.has(id));
+          });
+          nuovoLog = [...nuoviAlimenti, ...nuovoLog];
+        } else {
+          nuovoLog = [...logToUse, ...nuoviAlimenti];
+        }
       } else {
         nuovoLog = [...logToUse, ...nuoviAlimenti];
         if (pendingGhostMealId) {

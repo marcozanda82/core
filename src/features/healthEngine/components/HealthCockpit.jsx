@@ -1,6 +1,7 @@
 import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { PILLAR_STATES } from '../contracts/healthSystem.types.js';
+import { buildLongevityCockpitCards } from '../../trendHub/utils/longevityInsightGenerator';
 
 const PILLAR_ORDER = ['metabolism', 'nutrition', 'activity', 'recovery'];
 
@@ -48,6 +49,65 @@ const TONE_GLOW = {
   flexion: 'drop-shadow-[0_0_18px_rgba(251,191,36,0.4)]',
   overload: 'drop-shadow-[0_0_18px_rgba(251,113,133,0.4)]',
 };
+
+const CHIP_CLASS = {
+  good: 'bg-emerald-500/15 text-emerald-300',
+  mid: 'bg-amber-500/15 text-amber-300',
+  low: 'bg-rose-500/15 text-rose-300',
+  neutral: 'bg-white/10 text-zinc-300',
+};
+
+function DrillDownCard({
+  icon = '',
+  title = '',
+  valueLabel = '',
+  subtitle = '',
+  chip = null,
+  note = '',
+  onClick = null,
+} = {}) {
+  const clickable = typeof onClick === 'function';
+  const ariaParts = [title, valueLabel, subtitle, chip?.label, note].filter(Boolean);
+
+  return (
+    <button
+      type="button"
+      onClick={clickable ? onClick : undefined}
+      className={[
+        'flex w-full flex-col rounded-2xl border border-white/5 bg-zinc-900/50 py-2.5 px-3 text-left',
+        'transition-all',
+        clickable ? 'cursor-pointer active:scale-95' : 'cursor-default',
+      ].join(' ')}
+      aria-label={ariaParts.join(': ')}
+    >
+      <span className="text-[10px] font-bold uppercase tracking-wide text-zinc-400">
+        {icon} {title}
+      </span>
+      {valueLabel ? (
+        <span className="mt-1 text-lg font-semibold tabular-nums text-zinc-100">
+          {valueLabel}
+        </span>
+      ) : null}
+      {chip?.label ? (
+        <span
+          className={`mt-1 inline-flex w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${CHIP_CLASS[chip.tone] || CHIP_CLASS.neutral}`}
+        >
+          {chip.label}
+        </span>
+      ) : null}
+      {subtitle ? (
+        <p className="m-0 mt-0.5 text-xs font-medium leading-snug text-zinc-500">
+          {subtitle}
+        </p>
+      ) : null}
+      {note ? (
+        <p className="m-0 mt-1 line-clamp-2 text-[11px] leading-snug text-zinc-400">
+          {note}
+        </p>
+      ) : null}
+    </button>
+  );
+}
 
 const CARD_CLASS = [
   'rounded-2xl border border-white/10 bg-zinc-950/55',
@@ -128,11 +188,15 @@ export default function HealthCockpit({
   isLoading = false,
   onOpenLabTool = null,
   onOpenPillarAnalysis = null,
+  onOpenStimulusCockpit = null,
+  onOpenMetabolicFocus = null,
+  longevityResult = null,
 } = {}) {
   const score = Number(healthState?.score);
   const globalTone = Number.isFinite(score) ? scoreTone(score) : 'flexion';
   const pillars = healthState?.pillars || {};
   const actionText = String(healthState?.primaryAction?.text || '').trim();
+  const longevityCards = buildLongevityCockpitCards(longevityResult);
 
   return (
     <section
@@ -220,31 +284,36 @@ export default function HealthCockpit({
               })}
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-6 mb-4 w-full">
-              {/* Cardio */}
-              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
-                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">🏃 CARDIO</span></div>
-                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">45</span> <span className="text-xs text-zinc-500">/ 150 min</span></div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-cyan-500" style={{ width: '30%' }}></div></div>
-              </div>
-              {/* Forza */}
-              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
-                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">🏋️ FORZA</span></div>
-                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">4</span> <span className="text-xs text-zinc-500">/ 5 distr.</span></div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-purple-500" style={{ width: '80%' }}></div></div>
-              </div>
-              {/* Sonno */}
-              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
-                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">😴 SONNO</span></div>
-                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">7.2</span> <span className="text-xs text-zinc-500">h</span></div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-amber-400" style={{ width: '90%' }}></div></div>
-              </div>
-              {/* Digiuno */}
-              <div className="flex flex-col bg-zinc-900/50 border border-white/5 rounded-2xl py-2.5 px-3">
-                <div className="flex items-center gap-1.5 mb-1"><span className="text-[10px] uppercase font-bold text-zinc-400">⏱️ DIGIUNO</span></div>
-                <div className="mb-2"><span className="text-xl font-bold text-zinc-100">14</span> <span className="text-xs text-zinc-500">h</span></div>
-                <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden mt-auto"><div className="h-full bg-emerald-500" style={{ width: '85%' }}></div></div>
-              </div>
+            <div className="mb-4 mt-6 grid w-full grid-cols-2 gap-3">
+              <DrillDownCard
+                icon={longevityCards.activity.icon}
+                title={longevityCards.activity.title}
+                valueLabel={longevityCards.activity.valueLabel}
+                subtitle={longevityCards.activity.subtitle}
+                onClick={onOpenStimulusCockpit}
+              />
+              <DrillDownCard
+                icon={longevityCards.metabolism.icon}
+                title={longevityCards.metabolism.title}
+                valueLabel={longevityCards.metabolism.valueLabel}
+                subtitle={longevityCards.metabolism.subtitle}
+                onClick={onOpenMetabolicFocus}
+              />
+              <DrillDownCard
+                icon={longevityCards.nutrition.icon}
+                title={longevityCards.nutrition.title}
+                valueLabel={longevityCards.nutrition.valueLabel}
+                subtitle={longevityCards.nutrition.subtitle}
+                chip={longevityCards.nutrition.chip}
+                note={longevityCards.nutrition.note}
+              />
+              <DrillDownCard
+                icon={longevityCards.recovery.icon}
+                title={longevityCards.recovery.title}
+                valueLabel={longevityCards.recovery.valueLabel}
+                subtitle={longevityCards.recovery.subtitle}
+                note={longevityCards.recovery.note}
+              />
             </div>
 
             {actionText ? (

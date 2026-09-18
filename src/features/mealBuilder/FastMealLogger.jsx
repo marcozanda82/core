@@ -364,9 +364,9 @@ function resolveSearchResultTileStats(result, personalDb, catalogServingOverride
 function resolveInitialMealSlot(initialDraft, editingMealId) {
   if (Array.isArray(initialDraft) && initialDraft.length > 0) {
     const mt = initialDraft[0]?.mealType;
-    if (mt) return String(mt).split('_')[0];
+    if (mt) return editingMealId ? String(mt) : String(mt).split('_')[0];
   }
-  if (editingMealId) return String(editingMealId).split('_')[0];
+  if (editingMealId) return String(editingMealId);
   return inferMealSlotFromCurrentHour();
 }
 
@@ -460,6 +460,7 @@ function FastMealLoggerContent({
   masterDb,
   onAcquireExternalFood,
   onSaveRecipe,
+  onDeleteRecipe,
   onPatchFoodDbEntry,
   getMealTargetsForSlot,
   getMealConsumedForSlot,
@@ -602,6 +603,7 @@ function FastMealLoggerContent({
   );
 
   useEffect(() => {
+    if (editingMealId) return;
     if (mealTypeManualRef.current) return;
     if (!Number.isFinite(Number(mealTime))) return;
     const nextSlot = getLearnedMealSlot(mealTime, fullHistory);
@@ -612,7 +614,7 @@ function FastMealLoggerContent({
       }
       return prev === nextSlot ? prev : nextSlot;
     });
-  }, [mealTime, fullHistory]);
+  }, [mealTime, fullHistory, editingMealId]);
 
   const notifyItemAdded = (label) => {
     setAddFeedback(label || 'Aggiunto al piatto');
@@ -745,6 +747,19 @@ function FastMealLoggerContent({
         if (refreshed) {
           updateFoodInDraft(item.id, refreshed);
         }
+      }
+    });
+    setEditingRecipe(null);
+  };
+
+  const handleRecipeEditorDelete = async (recipeKey) => {
+    if (typeof onDeleteRecipe !== 'function') return;
+    await onDeleteRecipe(recipeKey);
+
+    const identity = `db:${recipeKey}`;
+    draftFoods.forEach((item) => {
+      if (resolveFoodIdentityKey(item) === identity) {
+        removeFoodFromDraft(item.id);
       }
     });
     setEditingRecipe(null);
@@ -2363,8 +2378,15 @@ function FastMealLoggerContent({
         <RecipeEditor
           recipeKey={editingRecipe.key}
           recipeEntry={editingRecipe.entry}
+          personalDb={personalDb}
+          kentuItDb={kentuItDb}
+          globalDb={globalDb ?? masterDb}
+          offDb={offDb}
+          masterDb={masterDb}
           onSave={handleRecipeEditorSave}
+          onDelete={typeof onDeleteRecipe === 'function' ? handleRecipeEditorDelete : undefined}
           onClose={() => setEditingRecipe(null)}
+          onAcquireExternalFood={onAcquireExternalFood}
         />
       ) : null}
 
@@ -2401,6 +2423,7 @@ export default function FastMealLogger({
   masterDb: masterDbProp,
   onAcquireExternalFood,
   onSaveRecipe,
+  onDeleteRecipe,
   onPatchFoodDbEntry,
   getMealTargetsForSlot,
   getMealConsumedForSlot,
@@ -2426,10 +2449,10 @@ export default function FastMealLogger({
     return getCurrentDecimalHours();
   }, [initialMealTime, initialDraft]);
   const composerInitialMealType =
-    initialMealSlot
-    || (Array.isArray(initialDraft) && initialDraft[0]?.mealType
+    (Array.isArray(initialDraft) && initialDraft[0]?.mealType
       ? String(initialDraft[0].mealType).split('_')[0]
       : null)
+    || (initialMealSlot ? String(initialMealSlot).split('_')[0] : null)
     || (editingMealId ? String(editingMealId).split('_')[0] : null)
     || inferMealSlotFromCurrentHour();
 
@@ -2461,6 +2484,7 @@ export default function FastMealLogger({
             masterDb={resolvedGlobalDb}
             onAcquireExternalFood={onAcquireExternalFood}
             onSaveRecipe={onSaveRecipe}
+            onDeleteRecipe={onDeleteRecipe}
             onPatchFoodDbEntry={onPatchFoodDbEntry}
             getMealTargetsForSlot={getMealTargetsForSlot}
             getMealConsumedForSlot={getMealConsumedForSlot}

@@ -534,3 +534,146 @@ export function buildLongevityContextForAi(score, metrics = {}) {
     bottleneckId: top?.id || null,
   };
 }
+
+function proteinStatusChip(status) {
+  const raw = String(status || '').trim().toUpperCase();
+  if (raw === 'OPTIMAL') return { label: 'Proteine ottimali', tone: 'good' };
+  if (raw === 'MODERATE') return { label: 'Proteine moderate', tone: 'mid' };
+  if (raw === 'LOW') return { label: 'Proteine basse', tone: 'low' };
+  return null;
+}
+
+function fastingWindowLabel(evaluation) {
+  const raw = String(evaluation || '').trim().toUpperCase();
+  if (raw === 'OPTIMAL') return 'Digiuno ottimale';
+  if (raw === 'GOOD') return 'Digiuno buono';
+  if (raw === 'POOR') return 'Digiuno corto';
+  return null;
+}
+
+function fastingWindowPct(evaluation) {
+  const raw = String(evaluation || '').trim().toUpperCase();
+  if (raw === 'OPTIMAL') return 100;
+  if (raw === 'GOOD') return 70;
+  if (raw === 'POOR') return 30;
+  return 0;
+}
+
+function sleepStatusFromScore(sleepScore, sleepAvg) {
+  if (!(Number.isFinite(Number(sleepAvg)) && Number(sleepAvg) > 0)) {
+    return 'Non registrato';
+  }
+  const pct = pillarPctFromLongevityScore(sleepScore);
+  if (pct >= 100) return 'Eccellente';
+  if (pct >= 75) return 'Buona traiettoria';
+  return 'Sotto target';
+}
+
+function whtrImpactLabel(multiplier) {
+  const m = Number(multiplier);
+  if (!Number.isFinite(m)) return '—';
+  if (m >= 0.98) return 'WHtR neutrale';
+  return `Filtro WHtR ×${m.toFixed(2)}`;
+}
+
+function pickClinicalNote(nutrition, nutritionScore) {
+  const strength = String(nutrition?.clinicalNoteStrength || '').trim();
+  const bottleneck = String(nutrition?.clinicalNoteBottleneck || '').trim();
+  const pct = pillarPctFromLongevityScore(nutritionScore);
+  if (pct >= 72) return strength || bottleneck;
+  return bottleneck || strength;
+}
+
+/**
+ * SSOT UI per le 4 card Cockpit (Attività, Recupero, Metabolismo, Nutrizione).
+ * Solo campi già presenti in `longevityResult` — nessun mock.
+ *
+ * @param {{ breakdown?: object }|null} [longevityResult]
+ * @returns {{
+ *   activity: object,
+ *   recovery: object,
+ *   metabolism: object,
+ *   nutrition: object,
+ * }}
+ */
+export function buildLongevityCockpitCards(longevityResult = null) {
+  const hasResult = Boolean(longevityResult && typeof longevityResult === 'object');
+  const breakdown = hasResult && longevityResult.breakdown && typeof longevityResult.breakdown === 'object'
+    ? longevityResult.breakdown
+    : {};
+  const nutritionMeta = breakdown.longevityNutrition && typeof breakdown.longevityNutrition === 'object'
+    ? breakdown.longevityNutrition
+    : null;
+
+  const cardioMins = Math.round(Number(breakdown.cardioMins) || 0);
+  const uniqueGroups = Math.max(0, Math.min(
+    WEIGHTS_TARGET_GROUPS,
+    Math.round(Number(breakdown.uniqueGroups) || 0),
+  ));
+  const sleepAvg = Number.isFinite(Number(breakdown.sleepAvg)) && Number(breakdown.sleepAvg) > 0
+    ? Number(breakdown.sleepAvg)
+    : null;
+  const sleepScore = Number(breakdown.sleepScore);
+  const nutritionScore = Number.isFinite(Number(breakdown.nutritionScore))
+    ? Number(breakdown.nutritionScore)
+    : Number(nutritionMeta?.score);
+  const weightsScore = Number(breakdown.weightsScore);
+  const cardioScore = Number(breakdown.cardioScore);
+  const activityPct = hasResult
+    ? Math.round((
+      pillarPctFromLongevityScore(weightsScore) + pillarPctFromLongevityScore(cardioScore)
+    ) / 2)
+    : 0;
+
+  const fastingLabel = fastingWindowLabel(nutritionMeta?.fastingWindowEvaluation);
+  const proteinChip = proteinStatusChip(nutritionMeta?.proteinStatus);
+  const clinicalNote = pickClinicalNote(nutritionMeta, nutritionScore);
+  const nutritionPts = Number.isFinite(nutritionScore) ? Math.round(nutritionScore) : null;
+
+  return {
+    activity: {
+      id: 'activity',
+      icon: '🏋️',
+      title: 'Attività',
+      valueLabel: hasResult ? `${uniqueGroups} / ${WEIGHTS_TARGET_GROUPS} distretti` : '—',
+      subtitle: hasResult ? `${cardioMins} / ${CARDIO_TARGET_MIN} min` : '',
+      chip: null,
+      note: '',
+      pct: activityPct,
+      tone: longevityToneFromScore(activityPct),
+    },
+    recovery: {
+      id: 'recovery',
+      icon: '😴',
+      title: 'Recupero',
+      valueLabel: sleepAvg != null ? `${sleepAvg.toFixed(1)} h` : '—',
+      subtitle: hasResult ? sleepStatusFromScore(sleepScore, sleepAvg) : '',
+      chip: null,
+      note: sleepAvg != null ? `target ${SLEEP_TARGET_H}h` : '',
+      pct: pillarPctFromLongevityScore(sleepScore),
+      tone: longevityToneFromScore(pillarPctFromLongevityScore(sleepScore)),
+    },
+    metabolism: {
+      id: 'metabolism',
+      icon: '⏱️',
+      title: 'Metabolismo',
+      valueLabel: fastingLabel || '—',
+      subtitle: hasResult ? whtrImpactLabel(breakdown.whtrMultiplier) : '',
+      chip: null,
+      note: '',
+      pct: fastingWindowPct(nutritionMeta?.fastingWindowEvaluation),
+      tone: longevityToneFromScore(fastingWindowPct(nutritionMeta?.fastingWindowEvaluation)),
+    },
+    nutrition: {
+      id: 'nutrition',
+      icon: '🥗',
+      title: 'Nutrizione',
+      valueLabel: nutritionPts != null ? `${nutritionPts} / ${PILLAR_MAX}` : '—',
+      subtitle: '',
+      chip: proteinChip,
+      note: clinicalNote,
+      pct: pillarPctFromLongevityScore(nutritionScore),
+      tone: longevityToneFromScore(pillarPctFromLongevityScore(nutritionScore)),
+    },
+  };
+}

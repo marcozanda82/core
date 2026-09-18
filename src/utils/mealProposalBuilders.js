@@ -1,4 +1,4 @@
-import { getSlotKey } from '../coreEngine.jsx';
+import { getSlotKey, toCanonicalMealType } from '../coreEngine.jsx';
 
 function isDiaryFood(item) {
   return item?.type === 'food' || item?.type === 'recipe';
@@ -27,6 +27,37 @@ function foodsOfMealType(list, mealType) {
   const mt = String(mealType || '');
   if (!mt) return [];
   return (list || []).filter((item) => isDiaryFood(item) && String(item.mealType || '') === mt);
+}
+
+function canonicalMealBase(mealType) {
+  return toCanonicalMealType(String(mealType || '').split('_')[0]) || '';
+}
+
+/** Separa `mealType` da un eventuale suffisso orario (0–24). Non tratta i timestamp di sessione. */
+export function parseCompositeMealSlotId(slotId) {
+  const idStr = String(slotId || '').trim();
+  if (!idStr) return { typePart: '', timePart: NaN };
+  const last = idStr.lastIndexOf('_');
+  if (last <= 0) return { typePart: idStr, timePart: NaN };
+  const suffix = idStr.slice(last + 1);
+  const n = Number(suffix);
+  if (Number.isFinite(n) && n >= 0 && n <= 24) {
+    return { typePart: idStr.slice(0, last), timePart: n };
+  }
+  return { typePart: idStr, timePart: NaN };
+}
+
+function foodsOfCanonicalTypeAndTime(list, canonical, timePart) {
+  const canon = String(canonical || '');
+  if (!canon) return [];
+  const sameCanon = (list || []).filter((item) => (
+    isDiaryFood(item) && canonicalMealBase(item.mealType) === canon
+  ));
+  if (!Number.isFinite(timePart)) return sameCanon;
+  return sameCanon.filter((item) => {
+    const t = coerceDiaryMealTime(item.mealTime);
+    return t != null && Math.abs(t - timePart) < 1e-4;
+  });
 }
 
 function pickClosestMealTimeCluster(foods, parsedTime) {
@@ -82,18 +113,33 @@ export function getFoodItemsForMealSlotFromLog(log, slotId) {
   }
 
   if (prefixMatchType) {
-    return pickClosestMealTimeCluster(foodsOfMealType(list, prefixMatchType), parsedTime);
+    const closest = pickClosestMealTimeCluster(foodsOfMealType(list, prefixMatchType), parsedTime);
+    if (closest.length > 0) return closest;
   }
 
   const u = idStr.lastIndexOf('_');
   if (u > 0) {
     const baseMealType = idStr.slice(0, u);
     const parsed = Number(idStr.slice(u + 1));
-    return pickClosestMealTimeCluster(
+    const closest = pickClosestMealTimeCluster(
       foodsOfMealType(list, baseMealType),
       Number.isFinite(parsed) ? parsed : NaN,
     );
+    if (closest.length > 0) return closest;
   }
+
+  // `pranzo_13` deve trovare anche `mealType: pranzo_<timestamp>` allo stesso orario.
+  const composite = parseCompositeMealSlotId(idStr);
+  const canonical = canonicalMealBase(composite.typePart) || canonicalMealBase(idStr);
+  if (canonical) {
+    const byCanon = foodsOfCanonicalTypeAndTime(
+      list,
+      canonical,
+      Number.isFinite(composite.timePart) ? composite.timePart : parsedTime,
+    );
+    if (byCanon.length > 0) return byCanon;
+  }
+
   return foodsOfMealType(list, idStr);
 }
 

@@ -132,6 +132,8 @@ export default function UniversalSearchModal({
   preferManualEntry = false,
   /** EAN da precompilare nel form manuale. */
   preferManualBarcode = '',
+  /** Sopra overlay più alti (es. modifica ricetta). */
+  elevated = false,
 }) {
   const {
     query,
@@ -260,7 +262,9 @@ export default function UniversalSearchModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100050] flex flex-col bg-[#050a12]/98 text-slate-100 backdrop-blur-md"
+      className={`fixed inset-0 flex flex-col bg-[#050a12]/98 text-slate-100 backdrop-blur-md ${
+        elevated ? 'z-[100070]' : 'z-[100050]'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Ricerca alimenti universale"
@@ -319,15 +323,17 @@ export default function UniversalSearchModal({
               <Search className="h-4 w-4" />
             </button>
           </div>
+          {typeof onOpenScanner === 'function' ? (
           <button
             type="button"
-            onClick={() => onOpenScanner?.()}
+            onClick={() => onOpenScanner()}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-slate-700/80 bg-slate-900/80 text-cyan-400 shadow-sm transition-all hover:border-cyan-500/40 hover:bg-slate-800 active:scale-95"
             aria-label="Scansiona barcode"
             title="Scanner barcode"
           >
             <ScanBarcode className="h-5 w-5" />
           </button>
+          ) : null}
         </form>
 
         {!isManualEntryOpen ? (
@@ -523,6 +529,7 @@ export default function UniversalSearchModal({
                           sizeClassName="h-12 w-12"
                           className="rounded-xl ring-1 ring-white/[0.08]"
                         />
+                        {typeof onEditRecipe === 'function' || typeof onEditCatalogFood === 'function' ? (
                         <button
                           type="button"
                           onClick={(event) => {
@@ -538,6 +545,7 @@ export default function UniversalSearchModal({
                         >
                           <Settings className="h-3 w-3 text-slate-400" />
                         </button>
+                        ) : null}
                       </div>
                     </div>
                     <div className="min-w-0 flex-1">

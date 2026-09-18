@@ -1,24 +1,45 @@
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, Clipboard, Plus, Trash2, X } from 'lucide-react';
 import { computeMacrosFromIngredients } from '../utils/recipePayloadUtils';
 import {
+  buildIngredientFromSearchResult,
   normalizeIngredient,
   scaleIngredientMacros,
 } from '../utils/recipeIngredientUtils';
+import { triggerSelectionHaptic } from '../utils/hapticFeedback';
+import UniversalSearchModal from './UniversalSearchModal';
+
+function ingredientsWithoutLocalIds(list) {
+  return (list || []).map((ing) => {
+    const next = { ...ing };
+    delete next.id;
+    return next;
+  });
+}
 
 export default function RecipeEditor({
   recipeKey,
   recipeEntry,
+  personalDb = null,
+  kentuItDb = null,
+  globalDb = null,
+  offDb = null,
+  masterDb = null,
   onSave,
   onClose,
+  onDelete,
+  onAcquireExternalFood,
 }) {
   const [name, setName] = useState(() => String(recipeEntry?.desc ?? recipeEntry?.name ?? '').trim());
   const [ingredients, setIngredients] = useState(() =>
     (Array.isArray(recipeEntry?.ingredients) ? recipeEntry.ingredients : []).map(normalizeIngredient),
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState('');
   const [copiedJson, setCopiedJson] = useState(false);
+  const [isAddingIngredient, setIsAddingIngredient] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const per100 = useMemo(() => computeMacrosFromIngredients(ingredients), [ingredients]);
 
@@ -32,6 +53,40 @@ export default function RecipeEditor({
 
   const handleRemove = (index) => {
     setIngredients((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddIngredient = async (result) => {
+    if (!result) return;
+
+    const selectedKey = String(result.key ?? result.id ?? '').trim();
+    if (recipeKey && selectedKey && selectedKey === String(recipeKey)) {
+      setError('Non puoi aggiungere la ricetta a se stessa.');
+      return;
+    }
+
+    if (
+      result._source !== 'personal'
+      && result._source !== 'recipe'
+      && typeof onAcquireExternalFood === 'function'
+    ) {
+      const row = result.row || {};
+      try {
+        await onAcquireExternalFood({
+          desc: String(result.desc || result.name || row.desc || '').trim(),
+          kcal: Number(row.kcal ?? row.cal) || 0,
+          prot: Number(row.prot) || 0,
+          carb: Number(row.carb) || 0,
+          fatTotal: Number(row.fatTotal ?? row.fat) || 0,
+          ...(result._source === 'master' ? { foodSource: 'KENTU' } : {}),
+        });
+      } catch {
+        /* acquisizione silenziosa */
+      }
+    }
+
+    triggerSelectionHaptic(15);
+    setIngredients((prev) => [...prev, buildIngredientFromSearchResult(result, 100)]);
+    setError('');
   };
 
   const handleSubmit = async (event) => {
@@ -61,7 +116,7 @@ export default function RecipeEditor({
           prot: per100.prot,
           carb: per100.carb,
           fatTotal: per100.fatTotal,
-          ingredients: ingredients.map(({ id, ...ing }) => ing),
+          ingredients: ingredientsWithoutLocalIds(ingredients),
         },
         recipeKey,
       );
@@ -70,6 +125,29 @@ export default function RecipeEditor({
       setError('Salvataggio non riuscito. Riprova.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!recipeKey) {
+      setError('Impossibile eliminare: chiave ricetta mancante.');
+      return;
+    }
+    if (typeof onDelete !== 'function') {
+      setError('Eliminazione non disponibile.');
+      return;
+    }
+
+    setIsDeleting(true);
+    setError('');
+    try {
+      await onDelete(recipeKey);
+      onClose?.();
+    } catch {
+      setError('Eliminazione non riuscita. Riprova.');
+      setConfirmDelete(false);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -84,7 +162,7 @@ export default function RecipeEditor({
       carb: per100.carb,
       fatTotal: per100.fatTotal,
       totalWeight: per100.totalWeight,
-      ingredients: ingredients.map(({ id, ...ing }) => ing),
+      ingredients: ingredientsWithoutLocalIds(ingredients),
     };
     const jsonString = JSON.stringify(currentRecipe, null, 2);
     await navigator.clipboard.writeText(jsonString);
@@ -93,133 +171,203 @@ export default function RecipeEditor({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100060] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Modifica ricetta"
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-700 bg-[#050a12] text-slate-100 sm:rounded-2xl"
+    <>
+      <div
+        className="fixed inset-0 z-[100060] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Modifica ricetta"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-3">
-          <h2 className="text-base font-semibold">Modifica ricetta</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
-            aria-label="Chiudi"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <label className="mb-4 block">
-            <span className="mb-1 block text-xs font-medium text-slate-300">Nome ricetta</span>
-            <input
-              type="text"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
-            />
-          </label>
-
-          <div className="mb-4 rounded-xl border border-violet-500/25 bg-violet-950/20 px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300/80">
-              Macro per 100g (blocco ricetta)
-            </p>
-            <p className="mt-1 text-sm text-slate-200">
-              {per100.kcal} kcal · P{per100.prot} · C{per100.carb} · F{per100.fatTotal}
-            </p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Porzione base: {per100.totalWeight}g
-            </p>
-          </div>
-
-          <p className="mb-2 text-xs font-medium text-slate-400">Ingredienti</p>
-          <ul className="space-y-2">
-            {ingredients.map((ing, index) => (
-              <li
-                key={ing.id}
-                className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-100">{ing.desc}</p>
-                  <p className="text-[10px] text-slate-500">
-                    {ing.kcal} kcal · P{ing.prot} · C{ing.carb} · F{ing.fat}
-                  </p>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={ing.weight}
-                  onChange={(event) => handleWeightChange(index, event.target.value)}
-                  aria-label={`Peso ${ing.desc}`}
-                  className="w-16 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm text-slate-200 outline-none focus:border-violet-500"
-                />
-                <span className="text-xs text-slate-500">g</span>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(index)}
-                  aria-label={`Rimuovi ${ing.desc}`}
-                  className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-500/10"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          {ingredients.length === 0 ? (
-            <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-500">
-              Nessun ingrediente. La ricetta deve contenere almeno un ingrediente.
-            </p>
-          ) : null}
-
-          {error ? (
-            <p className="mt-3 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
-              {error}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="shrink-0 border-t border-slate-800 px-4 py-4">
-          <div className="flex gap-2">
+        <form
+          onSubmit={handleSubmit}
+          className="relative flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl border border-slate-700 bg-[#050a12] text-slate-100 sm:rounded-2xl"
+        >
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-3">
+            <h2 className="text-base font-semibold">Modifica ricetta</h2>
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:border-slate-500"
+              className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+              aria-label="Chiudi"
             >
-              Annulla
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving || ingredients.length === 0}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
-            >
-              <Plus className="h-4 w-4" />
-              {isSaving ? 'Salvataggio...' : 'Salva ricetta'}
+              <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="mt-3 flex justify-end">
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <label className="mb-4 block">
+              <span className="mb-1 block text-xs font-medium text-slate-300">Nome ricetta</span>
+              <input
+                type="text"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 focus:border-violet-500/50 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+              />
+            </label>
+
+            <div className="mb-4 rounded-xl border border-violet-500/25 bg-violet-950/20 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300/80">
+                Macro per 100g (blocco ricetta)
+              </p>
+              <p className="mt-1 text-sm text-slate-200">
+                {per100.kcal} kcal · P{per100.prot} · C{per100.carb} · F{per100.fatTotal}
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Porzione base: {per100.totalWeight}g
+              </p>
+            </div>
+
+            <p className="mb-2 text-xs font-medium text-slate-400">Ingredienti</p>
+            <ul className="space-y-2">
+              {ingredients.map((ing, index) => (
+                <li
+                  key={ing.id}
+                  className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-100">{ing.desc}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {ing.kcal} kcal · P{ing.prot} · C{ing.carb} · F{ing.fat}
+                    </p>
+                  </div>
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={ing.weight}
+                    onChange={(event) => handleWeightChange(index, event.target.value)}
+                    aria-label={`Peso ${ing.desc}`}
+                    className="w-16 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-center text-sm text-slate-200 outline-none focus:border-violet-500"
+                  />
+                  <span className="text-xs text-slate-500">g</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(index)}
+                    aria-label={`Rimuovi ${ing.desc}`}
+                    className="rounded-lg p-1.5 text-red-400 transition-colors hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {ingredients.length === 0 ? (
+              <p className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-center text-sm text-slate-500">
+                Nessun ingrediente. La ricetta deve contenere almeno un ingrediente.
+              </p>
+            ) : null}
+
             <button
               type="button"
-              onClick={handleCopyJson}
-              className="flex items-center gap-1 rounded border border-slate-800 bg-slate-900/40 px-2 py-1 text-[10px] font-mono text-slate-500 transition-colors hover:text-cyan-400"
+              onClick={() => setIsAddingIngredient(true)}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-violet-500/35 bg-violet-950/15 px-4 py-2.5 text-sm font-medium text-violet-200 transition-colors hover:border-violet-400/50 hover:bg-violet-950/30"
             >
-              {copiedJson ? (
-                <Check className="h-3 w-3 text-green-400" />
-              ) : (
-                <Clipboard className="h-3 w-3" />
-              )}
-              {copiedJson ? 'JSON Copiato!' : 'Copia JSON'}
+              <Plus className="h-4 w-4" />
+              Aggiungi ingrediente
             </button>
+
+            {error ? (
+              <p className="mt-3 rounded-xl border border-red-500/40 bg-red-950/40 px-3 py-2 text-xs text-red-200">
+                {error}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="shrink-0 border-t border-slate-800 px-4 py-4">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:border-slate-500"
+              >
+                Annulla
+              </button>
+              <button
+                type="submit"
+                disabled={isSaving || isDeleting || ingredients.length === 0}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
+              >
+                <Plus className="h-4 w-4" />
+                {isSaving ? 'Salvataggio...' : 'Salva ricetta'}
+              </button>
+            </div>
+            {typeof onDelete === 'function' && recipeKey ? (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                disabled={isSaving || isDeleting}
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/40 bg-red-950/25 px-4 py-2.5 text-sm font-medium text-red-200 transition-colors hover:border-red-400/60 hover:bg-red-950/40 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Elimina ricetta
+              </button>
+            ) : null}
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={handleCopyJson}
+                className="flex items-center gap-1 rounded border border-slate-800 bg-slate-900/40 px-2 py-1 text-[10px] font-mono text-slate-500 transition-colors hover:text-cyan-400"
+              >
+                {copiedJson ? (
+                  <Check className="h-3 w-3 text-green-400" />
+                ) : (
+                  <Clipboard className="h-3 w-3" />
+                )}
+                {copiedJson ? 'JSON Copiato!' : 'Copia JSON'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <UniversalSearchModal
+        isOpen={isAddingIngredient}
+        onClose={() => setIsAddingIngredient(false)}
+        personalDb={personalDb}
+        kentuItDb={kentuItDb}
+        globalDb={globalDb ?? masterDb}
+        offDb={offDb}
+        masterDb={masterDb}
+        onSelectFood={handleAddIngredient}
+        onSaveManualFood={onAcquireExternalFood}
+        draftFoods={[]}
+        elevated
+      />
+
+      {confirmDelete ? (
+        <div
+          className="fixed inset-0 z-[100075] flex items-center justify-center bg-black/70 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Conferma eliminazione ricetta"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-[#0b1220] p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-slate-50">Elimina ricetta</h3>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              Sei sicuro di voler eliminare questa ricetta? L&apos;azione è irreversibile.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                disabled={isDeleting}
+                className="flex-1 rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300"
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {isDeleting ? 'Eliminazione...' : 'Conferma'}
+              </button>
+            </div>
           </div>
         </div>
-      </form>
-    </div>
+      ) : null}
+    </>
   );
 }
