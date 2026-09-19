@@ -102,8 +102,8 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
     loadSheetMetrics: Boolean(activeDetail),
   });
   const shellClass = embedded
-    ? 'relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-[#0A0E14] text-slate-50'
-    : 'relative min-h-[100dvh] bg-[#0A0E14] text-slate-50';
+    ? 'relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain bg-transparent text-zinc-50'
+    : 'relative min-h-[100dvh] bg-transparent text-zinc-50';
   const innerPad = embedded
     ? 'mx-auto w-full max-w-3xl px-4 pb-6 pt-5 sm:px-8 sm:pt-8'
     : 'mx-auto w-full max-w-3xl px-4 pb-24 pt-4 sm:px-8 sm:pt-8';
@@ -112,8 +112,8 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
     return (
       <div
         className={embedded
-          ? 'flex h-full min-h-0 flex-1 items-center justify-center bg-[#0A0E14] px-6'
-          : 'flex min-h-[100dvh] flex-col bg-[#0A0E14] px-4 pt-4'}
+          ? 'flex h-full min-h-0 flex-1 items-center justify-center bg-transparent px-6 text-zinc-50'
+          : 'flex min-h-[100dvh] flex-col bg-transparent px-4 pt-4 text-zinc-50'}
         aria-busy
         aria-label="Caricamento Salute"
       >
@@ -253,7 +253,7 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
         </section>
 
         <section
-          className={`relative mb-5 overflow-hidden rounded-[22px] border border-white/[0.10] px-4 py-4 sm:px-5 ${SALUTE_FROST.card}`}
+          className={`relative mb-5 overflow-hidden rounded-[22px] border border-white/12 px-4 py-4 sm:px-5 ${SALUTE_FROST.card}`}
           aria-label="Stato metabolico"
         >
           <FrostSheen />
@@ -280,7 +280,7 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
           ) : null}
         </section>
 
-        <section className={`relative mb-5 overflow-hidden rounded-[22px] border border-white/[0.10] px-4 py-4 sm:px-5 ${SALUTE_FROST.card}`} aria-label="Cosa sta succedendo">
+        <section className={`relative mb-5 overflow-hidden rounded-[22px] border border-white/12 px-4 py-4 sm:px-5 ${SALUTE_FROST.card}`} aria-label="Cosa sta succedendo">
           <FrostSheen />
           {viewModel.analysis.length === 0 ? (
             <p className="m-0 text-[14px] text-slate-400">

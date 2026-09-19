@@ -54,6 +54,33 @@ function asTrimmedString(value) {
 }
 
 /**
+ * True se il testo è un log sonno da registrare (screenshot o valori numerici).
+ * Parlare di sonno («non ho dormito bene») NON è un log.
+ * @param {string} userText
+ * @param {{ hasImages?: boolean }} [options]
+ * @returns {boolean}
+ */
+export function isSleepLogIntent(userText, { hasImages = false } = {}) {
+  const t = asTrimmedString(userText).toLowerCase();
+  if (!t && hasImages) return true;
+  if (!t) return false;
+
+  const mentionsSleep = /\b(?:sonno|sleep|dormit|dormire|wearable|smartwatch|xiaomi)\b/.test(t);
+  const hasSleepNumbers =
+    /\b\d+(?:[.,]\d+)?\s*(?:h|ore)\b/.test(t)
+    || /\b\d+\s*(?:h|ore)\s*(?:e\s*)?\d+\s*(?:min|m|minuti)\b/.test(t)
+    || /\b(?:punti|qualityscore|score)\s*\d+\b/.test(t)
+    || /\b\d+\s*(?:punti|stelle)\b/.test(t);
+  const explicitLog = /\b(?:registro|logg|inserisc|salva)\b.{0,24}\b(?:sonno|sleep)\b/.test(t)
+    || /\b(?:sonno|sleep)\b.{0,24}\b(?:registro|logg|inserisc|salva)\b/.test(t);
+
+  if (hasImages && (mentionsSleep || hasSleepNumbers || !asTrimmedString(userText))) return true;
+  if (explicitLog && mentionsSleep) return true;
+  if (mentionsSleep && hasSleepNumbers) return true;
+  return false;
+}
+
+/**
  * True se il testo è una domanda/consulto sullo stato (non un log azione).
  * Evita over-triggering di bozze pasto/workout.
  * @param {string} userText
@@ -62,14 +89,23 @@ function asTrimmedString(value) {
 export function isConsultativeStateIntent(userText) {
   const t = asTrimmedString(userText).toLowerCase();
   if (!t) return false;
+  if (isSleepLogIntent(t)) return false;
 
   // DATA ENTRY pasti: "come snack, ho mangiato…" NON è un consulto.
-  if (/\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut)\b/.test(t)) {
+  if (/\bho\s+(?:mangiat|consumat|assunt|bevut)\b/.test(t)) {
+    return false;
+  }
+  if (/\bho\s+preso\b/.test(t) && !/\b(?:giornata|decisione|impegno|sonno|pausa|freddo|caldo)\b/.test(t)) {
     return false;
   }
   // "come snack/colazione/…" = tipo pasto, non avverbio interrogativo.
   if (/\bcome\s+(?:snack|snak|spuntino|colazione|pranzo|cena)\b/.test(t)) {
     return false;
+  }
+
+  if (/^(ciao|hey|ehi|salve|buongiorno|buonasera|buonanotte|hola|hello)\b/.test(t)) return true;
+  if (/\b(?:sonno|dormit|dormire|stanco|stanchezza|stress|ansia|energia)\b/.test(t) && !isSleepLogIntent(t)) {
+    return true;
   }
 
   if (/\?/.test(t)) return true;

@@ -10,6 +10,8 @@ import { normalizePortionFoodKey, lookupRecentFoodPortionGrams } from './userPor
 
 export const USER_RECENT_FOODS_DEFAULT_LIMIT = 20;
 export const USER_RECENT_FOODS_LOOKBACK_DAYS = 45;
+export const PROBABLE_PANTRY_LOOKBACK_DAYS = 7;
+export const PROBABLE_PANTRY_MAX_NAMES = 18;
 
 function toSafeString(value) {
   return String(value ?? '').trim();
@@ -347,4 +349,87 @@ export function getLastUsedQuantity(foodDbKeyOrName, currentState = {}) {
   if (Number.isFinite(fromPortions) && fromPortions > 0) return fromPortions;
 
   return null;
+}
+
+/**
+ * Nomi unici dagli ultimi ~7 giorni di diario: dispensa/frigo probabile.
+ * Solo elenco compatto per il prompt (niente grammi).
+ *
+ * @param {object} currentState
+ * @param {{ limit?: number, lookbackDays?: number }} [options]
+ * @returns {string[]}
+ */
+export function buildProbablePantryFoodNames(currentState = {}, options = {}) {
+  const limit = Math.max(
+    1,
+    Math.min(20, Number(options.limit) || PROBABLE_PANTRY_MAX_NAMES),
+  );
+  const lookbackDays = Math.max(
+    1,
+    Math.min(14, Number(options.lookbackDays) || PROBABLE_PANTRY_LOOKBACK_DAYS),
+  );
+
+  /** @type {Map<string, { foodName: string, lastUsed: number }>} */
+  const byName = new Map();
+  const consider = (item, dayIndex = 0) => {
+    if (!isFoodLogEntry(item)) return;
+    const foodName = foodNameFromEntry(item);
+    if (!foodName) return;
+    const key = normalizePortionFoodKey(foodName);
+    if (!key) return;
+    const lastUsed = Number(item?.timestamp ?? item?.lastUsedAt ?? item?.lastUsed)
+      || (Date.now() - dayIndex * 86400000);
+    const prev = byName.get(key);
+    if (!prev) {
+      byName.set(key, { foodName, lastUsed });
+      return;
+    }
+    if (lastUsed > prev.lastUsed) prev.lastUsed = lastUsed;
+    if (foodName.length > prev.foodName.length) prev.foodName = foodName;
+  };
+
+  const ingestLog = (log, dayIndex) => {
+    const entries = Array.isArray(log) ? log : [];
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      consider(entries[i], dayIndex);
+    }
+  };
+
+  ingestLog(currentState?.activeLog || [], 0);
+
+  const fullHistory = currentState?.fullHistory;
+  const anchor = resolveAnchorDate(currentState);
+  if (fullHistory && typeof fullHistory === 'object' && isValidIsoDate(anchor)) {
+    for (let offset = 1; offset <= lookbackDays; offset += 1) {
+      const dateStr = addDays(anchor, -offset);
+      if (!isValidIsoDate(dateStr)) continue;
+      let dayLog = [];
+      try {
+        dayLog = getLogFromStoricoTree(fullHistory, dateStr) || [];
+      } catch {
+        dayLog = [];
+      }
+      ingestLog(dayLog, offset);
+    }
+  }
+
+  return [...byName.values()]
+    .sort((a, b) => {
+      if (b.lastUsed !== a.lastUsed) return b.lastUsed - a.lastUsed;
+      return a.foodName.localeCompare(b.foodName, 'it');
+    })
+    .slice(0, limit)
+    .map((row) => row.foodName);
+}
+
+/**
+ * @param {string[]} names
+ * @returns {string}
+ */
+export function formatProbablePantryPromptBlock(names) {
+  const list = (Array.isArray(names) ? names : [])
+    .map((name) => String(name || '').trim())
+    .filter(Boolean);
+  if (list.length === 0) return '';
+  return `[DISPENSA PROBABILE / ALIMENTI RECENTI]: ${list.join(', ')}`;
 }

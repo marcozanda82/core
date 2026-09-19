@@ -131,7 +131,7 @@ export default function StimulusCockpitOverlay({
             className="pointer-events-none fixed inset-0 z-[100041] flex items-end justify-center px-3 pb-3 pt-6 sm:items-center sm:px-6 sm:py-6"
           >
             <div
-              className="kentu-submenu-focus-panel pointer-events-auto relative flex max-h-[96dvh] min-h-[min(92dvh,720px)] w-full max-w-lg flex-col overflow-hidden"
+              className="kentu-submenu-focus-panel pointer-events-auto relative flex max-h-[96dvh] min-h-[min(92dvh,720px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md"
               onClick={(event) => event.stopPropagation()}
             >
               <button

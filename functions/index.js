@@ -121,25 +121,51 @@ function extractGeminiText(geminiData) {
   return textPart?.text || '';
 }
 
-async function callGeminiGenerateContent({
-  prompt,
-  systemText,
-  generationConfig,
-  images,
-  image,
-}) {
-  const geminiPayload = {
-    contents: [
-      {
-        parts: buildUserParts(prompt, systemText, images, image),
-      },
-    ],
-    generationConfig,
-  };
+/**
+ * Normalizza contents Gemini nativi: role + parts.
+ * Entry invalide vengono scartate (niente 500).
+ * @param {unknown} raw
+ * @returns {Array<{role: string, parts: object[]}>|null}
+ */
+function normalizeGeminiContents(raw) {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const roleRaw = String(entry.role || '').toLowerCase();
+    const role = roleRaw === 'model' || roleRaw === 'assistant' ? 'model' : 'user';
+    let parts = Array.isArray(entry.parts)
+      ? entry.parts.filter((part) => part && typeof part === 'object')
+      : [];
+    if (parts.length === 0) {
+      const text = String(entry.text || '').trim();
+      if (!text) continue;
+      parts = [{ text }];
+    }
+    const safeParts = parts
+      .map((part) => {
+        if (typeof part.text === 'string' && part.text.trim()) {
+          return { text: part.text };
+        }
+        if (part.inlineData && typeof part.inlineData === 'object') {
+          return { inlineData: part.inlineData };
+        }
+        if (part.inline_data && typeof part.inline_data === 'object') {
+          return { inlineData: part.inline_data };
+        }
+        return null;
+      })
+      .filter(Boolean);
+    if (safeParts.length === 0) continue;
+    out.push({ role, parts: safeParts });
+  }
+  while (out.length > 0 && out[0].role === 'model') {
+    out.shift();
+  }
+  return out.length > 0 ? out : null;
+}
 
-  const apiKey = getGeminiApiKey();
-  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-
+async function postGeminiGenerateContent(url, geminiPayload) {
   let response;
   try {
     response = await fetch(url, {
@@ -155,6 +181,43 @@ async function callGeminiGenerateContent({
   }
 
   const rawBody = await response.text();
+  return { response, rawBody };
+}
+
+async function callGeminiGenerateContent({
+  prompt,
+  systemText,
+  generationConfig,
+  images,
+  image,
+  historyContents,
+}) {
+  const history = normalizeGeminiContents(historyContents) || [];
+  const userTurn = {
+    role: 'user',
+    parts: buildUserParts(prompt, systemText, images, image),
+  };
+  const apiKey = getGeminiApiKey();
+  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+
+  const buildPayload = (turns) => ({
+    contents: turns,
+    generationConfig,
+  });
+
+  let { response, rawBody } = await postGeminiGenerateContent(
+    url,
+    buildPayload([...history, userTurn]),
+  );
+
+  if (!response.ok && history.length > 0 && response.status >= 400 && response.status < 500) {
+    console.warn(
+      'Gemini rejected native contents, retrying without history',
+      response.status,
+      rawBody.slice(0, 400),
+    );
+    ({ response, rawBody } = await postGeminiGenerateContent(url, buildPayload([userTurn])));
+  }
 
   if (!response.ok) {
     console.error('Gemini API HTTP error', response.status, rawBody.slice(0, 1200));
@@ -219,6 +282,7 @@ exports.callGemini = functions
         generationConfig,
         images: payload.images,
         image: payload.image,
+        historyContents: payload.contents,
       });
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {

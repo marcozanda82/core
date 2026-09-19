@@ -218,14 +218,14 @@ function PillarButton({ icon, label, active, onClick }) {
       onClick={onClick}
       aria-pressed={active}
       className={[
-        'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-xl border px-1.5 py-2 transition-colors',
+        'kentu-pulsantiera__btn flex h-auto min-h-0 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 transition-colors',
         active
           ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
           : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
       ].join(' ')}
     >
-      <span className="text-lg leading-none" aria-hidden>{icon}</span>
-      <span className="truncate text-[0.65rem] font-semibold tracking-wide uppercase">{label}</span>
+      <span className="text-base leading-none" aria-hidden>{icon}</span>
+      <span className="max-w-full truncate text-[0.62rem] font-semibold leading-tight tracking-wide uppercase">{label}</span>
     </button>
   );
 }
@@ -1050,7 +1050,7 @@ export default function PulsantieraUniversale({
   if (isAiGuidedModeActive) return null;
 
   return (
-    <div className="relative z-[100045] flex w-full shrink-0 flex-col gap-2 py-2">
+    <div className="kentu-pulsantiera relative z-[100045] flex h-auto w-full flex-none shrink-0 flex-col gap-1 py-1">
       {submenuOverlay}
       {attivitaCockpit}
       <MealTrashSheet
@@ -1062,7 +1062,7 @@ export default function PulsantieraUniversale({
       />
 
       <div
-        className="grid w-full grid-cols-5 gap-1.5 sm:gap-2"
+        className="kentu-pulsantiera__row flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1"
         role="toolbar"
         aria-label="Pulsantiera universale"
       >

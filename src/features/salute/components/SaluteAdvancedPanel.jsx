@@ -23,7 +23,7 @@ export default function SaluteAdvancedPanel({
   const [showTelemetry, setShowTelemetry] = useState(false);
 
   return (
-    <section className={`relative overflow-hidden rounded-[22px] border border-white/[0.10] ${SALUTE_FROST.card}`}>
+    <section className={`relative overflow-hidden rounded-[22px] border border-white/12 ${SALUTE_FROST.card}`}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -37,25 +37,25 @@ export default function SaluteAdvancedPanel({
       {open ? (
         <div className="space-y-4 border-t border-white/[0.06] px-4 pb-4 pt-3.5 sm:px-5">
           <div className="grid grid-cols-2 gap-2.5">
-            <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
               <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Peso</p>
               <p className="m-0 mt-1.5 text-[17px] font-semibold tabular-nums text-slate-50">
                 {formatMetric(biometrics?.weightKg, 1, ' kg')}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
               <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Vita</p>
               <p className="m-0 mt-1.5 text-[17px] font-semibold tabular-nums text-slate-50">
                 {formatMetric(biometrics?.waistCm ?? metabolic?.waistCm, 1, ' cm')}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
               <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Altezza</p>
               <p className="m-0 mt-1.5 text-[17px] font-semibold tabular-nums text-slate-50">
                 {formatMetric(metabolic?.heightCm, 0, ' cm')}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+            <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
               <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">Soglia vita</p>
               <p className="m-0 mt-1.5 text-[17px] font-semibold tabular-nums text-slate-50">
                 {formatMetric(metabolic?.thresholdCm, 1, ' cm')}
@@ -69,7 +69,7 @@ export default function SaluteAdvancedPanel({
           <button
             type="button"
             onClick={() => setShowTelemetry((v) => !v)}
-            className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-violet-400/35 bg-[#1C1830]/95 px-4 text-[13px] font-medium text-violet-100 shadow-[0_0_10px_rgba(167,139,250,0.10)]"
+            className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-violet-400/35 bg-violet-500/10 px-4 text-[13px] font-medium text-violet-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm"
           >
             {showTelemetry ? 'Nascondi telemetria' : 'Telemetria muscolare'}
           </button>
@@ -85,7 +85,7 @@ export default function SaluteAdvancedPanel({
             </Suspense>
           ) : null}
           {isDev ? (
-            <details className="rounded-2xl border border-dashed border-white/15 bg-[#0E1520]/96 p-3.5">
+            <details className={`rounded-2xl border border-dashed border-white/15 p-3.5 ${SALUTE_FROST.nested}`}>
               <summary className="cursor-pointer text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
                 JSON debug · DEV
               </summary>

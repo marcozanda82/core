@@ -452,6 +452,7 @@ export const chatResponsePayloadSchema = {
       nullable: true,
       description:
         'Analisi testuale BREVE (1-3 frasi, tono coach, adatta a TTS) basata ESCLUSIVAMENTE su KENTU_GLOBAL_STATE. '
+        + 'Saluti: usa User_Profile.firstName in modo caloroso (es. Ciao Marco!). '
         + 'Su consigli giornata/allenamento: usa longevityContext.strategicLever e collegalo al punteggio Longevità. '
         + 'Puoi anche mettere il testo in uiMessage/adviceMessage.',
     },

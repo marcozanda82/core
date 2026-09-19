@@ -44,6 +44,18 @@ const MEAL_ADVICE_EVALUATION_PATTERNS = [
   /\bdentro\s+(?:al\s+)?budget\b/i,
   /\bquanto\s+(?:posso\s+)?mangiare\b/i,
   /\bposso\s+.*\?/i,
+  /\bho\s+(?:in\s+)?(?:frigo|dispensa|casa)\b/i,
+  /\bho\s+(?:del|della|dello|dell'|dei|delle)\s+/i,
+  /\bpartiamo\s+da\b/i,
+  /\bcome\s+(?:lo|la|li|le)\s+chiud/i,
+];
+
+/** Ingrediente in casa / frigo: composizione collaborativa, non logging. */
+const FRIDGE_COMPOSITION_PATTERNS = [
+  /\bho\s+(?:in\s+)?(?:frigo|dispensa|casa)\b/i,
+  /\bho\s+(?:del|della|dello|dell'|dei|delle)\s+/i,
+  /\bpartiamo\s+da\b/i,
+  /\bcome\s+(?:lo|la|li|le)\s+chiud/i,
 ];
 
 const FOOD_REGISTRATION_PATTERNS = [
@@ -287,7 +299,8 @@ export function parseConsultantMealIntent(userText) {
 
   const mealType = parseTargetMealTypeFromUpdateText(text)?.mealType
     || parseMealTypeFromUserText(text);
-  if (!mealType) return null;
+  const isFridgeComposition = FRIDGE_COMPOSITION_PATTERNS.some((pattern) => pattern.test(text));
+  if (!mealType && !isFridgeComposition) return null;
 
   let anchorFood = null;
   const conMatch = text.match(
@@ -311,18 +324,33 @@ export function parseConsultantMealIntent(userText) {
     if (verbMatch?.[1]) anchorFood = cleanConsultantAnchorFood(verbMatch[1]);
   }
 
+  if (!anchorFood && isFridgeComposition) {
+    const fridgeMatch = text.match(
+      /\bho\s+(?:in\s+(?:frigo|dispensa|casa)\s+)?(?:del|della|dello|dell'|dei|delle|un|una)\s+(.+)/i,
+    ) || text.match(
+      /\bho\s+in\s+(?:frigo|dispensa|casa)\s+(.+)/i,
+    ) || text.match(
+      /\bpartiamo\s+da\s+(?:del|della|dello|dell'|dei|delle|un|una)?\s*(.+)/i,
+    );
+    if (fridgeMatch?.[1]) {
+      anchorFood = cleanConsultantAnchorFood(
+        fridgeMatch[1].replace(/\bcome\s+(?:lo|la|li|le)\s+chiud.*$/i, '').trim(),
+      );
+    }
+  }
+
   if (!anchorFood) return null;
 
   return {
-    mealType,
+    mealType: mealType || '',
     anchorFood,
     rawQuery: text,
   };
 }
 
 /**
- * Consultant Mode: l'utente dichiara un alimento base sicuro per un pasto
- * e chiede 3 varianti complete bilanciate sui macro rimanenti.
+ * Consultant Mode: l'utente dà un ingrediente (frigo / «cena con pollo»)
+ * e il sous-chef costruisce il pasto in prosa (STEP 2), senza 3 menu.
  * @param {string} userText
  * @param {Array<object>} [chatHistory]
  * @returns {boolean}
@@ -335,9 +363,15 @@ export function isConsultantMealIntent(userText, chatHistory = []) {
   if (isMealDraftEvaluationIntent(text)) return false;
   if (isMealCompletionIntent(text)) return false;
   if (CONSULTANT_EVALUATION_BLOCK_RE.test(text)) return false;
-  if (/\?\s*$/.test(text) && !/\bconsigl\w*/.test(text)) return false;
-  if (!CONSULTANT_MEAL_PATTERNS.some((pattern) => pattern.test(text))) return false;
-  if (!CONSULTANT_CERTAINTY_RE.test(text) && !/\bconsigl\w*\s+/.test(text) && !/\bcon\s+\w/.test(text)) {
+  const isFridgeComposition = FRIDGE_COMPOSITION_PATTERNS.some((pattern) => pattern.test(text));
+  if (/\?\s*$/.test(text) && !/\bconsigl\w*/.test(text) && !isFridgeComposition) return false;
+  if (!isFridgeComposition && !CONSULTANT_MEAL_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (
+    !isFridgeComposition
+    && !CONSULTANT_CERTAINTY_RE.test(text)
+    && !/\bconsigl\w*\s+/.test(text)
+    && !/\bcon\s+\w/.test(text)
+  ) {
     return false;
   }
   return Boolean(parseConsultantMealIntent(text));
@@ -668,6 +702,15 @@ export function isFoodRegistrationIntent(userText) {
 
   // Esclusione advice flat.
   if (isMealProposalQuery(text) || MEAL_ADVICE_EVALUATION_PATTERNS.some((pattern) => pattern.test(text))) {
+    return false;
+  }
+
+  if (
+    /\bho\s+preso\b/.test(text)
+    && !WEIGHT_PATTERN.test(text)
+    && !MEAL_SLOT_PATTERN.test(text)
+    && /\b(?:giornata|decisione|impegno|sonno|pausa|freddo|caldo)\b/.test(text)
+  ) {
     return false;
   }
 
@@ -1705,10 +1748,18 @@ export function isConsumedMealLogDescription(userText) {
   const text = String(userText || '').trim().toLowerCase();
   if (!text) return false;
 
-  return (
-    /\b(?:ho\s+)?(?:mangiat|consumat|assunt|preso|bevut)\b/.test(text)
-    || /\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\b/.test(text) && WEIGHT_PATTERN.test(text)
-  );
+  if (/\bho\s+(?:mangiat|consumat|assunt|bevut)\b/.test(text)) return true;
+  if (/\b(?:per\s+)?(?:colazione|pranzo|cena|snack)\b/.test(text) && WEIGHT_PATTERN.test(text)) {
+    return true;
+  }
+  if (
+    /\bho\s+preso\b/.test(text)
+    && (WEIGHT_PATTERN.test(text) || MEAL_SLOT_PATTERN.test(text))
+    && !/\b(?:giornata|decisione|impegno|sonno)\b/.test(text)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**

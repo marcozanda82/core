@@ -53,9 +53,9 @@ function PillarCard({
       type="button"
       onClick={clickable ? onClick : undefined}
       className={[
-        'flex w-full flex-col rounded-2xl border border-white/5 bg-zinc-900/50 py-2.5 px-3 text-left',
-        'transition-all',
-        clickable ? 'cursor-pointer active:scale-95' : 'cursor-default',
+        'flex w-full flex-col rounded-2xl border border-white/12 bg-white/[0.06] py-2.5 px-3 text-left',
+        'shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-all',
+        clickable ? 'cursor-pointer hover:border-cyan-400/45 hover:bg-white/[0.08] active:scale-95' : 'cursor-default',
       ].join(' ')}
       aria-label={ariaParts.join(': ')}
     >
@@ -73,7 +73,7 @@ function PillarCard({
         </span>
       ) : null}
       {subtitle ? (
-        <span className="mt-0.5 text-xs font-medium leading-snug text-zinc-500">
+        <span className="mt-0.5 text-xs font-medium leading-snug text-zinc-400">
           {subtitle}
         </span>
       ) : null}

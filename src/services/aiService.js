@@ -133,15 +133,19 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
     throw createAbortError();
   }
 
+  const nativeContents = Array.isArray(opts.contents) && opts.contents.length > 0
+    ? opts.contents
+    : null;
   const payload = {
-    prompt: buildPromptWithHistory(prompt, opts),
+    // Se contents nativi sono presenti, lo storico viaggia lì: non duplicarlo nel prompt.
+    prompt: nativeContents ? String(prompt ?? '') : buildPromptWithHistory(prompt, opts),
     systemInstruction: systemInstruction || opts.systemInstruction || '',
     model: opts.model || 'gemini-3.7-flash',
   };
 
   if (opts.images?.length) payload.images = opts.images;
   if (opts.image) payload.image = opts.image;
-  if (opts.contents) payload.contents = opts.contents;
+  if (nativeContents) payload.contents = nativeContents;
   if (opts.temperature != null) payload.temperature = opts.temperature;
   if (opts.responseSchema) payload.responseSchema = opts.responseSchema;
   if (opts.generationConfig) payload.generationConfig = opts.generationConfig;

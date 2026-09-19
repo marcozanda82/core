@@ -227,12 +227,14 @@ import {
   normalizeChatWorkoutType,
   parseWorkoutConflictResponse,
   isConsultativeStateIntent,
+  isSleepLogIntent,
 } from './conversation/workoutRegistrationSlots.js';
 import {
   appendKentuGlobalStateToSystemInstruction,
   buildKentuGlobalStateFromAppState,
 } from './context/kentuGlobalState.js';
 import { handleLocalQuery } from './context/localReceptionist.js';
+import { matchLocalGreeting } from './conversation/greetingMatcher.js';
 import {
   classifyMealWipSubIntent,
   hasMealWipConstraints,
@@ -3551,6 +3553,10 @@ export class CommandTerminalController {
       return 'LOG_COFFEE';
     }
 
+    if (isSleepLogIntent(userText, { hasImages: options.hasImages })) {
+      return 'LOG_SLEEP';
+    }
+
     // Follow-up a chiarimento (grammi/tipo) → sempre ADD_FOOD, anche senza "ho mangiato".
     if (
       isClarificationFollowUpReply(userText, options?.chatHistory || [])
@@ -3586,7 +3592,7 @@ export class CommandTerminalController {
     });
     if (detected !== 'UNKNOWN') return detected;
 
-    return detected;
+    return 'CHAT_RESPONSE';
   }
 
   tryParseAndPublishMealLog(userText, currentState = {}, chatHistory = [], options = {}) {
@@ -6210,6 +6216,37 @@ export class CommandTerminalController {
 
     if (userText && images.length === 0) {
       try {
+        const skipLocalGreeting = Boolean(forcedIntentEarly)
+          && !['CHAT_RESPONSE', 'UNKNOWN'].includes(forcedIntentEarly);
+        if (!skipLocalGreeting) {
+          const greetingHit = matchLocalGreeting(userText, {
+            displayName: resolveUserDisplayName(currentState?.userProfile)
+              || resolveUserDisplayName({ displayName: currentState?.userDisplayName })
+              || '',
+          });
+          if (greetingHit?.reply) {
+            console.log('[GreetingMatcher] intercepted → skip Gemini', {
+              phrase: greetingHit.phrase,
+              learned: greetingHit.learned,
+            });
+            return this.publishChatResponse(
+              {
+                uiMessage: greetingHit.reply,
+                payload: { message: greetingHit.reply },
+                requiresConfirmation: false,
+              },
+              userText,
+              { local: true },
+            );
+          }
+        }
+      } catch (error) {
+        console.warn('[GreetingMatcher] failed, falling through', error);
+      }
+    }
+
+    if (userText && images.length === 0) {
+      try {
         const globalPack = buildKentuGlobalStateFromAppState(currentState).object;
         const localAnswer = handleLocalQuery(userText, globalPack);
         if (localAnswer) {
@@ -6356,10 +6393,11 @@ export class CommandTerminalController {
     }
 
     const commandHint =
-      inferredIntent === 'UNKNOWN'
-      && isFoodRegistrationIntent(userText)
+      inferredIntent === 'UNKNOWN' && isFoodRegistrationIntent(userText)
         ? 'ADD_FOOD'
-        : inferredIntent;
+        : inferredIntent === 'UNKNOWN'
+          ? 'CHAT_RESPONSE'
+          : inferredIntent;
 
     if (
       commandHint === 'ADD_FOOD'
@@ -6432,6 +6470,13 @@ export class CommandTerminalController {
     }
 
     let commandType = String(commandResponse.command?.commandType || '').trim().toUpperCase();
+    if (commandType === 'CHAT_MESSAGE' || commandType === 'CHAT' || commandType === 'MESSAGE') {
+      commandType = 'CHAT_RESPONSE';
+      commandResponse.command = {
+        ...commandResponse.command,
+        commandType: 'CHAT_RESPONSE',
+      };
+    }
     let rawPayload = commandResponse.command?.payload || {};
 
     console.log('🟡 DEBUG - BRANCH DOPO LLM:', {

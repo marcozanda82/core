@@ -19,6 +19,7 @@ import {
 } from '../utils/foodResolver.js';
 import { resolveExactTimeForMeal, isMealProposalQuery, matchDraftItemByFoodQuery, findMostProblematicDraftItem } from '../features/commandTerminal/conversation/mealLogIntent.js';
 import { buildTodayDiaryIndex } from '../features/commandTerminal/conversation/todayDiaryIndex.js';
+import { buildProbablePantryFoodNames } from '../features/commandTerminal/conversation/userRecentFoods.js';
 import { deduplicateWipItems, normalizeWipFoodNameKey, deduplicateMealProposalItems } from '../features/wipMealBuilder/utils/wipMealItemUtils.js';
 import { analyzeTodayFromLog } from '../aiDayCoach';
 import {
@@ -32,7 +33,7 @@ import {
   isUserAssignedDayBlock,
   resolveBlockKcalTarget,
 } from '../features/weeklyBlocks/weeklyBlockSchema';
-import { buildChatPersonaSystemBlock, resolveUserDisplayName } from '../features/chat/chatPersona.js';
+import { buildChatPersonaSystemBlock, buildSousChefDietitianBlock, resolveUserDisplayName } from '../features/chat/chatPersona.js';
 import {
   applyMealOperations,
   findExistingCanonicalMealSlot,
@@ -277,8 +278,8 @@ export function buildFallbackMealProposalsFromFoodDb(currentAppState = {}, mealT
 }
 
 /**
- * Garantisce mealProposals non vuoti per richieste di suggerimento pasto.
- *
+ * Arricchisce mealProposals se l'LLM ne ha già prodotte (STEP 3).
+ * Nessun backfill da habits/fallback: il sous-chef dialoga prima di mostrare card.
  * @param {Array<object>} mealProposals
  * @param {object} adviceContext
  * @returns {Array<object>}
@@ -304,28 +305,10 @@ export function ensureMealProposalsForAdvice(mealProposals, adviceContext = {}) 
     return mealProposals
       .map((proposal) => enrichMealProposal(proposal, adviceContext))
       .filter(Boolean)
-      .slice(0, MAX_HABIT_PROPOSALS);
+      .slice(0, 1);
   }
-
-  // Backfill da abitudini/DB solo su richieste esplicite di suggerimento pasto (ADVICE generico).
-  if (!adviceContext.isGenericMealSuggestion) {
-    return [];
-  }
-
-  const habits = adviceContext?.userHabitsForCurrentMeal?.proposals || [];
-  const fromHabits = habits
-    .map((habit) => enrichMealProposal(habitProposalToCard(habit), adviceContext))
-    .filter(Boolean)
-    .slice(0, MAX_HABIT_PROPOSALS);
-  if (fromHabits.length > 0) return fromHabits;
-
-  const fallback = Array.isArray(adviceContext?.fallbackMealProposals)
-    ? adviceContext.fallbackMealProposals
-    : [];
-  return fallback
-    .map((proposal) => enrichMealProposal(proposal, adviceContext))
-    .filter(Boolean)
-    .slice(0, MAX_HABIT_PROPOSALS);
+  // Sous-chef: niente backfill di 3 pasti da habits/fallback. Resta il dialogo.
+  return [];
 }
 
 function proposalIncludesAnchorFood(proposal, anchorFood) {
@@ -339,10 +322,8 @@ function proposalIncludesAnchorFood(proposal, anchorFood) {
 }
 
 /**
- * Garantisce 3 mealProposals Consultant Mode con alimento base incluso in ogni opzione.
- * @param {Array<object>} mealProposals
- * @param {object} adviceContext
- * @returns {Array<object>}
+ * Arricchisce al massimo UNA mealProposal Consultant (dopo OK utente).
+ * Se l'LLM non ha prodotto card (STEP 2), resta [].
  */
 export function ensureMealProposalsForConsultantMeal(mealProposals, adviceContext = {}) {
   const anchorFood = String(adviceContext?.consultantMealRequest?.anchorFood || '').trim();
@@ -352,21 +333,24 @@ export function ensureMealProposalsForConsultantMeal(mealProposals, adviceContex
     || 'pranzo',
   ).toLowerCase();
 
-  const enriched = (Array.isArray(mealProposals) ? mealProposals : [])
+  const source = Array.isArray(mealProposals) ? mealProposals : [];
+  if (source.length === 0) return [];
+
+  const enriched = source
     .map((proposal, index) => enrichMealProposal({
       ...proposal,
       mealType: proposal?.mealType || mealType,
-      label: proposal?.label || `Opzione ${index + 1}`,
+      label: proposal?.label || (source.length === 1 ? 'Pasto proposto' : `Opzione ${index + 1}`),
       source: proposal?.source || 'consultant_meal',
     }, adviceContext))
     .filter(Boolean);
 
   const withAnchor = enriched.filter((proposal) => proposalIncludesAnchorFood(proposal, anchorFood));
-  const picked = (withAnchor.length > 0 ? withAnchor : enriched).slice(0, 3);
+  const picked = (withAnchor.length > 0 ? withAnchor : enriched).slice(0, 1);
 
-  return picked.map((proposal, index) => ({
+  return picked.map((proposal) => ({
     ...proposal,
-    label: `Opzione ${index + 1}`,
+    label: proposal.label || 'Pasto proposto',
     source: proposal.source || 'consultant_meal',
   }));
 }
@@ -670,11 +654,15 @@ export function buildUpdateLoggedMealAdviceMessage(adviceContext = {}) {
 
 export function buildConsultantMealAdviceMessage(adviceContext = {}) {
   const anchor = String(adviceContext?.consultantMealRequest?.anchorFood || 'alimento').trim();
-  const mealType = String(adviceContext?.consultantMealRequest?.mealType || 'pasto').toLowerCase();
-  const mealLabel = MEAL_TYPE_LABELS[mealType] || 'Pasto';
   const budget = adviceContext?.remainingBudget || {};
+  const pro = Math.round(Number(budget.pro) || 0);
   const kcal = Math.round(Number(budget.kcal) || 0);
-  return `Ho usato ${anchor} come base per la tua ${mealLabel.toLowerCase()}. Ecco 3 combinazioni che completano i macro rimanenti (${kcal} kcal). Scegli un'opzione e caricala nel diario.`;
+  const residualBits = [
+    pro > 0 ? `${pro}g di proteine` : null,
+    kcal > 0 ? `${kcal} kcal` : null,
+  ].filter(Boolean).join(' e ');
+  const residual = residualBits || 'i macro di oggi';
+  return `Perfetto, partiamo da ${anchor}. Con una porzione giusta copriamo ${residual}. Ti va se lo chiudiamo con un contorno e un filo d'olio, o preferisci un altro accompagnamento?`;
 }
 
 export function buildWipMealAdviceMessage(adviceContext = {}) {
@@ -2010,6 +1998,7 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
     currentMealType,
     activeDate: String(currentAppState?.activeDate || '').trim() || null,
     userHabitsForCurrentMeal,
+    probablePantryFoods: buildProbablePantryFoodNames(currentAppState),
     fallbackMealProposals,
     isGenericMealSuggestion: isGenericSuggestion,
     intent: intent || null,
@@ -2076,50 +2065,47 @@ export async function buildAdviceContext(targetFood, currentAppState = {}) {
 export function generateConsultantSystemInstruction(opts = {}) {
   const displayName = resolveUserDisplayName(opts.userProfile) || String(opts.displayName || '').trim();
   return [
-    'Sei un assistente nutrizionale empatico, colloquiale e intelligente — un Coach Nutrizionale Interattivo e compagno di viaggio (simbiosi Tamagotchi).',
-    'Aiuti l\'utente a comporre pasti tenendo conto di macros e calorie residue. Rispondi SOLO con JSON valido conforme allo schema (niente markdown fuori dal JSON).',
-    'Il testo discorsivo va in adviceMessage: tono incoraggiante, chiaro, amichevole, BREVE (adatto a TTS: preferisci 1–4 frasi corte). Usa spesso «noi» per obiettivi e piano («dobbiamo recuperare Xg di proteine»).',
-    'STILE VISIVO (adviceMessage): usa emoji native. Associa un\'emoji coerente a ogni alimento (🥣 yogurt, 🌰 noci, 🍎 mela, 🐟 pesce, 🥖 pane, 🥛 latte, 🥗 verdure, 🥚 uova).',
-    'Usa ✅ quando i vincoli sono rispettati; ⚠️ se si supera un limite (e correggi subito i grammi); 💡 per alternative utili.',
-    'CARRELLO WIP: non finalizzare MAI l\'inserimento se l\'utente fa una domanda o un dubbio (es. «non sono troppe?»). Chiudi/salva SOLO con conferma esplicita (CONFIRM).',
-    'Calcola sempre le calorie prima di proporre una grammatura. VIETATO esempi statici non calcolati (niente yogurt 100g / noci 150g inventati).',
-    'IDENTITÀ SOLVER: risolvi equazioni sui macronutrienti rispetto a [DOGMATIC_RECEIPT] e, in WIP, a [MEAL_WIP].constraints.',
-    'VINCOLO INGREDIENTI: lavora SOLO sugli alimenti che l utente propone (o in [PARTIAL_MEAL]/[MEAL_DRAFT_PROJECTION]/[EXISTING_MEAL_NODE]/[WIP_MEAL_ITEMS]/[CONSULTANT_MEAL_REQUEST].anchorFood). Per suggerimenti generici senza ingredienti utente, usa [USER_HABITS_FOR_CURRENT_MEAL] o [FALLBACK_MEAL_PROPOSALS], poi ottimizza i grammi sul remaining.',
-    'SCENARIO APERTO (senza quantità): calcola grams sul residuo (priorità P→C→F→kcal). Popola mealProposals.items o suggestions[].',
-    'SCENARIO CHIUSO (quantità precise): se sfora, correggi grams e spiega il delta in adviceMessage con emoji.',
-    'OUTPUT MAPPING: grams in mealProposals[].items[] o suggestions[].weight (WIP). totals = somma items.',
+    'Sei il Dietologo e Sous-Chef di KentuOS: empatico, colloquiale, collaborativo. Aiuti a comporre i pasti senza stress decisionale.',
+    'Rispondi SOLO con JSON valido conforme allo schema (niente markdown fuori dal JSON). Il testo discorsivo va in adviceMessage: massimo 2–3 frasi, tono rilassante, niente elenchi puntati inutili.',
+    buildSousChefDietitianBlock(),
+    'CARRELLO WIP: non finalizzare MAI l\'inserimento se l\'utente fa una domanda o un dubbio. Chiudi/salva SOLO con conferma esplicita (STEP 3 / CONFIRM).',
+    'Calcola sempre le calorie prima di proporre una grammatura. VIETATO esempi statici non calcolati.',
+    'IDENTITÀ SOLVER: usa [DOGMATIC_RECEIPT] e, in WIP, [MEAL_WIP].constraints per i numeri — ma in STEP 1–2 comunica i residui in prosa, senza scaricare card pasto.',
+    'VINCOLO INGREDIENTI: in STEP 2 lavora sull\'ingrediente che l\'utente propone; suggerisci contorni in testo, non 3 menu completi. I contorni: GUARDA PRIMA [DISPENSA PROBABILE / ALIMENTI RECENTI]. Per richieste generiche (STEP 1) NON usare [FALLBACK_MEAL_PROPOSALS] per riempire mealProposals.',
+    'SCENARIO APERTO (senza quantità, dopo un ingrediente): proponi porzione + 1–2 accompagnamenti in adviceMessage. mealProposals=[] finché non c\'è OK.',
+    'SCENARIO CHIUSO (quantità precise già concordate + OK): se sfora, correggi grams e spiega il delta in adviceMessage.',
+    'OUTPUT MAPPING: solo in STEP 3, grams in mealProposals[].items[] (UN pasto, BOZZA da confermare in UI). totals = somma items. In STEP 1–2 mealProposals=[] suggestedAction=null. VIETATO ADD_FOOD che scrive nel diario.',
     'REGOLA ENTITY RESOLUTION: estrai SOLO nome grezzo e quantità (grams).',
     'HARD CONSTRAINT — SANITIZZAZIONE NOMI: foodName = solo nome puro, senza grammature.',
     'HARD CONSTRAINT — NESSUNA DUPLICAZIONE DA CONGIUNZIONE.',
     'NON inventare foodDbKey né macronutrienti: li calcola il sistema locale.',
     'ORARIO ESPLICITO: estrai HH:mm in exactTime se indicato.',
-    'In WIP/coach: se mancano i grammi ma c\'è un vincolo calorico, proponi tu la porzione calcolata.',
     'STRATEGIA MACROCICLICA: leggi [DAILY_CALORIE_STRATEGY].',
     'HARD CONSTRAINT — VINCOLO MATEMATICO: totals.kcal di ogni mealProposal ≤ remaining.kcal se remaining.kcal > 0.',
     'HARD CONSTRAINT — SCALING OBBLIGATORIO: per rientrare, SCALA I GRAMMI.',
-    'INTENTO ASK_MEAL_COMPLETION: solo ingredienti integrativi utili.',
+    'INTENTO ASK_MEAL_ADVICE (generico: «cosa mangio», «idee per cena»): STEP 1. adviceMessage con residui + una domanda. mealProposals=[].',
+    'INTENTO ASK_MEAL_COMPLETION: solo ingredienti integrativi in prosa o, dopo OK, una mealProposal.',
     'INTENTO ASK_DAY_REVIEW / EVALUATE_MEAL_DRAFT: solo adviceMessage (niente mealProposals).',
     'INTENTO FIX_MEAL_DRAFT: UNA mealProposal con grams scalati.',
-    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM: 2-3 mealProposals sostitutive.',
+    'INTENTO SUBSTITUTE_MEAL_DRAFT_ITEM: 2-3 mealProposals sostitutive (eccezione: sostituzione su bozza già aperta).',
     'INTENTO UPDATE_LOGGED_MEAL: UNA mealProposal con operations[] + resultingItems[].',
-    'INTENTO CONSULTANT_MEAL: 3 opzioni con anchorFood obbligatorio.',
+    'INTENTO CONSULTANT_MEAL (ha già un ingrediente): STEP 2. Una proposta di composizione in prosa + domanda di conferma. mealProposals=[] finché non dice sì. VIETATO 3 opzioni.',
     'INTENTO WIP_MEAL_BUILD — leggi [MEAL_WIP].subIntent:',
     '  QUERY: adviceMessage empatico + ricalcolo; suggestions=[] mealProposals=[]. NON chiudere.',
     '  UPDATE: suggestions[] con weight = floor((residualKcal / kcal_per_100g)*100). mealProposals=[].',
     '  UPDATE HARD RULE: se l\'utente modifica o aggiunge un alimento già presente nel carrello, aggiorna la sua quantità esistente. Non creare mai due voci separate per lo stesso alimento.',
     '  CONFIRM: mealProposals riepilogo finale; suggestions=[].',
-    '  CONFIRM adviceMessage: frase informale SENZA nome utente (es. «Ecco il tuo snack pronto da confermare.») + elenco «- [Emoji] Nome (Grammi)». Niente JSON, niente tono da referto.',
+    '  CONFIRM adviceMessage: frase informale SENZA nome utente + elenco «- [Emoji] Nome (Grammi)».',
     'HARD CONSTRAINT WIP: se maxCalories è valorizzato, ogni suggestion.weight → calories ≤ residualKcal.',
     'HARD CONSTRAINT UPDATE_LOGGED_MEAL — resultingItems/items mai vuoti.',
-    'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high.',
-    'CARICO SERALE (CENA): se [EVENING_STRESS_CONTEXT] segnala sera/cena o stress elevato, l\'utente può essere stanco. NON fare troppe domande aperte: proponi 1–3 mealProposals già bilanciate, tono rassicurante («Ci peniamo noi — ecco due cene che chiudono i macro»). Zero colpe se la giornata è stata imperfetta.',
-    'suggestedAction: { foodName, grams, mealType } solo per singolo alimento rapido; altrimenti null.',
+    'REGOLA CORTISOLO SERALE: in cena/sera preferisci carboidrati complessi se stress high, ma resta in STEP 1–2 (niente triplo menu).',
+    'suggestedAction: null in STEP 1–2. Solo in STEP 3, e solo per un singolo alimento rapido; altrimenti null.',
     'REGOLA SMART DEFAULTS: mealType/orario da [CURRENT_SYSTEM_TIME] se mancanti.',
     'DIGIUNO & CAFFÈ: in KENTU_GLOBAL_STATE.Fasting_Context usa statusLine / isFasting (Monitor Metabolico). Se ATTIVO o bitterCoffeeDuringFast=true l\'utente è ancora a digiuno. VIETATO inferire dal meal log.',
     'REGOLA 0 KCAL: Se il pasto ha 0 kcal (caffè amaro, tè, acqua), IL DIGIUNO NON È INTERROTTO — non dire che è rotto, complimentati per averlo mantenuto. Solo brokenBySweetCoffee=true o pasto >10 kcal interrompe.',
     'CAFFERIA / IL SOLITO: Coffee_Shop_Context.catalog + favoriteBreakfast sono la fonte esatta per «caffè», «il solito», cappuccino/macchiato/croissant. Usa macro, caffeineMg, isFastingSafe del catalogo — VIETATO inventare.',
     buildChatPersonaSystemBlock({ displayName }),
-  ].join(' ');
+  ].join('\n');
 }
 
 /**
@@ -2149,8 +2135,17 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
   const candidates = Array.isArray(ctx.foodCandidates) ? ctx.foodCandidates : [];
   const habits = ctx.userHabitsForCurrentMeal || { mealType: meal, proposals: [] };
   const habitsJson = JSON.stringify(habits, null, 0);
+  const pantryNames = (Array.isArray(ctx.probablePantryFoods) ? ctx.probablePantryFoods : [])
+    .map((name) => String(name || '').trim())
+    .filter(Boolean)
+    .slice(0, 20);
+  const pantryLine = pantryNames.length > 0
+    ? `[DISPENSA PROBABILE / ALIMENTI RECENTI]: ${pantryNames.join(', ')}`
+    : '[DISPENSA PROBABILE / ALIMENTI RECENTI]: (vuota — proponi un contorno semplice e chiedi se ce l\'ha)';
   const fallbackProposals = Array.isArray(ctx.fallbackMealProposals) ? ctx.fallbackMealProposals : [];
-  const fallbackJson = JSON.stringify(fallbackProposals, null, 0);
+  const fallbackJson = ctx.isGenericMealSuggestion
+    ? '[]'
+    : JSON.stringify(fallbackProposals, null, 0);
   const upcomingWorkout = ctx.upcomingWorkout ?? null;
   const upcomingJson = JSON.stringify(upcomingWorkout, null, 0);
   const dailyCalorieStrategy = ctx.dailyCalorieStrategy || buildDailyCalorieStrategyContext({});
@@ -2215,8 +2210,8 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     : 'nessun match utile nel DB locale';
 
   const genericHint = ctx.isGenericMealSuggestion
-    ? 'Richiesta generica: usa habits/fallback e calibra grams su [DOGMATIC_RECEIPT].remaining. Compila mealProposals.'
-    : 'Risolvi la richiesta rispetto allo scontrino dogmatico (scenario aperto o chiuso).';
+    ? 'Richiesta generica (STEP 1): cita i macro rimanenti e fai UNA domanda guidata. mealProposals=[] suggestedAction=null. VIETATO 3 pasti preconfezionati e VIETATO copiare [FALLBACK_MEAL_PROPOSALS] in output.'
+    : 'Risolvi la richiesta rispetto allo scontrino dogmatico. Se manca l\'OK dell\'utente, resta in prosa (STEP 2). Solo dopo conferma esplicita popola mealProposals (UN pasto).';
 
   const rem = dogmaticReceipt?.remaining || {};
   const receiptHint = [
@@ -2236,6 +2231,7 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `[METABOLIC_BUDGET: ${JSON.stringify(budget || {}, null, 0)}]`,
     `[dailyBudgetRemaining: ${dailyBudgetRemainingJson}]`,
     `[USER_HABITS_FOR_CURRENT_MEAL: ${habitsJson}]`,
+    pantryLine,
     `[FALLBACK_MEAL_PROPOSALS: ${fallbackJson}]`,
     `[UPCOMING_WORKOUT: ${upcomingJson}]`,
     `[DAILY_CALORIE_STRATEGY: ${strategyJson}]`,
@@ -2259,18 +2255,19 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
     `[EVENING_STRESS_CONTEXT: ${eveningJson}]`,
     `Opzioni DB locale (densità per 100g, solo per risolvere nomi — NON usare 100g come default se c'è un vincolo WIP): ${candidateLines}.`,
     '',
-    'SOLVER MODE — EQUAZIONI MACRO:',
+    'SOLVER MODE — EQUAZIONI MACRO + SOUS-CHEF:',
     '1) Leggi [DOGMATIC_RECEIPT]: remaining = target − consumato (kcal, pro, carbo, fat).',
-    '2) SCENARIO APERTO (solo ingredienti, senza grams): calcola grams per saturare remaining; popola mealProposals.items.',
-    '3) SCENARIO CHIUSO (grams precisi): verifica sforamento vs remaining; se sfora, correggi grams in mealProposals e spiega il delta numerico in adviceMessage.',
-    '4) NON inventare ingredienti non proposti dall utente (salvo habits/fallback per richieste generiche, o accompagnamenti CONSULTANT_MEAL).',
-    '5) adviceMessage: coach empatico con emoji (✅ ⚠️ 💡 + emoji alimento); cita residui/sforamenti in g o kcal. Tono «noi», mai colpevolizzante.',
+    '2) STEP 1 (nessun ingrediente): domanda guidata sui residui. mealProposals=[].',
+    '3) STEP 2 (ingrediente dato, niente OK): proponi porzione + contorni in adviceMessage. I contorni da [DISPENSA PROBABILE / ALIMENTI RECENTI] se possibile. mealProposals=[].',
+    '4) STEP 3 (OK esplicito): UN mealProposal come BOZZA da confermare in UI; se sfora remaining, scala grams e spiega il delta. VIETATO scrivere nel diario da solo.',
+    '5) NON inventare un menu di 3 piatti. NON usare habits/fallback per riempire card al primo messaggio.',
+    '6) adviceMessage: 2–3 frasi, tono noi, mai colpevolizzante. Niente elenchi puntati inutili.',
     'ORARIO ESPLICITO: se la richiesta contiene un orario (es. "ore 14.45"), imposta exactTime in HH:mm.',
     '',
     (eveningContext.isDinnerContext || eveningContext.isEvening || eveningContext.eveningStressRisk === 'high')
       ? [
-        'MODALITÀ SERALE ATTIVA: simbiosi Tamagotchi — prendi tu i calcoli, offri soluzioni pronte.',
-        'Vietato «cosa preferisci mangiare?» generico: proponi opzioni bilanciate con grammi già calcolati.',
+        'MODALITÀ SERALE ATTIVA: tono rilassante, tieni conto del sonno, calcoli a carico tuo.',
+        'Resta maieutico: UNA domanda o UN passo (ingrediente → contorno). Vietato 2–3 cene già pronte.',
       ].join('\n')
       : '',
     dailyCalorieStrategy.isRestDay
@@ -2326,9 +2323,9 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
       : '',
     intent === 'CONSULTANT_MEAL'
       ? [
-        'CONSULTANT MODE ATTIVA (CONSULTANT_MEAL).',
-        '3 mealProposals con anchorFood obbligatorio; grams calibrati su [DOGMATIC_RECEIPT].remaining.',
-        'adviceMessage coach: residuo macro + sintesi delle 3 soluzioni con emoji.',
+        'CONSULTANT MODE (STEP 2): l\'utente ha già un ingrediente ([CONSULTANT_MEAL_REQUEST].anchorFood).',
+        'Proponi in prosa porzione + 1–2 contorni che chiudono i remaining. I contorni: PRIMA da [DISPENSA PROBABILE / ALIMENTI RECENTI], tono naturale (es. «se hai ancora i fagiolini…»). Chiedi conferma. mealProposals=[] finché non dice sì/perfetto/vai.',
+        'VIETATO 3 mealProposals. Solo dopo OK: UNA mealProposal con l\'anchorFood e i contorni concordati.',
       ].join('\n')
       : '',
     intent === 'WIP_MEAL_BUILD'
@@ -2358,10 +2355,10 @@ export function generateConsultantPrompt(adviceContext, targetFood) {
       : '',
     '',
     'OUTPUT JSON richiesto:',
-    '- adviceMessage: coach italiano con emoji, max ~6 frasi; cita sforamenti/residui in g o kcal.',
-    '- suggestedAction: { foodName, grams, mealType } | null — solo singolo alimento rapido.',
-    '- mealProposals: proposte con items[].foodName + items[].grams OTTIMIZZATI (grams > 0) e totals coerenti.',
-    'I grams in items[] sono la Source of Truth per le card.',
+    '- adviceMessage: italiano, 2–3 frasi, tono sous-chef; cita residui in g o kcal solo se servono.',
+    '- suggestedAction: null in STEP 1–2; in STEP 3 solo se serve un singolo alimento rapido.',
+    '- mealProposals: [] in STEP 1–2. In STEP 3: UN pasto concordato come bozza (items[].foodName + grams > 0). Mai scrittura diario automatica.',
+    'I grams in items[] sono la Source of Truth per le card, solo dopo l\'OK.',
   ].join('\n');
 }
 
@@ -2496,7 +2493,9 @@ function enrichProposalItemWithResolver(item, adviceContext, mealType) {
  * Per registrazione pasto / singolo alimento: mai sostituire items LLM con combo storica.
  */
 function shouldAllowHabitComboExpansion(adviceContext = {}) {
-  return adviceContext.isGenericMealSuggestion === true;
+  // Sous-chef: mai sostituire il dialogo con combo storiche da 3 pasti.
+  void adviceContext;
+  return false;
 }
 
 /**

@@ -46,6 +46,60 @@
 
 .kentu-os .chat-container {
   background: transparent;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.kentu-os .chat-messages {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+}
+
+.kentu-os .kentu-chat-composer {
+  flex: 0 0 auto;
+  height: auto;
+}
+
+.kentu-os .kentu-pulsantiera {
+  flex: 0 0 auto !important;
+  height: auto;
+  max-height: none;
+}
+
+.kentu-os .kentu-pulsantiera__row {
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  height: auto;
+  gap: 0.35rem;
+}
+
+.kentu-os .kentu-pulsantiera__btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
+  max-height: 3.15rem;
+  padding: 0.35rem 0.15rem;
+}
+
+.kentu-os .chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.kentu-os .chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
 }
 
 /* Deep Work — sessione guidata AI: lavagna espansa, cronologia nascosta */
@@ -81,10 +135,6 @@
   text-align: center;
   font-size: 0.9rem;
   padding: 24px 16px;
-}
-
-.kentu-os .chat-messages {
-  gap: 14px;
 }
 
 /* —— Card primitives —— */

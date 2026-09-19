@@ -74,9 +74,9 @@ function DrillDownCard({
       type="button"
       onClick={clickable ? onClick : undefined}
       className={[
-        'flex w-full flex-col rounded-2xl border border-white/5 bg-zinc-900/50 py-2.5 px-3 text-left',
-        'transition-all',
-        clickable ? 'cursor-pointer active:scale-95' : 'cursor-default',
+        'flex w-full flex-col rounded-2xl border border-white/12 bg-white/[0.06] py-2.5 px-3 text-left',
+        'shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm transition-all',
+        clickable ? 'cursor-pointer hover:border-cyan-400/45 hover:bg-white/[0.08] active:scale-95' : 'cursor-default',
       ].join(' ')}
       aria-label={ariaParts.join(': ')}
     >
@@ -96,7 +96,7 @@ function DrillDownCard({
         </span>
       ) : null}
       {subtitle ? (
-        <p className="m-0 mt-0.5 text-xs font-medium leading-snug text-zinc-500">
+        <p className="m-0 mt-0.5 text-xs font-medium leading-snug text-zinc-400">
           {subtitle}
         </p>
       ) : null}
@@ -110,8 +110,8 @@ function DrillDownCard({
 }
 
 const CARD_CLASS = [
-  'rounded-2xl border border-white/10 bg-zinc-950/55',
-  'shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl',
+  'rounded-2xl border border-white/12 bg-white/[0.06]',
+  'shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md',
 ].join(' ');
 
 /**
@@ -230,7 +230,7 @@ export default function HealthCockpit({
 
             {/* 🎯 DIRETTIVA DI SISTEMA - Azione Prioritaria */}
             {healthState?.primaryAction?.text && (
-              <div className="mx-6 mt-2 mb-8 p-4 bg-zinc-900/60 backdrop-blur-md border border-white/10 rounded-2xl flex items-center gap-4 shadow-lg">
+              <div className="mx-6 mt-2 mb-8 flex items-center gap-4 rounded-2xl border border-white/12 bg-white/[0.06] p-4 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md">
                 {/* Icona Target */}
                 <div className="flex-shrink-0 w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -262,7 +262,7 @@ export default function HealthCockpit({
                     key={id}
                     type="button"
                     onClick={() => onOpenPillarAnalysis?.(id)}
-                    className={`${CARD_CLASS} relative flex w-full cursor-pointer flex-col items-center gap-1.5 px-3 py-4 text-center transition-transform hover:bg-white/[0.02] active:scale-95`}
+                    className={`${CARD_CLASS} relative flex w-full cursor-pointer flex-col items-center gap-1.5 px-3 py-4 text-center transition-transform hover:border-cyan-400/45 hover:bg-white/[0.08] active:scale-95`}
                     aria-label={`${meta.label}: ${visual.label}. Apri analisi`}
                   >
                     <ChevronRight
@@ -318,7 +318,7 @@ export default function HealthCockpit({
 
             {actionText ? (
               <div
-                className={`${CARD_CLASS} border-cyan-400/25 bg-gradient-to-br from-cyan-950/50 via-zinc-950/70 to-zinc-950/80 px-4 py-4 mt-6`}
+                className={`${CARD_CLASS} mt-6 border-cyan-400/25 bg-gradient-to-br from-cyan-500/10 via-white/[0.04] to-transparent px-4 py-4`}
                 aria-label="Azione primaria"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-cyan-400/80">

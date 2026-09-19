@@ -4,7 +4,8 @@
  *
  * Home: cyan `#22d3ee` / `#00e5ff` · amber `#fbbf24` · emerald `#34d399`
  * viola `#a855f7` / `#818cf8` / `#b388ff` · fuchsia AI.
- * Superfici: stesso frost di Home (`backdrop-blur-sm` + inset white ~8–10%).
+ * Superfici: Vetrina Ghiacciata della Chat
+ * (`border-white/12 bg-white/[0.06] backdrop-blur-md` + shadow 8/32).
  */
 
 import {
@@ -12,13 +13,18 @@ import {
   pillarPctFromLongevityScore,
 } from '../../trendHub/utils/longevityInsightGenerator';
 
-/** Superfici satinata/frost — blur basso, opacità alta, niente ghiaccio. */
+/**
+ * Mix glass della Chat (Pulsantiera / Menu):
+ * tile `border-white/12 bg-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm`
+ * pannello `border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md`
+ */
 export const SALUTE_FROST = {
   page: 'pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_-10%,rgba(255,255,255,0.045),transparent_55%),linear-gradient(180deg,rgba(255,255,255,0.025)_0%,transparent_28%)]',
-  card: 'relative overflow-hidden bg-[#171E2A]/90 backdrop-blur-[3px] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_28px_rgba(0,0,0,0.22)]',
-  sheet: 'bg-[#0E141C]/97 backdrop-blur-[2px] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]',
-  micro: 'bg-[#0C121A]/98 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]',
-  sheen: 'pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-br from-white/[0.06] via-transparent to-transparent',
+  card: 'relative overflow-hidden bg-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-md',
+  sheet: 'bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md',
+  nested: 'border border-white/10 bg-black/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm',
+  micro: 'border border-white/10 bg-white/[0.04] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-sm',
+  sheen: 'pointer-events-none absolute inset-0 rounded-[inherit] bg-gradient-to-br from-white/[0.08] via-transparent to-transparent',
 };
 
 export const SALUTE_PILLAR_THEME = {
@@ -30,10 +36,10 @@ export const SALUTE_PILLAR_THEME = {
     value: 'text-cyan-100',
     label: 'text-cyan-200/80',
     iconWrap: 'border-cyan-400/30 bg-cyan-500/12',
-    card: 'border-white/[0.10] hover:border-cyan-400/28',
-    cardSelected: 'border-cyan-400/35 bg-[#13222C]/95',
-    sheetBorder: 'border-white/[0.10]',
-    kpiBorder: 'border-white/[0.08]',
+    card: 'border-white/12 hover:border-cyan-400/45',
+    cardSelected: 'border-cyan-400/45 shadow-[0_12px_40px_rgba(34,211,238,0.12)]',
+    sheetBorder: 'border-white/10',
+    kpiBorder: 'border-white/10',
     hex: '#22d3ee',
     glow: 'rgba(34,211,238,0.16)',
   },
@@ -45,10 +51,10 @@ export const SALUTE_PILLAR_THEME = {
     value: 'text-amber-100',
     label: 'text-amber-200/80',
     iconWrap: 'border-amber-400/30 bg-amber-500/12',
-    card: 'border-white/[0.10] hover:border-amber-400/28',
-    cardSelected: 'border-amber-400/35 bg-[#231C12]/95',
-    sheetBorder: 'border-white/[0.10]',
-    kpiBorder: 'border-white/[0.08]',
+    card: 'border-white/12 hover:border-amber-400/45',
+    cardSelected: 'border-amber-400/45 shadow-[0_12px_40px_rgba(251,191,36,0.12)]',
+    sheetBorder: 'border-white/10',
+    kpiBorder: 'border-white/10',
     hex: '#fbbf24',
     glow: 'rgba(251,191,36,0.14)',
   },
@@ -60,10 +66,10 @@ export const SALUTE_PILLAR_THEME = {
     value: 'text-violet-100',
     label: 'text-violet-200/80',
     iconWrap: 'border-violet-400/30 bg-violet-500/12',
-    card: 'border-white/[0.10] hover:border-violet-400/28',
-    cardSelected: 'border-violet-400/35 bg-[#1C1830]/95',
-    sheetBorder: 'border-white/[0.10]',
-    kpiBorder: 'border-white/[0.08]',
+    card: 'border-white/12 hover:border-violet-400/45',
+    cardSelected: 'border-violet-400/45 shadow-[0_12px_40px_rgba(167,139,250,0.12)]',
+    sheetBorder: 'border-white/10',
+    kpiBorder: 'border-white/10',
     hex: '#a78bfa',
     glow: 'rgba(167,139,250,0.16)',
   },
@@ -75,10 +81,10 @@ export const SALUTE_PILLAR_THEME = {
     value: 'text-emerald-100',
     label: 'text-emerald-200/80',
     iconWrap: 'border-emerald-400/30 bg-emerald-500/12',
-    card: 'border-white/[0.10] hover:border-emerald-400/28',
-    cardSelected: 'border-emerald-400/35 bg-[#12241F]/95',
-    sheetBorder: 'border-white/[0.10]',
-    kpiBorder: 'border-white/[0.08]',
+    card: 'border-white/12 hover:border-emerald-400/45',
+    cardSelected: 'border-emerald-400/45 shadow-[0_12px_40px_rgba(52,211,153,0.12)]',
+    sheetBorder: 'border-white/10',
+    kpiBorder: 'border-white/10',
     hex: '#34d399',
     glow: 'rgba(52,211,153,0.14)',
   },
@@ -90,10 +96,10 @@ export const SALUTE_PILLAR_THEME = {
     value: 'text-fuchsia-100',
     label: 'text-fuchsia-200/80',
     iconWrap: 'border-fuchsia-400/30 bg-fuchsia-500/12',
-    card: 'border-white/[0.10] hover:border-fuchsia-400/28',
-    cardSelected: 'border-fuchsia-400/32 bg-[#241428]/95',
-    sheetBorder: 'border-white/[0.10]',
-    kpiBorder: 'border-white/[0.08]',
+    card: 'border-white/12 hover:border-fuchsia-400/45',
+    cardSelected: 'border-fuchsia-400/45 shadow-[0_12px_40px_rgba(232,121,249,0.12)]',
+    sheetBorder: 'border-white/10',
+    kpiBorder: 'border-white/10',
     hex: '#e879f9',
     glow: 'rgba(232,121,249,0.12)',
   },

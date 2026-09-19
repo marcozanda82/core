@@ -141,7 +141,7 @@ export default function KentuChatUI({
 
   return (
     <div
-      className="view-animate flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
+      className="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden"
       style={{
         flex: 1,
         minHeight: 0,

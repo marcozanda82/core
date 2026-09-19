@@ -52,7 +52,7 @@ export default function HealthCockpitLongevityPreviewGate({
           type="button"
           onClick={togglePreview}
           aria-pressed={previewOn}
-          className="absolute left-3 top-2 z-[60] rounded-full border border-white/15 bg-zinc-900/90 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400"
+          className="absolute left-3 top-2 z-[60] rounded-full border border-white/12 bg-white/[0.06] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-300 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm"
         >
           Modalità Longevità {previewOn ? 'ON' : 'OFF'}
         </button>

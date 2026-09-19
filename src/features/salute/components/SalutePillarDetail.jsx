@@ -4,7 +4,7 @@ import CardioAnalysisCard from '../../trendHub/components/CardioAnalysisCard';
 import { formatFastingHoursLabel } from '../../trendHub/utils/saluteDashboardMetrics';
 import { MUSCLE_STIMULUS_DAILY_DECAY_FACTOR } from '../../trendHub/utils/muscleSpillover';
 import SaluteSleepDetail from './SaluteSleepDetail';
-import { saluteTheme } from '../utils/saluteVisualTheme';
+import { SALUTE_FROST, saluteTheme } from '../utils/saluteVisualTheme';
 
 const MuscleTelemetryHub = lazy(() => import('../../trendHub/components/MuscleTelemetryHub'));
 
@@ -44,7 +44,7 @@ function Expandable({ title, children, defaultOpen = false, accentClass = 'borde
   return (
     <details
       open={defaultOpen || undefined}
-      className={`rounded-2xl border bg-[#0E1520]/96 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ${accentClass}`}
+      className={`rounded-2xl ${SALUTE_FROST.nested} ${accentClass}`}
     >
       <summary className="cursor-pointer list-none px-4 py-3.5 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 marker:content-none [&::-webkit-details-marker]:hidden">
         {title}
@@ -140,7 +140,7 @@ function StrengthDetail({ pillar, showTelemetry, onToggleTelemetry, fourCylinder
           {pillar.districts.map((row) => (
             <li
               key={row.id}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+              className={`flex items-center justify-between gap-3 rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}
             >
               <span className="text-[14px] font-medium text-slate-50">{row.label}</span>
               <span className="shrink-0 text-right">
@@ -163,7 +163,7 @@ function StrengthDetail({ pillar, showTelemetry, onToggleTelemetry, fourCylinder
       <button
         type="button"
         onClick={onToggleTelemetry}
-        className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-violet-400/35 bg-[#1C1830]/95 px-4 text-[13px] font-medium text-violet-100 shadow-[0_0_10px_rgba(167,139,250,0.10)]"
+        className="flex min-h-12 w-full items-center justify-center rounded-2xl border border-violet-400/35 bg-violet-500/10 px-4 text-[13px] font-medium text-violet-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm"
       >
         {showTelemetry ? 'Nascondi telemetria muscolare' : 'Apri telemetria muscolare'}
       </button>
@@ -239,7 +239,7 @@ function NutritionDetail({ pillar, reportRead, healthReportStatus, recentNutriti
                   {history.map((row) => (
                     <li
                       key={row.date}
-                      className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#0E1520]/96 px-3 py-2.5 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                      className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] ${SALUTE_FROST.micro}`}
                     >
                       <span className="text-slate-200">{formatDateIt(row.date)}</span>
                       <span className="tabular-nums text-slate-400">
@@ -263,7 +263,7 @@ function NutritionDetail({ pillar, reportRead, healthReportStatus, recentNutriti
 
 function Kpi({ label, value, hint, accentClass = 'border-white/[0.08]', valueClass = 'text-slate-50' }) {
   return (
-    <div className={`rounded-2xl border bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] ${accentClass}`}>
+    <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested} ${accentClass}`}>
       <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">{label}</p>
       <p className={`m-0 mt-1.5 text-[17px] font-semibold leading-tight tabular-nums ${valueClass}`}>{value}</p>
       {hint ? <p className="m-0 mt-1 text-[11px] text-slate-400">{hint}</p> : null}
@@ -303,7 +303,7 @@ export default function SalutePillarDetail({
 
   return (
     <section
-      className={`rounded-[22px] border bg-[#151D2B]/94 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-[2px] sm:p-5 ${theme.sheetBorder}`}
+      className={`rounded-[22px] border p-4 sm:p-5 ${SALUTE_FROST.card} ${theme.sheetBorder}`}
       aria-label={`Dettaglio ${pillar.label}`}
     >
       <h2 className={`m-0 text-[12px] font-medium uppercase tracking-[0.14em] ${theme.label}`}>

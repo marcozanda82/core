@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import { formatSleepClock } from '../utils/sleepReference';
-import { SALUTE_SLEEP_CHART } from '../utils/saluteVisualTheme';
+import { SALUTE_FROST, SALUTE_SLEEP_CHART } from '../utils/saluteVisualTheme';
 
 /**
  * Presentation layer `/salute` del Ghost 14 giorni.
@@ -44,11 +44,11 @@ export default function SaluteSleepGhostChart({
 
   return (
     <section
-      className="relative overflow-hidden rounded-[22px] border border-white/[0.10] bg-[#161D28]/94 p-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-[2px] sm:p-4"
+      className={`relative overflow-hidden rounded-[22px] border border-white/12 p-3.5 sm:p-4 ${SALUTE_FROST.card}`}
       aria-label="Il tuo sonno ultimi 14 giorni"
     >
       <span
-        className="pointer-events-none absolute inset-0 rounded-[22px] bg-gradient-to-br from-white/[0.035] via-transparent to-transparent"
+        className={SALUTE_FROST.sheen}
         aria-hidden
       />
       <div className="relative">

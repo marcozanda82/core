@@ -27,15 +27,16 @@ import {
   resolveSubstituteRemovedItem,
 } from '../conversation/mealLogIntent.js';
 import { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
-import { isWorkoutLogIntent, isConsultativeStateIntent } from '../conversation/workoutRegistrationSlots.js';
+import { isWorkoutLogIntent, isConsultativeStateIntent, isSleepLogIntent } from '../conversation/workoutRegistrationSlots.js';
 import { formatCurrentSystemTimeContext } from '../conversation/mealSmartDefaults.js';
 import {
   buildKentuGlobalStateFromAppState,
 } from './kentuGlobalState.js';
-import { buildUserRecentFoods } from '../conversation/userRecentFoods.js';
+import { buildUserRecentFoods, buildProbablePantryFoodNames } from '../conversation/userRecentFoods.js';
 import { getHistoricalFoodBlocks } from '../conversation/historicalFoodBlocks.js';
 import { ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK } from '../conversation/draftAdviceCoach.js';
 import { expandFoodPayloadItems } from '../conversation/conversationState.js';
+import { resolveUserDisplayName } from '../../chat/chatPersona.js';
 
 const MAX_FOOD_CONTEXT_ITEMS = 40;
 
@@ -68,6 +69,20 @@ function buildDailyBudgetRemaining(currentState = {}) {
   };
 }
 
+function buildProbablePantrySlice(currentState = {}) {
+  let foods = [];
+  try {
+    foods = buildProbablePantryFoodNames(currentState);
+  } catch (error) {
+    console.warn('[ContextComposer] buildProbablePantryFoodNames failed', error);
+    foods = [];
+  }
+  return {
+    'DISPENSA PROBABILE / ALIMENTI RECENTI': foods,
+    Probable_Pantry: foods,
+  };
+}
+
 export { buildTodayDiaryIndex } from '../conversation/todayDiaryIndex.js';
 
 export class ContextComposer {
@@ -86,8 +101,7 @@ export class ContextComposer {
       return 'ASK_DRAFT_ADVICE';
     }
 
-    const sleepKeywords = ['sonno', 'sleep', 'dormito', 'dormire', 'deep sleep', 'sleep score', 'smartwatch'];
-    if (sleepKeywords.some((token) => text.includes(token))) return 'LOG_SLEEP';
+    if (isSleepLogIntent(text, { hasImages })) return 'LOG_SLEEP';
 
     // Merge/update verso slot esistente PRIMA della registrazione (evita ghost).
     if (isMergeIntoExistingMealIntent(text) || isUpdateLoggedMealIntent(text, chatHistory)) {
@@ -117,7 +131,7 @@ export class ContextComposer {
       mealWipActive: Boolean(currentState?.mealWipActive),
     })) return 'WIP_MEAL_BUILD';
     if (isMealAdviceIntent(text, chatHistory)) return 'ASK_MEAL_ADVICE';
-    return 'UNKNOWN';
+    return 'CHAT_RESPONSE';
   }
 
   /**
@@ -306,14 +320,25 @@ export class ContextComposer {
       };
     }
     if (normalizedIntent === 'CHAT_RESPONSE') {
+      const firstName = resolveUserDisplayName(currentState?.userProfile)
+        || resolveUserDisplayName({ displayName: currentState?.userDisplayName })
+        || '';
       return {
         intent: 'CHAT_RESPONSE',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          ...buildProbablePantrySlice(currentState),
           TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
+          USER_PROFILE: {
+            firstName: firstName || null,
+            displayName: firstName || null,
+          },
           INTENT_ROUTING:
             'CASO 2 CONSULTO: rispondi solo con commandType CHAT_RESPONSE. '
-            + 'Usa ESCLUSIVAMENTE KENTU_GLOBAL_STATE. Vietato ADD_FOOD/ADD_WORKOUT/bozze.',
+            + 'Usa ESCLUSIVAMENTE KENTU_GLOBAL_STATE. Vietato ADD_FOOD/ADD_WORKOUT/bozze. '
+            + (firstName
+              ? `Saluti: usa il nome «${firstName}» in modo caloroso (es. «Ciao ${firstName}! Come stiamo oggi?»).`
+              : 'Saluti: tono caloroso; se User_Profile.firstName è valorizzato, usalo.'),
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
             locale: toSafeString(currentState?.locale) || 'it-IT',
@@ -326,6 +351,7 @@ export class ContextComposer {
         intent: 'ASK_MEAL_ADVICE',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          ...buildProbablePantrySlice(currentState),
           TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           app: {
             activeDate: toSafeString(currentState?.activeDate) || null,
@@ -351,6 +377,7 @@ export class ContextComposer {
         intent: 'ASK_DRAFT_ADVICE',
         contextSlices: {
           ...nutritionSlices,
+          ...buildProbablePantrySlice(currentState),
           COACH_DRAFT_ADVICE_POLICY: ASK_DRAFT_ADVICE_COACH_SYSTEM_BLOCK,
           ...(activeDraftItems.length > 0
             ? {
@@ -380,6 +407,7 @@ export class ContextComposer {
         intent: 'CONSULTANT_MEAL',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          ...buildProbablePantrySlice(currentState),
           dailyBudgetRemaining,
           TODAY_DIARY_INDEX: this.getTodayDiaryIndex(currentState),
           CONSULTANT_MEAL_REQUEST: {
@@ -404,6 +432,7 @@ export class ContextComposer {
         intent: 'WIP_MEAL_BUILD',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          ...buildProbablePantrySlice(currentState),
           dailyBudgetRemaining,
           WIP_MEAL_ITEMS: wipMealItems,
           WIP_MEAL_DECLARATION: wipDeclaration,
@@ -426,6 +455,7 @@ export class ContextComposer {
         intent: 'ASK_MEAL_COMPLETION',
         contextSlices: {
           ...this.buildNutritionContextSlices(currentState),
+          ...buildProbablePantrySlice(currentState),
           PARTIAL_MEAL: {
             items,
             mealType: parsed?.mealType || null,
@@ -688,6 +718,13 @@ export class ContextComposer {
         ...(kentuGlobalState ? { KENTU_GLOBAL_STATE: kentuGlobalState } : {}),
       },
       kentuGlobalStateText,
+      userDisplayName:
+        kentuGlobalState?.User_Profile?.firstName
+        || resolveUserDisplayName({
+          displayName: kentuGlobalState?.User_Profile?.displayName,
+        })
+        || resolveUserDisplayName(currentState?.userProfile)
+        || '',
       promptContextText: JSON.stringify({
         ...(bundle.contextSlices || {}),
         ...(kentuGlobalState ? { KENTU_GLOBAL_STATE: kentuGlobalState } : {}),

@@ -70,7 +70,7 @@ export default function SaluteDetailSheet({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[100070] flex items-end justify-center bg-[#05070C]/88 sm:items-center sm:p-8"
+      className="fixed inset-0 z-[100070] flex items-end justify-center bg-black/60 backdrop-blur-md sm:items-center sm:p-8"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
@@ -81,7 +81,7 @@ export default function SaluteDetailSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className={`flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/[0.10] bg-[#0E141C]/97 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_-12px_48px_rgba(0,0,0,0.55)] backdrop-blur-[2px] sm:max-h-[86dvh] sm:rounded-[28px] sm:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_28px_80px_rgba(0,0,0,0.58)] ${accentClass}`}
+        className={`flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md sm:max-h-[86dvh] sm:rounded-[28px] ${accentClass}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mx-auto mt-2.5 h-1 w-11 shrink-0 rounded-full bg-slate-500/45 sm:hidden" aria-hidden />

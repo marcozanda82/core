@@ -241,10 +241,26 @@ export default function AiCluster({
   const vitalityBandClass = vitality.textClass;
 
   const chatEndRef = useRef(null);
+  const chatMessagesRef = useRef(null);
+  const stickToBottomRef = useRef(true);
   const chatFileInputRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
   const [consumedPredictiveGreetingKeys, setConsumedPredictiveGreetingKeys] = useState(() => new Set());
   const voiceSubmitRef = useRef(null);
+
+  const pinChatToBottomSoon = useCallback(() => {
+    stickToBottomRef.current = true;
+    window.setTimeout(() => {
+      const scroller = chatMessagesRef.current;
+      if (!scroller) return;
+      const top = scroller.scrollHeight;
+      if (typeof scroller.scrollTo === 'function') {
+        scroller.scrollTo({ top, behavior: 'smooth' });
+      } else {
+        scroller.scrollTop = top;
+      }
+    }, 100);
+  }, []);
 
   const handlePredictiveGreetingChipClick = useCallback((chip, msg, predictiveKey) => {
     const replyObj = chip && typeof chip === 'object' ? chip : null;
@@ -263,8 +279,8 @@ export default function AiCluster({
       label: replyLabel,
       durationHours: replyObj?.durationHours ?? null,
     });
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  }, [onSlotQuickReplyClick]);
+    pinChatToBottomSoon();
+  }, [onSlotQuickReplyClick, pinChatToBottomSoon]);
 
   const openFoodPhotoCapture = useCallback(async () => {
     try {
@@ -769,22 +785,38 @@ export default function AiCluster({
 
   const headerAvatarLabel = `${healthScoreLabel}. Score ${vitality.score}`;
 
-  /** Fingerprint lavagna attiva (dock): scroll cronologia resta indipendente. */
+  /** Scroll solo il contenitore messaggi (non gli ancestor con overflow hidden). */
   const scrollChatToBottom = useCallback((behavior = 'smooth') => {
-    const node = chatEndRef.current;
-    if (!node) return;
-    node.scrollIntoView({ behavior, block: 'end' });
+    const scroller = chatMessagesRef.current;
+    if (!scroller) return;
+    const top = scroller.scrollHeight;
+    if (typeof scroller.scrollTo === 'function') {
+      scroller.scrollTo({ top, behavior });
+      return;
+    }
+    scroller.scrollTop = top;
+  }, []);
+
+  const handleChatMessagesScroll = useCallback(() => {
+    const scroller = chatMessagesRef.current;
+    if (!scroller) return;
+    const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+    stickToBottomRef.current = distance < 96;
   }, []);
 
   useEffect(() => {
+    if (!stickToBottomRef.current) return undefined;
     scrollChatToBottom('smooth');
-    const t1 = window.setTimeout(() => scrollChatToBottom('smooth'), 80);
-    const t2 = window.setTimeout(() => scrollChatToBottom('auto'), 220);
+    const t1 = window.setTimeout(() => {
+      if (stickToBottomRef.current) scrollChatToBottom('smooth');
+    }, 80);
+    const t2 = window.setTimeout(() => {
+      if (stickToBottomRef.current) scrollChatToBottom('auto');
+    }, 220);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-    // Non dipendere dalla lavagna McDrive: i nuovi item nascono in cima, niente auto-scroll.
   }, [chatHistory, showTypingIndicator, scrollChatToBottom]);
 
   const suppressQuickReplies = useMemo(
@@ -867,7 +899,7 @@ export default function AiCluster({
       ...(options?.visibleUserText ? { visibleUserText: options.visibleUserText } : {}),
       ...(intent === 'REQUEST_CLINICAL_INSIGHT' ? { forceStrategic: true } : {}),
     });
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    pinChatToBottomSoon();
   }, [
     isProcessing,
     isNotesMode,
@@ -1051,7 +1083,7 @@ export default function AiCluster({
 
     setChatInput('');
     onSendMessage(text, { fromInput: true });
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    pinChatToBottomSoon();
   }, [
     isProcessing,
     isVoiceNoteActive,
@@ -1089,7 +1121,7 @@ export default function AiCluster({
       }
 
       onSendMessage(transcription, { fromInput: true, fromVoice: true });
-      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+      pinChatToBottomSoon();
     } catch (error) {
       console.error('[AiCluster] voice note transcription failed', error);
       const message = String(error?.message || '').trim();
@@ -1126,7 +1158,7 @@ export default function AiCluster({
       return;
     }
     onSendMessage(trimmed, { fromInput: true, fromVoice: true });
-    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    pinChatToBottomSoon();
   };
 
   const handleWorkspaceHomeClick = useCallback(() => {
@@ -1140,8 +1172,8 @@ export default function AiCluster({
 
   return (
     <div
-      className="view-animate ai-cluster-root kentu-os flex flex-col bg-zinc-950"
-      style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%' }}
+      className="ai-cluster-root kentu-os flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-zinc-950"
+      style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, height: '100%', maxHeight: '100%' }}
     >
       <header
         className={[
@@ -1312,11 +1344,13 @@ export default function AiCluster({
       ) : null}
 
       <div
-        className={`chat-container flex min-h-0 flex-1 flex-col${isAiGuidedImmersive ? ' chat-container--ai-guided' : ''}`}
+        className={`chat-container flex h-full min-h-0 flex-1 flex-col overflow-hidden${isAiGuidedImmersive ? ' chat-container--ai-guided' : ''}`}
         style={{
           minHeight: 0,
+          height: '100%',
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
         {!isAiGuidedImmersive ? (
@@ -1329,7 +1363,20 @@ export default function AiCluster({
           />
         ) : null}
         {!isAiGuidedImmersive ? (
-        <div className="chat-messages flex-1 overflow-y-auto" style={{ minHeight: 0, WebkitOverflowScrolling: 'touch', paddingRight: '5px' }}>
+        <div
+          ref={chatMessagesRef}
+          className="chat-messages min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain"
+          onScroll={handleChatMessagesScroll}
+          style={{
+            minHeight: 0,
+            height: 0,
+            flexGrow: 1,
+            flexShrink: 1,
+            flexBasis: 0,
+            WebkitOverflowScrolling: 'touch',
+            paddingRight: '5px',
+          }}
+        >
           {safeMessages.filter((msg) => {
             if (msg?.predictiveSuperseded === true) return false;
             // Lavagna attiva: solo nel dock sopra l'input, non in cronologia.
@@ -1717,7 +1764,7 @@ export default function AiCluster({
                           type="button"
                           onClick={() => {
                             openFoodPhotoCapture();
-                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                            pinChatToBottomSoon();
                           }}
                         >
                           📷 Scatta foto etichetta
@@ -1779,7 +1826,7 @@ export default function AiCluster({
                           if (isFoodPhotoQuickReply(replyLabel) || replyObj?.action === 'photo' || msg.requestFoodPhoto) {
                             if (isFoodPhotoQuickReply(replyLabel) || replyObj?.action === 'photo') {
                               openFoodPhotoCapture();
-                              setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                              pinChatToBottomSoon();
                               return;
                             }
                           }
@@ -1833,7 +1880,7 @@ export default function AiCluster({
                               ].includes(String(replyObj?.intent || replyObj?.action || '').toUpperCase()),
                             });
                           }
-                          setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                          pinChatToBottomSoon();
                         }}
                       >
                         {replyLabel}
@@ -1852,7 +1899,7 @@ export default function AiCluster({
                       className="kentu-btn--sm"
                       onClick={() => {
                         onLogDinnerOption(opt);
-                        setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                        pinChatToBottomSoon();
                       }}
                     >
                       Log pasto {oIdx + 1}
@@ -1866,7 +1913,7 @@ export default function AiCluster({
                     variant="secondary"
                     onClick={() => {
                       onLoadAgenda(msg.agendaOptions);
-                      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                      pinChatToBottomSoon();
                     }}
                   >
                     Carica nel diario
@@ -1963,12 +2010,12 @@ export default function AiCluster({
 
         <div
           className={[
-            'flex shrink-0 flex-col origin-bottom',
+            'kentu-chat-composer flex h-auto flex-none shrink-0 flex-col origin-bottom',
             collapseComposerForHoisted ? 'overflow-hidden' : 'overflow-visible',
             'transition-[max-height,opacity] duration-500 ease-in-out',
             collapseComposerForHoisted
               ? 'pointer-events-none max-h-0 opacity-0'
-              : 'max-h-[32rem] opacity-100',
+              : 'max-h-none opacity-100',
           ].join(' ')}
           aria-hidden={collapseComposerForHoisted ? true : undefined}
         >
@@ -2026,7 +2073,7 @@ export default function AiCluster({
                       label: entry.label,
                     });
                   }
-                  setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                  pinChatToBottomSoon();
                 }}
                 className="shrink-0 rounded-full border border-cyan-500/30 bg-slate-900/70 px-3.5 py-1.5 text-sm font-medium text-cyan-200 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 hover:text-cyan-50"
               >

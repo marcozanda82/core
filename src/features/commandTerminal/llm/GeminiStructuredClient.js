@@ -57,6 +57,108 @@ function unwrapJsonText(rawText) {
   return text;
 }
 
+function extractJsonObjectCandidate(text) {
+  const cleaned = unwrapJsonText(text);
+  if (!cleaned) return '';
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start >= 0 && end > start) return cleaned.slice(start, end + 1);
+  return cleaned;
+}
+
+function tryParseJsonObject(rawText) {
+  const cleaned = unwrapJsonText(rawText);
+  if (!cleaned) return null;
+  const candidates = [cleaned];
+  const extracted = extractJsonObjectCandidate(cleaned);
+  if (extracted && extracted !== cleaned) candidates.push(extracted);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // testo libero o JSON rotto → prossimo candidato
+    }
+  }
+  return null;
+}
+
+function asConversationalCommand(rawText) {
+  const text = asTrimmedString(rawText);
+  return {
+    commandType: 'CHAT_RESPONSE',
+    payload: { message: text },
+    adviceMessage: text,
+    uiMessage: text,
+    confidence: 0.5,
+    requiresConfirmation: false,
+  };
+}
+
+function conversationalTextFromParsed(parsed, fallbackText) {
+  return asTrimmedString(
+    parsed?.uiMessage
+    || parsed?.adviceMessage
+    || parsed?.payload?.message
+    || parsed?.message
+    || parsed?.text
+    || fallbackText,
+  );
+}
+
+/** Envelope JSON valido, oppure testo libero come CHAT_RESPONSE (niente throw). */
+function coerceStructuredCommand(rawText) {
+  const cleaned = unwrapJsonText(rawText);
+  const parsed = tryParseJsonObject(cleaned);
+  if (!parsed) return asConversationalCommand(cleaned || rawText);
+
+  const rawType = asTrimmedString(parsed.commandType || parsed.type || parsed.intent).toUpperCase();
+  if (rawType === 'CHAT_MESSAGE' || rawType === 'CHAT' || rawType === 'MESSAGE') {
+    parsed.commandType = 'CHAT_RESPONSE';
+  }
+
+  if (!asTrimmedString(parsed.commandType)) {
+    const text = conversationalTextFromParsed(parsed, cleaned);
+    return {
+      ...asConversationalCommand(text),
+      ...(parsed.payload && typeof parsed.payload === 'object' ? { payload: parsed.payload } : {}),
+    };
+  }
+
+  if (!asTrimmedString(parsed.uiMessage) && !asTrimmedString(parsed.adviceMessage)) {
+    const text = conversationalTextFromParsed(parsed, '');
+    if (text) {
+      parsed.uiMessage = text;
+      parsed.adviceMessage = parsed.adviceMessage || text;
+    }
+  }
+
+  return parsed;
+}
+
+function coerceConsultantPayload(rawText) {
+  const cleaned = unwrapJsonText(rawText);
+  const parsed = tryParseJsonObject(cleaned);
+  if (!parsed) {
+    return {
+      adviceMessage: cleaned,
+      suggestedAction: null,
+      mealProposals: [],
+      suggestions: [],
+    };
+  }
+
+  const adviceMessage = conversationalTextFromParsed(parsed, cleaned);
+  return {
+    adviceMessage,
+    suggestedAction: parsed.suggestedAction && typeof parsed.suggestedAction === 'object'
+      ? parsed.suggestedAction
+      : null,
+    mealProposals: Array.isArray(parsed.mealProposals) ? parsed.mealProposals : [],
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions : [],
+  };
+}
+
 /** True se il testo utente menziona grammi espliciti (non pezzi/unita). */
 function userTextMentionsExplicitGrams(userText) {
   const t = asTrimmedString(userText).toLowerCase();
@@ -1154,7 +1256,7 @@ function getEnvelopeSchemaForIntent(commandHint) {
         uiMessage: {
           type: 'string',
           description:
-            'OBBLIGATORIO per CHAT_RESPONSE: analisi BREVE (TTS) basata su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: noi, mai colpevolizzante.',
+            'OBBLIGATORIO per CHAT_RESPONSE: 2–3 frasi TTS. Saluti: usa User_Profile.firstName (es. Ciao Marco!). Tono simbiosi Tamagotchi: noi, mai colpevolizzante.',
         },
         adviceMessage: {
           type: 'string',
@@ -1241,14 +1343,22 @@ function imageDataUrlToInlinePart(imageSrc) {
 export const INTENT_ROUTING_SYSTEM_BLOCK = `### REGOLA FONDAMENTALE DI INTENT ROUTING (CLASSIFICAZIONE DELL'INTENZIONE)
 Prima di generare la risposta e compilare la struttura dati, devi classificare l'intenzione dell'utente.
 
-REGOLA DI ROUTING CRITICA (ASSOLUTA): SE IL MESSAGGIO DELL'UTENTE CONTIENE VERBI COME "HO MANGIATO", "HO BEVUTO", "HO PRESO", "HO CONSUMATO", OPPURE ELENCA CIBI, INGREDIENTI O PASTI (COLAZIONE, SNACK, PRANZO, CENA) — ANCHE IN FORMA DISCORSIVA TIPO "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE..." — DEVI USARE ADD_FOOD (se chiaro) OPPURE ASK_CLARIFICATION (proposta maggiordomo) OPPURE REQUEST_FOOD_PHOTO (sconosciuto). È SEVERAMENTE VIETATO USARE CHAT_RESPONSE O FORNIRE RIASSUNTI DI STATO / CILINDRI / BUDGET QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE DI CIBO. PRIORITÀ: DATA ENTRY, NON CHIACCHIERE.
+CASO 0: [CHIACCHIERA — DEFAULT]
+Saluti, fare il punto, sonno/energia/macro senza numeri da registrare, riflessioni, «come stiamo?».
+-> COMPORTAMENTO: commandType CHAT_RESPONSE. Solo testo. VIETATO ADD_FOOD, LOG_SLEEP, ADD_WORKOUT, mealProposals, scrittura diario.
+SALUTI: se l'utente dice ciao/buongiorno/hey, usa User_Profile.firstName (o displayName) in uiMessage in modo caloroso. Vietato «Ciao! Come posso aiutarti oggi?» senza nome quando il nome è noto.
+
+REGOLA DI ROUTING CRITICA: SE IL MESSAGGIO DICHIARA CIBO GIÀ CONSUMATO — VERBI COME "HO MANGIATO", "HO BEVUTO", "HO CONSUMATO", O "HO PRESO" + alimento (es. "COME SNACK, ALLE ORE 19:00, HO MANGIATO SARDINE...") — DEVI USARE ADD_FOOD (bozza da confermare) OPPURE ASK_CLARIFICATION OPPURE REQUEST_FOOD_PHOTO. È VIETATO USARE CHAT_RESPONSE QUANDO L'UTENTE DESCRIVE L'ASSUNZIONE GIÀ AVVENUTA.
+ECCEZIONE SOUS-CHEF: se NON ha mangiato e chiede cosa cucinare, oppure ha un ingrediente in frigo ("ho del pollo", "ho in frigo…", "come lo chiudo?") → CASO 2 (dialogo), NON ADD_FOOD.
+SONNO: parlare di sonno («non ho dormito bene», «come stiamo col sonno?») è CASO 0. LOG_SLEEP solo con screenshot wearable o valori numerici espliciti da registrare.
 
 CASO 1: [AZIONE - INSERIMENTO DATI]
 L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato una mela', 'come snack alle 19 ho mangiato sardine', 'Ho fatto 45 min di petto').
 -> COMPORTAMENTO OBBLIGATORIO: Genera il JSON strutturato (ADD_FOOD / ADD_WORKOUT / LOG_SLEEP). Per ADD_FOOD lascia uiMessage e adviceMessage VUOTI. Non fare il consulente di stato.
 
 CASO 1b: [WIZARD SEQUENZIALE — RISOLUZIONE DB-FIRST]
-L'utente elenca uno o più alimenti OPPURE nomina un piatto (es. 'pane e pomodoro', 'ho mangiato yogurt', 'cotoletta', 'pasta al pomodoro').
+L'utente elenca alimenti GIÀ MANGIATI (verbo al passato o grammi+slot pasto). Esempi: 'ho mangiato yogurt', 'pane e pomodoro 80g a pranzo'.
+NON applicare questo caso a un nome cibo isolato senza log («cotoletta», «pasta»), né a "ho del X" / "in frigo" / "cosa mangio" (CASO 0 o 2).
 -> COMPORTAMENTO: commandType ADD_FOOD con items[] già valorizzati seguendo la GERARCHIA DI RISOLUZIONE (vedi blocco dedicato):
 0) PRIORITÀ 0 — [userRecentFoods]: variante specifica + OBBLIGO di applicare typicalGrams esatto (DIVIETO di sovrascrivere con 100g o altre stime). Solo se peso/marca espliciti diversi dall'utente.
 1) PRIMA match esatto/semantico nel database Kentu ([USER_HABITS], DB personale, elenchi alimenti nel contesto) → UNA sola voce così com'è, SENZA scomporre.
@@ -1278,12 +1388,14 @@ Se l'utente nomina un prodotto che non riconosci / non è in [USER_HABITS] né n
 -> COMPORTAMENTO OBBLIGATORIO: commandType REQUEST_FOOD_PHOTO con payload { message: «Questo prodotto non credo di averlo in memoria. Puoi fargli una foto veloce all'etichetta o alla confezione?», foodName, options: ["📷 Scatta foto etichetta", "Te lo descrivo a parole"] }.
 VIETATO forzare ricerche complesse o inventare schede nutrizionali.
 
-CASO 2: [CONSULTO - DOMANDA SULLO STATO]
-L'utente pone una domanda ESPLICITA sullo stato SENZA descrivere un pasto appena mangiato (es. 'Quante pro mi mancano?', 'Quanto cardio ho fatto?', 'Cosa faccio oggi?', 'Come mi alleno?').
--> COMPORTAMENTO OBBLIGATORIO: commandType CHAT_RESPONSE. È VIETATO creare bozze pasto/workout. Analisi BREVE (1-3 frasi, TTS) su KENTU_GLOBAL_STATE. Tono simbiosi Tamagotchi: linguaggio di squadra (noi), leggi Avatar_Symbiosis; zero colpe.
+CASO 2: [CONSULTO / COMPOSIZIONE PASTO]
+L'utente pone una domanda sullo stato OPPURE chiede cosa mangiare SENZA dichiarare un pasto già consumato (es. 'Quante pro mi mancano?', 'Cosa potrei mangiare per cena?', 'Ho del pollo, come lo chiudo?').
+-> COMPORTAMENTO: commandType CHAT_RESPONSE (dietologo/sous-chef). Analisi BREVE (2-3 frasi TTS).
+-> COMPOSIZIONE PASTO: NON proporre pasti interi preconfezionati né 3 opzioni complete. STEP 1 = residui + una domanda; STEP 2 = ingrediente utente + contorni in prosa + chiedi OK; STEP 3 = UNA mealProposal BOZZA (anteprima non vincolante) SOLO dopo «sì/perfetto/vai». VIETATO ADD_FOOD che scrive nel diario.
+-> È VIETATO creare bozze pasto/workout o ADD_FOOD al primo messaggio di consiglio.
 -> ALLENAMENTO: il calendario è solo un promemoria. VIETATO giudicare sessioni saltate. Valuta lo stato fisico SOLO da Muscular_Cylinders (telemetria).
 -> LEVA LONGEVITÀ: se chiede direzione/allenamento/cosa fare oggi, leggi longevityContext.strategicLever e collegalo all'aumento del punteggio Longevità. Puoi mettere longevityContext.chipLabel in payload.options come chip rapido.
--> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti → vince SEMPRE CASO 1 / 1b / 1d.`;
+-> ECCEZIONE: se nel messaggio c'è anche "ho mangiato" / elenco alimenti già consumati → vince SEMPRE CASO 1 / 1b / 1d.`;
 
 /**
  * Food Wizard — Gerarchia di risoluzione (memoria abitudini → DB-first → scomposizione fallback).
@@ -1450,7 +1562,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
     parts.push(
       fixedHint && fixedHint !== 'UNKNOWN'
         ? `Intent target FORZATO: ${fixedHint}. Per ADD_FOOD e VIETATO rispondere con CHAT_RESPONSE (usa ASK_CLARIFICATION se ambigua).`
-        : 'Se l intent non e chiaro, classifica CASO 1 / 1b / 2. Cibo chiaro → ADD_FOOD. Cibo ambiguo → ASK_CLARIFICATION. Solo domande pure di stato → CHAT_RESPONSE.',
+        : 'Default CONVERSAZIONE: se non è un log esplicito (ho mangiato / registro sonno numerico / ho fatto allenamento), commandType CHAT_RESPONSE. Cibo GIÀ MANGIATO → ADD_FOOD (bozza da confermare). «cosa mangio / ho del / in frigo» → CHAT_RESPONSE sous-chef, niente ADD_FOOD. Parlare di sonno senza numeri → CHAT_RESPONSE, non LOG_SLEEP.',
     );
 
     return `${lead}\n\n${parts.join(' ')}`;
@@ -1483,10 +1595,12 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         ? 'Analizza lo screenshot allegato (app fitness/sonno in italiano, es. Xiaomi Fitness) ed estrai durata sonno, fase Profondo e punteggio punti per LOG_SLEEP.'
         : '');
     const displayName = asTrimmedString(
-      contextBundle?.contextSlices?.KENTU_GLOBAL_STATE?.User_Profile?.displayName
+      contextBundle?.contextSlices?.KENTU_GLOBAL_STATE?.User_Profile?.firstName
       || contextBundle?.userDisplayName
+      || contextBundle?.contextSlices?.USER_PROFILE?.firstName
+      || contextBundle?.contextSlices?.KENTU_GLOBAL_STATE?.User_Profile?.displayName
       || '',
-    );
+    ).split(/\s+/)[0];
     const systemInstruction = appendKentuGlobalStateToSystemInstruction(
       this.buildSystemInstruction(commandHint, {
         hasImages: imageParts.length > 0,
@@ -1509,7 +1623,11 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         ? 'Registrazione allenamento context-aware: contesto modulare include [USER_WORKOUT_HABITS]. payload.workoutType OBBLIGATORIO (spinta|trazione|gambe|cardio|altro). Sessione generica senza esercizi citati → exercises=[] ok. durationMinutes solo se esplicita. OBBLIGATORIO: se l utente usa un termine generico e [USER_WORKOUT_HABITS] ha la variante abituale, restituisci il nome completo in exerciseName (SMART RESOLUTION). Vietato aggiungere riscaldamento, defaticamento o esercizi extra non citati. Se la richiesta e un CONSULTO/domanda sullo stato (CASO 2), usa commandType CHAT_RESPONSE invece di ADD_WORKOUT. Se ambigua → ASK_CLARIFICATION.'
         : null,
       asTrimmedString(commandHint).toUpperCase() === 'CHAT_RESPONSE'
-        ? 'CASO 2 CONSULTO: commandType CHAT_RESPONSE (o ASK_CLARIFICATION se serve una scelta). Compila uiMessage breve TTS (1-3 frasi) basata SOLO su KENTU_GLOBAL_STATE. Su «cosa faccio oggi» / allenamento: usa longevityContext.strategicLever e collega all\'aumento Longevità; offri chip longevityContext.chipLabel in payload.options. requiresConfirmation=false. VIETATO creare payload ADD_FOOD/ADD_WORKOUT o bozze.'
+        ? `CASO 2 CONSULTO / SPAZIO CONVERSAZIONALE: commandType CHAT_RESPONSE. uiMessage 2–3 frasi. Saluti/giornata/sonno/macro = solo testo.${
+            displayName
+              ? ` Saluto: usa il nome «${displayName}» (es. «Ciao ${displayName}! Come stiamo oggi?»). Vietato «Ciao! Come posso aiutarti oggi?» senza nome.`
+              : ' Se User_Profile.firstName è nel contesto, usalo nel saluto.'
+          } Su «cosa mangio»: STEP 1–2. Dopo OK: UNA mealProposal bozza, mai diario in background. Su «cosa faccio oggi»: longevityContext.strategicLever. requiresConfirmation=false.`
         : null,
       'Produci esclusivamente l envelope commandType/payload/adviceMessage/uiMessage/confidence/requiresConfirmation.',
     ]
@@ -1543,12 +1661,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
     console.log('RAW_GEMINI_RESPONSE:', rawText);
     const cleaned = unwrapJsonText(rawText);
     if (!cleaned) throw new Error('Gemini returned empty structured response');
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      throw new Error('Gemini returned malformed JSON');
-    }
+    let parsed = coerceStructuredCommand(cleaned);
     parsed = sanitizeAddFoodCommand(parsed, normalizedUserText, conversationText, contextBundle);
     parsed = sanitizeAddWorkoutCommand(parsed, normalizedUserText, conversationText, contextBundle);
 
@@ -1609,36 +1722,15 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
     const cleaned = unwrapJsonText(rawText);
     if (!cleaned) throw new Error('Consultant LLM returned empty response');
 
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      throw new Error('Consultant LLM returned malformed JSON');
-    }
-
-    const adviceMessage = asTrimmedString(parsed?.adviceMessage);
+    const coerced = coerceConsultantPayload(cleaned);
+    const adviceMessage = asTrimmedString(coerced.adviceMessage);
     if (!adviceMessage) throw new Error('Consultant response missing adviceMessage');
-
-    let suggestedAction = null;
-    if (parsed?.suggestedAction && typeof parsed.suggestedAction === 'object') {
-      suggestedAction = parsed.suggestedAction;
-    }
-
-    let mealProposals = [];
-    if (Array.isArray(parsed?.mealProposals)) {
-      mealProposals = parsed.mealProposals;
-    }
-
-    let suggestions = [];
-    if (Array.isArray(parsed?.suggestions)) {
-      suggestions = parsed.suggestions;
-    }
 
     return {
       adviceMessage,
-      suggestedAction,
-      mealProposals,
-      suggestions,
+      suggestedAction: coerced.suggestedAction,
+      mealProposals: coerced.mealProposals,
+      suggestions: coerced.suggestions,
       rawText,
       model: CONSULTANT_MODEL,
     };

@@ -29,7 +29,7 @@ export default function HealthCockpitLabOverlay({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex flex-col justify-end bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
       aria-label={meta.title}
@@ -42,7 +42,7 @@ export default function HealthCockpitLabOverlay({
     >
       {/* Full-height sheet: il Radar deve stare nello spazio verticale disponibile, non in 85vh. */}
       <div
-        className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden border-t border-white/10 bg-zinc-950 shadow-2xl transform transition-transform animate-in slide-in-from-bottom duration-300"
+        className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden border-t border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md transform transition-transform animate-in slide-in-from-bottom duration-300"
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
         onClick={(e) => e.stopPropagation()}
       >

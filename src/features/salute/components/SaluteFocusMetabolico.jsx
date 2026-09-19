@@ -42,7 +42,7 @@ export function SaluteFocusMetabolicoCard({
     <button
       type="button"
       onClick={() => onOpen?.()}
-      className={`mb-5 flex w-full flex-col rounded-[22px] border border-white/[0.10] text-left transition hover:border-fuchsia-400/28 ${SALUTE_FROST.card}`}
+      className={`mb-5 flex w-full flex-col rounded-[22px] border border-white/12 text-left transition hover:border-fuchsia-400/45 ${SALUTE_FROST.card}`}
       aria-label={`${METABOLIC_FOCUS_LABEL}. Apri analisi`}
       aria-haspopup="dialog"
       aria-expanded={open}
@@ -129,7 +129,7 @@ export function SaluteFocusMetabolicoBody({
         status={insightStatus}
       />
 
-      <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <div className={`rounded-2xl ${SALUTE_FROST.nested}`}>
         <button
           type="button"
           onClick={() => setShowData((v) => !v)}
@@ -179,7 +179,7 @@ export function SaluteFocusMetabolicoBody({
                   {history.map((row) => (
                     <li
                       key={row.date}
-                      className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#0E1520]/96 px-3 py-2.5 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                      className={`flex items-center justify-between rounded-xl px-3 py-2.5 text-[13px] ${SALUTE_FROST.micro}`}
                     >
                       <span className="text-slate-200">{formatDateIt(row.date)}</span>
                       <span className="tabular-nums text-slate-400">

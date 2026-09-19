@@ -65,7 +65,7 @@ function MetabolicFocusDetailSheet({ open, parsed, styles, onClose }) {
   return createPortal(
     <div
       role="presentation"
-      className="fixed inset-0 z-[100080] flex items-end justify-center bg-black/65 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[100080] flex items-end justify-center bg-black/60 backdrop-blur-md"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose?.();
       }}
@@ -74,7 +74,7 @@ function MetabolicFocusDetailSheet({ open, parsed, styles, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="metabolic-focus-sheet-title"
-        className="flex max-h-[86dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-zinc-600/70 bg-zinc-950 shadow-[0_-16px_48px_rgba(0,0,0,0.45)]"
+        className="flex max-h-[86dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-zinc-600" aria-hidden />

@@ -14,6 +14,12 @@ import {
   CARDIO_WEEKLY_TARGET_MINUTES,
 } from './cardioCylinderStatus.js';
 import { sanitizeUserPortionsDict } from '../conversation/userPortionsMemory.js';
+import { resolveUserDisplayName } from '../../chat/chatPersona.js';
+import {
+  buildProbablePantryFoodNames,
+  formatProbablePantryPromptBlock,
+  PROBABLE_PANTRY_LOOKBACK_DAYS,
+} from '../conversation/userRecentFoods.js';
 import { buildFastingContextForLlm } from '../../stimulants/coffeeLogEngine.js';
 import { isFastingBreakerItem } from '../../../utils/fastingBreakRules.js';
 import {
@@ -66,6 +72,28 @@ function roundMacro(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n);
+}
+
+function buildProbablePantryBlock(nutritionState = {}, diaryState = {}, options = {}) {
+  const fromOptions = Array.isArray(options.probablePantryFoods)
+    ? options.probablePantryFoods
+      .map((name) => asTrimmedString(name))
+      .filter(Boolean)
+      .slice(0, 20)
+    : null;
+  const foods = fromOptions && fromOptions.length > 0
+    ? fromOptions
+    : buildProbablePantryFoodNames({
+      activeLog: nutritionState?.activeLog || diaryState?.activeLog,
+      fullHistory: nutritionState?.fullHistory || diaryState?.fullHistory,
+      activeDate: nutritionState?.activeDate || diaryState?.activeDate,
+    });
+  return {
+    lookbackDays: PROBABLE_PANTRY_LOOKBACK_DAYS,
+    foods,
+    promptRule:
+      'Quando suggerisci un contorno o un ingrediente mancante, scegli PRIMA da foods: è molto probabile che siano ancora in casa. Tono naturale, non ripetitivo.',
+  };
 }
 
 /**
@@ -545,16 +573,27 @@ export function buildKentuGlobalStateObject(
 
   const longevityContext = buildLongevityContextBlock(nutritionState, diaryState, options);
 
+  const rawDisplayName = asTrimmedString(
+    options.userDisplayName
+    || nutritionState?.userDisplayName
+    || nutritionState?.userProfile?.displayName
+    || nutritionState?.userProfile?.name
+    || diaryState?.userDisplayName
+    || diaryState?.userProfile?.displayName
+    || '',
+  ) || null;
+  const firstName = resolveUserDisplayName({
+    displayName: rawDisplayName,
+    firstName: nutritionState?.userProfile?.firstName
+      || diaryState?.userProfile?.firstName,
+    name: nutritionState?.userProfile?.name
+      || diaryState?.userProfile?.name,
+  }) || null;
+
   return {
     User_Profile: {
-      displayName: asTrimmedString(
-        options.userDisplayName
-        || nutritionState?.userDisplayName
-        || nutritionState?.userProfile?.displayName
-        || nutritionState?.userProfile?.name
-        || diaryState?.userDisplayName
-        || '',
-      ) || null,
+      displayName: rawDisplayName,
+      firstName,
     },
     Nutrition_Context: buildNutritionContextBlock(nutritionState, activeLog),
     Muscular_Cylinders: buildMuscularCylindersBlock(cylindersState, {
@@ -578,6 +617,7 @@ export function buildKentuGlobalStateObject(
       spilloverRule: '30% della durata pesi conta come cardio (1h ipertrofia ≈ 18 min cardio)',
     },
     User_Portions_Dictionary: userPortions,
+    Probable_Pantry: buildProbablePantryBlock(nutritionState, diaryState, options),
     Fasting_Context: fastingContext,
     Coffee_Shop_Context: {
       catalog: COFFEE_SHOP_PRODUCTS.map((p) => ({
@@ -765,6 +805,7 @@ export const KENTU_GLOBAL_STATE_PROMPT_HEADER = [
   'LONGEVITÀ (leva strategica): leggi longevityContext (score, bottleneck, strategicLever, targetAction / chipLabel).',
   'Se l\'utente chiede cosa fare oggi / come allenarsi / una direzione per la giornata: proponi strategicLever collegandola all\'aumento del punteggio Longevità (motivante, 1-2 frasi).',
   'Puoi offrire un chip rapido con targetAction/chipLabel (es. «🏃‍♂️ Avvia 30 min Zona 2») in payload.options.',
+  'DISPENSA: leggi [DISPENSA PROBABILE / ALIMENTI RECENTI] e Probable_Pantry.foods. Per i contorni, pesca da lì per primi.',
   '',
 ].join('\n');
 
@@ -785,8 +826,13 @@ export function appendKentuGlobalStateToSystemInstruction(systemInstruction, glo
 }
 
 function serializeKentuGlobalState(object) {
+  const firstName = asTrimmedString(object?.User_Profile?.firstName)
+    || asTrimmedString(object?.User_Profile?.displayName).split(/\s+/)[0];
+  const userLine = firstName
+    ? `UTENTE: ${firstName} — usa questo nome nei saluti (es. «Ciao ${firstName}!»).`
+    : '';
   const statusLine = asTrimmedString(object?.Fasting_Context?.statusLine);
+  const pantryLine = formatProbablePantryPromptBlock(object?.Probable_Pantry?.foods);
   const json = JSON.stringify(object, null, 2);
-  if (!statusLine) return json;
-  return `${statusLine}\n\n${json}`;
+  return [userLine, statusLine, pantryLine, json].filter(Boolean).join('\n\n');
 }

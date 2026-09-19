@@ -11,11 +11,11 @@ import {
   snapSleepReferenceHours,
 } from '../utils/sleepReference';
 import SaluteSleepGhostChart from './SaluteSleepGhostChart';
-import { sleepSemaphoreFromDelta } from '../utils/saluteVisualTheme';
+import { SALUTE_FROST, sleepSemaphoreFromDelta } from '../utils/saluteVisualTheme';
 
 function Expandable({ title, children }) {
   return (
-    <details className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+    <details className={`rounded-2xl ${SALUTE_FROST.nested}`}>
       <summary className="cursor-pointer list-none px-4 py-3.5 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400 marker:content-none [&::-webkit-details-marker]:hidden">
         {title}
       </summary>
@@ -35,7 +35,7 @@ function ReferenceEditor({
   onClose,
 }) {
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+    <div className={`rounded-2xl px-3.5 py-3.5 ${SALUTE_FROST.nested}`}>
       <p className="m-0 text-[13px] leading-relaxed text-slate-200">
         Quanto vuoi usare come riferimento?
       </p>
@@ -82,7 +82,7 @@ function ReferenceEditor({
           type="button"
           onClick={onSavePersonal}
           disabled={saving}
-          className="min-h-11 flex-1 rounded-2xl border border-violet-400/35 bg-[#1C1830]/95 px-3 text-[13px] font-medium text-violet-100 shadow-[0_0_10px_rgba(167,139,250,0.10)]"
+          className="min-h-11 flex-1 rounded-2xl border border-violet-400/35 bg-violet-500/10 px-3 text-[13px] font-medium text-violet-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm"
         >
           Salva
         </button>
@@ -132,7 +132,7 @@ export default function SaluteSleepDetail({
         </p>
       </section>
 
-      <section className="rounded-[22px] border border-white/[0.10] bg-[#0E1520]/96 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+      <section className={`rounded-[22px] px-4 py-4 ${SALUTE_FROST.nested}`}>
         <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-violet-300/85">
           Il tuo riferimento
         </p>
@@ -193,7 +193,7 @@ export default function SaluteSleepDetail({
       />
 
       <div className="grid grid-cols-2 gap-2.5">
-        <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
           <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-cyan-300/85">
             Media 14 giorni
           </p>
@@ -213,7 +213,7 @@ export default function SaluteSleepDetail({
 
       <Expandable title="Approfondimenti">
         <div className="grid grid-cols-2 gap-2.5">
-          <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
             <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
               Punteggio longevità
             </p>
@@ -223,7 +223,7 @@ export default function SaluteSleepDetail({
                 : `— / ${pillar?.max ?? 25}`}
             </p>
           </div>
-          <div className="rounded-2xl border border-white/[0.08] bg-[#0E1520]/96 px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+          <div className={`rounded-2xl px-3.5 py-3 ${SALUTE_FROST.nested}`}>
             <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
               Notti in finestra
             </p>

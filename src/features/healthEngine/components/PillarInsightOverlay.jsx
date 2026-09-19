@@ -138,12 +138,12 @@ export default function PillarInsightOverlay({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col justify-end bg-black/55 backdrop-blur-[2px]"
+      className="absolute inset-0 z-30 flex flex-col justify-end bg-black/60 backdrop-blur-md"
       role="presentation"
       onClick={() => onClose?.()}
     >
       <div
-        className="mb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] flex max-h-[min(82%,36rem)] w-full flex-col rounded-t-3xl border border-cyan-400/20 bg-zinc-950 shadow-[0_-16px_48px_rgba(0,0,0,0.55)]"
+        className="mb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] flex max-h-[min(82%,36rem)] w-full flex-col rounded-t-3xl border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md"
         role="dialog"
         aria-modal="true"
         aria-label={`Analisi ${meta.label}`}
