@@ -285,6 +285,22 @@
   font-size: 1.18rem;
 }
 
+.kentu-predictive-greeting-block .kentu-card--hero {
+  padding: 0.5rem 0.75rem;
+  border-color: rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.45);
+  box-shadow: none;
+}
+
+.kentu-predictive-greeting-block .kentu-insight-title,
+.kentu-greeting-whisper {
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.4;
+  color: rgb(148 163 184);
+}
+
 .kentu-insight-sub {
   font-size: 0.72rem;
   font-weight: 600;
@@ -1497,6 +1513,24 @@
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.kentu-os .kentu-quick-reply-chip-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.kentu-os .kentu-quick-reply-chip {
+  min-height: 2.5rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+  border-radius: 0.75rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* —— Quick actions row —— */

@@ -115,7 +115,7 @@ export function useWorkoutManager({
   const [workoutRpe, setWorkoutRpe] = useState(/** @type {number | null} */ (null));
   const [workoutNotes, setWorkoutNotes] = useState('');
   const [editingWorkoutId, setEditingWorkoutId] = useState(null);
-  /** Dopo conferma sessione: scheda revisione carichi/ripetizioni senza chiudere il drawer. */
+  /** Legacy: scheda «SALVA CORREZIONI» bypassata — il salvataggio chiude subito sulla dashboard. */
   const [postWorkoutReviewActive, setPostWorkoutReviewActive] = useState(false);
 
   const lastWorkoutCommitRef = useRef({ key: '', at: 0 });
@@ -490,7 +490,6 @@ export function useWorkoutManager({
     }
     saveInFlightRef.current = true;
     const editingAtStart = editingWorkoutId;
-    const inReviewAtStart = postWorkoutReviewActive;
     try {
       const normalizedDurationMin = parseDurationMinutesInput(workoutDurationMin, {
         min: WORKOUT_DURATION_MIN,
@@ -610,32 +609,8 @@ export function useWorkoutManager({
         setIsPlanActionSheetOpen(false);
         if (fromTrainingBlockExecute) {
           trainingBlockExecuteRef.current = false;
-          setPostWorkoutReviewActive(false);
-          setEditingWorkoutId(null);
-          setWorkoutMuscles([]);
-          setWorkoutStrengthDetail('');
-          setWorkoutGoal('');
-          setWorkoutRpe(null);
-          setWorkoutNotes('');
-          endWorkoutSurface();
-          return;
         }
-        if (inReviewAtStart) {
-          setPostWorkoutReviewActive(false);
-          setEditingWorkoutId(null);
-          setWorkoutMuscles([]);
-          setWorkoutStrengthDetail('');
-          setWorkoutGoal('');
-          setWorkoutRpe(null);
-          setWorkoutNotes('');
-          endWorkoutSurface();
-          return;
-        }
-        if (!editingAtStart) {
-          setEditingWorkoutId(finalId);
-          setPostWorkoutReviewActive(true);
-          return;
-        }
+        setPostWorkoutReviewActive(false);
         setEditingWorkoutId(null);
         setWorkoutMuscles([]);
         setWorkoutStrengthDetail('');
@@ -742,7 +717,6 @@ export function useWorkoutManager({
     workoutDurationMin,
     workoutStartTime,
     editingWorkoutId,
-    postWorkoutReviewActive,
     workoutMuscles,
     workoutKcal,
     workoutGoal,

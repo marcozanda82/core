@@ -1113,9 +1113,13 @@ export default function SalaComandi() {
     isChatOpen,
     openChat,
     closeChat,
+    canLoadPrevious,
+    isLoadingPrevious,
+    isHistoryVisible,
+    loadPreviousMessages,
   } = useKentuChatShell({
     introPhrase,
-    currentTrackerDate,
+    userUid,
     activeAction,
     setActiveAction,
     setIsDrawerOpen,
@@ -6970,6 +6974,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onRestoreTrashMeal: handleRestoreTrashMeal,
     onPurgeTrashMeal: handlePurgeTrashMeal,
     onDeleteWorkout: removeLogItem,
+    onLoadPreviousMessages: loadPreviousMessages,
+    canLoadPreviousMessages: canLoadPrevious,
+    isLoadingPreviousMessages: isLoadingPrevious,
+    isHistoryVisible,
   }), [
     // ⚠️ RIMOSSO registerHandlers: causava loop perché non usato nell'oggetto!
     chatHistory,
@@ -7030,6 +7038,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleRestoreTrashMeal,
     handlePurgeTrashMeal,
     removeLogItem,
+    loadPreviousMessages,
+    canLoadPrevious,
+    isLoadingPrevious,
+    isHistoryVisible,
   ]);
 
   // 🔥 FIX LOOP: Registra handlers solo quando il memoized object cambia
@@ -8702,6 +8714,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             healthScore={healthScore ?? null}
             isTrainingDay={Boolean(hasPlannedBlock || hasRealWorkoutInActiveLog)}
             onRequestHealthDiagnosis={handleRequestHealthDiagnosis}
+            onLoadPreviousMessages={loadPreviousMessages}
+            canLoadPreviousMessages={canLoadPrevious}
+            isLoadingPreviousMessages={isLoadingPrevious}
+            isHistoryVisible={isHistoryVisible}
           />
           </Suspense>
       </KentuChatShell>

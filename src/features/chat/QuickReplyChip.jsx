@@ -14,8 +14,8 @@ export default function QuickReplyChip({
   if (!text) return null;
 
   const variantClass = variant === 'primary'
-    ? 'border-cyan-400/55 bg-cyan-500/15 text-cyan-50 hover:bg-cyan-500/25'
-    : 'border-zinc-600/80 bg-zinc-900/80 text-zinc-100 hover:border-cyan-500/35 hover:bg-zinc-800/90';
+    ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-50 hover:bg-cyan-400/18'
+    : 'border-white/12 bg-white/[0.06] text-zinc-100 hover:border-cyan-400/30 hover:bg-white/[0.1]';
 
   return (
     <button
@@ -24,21 +24,22 @@ export default function QuickReplyChip({
       onClick={onClick}
       className={[
         'kentu-quick-reply-chip',
-        'inline-flex min-h-[3rem] w-full items-center justify-center',
-        'rounded-2xl border px-4 py-3 text-base font-semibold',
+        'inline-flex min-h-[2.5rem] w-full min-w-0 items-center justify-center',
+        'rounded-xl border px-2.5 py-1.5 text-sm font-medium leading-snug',
+        'backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.18)]',
         'transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/45',
         variantClass,
         className,
       ].join(' ')}
     >
-      {text}
+      <span className="line-clamp-2 text-center">{text}</span>
     </button>
   );
 }
 
 /**
- * Griglia verticale di chip sotto un messaggio AI.
+ * Griglia compatta 2 colonne di chip sotto un messaggio AI.
  */
 export function QuickReplyChipRow({
   replies = [],
@@ -66,8 +67,8 @@ export function QuickReplyChipRow({
   return (
     <div
       className={[
-        'kentu-quick-reply-chip-row flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5 py-1',
-        align === 'end' ? 'items-end' : 'items-start',
+        'kentu-quick-reply-chip-row grid w-full max-w-[min(92%,28rem)] grid-cols-2 gap-2 py-1',
+        align === 'end' ? 'ml-auto' : 'mr-auto',
       ].join(' ')}
     >
       {items.map((item, index) => (

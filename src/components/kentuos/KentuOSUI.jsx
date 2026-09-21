@@ -263,7 +263,16 @@ function MetricRow({ line }) {
   );
 }
 
-export function KentuInsightHero({ block }) {
+export function KentuInsightHero({ block, compact = false }) {
+  if (compact) {
+    const text = String(block || '').trim();
+    if (!text) return null;
+    return (
+      <p className="kentu-greeting-whisper m-0 max-w-full text-sm font-medium leading-snug text-slate-400">
+        {text}
+      </p>
+    );
+  }
   const { title, bullets, bars, remainder } = parseInsightBlock(block);
   const showBullets = bullets.slice(0, 3);
   const showBars = bars.slice(0, 3);

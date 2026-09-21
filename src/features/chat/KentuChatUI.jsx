@@ -98,6 +98,10 @@ export default function KentuChatUI({
   healthScore = null,
   isTrainingDay = false,
   onRequestHealthDiagnosis = null,
+  onLoadPreviousMessages = null,
+  canLoadPreviousMessages = false,
+  isLoadingPreviousMessages = false,
+  isHistoryVisible = false,
 }) {
   const safeDailyLog = normalizeDailyLog(dailyLog);
   const safeUserTargets = normalizeUserTargets(userTargets);
@@ -228,6 +232,10 @@ export default function KentuChatUI({
         healthScore={safeHealthScore}
         isTrainingDay={isTrainingDay}
         onRequestHealthDiagnosis={onRequestHealthDiagnosis}
+        onLoadPreviousMessages={onLoadPreviousMessages}
+        canLoadPreviousMessages={canLoadPreviousMessages}
+        isLoadingPreviousMessages={isLoadingPreviousMessages}
+        isHistoryVisible={isHistoryVisible}
       />
     </div>
   );

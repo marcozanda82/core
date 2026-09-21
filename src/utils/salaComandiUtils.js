@@ -6,6 +6,7 @@ import {
   EVENT_USAGE_LEGACY_ALIASES,
   MEAL_CONFIRM_DEBOUNCE_MS,
 } from '../constants/salaComandiConstants';
+import { KENTU_INTRO_PHRASES } from '../kentuIntroPhrases';
 
 export function migrateIdealStrategy(raw) {
   const defaults = {
@@ -92,6 +93,98 @@ export function kentuChatStorageKey(dateStr) {
   return `kentu_chat_${dateStr}`;
 }
 
+const KENTU_CHAT_DATE_KEY_RE = /^kentu_chat_(\d{4}-\d{2}-\d{2})$/;
+
+/** Data locale YYYY-MM-DD (allineata a getTodayString / timezone offset). */
+export function getLocalIsoDateString(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return '';
+  const offset = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offset).toISOString().slice(0, 10);
+}
+
+/** Millisecondi al prossimo mezzanotte locale (min 250ms). */
+export function msUntilNextLocalMidnight(now = new Date()) {
+  const d = now instanceof Date ? now : new Date(now);
+  const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+  return Math.max(250, next.getTime() - d.getTime());
+}
+
+export function listLocalKentuChatDates() {
+  if (typeof localStorage === 'undefined') return [];
+  const dates = [];
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      const match = KENTU_CHAT_DATE_KEY_RE.exec(String(key || ''));
+      if (match) dates.push(match[1]);
+    }
+  } catch {
+    /* private mode */
+  }
+  return dates.sort();
+}
+
+function messageCalendarDate(message) {
+  if (!message || typeof message !== 'object') return '';
+  const raw = message.createdAt ?? message.timestamp ?? message.at ?? message.anchorDate;
+  if (raw == null || raw === '') return '';
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return getLocalIsoDateString(new Date(raw));
+  }
+  const asString = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(asString)) return asString;
+  const parsed = Date.parse(asString);
+  if (!Number.isFinite(parsed)) return '';
+  return getLocalIsoDateString(new Date(parsed));
+}
+
+/**
+ * Vista principale: solo messaggi del giorno in corso.
+ * I messaggi senza data restano visibili (seed / legacy).
+ */
+export function filterKentuChatMessagesForVisibleDay(messages, dateStr) {
+  const day = String(dateStr || '').slice(0, 10);
+  const list = asArrayOrEmpty(messages);
+  if (!day) return list;
+  return list.filter((m) => {
+    if (m?.fromArchive === true) return true;
+    const msgDay = messageCalendarDate(m);
+    return !msgDay || msgDay === day;
+  });
+}
+
+const KENTU_INTRO_SEED_TEXTS = new Set([
+  ...(Array.isArray(KENTU_INTRO_PHRASES) ? KENTU_INTRO_PHRASES : []),
+  'Ciao, come posso aiutarti?',
+  'La direzione vale più della fretta.',
+]);
+
+/** Balloon «frase del giorno» (seed chat): non va mostrato né regenerato. */
+export function isKentuIntroSeedMessage(message) {
+  if (!message || typeof message !== 'object') return false;
+  if (message.sender !== 'ai' || message.isTyping) return false;
+  if (message.predictiveGreeting === true || String(message.type || '') === 'PREDICTIVE_GREETING') {
+    return false;
+  }
+  if (Array.isArray(message.quickReplies) && message.quickReplies.length > 0) return false;
+  if (
+    message.mealProposal
+    || message.mealDraft
+    || message.workoutDraft
+    || message.dailyPlan
+    || message.clarification === true
+  ) {
+    return false;
+  }
+  const text = String(message.text || '').trim();
+  return Boolean(text) && KENTU_INTRO_SEED_TEXTS.has(text);
+}
+
+export function stripKentuIntroSeedMessages(messages) {
+  return asArrayOrEmpty(messages).filter((m) => !isKentuIntroSeedMessage(m));
+}
+
 function asArrayOrEmpty(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -122,9 +215,9 @@ export function coerceLiveChatHistory(messages) {
   return sanitizeKentuChatMessages(messages, { keepTyping: true });
 }
 
-export function seedKentuChatHistory(introPhrase = '') {
-  const text = String(introPhrase || '').trim();
-  return [{ sender: 'ai', text: text || 'Ciao, come posso aiutarti?' }];
+/** Chat del giorno: nessun balloon di «frase del giorno». */
+export function seedKentuChatHistory(_introPhrase = '') {
+  return [];
 }
 
 export function readKentuChatHistoryFromLocalStorage(dateStr) {

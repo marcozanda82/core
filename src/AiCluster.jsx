@@ -1,7 +1,7 @@
 /**
  * AiCluster.jsx — KentuOS: superficie chat (messaggi, quick replies, input).
  */
-import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Home, X } from 'lucide-react';
 import { matchReportCommand, REPORT_ANIMATION_SRC, REPORT_COVER_SRC } from './features/commandTerminal/conversation/reportCommandIntent.js';
@@ -52,6 +52,7 @@ import {
 } from './features/quickEvents/quickEventConfirmAssets.js';
 import { draftHasRawMcDriveItems, isMcDriveValidationPenultimateOrLater } from './features/commandTerminal/conversation/mcdriveWizard.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
+import { isKentuIntroSeedMessage } from './utils/salaComandiUtils';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
   AVATAR_MOOD,
@@ -200,6 +201,10 @@ export default function AiCluster({
   isTrainingDay = false,
   /** Click sull'avatar → diagnosi in chat (intent REQUEST_HEALTH_DIAGNOSIS). */
   onRequestHealthDiagnosis = null,
+  onLoadPreviousMessages = null,
+  canLoadPreviousMessages = false,
+  isLoadingPreviousMessages = false,
+  isHistoryVisible = false,
 }) {
   const safeDailyLog = useMemo(
     () => (Array.isArray(dailyLog) ? dailyLog : []),
@@ -243,6 +248,7 @@ export default function AiCluster({
   const chatEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const stickToBottomRef = useRef(true);
+  const pendingScrollRestoreRef = useRef(null);
   const chatFileInputRef = useRef(null);
   const [consumedClarificationKeys, setConsumedClarificationKeys] = useState(() => new Set());
   const [consumedPredictiveGreetingKeys, setConsumedPredictiveGreetingKeys] = useState(() => new Set());
@@ -804,7 +810,37 @@ export default function AiCluster({
     stickToBottomRef.current = distance < 96;
   }, []);
 
+  const handleLoadPreviousClick = useCallback(async () => {
+    if (isLoadingPreviousMessages || typeof onLoadPreviousMessages !== 'function') return;
+    const scroller = chatMessagesRef.current;
+    if (isHistoryVisible) {
+      pendingScrollRestoreRef.current = null;
+      stickToBottomRef.current = true;
+      await onLoadPreviousMessages();
+      return;
+    }
+    if (scroller) {
+      pendingScrollRestoreRef.current = {
+        scrollHeight: scroller.scrollHeight,
+        scrollTop: scroller.scrollTop,
+      };
+    }
+    stickToBottomRef.current = false;
+    await onLoadPreviousMessages();
+  }, [isHistoryVisible, isLoadingPreviousMessages, onLoadPreviousMessages]);
+
+  useLayoutEffect(() => {
+    const pending = pendingScrollRestoreRef.current;
+    if (!pending) return;
+    const scroller = chatMessagesRef.current;
+    pendingScrollRestoreRef.current = null;
+    if (!scroller) return;
+    scroller.scrollTop = scroller.scrollHeight - pending.scrollHeight + pending.scrollTop;
+    stickToBottomRef.current = false;
+  }, [safeMessages.length]);
+
   useEffect(() => {
+    if (pendingScrollRestoreRef.current) return undefined;
     if (!stickToBottomRef.current) return undefined;
     scrollChatToBottom('smooth');
     const t1 = window.setTimeout(() => {
@@ -1377,7 +1413,24 @@ export default function AiCluster({
             paddingRight: '5px',
           }}
         >
+          {canLoadPreviousMessages ? (
+            <div className="flex w-full justify-center">
+              <button
+                type="button"
+                disabled={isLoadingPreviousMessages}
+                onClick={() => { void handleLoadPreviousClick(); }}
+                className="mx-auto my-4 cursor-pointer rounded-full bg-slate-800/50 px-4 py-1 text-xs text-slate-400 hover:bg-slate-700/50 disabled:cursor-wait disabled:opacity-50"
+              >
+                {isLoadingPreviousMessages
+                  ? 'Caricamento…'
+                  : isHistoryVisible
+                    ? 'Nascondi messaggi precedenti'
+                    : 'Carica messaggi precedenti'}
+              </button>
+            </div>
+          ) : null}
           {safeMessages.filter((msg) => {
+            if (isKentuIntroSeedMessage(msg)) return false;
             if (msg?.predictiveSuperseded === true) return false;
             // Lavagna attiva: solo nel dock sopra l'input, non in cronologia.
             if (dockedMcDriveTrayMsg && msg === dockedMcDriveTrayMsg) return false;
@@ -1639,7 +1692,7 @@ export default function AiCluster({
                 ) : (
                   <div
                     className={[
-                      'flex w-full max-w-[min(92%,28rem)] flex-col gap-2.5',
+                      'flex w-full max-w-[min(92%,28rem)] flex-col gap-2',
                       isPredictiveGreetingMessage(msg) ? 'kentu-predictive-greeting-block' : '',
                     ].filter(Boolean).join(' ')}
                   >
@@ -1654,7 +1707,7 @@ export default function AiCluster({
                           className="mb-0.5 shrink-0 self-end"
                           alt="Kentu AI"
                         />
-                        <div className="kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col gap-2.5">
+                        <div className={`kentu-ai-bubble-stack flex min-w-0 flex-1 flex-col ${isPredictiveGreetingMessage(msg) ? 'gap-1.5' : 'gap-2.5'}`}>
                           {msg.local === true || msg.sourceTag === 'local_receptionist' ? (
                             <div
                               className="kentu-local-receptionist-badge"
@@ -1672,7 +1725,11 @@ export default function AiCluster({
                           ) : null}
                           {splitAiMessageSections(msg.text).map((block, si) =>
                             si === 0 ? (
-                              <KentuInsightHero key={si} block={block} />
+                              <KentuInsightHero
+                                key={si}
+                                block={block}
+                                compact={isPredictiveGreetingMessage(msg)}
+                              />
                             ) : (
                               <KentuInsightCard key={si} block={block} />
                             )

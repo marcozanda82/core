@@ -6,8 +6,8 @@ import {
 } from '../features/commandTerminal/context/cardioCylinderStatus.js';
 import { collectRecentWorkoutLogs } from '../features/commandTerminal/context/kentuGlobalState.js';
 import { getTodayString } from '../coreEngine';
-import { UNIFIED_STIMULUS_TRACK_CLASS, unifiedStimulusBarClass } from '../utils/unifiedStimulusBar';
 import CardioDetailsModal from './CardioDetailsModal';
+import CardioWidget, { splitCardioIntensity } from './CardioWidget';
 
 /**
  * Chiave giorno locale YYYY-MM-DD — si aggiorna a mezzanotte (e al ritorno in foreground).
@@ -39,9 +39,7 @@ function useLiveCalendarDayKey() {
 }
 
 /**
- * Barra di progressione Cardio — stile fluido allineato a MuscleStimulusWidget.
- * Finestra: rolling 168h da Date.now() (non settimana solare).
- * Clic → estratto conto trasparente (CardioDetailsModal).
+ * Monitoraggio Cardio (7g rolling) — widget glass + estratto conto al tap.
  *
  * @param {{
  *   fullHistory?: object | null,
@@ -52,6 +50,7 @@ function useLiveCalendarDayKey() {
  *   compact?: boolean,
  *   dense?: boolean,
  *   unifiedBars?: boolean,
+ *   onActivate?: (() => void) | null,
  * }} props
  */
 export default function CardioProgressBar({
@@ -118,10 +117,15 @@ export default function CardioProgressBar({
     1,
     Math.round(Number(status.weeklyTargetMinutes) || CARDIO_WEEKLY_TARGET_MINUTES),
   );
+  const remaining = Math.max(
+    0,
+    Math.round(Number(status.remainingMinutes) ?? (target - accumulated)),
+  );
   const fillPercent = Math.max(
     0,
     Math.min(100, Math.round(Number(status.fillPercent) ?? (accumulated / target) * 100)),
   );
+  const intensity = splitCardioIntensity(breakdown);
 
   const openDetails = () => {
     if (typeof onActivate === 'function') {
@@ -134,8 +138,8 @@ export default function CardioProgressBar({
   return (
     <>
       <div
-        className={`w-full ${className}`.trim()}
-        aria-label={`Cardio 7 giorni: ${accumulated} su ${target} minuti. Tocca per l'estratto conto.`}
+        className={`w-full cursor-pointer transition-transform duration-200 active:scale-[0.99] ${className}`.trim()}
+        aria-label={`Monitoraggio cardio 7 giorni: ${accumulated} su ${target} minuti, ${remaining} al target. Tocca per l'estratto conto.`}
         role="button"
         tabIndex={0}
         onClick={openDetails}
@@ -146,81 +150,17 @@ export default function CardioProgressBar({
           }
         }}
       >
-        <div
-          className={[
-            'cardio-progress-bar-hit rounded-xl border border-blue-500/35 bg-slate-900/80 shadow-lg backdrop-blur-sm',
-            'cursor-pointer transition-all duration-200',
-            'hover:border-cyan-400/55 hover:bg-slate-900/95 hover:shadow-[0_0_20px_rgba(34,211,238,0.22)]',
-            'active:scale-[0.99]',
-            dense ? 'p-2' : compact ? 'p-2.5' : 'p-3',
-          ].join(' ')}
-        >
-          <div className={`${dense ? 'mb-1' : 'mb-2.5'} flex items-center justify-between gap-2`}>
-            <span className="text-[10px] font-bold tracking-wider text-cyan-400">
-              CARDIO (7G)
-            </span>
-            <span className="text-[11px] font-bold tabular-nums text-slate-200">
-              {accumulated}
-              <span className="font-semibold text-slate-500"> / {target} min</span>
-            </span>
-          </div>
-
-          <div className={`relative w-full ${unifiedBars ? UNIFIED_STIMULUS_TRACK_CLASS : `overflow-hidden rounded bg-slate-950 ring-1 ring-white/10 ${dense ? 'h-2' : 'h-5'}`}`}>
-            <div
-              className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ease-out ${unifiedBars ? unifiedStimulusBarClass(fillPercent) : 'bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-400'}`}
-              style={{
-                width: `${fillPercent}%`,
-                boxShadow: unifiedBars
-                  ? 'none'
-                  : fillPercent > 0
-                    ? '0 0 14px rgba(56, 189, 248, 0.55), inset 0 1px 0 rgba(255,255,255,0.25)'
-                    : 'none',
-              }}
-            />
-            {!unifiedBars && fillPercent > 0 ? (
-              <div
-                className="pointer-events-none absolute left-0 top-0 h-full overflow-hidden"
-                style={{ width: `${fillPercent}%` }}
-                aria-hidden
-              >
-                <div
-                  className="h-full w-1/3 opacity-40"
-                  style={{
-                    background:
-                      'linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)',
-                    animation: 'cardioFluidShimmer 2.8s ease-in-out infinite',
-                  }}
-                />
-              </div>
-            ) : null}
-            {unifiedBars ? null : (
-            <div
-              className="absolute inset-0 opacity-25 mix-blend-overlay"
-              style={{
-                backgroundImage:
-                  'repeating-linear-gradient(to right, transparent, transparent 3px, #000 3px, #000 4px)',
-              }}
-            />
-            )}
-          </div>
-
-          {dense ? null : !compact ? (
-            <p className="mt-1.5 text-[10px] text-slate-500">
-              Include spillover pesi (30%) · {fillPercent}% · tocca per i dettagli
-            </p>
-          ) : (
-            <p className="mt-1.5 text-[9px] text-slate-500">
-              {accumulated}/{target} min aerobici · tocca per l&apos;estratto conto
-            </p>
-          )}
-        </div>
-
-        <style>{`
-          @keyframes cardioFluidShimmer {
-            0% { transform: translateX(-120%); }
-            100% { transform: translateX(320%); }
-          }
-        `}</style>
+        <CardioWidget
+          fillPercent={fillPercent}
+          accumulatedMinutes={accumulated}
+          weeklyTargetMinutes={target}
+          remainingMinutes={remaining}
+          moderateMinutes={intensity.moderateMinutes}
+          highMinutes={intensity.highMinutes}
+          sessionCount={intensity.sessionCount}
+          compact={compact || dense || unifiedBars}
+          className="transition-colors hover:border-cyan-400/40 hover:bg-slate-900/70"
+        />
       </div>
 
       <CardioDetailsModal
