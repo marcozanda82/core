@@ -1036,7 +1036,10 @@ export function buildMealLogProposalFromPayload(payload, currentAppState = {}, o
     );
 
   const activeLog = Array.isArray(currentAppState?.activeLog) ? currentAppState.activeLog : [];
-  if (wantsCanonicalMerge && mealType && activeLog.length > 0) {
+  // Mai sovrascrivere un targetNodeId già assegnato (slot di sessione McDrive / NLP).
+  // Merge per nome/tipo solo se l'intento è esplicito e non c'è già un id univoco.
+  const isMcDriveSource = sourceHint.includes('mcdrive');
+  if (wantsCanonicalMerge && !targetNodeId && !isMcDriveSource && mealType && activeLog.length > 0) {
     const existing = findExistingCanonicalMealSlot(activeLog, mealType);
     if (existing?.slotId) {
       upsertAction = 'merge';

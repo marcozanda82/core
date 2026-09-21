@@ -97,7 +97,7 @@ export default function KentuTimeSelector({
     ? wrapMinutes(parsedMinutes)
     : lastValidMinutesRef.current;
   const display = minutesToHHmm(
-    currentMinutes != null ? currentMinutes : 0,
+    currentMinutes != null ? currentMinutes : nowMinutes(),
   );
 
   const emit = useCallback((totalMinutes) => {
@@ -105,6 +105,15 @@ export default function KentuTimeSelector({
     if (totalMinutes == null || !Number.isFinite(Number(totalMinutes))) return;
     onChange?.(minutesToHHmm(totalMinutes));
   }, [disabled, onChange]);
+
+  // Seed once when the field has no clock — avoid showing/saving 00:00.
+  useEffect(() => {
+    if (disabled) return undefined;
+    if (parseTimeValueToMinutes(value, null) != null) return undefined;
+    emit(nowMinutes());
+    return undefined;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleTimeInput = useCallback((event) => {
     const next = String(event.target.value || '').trim();
@@ -120,7 +129,7 @@ export default function KentuTimeSelector({
       emit(nowMinutes());
       return;
     }
-    const base = currentMinutes != null ? currentMinutes : 0;
+    const base = currentMinutes != null ? currentMinutes : nowMinutes();
     emit(wrapMinutes(base + Number(offset.minutes || 0)));
   }, [currentMinutes, emit]);
 

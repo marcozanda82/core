@@ -188,3 +188,148 @@ export function buildAttivitaWorkoutSummary({
     thirdStat,
   };
 }
+
+function hhmmToDecimal(raw) {
+  const match = String(raw || '').trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const mins = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(mins)) return null;
+  return hours + (Math.min(59, mins) / 60);
+}
+
+function draftTimeDecimal(entry) {
+  const numeric = Number(entry?.time ?? entry?.mealTime ?? entry?.hour);
+  if (Number.isFinite(numeric) && numeric >= 0 && numeric < 24) return numeric;
+  return hhmmToDecimal(
+    entry?.exactTime
+    || entry?.timeString
+    || entry?.time
+    || entry?.clock
+    || '',
+  );
+}
+
+function draftDurationMinutes(entry) {
+  const explicit = Number(entry?.durationMin ?? entry?.durationMinutes);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.round(explicit);
+  return workoutDurationMinutes(entry);
+}
+
+function draftSourceKind(entry) {
+  const blob = [
+    entry?.source,
+    entry?.kind,
+    entry?.origin,
+    entry?.protocol,
+    entry?.generatedBy,
+  ].map((value) => String(value || '').toLowerCase()).join(' ');
+  if (
+    blob.includes('sleep')
+    || blob.includes('sonno')
+    || blob.includes('circadian')
+    || blob.includes('neural')
+  ) {
+    return 'sleep';
+  }
+  if (blob.includes('training-block') || blob.includes('training_block') || blob.includes('protocol')) {
+    return 'protocol';
+  }
+  if (
+    blob.includes('ai')
+    || blob.includes('chat')
+    || blob.includes('ghost')
+    || entry?.kind === 'chat-workout-draft'
+    || entry?.type === 'ghost_workout'
+    || entry?.isGhost === true
+  ) {
+    return 'ai';
+  }
+  return 'pending';
+}
+
+export function draftSourceLabel(kind) {
+  if (kind === 'sleep') return 'Protocollo Sonno';
+  if (kind === 'protocol') return 'Protocollo';
+  if (kind === 'ai') return 'Proposta AI';
+  return 'In attesa';
+}
+
+function isPendingPhysicalDraft(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  if (entry.draftResolved === true) return false;
+  if (entry.kind === 'chat-workout-draft' || entry.kind === 'activity-draft' || entry.workoutDraft) return true;
+  const type = String(entry.type || '').toLowerCase();
+  if (type === 'ghost_workout') return true;
+  if (entry.isGhost === true && (type === 'workout' || type === 'activity' || type === 'camminata' || type === 'corsa')) {
+    return true;
+  }
+  const sourceKind = draftSourceKind(entry);
+  if (sourceKind === 'sleep' && (type === 'workout' || type === 'activity' || type === 'camminata' || type === 'corsa')) {
+    return true;
+  }
+  return false;
+}
+
+function normalizePendingSessionDraft(entry) {
+  const payload = entry?.workoutDraft?.payload && typeof entry.workoutDraft.payload === 'object'
+    ? entry.workoutDraft.payload
+    : (entry?.payload && typeof entry.payload === 'object' ? entry.payload : null);
+  const merged = payload ? { ...entry, ...payload } : entry;
+  const typeId = merged.workoutType || merged.subType || merged.activityType || 'pesi';
+  const sourceKind = draftSourceKind(merged);
+  const timeDec = draftTimeDecimal(merged);
+  const minutes = draftDurationMinutes(merged);
+  const clock = timeDec != null
+    ? formatWorkoutClock({ time: timeDec })
+    : String(merged.exactTime || merged.timeString || '').trim();
+  const id = String(
+    merged.id
+    || merged.draftId
+    || `${sourceKind}:${merged.title || merged.name || typeId}:${clock || minutes}`,
+  );
+  return {
+    id,
+    draftId: merged.draftId || null,
+    kind: merged.kind || null,
+    source: merged.source || null,
+    sourceKind,
+    sourceLabel: draftSourceLabel(sourceKind),
+    typeId,
+    typeLabel: workoutTypeLabel(typeId),
+    icon: workoutTypeIcon(typeId),
+    title: workoutDisplayTitle(merged, typeId),
+    clock,
+    minutes,
+    kcal: Math.max(0, Math.round(Number(merged.kcal ?? merged.cal ?? merged.estimatedKcal) || 0)),
+    raw: entry,
+  };
+}
+
+/**
+ * Bozze attività da confermare: ghost AI, Protocollo Sonno, Training Block, chat.
+ */
+export function collectPendingSessionDrafts({
+  dailyLog = [],
+  manualNodes = [],
+  extraDrafts = [],
+} = {}) {
+  const seen = new Set();
+  const rows = [];
+  const push = (entry) => {
+    if (!isPendingPhysicalDraft(entry)) return;
+    const normalized = normalizePendingSessionDraft(entry);
+    if (!normalized.id || seen.has(normalized.id)) return;
+    seen.add(normalized.id);
+    rows.push(normalized);
+  };
+  (Array.isArray(extraDrafts) ? extraDrafts : []).forEach(push);
+  (Array.isArray(dailyLog) ? dailyLog : []).forEach(push);
+  (Array.isArray(manualNodes) ? manualNodes : []).forEach(push);
+  rows.sort((a, b) => {
+    const ta = a.clock || '99:99';
+    const tb = b.clock || '99:99';
+    return ta.localeCompare(tb);
+  });
+  return rows;
+}

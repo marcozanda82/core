@@ -5,6 +5,7 @@ import { isAbortError } from '../../services/aiService.js';
 import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
+  DISPATCH_STAGE_ACTIVITY_DRAFT,
   DISPATCH_LOG_SLEEP,
   DISPATCH_LOG_STIMULANT,
   DISPATCH_COMMAND_ACCEPTED,
@@ -278,6 +279,10 @@ import {
   resolveCoffeeVariantFromText,
 } from '../stimulants/coffeeLogEngine.js';
 import { buildQuickEventConfirmPayload, resolveLocomotionConfirmKind } from '../quickEvents/quickEventConfirmAssets.js';
+import {
+  buildActivityDraftReadyMessage,
+  OPEN_SESSIONI_QUICK_REPLY,
+} from '../workout/activityDrafts.js';
 
 const USER_FACING_ERROR_MESSAGE =
   'Scusa, ho avuto un problema a elaborare questa frase. Puoi riformularla?';
@@ -596,6 +601,11 @@ export class CommandTerminalController {
 
   /** Payload lavagna con mealType corrente. */
   buildMcdriveTrayPayload() {
+    if (!String(this.mcdriveExactTime || this.mcdriveTimeString || '').trim()) {
+      const timeCtx = formatCurrentSystemTimeContext();
+      this.mcdriveExactTime = timeCtx.timeHHmm;
+      this.mcdriveTimeString = timeCtx.timeHHmm;
+    }
     return buildLiveMealTrayPayload(this.pendingMcDriveDraft, {
       mealType: this.mcdriveMealType,
       exactTime: this.mcdriveExactTime,
@@ -669,6 +679,11 @@ export class CommandTerminalController {
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_MEAL_TYPE;
     this.pendingMcDriveDraft = createEmptyMcDriveDraft();
     this.mcdriveMealType = null;
+    if (!String(this.mcdriveExactTime || '').trim()) {
+      const timeCtx = formatCurrentSystemTimeContext();
+      this.mcdriveExactTime = timeCtx.timeHHmm;
+      this.mcdriveTimeString = timeCtx.timeHHmm;
+    }
     this.bus.publish(
       DISPATCH_SYSTEM_MESSAGE,
       {
@@ -1045,16 +1060,17 @@ export class CommandTerminalController {
 
     const alreadyPersisted = this.mcdriveDraftPersisted === true;
     this.mcdriveDraftPersisted = true;
+    const isNewMealPersist = !editingMealId;
     this.bus.publish(
       DISPATCH_UPSERT_MEAL,
       {
         mealType,
         sessionMealSlot: sessionSlotId,
         items: persistItems,
-        action: alreadyPersisted || editingMealId ? (editingMealId ? 'replace' : 'merge') : 'append',
-        upsertAction: alreadyPersisted || editingMealId ? (editingMealId ? 'replace' : 'merge') : 'append',
-        forceNewMealSlot: !alreadyPersisted && !editingMealId,
-        upsertById: alreadyPersisted && !editingMealId,
+        action: alreadyPersisted || editingMealId ? 'replace' : 'append',
+        upsertAction: alreadyPersisted || editingMealId ? 'replace' : 'append',
+        forceNewMealSlot: isNewMealPersist && !alreadyPersisted,
+        upsertById: alreadyPersisted && isNewMealPersist,
         source: 'mcdrive_draft_persist',
         ...(editingMealId || alreadyPersisted ? { targetNodeId: sessionSlotId } : {}),
         ...(exactTime ? { exactTime, timeString: exactTime } : {}),
@@ -1803,6 +1819,9 @@ export class CommandTerminalController {
     const sessionSlotId = isEditingLoggedMeal && !mealTypeChanged
       ? editingMealId
       : (this.mcdriveSessionSlotId || createSessionMealSlotId(mealTypeForPayload));
+    if (!isEditingLoggedMeal || mealTypeChanged) {
+      this.mcdriveSessionSlotId = sessionSlotId;
+    }
 
     let payload = normalizeFoodPayload(
       {
@@ -1848,9 +1867,12 @@ export class CommandTerminalController {
       );
     }
 
-    // 🔥 FIX AI ADD TO EXISTING MEAL: usa 'merge' invece di 'replace' per preservare items esistenti
-    const actionForEdit = isEditingLoggedMeal && !mealTypeChanged ? 'merge' : (draftPersisted ? 'merge' : 'append');
-    
+    // Nuovo pasto AI: sempre id univoco + append/replace sullo slot di sessione, mai merge per nome.
+    const isNewIndependentMeal = !isEditingLoggedMeal || mealTypeChanged;
+    const actionForEdit = isNewIndependentMeal
+      ? (draftPersisted ? 'replace' : 'append')
+      : 'merge';
+
     this.bus.publish(
       DISPATCH_UPSERT_MEAL,
       {
@@ -1859,9 +1881,9 @@ export class CommandTerminalController {
         items: itemsForCommit,
         action: actionForEdit,
         upsertAction: actionForEdit,
-        upsertById: draftPersisted && !isEditingLoggedMeal,
-        forceNewMealSlot: (!isEditingLoggedMeal && !draftPersisted) || mealTypeChanged,
-        ...(isEditingLoggedMeal && !mealTypeChanged || draftPersisted ? { targetNodeId: sessionSlotId } : {}),
+        upsertById: draftPersisted && isNewIndependentMeal,
+        forceNewMealSlot: isNewIndependentMeal && !draftPersisted,
+        ...(isNewIndependentMeal && !draftPersisted ? {} : { targetNodeId: sessionSlotId }),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(exactTime ? {
           exactTime,
@@ -4618,11 +4640,20 @@ export class CommandTerminalController {
       return { ok: false, reason: validationError };
     }
 
-    const uiMessage = buildWorkoutDraftUiMessage(payload);
-    return this.stagePendingAction('ADD_WORKOUT', payload, {
-      requiresConfirmation: true,
-      uiMessage,
+    this.resetConversationState();
+    this.bus.publish(
+      DISPATCH_STAGE_ACTIVITY_DRAFT,
+      {
+        payload,
+        source: 'ai-chat',
+      },
+      { source: 'CommandTerminalController' },
+    );
+    this.publishSystemMessage(buildActivityDraftReadyMessage(payload), {
+      type: 'ACTIVITY_DRAFT_READY',
+      quickReplies: [OPEN_SESSIONI_QUICK_REPLY],
     });
+    return { ok: true, stagedDraft: true };
   }
 
   processWorkoutSlotFillingResponse(userText, currentState = {}, options = {}) {

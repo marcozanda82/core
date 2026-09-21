@@ -137,6 +137,7 @@ export default function AiCluster({
   globalFoodDatabase = {},
   offDb = {},
   fullHistory = {},
+  manualNodes = [],
   onDraftConfirm,
   onDraftCancel,
   onDraftRemoveItem,
@@ -187,6 +188,11 @@ export default function AiCluster({
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
   onDeleteWorkout = null,
+  extraPendingDrafts = [],
+  onConfirmSessionDraft = null,
+  onEditSessionDraft = null,
+  onCancelSessionDraft = null,
+  onOpenSessions = null,
   isDiabetesAppMode = false,
   onRequestReport,
   onRequestBarcodeScan,
@@ -2182,7 +2188,13 @@ export default function AiCluster({
             onRestoreTrashMeal={onRestoreTrashMeal}
             onPurgeTrashMeal={onPurgeTrashMeal}
             onDeleteWorkout={onDeleteWorkout}
+            extraPendingDrafts={extraPendingDrafts}
+            onConfirmSessionDraft={onConfirmSessionDraft}
+            onEditSessionDraft={onEditSessionDraft}
+            onCancelSessionDraft={onCancelSessionDraft}
+            onOpenSessions={onOpenSessions}
             dailyLog={safeDailyLog}
+            manualNodes={manualNodes}
             fullHistory={fullHistory}
             fourCylinder={fourCylinder}
             isDiabetesAppMode={isDiabetesAppMode}

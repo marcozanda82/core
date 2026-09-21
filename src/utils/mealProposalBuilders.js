@@ -1,4 +1,4 @@
-import { getSlotKey, toCanonicalMealType } from '../coreEngine.jsx';
+import { getSlotKey, isTimestampMealSlot, toCanonicalMealType } from '../coreEngine.jsx';
 
 function isDiaryFood(item) {
   return item?.type === 'food' || item?.type === 'recipe';
@@ -87,6 +87,9 @@ export function getFoodItemsForMealSlotFromLog(log, slotId) {
   const list = Array.isArray(log) ? log : [];
   let items = list.filter((item) => getSlotKey(item) === idStr);
   if (items.length > 0) return items;
+
+  // Slot di sessione univoco (`snack_1757…`): mai accorpare altri pasti omonimi.
+  if (isTimestampMealSlot(idStr)) return [];
 
   const foods = list.filter(isDiaryFood);
   const mealTypes = [...new Set(foods.map((f) => String(f.mealType || '')).filter(Boolean))];

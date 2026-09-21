@@ -80,6 +80,12 @@ import {
 import { getWipMealSnapshotFromBridge, seedWipMealFromBridge } from './features/wipMealBuilder/wipMealBridge.js';
 import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContext.jsx';
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
+import { useActivityDrafts } from './hooks/useActivityDrafts';
+import DailySessionsView from './features/chat/DailySessionsView';
+import {
+  buildAttivitaWorkoutSummary,
+  collectPendingSessionDrafts,
+} from './features/chat/attivitaWorkoutSummary';
 import { callGeminiAPIWithRotation } from './services/aiService';
 import { useProfileAndTargets } from './hooks/useProfileAndTargets';
 import {
@@ -504,6 +510,7 @@ export default function SalaComandi() {
   const [snapshotOverlayOpen, setSnapshotOverlayOpen] = useState(false);
   /** Cruscotto dello stimolo — stesso overlay della chat Attività, aperto dalla card Home. */
   const [stimulusCockpitOpen, setStimulusCockpitOpen] = useState(false);
+  const [dailySessionsOpen, setDailySessionsOpen] = useState(false);
   /** Emisfero bloccato quando l'overlay è aperto da un widget Home. */
   const [snapshotOverlayHemisphere, setSnapshotOverlayHemisphere] = useState('progressione');
   const [snapshotOverlayFocus, setSnapshotOverlayFocus] = useState(null);
@@ -600,6 +607,14 @@ export default function SalaComandi() {
 
   const handleCloseStimulusCockpit = useCallback(() => {
     setStimulusCockpitOpen(false);
+  }, []);
+
+  const handleOpenDailySessions = useCallback(() => {
+    setDailySessionsOpen(true);
+  }, []);
+
+  const handleCloseDailySessions = useCallback(() => {
+    setDailySessionsOpen(false);
   }, []);
 
   const handleCloseSnapshotOverlay = useCallback(() => {
@@ -1042,11 +1057,22 @@ export default function SalaComandi() {
     }
   }, []);
 
+  const handlePostponeTrainingBlockSessionRef = useRef(
+    /** @type {((context: object) => void | Promise<void>) | null} */ (null),
+  );
+  const invokeTrainingBlockOnPostpone = useCallback(async (context) => {
+    const fn = handlePostponeTrainingBlockSessionRef.current;
+    if (typeof fn === 'function') {
+      await fn(context);
+    }
+  }, []);
+
   const {
     block: trainingBlockLive,
     todaySession: trainingBlockTodaySession,
     metabolicTargets: trainingBlockMetabolicTargets,
     confirmSession: confirmTrainingBlockSession,
+    postponeSession: postponeTrainingBlockSession,
   } = useTrainingBlock({
     db,
     userUid: user?.uid ?? null,
@@ -1054,6 +1080,18 @@ export default function SalaComandi() {
     userProfile,
     isSimulationMode,
     onConfirmSession: invokeTrainingBlockOnConfirm,
+    onPostponeSession: invokeTrainingBlockOnPostpone,
+  });
+
+  const {
+    activityDrafts,
+    addActivityDraft,
+    removeActivityDraft,
+  } = useActivityDrafts({
+    db,
+    userUid: user?.uid ?? userUid,
+    todayIso: currentTrackerDate || getTodayString(),
+    isSimulationMode,
   });
 
   const effectiveTargetsForCurrentDate = useMemo(
@@ -1831,6 +1869,10 @@ export default function SalaComandi() {
     [applyTrainingBlockDailyTargets],
   );
 
+  useEffect(() => {
+    handlePostponeTrainingBlockSessionRef.current = handlePostponeTrainingBlockSession;
+  }, [handlePostponeTrainingBlockSession]);
+
   /** Obiettivo blocco allenamento → delta Calibrazione Target & Bilancio (Ghost Car). */
   const handleTrainingBlockMacroGoalCalibration = useCallback(
     async (suggestedDeltaKcal) => {
@@ -2139,6 +2181,62 @@ export default function SalaComandi() {
     trainingBlockLive,
     currentTrackerDate,
   ]);
+
+  const extraPendingSessionDrafts = useMemo(() => {
+    const fromStore = Array.isArray(activityDrafts) ? activityDrafts : [];
+    const fromTimeline = (allNodes || []).filter((node) => (
+      node
+      && (
+        node.type === 'ghost_workout'
+        || (node.isGhost === true && (node.type === 'workout' || node.type === 'activity'))
+      )
+    ));
+    const fromChat = (chatHistory || [])
+      .filter((message) => message?.workoutDraft && !message?.draftResolved)
+      .map((message) => {
+        const payload = message.workoutDraft?.payload && typeof message.workoutDraft.payload === 'object'
+          ? message.workoutDraft.payload
+          : {};
+        return {
+          id: message.draftId || message.id,
+          draftId: message.draftId || message.id,
+          type: 'ghost_workout',
+          isGhost: true,
+          source: 'ai',
+          kind: 'chat-workout-draft',
+          title: payload.workoutName || 'Allenamento',
+          name: payload.workoutName || 'Allenamento',
+          desc: payload.workoutName || 'Allenamento',
+          time: payload.exactTime || payload.timeString,
+          exactTime: payload.exactTime,
+          timeString: payload.timeString,
+          durationMin: payload.durationMinutes,
+          durationMinutes: payload.durationMinutes,
+          kcal: payload.estimatedKcal ?? payload.kcal,
+          workoutType: payload.activityType || payload.workoutType || 'pesi',
+          subType: payload.activityType || payload.workoutType || 'pesi',
+          payload,
+        };
+      });
+    return [...fromStore, ...fromTimeline, ...fromChat];
+  }, [activityDrafts, allNodes, chatHistory]);
+
+  const sessionPendingDrafts = useMemo(
+    () => collectPendingSessionDrafts({
+      dailyLog: activeLog,
+      manualNodes,
+      extraDrafts: extraPendingSessionDrafts,
+    }),
+    [activeLog, manualNodes, extraPendingSessionDrafts],
+  );
+
+  const sessionCompletedToday = useMemo(
+    () => buildAttivitaWorkoutSummary({
+      dailyLog: activeLog,
+      fullHistory,
+    }).todayWorkouts,
+    [activeLog, fullHistory],
+  );
 
   const activeNodes = simulationMode ? simulationNodes : allNodes;
 
@@ -3718,6 +3816,9 @@ export default function SalaComandi() {
       const logSnap = dailyLogRef.current || [];
       let slotId = String(targetNodeId || '').trim();
       let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
+      if (existing.length && isTimestampMealSlot(slotId)) {
+        existing = existing.filter((item) => String(item.mealType || '') === slotId);
+      }
 
       if (!existing.length) {
         return null;
@@ -3872,6 +3973,9 @@ Slot esistente aggiornato (nessun ghost).`;
       const logSnap = dailyLogRef.current || [];
       let slotId = String(targetNodeId || payload?.sessionMealSlot || '').trim();
       let existing = slotId ? getFoodItemsForMealSlot(logSnap, slotId) : [];
+      if (existing.length && isTimestampMealSlot(slotId)) {
+        existing = existing.filter((item) => String(item.mealType || '') === slotId);
+      }
 
       if (!existing.length) {
         return commitAddFoodChatPayload({
@@ -6748,6 +6852,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     onAddFoodCommand: commitAddFoodCommand,
     onReturnRawToDiaryInbox: handleReturnRawToDiaryInbox,
     onAddWorkoutCommand: commitAddWorkoutCommand,
+    onStageActivityDraft: (payload, meta) => {
+      addActivityDraft(payload, {
+        source: meta?.source || 'ai-chat',
+        date: getTodayString(),
+      });
+    },
+    onOpenSessions: handleOpenDailySessions,
     onLogSleepCommand: commitLogSleepCommand,
     onLogStimulantCommand: commitLogStimulantCommand,
     onOpenSleepPrompt: () => {
@@ -6936,6 +7047,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     offDb: offFoodDb,
     fullHistory,
     dailyLog: activeLog,
+    manualNodes,
     onDraftConfirm: handleDraftConfirm,
     onDraftCancel: handleDraftCancel,
     onDraftRemoveItem: handleDraftRemoveItem,
@@ -7001,6 +7113,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     offFoodDb,
     fullHistory,
     activeLog,
+    manualNodes,
     handleDraftConfirm,
     handleDraftCancel,
     handleDraftRemoveItem,
@@ -7824,23 +7937,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [isDiabetesAppMode, openTherapyPlan, openTrainingPlan]);
 
   const handleChatManualShortcut = useCallback(
-    (actionId) => {
+    (actionId, options = {}) => {
+      const returnToChat = options.returnToChat !== false;
+      returnToChatAfterQuickActionRef.current = returnToChat;
+      if (returnToChat) closeChat();
       if (actionId === 'menu') {
-        returnToChatAfterQuickActionRef.current = true;
-        closeChat();
         setAddChoiceView('main');
         setShowChoiceModal(true);
         return;
       }
       if (actionId === 'sleep') {
-        returnToChatAfterQuickActionRef.current = true;
-        closeChat();
         setShowSleepPrompt(true);
         return;
       }
       if (actionId === 'weight') {
-        returnToChatAfterQuickActionRef.current = true;
-        closeChat();
         trackEventUsage('weight');
         setShowWeightModal(true);
         return;
@@ -7862,13 +7972,129 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                     : raw === 'allenamento'
                       ? 'workout'
                       : raw;
-      // Acqua / Caffè / Tè / Energy / Pisolino → panel o drawer. Ritorno chat dopo conferma.
-      returnToChatAfterQuickActionRef.current = true;
-      closeChat();
-      handleAddEventMenuItem(canonical, 'chat_shortcut');
+      handleAddEventMenuItem(canonical, returnToChat ? 'chat_shortcut' : 'home_shortcut');
     },
     [closeChat, handleAddEventMenuItem, trackEventUsage],
   );
+
+  const handleHomeActionSend = useCallback((text, options) => {
+    if (!isEngineReady) {
+      showEngineAlignToast();
+      return;
+    }
+    openChat();
+    void sendMessage(text, options);
+  }, [isEngineReady, openChat, sendMessage, showEngineAlignToast]);
+
+  const handleHomeManualShortcut = useCallback(
+    (actionId) => handleChatManualShortcut(actionId, { returnToChat: false }),
+    [handleChatManualShortcut],
+  );
+
+  const handleConfirmSessionDraft = useCallback((draft) => {
+    setDailySessionsOpen(false);
+    const kind = String(draft?.kind || draft?.raw?.kind || '');
+    const raw = draft?.raw || draft;
+    if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat') {
+      const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : raw;
+      try {
+        const result = commitAddWorkoutCommand(payload);
+        if (result != null) removeActivityDraft(draft.id || raw.id);
+      } catch (error) {
+        console.warn('[SalaComandi] confirm activity draft failed', error);
+      }
+      return;
+    }
+    if (kind === 'chat-workout-draft') {
+      const id = draft.draftId || draft.id;
+      if (id) handleDraftConfirm(id);
+      return;
+    }
+    if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
+      handleExecuteTrainingBlockSession(trainingBlockTodaySession);
+      return;
+    }
+    const entry = draft?.raw || draft;
+    if (entry?.id) openWorkoutEditorFromLogItem(entry);
+  }, [
+    commitAddWorkoutCommand,
+    removeActivityDraft,
+    handleDraftConfirm,
+    handleExecuteTrainingBlockSession,
+    trainingBlockTodaySession,
+    openWorkoutEditorFromLogItem,
+  ]);
+
+  const handleEditSessionDraft = useCallback((draft) => {
+    setDailySessionsOpen(false);
+    setStimulusCockpitOpen(false);
+    const kind = String(draft?.kind || draft?.raw?.kind || '');
+    const raw = draft?.raw || draft;
+    if (kind === 'activity-draft' || kind === 'chat-workout-draft' || raw?.kind === 'activity-draft') {
+      const payload = raw?.payload && typeof raw.payload === 'object'
+        ? raw.payload
+        : (draft?.payload && typeof draft.payload === 'object' ? draft.payload : {});
+      const timeRaw = payload.exactTime || payload.timeString || draft.clock || draft.time;
+      const parsedTime = typeof parseFlexibleTimeToDecimal === 'function'
+        ? parseFlexibleTimeToDecimal(String(timeRaw || ''))
+        : null;
+      const durationMin = Math.max(15, Math.round(Number(payload.durationMinutes || draft.minutes) || 45));
+      if (kind === 'chat-workout-draft') {
+        const id = draft.draftId || draft.id;
+        if (id) handleDraftCancel(id);
+      } else {
+        removeActivityDraft(draft.id || raw.id);
+      }
+      openWorkoutEditorFromLogItem({
+        id: draft.id || `session_edit_${Date.now()}`,
+        type: 'workout',
+        time: Number.isFinite(parsedTime) ? parsedTime : 12,
+        duration: durationMin / 60,
+        name: payload.workoutName || draft.title || 'Allenamento',
+        desc: payload.workoutName || draft.title || 'Allenamento',
+        kcal: payload.estimatedKcal ?? payload.kcal ?? draft.kcal,
+        workoutType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
+        subType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
+      });
+      return;
+    }
+    if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
+      handleExecuteTrainingBlockSession(trainingBlockTodaySession);
+      return;
+    }
+    const entry = draft?.raw || draft;
+    if (entry?.id) openWorkoutEditorFromLogItem(entry);
+  }, [
+    parseFlexibleTimeToDecimal,
+    handleDraftCancel,
+    removeActivityDraft,
+    openWorkoutEditorFromLogItem,
+    handleExecuteTrainingBlockSession,
+    trainingBlockTodaySession,
+  ]);
+
+  const handleCancelSessionDraft = useCallback((draft) => {
+    const kind = String(draft?.kind || draft?.raw?.kind || '');
+    if (kind === 'activity-draft' || draft?.raw?.kind === 'activity-draft' || draft?.raw?.source === 'ai-chat') {
+      removeActivityDraft(draft.id || draft?.raw?.id);
+      return;
+    }
+    if (kind === 'chat-workout-draft') {
+      const id = draft.draftId || draft.id;
+      if (id) handleDraftCancel(id);
+      return;
+    }
+    if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
+      const ok = typeof window !== 'undefined'
+        ? window.confirm('Annullare la sessione di oggi? Verrà rimandata e oggi sarà un giorno di riposo.')
+        : true;
+      if (!ok) return;
+      void postponeTrainingBlockSession();
+      return;
+    }
+    const id = draft?.id || draft?.raw?.id;
+    if (id) removeLogItem(id);
+  }, [handleDraftCancel, postponeTrainingBlockSession, removeLogItem, removeActivityDraft]);
 
   const fixedAppBottomChrome = shouldHideBottomChatBar ? null : (
     <AppBottomNavigation
@@ -8184,6 +8410,31 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setShowMetabolicSheet={setShowMetabolicSheet}
           showMissingSleepBanner={showMissingSleepState}
           longevityResult={longevityResult}
+          quickActionPadProps={{
+            onOpenManualView: handleOpenManualMealFromChat,
+            onOpenActivityView: handleOpenActivityFromStimulusCockpit,
+            onOpenPlanView: handleOpenPlanFromStimulusCockpit,
+            onManualShortcut: handleHomeManualShortcut,
+            onSendChatMessage: handleHomeActionSend,
+            onSelectInboxDraft: handleSelectInboxDraft,
+            onDropInboxOntoMeal: handleDropInboxOntoMeal,
+            onDropInboxOntoDraft: handleMergeInboxDrafts,
+            onTrashMeal: handleTrashMeal,
+            trashMeals,
+            onRestoreTrashMeal: handleRestoreTrashMeal,
+            onPurgeTrashMeal: handlePurgeTrashMeal,
+            onDeleteWorkout: removeLogItem,
+            extraPendingDrafts: extraPendingSessionDrafts,
+            onConfirmSessionDraft: handleConfirmSessionDraft,
+            onEditSessionDraft: handleEditSessionDraft,
+            onCancelSessionDraft: handleCancelSessionDraft,
+            onOpenSessions: handleOpenDailySessions,
+            dailyLog: activeLog,
+            manualNodes,
+            fullHistory,
+            fourCylinder: userModel?.fourCylinder ?? null,
+            isDiabetesAppMode,
+          }}
         />
       )}
 
@@ -8662,6 +8913,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             offDb={offFoodDb}
             fullHistory={fullHistory}
             dailyLog={activeLog}
+            manualNodes={manualNodes}
             fourCylinder={userModel?.fourCylinder ?? null}
             userTargets={effectiveTargetsForCurrentDate || userTargets}
             diaryReady={isInitialLoadComplete}
@@ -8705,6 +8957,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onRestoreTrashMeal={handleRestoreTrashMeal}
             onPurgeTrashMeal={handlePurgeTrashMeal}
             onDeleteWorkout={removeLogItem}
+            extraPendingDrafts={extraPendingSessionDrafts}
+            onConfirmSessionDraft={handleConfirmSessionDraft}
+            onEditSessionDraft={handleEditSessionDraft}
+            onCancelSessionDraft={handleCancelSessionDraft}
+            onOpenSessions={handleOpenDailySessions}
             isDiabetesAppMode={isDiabetesAppMode}
             onRequestReport={handleRequestDailyReport}
             onRequestBarcodeScan={handleRequestBarcodeScan}
@@ -8738,6 +8995,22 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onOpenActivity={handleOpenActivityFromStimulusCockpit}
         onOpenPlan={handleOpenPlanFromStimulusCockpit}
         onDeleteWorkout={removeLogItem}
+        extraPendingDrafts={extraPendingSessionDrafts}
+        manualNodes={manualNodes}
+        onConfirmSessionDraft={handleConfirmSessionDraft}
+        onEditSessionDraft={handleEditSessionDraft}
+        onCancelSessionDraft={handleCancelSessionDraft}
+        onOpenSessions={handleOpenDailySessions}
+      />
+
+      <DailySessionsView
+        open={dailySessionsOpen}
+        pendingDrafts={sessionPendingDrafts}
+        completedToday={sessionCompletedToday}
+        onClose={handleCloseDailySessions}
+        onConfirmDraft={handleConfirmSessionDraft}
+        onEditDraft={handleEditSessionDraft}
+        onCancelDraft={handleCancelSessionDraft}
       />
 
       {showBiochemicalDiagnostics ? (

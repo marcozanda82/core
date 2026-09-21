@@ -11,6 +11,7 @@ import {
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
 import StimulusCockpitOverlay from './StimulusCockpitOverlay';
+import { useSmartQuickActions } from '../predictive/useSmartQuickActions';
 
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti' },
@@ -290,6 +291,7 @@ function SubmenuFocusOverlay({
   onClose,
   onSelectItem,
   cancelLabel = 'Annulla',
+  emptyMessage = '',
 }) {
   const isCatalog = layout === 'catalog';
   const hasSections = Array.isArray(sections) && sections.length > 0;
@@ -297,8 +299,10 @@ function SubmenuFocusOverlay({
     ? sections.flatMap((section) => section.items || [])
     : items;
   const itemCount = flatItems.length;
+  const emptyText = String(emptyMessage || '').trim();
 
-  if (!itemCount || typeof document === 'undefined') return null;
+  if (typeof document === 'undefined') return null;
+  if (!itemCount && !emptyText) return null;
 
   const gridClass = isCatalog ? GRID_CATALOG : resolveCompactGridClass(itemCount);
   const panelMaxWidth = isCatalog ? 'max-w-3xl' : 'max-w-lg';
@@ -330,7 +334,11 @@ function SubmenuFocusOverlay({
           <div
             className="min-h-0 w-full flex-1 overflow-y-auto overscroll-contain px-0.5 pb-1"
           >
-            {hasSections ? (
+            {!itemCount && emptyText ? (
+              <p className="px-4 py-8 text-center text-sm text-zinc-400">
+                {emptyText}
+              </p>
+            ) : hasSections ? (
               <div className="flex flex-col gap-5">
                 {sections.map((section) => (
                   <section key={section.id}>
@@ -393,12 +401,19 @@ export default function PulsantieraUniversale({
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
   onDeleteWorkout = null,
+  extraPendingDrafts = [],
+  onConfirmSessionDraft = null,
+  onEditSessionDraft = null,
+  onCancelSessionDraft = null,
+  onOpenSessions = null,
   dailyLog = [],
+  manualNodes = [],
   fullHistory = {},
   fourCylinder = null,
   disabled = false,
   isDiabetesAppMode = false,
   isAiGuidedModeActive = false,
+  embedded = false,
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
@@ -412,6 +427,12 @@ export default function PulsantieraUniversale({
     block: null,
     armed: false,
     suppressTapUntil: 0,
+  });
+
+  const smartRapidi = useSmartQuickActions({
+    fullHistory,
+    dailyLog,
+    manualNodes,
   });
 
   const closeMenus = useCallback(() => {
@@ -544,6 +565,22 @@ export default function PulsantieraUniversale({
       };
     }
 
+    if (activeCategory === 'rapidi') {
+      const items = (smartRapidi.items || []).map((rawItem) => ({
+        ...resolveItemPresentation(rawItem),
+        id: rawItem.id,
+      }));
+      return {
+        categoryLabel: CATEGORY_LABELS.rapidi,
+        subtitle: smartRapidi.band?.label || 'Scegli azione',
+        items,
+        emptyMessage: items.length === 0
+          ? 'Nessuna abitudine in questa fascia oraria'
+          : '',
+        layout: 'compact',
+      };
+    }
+
     if (activeCategory === 'tutti') {
       const sections = VOCABULARY_SECTIONS.map((section) => ({
         id: section.id,
@@ -578,7 +615,7 @@ export default function PulsantieraUniversale({
       items,
       layout: 'compact',
     };
-  }, [activeCategory, resolveItemPresentation]);
+  }, [activeCategory, resolveItemPresentation, smartRapidi]);
 
   const pastiToday = useMemo(() => {
     const log = Array.isArray(dailyLog) ? dailyLog : [];
@@ -1029,6 +1066,12 @@ export default function PulsantieraUniversale({
       })}
       onOpenPlan={() => dispatchItem({ action: 'openPlan' })}
       onDeleteWorkout={onDeleteWorkout}
+      extraPendingDrafts={extraPendingDrafts}
+      manualNodes={manualNodes}
+      onConfirmSessionDraft={onConfirmSessionDraft}
+      onEditSessionDraft={onEditSessionDraft}
+      onCancelSessionDraft={onCancelSessionDraft}
+      onOpenSessions={onOpenSessions}
     />
   );
 
@@ -1040,6 +1083,7 @@ export default function PulsantieraUniversale({
       items={overlayConfig.items}
       sections={overlayConfig.sections}
       layout={overlayConfig.layout}
+      emptyMessage={overlayConfig.emptyMessage}
       disabled={disabled}
       onClose={handleOverlayClose}
       onSelectItem={dispatchItem}
@@ -1050,7 +1094,12 @@ export default function PulsantieraUniversale({
   if (isAiGuidedModeActive) return null;
 
   return (
-    <div className="kentu-pulsantiera relative z-[100045] flex h-auto w-full flex-none shrink-0 flex-col gap-1 py-1">
+    <div
+      className={[
+        'kentu-pulsantiera relative flex h-auto w-full flex-none shrink-0 flex-col gap-1 py-1',
+        embedded ? 'z-10' : 'z-[100045]',
+      ].join(' ')}
+    >
       {submenuOverlay}
       {attivitaCockpit}
       <MealTrashSheet

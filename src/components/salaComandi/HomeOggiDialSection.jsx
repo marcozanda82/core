@@ -4,12 +4,15 @@
  */
 
 import { lazy, Suspense } from 'react';
+import { LayoutGrid, MousePointerClick } from 'lucide-react';
 import DialMaintenanceMarker from '../DialMaintenanceMarker';
 import KcalFuelTelemetryRing from '../KcalFuelTelemetryRing';
 import HomeNutrientStrip from '../HomeNutrientStrip';
 import TrainingBlockWidget from '../TrainingBlockWidget';
 import MetabolicMonitorCard from '../MetabolicMonitorCard';
+import PulsantieraUniversale from '../../features/chat/PulsantieraUniversale';
 import { getTodayString } from '../../coreEngine';
+import { useActionView } from '../../homeStore';
 
 const HomeMealPieDial = lazy(() => import('../charts/HomeMealPieDial'));
 
@@ -64,7 +67,9 @@ export default function HomeOggiDialSection({
   setShowMetabolicSheet = null,
   showMissingSleepBanner = false,
   longevityResult = null,
+  quickActionPadProps = null,
 }) {
+  const [isActionView, toggleActionView] = useActionView();
   const hud = dialHud || {};
   const {
     targetProt = 150,
@@ -113,6 +118,23 @@ export default function HomeOggiDialSection({
             }}
           >
             <div className="kcal-dial-inner">
+              <button
+                type="button"
+                className="pointer-events-auto absolute left-1 top-1 z-20 rounded-full border border-white/10 bg-slate-800/50 p-2 text-slate-200 shadow-lg shadow-black/30 backdrop-blur-sm transition-colors hover:border-cyan-400/40 hover:text-cyan-100 active:scale-95"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleActionView();
+                }}
+                aria-pressed={isActionView}
+                aria-label={isActionView ? 'Passa alla vista widget' : 'Passa alla vista azioni'}
+                title={isActionView ? 'Vista azioni' : 'Vista widget'}
+              >
+                {isActionView ? (
+                  <MousePointerClick className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                ) : (
+                  <LayoutGrid className="h-4 w-4" strokeWidth={1.75} aria-hidden />
+                )}
+              </button>
               <div
                 className={selectedMealCenter ? 'tachimeter-center tachimeter-center-reset' : 'tachimeter-center'}
                 onClick={(e) => {
@@ -339,30 +361,32 @@ export default function HomeOggiDialSection({
             onMineralsClick={() => setShowMineralsSheet?.(true)}
             onVitaminsClick={() => setShowVitaminsSheet?.(true)}
           />
-          <TrainingBlockWidget
-            db={db}
-            userUid={user?.uid ?? null}
-            todayIso={homeDayKey}
-            userProfile={userProfile}
-            fourCylinder={userModel?.fourCylinder ?? null}
-            fullHistory={fullHistory}
-            activeLog={activeLog}
-            userTargets={userTargets}
-            bodyMetricsHistory={bodyMetricsHistory}
-            heightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || null}
-            isSimulationMode={isSimulationMode}
-            onConfirmSession={handleConfirmTrainingBlockSession}
-            onPostponeSession={handlePostponeTrainingBlockSession}
-            onExecuteSession={handleExecuteTrainingBlockSession}
-            onMacroGoalCalibrationChange={handleTrainingBlockMacroGoalCalibration}
-            calibrationDeltaKcal={calibrationDeltaKcal}
-            onOpenTrendDiag={handleOpenTrendDiag}
-            onOpenLongevity={handleOpenTrendSalute}
-            onOpenProgressione={handleOpenStimulusCockpit || handleOpenTrendProgressione}
-            creatorOpen={trainingBlockCreatorOpen}
-            onCreatorOpenChange={setTrainingBlockCreatorOpen}
-            longevityResult={longevityResult}
-          />
+          {!isActionView ? (
+            <TrainingBlockWidget
+              db={db}
+              userUid={user?.uid ?? null}
+              todayIso={homeDayKey}
+              userProfile={userProfile}
+              fourCylinder={userModel?.fourCylinder ?? null}
+              fullHistory={fullHistory}
+              activeLog={activeLog}
+              userTargets={userTargets}
+              bodyMetricsHistory={bodyMetricsHistory}
+              heightCm={Number(userProfile?.height) || Number(userProfile?.altezza) || null}
+              isSimulationMode={isSimulationMode}
+              onConfirmSession={handleConfirmTrainingBlockSession}
+              onPostponeSession={handlePostponeTrainingBlockSession}
+              onExecuteSession={handleExecuteTrainingBlockSession}
+              onMacroGoalCalibrationChange={handleTrainingBlockMacroGoalCalibration}
+              calibrationDeltaKcal={calibrationDeltaKcal}
+              onOpenTrendDiag={handleOpenTrendDiag}
+              onOpenLongevity={handleOpenTrendSalute}
+              onOpenProgressione={handleOpenStimulusCockpit || handleOpenTrendProgressione}
+              creatorOpen={trainingBlockCreatorOpen}
+              onCreatorOpenChange={setTrainingBlockCreatorOpen}
+              longevityResult={longevityResult}
+            />
+          ) : null}
           <MetabolicMonitorCard
             metabolicSnapshot={metabolicSnapshot}
             missingSleepData={missingSleep}
@@ -382,6 +406,14 @@ export default function HomeOggiDialSection({
               else setShowDiarySheet?.(true);
             }}
           />
+          {isActionView && quickActionPadProps ? (
+            <div
+              className="home-oggi-rigid mb-0 box-border w-full min-w-0 max-w-full rounded-2xl border border-white/10 bg-slate-900/40 px-1.5 py-1.5 backdrop-blur-sm"
+              aria-label="Azioni rapide Home"
+            >
+              <PulsantieraUniversale embedded {...quickActionPadProps} />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

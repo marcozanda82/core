@@ -9,6 +9,7 @@ import {
   DISPATCH_COMMAND_REJECTED,
   DISPATCH_LOG_SLEEP,
   DISPATCH_LOG_STIMULANT,
+  DISPATCH_STAGE_ACTIVITY_DRAFT,
   DISPATCH_SYSTEM_MESSAGE,
 } from '../contracts/eventTypes.js';
 import { initNutritionHandlers } from '../handlers/NutritionCommandHandler.js';
@@ -187,6 +188,8 @@ export function useCommandTerminal({
   onWipMealSeed = null,
   onAddFoodCommand = null,
   onAddWorkoutCommand = null,
+  onStageActivityDraft = null,
+  onOpenSessions = null,
   onLogSleepCommand = null,
   onLogStimulantCommand = null,
   onSaveFoodDbEntry = null,
@@ -295,6 +298,8 @@ export function useCommandTerminal({
   const onChatCloseRef = useRef(onChatClose);
   const chatCloseTimerRef = useRef(null);
   const onAddWorkoutRef = useRef(onAddWorkoutCommand);
+  const onStageActivityDraftRef = useRef(onStageActivityDraft);
+  const onOpenSessionsRef = useRef(onOpenSessions);
   const onLogSleepRef = useRef(onLogSleepCommand);
   const onLogStimulantRef = useRef(onLogStimulantCommand);
   const onSaveFoodDbEntryRef = useRef(onSaveFoodDbEntry);
@@ -329,6 +334,14 @@ export function useCommandTerminal({
   useEffect(() => {
     onAddWorkoutRef.current = onAddWorkoutCommand;
   }, [onAddWorkoutCommand]);
+
+  useEffect(() => {
+    onStageActivityDraftRef.current = onStageActivityDraft;
+  }, [onStageActivityDraft]);
+
+  useEffect(() => {
+    onOpenSessionsRef.current = onOpenSessions;
+  }, [onOpenSessions]);
 
   useEffect(() => {
     onLogSleepRef.current = onLogSleepCommand;
@@ -519,6 +532,34 @@ export function useCommandTerminal({
           return onAddWorkoutRef.current(payload, envelope);
         },
       }),
+    );
+
+    const unsubscribeStageActivityDraft = commandBus.subscribe(
+      DISPATCH_STAGE_ACTIVITY_DRAFT,
+      (envelope) => {
+        const body = envelope?.payload && typeof envelope.payload === 'object'
+          ? envelope.payload
+          : {};
+        const workoutPayload = body.payload && typeof body.payload === 'object'
+          ? body.payload
+          : body;
+        if (typeof onStageActivityDraftRef.current !== 'function') return;
+        try {
+          onStageActivityDraftRef.current(workoutPayload, {
+            source: body.source || 'ai-chat',
+            envelope,
+          });
+        } catch (error) {
+          commandBus.publish(
+            DISPATCH_COMMAND_REJECTED,
+            {
+              reason: `Activity draft staging failed: ${error?.message || 'unknown error'}`,
+              command: workoutPayload,
+            },
+            { source: 'useCommandTerminal' },
+          );
+        }
+      },
     );
 
     const unsubscribeLogSleep = commandBus.subscribe(DISPATCH_LOG_SLEEP, async (envelope) => {
@@ -848,6 +889,7 @@ export function useCommandTerminal({
     return () => {
       unsubscribeLogSleep();
       unsubscribeLogStimulant();
+      unsubscribeStageActivityDraft();
       unsubscribeSystem();
       unsubscribeRejected();
       cleanupFns.forEach((fn) => {
@@ -870,8 +912,17 @@ export function useCommandTerminal({
       const attachedImages = Array.isArray(options?.images) && options.images.length > 0
         ? options.images
         : chatImages;
-      const isFreeMealListen = String(options?.intent || '').trim().toUpperCase() === 'FREE_MEAL_LISTEN';
       const intentUpper = String(options?.intent || '').trim().toUpperCase();
+      if (
+        intentUpper === 'OPENSESSIONS'
+        || intentUpper === 'OPEN_SESSIONI'
+        || /^apri\s+sessioni$/i.test(resolvedText)
+      ) {
+        setActiveQuickReplies([]);
+        onOpenSessionsRef.current?.();
+        return { ok: true, openedSessions: true };
+      }
+      const isFreeMealListen = String(options?.intent || '').trim().toUpperCase() === 'FREE_MEAL_LISTEN';
       const isMcdriveWizardIntent = intentUpper === 'START_MCDRIVE_WIZARD'
         || intentUpper === 'FINISH_MCDRIVE_WIZARD'
         || intentUpper === 'SAVE_MCDRIVE_MEAL'
@@ -1455,11 +1506,26 @@ export function useCommandTerminal({
   const handleQuickReplyClick = useCallback(
     (text, extra = {}) => {
       if (extra?.predictiveIntent) {
+        const predictive = String(extra.predictiveIntent || extra.intent || extra.action || '').trim();
+        if (predictive === 'openSessions' || predictive === 'OPEN_SESSIONI') {
+          setActiveQuickReplies([]);
+          onOpenSessionsRef.current?.();
+          return Promise.resolve({ ok: true, openedSessions: true });
+        }
         return handlePredictiveIntent(extra.predictiveIntent, extra);
       }
 
-      const label = String(text ?? '').trim();
+      const label = String(
+        (text && typeof text === 'object' ? (text.label || text.text) : text) ?? '',
+      ).trim();
       if (!label) return Promise.resolve({ ok: false, reason: 'empty_quick_reply' });
+      const action = extra?.intent || extra?.action || extra?.predictiveIntent
+        || (text && typeof text === 'object' ? (text.action || text.intent) : null);
+      if (action === 'openSessions' || action === 'OPEN_SESSIONI' || /^apri\s+sessioni$/i.test(label)) {
+        setActiveQuickReplies([]);
+        onOpenSessionsRef.current?.();
+        return Promise.resolve({ ok: true, openedSessions: true });
+      }
       const wizardSelection = extra?.wizardSelection && typeof extra.wizardSelection === 'object'
         ? extra.wizardSelection
         : null;

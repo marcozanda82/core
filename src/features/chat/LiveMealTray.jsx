@@ -96,6 +96,11 @@ function McDriveStatusIcon({ visualStatus, item = null, foodName = '' }) {
   );
 }
 
+function getCurrentTimeHHmm() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
 function roundMacro(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -515,9 +520,12 @@ function LiveMealTray({
   }, []);
 
   const exactTimeValue = String(tray?.exactTime || tray?.timeString || '').trim();
-  const [localExactTime, setLocalExactTime] = useState(exactTimeValue);
-  const localExactTimeRef = useRef(exactTimeValue);
+  const [localExactTime, setLocalExactTime] = useState(
+    () => exactTimeValue || getCurrentTimeHHmm(),
+  );
+  const localExactTimeRef = useRef(exactTimeValue || getCurrentTimeHHmm());
   const timeDirtyRef = useRef(false);
+  const didSeedTimeRef = useRef(false);
 
   useEffect(() => {
     if (!exactTimeValue) return undefined;
@@ -529,6 +537,19 @@ function LiveMealTray({
     localExactTimeRef.current = exactTimeValue;
     return undefined;
   }, [exactTimeValue]);
+
+  useEffect(() => {
+    if (didSeedTimeRef.current) return undefined;
+    didSeedTimeRef.current = true;
+    if (exactTimeValue) return undefined;
+    const seeded = localExactTimeRef.current || getCurrentTimeHHmm();
+    if (!localExactTime) {
+      setLocalExactTime(seeded);
+      localExactTimeRef.current = seeded;
+    }
+    onUpdateMealTime?.(seeded);
+    return undefined;
+  }, [exactTimeValue, localExactTime, onUpdateMealTime]);
 
   const handleTrayTimeChange = useCallback((next) => {
     const normalized = String(next || '').trim();
@@ -1146,7 +1167,7 @@ function LiveMealTray({
                     await withMealSavingOverlay(async () => {
                       setIsSaving(true);
                       const timeToSave = String(
-                        localExactTimeRef.current || localExactTime || exactTimeValue || '',
+                        localExactTimeRef.current || localExactTime || exactTimeValue || getCurrentTimeHHmm(),
                       ).trim();
                       await Promise.resolve(onSave?.(items, {
                         exactTime: timeToSave,

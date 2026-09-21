@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { ListChecks, X } from 'lucide-react';
 import { getMuscleGroupsForMacro, stashActivitySheetTempTab } from '../../activityCatalog';
 import CardioProgressBar from '../../components/CardioProgressBar';
 import MuscleStimulusDistrictList from '../trendHub/components/MuscleStimulusDistrictList';
 import { buildMuscleTelemetryRows } from '../trendHub/utils/muscleTelemetryModel';
-import { buildAttivitaWorkoutSummary } from './attivitaWorkoutSummary';
+import {
+  buildAttivitaWorkoutSummary,
+  collectPendingSessionDrafts,
+} from './attivitaWorkoutSummary';
 import AttivitaWorkoutHistoryModal from './AttivitaWorkoutHistoryModal';
+import DailySessionsView from './DailySessionsView';
 
 function OverlayActionButton({ icon, label, onClick, disabled }) {
   return (
@@ -23,7 +27,9 @@ function OverlayActionButton({ icon, label, onClick, disabled }) {
         'disabled:pointer-events-none disabled:opacity-45',
       ].join(' ')}
     >
-      <span className="text-2xl leading-none" aria-hidden>{icon}</span>
+      <span className="inline-flex h-8 items-center justify-center text-2xl leading-none" aria-hidden>
+        {icon}
+      </span>
       <span className="whitespace-nowrap text-center text-xs font-semibold leading-tight sm:text-sm">
         {label}
       </span>
@@ -41,21 +47,30 @@ export default function StimulusCockpitOverlay({
   fullHistory = null,
   dailyLog = null,
   disabled = false,
-  isDiabetesAppMode = false,
+  isDiabetesAppMode: _isDiabetesAppMode = false,
   onOpenActivity = null,
-  onOpenPlan = null,
+  onOpenPlan: _onOpenPlan = null,
   onDeleteWorkout = null,
+  extraPendingDrafts = [],
+  manualNodes = [],
+  onConfirmSessionDraft = null,
+  onEditSessionDraft = null,
+  onCancelSessionDraft = null,
+  onOpenSessions = null,
 } = {}) {
   const [showWorkoutHistory, setShowWorkoutHistory] = useState(false);
+  const [showDailySessions, setShowDailySessions] = useState(false);
 
   const handleClose = useCallback(() => {
     setShowWorkoutHistory(false);
+    setShowDailySessions(false);
     onClose?.();
   }, [onClose]);
 
   useEffect(() => {
     if (!open) {
       setShowWorkoutHistory(false);
+      setShowDailySessions(false);
       return undefined;
     }
     const onKey = (event) => {
@@ -110,8 +125,29 @@ export default function StimulusCockpitOverlay({
     });
   }, [openActivity]);
 
-  const planLabel = isDiabetesAppMode ? 'Terapia' : 'Piano';
-  const planIcon = isDiabetesAppMode ? '💊' : '🗓️';
+  const pendingSessionDrafts = useMemo(
+    () => collectPendingSessionDrafts({
+      dailyLog,
+      manualNodes,
+      extraDrafts: extraPendingDrafts,
+    }),
+    [dailyLog, manualNodes, extraPendingDrafts],
+  );
+
+  const closeSessionsAndCockpit = useCallback(() => {
+    setShowDailySessions(false);
+    handleClose();
+  }, [handleClose]);
+
+  const handleConfirmSessionDraft = useCallback((draft) => {
+    closeSessionsAndCockpit();
+    onConfirmSessionDraft?.(draft);
+  }, [closeSessionsAndCockpit, onConfirmSessionDraft]);
+
+  const handleEditSessionDraft = useCallback((draft) => {
+    closeSessionsAndCockpit();
+    onEditSessionDraft?.(draft);
+  }, [closeSessionsAndCockpit, onEditSessionDraft]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -148,7 +184,7 @@ export default function StimulusCockpitOverlay({
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
-              <header className="relative shrink-0 px-1 pb-2 pr-14 pt-1 text-center">
+              <header className="relative shrink-0 px-1 pb-1.5 pr-14 pt-1 text-center">
                 <p className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                   Semaforo metabolico
                 </p>
@@ -157,14 +193,15 @@ export default function StimulusCockpitOverlay({
                 </h2>
               </header>
 
-              <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-3">
+              <div className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto px-3 pb-1">
                 <MuscleStimulusDistrictList
                   muscleRows={muscleRows}
                   onSelectRow={openStimulusCylinder}
+                  showLegend={false}
                   unifiedBars
                 />
 
-                <section className="mt-3">
+                <section className="mt-3 mb-1">
                   <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
                     Monitoraggio Cardio
                   </h3>
@@ -179,34 +216,6 @@ export default function StimulusCockpitOverlay({
                       defaultTab: 'cardio',
                     })}
                   />
-                </section>
-
-                <section className="mt-3" aria-label="Allenamenti di oggi">
-                  <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                    Allenamenti di oggi
-                  </h3>
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
-                    {workoutSummary.todayWorkouts.length === 0 ? (
-                      <p className="m-0 text-[12px] italic text-zinc-500">
-                        Nessun allenamento registrato oggi
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {workoutSummary.todayWorkouts.map((item) => (
-                          <span
-                            key={item.id}
-                            className="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2.5 py-1 text-[11px] font-medium text-zinc-100"
-                          >
-                            <span aria-hidden>{item.icon}</span>
-                            <span className="truncate">
-                              {item.typeLabel}
-                              {item.minutes > 0 ? ` • ${item.minutes} min` : ''}
-                            </span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </section>
               </div>
 
@@ -243,13 +252,16 @@ export default function StimulusCockpitOverlay({
                 </div>
                 <div className="mt-2 grid w-full grid-cols-2 gap-2 [&>button]:w-full">
                   <OverlayActionButton
-                    icon={planIcon}
-                    label={planLabel}
+                    icon={<ListChecks className="h-7 w-7 text-cyan-200" strokeWidth={2.1} />}
+                    label="Sessioni"
                     disabled={disabled}
                     onClick={() => {
                       if (disabled) return;
-                      handleClose();
-                      onOpenPlan?.();
+                      if (typeof onOpenSessions === 'function') {
+                        onOpenSessions();
+                        return;
+                      }
+                      setShowDailySessions(true);
                     }}
                   />
                   <OverlayActionButton
@@ -270,6 +282,15 @@ export default function StimulusCockpitOverlay({
         summary={workoutSummary}
         onClose={() => setShowWorkoutHistory(false)}
         onDeleteWorkout={onDeleteWorkout}
+      />
+      <DailySessionsView
+        open={showDailySessions}
+        pendingDrafts={pendingSessionDrafts}
+        completedToday={workoutSummary.todayWorkouts}
+        onClose={() => setShowDailySessions(false)}
+        onConfirmDraft={handleConfirmSessionDraft}
+        onEditDraft={handleEditSessionDraft}
+        onCancelDraft={onCancelSessionDraft}
       />
     </>
   );
