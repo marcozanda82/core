@@ -415,6 +415,7 @@ export default function PulsantieraUniversale({
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
+  onEditCompletedSession = null,
   onOpenSessions = null,
   dailyLog = [],
   manualNodes = [],
@@ -1090,6 +1091,7 @@ export default function PulsantieraUniversale({
       onConfirmSessionDraft={onConfirmSessionDraft}
       onEditSessionDraft={onEditSessionDraft}
       onCancelSessionDraft={onCancelSessionDraft}
+      onEditCompletedSession={onEditCompletedSession}
       onOpenSessions={onOpenSessions}
     />
   );

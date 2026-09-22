@@ -95,6 +95,7 @@ export default function KentuChatUI({
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
+  onEditCompletedSession = null,
   onOpenSessions = null,
   onRequestReport,
   onRequestBarcodeScan,
@@ -235,6 +236,7 @@ export default function KentuChatUI({
         onConfirmSessionDraft={onConfirmSessionDraft}
         onEditSessionDraft={onEditSessionDraft}
         onCancelSessionDraft={onCancelSessionDraft}
+        onEditCompletedSession={onEditCompletedSession}
         onOpenSessions={onOpenSessions}
         onRequestReport={onRequestReport}
         onRequestBarcodeScan={onRequestBarcodeScan}

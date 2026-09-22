@@ -192,6 +192,7 @@ export default function AiCluster({
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
+  onEditCompletedSession = null,
   onOpenSessions = null,
   isDiabetesAppMode = false,
   onRequestReport,
@@ -2192,6 +2193,7 @@ export default function AiCluster({
             onConfirmSessionDraft={onConfirmSessionDraft}
             onEditSessionDraft={onEditSessionDraft}
             onCancelSessionDraft={onCancelSessionDraft}
+            onEditCompletedSession={onEditCompletedSession}
             onOpenSessions={onOpenSessions}
             dailyLog={safeDailyLog}
             manualNodes={manualNodes}

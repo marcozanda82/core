@@ -56,6 +56,7 @@ export default function StimulusCockpitOverlay({
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
+  onEditCompletedSession = null,
   onOpenSessions = null,
 } = {}) {
   const [showWorkoutHistory, setShowWorkoutHistory] = useState(false);
@@ -148,6 +149,11 @@ export default function StimulusCockpitOverlay({
     closeSessionsAndCockpit();
     onEditSessionDraft?.(draft);
   }, [closeSessionsAndCockpit, onEditSessionDraft]);
+
+  const handleEditCompletedSession = useCallback((item) => {
+    closeSessionsAndCockpit();
+    onEditCompletedSession?.(item);
+  }, [closeSessionsAndCockpit, onEditCompletedSession]);
 
   if (!open || typeof document === 'undefined') return null;
 
@@ -291,6 +297,7 @@ export default function StimulusCockpitOverlay({
         onConfirmDraft={handleConfirmSessionDraft}
         onEditDraft={handleEditSessionDraft}
         onCancelDraft={onCancelSessionDraft}
+        onEditCompleted={handleEditCompletedSession}
       />
     </>
   );

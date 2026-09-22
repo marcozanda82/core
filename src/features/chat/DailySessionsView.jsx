@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ListChecks, X } from 'lucide-react';
+import { Check, ListChecks, Trash2, X } from 'lucide-react';
 import { formatDurationMinutes } from './attivitaWorkoutSummary';
 
 function sourceBadgeClass(kind) {
@@ -12,8 +11,6 @@ function sourceBadgeClass(kind) {
 
 function DraftCard({
   draft,
-  expanded,
-  onToggleSecondary,
   onConfirm,
   onEdit,
   onCancel,
@@ -28,8 +25,34 @@ function DraftCard({
   ].filter(Boolean);
 
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
-      <div className="flex items-start gap-2">
+    <article
+      className={[
+        'relative rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.28)]',
+        canEdit ? 'cursor-pointer transition hover:border-cyan-400/25 hover:bg-white/[0.06]' : '',
+      ].join(' ')}
+      onClick={canEdit ? () => onEdit(draft) : undefined}
+    >
+      {canCancel ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onCancel(draft);
+          }}
+          aria-label={`Elimina bozza ${draft.title}`}
+          title="Elimina bozza"
+          className={[
+            'absolute right-2 top-2 z-10 inline-flex h-8 w-8 items-center justify-center rounded-full',
+            'border border-white/10 bg-zinc-950/70 text-zinc-500',
+            'transition hover:border-rose-400/40 hover:bg-rose-500/15 hover:text-rose-200',
+            'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40',
+          ].join(' ')}
+        >
+          <Trash2 className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
+        </button>
+      ) : null}
+
+      <div className={`flex items-start gap-2 ${canCancel ? 'pr-9' : ''}`}>
         <span className="mt-0.5 text-lg leading-none" aria-hidden>{draft.icon}</span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -51,62 +74,74 @@ function DraftCard({
         </div>
       </div>
 
-      {expanded ? (
-        <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            disabled={!canEdit}
-            onClick={() => onEdit?.(draft)}
-            className={[
-              'rounded-xl border border-white/15 bg-white/[0.06] py-2 text-[12px] font-semibold text-zinc-100',
-              'transition hover:border-cyan-400/40 hover:bg-cyan-500/10',
-              'disabled:pointer-events-none disabled:opacity-40',
-            ].join(' ')}
-          >
-            Modifica
-          </button>
-          <button
-            type="button"
-            disabled={!canCancel}
-            onClick={() => onCancel?.(draft)}
-            className={[
-              'rounded-xl border border-rose-500/35 bg-rose-500/10 py-2 text-[12px] font-semibold text-rose-100',
-              'transition hover:border-rose-400/50 hover:bg-rose-500/20',
-              'disabled:pointer-events-none disabled:opacity-40',
-            ].join(' ')}
-          >
-            Annulla
-          </button>
-        </div>
-      ) : (
-        <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-          <button
-            type="button"
-            disabled={!canConfirm}
-            onClick={() => onConfirm?.(draft)}
-            className={[
-              'inline-flex items-center justify-center gap-1 rounded-xl border border-emerald-400/40',
-              'bg-emerald-500/90 py-2 text-[12px] font-bold text-emerald-50',
-              'shadow-[0_8px_20px_rgba(16,185,129,0.18)] transition hover:bg-emerald-400',
-              'disabled:pointer-events-none disabled:opacity-40',
-            ].join(' ')}
-          >
-            <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
-            Conferma
-          </button>
-          <button
-            type="button"
-            onClick={() => onToggleSecondary(draft.id)}
-            className={[
-              'rounded-xl border border-white/15 bg-zinc-900/80 py-2 text-[12px] font-semibold text-zinc-200',
-              'transition hover:border-zinc-400/40 hover:bg-zinc-800',
-            ].join(' ')}
-          >
-            Modifica / Annulla
-          </button>
-        </div>
-      )}
+      <button
+        type="button"
+        disabled={!canConfirm}
+        onClick={(event) => {
+          event.stopPropagation();
+          onConfirm?.(draft);
+        }}
+        className={[
+          'relative z-10 mt-2.5 inline-flex w-full items-center justify-center gap-1 rounded-xl border border-emerald-400/40',
+          'bg-emerald-500/90 py-2 text-[12px] font-bold text-emerald-50',
+          'shadow-[0_8px_20px_rgba(16,185,129,0.18)] transition hover:bg-emerald-400',
+          'disabled:pointer-events-none disabled:opacity-40',
+        ].join(' ')}
+      >
+        <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden />
+        Conferma
+      </button>
     </article>
+  );
+}
+
+function CompletedCard({ item, onEdit }) {
+  const canEdit = typeof onEdit === 'function';
+  const body = (
+    <>
+      <div className="min-w-0">
+        <p className="m-0 truncate text-[13px] font-semibold text-zinc-100">
+          <span aria-hidden>{item.icon}</span>
+          {' '}
+          {item.title}
+        </p>
+        <p className="m-0 mt-0.5 text-[11px] text-zinc-500">
+          {[
+            item.clock || null,
+            item.typeLabel,
+            item.minutes > 0 ? formatDurationMinutes(item.minutes) : null,
+          ].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+      <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-200">
+        Fatto
+      </span>
+    </>
+  );
+
+  if (!canEdit) {
+    return (
+      <li className="flex items-start justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.07] px-3 py-2.5">
+        {body}
+      </li>
+    );
+  }
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onEdit(item)}
+        aria-label={`Modifica ${item.title}`}
+        className={[
+          'flex w-full items-start justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.07] px-3 py-2.5 text-left',
+          'transition hover:border-emerald-400/40 hover:bg-emerald-500/[0.12]',
+          'active:scale-[0.99] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40',
+        ].join(' ')}
+      >
+        {body}
+      </button>
+    </li>
   );
 }
 
@@ -121,9 +156,8 @@ export default function DailySessionsView({
   onConfirmDraft = null,
   onEditDraft = null,
   onCancelDraft = null,
+  onEditCompleted = null,
 } = {}) {
-  const [expandedId, setExpandedId] = useState(null);
-
   if (!open || typeof document === 'undefined') return null;
 
   const drafts = Array.isArray(pendingDrafts) ? pendingDrafts : [];
@@ -188,8 +222,6 @@ export default function DailySessionsView({
                     <DraftCard
                       key={draft.id}
                       draft={draft}
-                      expanded={expandedId === draft.id}
-                      onToggleSecondary={(id) => setExpandedId((prev) => (prev === id ? null : id))}
                       onConfirm={onConfirmDraft}
                       onEdit={onEditDraft}
                       onCancel={onCancelDraft}
@@ -210,28 +242,11 @@ export default function DailySessionsView({
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
                   {completed.map((item) => (
-                    <li
+                    <CompletedCard
                       key={item.id}
-                      className="flex items-start justify-between gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/[0.07] px-3 py-2.5"
-                    >
-                      <div className="min-w-0">
-                        <p className="m-0 truncate text-[13px] font-semibold text-zinc-100">
-                          <span aria-hidden>{item.icon}</span>
-                          {' '}
-                          {item.title}
-                        </p>
-                        <p className="m-0 mt-0.5 text-[11px] text-zinc-500">
-                          {[
-                            item.clock || null,
-                            item.typeLabel,
-                            item.minutes > 0 ? formatDurationMinutes(item.minutes) : null,
-                          ].filter(Boolean).join(' · ')}
-                        </p>
-                      </div>
-                      <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-200">
-                        Fatto
-                      </span>
-                    </li>
+                      item={item}
+                      onEdit={onEditCompleted}
+                    />
                   ))}
                 </ul>
               )}

@@ -8091,6 +8091,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         kcal: payload.estimatedKcal ?? payload.kcal ?? draft.kcal,
         workoutType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
         subType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
+        muscles: payload.muscles || payload.muscleGroups || payload.groups,
+        workoutDetailNote: payload.workoutDetailNote || payload.detail,
+        trainingGoal: payload.trainingGoal || payload.workoutGoal,
+        rpe: payload.rpe,
+        note: payload.progressionNote || payload.notes || payload.note,
       });
       return;
     }
@@ -8108,6 +8113,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleExecuteTrainingBlockSession,
     trainingBlockTodaySession,
   ]);
+
+  const handleEditCompletedSession = useCallback((item) => {
+    setDailySessionsOpen(false);
+    setStimulusCockpitOpen(false);
+    const entry = item?.entry && typeof item.entry === 'object' ? item.entry : item;
+    if (entry?.id) openWorkoutEditorFromLogItem(entry);
+  }, [openWorkoutEditorFromLogItem]);
 
   const handleCancelSessionDraft = useCallback((draft) => {
     const kind = String(draft?.kind || draft?.raw?.kind || '');
@@ -8464,6 +8476,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onConfirmSessionDraft: handleConfirmSessionDraft,
             onEditSessionDraft: handleEditSessionDraft,
             onCancelSessionDraft: handleCancelSessionDraft,
+            onEditCompletedSession: handleEditCompletedSession,
             onOpenSessions: handleOpenDailySessions,
             dailyLog: activeLog,
             manualNodes,
@@ -8997,6 +9010,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onConfirmSessionDraft={handleConfirmSessionDraft}
             onEditSessionDraft={handleEditSessionDraft}
             onCancelSessionDraft={handleCancelSessionDraft}
+            onEditCompletedSession={handleEditCompletedSession}
             onOpenSessions={handleOpenDailySessions}
             isDiabetesAppMode={isDiabetesAppMode}
             onRequestReport={handleRequestDailyReport}
@@ -9036,6 +9050,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onConfirmSessionDraft={handleConfirmSessionDraft}
         onEditSessionDraft={handleEditSessionDraft}
         onCancelSessionDraft={handleCancelSessionDraft}
+        onEditCompletedSession={handleEditCompletedSession}
         onOpenSessions={handleOpenDailySessions}
       />
 
@@ -9047,6 +9062,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onConfirmDraft={handleConfirmSessionDraft}
         onEditDraft={handleEditSessionDraft}
         onCancelDraft={handleCancelSessionDraft}
+        onEditCompleted={handleEditCompletedSession}
       />
 
       {showBiochemicalDiagnostics ? (

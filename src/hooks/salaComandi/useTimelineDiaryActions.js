@@ -253,7 +253,9 @@ export function useTimelineDiaryActions({
         } else {
           mealTypeToUse = existingType || rawSlot;
         }
-        const existingTime = coerceDiaryMealTime(existingMealFoods[0]?.mealTime);
+        const existingTime = coerceDiaryMealTime(
+          existingMealFoods[0]?.mealTime ?? existingMealFoods[0]?.time,
+        );
         if (existingTime != null) mealTimeToUse = existingTime;
       } else if (editMealId) {
         // Riferimento presente ma lookup vuoto: non mintare un nuovo slot timestamp.
@@ -261,9 +263,7 @@ export function useTimelineDiaryActions({
         mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
           ? rawSlot
           : (fromEditId.typePart || rawSlot);
-        const customDec = coerceDiaryMealTime(customMealTime);
-        if (customDec != null) mealTimeToUse = customDec;
-        else if (Number.isFinite(fromEditId.timePart)) mealTimeToUse = fromEditId.timePart;
+        if (Number.isFinite(fromEditId.timePart)) mealTimeToUse = fromEditId.timePart;
       } else {
         mealTypeToUse = isTimestampMealSlot(rawSlot) || isGhostInstanceMealType(rawSlot)
           ? rawSlot
@@ -290,11 +290,10 @@ export function useTimelineDiaryActions({
         }
       }
 
-      if (!editMealId) {
-        const customDec = coerceDiaryMealTime(customMealTime);
-        if (customDec != null) {
-          mealTimeToUse = customDec;
-        }
+      // Orario del form (decimale 0–24 o "HH:mm"): vince sempre su default/slot/pasto esistente.
+      const customDec = coerceDiaryMealTime(customMealTime);
+      if (customDec != null) {
+        mealTimeToUse = customDec;
       }
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
@@ -314,6 +313,8 @@ export function useTimelineDiaryActions({
           selectedUnit,
           qtyLabel,
           _searchSource,
+          mealTime: _oldMealTime,
+          time: _oldTime,
           ...rest
         } = f || {};
         return ensureRecipeDiaryFields({
@@ -324,6 +325,7 @@ export function useTimelineDiaryActions({
           type: f.type === 'recipe' ? 'recipe' : 'food',
           mealType: mealTypeToUse,
           mealTime: mealTimeToUse,
+          time: mealTimeToUse,
           id: `f_${batchId}_${index}`,
           qta: weight,
           weight,

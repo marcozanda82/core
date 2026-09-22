@@ -378,6 +378,7 @@ Ottimo! Diario aggiornato. 🥗`;
         type: f.type === 'recipe' ? 'recipe' : 'food',
         mealType: ourSlot,
         mealTime: timeToUse,
+        time: timeToUse,
         id: f.id || `f_${uniqueBatchId}_${index}`,
       }));
 
@@ -483,6 +484,7 @@ Ottimo! Diario aggiornato. 🥗`;
           type: f.type === 'recipe' ? 'recipe' : 'food',
           mealType: ourSlot,
           mealTime: timeToUse,
+          time: timeToUse,
           id: f.id || `f_${Date.now()}_${index}`,
         }));
         const foodsToRemove = getFoodItemsForMealSlot(logToUse, String(slotToReplace));
