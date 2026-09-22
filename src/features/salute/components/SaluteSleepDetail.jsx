@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import SleepTrackerWidget from '../../trendHub/components/SleepTrackerWidget';
 import {
   formatSleepClock,
   formatSleepHoursShort,
   formatVsReferenceClock,
+  SLEEP_REFERENCE_DEFAULT_H,
   SLEEP_REFERENCE_MAX_H,
   SLEEP_REFERENCE_MIN_H,
   SLEEP_REFERENCE_STEP_H,
@@ -12,6 +14,28 @@ import {
 } from '../utils/sleepReference';
 import SaluteSleepGhostChart from './SaluteSleepGhostChart';
 import { SALUTE_FROST, sleepSemaphoreFromDelta } from '../utils/saluteVisualTheme';
+
+const TIME_INPUT_STEP_S = Math.round(SLEEP_REFERENCE_STEP_H * 3600);
+const TIME_INPUT_MIN = hoursToTimeValue(SLEEP_REFERENCE_MIN_H);
+const TIME_INPUT_MAX = hoursToTimeValue(SLEEP_REFERENCE_MAX_H);
+
+function hoursToTimeValue(hours) {
+  const snapped = snapSleepReferenceHours(hours);
+  const n = snapped == null ? SLEEP_REFERENCE_DEFAULT_H : snapped;
+  const totalMins = Math.round(n * 60);
+  const h = Math.min(23, Math.max(0, Math.floor(totalMins / 60)));
+  const m = totalMins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function timeValueToHours(value) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const mins = Number(match[2]);
+  if (!Number.isFinite(hours) || !Number.isFinite(mins)) return null;
+  return snapSleepReferenceHours(hours + mins / 60);
+}
 
 function Expandable({ title, children }) {
   return (
@@ -26,68 +50,69 @@ function Expandable({ title, children }) {
   );
 }
 
-function ReferenceEditor({
-  draftHours,
-  saving,
-  onDraftChange,
-  onSavePersonal,
-  onUseRecommended,
-  onClose,
-}) {
-  return (
-    <div className={`rounded-2xl px-3.5 py-3.5 ${SALUTE_FROST.nested}`}>
-      <p className="m-0 text-[13px] leading-relaxed text-slate-200">
-        Quanto vuoi usare come riferimento?
-      </p>
-      <div className="mt-3 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => onDraftChange(draftHours - SLEEP_REFERENCE_STEP_H)}
-          disabled={draftHours <= SLEEP_REFERENCE_MIN_H}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-violet-400/30 text-[18px] text-violet-100 disabled:opacity-35"
-          aria-label="Diminuisci riferimento"
-        >
-          −
-        </button>
-        <p className="m-0 min-w-[5.5rem] text-center text-[22px] font-semibold tabular-nums text-violet-100">
-          {formatSleepClock(draftHours)}
-        </p>
-        <button
-          type="button"
-          onClick={() => onDraftChange(draftHours + SLEEP_REFERENCE_STEP_H)}
-          disabled={draftHours >= SLEEP_REFERENCE_MAX_H}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-violet-400/30 text-[18px] text-violet-100 disabled:opacity-35"
-          aria-label="Aumenta riferimento"
-        >
-          +
-        </button>
-      </div>
-      <button
-        type="button"
-        onClick={onUseRecommended}
-        disabled={saving}
-        className="mt-3 min-h-11 w-full rounded-2xl border border-white/10 px-3 text-[13px] font-medium text-slate-200"
+function SleepReferenceConfirmDialog({
+  open = false,
+  nextLabel = '',
+  saving = false,
+  onCancel = null,
+  onSave = null,
+} = {}) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (!saving) onCancel?.();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, saving, onCancel]);
+
+  if (!open || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      role="presentation"
+      className="fixed inset-0 z-[100085] flex items-center justify-center bg-black/60 px-4 backdrop-blur-md"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !saving) onCancel?.();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sleep-ref-confirm-title"
+        className="w-full max-w-sm rounded-2xl border border-white/10 bg-zinc-950/80 px-5 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md"
+        onMouseDown={(event) => event.stopPropagation()}
       >
-        Usa 7h
-      </button>
-      <div className="mt-2 flex gap-2">
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-11 flex-1 rounded-2xl border border-white/10 px-3 text-[13px] text-slate-300"
+        <h3
+          id="sleep-ref-confirm-title"
+          className="m-0 text-[16px] font-semibold leading-snug text-slate-50"
         >
-          Annulla
-        </button>
-        <button
-          type="button"
-          onClick={onSavePersonal}
-          disabled={saving}
-          className="min-h-11 flex-1 rounded-2xl border border-violet-400/35 bg-violet-500/10 px-3 text-[13px] font-medium text-violet-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm"
-        >
-          Salva
-        </button>
+          Vuoi impostare {nextLabel} come nuovo riferimento per il sonno?
+        </h3>
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving}
+            className="min-h-11 flex-1 rounded-2xl border border-white/10 px-3 text-[13px] text-slate-300 disabled:opacity-45"
+          >
+            Annulla
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="min-h-11 flex-1 rounded-2xl border border-violet-400/35 bg-violet-500/10 px-3 text-[13px] font-medium text-violet-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm disabled:opacity-45"
+          >
+            Salva
+          </button>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -97,9 +122,61 @@ export default function SaluteSleepDetail({
   sleepLog,
   sleepReference,
 } = {}) {
-  const [editing, setEditing] = useState(false);
-  const [draftHours, setDraftHours] = useState(null);
-  const editorHours = draftHours ?? sleepReference?.effectiveHours ?? 7;
+  const timeInputRef = useRef(null);
+  const [pendingHours, setPendingHours] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const committedHours = snapSleepReferenceHours(sleepReference?.effectiveHours)
+    ?? SLEEP_REFERENCE_DEFAULT_H;
+  const displayedHours = pendingHours ?? committedHours;
+  const saving = Boolean(sleepReference?.saving);
+
+  useEffect(() => {
+    if (pendingHours != null || confirmOpen) return;
+    const input = timeInputRef.current;
+    if (input) input.value = hoursToTimeValue(committedHours);
+  }, [committedHours, pendingHours, confirmOpen]);
+
+  const proposeHours = (next) => {
+    if (next == null) return;
+    if (next === committedHours) {
+      setPendingHours(null);
+      setConfirmOpen(false);
+      const input = timeInputRef.current;
+      if (input) input.value = hoursToTimeValue(committedHours);
+      return;
+    }
+    setPendingHours(next);
+    setConfirmOpen(true);
+  };
+
+  const openTimePicker = (event) => {
+    if (saving) return;
+    const input = timeInputRef.current;
+    if (!input || typeof input.showPicker !== 'function') return;
+    event.preventDefault();
+    try {
+      input.showPicker();
+    } catch {
+      input.focus();
+    }
+  };
+
+  const handleCancelConfirm = () => {
+    if (saving) return;
+    setConfirmOpen(false);
+    setPendingHours(null);
+    const input = timeInputRef.current;
+    if (input) input.value = hoursToTimeValue(committedHours);
+  };
+
+  const handleSaveConfirm = async () => {
+    if (pendingHours == null) return;
+    const ok = await sleepReference?.savePersonal?.(pendingHours);
+    if (ok) {
+      setConfirmOpen(false);
+      setPendingHours(null);
+    }
+  };
 
   const avg14 = Number.isFinite(Number(sleepTrend?.avg14Days))
     ? Number(sleepTrend.avg14Days)
@@ -136,54 +213,39 @@ export default function SaluteSleepDetail({
         <p className="m-0 text-[10px] font-medium uppercase tracking-[0.12em] text-violet-300/85">
           Il tuo riferimento
         </p>
-        <p className="m-0 mt-1.5 text-[28px] font-semibold tabular-nums leading-none text-violet-100">
-          {formatSleepClock(effective)}
-        </p>
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <p className="m-0 text-[13px] text-slate-400">
-            {sleepReference?.sourceLabel || 'Riferimento consigliato'}
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setDraftHours(sleepReference?.effectiveHours ?? 7);
-              setEditing((v) => !v);
+        <label
+          className={[
+            'group relative mt-1.5 inline-flex cursor-pointer items-baseline rounded-xl px-1.5 py-1 -ml-1.5',
+            'text-[28px] font-semibold tabular-nums leading-none text-violet-100',
+            'underline decoration-violet-300/35 decoration-dotted underline-offset-4',
+            'transition hover:bg-violet-500/15 hover:text-violet-50 hover:decoration-violet-200/70',
+            'focus-within:bg-violet-500/15 focus-within:ring-2 focus-within:ring-violet-400/45',
+            saving ? 'pointer-events-none opacity-60' : '',
+          ].join(' ')}
+          onClick={openTimePicker}
+        >
+          <span aria-hidden>{formatSleepClock(displayedHours)}</span>
+          <input
+            ref={timeInputRef}
+            type="time"
+            min={TIME_INPUT_MIN}
+            max={TIME_INPUT_MAX}
+            step={TIME_INPUT_STEP_S}
+            defaultValue={hoursToTimeValue(committedHours)}
+            disabled={saving}
+            aria-label="Riferimento del sonno. Tocca per modificare"
+            title="Tocca per modificare"
+            className="absolute inset-0 cursor-pointer opacity-0"
+            onChange={(event) => proposeHours(timeValueToHours(event.target.value))}
+            onBlur={(event) => {
+              if (confirmOpen) return;
+              proposeHours(timeValueToHours(event.target.value));
             }}
-            className="min-h-10 rounded-full border border-violet-400/35 px-3 text-[12px] font-medium text-violet-100"
-          >
-            {editing ? 'Chiudi' : 'Modifica'}
-          </button>
-        </div>
-        {editing ? (
-          <div className="mt-3">
-            <ReferenceEditor
-              draftHours={editorHours}
-              saving={sleepReference?.saving}
-              onDraftChange={(value) => {
-                const next = snapSleepReferenceHours(value);
-                if (next != null) setDraftHours(next);
-              }}
-              onSavePersonal={async () => {
-                const ok = await sleepReference?.savePersonal?.(editorHours);
-                if (ok) {
-                  setDraftHours(null);
-                  setEditing(false);
-                }
-              }}
-              onUseRecommended={async () => {
-                const ok = await sleepReference?.clearPersonal?.();
-                if (ok) {
-                  setDraftHours(null);
-                  setEditing(false);
-                }
-              }}
-              onClose={() => {
-                setDraftHours(null);
-                setEditing(false);
-              }}
-            />
-          </div>
-        ) : null}
+          />
+        </label>
+        <p className="m-0 mt-2 text-[13px] text-slate-400">
+          {sleepReference?.sourceLabel || 'Riferimento consigliato'}
+        </p>
       </section>
 
       <SaluteSleepGhostChart
@@ -253,6 +315,14 @@ export default function SaluteSleepDetail({
           onSave={sleepLog?.save}
         />
       </Expandable>
+
+      <SleepReferenceConfirmDialog
+        open={confirmOpen}
+        nextLabel={formatSleepClock(pendingHours)}
+        saving={saving}
+        onCancel={handleCancelConfirm}
+        onSave={handleSaveConfirm}
+      />
     </div>
   );
 }

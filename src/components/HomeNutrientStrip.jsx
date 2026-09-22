@@ -91,7 +91,9 @@ function NutrientChip({ label, emoji, color, borderClass, value, target, unit, o
           gap: '4px',
         }}
       >
-        <span style={{ fontSize: '0.9rem' }}>{emoji}</span>
+        <span style={{ fontSize: '0.9rem', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }} aria-hidden>
+          {emoji}
+        </span>
         {label}
       </div>
 
@@ -225,6 +227,7 @@ export default function HomeNutrientStrip({
       />
       <NutrientChip
         label="Minerali"
+        emoji="🧂"
         color="#2dd4bf"
         borderClass="border-[#2dd4bf]/35"
         value={naKRatio}
@@ -234,6 +237,7 @@ export default function HomeNutrientStrip({
       />
       <NutrientChip
         label="Vitamine"
+        emoji="🍊"
         color="#c4b5fd"
         borderClass="border-[#c4b5fd]/35"
         value={vitaminPct}

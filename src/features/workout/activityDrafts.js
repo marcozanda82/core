@@ -1,9 +1,73 @@
 import { stripUndefined } from '../../utils/firebasePayloadUtils';
+import { getTodayString } from '../../coreEngine';
+
+export const AI_WORKOUT_PROPOSAL_SOURCE = 'ai-proposal';
+export const AI_WORKOUT_PROPOSAL_SEED_SOURCE = 'ai-proposal-seed';
+
+export function activityDraftsRootPath(uid) {
+  const user = String(uid || '').trim();
+  return `users/${user}/activityDrafts`;
+}
 
 export function activityDraftsDbPath(uid, dateIso) {
   const user = String(uid || '').trim();
   const day = String(dateIso || '').slice(0, 10);
   return `users/${user}/activityDrafts/${day}`;
+}
+
+function asIsoDay(value) {
+  const day = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : '';
+}
+
+export function localIsoFromTimestamp(ms, fallback = '') {
+  const ts = Number(ms);
+  if (!Number.isFinite(ts) || ts <= 0) return asIsoDay(fallback);
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return asIsoDay(fallback);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function activityDraftCalendarDate(draft, todayIso = '') {
+  const today = asIsoDay(todayIso) || getTodayString();
+  return asIsoDay(draft?.date)
+    || asIsoDay(draft?.createdDate)
+    || localIsoFromTimestamp(draft?.createdAt, today);
+}
+
+export function isStaleActivityDraft(draft, todayIso = '') {
+  const today = asIsoDay(todayIso) || getTodayString();
+  const day = activityDraftCalendarDate(draft, today);
+  return Boolean(day && day < today);
+}
+
+export function isAiProposalSeed(draft) {
+  if (!draft || typeof draft !== 'object') return false;
+  if (draft.source === AI_WORKOUT_PROPOSAL_SEED_SOURCE) return true;
+  if (draft.kind === 'activity-draft-seed') return true;
+  return String(draft.id || '').startsWith('ai_proposal_seed_');
+}
+
+export function isVisibleActivityDraft(draft) {
+  if (!draft || typeof draft !== 'object' || !draft.id) return false;
+  if (isAiProposalSeed(draft)) return false;
+  return true;
+}
+
+export function createAiProposalSeed(dateIso) {
+  const date = asIsoDay(dateIso) || getTodayString();
+  return {
+    id: `ai_proposal_seed_${date}`,
+    date,
+    createdAt: Date.now(),
+    createdDate: date,
+    source: AI_WORKOUT_PROPOSAL_SEED_SOURCE,
+    kind: 'activity-draft-seed',
+    ephemeral: true,
+  };
 }
 
 export function createActivityDraftId() {
@@ -33,11 +97,14 @@ export function createActivityDraft(workoutPayload = {}, {
   const kcal = Math.max(0, Math.round(Number(payload.estimatedKcal ?? payload.kcal) || 0));
   const exactTime = asTrimmedString(payload.exactTime || payload.timeString);
   const draftId = asTrimmedString(id) || createActivityDraftId();
+  const day = String(date || '').slice(0, 10);
+  const createdAt = Date.now();
 
   return stripUndefined({
     id: draftId,
-    date: String(date || '').slice(0, 10),
-    createdAt: Date.now(),
+    date: day,
+    createdAt,
+    createdDate: day || localIsoFromTimestamp(createdAt),
     source,
     kind: 'activity-draft',
     type: 'ghost_workout',
@@ -69,20 +136,28 @@ export function createActivityDraft(workoutPayload = {}, {
   });
 }
 
-export function listActivityDraftsFromSnapshot(raw) {
+export function listActivityDraftsFromSnapshot(raw, { todayIso = '', includeStale = false } = {}) {
   if (!raw) return [];
+  const today = String(todayIso || getTodayString()).slice(0, 10);
   const values = Array.isArray(raw)
     ? raw
     : (typeof raw === 'object' ? Object.values(raw) : []);
   return values
     .filter((item) => item && typeof item === 'object' && item.id)
-    .map((item) => ({
-      ...item,
-      kind: item.kind || 'activity-draft',
-      source: item.source || 'ai-chat',
-      type: item.type || 'ghost_workout',
-      isGhost: true,
-    }))
+    .filter((item) => includeStale || !isStaleActivityDraft(item, today))
+    .map((item) => (
+      isAiProposalSeed(item)
+        ? { ...item, date: item.date || today, createdDate: item.createdDate || item.date || today }
+        : {
+          ...item,
+          kind: item.kind || 'activity-draft',
+          source: item.source || 'ai-chat',
+          type: item.type || 'ghost_workout',
+          isGhost: true,
+          createdAt: Number(item.createdAt) || Date.now(),
+          createdDate: item.createdDate || item.date || today,
+        }
+    ))
     .sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
 }
 

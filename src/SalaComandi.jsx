@@ -81,6 +81,7 @@ import { getWipMealSnapshotFromBridge, seedWipMealFromBridge } from './features/
 import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContext.jsx';
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
 import { useActivityDrafts } from './hooks/useActivityDrafts';
+import { useAiWorkoutDrafts } from './hooks/useAiWorkoutDrafts';
 import DailySessionsView from './features/chat/DailySessionsView';
 import {
   buildAttivitaWorkoutSummary,
@@ -1087,10 +1088,13 @@ export default function SalaComandi() {
     activityDrafts,
     addActivityDraft,
     removeActivityDraft,
+    purgeStaleActivityDrafts,
+    markAiProposalSeed,
+    hasAiProposalSeed,
   } = useActivityDrafts({
     db,
     userUid: user?.uid ?? userUid,
-    todayIso: currentTrackerDate || getTodayString(),
+    todayIso: getTodayString(),
     isSimulationMode,
   });
 
@@ -1586,6 +1590,34 @@ export default function SalaComandi() {
 
   // 🔥 FIX UX: Segnala ad App.jsx che i dati sono pronti (per splash screen)
   useSignalAppReady(isInitialLoadComplete && isProfileHydrated);
+
+  useAiWorkoutDrafts({
+    enabled: Boolean(isInitialLoadComplete && userUid && !isSimulationMode),
+    sessionsOpen: dailySessionsOpen,
+    fourCylinder: userModel?.fourCylinder ?? null,
+    fullHistory,
+    activeLog,
+    activityDrafts,
+    addActivityDraft,
+    purgeStaleActivityDrafts,
+    markAiProposalSeed,
+    hasAiProposalSeed,
+    isSimulationMode,
+  });
+
+  useAiWorkoutDrafts({
+    enabled: Boolean(isInitialLoadComplete && userUid && !isSimulationMode),
+    sessionsOpen: dailySessionsOpen,
+    fourCylinder: userModel?.fourCylinder ?? null,
+    fullHistory,
+    activeLog,
+    activityDrafts,
+    addActivityDraft,
+    purgeStaleActivityDrafts,
+    markAiProposalSeed,
+    hasAiProposalSeed,
+    isSimulationMode,
+  });
 
   /** Target giornalieri dal Training Block (Wave Nutrition sul giorno, se presenti). */
   const applyTrainingBlockDailyTargets = useCallback(
@@ -2183,7 +2215,11 @@ export default function SalaComandi() {
   ]);
 
   const extraPendingSessionDrafts = useMemo(() => {
-    const fromStore = Array.isArray(activityDrafts) ? activityDrafts : [];
+    const fromStore = (Array.isArray(activityDrafts) ? activityDrafts : []).filter((item) => (
+      item
+      && item.source !== 'ai-proposal-seed'
+      && item.kind !== 'activity-draft-seed'
+    ));
     const fromTimeline = (allNodes || []).filter((node) => (
       node
       && (
@@ -7995,7 +8031,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setDailySessionsOpen(false);
     const kind = String(draft?.kind || draft?.raw?.kind || '');
     const raw = draft?.raw || draft;
-    if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat') {
+    if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat' || raw?.source === 'ai-proposal') {
       const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : raw;
       try {
         const result = commitAddWorkoutCommand(payload);

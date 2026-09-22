@@ -176,9 +176,12 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     trazione: ['Dorso', 'Bicipiti'],
     gambe: ['Gambe'],
   };
-  const muscles = Array.isArray(cylinderMuscles[workoutType])
-    ? [...cylinderMuscles[workoutType]]
+  const explicitMuscles = Array.isArray(chatPayload?.muscles)
+    ? chatPayload.muscles.map((item) => String(item || '').trim()).filter(Boolean)
     : [];
+  const muscles = explicitMuscles.length > 0
+    ? explicitMuscles
+    : (Array.isArray(cylinderMuscles[workoutType]) ? [...cylinderMuscles[workoutType]] : []);
   const baseDesc = getWorkoutActivityLogDescription(
     ['spinta', 'trazione', 'gambe'].includes(workoutType) ? 'pesi' : workoutType,
     muscles,
@@ -264,6 +267,7 @@ export function mapChatWorkoutToNativePayload(chatPayload, currentTimeDecimal) {
     duration,
     ...(workoutDetailNote ? { workoutDetailNote } : {}),
     ...(exercises.length ? { exercises } : {}),
+    ...(muscles.length ? { muscles } : {}),
     ...structuredPatch,
   };
 

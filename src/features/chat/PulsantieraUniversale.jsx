@@ -11,6 +11,7 @@ import {
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
 import StimulusCockpitOverlay from './StimulusCockpitOverlay';
+import { collectPendingSessionDrafts } from './attivitaWorkoutSummary';
 import { useSmartQuickActions } from '../predictive/useSmartQuickActions';
 
 const PILLARS = [
@@ -212,14 +213,15 @@ function resolveCompactGridClass(itemCount) {
   return 'grid w-full max-w-sm grid-cols-2 gap-3';
 }
 
-function PillarButton({ icon, label, active, onClick }) {
+function PillarButton({ icon, label, active, onClick, badgeCount = 0 }) {
+  const count = Math.max(0, Math.round(Number(badgeCount) || 0));
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
       className={[
-        'kentu-pulsantiera__btn flex h-auto min-h-0 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 transition-colors',
+        'kentu-pulsantiera__btn relative flex h-auto min-h-0 min-w-0 flex-col items-center justify-center gap-0.5 overflow-visible rounded-xl border px-1 py-1.5 transition-colors',
         active
           ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
           : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
@@ -227,6 +229,14 @@ function PillarButton({ icon, label, active, onClick }) {
     >
       <span className="text-base leading-none" aria-hidden>{icon}</span>
       <span className="max-w-full truncate text-[0.62rem] font-semibold leading-tight tracking-wide uppercase">{label}</span>
+      {count > 0 ? (
+        <span
+          className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-bold leading-none text-slate-900 shadow-[0_0_10px_rgba(34,211,238,0.55)]"
+          aria-label={`${count} ${count === 1 ? 'bozza in attesa' : 'bozze in attesa'}`}
+        >
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -666,6 +676,15 @@ export default function PulsantieraUniversale({
   }, [dailyLog]);
 
   const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
+  const mealDraftsCount = inboxBlocks.length;
+  const activityDraftsCount = useMemo(
+    () => collectPendingSessionDrafts({
+      dailyLog,
+      manualNodes,
+      extraDrafts: extraPendingDrafts,
+    }).length,
+    [dailyLog, extraPendingDrafts, manualNodes],
+  );
 
   const resolveInboxDropTarget = useCallback((x, y, ignoreDraftId = '') => {
     if (typeof document === 'undefined') return null;
@@ -1096,7 +1115,7 @@ export default function PulsantieraUniversale({
   return (
     <div
       className={[
-        'kentu-pulsantiera relative flex h-auto w-full flex-none shrink-0 flex-col gap-1 py-1',
+        'kentu-pulsantiera relative flex h-auto w-full flex-none shrink-0 flex-col gap-1 overflow-visible py-1',
         embedded ? 'z-10' : 'z-[100045]',
       ].join(' ')}
     >
@@ -1111,7 +1130,7 @@ export default function PulsantieraUniversale({
       />
 
       <div
-        className="kentu-pulsantiera__row flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1"
+        className="kentu-pulsantiera__row flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1 overflow-visible px-0.5 pt-1.5"
         role="toolbar"
         aria-label="Pulsantiera universale"
       >
@@ -1121,6 +1140,13 @@ export default function PulsantieraUniversale({
             icon={pillar.icon}
             label={pillar.label}
             active={activeCategory === pillar.id}
+            badgeCount={
+              pillar.id === 'pasti'
+                ? mealDraftsCount
+                : pillar.id === 'attivita'
+                  ? activityDraftsCount
+                  : 0
+            }
             onClick={() => handlePillarClick(pillar.id)}
           />
         ))}
