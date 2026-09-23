@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getWorkoutActivityLogDescription } from '../activityCatalog';
+import { Pencil, Trash2 } from 'lucide-react';
+import { getWorkoutActivityLogDescription, getWorkoutActivityTypeDef } from '../activityCatalog';
 import { formatMealSlotLabel, toCanonicalMealType } from '../coreEngine';
 import { KENTU_PILLARS, PILLAR_IDS, pillarColorToRgba } from '../features/metabolic/pillarsMapper';
-import { TRAINING_GOALS, WorkoutQuestionnaireForm } from '../features/metabolic/WorkoutQuestionnaireForm';
 import {
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
@@ -89,37 +89,42 @@ function formatTimeLabel(decimalHour, decimalToTimeStr) {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
-function formatWorkoutMeta(workout) {
-  const parts = [];
-  const durH = Number(workout.duration);
-  if (Number.isFinite(durH) && durH > 0) {
-    parts.push(`${Math.round(durH * 60)} min`);
-  }
-  const goal = String(workout.trainingGoal || workout.workoutGoal || '').trim();
-  if (goal) {
-    const found = TRAINING_GOALS.find((g) => g.id === goal);
-    parts.push(found?.label || goal);
-  }
-  const rpe = Number(workout.rpe);
-  if (Number.isFinite(rpe) && rpe >= 1) parts.push(`RPE ${Math.round(rpe)}`);
-  const muscles = Array.isArray(workout.muscles)
+function workoutMusclesList(workout) {
+  const raw = Array.isArray(workout?.muscles)
     ? workout.muscles
-    : Array.isArray(workout.workoutMuscles)
+    : Array.isArray(workout?.workoutMuscles)
       ? workout.workoutMuscles
       : [];
-  if (muscles.length > 0) parts.push(muscles.join(' · '));
-  return parts.join(' · ') || '—';
+  return raw.map((item) => String(item || '').trim()).filter(Boolean);
+}
+
+function formatWorkoutDuration(workout) {
+  const durH = Number(workout?.duration);
+  if (!Number.isFinite(durH) || durH <= 0) return '';
+  const minutes = Math.max(1, Math.round(durH > 24 ? durH : durH * 60));
+  return `${minutes} min`;
+}
+
+function resolveWorkoutIcon(workout) {
+  const fromEntry = String(workout?.icon || '').trim();
+  if (fromEntry) return fromEntry;
+  const typeId = workout?.subType || workout?.workoutType || 'pesi';
+  return getWorkoutActivityTypeDef(typeId)?.icon || '🏋️';
 }
 
 function resolveWorkoutName(workout) {
-  const desc = String(workout.desc || workout.name || '').trim();
+  const typeId = String(workout?.subType || workout?.workoutType || 'pesi');
+  const def = getWorkoutActivityTypeDef(typeId);
+  const muscles = workoutMusclesList(workout);
+  if (typeId === 'pesi' && muscles.length > 0) {
+    return `Forza - ${muscles.join(' e ')}`;
+  }
+  if (def?.label) {
+    return muscles.length > 0 ? `${def.label} - ${muscles.join(' e ')}` : def.label;
+  }
+  const desc = String(workout?.desc || workout?.name || '').trim();
   if (desc) return desc;
-  const muscles = Array.isArray(workout.muscles)
-    ? workout.muscles
-    : Array.isArray(workout.workoutMuscles)
-      ? workout.workoutMuscles
-      : [];
-  return getWorkoutActivityLogDescription(workout.subType || 'pesi', muscles);
+  return getWorkoutActivityLogDescription(typeId || 'pesi', muscles);
 }
 
 function buildMealSections(groupedFoods, decimalToTimeStr) {
@@ -177,7 +182,8 @@ function buildWorkoutEntries(workoutsLog, decimalToTimeStr) {
         sortTime,
         timeLabel,
         name: resolveWorkoutName(workout),
-        meta: formatWorkoutMeta(workout),
+        icon: resolveWorkoutIcon(workout),
+        durationLabel: formatWorkoutDuration(workout),
         burnedKcal: Number(workout.kcal ?? workout.cal) || 0,
       };
     })
@@ -442,7 +448,6 @@ export default function DiaryDetailsSheet({
   onEditWorkout,
   onDeleteItem,
   onInspectFood,
-  onUpdateWorkoutQuestionnaire,
   onSaveSleep,
   onSelectInboxDraft = null,
   onReturnRawToInbox = null,
@@ -498,12 +503,6 @@ export default function DiaryDetailsSheet({
   );
 
   const lastScrollItemKey = useMemo(() => {
-    if (activePillarTab === 'TRAINING' && workoutEntries.length > 0) {
-      const lastWorkout = workoutEntries[workoutEntries.length - 1]?.workout;
-      return lastWorkout?.id != null
-        ? `workout-${String(lastWorkout.id)}`
-        : `workout-${workoutEntries.length - 1}`;
-    }
     if (activePillarTab === 'NUTRITION' && mealSections.length > 0) {
       const lastSection = mealSections[mealSections.length - 1];
       const lastFood = lastSection?.items?.[lastSection.items.length - 1];
@@ -513,7 +512,7 @@ export default function DiaryDetailsSheet({
         : `food-${lastSection.slotKey}-${lastSection.items.length - 1}`;
     }
     return null;
-  }, [activePillarTab, mealSections, workoutEntries]);
+  }, [activePillarTab, mealSections]);
 
   if (!isOpen) return null;
 
@@ -527,10 +526,6 @@ export default function DiaryDetailsSheet({
     food.id != null
       ? `food-${String(food.id)}`
       : `food-${section.slotKey}-${section.items.indexOf(food)}`
-  );
-
-  const resolveWorkoutRowKey = (workout, index) => (
-    workout.id != null ? `workout-${String(workout.id)}` : `workout-${index}`
   );
 
   const panel = (
@@ -804,76 +799,61 @@ export default function DiaryDetailsSheet({
                 </header>
 
                 <ul className="diary-details-food-list">
-                  {workoutEntries.map(({ workout, name, meta, timeLabel, burnedKcal }, index) => {
+                  {workoutEntries.map(({ workout, name, icon, durationLabel, timeLabel, burnedKcal }) => {
                     const workoutId = workout.id != null ? String(workout.id) : name;
-                    const rowKey = resolveWorkoutRowKey(workout, index);
-                    const menuOpensUp = rowKey === lastScrollItemKey
-                      || index === workoutEntries.length - 1;
                     const canEditSession = Boolean(workout?.id) && typeof onEditWorkout === 'function';
+                    const canDeleteSession = Boolean(workout?.id) && typeof onDeleteItem === 'function';
+                    const metaLine = [timeLabel || null, durationLabel || null].filter(Boolean).join(' · ');
                     return (
                       <li
                         key={workoutId}
-                        className={`diary-details-food-row diary-details-food-row--workout${menuOpensUp ? ' diary-details-food-row--menu-up' : ''}`}
+                        className="diary-details-food-row diary-details-food-row--workout"
                       >
-                        <div className="diary-details-food-row__stack">
-                          <button
-                            type="button"
-                            className="diary-details-food-row__main diary-details-food-row__main--clickable"
-                            disabled={!canEditSession}
-                            title={canEditSession ? `Modifica ${name}` : undefined}
-                            aria-label={canEditSession ? `Modifica sessione ${name}` : undefined}
-                            onClick={() => {
-                              if (canEditSession) onEditWorkout(workout);
-                            }}
-                          >
-                            <span className="diary-details-food-row__name" title={name}>
+                        <div className="diary-workout-session">
+                          <span className="diary-workout-session__icon" aria-hidden>
+                            {icon}
+                          </span>
+                          <div className="diary-workout-session__copy">
+                            <p className="diary-workout-session__title" title={name}>
                               {name}
-                              {timeLabel ? (
-                                <span className="diary-details-food-row__time-inline"> · {timeLabel}</span>
-                              ) : null}
-                            </span>
-                            <span className="diary-details-food-row__qty diary-details-food-row__meta">
-                              {meta}
-                            </span>
-                            <span className="diary-details-food-row__kcal diary-details-food-row__kcal--burn">
-                              {formatBurnedKcal(burnedKcal)}
-                            </span>
-                          </button>
-
-                          <WorkoutQuestionnaireForm
-                            workout={workout}
-                            onSave={onUpdateWorkoutQuestionnaire}
-                          />
+                            </p>
+                            {metaLine ? (
+                              <p className="diary-workout-session__meta">{metaLine}</p>
+                            ) : null}
+                          </div>
+                          <span className="diary-workout-session__kcal">
+                            {formatBurnedKcal(burnedKcal)}
+                          </span>
+                          <div className="diary-workout-session__actions">
+                            {canEditSession ? (
+                              <button
+                                type="button"
+                                className="diary-workout-session__action"
+                                aria-label={`Modifica sessione ${name}`}
+                                title="Modifica"
+                                onClick={() => onEditWorkout(workout)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
+                              </button>
+                            ) : null}
+                            {canDeleteSession ? (
+                              <button
+                                type="button"
+                                className="diary-workout-session__action diary-workout-session__action--danger"
+                                aria-label={`Elimina sessione ${name}`}
+                                title="Elimina"
+                                onClick={() => {
+                                  const ok = typeof window !== 'undefined'
+                                    ? window.confirm('Vuoi eliminare questa sessione?')
+                                    : true;
+                                  if (ok) onDeleteItem(String(workout.id));
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-
-                        <details className="diary-details-food-menu">
-                          <summary className="diary-details-food-menu__trigger" aria-label={`Azioni per ${name}`}>
-                            ⋮
-                          </summary>
-                          <menu className="diary-details-food-menu__panel">
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onEditWorkout?.(workout);
-                                }}
-                              >
-                                Modifica
-                              </button>
-                            </li>
-                            <li>
-                              <button
-                                type="button"
-                                className="diary-details-food-menu__danger"
-                                onClick={() => {
-                                  if (workout.id != null) onDeleteItem?.(String(workout.id));
-                                }}
-                              >
-                                Elimina
-                              </button>
-                            </li>
-                          </menu>
-                        </details>
                       </li>
                     );
                   })}

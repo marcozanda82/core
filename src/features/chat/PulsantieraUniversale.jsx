@@ -4,6 +4,7 @@ import { stashActivitySheetTempTab } from '../../activityCatalog';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
 import {
+  countPendingMealDrafts,
   countUnresolvedMealDraftItems,
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
@@ -213,31 +214,59 @@ function resolveCompactGridClass(itemCount) {
   return 'grid w-full max-w-sm grid-cols-2 gap-3';
 }
 
-function PillarButton({ icon, label, active, onClick, badgeCount = 0 }) {
+function PillarButton({
+  icon,
+  label,
+  active,
+  onClick,
+  badgeCount = 0,
+  onBadgeClick = null,
+}) {
   const count = Math.max(0, Math.round(Number(badgeCount) || 0));
+  const canOpenBadge = count > 0 && typeof onBadgeClick === 'function';
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={[
-        'kentu-pulsantiera__btn relative flex h-auto min-h-0 min-w-0 flex-col items-center justify-center gap-0.5 overflow-visible rounded-xl border px-1 py-1.5 transition-colors',
-        active
-          ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
-          : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
-      ].join(' ')}
+    <div
+      className="relative min-w-0 flex-1 overflow-visible"
+      style={{ zIndex: count > 0 ? 40 : 1 }}
     >
-      <span className="text-base leading-none" aria-hidden>{icon}</span>
-      <span className="max-w-full truncate text-[0.62rem] font-semibold leading-tight tracking-wide uppercase">{label}</span>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={active}
+        className={[
+          'kentu-pulsantiera__btn relative flex h-auto min-h-0 w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-visible rounded-xl border px-1 py-1.5 transition-colors',
+          active
+            ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
+            : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
+        ].join(' ')}
+      >
+        <span className="text-base leading-none" aria-hidden>{icon}</span>
+        <span className="max-w-full truncate text-[0.62rem] font-semibold leading-tight tracking-wide uppercase">{label}</span>
+      </button>
       {count > 0 ? (
-        <span
-          className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-bold leading-none text-slate-900 shadow-[0_0_10px_rgba(34,211,238,0.55)]"
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (canOpenBadge) onBadgeClick(event);
+            else onClick?.(event);
+          }}
           aria-label={`${count} ${count === 1 ? 'bozza in attesa' : 'bozze in attesa'}`}
+          title="Apri bozze in attesa"
+          className={[
+            'absolute -right-1.5 -top-1.5 z-50 flex h-5 w-5 items-center justify-center rounded-full',
+            'bg-cyan-500 text-[10px] font-bold leading-none text-slate-900',
+            'shadow-[0_0_10px_rgba(34,211,238,0.55)]',
+            'transition hover:bg-cyan-400 active:scale-95',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/80',
+          ].join(' ')}
+          style={{ zIndex: 50 }}
         >
           {count}
-        </span>
+        </button>
       ) : null}
-    </button>
+    </div>
   );
 }
 
@@ -412,6 +441,7 @@ export default function PulsantieraUniversale({
   onPurgeTrashMeal = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
+  extraPendingMealDrafts = [],
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
@@ -677,7 +707,13 @@ export default function PulsantieraUniversale({
   }, [dailyLog]);
 
   const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
-  const mealDraftsCount = inboxBlocks.length;
+  const mealDraftsCount = useMemo(
+    () => countPendingMealDrafts({
+      dailyLog,
+      extraDrafts: extraPendingMealDrafts,
+    }),
+    [dailyLog, extraPendingMealDrafts],
+  );
   const activityDraftsCount = useMemo(
     () => collectPendingSessionDrafts({
       dailyLog,
@@ -686,6 +722,31 @@ export default function PulsantieraUniversale({
     }).length,
     [dailyLog, extraPendingDrafts, manualNodes],
   );
+
+  const handleMealDraftsBadgeClick = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (disabled) return;
+    if (inboxBlocks.length === 1 && typeof onSelectInboxDraft === 'function') {
+      closeMenus();
+      onSelectInboxDraft(inboxBlocks[0]);
+      return;
+    }
+    closeMenus();
+    setActiveCategory('pasti');
+  }, [closeMenus, disabled, inboxBlocks, onSelectInboxDraft]);
+
+  const handleActivityDraftsBadgeClick = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (disabled) return;
+    if (typeof onOpenSessions === 'function') {
+      closeMenus();
+      onOpenSessions();
+      return;
+    }
+    setActiveCategory('attivita');
+  }, [closeMenus, disabled, onOpenSessions]);
 
   const resolveInboxDropTarget = useCallback((x, y, ignoreDraftId = '') => {
     if (typeof document === 'undefined') return null;
@@ -1117,7 +1178,7 @@ export default function PulsantieraUniversale({
   return (
     <div
       className={[
-        'kentu-pulsantiera relative flex h-auto w-full flex-none shrink-0 flex-col gap-1 overflow-visible py-1',
+        'kentu-pulsantiera relative isolate flex h-auto w-full flex-none shrink-0 flex-col gap-1 overflow-visible py-1',
         embedded ? 'z-10' : 'z-[100045]',
       ].join(' ')}
     >
@@ -1132,7 +1193,7 @@ export default function PulsantieraUniversale({
       />
 
       <div
-        className="kentu-pulsantiera__row flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1 overflow-visible px-0.5 pt-1.5"
+        className="kentu-pulsantiera__row isolate flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1 overflow-visible px-1.5 pt-2"
         role="toolbar"
         aria-label="Pulsantiera universale"
       >
@@ -1150,6 +1211,13 @@ export default function PulsantieraUniversale({
                   : 0
             }
             onClick={() => handlePillarClick(pillar.id)}
+            onBadgeClick={
+              pillar.id === 'pasti'
+                ? handleMealDraftsBadgeClick
+                : pillar.id === 'attivita'
+                  ? handleActivityDraftsBadgeClick
+                  : null
+            }
           />
         ))}
       </div>

@@ -92,6 +92,7 @@ export default function KentuChatUI({
   onPurgeTrashMeal = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
+  extraPendingMealDrafts = [],
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
@@ -233,6 +234,7 @@ export default function KentuChatUI({
         onPurgeTrashMeal={onPurgeTrashMeal}
         onDeleteWorkout={onDeleteWorkout}
         extraPendingDrafts={extraPendingDrafts}
+        extraPendingMealDrafts={extraPendingMealDrafts}
         onConfirmSessionDraft={onConfirmSessionDraft}
         onEditSessionDraft={onEditSessionDraft}
         onCancelSessionDraft={onCancelSessionDraft}

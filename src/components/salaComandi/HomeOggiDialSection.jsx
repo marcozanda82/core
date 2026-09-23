@@ -408,7 +408,7 @@ export default function HomeOggiDialSection({
           />
           {isActionView && quickActionPadProps ? (
             <div
-              className="home-oggi-rigid mb-0 box-border w-full min-w-0 max-w-full overflow-visible rounded-2xl border border-white/10 bg-slate-900/40 px-1.5 py-1.5 backdrop-blur-sm"
+              className="home-oggi-rigid mb-0 box-border w-full min-w-0 max-w-full overflow-visible rounded-2xl border border-white/10 bg-slate-900/40 px-2 py-2 backdrop-blur-sm"
               aria-label="Azioni rapide Home"
             >
               <PulsantieraUniversale embedded {...quickActionPadProps} />

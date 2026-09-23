@@ -256,6 +256,21 @@ export function formatInboxDraftCardLabel(block) {
   return `Bozza ${time} - ${foods}`;
 }
 
+/**
+ * Bozze pasti in attesa: inbox non assegnata + voci raw sui pasti + extra (es. chat).
+ */
+export function countPendingMealDrafts({ dailyLog = [], extraDrafts = [] } = {}) {
+  const log = Array.isArray(dailyLog) ? dailyLog : asCollectionArray(dailyLog);
+  const inbox = extractUnassignedDraftBlocks(log).length;
+  const pendingOnMeals = log.filter((entry) => (
+    (entry?.type === 'food' || entry?.type === 'recipe')
+    && String(entry?.mealType || '').trim().length > 0
+    && isUnresolvedMealDraftItem(entry)
+  )).length;
+  const extra = (Array.isArray(extraDrafts) ? extraDrafts : []).filter(Boolean).length;
+  return inbox + pendingOnMeals + extra;
+}
+
 export function serializeUnassignedDraftsForFirebase(log) {
   const blocks = extractUnassignedDraftBlocks(log).map((block) => ({
     id: block.id,

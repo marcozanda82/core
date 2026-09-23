@@ -189,6 +189,7 @@ export default function AiCluster({
   onPurgeTrashMeal = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
+  extraPendingMealDrafts = [],
   onConfirmSessionDraft = null,
   onEditSessionDraft = null,
   onCancelSessionDraft = null,
@@ -2190,6 +2191,7 @@ export default function AiCluster({
             onPurgeTrashMeal={onPurgeTrashMeal}
             onDeleteWorkout={onDeleteWorkout}
             extraPendingDrafts={extraPendingDrafts}
+            extraPendingMealDrafts={extraPendingMealDrafts}
             onConfirmSessionDraft={onConfirmSessionDraft}
             onEditSessionDraft={onEditSessionDraft}
             onCancelSessionDraft={onCancelSessionDraft}

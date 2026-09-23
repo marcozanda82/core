@@ -4982,7 +4982,7 @@ html, body, #root {
 
 .diary-sheet-workout-group {
   margin-top: 4px;
-  padding: 12px 10px 8px;
+  padding: 10px 10px 6px;
   border-radius: 14px;
   border: 1px solid rgba(251, 146, 60, 0.18);
   background: rgba(15, 23, 42, 0.4);
@@ -5026,7 +5026,102 @@ html, body, #root {
 }
 
 .diary-details-food-row--workout {
+  align-items: center;
+  padding: 6px 6px 6px 8px;
   border-left: 2px solid rgba(251, 146, 60, 0.45);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.35);
+  margin-bottom: 6px;
+  border-bottom: none;
+}
+
+.diary-details-food-row--workout:last-child {
+  margin-bottom: 0;
+}
+
+.diary-workout-session {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.diary-workout-session__icon {
+  flex-shrink: 0;
+  width: 1.75rem;
+  text-align: center;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.diary-workout-session__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.diary-workout-session__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+  font-weight: 650;
+  color: #e2e8f0;
+  line-height: 1.2;
+}
+
+.diary-workout-session__meta {
+  margin: 2px 0 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.9);
+  line-height: 1.2;
+}
+
+.diary-workout-session__kcal {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fb923c;
+  white-space: nowrap;
+}
+
+.diary-workout-session__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.diary-workout-session__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.7);
+  color: rgba(226, 232, 240, 0.88);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.diary-workout-session__action:hover,
+.diary-workout-session__action:focus-visible {
+  border-color: rgba(34, 211, 238, 0.45);
+  background: rgba(8, 47, 73, 0.7);
+  color: #e0f2fe;
+  outline: none;
+}
+
+.diary-workout-session__action--danger:hover,
+.diary-workout-session__action--danger:focus-visible {
+  border-color: rgba(251, 113, 133, 0.5);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecdd3;
 }
 
 .diary-details-food-row__meta {

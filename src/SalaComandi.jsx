@@ -2214,6 +2214,16 @@ export default function SalaComandi() {
     currentTrackerDate,
   ]);
 
+  const extraPendingMealDrafts = useMemo(() => (
+    (Array.isArray(chatHistory) ? chatHistory : [])
+      .filter((message) => message?.mealDraft && !message?.draftResolved)
+      .map((message) => ({
+        id: message.draftId || message.id,
+        kind: 'chat-meal-draft',
+        mealDraft: message.mealDraft,
+      }))
+  ), [chatHistory]);
+
   const extraPendingSessionDrafts = useMemo(() => {
     const fromStore = (Array.isArray(activityDrafts) ? activityDrafts : []).filter((item) => (
       item
@@ -8473,6 +8483,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onPurgeTrashMeal: handlePurgeTrashMeal,
             onDeleteWorkout: removeLogItem,
             extraPendingDrafts: extraPendingSessionDrafts,
+            extraPendingMealDrafts,
             onConfirmSessionDraft: handleConfirmSessionDraft,
             onEditSessionDraft: handleEditSessionDraft,
             onCancelSessionDraft: handleCancelSessionDraft,
@@ -9007,6 +9018,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onPurgeTrashMeal={handlePurgeTrashMeal}
             onDeleteWorkout={removeLogItem}
             extraPendingDrafts={extraPendingSessionDrafts}
+            extraPendingMealDrafts={extraPendingMealDrafts}
             onConfirmSessionDraft={handleConfirmSessionDraft}
             onEditSessionDraft={handleEditSessionDraft}
             onCancelSessionDraft={handleCancelSessionDraft}
