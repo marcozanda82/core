@@ -20,6 +20,7 @@ import { UNIFIED_STIMULUS_TRACK_CLASS, unifiedStimulusBarClass } from '../../../
  *   onSelectRow?: ((row: object) => void) | null,
  *   showLegend?: boolean,
  *   unifiedBars?: boolean,
+ *   dense?: boolean,
  * }} props
  */
 export default function MuscleStimulusDistrictList({
@@ -27,6 +28,7 @@ export default function MuscleStimulusDistrictList({
   onSelectRow = null,
   showLegend = true,
   unifiedBars = false,
+  dense = false,
 } = {}) {
   const selectable = typeof onSelectRow === 'function';
   const rankedRows = useMemo(
@@ -35,7 +37,7 @@ export default function MuscleStimulusDistrictList({
   );
 
   return (
-    <div className={unifiedBars ? 'space-y-2.5' : 'space-y-1'}>
+    <div className={unifiedBars ? (dense ? 'space-y-1.5' : 'space-y-2.5') : 'space-y-1'}>
       {showLegend ? (
         <p className="m-0 px-0.5 text-[8px] uppercase tracking-wider text-slate-600">
           ≤{HYPERTROPHY_TRIAGE_STIMULATE_MAX}% da stimolare · &gt;{HYPERTROPHY_TRIAGE_RECOVERY_MAX}% ottimale
@@ -60,7 +62,7 @@ export default function MuscleStimulusDistrictList({
             key={row.id}
             className={[
               'group rounded-xl border',
-              unifiedBars ? 'px-3.5 py-3' : 'rounded-lg px-2 py-1.5',
+              unifiedBars ? (dense ? 'px-3 py-2' : 'px-3.5 py-3') : 'rounded-lg px-2 py-1.5',
               styles.border,
               styles.bg,
               priorityRing ? 'ring-1 ring-red-500/25' : '',
@@ -97,7 +99,7 @@ export default function MuscleStimulusDistrictList({
           >
             {unifiedBars ? (
               <>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className={`${dense ? 'mb-1' : 'mb-1.5'} flex items-center justify-between gap-2`}>
                   <div className="flex min-w-0 items-center gap-1.5">
                     <span className="font-mono text-[10px] text-slate-500">#{index + 1}</span>
                     <p className={`m-0 truncate text-[13px] font-semibold leading-tight ${styles.text}`}>

@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { getTodayString } from '../coreEngine';
-import { AI_WORKOUT_PROPOSAL_SOURCE } from '../features/workout/activityDrafts';
-import { buildAiWorkoutDraftProposals } from '../features/workout/aiWorkoutDraftEngine';
+import { AI_WORKOUT_PROPOSAL_SOURCE, isAiProposalSeed } from '../features/workout/activityDrafts';
+import {
+  buildAiWorkoutDraftProposals,
+  hasCompletedStrengthWorkoutToday,
+} from '../features/workout/aiWorkoutDraftEngine';
+
+function isAutoAiProposal(item) {
+  if (!item || typeof item !== 'object' || isAiProposalSeed(item)) return false;
+  if (item.source === AI_WORKOUT_PROPOSAL_SOURCE) return true;
+  return String(item.id || '').startsWith('ai_proposal_');
+}
 
 /**
  * Semina le Proposte AI del giorno (Sessioni) e le rinfresca all'apertura della pagina.
+ * Se oggi è già stata completata una Forza, toglie/non crea la bozza muscolare.
  */
 export function useAiWorkoutDrafts({
   enabled = false,
@@ -14,6 +24,7 @@ export function useAiWorkoutDrafts({
   activeLog = null,
   activityDrafts = [],
   addActivityDraft = null,
+  removeActivityDraft = null,
   purgeStaleActivityDrafts = null,
   markAiProposalSeed = null,
   hasAiProposalSeed = false,
@@ -22,12 +33,18 @@ export function useAiWorkoutDrafts({
   const inFlightRef = useRef(false);
   const lastDayRef = useRef('');
   const contextRef = useRef({});
+  const strengthDoneToday = hasCompletedStrengthWorkoutToday({
+    fullHistory,
+    activeLog,
+    todayIso: getTodayString(),
+  });
   contextRef.current = {
     fourCylinder,
     fullHistory,
     activeLog,
     activityDrafts,
     hasAiProposalSeed,
+    strengthDoneToday,
   };
 
   const ensure = useCallback(async () => {
@@ -42,16 +59,6 @@ export function useAiWorkoutDrafts({
       if (typeof purgeStaleActivityDrafts === 'function') {
         await purgeStaleActivityDrafts(today);
       }
-      const drafts = Array.isArray(ctx.activityDrafts) ? ctx.activityDrafts : [];
-      const alreadySeeded = Boolean(ctx.hasAiProposalSeed)
-        || drafts.some((item) => (
-          item?.source === AI_WORKOUT_PROPOSAL_SOURCE
-          || String(item?.id || '').startsWith('ai_proposal_')
-        ));
-      if (alreadySeeded) {
-        lastDayRef.current = today;
-        return;
-      }
 
       const result = buildAiWorkoutDraftProposals({
         todayIso: today,
@@ -60,7 +67,21 @@ export function useAiWorkoutDrafts({
         activeLog: ctx.activeLog,
         nowMs: Date.now(),
       });
-      (result.payloads || []).forEach((payload) => {
+      const desired = Array.isArray(result.payloads) ? result.payloads : [];
+      const desiredIds = new Set(desired.map((payload) => String(payload.id)));
+      const drafts = Array.isArray(ctx.activityDrafts) ? ctx.activityDrafts : [];
+
+      drafts.forEach((item) => {
+        if (!isAutoAiProposal(item)) return;
+        if (desiredIds.has(String(item.id))) return;
+        if (typeof removeActivityDraft === 'function') {
+          removeActivityDraft(item.id);
+        }
+      });
+
+      const existingIds = new Set(drafts.map((item) => String(item?.id || '')));
+      desired.forEach((payload) => {
+        if (!payload?.id || existingIds.has(String(payload.id))) return;
         addActivityDraft(payload, {
           source: AI_WORKOUT_PROPOSAL_SOURCE,
           date: today,
@@ -78,6 +99,7 @@ export function useAiWorkoutDrafts({
     enabled,
     isSimulationMode,
     addActivityDraft,
+    removeActivityDraft,
     purgeStaleActivityDrafts,
     markAiProposalSeed,
   ]);
@@ -86,7 +108,7 @@ export function useAiWorkoutDrafts({
     if (!enabled) return undefined;
     void ensure();
     return undefined;
-  }, [enabled, ensure]);
+  }, [enabled, ensure, strengthDoneToday]);
 
   useEffect(() => {
     if (!enabled || !sessionsOpen) return undefined;

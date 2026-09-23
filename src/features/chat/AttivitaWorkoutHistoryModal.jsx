@@ -1,6 +1,15 @@
-import { History } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { History, Trash2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { formatDurationMinutes } from './attivitaWorkoutSummary';
+import { getTodayString } from '../../coreEngine';
+import {
+  WORKOUT_HISTORY_RANGE_LABEL,
+  WORKOUT_HISTORY_TIME_FILTERS,
+  buildWorkoutHistoryRangeStats,
+  filterWorkoutsByTimeFilter,
+  formatDurationMinutes,
+  groupWorkoutsForTimeFilter,
+} from './attivitaWorkoutSummary';
 
 /**
  * Pop-up Storico & Statistiche allenamenti — overlay sul cruscotto Attività.
@@ -11,10 +20,26 @@ export default function AttivitaWorkoutHistoryModal({
   onClose,
   onDeleteWorkout = null,
 } = {}) {
-  if (!open || typeof document === 'undefined') return null;
-
+  const [timeFilter, setTimeFilter] = useState('month');
   const history = Array.isArray(summary?.history) ? summary.history : [];
+  const todayIso = String(summary?.today || getTodayString()).slice(0, 10);
   const canDelete = typeof onDeleteWorkout === 'function';
+  const rangeLabel = WORKOUT_HISTORY_RANGE_LABEL[timeFilter] || 'mese';
+
+  const filteredHistory = useMemo(
+    () => filterWorkoutsByTimeFilter(history, timeFilter, todayIso),
+    [history, timeFilter, todayIso],
+  );
+  const rangeStats = useMemo(
+    () => buildWorkoutHistoryRangeStats(filteredHistory),
+    [filteredHistory],
+  );
+  const groupedHistory = useMemo(
+    () => groupWorkoutsForTimeFilter(filteredHistory, timeFilter, todayIso),
+    [filteredHistory, timeFilter, todayIso],
+  );
+
+  if (!open || typeof document === 'undefined') return null;
 
   const handleDelete = (item) => {
     if (!canDelete || !item?.id) return;
@@ -57,29 +82,56 @@ export default function AttivitaWorkoutHistoryModal({
               {summary?.lastWorkoutBanner || 'Nessun allenamento in archivio'}
             </p>
 
+            <div
+              role="tablist"
+              aria-label="Filtro temporale"
+              className="mt-3 grid grid-cols-3 rounded-full border border-cyan-400/20 bg-zinc-900/80 p-1 shadow-[inset_0_0_18px_rgba(34,211,238,0.08)]"
+            >
+              {WORKOUT_HISTORY_TIME_FILTERS.map((option) => {
+                const selected = timeFilter === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTimeFilter(option.id)}
+                    className={[
+                      'rounded-full px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide transition',
+                      selected
+                        ? 'bg-cyan-400 text-slate-950 shadow-[0_0_14px_rgba(34,211,238,0.45)]'
+                        : 'text-zinc-400 hover:text-zinc-100',
+                    ].join(' ')}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="mt-3 grid grid-cols-3 gap-1.5">
               <article className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-center">
                 <p className="m-0 text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Sessioni mese
+                  Sessioni {rangeLabel}
                 </p>
                 <p className="m-0 mt-1 text-lg font-bold tabular-nums text-zinc-50">
-                  {summary?.monthSessions ?? 0}
+                  {rangeStats.sessions}
                 </p>
               </article>
               <article className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-center">
                 <p className="m-0 text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
-                  Tempo mese
+                  Tempo {rangeLabel}
                 </p>
                 <p className="m-0 mt-1 text-sm font-bold tabular-nums text-zinc-50">
-                  {summary?.monthDurationLabel || '—'}
+                  {rangeStats.durationLabel || '—'}
                 </p>
               </article>
               <article className="rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-center">
                 <p className="m-0 text-[9px] font-semibold uppercase tracking-wide text-zinc-500">
-                  {summary?.thirdStat?.label || 'Più allenato'}
+                  {rangeStats.thirdStat?.label || 'Più allenato'}
                 </p>
                 <p className="m-0 mt-1 truncate text-[12px] font-bold text-zinc-50">
-                  {summary?.thirdStat?.value || '—'}
+                  {rangeStats.thirdStat?.value || '—'}
                 </p>
               </article>
             </div>
@@ -87,48 +139,63 @@ export default function AttivitaWorkoutHistoryModal({
             <h3 className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
               Ultime registrazioni
             </h3>
-            {history.length === 0 ? (
+            {filteredHistory.length === 0 ? (
               <p className="m-0 rounded-xl border border-dashed border-slate-700/80 px-3 py-6 text-center text-sm text-slate-500">
-                Nessuna sessione nello storico.
+                Nessuna sessione in questo periodo.
               </p>
             ) : (
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-                {history.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex items-start justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="m-0 truncate text-[13px] font-semibold text-zinc-100">
-                        <span aria-hidden>{item.icon}</span>
-                        {' '}
-                        {item.title}
-                      </p>
-                      <p className="m-0 mt-0.5 text-[11px] text-zinc-500">
-                        {String(item.date).slice(8, 10)}/{String(item.date).slice(5, 7)}
-                        {item.clock ? ` · ${item.clock}` : ''}
-                        {' · '}
-                        {item.typeLabel}
-                        {' · '}
-                        {formatDurationMinutes(item.minutes)}
-                      </p>
-                      {item.notes ? (
-                        <p className="m-0 mt-0.5 truncate text-[11px] text-zinc-400">{item.notes}</p>
-                      ) : null}
-                    </div>
-                    {canDelete && item.isToday ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(item)}
-                        className="shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-200 hover:border-rose-400/50 hover:bg-rose-500/20"
-                        aria-label={`Elimina allenamento ${item.title}`}
-                      >
-                        Elimina
-                      </button>
-                    ) : null}
-                  </li>
+              <div className="flex flex-col gap-3">
+                {groupedHistory.map((group) => (
+                  <section key={group.key}>
+                    <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/80">
+                      {group.label}
+                    </h4>
+                    <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+                      {group.items.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-start justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="m-0 truncate text-[13px] font-semibold text-zinc-100">
+                              <span aria-hidden>{item.icon}</span>
+                              {' '}
+                              {item.title}
+                            </p>
+                            <p className="m-0 mt-0.5 text-[11px] text-zinc-500">
+                              {String(item.date).slice(8, 10)}/{String(item.date).slice(5, 7)}
+                              {item.clock ? ` · ${item.clock}` : ''}
+                              {' · '}
+                              {item.typeLabel}
+                              {' · '}
+                              {formatDurationMinutes(item.minutes)}
+                            </p>
+                            {item.notes ? (
+                              <p className="m-0 mt-0.5 truncate text-[11px] text-zinc-400">{item.notes}</p>
+                            ) : null}
+                          </div>
+                          {canDelete && item.isToday ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(item)}
+                              aria-label={`Elimina allenamento ${item.title}`}
+                              title="Elimina"
+                              className={[
+                                'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
+                                'border border-white/10 bg-transparent text-zinc-500',
+                                'transition hover:border-rose-400/35 hover:bg-rose-500/10 hover:text-rose-200',
+                                'active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/40',
+                              ].join(' ')}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" strokeWidth={2.1} aria-hidden />
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-              </ul>
+              </div>
             )}
           </div>
 

@@ -1,4 +1,6 @@
 import { getTodayString } from '../../coreEngine';
+import { addDays } from '../../calendarDateUtils';
+import { getWeekStartMondayKeyLocal } from '../../weeklyPlanning';
 import { getWorkoutActivityTypeDef } from '../../activityCatalog';
 import { collectLoggedWorkoutsNewestFirst } from '../workout/lastWorkoutMemory';
 import { workoutDurationMinutes } from '../trendHub/utils/saluteHistorySeries';
@@ -6,6 +8,32 @@ import { MUSCLE_CYLINDER_DEFS, resolveMuscleCylinderId } from '../salaComandi/en
 
 const WEEKDAYS = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 const MONTHS_SHORT = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+const MONTHS_IT = [
+  'Gennaio',
+  'Febbraio',
+  'Marzo',
+  'Aprile',
+  'Maggio',
+  'Giugno',
+  'Luglio',
+  'Agosto',
+  'Settembre',
+  'Ottobre',
+  'Novembre',
+  'Dicembre',
+];
+
+export const WORKOUT_HISTORY_TIME_FILTERS = [
+  { id: 'day', label: 'Oggi' },
+  { id: 'week', label: 'Settimana' },
+  { id: 'month', label: 'Mese' },
+];
+
+export const WORKOUT_HISTORY_RANGE_LABEL = {
+  day: 'oggi',
+  week: 'settimana',
+  month: 'mese',
+};
 
 const TYPE_LABELS = {
   pesi: 'Forza',
@@ -126,6 +154,81 @@ function countMusclesThisMonth(items) {
     }
   });
   return bestId ? { id: bestId, label: cylinderLabel(bestId), count: best } : null;
+}
+
+function formatHistoryDayHeader(dateIso) {
+  const date = parseIsoDate(dateIso);
+  if (!date) return dateIso;
+  const weekday = WEEKDAYS[date.getDay()];
+  const day = date.getDate();
+  const month = MONTHS_SHORT[date.getMonth()].toLowerCase();
+  return `${weekday} ${day} ${month}`;
+}
+
+function formatHistoryMonthHeader(dateIso) {
+  const date = parseIsoDate(dateIso);
+  if (!date) return dateIso;
+  return `${MONTHS_IT[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+export function filterWorkoutsByTimeFilter(history, filter = 'month', todayIso = '') {
+  const today = String(todayIso || getTodayString()).slice(0, 10);
+  const items = Array.isArray(history) ? history : [];
+  if (filter === 'day') return items.filter((item) => String(item.date).slice(0, 10) === today);
+  if (filter === 'week') {
+    const start = getWeekStartMondayKeyLocal(today);
+    const end = addDays(start, 6);
+    return items.filter((item) => {
+      const day = String(item.date).slice(0, 10);
+      return day >= start && day <= end;
+    });
+  }
+  const monthPrefix = today.slice(0, 7);
+  return items.filter((item) => String(item.date).startsWith(monthPrefix));
+}
+
+export function buildWorkoutHistoryRangeStats(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  const minutes = list.reduce((sum, item) => sum + (Number(item.minutes) || 0), 0);
+  const topMuscle = countMusclesThisMonth(list);
+  const cardio = list.filter((item) => item.isCardio);
+  const cardioAvg = cardio.length
+    ? Math.round(cardio.reduce((sum, item) => sum + (item.minutes || 0), 0) / cardio.length)
+    : 0;
+  let thirdStat;
+  if (topMuscle) {
+    thirdStat = { label: 'Più allenato', value: topMuscle.label };
+  } else if (cardioAvg > 0) {
+    thirdStat = { label: 'Cardio medio', value: formatDurationMinutes(cardioAvg) };
+  } else {
+    thirdStat = { label: 'Più allenato', value: '—' };
+  }
+  return {
+    sessions: list.length,
+    durationLabel: minutes > 0 ? formatDurationMinutes(minutes) : '—',
+    thirdStat,
+  };
+}
+
+export function groupWorkoutsForTimeFilter(items, filter = 'month', todayIso = '') {
+  const today = String(todayIso || getTodayString()).slice(0, 10);
+  const groups = [];
+  const map = new Map();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const day = String(item.date || '').slice(0, 10);
+    const key = filter === 'month' ? day.slice(0, 7) : day;
+    if (!key) return;
+    if (!map.has(key)) {
+      let label = formatHistoryDayHeader(day);
+      if (filter === 'day') label = day === today ? 'Oggi' : label;
+      if (filter === 'month') label = formatHistoryMonthHeader(day);
+      const group = { key, label, items: [] };
+      map.set(key, group);
+      groups.push(group);
+    }
+    map.get(key).items.push(item);
+  });
+  return groups;
 }
 
 /**

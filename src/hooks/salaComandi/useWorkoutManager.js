@@ -123,6 +123,8 @@ export function useWorkoutManager({
   /** Home Training Block «Esegui»: salva reale in scheda, poi commit blocco in background. */
   const trainingBlockExecuteRef = useRef(false);
   const onTrainingBlockWorkoutCommittedRef = useRef(/** @type {(() => void | Promise<void>) | null} */ (null));
+  /** Dopo Salva riuscito (es. rimuovi bozza Sessioni). Non gira se l'utente chiude senza salvare. */
+  const onWorkoutSavedRef = useRef(/** @type {(() => void | Promise<void>) | null} */ (null));
 
   const lastAppliedMemorySigRef = useRef(/** @type {string | null} */ (null));
 
@@ -276,6 +278,7 @@ export function useWorkoutManager({
         || (workout.type === 'work' ? 'lavoro' : workout.type === 'cognitive' ? 'studio' : 'pesi');
 
       setEditingWorkoutId(workout.id);
+      onWorkoutSavedRef.current = null;
       setPostWorkoutReviewActive(false);
       setWorkoutType(resolveWorkoutActivityTypeId(editSt) ?? editSt);
       setWorkoutEndTime(Math.min(24, startT + durH));
@@ -319,10 +322,59 @@ export function useWorkoutManager({
     setWorkoutPlanDraft(null);
   }, []);
 
+  const clearPendingWorkoutSavedCallback = useCallback(() => {
+    onWorkoutSavedRef.current = null;
+  }, []);
+
+  /**
+   * Apre la scheda Attività come nuova sessione, con campi precompilati.
+   * `onSaved` gira solo dopo Salva riuscito (non se si chiude il modulo).
+   */
+  const openWorkoutFormFromInitialData = useCallback((initial = {}, onSaved = null) => {
+    const typeVal = resolveWorkoutActivityTypeId(initial.workoutType || initial.activityType || 'pesi')
+      || String(initial.workoutType || 'pesi');
+    const musclesCanon = normalizeMuscleGroupArray(initial.muscles || initial.muscleGroups || []);
+    const durationMin = parseDurationMinutesInput(initial.durationMin ?? initial.durationMinutes, {
+      min: WORKOUT_DURATION_MIN,
+      max: WORKOUT_DURATION_MAX,
+      fallback: WORKOUT_DURATION_DEFAULT,
+    });
+    const startRaw = Number(initial.startTime);
+    const startT = Number.isFinite(startRaw)
+      ? startRaw
+      : getCurrentTimeDecimal();
+    const kcal = Math.max(0, Math.round(Number(initial.kcal ?? initial.estimatedKcal) || DEFAULT_WORKOUT_KCAL));
+    const rpeRaw = Number(initial.rpe);
+    const rpeValid = Number.isFinite(rpeRaw) && rpeRaw >= 1 && rpeRaw <= 10;
+
+    onWorkoutSavedRef.current = typeof onSaved === 'function' ? onSaved : null;
+    lastAppliedMemorySigRef.current = generateWorkoutComboSignature(
+      resolveActivitySheetTab(typeVal),
+      musclesCanon,
+    );
+
+    setEditingWorkoutId(null);
+    setPostWorkoutReviewActive(false);
+    setWorkoutPlanDraft(null);
+    setWorkoutType(typeVal);
+    setWorkoutMuscles(musclesCanon);
+    setWorkoutKcal(kcal || DEFAULT_WORKOUT_KCAL);
+    setWorkoutDurationMin(String(durationMin));
+    setWorkoutEndTime(Math.min(24, startT + durationMin / 60));
+    setWorkoutStrengthDetail(String(initial.workoutDetailNote || initial.detail || '').trim());
+    setWorkoutGoal(String(initial.trainingGoal || initial.workoutGoal || '').trim());
+    setWorkoutRpe(rpeValid ? Math.round(rpeRaw) : null);
+    setWorkoutNotes(String(initial.notes || initial.progressionNote || initial.note || '').trim());
+    setShowDiarySheet(false);
+    setActiveAction('allenamento');
+    setIsDrawerOpen(true);
+  }, [setActiveAction, setIsDrawerOpen, setShowDiarySheet]);
+
   /** Reset form per nuova sessione (non edit): kcal/durata dall'ultimo match, fallback 300/30. */
   const resetWorkoutFormForNewSession = useCallback((defaultTab = 'pesi', preselectedMuscles = []) => {
     const tab = resolveActivitySheetTab(defaultTab);
     const musclesCanon = normalizeMuscleGroupArray(preselectedMuscles);
+    onWorkoutSavedRef.current = null;
     setEditingWorkoutId(null);
     setPostWorkoutReviewActive(false);
     setWorkoutPlanDraft(null);
@@ -355,6 +407,7 @@ export function useWorkoutManager({
   ]);
 
   const dismissPostWorkoutReview = useCallback(() => {
+    onWorkoutSavedRef.current = null;
     setPostWorkoutReviewActive(false);
     setEditingWorkoutId(null);
     setWorkoutMuscles([]);
@@ -605,6 +658,8 @@ export function useWorkoutManager({
       }
 
       const finishPostSaveUi = () => {
+        const savedCb = onWorkoutSavedRef.current;
+        onWorkoutSavedRef.current = null;
         setWorkoutPlanDraft(null);
         setIsPlanActionSheetOpen(false);
         if (fromTrainingBlockExecute) {
@@ -617,6 +672,11 @@ export function useWorkoutManager({
         setWorkoutGoal('');
         setWorkoutRpe(null);
         setWorkoutNotes('');
+        if (typeof savedCb === 'function') {
+          void Promise.resolve(savedCb()).catch((err) => {
+            console.warn('[useWorkoutManager] onWorkoutSaved failed', err);
+          });
+        }
         endWorkoutSurface();
       };
 
@@ -923,8 +983,10 @@ export function useWorkoutManager({
     openWorkoutFromTodayPlan,
     openWorkoutFromTrainingBlockSession,
     openWorkoutEditorFromLogItem,
+    openWorkoutFormFromInitialData,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,
+    clearPendingWorkoutSavedCallback,
     resetWorkoutFormForNewSession,
     skipTodayPlanSession,
     handlePostponeWorkout,

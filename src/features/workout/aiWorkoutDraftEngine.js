@@ -111,6 +111,33 @@ export function hasStrengthWorkoutInLookback(input = {}) {
   return collectLogsForLookbackDays(input).some(isLoggedStrengthWorkout);
 }
 
+/**
+ * Attività già registrate oggi (niente ghost / planner): fonte per il blocco Forza.
+ */
+export function collectCompletedWorkoutsToday({
+  fullHistory = {},
+  activeLog = [],
+  todayIso = '',
+} = {}) {
+  const today = asIsoDay(todayIso, getTodayString());
+  const log = Array.isArray(activeLog) && activeLog.length > 0
+    ? activeLog
+    : (getLogFromStoricoTree(fullHistory, today) || []);
+  return (Array.isArray(log) ? log : []).filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    if (isGhostEntry(entry)) return false;
+    const type = String(entry.type || '').toLowerCase();
+    if (SKIP_ENTRY_TYPES.has(type)) return false;
+    if (type === 'workout' || type === 'activity') return true;
+    const typeId = resolveWorkoutTypeId(entry);
+    return Boolean(typeId && (isStrengthWorkoutType(typeId) || isPureCardioEntry(entry)));
+  });
+}
+
+export function hasCompletedStrengthWorkoutToday(input = {}) {
+  return collectCompletedWorkoutsToday(input).some(isLoggedStrengthWorkout);
+}
+
 export function preferredAerobicType({
   fullHistory = {},
   activeLog = [],
@@ -227,8 +254,8 @@ function buildCardioPayload({ today, minutes, aerobicType, exclusive = false }) 
 
 /**
  * Genera 0–2 payload di bozza AI per la giornata.
- * Forza solo se c'è storico pesi ≤30g e solo sul distretto PRIORITÀ.
- * Cardio se manca il target settimanale (anche in assenza di pesi).
+ * Forza solo se c'è storico pesi ≤30g, il distretto PRIORITÀ, e NESSUNA Forza già completata oggi.
+ * Cardio se manca il target settimanale (anche dopo una sessione pesi odierna).
  */
 export function buildAiWorkoutDraftProposals({
   todayIso = '',
@@ -238,18 +265,27 @@ export function buildAiWorkoutDraftProposals({
   nowMs = Date.now(),
 } = {}) {
   const today = asIsoDay(todayIso, getTodayString());
-  const strengthAllowed = hasStrengthWorkoutInLookback({
+  const completedToday = collectCompletedWorkoutsToday({
+    fullHistory,
+    activeLog,
+    todayIso: today,
+  });
+  const strengthDoneToday = completedToday.some(isLoggedStrengthWorkout);
+  const strengthHistoryOk = hasStrengthWorkoutInLookback({
     fullHistory,
     activeLog,
     todayIso: today,
     days: STRENGTH_LOOKBACK_DAYS,
   });
-  const district = readStimulusPriorityDistrict({
-    fourCylinder,
-    fullHistory,
-    activeLog,
-    activeDate: today,
-  });
+
+  const district = strengthDoneToday
+    ? null
+    : readStimulusPriorityDistrict({
+      fourCylinder,
+      fullHistory,
+      activeLog,
+      activeDate: today,
+    });
   const cardio = readCardioDeficitMinutes({
     fullHistory,
     activeLog,
@@ -264,8 +300,9 @@ export function buildAiWorkoutDraftProposals({
   });
 
   const payloads = [];
+  const proposeStrength = !strengthDoneToday && strengthHistoryOk && district;
 
-  if (strengthAllowed && district) {
+  if (proposeStrength) {
     payloads.push(buildStrengthPayload({
       today,
       district,
@@ -278,13 +315,14 @@ export function buildAiWorkoutDraftProposals({
       today,
       minutes: cardioMinutes,
       aerobicType,
-      exclusive: !strengthAllowed,
+      exclusive: !proposeStrength,
     }));
   }
 
   return {
     today,
-    strengthAllowed,
+    strengthAllowed: strengthHistoryOk,
+    strengthDoneToday,
     cardioRemainingMinutes: cardio.remainingMinutes,
     cardioProposalMinutes: cardioMinutes,
     priorityDistrict: district,

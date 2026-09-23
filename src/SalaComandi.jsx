@@ -1599,20 +1599,7 @@ export default function SalaComandi() {
     activeLog,
     activityDrafts,
     addActivityDraft,
-    purgeStaleActivityDrafts,
-    markAiProposalSeed,
-    hasAiProposalSeed,
-    isSimulationMode,
-  });
-
-  useAiWorkoutDrafts({
-    enabled: Boolean(isInitialLoadComplete && userUid && !isSimulationMode),
-    sessionsOpen: dailySessionsOpen,
-    fourCylinder: userModel?.fourCylinder ?? null,
-    fullHistory,
-    activeLog,
-    activityDrafts,
-    addActivityDraft,
+    removeActivityDraft,
     purgeStaleActivityDrafts,
     markAiProposalSeed,
     hasAiProposalSeed,
@@ -2787,8 +2774,10 @@ export default function SalaComandi() {
     openWorkoutFromTodayPlan,
     openWorkoutFromTrainingBlockSession,
     openWorkoutEditorFromLogItem,
+    openWorkoutFormFromInitialData,
     handleStartWorkoutSession,
     clearWorkoutPlanDraft,
+    clearPendingWorkoutSavedCallback,
     resetWorkoutFormForNewSession,
     skipTodayPlanSession,
     handlePostponeWorkout,
@@ -8039,90 +8028,69 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleConfirmSessionDraft = useCallback((draft) => {
     setDailySessionsOpen(false);
-    const kind = String(draft?.kind || draft?.raw?.kind || '');
-    const raw = draft?.raw || draft;
-    if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat' || raw?.source === 'ai-proposal') {
-      const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : raw;
-      try {
-        const result = commitAddWorkoutCommand(payload);
-        if (result != null) removeActivityDraft(draft.id || raw.id);
-      } catch (error) {
-        console.warn('[SalaComandi] confirm activity draft failed', error);
-      }
-      return;
-    }
-    if (kind === 'chat-workout-draft') {
-      const id = draft.draftId || draft.id;
-      if (id) handleDraftConfirm(id);
-      return;
-    }
-    if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
-      handleExecuteTrainingBlockSession(trainingBlockTodaySession);
-      return;
-    }
-    const entry = draft?.raw || draft;
-    if (entry?.id) openWorkoutEditorFromLogItem(entry);
-  }, [
-    commitAddWorkoutCommand,
-    removeActivityDraft,
-    handleDraftConfirm,
-    handleExecuteTrainingBlockSession,
-    trainingBlockTodaySession,
-    openWorkoutEditorFromLogItem,
-  ]);
-
-  const handleEditSessionDraft = useCallback((draft) => {
-    setDailySessionsOpen(false);
     setStimulusCockpitOpen(false);
     const kind = String(draft?.kind || draft?.raw?.kind || '');
     const raw = draft?.raw || draft;
-    if (kind === 'activity-draft' || kind === 'chat-workout-draft' || raw?.kind === 'activity-draft') {
-      const payload = raw?.payload && typeof raw.payload === 'object'
-        ? raw.payload
-        : (draft?.payload && typeof draft.payload === 'object' ? draft.payload : {});
-      const timeRaw = payload.exactTime || payload.timeString || draft.clock || draft.time;
-      const parsedTime = typeof parseFlexibleTimeToDecimal === 'function'
-        ? parseFlexibleTimeToDecimal(String(timeRaw || ''))
-        : null;
-      const durationMin = Math.max(15, Math.round(Number(payload.durationMinutes || draft.minutes) || 45));
-      if (kind === 'chat-workout-draft') {
-        const id = draft.draftId || draft.id;
-        if (id) handleDraftCancel(id);
-      } else {
-        removeActivityDraft(draft.id || raw.id);
-      }
-      openWorkoutEditorFromLogItem({
-        id: draft.id || `session_edit_${Date.now()}`,
-        type: 'workout',
-        time: Number.isFinite(parsedTime) ? parsedTime : 12,
-        duration: durationMin / 60,
-        name: payload.workoutName || draft.title || 'Allenamento',
-        desc: payload.workoutName || draft.title || 'Allenamento',
-        kcal: payload.estimatedKcal ?? payload.kcal ?? draft.kcal,
-        workoutType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
-        subType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
-        muscles: payload.muscles || payload.muscleGroups || payload.groups,
-        workoutDetailNote: payload.workoutDetailNote || payload.detail,
-        trainingGoal: payload.trainingGoal || payload.workoutGoal,
-        rpe: payload.rpe,
-        note: payload.progressionNote || payload.notes || payload.note,
-      });
-      return;
-    }
     if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
       handleExecuteTrainingBlockSession(trainingBlockTodaySession);
       return;
     }
-    const entry = draft?.raw || draft;
-    if (entry?.id) openWorkoutEditorFromLogItem(entry);
+    const payload = raw?.payload && typeof raw.payload === 'object'
+      ? raw.payload
+      : (draft?.payload && typeof draft.payload === 'object' ? draft.payload : {});
+    const timeRaw = payload.exactTime || payload.timeString || draft.clock || draft.time;
+    const parsedTime = typeof parseFlexibleTimeToDecimal === 'function'
+      ? parseFlexibleTimeToDecimal(String(timeRaw || ''))
+      : null;
+    const durationMin = Math.max(15, Math.round(Number(payload.durationMinutes || draft.minutes) || 45));
+    openWorkoutFormFromInitialData({
+      workoutType: payload.activityType || payload.workoutType || draft.typeId || raw.workoutType || 'pesi',
+      activityType: payload.activityType || payload.workoutType || draft.typeId || 'pesi',
+      muscles: payload.muscles || payload.muscleGroups || payload.groups || raw.muscles,
+      durationMin,
+      kcal: payload.estimatedKcal ?? payload.kcal ?? draft.kcal ?? raw.kcal,
+      estimatedKcal: payload.estimatedKcal ?? payload.kcal ?? draft.kcal,
+      startTime: Number.isFinite(parsedTime) ? parsedTime : undefined,
+      workoutDetailNote: payload.workoutDetailNote || payload.detail || raw.workoutDetailNote,
+      trainingGoal: payload.trainingGoal || payload.workoutGoal,
+      rpe: payload.rpe,
+      notes: payload.progressionNote || payload.notes || payload.note,
+    }, () => {
+      if (kind === 'chat-workout-draft') {
+        const id = draft.draftId || draft.id;
+        if (id && typeof setChatHistory === 'function') {
+          setChatHistory((prev) =>
+            (prev || []).map((entry) => (
+              String(entry?.draftId || entry?.id || '') === String(id)
+                ? { ...entry, workoutDraft: null, draftResolved: true }
+                : entry
+            )),
+          );
+        }
+        return;
+      }
+      if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat' || raw?.source === 'ai-proposal') {
+        removeActivityDraft(draft.id || raw.id);
+        return;
+      }
+      const id = draft.id || raw.id;
+      if (id && (raw?.isGhost === true || raw?.type === 'ghost_workout')) {
+        removeLogItem(id);
+      }
+    });
   }, [
     parseFlexibleTimeToDecimal,
-    handleDraftCancel,
+    openWorkoutFormFromInitialData,
+    setChatHistory,
     removeActivityDraft,
-    openWorkoutEditorFromLogItem,
+    removeLogItem,
     handleExecuteTrainingBlockSession,
     trainingBlockTodaySession,
   ]);
+
+  const handleEditSessionDraft = useCallback((draft) => {
+    handleConfirmSessionDraft(draft);
+  }, [handleConfirmSessionDraft]);
 
   const handleEditCompletedSession = useCallback((item) => {
     setDailySessionsOpen(false);
@@ -8783,6 +8751,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
                 dismissPostWorkoutReview();
                 return;
               }
+              clearPendingWorkoutSavedCallback();
               setEditingWorkoutId(null);
               setWorkoutGoal('');
               setWorkoutRpe(null);
