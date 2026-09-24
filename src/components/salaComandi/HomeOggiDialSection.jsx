@@ -11,6 +11,7 @@ import HomeNutrientStrip from '../HomeNutrientStrip';
 import TrainingBlockWidget from '../TrainingBlockWidget';
 import MetabolicMonitorCard from '../MetabolicMonitorCard';
 import PulsantieraUniversale from '../../features/chat/PulsantieraUniversale';
+import DailyProtocolHomeBanner from '../../features/dailyProtocols/DailyProtocolHomeBanner';
 import { getTodayString } from '../../coreEngine';
 import { useActionView } from '../../homeStore';
 
@@ -68,6 +69,7 @@ export default function HomeOggiDialSection({
   showMissingSleepBanner = false,
   longevityResult = null,
   quickActionPadProps = null,
+  onOpenKentuChat = null,
 }) {
   const [isActionView, toggleActionView] = useActionView();
   const hud = dialHud || {};
@@ -109,6 +111,7 @@ export default function HomeOggiDialSection({
             <span className="shrink-0 text-xs font-medium text-indigo-300/90">Apri →</span>
           </button>
         ) : null}
+        <DailyProtocolHomeBanner onOpenChat={onOpenKentuChat} />
         <div className="nutrition-cluster">
           <div
             className="kcal-dial-shell"

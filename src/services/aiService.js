@@ -140,7 +140,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
     // Se contents nativi sono presenti, lo storico viaggia lì: non duplicarlo nel prompt.
     prompt: nativeContents ? String(prompt ?? '') : buildPromptWithHistory(prompt, opts),
     systemInstruction: systemInstruction || opts.systemInstruction || '',
-    model: opts.model || 'gemini-3.7-flash',
+    model: opts.model || 'gemini-3.8-flash',
   };
 
   if (opts.images?.length) payload.images = opts.images;

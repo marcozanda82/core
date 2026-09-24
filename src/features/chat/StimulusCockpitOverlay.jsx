@@ -19,7 +19,7 @@ function OverlayActionButton({ icon, label, onClick, disabled }) {
       onClick={onClick}
       disabled={disabled}
       className={[
-        'flex w-full min-h-[3.25rem] flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2',
+        'flex w-full min-h-[4.75rem] flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-3',
         'border-white/12 bg-white/[0.06] text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)]',
         'backdrop-blur-sm transition-all duration-150',
         'hover:border-cyan-400/45 hover:bg-cyan-500/10 hover:shadow-[0_12px_40px_rgba(34,211,238,0.12)]',
@@ -27,10 +27,10 @@ function OverlayActionButton({ icon, label, onClick, disabled }) {
         'disabled:pointer-events-none disabled:opacity-45',
       ].join(' ')}
     >
-      <span className="inline-flex h-5 w-5 items-center justify-center text-xl leading-none" aria-hidden>
+      <span className="inline-flex h-8 items-center justify-center text-2xl leading-none" aria-hidden>
         {icon}
       </span>
-      <span className="whitespace-nowrap text-center text-[11px] font-semibold leading-tight sm:text-xs">
+      <span className="whitespace-nowrap text-center text-xs font-semibold leading-tight sm:text-sm">
         {label}
       </span>
     </button>
@@ -137,6 +137,7 @@ export default function StimulusCockpitOverlay({
 
   const closeSessionsAndCockpit = useCallback(() => {
     setShowDailySessions(false);
+    setShowWorkoutHistory(false);
     handleClose();
   }, [handleClose]);
 
@@ -170,10 +171,10 @@ export default function StimulusCockpitOverlay({
             role="dialog"
             aria-modal="true"
             aria-label="Cruscotto dello stimolo muscolare e cardio"
-            className="pointer-events-none fixed inset-0 z-[100041] flex h-[100dvh] max-h-[100dvh] items-end justify-center overflow-hidden px-3 pb-3 pt-4 sm:items-center sm:px-6 sm:py-6"
+            className="pointer-events-none fixed inset-0 z-[100041] flex h-[100dvh] items-end justify-center px-3 pb-3 pt-6 sm:items-center sm:px-6 sm:py-6"
           >
             <div
-              className="kentu-submenu-focus-panel pointer-events-auto relative flex h-full min-h-0 w-full max-w-lg max-h-[100dvh] flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md sm:h-auto sm:max-h-[min(100dvh,720px)]"
+              className="kentu-submenu-focus-panel pointer-events-auto relative flex h-full w-full max-w-lg flex-col rounded-2xl border border-white/10 bg-zinc-950/75 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-md"
               onClick={(event) => event.stopPropagation()}
             >
               <button
@@ -190,7 +191,7 @@ export default function StimulusCockpitOverlay({
               >
                 <X className="h-4 w-4" aria-hidden />
               </button>
-              <header className="relative shrink-0 px-1 pb-1 pr-14 pt-1 text-center">
+              <header className="relative shrink-0 px-1 pb-1.5 pr-14 pt-1 text-center">
                 <p className="text-[0.6rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
                   Semaforo metabolico
                 </p>
@@ -199,38 +200,33 @@ export default function StimulusCockpitOverlay({
                 </h2>
               </header>
 
-              <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-3 pb-0">
-                <div className="flex min-h-0 flex-1 flex-col justify-end overflow-hidden">
-                  <div className="min-h-0 overflow-y-auto overscroll-contain">
-                    <MuscleStimulusDistrictList
-                      muscleRows={muscleRows}
-                      onSelectRow={openStimulusCylinder}
-                      showLegend={false}
-                      unifiedBars
-                      dense
-                    />
-                  </div>
-                  <section className="mt-1.5 shrink-0">
-                    <h3 className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                      Monitoraggio Cardio
-                    </h3>
-                    <CardioProgressBar
-                      compact
-                      dense
-                      unifiedBars
-                      fullHistory={fullHistory}
-                      activeLog={dailyLog}
-                      onActivate={() => openActivity({
-                        id: 'cardio-monitor',
-                        defaultTab: 'cardio',
-                      })}
-                    />
-                  </section>
-                </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+                <MuscleStimulusDistrictList
+                  muscleRows={muscleRows}
+                  onSelectRow={openStimulusCylinder}
+                  showLegend={false}
+                  unifiedBars
+                />
               </div>
 
-              <div className="w-full shrink-0 px-3 pb-2.5 pt-1.5">
-                <div className="grid w-full grid-cols-3 gap-1.5 [&>button]:w-full">
+              <div className="w-full shrink-0 px-3 pb-3 pt-2">
+                <section className="mb-3">
+                  <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Monitoraggio Cardio
+                  </h3>
+                  <CardioProgressBar
+                    compact
+                    dense
+                    unifiedBars
+                    fullHistory={fullHistory}
+                    activeLog={dailyLog}
+                    onActivate={() => openActivity({
+                      id: 'cardio-monitor',
+                      defaultTab: 'cardio',
+                    })}
+                  />
+                </section>
+                <div className="grid w-full grid-cols-3 gap-2 [&>button]:w-full">
                   <OverlayActionButton
                     icon="🏋️"
                     label="Forza"
@@ -260,14 +256,16 @@ export default function StimulusCockpitOverlay({
                     })}
                   />
                 </div>
-                <div className="mt-1.5 grid w-full grid-cols-2 gap-1.5 [&>button]:w-full">
+                <div className="mt-2 grid w-full grid-cols-2 gap-2 [&>button]:w-full">
                   <OverlayActionButton
-                    icon={<ListChecks className="h-5 w-5 text-cyan-200" strokeWidth={2.1} />}
+                    icon={<ListChecks className="h-7 w-7 text-cyan-200" strokeWidth={2.1} />}
                     label="Sessioni"
                     disabled={disabled}
                     onClick={() => {
                       if (disabled) return;
+                      setShowWorkoutHistory(false);
                       if (typeof onOpenSessions === 'function') {
+                        handleClose();
                         onOpenSessions();
                         return;
                       }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { SESSION_NAV_DISMISS_EVENT } from './sessionNavStack';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
@@ -56,12 +57,20 @@ const GUIDED_MEAL_ITEMS = [
   { id: 'cena', icon: '🌙', label: 'Cena', action: 'startGuidedMeal', mealType: 'cena' },
 ];
 
+const PROTOCOL_PLANNER_ITEM = {
+  id: 'pianifica-giornata',
+  icon: '🎯',
+  label: 'Pianifica Giornata',
+  action: 'openProtocolPlanner',
+};
+
 const SUBMENUS = {
   pasti: [
     { id: 'manuale', icon: '🔎', label: 'Manuale', action: 'openManual' },
     { id: 'guidato', icon: '✨', label: 'Guidato AI', action: 'pickGuidedMeal' },
   ],
   rapidi: [
+    PROTOCOL_PLANNER_ITEM,
     { id: 'acqua', icon: '💧', label: 'Acqua', action: 'shortcut', shortcutId: 'acqua' },
     { id: 'caffe', icon: '☕', label: 'Caffè', action: 'shortcut', shortcutId: 'caffe' },
     { id: 'pisolino', icon: '😴', label: 'Pisolino', action: 'shortcut', shortcutId: 'pisolino' },
@@ -115,6 +124,11 @@ const SUBMENUS = {
 
 /** Vocabolario completo — pilastro "Tutti". */
 const VOCABULARY_SECTIONS = [
+  {
+    id: 'giornata',
+    title: 'Giornata',
+    items: [PROTOCOL_PLANNER_ITEM],
+  },
   {
     id: 'alimentazione',
     title: 'Alimentazione',
@@ -486,6 +500,27 @@ export default function PulsantieraUniversale({
     inboxDragRef.current.pointerId = null;
   }, []);
 
+  useEffect(() => {
+    const onDismissSessionNav = () => closeMenus();
+    window.addEventListener(SESSION_NAV_DISMISS_EVENT, onDismissSessionNav);
+    return () => window.removeEventListener(SESSION_NAV_DISMISS_EVENT, onDismissSessionNav);
+  }, [closeMenus]);
+
+  const dismissThenConfirmSessionDraft = useCallback((draft) => {
+    closeMenus();
+    onConfirmSessionDraft?.(draft);
+  }, [closeMenus, onConfirmSessionDraft]);
+
+  const dismissThenEditSessionDraft = useCallback((draft) => {
+    closeMenus();
+    onEditSessionDraft?.(draft);
+  }, [closeMenus, onEditSessionDraft]);
+
+  const dismissThenEditCompletedSession = useCallback((item) => {
+    closeMenus();
+    onEditCompletedSession?.(item);
+  }, [closeMenus, onEditCompletedSession]);
+
   const handleOverlayClose = useCallback(() => {
     if (activeCategory === GUIDED_MEAL_PICKER_ID && guidedMealOrigin) {
       setActiveCategory(guidedMealOrigin);
@@ -540,6 +575,14 @@ export default function PulsantieraUniversale({
     if (item.action === 'openPlan') {
       closeMenus();
       onOpenPlanView?.();
+      return;
+    }
+    if (item.action === 'openProtocolPlanner') {
+      closeMenus();
+      onSendChatMessage?.('', {
+        intent: 'OPEN_PROTOCOL_PLANNER',
+        skipUserBubble: true,
+      });
       return;
     }
     if (item.action === 'shortcut') {
@@ -607,7 +650,10 @@ export default function PulsantieraUniversale({
     }
 
     if (activeCategory === 'rapidi') {
-      const items = (smartRapidi.items || []).map((rawItem) => ({
+      const smartItems = (smartRapidi.items || []).filter(
+        (rawItem) => String(rawItem?.id || '') !== PROTOCOL_PLANNER_ITEM.id,
+      );
+      const items = [PROTOCOL_PLANNER_ITEM, ...smartItems].map((rawItem) => ({
         ...resolveItemPresentation(rawItem),
         id: rawItem.id,
       }));
@@ -1149,10 +1195,10 @@ export default function PulsantieraUniversale({
       onDeleteWorkout={onDeleteWorkout}
       extraPendingDrafts={extraPendingDrafts}
       manualNodes={manualNodes}
-      onConfirmSessionDraft={onConfirmSessionDraft}
-      onEditSessionDraft={onEditSessionDraft}
+      onConfirmSessionDraft={dismissThenConfirmSessionDraft}
+      onEditSessionDraft={dismissThenEditSessionDraft}
       onCancelSessionDraft={onCancelSessionDraft}
-      onEditCompletedSession={onEditCompletedSession}
+      onEditCompletedSession={dismissThenEditCompletedSession}
       onOpenSessions={onOpenSessions}
     />
   );

@@ -2,7 +2,13 @@ const functions = require('firebase-functions');
 
 /** REST v1 — payload JSON in camelCase (REST Gemini). */
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
+
+function sanitizeGeminiModel(raw) {
+  const id = String(raw || '').trim();
+  if (/^[a-zA-Z0-9._-]+$/.test(id)) return id;
+  return GEMINI_MODEL;
+}
 
 function readLegacyConfigKey() {
   try {
@@ -191,6 +197,7 @@ async function callGeminiGenerateContent({
   images,
   image,
   historyContents,
+  model,
 }) {
   const history = normalizeGeminiContents(historyContents) || [];
   const userTurn = {
@@ -198,7 +205,8 @@ async function callGeminiGenerateContent({
     parts: buildUserParts(prompt, systemText, images, image),
   };
   const apiKey = getGeminiApiKey();
-  const url = `${GEMINI_API_BASE}/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+  const modelId = sanitizeGeminiModel(model || GEMINI_MODEL);
+  const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
 
   const buildPayload = (turns) => ({
     contents: turns,
@@ -275,6 +283,7 @@ exports.callGemini = functions
       }
 
       const generationConfig = normalizeGenerationConfig(payload.generationConfig);
+      const modelName = payload.model || 'gemini-3.8-flash';
 
       return await callGeminiGenerateContent({
         prompt,
@@ -283,6 +292,7 @@ exports.callGemini = functions
         images: payload.images,
         image: payload.image,
         historyContents: payload.contents,
+        model: modelName,
       });
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {

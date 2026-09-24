@@ -40,12 +40,36 @@ import { getTodayString } from '../../../coreEngine.jsx';
 import { getCurrentPredictiveContext } from '../../predictive/HabitEngine.js';
 import {
   buildPredictiveGreeting,
+  buildProtocolSelectGreeting,
   evaluatePredictiveGreetingDecision,
   markPredictiveGreetingsSuperseded,
   PREDICTIVE_GREETING_TYPE,
+  PREDICTIVE_INTENT,
+  PROTOCOL_SELECT_STATE,
   resolveEffectivePredictiveState,
   resolvePredictiveIntentAction,
 } from '../../predictive/predictiveGreeting.js';
+import {
+  DAILY_PROTOCOL_ACK_TEXT,
+  DAILY_PROTOCOL_STATUS,
+  buildDailyProtocolActivationUserText,
+  buildDailyProtocolSelectChips,
+  isDailyProtocolId,
+} from '../../dailyProtocols/dailyProtocols.js';
+import {
+  clearDailyProtocol,
+  getDailyProtocolSnapshot,
+  setActiveDailyProtocol,
+  setProtocolGenerating,
+  setProtocolStatus,
+  setProtocolTimeline,
+} from '../../dailyProtocols/dailyProtocolStore.js';
+import {
+  buildProtocolDashboardState,
+  generateDynamicTimeline,
+  reviseDynamicTimeline,
+  PROTOCOL_TIMELINE_ERROR_TEXT,
+} from '../../dailyProtocols/generateDynamicTimeline.js';
 import {
   readFavoriteBreakfast,
   resolveUsualBreakfastAction,
@@ -216,6 +240,7 @@ export function useCommandTerminal({
   const abortControllerRef = useRef(null);
   const generationTokenRef = useRef(0);
   const strategicGenerationRef = useRef(false);
+  const skipNextPredictiveGreetingRef = useRef(false);
   useEffect(() => {
     setChatHistoryRef.current = setChatHistory;
   }, [setChatHistory]);
@@ -902,6 +927,77 @@ export function useCommandTerminal({
     };
   }, [appendAiMessage, scheduleChatCloseAfterMealCommit]);
 
+  const openProtocolPlannerOnDemand = useCallback(() => {
+    skipNextPredictiveGreetingRef.current = true;
+    window.setTimeout(() => {
+      skipNextPredictiveGreetingRef.current = false;
+    }, 800);
+    const snap = getDailyProtocolSnapshot();
+    const protocolId = isDailyProtocolId(snap.activeDailyProtocol)
+      ? String(snap.activeDailyProtocol)
+      : null;
+    const timeline = Array.isArray(snap.protocolTimeline) ? snap.protocolTimeline : [];
+    const reopenPlanning = Boolean(
+      protocolId
+      && snap.protocolStatus === DAILY_PROTOCOL_STATUS.PLANNING
+      && timeline.length > 0
+      && snap.isGenerating !== true
+    );
+
+    setActiveQuickReplies([]);
+
+    if (protocolId && snap.isGenerating === true) {
+      return { ok: true, protocolPlanner: 'generating', dailyProtocol: protocolId };
+    }
+
+    if (reopenPlanning) {
+      setProtocolStatus(DAILY_PROTOCOL_STATUS.PLANNING);
+      if (typeof setChatHistoryRef.current === 'function') {
+        setChatHistoryRef.current((prev) => markPredictiveGreetingsSuperseded(prev));
+      }
+      appendAiMessage('Ecco il piano attuale. Dimmi cosa vuoi cambiare, oppure approva.', {
+        type: 'PROTOCOL_PLANNING',
+        protocolId,
+        protocolTimeline: timeline,
+        isGeneratingPlan: false,
+      });
+      return { ok: true, protocolPlanner: 'reopen', dailyProtocol: protocolId };
+    }
+
+    if (protocolId) {
+      clearDailyProtocol();
+    }
+
+    if (typeof setChatHistoryRef.current !== 'function') {
+      return { ok: false, reason: 'chat_history_not_configured' };
+    }
+
+    const currentState =
+      typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+    const greeting = buildProtocolSelectGreeting({
+      userDisplayName: currentState.userDisplayName || currentState.userProfile?.displayName || '',
+      userProfile: currentState.userProfile || null,
+    }, { onDemand: true });
+
+    const greetingMessage = {
+      sender: 'ai',
+      type: PREDICTIVE_GREETING_TYPE,
+      text: greeting.text,
+      avatarAsset: greeting.avatarAsset,
+      quickReplies: Array.isArray(greeting.quickReplies) ? greeting.quickReplies : [],
+      predictiveState: greeting.predictiveState,
+      predictiveGreeting: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    setChatHistoryRef.current((prev) => {
+      const withoutTyping = (Array.isArray(prev) ? prev : []).filter((entry) => !entry?.isTyping);
+      return [...markPredictiveGreetingsSuperseded(withoutTyping), greetingMessage];
+    });
+
+    return { ok: true, protocolPlanner: 'select' };
+  }, [appendAiMessage]);
+
   const sendMessage = useCallback(
     async (text, options = {}) => {
       if (typeof setChatHistoryRef.current !== 'function') {
@@ -921,6 +1017,12 @@ export function useCommandTerminal({
         setActiveQuickReplies([]);
         onOpenSessionsRef.current?.();
         return { ok: true, openedSessions: true };
+      }
+      if (
+        intentUpper === 'OPEN_PROTOCOL_PLANNER'
+        || intentUpper === PREDICTIVE_INTENT.OPEN_PROTOCOL_PLANNER
+      ) {
+        return openProtocolPlannerOnDemand();
       }
       const isFreeMealListen = String(options?.intent || '').trim().toUpperCase() === 'FREE_MEAL_LISTEN';
       const isMcdriveWizardIntent = intentUpper === 'START_MCDRIVE_WIZARD'
@@ -976,6 +1078,91 @@ export function useCommandTerminal({
       }
       if (options?.fromQuickReply || options?.clarificationReply || options?.fromSlotQuickReply) {
         setActiveQuickReplies([]);
+      }
+
+      const protocolSnap = getDailyProtocolSnapshot();
+      const canNegotiateProtocol = protocolSnap.protocolStatus === DAILY_PROTOCOL_STATUS.PLANNING
+        && isDailyProtocolId(protocolSnap.activeDailyProtocol)
+        && Array.isArray(protocolSnap.protocolTimeline)
+        && protocolSnap.protocolTimeline.length > 0
+        && protocolSnap.isGenerating !== true
+        && Boolean(resolvedText)
+        && !skipUserBubble
+        && !isFreeMealListen
+        && !isMcdriveWizardIntent
+        && !options?.fromQuickReply
+        && !options?.clarificationReply
+        && !options?.fromSlotQuickReply
+        && !['GENERATE_PERIOD_REPORT', 'GENERATE_REPORT', 'MANUAL_SHORTCUT'].includes(intentUpper);
+
+      if (canNegotiateProtocol) {
+        const protocolId = protocolSnap.activeDailyProtocol;
+        setProtocolGenerating(true);
+        setIsLoading(true);
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => {
+            const list = Array.isArray(prev) ? [...prev] : [];
+            for (let i = list.length - 1; i >= 0; i -= 1) {
+              if (list[i]?.type === 'PROTOCOL_PLANNING') {
+                list[i] = { ...list[i], isGeneratingPlan: true };
+                break;
+              }
+            }
+            return list;
+          });
+        }
+        try {
+          const currentState =
+            typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+          const timeline = await reviseDynamicTimeline(
+            protocolId,
+            protocolSnap.protocolTimeline,
+            resolvedText,
+            buildProtocolDashboardState(currentState),
+          );
+          setProtocolTimeline(timeline);
+          setProtocolGenerating(false);
+          setIsLoading(false);
+          if (typeof setChatHistoryRef.current === 'function') {
+            setChatHistoryRef.current((prev) => {
+              const list = Array.isArray(prev) ? [...prev] : [];
+              for (let i = list.length - 1; i >= 0; i -= 1) {
+                if (list[i]?.type === 'PROTOCOL_PLANNING') {
+                  list[i] = {
+                    ...list[i],
+                    protocolId,
+                    protocolTimeline: timeline,
+                    isGeneratingPlan: false,
+                  };
+                  break;
+                }
+              }
+              return list;
+            });
+          }
+          return { ok: true, protocolRevised: true, dailyProtocol: protocolId };
+        } catch (error) {
+          console.warn('[useCommandTerminal] reviseDynamicTimeline failed', error);
+          setProtocolGenerating(false);
+          setIsLoading(false);
+          if (typeof setChatHistoryRef.current === 'function') {
+            setChatHistoryRef.current((prev) => {
+              const list = Array.isArray(prev) ? [...prev] : [];
+              for (let i = list.length - 1; i >= 0; i -= 1) {
+                if (list[i]?.type === 'PROTOCOL_PLANNING') {
+                  list[i] = { ...list[i], isGeneratingPlan: false };
+                  break;
+                }
+              }
+              return list;
+            });
+          }
+          appendAiMessage(PROTOCOL_TIMELINE_ERROR_TEXT, {
+            type: 'ERROR',
+            isError: true,
+          });
+          return { ok: false, reason: 'timeline_revision_failed', userNotified: true };
+        }
       }
 
       if (abortControllerRef.current) {
@@ -1263,7 +1450,7 @@ export function useCommandTerminal({
         syncActiveQuickRepliesFromController();
       }
     },
-    [chatInput, chatImages, controller, syncActiveQuickRepliesFromController, appendAiMessage],
+    [chatInput, chatImages, controller, syncActiveQuickRepliesFromController, appendAiMessage, openProtocolPlannerOnDemand],
   );
 
   const sendMessageRef = useRef(sendMessage);
@@ -1272,13 +1459,96 @@ export function useCommandTerminal({
   }, [sendMessage]);
 
   const handlePredictiveIntent = useCallback(async (intent, extra = {}) => {
+    if (String(intent || '').trim().toUpperCase() === PREDICTIVE_INTENT.OPEN_PROTOCOL_PLANNER) {
+      return openProtocolPlannerOnDemand();
+    }
     const resolved = resolvePredictiveIntentAction(String(intent || ''), {
       predictiveState: extra?.predictiveState,
       label: extra?.label,
       durationHours: extra?.durationHours,
+      protocolId: extra?.protocolId,
     });
     if (!resolved) {
       return { ok: false, reason: 'unknown_predictive_intent' };
+    }
+    if (resolved.options?.selectDailyProtocol || String(intent || '') === PREDICTIVE_INTENT.SELECT_DAILY_PROTOCOL) {
+      const protocolId = resolved.options?.protocolId || extra?.protocolId;
+      if (!isDailyProtocolId(protocolId)) {
+        return { ok: false, reason: 'invalid_daily_protocol' };
+      }
+      setActiveDailyProtocol(protocolId, DAILY_PROTOCOL_STATUS.PLANNING);
+      setProtocolTimeline([]);
+      setProtocolGenerating(true);
+      const userText = buildDailyProtocolActivationUserText(protocolId);
+      if (typeof setChatHistoryRef.current === 'function') {
+        setChatHistoryRef.current((prev) => {
+          const withoutTyping = (Array.isArray(prev) ? prev : []).filter((entry) => !entry?.isTyping);
+          return [
+            ...markPredictiveGreetingsSuperseded(withoutTyping),
+            { sender: 'user', text: userText },
+          ];
+        });
+      }
+      appendAiMessage(DAILY_PROTOCOL_ACK_TEXT, {
+        type: 'PROTOCOL_PLANNING',
+        protocolId,
+        protocolTimeline: [],
+        isGeneratingPlan: true,
+      });
+      setActiveQuickReplies([]);
+
+      try {
+        const currentState =
+          typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+        const dashboardState = buildProtocolDashboardState(currentState);
+        const timeline = await generateDynamicTimeline(protocolId, dashboardState);
+        setProtocolTimeline(timeline);
+        setProtocolGenerating(false);
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => {
+            const list = Array.isArray(prev) ? [...prev] : [];
+            for (let i = list.length - 1; i >= 0; i -= 1) {
+              if (list[i]?.type === 'PROTOCOL_PLANNING' && list[i]?.protocolId === protocolId) {
+                list[i] = {
+                  ...list[i],
+                  protocolTimeline: timeline,
+                  isGeneratingPlan: false,
+                };
+                break;
+              }
+            }
+            return list;
+          });
+        }
+        return { ok: true, dailyProtocol: protocolId, protocolStatus: DAILY_PROTOCOL_STATUS.PLANNING };
+      } catch (error) {
+        console.warn('[useCommandTerminal] generateDynamicTimeline failed', error);
+        setProtocolGenerating(false);
+        setProtocolTimeline([]);
+        if (typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => {
+            const list = Array.isArray(prev) ? [...prev] : [];
+            for (let i = list.length - 1; i >= 0; i -= 1) {
+              if (list[i]?.type === 'PROTOCOL_PLANNING' && list[i]?.isGeneratingPlan === true) {
+                list[i] = {
+                  ...list[i],
+                  isGeneratingPlan: false,
+                  protocolTimeline: [],
+                };
+                break;
+              }
+            }
+            return list;
+          });
+        }
+        appendAiMessage(PROTOCOL_TIMELINE_ERROR_TEXT, {
+          type: PREDICTIVE_GREETING_TYPE,
+          isError: true,
+          predictiveState: PROTOCOL_SELECT_STATE,
+          quickReplies: buildDailyProtocolSelectChips(),
+        });
+        return { ok: false, reason: 'timeline_generation_failed', userNotified: true };
+      }
     }
     if (resolved.options?.snoozeOnly) {
       appendAiMessage('Ok, ti ricorderò più tardi. 💪', { type: 'system' });
@@ -1388,10 +1658,14 @@ export function useCommandTerminal({
       fromPredictiveGreeting: true,
       fromQuickReply: true,
     });
-  }, [appendAiMessage, controller]);
+  }, [appendAiMessage, controller, openProtocolPlannerOnDemand]);
 
   const tryEmitPredictiveGreeting = useCallback(() => {
     if (isLoading) return { ok: false, reason: 'processing' };
+    if (skipNextPredictiveGreetingRef.current) {
+      skipNextPredictiveGreetingRef.current = false;
+      return { ok: false, reason: 'protocol_planner_on_demand' };
+    }
 
     try {
     const currentState =
@@ -1410,6 +1684,9 @@ export function useCommandTerminal({
       }),
       hasSleepData: currentState.hasSleepData === true,
       favoriteBreakfast: currentState.favoriteBreakfast || readFavoriteBreakfast(),
+      activeDailyProtocol: currentState.activeDailyProtocol ?? null,
+      userDisplayName: currentState.userDisplayName || currentState.userProfile?.displayName || '',
+      userProfile: currentState.userProfile || null,
     };
 
     const decision = evaluatePredictiveGreetingDecision(history, ctx, { anchorDate });

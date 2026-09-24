@@ -3,6 +3,8 @@ import { getTodayString } from '../../coreEngine';
 
 export const AI_WORKOUT_PROPOSAL_SOURCE = 'ai-proposal';
 export const AI_WORKOUT_PROPOSAL_SEED_SOURCE = 'ai-proposal-seed';
+/** Bozze sessione generate dal Protocollo Giornaliero (non dall'auto-seed). */
+export const PROTOCOL_ACTIVITY_DRAFT_SOURCE = 'ai_proposal';
 
 export function activityDraftsRootPath(uid) {
   const user = String(uid || '').trim();

@@ -1,7 +1,45 @@
 import { AVATAR_MOOD, AVATAR_MOOD_SRC, CHAT_DEFAULT_AVATAR_SRC } from '../chat/avatarMood.js';
 import { PREDICTIVE_STATE } from './HabitEngine.js';
+import {
+  buildDailyProtocolSelectChips,
+  isDailyProtocolId,
+} from '../dailyProtocols/dailyProtocols.js';
+import { getActiveDailyProtocol } from '../dailyProtocols/dailyProtocolStore.js';
+
+/** Stato saluto: nessun protocollo giornaliero ancora scelto. */
+export const PROTOCOL_SELECT_STATE = 'PROTOCOL_SELECT';
 
 export const PREDICTIVE_GREETING_TYPE = 'PREDICTIVE_GREETING';
+
+function firstNameFromCtx(ctx = {}) {
+  const raw = String(
+    ctx.userDisplayName
+    || ctx.userProfile?.displayName
+    || ctx.userProfile?.name
+    || ctx.firstName
+    || '',
+  ).trim();
+  return raw.split(/\s+/)[0] || '';
+}
+
+function resolvedActiveProtocolId(ctx = {}) {
+  if (isDailyProtocolId(ctx.activeDailyProtocol)) return String(ctx.activeDailyProtocol);
+  return getActiveDailyProtocol();
+}
+
+export function buildProtocolSelectGreeting(ctx = {}, options = {}) {
+  const name = firstNameFromCtx(ctx);
+  const onDemand = options.onDemand === true;
+  const text = onDemand
+    ? (name ? `${name}, cosa facciamo oggi?` : 'Cosa facciamo oggi?')
+    : `${name ? `Buongiorno ${name}!` : 'Buongiorno!'} Ho analizzato il tuo stato. Cosa facciamo oggi per ottimizzare il metabolismo?`;
+  return {
+    text,
+    avatarAsset: CHAT_DEFAULT_AVATAR_SRC,
+    predictiveState: PROTOCOL_SELECT_STATE,
+    quickReplies: buildDailyProtocolSelectChips(),
+  };
+}
 
 export const PREDICTIVE_INTENT = Object.freeze({
   START_MEAL_WIZARD: 'START_MEAL_WIZARD',
@@ -24,6 +62,9 @@ export const PREDICTIVE_INTENT = Object.freeze({
   LOG_WATER: 'LOG_WATER',
   LOG_SNACK: 'LOG_SNACK',
   START_MCDRIVE_WIZARD: 'START_MCDRIVE_WIZARD',
+  SELECT_DAILY_PROTOCOL: 'SELECT_DAILY_PROTOCOL',
+  /** Innesco manuale Pulsantiera: mostra i 4 chip protocollo. */
+  OPEN_PROTOCOL_PLANNER: 'OPEN_PROTOCOL_PLANNER',
 });
 
 /** Fascia mattutina proattiva sonno mancante (05:00–13:00). */
@@ -143,6 +184,9 @@ export function resolveCourtesyCheckInState(decimalHour, now = new Date()) {
  * @returns {string}
  */
 export function resolveEffectivePredictiveState(ctx = {}) {
+  if (!isDailyProtocolId(resolvedActiveProtocolId(ctx))) {
+    return PROTOCOL_SELECT_STATE;
+  }
   const habitState = String(ctx?.state || PREDICTIVE_STATE.IDLE).trim() || PREDICTIVE_STATE.IDLE;
   if (habitState !== PREDICTIVE_STATE.IDLE) return habitState;
   return resolveCourtesyCheckInState(ctx?.decimalHour);
@@ -315,6 +359,11 @@ export function buildPredictiveGreeting(ctx) {
   if (!ctx) return null;
 
   const effectiveState = resolveEffectivePredictiveState(ctx);
+
+  if (effectiveState === PROTOCOL_SELECT_STATE || !isDailyProtocolId(resolvedActiveProtocolId(ctx))) {
+    return buildProtocolSelectGreeting(ctx);
+  }
+
   const hasSleepData = ctx.hasSleepData === true;
   const decimalHour = Number(ctx.decimalHour);
 
@@ -391,6 +440,22 @@ export function resolvePredictiveIntentAction(intent, ctx = {}) {
   const label = String(ctx.label || '').trim().toLowerCase();
 
   switch (intent) {
+    case PREDICTIVE_INTENT.SELECT_DAILY_PROTOCOL: {
+      const fromCtx = String(ctx.protocolId || '').trim();
+      const fromLabel = buildDailyProtocolSelectChips(PREDICTIVE_INTENT.SELECT_DAILY_PROTOCOL)
+        .find((chip) => String(chip.label || '').trim().toLowerCase() === String(ctx.label || '').trim().toLowerCase());
+      const protocolId = isDailyProtocolId(fromCtx) ? fromCtx : (fromLabel?.protocolId || null);
+      if (!isDailyProtocolId(protocolId)) return null;
+      return {
+        userText: '',
+        options: {
+          selectDailyProtocol: true,
+          protocolId,
+          skipUserBubble: true,
+          fromPredictiveGreeting: true,
+        },
+      };
+    }
     case PREDICTIVE_INTENT.LOG_SLEEP_HOURS: {
       const fromCtx = Number(ctx.durationHours);
       const fromLabel = (() => {

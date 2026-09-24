@@ -52,6 +52,10 @@ import {
 } from './features/quickEvents/quickEventConfirmAssets.js';
 import { draftHasRawMcDriveItems, isMcDriveValidationPenultimateOrLater } from './features/commandTerminal/conversation/mcdriveWizard.js';
 import { isPredictiveGreetingMessage } from './features/predictive/predictiveGreeting.js';
+import ProtocolTimeline, { ProtocolPlanLoader } from './features/dailyProtocols/ProtocolTimeline.jsx';
+import { PROTOCOL_TIMELINE_GENERATING_TEXT, PROTOCOL_TIMELINE_REVISE_TEXT } from './features/dailyProtocols/generateDynamicTimeline.js';
+import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols.js';
+import { useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore.js';
 import { isKentuIntroSeedMessage } from './utils/salaComandiUtils';
 import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
 import {
@@ -239,6 +243,17 @@ export default function AiCluster({
 
   const [isNotesMode, setIsNotesMode] = useState(false);
   const [mcdriveBarcodeOpenNonce, setMcdriveBarcodeOpenNonce] = useState(0);
+  const {
+    activeDailyProtocol,
+    protocolStatus,
+    protocolTimeline,
+    isGenerating,
+  } = useDailyProtocol();
+  const isProtocolPlanning = protocolStatus === DAILY_PROTOCOL_STATUS.PLANNING
+    && Boolean(activeDailyProtocol);
+  const protocolPlanApproved = protocolStatus === DAILY_PROTOCOL_STATUS.ACTIVE
+    || protocolStatus === DAILY_PROTOCOL_STATUS.COMPLETED;
+  const hasProtocolTimeline = Array.isArray(protocolTimeline) && protocolTimeline.length > 0;
 
   const healthAvatarSrc = String(safeHealthScore?.avatar?.src || '/cellula_1_ottimale.png').trim()
     || '/cellula_1_ottimale.png';
@@ -292,6 +307,7 @@ export default function AiCluster({
       predictiveState: msg.predictiveState || null,
       label: replyLabel,
       durationHours: replyObj?.durationHours ?? null,
+      protocolId: replyObj?.protocolId ?? null,
     });
     pinChatToBottomSoon();
   }, [onSlotQuickReplyClick, pinChatToBottomSoon]);
@@ -815,7 +831,7 @@ export default function AiCluster({
     const scroller = chatMessagesRef.current;
     if (!scroller) return;
     const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    stickToBottomRef.current = distance < 96;
+    stickToBottomRef.current = distance <= 50;
   }, []);
 
   const handleLoadPreviousClick = useCallback(async () => {
@@ -861,7 +877,7 @@ export default function AiCluster({
       window.clearTimeout(t1);
       window.clearTimeout(t2);
     };
-  }, [chatHistory, showTypingIndicator, scrollChatToBottom]);
+  }, [safeMessages.length, scrollChatToBottom]);
 
   const suppressQuickReplies = useMemo(
     () => safeMessages.some(
@@ -923,7 +939,8 @@ export default function AiCluster({
     const intent = String(options?.intent || '').trim();
     const mealType = String(options?.mealType || options?.mealTypeHint || '').trim() || null;
     const reportKind = String(options?.reportKind || '').trim() || null;
-    const allowEmpty = intent === 'START_MCDRIVE_WIZARD' && Boolean(mealType);
+    const allowEmpty = (intent === 'START_MCDRIVE_WIZARD' && Boolean(mealType))
+      || intent === 'OPEN_PROTOCOL_PLANNER';
     if (!trimmed && !allowEmpty) return;
     if (isVoiceNoteActive) {
       discardNote();
@@ -1213,6 +1230,10 @@ export default function AiCluster({
     stopSpeaking();
     onBack?.();
   }, [dismissHoistedVideo, discardNote, hoistedVideo, onBack]);
+
+  const handleApproveProtocolPlan = useCallback(() => {
+    handleWorkspaceHomeClick();
+  }, [handleWorkspaceHomeClick]);
 
   return (
     <div
@@ -1700,8 +1721,9 @@ export default function AiCluster({
                 ) : (
                   <div
                     className={[
-                      'flex w-full max-w-[min(92%,28rem)] flex-col gap-2',
-                      isPredictiveGreetingMessage(msg) ? 'kentu-predictive-greeting-block' : '',
+                      'flex w-full flex-col gap-2',
+                      isPredictiveGreetingMessage(msg) ? 'max-w-[min(92%,28rem)] kentu-predictive-greeting-block' : '',
+                      msg.type === 'PROTOCOL_PLANNING' ? 'max-w-[min(96%,32rem)]' : 'max-w-[min(92%,28rem)]',
                     ].filter(Boolean).join(' ')}
                   >
                     {shouldRenderSystemNoticeChrome(msg) ? (
@@ -1736,12 +1758,32 @@ export default function AiCluster({
                               <KentuInsightHero
                                 key={si}
                                 block={block}
-                                compact={isPredictiveGreetingMessage(msg)}
+                                compact={isPredictiveGreetingMessage(msg) || msg.type === 'PROTOCOL_PLANNING'}
                               />
                             ) : (
                               <KentuInsightCard key={si} block={block} />
                             )
                           )}
+                          {msg.type === 'PROTOCOL_PLANNING' || Array.isArray(msg.protocolTimeline) ? (
+                            msg.isGeneratingPlan === true || (isGenerating && !(Array.isArray(msg.protocolTimeline) && msg.protocolTimeline.length > 0)) ? (
+                              <div className="mt-3">
+                                <ProtocolPlanLoader
+                                  label={
+                                    hasProtocolTimeline
+                                      ? PROTOCOL_TIMELINE_REVISE_TEXT
+                                      : PROTOCOL_TIMELINE_GENERATING_TEXT
+                                  }
+                                />
+                              </div>
+                            ) : (
+                              <ProtocolTimeline
+                                protocolId={msg.protocolId || activeDailyProtocol}
+                                events={msg.protocolTimeline}
+                                approved={protocolPlanApproved}
+                                onApprove={handleApproveProtocolPlan}
+                              />
+                            )
+                          ) : null}
                           {msg.suggestedAction
                             && !msg.adviceAccepted
                             && typeof onAcceptAdvice === 'function' ? (
@@ -1772,7 +1814,7 @@ export default function AiCluster({
                             && msg.predictiveSuperseded !== true ? (
                               <QuickReplyChipRow
                                 replies={msg.quickReplies}
-                                disabled={isProcessing}
+                                disabled={isProcessing || isGenerating}
                                 align="start"
                                 onChipClick={(chip) => {
                                   handlePredictiveGreetingChipClick(chip, msg, `pred-${idx}`);
@@ -2282,6 +2324,10 @@ export default function AiCluster({
                 </button>
               </div>
             ) : null}
+          </div>
+        ) : isProtocolPlanning && isGenerating && !hasProtocolTimeline ? (
+          <div className="shrink-0 border-t border-white/10 bg-[#050a12]/90 px-3 py-2.5 backdrop-blur-md">
+            <ProtocolPlanLoader label={PROTOCOL_TIMELINE_GENERATING_TEXT} />
           </div>
         ) : (
         <div className={`kentu-input-strip${isNotesMode ? ' kentu-input-strip--notes' : ''}`}>

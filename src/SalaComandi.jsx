@@ -83,6 +83,12 @@ import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter
 import { useActivityDrafts } from './hooks/useActivityDrafts';
 import { useAiWorkoutDrafts } from './hooks/useAiWorkoutDrafts';
 import DailySessionsView from './features/chat/DailySessionsView';
+import { dismissSessionNavStack } from './features/chat/sessionNavStack';
+import { getActiveDailyProtocol, useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore';
+import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols';
+import { PROTOCOL_ACTIVITY_DRAFT_SOURCE } from './features/dailyProtocols/generateDraftsFromTimeline';
+import { registerProtocolDraftCommitHandler } from './features/dailyProtocols/protocolDraftCommitBus';
+import { AI_WORKOUT_PROPOSAL_SOURCE } from './features/workout/activityDrafts';
 import {
   buildAttivitaWorkoutSummary,
   collectPendingSessionDrafts,
@@ -618,6 +624,12 @@ export default function SalaComandi() {
     setDailySessionsOpen(false);
   }, []);
 
+  const closeSessionNavigationStack = useCallback(() => {
+    setDailySessionsOpen(false);
+    setStimulusCockpitOpen(false);
+    dismissSessionNavStack();
+  }, []);
+
   const handleCloseSnapshotOverlay = useCallback(() => {
     setSnapshotOverlayOpen(false);
     setSnapshotOverlayFocus(null);
@@ -1097,6 +1109,44 @@ export default function SalaComandi() {
     todayIso: getTodayString(),
     isSimulationMode,
   });
+
+  const {
+    protocolMealDrafts,
+    protocolActivityDrafts,
+    protocolStatus,
+  } = useDailyProtocol();
+
+  const activityDraftsRef = useRef(activityDrafts);
+  activityDraftsRef.current = activityDrafts;
+
+  const commitProtocolActivityDrafts = useCallback((payload = {}) => {
+    const drafts = Array.isArray(payload?.drafts) ? payload.drafts : [];
+    if (payload?.replaceAutoAiProposals) {
+      (activityDraftsRef.current || []).forEach((item) => {
+        if (!item?.id) return;
+        const source = String(item.source || '');
+        const id = String(item.id);
+        const isAuto = source === AI_WORKOUT_PROPOSAL_SOURCE
+          || (id.startsWith('ai_proposal_') && !id.startsWith('ai_proposal_seed_'));
+        if (isAuto) removeActivityDraft(item.id);
+      });
+    }
+    drafts.forEach((draft) => {
+      if (!draft || typeof draft !== 'object') return;
+      addActivityDraft(draft, {
+        raw: true,
+        source: draft.source || PROTOCOL_ACTIVITY_DRAFT_SOURCE,
+        date: draft.date || getTodayString(),
+        id: draft.id,
+      });
+    });
+    return { ok: true, count: drafts.length };
+  }, [addActivityDraft, removeActivityDraft]);
+
+  useEffect(
+    () => registerProtocolDraftCommitHandler(commitProtocolActivityDrafts),
+    [commitProtocolActivityDrafts],
+  );
 
   const effectiveTargetsForCurrentDate = useMemo(
     () =>
@@ -1592,7 +1642,13 @@ export default function SalaComandi() {
   useSignalAppReady(isInitialLoadComplete && isProfileHydrated);
 
   useAiWorkoutDrafts({
-    enabled: Boolean(isInitialLoadComplete && userUid && !isSimulationMode),
+    enabled: Boolean(
+      isInitialLoadComplete
+      && userUid
+      && !isSimulationMode
+      && protocolStatus !== DAILY_PROTOCOL_STATUS.ACTIVE
+      && protocolStatus !== DAILY_PROTOCOL_STATUS.COMPLETED
+    ),
     sessionsOpen: dailySessionsOpen,
     fourCylinder: userModel?.fourCylinder ?? null,
     fullHistory,
@@ -2201,15 +2257,28 @@ export default function SalaComandi() {
     currentTrackerDate,
   ]);
 
-  const extraPendingMealDrafts = useMemo(() => (
-    (Array.isArray(chatHistory) ? chatHistory : [])
+  const extraPendingMealDrafts = useMemo(() => {
+    const fromChat = (Array.isArray(chatHistory) ? chatHistory : [])
       .filter((message) => message?.mealDraft && !message?.draftResolved)
       .map((message) => ({
         id: message.draftId || message.id,
         kind: 'chat-meal-draft',
         mealDraft: message.mealDraft,
-      }))
-  ), [chatHistory]);
+      }));
+    const fromProtocol = (Array.isArray(protocolMealDrafts) ? protocolMealDrafts : [])
+      .map((draft) => ({
+        id: draft.id,
+        kind: 'protocol-meal-draft',
+        mealDraft: draft,
+      }));
+    const seen = new Set();
+    return [...fromChat, ...fromProtocol].filter((item) => {
+      const id = String(item?.id || '');
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [chatHistory, protocolMealDrafts]);
 
   const extraPendingSessionDrafts = useMemo(() => {
     const fromStore = (Array.isArray(activityDrafts) ? activityDrafts : []).filter((item) => (
@@ -2251,8 +2320,8 @@ export default function SalaComandi() {
           payload,
         };
       });
-    return [...fromStore, ...fromTimeline, ...fromChat];
-  }, [activityDrafts, allNodes, chatHistory]);
+    return [...fromStore, ...fromTimeline, ...fromChat, ...(Array.isArray(protocolActivityDrafts) ? protocolActivityDrafts : [])];
+  }, [activityDrafts, allNodes, chatHistory, protocolActivityDrafts]);
 
   const sessionPendingDrafts = useMemo(
     () => collectPendingSessionDrafts({
@@ -6967,6 +7036,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         scheduledWorkout: scheduledWorkoutContextRef.current,
         hasSleepData: !showMissingSleepState,
         favoriteBreakfast: readFavoriteBreakfast(),
+        activeDailyProtocol: getActiveDailyProtocol(),
         timelineNodes: allNodes,
         manualNodes: manualNodesForTimeline,
         fastingData,
@@ -8027,8 +8097,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const handleConfirmSessionDraft = useCallback((draft) => {
-    setDailySessionsOpen(false);
-    setStimulusCockpitOpen(false);
+    closeSessionNavigationStack();
     const kind = String(draft?.kind || draft?.raw?.kind || '');
     const raw = draft?.raw || draft;
     if (draft?.source === 'training-block' || draft?.id === 'physio_ghost_today') {
@@ -8069,7 +8138,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }
         return;
       }
-      if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat' || raw?.source === 'ai-proposal') {
+      if (kind === 'activity-draft' || raw?.kind === 'activity-draft' || raw?.source === 'ai-chat' || raw?.source === 'ai-proposal' || raw?.source === PROTOCOL_ACTIVITY_DRAFT_SOURCE || draft?.source === PROTOCOL_ACTIVITY_DRAFT_SOURCE) {
         removeActivityDraft(draft.id || raw.id);
         return;
       }
@@ -8086,6 +8155,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     removeLogItem,
     handleExecuteTrainingBlockSession,
     trainingBlockTodaySession,
+    closeSessionNavigationStack,
   ]);
 
   const handleEditSessionDraft = useCallback((draft) => {
@@ -8093,15 +8163,14 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }, [handleConfirmSessionDraft]);
 
   const handleEditCompletedSession = useCallback((item) => {
-    setDailySessionsOpen(false);
-    setStimulusCockpitOpen(false);
+    closeSessionNavigationStack();
     const entry = item?.entry && typeof item.entry === 'object' ? item.entry : item;
     if (entry?.id) openWorkoutEditorFromLogItem(entry);
-  }, [openWorkoutEditorFromLogItem]);
+  }, [openWorkoutEditorFromLogItem, closeSessionNavigationStack]);
 
   const handleCancelSessionDraft = useCallback((draft) => {
     const kind = String(draft?.kind || draft?.raw?.kind || '');
-    if (kind === 'activity-draft' || draft?.raw?.kind === 'activity-draft' || draft?.raw?.source === 'ai-chat') {
+    if (kind === 'activity-draft' || draft?.raw?.kind === 'activity-draft' || draft?.raw?.source === 'ai-chat' || draft?.raw?.source === PROTOCOL_ACTIVITY_DRAFT_SOURCE || draft?.source === PROTOCOL_ACTIVITY_DRAFT_SOURCE) {
       removeActivityDraft(draft.id || draft?.raw?.id);
       return;
     }
@@ -8463,6 +8532,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             fourCylinder: userModel?.fourCylinder ?? null,
             isDiabetesAppMode,
           }}
+          onOpenKentuChat={handleOpenKentuChat}
         />
       )}
 

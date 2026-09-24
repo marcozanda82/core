@@ -335,7 +335,7 @@ function draftSourceKind(entry) {
   ) {
     return 'sleep';
   }
-  if (blob.includes('training-block') || blob.includes('training_block') || blob.includes('protocol')) {
+  if (blob.includes('ai_proposal') || blob.includes('training-block') || blob.includes('training_block') || blob.includes('protocol')) {
     return 'protocol';
   }
   if (
