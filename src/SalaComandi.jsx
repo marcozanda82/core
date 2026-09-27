@@ -8221,7 +8221,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
       onOpen={handleOpenKentuChat}
       onBlockedOpen={showEngineAlignToast}
-      onConfirmVoiceText={handleHomeActionSend}
+      onSendMessage={sendMessage}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}
     />

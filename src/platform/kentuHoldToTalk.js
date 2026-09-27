@@ -1,20 +1,36 @@
 /**
  * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech)
  * e aptica nativa con fallback vibrate.
+ *
+ * Trascrizione: solo il testo finale (isFinal / ultima ipotesi completa).
+ * I partial non si concatenano — si sovrascrivono.
  */
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
-import { createSpeechRecognition } from '../features/chat/voiceChat';
+import {
+  collapseAnomalousRepetitions,
+  createSpeechRecognition,
+} from '../features/chat/voiceChat';
 
-function collectWebTranscript(event) {
-  if (!event?.results) return '';
-  let text = '';
+function applySpeechResult(event, state) {
+  if (!event?.results) return;
+  const finals = [];
+  let interim = '';
   for (let i = 0; i < event.results.length; i += 1) {
     const result = event.results[i];
     const piece = String(result?.[0]?.transcript || '').trim();
-    if (piece) text = text ? `${text} ${piece}` : piece;
+    if (!piece) continue;
+    if (result.isFinal) finals.push(piece);
+    else interim = piece;
   }
-  return text.trim();
+  const finalText = finals.join(' ').replace(/\s+/g, ' ').trim();
+  if (finalText) state.finalTranscript = finalText;
+  state.interimTranscript = interim;
+}
+
+function pickCleanTranscript(state) {
+  const raw = String(state.finalTranscript || state.interimTranscript || '').trim();
+  return collapseAnomalousRepetitions(raw).replace(/\s+/g, ' ').trim();
 }
 
 export async function playHoldToTalkHaptic() {
@@ -34,19 +50,22 @@ export function createHoldToTalkSession() {
   const state = {
     mode: null,
     recognition: null,
-    transcript: '',
+    finalTranscript: '',
+    interimTranscript: '',
     capacitorListener: null,
   };
 
   const startWebkit = () => {
     const recognition = createSpeechRecognition({ continuous: true });
     if (!recognition) return false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
     state.mode = 'webkit';
     state.recognition = recognition;
-    state.transcript = '';
+    state.finalTranscript = '';
+    state.interimTranscript = '';
     recognition.onresult = (event) => {
-      const next = collectWebTranscript(event);
-      if (next) state.transcript = next;
+      applySpeechResult(event, state);
     };
     recognition.onerror = () => {};
     try {
@@ -60,7 +79,8 @@ export function createHoldToTalkSession() {
   };
 
   const start = async () => {
-    state.transcript = '';
+    state.finalTranscript = '';
+    state.interimTranscript = '';
     try {
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
@@ -74,7 +94,9 @@ export function createHoldToTalkSession() {
             'partialResults',
             (data) => {
               const match = String(data?.matches?.[0] || '').trim();
-              if (match) state.transcript = match;
+              if (!match) return;
+              // L'API Android manda l'ipotesi COMPLETA: sovrascrivi, non concatenare.
+              state.interimTranscript = match;
             },
           );
           await SpeechRecognition.start({
@@ -106,6 +128,9 @@ export function createHoldToTalkSession() {
         } catch {
           /* already stopped */
         }
+        await new Promise((resolve) => {
+          window.setTimeout(resolve, 120);
+        });
         try {
           await state.capacitorListener?.remove?.();
         } catch {
@@ -120,23 +145,43 @@ export function createHoldToTalkSession() {
         /* ignore */
       }
     } else if (mode === 'webkit' && state.recognition) {
-      try {
-        state.recognition.onresult = null;
-        state.recognition.onerror = null;
-        state.recognition.stop();
-      } catch {
+      const rec = state.recognition;
+      await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          try {
+            rec.onresult = null;
+            rec.onerror = null;
+            rec.onend = null;
+          } catch {
+            /* ignore */
+          }
+          resolve();
+        };
+        rec.onend = finish;
+        rec.onerror = finish;
         try {
-          state.recognition.abort();
+          rec.stop();
         } catch {
-          /* ignore */
+          try {
+            rec.abort();
+          } catch {
+            /* ignore */
+          }
+          finish();
+          return;
         }
-      }
+        window.setTimeout(finish, 450);
+      });
     }
-    const text = String(state.transcript || '').trim();
+    const text = pickCleanTranscript(state);
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;
-    state.transcript = '';
+    state.finalTranscript = '';
+    state.interimTranscript = '';
     return text;
   };
 

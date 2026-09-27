@@ -32,7 +32,7 @@ export default function KentuChatFab({
   engineReady = true,
   onOpen = null,
   onBlockedOpen = null,
-  onConfirmVoiceText = null,
+  onSendMessage = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
@@ -71,7 +71,11 @@ export default function KentuChatFab({
       showToast('Nessun testo rilevato');
       return;
     }
-    setVoicePreviewText(text);
+    // Dopo il long-press Android può ancora sparare un click fantasma:
+    // ritarda il modale così non preme Conferma al posto dell'anteprima.
+    window.setTimeout(() => {
+      setVoicePreviewText(text);
+    }, 280);
   }, [showToast]);
 
   const startListening = useCallback(async () => {
@@ -105,16 +109,13 @@ export default function KentuChatFab({
     const text = String(voicePreviewText || '').trim();
     setVoicePreviewText('');
     if (!text) return;
-    if (typeof onConfirmVoiceText === 'function') {
-      onConfirmVoiceText(text, { fromInput: true, source: 'kentu_fab_hold' });
-      return;
-    }
-    onOpen?.();
-  }, [voicePreviewText, onConfirmVoiceText, onOpen]);
+    onSendMessage?.(text);
+  }, [voicePreviewText, onSendMessage]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
     if (voicePreviewText) return;
+    event.preventDefault();
     finishingRef.current = false;
     if (!engineReady) {
       onBlockedOpen?.();
@@ -143,21 +144,22 @@ export default function KentuChatFab({
       /* ignore */
     }
     if (isListeningRef.current) {
+      event.preventDefault();
       void stopListeningAndPreview();
       return;
     }
     openTextChat();
   }, [clearPressTimer, openTextChat, stopListeningAndPreview]);
 
-  const handlePointerLeave = useCallback((event) => {
-    if (event.buttons !== 0) return;
-    if (finishingRef.current) return;
-    finishingRef.current = true;
+  const handlePointerLeave = useCallback(() => {
+    if (isListeningRef.current) return;
     clearPressTimer();
-    if (isListeningRef.current) {
-      void stopListeningAndPreview();
-    }
-  }, [clearPressTimer, stopListeningAndPreview]);
+  }, [clearPressTimer]);
+
+  const handlePointerCancel = useCallback(() => {
+    if (isListeningRef.current) return;
+    clearPressTimer();
+  }, [clearPressTimer]);
 
   useEffect(() => () => {
     clearPressTimer();
@@ -178,7 +180,7 @@ export default function KentuChatFab({
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerLeave}
-        onPointerCancel={handlePointerLeave}
+        onPointerCancel={handlePointerCancel}
         onContextMenu={(event) => event.preventDefault()}
         disabled={!engineReady}
         className={[
