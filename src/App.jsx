@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { get, ref } from 'firebase/database';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import CentroAnalisiPage from './pages/CentroAnalisiPage';
@@ -14,6 +14,7 @@ import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
 import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListener.jsx';
+import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
 import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
 import { Capacitor } from '@capacitor/core';
@@ -137,6 +138,20 @@ function AuthenticatedApp() {
   );
 }
 
+function AssistantInboxLocationBridge() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!location.state?.openInboxComposer) return;
+    const result = requestOpenInboxComposer();
+    if (result?.skipped) return;
+    navigate(location.pathname || '/', { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
+
+  return null;
+}
+
 function isCapacitorAndroid() {
   try {
     return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
@@ -162,6 +177,7 @@ export default function App() {
       <ChatOverlayProvider>
         <BrowserRouter>
           <NativeAndroidBackHandler />
+          <AssistantInboxLocationBridge />
           <GoogleAssistantInboxListener />
           <AuthenticatedApp />
           <BootSplashLayer />

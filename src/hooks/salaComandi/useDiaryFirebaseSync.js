@@ -107,10 +107,11 @@ export function useDiaryFirebaseSync({
     const todayNode = fullStorico[todayKey];
 
     if (todayNode?.hasEditedNodes || (todayNode?.manualNodes && todayNode.manualNodes.length > 0)) {
-      setManualNodes(todayNode.manualNodes || []);
+      const nextNodes = todayNode.manualNodes || [];
+      setManualNodes((prev) => (prev === nextNodes ? prev : nextNodes));
     } else {
       // BUGFIX: Se oggi è vuoto, partiamo puliti. Nessun trascinamento da ieri.
-      setManualNodes([]);
+      setManualNodes((prev) => (Array.isArray(prev) && prev.length === 0 ? prev : []));
     }
   }, [fullStorico, currentTrackerDateRef, setManualNodes]);
 
@@ -339,6 +340,7 @@ export function useDiaryFirebaseSync({
     setDailyLog((prev) => {
       const safePrev = Array.isArray(prev) ? prev : [];
       if (!dateChanged && safePrev.length > 0) return safePrev;
+      if (!dateChanged && safePrev.length === 0 && safeNextLog.length === 0) return safePrev;
       return safeNextLog;
     });
 

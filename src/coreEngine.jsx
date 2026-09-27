@@ -1727,7 +1727,7 @@ function computeAccumuloSNC(trackerData, daysBack = 60) {
 /** Normalizza log da formato vecchio (meal/items, single, workout) a lista piatta. */
 function normalizeLogData(rawLog) {
   const out = [];
-  (rawLog || []).forEach(entry => {
+  (rawLog || []).forEach((entry, index) => {
     if (!entry || typeof entry !== 'object') return;
     if (isInboxDraftEntry(entry)) {
       if (entry.type === 'unassigned_drafts') {
@@ -1758,7 +1758,7 @@ function normalizeLogData(rawLog) {
       out.push({
         ...entry,
         type: 'ghost_meal',
-        id: entry.id || `ghost_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        id: entry.id || `ghost_${index}_${mt}`,
         mealType: mt,
         mealTime: mTime,
         title: entry.title != null ? String(entry.title) : 'Pasto pianificato',
@@ -1779,7 +1779,7 @@ function normalizeLogData(rawLog) {
           : folderMealType;
         out.push({
           ...subItem, type: itemType, mealType: itemMt,
-          id: subItem.id || Date.now() + Math.random(),
+          id: subItem.id || `food_${index}_${itemMt}`,
           kcal: subItem.kcal ?? subItem.cal ?? 0
         });
       });
@@ -1787,7 +1787,7 @@ function normalizeLogData(rawLog) {
       const mealType = inferMealType(entry);
       out.push({
         ...entry, type: 'food', mealType,
-        id: entry.id || Date.now() + Math.random(),
+        id: entry.id || `food_${index}_${mealType}`,
         kcal: entry.kcal ?? entry.cal ?? 0
       });
     } else if (isSleepEntry(entry)) {
@@ -2772,7 +2772,7 @@ function applyMealTimes(logArray, timesObj) {
     if ((item.type !== 'food' && item.type !== 'recipe') || !timesObj) return item;
     const own = Number(item.mealTime);
     if (Number.isFinite(own) && own >= 0 && own <= 24) {
-      return { ...item, mealTime: own };
+      return item.mealTime === own ? item : { ...item, mealTime: own };
     }
     // Chiave esatta (snack_2) prima del base (snack): non fondere orari di slot ghost.
     const exact = timesObj[item.mealType];

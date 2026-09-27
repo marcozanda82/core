@@ -6,6 +6,8 @@
  * ogni blocco è un'entry `inbox_draft` (timestamp + voci raw, senza mealType).
  */
 
+import { inferDraftType, isDraftType } from './draftParser';
+
 export const MEAL_DRAFT_UNRESOLVED_STATUSES = new Set([
   'raw',
   'pending_enrichment',
@@ -93,22 +95,45 @@ export function serializeInboxDraftItem(item) {
 
 export function normalizeInboxDraftBlock(block, fallbackIndex = 0) {
   if (!block || typeof block !== 'object') return null;
-  const items = asCollectionArray(block.items)
+  const rawText = String(block.rawText || '').trim();
+  let items = asCollectionArray(block.items)
     .map(serializeInboxDraftItem)
     .filter(Boolean);
+  if (items.length === 0 && rawText) {
+    const synthesized = serializeInboxDraftItem({
+      foodName: rawText,
+      status: String(block.status || 'pending').toLowerCase() || 'pending',
+    });
+    if (synthesized) items = [synthesized];
+  }
   if (items.length === 0) return null;
-  const createdAtRaw = Number(block.createdAt);
+  const createdAtRaw = Number(block.createdAt ?? block.timestamp);
+  // Mai Date.now() in lettura: ogni hydrate cambierebbe timestamp/id e
+  // riaccenderebbe setDailyLog / echo Firebase (React #185).
   const createdAt = Number.isFinite(createdAtRaw) && createdAtRaw > 0
     ? Math.round(createdAtRaw)
-    : Date.now();
+    : 0;
   const timeHHmm = String(block.timeHHmm || block.timeString || '').trim();
   const id = resolveInboxDraftIdentity({ ...block, items, createdAt }, fallbackIndex);
+  const inferredFromItems = items
+    .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const resolvedRawText = rawText || inferredFromItems;
+  const inferredType = isDraftType(block.inferredType)
+    ? block.inferredType
+    : inferDraftType(resolvedRawText);
+  const status = String(block.status || 'pending').toLowerCase() || 'pending';
   return {
     type: INBOX_DRAFT_TYPE,
     id,
     createdAt,
+    timestamp: createdAt,
     timeHHmm,
     items,
+    rawText: resolvedRawText,
+    inferredType,
+    status,
     kcal: 0,
   };
 }
@@ -139,12 +164,26 @@ export function extractUnassignedDraftBlocks(log) {
   return blocks.sort((a, b) => (Number(a.createdAt) || 0) - (Number(b.createdAt) || 0));
 }
 
-export function appendUnassignedDraftBlock(log, { items, createdAt, timeHHmm } = {}) {
+export function appendUnassignedDraftBlock(log, {
+  items,
+  createdAt,
+  timeHHmm,
+  rawText,
+  inferredType,
+  timestamp,
+  status,
+  id,
+} = {}) {
+  const stamp = Number(timestamp ?? createdAt) || Date.now();
   const block = normalizeInboxDraftBlock({
-    id: `inbox_${Number(createdAt) || Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    createdAt: Number(createdAt) || Date.now(),
+    id: id || `inbox_${stamp}_${Math.random().toString(36).slice(2, 8)}`,
+    createdAt: stamp,
+    timestamp: stamp,
     timeHHmm,
     items,
+    rawText,
+    inferredType,
+    status: status || 'pending',
   });
   if (!block) return Array.isArray(log) ? [...log] : [];
   return [...(Array.isArray(log) ? log : []), block];
@@ -252,8 +291,15 @@ export function formatInboxDraftCardLabel(block) {
   const names = (Array.isArray(block?.items) ? block.items : [])
     .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
     .filter(Boolean);
-  const foods = names.length > 0 ? names.join(', ') : 'appunti';
-  return `Bozza ${time} - ${foods}`;
+  const foods = String(block?.rawText || '').trim()
+    || (names.length > 0 ? names.join(', ') : 'appunti');
+  const typeTag = block?.inferredType === 'meal'
+    ? 'pasto'
+    : block?.inferredType === 'workout'
+      ? 'allenamento'
+      : '';
+  const prefix = typeTag ? `Bozza ${typeTag}` : 'Bozza';
+  return `${prefix} ${time} - ${foods}`;
 }
 
 /**
@@ -275,8 +321,12 @@ export function serializeUnassignedDraftsForFirebase(log) {
   const blocks = extractUnassignedDraftBlocks(log).map((block) => ({
     id: block.id,
     createdAt: block.createdAt,
+    timestamp: block.timestamp || block.createdAt,
     timeHHmm: block.timeHHmm,
     items: block.items,
+    rawText: block.rawText || '',
+    inferredType: block.inferredType || 'unknown',
+    status: block.status || 'pending',
   }));
   if (blocks.length === 0) return null;
   return {

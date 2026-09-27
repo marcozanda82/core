@@ -11,6 +11,8 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signInWithCredential,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
   deleteUser,
@@ -26,7 +28,15 @@ export { auth };
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-const NATIVE_GOOGLE_SIGNIN_OPTS = { skipNativeAuth: true };
+/** Web Client ID (OAuth client_type 3). Non usare gli ID Android (client_type 1). */
+const GOOGLE_WEB_CLIENT_ID =
+  '382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com';
+
+const NATIVE_GOOGLE_SIGNIN_OPTS = {
+  skipNativeAuth: true,
+  clientId: GOOGLE_WEB_CLIENT_ID,
+  serverClientId: GOOGLE_WEB_CLIENT_ID,
+};
 
 function isNativeRuntime() {
   return Capacitor.isNativePlatform();
@@ -40,6 +50,45 @@ export function isAuthCancelled(error) {
     code === 'auth/cancelled-popup-request' ||
     message.includes('cancel')
   );
+}
+
+/**
+ * Messaggio UI per errori Auth (email/password e Google).
+ * @param {unknown} error
+ * @returns {string}
+ */
+export function getAuthErrorMessage(error) {
+  const code = String(error?.code || '');
+  switch (code) {
+    case 'auth/invalid-email':
+      return 'Indirizzo email non valido.';
+    case 'auth/user-not-found':
+      return 'Nessun account associato a questa email.';
+    case 'auth/wrong-password':
+      return 'Password errata. Riprova.';
+    case 'auth/invalid-credential':
+      return 'Email o password non corretti.';
+    case 'auth/email-already-in-use':
+      return 'Questa email è già in uso. Accedi oppure usa un altro indirizzo.';
+    case 'auth/weak-password':
+      return 'La password deve avere almeno 6 caratteri.';
+    case 'auth/missing-password':
+      return 'Inserisci una password.';
+    case 'auth/missing-email':
+      return 'Inserisci un indirizzo email.';
+    case 'auth/too-many-requests':
+      return 'Troppi tentativi. Riprova tra qualche minuto.';
+    case 'auth/network-request-failed':
+      return 'Connessione assente. Verifica la rete e riprova.';
+    case 'auth/operation-not-allowed':
+      return 'Accesso email non abilitato. Contatta il supporto.';
+    default:
+      return 'Accesso non riuscito. Verifica i dati e riprova.';
+  }
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 /**
@@ -74,6 +123,26 @@ export async function loginWithGoogle() {
     return signInWithCredential(auth, credential);
   }
   return signInWithPopup(auth, googleProvider);
+}
+
+/**
+ * Accede con email e password Firebase.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<import('firebase/auth').UserCredential>}
+ */
+export async function loginWithEmailPassword(email, password) {
+  return signInWithEmailAndPassword(auth, normalizeEmail(email), String(password || ''));
+}
+
+/**
+ * Crea un account email/password Firebase.
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<import('firebase/auth').UserCredential>}
+ */
+export async function createAccountWithEmailPassword(email, password) {
+  return createUserWithEmailAndPassword(auth, normalizeEmail(email), String(password || ''));
 }
 
 /**

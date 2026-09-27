@@ -34,7 +34,7 @@ export default function SalaComandiLoginScreen({
         <form className="login-box" onSubmit={onSubmit}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
             <img
-              src="/nuovo%20logo%20trasparente2.png"
+              src={encodeURI('/nuovo logo trasparente3.png')}
               alt="Kentuos Logo"
               decoding="async"
               style={{

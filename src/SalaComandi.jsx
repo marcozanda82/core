@@ -171,7 +171,7 @@ import {
   isDayIntentionalFast,
   resolveOvernightCarryMeal,
 } from './utils/dayTrackingStatus';
-import { useChatOverlay } from './contexts/ChatOverlayContext';
+import { useChatOverlayApi } from './contexts/ChatOverlayContext';
 import { SimulationModeProvider } from './contexts/SimulationModeContext';
 import { getCurrentTimeRoundedTo15Min, getDefaultWorkoutEndTimeDecimal } from './utils/decimalTimeUtils';
 import {
@@ -873,7 +873,7 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (sleepModal == null) return;
-    const logSrc = isSimulationMode ? (simulatedLog || []) : dailyLog;
+    const logSrc = isSimulationMode ? (simulatedLog || []) : (dailyLogRef.current || []);
     const item = sleepModal.editingId
       ? logSrc.find((e) => e?.id === sleepModal.editingId && e?.type === 'sleep')
       : null;
@@ -914,7 +914,7 @@ export default function SalaComandi() {
       setSleepFormNotes('');
       setSleepFormQuality(3);
     }
-  }, [sleepModal, isSimulationMode, dailyLog, simulatedLog]);
+  }, [sleepModal, isSimulationMode]);
 
   useEffect(() => {
     if (!showSleepPrompt) return;
@@ -3808,11 +3808,21 @@ export default function SalaComandi() {
 
   const commitAppendInboxDraft = useCallback((payload = {}) => {
     const items = Array.isArray(payload?.items) ? payload.items : [];
-    if (!items.length) return { text: '', skipped: true };
-    const createdAt = Number(payload?.createdAt) || Date.now();
+    const rawText = String(payload?.rawText || '').trim();
+    if (!items.length && !rawText) return { text: '', skipped: true };
+    const createdAt = Number(payload?.timestamp ?? payload?.createdAt) || Date.now();
     const timeHHmm = String(payload?.timeString || payload?.exactTime || '').trim();
     const logSnap = dailyLogRef.current || [];
-    const nextLog = appendUnassignedDraftBlock(logSnap, { items, createdAt, timeHHmm });
+    const nextLog = appendUnassignedDraftBlock(logSnap, {
+      id: payload?.id,
+      items,
+      createdAt,
+      timestamp: createdAt,
+      timeHHmm,
+      rawText,
+      inferredType: payload?.inferredType,
+      status: payload?.status || 'pending',
+    });
     dailyLogRef.current = nextLog;
     if (isSimulationMode) {
       setSimulatedLog(nextLog);
@@ -6887,7 +6897,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [dailyLog, manualNodes, setDailyLog, setManualNodes, syncDatiFirebase, trackEventUsage],
   );
 
-  const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlay();
+  const { registerHandlers, closeChat: closeOverlayChat } = useChatOverlayApi();
   closeOverlayChatRef.current = closeOverlayChat;
 
   const {
@@ -7227,7 +7237,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     handleDraftUpdateFoodItemName,
     handleMcDriveRemoveItem,
     handleMcDriveReturnItemToInbox,
-    handleMcDriveRevertAssignedIds,
     handleMcDriveUpdateGrams,
     handleMcDriveUpdateMealTime,
     handleMcDriveApplyAlternative,

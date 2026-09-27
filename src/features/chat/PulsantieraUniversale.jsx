@@ -10,6 +10,9 @@ import {
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
 } from '../../utils/mealDraftStatus';
+import { buildVoiceInboxDraftPayload } from '../../platform/googleAssistantInbox';
+import { enqueueInboxDraftAppend } from '../../platform/inboxDraftAppendBus';
+import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
 import StimulusCockpitOverlay from './StimulusCockpitOverlay';
@@ -474,6 +477,9 @@ export default function PulsantieraUniversale({
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
   const [inboxDrag, setInboxDrag] = useState(null);
   const [showMealTrash, setShowMealTrash] = useState(false);
+  const [inboxComposerOpen, setInboxComposerOpen] = useState(false);
+  const [inboxComposerText, setInboxComposerText] = useState('');
+  const inboxComposerInputRef = useRef(null);
   const inboxDragRef = useRef({
     timer: null,
     pointerId: null,
@@ -495,10 +501,28 @@ export default function PulsantieraUniversale({
     setGuidedMealOrigin(null);
     setShowMealTrash(false);
     setInboxDrag(null);
+    setInboxComposerOpen(false);
+    setInboxComposerText('');
     inboxDragRef.current.armed = false;
     inboxDragRef.current.block = null;
     inboxDragRef.current.pointerId = null;
   }, []);
+
+  useEffect(() => (
+    subscribeInboxComposerFocus(() => {
+      setInboxComposerText('');
+      setInboxComposerOpen(true);
+      setActiveCategory('pasti');
+    }, { embedded })
+  ), [embedded]);
+
+  useEffect(() => {
+    if (activeCategory !== 'pasti' || !inboxComposerOpen) return undefined;
+    const timer = window.setTimeout(() => {
+      inboxComposerInputRef.current?.focus?.();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [activeCategory, inboxComposerOpen]);
 
   useEffect(() => {
     const onDismissSessionNav = () => closeMenus();
@@ -928,6 +952,15 @@ export default function PulsantieraUniversale({
     onSelectInboxDraft?.(block);
   }, [onSelectInboxDraft]);
 
+  const submitInboxComposer = useCallback((event) => {
+    event?.preventDefault?.();
+    const payload = buildVoiceInboxDraftPayload(inboxComposerText);
+    if (!payload) return;
+    enqueueInboxDraftAppend(payload);
+    setInboxComposerText('');
+    setInboxComposerOpen(false);
+  }, [inboxComposerText]);
+
   const pastiOverlay = activeCategory === 'pasti' ? (
     createPortal(
       <>
@@ -983,9 +1016,33 @@ export default function PulsantieraUniversale({
             </div>
 
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
-              {inboxBlocks.length > 0 ? (
-                <section className="inbox-pasti-top mb-3 max-h-[38%] shrink-0 overflow-y-auto overscroll-contain">
-                  <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
+              <section className="inbox-pasti-top mb-3 max-h-[42%] shrink-0 overflow-y-auto overscroll-contain">
+                <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
+                <form
+                  className="mb-2 flex gap-2"
+                  onSubmit={submitInboxComposer}
+                >
+                  <input
+                    ref={inboxComposerInputRef}
+                    type="text"
+                    inputMode="text"
+                    enterKeyHint="done"
+                    autoComplete="off"
+                    placeholder="Scrivi una bozza…"
+                    aria-label="Nuova bozza Inbox"
+                    value={inboxComposerText}
+                    onChange={(event) => setInboxComposerText(event.target.value)}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-400/60"
+                  />
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-cyan-100"
+                  >
+                    Aggiungi
+                  </button>
+                </form>
+                {inboxBlocks.length > 0 ? (
+                  <>
                   <p className="mb-2 text-[0.68rem] text-slate-500">
                     Tocco per smistare · trascina dalla maniglia su un pasto o su un'altra bozza
                   </p>
@@ -1032,8 +1089,13 @@ export default function PulsantieraUniversale({
                       );
                     })}
                   </div>
-                </section>
-              ) : null}
+                  </>
+                ) : (
+                  <p className="mb-2 text-[0.68rem] text-slate-500">
+                    Nessuna bozza in sospeso. Scrivi un alimento e premi Aggiungi.
+                  </p>
+                )}
+              </section>
 
               <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
                 <h3 className="inbox-drafts__title inbox-drafts__title--muted">I tuoi Pasti</h3>

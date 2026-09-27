@@ -5,7 +5,9 @@
   "plugins": {
     "FirebaseAuthentication": {
       "skipNativeAuth": true,
-      "providers": ["google.com"]
+      "providers": ["google.com"],
+      "clientId": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com",
+      "serverClientId": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com"
     },
     "SplashScreen": {
       "launchShowDuration": 0,

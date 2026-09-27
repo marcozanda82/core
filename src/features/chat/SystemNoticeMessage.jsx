@@ -33,7 +33,7 @@ export default function SystemNoticeMessage({ message }) {
         height={72}
         draggable={false}
       />
-      <p className="kentu-system-notice__text">{text}</p>
+      <p className="kentu-system-notice__text text-base font-normal leading-relaxed">{text}</p>
     </div>
   );
 }

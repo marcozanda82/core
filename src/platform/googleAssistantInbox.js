@@ -1,5 +1,6 @@
 import { splitFoodListSegments } from '../features/commandTerminal/conversation/foodPhraseSplit';
 import { serializeInboxDraftItem } from '../utils/mealDraftStatus';
+import { createPendingInboxDraft, inferDraftType } from '../utils/draftParser';
 
 export const GOOGLE_ASSISTANT_DRAFT_SCHEME = 'kentu';
 export const GOOGLE_ASSISTANT_DRAFT_HOST = 'app';
@@ -12,19 +13,11 @@ function nowHHmm() {
   return `${hours}:${minutes}`;
 }
 
-export function stripAssistantCommandWrapper(text) {
-  return String(text || '')
-    .trim()
-    .replace(/^(?:ok\s+google[,:]?\s*)?(?:aggiungi|add|inserisci|salva|registra)\s+/i, '')
-    .replace(/\s+(?:a|su|in|nel|nella)\s+kentu(?:os)?\s*$/i, '')
-    .trim();
-}
-
 export function parseVoiceDraftItems(rawText) {
-  const cleaned = stripAssistantCommandWrapper(rawText);
-  if (!cleaned) return [];
-  const segments = splitFoodListSegments(cleaned);
-  const names = (segments.length > 0 ? segments : [cleaned])
+  const text = String(rawText || '').trim();
+  if (!text) return [];
+  const segments = splitFoodListSegments(text);
+  const names = (segments.length > 0 ? segments : [text])
     .map((name) => String(name || '').trim())
     .filter(Boolean);
   const stamp = Date.now();
@@ -36,20 +29,23 @@ export function parseVoiceDraftItems(rawText) {
       desc: foodName,
       spokenFoodName: foodName,
       grams: 1,
-      status: 'raw',
+      status: 'pending',
     }))
     .filter(Boolean);
 }
 
-export function extractAssistantDraftTextFromUrl(urlString) {
+export function parseAssistantAddDraftUrl(urlString) {
   const raw = String(urlString || '').trim();
-  if (!raw) return '';
+  if (!raw) return { matched: false, text: '' };
   let parsed = null;
   try {
     parsed = new URL(raw);
   } catch {
+    const isVoiceDraft = /add_draft/i.test(raw);
+    if (!isVoiceDraft) return { matched: false, text: '' };
     const match = raw.match(/[?&](?:text|name|query)=([^&]*)/i);
-    return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')).trim() : '';
+    const text = match ? decodeURIComponent(match[1].replace(/\+/g, ' ')).trim() : '';
+    return { matched: true, text };
   }
   const scheme = String(parsed.protocol || '').replace(/:$/, '');
   const host = String(parsed.hostname || parsed.host || '');
@@ -59,23 +55,40 @@ export function extractAssistantDraftTextFromUrl(urlString) {
     && host === GOOGLE_ASSISTANT_DRAFT_HOST
     && path.replace(/\/$/, '') === GOOGLE_ASSISTANT_DRAFT_PATH
   ) || /add_draft/i.test(raw);
-  if (!isVoiceDraft) return '';
+  if (!isVoiceDraft) return { matched: false, text: '' };
   const text = parsed.searchParams.get('text')
     || parsed.searchParams.get('name')
     || parsed.searchParams.get('query')
     || '';
-  return String(text).trim();
+  return { matched: true, text: String(text).trim() };
+}
+
+export function isAssistantAddDraftUrl(urlString) {
+  return parseAssistantAddDraftUrl(urlString).matched;
+}
+
+export function extractAssistantDraftTextFromUrl(urlString) {
+  return parseAssistantAddDraftUrl(urlString).text;
 }
 
 export function buildVoiceInboxDraftPayload(rawText) {
-  const items = parseVoiceDraftItems(rawText);
+  const text = String(rawText || '').trim();
+  if (!text) return null;
+  const structured = createPendingInboxDraft(text);
+  const items = parseVoiceDraftItems(text);
   if (items.length === 0) return null;
-  const createdAt = Date.now();
   return {
+    id: structured.id,
+    rawText: structured.rawText,
+    inferredType: structured.inferredType,
+    timestamp: structured.timestamp,
+    status: structured.status,
     items,
-    createdAt,
+    createdAt: structured.timestamp,
     timeString: nowHHmm(),
     exactTime: nowHHmm(),
     source: 'google_assistant',
   };
 }
+
+export { inferDraftType };

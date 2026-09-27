@@ -1,7 +1,9 @@
 <?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">KentuOS</string>
-    <string name="title_activity_main">KentuOS</string>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">Kentu</string>
+    <string name="title_activity_main">Kentu</string>
     <string name="package_name">com.marcozanda.kentuos</string>
     <string name="custom_url_scheme">com.marcozanda.kentuos</string>
+    <!-- Web Client ID (client_type 3). Usato da Google Sign-In come serverClientId. Non sostituire con ID Android. -->
+    <string name="default_web_client_id" translatable="false" tools:node="replace">382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com</string>
 </resources>

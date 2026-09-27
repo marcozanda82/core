@@ -9,10 +9,13 @@ export const PROTOCOL_TIMELINE_GENERATING_TEXT =
 export const PROTOCOL_TIMELINE_REVISE_TEXT =
   'Aggiorno il piano della giornata...';
 
+export const PROTOCOL_TIMELINE_UPDATED_TEXT =
+  'Ho aggiornato il piano come richiesto.';
+
 export const PROTOCOL_TIMELINE_ERROR_TEXT =
   'Si è verificato un errore nella connessione neurale. Riprova.';
 
-export const PROTOCOL_TIMELINE_SYSTEM_PROMPT = [
+const PROTOCOL_TIMELINE_SYSTEM_PROMPT_BASE = [
   'Sei l\'Architetto dello Stile di Vita Metabolico di Kentu.',
   'Genera una timeline giornaliera personalizzata in base al protocollo richiesto e alle carenze evidenziate dal dashboardState (Forza, Cardio, Sonno, Nutrizione).',
   'Se un pilastro è in priorità (punteggio più basso), inserisci almeno un evento mirato: ad esempio se Forza è in priorità, inserire un evento Allenamento; se Cardio è in priorità, una camminata o sessione aerobica; se Sonno è in priorità, un wind-down serale; se Nutrizione è in priorità, pasti più strutturati.',
@@ -21,8 +24,41 @@ export const PROTOCOL_TIMELINE_SYSTEM_PROMPT = [
   'Schema esatto:',
   '{"timeline":[{"orario":"HH:MM","titolo":"stringa breve in italiano","tipo":"meal|activity|ritual|recovery|focus","focus":"perché questo evento rispetto al protocollo e alle carenze"}]}',
   'tipo: meal = pasti; activity = allenamento/camminata/mobilità; ritual = caffè/idratazione; recovery = sonno/wind-down; focus = deep work.',
-  'Genera 5-8 eventi che coprono l\'intera giornata, con orari realistici e crescenti.',
+  'Genera 3-8 eventi con orari realistici e strettamente crescenti, solo nel futuro rispetto a currentTime.',
 ].join(' ');
+
+/**
+ * System prompt Gemini con vincolo temporale (ore rimanenti + diario già loggato).
+ * @param {string} currentTime
+ * @param {object[]|string} todayLoggedEvents
+ */
+export function buildProtocolTimelineSystemPrompt(currentTime, todayLoggedEvents) {
+  const clock = asTimeHHmm(currentTime) || String(currentTime || '').trim() || '--:--';
+  const logged = formatLoggedEventsForPrompt(todayLoggedEvents);
+  return [
+    PROTOCOL_TIMELINE_SYSTEM_PROMPT_BASE,
+    `CONTESTO TEMPORALE CRITICO: L'orario attuale è ${clock}. L'utente ha già registrato queste attività/pasti oggi: ${logged}.`,
+    `REGOLA RIGIDA: Devi generare la timeline ESCLUSIVAMENTE per le ore rimanenti della giornata (da ${clock} fino al momento di dormire), adattando gli obiettivi del protocollo a ciò che è già stato fatto. NON inserire o proporre MAI eventi in orari passati.`,
+  ].join(' ');
+}
+
+export function buildProtocolTimelineNegotiationPrompt(userMessage, currentTime, todayLoggedEvents) {
+  const clock = asTimeHHmm(currentTime) || String(currentTime || '').trim() || '--:--';
+  const logged = formatLoggedEventsForPrompt(todayLoggedEvents);
+  const request = String(userMessage || '').trim() || 'modifica il piano';
+  return [
+    'Sei l\'Architetto dello Stile di Vita Metabolico di Kentu.',
+    `Sei in fase di negoziazione. L'utente ha chiesto una modifica al piano attuale. Applica la modifica richiesta ('${request}') alla timeline fornita, aggiustando coerentemente gli orari se necessario. Restituisci ESCLUSIVAMENTE il nuovo oggetto JSON con l'array 'timeline' aggiornato.`,
+    `CONTESTO TEMPORALE CRITICO: L'orario attuale è ${clock}. L'utente ha già registrato queste attività/pasti oggi: ${logged}.`,
+    `NON inserire o proporre MAI eventi in orari passati (prima di ${clock}). Conserva gli eventi non toccati dalla richiesta.`,
+    'Niente markdown, niente testo fuori dal JSON, niente spiegazioni.',
+    'Schema esatto:',
+    '{"timeline":[{"orario":"HH:MM","titolo":"stringa breve in italiano","tipo":"meal|activity|ritual|recovery|focus","focus":"perché questo evento rispetto al protocollo e alle carenze"}]}',
+  ].join(' ');
+}
+
+/** Compat: prompt statico senza orario (evitare per generate/revise). */
+export const PROTOCOL_TIMELINE_SYSTEM_PROMPT = PROTOCOL_TIMELINE_SYSTEM_PROMPT_BASE;
 
 const KIND_ICONS = Object.freeze({
   meal: '🍽',
@@ -44,6 +80,137 @@ function asTimeHHmm(value) {
   const hours = Math.min(23, Math.max(0, Number(match[1])));
   const mins = Math.min(59, Math.max(0, Number(match[2])));
   return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function clockFromDecimal(value) {
+  const dec = Number(value);
+  if (!Number.isFinite(dec) || dec < 0 || dec >= 24) return '';
+  const hours = Math.min(23, Math.max(0, Math.floor(dec)));
+  const mins = Math.min(59, Math.max(0, Math.round((dec - hours) * 60)));
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+function clockFromEntry(entry = {}) {
+  return asTimeHHmm(
+    entry.exactTime
+    || entry.timeString
+    || entry.clock
+    || entry.orario,
+  ) || clockFromDecimal(
+    entry.time
+    ?? entry.decimalHour
+    ?? entry.mealTime
+    ?? entry.startTime
+    ?? entry.wakeTime,
+  );
+}
+
+function firstFoodNames(entry = {}) {
+  const items = Array.isArray(entry.items)
+    ? entry.items
+    : Array.isArray(entry.foods)
+      ? entry.foods
+      : [];
+  const names = items
+    .map((row) => String(row?.desc || row?.name || row?.foodName || row?.label || '').trim())
+    .filter(Boolean)
+    .slice(0, 4);
+  if (names.length) return names.join(', ');
+  return String(entry.desc || entry.name || entry.foodName || entry.label || '').trim();
+}
+
+const MEAL_TITLE = {
+  colazione: 'Colazione',
+  snack: 'Spuntino',
+  pranzo: 'Pranzo',
+  cena: 'Cena',
+};
+
+function summarizeLogEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const type = String(entry.type || '').trim().toLowerCase();
+  const time = clockFromEntry(entry);
+  if (type === 'meal' || type === 'food' || type === 'recipe' || type === 'single') {
+    const mealKey = String(entry.mealType || '').split('_')[0].toLowerCase();
+    const title = MEAL_TITLE[mealKey] || 'Pasto';
+    const detail = firstFoodNames(entry);
+    return {
+      time,
+      type: 'meal',
+      title: detail ? `${title}: ${detail}` : title,
+    };
+  }
+  if (type === 'workout' || type === 'work') {
+    const title = String(
+      entry.workoutName
+      || entry.workoutType
+      || entry.activityType
+      || entry.name
+      || entry.label
+      || 'Allenamento',
+    ).trim();
+    return { time, type: 'activity', title };
+  }
+  if (type === 'stimulant' || type === 'energizer' || type === 'coffee' || type === 'tea') {
+    const title = String(
+      entry.label
+      || entry.name
+      || entry.subtype
+      || 'Caffè',
+    ).trim();
+    return { time, type: 'ritual', title };
+  }
+  if (type === 'nap' || type === 'pisolino') {
+    return { time, type: 'recovery', title: 'Pisolino' };
+  }
+  if (type === 'water' || type === 'acqua') {
+    return { time, type: 'ritual', title: 'Acqua' };
+  }
+  return null;
+}
+
+/**
+ * Riepilogo sintetico di pasti/attività già registrati oggi (diario).
+ * @param {object} currentState
+ * @returns {object[]}
+ */
+export function buildTodayLoggedEvents(currentState = {}) {
+  const log = Array.isArray(currentState.activeLog) && currentState.activeLog.length
+    ? currentState.activeLog
+    : (Array.isArray(currentState.dailyLog) ? currentState.dailyLog : []);
+  const extraNodes = Array.isArray(currentState.timelineNodes) ? currentState.timelineNodes : [];
+  const source = log.length > 0 ? log : extraNodes;
+  const seen = new Set();
+  const events = [];
+  source.forEach((entry) => {
+    const row = summarizeLogEntry(entry);
+    if (!row) return;
+    const key = `${row.time}|${row.type}|${row.title}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    events.push(row);
+  });
+  return events
+    .sort((a, b) => String(a.time).localeCompare(String(b.time)))
+    .slice(0, 24);
+}
+
+function formatLoggedEventsForPrompt(todayLoggedEvents) {
+  if (typeof todayLoggedEvents === 'string' && todayLoggedEvents.trim()) {
+    return todayLoggedEvents.trim();
+  }
+  const list = Array.isArray(todayLoggedEvents) ? todayLoggedEvents : [];
+  if (list.length === 0) return 'nessuna attività o pasto registrato finora';
+  return JSON.stringify(list);
+}
+
+function dropPastTimelineEvents(events, currentTime) {
+  const now = asTimeHHmm(currentTime);
+  if (!now) return events;
+  return (Array.isArray(events) ? events : []).filter((row) => {
+    const stamp = asTimeHHmm(row?.time);
+    return !stamp || stamp >= now;
+  });
 }
 
 function unwrapJsonText(rawText) {
@@ -170,6 +337,7 @@ export function buildProtocolDashboardState(currentState = {}) {
       : null,
     hasSleepData: currentState.hasSleepData !== false,
     isTrainingDay: currentState.isTrainingDay === true,
+    todayLoggedEvents: buildTodayLoggedEvents(currentState),
   };
 }
 
@@ -183,26 +351,106 @@ export async function generateDynamicTimeline(protocolId, dashboardState) {
   const id = isDailyProtocolId(protocolId) ? String(protocolId) : '';
   if (!id) throw new Error('invalid_protocol');
   const def = getDailyProtocolDef(id);
+  const currentTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const clock = asTimeHHmm(currentTime) || currentTime;
+  const dash = dashboardState && typeof dashboardState === 'object' ? dashboardState : {};
+  const todayLoggedEvents = Array.isArray(dash.todayLoggedEvents)
+    ? dash.todayLoggedEvents
+    : buildTodayLoggedEvents(dash);
   const payload = {
     protocolId: id,
     protocolName: def?.nome || id,
     protocolFocus: def?.focus || '',
-    dashboardState: dashboardState && typeof dashboardState === 'object' ? dashboardState : {},
+    currentTime: clock,
+    todayLoggedEvents,
+    dashboardState: dash,
   };
   const userPrompt = [
     `Protocollo selezionato: ${payload.protocolName} (${payload.protocolId}).`,
     `Focus del protocollo: ${payload.protocolFocus}`,
+    `currentTime: ${payload.currentTime}`,
+    'todayLoggedEvents (eventi/pasti già completati oggi):',
+    JSON.stringify(payload.todayLoggedEvents),
     'dashboardState (punteggi attuali Forza, Cardio, Sonno, Nutrizione):',
     JSON.stringify(payload.dashboardState),
-    'Genera ora la timeline JSON.',
+    'Genera ora la timeline JSON solo per le ore rimanenti.',
   ].join('\n');
 
-  const text = await askAI(userPrompt, PROTOCOL_TIMELINE_SYSTEM_PROMPT, {
+  const text = await askAI(userPrompt, buildProtocolTimelineSystemPrompt(clock, todayLoggedEvents), {
     model: PROTOCOL_TIMELINE_MODEL,
     temperature: 0.4,
     timeoutMs: 45_000,
   });
-  return parseProtocolTimelineJson(text);
+  const events = parseProtocolTimelineJson(text);
+  const remaining = dropPastTimelineEvents(events, clock);
+  if (remaining.length === 0) {
+    throw new Error('empty_timeline');
+  }
+  return remaining;
+}
+
+/**
+ * Rinegozia la timeline applicando una modifica in linguaggio naturale.
+ * @param {string} userMessage
+ * @param {object[]} currentTimeline
+ * @param {{ protocolId?: string, dashboardState?: object }} [options]
+ * @returns {Promise<object[]>}
+ */
+export async function renegotiateTimeline(userMessage, currentTimeline, options = {}) {
+  const instruction = String(userMessage || '').trim();
+  if (!instruction) throw new Error('empty_revision');
+  const protocolId = options.protocolId;
+  const id = isDailyProtocolId(protocolId) ? String(protocolId) : '';
+  if (!id) throw new Error('invalid_protocol');
+  const def = getDailyProtocolDef(id);
+  const currentTime = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const clock = asTimeHHmm(currentTime) || currentTime;
+  const dash = options.dashboardState && typeof options.dashboardState === 'object'
+    ? options.dashboardState
+    : {};
+  const todayLoggedEvents = Array.isArray(dash.todayLoggedEvents)
+    ? dash.todayLoggedEvents
+    : buildTodayLoggedEvents(dash);
+  const compactTimeline = (Array.isArray(currentTimeline) ? currentTimeline : []).map((row) => ({
+    orario: row?.time || row?.orario || '',
+    titolo: row?.title || row?.titolo || '',
+    tipo: row?.kind || row?.tipo || 'meal',
+    focus: row?.focus || '',
+  }));
+  const payload = {
+    protocolId: id,
+    protocolName: def?.nome || id,
+    currentTime: clock,
+    todayLoggedEvents,
+    userMessage: instruction,
+    timeline: compactTimeline,
+  };
+  const userPrompt = [
+    `Protocollo: ${payload.protocolName} (${payload.protocolId}).`,
+    `currentTime: ${payload.currentTime}`,
+    'todayLoggedEvents:',
+    JSON.stringify(payload.todayLoggedEvents),
+    'Timeline attuale (JSON):',
+    JSON.stringify({ timeline: payload.timeline }),
+    `Richiesta dell'utente: ${payload.userMessage}`,
+    'Applica la modifica e restituisci SOLO il JSON aggiornato con l\'array timeline.',
+  ].join('\n');
+
+  const text = await askAI(
+    userPrompt,
+    buildProtocolTimelineNegotiationPrompt(instruction, clock, todayLoggedEvents),
+    {
+      model: PROTOCOL_TIMELINE_MODEL,
+      temperature: 0.3,
+      timeoutMs: 45_000,
+    },
+  );
+  const events = parseProtocolTimelineJson(text);
+  const remaining = dropPastTimelineEvents(events, clock);
+  if (remaining.length === 0) {
+    throw new Error('empty_timeline');
+  }
+  return remaining;
 }
 
 /**
@@ -219,32 +467,8 @@ export async function reviseDynamicTimeline(
   userInstruction,
   dashboardState,
 ) {
-  const id = isDailyProtocolId(protocolId) ? String(protocolId) : '';
-  if (!id) throw new Error('invalid_protocol');
-  const instruction = String(userInstruction || '').trim();
-  if (!instruction) throw new Error('empty_revision');
-  const def = getDailyProtocolDef(id);
-  const compactTimeline = (Array.isArray(currentTimeline) ? currentTimeline : []).map((row) => ({
-    orario: row?.time || row?.orario || '',
-    titolo: row?.title || row?.titolo || '',
-    tipo: row?.kind || row?.tipo || 'meal',
-    focus: row?.focus || '',
-  }));
-  const userPrompt = [
-    `Protocollo selezionato: ${def?.nome || id} (${id}).`,
-    `Focus del protocollo: ${def?.focus || ''}`,
-    'dashboardState:',
-    JSON.stringify(dashboardState && typeof dashboardState === 'object' ? dashboardState : {}),
-    'Timeline attuale (JSON):',
-    JSON.stringify({ timeline: compactTimeline }),
-    `Modifica richiesta dall'utente: ${instruction}`,
-    'Applica SOLO la modifica richiesta, conserva il resto del piano, restituisci la timeline JSON completa aggiornata.',
-  ].join('\n');
-
-  const text = await askAI(userPrompt, PROTOCOL_TIMELINE_SYSTEM_PROMPT, {
-    model: PROTOCOL_TIMELINE_MODEL,
-    temperature: 0.3,
-    timeoutMs: 45_000,
+  return renegotiateTimeline(userInstruction, currentTimeline, {
+    protocolId,
+    dashboardState,
   });
-  return parseProtocolTimelineJson(text);
 }

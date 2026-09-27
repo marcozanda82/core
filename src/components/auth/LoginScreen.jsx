@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { isAuthCancelled, loginWithGoogle } from '../../services/firebaseAuth';
+import {
+  isAuthCancelled,
+  loginWithGoogle,
+  loginWithEmailPassword,
+  createAccountWithEmailPassword,
+  getAuthErrorMessage,
+} from '../../services/firebaseAuth';
 import { takeNextKentuIntroPhrase } from '../../kentuIntroPhrases';
 import LegalTextModal from '../legal/LegalTextModal.jsx';
 import {
@@ -8,6 +14,8 @@ import {
   PRIVACY_POLICY_SUMMARY,
   PRIVACY_POLICY_TITLE,
 } from '../../constants/legalContent.js';
+
+const KENTU_LOGIN_LOGO_SRC = encodeURI('/nuovo logo trasparente3.png');
 
 function GoogleIcon() {
   return (
@@ -22,28 +30,47 @@ function GoogleIcon() {
 
 export default function LoginScreen() {
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [authBusy, setAuthBusy] = useState(null);
   const [error, setError] = useState(null);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [legalModal, setLegalModal] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [introPhrase] = useState(() => takeNextKentuIntroPhrase());
 
-  const handleGoogleLogin = async () => {
+  const loginDisabled = isSigningIn || !legalAccepted;
+
+  const runAuth = async (mode, action) => {
     if (isSigningIn || !legalAccepted) return;
     setIsSigningIn(true);
+    setAuthBusy(mode);
     setError(null);
     try {
-      await loginWithGoogle();
+      await action();
     } catch (err) {
       if (!isAuthCancelled(err)) {
-        console.warn('[Auth] Google sign-in failed', err);
-        setError('Accesso non riuscito. Verifica la connessione e riprova.');
+        console.warn('[Auth] sign-in failed', err);
+        setError(getAuthErrorMessage(err));
       }
     } finally {
       setIsSigningIn(false);
+      setAuthBusy(null);
     }
   };
 
-  const loginDisabled = isSigningIn || !legalAccepted;
+  const handleGoogleLogin = () => {
+    void runAuth('google', () => loginWithGoogle());
+  };
+
+  const handleEmailLogin = (event) => {
+    event.preventDefault();
+    void runAuth('email', () => loginWithEmailPassword(email, password));
+  };
+
+  const handleCreateAccount = (event) => {
+    event.preventDefault();
+    void runAuth('register', () => createAccountWithEmailPassword(email, password));
+  };
 
   return (
     <div
@@ -82,6 +109,63 @@ export default function LoginScreen() {
             height: 2px;
             background: #22d3ee;
             box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+          }
+          .kentu-login-input {
+            width: 100%;
+            box-sizing: border-box;
+            background: #0b1220;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            color: #f1f5f9;
+            padding: 12px 14px;
+            font-size: 0.9rem;
+            border-radius: 10px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+          }
+          .kentu-login-input::placeholder {
+            color: #64748b;
+          }
+          .kentu-login-input:focus {
+            border-color: rgba(34, 211, 238, 0.65);
+            box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
+          }
+          .kentu-login-primary {
+            width: 100%;
+            background: rgba(34, 211, 238, 0.16);
+            border: 1px solid rgba(34, 211, 238, 0.45);
+            color: #ecfeff;
+            padding: 12px 16px;
+            font-size: 0.9rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+          }
+          .kentu-login-primary:hover:not(:disabled) {
+            background: rgba(34, 211, 238, 0.28);
+            border-color: rgba(34, 211, 238, 0.7);
+            box-shadow: 0 0 22px rgba(34, 211, 238, 0.18);
+          }
+          .kentu-login-secondary {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: #67e8f9;
+            padding: 8px 4px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+          }
+          .kentu-login-secondary:hover:not(:disabled) {
+            color: #a5f3fc;
+          }
+          .kentu-login-primary:disabled,
+          .kentu-login-secondary:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
           }
           .kentu-google-btn {
             width: 100%;
@@ -150,14 +234,17 @@ export default function LoginScreen() {
       <div className="kentu-login-card">
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
           <img
-            src="/nuovo%20logo%20trasparente2.png"
+            src={KENTU_LOGIN_LOGO_SRC}
             alt="KentuOS"
             decoding="async"
+            draggable={false}
+            className="h-auto w-auto max-h-16 max-w-[min(280px,88vw)] object-contain"
             style={{
-              maxHeight: 52,
+              maxHeight: 64,
               width: 'auto',
               maxWidth: 'min(280px, 88vw)',
               objectFit: 'contain',
+              display: 'block',
             }}
           />
         </div>
@@ -187,7 +274,7 @@ export default function LoginScreen() {
             textTransform: 'uppercase',
           }}
         >
-          Beta · Accedi con il tuo account Google
+          Beta · Accedi al tuo account
         </p>
 
         <label
@@ -243,6 +330,67 @@ export default function LoginScreen() {
           </span>
         </label>
 
+        <form onSubmit={handleEmailLogin} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <input
+            type="email"
+            name="email"
+            autoComplete="email"
+            inputMode="email"
+            required
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isSigningIn}
+            className="kentu-login-input"
+            aria-label="Email"
+          />
+          <input
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+            minLength={6}
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={isSigningIn}
+            className="kentu-login-input"
+            aria-label="Password"
+          />
+          <button
+            type="submit"
+            className="kentu-login-primary"
+            disabled={loginDisabled}
+            aria-disabled={loginDisabled}
+          >
+            {authBusy === 'email' ? 'Accesso in corso…' : 'Accedi'}
+          </button>
+          <button
+            type="button"
+            className="kentu-login-secondary"
+            onClick={handleCreateAccount}
+            disabled={loginDisabled}
+            aria-disabled={loginDisabled}
+          >
+            {authBusy === 'register' ? 'Creazione account…' : 'Crea Account'}
+          </button>
+        </form>
+
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            margin: '16px 0 8px',
+          }}
+        >
+          <span style={{ flex: 1, height: 1, background: 'rgba(148,163,184,0.18)' }} />
+          <span style={{ fontSize: '0.68rem', letterSpacing: '0.12em', color: '#64748b', textTransform: 'uppercase' }}>
+            oppure
+          </span>
+          <span style={{ flex: 1, height: 1, background: 'rgba(148,163,184,0.18)' }} />
+        </div>
+
         <button
           type="button"
           className="kentu-google-btn"
@@ -250,7 +398,7 @@ export default function LoginScreen() {
           disabled={loginDisabled}
           aria-disabled={loginDisabled}
         >
-          {isSigningIn ? (
+          {authBusy === 'google' ? (
             <>
               <div className="kentu-auth-spinner" style={{ width: 18, height: 18, margin: 0 }} />
               Connessione in corso…
@@ -283,7 +431,7 @@ export default function LoginScreen() {
               marginTop: 14,
               textAlign: 'center',
               fontSize: '0.75rem',
-              color: '#f87171',
+              color: '#fb923c',
             }}
           >
             {error}

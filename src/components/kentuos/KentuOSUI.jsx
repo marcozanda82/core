@@ -2,6 +2,7 @@
  * KentuOS UI primitives — cards, badges, buttons, grid, outline icons, insight parsing.
  */
 import React from 'react';
+import ChatAiProse from '../../features/chat/ChatAiProse.jsx';
 import './kentuos.css';
 
 const ICON_STROKE = 1.75;
@@ -264,18 +265,21 @@ function MetricRow({ line }) {
 }
 
 export function KentuInsightHero({ block, compact = false }) {
+  const text = String(block || '').trim();
+  if (!text) return null;
+
   if (compact) {
-    const text = String(block || '').trim();
-    if (!text) return null;
-    return (
-      <p className="kentu-greeting-whisper m-0 max-w-full text-sm font-medium leading-snug text-slate-400">
-        {text}
-      </p>
-    );
+    return <ChatAiProse text={text} className="kentu-greeting-whisper" />;
   }
+
   const { title, bullets, bars, remainder } = parseInsightBlock(block);
   const showBullets = bullets.slice(0, 3);
   const showBars = bars.slice(0, 3);
+  const isProse = showBullets.length === 0 && showBars.length === 0;
+
+  if (isProse) {
+    return <ChatAiProse text={text} />;
+  }
 
   return (
     <article className="kentu-card kentu-card--hero kentu-card--chat-ai">
@@ -297,18 +301,24 @@ export function KentuInsightHero({ block, compact = false }) {
         </ul>
       )}
       {remainder ? (
-        <p className="kentu-insight-raw kentu-line-clamp-4" style={{ marginTop: showBullets.length || showBars.length ? 10 : 0 }}>
-          {remainder}
-        </p>
+        <ChatAiProse
+          text={remainder}
+          className="kentu-insight-raw mt-2.5"
+        />
       ) : null}
     </article>
   );
 }
 
 export function KentuInsightCard({ block }) {
+  const text = String(block || '').trim();
+  if (!text) return null;
   const { title, status, bullets, bars, remainder } = parseInsightBlock(block);
   const showBullets = bullets.slice(0, 3);
   const showBars = bars.slice(0, 2);
+  if (showBullets.length === 0 && showBars.length === 0) {
+    return <ChatAiProse text={text} />;
+  }
 
   return (
     <article className="kentu-card kentu-card--insight kentu-card--chat-ai">
@@ -321,18 +331,7 @@ export function KentuInsightCard({ block }) {
           marginBottom: 8,
         }}
       >
-        <h4
-          style={{
-            margin: 0,
-            fontSize: '0.88rem',
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.3,
-            flex: 1,
-            minWidth: 0,
-            color: '#f1f5f9',
-          }}
-        >
+        <h4 className="kentu-insight-title m-0 min-w-0 flex-1">
           {title}
         </h4>
         <KentuBadge variant={status} />
@@ -348,9 +347,7 @@ export function KentuInsightCard({ block }) {
         </ul>
       ) : null}
       {remainder ? (
-        <p className="kentu-insight-raw kentu-line-clamp-4" style={{ marginTop: 8 }}>
-          {remainder}
-        </p>
+        <ChatAiProse text={remainder} className="kentu-insight-raw mt-2" />
       ) : null}
     </article>
   );

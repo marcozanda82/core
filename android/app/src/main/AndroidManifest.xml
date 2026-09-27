@@ -31,6 +31,10 @@
                 <data
                     android:scheme="kentu"
                     android:host="app"
+                    android:path="/add_draft" />
+                <data
+                    android:scheme="kentu"
+                    android:host="app"
                     android:pathPrefix="/add_draft" />
             </intent-filter>
 
@@ -53,6 +57,7 @@
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <!-- Android 12 e precedenti: galleria per foto etichette -->

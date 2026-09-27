@@ -3,6 +3,8 @@ import {
   loginWithGoogle,
   logout,
   subscribeToAuth,
+  loginWithEmailPassword,
+  createAccountWithEmailPassword,
 } from '../services/firebaseAuth';
 
 const AuthContext = createContext(null);
@@ -36,6 +38,8 @@ export function AuthProvider({ children }) {
       authReady,
       uid: user?.uid ?? null,
       loginWithGoogle,
+      loginWithEmailPassword,
+      createAccountWithEmailPassword,
       logout,
     }),
     [user, authReady],

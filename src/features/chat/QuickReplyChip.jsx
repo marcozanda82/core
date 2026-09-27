@@ -24,8 +24,8 @@ export default function QuickReplyChip({
       onClick={onClick}
       className={[
         'kentu-quick-reply-chip',
-        'inline-flex min-h-[2.5rem] w-full min-w-0 items-center justify-center',
-        'rounded-xl border px-2.5 py-1.5 text-sm font-medium leading-snug',
+        'inline-flex min-h-[2.5rem] min-w-0 items-center justify-center',
+        'rounded-xl border px-3 py-1.5 text-sm font-medium leading-snug',
         'backdrop-blur-md shadow-[0_4px_16px_rgba(0,0,0,0.18)]',
         'transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/45',
@@ -77,6 +77,7 @@ export function QuickReplyChipRow({
           label={item.label}
           variant={item.variant}
           disabled={disabled}
+          className="w-full"
           onClick={() => onChipClick?.(item.raw ?? item, index)}
         />
       ))}

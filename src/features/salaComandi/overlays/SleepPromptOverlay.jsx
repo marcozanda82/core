@@ -5,6 +5,7 @@ import {
   isSleepHoursOutOfRange,
   sanitizeNumericInput,
 } from '../../../utils/inputSanity';
+import SleepWakeTimeField from './SleepWakeTimeField';
 
 const STAR_LABELS = ['Pessima', 'Scarsa', 'Discreta', 'Buona', 'Ottima'];
 
@@ -100,7 +101,9 @@ export default function SleepPromptOverlay({
   return (
     <div
       className="sleepPromptModal sleep-quick-modal-overlay"
-      onClick={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose?.();
+      }}
     >
       <div
         className="sleepPromptCard sleep-quick-modal"
@@ -116,11 +119,10 @@ export default function SleepPromptOverlay({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '16px' }}>
           <div>
             <label style={labelStyle}>Ora risveglio</label>
-            <input
-              type="time"
+            <SleepWakeTimeField
               value={sleepFormWakeStr}
-              onChange={(e) => setSleepFormWakeStr(e.target.value)}
-              style={fieldStyle}
+              onChange={setSleepFormWakeStr}
+              fieldStyle={fieldStyle}
             />
           </div>
 

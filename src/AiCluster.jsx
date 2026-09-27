@@ -39,7 +39,7 @@ import ChatReportCard from './features/chat/ChatReportCard.jsx';
 import MetabolicFocusChatCard from './features/chat/MetabolicFocusChatCard.jsx';
 import { isMetabolicFocusMessage } from './features/chat/metabolicFocus.js';
 import KentuProcessingBanner, { KentuProcessingStatusBadge } from './features/chat/KentuProcessingBanner.jsx';
-import { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
+import QuickReplyChip, { QuickReplyChipRow } from './features/chat/QuickReplyChip.jsx';
 import SystemNoticeMessage from './features/chat/SystemNoticeMessage.jsx';
 import { isSystemNoticeMessage, shouldRenderSystemNoticeChrome } from './features/chat/chatMessageKind.js';
 import QuickEventConfirmMedia from './features/quickEvents/QuickEventConfirmMedia.jsx';
@@ -1864,18 +1864,16 @@ export default function AiCluster({
                         />
                       ) : null}
                     {(msg.type === 'REQUEST_FOOD_PHOTO' || msg.requestFoodPhoto === true) && !msg.isTyping ? (
-                      <div className="kentu-quick-row kentu-quick-row--clarification" style={{ justifyContent: 'flex-start', marginTop: 8 }}>
-                        <KentuButton
-                          variant="secondary"
-                          className="kentu-btn--clarification"
-                          type="button"
+                      <div className="kentu-quick-row kentu-quick-row--clarification">
+                        <QuickReplyChip
+                          label="📷 Scatta foto etichetta"
+                          variant="primary"
+                          className="w-full"
                           onClick={() => {
                             openFoodPhotoCapture();
                             pinChatToBottomSoon();
                           }}
-                        >
-                          📷 Scatta foto etichetta
-                        </KentuButton>
+                        />
                       </div>
                     ) : null}
                   </div>
@@ -1908,7 +1906,6 @@ export default function AiCluster({
                 return (
                 <div
                   className={`kentu-quick-row${isClarification ? ' kentu-quick-row--clarification' : ''}`}
-                  style={{ justifyContent: msg.sender === 'ai' ? 'flex-start' : 'flex-end' }}
                 >
                   {replies.map((reply, rIdx) => {
                     const morningActivityIds = ['weights', 'cardio', 'rest'];
@@ -1918,10 +1915,12 @@ export default function AiCluster({
                       : String(reply || '').trim();
                     if (!replyLabel) return null;
                     return (
-                      <KentuButton
+                      <QuickReplyChip
                         key={rIdx}
-                        variant="secondary"
-                        className={isClarification ? 'kentu-btn--clarification' : 'kentu-btn--sm'}
+                        label={replyLabel}
+                        variant={isClarification || replyObj?.variant === 'primary' ? 'primary' : 'default'}
+                        className="w-full"
+                        disabled={isProcessing}
                         onClick={() => {
                           if (isClarification) {
                             setConsumedClarificationKeys((prev) => {
@@ -1989,42 +1988,38 @@ export default function AiCluster({
                           }
                           pinChatToBottomSoon();
                         }}
-                      >
-                        {replyLabel}
-                      </KentuButton>
+                      />
                     );
                   })}
                 </div>
                 );
               })()}
               {Array.isArray(msg.dinnerOptions) && msg.dinnerOptions.length > 0 && !msg.isTyping && typeof onLogDinnerOption === 'function' && (
-                <div className="kentu-quick-row" style={{ justifyContent: 'flex-end' }}>
+                <div className="kentu-quick-row">
                   {msg.dinnerOptions.map((opt, oIdx) => (
-                    <KentuButton
+                    <QuickReplyChip
                       key={oIdx}
-                      variant="secondary"
-                      className="kentu-btn--sm"
+                      label={`Log pasto ${oIdx + 1}`}
+                      className="w-full"
                       onClick={() => {
                         onLogDinnerOption(opt);
                         pinChatToBottomSoon();
                       }}
-                    >
-                      Log pasto {oIdx + 1}
-                    </KentuButton>
+                    />
                   ))}
                 </div>
               )}
               {Array.isArray(msg.agendaOptions) && msg.agendaOptions.length > 0 && !msg.isTyping && typeof onLoadAgenda === 'function' && (
-                <div className="kentu-quick-row" style={{ justifyContent: 'flex-start' }}>
-                  <KentuButton
-                    variant="secondary"
+                <div className="kentu-quick-row">
+                  <QuickReplyChip
+                    label="Carica nel diario"
+                    variant="primary"
+                    className="w-full"
                     onClick={() => {
                       onLoadAgenda(msg.agendaOptions);
                       pinChatToBottomSoon();
                     }}
-                  >
-                    Carica nel diario
-                  </KentuButton>
+                  />
                 </div>
               )}
             </div>
@@ -2156,11 +2151,13 @@ export default function AiCluster({
           </div>
         )}
         {visibleQuickReplies.length > 0 && !suppressQuickReplies && !dockedMcDriveTray ? (
-          <div className="flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
+          <div className="kentu-quick-reply-chip-row kentu-quick-reply-chip-row--scroll flex w-full flex-row gap-2 overflow-x-auto px-2 pb-2 scrollbar-hide">
             {visibleQuickReplies.map((entry) => (
-              <button
+              <QuickReplyChip
                 key={entry.label}
-                type="button"
+                label={entry.label}
+                variant={entry.variant === 'primary' ? 'primary' : 'default'}
+                className="w-auto shrink-0"
                 onClick={() => {
                   if (isFoodPhotoQuickReply(entry.label) || entry.action === 'photo') {
                     openFoodPhotoCapture();
@@ -2182,10 +2179,7 @@ export default function AiCluster({
                   }
                   pinChatToBottomSoon();
                 }}
-                className="shrink-0 rounded-full border border-cyan-500/30 bg-slate-900/70 px-3.5 py-1.5 text-sm font-medium text-cyan-200 transition-colors hover:border-cyan-400/50 hover:bg-slate-800/90 hover:text-cyan-50"
-              >
-                {entry.label}
-              </button>
+              />
             ))}
           </div>
         ) : null}

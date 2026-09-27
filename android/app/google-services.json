@@ -15,6 +15,18 @@
       },
       "oauth_client": [
         {
+          "client_id": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com",
+          "client_type": 3
+        },
+        {
+          "client_id": "382993217593-45d3qgp64dfq8mljca98uln5ul9uf4s3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.marcozanda.kentuos",
+            "certificate_hash": "cf7e7968698dab73cd3a8597cae408530de523fd"
+          }
+        },
+        {
           "client_id": "382993217593-8kftgddgpro97p6s38qoeem4vbrp5jsp.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -23,8 +35,12 @@
           }
         },
         {
-          "client_id": "382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com",
-          "client_type": 3
+          "client_id": "382993217593-rt5kt3mfp9a6noufn1do6h0unadq99ni.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.marcozanda.kentuos",
+            "certificate_hash": "61135be8ae0861dead4a6d140531f7174edb5a21"
+          }
         }
       ],
       "api_key": [

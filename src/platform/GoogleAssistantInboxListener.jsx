@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   buildVoiceInboxDraftPayload,
-  extractAssistantDraftTextFromUrl,
+  parseAssistantAddDraftUrl,
 } from './googleAssistantInbox';
 import { enqueueInboxDraftAppend } from './inboxDraftAppendBus';
+import { requestOpenInboxComposer } from './inboxComposerFocusBus';
+import { toastMessageForDraftType } from '../utils/draftParser';
 
 const TOAST_MS = 2800;
-const TOAST_MESSAGE = 'Bozza vocale aggiunta all\'Inbox';
 
 function VoiceInboxToast({ message }) {
   if (!message || typeof document === 'undefined') return null;
@@ -19,14 +21,23 @@ function VoiceInboxToast({ message }) {
   );
 }
 
+function openInboxComposer(navigate) {
+  requestOpenInboxComposer();
+  if (typeof navigate === 'function') {
+    navigate('/', { replace: true, state: { openInboxComposer: true, ts: Date.now() } });
+  }
+}
+
 /**
  * Intercetta kentu://app/add_draft?text=... (Ok Google / App Actions)
- * e accoda la bozza Inbox senza bloccare la UI.
+ * e accoda la bozza Inbox, oppure apre Inbox + tastiera se il testo manca.
  */
 export default function GoogleAssistantInboxListener() {
+  const navigate = useNavigate();
   const [toast, setToast] = useState('');
   const seenUrlsRef = useRef(new Set());
   const toastTimerRef = useRef(null);
+  const launchHandledRef = useRef(false);
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -36,9 +47,9 @@ export default function GoogleAssistantInboxListener() {
     let listenerHandle = null;
     let cancelled = false;
 
-    const showToast = () => {
+    const showToast = (message) => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
-      setToast(TOAST_MESSAGE);
+      setToast(message || toastMessageForDraftType('unknown'));
       toastTimerRef.current = window.setTimeout(() => {
         setToast('');
         toastTimerRef.current = null;
@@ -47,15 +58,24 @@ export default function GoogleAssistantInboxListener() {
 
     const handleUrl = (urlString) => {
       const url = String(urlString || '').trim();
-      if (!url || seenUrlsRef.current.has(url)) return;
-      const text = extractAssistantDraftTextFromUrl(url);
-      if (!text) return;
+      if (!url) return;
+      const parsed = parseAssistantAddDraftUrl(url);
+      if (!parsed.matched) return;
+      const rawText = String(parsed.text || '').trim();
+      if (!rawText || /^[.,;:!?\s]+$/.test(rawText)) {
+        openInboxComposer(navigate);
+        return;
+      }
+      if (seenUrlsRef.current.has(url)) return;
       seenUrlsRef.current.add(url);
-      const payload = buildVoiceInboxDraftPayload(text);
-      if (!payload) return;
+      const payload = buildVoiceInboxDraftPayload(rawText);
+      if (!payload) {
+        openInboxComposer(navigate);
+        return;
+      }
       const result = enqueueInboxDraftAppend(payload);
       if (result?.skipped) return;
-      showToast();
+      showToast(toastMessageForDraftType(payload.inferredType));
     };
 
     (async () => {
@@ -66,7 +86,10 @@ export default function GoogleAssistantInboxListener() {
 
         try {
           const launch = await CapacitorApp.getLaunchUrl();
-          if (!cancelled && launch?.url) handleUrl(launch.url);
+          if (!cancelled && launch?.url && !launchHandledRef.current) {
+            launchHandledRef.current = true;
+            handleUrl(launch.url);
+          }
         } catch (error) {
           console.warn('[GoogleAssistantInbox] getLaunchUrl failed', error);
         }
@@ -83,7 +106,7 @@ export default function GoogleAssistantInboxListener() {
       cancelled = true;
       listenerHandle?.remove?.();
     };
-  }, []);
+  }, [navigate]);
 
   return <VoiceInboxToast message={toast} />;
 }

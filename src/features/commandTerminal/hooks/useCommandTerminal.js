@@ -67,8 +67,10 @@ import {
 import {
   buildProtocolDashboardState,
   generateDynamicTimeline,
-  reviseDynamicTimeline,
+  renegotiateTimeline,
   PROTOCOL_TIMELINE_ERROR_TEXT,
+  PROTOCOL_TIMELINE_REVISE_TEXT,
+  PROTOCOL_TIMELINE_UPDATED_TEXT,
 } from '../../dailyProtocols/generateDynamicTimeline.js';
 import {
   readFavoriteBreakfast,
@@ -1081,10 +1083,22 @@ export function useCommandTerminal({
       }
 
       const protocolSnap = getDailyProtocolSnapshot();
+      const historyTimeline = (() => {
+        const list = Array.isArray(chatHistoryRef.current) ? chatHistoryRef.current : [];
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+          const events = list[i]?.protocolTimeline;
+          if (Array.isArray(events) && events.length > 0) return events;
+        }
+        return [];
+      })();
+      const planningTimeline = (
+        Array.isArray(protocolSnap.protocolTimeline) && protocolSnap.protocolTimeline.length > 0
+          ? protocolSnap.protocolTimeline
+          : historyTimeline
+      );
       const canNegotiateProtocol = protocolSnap.protocolStatus === DAILY_PROTOCOL_STATUS.PLANNING
         && isDailyProtocolId(protocolSnap.activeDailyProtocol)
-        && Array.isArray(protocolSnap.protocolTimeline)
-        && protocolSnap.protocolTimeline.length > 0
+        && planningTimeline.length > 0
         && protocolSnap.isGenerating !== true
         && Boolean(resolvedText)
         && !skipUserBubble
@@ -1093,33 +1107,26 @@ export function useCommandTerminal({
         && !options?.fromQuickReply
         && !options?.clarificationReply
         && !options?.fromSlotQuickReply
-        && !['GENERATE_PERIOD_REPORT', 'GENERATE_REPORT', 'MANUAL_SHORTCUT'].includes(intentUpper);
+        && !['GENERATE_PERIOD_REPORT', 'GENERATE_REPORT', 'MANUAL_SHORTCUT', 'OPEN_PROTOCOL_PLANNER'].includes(intentUpper);
 
       if (canNegotiateProtocol) {
         const protocolId = protocolSnap.activeDailyProtocol;
         setProtocolGenerating(true);
         setIsLoading(true);
-        if (typeof setChatHistoryRef.current === 'function') {
-          setChatHistoryRef.current((prev) => {
-            const list = Array.isArray(prev) ? [...prev] : [];
-            for (let i = list.length - 1; i >= 0; i -= 1) {
-              if (list[i]?.type === 'PROTOCOL_PLANNING') {
-                list[i] = { ...list[i], isGeneratingPlan: true };
-                break;
-              }
-            }
-            return list;
-          });
-        }
+        setActiveQuickReplies([]);
+        appendAiMessage(PROTOCOL_TIMELINE_REVISE_TEXT, {
+          type: 'PROTOCOL_PLANNING',
+          protocolId,
+          protocolTimeline: planningTimeline,
+          isGeneratingPlan: true,
+        });
         try {
           const currentState =
             typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
-          const timeline = await reviseDynamicTimeline(
+          const timeline = await renegotiateTimeline(resolvedText, planningTimeline, {
             protocolId,
-            protocolSnap.protocolTimeline,
-            resolvedText,
-            buildProtocolDashboardState(currentState),
-          );
+            dashboardState: buildProtocolDashboardState(currentState),
+          });
           setProtocolTimeline(timeline);
           setProtocolGenerating(false);
           setIsLoading(false);
@@ -1127,9 +1134,10 @@ export function useCommandTerminal({
             setChatHistoryRef.current((prev) => {
               const list = Array.isArray(prev) ? [...prev] : [];
               for (let i = list.length - 1; i >= 0; i -= 1) {
-                if (list[i]?.type === 'PROTOCOL_PLANNING') {
+                if (list[i]?.type === 'PROTOCOL_PLANNING' && list[i]?.isGeneratingPlan === true) {
                   list[i] = {
                     ...list[i],
+                    text: PROTOCOL_TIMELINE_UPDATED_TEXT,
                     protocolId,
                     protocolTimeline: timeline,
                     isGeneratingPlan: false,
@@ -1142,14 +1150,14 @@ export function useCommandTerminal({
           }
           return { ok: true, protocolRevised: true, dailyProtocol: protocolId };
         } catch (error) {
-          console.warn('[useCommandTerminal] reviseDynamicTimeline failed', error);
+          console.warn('[useCommandTerminal] renegotiateTimeline failed', error);
           setProtocolGenerating(false);
           setIsLoading(false);
           if (typeof setChatHistoryRef.current === 'function') {
             setChatHistoryRef.current((prev) => {
               const list = Array.isArray(prev) ? [...prev] : [];
               for (let i = list.length - 1; i >= 0; i -= 1) {
-                if (list[i]?.type === 'PROTOCOL_PLANNING') {
+                if (list[i]?.type === 'PROTOCOL_PLANNING' && list[i]?.isGeneratingPlan === true) {
                   list[i] = { ...list[i], isGeneratingPlan: false };
                   break;
                 }

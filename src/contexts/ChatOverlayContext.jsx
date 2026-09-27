@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
-const ChatOverlayContext = createContext(null);
+const ChatOverlayApiContext = createContext(null);
+const ChatOverlayHandlersContext = createContext(null);
 
 /**
  * 🛡️ DIGA ANTI-LOOP: Shallow equality check per oggetti
@@ -26,6 +27,9 @@ function shallowEqual(objA, objB) {
 /**
  * Stato globale overlay chat (FAB + bottom sheet).
  * actionHandlers: props AiCluster iniettate da SalaComandi via registerHandlers.
+ *
+ * Due context: SalaComandi si iscrive solo all'API (registerHandlers / closeChat)
+ * così un aggiornamento degli handler non re-renderizza SalaComandi (React #185).
  */
 export function ChatOverlayProvider({ children }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -35,56 +39,48 @@ export function ChatOverlayProvider({ children }) {
   const closeChat = useCallback(() => setIsChatOpen(false), []);
   const toggleChat = useCallback(() => setIsChatOpen((prev) => !prev), []);
 
-  // 🔥 FIX LOOP DEFINITIVO: Shallow compare per bloccare aggiornamenti ridondanti
   const registerHandlers = useCallback((newHandlers) => {
     setActionHandlers((prevHandlers) => {
       const safeNewHandlers = newHandlers && typeof newHandlers === 'object' ? newHandlers : {};
-      
-      // 🛡️ DIGA: Se semanticamente identici, ritorna PREV per evitare re-render
       if (shallowEqual(prevHandlers, safeNewHandlers)) {
-        console.log('🛡️ [ANTI-LOOP] Handlers identici, aggiornamento bloccato');
-        return prevHandlers; // ← Blocca il re-render del context!
+        return prevHandlers;
       }
-      
-      // 🔍 DIAGNOSTICA: Log delle chiavi che sono cambiate (per debug)
-      if (process.env.NODE_ENV === 'development') {
-        const changedKeys = Object.keys(safeNewHandlers).filter(
-          key => !Object.is(prevHandlers[key], safeNewHandlers[key])
-        );
-        if (changedKeys.length > 0 && changedKeys.length < 10) {
-          console.log('🔄 [CONTEXT] Handlers modificati:', changedKeys.join(', '));
-        }
-      }
-      
       return safeNewHandlers;
     });
   }, []);
 
-  const value = useMemo(
+  const api = useMemo(
     () => ({
       isChatOpen,
       openChat,
       closeChat,
       toggleChat,
-      actionHandlers,
       registerHandlers,
     }),
-    [isChatOpen, openChat, closeChat, toggleChat, actionHandlers, registerHandlers],
+    [isChatOpen, openChat, closeChat, toggleChat, registerHandlers],
   );
 
   return (
-    <ChatOverlayContext.Provider value={value}>
-      {children}
-    </ChatOverlayContext.Provider>
+    <ChatOverlayApiContext.Provider value={api}>
+      <ChatOverlayHandlersContext.Provider value={actionHandlers}>
+        {children}
+      </ChatOverlayHandlersContext.Provider>
+    </ChatOverlayApiContext.Provider>
   );
 }
 
-export function useChatOverlay() {
-  const ctx = useContext(ChatOverlayContext);
+export function useChatOverlayApi() {
+  const ctx = useContext(ChatOverlayApiContext);
   if (!ctx) {
-    throw new Error('useChatOverlay must be used within ChatOverlayProvider');
+    throw new Error('useChatOverlayApi must be used within ChatOverlayProvider');
   }
   return ctx;
 }
 
-export default ChatOverlayContext;
+export function useChatOverlay() {
+  const api = useChatOverlayApi();
+  const actionHandlers = useContext(ChatOverlayHandlersContext);
+  return { ...api, actionHandlers: actionHandlers || {} };
+}
+
+export default ChatOverlayApiContext;
