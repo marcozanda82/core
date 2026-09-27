@@ -324,7 +324,7 @@ export async function sanitizeHistoricalFoodDb(userId, masterDb, options = {}) {
   /** @type {Record<string, Record<string, unknown>>} */
   const patchByKey = {};
   /** @type {Record<string, object>} */
-  const nextFoodDb = { ...(personalDb || {}) };
+  let nextFoodDb = { ...(personalDb || {}) };
 
   let resynced = 0;
   let sterilized = 0;

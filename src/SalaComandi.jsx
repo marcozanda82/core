@@ -7021,7 +7021,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         dynamicDailyKcal:
           dynamicDailyKcal
           ?? (effectiveTargetsForCurrentDate?.kcal ?? userTargets?.kcal ?? 2000),
-        fullHistory,
         decimalHour: getCurrentTimeRoundedTo15Min(),
         predictMealType,
         mealState: {
@@ -7048,11 +7047,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         favoriteBreakfast: readFavoriteBreakfast(),
         activeDailyProtocol: getActiveDailyProtocol(),
         timelineNodes: allNodes,
-        manualNodes: manualNodesForTimeline,
         fastingData,
         metabolicSnapshot,
         userProfile,
-        userUid,
         userDisplayName: String(userProfile?.displayName || userProfile?.name || '').trim(),
         healthScore,
         longevityScore: unifiedLongevityScore,
