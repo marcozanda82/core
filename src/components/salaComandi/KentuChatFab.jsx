@@ -1,8 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { enqueueInboxDraftAppend } from '../../platform/inboxDraftAppendBus';
-import { buildVoiceInboxDraftPayload } from '../../platform/googleAssistantInbox';
-import { toastMessageForDraftType } from '../../utils/draftParser';
 import {
   createHoldToTalkSession,
   playHoldToTalkHaptic,
@@ -13,8 +10,21 @@ const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
 const TOAST_MS = 2800;
 
+const btnBase = {
+  flex: 1,
+  minHeight: 56,
+  padding: '16px 12px',
+  borderRadius: 14,
+  fontSize: '1.05rem',
+  fontWeight: 800,
+  letterSpacing: '0.04em',
+  textTransform: 'uppercase',
+  cursor: 'pointer',
+  border: 'none',
+};
+
 /**
- * Pulsante flottante Emblema Kentu — tap: apre la chat; long-press: dettatura → bozza Inbox.
+ * Pulsante flottante Emblema Kentu — tap: apre la chat; long-press: dettatura → anteprima → chat.
  */
 
 export default function KentuChatFab({
@@ -22,6 +32,7 @@ export default function KentuChatFab({
   engineReady = true,
   onOpen = null,
   onBlockedOpen = null,
+  onConfirmVoiceText = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
@@ -29,10 +40,11 @@ export default function KentuChatFab({
   const sessionRef = useRef(null);
   const finishingRef = useRef(false);
   const [isListening, setIsListening] = useState(false);
+  const [voicePreviewText, setVoicePreviewText] = useState('');
   const [toast, setToast] = useState('');
   const toastTimerRef = useRef(null);
 
-  const showDraftToast = useCallback((message) => {
+  const showToast = useCallback((message) => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     setToast(message);
     toastTimerRef.current = window.setTimeout(() => {
@@ -48,20 +60,19 @@ export default function KentuChatFab({
     }
   }, []);
 
-  const stopListeningAndSaveDraft = useCallback(async () => {
+  const stopListeningAndPreview = useCallback(async () => {
     const session = sessionRef.current;
     sessionRef.current = null;
     isListeningRef.current = false;
     setIsListening(false);
     if (!session) return;
-    const text = await session.stop();
-    const payload = buildVoiceInboxDraftPayload(text);
-    if (!payload) return;
-    payload.source = 'kentu_fab_hold';
-    const result = enqueueInboxDraftAppend(payload);
-    if (result?.skipped) return;
-    showDraftToast(toastMessageForDraftType(payload.inferredType));
-  }, [showDraftToast]);
+    const text = String(await session.stop() || '').trim();
+    if (!text) {
+      showToast('Nessun testo rilevato');
+      return;
+    }
+    setVoicePreviewText(text);
+  }, [showToast]);
 
   const startListening = useCallback(async () => {
     const session = createHoldToTalkSession();
@@ -74,9 +85,9 @@ export default function KentuChatFab({
       isListeningRef.current = false;
       setIsListening(false);
       sessionRef.current = null;
-      showDraftToast('Microfono non disponibile');
+      showToast('Microfono non disponibile');
     }
-  }, [showDraftToast]);
+  }, [showToast]);
 
   const openTextChat = useCallback(() => {
     if (!engineReady) {
@@ -86,8 +97,24 @@ export default function KentuChatFab({
     onOpen?.();
   }, [engineReady, onBlockedOpen, onOpen]);
 
+  const handleCancelPreview = useCallback(() => {
+    setVoicePreviewText('');
+  }, []);
+
+  const handleConfirmPreview = useCallback(() => {
+    const text = String(voicePreviewText || '').trim();
+    setVoicePreviewText('');
+    if (!text) return;
+    if (typeof onConfirmVoiceText === 'function') {
+      onConfirmVoiceText(text, { fromInput: true, source: 'kentu_fab_hold' });
+      return;
+    }
+    onOpen?.();
+  }, [voicePreviewText, onConfirmVoiceText, onOpen]);
+
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
+    if (voicePreviewText) return;
     finishingRef.current = false;
     if (!engineReady) {
       onBlockedOpen?.();
@@ -103,7 +130,7 @@ export default function KentuChatFab({
       pressTimer.current = null;
       void startListening();
     }, HOLD_MS);
-  }, [clearPressTimer, engineReady, onBlockedOpen, startListening]);
+  }, [clearPressTimer, engineReady, onBlockedOpen, startListening, voicePreviewText]);
 
   const handlePointerUp = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -116,11 +143,11 @@ export default function KentuChatFab({
       /* ignore */
     }
     if (isListeningRef.current) {
-      void stopListeningAndSaveDraft();
+      void stopListeningAndPreview();
       return;
     }
     openTextChat();
-  }, [clearPressTimer, openTextChat, stopListeningAndSaveDraft]);
+  }, [clearPressTimer, openTextChat, stopListeningAndPreview]);
 
   const handlePointerLeave = useCallback((event) => {
     if (event.buttons !== 0) return;
@@ -128,11 +155,9 @@ export default function KentuChatFab({
     finishingRef.current = true;
     clearPressTimer();
     if (isListeningRef.current) {
-      void stopListeningAndSaveDraft();
-      return;
+      void stopListeningAndPreview();
     }
-    // Leave senza hold: non aprire la chat (evita tap fantasma).
-  }, [clearPressTimer, stopListeningAndSaveDraft]);
+  }, [clearPressTimer, stopListeningAndPreview]);
 
   useEffect(() => () => {
     clearPressTimer();
@@ -143,6 +168,8 @@ export default function KentuChatFab({
   }, [clearPressTimer]);
 
   if (!visible) return null;
+
+  const previewOpen = Boolean(String(voicePreviewText || '').trim());
 
   return (
     <>
@@ -164,7 +191,7 @@ export default function KentuChatFab({
         ].join(' ')}
         aria-label={
           isListening
-            ? 'Kentu AI — in ascolto, rilascia per salvare la bozza'
+            ? 'Kentu AI — in ascolto, rilascia per rivedere il testo'
             : engineReady
               ? 'Kentu AI'
               : 'Kentu AI — allineamento in corso'
@@ -227,6 +254,94 @@ export default function KentuChatFab({
           {isListening ? 'Ascolto…' : 'Kentu AI'}
         </span>
       </button>
+      {previewOpen && typeof document !== 'undefined'
+        ? createPortal(
+          <div
+            role="presentation"
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 100090,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+              background: 'rgba(0,0,0,0.82)',
+            }}
+            onClick={handleCancelPreview}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="kentu-voice-preview-title"
+              onClick={(event) => event.stopPropagation()}
+              style={{
+                width: '100%',
+                maxWidth: 400,
+                background: '#12141a',
+                color: '#fff',
+                padding: 24,
+                borderRadius: 18,
+                border: '1px solid rgba(34, 211, 238, 0.28)',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              }}
+            >
+              <h3
+                id="kentu-voice-preview-title"
+                style={{
+                  margin: '0 0 12px',
+                  fontSize: '1.15rem',
+                  fontWeight: 800,
+                  color: '#f8fafc',
+                }}
+              >
+                Testo Rilevato
+              </h3>
+              <p
+                style={{
+                  margin: '0 0 22px',
+                  padding: 14,
+                  borderRadius: 12,
+                  background: '#0f1115',
+                  border: '1px solid #334155',
+                  color: '#e2e8f0',
+                  fontSize: '1.05rem',
+                  lineHeight: 1.45,
+                  maxHeight: '40vh',
+                  overflowY: 'auto',
+                }}
+              >
+                {voicePreviewText}
+              </p>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={handleCancelPreview}
+                  style={{
+                    ...btnBase,
+                    background: '#1e293b',
+                    color: '#e2e8f0',
+                  }}
+                >
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmPreview}
+                  style={{
+                    ...btnBase,
+                    background: '#22d3ee',
+                    color: '#0f172a',
+                  }}
+                >
+                  Conferma
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+        : null}
       {toast && typeof document !== 'undefined'
         ? createPortal(
           <div className="inbox-undo-toast" role="status" aria-live="polite">

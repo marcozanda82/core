@@ -10,8 +10,6 @@ import {
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
 } from '../../utils/mealDraftStatus';
-import { buildVoiceInboxDraftPayload } from '../../platform/googleAssistantInbox';
-import { enqueueInboxDraftAppend } from '../../platform/inboxDraftAppendBus';
 import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
@@ -238,6 +236,7 @@ function PillarButton({
   onClick,
   badgeCount = 0,
   onBadgeClick = null,
+  large = false,
 }) {
   const count = Math.max(0, Math.round(Number(badgeCount) || 0));
   const canOpenBadge = count > 0 && typeof onBadgeClick === 'function';
@@ -251,14 +250,20 @@ function PillarButton({
         onClick={onClick}
         aria-pressed={active}
         className={[
-          'kentu-pulsantiera__btn relative flex h-auto min-h-0 w-full min-w-0 flex-col items-center justify-center gap-0.5 overflow-visible rounded-xl border px-1 py-1.5 transition-colors',
+          'kentu-pulsantiera__btn relative flex h-auto w-full min-w-0 flex-col items-center justify-center overflow-visible rounded-xl border transition-colors',
+          large
+            ? 'min-h-[4.75rem] gap-1.5 px-2 py-3'
+            : 'min-h-0 gap-0.5 px-1 py-1.5',
           active
             ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
             : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
         ].join(' ')}
       >
-        <span className="text-base leading-none" aria-hidden>{icon}</span>
-        <span className="max-w-full truncate text-[0.62rem] font-semibold leading-tight tracking-wide uppercase">{label}</span>
+        <span className={large ? 'text-2xl leading-none' : 'text-base leading-none'} aria-hidden>{icon}</span>
+        <span className={[
+          'max-w-full truncate font-semibold leading-tight tracking-wide uppercase',
+          large ? 'text-[0.72rem]' : 'text-[0.62rem]',
+        ].join(' ')}>{label}</span>
       </button>
       {count > 0 ? (
         <button
@@ -272,8 +277,9 @@ function PillarButton({
           aria-label={`${count} ${count === 1 ? 'bozza in attesa' : 'bozze in attesa'}`}
           title="Apri bozze in attesa"
           className={[
-            'absolute -right-1.5 -top-1.5 z-50 flex h-5 w-5 items-center justify-center rounded-full',
-            'bg-cyan-500 text-[10px] font-bold leading-none text-slate-900',
+            'absolute z-50 flex items-center justify-center rounded-full',
+            large ? '-right-1 -top-1 h-6 w-6 text-[11px]' : '-right-1.5 -top-1.5 h-5 w-5 text-[10px]',
+            'bg-cyan-500 font-bold leading-none text-slate-900',
             'shadow-[0_0_10px_rgba(34,211,238,0.55)]',
             'transition hover:bg-cyan-400 active:scale-95',
             'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/80',
@@ -477,9 +483,6 @@ export default function PulsantieraUniversale({
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
   const [inboxDrag, setInboxDrag] = useState(null);
   const [showMealTrash, setShowMealTrash] = useState(false);
-  const [inboxComposerOpen, setInboxComposerOpen] = useState(false);
-  const [inboxComposerText, setInboxComposerText] = useState('');
-  const inboxComposerInputRef = useRef(null);
   const inboxDragRef = useRef({
     timer: null,
     pointerId: null,
@@ -501,8 +504,6 @@ export default function PulsantieraUniversale({
     setGuidedMealOrigin(null);
     setShowMealTrash(false);
     setInboxDrag(null);
-    setInboxComposerOpen(false);
-    setInboxComposerText('');
     inboxDragRef.current.armed = false;
     inboxDragRef.current.block = null;
     inboxDragRef.current.pointerId = null;
@@ -510,19 +511,9 @@ export default function PulsantieraUniversale({
 
   useEffect(() => (
     subscribeInboxComposerFocus(() => {
-      setInboxComposerText('');
-      setInboxComposerOpen(true);
       setActiveCategory('pasti');
     }, { embedded })
   ), [embedded]);
-
-  useEffect(() => {
-    if (activeCategory !== 'pasti' || !inboxComposerOpen) return undefined;
-    const timer = window.setTimeout(() => {
-      inboxComposerInputRef.current?.focus?.();
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [activeCategory, inboxComposerOpen]);
 
   useEffect(() => {
     const onDismissSessionNav = () => closeMenus();
@@ -952,15 +943,6 @@ export default function PulsantieraUniversale({
     onSelectInboxDraft?.(block);
   }, [onSelectInboxDraft]);
 
-  const submitInboxComposer = useCallback((event) => {
-    event?.preventDefault?.();
-    const payload = buildVoiceInboxDraftPayload(inboxComposerText);
-    if (!payload) return;
-    enqueueInboxDraftAppend(payload);
-    setInboxComposerText('');
-    setInboxComposerOpen(false);
-  }, [inboxComposerText]);
-
   const pastiOverlay = activeCategory === 'pasti' ? (
     createPortal(
       <>
@@ -1018,29 +1000,6 @@ export default function PulsantieraUniversale({
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
               <section className="inbox-pasti-top mb-3 max-h-[42%] shrink-0 overflow-y-auto overscroll-contain">
                 <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
-                <form
-                  className="mb-2 flex gap-2"
-                  onSubmit={submitInboxComposer}
-                >
-                  <input
-                    ref={inboxComposerInputRef}
-                    type="text"
-                    inputMode="text"
-                    enterKeyHint="done"
-                    autoComplete="off"
-                    placeholder="Scrivi una bozza…"
-                    aria-label="Nuova bozza Inbox"
-                    value={inboxComposerText}
-                    onChange={(event) => setInboxComposerText(event.target.value)}
-                    className="min-w-0 flex-1 rounded-lg border border-slate-700/80 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-cyan-400/60"
-                  />
-                  <button
-                    type="submit"
-                    className="shrink-0 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-cyan-100"
-                  >
-                    Aggiungi
-                  </button>
-                </form>
                 {inboxBlocks.length > 0 ? (
                   <>
                   <p className="mb-2 text-[0.68rem] text-slate-500">
@@ -1092,7 +1051,7 @@ export default function PulsantieraUniversale({
                   </>
                 ) : (
                   <p className="mb-2 text-[0.68rem] text-slate-500">
-                    Nessuna bozza in sospeso. Scrivi un alimento e premi Aggiungi.
+                    Nessuna bozza in sospeso. Tieni premuto Kentu AI per dettare.
                   </p>
                 )}
               </section>
@@ -1286,8 +1245,8 @@ export default function PulsantieraUniversale({
   return (
     <div
       className={[
-        'kentu-pulsantiera relative isolate flex h-auto w-full flex-none shrink-0 flex-col gap-1 overflow-visible py-1',
-        embedded ? 'z-10' : 'z-[100045]',
+        'kentu-pulsantiera relative isolate flex h-auto w-full flex-none shrink-0 flex-col overflow-visible',
+        embedded ? 'z-10 gap-0 bg-transparent p-0' : 'z-[100045] gap-1 py-1',
       ].join(' ')}
     >
       {submenuOverlay}
@@ -1301,9 +1260,12 @@ export default function PulsantieraUniversale({
       />
 
       <div
-        className="kentu-pulsantiera__row isolate flex h-auto w-full flex-none flex-row flex-nowrap items-center justify-around gap-1 overflow-visible px-1.5 pt-2"
+        className={[
+          'kentu-pulsantiera__row isolate flex h-auto w-full flex-none flex-row flex-nowrap items-stretch overflow-visible',
+          embedded ? 'justify-between gap-2 px-0 pt-1' : 'items-center justify-around gap-1 px-1.5 pt-2',
+        ].join(' ')}
         role="toolbar"
-        aria-label="Pulsantiera universale"
+        aria-label={embedded ? 'Azioni rapide Home' : 'Pulsantiera universale'}
       >
         {PILLARS.map((pillar) => (
           <PillarButton
@@ -1311,6 +1273,7 @@ export default function PulsantieraUniversale({
             icon={pillar.icon}
             label={pillar.label}
             active={activeCategory === pillar.id}
+            large={embedded}
             badgeCount={
               pillar.id === 'pasti'
                 ? mealDraftsCount
