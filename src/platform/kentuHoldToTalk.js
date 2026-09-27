@@ -2,8 +2,8 @@
  * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech)
  * e aptica nativa con fallback vibrate.
  *
- * Trascrizione: solo il testo finale (isFinal / ultima ipotesi completa).
- * I partial non si concatenano — si sovrascrivono.
+ * L'API restituisce già la frase intera in matches[0] / ultimo transcript:
+ * si SOSTITUISCE lo stato, non si concatena mai al testo precedente.
  */
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -12,25 +12,19 @@ import {
   createSpeechRecognition,
 } from '../features/chat/voiceChat';
 
-function applySpeechResult(event, state) {
-  if (!event?.results) return;
-  const finals = [];
-  let interim = '';
-  for (let i = 0; i < event.results.length; i += 1) {
-    const result = event.results[i];
-    const piece = String(result?.[0]?.transcript || '').trim();
-    if (!piece) continue;
-    if (result.isFinal) finals.push(piece);
-    else interim = piece;
+/** Frase completa fornita dall'evento — un solo snapshot, mai un pezzo da accodare. */
+function fullUtteranceFromEvent(event) {
+  if (!event || typeof event !== 'object') return '';
+  if (event.matches != null && event.matches[0] != null) {
+    return String(event.matches[0]);
   }
-  const finalText = finals.join(' ').replace(/\s+/g, ' ').trim();
-  if (finalText) state.finalTranscript = finalText;
-  state.interimTranscript = interim;
-}
-
-function pickCleanTranscript(state) {
-  const raw = String(state.finalTranscript || state.interimTranscript || '').trim();
-  return collapseAnomalousRepetitions(raw).replace(/\s+/g, ' ').trim();
+  const results = event.results;
+  if (results && results.length > 0) {
+    const last = results[results.length - 1];
+    return String(last?.[0]?.transcript ?? '');
+  }
+  if (event.transcript != null) return String(event.transcript);
+  return '';
 }
 
 export async function playHoldToTalkHaptic() {
@@ -50,8 +44,7 @@ export function createHoldToTalkSession() {
   const state = {
     mode: null,
     recognition: null,
-    finalTranscript: '',
-    interimTranscript: '',
+    detectedText: '',
     capacitorListener: null,
   };
 
@@ -62,10 +55,9 @@ export function createHoldToTalkSession() {
     recognition.maxAlternatives = 1;
     state.mode = 'webkit';
     state.recognition = recognition;
-    state.finalTranscript = '';
-    state.interimTranscript = '';
+    state.detectedText = '';
     recognition.onresult = (event) => {
-      applySpeechResult(event, state);
+      state.detectedText = fullUtteranceFromEvent(event);
     };
     recognition.onerror = () => {};
     try {
@@ -79,8 +71,7 @@ export function createHoldToTalkSession() {
   };
 
   const start = async () => {
-    state.finalTranscript = '';
-    state.interimTranscript = '';
+    state.detectedText = '';
     try {
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
@@ -92,11 +83,8 @@ export function createHoldToTalkSession() {
           await SpeechRecognition.requestPermissions?.();
           state.capacitorListener = await SpeechRecognition.addListener?.(
             'partialResults',
-            (data) => {
-              const match = String(data?.matches?.[0] || '').trim();
-              if (!match) return;
-              // L'API Android manda l'ipotesi COMPLETA: sovrascrivi, non concatenare.
-              state.interimTranscript = match;
+            (event) => {
+              state.detectedText = String(event?.matches?.[0] ?? '');
             },
           );
           await SpeechRecognition.start({
@@ -176,12 +164,13 @@ export function createHoldToTalkSession() {
         window.setTimeout(finish, 450);
       });
     }
-    const text = pickCleanTranscript(state);
+    const text = collapseAnomalousRepetitions(String(state.detectedText || ''))
+      .replace(/\s+/g, ' ')
+      .trim();
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;
-    state.finalTranscript = '';
-    state.interimTranscript = '';
+    state.detectedText = '';
     return text;
   };
 
