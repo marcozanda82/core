@@ -1,9 +1,7 @@
 /**
- * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech)
- * e aptica nativa con fallback vibrate.
- *
- * L'API restituisce già la frase intera in matches[0] / ultimo transcript:
- * si SOSTITUISCE lo stato, non si concatena mai al testo precedente.
+ * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech).
+ * L'ascolto resta attivo fino a SpeechRecognition.stop() da pointer-up:
+ * se il sistema chiude per silenzio, si riavvia tenendo il testo già detto.
  */
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
@@ -12,16 +10,39 @@ import {
   createSpeechRecognition,
 } from '../features/chat/voiceChat';
 
-/** Frase completa fornita dall'evento — un solo snapshot, mai un pezzo da accodare. */
+const CAPACITOR_START_OPTS = {
+  language: 'it-IT',
+  maxResults: 5,
+  prompt: 'Parla ora',
+  partialResults: true,
+  popup: false,
+};
+
+const RESTART_DELAY_MS = 220;
+
+function joinUtterance(prefix, next) {
+  const left = String(prefix || '').replace(/\s+/g, ' ').trim();
+  const right = String(next || '').replace(/\s+/g, ' ').trim();
+  if (!left) return right;
+  if (!right) return left;
+  if (right.startsWith(left)) return right;
+  if (left.startsWith(right)) return left;
+  return `${left} ${right}`.replace(/\s+/g, ' ').trim();
+}
+
+/** Tutti i result Web Speech, non solo l'ultimo (altrimenti una pausa perde la frase precedente). */
 function fullUtteranceFromEvent(event) {
   if (!event || typeof event !== 'object') return '';
-  if (event.matches != null && event.matches[0] != null) {
-    return String(event.matches[0]);
-  }
   const results = event.results;
   if (results && results.length > 0) {
-    const last = results[results.length - 1];
-    return String(last?.[0]?.transcript ?? '');
+    let acc = '';
+    for (let i = 0; i < results.length; i += 1) {
+      acc += String(results[i]?.[0]?.transcript ?? '');
+    }
+    return acc;
+  }
+  if (event.matches != null && event.matches[0] != null) {
+    return String(event.matches[0]);
   }
   if (event.transcript != null) return String(event.transcript);
   return '';
@@ -45,19 +66,31 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
     mode: null,
     recognition: null,
     detectedText: '',
+    committedText: '',
+    sessionScratch: '',
     capacitorListener: null,
+    listeningStateListener: null,
     startGate: null,
     stopRequested: false,
     started: false,
+    restartTimer: null,
+    SpeechRecognition: null,
   };
 
-  const emitTranscript = (raw) => {
-    const next = String(raw ?? '');
+  const emitCombined = () => {
+    const next = joinUtterance(state.committedText, state.sessionScratch);
     state.detectedText = next;
     try {
       onTranscript?.(next);
     } catch {
       /* ignore */
+    }
+  };
+
+  const clearRestartTimer = () => {
+    if (state.restartTimer != null) {
+      window.clearTimeout(state.restartTimer);
+      state.restartTimer = null;
     }
   };
 
@@ -69,11 +102,18 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
     recognition.maxAlternatives = 1;
     state.mode = 'webkit';
     state.recognition = recognition;
-    state.detectedText = '';
     recognition.onresult = (event) => {
-      emitTranscript(fullUtteranceFromEvent(event));
+      state.sessionScratch = fullUtteranceFromEvent(event);
+      emitCombined();
     };
-    recognition.onerror = () => {};
+    recognition.onerror = () => {
+      if (state.stopRequested) return;
+      scheduleRestart();
+    };
+    recognition.onend = () => {
+      if (state.stopRequested) return;
+      scheduleRestart();
+    };
     try {
       recognition.start();
       state.started = true;
@@ -85,10 +125,43 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
     }
   };
 
+  const startCapacitorEngine = async () => {
+    const SpeechRecognition = state.SpeechRecognition;
+    if (!SpeechRecognition || state.stopRequested) return false;
+    await SpeechRecognition.start(CAPACITOR_START_OPTS);
+    state.started = true;
+    return true;
+  };
+
+  const scheduleRestart = () => {
+    if (state.stopRequested) return;
+    clearRestartTimer();
+    state.committedText = joinUtterance(state.committedText, state.sessionScratch);
+    state.sessionScratch = '';
+    emitCombined();
+    state.restartTimer = window.setTimeout(() => {
+      state.restartTimer = null;
+      if (state.stopRequested) return;
+      if (state.mode === 'capacitor') {
+        void startCapacitorEngine().catch(() => {});
+        return;
+      }
+      if (state.mode === 'webkit' && state.recognition) {
+        try {
+          state.recognition.start();
+        } catch {
+          startWebkit();
+        }
+      }
+    }, RESTART_DELAY_MS);
+  };
+
   const start = async () => {
     if (state.startGate) return state.startGate;
     state.startGate = (async () => {
       state.detectedText = '';
+      state.committedText = '';
+      state.sessionScratch = '';
       if (state.stopRequested) return false;
       try {
         const { Capacitor } = await import('@capacitor/core');
@@ -96,6 +169,7 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
           const { SpeechRecognition } = await import(
             /* @vite-ignore */ '@capacitor-community/speech-recognition'
           );
+          state.SpeechRecognition = SpeechRecognition;
           const available = await SpeechRecognition.available?.();
           if (available?.available !== false) {
             await SpeechRecognition.requestPermissions?.();
@@ -103,18 +177,21 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
             state.capacitorListener = await SpeechRecognition.addListener?.(
               'partialResults',
               (event) => {
-                emitTranscript(event?.matches?.[0] ?? '');
+                state.sessionScratch = String(event?.matches?.[0] ?? '');
+                emitCombined();
+              },
+            );
+            state.listeningStateListener = await SpeechRecognition.addListener?.(
+              'listeningState',
+              (event) => {
+                if (state.stopRequested) return;
+                if (String(event?.status || '') === 'stopped') {
+                  scheduleRestart();
+                }
               },
             );
             state.mode = 'capacitor';
-            await SpeechRecognition.start({
-              language: 'it-IT',
-              maxResults: 1,
-              prompt: 'Parla ora',
-              partialResults: true,
-              popup: false,
-            });
-            state.started = true;
+            await startCapacitorEngine();
             if (state.stopRequested) return true;
             return true;
           }
@@ -130,6 +207,7 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
 
   const stop = async () => {
     state.stopRequested = true;
+    clearRestartTimer();
     if (state.startGate) {
       try {
         await state.startGate;
@@ -138,11 +216,12 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
       }
     }
     const mode = state.mode;
-    if (mode === 'capacitor' || state.started) {
+    if (mode === 'capacitor' || (state.started && state.SpeechRecognition)) {
       try {
-        const { SpeechRecognition } = await import(
-          /* @vite-ignore */ '@capacitor-community/speech-recognition'
-        );
+        const SpeechRecognition = state.SpeechRecognition
+          || (await import(
+            /* @vite-ignore */ '@capacitor-community/speech-recognition'
+          ).then((mod) => mod.SpeechRecognition));
         try {
           await SpeechRecognition.stop();
         } catch {
@@ -153,6 +232,11 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
         });
         try {
           await state.capacitorListener?.remove?.();
+        } catch {
+          /* ignore */
+        }
+        try {
+          await state.listeningStateListener?.remove?.();
         } catch {
           /* ignore */
         }
@@ -196,14 +280,20 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
         window.setTimeout(finish, 450);
       });
     }
-    const text = collapseAnomalousRepetitions(String(state.detectedText || ''))
+    const text = collapseAnomalousRepetitions(
+      joinUtterance(state.committedText, state.sessionScratch) || String(state.detectedText || ''),
+    )
       .replace(/\s+/g, ' ')
       .trim();
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;
+    state.listeningStateListener = null;
     state.detectedText = '';
+    state.committedText = '';
+    state.sessionScratch = '';
     state.started = false;
+    state.SpeechRecognition = null;
     return text;
   };
 

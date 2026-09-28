@@ -6,7 +6,7 @@ import {
   createHoldToTalkSession,
   playHoldToTalkHaptic,
 } from '../../platform/kentuHoldToTalk';
-import { createPendingInboxDraft, inferDraftType } from '../../utils/draftParser';
+import { createPendingInboxDraft, inferDraftType, parseDraftWithGemini } from '../../utils/draftParser';
 
 const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
@@ -55,6 +55,7 @@ export default function KentuChatFab({
   const [confirmText, setConfirmText] = useState('');
   const [isEditing, setIsEditing] = useState(false);
   const [toast, setToast] = useState('');
+  const [isParsingDraft, setIsParsingDraft] = useState(false);
 
   useEffect(() => {
     persistVoiceOnboarded();
@@ -138,27 +139,48 @@ export default function KentuChatFab({
     onOpen?.();
   }, [engineReady, onBlockedOpen, onOpen]);
 
-  const handleCreateDraft = useCallback(() => {
+  const handleCreateDraft = useCallback(async () => {
     const text = cleanTranscript(confirmText);
     if (!text) {
       showToast('Nessun testo da salvare');
       return;
     }
-    const draft = createPendingInboxDraft(text);
-    enqueueInboxDraftAppend({
-      id: draft.id,
-      rawText: draft.rawText,
-      inferredType: draft.inferredType || inferDraftType(text),
-      timestamp: draft.timestamp,
-      createdAt: draft.timestamp,
-      status: 'pending',
-      timeString: currentTimeHHmm(),
-    });
-    setConfirmText('');
-    setLiveTranscript('');
-    setIsEditing(false);
-    showToast('Bozza salvata in Inbox');
-  }, [confirmText, showToast]);
+    if (isParsingDraft) return;
+    setIsParsingDraft(true);
+    try {
+      const foodNames = await parseDraftWithGemini(text);
+      const stamp = Date.now();
+      const items = foodNames.map((foodName, index) => ({
+        id: `voice_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+        foodName,
+        name: foodName,
+        desc: foodName,
+        spokenFoodName: foodName,
+        grams: 1,
+        status: 'pending',
+      }));
+      const draft = createPendingInboxDraft(text, { timestamp: stamp });
+      enqueueInboxDraftAppend({
+        id: draft.id,
+        rawText: draft.rawText,
+        inferredType: draft.inferredType || inferDraftType(text),
+        timestamp: draft.timestamp,
+        createdAt: draft.timestamp,
+        status: 'pending',
+        timeString: currentTimeHHmm(),
+        items,
+      });
+      setConfirmText('');
+      setLiveTranscript('');
+      setIsEditing(false);
+      showToast(items.length > 1 ? `Inbox: ${items.length} alimenti` : 'Bozza salvata in Inbox');
+    } catch (error) {
+      console.warn('[KentuChatFab] parseDraftWithGemini failed', error);
+      showToast('Non sono riuscito a spezzare gli alimenti. Riprova.');
+    } finally {
+      setIsParsingDraft(false);
+    }
+  }, [confirmText, isParsingDraft, showToast]);
 
   const handleRetry = useCallback(() => {
     setConfirmText('');
@@ -406,10 +428,11 @@ export default function KentuChatFab({
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"
-                onClick={handleCreateDraft}
-                className="rounded-xl border border-cyan-400/40 bg-cyan-400 px-3 py-3 text-sm font-bold uppercase tracking-wide text-slate-950"
+                onClick={() => void handleCreateDraft()}
+                disabled={isParsingDraft}
+                className="rounded-xl border border-cyan-400/40 bg-cyan-400 px-3 py-3 text-sm font-bold uppercase tracking-wide text-slate-950 disabled:opacity-60"
               >
-                Crea bozza
+                {isParsingDraft ? 'Analizzo…' : 'Conferma'}
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <button

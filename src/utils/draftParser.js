@@ -75,3 +75,80 @@ export function toastMessageForDraftType(inferredType) {
   }
   return 'Bozza salvata in attesa di convalida';
 }
+
+const GEMINI_DRAFT_SPLIT_SYSTEM = [
+  'Sei un parser di diari alimentari.',
+  'Dalla frase parlata estrai SOLO gli alimenti o bevande distinti.',
+  'Spezza elenchi con virgole, "e", "ed", "+", ";" anche senza grammi.',
+  'Togli prefissi tipo "ho mangiato", "per pranzo", orari.',
+  'Non unire alimenti diversi in una sola stringa.',
+  'Rispondi SOLO con JSON: {"foods":["pasta","pesto","carote"]}.',
+].join(' ');
+
+const GEMINI_DRAFT_SPLIT_SCHEMA = {
+  type: 'object',
+  properties: {
+    foods: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  },
+  required: ['foods'],
+};
+
+function parseFoodsJson(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return [];
+  const fenced = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const start = fenced.indexOf('{');
+  const end = fenced.lastIndexOf('}');
+  const candidate = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
+  try {
+    const parsed = JSON.parse(candidate);
+    const foods = Array.isArray(parsed?.foods) ? parsed.foods : [];
+    return foods.map((name) => String(name || '').trim()).filter((name) => name.length >= 2);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Spezza una frase vocale grezza in alimenti tramite Gemini.
+ * Fallback locale se l'AI non risponde.
+ * @param {string} rawText
+ * @returns {Promise<string[]>}
+ */
+export async function parseDraftWithGemini(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) return [];
+
+  let names = [];
+  try {
+    const { askAI } = await import('../services/aiService.js');
+    const raw = await askAI(
+      `Frase da spezzare in alimenti:\n"""${text}"""`,
+      GEMINI_DRAFT_SPLIT_SYSTEM,
+      {
+        temperature: 0,
+        responseSchema: GEMINI_DRAFT_SPLIT_SCHEMA,
+        generationConfig: { temperature: 0, maxOutputTokens: 512 },
+      },
+    );
+    names = parseFoodsJson(raw);
+  } catch (error) {
+    console.warn('[parseDraftWithGemini] Gemini split failed', error);
+  }
+
+  if (names.length === 0) {
+    try {
+      const { extractBareFoodNamesFromText } = await import(
+        '../features/commandTerminal/conversation/mealLogIntent.js'
+      );
+      names = extractBareFoodNamesFromText(text);
+    } catch {
+      names = [];
+    }
+  }
+
+  return names.length > 0 ? names : [text];
+}
