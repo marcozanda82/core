@@ -423,9 +423,13 @@ import {
   buildRecentActivitiesContext,
   buildKentuAgendaSecretPrompt,
 } from './features/chat/aiPromptBuilders';
+import HubPage from './pages/HubPage';
 import {
   migrateIdealStrategy,
   readPersistedEventUsage,
+  readPersistedHubInnerTab,
+  persistHubInnerTab,
+  normalizeHubInnerTab,
   computeSleepDurationHours,
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
@@ -448,7 +452,6 @@ import LongevityTabShell from './components/salaComandi/LongevityTabShell';
 import PlanningTabPanel from './components/salaComandi/PlanningTabPanel';
 import RecalibrationProposalModal from './components/salaComandi/RecalibrationProposalModal';
 import AnalisiTimelineTab from './components/salaComandi/AnalisiTimelineTab';
-import MetabolicTimelineOverlay from './components/salaComandi/MetabolicTimelineOverlay';
 import { useHealthScoreSnapshot } from './hooks/salaComandi/useHealthScoreSnapshot';
 import { useLongevityScore } from './features/trendHub/hooks/useLongevityScore';
 import { calculateProgressionScore } from './features/trendHub/utils/saluteDashboardMetrics';
@@ -473,7 +476,6 @@ import StimulusCockpitOverlay from './features/chat/StimulusCockpitOverlay';
 export { calculateAge } from './utils/profileAge';
 
 const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
-const SaluteExperience = lazy(() => import('./features/salute/components/SaluteExperience'));
 const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
 const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
 const ApiDiary = lazy(() => import('./components/ApiDiary'));
@@ -506,11 +508,16 @@ export default function SalaComandi() {
   const closeOverlayChatRef = useRef(null);
   const sendMessageRef = useRef(null);
   const [activeBottomTab, setActiveBottomTab] = useState('oggi');
+  const [hubInnerTab, setHubInnerTabState] = useState(readPersistedHubInnerTab);
+  const setHubInnerTab = useCallback((tab) => {
+    const next = normalizeHubInnerTab(tab);
+    setHubInnerTabState(next);
+    persistHubInnerTab(next);
+  }, []);
+  const isHubTimelineOpen = activeBottomTab === 'hub' && hubInnerTab === 'timeline';
   /** Deep-link Centro Analisi (es. calibrazione da modale calorie). */
   const [centroAnalisiEntryArea, setCentroAnalisiEntryArea] = useState(null);
   const centroAnalisiReturnTabRef = useRef('oggi');
-  /** Tab Salute: cockpit v1 vs Centro Analisi / SaluteView legacy. */
-  const [saluteSurface, setSaluteSurface] = useState('cockpit');
   /** Apertura TrainingBlockCreator dalla pulsantiera (tab Pianifica). */
   const [trainingBlockCreatorOpen, setTrainingBlockCreatorOpen] = useState(false);
   /** Overlay Fotografia (Progressione / Salute) — aperto dai widget Home, non dalla bottom bar. */
@@ -573,10 +580,15 @@ export default function SalaComandi() {
   }, []);
 
   useEffect(() => {
+    if (activeBottomTab === 'timeline' || activeBottomTab === 'strumenti') {
+      setHubInnerTab(activeBottomTab);
+      setActiveBottomTab('hub');
+      return;
+    }
     if (!PERSISTED_BOTTOM_TAB_IDS.includes(activeBottomTab)) {
       setActiveBottomTab('oggi');
     }
-  }, [activeBottomTab]);
+  }, [activeBottomTab, setHubInnerTab]);
 
   /** Home / deep-link → Fotografia Progressione (diagnostica). */
   const handleOpenTrendDiag = useCallback(() => {
@@ -678,6 +690,20 @@ export default function SalaComandi() {
     navigate(location.pathname || '/', { replace: true, state: {} });
     return undefined;
   }, [location.state, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (!location.state?.openHub) return undefined;
+    const inner = String(location.state?.openHubTab || '').toLowerCase();
+    if (inner === 'strumenti' || inner === 'timeline') {
+      setHubInnerTab(inner);
+    }
+    setSnapshotOverlayOpen(false);
+    setActiveBottomTab('hub');
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+    navigate(location.pathname || '/', { replace: true, state: {} });
+    return undefined;
+  }, [location.state, location.pathname, navigate, setHubInnerTab]);
 
   const [pendingAiBatch, setPendingAiBatch] = useState(null);
   /** add_food con qty mancante: proposta da abitudine DB + storico, in attesa di Sì/No */
@@ -995,6 +1021,15 @@ export default function SalaComandi() {
     setIsDrawerOpen(false);
   }, []);
 
+  const handleHubInnerTabChange = useCallback((tabId) => {
+    const next = normalizeHubInnerTab(tabId);
+    if (next === 'strumenti') {
+      setCentroAnalisiEntryArea((prev) => (prev === 'calibrazione_target' ? prev : 'strumentazione'));
+    }
+    setShowMetabolicTimeline(false);
+    setHubInnerTab(next);
+  }, [setHubInnerTab]);
+
   const bottomNavItems = useMemo(() => BOTTOM_NAV_ITEMS, []);
 
   const handleBottomNavTabSelect = useCallback(
@@ -1024,16 +1059,24 @@ export default function SalaComandi() {
       }
       setShowMetabolicTimeline(false);
       setSnapshotOverlayOpen(false);
-      if (tabId === 'bussola') {
-        setSaluteSurface('cockpit');
-        if (activeBottomTab !== 'bussola') {
+      if (tabId === 'timeline' || tabId === 'strumenti') {
+        setHubInnerTab(tabId);
+        if (tabId === 'strumenti' && activeBottomTab !== 'hub') {
           centroAnalisiReturnTabRef.current = activeBottomTab;
+          setCentroAnalisiEntryArea((prev) => (prev === 'calibrazione_target' ? prev : 'strumentazione'));
         }
-        setCentroAnalisiEntryArea(null);
+        setActiveBottomTab('hub');
+        return;
+      }
+      if (tabId === 'hub') {
+        if (hubInnerTab === 'strumenti' && activeBottomTab !== 'hub') {
+          centroAnalisiReturnTabRef.current = activeBottomTab;
+          setCentroAnalisiEntryArea((prev) => (prev === 'calibrazione_target' ? prev : 'strumentazione'));
+        }
       }
       setActiveBottomTab(tabId);
     },
-    [activeBottomTab, isDiabetesAppMode, openTherapyPlan, openTrainingPlan],
+    [activeBottomTab, hubInnerTab, isDiabetesAppMode, openTherapyPlan, openTrainingPlan, setHubInnerTab],
   );
 
   const handleAppModeChange = useCallback(async (appMode, profileSnapshot = null) => {
@@ -1308,38 +1351,43 @@ export default function SalaComandi() {
   }, []);
 
   const openMetabolicTimeline = useCallback(() => {
-    setShowMetabolicTimeline(true);
+    setShowMetabolicTimeline(false);
     setSnapshotOverlayOpen(false);
     setIsDrawerOpen(false);
-  }, []);
+    setHubInnerTab('timeline');
+    setActiveBottomTab('hub');
+  }, [setHubInnerTab]);
 
   const openCalibrazioneFromCalorieModal = useCallback(() => {
     const current = activeBottomTab;
-    centroAnalisiReturnTabRef.current = current === 'bussola' ? 'oggi' : current;
+    centroAnalisiReturnTabRef.current = current === 'hub' ? 'oggi' : current;
     setShowCalorieDetailsSheet(false);
     setShowDiarySheet(false);
-    setSaluteSurface('legacy');
     setCentroAnalisiEntryArea('calibrazione_target');
-    setActiveBottomTab('bussola');
-  }, [activeBottomTab]);
+    setHubInnerTab('strumenti');
+    setActiveBottomTab('hub');
+  }, [activeBottomTab, setHubInnerTab]);
 
   const exitCentroAnalisi = useCallback(() => {
     const ret = centroAnalisiReturnTabRef.current || 'oggi';
     setCentroAnalisiEntryArea(null);
-    setSaluteSurface('cockpit');
-    setActiveBottomTab(ret === 'bussola' ? 'oggi' : ret);
+    if (ret === 'strumenti' || ret === 'timeline' || ret === 'bussola' || ret === 'hub') {
+      setActiveBottomTab('oggi');
+      return;
+    }
+    setActiveBottomTab(ret);
   }, []);
 
   const openLegacyCentroAnalisi = useCallback(() => {
-    centroAnalisiReturnTabRef.current = activeBottomTab === 'bussola' ? 'oggi' : activeBottomTab;
+    centroAnalisiReturnTabRef.current = activeBottomTab === 'hub' ? 'oggi' : activeBottomTab;
     setSnapshotOverlayOpen(false);
     setShowMetabolicTimeline(false);
-    setSaluteSurface('legacy');
-    setCentroAnalisiEntryArea(null);
-    setActiveBottomTab('bussola');
+    setCentroAnalisiEntryArea('hub');
+    setHubInnerTab('strumenti');
+    setActiveBottomTab('hub');
     setActiveAction(null);
     setIsDrawerOpen(false);
-  }, [activeBottomTab]);
+  }, [activeBottomTab, setHubInnerTab]);
   const [showFatSheet, setShowFatSheet] = useState(false);
   const [showCarbsSheet, setShowCarbsSheet] = useState(false);
   const [showProteinSheet, setShowProteinSheet] = useState(false);
@@ -3492,7 +3540,7 @@ export default function SalaComandi() {
       const batchIdFood = `batch_${Date.now()}`;
       return addFoodItems
         .map((item, index) => {
-          const name = String(item?.name || item?.foodName || '').trim();
+          const name = String(item?.name || item?.foodName || item?.desc || '').trim();
           if (!name) return null;
           const preservedId = item?.id != null && String(item.id).trim() ? String(item.id).trim() : null;
           const qtyRaw = Number(item?.qty ?? item?.grams);
@@ -4965,14 +5013,17 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     if (!block) return;
     const originalBlock = normalizeInboxDraftBlock(block);
     const logSnap = dailyLogRef.current || [];
-    const without = removeUnassignedDraftBlock(logSnap, block.id);
+    const without = removeUnassignedDraftBlock(logSnap, block);
     const mealDec = parseTimeStringToDecimalHour(block.timeHHmm)
       ?? parseFlexibleTimeToDecimal(String(block.timeHHmm || ''))
       ?? getCurrentTimeRoundedTo15Min();
     const baseType = toCanonicalMealType(String(mealTypeRaw || '').split('_')[0]) || 'snack';
     const newMealType = getGhostMealType(baseType, without);
+    const sourceItems = Array.isArray(block.items) && block.items.length > 0
+      ? block.items
+      : (block.rawText ? [{ foodName: block.rawText, name: block.rawText, status: 'raw' }] : []);
     const foods = mapProposalItemsToDiaryFoods(
-      block.items,
+      sourceItems,
       mealDec,
       baseType,
       { mealType: newMealType, mealTime: mealDec },
@@ -5006,7 +5057,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const originalBlock = normalizeInboxDraftBlock(block);
     const slotKey = String(meal.slotKey || meal.slotId);
     const logSnap = dailyLogRef.current || [];
-    const without = removeUnassignedDraftBlock(logSnap, block.id);
+    const without = removeUnassignedDraftBlock(logSnap, block);
     let existing = getFoodItemsForMealSlot(without, slotKey);
     if (!existing.length && Array.isArray(meal.foods) && meal.foods.length > 0) {
       existing = meal.foods.filter((item) => item && (item.type === 'food' || item.type === 'recipe' || !item.type));
@@ -5077,7 +5128,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const handleDeleteInboxDraft = useCallback((block) => {
     if (!block?.id) return;
     const logSnap = dailyLogRef.current || [];
-    writeAssignedInboxLog(removeUnassignedDraftBlock(logSnap, block.id));
+    writeAssignedInboxLog(removeUnassignedDraftBlock(logSnap, block));
     setInboxTriageBlock(null);
   }, [writeAssignedInboxLog]);
   
@@ -5357,7 +5408,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     simulationMode,
     isSimulationMode,
     sleepStatus,
-    metabolicTimelineOpen: showMetabolicTimeline,
+    metabolicTimelineOpen: isHubTimelineOpen,
   });
 
   const activeWaterIntake = simulationMode
@@ -7953,7 +8004,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const shouldHideBottomChatBar =
     biochemicalDetailModal != null
     || isChatOpen
-    || showMetabolicTimeline
     || showFastLogger;
 
   const handleRequestBarcodeScan = useCallback(() => {
@@ -8214,14 +8264,12 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && !trainingBlockCreatorOpen
         && !showTherapyPlan
         && !isChatOpen
-        && !showMetabolicTimeline
         && !showFastLogger
         // Neural Reset / Meditazione: il FAB coprirebbe «AVVIA CICLO»
         && activeAction !== 'focus'
       }
       onOpen={handleOpenKentuChat}
       onBlockedOpen={showEngineAlignToast}
-      onSendMessage={sendMessage}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}
     />
@@ -8539,7 +8587,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             fourCylinder: userModel?.fourCylinder ?? null,
             isDiabetesAppMode,
           }}
-          onOpenKentuChat={handleOpenKentuChat}
         />
       )}
 
@@ -8607,7 +8654,88 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setPlanningWizardOverlayOpen={setPlanningWizardOverlayOpen}
         />
       )}
-      {activeBottomTab === 'bussola' && (
+      {activeBottomTab === 'hub' && (
+        <HubPage
+          activeTab={hubInnerTab}
+          onTabChange={handleHubInnerTabChange}
+          timeline={(
+        <div
+          className="timeline-tab-shell"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            width: '100%',
+            boxSizing: 'border-box',
+          }}
+        >
+          <AnalisiTimelineTab
+            hasCrashRisk={hasCrashRisk}
+            hasWaterRisk={hasWaterRisk}
+            hasCortisolRisk={hasCortisolRisk}
+            hasDigestionRisk={hasDigestionRisk}
+            chartUnit={chartUnit}
+            setChartUnit={setChartUnit}
+            handleUndo={handleUndo}
+            handleRedo={handleRedo}
+            historyIndex={historyIndex}
+            historyStack={historyStack}
+            isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
+            setZoomLevel={setZoomLevel}
+            handleCenterZoomAndPan={handleCenterZoomAndPan}
+            draggingNode={draggingNode}
+            chartScrollRef={chartScrollRef}
+            handleChartTouchStart={handleChartTouchStart}
+            handleChartTouchMove={handleChartTouchMove}
+            handleChartTouchEnd={handleChartTouchEnd}
+            isChartTooltipActive={isChartTooltipActive}
+            setIsChartTooltipActive={setIsChartTooltipActive}
+            chartTouchTimerRef={chartTouchTimerRef}
+            TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1={TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1}
+            zoomLevel={zoomLevel}
+            mainChartData={mainChartData}
+            nodesForEnergySimulation={nodesForEnergySimulation}
+            displayTime={displayTime}
+            finalDotY={finalDotY}
+            isViewingPastDate={isViewingPastDate}
+            currentTime={currentTime}
+            targetKcalChart={targetKcalChart}
+            totalCaloriesTimeline={totalCaloriesTimeline}
+            metabolicGradientStops={metabolicGradientStops}
+            metabolicChartGradientStops={metabolicChartGradientStops}
+            currentMetabolicColor={currentMetabolicColor}
+            activeLog={activeLog}
+            metabolicContextOptions={metabolicContextOptions}
+            setShowMetabolicSheet={setShowMetabolicSheet}
+            activeNodesWithStack={activeNodesWithStack}
+            activeAction={activeAction}
+            idealStrategy={idealStrategy}
+            realTotals={realTotals}
+            touchingNodeId={touchingNodeId}
+            dragOffsetY={dragOffsetY}
+            dragLiveTime={dragLiveTime}
+            timelineContainerRef={timelineContainerRef}
+            startNodeDrag={startNodeDrag}
+            releaseNodePointer={releaseNodePointer}
+            onTimelineNodeClick={onTimelineNodeClick}
+            openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
+            handleNodeTap={handleNodeTap}
+            syncDatiFirebase={syncDatiFirebase}
+            setManualNodes={setManualNodes}
+            setDailyLog={setDailyLog}
+            timelineEnergySeries={timelineEnergySeries}
+            chartData={chartData}
+            updateMealTime={updateMealTime}
+            onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
+            scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
+            clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
+            onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
+          />
+        </div>
+          )}
+          strumenti={(
         <div
           className="centro-analisi-tab-shell"
           style={{
@@ -8620,61 +8748,35 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             boxSizing: 'border-box',
           }}
         >
-          {/* Default Stato: SaluteExperience. Centro Analisi resta il fallback legacy. */}
-          {saluteSurface === 'legacy' || centroAnalisiEntryArea ? (
-            <Suspense fallback={<KentuLazySectionFallback label="Centro Analisi…" />}>
-              <CentroAnalisiView
-                embedded
-                initialAreaId={centroAnalisiEntryArea}
-                onExit={exitCentroAnalisi}
-                onOpenFotografiaSalute={handleOpenTrendSalute}
-                onOpenFotografiaProgressione={handleOpenTrendProgressione}
-                onOpenTimelineMetabolica={openMetabolicTimeline}
-                livePreview={centroAnalisiLivePreview}
-                calibrazioneHandlers={{
-                  activeDate: currentTrackerDate || getTodayString(),
-                  settingsBaseKcal: dogmaticSettingsBaseKcal,
-                  committedGhostGoal,
-                  committedGhostDeltaKcal,
-                  effectiveGhostDeltaKcal,
-                  autoCompensationDelta: dogmaticAutoCompensationKcal,
-                  rollingDebt,
-                  ghostAutoPilotEnabled,
-                  onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
-                  onApplyGhostSimGoal: applyGhostSimGoal,
-                  activeCompensation: userProfile?.activeCompensation ?? null,
-                  onConfirmCompensation: applyActiveCompensationPlan,
-                  onClearCompensation: clearActiveCompensationPlan,
-                }}
-              />
-            </Suspense>
-          ) : (
-            <Suspense fallback={<KentuLazySectionFallback label="Salute…" />}>
-              <SaluteExperience
-                embedded
-                host={{
-                  ready: Boolean(isInitialLoadComplete),
-                  db,
-                  uid: userUid,
-                  todayDate: currentTrackerDate || getTodayString(),
-                  fullHistory,
-                  activeLog,
-                  userTargets,
-                  userProfile,
-                  fourCylinder: userModel?.fourCylinder ?? null,
-                  bodyMetricsHistory,
-                  fastingData,
-                  longevityResult,
-                  longevityWindow: unifiedLongevityWindow,
-                  longevityNutrition: unifiedLongevityNutrition,
-                  recentNutritionScores: unifiedRecentNutritionScores,
-                  healthReportStatus: unifiedHealthReportStatus,
-                  isEngineReady,
-                }}
-              />
-            </Suspense>
-          )}
+          <Suspense fallback={<KentuLazySectionFallback label="Strumenti…" />}>
+            <CentroAnalisiView
+              embedded
+              initialAreaId={centroAnalisiEntryArea === 'hub' ? null : (centroAnalisiEntryArea || 'strumentazione')}
+              onExit={exitCentroAnalisi}
+              onOpenFotografiaSalute={handleOpenTrendSalute}
+              onOpenFotografiaProgressione={handleOpenTrendProgressione}
+              onOpenTimelineMetabolica={openMetabolicTimeline}
+              livePreview={centroAnalisiLivePreview}
+              calibrazioneHandlers={{
+                activeDate: currentTrackerDate || getTodayString(),
+                settingsBaseKcal: dogmaticSettingsBaseKcal,
+                committedGhostGoal,
+                committedGhostDeltaKcal,
+                effectiveGhostDeltaKcal,
+                autoCompensationDelta: dogmaticAutoCompensationKcal,
+                rollingDebt,
+                ghostAutoPilotEnabled,
+                onToggleGhostAutoPilot: setGhostAutoPilotEnabled,
+                onApplyGhostSimGoal: applyGhostSimGoal,
+                activeCompensation: userProfile?.activeCompensation ?? null,
+                onConfirmCompensation: applyActiveCompensationPlan,
+                onClearCompensation: clearActiveCompensationPlan,
+              }}
+            />
+          </Suspense>
         </div>
+          )}
+        />
       )}
       </>
       )}
@@ -9542,79 +9644,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onUndo={trashToast ? handleMealTrashUndo : handleInboxUndo}
         onDismiss={trashToast ? clearTrashToast : clearInboxUndoToast}
       />
-
-      <MetabolicTimelineOverlay
-        open={showMetabolicTimeline}
-        onClose={() => setShowMetabolicTimeline(false)}
-        dateLabel={
-          currentTrackerDate
-            ? `Giorno selezionato: ${currentTrackerDate}${isViewingPastDate ? ' (storico)' : ''}`
-            : ''
-        }
-      >
-        <AnalisiTimelineTab
-          hasCrashRisk={hasCrashRisk}
-          hasWaterRisk={hasWaterRisk}
-          hasCortisolRisk={hasCortisolRisk}
-          hasDigestionRisk={hasDigestionRisk}
-          chartUnit={chartUnit}
-          setChartUnit={setChartUnit}
-          handleUndo={handleUndo}
-          handleRedo={handleRedo}
-          historyIndex={historyIndex}
-          historyStack={historyStack}
-          isWaterHydrationAutoPilot={isWaterHydrationAutoPilot}
-          setZoomLevel={setZoomLevel}
-          handleCenterZoomAndPan={handleCenterZoomAndPan}
-          draggingNode={draggingNode}
-          chartScrollRef={chartScrollRef}
-          handleChartTouchStart={handleChartTouchStart}
-          handleChartTouchMove={handleChartTouchMove}
-          handleChartTouchEnd={handleChartTouchEnd}
-          isChartTooltipActive={isChartTooltipActive}
-          setIsChartTooltipActive={setIsChartTooltipActive}
-          chartTouchTimerRef={chartTouchTimerRef}
-          TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1={TIMELINE_CHART_WIDTH_PCT_AT_ZOOM_1}
-          zoomLevel={zoomLevel}
-          mainChartData={mainChartData}
-          nodesForEnergySimulation={nodesForEnergySimulation}
-          displayTime={displayTime}
-          finalDotY={finalDotY}
-          isViewingPastDate={isViewingPastDate}
-          currentTime={currentTime}
-          targetKcalChart={targetKcalChart}
-          totalCaloriesTimeline={totalCaloriesTimeline}
-          metabolicGradientStops={metabolicGradientStops}
-          metabolicChartGradientStops={metabolicChartGradientStops}
-          currentMetabolicColor={currentMetabolicColor}
-          activeLog={activeLog}
-          metabolicContextOptions={metabolicContextOptions}
-          setShowMetabolicSheet={setShowMetabolicSheet}
-          activeNodesWithStack={activeNodesWithStack}
-          activeAction={activeAction}
-          idealStrategy={idealStrategy}
-          realTotals={realTotals}
-          touchingNodeId={touchingNodeId}
-          dragOffsetY={dragOffsetY}
-          dragLiveTime={dragLiveTime}
-          timelineContainerRef={timelineContainerRef}
-          startNodeDrag={startNodeDrag}
-          releaseNodePointer={releaseNodePointer}
-          onTimelineNodeClick={onTimelineNodeClick}
-          openTimelineQuickAddAtPointer={openTimelineQuickAddAtPointer}
-          handleNodeTap={handleNodeTap}
-          syncDatiFirebase={syncDatiFirebase}
-          setManualNodes={setManualNodes}
-          setDailyLog={setDailyLog}
-          timelineEnergySeries={timelineEnergySeries}
-          chartData={chartData}
-          updateMealTime={updateMealTime}
-          onTimelineStripPreviewDragStart={onTimelineStripPreviewDragStart}
-          scheduleTimelineStripEnergyPreview={scheduleTimelineStripEnergyPreview}
-          clearTimelineStripEnergyPreview={clearTimelineStripEnergyPreview}
-          onTimelineStripDragOutsideDelete={onTimelineStripDragOutsideDelete}
-        />
-      </MetabolicTimelineOverlay>
 
       <EnergyBalanceSheet
         isOpen={showEnergySheet}

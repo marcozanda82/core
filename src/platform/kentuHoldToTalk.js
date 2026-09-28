@@ -40,15 +40,29 @@ export async function playHoldToTalkHaptic() {
   }
 }
 
-export function createHoldToTalkSession() {
+export function createHoldToTalkSession({ onTranscript } = {}) {
   const state = {
     mode: null,
     recognition: null,
     detectedText: '',
     capacitorListener: null,
+    startGate: null,
+    stopRequested: false,
+    started: false,
+  };
+
+  const emitTranscript = (raw) => {
+    const next = String(raw ?? '');
+    state.detectedText = next;
+    try {
+      onTranscript?.(next);
+    } catch {
+      /* ignore */
+    }
   };
 
   const startWebkit = () => {
+    if (state.stopRequested) return false;
     const recognition = createSpeechRecognition({ continuous: true });
     if (!recognition) return false;
     recognition.interimResults = true;
@@ -57,11 +71,12 @@ export function createHoldToTalkSession() {
     state.recognition = recognition;
     state.detectedText = '';
     recognition.onresult = (event) => {
-      state.detectedText = fullUtteranceFromEvent(event);
+      emitTranscript(fullUtteranceFromEvent(event));
     };
     recognition.onerror = () => {};
     try {
       recognition.start();
+      state.started = true;
       return true;
     } catch {
       state.recognition = null;
@@ -71,42 +86,59 @@ export function createHoldToTalkSession() {
   };
 
   const start = async () => {
-    state.detectedText = '';
-    try {
-      const { Capacitor } = await import('@capacitor/core');
-      if (Capacitor.isNativePlatform()) {
-        const { SpeechRecognition } = await import(
-          /* @vite-ignore */ '@capacitor-community/speech-recognition'
-        );
-        const available = await SpeechRecognition.available?.();
-        if (available?.available !== false) {
-          await SpeechRecognition.requestPermissions?.();
-          state.capacitorListener = await SpeechRecognition.addListener?.(
-            'partialResults',
-            (event) => {
-              state.detectedText = String(event?.matches?.[0] ?? '');
-            },
+    if (state.startGate) return state.startGate;
+    state.startGate = (async () => {
+      state.detectedText = '';
+      if (state.stopRequested) return false;
+      try {
+        const { Capacitor } = await import('@capacitor/core');
+        if (Capacitor.isNativePlatform()) {
+          const { SpeechRecognition } = await import(
+            /* @vite-ignore */ '@capacitor-community/speech-recognition'
           );
-          await SpeechRecognition.start({
-            language: 'it-IT',
-            maxResults: 1,
-            prompt: 'Parla ora',
-            partialResults: true,
-            popup: false,
-          });
-          state.mode = 'capacitor';
-          return true;
+          const available = await SpeechRecognition.available?.();
+          if (available?.available !== false) {
+            await SpeechRecognition.requestPermissions?.();
+            if (state.stopRequested) return false;
+            state.capacitorListener = await SpeechRecognition.addListener?.(
+              'partialResults',
+              (event) => {
+                emitTranscript(event?.matches?.[0] ?? '');
+              },
+            );
+            state.mode = 'capacitor';
+            await SpeechRecognition.start({
+              language: 'it-IT',
+              maxResults: 1,
+              prompt: 'Parla ora',
+              partialResults: true,
+              popup: false,
+            });
+            state.started = true;
+            if (state.stopRequested) return true;
+            return true;
+          }
         }
+      } catch {
+        /* plugin assente → Web Speech */
       }
-    } catch {
-      /* plugin assente → Web Speech */
-    }
-    return startWebkit();
+      if (state.stopRequested) return false;
+      return startWebkit();
+    })();
+    return state.startGate;
   };
 
   const stop = async () => {
+    state.stopRequested = true;
+    if (state.startGate) {
+      try {
+        await state.startGate;
+      } catch {
+        /* ignore */
+      }
+    }
     const mode = state.mode;
-    if (mode === 'capacitor') {
+    if (mode === 'capacitor' || state.started) {
       try {
         const { SpeechRecognition } = await import(
           /* @vite-ignore */ '@capacitor-community/speech-recognition'
@@ -117,7 +149,7 @@ export function createHoldToTalkSession() {
           /* already stopped */
         }
         await new Promise((resolve) => {
-          window.setTimeout(resolve, 120);
+          window.setTimeout(resolve, 180);
         });
         try {
           await state.capacitorListener?.remove?.();
@@ -171,6 +203,7 @@ export function createHoldToTalkSession() {
     state.recognition = null;
     state.capacitorListener = null;
     state.detectedText = '';
+    state.started = false;
     return text;
   };
 

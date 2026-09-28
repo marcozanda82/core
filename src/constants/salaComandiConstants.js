@@ -1,19 +1,26 @@
 /** Tab principali per swipe laterale (stesso ordine della bottom navigation). */
-export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'bussola'];
+export const MAIN_BOTTOM_TAB_ORDER = ['oggi', 'analisi', 'hub'];
 
-/** Tab bottom bar persistibili in localStorage (Menu apre un drawer, non una tab). */
+/** Tab bottom bar persistibili in localStorage (Menu apre un overlay, non una tab). */
 export const PERSISTED_BOTTOM_TAB_IDS = [...MAIN_BOTTOM_TAB_ORDER];
 
 /** Voci barra inferiore Arc Reactor (Kentu centrale è gestito a parte in BottomChrome / KentuChatFab).
- *  Layout: Home | Diario (lista) | [Emblema Kentu AI] | Stato | Menu. */
+ *  Layout a 5 slot: Home | Diario | [Emblema Kentu AI] | Hub | Menu. */
 export const BOTTOM_NAV_ITEMS = [
   { id: 'oggi', label: 'Home', icon: '🏠' },
   { id: 'analisi', label: 'Diario', icon: '📖' },
-  { id: 'bussola', label: 'Stato', icon: '⚡' },
+  { id: 'hub', label: 'Hub', icon: '▦' },
   { id: 'menu', label: 'Menu', icon: '☰' },
 ];
 
+/** Schede interne della pagina Hub (Timeline | Strumenti). */
+export const HUB_INNER_TAB_LS_KEY = 'kentu_hub_inner_tab';
+export const HUB_INNER_TABS = Object.freeze(['timeline', 'strumenti']);
+export const DEFAULT_HUB_INNER_TAB = 'timeline';
+
 export const ACTIVE_BOTTOM_TAB_LS_KEY = 'kentu_active_bottom_tab';
+/** Legacy: tooltip hold-to-talk Kentu AI dismesso (sempre onboarded). */
+export const KENTU_VOICE_ONBOARDING_LS_KEY = 'kentu_voice_hold_onboarded';
 /** Emisfero attivo nella Fotografia (SnapshotHub): progressione | salute. */
 export const TREND_HUB_HEMISPHERE_LS_KEY = 'kentu_trend_hemisphere';
 export const TREND_HUB_HEMISPHERES = Object.freeze(['progressione', 'salute']);

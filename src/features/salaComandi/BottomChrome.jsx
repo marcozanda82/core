@@ -1,8 +1,8 @@
 import React from 'react';
-import { Gauge, BookOpen } from 'lucide-react';
+import { BookOpen, LayoutDashboard } from 'lucide-react';
 
 /**
- * Bottom Navigation "Arc Reactor": tab con icona + label + slot centrale (Emblema flottante da SalaComandi).
+ * Bottom Navigation a 5 slot: Home | Diario | Kentu AI | Hub | Menu.
  */
 export default function BottomChrome({
   BOTTOM_NAV_ITEMS,
@@ -10,12 +10,12 @@ export default function BottomChrome({
   activeBottomTab,
 }) {
   const leftItems = (BOTTOM_NAV_ITEMS || []).filter((t) => t.id === 'oggi' || t.id === 'analisi');
-  const rightItems = (BOTTOM_NAV_ITEMS || []).filter(
-    (t) => t.id === 'bussola' || t.id === 'menu' || t.id === 'pianifica',
-  );
+  const rightItems = (BOTTOM_NAV_ITEMS || []).filter((t) => t.id === 'hub' || t.id === 'menu').slice(0, 2);
 
   const renderTab = (t) => {
-    const isActive = activeBottomTab === t.id;
+    const isActive = t.id === 'hub'
+      ? activeBottomTab === 'hub' || activeBottomTab === 'timeline' || activeBottomTab === 'strumenti'
+      : activeBottomTab === t.id;
     const label = t.label || t.id;
     return (
       <button
@@ -36,8 +36,8 @@ export default function BottomChrome({
           ].join(' ')}
           aria-hidden
         >
-          {t.id === 'bussola' ? (
-            <Gauge size={18} strokeWidth={2.2} />
+          {t.id === 'hub' ? (
+            <LayoutDashboard size={18} strokeWidth={2.2} />
           ) : t.id === 'analisi' ? (
             <BookOpen size={18} strokeWidth={2.2} />
           ) : (
@@ -67,11 +67,10 @@ export default function BottomChrome({
         className="pointer-events-none absolute inset-0 border-t border-zinc-800 bg-zinc-950/95 backdrop-blur-md"
       />
 
-      <div className="relative z-10 flex min-h-[3.5rem] w-full items-stretch justify-around overflow-visible">
+      <div className="relative z-10 grid min-h-[3.5rem] w-full grid-cols-5 items-stretch overflow-visible">
         {leftItems.map(renderTab)}
-        {/* Slot centrale: spazio per Emblema K + label «Kentu AI» (KentuChatFab). */}
-        <div className="relative flex flex-1 items-center justify-center overflow-visible" aria-hidden />
-        {rightItems.slice(0, 2).map(renderTab)}
+        <div className="relative flex items-center justify-center overflow-visible" aria-hidden />
+        {rightItems.map(renderTab)}
       </div>
     </nav>
   );

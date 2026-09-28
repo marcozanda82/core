@@ -27,7 +27,7 @@ export function useMainTabSwipe({
   const handleMainTabTouchStart = useCallback((e) => {
     const el = e.target;
     if (el && typeof el.closest === 'function') {
-      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros') || el.closest('.home-training-carousel')) {
+      if (el.closest('.chart-scroll-container') || el.closest('.mini-timeline-hitbox') || el.closest('.home-oggi-macros') || el.closest('.home-training-carousel') || el.closest('.hub-page-segmented')) {
         mainTabSwipeIgnoreRef.current = true;
         return;
       }

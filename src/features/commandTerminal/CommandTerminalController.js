@@ -1005,7 +1005,7 @@ export class CommandTerminalController {
    */
   persistMcDriveDraftItemsToInbox(items = [], timeHHmm = '') {
     const toPersist = (Array.isArray(items) ? items : []).filter((item) => (
-      item?.foodName && isUnresolvedMealDraftItem(item)
+      Boolean(item?.foodName)
     ));
     if (toPersist.length === 0) return;
 

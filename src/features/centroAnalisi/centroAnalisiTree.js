@@ -1,18 +1,9 @@
 /**
  * Albero concettuale del Centro Analisi — solo metadati UI.
- * Salute / Progressione aprono la Fotografia Home (`opensFotografia`).
+ * Progressione apre la Fotografia Home. Timeline e Strumenti sono tab principali.
  * Strumentazione resta a stanze interne.
  */
 export const CENTRO_ANALISI_AREAS = Object.freeze([
-  {
-    id: 'salute',
-    icon: '🫀',
-    label: 'Salute & Longevità',
-    kicker: 'Fotografia',
-    hint: 'Pagella metabolica a 4 pilastri, trend 14gg e parametri corporei.',
-    opensFotografia: 'salute',
-    rooms: [],
-  },
   {
     id: 'progressione',
     icon: '📈',
@@ -25,7 +16,7 @@ export const CENTRO_ANALISI_AREAS = Object.freeze([
   {
     id: 'strumentazione',
     icon: '🔭',
-    label: 'Strumentazione',
+    label: 'Strumenti',
     kicker: 'Strumenti',
     hint: 'Bussola, Radar e Mappa di stato in tempo reale.',
     opensFotografia: null,

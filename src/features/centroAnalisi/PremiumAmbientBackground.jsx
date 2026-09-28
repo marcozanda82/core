@@ -19,12 +19,15 @@ const DEFAULT_GRADIENT = 'from-blue-900 via-slate-800 to-slate-900';
  * Sfondo Mobile-Premium: blob GPU (transform) + palette per stanza.
  * Nessun mouse tracking. pointer-events-none.
  */
-export default function PremiumAmbientBackground({ activeRoomId = null } = {}) {
+export default function PremiumAmbientBackground({ activeRoomId = null, contained = false } = {}) {
   const gradient = ROOM_GRADIENT[activeRoomId] || DEFAULT_GRADIENT;
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-black"
+      className={[
+        'pointer-events-none z-0 overflow-hidden bg-black',
+        contained ? 'absolute inset-0' : 'fixed inset-0',
+      ].join(' ')}
       aria-hidden
     >
       <style>{`

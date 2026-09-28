@@ -20,7 +20,6 @@ import { db } from './firebaseConfig';
 import { Capacitor } from '@capacitor/core';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
-const SaluteExperiencePage = lazy(() => import('./pages/SaluteExperiencePage'));
 
 function AppBootFallback() {
   return <AuthLoadingScreen />;
@@ -128,7 +127,8 @@ function AuthenticatedApp() {
           <Route path="/centro-analisi" element={<CentroAnalisiPage />} />
           <Route path="/analisi" element={<CentroAnalisiPage />} />
           <Route path="/consulto" element={<ConsultoPreview />} />
-          <Route path="/salute" element={<SaluteExperiencePage />} />
+          <Route path="/salute" element={<Navigate to="/" replace />} />
+          <Route path="/hub" element={<Navigate to="/" replace state={{ openHub: true }} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

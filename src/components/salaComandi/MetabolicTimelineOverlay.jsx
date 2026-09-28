@@ -21,7 +21,7 @@ export default function MetabolicTimelineOverlay({
           type="button"
           onClick={() => onClose?.()}
           className="flex h-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm font-semibold text-cyan-200 transition hover:border-white/25 hover:bg-white/[0.08]"
-          aria-label="Torna a Salute"
+          aria-label="Torna indietro"
         >
           ← Indietro
         </button>

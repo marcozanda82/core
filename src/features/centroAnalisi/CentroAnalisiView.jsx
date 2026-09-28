@@ -14,7 +14,6 @@ import { useCentroAnalisiReadStore } from './useCentroAnalisiReadStore';
 import { useStrumentazioneMapData } from './useStrumentazioneMapData';
 import {
   CentroAnalisiLiveCard,
-  LongevityLivePreview,
   ProgressionLivePreview,
   StrumentazioneLivePreview,
   TimelineLivePreview,
@@ -98,7 +97,11 @@ export default function CentroAnalisiView({
       setAreaId('strumentazione');
       setRoomId(DEFAULT_STRUMENTAZIONE_ROOM);
       deepLinkedAreaRef.current = 'strumentazione';
+      return;
     }
+    setAreaId(null);
+    setRoomId(null);
+    deepLinkedAreaRef.current = null;
   }, [initialAreaId]);
 
   const preview = livePreview && typeof livePreview === 'object' ? livePreview : {};
@@ -149,8 +152,6 @@ export default function CentroAnalisiView({
     };
   }, [centroAnalisiStore?.activeLog, centroAnalisiStore?.userTargets]);
 
-  const longevityScore = preview.longevityScore ?? null;
-  const longevityBars = preview.longevityBars ?? [];
   const progressionScore = preview.progressionScore ?? fallbackProgression.finalScore;
   const macroPreview = preview.macroPreview ?? fallbackMacroPreview;
   const gradientStops = preview.gradientStops ?? null;
@@ -213,10 +214,6 @@ export default function CentroAnalisiView({
   }, [areaId, onExit, roomId]);
 
   const openHubItem = useCallback((itemId) => {
-    if (itemId === 'salute') {
-      onOpenFotografiaSalute?.();
-      return;
-    }
     if (itemId === 'progressione') {
       onOpenFotografiaProgressione?.();
       return;
@@ -234,7 +231,7 @@ export default function CentroAnalisiView({
       setAreaId('calibrazione_target');
       setRoomId(null);
     }
-  }, [onOpenFotografiaProgressione, onOpenFotografiaSalute, onOpenTimelineMetabolica]);
+  }, [onOpenFotografiaProgressione, onOpenTimelineMetabolica]);
 
   const title = isStrumentazione
     ? (area?.label || 'Strumentazione')
@@ -258,11 +255,9 @@ export default function CentroAnalisiView({
   ]);
   const showHubTitle = !area;
   const backLabel = '← Indietro';
+  const hideRootBack = String(initialAreaId || '').toLowerCase() === 'strumentazione' && isStrumentazione;
 
   const renderLivePreview = (itemId) => {
-    if (itemId === 'salute') {
-      return <LongevityLivePreview score={longevityScore} bars={longevityBars} />;
-    }
     if (itemId === 'progressione') {
       return (
         <ProgressionLivePreview
@@ -320,10 +315,12 @@ export default function CentroAnalisiView({
       ].join(' ')}
     >
       <PremiumAmbientBackground
+        contained={embedded}
         activeRoomId={isStrumentazione ? activeStrumentazioneRoom : (room?.id || null)}
       />
 
       <header className="relative z-10 shrink-0 px-3 pt-2 sm:px-5">
+        {hideRootBack ? null : (
         <div className={`flex items-center gap-3 rounded-2xl px-3 py-2.5 ${GLASS_SURFACE_CLASS}`}>
           <button
             type="button"
@@ -339,10 +336,13 @@ export default function CentroAnalisiView({
           >
             {backLabel}
           </button>
-          <h1 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
-            {title}
-          </h1>
+          {title === 'Strumenti' ? null : (
+            <h1 className="m-0 min-w-0 flex-1 truncate text-sm font-semibold text-zinc-100">
+              {title}
+            </h1>
+          )}
         </div>
+        )}
         {isStrumentazione ? (
           <div className="mt-2">
             <StrumentazioneToolTabs

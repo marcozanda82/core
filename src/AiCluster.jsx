@@ -1715,7 +1715,6 @@ export default function AiCluster({
                   <div className="w-full max-w-full box-border px-1">
                     <MetabolicFocusChatCard
                       text={msg.text || msg.displayText || ''}
-                      avatarSrc={resolveMessageAvatarSrc(msg)}
                     />
                   </div>
                 ) : (

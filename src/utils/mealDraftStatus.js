@@ -10,6 +10,7 @@ import { inferDraftType, isDraftType } from './draftParser';
 
 export const MEAL_DRAFT_UNRESOLVED_STATUSES = new Set([
   'raw',
+  'pending',
   'pending_enrichment',
   'requires_disambiguation',
   'processing',
@@ -189,15 +190,37 @@ export function appendUnassignedDraftBlock(log, {
   return [...(Array.isArray(log) ? log : []), block];
 }
 
-export function removeUnassignedDraftBlock(log, blockId) {
-  const id = String(blockId || '').trim();
-  if (!id) return Array.isArray(log) ? [...log] : [];
+function inboxDraftIdsMatch(candidateId, targetId) {
+  const a = String(candidateId || '').trim();
+  const b = String(targetId || '').trim();
+  if (!a || !b) return false;
+  if (a === b) return true;
+  return a.startsWith(`${b}__`) || b.startsWith(`${a}__`);
+}
+
+function inboxDraftBlockMatches(entry, targetId, hint = null) {
+  if (inboxDraftIdsMatch(entry?.id, targetId)) return true;
+  const createdAt = Number(hint?.createdAt);
+  if (Number.isFinite(createdAt) && createdAt > 0 && Number(entry?.createdAt) === createdAt) {
+    return true;
+  }
+  return false;
+}
+
+export function removeUnassignedDraftBlock(log, blockId, hint = null) {
+  const raw = blockId && typeof blockId === 'object' ? blockId : hint;
+  const id = String(
+    (blockId && typeof blockId === 'object' ? blockId.id : blockId) || raw?.id || '',
+  ).trim();
+  if (!id && !raw) return Array.isArray(log) ? [...log] : [];
   const next = [];
   (Array.isArray(log) ? log : []).forEach((entry) => {
     if (!entry) return;
-    if (entry.type === INBOX_DRAFT_TYPE && String(entry.id) === id) return;
+    if (entry.type === INBOX_DRAFT_TYPE && inboxDraftBlockMatches(entry, id, raw)) return;
     if (entry.type === UNASSIGNED_DRAFTS_TYPE && entry.blocks) {
-      const blocks = asCollectionArray(entry.blocks).filter((block) => String(block?.id) !== id);
+      const blocks = asCollectionArray(entry.blocks).filter(
+        (block) => !inboxDraftBlockMatches(block, id, raw),
+      );
       if (blocks.length === 0) return;
       next.push({ ...entry, blocks });
       return;
@@ -308,13 +331,17 @@ export function formatInboxDraftCardLabel(block) {
 export function countPendingMealDrafts({ dailyLog = [], extraDrafts = [] } = {}) {
   const log = Array.isArray(dailyLog) ? dailyLog : asCollectionArray(dailyLog);
   const inbox = extractUnassignedDraftBlocks(log).length;
-  const pendingOnMeals = log.filter((entry) => (
-    (entry?.type === 'food' || entry?.type === 'recipe')
-    && String(entry?.mealType || '').trim().length > 0
-    && isUnresolvedMealDraftItem(entry)
-  )).length;
+  const pendingMealSlots = new Set();
+  log.forEach((entry) => {
+    if (!entry || (entry.type !== 'food' && entry.type !== 'recipe')) return;
+    const mealType = String(entry.mealType || '').trim();
+    if (!mealType || !isUnresolvedMealDraftItem(entry)) return;
+    const mealTime = Number(entry.mealTime);
+    const timeKey = Number.isFinite(mealTime) ? String(mealTime) : '';
+    pendingMealSlots.add(`${mealType}_${timeKey}`);
+  });
   const extra = (Array.isArray(extraDrafts) ? extraDrafts : []).filter(Boolean).length;
-  return inbox + pendingOnMeals + extra;
+  return inbox + pendingMealSlots.size + extra;
 }
 
 export function serializeUnassignedDraftsForFirebase(log) {

@@ -18,11 +18,11 @@ import { collectPendingSessionDrafts } from './attivitaWorkoutSummary';
 import { useSmartQuickActions } from '../predictive/useSmartQuickActions';
 
 const PILLARS = [
-  { id: 'pasti', icon: '🍽', label: 'Pasti' },
-  { id: 'rapidi', icon: '⚡', label: 'Rapidi' },
-  { id: 'attivita', icon: '🏃', label: 'Attività' },
-  { id: 'report', icon: '📊', label: 'Report' },
-  { id: 'tutti', icon: '⋯', label: 'Tutti' },
+  { id: 'pasti', icon: '🍽', label: 'Pasti', sigla: 'PAS' },
+  { id: 'rapidi', icon: '⚡', label: 'Rapidi', sigla: 'RAP' },
+  { id: 'attivita', icon: '🏃', label: 'Attività', sigla: 'ATT' },
+  { id: 'report', icon: '📊', label: 'Report', sigla: 'RPT' },
+  { id: 'tutti', icon: '⋯', label: 'Tutti', sigla: 'ALL' },
 ];
 
 const CATEGORY_LABELS = {
@@ -52,60 +52,66 @@ function pointFromPointerOrTouch(event) {
 }
 
 const GUIDED_MEAL_ITEMS = [
-  { id: 'colazione', icon: '🍳', label: 'Colazione', action: 'startGuidedMeal', mealType: 'colazione' },
-  { id: 'spuntino', icon: '🍎', label: 'Spuntino', action: 'startGuidedMeal', mealType: 'snack' },
-  { id: 'pranzo', icon: '🍽️', label: 'Pranzo', action: 'startGuidedMeal', mealType: 'pranzo' },
-  { id: 'cena', icon: '🌙', label: 'Cena', action: 'startGuidedMeal', mealType: 'cena' },
+  { id: 'colazione', icon: '🍳', label: 'Colazione', sigla: 'COL', action: 'startGuidedMeal', mealType: 'colazione' },
+  { id: 'spuntino', icon: '🍎', label: 'Spuntino', sigla: 'SPU', action: 'startGuidedMeal', mealType: 'snack' },
+  { id: 'pranzo', icon: '🍽️', label: 'Pranzo', sigla: 'PRZ', action: 'startGuidedMeal', mealType: 'pranzo' },
+  { id: 'cena', icon: '🌙', label: 'Cena', sigla: 'CEN', action: 'startGuidedMeal', mealType: 'cena' },
 ];
 
 const PROTOCOL_PLANNER_ITEM = {
   id: 'pianifica-giornata',
   icon: '🎯',
   label: 'Pianifica Giornata',
+  sigla: 'PLAN',
   action: 'openProtocolPlanner',
+};
+
+const CLINICAL_INSIGHT_ITEM = {
+  id: 'insight-clinico',
+  icon: '⚡',
+  label: 'Insight clinico',
+  sigla: 'INS',
+  action: 'send',
+  message: METABOLIC_FOCUS_LABEL,
+  intent: 'REQUEST_CLINICAL_INSIGHT',
+  isHiddenUserMessage: true,
+  visibleUserText: `⚡ Insight clinico`,
 };
 
 const SUBMENUS = {
   pasti: [
-    { id: 'manuale', icon: '🔎', label: 'Manuale', action: 'openManual' },
-    { id: 'guidato', icon: '✨', label: 'Guidato AI', action: 'pickGuidedMeal' },
+    { id: 'manuale', icon: '🔎', label: 'Manuale', sigla: 'MAN', action: 'openManual' },
+    { id: 'guidato', icon: '✨', label: 'Guidato AI', sigla: 'AI', action: 'pickGuidedMeal' },
   ],
   rapidi: [
     PROTOCOL_PLANNER_ITEM,
-    { id: 'acqua', icon: '💧', label: 'Acqua', action: 'shortcut', shortcutId: 'acqua' },
-    { id: 'caffe', icon: '☕', label: 'Caffè', action: 'shortcut', shortcutId: 'caffe' },
-    { id: 'pisolino', icon: '😴', label: 'Pisolino', action: 'shortcut', shortcutId: 'pisolino' },
+    { id: 'acqua', icon: '💧', label: 'Acqua', sigla: 'H2O', action: 'shortcut', shortcutId: 'acqua' },
+    { id: 'caffe', icon: '☕', label: 'Caffè', sigla: 'CAF', action: 'shortcut', shortcutId: 'caffe' },
+    { id: 'pisolino', icon: '😴', label: 'Pisolino', sigla: 'NAP', action: 'shortcut', shortcutId: 'pisolino' },
   ],
   attivita: [
-    { id: 'allenamento', icon: '🏋️', label: 'Allenamento', action: 'openActivity', defaultTab: 'pesi' },
-    { id: 'camminata', icon: '🚶', label: 'Camminata', action: 'openActivity', defaultTab: 'camminata' },
-    { id: 'corsa', icon: '🏃', label: 'Corsa', action: 'openActivity', defaultTab: 'corsa' },
-    { id: 'piano', icon: '🗓️', label: 'Piano', action: 'openPlan' },
+    { id: 'allenamento', icon: '🏋️', label: 'Allenamento', sigla: 'TRN', action: 'openActivity', defaultTab: 'pesi' },
+    { id: 'camminata', icon: '🚶', label: 'Camminata', sigla: 'CAM', action: 'openActivity', defaultTab: 'camminata' },
+    { id: 'corsa', icon: '🏃', label: 'Corsa', sigla: 'RUN', action: 'openActivity', defaultTab: 'corsa' },
+    { id: 'piano', icon: '🗓️', label: 'Piano', sigla: 'PNO', action: 'openPlan' },
   ],
   report: [
     {
       id: 'report-ieri',
       icon: '📰',
       label: 'Report di Ieri',
+      sigla: 'IERI',
       action: 'send',
       message: 'Genera il report di ieri',
       intent: 'GENERATE_PERIOD_REPORT',
       reportKind: 'yesterday',
     },
-    {
-      id: 'insight-clinico',
-      icon: '⚡',
-      label: METABOLIC_FOCUS_LABEL,
-      action: 'send',
-      message: METABOLIC_FOCUS_LABEL,
-      intent: 'REQUEST_CLINICAL_INSIGHT',
-      isHiddenUserMessage: true,
-      visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
-    },
+    CLINICAL_INSIGHT_ITEM,
     {
       id: 'sintesi-settimanale',
       icon: '📅',
       label: 'Sintesi Settimanale',
+      sigla: 'SET',
       action: 'send',
       message: 'Genera la sintesi settimanale',
       intent: 'GENERATE_PERIOD_REPORT',
@@ -115,6 +121,7 @@ const SUBMENUS = {
       id: 'trend-mensile',
       icon: '📈',
       label: 'Trend Mensile',
+      sigla: '30G',
       action: 'send',
       message: 'Genera il trend mensile',
       intent: 'GENERATE_PERIOD_REPORT',
@@ -163,25 +170,18 @@ const VOCABULARY_SECTIONS = [
         id: 'report-ieri',
         icon: '📰',
         label: 'Report di Ieri',
+        sigla: 'IERI',
         action: 'send',
         message: 'Genera il report di ieri',
         intent: 'GENERATE_PERIOD_REPORT',
         reportKind: 'yesterday',
       },
-      {
-        id: 'insight-clinico',
-        icon: '⚡',
-        label: METABOLIC_FOCUS_LABEL,
-        action: 'send',
-        message: METABOLIC_FOCUS_LABEL,
-        intent: 'REQUEST_CLINICAL_INSIGHT',
-        isHiddenUserMessage: true,
-        visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
-      },
+      CLINICAL_INSIGHT_ITEM,
       {
         id: 'sintesi-settimanale',
         icon: '📅',
         label: 'Sintesi Settimanale',
+        sigla: 'SET',
         action: 'send',
         message: 'Genera la sintesi settimanale',
         intent: 'GENERATE_PERIOD_REPORT',
@@ -191,6 +191,7 @@ const VOCABULARY_SECTIONS = [
         id: 'trend-mensile',
         icon: '📈',
         label: 'Trend Mensile',
+        sigla: '30G',
         action: 'send',
         message: 'Genera il trend mensile',
         intent: 'GENERATE_PERIOD_REPORT',
@@ -202,26 +203,24 @@ const VOCABULARY_SECTIONS = [
     id: 'recupero',
     title: 'Recupero',
     items: [
-      { id: 'pisolino', icon: '😴', label: 'Pisolino', action: 'shortcut', shortcutId: 'pisolino' },
-      { id: 'meditazione', icon: '🧘', label: 'Meditazione', action: 'send', message: 'Meditazione' },
-      { id: 'sonno', icon: '🌙', label: 'Sonno', action: 'send', message: 'Sonno' },
-      {
-        id: 'insight-clinico',
-        icon: '⚡',
-        label: METABOLIC_FOCUS_LABEL,
-        action: 'send',
-        message: METABOLIC_FOCUS_LABEL,
-        intent: 'REQUEST_CLINICAL_INSIGHT',
-        isHiddenUserMessage: true,
-        visibleUserText: `⚡ ${METABOLIC_FOCUS_LABEL}`,
-      },
+      { id: 'pisolino', icon: '😴', label: 'Pisolino', sigla: 'NAP', action: 'shortcut', shortcutId: 'pisolino' },
+      { id: 'meditazione', icon: '🧘', label: 'Meditazione', sigla: 'MED', action: 'send', message: 'Meditazione' },
+      { id: 'sonno', icon: '🌙', label: 'Sonno', sigla: 'SON', action: 'send', message: 'Sonno' },
     ],
   },
 ];
 
+function actionSigla(item) {
+  const explicit = String(item?.sigla || '').trim();
+  if (explicit) return explicit;
+  const words = String(item?.label || '').split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0].slice(0, 4).toUpperCase();
+  return words.map((word) => word[0]).join('').slice(0, 4).toUpperCase();
+}
+
 /** Griglia responsive con scroll sicuro su cataloghi lunghi. */
 const GRID_COMPACT = 'grid w-full max-w-md grid-cols-2 gap-3 sm:grid-cols-2';
-const GRID_CATALOG = 'grid w-full grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4';
+const GRID_CATALOG = 'grid w-full grid-cols-3 gap-2.5 sm:grid-cols-4';
 
 function resolveCompactGridClass(itemCount) {
   if (itemCount >= 4) return GRID_COMPACT;
@@ -232,38 +231,43 @@ function resolveCompactGridClass(itemCount) {
 function PillarButton({
   icon,
   label,
+  sigla,
   active,
   onClick,
   badgeCount = 0,
+  badgeDot = false,
+  badgeDotLabel = '',
   onBadgeClick = null,
   large = false,
 }) {
   const count = Math.max(0, Math.round(Number(badgeCount) || 0));
-  const canOpenBadge = count > 0 && typeof onBadgeClick === 'function';
+  const showDot = Boolean(badgeDot) && count <= 0;
+  const canOpenBadge = (count > 0 || showDot) && typeof onBadgeClick === 'function';
+  const caption = String(sigla || actionSigla({ label, sigla }) || label).toUpperCase();
   return (
     <div
-      className="relative min-w-0 flex-1 overflow-visible"
-      style={{ zIndex: count > 0 ? 40 : 1 }}
+      className="relative mx-auto min-w-0 flex-1 overflow-visible"
+      style={{ zIndex: (count > 0 || showDot) ? 40 : 1 }}
     >
       <button
         type="button"
         onClick={onClick}
         aria-pressed={active}
+        aria-label={showDot && badgeDotLabel ? `${label}. ${badgeDotLabel}` : label}
+        title={label}
         className={[
-          'kentu-pulsantiera__btn relative flex h-auto w-full min-w-0 flex-col items-center justify-center overflow-visible rounded-xl border transition-colors',
-          large
-            ? 'min-h-[4.75rem] gap-1.5 px-2 py-3'
-            : 'min-h-0 gap-0.5 px-1 py-1.5',
+          'kentu-pulsantiera__btn relative mx-auto flex aspect-square w-full max-w-[4.85rem] flex-col items-center justify-center overflow-hidden rounded-xl border transition-colors',
+          large ? 'gap-1 p-1.5' : 'gap-0.5 p-1',
           active
             ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100'
             : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
         ].join(' ')}
       >
-        <span className={large ? 'text-2xl leading-none' : 'text-base leading-none'} aria-hidden>{icon}</span>
+        <span className={large ? 'text-xl leading-none' : 'text-base leading-none'} aria-hidden>{icon}</span>
         <span className={[
-          'max-w-full truncate font-semibold leading-tight tracking-wide uppercase',
-          large ? 'text-[0.72rem]' : 'text-[0.62rem]',
-        ].join(' ')}>{label}</span>
+          'font-bold uppercase leading-none tracking-wide',
+          large ? 'text-[0.68rem]' : 'text-[0.58rem]',
+        ].join(' ')}>{caption}</span>
       </button>
       {count > 0 ? (
         <button
@@ -288,6 +292,17 @@ function PillarButton({
         >
           {count}
         </button>
+      ) : showDot ? (
+        <span
+          className={[
+            'pointer-events-none absolute z-50 rounded-full bg-amber-400',
+            'shadow-[0_0_10px_rgba(251,191,36,0.85)]',
+            large ? '-right-0.5 -top-0.5 h-2.5 w-2.5' : '-right-0.5 -top-0.5 h-2 w-2',
+          ].join(' ')}
+          aria-hidden
+        >
+          <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/80" />
+        </span>
       ) : null}
     </div>
   );
@@ -295,17 +310,19 @@ function PillarButton({
 
 function OverlayActionButton({ icon, label, onClick, disabled, compact = false, dense = false }) {
   const sizeClass = dense
-    ? 'min-h-[3.35rem] gap-1 px-2 py-1.5'
+    ? 'aspect-square max-h-[4.25rem] gap-1 p-1.5'
     : compact
-      ? 'min-h-[4.75rem] gap-2 px-3 py-3'
-      : 'min-h-[5.5rem] gap-2.5 px-4 py-4';
+      ? 'aspect-square max-h-[5.25rem] gap-1 p-2'
+      : 'aspect-square max-h-[5.75rem] gap-1.5 p-2';
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-label={label}
+      title={label}
       className={[
-        'flex flex-col items-center justify-center rounded-2xl border',
+        'relative flex w-full flex-col items-center justify-center rounded-xl border',
         sizeClass,
         'border-white/12 bg-white/[0.06] text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.35)]',
         'backdrop-blur-sm transition-all duration-150',
@@ -314,8 +331,8 @@ function OverlayActionButton({ icon, label, onClick, disabled, compact = false, 
         'disabled:pointer-events-none disabled:opacity-45',
       ].join(' ')}
     >
-      <span className={`leading-none ${dense ? 'text-xl' : compact ? 'text-2xl' : 'text-3xl'}`} aria-hidden>{icon}</span>
-      <span className={`text-center font-semibold leading-tight whitespace-nowrap ${dense ? 'text-[10px]' : 'text-xs sm:text-sm'}`}>
+      <span className={`leading-none ${dense ? 'text-lg' : compact ? 'text-xl' : 'text-2xl'}`} aria-hidden>{icon}</span>
+      <span className={`px-0.5 text-center font-semibold leading-tight ${dense ? 'text-[10px]' : 'text-[11px]'}`}>
         {label}
       </span>
     </button>
@@ -1272,6 +1289,7 @@ export default function PulsantieraUniversale({
             key={pillar.id}
             icon={pillar.icon}
             label={pillar.label}
+            sigla={pillar.sigla}
             active={activeCategory === pillar.id}
             large={embedded}
             badgeCount={

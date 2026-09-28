@@ -88,7 +88,7 @@ export function useTimelineChartShell({
   }, [currentTime, zoomLevel, centerCurrentTime]);
 
   useEffect(() => {
-    if (activeBottomTab === 'analisi' || metabolicTimelineOpen || userProfileLevel === 'pro') {
+    if (activeBottomTab === 'analisi' || activeBottomTab === 'timeline' || activeBottomTab === 'hub' || metabolicTimelineOpen || userProfileLevel === 'pro') {
       const timer = setTimeout(() => centerCurrentTime(), 100);
       return () => clearTimeout(timer);
     }

@@ -5,6 +5,8 @@ import {
   EVENT_USAGE_DEFAULT,
   EVENT_USAGE_LEGACY_ALIASES,
   MEAL_CONFIRM_DEBOUNCE_MS,
+  HUB_INNER_TAB_LS_KEY,
+  DEFAULT_HUB_INNER_TAB,
 } from '../constants/salaComandiConstants';
 import { KENTU_INTRO_PHRASES } from '../kentuIntroPhrases';
 
@@ -36,6 +38,28 @@ export function readPersistedActiveBottomTab() {
     /* ignore */
   }
   return 'oggi';
+}
+
+export function normalizeHubInnerTab(value) {
+  return value === 'strumenti' ? 'strumenti' : DEFAULT_HUB_INNER_TAB;
+}
+
+export function readPersistedHubInnerTab() {
+  if (typeof localStorage === 'undefined') return DEFAULT_HUB_INNER_TAB;
+  try {
+    return normalizeHubInnerTab(localStorage.getItem(HUB_INNER_TAB_LS_KEY));
+  } catch {
+    return DEFAULT_HUB_INNER_TAB;
+  }
+}
+
+export function persistHubInnerTab(tab) {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(HUB_INNER_TAB_LS_KEY, normalizeHubInnerTab(tab));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function readPersistedEventUsage() {

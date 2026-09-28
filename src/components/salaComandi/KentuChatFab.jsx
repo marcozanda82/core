@@ -1,48 +1,64 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { KENTU_VOICE_ONBOARDING_LS_KEY } from '../../constants/salaComandiConstants';
+import { enqueueInboxDraftAppend } from '../../platform/inboxDraftAppendBus';
 import {
   createHoldToTalkSession,
   playHoldToTalkHaptic,
 } from '../../platform/kentuHoldToTalk';
+import { createPendingInboxDraft, inferDraftType } from '../../utils/draftParser';
 
-/** Emblema K in `public/` — tasto centrale bottom bar / Kentu AI Workspace. */
 const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
 const TOAST_MS = 2800;
 
-const btnBase = {
-  flex: 1,
-  minHeight: 56,
-  padding: '16px 12px',
-  borderRadius: 14,
-  fontSize: '1.05rem',
-  fontWeight: 800,
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
-  cursor: 'pointer',
-  border: 'none',
-};
+function persistVoiceOnboarded() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(KENTU_VOICE_ONBOARDING_LS_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}
+
+function currentTimeHHmm() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function cleanTranscript(raw) {
+  return String(raw || '').replace(/\s+/g, ' ').trim();
+}
 
 /**
- * Pulsante flottante Emblema Kentu — tap: apre la chat; long-press: dettatura → anteprima → chat.
+ * Pulsante centrale Kentu AI — tap: guida; long-press: ascolto → conferma bozza Inbox.
  */
-
 export default function KentuChatFab({
   visible = false,
   engineReady = true,
   onOpen = null,
   onBlockedOpen = null,
-  onSendMessage = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
   const isListeningRef = useRef(false);
   const sessionRef = useRef(null);
   const finishingRef = useRef(false);
-  const [isListening, setIsListening] = useState(false);
-  const [voicePreviewText, setVoicePreviewText] = useState('');
-  const [toast, setToast] = useState('');
+  const holdOriginRef = useRef(false);
+  const pressStartedAtRef = useRef(0);
   const toastTimerRef = useRef(null);
+
+  const [isListening, setIsListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [toast, setToast] = useState('');
+
+  useEffect(() => {
+    persistVoiceOnboarded();
+  }, []);
 
   const showToast = useCallback((message) => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -60,37 +76,58 @@ export default function KentuChatFab({
     }
   }, []);
 
-  const stopListeningAndPreview = useCallback(async () => {
-    const session = sessionRef.current;
-    sessionRef.current = null;
-    isListeningRef.current = false;
-    setIsListening(false);
-    if (!session) return;
-    const text = String(await session.stop() || '').trim();
-    if (!text) {
-      showToast('Nessun testo rilevato');
-      return;
-    }
-    // Dopo il long-press Android può ancora sparare un click fantasma:
-    // ritarda il modale così non preme Conferma al posto dell'anteprima.
-    window.setTimeout(() => {
-      setVoicePreviewText(text);
-    }, 280);
-  }, [showToast]);
-
   const startListening = useCallback(async () => {
-    const session = createHoldToTalkSession();
+    if (sessionRef.current) {
+      try {
+        await sessionRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+      sessionRef.current = null;
+    }
+    const session = createHoldToTalkSession({
+      onTranscript: (next) => setLiveTranscript(cleanTranscript(next)),
+    });
     sessionRef.current = session;
     isListeningRef.current = true;
+    finishingRef.current = false;
+    setLiveTranscript('');
+    setConfirmText('');
+    setIsEditing(false);
     setIsListening(true);
     await playHoldToTalkHaptic();
     const started = await session.start();
+    if (sessionRef.current !== session) return;
     if (!started) {
       isListeningRef.current = false;
       setIsListening(false);
       sessionRef.current = null;
       showToast('Microfono non disponibile');
     }
+  }, [showToast]);
+
+  const stopListeningAndConfirm = useCallback(async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    const session = sessionRef.current;
+    if (!session) {
+      isListeningRef.current = false;
+      setIsListening(false);
+      return;
+    }
+    const text = cleanTranscript(await session.stop());
+    sessionRef.current = null;
+    isListeningRef.current = false;
+    holdOriginRef.current = false;
+    setIsListening(false);
+    if (!text) {
+      showToast('Nessun testo rilevato');
+      setLiveTranscript('');
+      return;
+    }
+    setConfirmText(text);
+    setLiveTranscript(text);
+    setIsEditing(false);
   }, [showToast]);
 
   const openTextChat = useCallback(() => {
@@ -101,22 +138,42 @@ export default function KentuChatFab({
     onOpen?.();
   }, [engineReady, onBlockedOpen, onOpen]);
 
-  const handleCancelPreview = useCallback(() => {
-    setVoicePreviewText('');
-  }, []);
+  const handleCreateDraft = useCallback(() => {
+    const text = cleanTranscript(confirmText);
+    if (!text) {
+      showToast('Nessun testo da salvare');
+      return;
+    }
+    const draft = createPendingInboxDraft(text);
+    enqueueInboxDraftAppend({
+      id: draft.id,
+      rawText: draft.rawText,
+      inferredType: draft.inferredType || inferDraftType(text),
+      timestamp: draft.timestamp,
+      createdAt: draft.timestamp,
+      status: 'pending',
+      timeString: currentTimeHHmm(),
+    });
+    setConfirmText('');
+    setLiveTranscript('');
+    setIsEditing(false);
+    showToast('Bozza salvata in Inbox');
+  }, [confirmText, showToast]);
 
-  const handleConfirmPreview = useCallback(() => {
-    const text = String(voicePreviewText || '').trim();
-    setVoicePreviewText('');
-    if (!text) return;
-    onSendMessage?.(text);
-  }, [voicePreviewText, onSendMessage]);
+  const handleRetry = useCallback(() => {
+    setConfirmText('');
+    setIsEditing(false);
+    holdOriginRef.current = false;
+    void startListening();
+  }, [startListening]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
-    if (voicePreviewText) return;
+    if (confirmText) return;
     event.preventDefault();
     finishingRef.current = false;
+    holdOriginRef.current = false;
+    pressStartedAtRef.current = Date.now();
     if (!engineReady) {
       onBlockedOpen?.();
       return;
@@ -129,27 +186,34 @@ export default function KentuChatFab({
     clearPressTimer();
     pressTimer.current = window.setTimeout(() => {
       pressTimer.current = null;
+      holdOriginRef.current = true;
       void startListening();
     }, HOLD_MS);
-  }, [clearPressTimer, engineReady, onBlockedOpen, startListening, voicePreviewText]);
+  }, [clearPressTimer, confirmText, engineReady, onBlockedOpen, startListening]);
 
   const handlePointerUp = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
-    if (finishingRef.current) return;
-    finishingRef.current = true;
+    const startedAt = pressStartedAtRef.current;
+    pressStartedAtRef.current = 0;
+    const elapsed = startedAt ? Date.now() - startedAt : HOLD_MS;
     clearPressTimer();
     try {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
     } catch {
       /* ignore */
     }
+    if (confirmText) return;
     if (isListeningRef.current) {
       event.preventDefault();
-      void stopListeningAndPreview();
+      void stopListeningAndConfirm();
       return;
     }
-    openTextChat();
-  }, [clearPressTimer, openTextChat, stopListeningAndPreview]);
+    if (holdOriginRef.current) return;
+    if (elapsed < HOLD_MS) {
+      event.preventDefault();
+      openTextChat();
+    }
+  }, [clearPressTimer, confirmText, openTextChat, stopListeningAndConfirm]);
 
   const handlePointerLeave = useCallback(() => {
     if (isListeningRef.current) return;
@@ -161,6 +225,21 @@ export default function KentuChatFab({
     clearPressTimer();
   }, [clearPressTimer]);
 
+  useEffect(() => {
+    if (!isListening) return undefined;
+    const onUp = (event) => {
+      if (!holdOriginRef.current) return;
+      if (event.button != null && event.button !== 0) return;
+      void stopListeningAndConfirm();
+    };
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [isListening, stopListeningAndConfirm]);
+
   useEffect(() => () => {
     clearPressTimer();
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -171,7 +250,7 @@ export default function KentuChatFab({
 
   if (!visible) return null;
 
-  const previewOpen = Boolean(String(voicePreviewText || '').trim());
+  const canPortal = typeof document !== 'undefined';
 
   return (
     <>
@@ -193,7 +272,7 @@ export default function KentuChatFab({
         ].join(' ')}
         aria-label={
           isListening
-            ? 'Kentu AI — in ascolto, rilascia per rivedere il testo'
+            ? 'Kentu AI — in ascolto, rilascia per confermare'
             : engineReady
               ? 'Kentu AI'
               : 'Kentu AI — allineamento in corso'
@@ -215,12 +294,6 @@ export default function KentuChatFab({
             <span
               aria-hidden
               className="absolute inset-0 z-[2] m-auto h-5 w-5 animate-spin rounded-full border-2 border-cyan-400/30 border-t-cyan-300"
-            />
-          ) : null}
-          {isListening ? (
-            <span
-              aria-hidden
-              className="absolute inset-[-6px] z-0 animate-pulse rounded-full border-2 border-cyan-300/90 shadow-[0_0_18px_rgba(34,211,238,0.85)]"
             />
           ) : null}
           {showNotificationBadge && !isListening ? (
@@ -256,102 +329,126 @@ export default function KentuChatFab({
           {isListening ? 'Ascolto…' : 'Kentu AI'}
         </span>
       </button>
-      {previewOpen && typeof document !== 'undefined'
-        ? createPortal(
-          <div
-            role="presentation"
-            style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 100090,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 20,
-              background: 'rgba(0,0,0,0.82)',
-            }}
-            onClick={handleCancelPreview}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="kentu-voice-preview-title"
-              onClick={(event) => event.stopPropagation()}
-              style={{
-                width: '100%',
-                maxWidth: 400,
-                background: '#12141a',
-                color: '#fff',
-                padding: 24,
-                borderRadius: 18,
-                border: '1px solid rgba(34, 211, 238, 0.28)',
-                boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-              }}
+
+      {canPortal && isListening ? createPortal(
+        <div
+          className="pointer-events-none fixed inset-0 z-[100085] flex flex-col items-center justify-center bg-black/70 px-6 backdrop-blur-xl"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="kentu-listen-title"
+        >
+          <div className="relative mb-8 flex h-36 w-36 items-center justify-center">
+            <span className="absolute inset-0 animate-ping rounded-full bg-cyan-400/20" aria-hidden />
+            <span className="absolute inset-3 animate-pulse rounded-full border-2 border-cyan-300/70" aria-hidden />
+            <span className="absolute inset-8 rounded-full bg-cyan-400/15 shadow-[0_0_40px_rgba(34,211,238,0.45)]" aria-hidden />
+            <img
+              src={KENTU_CHAT_EMBLEM_SRC}
+              alt=""
+              width={72}
+              height={72}
+              className="relative z-[1] h-[72px] w-[72px] object-contain drop-shadow-[0_0_22px_rgba(34,211,238,0.95)]"
+            />
+          </div>
+          <p id="kentu-listen-title" className="m-0 text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+            Sto ascoltando…
+          </p>
+          <div className="mt-4 w-full max-w-md rounded-2xl border border-cyan-400/25 bg-zinc-950/80 px-4 py-4 text-center shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <p className="m-0 min-h-[3.2rem] text-base font-medium leading-relaxed text-zinc-100">
+              {liveTranscript || 'Parla ora. Il testo compare qui in tempo reale.'}
+            </p>
+          </div>
+          <p className="pointer-events-auto mt-6 text-center text-xs text-zinc-400">
+            {holdOriginRef.current
+              ? 'Rilascia per confermare il testo'
+              : 'Tocca Ferma quando hai finito'}
+          </p>
+          {!holdOriginRef.current ? (
+            <button
+              type="button"
+              className="pointer-events-auto mt-3 rounded-full border border-cyan-400/40 bg-cyan-500/15 px-5 py-2 text-sm font-semibold text-cyan-100"
+              onClick={() => void stopListeningAndConfirm()}
             >
-              <h3
-                id="kentu-voice-preview-title"
-                style={{
-                  margin: '0 0 12px',
-                  fontSize: '1.15rem',
-                  fontWeight: 800,
-                  color: '#f8fafc',
-                }}
-              >
-                Testo Rilevato
-              </h3>
-              <p
-                style={{
-                  margin: '0 0 22px',
-                  padding: 14,
-                  borderRadius: 12,
-                  background: '#0f1115',
-                  border: '1px solid #334155',
-                  color: '#e2e8f0',
-                  fontSize: '1.05rem',
-                  lineHeight: 1.45,
-                  maxHeight: '40vh',
-                  overflowY: 'auto',
-                }}
-              >
-                {voicePreviewText}
+              Ferma
+            </button>
+          ) : null}
+        </div>,
+        document.body,
+      ) : null}
+
+      {canPortal && confirmText ? createPortal(
+        <div
+          className="fixed inset-0 z-[100090] flex items-end justify-center bg-black/70 px-4 backdrop-blur-md sm:items-center"
+          role="presentation"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="kentu-voice-confirm-title"
+            className="w-full max-w-md rounded-t-3xl border border-white/10 bg-zinc-950/92 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_16px_48px_rgba(0,0,0,0.45)] sm:rounded-3xl sm:pb-5"
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-600" aria-hidden />
+            <h2 id="kentu-voice-confirm-title" className="m-0 text-lg font-bold text-zinc-50">
+              Ho capito
+            </h2>
+            {isEditing ? (
+              <textarea
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                rows={5}
+                className="mt-3 w-full resize-none rounded-2xl border border-cyan-400/30 bg-zinc-900 px-3 py-3 text-[15px] leading-relaxed text-zinc-100 outline-none focus:ring-2 focus:ring-cyan-400/40"
+                aria-label="Modifica testo trascritto"
+              />
+            ) : (
+              <p className="mt-3 max-h-[40vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900/80 px-3.5 py-3 text-[15px] leading-relaxed text-zinc-100">
+                {confirmText}
               </p>
-              <div style={{ display: 'flex', gap: 12 }}>
+            )}
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={handleCreateDraft}
+                className="rounded-xl border border-cyan-400/40 bg-cyan-400 px-3 py-3 text-sm font-bold uppercase tracking-wide text-slate-950"
+              >
+                Crea bozza
+              </button>
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={handleCancelPreview}
-                  style={{
-                    ...btnBase,
-                    background: '#1e293b',
-                    color: '#e2e8f0',
-                  }}
+                  onClick={handleRetry}
+                  className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100"
                 >
-                  Annulla
+                  Riprova
                 </button>
                 <button
                   type="button"
-                  onClick={handleConfirmPreview}
-                  style={{
-                    ...btnBase,
-                    background: '#22d3ee',
-                    color: '#0f172a',
-                  }}
+                  onClick={() => setIsEditing(true)}
+                  className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100"
                 >
-                  Conferma
+                  Modifica
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmText('');
+                  setIsEditing(false);
+                }}
+                className="rounded-xl px-3 py-2 text-sm font-medium text-zinc-400"
+              >
+                Annulla
+              </button>
             </div>
-          </div>,
-          document.body,
-        )
-        : null}
-      {toast && typeof document !== 'undefined'
-        ? createPortal(
-          <div className="inbox-undo-toast" role="status" aria-live="polite">
-            <span className="inbox-undo-toast__msg">{toast}</span>
-          </div>,
-          document.body,
-        )
-        : null}
+          </div>
+        </div>,
+        document.body,
+      ) : null}
+
+      {canPortal && toast ? createPortal(
+        <div className="inbox-undo-toast" role="status" aria-live="polite">
+          <span className="inbox-undo-toast__msg">{toast}</span>
+        </div>,
+        document.body,
+      ) : null}
     </>
   );
 }

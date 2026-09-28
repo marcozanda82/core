@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 
 const TIMEFRAME_OPTIONS = ['AUTO', 'IERI', '7G', '14G', '30G'];
-const BOTTOM_MENU_ITEMS = ['Oggi', 'Timeline', 'Salute', 'Progetti', 'Menu'];
+const BOTTOM_MENU_ITEMS = ['Oggi', 'Timeline', 'Strumenti', 'Progetti', 'Menu'];
 const ROUTE_LABELS = ['STALLO', 'DEFINIZIONE', 'MANUTENZIONE', 'MASSA PULITA', 'MASSA SPORCA'];
 
 function BrushedMetalPanel({ children, style }) {
@@ -369,7 +369,7 @@ export default function MetabolicUI() {
         }}
       >
         {BOTTOM_MENU_ITEMS.map((item) => {
-          const active = item === 'Salute';
+          const active = item === 'Strumenti';
           return (
             <button
               key={item}
