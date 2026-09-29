@@ -35,7 +35,12 @@ function cleanTranscript(raw) {
   return String(raw || '').replace(/\s+/g, ' ').trim();
 }
 
-function collapseGluedPrefix(text) {
+function normalizeGramsInTranscript(raw) {
+  return String(raw || '')
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:grammi|gr|g)\b/gi, '$1 g')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
   const s = String(text || '').trim();
   if (!s) return '';
   const glued = s.match(/^([\p{L}]{3,})\1/u);
@@ -123,7 +128,7 @@ export default function KentuChatFab({
   }, []);
 
   const commitSnippetToList = useCallback((snippet) => {
-    const live = collapseGluedPrefix(cleanTranscript(snippet));
+    const live = normalizeGramsInTranscript(collapseGluedPrefix(cleanTranscript(snippet)));
     if (!live) return;
     const next = [...voiceItemsRef.current, live];
     voiceItemsRef.current = next;
@@ -442,12 +447,12 @@ export default function KentuChatFab({
 
       {canPortal && sessionOpen ? createPortal(
         <div
-          className="fixed inset-0 z-[100085] flex items-end justify-center bg-black/78 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl sm:items-center"
+          className="fixed inset-0 z-[100085] flex items-end justify-center bg-black/78 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-xl sm:items-center sm:pt-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="kentu-listen-title"
         >
-          <div className="flex h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-zinc-950/95 px-4 pb-4 pt-3 shadow-[0_16px_48px_rgba(0,0,0,0.5)] sm:h-[85vh] sm:rounded-3xl">
+          <div className="flex h-[95vh] max-h-[95vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-zinc-950/95 px-4 pb-4 pt-3 shadow-[0_16px_48px_rgba(0,0,0,0.5)] sm:h-[95vh] sm:rounded-3xl">
             {isListening ? (
               <div className="relative mx-auto mb-3 flex h-20 w-20 shrink-0 items-center justify-center">
                 <span className="absolute inset-0 animate-ping rounded-full bg-cyan-400/20" aria-hidden />
