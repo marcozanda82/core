@@ -1,6 +1,6 @@
 /**
  * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech).
- * L'ascolto resta attivo fino a SpeechRecognition.stop() da pointer-up:
+ * L'ascolto resta attivo fino a SpeechRecognition.stop() (tasto Ferma o timeout):
  * se il sistema chiude per silenzio, si riavvia tenendo il testo già detto.
  */
 

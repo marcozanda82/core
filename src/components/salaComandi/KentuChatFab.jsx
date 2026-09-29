@@ -11,6 +11,7 @@ import { createPendingInboxDraft, inferDraftType, parseDraftWithGemini } from '.
 const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
 const TOAST_MS = 2800;
+const LISTEN_TIMEOUT_MS = 90_000;
 
 function persistVoiceOnboarded() {
   if (typeof localStorage === 'undefined') return;
@@ -33,7 +34,7 @@ function cleanTranscript(raw) {
 }
 
 /**
- * Pulsante centrale Kentu AI — tap: guida; long-press: ascolto → conferma bozza Inbox.
+ * Pulsante centrale Kentu AI — tap: chat; long-press: ascolto Start/Stop → textarea → Gemini.
  */
 export default function KentuChatFab({
   visible = false,
@@ -49,11 +50,12 @@ export default function KentuChatFab({
   const holdOriginRef = useRef(false);
   const pressStartedAtRef = useRef(0);
   const toastTimerRef = useRef(null);
+  const listenTimeoutRef = useRef(null);
 
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [confirmText, setConfirmText] = useState('');
-  const [isEditing, setIsEditing] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [isParsingDraft, setIsParsingDraft] = useState(false);
 
@@ -77,6 +79,34 @@ export default function KentuChatFab({
     }
   }, []);
 
+  const clearListenTimeout = useCallback(() => {
+    if (listenTimeoutRef.current != null) {
+      window.clearTimeout(listenTimeoutRef.current);
+      listenTimeoutRef.current = null;
+    }
+  }, []);
+
+  const stopListeningAndConfirm = useCallback(async () => {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
+    clearListenTimeout();
+    const session = sessionRef.current;
+    if (!session) {
+      isListeningRef.current = false;
+      setIsListening(false);
+      setPreviewOpen(true);
+      return;
+    }
+    const text = cleanTranscript(await session.stop());
+    sessionRef.current = null;
+    isListeningRef.current = false;
+    holdOriginRef.current = false;
+    setIsListening(false);
+    setLiveTranscript(text);
+    setConfirmText(text);
+    setPreviewOpen(true);
+  }, [clearListenTimeout]);
+
   const startListening = useCallback(async () => {
     if (sessionRef.current) {
       try {
@@ -86,6 +116,7 @@ export default function KentuChatFab({
       }
       sessionRef.current = null;
     }
+    clearListenTimeout();
     const session = createHoldToTalkSession({
       onTranscript: (next) => setLiveTranscript(cleanTranscript(next)),
     });
@@ -94,7 +125,7 @@ export default function KentuChatFab({
     finishingRef.current = false;
     setLiveTranscript('');
     setConfirmText('');
-    setIsEditing(false);
+    setPreviewOpen(false);
     setIsListening(true);
     await playHoldToTalkHaptic();
     const started = await session.start();
@@ -104,32 +135,15 @@ export default function KentuChatFab({
       setIsListening(false);
       sessionRef.current = null;
       showToast('Microfono non disponibile');
-    }
-  }, [showToast]);
-
-  const stopListeningAndConfirm = useCallback(async () => {
-    if (finishingRef.current) return;
-    finishingRef.current = true;
-    const session = sessionRef.current;
-    if (!session) {
-      isListeningRef.current = false;
-      setIsListening(false);
       return;
     }
-    const text = cleanTranscript(await session.stop());
-    sessionRef.current = null;
-    isListeningRef.current = false;
-    holdOriginRef.current = false;
-    setIsListening(false);
-    if (!text) {
-      showToast('Nessun testo rilevato');
-      setLiveTranscript('');
-      return;
-    }
-    setConfirmText(text);
-    setLiveTranscript(text);
-    setIsEditing(false);
-  }, [showToast]);
+    listenTimeoutRef.current = window.setTimeout(() => {
+      listenTimeoutRef.current = null;
+      if (!isListeningRef.current) return;
+      showToast('Ascolto interrotto per timeout');
+      void stopListeningAndConfirm();
+    }, LISTEN_TIMEOUT_MS);
+  }, [clearListenTimeout, showToast, stopListeningAndConfirm]);
 
   const openTextChat = useCallback(() => {
     if (!engineReady) {
@@ -172,7 +186,7 @@ export default function KentuChatFab({
       });
       setConfirmText('');
       setLiveTranscript('');
-      setIsEditing(false);
+      setPreviewOpen(false);
       showToast(items.length > 1 ? `Inbox: ${items.length} alimenti` : 'Bozza salvata in Inbox');
     } catch (error) {
       console.warn('[KentuChatFab] parseDraftWithGemini failed', error);
@@ -184,14 +198,14 @@ export default function KentuChatFab({
 
   const handleRetry = useCallback(() => {
     setConfirmText('');
-    setIsEditing(false);
+    setPreviewOpen(false);
     holdOriginRef.current = false;
     void startListening();
   }, [startListening]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
-    if (confirmText) return;
+    if (previewOpen || isListeningRef.current) return;
     event.preventDefault();
     finishingRef.current = false;
     holdOriginRef.current = false;
@@ -211,7 +225,7 @@ export default function KentuChatFab({
       holdOriginRef.current = true;
       void startListening();
     }, HOLD_MS);
-  }, [clearPressTimer, confirmText, engineReady, onBlockedOpen, startListening]);
+  }, [clearPressTimer, engineReady, onBlockedOpen, previewOpen, startListening]);
 
   const handlePointerUp = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -224,18 +238,16 @@ export default function KentuChatFab({
     } catch {
       /* ignore */
     }
-    if (confirmText) return;
-    if (isListeningRef.current) {
+    if (previewOpen) return;
+    if (isListeningRef.current || holdOriginRef.current) {
       event.preventDefault();
-      void stopListeningAndConfirm();
       return;
     }
-    if (holdOriginRef.current) return;
     if (elapsed < HOLD_MS) {
       event.preventDefault();
       openTextChat();
     }
-  }, [clearPressTimer, confirmText, openTextChat, stopListeningAndConfirm]);
+  }, [clearPressTimer, openTextChat, previewOpen]);
 
   const handlePointerLeave = useCallback(() => {
     if (isListeningRef.current) return;
@@ -247,28 +259,14 @@ export default function KentuChatFab({
     clearPressTimer();
   }, [clearPressTimer]);
 
-  useEffect(() => {
-    if (!isListening) return undefined;
-    const onUp = (event) => {
-      if (!holdOriginRef.current) return;
-      if (event.button != null && event.button !== 0) return;
-      void stopListeningAndConfirm();
-    };
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-  }, [isListening, stopListeningAndConfirm]);
-
   useEffect(() => () => {
     clearPressTimer();
+    clearListenTimeout();
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     const session = sessionRef.current;
     sessionRef.current = null;
     if (session) void session.stop();
-  }, [clearPressTimer]);
+  }, [clearListenTimeout, clearPressTimer]);
 
   if (!visible) return null;
 
@@ -294,7 +292,7 @@ export default function KentuChatFab({
         ].join(' ')}
         aria-label={
           isListening
-            ? 'Kentu AI — in ascolto, rilascia per confermare'
+            ? 'Kentu AI — in ascolto'
             : engineReady
               ? 'Kentu AI'
               : 'Kentu AI — allineamento in corso'
@@ -354,7 +352,7 @@ export default function KentuChatFab({
 
       {canPortal && isListening ? createPortal(
         <div
-          className="pointer-events-none fixed inset-0 z-[100085] flex flex-col items-center justify-center bg-black/70 px-6 backdrop-blur-xl"
+          className="fixed inset-0 z-[100085] flex flex-col items-center justify-center bg-black/75 px-6 backdrop-blur-xl"
           role="dialog"
           aria-modal="true"
           aria-labelledby="kentu-listen-title"
@@ -372,32 +370,25 @@ export default function KentuChatFab({
             />
           </div>
           <p id="kentu-listen-title" className="m-0 text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
-            Sto ascoltando…
+            In ascolto
           </p>
           <div className="mt-4 w-full max-w-md rounded-2xl border border-cyan-400/25 bg-zinc-950/80 px-4 py-4 text-center shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
             <p className="m-0 min-h-[3.2rem] text-base font-medium leading-relaxed text-zinc-100">
               {liveTranscript || 'Parla ora. Il testo compare qui in tempo reale.'}
             </p>
           </div>
-          <p className="pointer-events-auto mt-6 text-center text-xs text-zinc-400">
-            {holdOriginRef.current
-              ? 'Rilascia per confermare il testo'
-              : 'Tocca Ferma quando hai finito'}
-          </p>
-          {!holdOriginRef.current ? (
-            <button
-              type="button"
-              className="pointer-events-auto mt-3 rounded-full border border-cyan-400/40 bg-cyan-500/15 px-5 py-2 text-sm font-semibold text-cyan-100"
-              onClick={() => void stopListeningAndConfirm()}
-            >
-              Ferma
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="mt-8 w-full max-w-md rounded-2xl border border-cyan-400/50 bg-cyan-400 px-5 py-4 text-base font-bold uppercase tracking-wide text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.35)]"
+            onClick={() => void stopListeningAndConfirm()}
+          >
+            Ferma
+          </button>
         </div>,
         document.body,
       ) : null}
 
-      {canPortal && confirmText ? createPortal(
+      {canPortal && previewOpen && !isListening ? createPortal(
         <div
           className="fixed inset-0 z-[100090] flex items-end justify-center bg-black/70 px-4 backdrop-blur-md sm:items-center"
           role="presentation"
@@ -410,21 +401,20 @@ export default function KentuChatFab({
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-600" aria-hidden />
             <h2 id="kentu-voice-confirm-title" className="m-0 text-lg font-bold text-zinc-50">
-              Ho capito
+              Testo rilevato
             </h2>
-            {isEditing ? (
-              <textarea
-                value={confirmText}
-                onChange={(event) => setConfirmText(event.target.value)}
-                rows={5}
-                className="mt-3 w-full resize-none rounded-2xl border border-cyan-400/30 bg-zinc-900 px-3 py-3 text-[15px] leading-relaxed text-zinc-100 outline-none focus:ring-2 focus:ring-cyan-400/40"
-                aria-label="Modifica testo trascritto"
-              />
-            ) : (
-              <p className="mt-3 max-h-[40vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900/80 px-3.5 py-3 text-[15px] leading-relaxed text-zinc-100">
-                {confirmText}
-              </p>
-            )}
+            <p className="mt-1 text-sm text-zinc-400">
+              Correggi la trascrizione o continua a scrivere, poi conferma.
+            </p>
+            <textarea
+              value={confirmText}
+              onChange={(event) => setConfirmText(event.target.value)}
+              rows={6}
+              autoFocus
+              placeholder="Scrivi o correggi qui gli alimenti…"
+              className="mt-3 w-full resize-y rounded-2xl border border-cyan-400/30 bg-zinc-900 px-3 py-3 text-[15px] leading-relaxed text-zinc-100 outline-none focus:ring-2 focus:ring-cyan-400/40"
+              aria-label="Testo rilevato, modificabile"
+            />
             <div className="mt-4 flex flex-col gap-2">
               <button
                 type="button"
@@ -434,29 +424,22 @@ export default function KentuChatFab({
               >
                 {isParsingDraft ? 'Analizzo…' : 'Conferma'}
               </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleRetry}
-                  className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100"
-                >
-                  Riprova
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(true)}
-                  className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100"
-                >
-                  Modifica
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={isParsingDraft}
+                className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100 disabled:opacity-60"
+              >
+                Riprova
+              </button>
               <button
                 type="button"
                 onClick={() => {
                   setConfirmText('');
-                  setIsEditing(false);
+                  setPreviewOpen(false);
                 }}
-                className="rounded-xl px-3 py-2 text-sm font-medium text-zinc-400"
+                disabled={isParsingDraft}
+                className="rounded-xl px-3 py-2 text-sm font-medium text-zinc-400 disabled:opacity-60"
               >
                 Annulla
               </button>
