@@ -35,6 +35,14 @@ function cleanTranscript(raw) {
   return String(raw || '').replace(/\s+/g, ' ').trim();
 }
 
+function collapseGluedPrefix(text) {
+  const s = String(text || '').trim();
+  if (!s) return '';
+  const glued = s.match(/^([\p{L}]{3,})\1/u);
+  if (glued) return `${glued[1]}${s.slice(glued[0].length)}`.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 function joinVoiceItems(items) {
   return (Array.isArray(items) ? items : [])
     .map((item) => cleanTranscript(item))
@@ -75,6 +83,7 @@ export default function KentuChatFab({
   }, []);
 
   const setLiveOverwrite = useCallback((raw) => {
+    if (!isListeningRef.current) return;
     const next = String(raw ?? '');
     liveTranscriptRef.current = next;
     setLiveTranscript(next);
@@ -114,9 +123,15 @@ export default function KentuChatFab({
   }, []);
 
   const commitSnippetToList = useCallback((snippet) => {
-    const live = cleanTranscript(snippet);
+    const live = collapseGluedPrefix(cleanTranscript(snippet));
     if (!live) return;
     const next = [...voiceItemsRef.current, live];
+    voiceItemsRef.current = next;
+    setVoiceItemsList(next);
+  }, []);
+
+  const removeVoiceItem = useCallback((index) => {
+    const next = voiceItemsRef.current.filter((_, i) => i !== index);
     voiceItemsRef.current = next;
     setVoiceItemsList(next);
   }, []);
@@ -137,6 +152,10 @@ export default function KentuChatFab({
   const stopListeningToIdle = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
+    isListeningRef.current = false;
+    const captured = liveTranscriptRef.current;
+    liveTranscriptRef.current = '';
+    setLiveTranscript('');
     clearListenTimeout();
     const session = sessionRef.current;
     sessionRef.current = null;
@@ -148,13 +167,9 @@ export default function KentuChatFab({
         leftover = '';
       }
     }
-    isListeningRef.current = false;
     holdOriginRef.current = false;
     setIsListening(false);
-    const live = cleanTranscript(liveTranscriptRef.current || leftover);
-    liveTranscriptRef.current = '';
-    setLiveTranscript('');
-    commitSnippetToList(live);
+    commitSnippetToList(captured || leftover);
     setSessionOpen(true);
     finishingRef.current = false;
   }, [clearListenTimeout, commitSnippetToList]);
@@ -172,7 +187,7 @@ export default function KentuChatFab({
     clearListenTimeout();
     const session = createHoldToTalkSession({
       onTranscript: (next) => {
-        setLiveOverwrite(next);
+        setLiveOverwrite(String(next ?? ''));
       },
       onEngineStopped: () => {
         void stopListeningToIdle();
@@ -427,66 +442,78 @@ export default function KentuChatFab({
 
       {canPortal && sessionOpen ? createPortal(
         <div
-          className="fixed inset-0 z-[100085] flex flex-col items-center justify-end bg-black/78 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-10 backdrop-blur-xl sm:justify-center"
+          className="fixed inset-0 z-[100085] flex items-end justify-center bg-black/78 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-6 backdrop-blur-xl sm:items-center"
           role="dialog"
           aria-modal="true"
           aria-labelledby="kentu-listen-title"
         >
-          <div className="flex w-full max-w-md flex-col items-center">
+          <div className="flex h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-white/10 bg-zinc-950/95 px-4 pb-4 pt-3 shadow-[0_16px_48px_rgba(0,0,0,0.5)] sm:h-[85vh] sm:rounded-3xl">
             {isListening ? (
-              <div className="relative mb-5 flex h-28 w-28 items-center justify-center">
+              <div className="relative mx-auto mb-3 flex h-20 w-20 shrink-0 items-center justify-center">
                 <span className="absolute inset-0 animate-ping rounded-full bg-cyan-400/20" aria-hidden />
-                <span className="absolute inset-3 animate-pulse rounded-full border-2 border-cyan-300/70" aria-hidden />
+                <span className="absolute inset-2 animate-pulse rounded-full border-2 border-cyan-300/70" aria-hidden />
                 <img
                   src={KENTU_CHAT_EMBLEM_SRC}
                   alt=""
-                  width={64}
-                  height={64}
-                  className="relative z-[1] h-16 w-16 object-contain drop-shadow-[0_0_22px_rgba(34,211,238,0.95)]"
+                  width={48}
+                  height={48}
+                  className="relative z-[1] h-12 w-12 object-contain drop-shadow-[0_0_22px_rgba(34,211,238,0.95)]"
                 />
               </div>
             ) : null}
 
-            <p id="kentu-listen-title" className="m-0 text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
+            <p id="kentu-listen-title" className="m-0 shrink-0 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
               {isListening ? 'In ascolto' : 'Lista della spesa'}
             </p>
 
-            {voiceItemsList.length > 0 ? (
-              <ul className="mt-4 max-h-[28vh] w-full space-y-2 overflow-y-auto pr-0.5">
-                {voiceItemsList.map((item, index) => (
-                  <li
-                    key={`${index}_${item.slice(0, 24)}`}
-                    className="rounded-2xl border border-cyan-400/20 bg-zinc-950/85 px-3 py-2.5 text-sm leading-snug text-zinc-100 shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+            <ul className="mt-3 min-h-0 w-full flex-1 space-y-2 overflow-y-auto pr-0.5">
+              {voiceItemsList.length === 0 && !isListening ? (
+                <li className="px-2 py-8 text-center text-sm text-zinc-500">
+                  {guideText}
+                </li>
+              ) : null}
+              {voiceItemsList.map((item, index) => (
+                <li
+                  key={`${index}_${item.slice(0, 24)}`}
+                  className="flex items-start gap-2 rounded-2xl border border-cyan-400/20 bg-zinc-900/90 px-3 py-2.5 text-sm leading-snug text-zinc-100 shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+                >
+                  <span className="mt-0.5 shrink-0 text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1">{item}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeVoiceItem(index)}
+                    disabled={isParsingDraft || isListening}
+                    className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-zinc-400 hover:bg-red-500/20 hover:text-red-200 disabled:opacity-40"
+                    aria-label={`Elimina ${item}`}
                   >
-                    <span className="mr-2 text-[10px] font-bold uppercase tracking-wide text-cyan-400/80">
-                      {index + 1}
-                    </span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
 
             {isListening ? (
-              <>
-                <div className="mt-4 w-full rounded-2xl border border-cyan-400/25 bg-zinc-950/80 px-4 py-4 text-center shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+              <div className="mt-3 flex w-full shrink-0 flex-col gap-3">
+                <div className="w-full rounded-2xl border border-cyan-400/25 bg-zinc-900 px-4 py-4 text-center">
                   <p className={`m-0 min-h-[3.2rem] text-base font-medium leading-relaxed ${liveTranscript ? 'text-zinc-100' : 'text-zinc-500'}`}>
                     {liveOrGuide}
                   </p>
                 </div>
                 <button
                   type="button"
-                  className="mt-6 w-full rounded-2xl border border-cyan-400/50 bg-cyan-400 px-5 py-4 text-base font-bold uppercase tracking-wide text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.35)]"
+                  className="w-full rounded-2xl border border-cyan-400/50 bg-cyan-400 px-5 py-4 text-base font-bold uppercase tracking-wide text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.35)]"
                   onClick={() => void stopListeningToIdle()}
                 >
                   Ferma
                 </button>
-              </>
+              </div>
             ) : (
-              <div className="mt-5 flex w-full flex-col gap-2">
-                <p className="mb-1 text-center text-sm text-zinc-500">
-                  {guideText}
-                </p>
+              <div className="mt-3 flex w-full shrink-0 flex-col gap-2">
+                {voiceItemsList.length > 0 ? (
+                  <p className="mb-0 text-center text-sm text-zinc-500">{guideText}</p>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void startListening()}

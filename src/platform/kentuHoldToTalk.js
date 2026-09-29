@@ -10,7 +10,7 @@ import { createSpeechRecognition } from '../features/chat/voiceChat';
 
 const CAPACITOR_START_OPTS = {
   language: 'it-IT',
-  maxResults: 5,
+  maxResults: 1,
   prompt: 'Parla ora',
   partialResults: true,
   popup: false,
@@ -18,23 +18,20 @@ const CAPACITOR_START_OPTS = {
 
 function liveFromPartialEvent(event) {
   if (!event || typeof event !== 'object') return '';
-  if (event.matches != null && event.matches[0] != null) {
+  if (Array.isArray(event.matches) && event.matches[0] != null) {
     return String(event.matches[0]);
   }
   if (event.transcript != null) return String(event.transcript);
   return '';
 }
 
-/** Web Speech: l'API accumula i result; non è il bug Android dei partial overwrite. */
-function fullUtteranceFromWebEvent(event) {
+/** Solo l'ipotesi corrente (ultimo result), niente concat dei result precedenti. */
+function currentUtteranceFromWebEvent(event) {
   if (!event || typeof event !== 'object') return '';
   const results = event.results;
   if (results && results.length > 0) {
-    let acc = '';
-    for (let i = 0; i < results.length; i += 1) {
-      acc += String(results[i]?.[0]?.transcript ?? '');
-    }
-    return acc;
+    const last = results[results.length - 1];
+    return String(last?.[0]?.transcript ?? '');
   }
   return liveFromPartialEvent(event);
 }
@@ -66,7 +63,8 @@ export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) 
   };
 
   const emitLive = (raw) => {
-    state.liveText = String(raw || '');
+    if (state.stopRequested) return;
+    state.liveText = String(raw ?? '');
     try {
       onTranscript?.(state.liveText);
     } catch {
@@ -92,7 +90,7 @@ export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) 
     state.mode = 'webkit';
     state.recognition = recognition;
     recognition.onresult = (event) => {
-      emitLive(fullUtteranceFromWebEvent(event));
+      emitLive(currentUtteranceFromWebEvent(event));
     };
     recognition.onerror = () => {
       if (state.stopRequested) return;
@@ -133,7 +131,8 @@ export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) 
             state.capacitorListener = await SpeechRecognition.addListener?.(
               'partialResults',
               (event) => {
-                emitLive(String(event?.matches?.[0] ?? ''));
+                if (state.stopRequested) return;
+                emitLive(liveFromPartialEvent(event));
               },
             );
             state.listeningStateListener = await SpeechRecognition.addListener?.(
@@ -162,7 +161,9 @@ export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) 
   };
 
   const stop = async () => {
+    const snapshot = String(state.liveText || '');
     state.stopRequested = true;
+    state.liveText = '';
     if (state.startGate) {
       try {
         await state.startGate;
@@ -235,7 +236,7 @@ export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) 
         window.setTimeout(finish, 450);
       });
     }
-    const text = String(state.liveText || '').replace(/\s+/g, ' ').trim();
+    const text = snapshot.replace(/\s+/g, ' ').trim();
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;
