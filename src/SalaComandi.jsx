@@ -227,7 +227,6 @@ import { buildFatDetailsData } from './features/nutrition/buildFatDetailsData';
 import { buildCarbsDetailsData } from './features/nutrition/buildCarbsDetailsData';
 import { buildProteinDetailsData } from './features/nutrition/buildProteinDetailsData';
 import { buildMineralsDetailsData } from './features/nutrition/buildMineralsDetailsData';
-import WeeklyMetabolicIndicator from './components/WeeklyMetabolicIndicator';
 import MenuDrawerShell from './features/salaComandi/MenuDrawerShell';
 import OverlayHost from './features/salaComandi/OverlayHost';
 import ChoiceModalOverlay from './features/salaComandi/overlays/ChoiceModalOverlay';
@@ -8373,17 +8372,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }}
         accessory={
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-            {user?.uid && (
-            <WeeklyMetabolicIndicator
-              db={db}
-              user={user}
-              fullHistory={fullHistory}
-              userTargets={userTargets}
-              currentTrackerDate={currentTrackerDate}
-              isSimulationMode={isSimulationMode}
-              getTodayString={getTodayString}
-            />
-            )}
             <EnergyArcWidget
               variant="mini"
               longevityScore={unifiedLongevityScore}

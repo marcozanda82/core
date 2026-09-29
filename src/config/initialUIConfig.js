@@ -22,7 +22,6 @@ export const initialUIConfig = {
   header: {
     badgePosition: 'right',
     showMetabolicBadge: true,
-    showWeeklyMetabolicIndicator: true,
     showSncStressButton: true,
   },
 

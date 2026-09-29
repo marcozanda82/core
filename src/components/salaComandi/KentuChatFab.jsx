@@ -43,7 +43,7 @@ function joinVoiceItems(items) {
 }
 
 /**
- * Pulsante centrale Kentu AI — tap: chat; long-press: lista vocale step-by-step → Gemini.
+ * Pulsante centrale Kentu AI — tap: chat; long-press: modale vocale in riposo, ascolto solo su comando.
  */
 export default function KentuChatFab({
   visible = false,
@@ -65,7 +65,6 @@ export default function KentuChatFab({
 
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [pendingItem, setPendingItem] = useState('');
   const [voiceItemsList, setVoiceItemsList] = useState([]);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [toast, setToast] = useState('');
@@ -84,10 +83,11 @@ export default function KentuChatFab({
   const resetVoiceSession = useCallback(() => {
     voiceItemsRef.current = [];
     setVoiceItemsList([]);
-    setPendingItem('');
     setLiveTranscript('');
     liveTranscriptRef.current = '';
     setSessionOpen(false);
+    setIsListening(false);
+    isListeningRef.current = false;
   }, []);
 
   const showToast = useCallback((message) => {
@@ -113,7 +113,28 @@ export default function KentuChatFab({
     }
   }, []);
 
-  const stopListeningKeepSession = useCallback(async () => {
+  const commitSnippetToList = useCallback((snippet) => {
+    const live = cleanTranscript(snippet);
+    if (!live) return;
+    const next = [...voiceItemsRef.current, live];
+    voiceItemsRef.current = next;
+    setVoiceItemsList(next);
+  }, []);
+
+  const openIdleSession = useCallback(({ resetList = false } = {}) => {
+    if (resetList) {
+      voiceItemsRef.current = [];
+      setVoiceItemsList([]);
+    }
+    finishingRef.current = false;
+    isListeningRef.current = false;
+    setIsListening(false);
+    liveTranscriptRef.current = '';
+    setLiveTranscript('');
+    setSessionOpen(true);
+  }, []);
+
+  const stopListeningToIdle = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
     clearListenTimeout();
@@ -133,11 +154,13 @@ export default function KentuChatFab({
     const live = cleanTranscript(liveTranscriptRef.current || leftover);
     liveTranscriptRef.current = '';
     setLiveTranscript('');
-    if (live) setPendingItem(live);
+    commitSnippetToList(live);
     setSessionOpen(true);
-  }, [clearListenTimeout]);
+    finishingRef.current = false;
+  }, [clearListenTimeout, commitSnippetToList]);
 
-  const startListening = useCallback(async ({ resetList = false } = {}) => {
+  const startListening = useCallback(async () => {
+    if (isParsingDraft) return;
     if (sessionRef.current) {
       try {
         await sessionRef.current.stop();
@@ -152,7 +175,7 @@ export default function KentuChatFab({
         setLiveOverwrite(next);
       },
       onEngineStopped: () => {
-        void stopListeningKeepSession();
+        void stopListeningToIdle();
       },
     });
     sessionRef.current = session;
@@ -160,11 +183,6 @@ export default function KentuChatFab({
     finishingRef.current = false;
     liveTranscriptRef.current = '';
     setLiveTranscript('');
-    setPendingItem('');
-    if (resetList) {
-      voiceItemsRef.current = [];
-      setVoiceItemsList([]);
-    }
     setSessionOpen(true);
     setIsListening(true);
     await playHoldToTalkHaptic();
@@ -176,16 +194,16 @@ export default function KentuChatFab({
       sessionRef.current = null;
       finishingRef.current = false;
       showToast('Microfono non disponibile');
-      setSessionOpen(voiceItemsRef.current.length > 0);
+      setSessionOpen(true);
       return;
     }
     listenTimeoutRef.current = window.setTimeout(() => {
       listenTimeoutRef.current = null;
       if (!isListeningRef.current) return;
       showToast('Ascolto interrotto per timeout');
-      void stopListeningKeepSession();
+      void stopListeningToIdle();
     }, LISTEN_TIMEOUT_MS);
-  }, [clearListenTimeout, setLiveOverwrite, showToast, stopListeningKeepSession]);
+  }, [clearListenTimeout, isParsingDraft, setLiveOverwrite, showToast, stopListeningToIdle]);
 
   const openTextChat = useCallback(() => {
     if (!engineReady) {
@@ -195,32 +213,13 @@ export default function KentuChatFab({
     onOpen?.();
   }, [engineReady, onBlockedOpen, onOpen]);
 
-  const commitPendingToList = useCallback(() => {
-    const snippet = cleanTranscript(pendingItem);
-    if (!snippet) return false;
-    const next = [...voiceItemsRef.current, snippet];
-    voiceItemsRef.current = next;
-    setVoiceItemsList(next);
-    setPendingItem('');
-    return true;
-  }, [pendingItem]);
-
-  const handleAddAnother = useCallback(() => {
-    if (isParsingDraft || isListeningRef.current) return;
-    commitPendingToList();
-    holdOriginRef.current = false;
-    void startListening({ resetList: false });
-  }, [commitPendingToList, isParsingDraft, startListening]);
-
   const handleSubmitAll = useCallback(async () => {
-    if (isParsingDraft) return;
+    if (isParsingDraft || isListeningRef.current) return;
     if (!engineReady) {
       onBlockedOpen?.();
       return;
     }
-    const pending = cleanTranscript(pendingItem);
     const items = [...voiceItemsRef.current];
-    if (pending) items.push(pending);
     const text = joinVoiceItems(items);
     if (!text) {
       showToast('Nessun alimento da inviare');
@@ -275,7 +274,7 @@ export default function KentuChatFab({
     } finally {
       setIsParsingDraft(false);
     }
-  }, [engineReady, isParsingDraft, onBlockedOpen, pendingItem, resetVoiceSession, showToast]);
+  }, [engineReady, isParsingDraft, onBlockedOpen, resetVoiceSession, showToast]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -297,9 +296,9 @@ export default function KentuChatFab({
     pressTimer.current = window.setTimeout(() => {
       pressTimer.current = null;
       holdOriginRef.current = true;
-      void startListening({ resetList: true });
+      openIdleSession({ resetList: true });
     }, HOLD_MS);
-  }, [clearPressTimer, engineReady, onBlockedOpen, sessionOpen, startListening]);
+  }, [clearPressTimer, engineReady, onBlockedOpen, openIdleSession, sessionOpen]);
 
   const handlePointerUp = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -347,7 +346,6 @@ export default function KentuChatFab({
   const canPortal = typeof document !== 'undefined';
   const guideText = voiceItemsList.length === 0 ? GUIDE_EMPTY : GUIDE_NEXT;
   const liveOrGuide = cleanTranscript(liveTranscript) || guideText;
-  const showActions = sessionOpen && !isListening;
 
   return (
     <>
@@ -469,45 +467,41 @@ export default function KentuChatFab({
               </ul>
             ) : null}
 
-            <div className="mt-4 w-full rounded-2xl border border-cyan-400/25 bg-zinc-950/80 px-4 py-4 text-center shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-              {isListening ? (
-                <p className={`m-0 min-h-[3.2rem] text-base font-medium leading-relaxed ${liveTranscript ? 'text-zinc-100' : 'text-zinc-500'}`}>
-                  {liveOrGuide}
-                </p>
-              ) : (
-                <p className={`m-0 min-h-[3.2rem] text-base font-medium leading-relaxed ${pendingItem ? 'text-zinc-100' : 'text-zinc-500'}`}>
-                  {pendingItem || guideText}
-                </p>
-              )}
-            </div>
-
             {isListening ? (
-              <button
-                type="button"
-                className="mt-6 w-full rounded-2xl border border-cyan-400/50 bg-cyan-400 px-5 py-4 text-base font-bold uppercase tracking-wide text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.35)]"
-                onClick={() => void stopListeningKeepSession()}
-              >
-                Ferma
-              </button>
-            ) : null}
-
-            {showActions ? (
-              <div className="mt-5 flex w-full flex-col gap-2">
+              <>
+                <div className="mt-4 w-full rounded-2xl border border-cyan-400/25 bg-zinc-950/80 px-4 py-4 text-center shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                  <p className={`m-0 min-h-[3.2rem] text-base font-medium leading-relaxed ${liveTranscript ? 'text-zinc-100' : 'text-zinc-500'}`}>
+                    {liveOrGuide}
+                  </p>
+                </div>
                 <button
                   type="button"
-                  onClick={handleAddAnother}
-                  disabled={isParsingDraft || (!pendingItem && voiceItemsList.length === 0)}
-                  className="rounded-xl border border-cyan-400/40 bg-cyan-400/15 px-3 py-3 text-sm font-bold text-cyan-100 disabled:opacity-50"
+                  className="mt-6 w-full rounded-2xl border border-cyan-400/50 bg-cyan-400 px-5 py-4 text-base font-bold uppercase tracking-wide text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.35)]"
+                  onClick={() => void stopListeningToIdle()}
                 >
-                  Aggiungi altro alimento
+                  Ferma
+                </button>
+              </>
+            ) : (
+              <div className="mt-5 flex w-full flex-col gap-2">
+                <p className="mb-1 text-center text-sm text-zinc-500">
+                  {guideText}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void startListening()}
+                  disabled={isParsingDraft}
+                  className="rounded-2xl border border-cyan-400/50 bg-cyan-400 px-4 py-4 text-base font-bold text-slate-950 shadow-[0_12px_32px_rgba(34,211,238,0.28)] disabled:opacity-60"
+                >
+                  🎙️ Detta un alimento
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleSubmitAll()}
-                  disabled={isParsingDraft || (!pendingItem && voiceItemsList.length === 0)}
-                  className="rounded-xl border border-cyan-400/50 bg-cyan-400 px-3 py-3 text-sm font-bold uppercase tracking-wide text-slate-950 disabled:opacity-60"
+                  disabled={isParsingDraft || voiceItemsList.length === 0}
+                  className="rounded-xl border border-cyan-400/35 bg-cyan-400/15 px-3 py-3 text-sm font-bold uppercase tracking-wide text-cyan-100 disabled:opacity-50"
                 >
-                  {isParsingDraft ? 'Analizzo…' : 'Fine (Invia tutto)'}
+                  {isParsingDraft ? 'Analizzo…' : 'Invia al Diario'}
                 </button>
                 <button
                   type="button"
@@ -518,7 +512,7 @@ export default function KentuChatFab({
                   Annulla
                 </button>
               </div>
-            ) : null}
+            )}
           </div>
         </div>,
         document.body,
