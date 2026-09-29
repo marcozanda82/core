@@ -786,12 +786,14 @@ export class CommandTerminalController {
     this.mcdriveExactTime = nextTime;
     this.mcdriveTimeString = nextTime;
 
-    if (!isEditing) {
+    let editingFoods = Array.isArray(options?.editingFoods) ? options.editingFoods : [];
+    const hasSeedFoods = editingFoods.length > 0;
+
+    // Nuova lavagna vuota (Guidato AI senza alimenti). Con seed (voce «Calcola Ora»)
+    // idrata la stessa UI senza mealId di diario.
+    if (!isEditing && !hasSeedFoods) {
       return this.setMcdriveMealTypeAndOpen(mealType);
     }
-
-    // Hydration: pre-popoliamo la lavagna con gli alimenti del pasto esistente.
-    let editingFoods = Array.isArray(options?.editingFoods) ? options.editingFoods : [];
     if (editingFoods.length === 0 && editingMealId) {
       const log = Array.isArray(currentState?.activeLog) ? currentState.activeLog : [];
       editingFoods = getFoodItemsForMealSlotFromLog(log, editingMealId).map((f) => ({
@@ -872,7 +874,9 @@ export class CommandTerminalController {
 
     this.mcdriveMealType = mealType;
     this.pendingMcDriveDraft = hydratedDraft;
-    this.mcdriveSessionSlotId = editingMealId;
+    this.mcdriveSessionSlotId = isEditing
+      ? editingMealId
+      : createSessionMealSlotId(mealType);
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     return this.publishMcdriveTrayMessage('');

@@ -3824,6 +3824,59 @@ export default function SalaComandi() {
     ]
   );
 
+  /**
+   * Voce «Calcola Ora»: stessa lavagna Guidato AI (McDrive / LiveMealTray), non FastMealLogger.
+   * Seed degli alimenti parsati + avvio immediato del calcolo macro.
+   */
+  const openAiAssistedMealFromVoiceItems = useCallback(
+    (payload = {}) => {
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      if (!items.length) return false;
+      if (typeof sendMessageRef.current !== 'function') return false;
+
+      const mealDec = getCurrentTimeRoundedTo15Min();
+      const mealSlot =
+        toCanonicalMealType(String(payload?.mealType || '').split('_')[0])
+        || predictMealType(mealDec)
+        || 'pranzo';
+
+      const editingFoods = items.map((item, index) => {
+        const foodName = String(item?.foodName || item?.name || item?.spokenFoodName || '').trim();
+        const rawQty = Number(item?.grams ?? item?.qty ?? item?.weight);
+        const grams = Number.isFinite(rawQty) && rawQty > 0 ? Math.round(rawQty) : 100;
+        return {
+          foodName,
+          name: foodName,
+          spokenFoodName: foodName,
+          grams,
+          status: 'raw',
+          itemId: `voice_calc_${Date.now()}_${index}`,
+        };
+      }).filter((row) => row.foodName);
+
+      if (!editingFoods.length) return false;
+
+      setShowFastLogger(false);
+      openChat();
+      void (async () => {
+        const send = sendMessageRef.current;
+        if (typeof send !== 'function') return;
+        await send('', {
+          intent: 'START_MCDRIVE_WIZARD',
+          mealType: mealSlot,
+          editingFoods,
+          skipUserBubble: true,
+        });
+        await send('', {
+          intent: 'FINISH_MCDRIVE_WIZARD',
+          skipUserBubble: true,
+        });
+      })();
+      return true;
+    },
+    [openChat, predictMealType, toCanonicalMealType],
+  );
+
   /** Salvataggio pasto da payload add_food / pendingHabit; items possono includere matchedKey (abitudine). */
   const commitDiaryLogWrite = useCallback((nextLog) => {
     if (isSimulationMode) {
@@ -8273,7 +8326,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && activeAction !== 'focus'
       }
       onOpen={handleOpenKentuChat}
-      onPopulateMealLavagna={populateMealLavagnaFromChatItems}
+      onOpenAiMealBuilder={openAiAssistedMealFromVoiceItems}
       onBlockedOpen={showEngineAlignToast}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}

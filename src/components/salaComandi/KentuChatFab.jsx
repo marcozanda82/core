@@ -65,7 +65,7 @@ export default function KentuChatFab({
   engineReady = true,
   onOpen = null,
   onBlockedOpen = null,
-  onPopulateMealLavagna = null,
+  onOpenAiMealBuilder = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
@@ -308,8 +308,8 @@ export default function KentuChatFab({
         setSessionOpen(true);
         return;
       }
-      const opened = typeof onPopulateMealLavagna === 'function'
-        ? onPopulateMealLavagna({ items: foodItems })
+      const opened = typeof onOpenAiMealBuilder === 'function'
+        ? onOpenAiMealBuilder({ items: foodItems })
         : false;
       if (!opened) {
         showToast('Costruttore pasti non disponibile');
@@ -327,7 +327,7 @@ export default function KentuChatFab({
     } finally {
       setIsParsingDraft(false);
     }
-  }, [collectVoiceText, engineReady, isParsingDraft, onBlockedOpen, onPopulateMealLavagna, resetVoiceSession, showToast]);
+  }, [collectVoiceText, engineReady, isParsingDraft, onBlockedOpen, onOpenAiMealBuilder, resetVoiceSession, showToast]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
