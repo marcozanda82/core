@@ -2587,10 +2587,8 @@
 .kentu-meal-tray__footer {
   flex: none;
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  justify-content: stretch;
   padding: 10px 14px 12px;
   margin: 0;
   border-top: 1px solid rgba(148, 163, 184, 0.16);
@@ -2598,17 +2596,27 @@
   z-index: 1;
 }
 
-.kentu-meal-tray__confirm {
-  flex: 1 1 auto;
-  min-width: 140px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+.kentu-meal-tray__footer-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
 }
 
-.kentu-meal-tray__cancel,
-.kentu-meal-tray__add-more {
+.kentu-meal-tray__scan,
+.kentu-meal-tray__cancel {
+  flex: 1 1 0;
+  min-width: 0;
+  width: 50%;
+}
+
+.kentu-meal-tray__confirm {
   flex: 1 1 auto;
-  min-width: 110px;
+  width: 100%;
+  min-width: 0;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 @media (min-width: 480px) {

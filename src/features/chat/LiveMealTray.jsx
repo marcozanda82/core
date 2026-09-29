@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, ChevronRight, Inbox, Info, Pencil, ScanBarcode, Search, Sparkles, Trash2, Utensils } from 'lucide-react';
+import { ArrowLeftRight, ChevronRight, Inbox, Info, Pencil, ScanBarcode, Search, Trash2, Utensils } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
@@ -368,21 +368,6 @@ function MacroCompareRow({ label, actual, target, unit = 'g' }) {
   );
 }
 
-function TrayBarcodeScanButton({ disabled = false, onClick }) {
-  return (
-    <button
-      type="button"
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/20 disabled:opacity-50"
-      disabled={disabled}
-      onClick={onClick}
-      aria-label="Scansiona barcode"
-      title="Scanner barcode"
-    >
-      <ScanBarcode className="h-5 w-5" />
-    </button>
-  );
-}
-
 /**
  * Lavagna McDrive: vassoio interattivo + confronto target + edit potenziato.
  */
@@ -611,17 +596,6 @@ function LiveMealTray({
     || Number(mealTargets.carbo) > 0
     || Number(mealTargets.fat) > 0;
 
-  const hasNutrientGap = useMemo(() => {
-    if (!hasTargets) return false;
-    const gapKcal = Math.max(0, Number(mealTargets.kcal) - Number(resolvedTotals.kcal));
-    const gapPro = Math.max(0, Number(mealTargets.pro) - Number(resolvedTotals.pro));
-    const gapCarbo = Math.max(0, Number(mealTargets.carbo) - Number(resolvedTotals.carbo));
-    const gapFat = Math.max(0, Number(mealTargets.fat) - Number(resolvedTotals.fat));
-    return gapKcal > 5 || gapPro > 0.5 || gapCarbo > 0.5 || gapFat > 0.5;
-  }, [hasTargets, mealTargets, resolvedTotals]);
-
-  const canOpenSolver = items.length >= 1 || hasNutrientGap;
-
   const solverExistingFoods = useMemo(
     () => draftFoodsToSolverItems(items),
     [items],
@@ -756,16 +730,10 @@ function LiveMealTray({
         }
       >
         {items.length === 0 ? (
-          <div className="kentu-meal-tray__empty flex items-center gap-3 rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/50 px-4 py-5">
-            <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-400" role="status">
+          <div className="kentu-meal-tray__empty rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/50 px-4 py-6">
+            <p className="text-center text-sm leading-relaxed text-slate-400" role="status">
               Vassoio vuoto. Dettaglia i cibi in basso, usa il microfono o scansiona un codice a barre.
             </p>
-            {active ? (
-              <TrayBarcodeScanButton
-                disabled={disabled || isSaving}
-                onClick={() => openScanner()}
-              />
-            ) : null}
           </div>
         ) : (
           <ul className="kentu-meal-tray__list">
@@ -1084,42 +1052,34 @@ function LiveMealTray({
                 </li>
               );
             })}
-            {active ? (
-              <li className="kentu-meal-tray__row kentu-meal-tray__row--add">
-                <div className="flex w-full items-center justify-end">
-                  <TrayBarcodeScanButton
-                    disabled={disabled || isSaving}
-                    onClick={() => openScanner()}
-                  />
-                </div>
-              </li>
-            ) : null}
           </ul>
         )}
       </div>
 
       {active ? (
         <div className="kentu-meal-tray__footer flex-none">
-          <KentuButton
-            variant="secondary"
-            className="kentu-meal-tray__solver kentu-btn--sm min-w-[96px] shrink-0"
-            disabled={disabled || isSaving || !canOpenSolver}
-            onClick={() => setShowSolverModal(true)}
-            title={canOpenSolver ? 'Bilancia pasto con Kentu Solver' : 'Aggiungi alimenti o attendi target pasto'}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              Bilancia
-            </span>
-          </KentuButton>
-          <KentuButton
-            variant="secondary"
-            className="kentu-meal-tray__cancel"
-            disabled={disabled || isSaving}
-            onClick={() => onCancel?.()}
-          >
-            {MCDRIVE_CANCEL_CHIP.label}
-          </KentuButton>
+          <div className="kentu-meal-tray__footer-row">
+            <KentuButton
+              variant="secondary"
+              className="kentu-meal-tray__scan flex-1"
+              disabled={disabled || isSaving}
+              onClick={() => openScanner()}
+              title="Scansiona barcode"
+            >
+              <span className="inline-flex items-center justify-center gap-1.5">
+                <ScanBarcode className="h-4 w-4 shrink-0" aria-hidden />
+                Scanner
+              </span>
+            </KentuButton>
+            <KentuButton
+              variant="secondary"
+              className="kentu-meal-tray__cancel flex-1"
+              disabled={disabled || isSaving}
+              onClick={() => onCancel?.()}
+            >
+              {MCDRIVE_CANCEL_CHIP.label}
+            </KentuButton>
+          </div>
           {needsCalculate ? (
             <KentuButton
               variant="primary"
