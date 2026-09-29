@@ -37,10 +37,12 @@ function cleanTranscript(raw) {
 
 function normalizeGramsInTranscript(raw) {
   return String(raw || '')
-    .replace(/(\d+(?:[.,]\d+)?)\s*(?:grammi|gr|g)\b/gi, '$1 g')
+    .replace(/\s*(grammi|gr|g)\b/gi, ' g')
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+function collapseGluedPrefix(text) {
   const s = String(text || '').trim();
   if (!s) return '';
   const glued = s.match(/^([\p{L}]{3,})\1/u);
@@ -63,6 +65,7 @@ export default function KentuChatFab({
   engineReady = true,
   onOpen = null,
   onBlockedOpen = null,
+  onPopulateMealLavagna = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
@@ -233,16 +236,52 @@ export default function KentuChatFab({
     onOpen?.();
   }, [engineReady, onBlockedOpen, onOpen]);
 
-  const handleSubmitAll = useCallback(async () => {
+  const collectVoiceText = useCallback(() => {
+    const items = [...voiceItemsRef.current];
+    const text = joinVoiceItems(items);
+    return { items, text };
+  }, []);
+
+  const handleSaveDrafts = useCallback(() => {
+    if (isParsingDraft || isListeningRef.current) return;
+    const { items, text } = collectVoiceText();
+    if (!text) {
+      showToast('Nessun alimento da salvare');
+      return;
+    }
+    const stamp = Date.now();
+    const draft = createPendingInboxDraft(text, { timestamp: stamp });
+    enqueueInboxDraftAppend({
+      id: draft.id,
+      rawText: text,
+      inferredType: draft.inferredType || inferDraftType(text),
+      timestamp: stamp,
+      createdAt: stamp,
+      status: 'pending',
+      timeString: currentTimeHHmm(),
+      items: items.map((foodName, index) => ({
+        id: `voice_inbox_${stamp}_${index}`,
+        foodName,
+        name: foodName,
+        desc: foodName,
+        spokenFoodName: foodName,
+        grams: 1,
+        status: 'pending',
+      })),
+    });
+    resetVoiceSession();
+    showToast(items.length > 1 ? `Inbox: ${items.length} alimenti` : 'Bozza salvata in Inbox');
+  }, [collectVoiceText, isParsingDraft, resetVoiceSession, showToast]);
+
+  const handleCalcolaOra = useCallback(async () => {
     if (isParsingDraft || isListeningRef.current) return;
     if (!engineReady) {
       onBlockedOpen?.();
       return;
     }
-    const items = [...voiceItemsRef.current];
-    const text = joinVoiceItems(items);
+    const { items, text } = collectVoiceText();
     if (!text) {
-      showToast('Nessun alimento da inviare');
+      showToast('Nessun alimento da calcolare');
       return;
     }
 
@@ -250,20 +289,16 @@ export default function KentuChatFab({
     setIsParsingDraft(true);
     try {
       const parsed = await parseDraftWithGemini(text);
-      const stamp = Date.now();
-      const foodItems = parsed.map((entry, index) => {
+      const foodItems = parsed.map((entry) => {
         const foodName = typeof entry === 'string'
           ? entry
           : String(entry?.nome || entry?.foodName || '').trim();
         const grams = Number(entry?.grams);
         return {
-          id: `voice_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`,
           foodName,
           name: foodName,
-          desc: foodName,
           spokenFoodName: foodName,
           grams: Number.isFinite(grams) && grams > 0 ? grams : 100,
-          status: 'pending',
         };
       }).filter((item) => item.foodName);
       if (foodItems.length === 0) {
@@ -273,28 +308,26 @@ export default function KentuChatFab({
         setSessionOpen(true);
         return;
       }
-      const draft = createPendingInboxDraft(text, { timestamp: stamp });
-      enqueueInboxDraftAppend({
-        id: draft.id,
-        rawText: draft.rawText,
-        inferredType: draft.inferredType || inferDraftType(text),
-        timestamp: draft.timestamp,
-        createdAt: draft.timestamp,
-        status: 'pending',
-        timeString: currentTimeHHmm(),
-        items: foodItems,
-      });
-      showToast(foodItems.length > 1 ? `Inbox: ${foodItems.length} alimenti` : 'Bozza salvata in Inbox');
+      const opened = typeof onPopulateMealLavagna === 'function'
+        ? onPopulateMealLavagna({ items: foodItems })
+        : false;
+      if (!opened) {
+        showToast('Costruttore pasti non disponibile');
+        voiceItemsRef.current = items;
+        setVoiceItemsList(items);
+        setSessionOpen(true);
+        return;
+      }
     } catch (error) {
       console.warn('[KentuChatFab] parseDraftWithGemini failed', error);
-      showToast('Non sono riuscito a spezzare gli alimenti. Riprova.');
+      showToast('Non sono riuscito a calcolare gli alimenti. Riprova.');
       voiceItemsRef.current = items;
       setVoiceItemsList(items);
       setSessionOpen(true);
     } finally {
       setIsParsingDraft(false);
     }
-  }, [engineReady, isParsingDraft, onBlockedOpen, resetVoiceSession, showToast]);
+  }, [collectVoiceText, engineReady, isParsingDraft, onBlockedOpen, onPopulateMealLavagna, resetVoiceSession, showToast]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -468,7 +501,7 @@ export default function KentuChatFab({
             ) : null}
 
             <p id="kentu-listen-title" className="m-0 shrink-0 text-center text-[11px] font-bold uppercase tracking-[0.18em] text-cyan-300">
-              {isListening ? 'In ascolto' : 'Lista della spesa'}
+              {isListening ? 'In ascolto' : 'Alimenti inseriti'}
             </p>
 
             <ul className="mt-3 min-h-0 w-full flex-1 space-y-2 overflow-y-auto pr-0.5">
@@ -527,14 +560,24 @@ export default function KentuChatFab({
                 >
                   🎙️ Detta un alimento
                 </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSubmitAll()}
-                  disabled={isParsingDraft || voiceItemsList.length === 0}
-                  className="rounded-xl border border-cyan-400/35 bg-cyan-400/15 px-3 py-3 text-sm font-bold uppercase tracking-wide text-cyan-100 disabled:opacity-50"
-                >
-                  {isParsingDraft ? 'Analizzo…' : 'Invia al Diario'}
-                </button>
+                <div className="flex justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveDrafts}
+                    disabled={isParsingDraft || voiceItemsList.length === 0}
+                    className="flex-1 rounded-xl border border-white/12 bg-white/[0.06] px-3 py-3 text-sm font-semibold text-zinc-200 disabled:opacity-50"
+                  >
+                    Salva in Bozze
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleCalcolaOra()}
+                    disabled={isParsingDraft || voiceItemsList.length === 0}
+                    className="flex-1 rounded-xl border border-cyan-400/50 bg-cyan-400 px-3 py-3 text-sm font-bold text-slate-950 disabled:opacity-50"
+                  >
+                    {isParsingDraft ? 'Calcolo…' : 'Calcola Ora'}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={resetVoiceSession}

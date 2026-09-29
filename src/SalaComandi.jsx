@@ -8273,7 +8273,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && activeAction !== 'focus'
       }
       onOpen={handleOpenKentuChat}
-      onSendMessage={sendMessage}
+      onPopulateMealLavagna={populateMealLavagnaFromChatItems}
       onBlockedOpen={showEngineAlignToast}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}
