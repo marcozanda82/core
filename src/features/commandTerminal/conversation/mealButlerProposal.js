@@ -9,6 +9,7 @@ import {
   normalizeSearchText,
   normalizeSearchKeywords,
   shouldDiscloseSynonymMapping,
+  isExactNormalizedFoodName,
 } from '../../../foodSearch.js';
 import { normalizePortionFoodKey, lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 
@@ -201,29 +202,17 @@ export function enrichFoodItemsAsButlerProposal(items = [], ctx = {}) {
         includeUserHistory: false,
         enableFuzzy: true,
       });
-      const exactHit = hits.find((h) => (
-        String(h.matchTier || '') === 'exact'
-        || h.keywordExact === true
-        || Number(h.strictScore) >= 100
-      ));
-      if (exactHit?.name && shouldDiscloseSynonymMapping(originalName, exactHit.name)) {
-        foodName = String(exactHit.name).trim();
+      const exactHit = hits.find((h) => isExactNormalizedFoodName(h?.name, originalName));
+      if (exactHit?.name) {
+        foodName = originalName;
         foodDbKey = exactHit.id;
-        synonymMapped = true;
       }
     }
 
     if (!synonymMapped && generic && personalDb) {
       const habit = findMostFrequentPersonalFood(personalDb, originalName, item.searchKeywords);
-      if (habit && normalizeSearchText(habit.name) !== normalizeSearchText(originalName)) {
-        foodName = habit.name;
+      if (habit && isExactNormalizedFoodName(habit.name, originalName)) {
         foodDbKey = habit.id;
-        if (shouldDiscloseSynonymMapping(originalName, habit.name)) {
-          synonymMapped = true;
-        } else {
-          proposedFromHabit = true;
-          anyHabitApplied = true;
-        }
       }
     }
 

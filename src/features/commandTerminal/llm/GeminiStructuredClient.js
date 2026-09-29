@@ -27,6 +27,10 @@ import {
   overlayExplicitGramsOntoItems,
   extractBareFoodNamesFromText,
 } from '../conversation/mealLogIntent.js';
+import {
+  flattenFoodPayloadEntries,
+  gramsFromQuantitaString,
+} from '../conversation/conversationState.js';
 import { isCompositeFoodDescriptorName } from '../conversation/foodPhraseSplit.js';
 import {
   inferWorkoutTypeFromText,
@@ -409,64 +413,14 @@ function looksLikeRecipeMeanValueDecomposition(items, combinedText) {
   return true;
 }
 
-/** Rimuove voci items[] non citate dall'utente. Niente arricchimenti da abitudini. */
+/** Mantiene tutte le voci Gemini; non accorcia i nomi e non scarta per attestazione. */
 function filterItemsToUserMentions(items, combinedText, habitNames = []) {
-  const safeItems = Array.isArray(items)
-    ? items.filter((item) => item && typeof item === 'object')
-    : [];
-  if (safeItems.length === 0) return [];
-
-  const text = asTrimmedString(combinedText);
-  if (!text) return safeItems;
-
-  // Scomposizione ricetta: tieni tutti gli ingredienti stimati (non sono nel testo utente).
-  if (looksLikeRecipeMeanValueDecomposition(safeItems, text)) {
-    return safeItems;
-  }
-
+  void combinedText;
   void habitNames;
-  let attested;
-  try {
-    attested = foodNamesAttestedInUserText(text);
-  } catch {
-    attested = new Set();
-  }
-
-  const stripOverSpecific = (item) => {
-    const originalName = asTrimmedString(item?.foodName || item?.name);
-    if (!originalName) return item;
-    if (!foodNameHasUnspokenExtraTokens(originalName, text)) return item;
-    const fallbackName = resolveGenericFoodFallback(originalName, text) || originalName;
-    if (fallbackName && fallbackName !== originalName) {
-      return { ...item, foodName: fallbackName };
-    }
-    return item;
-  };
-
-  const filtered = safeItems.filter((item) => {
-    const foodName = asTrimmedString(item?.foodName || item?.name);
-    if (!foodName) return false;
-    try {
-      return isFoodNameAttestedInUserText(foodName, text, attested);
-    } catch {
-      return false;
-    }
-  });
-
-  if (filtered.length > 0) {
-    return filtered.map(stripOverSpecific);
-  }
-
-  const fallbackItems = safeItems
-    .map((item) => {
-      const originalName = asTrimmedString(item?.foodName || item?.name);
-      if (!originalName) return null;
-      const fallbackName = resolveGenericFoodFallback(originalName, text) || originalName;
-      return { ...item, foodName: fallbackName };
-    })
-    .filter(Boolean);
-
-  return fallbackItems.length > 0 ? fallbackItems.map(stripOverSpecific) : safeItems.map(stripOverSpecific);
+  const safeItems = Array.isArray(items)
+    ? items.filter((item) => item && typeof item === 'object' && asTrimmedString(item?.foodName || item?.name))
+    : [];
+  return safeItems;
 }
 
 const LEADING_CONJUNCTION_PATTERN = /^(?:(?:e|ed|con|più|piu|anche|oppure)\s+|,\s*)+/i;
@@ -498,14 +452,11 @@ function scrubFoodNameQuantityTokens(foodName) {
     : null;
 
   name = name
-    // Pattern tipico LLM: "e 160 g di pane…" / "160g di pane…"
     .replace(/^(?:e|ed|con|più|piu)\s+/i, '')
-    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)\b/gi, ' ')
+    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)(?:\s+di)?\b/gi, ' ')
     .replace(/\(\s*\d+[.,]?\d*\s*(?:g|gr|grammi)?\s*\)/gi, ' ')
     .replace(/\b\d+[.,]?\d*\b/g, ' ')
-    // Solo articoli quantitativi in testa o dopo rimozione grammi, non "all'olio"
-    .replace(/^(?:di|del|della|dello|dei|degli|delle|un|una|uno)\s+/i, '')
-    .replace(/\s+(?:di|del|della|dello|dei|degli|delle)\s+/gi, ' ')
+    .replace(/^(?:un|una|uno)\s+/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -541,9 +492,15 @@ function pickMergedFoodName(nameA, nameB) {
   return cleanA.length >= cleanB.length ? cleanA : cleanB;
 }
 
+function looksLikeLiteralFoodList(userText) {
+  const t = String(userText || '');
+  return /[,;+]/.test(t) || /\s+e\s+/i.test(t) || /\s+ed\s+/i.test(t);
+}
+
 function collapseSpuriousCompositeSplits(items, userText) {
   const list = Array.isArray(items) ? items.filter(Boolean) : [];
   if (list.length < 2) return list;
+  if (looksLikeLiteralFoodList(userText)) return list;
 
   const local = parseConsumedMealFromNaturalText(userText);
   if (local?.items?.length === 1 && isCompositeFoodDescriptorName(local.items[0].foodName)) {
@@ -585,8 +542,8 @@ function deduplicateAndCleanFoodItems(items) {
     const grams = Number(item.grams);
     const next = { ...item, foodName };
     if (!(Number.isFinite(grams) && grams > 0)) {
-      delete next.grams;
-      delete next.isEstimated;
+      next.grams = 100;
+      next.isEstimated = true;
     } else {
       next.grams = Math.round(grams);
     }
@@ -1006,11 +963,16 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
   }
 
   const payload = { ...(command.payload || {}) };
-  const hasItems = Array.isArray(payload.items) && payload.items.length > 0;
+  const rawEntries = flattenFoodPayloadEntries(payload.items);
+  if (rawEntries.length === 0) flattenFoodPayloadEntries(payload.alimenti, rawEntries);
+  if (rawEntries.length === 0) flattenFoodPayloadEntries(payload.foods, rawEntries);
+  const hasItems = rawEntries.length > 0;
 
   const sanitizeItem = (item) => {
     const next = { ...(item || {}) };
-    const rawFoodName = asTrimmedString(next.foodName || next.name);
+    const gramsFromQuantita = gramsFromQuantitaString(next.quantita);
+    if (gramsFromQuantita != null && next.grams == null) next.grams = gramsFromQuantita;
+    const rawFoodName = asTrimmedString(next.foodName || next.nome || next.name);
     if (!rawFoodName) return null;
 
     const { cleanName, gramsFromName } = scrubFoodNameQuantityTokens(rawFoodName);
@@ -1043,8 +1005,8 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
     const hasAnyQty = userTextMentionsExplicitQuantity(combinedText);
 
     if (!hasGrams) {
-      delete next.grams;
-      delete next.isEstimated;
+      next.grams = 100;
+      next.isEstimated = true;
     } else if (gramsFromName != null) {
       next.grams = Math.round(gramsNum);
       next.isEstimated = false;
@@ -1056,11 +1018,12 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
       next.grams = Math.round(gramsNum);
       next.isEstimated = false;
     } else {
-      // Nessuna quantita nel testo e modello non ha marcato stima: non inventare grammi.
-      delete next.grams;
-      delete next.isEstimated;
+      next.grams = Math.round(gramsNum);
+      next.isEstimated = true;
     }
     delete next.name;
+    delete next.nome;
+    delete next.quantita;
     delete next.qty;
     delete next.weight;
 
@@ -1121,7 +1084,7 @@ function sanitizeAddFoodCommand(command, userText, conversationText = '', contex
   };
 
   if (hasItems) {
-    payload.items = applyItemFilter(payload.items);
+    payload.items = applyItemFilter(rawEntries);
   } else {
     const single = sanitizeItem({
       foodName: payload.foodName,
@@ -1359,13 +1322,16 @@ L'utente dichiara un'azione compiuta o descrive cibo assunto (es. 'Ho mangiato u
 CASO 1b: [WIZARD SEQUENZIALE — RISOLUZIONE DB-FIRST]
 L'utente elenca alimenti GIÀ MANGIATI (verbo al passato o grammi+slot pasto). Esempi: 'ho mangiato yogurt', 'pane e pomodoro 80g a pranzo'.
 NON applicare questo caso a un nome cibo isolato senza log («cotoletta», «pasta»), né a "ho del X" / "in frigo" / "cosa mangio" (CASO 0 o 2).
--> COMPORTAMENTO: commandType ADD_FOOD con items[] già valorizzati seguendo la GERARCHIA DI RISOLUZIONE (vedi blocco dedicato):
-0) PRIORITÀ 0 — [userRecentFoods]: variante specifica + OBBLIGO di applicare typicalGrams esatto (DIVIETO di sovrascrivere con 100g o altre stime). Solo se peso/marca espliciti diversi dall'utente.
-1) PRIMA match esatto/semantico nel database Kentu ([USER_HABITS], DB personale, elenchi alimenti nel contesto) → UNA sola voce così com'è, SENZA scomporre.
-2) SOLO se nessun match DB → fallback scomposizione 2-4 ingredienti base con grams medi (isEstimated:true).
+-> COMPORTAMENTO: commandType ADD_FOOD con items[] PIATTO già valorizzati. DEVI estrarre gli alimenti in modo LETTERALE.
+È SEVERAMENTE VIETATO combinare ingredienti, inventare ricette o aggiungere cibi non menzionati.
+Se l'utente dice "pasta integrale, passato di pomodoro, merluzzo" restituisci 3 elementi separati. Non fonderli MAI in "merluzzo al pomodoro".
+VIETATO un oggetto singolo per una lista. VIETATO items annidati. Sempre [{foodName, grams}, ...].
+0) PRIORITÀ 0 — [userRecentFoods]: variante specifica + typicalGrams esatto SOLO se l'utente ha nominato QUELL'alimento (non fondere altri ingredienti nella stessa voce).
+1) Elenco (virgole / e / +): mappa 1:1, una voce per termine detto, senza scomposizione né fusione.
+2) Un SOLO piatto nominato (non un elenco): match DB Kentu → UNA voce così com'è. Scomposizione 2-4 ingredienti SOLO se nessun match e NON è un elenco di ingredienti.
 - Input Analitico (ingredienti + grammi): mappa 1:1, isEstimated:false.
 VIETATO domande di disambiguazione («Che tipo…?», «Quanti grammi?», «Quali ingredienti?»).
-VIETATO scomporre un piatto che esiste nel database (es. «Cotoletta» presente nel DB → items[{foodName:"Cotoletta", …}], NON inventare pane/carne/olio).
+VIETATO scomporre un piatto che esiste nel database (es. «Cotoletta» → items[{foodName:"Cotoletta", …}], NON inventare pane/carne/olio).
 
 ADATTIVE UI — payload.message (lavagna / nota vocale):
 - Speed (ESPERTO, items.length >= 2): messaggio BREVE e conclusivo (es. «Aggiunti al carrello.»). Niente domande.
@@ -1404,12 +1370,17 @@ L'utente pone una domanda sullo stato OPPURE chiede cosa mangiare SENZA dichiara
 export const FOOD_WIZARD_MEAN_VALUE_DECOMPOSITION_BLOCK = `### FOOD WIZARD — GERARCHIA DI RISOLUZIONE (CHAIN OF THOUGHT, OBBLIGATORIA)
 Prima di compilare payload.items[] esegui SEMPRE questo ragionamento in ordine. Non saltare i passi. Non fare domande di disambiguazione.
 
+REGOLA FERREA — ESTRAZIONE LETTERALE 1:1:
+payload.items DEVE essere un Array JSON piatto di {foodName, grams}. Mai un oggetto singolo al posto della lista, mai items annidati.
+Copia la dicitura ESATTA: "pasta integrale" resta "pasta integrale" (MAI "pasta"). "passato di pomodoro" resta "passato di pomodoro".
+Estrai OGNI cibo detto. Se manca il peso: grams=100, isEstimated=true. VIETATO scartare voci senza grammatura.
+VIETATO combinare ingredienti, inventare ricette, aggiungere contorni non menzionati.
+Esempio: "pasta integrale, passato di pomodoro, merluzzo" → 3 items. MAI "merluzzo al pomodoro".
+
 PRIORITÀ 0 — Memoria delle Abitudini:
-Ti viene fornita una lista [userRecentFoods] (alias USER_RECENT_FOODS) con gli alimenti consumati di recente dall'utente (nome esatto DB + grammatura tipica).
-Se l'utente usa un termine generico (es. 'quinoa', 'tonno') e nella lista recente esiste una variante specifica (es. 'quinoa cotti al vapore valfrutta 140 g'), DEVI assumere automaticamente che intenda quella specifica variante e quella precisa grammatura, a meno che l'utente non indichi esplicitamente un peso o una marca diversa.
-→ foodName = nome esatto della variante recente; grams = typicalGrams della lista (copia numerica esatta del campo); isEstimated: false.
-→ Se l'utente dice un peso diverso (es. '80g di quinoa'), tieni la variante specifica dal recente ma applica i grammi espliciti (isEstimated: false).
-→ VIETATO ignorare [userRecentFoods] quando c'è un match semantico chiaro sul termine generico.
+Usa typicalGrams dello storico SOLO se foodName dell'abitudine è IDENTICO (stessa dicitura) a quello detto dall'utente.
+VIETATO sostituire "pasta integrale" con "Pasta" o altre voci DB più corte/generiche.
+Se l'utente dice un peso diverso, applica i grammi espliciti (isEstimated: false).
 
 VINCOLO SULLE QUANTITÀ STORICHE (DIVIETO DI 100g): Quando associ un termine generico (es. 'quinoa') a un elemento specifico trovato nella lista [userRecentFoods], è ASSOLUTAMENTE OBBLIGATORIO estrarre e applicare il peso esatto indicato nel campo typicalGrams.
 NESSUN DEFAULT: È severamente vietato inserire '100g' di default (o qualsiasi altro peso da tabella nutrizionale / porzione standard) su alimenti presenti nello storico. Se l'utente dice 'quinoa' e nello storico c'è 'quinoa cotti al vapore valfrutta' con typicalGrams: 140, l'output DEVE essere esattamente grams: 140 (NON 100).
@@ -1417,10 +1388,8 @@ Copiare solo il foodName dalla lista e lasciare grams=100 è un ERRORE GRAVE: i 
 STIMA STANDARD COME EXTREMA RATIO: Usa stime generiche (come i classici 100g) ESCLUSIVAMENTE per alimenti del tutto nuovi di cui non esiste traccia nei recenti né nelle porzioni salvate, e per i quali l'utente non ha specificato il peso a voce.
 
 Priorità 1 — Match nel Database (db Kentu):
-Quando l'utente detta un alimento o un piatto (es. 'Cotoletta', 'Pasta al pomodoro', 'Carbonara'), e PRIORITÀ 0 non ha risolto, cerca una corrispondenza esatta o semantica nel database fornito nel contesto ([USER_HABITS], [USER_HABITS_FOR_CURRENT_MEAL], DB personale / elenchi alimenti Kentu nel prompt, porzioni abituali).
-Se l'elemento esiste nel database (match esatto, sinonimo, o nome molto vicino), DEVI utilizzare quello.
-→ Inseriscilo nel Wizard così com'è: UNA sola voce in items[] con foodName = nome DB (o termine parlato allineato al DB).
-→ VIETATO scomporlo. VIETATO inventare ingredienti. VIETATO bypassare il DB per "arricchire" la ricetta.
+Cerca un match ESATTO della dicitura detta. Se esiste, puoi usare i macro DB ma foodName resta quello detto dall'utente.
+Se NON c'è match esatto: tieni il nome parlato come alimento custom. VIETATO rimpiazzarlo con "Pasta" o altre voci più corte.
 
 Priorità 2 — Scomposizione (SOLO come Fallback):
 SOLO SE né [userRecentFoods] né la ricerca nel database producono risultati credibili per il piatto/alimento nominato, allora consideralo un piatto generico sconosciuto.
@@ -1474,8 +1443,16 @@ export class GeminiStructuredClient {
     if (includeFoodRules) {
       parts.push(
         FOOD_WIZARD_MEAN_VALUE_DECOMPOSITION_BLOCK,
-        "VINCOLO ADD_FOOD — ESTRAZIONE (CONTEGGIO VOCI): Per Input Analitico estrai SOLO gli alimenti ESPLICITAMENTE citati (N citati → ESATTAMENTE N voci). VIETATO aggiungere contorni/condimenti non menzionati. Per un singolo alimento/piatto nominato: Priorità 0 [userRecentFoods] → variante specifica + grams=typicalGrams obbligatorio (mai 100g di default); altrimenti Priorità 1 DB Kentu → UNA voce così com'è; Priorità 2 scomposizione SOLO se nessun match. VIETATO scomporre bypassando recenti/DB.",
+        "VINCOLO ADD_FOOD — ESTRAZIONE LETTERALE 1:1: N alimenti detti → ESATTAMENTE N voci, dicitura INVARIATA (pasta integrale NON diventa pasta). Se manca il peso: grams 100 isEstimated true, NON scartare. Array PIATTO. VIETATO fondere o inventare ricette.",
         `ESEMPI DI ESTRAZIONE PASTI MULTIPLI (Input Analitico):
+User: "pasta integrale, passato di pomodoro, merluzzo"
+Output Corretto:
+[
+  { "foodName": "pasta integrale", "searchKeywords": ["pasta integrale"] },
+  { "foodName": "passato di pomodoro", "searchKeywords": ["passato di pomodoro", "passata"] },
+  { "foodName": "merluzzo", "searchKeywords": ["merluzzo"] }
+]
+VIETATO: { "foodName": "merluzzo al pomodoro" } oppure un solo oggetto al posto dell'array.
 User: "Ho mangiato 90g di sardine all'olio e 160g di pane integrale"
 Output Corretto per payload.items:
 [

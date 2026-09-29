@@ -3153,10 +3153,11 @@ export class CommandTerminalController {
         ).trim();
         if (!foodName) return null;
         const gramsRaw = Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight);
+        const hasGrams = Number.isFinite(gramsRaw) && gramsRaw > 0;
         return buildMcDriveRawItem({
           foodName,
-          grams: Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : undefined,
-          isEstimated: item?.isEstimated === true,
+          grams: hasGrams ? Math.round(gramsRaw) : 100,
+          isEstimated: item?.isEstimated === true || !hasGrams,
           servingLabel: item?.servingLabel || null,
           coffeeShopProductId: item?.coffeeShopProductId || null,
         });

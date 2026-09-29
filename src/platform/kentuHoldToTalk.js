@@ -1,14 +1,12 @@
 /**
- * Long-press sul FAB Kentu: STT (Capacitor SpeechRecognition o Web Speech).
- * L'ascolto resta attivo fino a SpeechRecognition.stop() (tasto Ferma o timeout):
- * se il sistema chiude per silenzio, si riavvia tenendo il testo già detto.
+ * STT nativo Capacitor (o Web Speech in fallback).
+ * I partialResults sovrascrivono sempre matches[0]: niente concat.
+ * Lo stop del motore (Ferma, timeout OS, silenzio Android) è notificato al caller,
+ * che accoda il live transcript al testo finale.
  */
 
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
-import {
-  collapseAnomalousRepetitions,
-  createSpeechRecognition,
-} from '../features/chat/voiceChat';
+import { createSpeechRecognition } from '../features/chat/voiceChat';
 
 const CAPACITOR_START_OPTS = {
   language: 'it-IT',
@@ -18,20 +16,17 @@ const CAPACITOR_START_OPTS = {
   popup: false,
 };
 
-const RESTART_DELAY_MS = 220;
-
-function joinUtterance(prefix, next) {
-  const left = String(prefix || '').replace(/\s+/g, ' ').trim();
-  const right = String(next || '').replace(/\s+/g, ' ').trim();
-  if (!left) return right;
-  if (!right) return left;
-  if (right.startsWith(left)) return right;
-  if (left.startsWith(right)) return left;
-  return `${left} ${right}`.replace(/\s+/g, ' ').trim();
+function liveFromPartialEvent(event) {
+  if (!event || typeof event !== 'object') return '';
+  if (event.matches != null && event.matches[0] != null) {
+    return String(event.matches[0]);
+  }
+  if (event.transcript != null) return String(event.transcript);
+  return '';
 }
 
-/** Tutti i result Web Speech, non solo l'ultimo (altrimenti una pausa perde la frase precedente). */
-function fullUtteranceFromEvent(event) {
+/** Web Speech: l'API accumula i result; non è il bug Android dei partial overwrite. */
+function fullUtteranceFromWebEvent(event) {
   if (!event || typeof event !== 'object') return '';
   const results = event.results;
   if (results && results.length > 0) {
@@ -41,11 +36,7 @@ function fullUtteranceFromEvent(event) {
     }
     return acc;
   }
-  if (event.matches != null && event.matches[0] != null) {
-    return String(event.matches[0]);
-  }
-  if (event.transcript != null) return String(event.transcript);
-  return '';
+  return liveFromPartialEvent(event);
 }
 
 export async function playHoldToTalkHaptic() {
@@ -61,36 +52,34 @@ export async function playHoldToTalkHaptic() {
   }
 }
 
-export function createHoldToTalkSession({ onTranscript } = {}) {
+export function createHoldToTalkSession({ onTranscript, onEngineStopped } = {}) {
   const state = {
     mode: null,
     recognition: null,
-    detectedText: '',
-    committedText: '',
-    sessionScratch: '',
+    liveText: '',
     capacitorListener: null,
     listeningStateListener: null,
     startGate: null,
     stopRequested: false,
     started: false,
-    restartTimer: null,
     SpeechRecognition: null,
   };
 
-  const emitCombined = () => {
-    const next = joinUtterance(state.committedText, state.sessionScratch);
-    state.detectedText = next;
+  const emitLive = (raw) => {
+    state.liveText = String(raw || '');
     try {
-      onTranscript?.(next);
+      onTranscript?.(state.liveText);
     } catch {
       /* ignore */
     }
   };
 
-  const clearRestartTimer = () => {
-    if (state.restartTimer != null) {
-      window.clearTimeout(state.restartTimer);
-      state.restartTimer = null;
+  const notifyEngineStopped = () => {
+    if (state.stopRequested) return;
+    try {
+      onEngineStopped?.();
+    } catch {
+      /* ignore */
     }
   };
 
@@ -103,16 +92,15 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
     state.mode = 'webkit';
     state.recognition = recognition;
     recognition.onresult = (event) => {
-      state.sessionScratch = fullUtteranceFromEvent(event);
-      emitCombined();
+      emitLive(fullUtteranceFromWebEvent(event));
     };
     recognition.onerror = () => {
       if (state.stopRequested) return;
-      scheduleRestart();
+      notifyEngineStopped();
     };
     recognition.onend = () => {
       if (state.stopRequested) return;
-      scheduleRestart();
+      notifyEngineStopped();
     };
     try {
       recognition.start();
@@ -125,43 +113,11 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
     }
   };
 
-  const startCapacitorEngine = async () => {
-    const SpeechRecognition = state.SpeechRecognition;
-    if (!SpeechRecognition || state.stopRequested) return false;
-    await SpeechRecognition.start(CAPACITOR_START_OPTS);
-    state.started = true;
-    return true;
-  };
-
-  const scheduleRestart = () => {
-    if (state.stopRequested) return;
-    clearRestartTimer();
-    state.committedText = joinUtterance(state.committedText, state.sessionScratch);
-    state.sessionScratch = '';
-    emitCombined();
-    state.restartTimer = window.setTimeout(() => {
-      state.restartTimer = null;
-      if (state.stopRequested) return;
-      if (state.mode === 'capacitor') {
-        void startCapacitorEngine().catch(() => {});
-        return;
-      }
-      if (state.mode === 'webkit' && state.recognition) {
-        try {
-          state.recognition.start();
-        } catch {
-          startWebkit();
-        }
-      }
-    }, RESTART_DELAY_MS);
-  };
-
   const start = async () => {
     if (state.startGate) return state.startGate;
     state.startGate = (async () => {
-      state.detectedText = '';
-      state.committedText = '';
-      state.sessionScratch = '';
+      state.liveText = '';
+      emitLive('');
       if (state.stopRequested) return false;
       try {
         const { Capacitor } = await import('@capacitor/core');
@@ -177,8 +133,7 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
             state.capacitorListener = await SpeechRecognition.addListener?.(
               'partialResults',
               (event) => {
-                state.sessionScratch = String(event?.matches?.[0] ?? '');
-                emitCombined();
+                emitLive(String(event?.matches?.[0] ?? ''));
               },
             );
             state.listeningStateListener = await SpeechRecognition.addListener?.(
@@ -186,12 +141,13 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
               (event) => {
                 if (state.stopRequested) return;
                 if (String(event?.status || '') === 'stopped') {
-                  scheduleRestart();
+                  notifyEngineStopped();
                 }
               },
             );
             state.mode = 'capacitor';
-            await startCapacitorEngine();
+            await SpeechRecognition.start(CAPACITOR_START_OPTS);
+            state.started = true;
             if (state.stopRequested) return true;
             return true;
           }
@@ -207,7 +163,6 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
 
   const stop = async () => {
     state.stopRequested = true;
-    clearRestartTimer();
     if (state.startGate) {
       try {
         await state.startGate;
@@ -280,18 +235,12 @@ export function createHoldToTalkSession({ onTranscript } = {}) {
         window.setTimeout(finish, 450);
       });
     }
-    const text = collapseAnomalousRepetitions(
-      joinUtterance(state.committedText, state.sessionScratch) || String(state.detectedText || ''),
-    )
-      .replace(/\s+/g, ' ')
-      .trim();
+    const text = String(state.liveText || '').replace(/\s+/g, ' ').trim();
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;
     state.listeningStateListener = null;
-    state.detectedText = '';
-    state.committedText = '';
-    state.sessionScratch = '';
+    state.liveText = '';
     state.started = false;
     state.SpeechRecognition = null;
     return text;

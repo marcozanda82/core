@@ -3801,13 +3801,18 @@ export default function SalaComandi() {
       if (!draftItems.length) return false;
 
       setMealToEdit((prev) => {
-        const appending = showFastLoggerRef.current && Array.isArray(prev) && prev.length > 0;
-        return appending ? [...prev, ...draftItems] : draftItems;
+        const prevArr = Array.isArray(prev) ? prev : [];
+        if (prevArr.length > 0) {
+          return [...prevArr, ...draftItems];
+        }
+        return draftItems;
       });
       setEditingMealId(null);
       setPendingGhostMealId(null);
       setFastLoggerInitialSlot(mealSlot);
-      setFastLoggerRemountKey((k) => k + 1);
+      if (!showFastLoggerRef.current) {
+        setFastLoggerRemountKey((k) => k + 1);
+      }
       setShowFastLogger(true);
       // Non chiudere la chat: FastMealLogger è overlay; la risposta Adaptive resta per TTS.
       return true;
@@ -8269,6 +8274,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         && activeAction !== 'focus'
       }
       onOpen={handleOpenKentuChat}
+      onSendMessage={sendMessage}
       onBlockedOpen={showEngineAlignToast}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}

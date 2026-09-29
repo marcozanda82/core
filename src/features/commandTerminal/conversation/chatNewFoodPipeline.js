@@ -93,7 +93,7 @@ function tryAutoResolveFromDb(item, context = {}) {
     return {
       ...item,
       ...exactFast,
-      foodName: exactFast.foodName || foodName,
+      foodName,
       strictScore: EXACT_DB_MATCH_STRICT_SCORE,
       matchTier: 'exact',
       pendingUsdaEnrichment: false,
@@ -112,7 +112,7 @@ function tryAutoResolveFromDb(item, context = {}) {
     return {
       ...item,
       ...resolved,
-      foodName: resolved.foodName || foodName,
+      foodName: foodName,
       pendingUsdaEnrichment: false,
       isNewFood: false,
       resolutionSource: resolved.resolutionSource || 'chat_db_auto_resolve',

@@ -33,8 +33,12 @@ function cleanTranscript(raw) {
   return String(raw || '').replace(/\s+/g, ' ').trim();
 }
 
+function appendTranscript(base, extra) {
+  return cleanTranscript(`${cleanTranscript(base)} ${cleanTranscript(extra)}`);
+}
+
 /**
- * Pulsante centrale Kentu AI — tap: chat; long-press: ascolto Start/Stop → textarea → Gemini.
+ * Pulsante centrale Kentu AI — tap: chat; long-press: STT nativo → textarea → Gemini (solo stringa finale).
  */
 export default function KentuChatFab({
   visible = false,
@@ -51,16 +55,23 @@ export default function KentuChatFab({
   const pressStartedAtRef = useRef(0);
   const toastTimerRef = useRef(null);
   const listenTimeoutRef = useRef(null);
+  const liveTranscriptRef = useRef('');
 
   const [isListening, setIsListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
-  const [confirmText, setConfirmText] = useState('');
+  const [finalText, setFinalText] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [isParsingDraft, setIsParsingDraft] = useState(false);
 
   useEffect(() => {
     persistVoiceOnboarded();
+  }, []);
+
+  const setLiveOverwrite = useCallback((raw) => {
+    const next = String(raw ?? '');
+    liveTranscriptRef.current = next;
+    setLiveTranscript(next);
   }, []);
 
   const showToast = useCallback((message) => {
@@ -86,28 +97,36 @@ export default function KentuChatFab({
     }
   }, []);
 
+  const commitLiveIntoFinal = useCallback((extra = '') => {
+    const live = cleanTranscript(liveTranscriptRef.current || extra);
+    liveTranscriptRef.current = '';
+    setLiveTranscript('');
+    if (!live) return;
+    setFinalText((prev) => appendTranscript(prev, live));
+  }, []);
+
   const stopListeningAndConfirm = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
     clearListenTimeout();
     const session = sessionRef.current;
-    if (!session) {
-      isListeningRef.current = false;
-      setIsListening(false);
-      setPreviewOpen(true);
-      return;
-    }
-    const text = cleanTranscript(await session.stop());
     sessionRef.current = null;
+    let leftover = '';
+    if (session) {
+      try {
+        leftover = await session.stop();
+      } catch {
+        leftover = '';
+      }
+    }
     isListeningRef.current = false;
     holdOriginRef.current = false;
     setIsListening(false);
-    setLiveTranscript(text);
-    setConfirmText(text);
+    commitLiveIntoFinal(leftover);
     setPreviewOpen(true);
-  }, [clearListenTimeout]);
+  }, [clearListenTimeout, commitLiveIntoFinal]);
 
-  const startListening = useCallback(async () => {
+  const startListening = useCallback(async ({ resetFinal = false } = {}) => {
     if (sessionRef.current) {
       try {
         await sessionRef.current.stop();
@@ -118,13 +137,19 @@ export default function KentuChatFab({
     }
     clearListenTimeout();
     const session = createHoldToTalkSession({
-      onTranscript: (next) => setLiveTranscript(cleanTranscript(next)),
+      onTranscript: (next) => {
+        setLiveOverwrite(next);
+      },
+      onEngineStopped: () => {
+        void stopListeningAndConfirm();
+      },
     });
     sessionRef.current = session;
     isListeningRef.current = true;
     finishingRef.current = false;
+    liveTranscriptRef.current = '';
     setLiveTranscript('');
-    setConfirmText('');
+    if (resetFinal) setFinalText('');
     setPreviewOpen(false);
     setIsListening(true);
     await playHoldToTalkHaptic();
@@ -134,7 +159,9 @@ export default function KentuChatFab({
       isListeningRef.current = false;
       setIsListening(false);
       sessionRef.current = null;
+      finishingRef.current = false;
       showToast('Microfono non disponibile');
+      if (!resetFinal) setPreviewOpen(true);
       return;
     }
     listenTimeoutRef.current = window.setTimeout(() => {
@@ -143,7 +170,7 @@ export default function KentuChatFab({
       showToast('Ascolto interrotto per timeout');
       void stopListeningAndConfirm();
     }, LISTEN_TIMEOUT_MS);
-  }, [clearListenTimeout, showToast, stopListeningAndConfirm]);
+  }, [clearListenTimeout, setLiveOverwrite, showToast, stopListeningAndConfirm]);
 
   const openTextChat = useCallback(() => {
     if (!engineReady) {
@@ -154,25 +181,47 @@ export default function KentuChatFab({
   }, [engineReady, onBlockedOpen, onOpen]);
 
   const handleCreateDraft = useCallback(async () => {
-    const text = cleanTranscript(confirmText);
+    const text = cleanTranscript(finalText);
     if (!text) {
       showToast('Nessun testo da salvare');
       return;
     }
     if (isParsingDraft) return;
+    if (!engineReady) {
+      onBlockedOpen?.();
+      return;
+    }
+
+    setFinalText('');
+    setLiveTranscript('');
+    liveTranscriptRef.current = '';
+    setPreviewOpen(false);
+
     setIsParsingDraft(true);
     try {
-      const foodNames = await parseDraftWithGemini(text);
+      const parsed = await parseDraftWithGemini(text);
       const stamp = Date.now();
-      const items = foodNames.map((foodName, index) => ({
-        id: `voice_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`,
-        foodName,
-        name: foodName,
-        desc: foodName,
-        spokenFoodName: foodName,
-        grams: 1,
-        status: 'pending',
-      }));
+      const items = parsed.map((entry, index) => {
+        const foodName = typeof entry === 'string'
+          ? entry
+          : String(entry?.nome || entry?.foodName || '').trim();
+        const grams = Number(entry?.grams);
+        return {
+          id: `voice_${stamp}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+          foodName,
+          name: foodName,
+          desc: foodName,
+          spokenFoodName: foodName,
+          grams: Number.isFinite(grams) && grams > 0 ? grams : 1,
+          status: 'pending',
+        };
+      }).filter((item) => item.foodName);
+      if (items.length === 0) {
+        showToast('Nessun alimento riconosciuto. Riprova.');
+        setFinalText(text);
+        setPreviewOpen(true);
+        return;
+      }
       const draft = createPendingInboxDraft(text, { timestamp: stamp });
       enqueueInboxDraftAppend({
         id: draft.id,
@@ -184,24 +233,22 @@ export default function KentuChatFab({
         timeString: currentTimeHHmm(),
         items,
       });
-      setConfirmText('');
-      setLiveTranscript('');
-      setPreviewOpen(false);
       showToast(items.length > 1 ? `Inbox: ${items.length} alimenti` : 'Bozza salvata in Inbox');
     } catch (error) {
       console.warn('[KentuChatFab] parseDraftWithGemini failed', error);
       showToast('Non sono riuscito a spezzare gli alimenti. Riprova.');
+      setFinalText(text);
+      setPreviewOpen(true);
     } finally {
       setIsParsingDraft(false);
     }
-  }, [confirmText, isParsingDraft, showToast]);
+  }, [engineReady, finalText, isParsingDraft, onBlockedOpen, showToast]);
 
-  const handleRetry = useCallback(() => {
-    setConfirmText('');
-    setPreviewOpen(false);
+  const handleListenAgain = useCallback(() => {
+    if (isParsingDraft || isListeningRef.current) return;
     holdOriginRef.current = false;
-    void startListening();
-  }, [startListening]);
+    void startListening({ resetFinal: false });
+  }, [isParsingDraft, startListening]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;
@@ -223,7 +270,7 @@ export default function KentuChatFab({
     pressTimer.current = window.setTimeout(() => {
       pressTimer.current = null;
       holdOriginRef.current = true;
-      void startListening();
+      void startListening({ resetFinal: true });
     }, HOLD_MS);
   }, [clearPressTimer, engineReady, onBlockedOpen, previewOpen, startListening]);
 
@@ -404,11 +451,11 @@ export default function KentuChatFab({
               Testo rilevato
             </h2>
             <p className="mt-1 text-sm text-zinc-400">
-              Correggi la trascrizione o continua a scrivere, poi conferma.
+              Correggi la trascrizione o ascolta ancora per aggiungere testo, poi conferma.
             </p>
             <textarea
-              value={confirmText}
-              onChange={(event) => setConfirmText(event.target.value)}
+              value={finalText}
+              onChange={(event) => setFinalText(event.target.value)}
               rows={6}
               autoFocus
               placeholder="Scrivi o correggi qui gli alimenti…"
@@ -426,16 +473,18 @@ export default function KentuChatFab({
               </button>
               <button
                 type="button"
-                onClick={handleRetry}
+                onClick={handleListenAgain}
                 disabled={isParsingDraft}
-                className="rounded-xl border border-white/12 bg-white/[0.06] px-3 py-2.5 text-sm font-semibold text-zinc-100 disabled:opacity-60"
+                className="rounded-xl border border-cyan-400/35 bg-cyan-400/15 px-3 py-2.5 text-sm font-semibold text-cyan-100 disabled:opacity-60"
               >
-                Riprova
+                Aggiungi / Ascolta ancora
               </button>
               <button
                 type="button"
                 onClick={() => {
-                  setConfirmText('');
+                  setFinalText('');
+                  setLiveTranscript('');
+                  liveTranscriptRef.current = '';
                   setPreviewOpen(false);
                 }}
                 disabled={isParsingDraft}

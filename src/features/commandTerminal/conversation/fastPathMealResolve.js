@@ -6,9 +6,8 @@
 import {
   normalizeSearchKeywords,
   searchFoodsWithKeywords,
-  normalizeSearchText,
+  isExactNormalizedFoodName,
 } from '../../../foodSearch.js';
-import { foodNameMatchesQuery } from '../../salaComandi/engines/foodDataEngine.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 import { expandFoodPayloadItems } from './conversationState.js';
 
@@ -70,26 +69,14 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
       const food = layers[i].db[preferredDbKey];
       if (food) {
         const preferredName = String(food.desc || food.name || '').trim();
-        if (
-          !preferredName
-          || normalizeSearchText(preferredName).includes(normalizeSearchText(spokenName))
-          || normalizeSearchText(spokenName).includes(normalizeSearchText(preferredName))
-          || normalizeSearchText(preferredName) === normalizeSearchText(spokenName)
-        ) {
-          // Solo se il preferred è lessicalmente coerente con la query parlata.
-          const spokenNorm = normalizeSearchText(spokenName);
-          const prefNorm = normalizeSearchText(preferredName);
-          const tokens = spokenNorm.split(/\s+/).filter(Boolean);
-          const ok = tokens.length > 0 && tokens.every((t) => prefNorm.includes(t));
-          if (ok || prefNorm === spokenNorm || prefNorm.startsWith(spokenNorm)) {
-            return {
-              foodName: preferredName || spokenName,
-              foodDbKey: preferredDbKey,
-              matchTier: 'exact',
-              strictScore: 100,
-              source: layers[i].source,
-            };
-          }
+        if (isExactNormalizedFoodName(preferredName, spokenName)) {
+          return {
+            foodName: spokenName,
+            foodDbKey: preferredDbKey,
+            matchTier: 'exact',
+            strictScore: 100,
+            source: layers[i].source,
+          };
         }
         break;
       }
@@ -106,16 +93,7 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
     });
     const strong = hits.find((top) => {
       if (!top?.name) return false;
-      const tier = String(top.matchTier || '');
-      const score = Number(top.strictScore) || 0;
-      const stemOk = foodNameMatchesQuery(top.name, spokenName);
-      if (!stemOk) return false;
-      if (tier === 'exact' || tier === 'compound' || top.keywordExact || score >= 100) return true;
-      if ((tier === 'prefix' || tier === 'token_exact' || tier === 'word_boundary' || tier === 'substring') && stemOk) {
-        return true;
-      }
-      if (score >= 50 && stemOk) return true;
-      return false;
+      return isExactNormalizedFoodName(top.name, spokenName);
     });
     if (strong?.name) {
       return {
@@ -149,10 +127,11 @@ export function fastPathResolveFoodItem(item, ctx = {}) {
   const preferredDbKey = item?.foodDbKey ?? item?.foodId ?? null;
   const hit = findTopHitCascading(spokenName, keywords, preferredDbKey, ctx);
 
-  const foodName = hit?.foodName || spokenName;
-  const foodDbKey = hit?.foodDbKey ?? null;
-  const matchTier = hit?.matchTier || 'none';
-  const strictScore = Number(hit?.strictScore) || 0;
+  const exactHit = hit && isExactNormalizedFoodName(hit.foodName, spokenName);
+  const foodName = spokenName;
+  const foodDbKey = exactHit ? hit.foodDbKey : null;
+  const matchTier = exactHit ? (hit.matchTier || 'exact') : 'none';
+  const strictScore = exactHit ? (Number(hit.strictScore) || 100) : 0;
 
   const explicitGrams = Number(item?.grams);
   const hasExplicit = Number.isFinite(explicitGrams) && explicitGrams > 0;
@@ -173,8 +152,6 @@ export function fastPathResolveFoodItem(item, ctx = {}) {
     isEstimated = false;
   }
 
-  const synonymMapped = normalizeSearchText(spokenName) !== normalizeSearchText(foodName);
-
   return {
     foodName,
     grams,
@@ -187,7 +164,7 @@ export function fastPathResolveFoodItem(item, ctx = {}) {
     ...(item?.userProvidedMacros && typeof item.userProvidedMacros === 'object'
       ? { userProvidedMacros: item.userProvidedMacros }
       : {}),
-    ...(synonymMapped ? { synonymMapped: true } : {}),
+    ...(foodDbKey == null ? { isNewFood: true, isCustom: true } : {}),
     fastPath: true,
     matchTier,
     strictScore,

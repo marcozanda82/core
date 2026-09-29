@@ -522,6 +522,7 @@ function FastMealLoggerContent({
   const enrichmentResolveRef = useRef(null);
   const enrichmentOffRef = useRef(null);
   const prefillAppliedRef = useRef(false);
+  const prefillLenRef = useRef(0);
   const cartPulseTimerRef = useRef(null);
   const addFeedbackTimerRef = useRef(null);
   const mealTimeManualRef = useRef(false);
@@ -927,15 +928,17 @@ function FastMealLoggerContent({
   }, [autoOpenBarcodeScanner, openScanner, onAutoOpenBarcodeScannerConsumed, setScannerError]);
 
   useEffect(() => {
-    if (prefillAppliedRef.current) return;
-    if (Array.isArray(initialDraft) && initialDraft.length > 0) {
-      loadInitialDraft(initialDraft);
-      prefillAppliedRef.current = true;
-      setActiveTab('riepilogo');
-      const draftMealTime = initialDraft[0]?.mealTime;
-      if (typeof draftMealTime === 'number' && !Number.isNaN(draftMealTime)) {
-        commitDraftMealTime(draftMealTime, { fromNativeInput: true });
-      }
+    if (!Array.isArray(initialDraft) || initialDraft.length === 0) return;
+    const shouldReplace = !prefillAppliedRef.current
+      || initialDraft.length > (prefillLenRef.current || 0);
+    if (!shouldReplace) return;
+    loadInitialDraft(initialDraft);
+    prefillAppliedRef.current = true;
+    prefillLenRef.current = initialDraft.length;
+    setActiveTab('riepilogo');
+    const draftMealTime = initialDraft[0]?.mealTime;
+    if (typeof draftMealTime === 'number' && !Number.isNaN(draftMealTime)) {
+      commitDraftMealTime(draftMealTime, { fromNativeInput: true });
     }
   }, [initialDraft, loadInitialDraft, commitDraftMealTime]);
   const mealTargets = useMemo(

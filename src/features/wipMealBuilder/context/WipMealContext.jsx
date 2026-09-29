@@ -37,9 +37,9 @@ function useWipMealState() {
   /** Setter unico: ogni scrittura passa dal buttafuori di dedup. */
   const commitWipMealItems = useCallback((updater) => {
     setWipMealItems((prev) => {
-      const safePrev = deduplicateWipItems(prev);
+      const safePrev = deduplicateWipItems(prev, { keepZeroGrams: true });
       const next = typeof updater === 'function' ? updater(safePrev) : updater;
-      return deduplicateWipItems(next);
+      return deduplicateWipItems(next, { keepZeroGrams: true });
     });
   }, []);
 
@@ -60,6 +60,7 @@ function useWipMealState() {
     // Hard reduce: fonda doppioni LLM (es. 2× Cioccolato) sommando i grammi, poi upsert nel carrello
     const normalizedBatch = deduplicateWipItems(
       items.map((raw) => coerceWipItemForDedup(raw)).filter(Boolean),
+      { keepZeroGrams: true },
     );
 
     if (normalizedBatch.length === 0) return [];

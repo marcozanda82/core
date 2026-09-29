@@ -6,10 +6,10 @@ export const foodItemSchema = {
     foodName: {
       type: 'string',
       description:
-        'Stringa pulita da cercare nel database, es: "pane integrale", "sardine all\'olio". '
-        + 'NO grammi, NO congiunzioni (e/ed/con), NO articoli quantitativi, NO numeri. '
-        + 'VIETATO: "e 160 g di pane", "90g sardine", "e pane". '
-        + 'La quantita va SOLO in grams.',
+        'Nome LETTERALE 1:1 dell alimento detto, es: "pasta integrale", "passato di pomodoro". '
+        + 'VIETATO accorciare ("pasta integrale" NON diventa "pasta"). '
+        + 'VIETATO combinare ingredienti o inventare ricette ("merluzzo al pomodoro"). '
+        + 'NO grammi nel nome. La quantita va SOLO in grams. Se l utente non dice i grammi usa 100 e isEstimated true. Non omettere l alimento.',
     },
     icon: {
       type: 'string',
@@ -178,20 +178,18 @@ export const addFoodPayloadSchema = {
     items: {
       type: 'array',
       description:
-        'Se l utente elenca piu alimenti, crea UN oggetto SEPARATO per CIASCUN alimento. '
-        + 'Associa a ogni alimento ESATTAMENTE la sua grammatura specifica indicata nel testo. '
-        + 'E severamente vietato duplicare il peso del primo alimento sui successivi. '
-        + 'Separa alimenti SOLO con virgole, "+" oppure "e/ed" quando il secondo ha grammatura propria '
-        + 'o e un nuovo alimento autonomo. '
-        + 'NON splittare dopo descrittori "con", "ai", "al", "alla", "alle": restano nel foodName. '
-        + 'ESEMPIO COMPOSTO: "pane integrale con semi e noci 160 g" → '
-        + '[{"foodName":"pane integrale con semi e noci","grams":160,"isEstimated":false}] (UN alimento, 160g sul principale). '
-        + '"yogurt greco con mirtilli" → un solo alimento. '
+        'Array JSON PIATTO obbligatorio: un oggetto SEPARATO per CIASCUN alimento menzionato. '
+        + 'VIETATO annidare alimenti, VIETATO un oggetto singolo al posto di una lista. '
+        + 'ESTRAZIONE LETTERALE: vietato combinare ingredienti, inventare ricette o aggiungere cibi non detti. '
+        + 'Esempio FERREO: "pasta integrale, passato di pomodoro, merluzzo" → 3 oggetti, MAI "merluzzo al pomodoro". '
+        + 'Associa a ogni alimento ESATTAMENTE la sua grammatura (se detta). Vietato duplicare i grammi del primo. '
+        + 'Separa con virgole, "+" oppure "e/ed" ogni alimento autonomo. '
+        + 'NON splittare descrittori di UN solo cibo ("con", "ai", "al") se l utente ha nominato UN piatto unico. '
+        + 'Se grams assente: 100 e isEstimated true. VIETATO omettere voci senza peso. '
+        + 'ESEMPIO LISTA: "pasta integrale, passato di pomodoro, merluzzo" → '
+        + '[{"foodName":"pasta integrale","grams":100,"isEstimated":true},{"foodName":"passato di pomodoro","grams":100,"isEstimated":true},{"foodName":"merluzzo","grams":100,"isEstimated":true}]. '
         + '"pasta 80g e noci 20g" → due alimenti. '
-        + 'ONE-SHOT ESEMPIO: input "90g sardine e 160g pane" → '
-        + '[{"foodName":"sardine","grams":90,"isEstimated":false},{"foodName":"pane","grams":160,"isEstimated":false}]. '
-        + 'ESEMPIO 2: "90 g di sardine e 160 g di pane" → stessi due oggetti (foodName senza "di"/numeri). '
-        + 'ESEMPIO 3: "pane 160g, tonno 56g, pomodoro 200g e pesca 100g" = 4 voci, NON 5.',
+        + '"90g sardine e 160g pane" → sardine=90, pane=160.',
       items: foodItemSchema,
       minItems: 1,
     },

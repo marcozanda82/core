@@ -77,78 +77,134 @@ export function toastMessageForDraftType(inferredType) {
 }
 
 const GEMINI_DRAFT_SPLIT_SYSTEM = [
-  'Sei un parser di diari alimentari.',
-  'Dalla frase parlata estrai SOLO gli alimenti o bevande distinti.',
+  'Sei un parser LETTERALE di diari alimentari. Non sei uno chef.',
+  'DEVI estrarre gli alimenti in modo LETTERALE 1:1. La dicitura esatta va conservata: "pasta integrale" resta "pasta integrale", MAI "pasta".',
+  'È SEVERAMENTE VIETATO combinare ingredienti, inventare ricette, accorciare i nomi o omettere cibi non menzionati.',
+  'Se l\'utente dice "pasta integrale, passato di pomodoro, merluzzo" devi restituire 3 elementi separati. Non fonderli MAI in "merluzzo al pomodoro" o simili.',
+  'Se manca la grammatura NON scartare l\'alimento: metti quantita "" e il sistema userà 100g stimati.',
   'Spezza elenchi con virgole, "e", "ed", "+", ";" anche senza grammi.',
-  'Togli prefissi tipo "ho mangiato", "per pranzo", orari.',
-  'Non unire alimenti diversi in una sola stringa.',
-  'Rispondi SOLO con JSON: {"foods":["pasta","pesto","carote"]}.',
+  'Togli solo prefissi tipo "ho mangiato", "per pranzo", orari. Non riformulare i nomi.',
+  'DEVI SEMPRE restituire un Array JSON PIATTO di oggetti { "nome", "quantita" }.',
+  'Vietato annidare alimenti, vietato un oggetto singolo al posto di una lista, vietato wrappare in other keys se non {"alimenti":[...]}.',
+  'quantita: stringa così com\'è (es. "80g") oppure "" se assente. Vietato inventare grammi.',
+  'Esempio: [{"nome":"pasta integrale","quantita":""},{"nome":"passato di pomodoro","quantita":""},{"nome":"merluzzo","quantita":""}]',
 ].join(' ');
 
 const GEMINI_DRAFT_SPLIT_SCHEMA = {
   type: 'object',
   properties: {
-    foods: {
+    alimenti: {
       type: 'array',
-      items: { type: 'string' },
+      items: {
+        type: 'object',
+        properties: {
+          nome: { type: 'string' },
+          quantita: { type: 'string' },
+        },
+        required: ['nome'],
+      },
     },
   },
-  required: ['foods'],
+  required: ['alimenti'],
 };
+
+function parseQuantitaToGrams(quantita) {
+  const raw = String(quantita || '').trim().replace(',', '.');
+  if (!raw) return null;
+  const match = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
+function normalizeParsedAlimento(entry) {
+  if (typeof entry === 'string') {
+    const nome = entry.trim();
+    return nome.length >= 2 ? { nome, quantita: '', grams: 100 } : null;
+  }
+  if (!entry || typeof entry !== 'object') return null;
+  const nome = String(entry.nome || entry.foodName || entry.name || '').trim();
+  if (nome.length < 2) return null;
+  const quantita = String(entry.quantita || entry.qty || entry.grams || '').trim();
+  const grams = parseQuantitaToGrams(quantita) ?? parseQuantitaToGrams(entry.grams);
+  return { nome, quantita, grams: grams ?? 100 };
+}
 
 function parseFoodsJson(raw) {
   const text = String(raw || '').trim();
   if (!text) return [];
   const fenced = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  const start = fenced.indexOf('{');
-  const end = fenced.lastIndexOf('}');
-  const candidate = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
-  try {
-    const parsed = JSON.parse(candidate);
-    const foods = Array.isArray(parsed?.foods) ? parsed.foods : [];
-    return foods.map((name) => String(name || '').trim()).filter((name) => name.length >= 2);
-  } catch {
-    return [];
+  const arrayStart = fenced.indexOf('[');
+  const arrayEnd = fenced.lastIndexOf(']');
+  const objStart = fenced.indexOf('{');
+  const objEnd = fenced.lastIndexOf('}');
+  const candidates = [];
+  if (arrayStart >= 0 && arrayEnd > arrayStart) {
+    candidates.push(fenced.slice(arrayStart, arrayEnd + 1));
   }
+  if (objStart >= 0 && objEnd > objStart) {
+    candidates.push(fenced.slice(objStart, objEnd + 1));
+  }
+  candidates.push(fenced);
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const list = Array.isArray(parsed)
+        ? parsed
+        : (Array.isArray(parsed?.alimenti)
+          ? parsed.alimenti
+          : (Array.isArray(parsed?.foods)
+            ? parsed.foods
+            : (Array.isArray(parsed?.items) ? parsed.items : [])));
+      const names = list.map(normalizeParsedAlimento).filter(Boolean);
+      if (names.length > 0) return names;
+    } catch {
+      /* next candidate */
+    }
+  }
+  return [];
 }
 
 /**
- * Spezza una frase vocale grezza in alimenti tramite Gemini.
- * Fallback locale se l'AI non risponde.
+ * Spezza una frase vocale/testuale in alimenti LETTERALI tramite Gemini.
  * @param {string} rawText
- * @returns {Promise<string[]>}
+ * @returns {Promise<Array<{ nome: string, quantita: string, grams: number|null }>>}
  */
 export async function parseDraftWithGemini(rawText) {
   const text = String(rawText || '').trim();
   if (!text) return [];
 
-  let names = [];
+  let parsed = [];
   try {
     const { askAI } = await import('../services/aiService.js');
     const raw = await askAI(
-      `Frase da spezzare in alimenti:\n"""${text}"""`,
+      `Frase da spezzare in alimenti LETTERALI (niente ricette inventate):\n"""${text}"""`,
       GEMINI_DRAFT_SPLIT_SYSTEM,
       {
         temperature: 0,
         responseSchema: GEMINI_DRAFT_SPLIT_SCHEMA,
-        generationConfig: { temperature: 0, maxOutputTokens: 512 },
+        generationConfig: { temperature: 0, maxOutputTokens: 1024 },
       },
     );
-    names = parseFoodsJson(raw);
+    parsed = parseFoodsJson(raw);
   } catch (error) {
     console.warn('[parseDraftWithGemini] Gemini split failed', error);
   }
 
-  if (names.length === 0) {
+  if (parsed.length === 0) {
     try {
       const { extractBareFoodNamesFromText } = await import(
         '../features/commandTerminal/conversation/mealLogIntent.js'
       );
-      names = extractBareFoodNamesFromText(text);
+      parsed = extractBareFoodNamesFromText(text).map((nome) => ({
+        nome,
+        quantita: '',
+        grams: null,
+      }));
     } catch {
-      names = [];
+      parsed = [];
     }
   }
 
-  return names.length > 0 ? names : [text];
+  return parsed;
 }

@@ -1,4 +1,4 @@
-import { foodNameMatchesQuery, normalizeSearchText, searchFoodsDetailed, tokenSharesStem } from '../foodSearch.js';
+import { foodNameMatchesQuery, normalizeSearchText, searchFoodsDetailed, isExactNormalizedFoodName } from '../foodSearch.js';
 import {
   estraiDatiFoodDb,
   findFoodDbMatchCascading,
@@ -37,7 +37,7 @@ function resolveCatalogDbs(context = {}) {
  * @returns {{ cleanQuery: string, gramsFromQuery: number | null }}
  */
 export function cleanFoodQueryForDbSearch(rawQuery) {
-  let name = String(rawQuery || '').trim();
+  const name = String(rawQuery || '').trim();
   if (!name) return { cleanQuery: '', gramsFromQuery: null };
 
   const gramsMatch = name.match(/(\d+[.,]?\d*)\s*(?:g|gr|grammi)\b/i);
@@ -45,19 +45,18 @@ export function cleanFoodQueryForDbSearch(rawQuery) {
     ? Math.round(Number(String(gramsMatch[1]).replace(',', '.')))
     : null;
 
-  name = name
+  let cleaned = name
     .replace(/^(?:e|ed|con|più|piu|anche|oppure)\s+/i, '')
-    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)\b/gi, ' ')
+    .replace(/\b\d+[.,]?\d*\s*(?:g|gr|grammi|kg|ml)(?:\s+di)?\b/gi, ' ')
     .replace(/\(\s*\d+[.,]?\d*\s*(?:g|gr|grammi)?\s*\)/gi, ' ')
     .replace(/\b\d+[.,]?\d*\b/g, ' ')
-    .replace(/^(?:di|del|della|dello|dei|degli|delle|un|una|uno)\s+/i, '')
-    .replace(/\s+(?:di|del|della|dello|dei|degli|delle)\s+/gi, ' ')
+    .replace(/^(?:un|una|uno)\s+/i, '')
     .replace(/^(?:e|ed|con|più|piu)\s+/i, '')
     .replace(/\s+/g, ' ')
     .trim();
 
   return {
-    cleanQuery: name,
+    cleanQuery: cleaned,
     gramsFromQuery: Number.isFinite(gramsFromQuery) && gramsFromQuery > 0 ? gramsFromQuery : null,
   };
 }
@@ -231,48 +230,7 @@ function orderCandidates(candidates, preferredDbKey) {
  * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
  */
 function findStrongDbMatchInCatalog(query, foodDb) {
-  const exact = findExactLiteralFoodInDb(query, foodDb);
-  if (exact) return exact;
-
-  const needle = normalizeSearchText(query);
-  if (!needle || !foodDb || typeof foodDb !== 'object') return null;
-
-  let best = null;
-  let bestNameLen = Infinity;
-
-  for (const [id, food] of Object.entries(foodDb)) {
-    if (!food || typeof food !== 'object') continue;
-    const displayName = String(food.desc || food.name || '').trim();
-    if (!displayName || !foodNameMatchesQuery(displayName, query)) continue;
-
-    const nameNorm = normalizeSearchText(displayName);
-    const queryFirst = needle.split(/\s+/).filter(Boolean)[0] || '';
-    const nameFirst = nameNorm.split(/\s+/).filter(Boolean)[0] || '';
-    const stemOk = nameNorm === needle
-      || (queryFirst && nameFirst && tokenSharesStem(nameFirst, queryFirst));
-    if (!stemOk) continue;
-
-    if (nameNorm.length >= bestNameLen) continue;
-
-    const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
-    bestNameLen = nameNorm.length;
-    best = {
-      fdcId,
-      name: displayName,
-      confidence: 'high',
-      reason: nameNorm === needle ? 'Match letterale esatto' : 'Match lessicale forte',
-      row: {
-        ...food,
-        id: food.id ?? id,
-        fdcId,
-        foodDbKey: food.foodDbKey ?? fdcId,
-        desc: food.desc || displayName,
-        name: food.name || displayName,
-      },
-    };
-  }
-
-  return best;
+  return findExactLiteralFoodInDb(query, foodDb);
 }
 
 /**
@@ -378,7 +336,9 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
   const exactFast = tryExactDbMatchFastPath(query, g, context);
   if (exactFast) return exactFast;
 
-  // preferredDbKey solo se il nome DB è coerente con la query (no lock su habit sbagliato).
+  const displayName = String(rawName || query).trim() || query;
+
+  // preferredDbKey solo se il nome DB è identico al parlato.
   if (context.preferredDbKey != null) {
     const preferredMatch = findFoodDbMatchCascading({
       ...catalogs,
@@ -390,7 +350,7 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
       const preferredLabel = preferredMatch.foodDb[preferredMatch.key]?.desc
         || preferredMatch.foodDb[preferredMatch.key]?.name
         || query;
-      if (foodNameMatchesQuery(preferredLabel, query)) {
+      if (isExactNormalizedFoodName(preferredLabel, query) || isExactNormalizedFoodName(preferredLabel, displayName)) {
         const preferredPortion = buildPortionFromDbMatch(
           {
             foodDbKey: preferredMatch.key,
@@ -405,7 +365,8 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
         if (preferredPortion) {
           return {
             ...preferredPortion,
-            rawQuery: query,
+            foodName: displayName,
+            rawQuery: displayName,
             alternatives: [],
           };
         }
@@ -413,7 +374,6 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
     }
   }
 
-  // Cascata esatta/forte (stesso findFoodDbKey della ricerca manuale).
   const cascadeMatch = findFoodDbMatchCascading({
     ...catalogs,
     nome: query,
@@ -421,46 +381,33 @@ export function resolveFoodItemForProposal(rawName, grams, context = {}) {
     searchKeywords: context.searchKeywords || null,
   });
   if (cascadeMatch) {
-    const portion = buildPortionFromDbMatch(
-      {
-        foodDbKey: cascadeMatch.key,
-        foodName: cascadeMatch.foodDb[cascadeMatch.key]?.desc
-          || cascadeMatch.foodDb[cascadeMatch.key]?.name
-          || query,
-        matchScore: 1,
-        dbSource: cascadeMatch.source,
-        _lookupDb: cascadeMatch.foodDb,
-      },
-      g,
-      context,
-    );
-    if (portion) {
-      const resolution = resolveFoodEntity(query, catalogs.personalDb, {
-        ...context,
-        kentuItDb: catalogs.kentuItDb,
-        globalDb: catalogs.globalDb,
-        offDb: catalogs.offDb,
-        includeUserHistory: false,
-      });
-      const orderedCandidates = orderCandidates(
-        resolution.alternatives,
-        cascadeMatch.key,
+    const dbLabel = cascadeMatch.foodDb[cascadeMatch.key]?.desc
+      || cascadeMatch.foodDb[cascadeMatch.key]?.name
+      || query;
+    if (isExactNormalizedFoodName(dbLabel, query) || isExactNormalizedFoodName(dbLabel, displayName)) {
+      const portion = buildPortionFromDbMatch(
+        {
+          foodDbKey: cascadeMatch.key,
+          foodName: dbLabel,
+          matchScore: 1,
+          dbSource: cascadeMatch.source,
+          _lookupDb: cascadeMatch.foodDb,
+        },
+        g,
+        context,
       );
-      const portionAlternatives = orderedCandidates
-        .map((candidate) => buildPortionFromDbMatch(candidate, g, context))
-        .filter(Boolean);
-
-      return {
-        ...portion,
-        rawQuery: query,
-        alternatives: portionAlternatives.length >= MIN_ALTERNATIVES_FOR_UI
-          ? portionAlternatives
-          : [],
-      };
+      if (portion) {
+        return {
+          ...portion,
+          foodName: displayName,
+          rawQuery: displayName,
+          alternatives: [],
+        };
+      }
     }
   }
 
-  return buildUnresolvedPortion(query, g);
+  return buildUnresolvedPortion(displayName, g);
 }
 
 /**
@@ -473,14 +420,22 @@ export function resolveMealProposalItems(rawItems, context = {}) {
   return rawItems
     .map((item) => {
       const rawName = String(item?.rawQuery || item?.foodName || item?.name || '').trim();
-      const grams = Math.round(Number(item?.grams ?? item?.qta) || 0);
-      if (!rawName || !Number.isFinite(grams) || grams <= 0) return null;
-
-      return resolveFoodItemForProposal(rawName, grams, {
+      if (!rawName) return null;
+      const gramsRaw = Math.round(Number(item?.grams ?? item?.qta) || 0);
+      const grams = Number.isFinite(gramsRaw) && gramsRaw > 0 ? gramsRaw : 100;
+      const resolved = resolveFoodItemForProposal(rawName, grams, {
         ...context,
         preferredDbKey: item?.foodDbKey ?? context.preferredDbKey ?? null,
         searchKeywords: item?.searchKeywords || context.searchKeywords || null,
       });
+      if (!resolved) return null;
+      return {
+        ...resolved,
+        foodName: rawName,
+        spokenFoodName: item?.spokenFoodName || rawName,
+        isEstimated: item?.isEstimated === true || !(Number.isFinite(gramsRaw) && gramsRaw > 0),
+        isCustom: resolved.foodDbKey == null,
+      };
     })
     .filter(Boolean);
 }

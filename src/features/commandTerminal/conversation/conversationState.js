@@ -129,15 +129,54 @@ function pickFiniteMacro(...candidates) {
   return null;
 }
 
+export function gramsFromQuantitaString(quantita) {
+  const raw = String(quantita || '').trim().replace(',', '.');
+  if (!raw) return null;
+  const match = raw.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+}
+
+/**
+ * Appiattisce items/alimenti annidati o un oggetto singolo in una lista di voci cibo.
+ */
+export function flattenFoodPayloadEntries(value, acc = []) {
+  if (value == null) return acc;
+  if (Array.isArray(value)) {
+    value.forEach((entry) => flattenFoodPayloadEntries(entry, acc));
+    return acc;
+  }
+  if (typeof value === 'string') {
+    const nome = value.trim();
+    if (nome.length >= 2) acc.push({ foodName: nome });
+    return acc;
+  }
+  if (typeof value !== 'object') return acc;
+
+  const nested = value.items ?? value.alimenti ?? value.foods;
+  const ownName = String(value.foodName || value.nome || value.name || '').trim();
+  if (Array.isArray(nested) && nested.length > 0 && !ownName) {
+    nested.forEach((entry) => flattenFoodPayloadEntries(entry, acc));
+    return acc;
+  }
+  acc.push(value);
+  if (Array.isArray(nested) && nested.length > 0 && ownName) {
+    nested.forEach((entry) => flattenFoodPayloadEntries(entry, acc));
+  }
+  return acc;
+}
+
 function normalizeFoodItem(item) {
-  const foodName = String(item?.foodName || item?.name || '').trim();
-  const gramsRaw = item?.grams ?? item?.qty ?? item?.weight;
+  const foodName = String(item?.foodName || item?.nome || item?.name || '').trim();
+  const gramsRaw = item?.grams ?? item?.qty ?? item?.weight ?? gramsFromQuantitaString(item?.quantita);
   const gramsNum =
     gramsRaw === null || gramsRaw === undefined || gramsRaw === ''
       ? NaN
       : Number(gramsRaw);
-  const grams = Number.isFinite(gramsNum) && gramsNum > 0 ? Math.round(gramsNum) : null;
-  const isEstimated = grams != null && item?.isEstimated === true;
+  const hasExplicitGrams = Number.isFinite(gramsNum) && gramsNum > 0;
+  const grams = hasExplicitGrams ? Math.round(gramsNum) : 100;
+  const isEstimated = item?.isEstimated === true || !hasExplicitGrams;
   const wasEstimated = item?.wasEstimated === true || isEstimated;
   const icon = String(item?.icon || '').trim();
   const searchKeywords = Array.isArray(item?.searchKeywords)
@@ -198,12 +237,15 @@ export function draftItemsFromProposalItems(proposalItems) {
     .filter((item) => item.foodName);
 }
 
-/** Espande payload singolo o multi-item in struttura normalizzata. */
+/** Espande payload singolo o multi-item in struttura normalizzata (array piatto). */
 export function expandFoodPayloadItems(payload) {
-  if (Array.isArray(payload?.items) && payload.items.length > 0) {
-    return payload.items.map(normalizeFoodItem).filter((item) => item.foodName);
+  const entries = flattenFoodPayloadEntries(payload?.items);
+  if (entries.length === 0) flattenFoodPayloadEntries(payload?.alimenti, entries);
+  if (entries.length === 0) flattenFoodPayloadEntries(payload?.foods, entries);
+  if (entries.length > 0) {
+    return entries.map(normalizeFoodItem).filter((item) => item.foodName);
   }
-  const foodName = String(payload?.foodName || '').trim();
+  const foodName = String(payload?.foodName || payload?.nome || '').trim();
   if (!foodName) return [];
   return [normalizeFoodItem(payload)];
 }

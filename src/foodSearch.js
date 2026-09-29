@@ -12,6 +12,13 @@ export function normalizeSearchText(value) {
     .trim();
 }
 
+/** True solo se i due nomi coincidono dopo normalizzazione (niente subset/fuzzy). */
+export function isExactNormalizedFoodName(nameA, nameB) {
+  const a = normalizeSearchText(nameA);
+  const b = normalizeSearchText(nameB);
+  return Boolean(a) && a === b;
+}
+
 const RECENT_FOODS_STORAGE_KEY = 'recent_foods';
 const RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SEARCH_SYNONYMS = {
