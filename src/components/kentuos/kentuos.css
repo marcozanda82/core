@@ -129,18 +129,15 @@
   max-height: none;
 }
 
-.kentu-meal-tray--immersive .kentu-meal-tray__scroll--immersive:has(.kentu-meal-tray__estimate-banner) {
+.kentu-meal-tray--immersive .kentu-meal-tray__scroll--immersive:has(.kentu-meal-tray__empty) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
 }
 
-.kentu-meal-tray--immersive .kentu-meal-tray__estimate-banner {
+.kentu-meal-tray--immersive .kentu-meal-tray__empty {
   margin: auto 0;
-  text-align: center;
-  font-size: 0.9rem;
-  padding: 24px 16px;
 }
 
 /* —— Card primitives —— */

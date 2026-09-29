@@ -203,6 +203,10 @@ export default function UniversalSearchModal({
   };
 
   const handleManualCancel = () => {
+    if (preferManualEntry) {
+      onClose?.();
+      return;
+    }
     setIsManualEntryOpen(false);
     setManualForm(EMPTY_MANUAL_FORM);
     setManualError('');
@@ -271,7 +275,9 @@ export default function UniversalSearchModal({
     >
       <header className="shrink-0 border-b border-slate-800/80 px-4 pb-4 pt-5">
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-bold tracking-tight text-slate-50">Cerca alimento</h2>
+          <h2 className="text-lg font-bold tracking-tight text-slate-50">
+            {isManualEntryOpen ? 'Crea alimento' : 'Cerca alimento'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -282,6 +288,7 @@ export default function UniversalSearchModal({
           </button>
         </div>
 
+        {!isManualEntryOpen ? (
         <form
           className="flex items-center gap-2"
           onSubmit={(event) => {
@@ -335,15 +342,6 @@ export default function UniversalSearchModal({
           </button>
           ) : null}
         </form>
-
-        {!isManualEntryOpen ? (
-          <button
-            type="button"
-            onClick={() => setIsManualEntryOpen(true)}
-            className="mt-3 w-full rounded-xl border border-dashed border-cyan-500/30 bg-cyan-950/20 px-4 py-2.5 text-sm font-medium text-cyan-300 transition-colors hover:border-cyan-400/50 hover:bg-cyan-950/40"
-          >
-            ➕ Crea alimento manuale
-          </button>
         ) : null}
 
         {scannerError ? (

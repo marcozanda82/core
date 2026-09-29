@@ -374,7 +374,7 @@ function VetrinaSearchBar({
   value,
   onChange,
   onSubmit,
-  onOpenAdvanced,
+  onOpenScanner,
   inputRef,
   resetEpoch = 0,
 }) {
@@ -436,9 +436,9 @@ function VetrinaSearchBar({
         </button>
         <button
           type="button"
-          onClick={() => onOpenAdvanced?.()}
-          aria-label="Ricerca avanzata Kentu DB"
-          title="Ricerca avanzata"
+          onClick={() => onOpenScanner?.()}
+          aria-label="Scansiona barcode"
+          title="Scanner barcode"
           className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-800/90 text-slate-400 transition-all hover:border-cyan-500/40 hover:text-cyan-300 active:scale-95"
         >
           <ScanBarcode className="h-4 w-4" />
@@ -1424,8 +1424,16 @@ function FastMealLoggerContent({
   };
 
   const handleOpenScanner = () => {
+    setIsSearchModalOpen(false);
+    setPreferManualSearchEntry(false);
     setScannerError('');
     openScanner();
+  };
+
+  const openManualFoodCreator = () => {
+    setPreferManualBarcode('');
+    setPreferManualSearchEntry(true);
+    setIsSearchModalOpen(true);
   };
 
   const buildTileDraftPayload = (tile, targetWeight) => {
@@ -1789,7 +1797,7 @@ function FastMealLoggerContent({
                   value={vetrinaSearchQuery}
                   onChange={setVetrinaSearchQuery}
                   onSubmit={submitVetrinaSearch}
-                  onOpenAdvanced={() => setIsSearchModalOpen(true)}
+                  onOpenScanner={handleOpenScanner}
                   inputRef={vetrinaSearchInputRef}
                   resetEpoch={vetrinaSearchEpoch}
                 />
@@ -1889,6 +1897,14 @@ function FastMealLoggerContent({
                   </div>
                 </div>
               )}
+
+              <button
+                type="button"
+                onClick={openManualFoodCreator}
+                className="w-full rounded-xl border border-dashed border-cyan-500/30 bg-cyan-950/20 px-4 py-2.5 text-sm font-medium text-cyan-300 transition-colors hover:border-cyan-400/50 hover:bg-cyan-950/40"
+              >
+                ➕ Crea alimento manuale
+              </button>
 
               {isVetrinaSearching ? (
                 <div className="min-w-0 space-y-6">
@@ -2143,10 +2159,7 @@ function FastMealLoggerContent({
                   <li>
                     <button
                       type="button"
-                      onClick={() => {
-                        setPreferManualSearchEntry(false);
-                        setIsSearchModalOpen(true);
-                      }}
+                      onClick={() => setActiveTab('alimenti')}
                       className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-4 py-3 text-sm font-medium text-cyan-300 transition-colors hover:border-cyan-400/50 hover:bg-cyan-500/10"
                     >
                       + Aggiungi un altro alimento

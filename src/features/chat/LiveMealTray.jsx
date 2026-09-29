@@ -18,7 +18,6 @@ import {
 import useBarcodeScanner from '../mealBuilder/hooks/useBarcodeScanner';
 import {
   EMPTY_MCDRIVE_TOTALS,
-  MCDRIVE_ADD_MORE_CHIP,
   MCDRIVE_CANCEL_CHIP,
   MCDRIVE_FINISH_CHIP,
   MCDRIVE_SAVE_CONFIRM_CHIP,
@@ -366,6 +365,21 @@ function MacroCompareRow({ label, actual, target, unit = 'g' }) {
         />
       </div>
     </div>
+  );
+}
+
+function TrayBarcodeScanButton({ disabled = false, onClick }) {
+  return (
+    <button
+      type="button"
+      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/20 disabled:opacity-50"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label="Scansiona barcode"
+      title="Scanner barcode"
+    >
+      <ScanBarcode className="h-5 w-5" />
+    </button>
   );
 }
 
@@ -742,19 +756,15 @@ function LiveMealTray({
         }
       >
         {items.length === 0 ? (
-          <div className="space-y-2 px-1 py-2">
-            <p className="kentu-meal-tray__estimate-banner" role="status">
-              Nessun alimento sul vassoio.
+          <div className="kentu-meal-tray__empty flex items-center gap-3 rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/50 px-4 py-5">
+            <p className="min-w-0 flex-1 text-sm leading-relaxed text-slate-400" role="status">
+              Vassoio vuoto. Dettaglia i cibi in basso, usa il microfono o scansiona un codice a barre.
             </p>
             {active ? (
-              <button
-                type="button"
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+              <TrayBarcodeScanButton
                 disabled={disabled || isSaving}
-                onClick={() => onAddMore?.()}
-              >
-                + Aggiungi un altro alimento
-              </button>
+                onClick={() => openScanner()}
+              />
             ) : null}
           </div>
         ) : (
@@ -1076,25 +1086,11 @@ function LiveMealTray({
             })}
             {active ? (
               <li className="kentu-meal-tray__row kentu-meal-tray__row--add">
-                <div className="flex w-full items-center gap-2">
-                  <button
-                    type="button"
-                    className="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/35 bg-cyan-500/5 px-3 py-2.5 text-sm font-medium text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
-                    disabled={disabled || isSaving}
-                    onClick={() => onAddMore?.()}
-                  >
-                    + Aggiungi un altro alimento
-                  </button>
-                  <button
-                    type="button"
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/20 disabled:opacity-50"
+                <div className="flex w-full items-center justify-end">
+                  <TrayBarcodeScanButton
                     disabled={disabled || isSaving}
                     onClick={() => openScanner()}
-                    aria-label="Scansiona barcode"
-                    title="Scanner barcode"
-                  >
-                    <ScanBarcode className="h-5 w-5" />
-                  </button>
+                  />
                 </div>
               </li>
             ) : null}
@@ -1143,14 +1139,6 @@ function LiveMealTray({
             </KentuButton>
           ) : (
             <>
-              <KentuButton
-                variant="secondary"
-                className="kentu-meal-tray__add-more"
-                disabled={disabled || isSaving}
-                onClick={() => onAddMore?.()}
-              >
-                {MCDRIVE_ADD_MORE_CHIP.label}
-              </KentuButton>
               <KentuButton
                 variant="primary"
                 className={[
