@@ -1,12 +1,13 @@
-import React, { lazy, Suspense, useCallback, useState } from 'react';
+import React, { Suspense, useCallback, useState } from 'react';
 import { useHealthSystemState } from '../hooks/useHealthSystemState.js';
 import HealthCockpit from './HealthCockpit.jsx';
 import HealthCockpitLongevityPreviewGate from './HealthCockpitLongevityPreviewGate.jsx';
 import PillarInsightOverlay from './PillarInsightOverlay.jsx';
 import KentuLazySectionFallback from '../../../components/KentuLazySectionFallback.jsx';
 import SimulationJsonCopyButton from '../../../components/SimulationJsonCopyButton.jsx';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 
-const HealthCockpitLabOverlay = lazy(() => import('./HealthCockpitLabOverlay.jsx'));
+const HealthCockpitLabOverlay = lazyWithRetry(() => import('./HealthCockpitLabOverlay.jsx'));
 
 const EVIDENCE_TOOL_BY_PILLAR = {
   recovery: 'TIMELINE',

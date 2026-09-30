@@ -8,9 +8,41 @@ function formatErrorMessage(error) {
   return `${name}: ${message}`;
 }
 
+function isChunkLoadError(error) {
+  const message = String(error?.message || error || '');
+  return (
+    message.includes('Failed to fetch dynamically imported module')
+    || message.includes('Importing a module script failed')
+    || message.includes('error loading dynamically imported module')
+  );
+}
+
+async function clearAppCaches() {
+  try {
+    window.sessionStorage.removeItem('page-reloaded-for-chunk-error');
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof caches !== 'undefined' && caches?.keys) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const registrations = await navigator.serviceWorker?.getRegistrations?.();
+    if (Array.isArray(registrations)) {
+      await Promise.all(registrations.map((reg) => reg.unregister()));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * Root error boundary — evita schermate bianche su crash React (requisito store).
- * I dettagli tecnici sono temporanei per diagnosticare il crash Chat al primo avvio del giorno.
  */
 export default class GlobalErrorBoundary extends React.Component {
   constructor(props) {
@@ -37,9 +69,15 @@ export default class GlobalErrorBoundary extends React.Component {
     window.location.reload();
   };
 
+  handleRefreshApp = async () => {
+    await clearAppCaches();
+    window.location.reload(true);
+  };
+
   render() {
     if (this.state.hasError) {
       const { error, errorInfo } = this.state;
+      const chunkError = isChunkLoadError(error);
       const details = [
         formatErrorMessage(error),
         error?.stack ? `\n\n— stack —\n${error.stack}` : '',
@@ -80,7 +118,7 @@ export default class GlobalErrorBoundary extends React.Component {
               color: '#f8fafc',
             }}
           >
-            Ops! Qualcosa è andato storto
+            {chunkError ? 'Aggiornamento richiesto' : 'Ops! Qualcosa è andato storto'}
           </h1>
           <p
             style={{
@@ -91,11 +129,13 @@ export default class GlobalErrorBoundary extends React.Component {
               color: '#94a3b8',
             }}
           >
-            KentuOS ha incontrato un errore imprevisto. Ricarica l&apos;app per riprendere.
+            {chunkError
+              ? 'Un modulo dell’app non è stato caricato (chunk obsoleto o rete). Aggiorna per riprendere.'
+              : 'KentuOS ha incontrato un errore imprevisto. Ricarica l\'app per riprendere.'}
           </p>
           <button
             type="button"
-            onClick={this.handleReload}
+            onClick={chunkError ? this.handleRefreshApp : this.handleReload}
             style={{
               border: '1px solid rgba(34, 211, 238, 0.45)',
               background: 'rgba(34, 211, 238, 0.12)',
@@ -107,8 +147,9 @@ export default class GlobalErrorBoundary extends React.Component {
               cursor: 'pointer',
             }}
           >
-            Ricarica App
+            {chunkError ? 'Aggiorna App' : 'Ricarica App'}
           </button>
+          {!chunkError ? (
           <details
             open
             style={{
@@ -150,6 +191,7 @@ export default class GlobalErrorBoundary extends React.Component {
               {details.trim() || 'Nessuno stack disponibile'}
             </pre>
           </details>
+          ) : null}
         </div>
       );
     }

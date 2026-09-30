@@ -1,8 +1,9 @@
-import React, { Suspense, lazy, useCallback, useMemo } from 'react';
+import React, { Suspense, useCallback, useMemo } from 'react';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
 import { useStrumentazioneMapData } from './useStrumentazioneMapData';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const MetabolicUnifiedView = lazy(() => import('../../MetabolicUnifiedView'));
+const MetabolicUnifiedView = lazyWithRetry(() => import('../../MetabolicUnifiedView'));
 
 /**
  * Layout viewport — replica trend-tab-shell (Sala Comandi) + fix faccia radar.

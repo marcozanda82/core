@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { get, ref } from 'firebase/database';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
@@ -17,8 +17,9 @@ import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListene
 import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
 import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const SalaComandi = lazy(() => import('./SalaComandi'));
+const SalaComandi = lazyWithRetry(() => import('./SalaComandi'));
 
 function AppBootFallback() {
   return <AuthLoadingScreen />;

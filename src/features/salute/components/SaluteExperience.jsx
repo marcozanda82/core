@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { METABOLIC_FOCUS_LABEL } from '../../chat/metabolicFocus';
 import { useSaluteExperienceData } from '../hooks/useSaluteExperienceData';
@@ -16,13 +16,14 @@ import {
   sleepSemaphoreFromDelta,
 } from '../utils/saluteVisualTheme';
 import SaluteDetailSheet from './SaluteDetailSheet';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 
-const SalutePillarDetail = lazy(() => import('./SalutePillarDetail'));
-const SaluteAdvancedPanel = lazy(() => import('./SaluteAdvancedPanel'));
-const SaluteFocusMetabolicoCard = lazy(() =>
+const SalutePillarDetail = lazyWithRetry(() => import('./SalutePillarDetail'));
+const SaluteAdvancedPanel = lazyWithRetry(() => import('./SaluteAdvancedPanel'));
+const SaluteFocusMetabolicoCard = lazyWithRetry(() =>
   import('./SaluteFocusMetabolico').then((mod) => ({ default: mod.SaluteFocusMetabolicoCard })),
 );
-const SaluteFocusMetabolicoBody = lazy(() =>
+const SaluteFocusMetabolicoBody = lazyWithRetry(() =>
   import('./SaluteFocusMetabolico').then((mod) => ({ default: mod.SaluteFocusMetabolicoBody })),
 );
 

@@ -1,7 +1,7 @@
 /**
  * Tab Analisi: cruscotto energetico 0–24h + timeline nodi.
  */
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import KentuLazySectionFallback from '../KentuLazySectionFallback';
 import {
   CHART_AXIS_GUTTER_LEFT_PX,
@@ -12,9 +12,10 @@ import {
   NODE_TYPE_ICON,
   decimalToTimeStr,
 } from '../../coreEngine';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const MainDashboardCharts = lazy(() => import('../../features/charts/MainDashboardCharts'));
-const TimelineNodi = lazy(() => import('../../TimelineNodi'));
+const MainDashboardCharts = lazyWithRetry(() => import('../../features/charts/MainDashboardCharts'));
+const TimelineNodi = lazyWithRetry(() => import('../../TimelineNodi'));
 
 export default function AnalisiTimelineTab(props) {
   const {

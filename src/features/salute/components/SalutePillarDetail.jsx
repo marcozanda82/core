@@ -1,12 +1,13 @@
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import CardioAnalysisCard from '../../trendHub/components/CardioAnalysisCard';
 import { formatFastingHoursLabel } from '../../trendHub/utils/saluteDashboardMetrics';
 import { MUSCLE_STIMULUS_DAILY_DECAY_FACTOR } from '../../trendHub/utils/muscleSpillover';
 import SaluteSleepDetail from './SaluteSleepDetail';
 import { SALUTE_FROST, saluteTheme } from '../utils/saluteVisualTheme';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 
-const MuscleTelemetryHub = lazy(() => import('../../trendHub/components/MuscleTelemetryHub'));
+const MuscleTelemetryHub = lazyWithRetry(() => import('../../trendHub/components/MuscleTelemetryHub'));
 
 function formatPts(score, max) {
   if (!Number.isFinite(Number(score))) return `— / ${max}`;

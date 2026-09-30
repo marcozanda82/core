@@ -3,7 +3,7 @@
  * Dati dial da `useMealPieDialData` via props.
  */
 
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { LayoutGrid, MousePointerClick } from 'lucide-react';
 import DialMaintenanceMarker from '../DialMaintenanceMarker';
 import KcalFuelTelemetryRing from '../KcalFuelTelemetryRing';
@@ -13,8 +13,9 @@ import MetabolicMonitorCard from '../MetabolicMonitorCard';
 import PulsantieraUniversale from '../../features/chat/PulsantieraUniversale';
 import { getTodayString } from '../../coreEngine';
 import { useActionView } from '../../homeStore';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const HomeMealPieDial = lazy(() => import('../charts/HomeMealPieDial'));
+const HomeMealPieDial = lazyWithRetry(() => import('../charts/HomeMealPieDial'));
 
 /**
  * @param {object} props

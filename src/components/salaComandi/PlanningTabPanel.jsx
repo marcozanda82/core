@@ -2,11 +2,12 @@
  * Tab Planning: wizard CTA + piano settimanale.
  */
 
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import KentuLazySectionFallback from '../KentuLazySectionFallback';
 import { getTodayString } from '../../coreEngine';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const WeeklyPlanning = lazy(() => import('../WeeklyPlanning'));
+const WeeklyPlanning = lazyWithRetry(() => import('../WeeklyPlanning'));
 
 export default function PlanningTabPanel({
   weeklyPlan = null,

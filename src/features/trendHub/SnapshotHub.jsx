@@ -1,11 +1,12 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import KentuLazySectionFallback from '../../components/KentuLazySectionFallback';
 import { useHealthContext } from './hooks/useHealthContext';
 import { useTrendHubHemisphere } from './hooks/useTrendHubHemisphere';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 /** Code-split: Salute / Progressione solo quando l'emisfero è attivo. */
-const SaluteView = lazy(() => import('./SaluteView'));
-const ProgressioneView = lazy(() => import('./ProgressioneView'));
+const SaluteView = lazyWithRetry(() => import('./SaluteView'));
+const ProgressioneView = lazyWithRetry(() => import('./ProgressioneView'));
 
 const HEMISPHERE_OPTIONS = [
   { value: 'progressione', icon: '📈', label: 'Progressione' },

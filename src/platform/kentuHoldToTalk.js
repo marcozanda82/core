@@ -23,24 +23,30 @@ function liveFromPartialEvent(event) {
 }
 
 /**
- * Concatena solo i result.isFinal; se non ce ne sono, usa l'ultimo transcript.
- * Non restituisce stringhe vuote (i parziali vuoti non devono azzerare il live).
+ * Concatena i result finali e tiene l'ultimo interim, senza svuotare con parziali vuoti.
  */
 export function transcriptFromWebSpeechEvent(event) {
   const results = event?.results;
   if (!results || results.length === 0) return '';
 
   const finals = [];
+  let lastInterim = '';
   for (let i = 0; i < results.length; i += 1) {
     const result = results[i];
-    if (result?.isFinal !== true) continue;
-    const piece = String(result?.[0]?.transcript ?? '').trim();
-    if (piece) finals.push(piece);
+    const piece = String(result?.[0]?.transcript ?? '');
+    if (!piece.trim()) continue;
+    if (result?.isFinal === true) {
+      finals.push(piece.trim());
+    } else {
+      lastInterim = piece;
+    }
   }
-  if (finals.length > 0) return finals.join(' ');
-
-  const last = results[results.length - 1];
-  return String(last?.[0]?.transcript ?? '');
+  if (finals.length > 0) {
+    return lastInterim.trim()
+      ? `${finals.join(' ')} ${lastInterim}`.replace(/\s+/g, ' ').trim()
+      : finals.join(' ');
+  }
+  return lastInterim;
 }
 
 export async function playHoldToTalkHaptic() {
@@ -74,7 +80,6 @@ export function createHoldToTalkSession({
   };
 
   const emitLive = (raw) => {
-    if (state.stopRequested) return;
     const next = String(raw ?? '');
     if (!next.trim() && String(state.liveText || '').trim()) return;
     state.liveText = next;
@@ -103,9 +108,9 @@ export function createHoldToTalkSession({
 
   const startWebkit = () => {
     if (state.stopRequested) return false;
-    const recognition = createSpeechRecognition({ continuous: false });
+    const recognition = createSpeechRecognition({ continuous: true });
     if (!recognition) return false;
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     state.mode = 'webkit';
@@ -115,13 +120,23 @@ export function createHoldToTalkSession({
       if (!String(next || '').trim()) return;
       emitLive(next);
     };
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
+      const code = String(event?.error || '');
+      if (code === 'no-speech' || code === 'aborted') return;
+      if (state.stopRequested) return;
       notifyListeningEnd();
-      if (!state.stopRequested) notifyEngineStopped();
+      notifyEngineStopped();
     };
     recognition.onend = () => {
-      notifyListeningEnd();
-      if (!state.stopRequested) notifyEngineStopped();
+      if (state.stopRequested) return;
+      window.setTimeout(() => {
+        if (state.stopRequested || state.recognition !== recognition) return;
+        try {
+          recognition.start();
+        } catch {
+          /* already running */
+        }
+      }, 60);
     };
     try {
       recognition.start();
@@ -148,7 +163,6 @@ export function createHoldToTalkSession({
     state.capacitorListener = await SpeechRecognition.addListener?.(
       'partialResults',
       (event) => {
-        if (state.stopRequested) return;
         const next = liveFromPartialEvent(event);
         if (!String(next || '').trim()) return;
         emitLive(next);
@@ -157,10 +171,12 @@ export function createHoldToTalkSession({
     state.listeningStateListener = await SpeechRecognition.addListener?.(
       'listeningState',
       (event) => {
-        if (String(event?.status || '') === 'stopped') {
+        if (String(event?.status || '') !== 'stopped') return;
+        if (state.stopRequested) {
           notifyListeningEnd();
-          if (!state.stopRequested) notifyEngineStopped();
+          return;
         }
+        void SpeechRecognition.start(CAPACITOR_START_OPTS).catch(() => {});
       },
     );
     state.mode = 'capacitor';
@@ -190,7 +206,6 @@ export function createHoldToTalkSession({
   };
 
   const stop = async () => {
-    const snapshot = String(state.liveText || '');
     state.stopRequested = true;
     if (state.startGate) {
       try {
@@ -268,7 +283,7 @@ export function createHoldToTalkSession({
     } else {
       notifyListeningEnd();
     }
-    const text = snapshot.replace(/\s+/g, ' ').trim();
+    const text = String(state.liveText || '').replace(/\s+/g, ' ').trim();
     state.mode = null;
     state.recognition = null;
     state.capacitorListener = null;

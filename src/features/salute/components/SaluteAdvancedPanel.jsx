@@ -1,8 +1,9 @@
-import { lazy, Suspense, useState } from 'react';
+import { Suspense, useState } from 'react';
 import { MUSCLE_STIMULUS_DAILY_DECAY_FACTOR } from '../../trendHub/utils/muscleSpillover';
 import { SALUTE_FROST } from '../utils/saluteVisualTheme';
+import { lazyWithRetry } from '../../../utils/lazyWithRetry';
 
-const MuscleTelemetryHub = lazy(() => import('../../trendHub/components/MuscleTelemetryHub'));
+const MuscleTelemetryHub = lazyWithRetry(() => import('../../trendHub/components/MuscleTelemetryHub'));
 
 function formatMetric(value, digits = 1, unit = '') {
   if (value == null || !Number.isFinite(Number(value))) return '—';

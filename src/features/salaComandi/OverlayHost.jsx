@@ -1,8 +1,9 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import PesataDrawer from '../../components/drawers/PesataDrawer';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const PlanningWizard = lazy(() => import('../../PlanningWizard'));
+const PlanningWizard = lazyWithRetry(() => import('../../PlanningWizard'));
 
 export default function OverlayHost({
   showWeightModal,

@@ -76,7 +76,7 @@ export default function KentuChatFab({
   const pressStartedAtRef = useRef(0);
   const toastTimerRef = useRef(null);
   const listenTimeoutRef = useRef(null);
-  const liveTranscriptRef = useRef('');
+  const currentTranscriptRef = useRef('');
   const voiceItemsRef = useRef([]);
 
   const [isListening, setIsListening] = useState(false);
@@ -91,9 +91,8 @@ export default function KentuChatFab({
   }, []);
 
   const setLiveOverwrite = useCallback((raw) => {
-    if (!isListeningRef.current) return;
     const next = String(raw ?? '');
-    liveTranscriptRef.current = next;
+    currentTranscriptRef.current = next;
     setLiveTranscript(next);
   }, []);
 
@@ -101,7 +100,7 @@ export default function KentuChatFab({
     voiceItemsRef.current = [];
     setVoiceItemsList([]);
     setLiveTranscript('');
-    liveTranscriptRef.current = '';
+    currentTranscriptRef.current = '';
     setSessionOpen(false);
     setIsListening(false);
     isListeningRef.current = false;
@@ -131,9 +130,12 @@ export default function KentuChatFab({
   }, []);
 
   const commitSnippetToList = useCallback((snippet) => {
-    const live = normalizeGramsInTranscript(collapseGluedPrefix(cleanTranscript(snippet)));
-    if (!live) return;
-    const next = [...voiceItemsRef.current, live];
+    const val = String(snippet || '')
+      .replace(/\s*(grammi|gr|g)\b/gi, ' g')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!val) return;
+    const next = [...voiceItemsRef.current, collapseGluedPrefix(val)];
     voiceItemsRef.current = next;
     setVoiceItemsList(next);
   }, []);
@@ -152,7 +154,7 @@ export default function KentuChatFab({
     finishingRef.current = false;
     isListeningRef.current = false;
     setIsListening(false);
-    liveTranscriptRef.current = '';
+    currentTranscriptRef.current = '';
     setLiveTranscript('');
     setSessionOpen(true);
   }, []);
@@ -160,9 +162,6 @@ export default function KentuChatFab({
   const stopListeningToIdle = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
-    const captured = liveTranscriptRef.current;
-    liveTranscriptRef.current = '';
-    setLiveTranscript('');
     clearListenTimeout();
     const session = sessionRef.current;
     sessionRef.current = null;
@@ -174,10 +173,16 @@ export default function KentuChatFab({
         leftover = '';
       }
     }
+    const raw = String(currentTranscriptRef.current || leftover || '');
+    if (raw.trim()) {
+      const val = raw.replace(/\s*(grammi|gr|g)\b/gi, ' g');
+      commitSnippetToList(val);
+    }
+    currentTranscriptRef.current = '';
+    setLiveTranscript('');
     holdOriginRef.current = false;
     isListeningRef.current = false;
     setIsListening(false);
-    commitSnippetToList(captured || leftover);
     setSessionOpen(true);
     finishingRef.current = false;
   }, [clearListenTimeout, commitSnippetToList]);
@@ -201,14 +206,11 @@ export default function KentuChatFab({
         isListeningRef.current = false;
         setIsListening(false);
       },
-      onEngineStopped: () => {
-        void stopListeningToIdle();
-      },
     });
     sessionRef.current = session;
     isListeningRef.current = true;
     finishingRef.current = false;
-    liveTranscriptRef.current = '';
+    currentTranscriptRef.current = '';
     setLiveTranscript('');
     setSessionOpen(true);
     setIsListening(true);

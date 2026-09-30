@@ -8,11 +8,12 @@
  * 
  * FIX CRITICO: Retrocompatibilità mealType - 'spuntino' e 'snack' sono equivalenti
  */
-import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useSignalAppReady } from './hooks/useAppReadyState';
 import './styles/SalaComandiInline.css';
 import { createPortal } from 'react-dom';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ref, get, set, update, push, onValue, remove } from 'firebase/database';
 
 import {
@@ -474,18 +475,18 @@ import StimulusCockpitOverlay from './features/chat/StimulusCockpitOverlay';
 
 export { calculateAge } from './utils/profileAge';
 
-const CentroAnalisiView = lazy(() => import('./features/centroAnalisi/CentroAnalisiView'));
-const SnapshotHub = lazy(() => import('./features/trendHub/SnapshotHub'));
-const WorkoutView = lazy(() => import('./drawers/vistas/WorkoutView'));
-const ApiDiary = lazy(() => import('./components/ApiDiary'));
-const BiochemicalDiagnostics = lazy(() => import('./features/nutrition/BiochemicalDiagnostics'));
-const FastMealLogger = lazy(() => import('./features/mealBuilder/FastMealLogger'));
-const ArchivioStoricoView = lazy(() => import('./components/ArchivioStoricoView'));
-const DevConsoleView = lazy(() => import('./components/DevConsoleView'));
-const KentuChatUI = lazy(() => import('./features/chat/KentuChatWithWipMeal'));
-const HealthReportView = lazy(() => import('./features/health/HealthReportView'));
-const TherapyPlanView = lazy(() => import('./features/health/TherapyPlanView'));
-const TrendMetricLineChart = lazy(() => import('./components/charts/TrendMetricLineChart'));
+const CentroAnalisiView = lazyWithRetry(() => import('./features/centroAnalisi/CentroAnalisiView'));
+const SnapshotHub = lazyWithRetry(() => import('./features/trendHub/SnapshotHub'));
+const WorkoutView = lazyWithRetry(() => import('./drawers/vistas/WorkoutView'));
+const ApiDiary = lazyWithRetry(() => import('./components/ApiDiary'));
+const BiochemicalDiagnostics = lazyWithRetry(() => import('./features/nutrition/BiochemicalDiagnostics'));
+const FastMealLogger = lazyWithRetry(() => import('./features/mealBuilder/FastMealLogger'));
+const ArchivioStoricoView = lazyWithRetry(() => import('./components/ArchivioStoricoView'));
+const DevConsoleView = lazyWithRetry(() => import('./components/DevConsoleView'));
+const KentuChatUI = lazyWithRetry(() => import('./features/chat/KentuChatWithWipMeal'));
+const HealthReportView = lazyWithRetry(() => import('./features/health/HealthReportView'));
+const TherapyPlanView = lazyWithRetry(() => import('./features/health/TherapyPlanView'));
+const TrendMetricLineChart = lazyWithRetry(() => import('./components/charts/TrendMetricLineChart'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
