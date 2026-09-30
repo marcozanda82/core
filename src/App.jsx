@@ -17,7 +17,6 @@ import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListene
 import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
 import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
-import { Capacitor } from '@capacitor/core';
 
 const SalaComandi = lazy(() => import('./SalaComandi'));
 
@@ -152,22 +151,8 @@ function AssistantInboxLocationBridge() {
   return null;
 }
 
-function isCapacitorAndroid() {
-  try {
-    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
-  } catch {
-    return false;
-  }
-}
-
 function BootSplashLayer() {
   const isAppReady = useAppReadyState();
-  
-  if (isCapacitorAndroid()) {
-    return null;
-  }
-  
-  // 🔥 FIX UX: Splash scompare solo quando app è pronta
   return <KentuWebSplash ready={isAppReady} />;
 }
 

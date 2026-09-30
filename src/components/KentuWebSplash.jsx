@@ -1,5 +1,4 @@
 import { useEffect, useId, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
 import {
   ENSO_DRAW_PATH,
   ENSO_FILL_PATH,
@@ -10,18 +9,8 @@ import {
   OS_O_OUTER_PATH,
   OS_S_PATH,
 } from '../assets/kentu-splash/kentuLogoGeometry.js';
+import { hideNativeSplashScreen } from '../platform/hideNativeSplash.js';
 import './KentuWebSplash.css';
-
-const TOTAL_MS = 2000;
-const REDUCED_TOTAL_MS = 650;
-
-function isCapacitorAndroid() {
-  try {
-    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
-  } catch {
-    return false;
-  }
-}
 
 function isDevHold() {
   if (!import.meta.env.DEV || typeof window === 'undefined') return false;
@@ -33,15 +22,19 @@ function isDevHold() {
 }
 
 /**
- * Overlay splash Web (Vite/Vercel). Su Capacitor Android non montare.
- * Solo animazione vettoriale ricostruita dal master. Debug: `/?kentuSplash=hold`
- * 🔥 FIX UX: Resta visibile fino a `ready` (o timeout max 6s per sicurezza)
+ * Overlay splash vettoriale (Vite/Vercel e AAB). Lo splash nativo Capacitor
+ * viene nascosto al boot: questa animazione SVG gestisce il caricamento.
+ * Debug: `/?kentuSplash=hold`
  */
 export default function KentuWebSplash({ ready = false }) {
   const reactId = useId();
   const maskId = `kentu-enso-mask-${reactId.replace(/:/g, '')}`;
   const gradientId = `kentu-enso-fill-${reactId.replace(/:/g, '')}`;
   const [gone, setGone] = useState(false);
+
+  useEffect(() => {
+    void hideNativeSplashScreen();
+  }, []);
 
   useEffect(() => {
     if (isDevHold()) return undefined;
@@ -88,7 +81,7 @@ export default function KentuWebSplash({ ready = false }) {
     };
   }, [ready, gone]);
 
-  if (gone || isCapacitorAndroid()) return null;
+  if (gone) return null;
 
   const hold = isDevHold();
 

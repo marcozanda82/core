@@ -2,7 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import GlobalErrorBoundary from './components/GlobalErrorBoundary.jsx';
+import { hideNativeSplashScreen } from './platform/hideNativeSplash.js';
 import './index.css';
+
+void hideNativeSplashScreen();
 
 // ============================================================
 // PERFORMANCE PROFILING: App Start

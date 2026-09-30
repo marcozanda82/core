@@ -59,7 +59,6 @@ export function createSpeechRecognition(opts = {}) {
   if (!Ctor) return null;
   const recognition = new Ctor();
   recognition.lang = 'it-IT';
-  // continuous: false → una "nota vocale": stop a fine frase, controllo manuale del mic.
   recognition.continuous = opts.continuous === true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 1;

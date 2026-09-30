@@ -160,7 +160,6 @@ export default function KentuChatFab({
   const stopListeningToIdle = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
-    isListeningRef.current = false;
     const captured = liveTranscriptRef.current;
     liveTranscriptRef.current = '';
     setLiveTranscript('');
@@ -176,6 +175,7 @@ export default function KentuChatFab({
       }
     }
     holdOriginRef.current = false;
+    isListeningRef.current = false;
     setIsListening(false);
     commitSnippetToList(captured || leftover);
     setSessionOpen(true);
@@ -196,6 +196,10 @@ export default function KentuChatFab({
     const session = createHoldToTalkSession({
       onTranscript: (next) => {
         setLiveOverwrite(String(next ?? ''));
+      },
+      onListeningEnd: () => {
+        isListeningRef.current = false;
+        setIsListening(false);
       },
       onEngineStopped: () => {
         void stopListeningToIdle();

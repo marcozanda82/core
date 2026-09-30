@@ -104,20 +104,20 @@ export function useVoiceChat({
     clearRestartTimer();
     intentionalStopRef.current = true;
     const rec = recognitionRef.current;
-    detachRecognition();
     if (!rec) {
       setIsListening(false);
       return;
     }
     try {
-      rec.abort();
+      rec.stop();
     } catch {
       try {
-        rec.stop();
+        rec.abort();
       } catch {
         // ignore
       }
     }
+    detachRecognition();
     setIsListening(false);
   }, [clearRestartTimer, detachRecognition]);
 
@@ -139,21 +139,26 @@ export function useVoiceChat({
     };
 
     recognition.onresult = (event) => {
-      let interim = '';
-      let finalChunk = '';
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
-        const piece = String(result?.[0]?.transcript || '');
-        if (result.isFinal) finalChunk += piece;
-        else interim += piece;
+      const results = event?.results;
+      if (!results || results.length === 0) return;
+
+      const finals = [];
+      for (let i = 0; i < results.length; i += 1) {
+        const result = results[i];
+        if (result?.isFinal !== true) continue;
+        const piece = String(result?.[0]?.transcript ?? '').trim();
+        if (piece) finals.push(piece);
       }
-      if (finalChunk.trim()) {
-        finalTranscriptRef.current = [finalTranscriptRef.current, finalChunk.trim()]
-          .filter(Boolean)
-          .join(' ')
-          .trim();
+      if (finals.length > 0) {
+        finalTranscriptRef.current = finals.join(' ');
+        interimTranscriptRef.current = '';
+        syncDisplayTranscript();
+        return;
       }
-      interimTranscriptRef.current = interim.trim();
+
+      const last = String(results[results.length - 1]?.[0]?.transcript ?? '');
+      if (!last.trim()) return;
+      interimTranscriptRef.current = last.trim();
       syncDisplayTranscript();
     };
 
@@ -179,8 +184,6 @@ export function useVoiceChat({
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
-      // Nota vocale: fine frase/pausa → stop. Niente auto-restart ciclico.
-      // L'utente riattiva il microfono manualmente se vuole aggiungere altro.
     };
 
     try {
