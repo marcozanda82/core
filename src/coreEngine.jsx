@@ -16,6 +16,15 @@ import {
   serializeUnassignedDraftsForFirebase,
   asCollectionArray,
 } from './utils/mealDraftStatus';
+import { getDynamicMealTargets } from './features/mealEngine/getDynamicMealTargets.js';
+
+export { getDynamicMealTargets };
+export {
+  MEAL_PHYSIO_LUNCH_MIN_FIBRE_G,
+  MEAL_PHYSIO_LUNCH_MAX_SIMPLE_SUGAR_G,
+  MEAL_PHYSIO_DINNER_FAT_CAP_G,
+  MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G,
+} from './features/mealEngine/getDynamicMealTargets.js';
 
 const RADIAN = Math.PI / 180;
 
@@ -1837,19 +1846,6 @@ function formatMealSlotLabel(mealType) {
   return name;
 }
 
-/** Pasti proteici massimi al giorno (colazione esclusa dal conteggio). */
-const PROTEIN_MEALS_PER_DAY = 4;
-
-const BREAKFAST_KCAL_RATIO = 0.22;
-
-/** Pranzo: fibre minime e tetto zuccheri semplici (anti brain-fog). */
-export const MEAL_PHYSIO_LUNCH_MIN_FIBRE_G = 12;
-export const MEAL_PHYSIO_LUNCH_MAX_SIMPLE_SUGAR_G = 8;
-/** Cena: tetto grassi (sonno); più stretto se già in surplus calorico giornaliero. */
-export const MEAL_PHYSIO_DINNER_FAT_CAP_G = 23;
-export const MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G = 20;
-const MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD = 50;
-
 /** Delta kcal sulla baseline profilo (strategia giornaliera da chat Kentu). */
 export const CALORIE_STRATEGY_KCAL_DELTA = { deficit: -500, pari: 0, surplus: 400 };
 
@@ -1922,38 +1918,6 @@ export function parseKentuInvisibleCmd(text) {
   return { stripped, cmd };
 }
 
-/** Somma macro su tutti food/ricette del log (il chiamante può già aver escluso lo slot in editing). */
-function sumMacroAllFood(log, macro) {
-  const L = log || [];
-  let s = 0;
-  for (let i = 0; i < L.length; i++) {
-    const e = L[i];
-    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
-    if (isUnresolvedMealDraftItem(e)) continue;
-    if (macro === 'kcal') s += Number(e.kcal ?? e.cal) || 0;
-    else if (macro === 'prot') s += Number(e.prot ?? e.proteine) || 0;
-    else if (macro === 'carb') s += Number(e.carb ?? e.carboidrati) || 0;
-    else if (macro === 'fat') s += Number(e.fatTotal ?? e.fat ?? e.grassi) || 0;
-    else if (macro === 'fibre') s += Number(e.fibre) || 0;
-  }
-  return s;
-}
-
-/** Conta i pasti già registrati oggi diversi dalla colazione (slot distinti per mealType + mealTime). */
-function countLoggedProteinMealSlots(log) {
-  const seen = new Set();
-  for (const e of log || []) {
-    if (!e || (e.type !== 'food' && e.type !== 'recipe')) continue;
-    if (isUnresolvedMealDraftItem(e)) continue;
-    const mt = String(e.mealType || 'pasto');
-    const base = mt.split('_')[0];
-    if (toCanonicalMealType(base) === 'colazione') continue;
-    const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
-    seen.add(`${mt}|${t}`);
-  }
-  return seen.size;
-}
-
 /**
  * Voce canonica in `meal.foods` / `ghost_meal.foods`: macro sempre numeri (0 se ignoti).
  * Accetta anche campi legacy (`estKcal`, `desc`, `fatTotal`, …).
@@ -2000,172 +1964,6 @@ export function normalizeMealFoodsArray(raw) {
     if (item) out.push(item);
   }
   return out;
-}
-
-/**
- * Target macro: colazione con proteine fisse 15 g (fuori dal pool degli slot proteici).
- * Altri pasti: 4 «gettoni» proteici al giorno; slot rimanenti = max(1, 4 − pasti già loggati non-colazione).
- * Proteine = (Tprot − assunto totale inclusa colazione) / slotRimanenti. Kcal pranzo/snack: residuo / slot; **cena: kcal = max(0, Tkcal − kcal già assunte)**. Carb/grassi/fibre sui residui con blend.
- *
- * Default intelligenti (mealType):
- * — Pranzo: fibre ≥12g, tetto zuccheri semplici consigliato, blend meno grasso (verdure/proteine magre).
- * — Cena: tetto grassi assoluto (23g, 20g se surplus kcal); eccedenze spostate su carboidrati complessi e proteine magre.
- * — Surplus calorico: parte del budget grassi «non assegnabile a cena» aumenta leggermente il target grassi a pranzo/snack.
- *
- * @param {object} [options]
- * @param {'deficit'|'pari'|'surplus'} [options.calorieStrategy] — applicata a `userTargets.kcal` (baseline profilo).
- * @param {number} [options.burnedKcalBonus] — kcal da attività (sommate dopo la strategia).
- */
-export function getDynamicMealTargets(currentMealType, dailyLog, userTargets, options = {}) {
-  void options.currentDecimalHour;
-  const log = Array.isArray(dailyLog) ? dailyLog : [];
-
-  let Tkcal = Number(userTargets?.kcal ?? 2000) || 2000;
-  const strat = options.calorieStrategy;
-  if (strat != null && String(strat).trim() !== '') {
-    Tkcal = applyCalorieStrategyToProfileKcal(Tkcal, strat);
-  }
-  const burn = Number(options.burnedKcalBonus);
-  if (Number.isFinite(burn) && burn > 0) {
-    Tkcal += burn;
-  }
-
-  const Tprot = Number(userTargets?.prot ?? 150) || 150;
-  const Tcarb = Number(userTargets?.carb ?? 200) || 200;
-  const Tfat = Number(userTargets?.fatTotal ?? userTargets?.fat ?? 60) || 60;
-  const Tfibre = Number(userTargets?.fibre ?? 30) || 30;
-
-  const baseMt = String(currentMealType || 'pranzo').split('_')[0];
-  const canon = toCanonicalMealType(baseMt);
-
-  const emptyPhysio = {
-    maxSimpleSugarG: null,
-    minFibreG: null,
-    dinnerFatHardCapG: null,
-  };
-
-  if (canon === 'colazione') {
-    const rkcal = Tkcal * BREAKFAST_KCAL_RATIO;
-    return {
-      kcal: Math.round(rkcal),
-      prot: 15,
-      carb: Math.round(Tcarb * BREAKFAST_KCAL_RATIO * 10) / 10,
-      fat: Math.round(Tfat * BREAKFAST_KCAL_RATIO * 10) / 10,
-      fibre: Math.max(2, Math.round(Tfibre * BREAKFAST_KCAL_RATIO * 10) / 10),
-      ...emptyPhysio,
-    };
-  }
-
-  const pastiGiaFatti = countLoggedProteinMealSlots(log);
-  const remainingSlots = Math.max(1, PROTEIN_MEALS_PER_DAY - pastiGiaFatti);
-
-  const consumedKcal = sumMacroAllFood(log, 'kcal');
-  const consumedProt = sumMacroAllFood(log, 'prot');
-  const consumedCarb = sumMacroAllFood(log, 'carb');
-  const consumedFat = sumMacroAllFood(log, 'fat');
-  const consumedFibre = sumMacroAllFood(log, 'fibre');
-
-  const remKcal = Tkcal - consumedKcal;
-  const remProt = Tprot - consumedProt;
-  const remCarb = Tcarb - consumedCarb;
-  const remFat = Tfat - consumedFat;
-  const remFibre = Tfibre - consumedFibre;
-
-  const kcalSurplus = consumedKcal - Tkcal;
-  const dailyInCalorieSurplus = kcalSurplus > MEAL_PHYSIO_SURPLUS_KCAL_THRESHOLD;
-
-  /** Cena: tutto il residuo giornaliero (reale dopo ogni pasto), senza split su slot. Altri pasti: quota su slot rimanenti. */
-  let targetKcal =
-    canon === 'cena'
-      ? Math.max(0, Math.round(remKcal))
-      : Math.max(150, Math.round(remKcal / remainingSlots));
-
-  const rawProtTarget = remProt / remainingSlots;
-  let targetProt = Math.round(rawProtTarget * 10) / 10;
-  if (consumedProt >= Tprot) {
-    targetProt = Math.max(20, rawProtTarget);
-  } else {
-    targetProt = Math.max(10, targetProt);
-  }
-
-  const baseCarbResidual = remCarb / remainingSlots;
-  const baseFatResidual = remFat / remainingSlots;
-
-  const protKcal = targetProt * 4;
-  let remKcalAfterProt = Math.max(80, targetKcal - protKcal);
-
-  const isCena = canon === 'cena';
-  const isPranzo = canon === 'pranzo';
-  let carbEnergyRatio = 0.42;
-  let fatEnergyRatio = 0.36;
-  if (isPranzo) {
-    carbEnergyRatio = 0.4;
-    fatEnergyRatio = 0.34;
-  } else if (isCena) {
-    carbEnergyRatio = dailyInCalorieSurplus ? 0.54 : 0.5;
-    fatEnergyRatio = dailyInCalorieSurplus ? 0.2 : 0.24;
-  } else {
-    carbEnergyRatio = 0.41;
-    fatEnergyRatio = 0.38;
-  }
-
-  const carbFromKcal = (remKcalAfterProt * carbEnergyRatio) / 4;
-  const fatFromKcal = (remKcalAfterProt * fatEnergyRatio) / 9;
-
-  const blend = 0.55;
-  let finalCarb = Math.max(
-    5,
-    Math.round((carbFromKcal * blend + baseCarbResidual * (1 - blend)) * 10) / 10
-  );
-  let finalFat = Math.max(
-    3,
-    Math.round((fatFromKcal * blend + baseFatResidual * (1 - blend)) * 10) / 10
-  );
-
-  let fibreSlot = Math.max(2, Math.round((remFibre / remainingSlots) * 10) / 10);
-
-  if (isPranzo) {
-    fibreSlot = Math.max(MEAL_PHYSIO_LUNCH_MIN_FIBRE_G, fibreSlot);
-  }
-
-  if (dailyInCalorieSurplus && (isPranzo || canon === 'snack')) {
-    const fatBump = Math.min(8, Math.max(0, remFat) * 0.18);
-    if (fatBump > 0) {
-      finalFat = Math.round((finalFat + fatBump) * 10) / 10;
-    }
-  }
-
-  let maxSimpleSugarG = null;
-  let minFibreG = null;
-  let dinnerFatHardCapG = null;
-
-  if (isPranzo) {
-    maxSimpleSugarG = MEAL_PHYSIO_LUNCH_MAX_SIMPLE_SUGAR_G;
-    minFibreG = MEAL_PHYSIO_LUNCH_MIN_FIBRE_G;
-  }
-
-  if (isCena) {
-    dinnerFatHardCapG = dailyInCalorieSurplus ? MEAL_PHYSIO_DINNER_FAT_CAP_SURPLUS_G : MEAL_PHYSIO_DINNER_FAT_CAP_G;
-    const preFat = finalFat;
-    finalFat = Math.min(finalFat, dinnerFatHardCapG);
-    const fatGramsClamped = Math.max(0, preFat - finalFat);
-    const kcalShift = fatGramsClamped * 9;
-    finalCarb += Math.round(((kcalShift * 0.72) / 4) * 10) / 10;
-    targetProt += Math.round(((kcalShift * 0.28) / 4) * 10) / 10;
-    targetProt = Math.round(Math.min(55, Math.max(10, targetProt)) * 10) / 10;
-    finalCarb = Math.round(Math.max(5, finalCarb) * 10) / 10;
-  }
-
-  return {
-    kcal: targetKcal,
-    prot: targetProt,
-    carb: finalCarb,
-    fat: finalFat,
-    fibre: fibreSlot,
-    maxSimpleSugarG,
-    minFibreG,
-    dinnerFatHardCapG,
-  };
 }
 
 const SMART_HIGH_FIBRE_DESC =

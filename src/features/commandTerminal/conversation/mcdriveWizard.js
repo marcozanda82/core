@@ -20,6 +20,10 @@ import {
 import { resolveSmartDefaultPortion } from '../../../utils/smartFoodPortions.js';
 import { isUnresolvedMealDraftItem } from '../../../utils/mealDraftStatus.js';
 import { resolveFoodVisualEmoji, sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
+import {
+  MACRO_VS_TARGET_MARGIN_RATIO,
+  classifyMacroVsTarget,
+} from '../../mealEngine/classifyMacroVsTarget.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -87,7 +91,7 @@ export const EMPTY_MCDRIVE_TOTALS = Object.freeze({
 });
 
 /** Margine relativo (±) per evidenziare macro «on target». */
-export const MCDRIVE_TARGET_MARGIN_RATIO = 0.1;
+export const MCDRIVE_TARGET_MARGIN_RATIO = MACRO_VS_TARGET_MARGIN_RATIO;
 
 const DEFAULT_GRAMS = 100;
 /** Solo match ad alta confidenza: evita allucinazioni tipo «passata» → pizza. */
@@ -153,21 +157,8 @@ export function resolveMcdriveMealTargets(mealType, currentState = {}) {
   };
 }
 
-/**
- * @param {number} actual
- * @param {number} target
- * @param {number} [marginRatio]
- * @returns {'on-target'|'over'|'under'|'neutral'}
- */
 export function classifyMcdriveMacroVsTarget(actual, target, marginRatio = MCDRIVE_TARGET_MARGIN_RATIO) {
-  const a = Number(actual) || 0;
-  const t = Number(target) || 0;
-  if (!(t > 0)) return 'neutral';
-  const lo = t * (1 - marginRatio);
-  const hi = t * (1 + marginRatio);
-  if (a >= lo && a <= hi) return 'on-target';
-  if (a > hi) return 'over';
-  return 'under';
+  return classifyMacroVsTarget(actual, target, marginRatio);
 }
 
 /**

@@ -165,6 +165,7 @@ export default function AiCluster({
   /** Eventi del giorno corrente (timeline/diario) per contesto wizard pianificazione */
   dailyLog = [],
   userTargets = null,
+  effectiveDailyKcal = null,
   fourCylinder = null,
   onBack,
   /** Stessa frase del mount SalaComandi (rotazione kentuIntroPhrases); nessuna seconda estrazione qui. */
@@ -2057,6 +2058,9 @@ export default function AiCluster({
               globalDb={globalFoodDatabase}
               offDb={offDb}
               getMealTargets={getMcDriveMealTargets}
+              todayLog={safeDailyLog}
+              effectiveDailyKcal={effectiveDailyKcal}
+              dailyMacroTargets={safeUserTargets}
               onRemoveItem={onMcDriveRemoveItem}
               onReturnItemToInbox={onMcDriveReturnItemToInbox}
               onUpdateGrams={onMcDriveUpdateGrams}

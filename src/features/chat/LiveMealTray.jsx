@@ -33,6 +33,8 @@ import {
 } from '../commandTerminal/conversation/mcdriveWizard.js';
 import { lookupRecentFoodPortionGrams } from '../commandTerminal/conversation/userPortionsMemory.js';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
+import { useDayNutritionProjection } from '../mealEngine/useDayNutritionProjection.js';
+import DayNutritionProjectionCard from '../mealEngine/DayNutritionProjectionCard.jsx';
 
 /** Normalizza status lavagna per UI (validating → processing). */
 function resolveMcDriveVisualStatus(item) {
@@ -390,6 +392,9 @@ function LiveMealTray({
   onAppendSolverItems = null,
   onRequestDisambiguation = null,
   getMealTargets = null,
+  todayLog = null,
+  effectiveDailyKcal = null,
+  dailyMacroTargets = null,
   personalDb = null,
   kentuItDb = null,
   globalDb = null,
@@ -399,6 +404,20 @@ function LiveMealTray({
   onChangeMealType = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
+  const projectionTargets = useMemo(() => ({
+    kcal: Number(effectiveDailyKcal) || 0,
+    prot: Number(dailyMacroTargets?.prot ?? dailyMacroTargets?.pro) || 0,
+    carb: Number(dailyMacroTargets?.carb ?? dailyMacroTargets?.carbo) || 0,
+    fat: Number(dailyMacroTargets?.fat ?? dailyMacroTargets?.fatTotal) || 0,
+  }), [effectiveDailyKcal, dailyMacroTargets]);
+  const dayNutritionProjection = useDayNutritionProjection({
+    effectiveTargets: projectionTargets,
+    currentDailyLog: todayLog,
+    draftMeal: items,
+    editingContext: Array.isArray(tray?.editingSlotItems) && tray.editingSlotItems.length > 0
+      ? { slotItems: tray.editingSlotItems }
+      : null,
+  });
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
     ? tray.resolvedTotals
     : (tray?.totals && typeof tray.totals === 'object' ? tray.totals : EMPTY_MCDRIVE_TOTALS);
@@ -1054,6 +1073,11 @@ function LiveMealTray({
             })}
           </ul>
         )}
+        <DayNutritionProjectionCard
+          projection={dayNutritionProjection}
+          mealType={mealType}
+          compact
+        />
       </div>
 
       {active ? (

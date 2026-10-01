@@ -122,21 +122,19 @@ export function createHoldToTalkSession({
     };
     recognition.onerror = (event) => {
       const code = String(event?.error || '');
-      if (code === 'no-speech' || code === 'aborted') return;
-      if (state.stopRequested) return;
+      if (code === 'no-speech' || code === 'aborted') {
+        if (!state.stopRequested) notifyListeningEnd();
+        return;
+      }
+      if (state.stopRequested) {
+        notifyListeningEnd();
+        return;
+      }
       notifyListeningEnd();
       notifyEngineStopped();
     };
     recognition.onend = () => {
-      if (state.stopRequested) return;
-      window.setTimeout(() => {
-        if (state.stopRequested || state.recognition !== recognition) return;
-        try {
-          recognition.start();
-        } catch {
-          /* already running */
-        }
-      }, 60);
+      notifyListeningEnd();
     };
     try {
       recognition.start();
@@ -172,11 +170,7 @@ export function createHoldToTalkSession({
       'listeningState',
       (event) => {
         if (String(event?.status || '') !== 'stopped') return;
-        if (state.stopRequested) {
-          notifyListeningEnd();
-          return;
-        }
-        void SpeechRecognition.start(CAPACITOR_START_OPTS).catch(() => {});
+        notifyListeningEnd();
       },
     );
     state.mode = 'capacitor';
@@ -189,7 +183,6 @@ export function createHoldToTalkSession({
     if (state.startGate) return state.startGate;
     state.startGate = (async () => {
       state.liveText = '';
-      emitLive('');
       if (state.stopRequested) return false;
       const { Capacitor } = await import('@capacitor/core');
       if (Capacitor.isNativePlatform()) {
@@ -288,7 +281,6 @@ export function createHoldToTalkSession({
     state.recognition = null;
     state.capacitorListener = null;
     state.listeningStateListener = null;
-    state.liveText = '';
     state.started = false;
     state.SpeechRecognition = null;
     return text;

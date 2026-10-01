@@ -44,6 +44,7 @@ export default function KentuChatUI({
   manualNodes = [],
   fourCylinder = null,
   userTargets = null,
+  effectiveDailyKcal = null,
   diaryReady = true,
   engineReady = true,
   onDraftConfirm,
@@ -188,6 +189,7 @@ export default function KentuChatUI({
         manualNodes={manualNodes}
         fourCylinder={fourCylinder}
         userTargets={safeUserTargets}
+        effectiveDailyKcal={effectiveDailyKcal}
         onDraftConfirm={onDraftConfirm}
         onDraftCancel={onDraftCancel}
         onDraftRemoveItem={onDraftRemoveItem}

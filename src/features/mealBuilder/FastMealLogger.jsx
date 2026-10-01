@@ -26,6 +26,8 @@ import {
   resolveFoodIdentityKey,
 } from './utils/draftFoodMatchUtils';
 import { roundToOneDecimal } from './utils/numberFormatUtils';
+import { useDayNutritionProjection } from '../../features/mealEngine/useDayNutritionProjection.js';
+import DayNutritionProjectionCard from '../../features/mealEngine/DayNutritionProjectionCard.jsx';
 import {
   buildPer100TargetNutrientsFromRow,
   buildScaledNutrientsForWeight,
@@ -470,6 +472,8 @@ function FastMealLoggerContent({
   initialMealTime,
   autoOpenBarcodeScanner = false,
   onAutoOpenBarcodeScannerConsumed,
+  effectiveDailyKcal = null,
+  dailyMacroTargets = null,
 }) {
   const [selectedSlot, setSelectedSlot] = useState(() => {
     const initial = initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId);
@@ -546,6 +550,26 @@ function FastMealLoggerContent({
     clearDraft,
     loadInitialDraft,
   } = useMealComposer();
+  const projectionTargets = useMemo(() => ({
+    kcal: Number(effectiveDailyKcal) || 0,
+    prot: Number(dailyMacroTargets?.prot ?? dailyMacroTargets?.pro) || 0,
+    carb: Number(dailyMacroTargets?.carb ?? dailyMacroTargets?.carbo) || 0,
+    fat: Number(dailyMacroTargets?.fat ?? dailyMacroTargets?.fatTotal) || 0,
+  }), [effectiveDailyKcal, dailyMacroTargets]);
+  const projectionEditingContext = useMemo(
+    () => (
+      editingMealId && Array.isArray(initialDraft) && initialDraft.length > 0
+        ? { slotItems: initialDraft }
+        : null
+    ),
+    [editingMealId, initialDraft],
+  );
+  const dayNutritionProjection = useDayNutritionProjection({
+    effectiveTargets: projectionTargets,
+    currentDailyLog: todayLog,
+    draftMeal: draftFoods,
+    editingContext: projectionEditingContext,
+  });
 
   const canonicalSelectedSlot = normalizeMealSlotType(selectedSlot);
   const mealTypeManualRef = useRef(false);
@@ -2167,6 +2191,10 @@ function FastMealLoggerContent({
                   </li>
                 </ul>
               )}
+              <DayNutritionProjectionCard
+                projection={dayNutritionProjection}
+                mealType={canonicalSelectedSlot}
+              />
             </div>
 
             <div className="shrink-0 space-y-2 border-t border-slate-800 px-3 py-3">
@@ -2449,6 +2477,8 @@ export default function FastMealLogger({
   initialMealTime,
   autoOpenBarcodeScanner = false,
   onAutoOpenBarcodeScannerConsumed,
+  effectiveDailyKcal = null,
+  dailyMacroTargets = null,
 }) {
   const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb, offDb: loadedOffDb } = useFoodDb({ defer: false });
   const resolvedKentuItDb = loadedKentuItDb;
@@ -2510,6 +2540,8 @@ export default function FastMealLogger({
             initialMealTime={initialMealTime}
             autoOpenBarcodeScanner={autoOpenBarcodeScanner}
             onAutoOpenBarcodeScannerConsumed={onAutoOpenBarcodeScannerConsumed}
+            effectiveDailyKcal={effectiveDailyKcal}
+            dailyMacroTargets={dailyMacroTargets}
           />
         </div>
       </MealComposerProvider>

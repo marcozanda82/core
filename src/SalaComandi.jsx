@@ -412,6 +412,8 @@ import {
   generateLocalHabitScanner,
   getDynamicMealTargets,
 } from './coreEngine';
+import { computeEffectiveDailyTargetKcal } from './features/mealEngine/computeEffectiveDailyTargetKcal';
+import { excludeEditingMealSlotFromLog } from './features/mealEngine/excludeEditingMealSlotFromLog';
 
 import {
   buildQuickBriefingSecretPrompt,
@@ -5713,70 +5715,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const log = activeLog || [];
     if (!editingMealId) return log;
     const items = getFoodItemsForMealSlot(log, editingMealId);
-    const keys = new Set(
-      items.map((f) => {
-        const base = String(f.mealType ?? '').split('_')[0];
-        const t = typeof f.mealTime === 'number' && !Number.isNaN(f.mealTime) ? f.mealTime : 'na';
-        return `${base}|${t}`;
-      }),
-    );
-    return log.filter((e) => {
-      if (e.type !== 'food' && e.type !== 'recipe') return true;
-      const base = String(e.mealType ?? '').split('_')[0];
-      const t = typeof e.mealTime === 'number' && !Number.isNaN(e.mealTime) ? e.mealTime : 'na';
-      return !keys.has(`${base}|${t}`);
-    });
+    return excludeEditingMealSlotFromLog(log, items);
   }, [activeLog, editingMealId, getFoodItemsForMealSlot]);
-
-  const getFastLoggerMealTargetsForSlot = useCallback((mealSlot) => {
-    const canon = toCanonicalMealType(String(mealSlot || 'pranzo').split('_')[0]);
-    const baseTargets = {
-      kcal: effectiveTargetsForCurrentDate?.kcal ?? userTargets?.kcal ?? 2000,
-      prot: effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150,
-      carb: effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200,
-      fatTotal:
-        effectiveTargetsForCurrentDate?.fatTotal
-        ?? effectiveTargetsForCurrentDate?.fat
-        ?? userTargets?.fatTotal
-        ?? userTargets?.fat
-        ?? 60,
-      fat:
-        effectiveTargetsForCurrentDate?.fat
-        ?? effectiveTargetsForCurrentDate?.fatTotal
-        ?? userTargets?.fat
-        ?? userTargets?.fatTotal
-        ?? 60,
-      fibre: effectiveTargetsForCurrentDate?.fibre ?? userTargets?.fibre ?? 30,
-    };
-    const dynamic = getDynamicMealTargets(canon, fastLoggerDailyLogForTargets, baseTargets, {
-      calorieStrategy: kentuDailyCalorieStrategy,
-      burnedKcalBonus: burnedKcal,
-    });
-    const result = dynamic && typeof dynamic === 'object' ? { ...dynamic } : {};
-    const sk = getStrategyKey(canon);
-    const planK = idealStrategy?.[sk];
-    if (
-      canon !== 'cena'
-      && planK != null
-      && Number.isFinite(Number(planK))
-      && Number(planK) > 0
-    ) {
-      result.kcal = Math.round(Number(planK));
-    }
-    return {
-      kcal: Number(result.kcal) || baseTargets.kcal,
-      prot: Number(result.prot) || baseTargets.prot,
-      carb: Number(result.carb) || baseTargets.carb,
-      fat: Number(result.fat ?? result.fatTotal) || baseTargets.fat,
-    };
-  }, [
-    fastLoggerDailyLogForTargets,
-    effectiveTargetsForCurrentDate,
-    userTargets,
-    kentuDailyCalorieStrategy,
-    burnedKcal,
-    idealStrategy,
-  ]);
 
   const getFastLoggerMealConsumedForSlot = useCallback((mealSlot) => {
     if (editingMealId) {
@@ -5854,14 +5794,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   );
 
   const dogmaticTargetKcal = useMemo(
-    () => Math.max(
-      0,
-      dogmaticSettingsBaseKcal
-        + dogmaticBurnKcal
-        + dogmaticDeltaKcal
-        + dogmaticCompensationKcal
-        + dogmaticAutoCompensationKcal,
-    ),
+    () => computeEffectiveDailyTargetKcal({
+      settingsBaseKcal: dogmaticSettingsBaseKcal,
+      burnKcal: dogmaticBurnKcal,
+      strategyDeltaKcal: dogmaticDeltaKcal,
+      compensationKcal: dogmaticCompensationKcal,
+      autopilotKcal: dogmaticAutoCompensationKcal,
+    }),
     [
       dogmaticSettingsBaseKcal,
       dogmaticBurnKcal,
@@ -5874,8 +5813,71 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const dynamicDailyKcal = dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcal > 0
     ? dogmaticTargetKcal
     : (profileKcalBase != null
-      ? profileKcalBase + dogmaticBurnKcal + dogmaticDeltaKcal + dogmaticCompensationKcal + dogmaticAutoCompensationKcal
+      ? computeEffectiveDailyTargetKcal({
+        settingsBaseKcal: profileKcalBase,
+        burnKcal: dogmaticBurnKcal,
+        strategyDeltaKcal: dogmaticDeltaKcal,
+        compensationKcal: dogmaticCompensationKcal,
+        autopilotKcal: dogmaticAutoCompensationKcal,
+      })
       : null);
+
+  const getFastLoggerMealTargetsForSlot = useCallback((mealSlot) => {
+    const canon = toCanonicalMealType(String(mealSlot || 'pranzo').split('_')[0]);
+    const baseTargets = {
+      kcal: effectiveTargetsForCurrentDate?.kcal ?? userTargets?.kcal ?? 2000,
+      prot: effectiveTargetsForCurrentDate?.prot ?? userTargets?.prot ?? 150,
+      carb: effectiveTargetsForCurrentDate?.carb ?? userTargets?.carb ?? 200,
+      fatTotal:
+        effectiveTargetsForCurrentDate?.fatTotal
+        ?? effectiveTargetsForCurrentDate?.fat
+        ?? userTargets?.fatTotal
+        ?? userTargets?.fat
+        ?? 60,
+      fat:
+        effectiveTargetsForCurrentDate?.fat
+        ?? effectiveTargetsForCurrentDate?.fatTotal
+        ?? userTargets?.fat
+        ?? userTargets?.fatTotal
+        ?? 60,
+      fibre: effectiveTargetsForCurrentDate?.fibre ?? userTargets?.fibre ?? 30,
+    };
+    const mealEngineDailyKcal = Math.round(
+      Number(dynamicDailyKcal) > 0
+        ? Number(dynamicDailyKcal)
+        : Number(dogmaticTargetKcal) > 0
+          ? Number(dogmaticTargetKcal)
+          : (Number(baseTargets.kcal) || 2000),
+    );
+    const dynamic = getDynamicMealTargets(canon, fastLoggerDailyLogForTargets, baseTargets, {
+      effectiveDailyKcal: mealEngineDailyKcal,
+    });
+    const result = dynamic && typeof dynamic === 'object' ? { ...dynamic } : {};
+    const sk = getStrategyKey(canon);
+    const planK = idealStrategy?.[sk];
+    if (
+      canon !== 'cena'
+      && planK != null
+      && Number.isFinite(Number(planK))
+      && Number(planK) > 0
+    ) {
+      result.kcal = Math.round(Number(planK));
+    }
+    const slotKcal = Number(result.kcal);
+    return {
+      kcal: Number.isFinite(slotKcal) ? slotKcal : (Number(baseTargets.kcal) || 0),
+      prot: Number(result.prot) || baseTargets.prot,
+      carb: Number(result.carb) || baseTargets.carb,
+      fat: Number(result.fat ?? result.fatTotal) || baseTargets.fat,
+    };
+  }, [
+    fastLoggerDailyLogForTargets,
+    effectiveTargetsForCurrentDate,
+    userTargets,
+    dynamicDailyKcal,
+    dogmaticTargetKcal,
+    idealStrategy,
+  ]);
 
   const profileTdeeKcal = dogmaticSettingsBaseKcal > 0
     ? Math.round(dogmaticSettingsBaseKcal + dogmaticBurnKcal)
@@ -9172,6 +9174,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             manualNodes={manualNodes}
             fourCylinder={userModel?.fourCylinder ?? null}
             userTargets={effectiveTargetsForCurrentDate || userTargets}
+            effectiveDailyKcal={dynamicDailyKcal}
             diaryReady={isInitialLoadComplete}
             engineReady={isEngineReady}
             onDraftConfirm={handleDraftConfirm}
@@ -9812,6 +9815,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           masterDb={csvFoodDb}
           getMealTargetsForSlot={getFastLoggerMealTargetsForSlot}
           getMealConsumedForSlot={getFastLoggerMealConsumedForSlot}
+          effectiveDailyKcal={dynamicDailyKcal}
+          dailyMacroTargets={effectiveTargetsForCurrentDate || userTargets}
           initialDraft={mealToEdit}
           editingMealId={editingMealId}
           initialMealSlot={

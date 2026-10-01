@@ -11,7 +11,8 @@
     "dev": "vite",
     "build": "node node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --test src/features/mealEngine/__tests__/mealEngine.test.js src/features/mealEngine/__tests__/projectDayNutrition.test.js src/features/mealEngine/__tests__/formatDayNutritionRemaining.test.js"
   },
   "dependencies": {
     "@capacitor-community/speech-recognition": "^7.0.1",

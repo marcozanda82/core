@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { isUnresolvedMealDraftItem } from './utils/mealDraftStatus';
+import { isUnresolvedMealDraftItem } from './utils/mealDraftStatus.js';
 
 /**
  * TARGET BIOCHIMICI — Tutti i 40+ parametri (macro, aminoacidi, vitamine, minerali, omega).

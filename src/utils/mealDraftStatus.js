@@ -6,7 +6,7 @@
  * ogni blocco è un'entry `inbox_draft` (timestamp + voci raw, senza mealType).
  */
 
-import { inferDraftType, isDraftType } from './draftParser';
+import { inferDraftType, isDraftType } from './draftParser.js';
 
 export const MEAL_DRAFT_UNRESOLVED_STATUSES = new Set([
   'raw',

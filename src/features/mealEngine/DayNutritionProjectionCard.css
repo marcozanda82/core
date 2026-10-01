@@ -1,0 +1,96 @@
+.kentu-day-projection {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.kentu-day-projection--dinner {
+  border-color: rgba(125, 211, 252, 0.35);
+}
+
+.kentu-day-projection__title {
+  margin: 0 0 8px;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(186, 230, 253, 0.92);
+}
+
+.kentu-day-projection__kcal {
+  min-width: 0;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.8);
+}
+
+.kentu-day-projection__kcal-row,
+.kentu-day-projection__macro-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.kentu-day-projection__kcal-label,
+.kentu-day-projection__macro-label {
+  flex: 0 1 auto;
+  font-size: 0.72rem;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.kentu-day-projection__kcal-values,
+.kentu-day-projection__macro-values {
+  flex: 0 0 auto;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: #e2e8f0;
+  white-space: nowrap;
+}
+
+.kentu-day-projection__kcal-delta,
+.kentu-day-projection__macro-delta {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: rgba(148, 163, 184, 0.95);
+}
+
+.kentu-day-projection__macros {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kentu-day-projection__macro {
+  min-width: 0;
+}
+
+.kentu-day-projection__kcal--on-target .kentu-day-projection__kcal-values,
+.kentu-day-projection__macro--on-target .kentu-day-projection__macro-values {
+  color: #86efac;
+}
+
+.kentu-day-projection__kcal--over .kentu-day-projection__kcal-values,
+.kentu-day-projection__macro--over .kentu-day-projection__macro-values {
+  color: #fcd34d;
+}
+
+.kentu-day-projection--compact {
+  padding: 8px 10px;
+}
+
+.kentu-day-projection--compact .kentu-day-projection__kcal-values,
+.kentu-day-projection--compact .kentu-day-projection__macro-values {
+  font-size: 0.76rem;
+}
