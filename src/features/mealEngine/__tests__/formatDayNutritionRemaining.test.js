@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import {
   dayNutritionProjectionTitle,
   formatSignedRemainingLabel,
+  formatSlotReferenceHint,
   hasCountableProjectedMeal,
+  slotReferenceHeading,
 } from '../formatDayNutritionRemaining.js';
 
 test('remaining positivo → Restano', () => {
@@ -44,4 +46,21 @@ test('draft senza nutrienti validi non è proiettabile', () => {
   assert.equal(hasCountableProjectedMeal({
     meal: { kcal: 10, prot: 0, carb: 0, fat: 0 },
   }), true);
+});
+
+test('riferimento slot: pasto vs chiusura cena', () => {
+  assert.equal(slotReferenceHeading('spuntino'), 'Riferimento pasto');
+  assert.equal(slotReferenceHeading('pranzo'), 'Riferimento pasto');
+  assert.equal(slotReferenceHeading('cena'), 'Per chiudere oggi');
+  assert.equal(formatSlotReferenceHint('snack', 250, 'kcal'), 'Riferimento 250 kcal');
+  assert.equal(formatSlotReferenceHint('cena', 1124, 'kcal'), '1124 kcal disponibili');
+});
+
+test('remaining cena usa Resterebbero se richiesto', () => {
+  const kcal = formatSignedRemainingLabel(364, {
+    unit: 'kcal',
+    capitalize: true,
+    positiveVerb: 'Resterebbero',
+  });
+  assert.equal(kcal.text, 'Resterebbero 364 kcal');
 });

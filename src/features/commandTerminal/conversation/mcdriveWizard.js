@@ -1,7 +1,5 @@
-import {
-  parseConsumedMealFromNaturalText,
-  extractBareFoodNamesFromText,
-} from './mealLogIntent.js';
+import { parseAssistedMealLocal, toMcDriveParsedItems } from './assistedMealPipeline.js';
+import { confirmQuantitySourceAfterManualEdit } from './assistedQuantityPresentation.js';
 import {
   computeMacrosForWeight,
   getPer100Macros,
@@ -17,13 +15,17 @@ import {
   coffeeShopProductToCatalogRow,
   coffeeShopExtrasFromProduct,
 } from '../../../constants/coffeeShopDatabase.js';
-import { resolveSmartDefaultPortion } from '../../../utils/smartFoodPortions.js';
+import { resolveAssistedPortion } from './assistedPortionResolver.js';
 import { isUnresolvedMealDraftItem } from '../../../utils/mealDraftStatus.js';
 import { resolveFoodVisualEmoji, sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 import {
   MACRO_VS_TARGET_MARGIN_RATIO,
   classifyMacroVsTarget,
 } from '../../mealEngine/classifyMacroVsTarget.js';
+import {
+  toCanonicalDiaryFoodItem,
+  toMcDriveUpsertItem,
+} from '../../mealEngine/canonicalMealCommit.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -205,50 +207,11 @@ export function createEmptyMcDriveDraft() {
  * @param {string} userText
  * @returns {Array<{ foodName: string, grams: number, isEstimated: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null }>}
  */
-export function parseMcdriveFoodInputs(userText) {
+export function parseMcdriveFoodInputs(userText, context = {}) {
   const text = String(userText || '').trim();
   if (!text) return [];
-
-  /** @type {Array<{ foodName: string, grams: number, isEstimated: boolean, coffeeShopProductId?: string|null, servingLabel?: string|null }>} */
-  const out = [];
-  const seen = new Set();
-
-  const pushItem = (foodName, gramsHint, estimatedHint) => {
-    const name = sanitizeFoodDisplayName(foodName, '');
-    if (!name || name.length < 2) return;
-    const key = name.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-
-    const portion = resolveSmartDefaultPortion(name);
-    const hasExplicitGrams = Number.isFinite(Number(gramsHint)) && Number(gramsHint) > 0;
-    const recentGrams = lookupRecentFoodPortionGrams({ name });
-    const grams = hasExplicitGrams
-      ? Math.max(1, Math.round(Number(gramsHint)))
-      : (recentGrams > 0 ? recentGrams : portion.grams);
-    out.push({
-      foodName: name,
-      grams,
-      isEstimated: hasExplicitGrams ? false : true,
-      habitualPortion: !hasExplicitGrams && recentGrams > 0,
-      coffeeShopProductId: portion.coffeeShopProductId || null,
-      servingLabel: portion.servingLabel || null,
-    });
-  };
-
-  const parsed = parseConsumedMealFromNaturalText(text);
-  if (parsed?.items?.length) {
-    parsed.items.forEach((item) => {
-      pushItem(item.foodName, item.grams, false);
-    });
-  }
-
-  if (out.length === 0) {
-    const bare = extractBareFoodNamesFromText(text);
-    bare.forEach((name) => pushItem(name, null, true));
-  }
-
-  return out;
+  const draft = parseAssistedMealLocal(text, context);
+  return toMcDriveParsedItems(draft);
 }
 
 /**
@@ -412,19 +375,21 @@ export function buildMcDriveAlternatives(matches = [], topMatch = null, limit = 
  */
 export function buildMcDriveRawItem(parsed = {}) {
   const foodName = String(parsed?.foodName || '').trim();
-  const portion = resolveSmartDefaultPortion(foodName);
-  const product = portion.product
-    || (parsed?.coffeeShopProductId
-      ? findCoffeeShopProductByName(foodName)
-      : findCoffeeShopProductByName(foodName));
-  const grams = Math.max(
-    1,
-    Math.round(
-      Number(parsed?.grams)
-      || portion.grams
-      || DEFAULT_GRAMS,
-    ),
-  );
+  const portion = resolveAssistedPortion({
+    foodName,
+    explicitGrams: parsed?.quantitySource === 'explicit' ? parsed?.grams : null,
+    householdGrams: parsed?.quantitySource === 'household' ? parsed?.grams : null,
+    userHistory: parsed?.quantitySource === 'user-history' ? parsed?.grams : null,
+    existingGrams: parsed?.grams,
+    quantitySourceHint: parsed?.quantitySource,
+  });
+  const product = portion.coffeeShopProductId
+    ? findCoffeeShopProductByName(foodName)
+    : findCoffeeShopProductByName(foodName);
+  const grams = Number(parsed?.grams) > 0
+    ? Math.round(Number(parsed.grams))
+    : portion.grams;
+  const quantitySource = parsed?.quantitySource || portion.quantitySource || null;
   const id = `mcdrive_raw_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   const icon = product
     ? (product.kind === 'pastry' ? '🥐' : '☕')
@@ -442,6 +407,13 @@ export function buildMcDriveRawItem(parsed = {}) {
     icon,
     emoji: icon,
     ...(product ? coffeeShopExtrasFromProduct(product) : {}),
+    ...(quantitySource ? { quantitySource } : {}),
+    ...(parsed?.preferredFoodDbKey ? { preferredFoodDbKey: parsed.preferredFoodDbKey } : {}),
+    ...(parsed?.identityAmbiguous === true ? {
+      status: 'requires_disambiguation',
+      alternatives: Array.isArray(parsed.alternatives) ? parsed.alternatives : [],
+    } : {}),
+    ...(parsed?.restaurantGuess === true ? { restaurantGuess: true } : {}),
   };
 }
 
@@ -500,10 +472,15 @@ export function buildMcDriveDraftFromParsedFoods(items = []) {
       const hasMacros = kcal > 0 || pro > 0 || carbo > 0 || fat > 0;
 
       if (foodDbKey || hasMacros) {
-        const smartGrams = resolveSmartDefaultPortion(foodName).grams;
         const grams = hasExplicitGrams
           ? Math.round(gramsRaw)
-          : Math.max(1, Math.round(Number(smartGrams) || DEFAULT_GRAMS));
+          : resolveAssistedPortion({
+            foodName,
+            resolvedFood: f.row || null,
+            foodDbKey,
+            quantitySourceHint: f.quantitySource,
+            existingGrams: gramsRaw,
+          }).grams;
         return attachResolvedFoodIcon({
           id: String(f.id || f.itemId || `mcdrive_ai_${Date.now()}_${idx}`).trim(),
           foodName,
@@ -703,44 +680,41 @@ export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, cur
   const foodName = String(
     itemOrParsed?.foodName || matchInfo?.foodName || '',
   ).trim();
+  const source = String(itemOrParsed?.quantitySource || '').trim();
+  const existingGrams = Number(itemOrParsed?.grams);
   const recent = lookupRecentFoodPortionGrams({
     id: matchInfo?.foodDbKey,
     name: foodName,
     servingSize: matchInfo?.row?.servingSize,
   });
-  const smart = resolveSmartDefaultPortion(foodName);
-  const fallback = Math.max(
-    1,
-    Math.round(
-      Number(itemOrParsed?.grams)
-      || recent
-      || smart.grams
-      || DEFAULT_GRAMS,
-    ),
-  );
-
-  // Catalogo locale / porzione pezzo: non sovrascrivere con 100g storici sbagliati.
-  if (smart.coffeeShopProductId || smart.kind === 'piece' || smart.kind === 'pastry' || smart.kind === 'coffee') {
-    if (itemOrParsed?.isEstimated === true || !Number(itemOrParsed?.grams)) {
-      if (recent > 0) return recent;
-      return smart.grams;
+  let history = recent > 0 ? recent : 0;
+  if (!(history > 0)) {
+    const keys = [
+      matchInfo?.foodDbKey,
+      matchInfo?.foodName,
+      itemOrParsed?.foodName,
+    ].map((k) => String(k || '').trim()).filter(Boolean);
+    for (const key of keys) {
+      const hist = getLastUsedQuantity(key, currentState);
+      if (hist && hist > 0) {
+        history = Math.round(hist);
+        break;
+      }
     }
   }
 
-  if (itemOrParsed?.isEstimated !== true && Number(itemOrParsed?.grams) > 0) return fallback;
-  if (recent > 0) return recent;
-
-  const keys = [
-    matchInfo?.foodDbKey,
-    matchInfo?.foodName,
-    itemOrParsed?.foodName,
-  ].map((k) => String(k || '').trim()).filter(Boolean);
-
-  for (const key of keys) {
-    const hist = getLastUsedQuantity(key, currentState);
-    if (hist && hist > 0) return Math.max(1, Math.round(hist));
-  }
-  return fallback;
+  const resolved = resolveAssistedPortion({
+    foodName,
+    resolvedFood: matchInfo?.row || itemOrParsed?.row || null,
+    foodDbKey: matchInfo?.foodDbKey || itemOrParsed?.foodDbKey || null,
+    explicitGrams: source === 'explicit' ? existingGrams : null,
+    householdGrams: source === 'household' ? existingGrams : null,
+    userHistory: history > 0 ? history : null,
+    userPortions: currentState?.userPortions || null,
+    quantitySourceHint: source || null,
+    existingGrams,
+  });
+  return resolved.grams;
 }
 
 /**
@@ -803,17 +777,13 @@ export function mapMcDriveItemsToCommitPayload(items) {
     .filter(isMcDriveItemCommitEligible)
     .map((item) => {
       const foodName = sanitizeFoodDisplayName(item?.foodName || item?.name || '', '');
-      const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
-      if (!foodName || grams <= 0) return null;
-      const foodDbKey = item?.foodDbKey != null ? String(item.foodDbKey).trim() : '';
-      const kcal = Number(item?.kcal);
-      const pro = Number(item?.pro ?? item?.prot);
-      const carbo = Number(item?.carbo ?? item?.carb);
-      const fat = Number(item?.fat ?? item?.fatTotal);
       const unresolved = isUnresolvedMealDraftItem(item);
       const status = String(item?.status || '').toLowerCase();
       const itemId = item?.id != null ? String(item.id).trim() : '';
       if (unresolved) {
+        const gramsRaw = Number(item?.grams ?? item?.qta);
+        const grams = Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : null;
+        if (!foodName || grams == null) return null;
         return {
           foodName,
           name: foodName,
@@ -833,23 +803,19 @@ export function mapMcDriveItemsToCommitPayload(items) {
           ...(item?.icon ? { icon: item.icon } : {}),
         };
       }
+      const canonical = toCanonicalDiaryFoodItem({
+        food: item,
+        grams: item?.grams ?? item?.qta ?? item?.weight,
+        sourceMetadata: { entrySource: 'chat' },
+      });
+      if (!canonical) return null;
+      const upsert = toMcDriveUpsertItem(canonical);
+      if (!upsert) return null;
       return {
-        foodName,
-        name: foodName,
-        grams,
-        qty: grams,
+        ...upsert,
         spokenFoodName: foodName,
-        status: 'resolved',
         ...(itemId ? { id: itemId } : {}),
-        ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
-        ...(Number.isFinite(kcal) ? { kcal: Math.round(kcal) } : {}),
-        ...(Number.isFinite(pro) ? { pro } : {}),
-        ...(Number.isFinite(carbo) ? { carbo } : {}),
-        ...(Number.isFinite(fat) ? { fat } : {}),
         ...(item?.isEstimated === true ? { isEstimated: true } : {}),
-        ...(item?.coffeeShopProductId
-          ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
-          : {}),
       };
     })
     .filter(Boolean);
@@ -897,6 +863,8 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
       ...item,
       grams,
       status: 'raw',
+      isEstimated: false,
+      quantitySource: confirmQuantitySourceAfterManualEdit(),
     };
   }
 
@@ -913,6 +881,7 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
         carbo: Math.round(((Number(row.servingMacros.carb) || 0) * ratio) * 10) / 10,
         fat: Math.round(((Number(row.servingMacros.fat) || 0) * ratio) * 10) / 10,
         isEstimated: false,
+        quantitySource: confirmQuantitySourceAfterManualEdit(),
       };
     }
     const per100 = getPer100Macros({ row });
@@ -925,6 +894,7 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
       carbo: Number(macros.carb) || 0,
       fat: Number(macros.fat) || 0,
       isEstimated: false,
+      quantitySource: confirmQuantitySourceAfterManualEdit(),
     };
   }
 
@@ -938,6 +908,7 @@ export function rescaleMcDriveItemGrams(item, newGrams) {
     carbo: Math.round(((Number(item.carbo ?? item.carb) || 0) * ratio) * 10) / 10,
     fat: Math.round(((Number(item.fat ?? item.fatTotal) || 0) * ratio) * 10) / 10,
     isEstimated: false,
+    quantitySource: confirmQuantitySourceAfterManualEdit(),
   };
 }
 
@@ -983,6 +954,9 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
     globalDb: ctx.globalDb,
     offDb: ctx.offDb,
     userFoodAliases: ctx.userFoodAliases,
+    userPortions: ctx.userPortions,
+    personalFoods: ctx.personalFoods,
+    preferredFoodDbKey: ctx.preferredFoodDbKey,
     signal: ctx.signal,
     deferExternalSearch: ctx.deferExternalSearch !== false,
     onProgress: ctx.onProgress,

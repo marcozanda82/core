@@ -1,5 +1,6 @@
 /**
- * Porzioni default intelligenti: bevande / pezzi vs alimenti sfusi (100g).
+ * Porzioni default intelligenti: bevande / pezzi vs alimenti sfusi.
+ * DRAFT_FOOD_DEFAULT_GRAMS è la mappa unica per stime pasto (ex mealLogIntent).
  */
 
 import {
@@ -24,6 +25,22 @@ const BULK_KEYWORDS = Object.freeze([
   'petto di pollo', 'pollo', 'manzo', 'macinato', 'carne', 'tonno fresco',
   'passata', 'olio', 'farina',
 ]);
+
+/**
+ * Porzioni pasto già usate da mealLogIntent (non copiate: questa è la tabella canonica).
+ * Olio: stesso valore di foodUnits OIL / mealDraftVoiceEdit (cucchiaio ~10 g), usato come stima estimated.
+ */
+export const DRAFT_FOOD_DEFAULT_GRAMS = Object.freeze({
+  pizza: 300,
+  pasta: 200,
+  riso: 180,
+  pane: 50,
+  patate: 200,
+  gnocchi: 200,
+  olio: 10,
+});
+
+export const GENERIC_ASSISTED_FALLBACK_GRAMS = 100;
 
 function normalizePortionText(value) {
   return String(value || '')

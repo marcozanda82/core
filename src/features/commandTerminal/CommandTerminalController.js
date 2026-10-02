@@ -105,6 +105,11 @@ import {
   isPriorityFreeTextMealLog,
   isGenericMealLogIntentOnly,
 } from './conversation/mealLogIntent.js';
+import {
+  interpretAssistedMealInput,
+  toMcDriveParsedItems,
+} from './conversation/assistedMealPipeline.js';
+import { buildAssistedMemoryFromState } from './conversation/userFoodPreferenceContext.js';
 import { buildPhantomDailyReportData } from '../chat/buildPhantomDailyReportData.js';
 import {
   REPORT_ANIMATION_SRC,
@@ -845,6 +850,7 @@ export class CommandTerminalController {
             alternatives,
             icon: f.icon || f.emoji || null,
             emoji: f.icon || f.emoji || null,
+            ...(f.quantitySource ? { quantitySource: f.quantitySource } : {}),
           };
         }
 
@@ -880,6 +886,72 @@ export class CommandTerminalController {
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     return this.publishMcdriveTrayMessage('');
+  }
+
+  shouldOpenAssistedMealPipeline(userText, options = {}, chatHistory = []) {
+    if (this.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP) return false;
+    if (this.activeWizard === ACTIVE_WIZARD.MEAL_BUILDER) return false;
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_FOOD_GRAMS) return false;
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_MEAL_TYPE) return false;
+    if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP) return false;
+    if (this.pendingMealUpdate?.targetMealType) return false;
+    if (isMealBuilderWizardTrigger(userText)) return false;
+    if (isGenericMealLogIntentOnly(userText)) return false;
+    if (isCoffeeLogIntent(userText)) return false;
+    if (isMealAdviceIntent(userText, chatHistory)) return false;
+    if (isAskDraftAdviceIntent(userText)) return false;
+    if (isWipMealBuildIntent(userText, chatHistory, options?.wipMealItems || [], {
+      constraints: options?.wipConstraints || null,
+      mealWipActive: Boolean(options?.mealWipActive),
+    })) return false;
+    const activeDraft = this.getPendingMealDraft?.();
+    if (activeDraft && isUpdateMealDraftIntent(userText)) return false;
+    return isFoodRegistrationIntent(userText)
+      || isConsumedMealLogDescription(userText)
+      || isPriorityFreeTextMealLog(userText);
+  }
+
+  async openAssistedMealFromTranscript(userText, currentState = {}, options = {}) {
+    const interpreted = await interpretAssistedMealInput(userText, {
+      ...buildAssistedMemoryFromState({
+        ...currentState,
+        personalDb: this.getFastPathContext(currentState).personalDb,
+      }),
+      source: options?.fromVoice === true ? 'voice' : 'text',
+      mealTypeHint: options?.mealType || options?.mealTypeHint || null,
+    });
+    if (!interpreted.items.length) return null;
+
+    const mealType = normalizeMcdriveMealType(interpreted.mealType)
+      || normalizeMcdriveMealType(options?.mealType || options?.mealTypeHint)
+      || inferDefaultMealType(currentState)
+      || 'pranzo';
+
+    const editingFoods = interpreted.items.map((item, index) => ({
+      foodName: item.foodName,
+      name: item.foodName,
+      spokenFoodName: item.foodName,
+      grams: item.grams,
+      status: item.identityAmbiguous ? 'requires_disambiguation' : 'raw',
+      isEstimated: item.isEstimated === true,
+      quantitySource: item.quantitySource,
+      preferredFoodDbKey: item.preferredFoodDbKey || null,
+      alternatives: item.disambiguationCandidates || [],
+      restaurantGuess: item.restaurantGuess === true,
+      itemId: `assisted_${Date.now()}_${index}`,
+    }));
+
+    const started = this.startMcdriveWizard(currentState, {
+      ...options,
+      mealType,
+      mealTypeHint: mealType,
+      editingFoods,
+      userText,
+    });
+    if (!this.mcdriveMealType || !Array.isArray(this.pendingMcDriveDraft) || this.pendingMcDriveDraft.length === 0) {
+      return started;
+    }
+    return this.finishMcdriveWizard(currentState);
   }
 
   continueMcdriveAddMore() {
@@ -929,7 +1001,13 @@ export class CommandTerminalController {
 
     if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM) {
       // Testo libero in conferma: tratta come append se sembra cibo, altrimenti ripropone i chip.
-      const maybeFoods = parseMcdriveFoodInputs(text);
+      const maybeFoods = parseMcdriveFoodInputs(text, {
+        source: options?.fromVoice === true ? 'voice' : 'text',
+        ...buildAssistedMemoryFromState({
+          ...currentState,
+          personalDb: this.getFastPathContext(currentState).personalDb,
+        }),
+      });
       if (maybeFoods.length > 0) {
         this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
         const draftItems = maybeFoods.map((parsed) => buildMcDriveRawItem(parsed));
@@ -944,20 +1022,47 @@ export class CommandTerminalController {
       return this.promptMcdriveMealType();
     }
 
-    const parsedItems = parseMcdriveFoodInputs(text);
+    const parsedItems = parseMcdriveFoodInputs(text, {
+      source: options?.fromVoice === true ? 'voice' : 'text',
+      ...buildAssistedMemoryFromState({
+        ...currentState,
+        personalDb: this.getFastPathContext(currentState).personalDb,
+      }),
+    });
     if (parsedItems.length === 0) {
+      const interpreted = await interpretAssistedMealInput(text, {
+        source: options?.fromVoice === true ? 'voice' : 'text',
+        mealTypeHint: this.mcdriveMealType,
+        ...buildAssistedMemoryFromState({
+          ...currentState,
+          personalDb: this.getFastPathContext(currentState).personalDb,
+        }),
+      });
+      const fromPipeline = toMcDriveParsedItems(interpreted);
+      if (fromPipeline.length === 0) {
+        this.publishMcdriveTraySync();
+        this.bus.publish(
+          DISPATCH_SYSTEM_MESSAGE,
+          {
+            type: 'system',
+            text: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
+            message: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
+            isSystem: true,
+          },
+          { source: 'CommandTerminalController' },
+        );
+        return { ok: false, reason: 'unparsed_food' };
+      }
+      const draftItems = fromPipeline.map((parsed) => buildMcDriveRawItem(parsed));
+      this.appendMcDriveDraftItems(draftItems);
+      this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
       this.publishMcdriveTraySync();
-      this.bus.publish(
-        DISPATCH_SYSTEM_MESSAGE,
-        {
-          type: 'system',
-          text: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
-          message: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
-          isSystem: true,
-        },
-        { source: 'CommandTerminalController' },
-      );
-      return { ok: false, reason: 'unparsed_food' };
+      return {
+        ok: true,
+        appended: true,
+        intent: 'MCDRIVE_APPEND_RAW',
+        pendingMcDriveDraft: [...this.pendingMcDriveDraft],
+      };
     }
 
     // Append raw sulla lavagna (multi-item: «caffè e croissant»).
@@ -1562,6 +1667,8 @@ export class CommandTerminalController {
         globalDb: dbCtx.globalDb,
         offDb: dbCtx.offDb,
         userFoodAliases: dbCtx.userFoodAliases,
+        userPortions: currentState?.userPortions || currentState?.nutrition?.userPortions || null,
+        preferredFoodDbKey: item?.preferredFoodDbKey || null,
       });
     } catch (error) {
       if (isAbortError(error)) {
@@ -6089,6 +6196,14 @@ export class CommandTerminalController {
     }
     if (forcedIntentEarly === 'FREE_MEAL_LISTEN') {
       return this.startFreeMealListen(options?.mealTypeHint || null, options);
+    }
+
+    if (
+      userText
+      && this.shouldOpenAssistedMealPipeline(userText, options, chatHistory)
+    ) {
+      const opened = await this.openAssistedMealFromTranscript(userText, currentState, options);
+      if (opened) return opened;
     }
 
     // One-tap exact match (voce/testo): bypass motore AI alimentare.

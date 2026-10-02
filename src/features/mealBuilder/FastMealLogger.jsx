@@ -2115,16 +2115,7 @@ function FastMealLoggerContent({
 
             {viewMode === 'expanded' && !isBuilderHeaderCollapsed ? (
               <div className="shrink-0 border-b border-slate-800/80 px-3 pb-2 pt-1.5 transition-all duration-200">
-                <LiveMacroHud
-                  mealTargets={mealTargets}
-                  mealConsumed={mealConsumed}
-                  draftTotals={draftTotals}
-                  compact
-                  className="border-slate-700/80 bg-slate-900 shadow-none"
-                />
-
-                <div className="mt-2 space-y-2">
-                  <div className="flex min-w-0 rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
+                <div className="flex min-w-0 rounded-lg border border-slate-700/80 bg-slate-900/60 p-0.5">
                     {MEAL_SLOTS.map((slot) => {
                       const isActive = canonicalSelectedSlot === slot.id;
                       return (
@@ -2142,7 +2133,6 @@ function FastMealLoggerContent({
                         </button>
                       );
                     })}
-                  </div>
                 </div>
               </div>
             ) : null}
@@ -2194,6 +2184,14 @@ function FastMealLoggerContent({
               <DayNutritionProjectionCard
                 projection={dayNutritionProjection}
                 mealType={canonicalSelectedSlot}
+              />
+              <LiveMacroHud
+                mealTargets={mealTargets}
+                mealConsumed={mealConsumed}
+                draftTotals={draftTotals}
+                compact
+                mealType={canonicalSelectedSlot}
+                className="mt-2 border-slate-700/80 bg-slate-900/80 shadow-none"
               />
             </div>
 

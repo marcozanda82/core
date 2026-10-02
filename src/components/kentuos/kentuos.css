@@ -2048,10 +2048,20 @@
   gap: 8px 10px;
 }
 
+.kentu-meal-tray__ref-caption {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.95);
+}
+
 .kentu-meal-tray__macro-row {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -2063,10 +2073,25 @@
 }
 
 .kentu-meal-tray__macro-label {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: rgba(148, 163, 184, 0.9);
+  color: rgba(148, 163, 184, 0.85);
+}
+
+.kentu-meal-tray__macro-actual {
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #f8fafc;
+  line-height: 1.15;
+}
+
+.kentu-meal-tray__macro-ref {
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.92);
+  line-height: 1.2;
 }
 
 .kentu-meal-tray__macro-values {
@@ -2077,38 +2102,39 @@
 }
 
 .kentu-meal-tray__macro-bar {
-  height: 4px;
+  height: 3px;
+  margin-top: 3px;
   border-radius: 999px;
-  background: rgba(51, 65, 85, 0.85);
+  background: rgba(51, 65, 85, 0.7);
   overflow: hidden;
+  opacity: 0.75;
 }
 
 .kentu-meal-tray__macro-bar-fill {
   height: 100%;
   border-radius: inherit;
-  background: rgba(56, 189, 248, 0.75);
+  background: rgba(56, 189, 248, 0.55);
   transition: width 0.25s ease, background-color 0.2s ease;
 }
 
-.kentu-meal-tray__macro-row--on-target .kentu-meal-tray__macro-values {
-  color: #86efac;
-  font-weight: 650;
+.kentu-meal-tray__macro-row--on-target .kentu-meal-tray__macro-actual {
+  color: #bae6fd;
 }
 
 .kentu-meal-tray__macro-row--on-target .kentu-meal-tray__macro-bar-fill {
-  background: #4ade80;
+  background: rgba(125, 211, 252, 0.7);
 }
 
-.kentu-meal-tray__macro-row--over .kentu-meal-tray__macro-values {
-  color: #fcd34d;
+.kentu-meal-tray__macro-row--over .kentu-meal-tray__macro-actual {
+  color: #fde68a;
 }
 
 .kentu-meal-tray__macro-row--over .kentu-meal-tray__macro-bar-fill {
-  background: #fbbf24;
+  background: rgba(251, 191, 36, 0.7);
 }
 
 .kentu-meal-tray__macro-row--under .kentu-meal-tray__macro-bar-fill {
-  background: rgba(125, 211, 252, 0.7);
+  background: rgba(125, 211, 252, 0.55);
 }
 
 .kentu-meal-tray__row--editing {
@@ -2216,7 +2242,7 @@
 
 .kentu-meal-tray__scroll {
   -webkit-overflow-scrolling: touch;
-  padding: 10px 14px 8px;
+  padding: 10px 14px 24px;
 }
 
 .kentu-meal-tray__list {
@@ -2339,6 +2365,19 @@
   font-variant-numeric: tabular-nums;
   color: #e2e8f0;
   letter-spacing: 0.02em;
+}
+
+.kentu-meal-tray__grams--estimated {
+  color: #fde68a;
+}
+
+.kentu-meal-tray__qty-est {
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(253, 230, 138, 0.88);
+  line-height: 1;
 }
 
 .kentu-meal-tray__row-info {

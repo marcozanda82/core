@@ -20,7 +20,7 @@ export const DEFAULT_TARGETS = {
 };
 
 /** Elenco piatto di tutte le chiavi nutrizionali (macro + amino + vit + min + fat) per iterazione */
-const ALL_NUTRIENT_KEYS = Object.values(TARGETS).flatMap(g => Object.keys(g));
+export const ALL_NUTRIENT_KEYS = Object.values(TARGETS).flatMap(g => Object.keys(g));
 
 /** Alias legacy su voci diario → chiave canonica TARGETS (somma widget Home). */
 const LOG_ITEM_NUTRIENT_ALIASES = {

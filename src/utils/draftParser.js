@@ -81,7 +81,7 @@ const GEMINI_DRAFT_SPLIT_SYSTEM = [
   'DEVI estrarre gli alimenti in modo LETTERALE 1:1. La dicitura esatta va conservata: "pasta integrale" resta "pasta integrale", MAI "pasta".',
   'È SEVERAMENTE VIETATO combinare ingredienti, inventare ricette, accorciare i nomi o omettere cibi non menzionati.',
   'Se l\'utente dice "pasta integrale, passato di pomodoro, merluzzo" devi restituire 3 elementi separati. Non fonderli MAI in "merluzzo al pomodoro" o simili.',
-  'Se manca la grammatura NON scartare l\'alimento: metti quantita "" e il sistema userà 100g stimati.',
+  'Se manca la grammatura NON scartare l\'alimento: metti quantita "" e NON inventare grammi.',
   'Spezza elenchi con virgole, "e", "ed", "+", ";" anche senza grammi.',
   'Togli solo prefissi tipo "ho mangiato", "per pranzo", orari. Non riformulare i nomi.',
   'DEVI SEMPRE restituire un Array JSON PIATTO di oggetti { "nome", "quantita" }.',
@@ -120,14 +120,14 @@ function parseQuantitaToGrams(quantita) {
 function normalizeParsedAlimento(entry) {
   if (typeof entry === 'string') {
     const nome = entry.trim();
-    return nome.length >= 2 ? { nome, quantita: '', grams: 100 } : null;
+    return nome.length >= 2 ? { nome, quantita: '', grams: null } : null;
   }
   if (!entry || typeof entry !== 'object') return null;
   const nome = String(entry.nome || entry.foodName || entry.name || '').trim();
   if (nome.length < 2) return null;
   const quantita = String(entry.quantita || entry.qty || entry.grams || '').trim();
   const grams = parseQuantitaToGrams(quantita) ?? parseQuantitaToGrams(entry.grams);
-  return { nome, quantita, grams: grams ?? 100 };
+  return { nome, quantita, grams: grams ?? null };
 }
 
 function parseFoodsJson(raw) {

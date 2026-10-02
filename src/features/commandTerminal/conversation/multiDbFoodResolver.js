@@ -19,6 +19,7 @@ import {
   searchPersonalDb,
 } from '../../mealBuilder/hooks/useUniversalSearchEngine.js';
 import { lookupUserFoodAlias } from './userFoodAliases.js';
+import { getUserFoodPreferenceContext } from './userFoodPreferenceContext.js';
 import {
   findCoffeeShopProductByName,
   coffeeShopProductToResolverCandidate,
@@ -698,6 +699,34 @@ export function lookupFoodCandidateFromAlias(foodName, ctx = {}) {
   return null;
 }
 
+function candidateFromKnownFoodDbKey(foodDbKey, spokenName, ctx = {}) {
+  const key = String(foodDbKey || '').trim();
+  if (!key) return null;
+  const catalogs = [
+    { db: ctx.personalDb, source: 'personal' },
+    { db: ctx.kentuItDb, source: 'kentu' },
+    { db: ctx.globalDb, source: 'usda' },
+    { db: ctx.offDb, source: 'off' },
+  ];
+  for (let i = 0; i < catalogs.length; i += 1) {
+    const { db, source } = catalogs[i];
+    if (!db || typeof db !== 'object' || !db[key]) continue;
+    const row = db[key];
+    const displayName = String(row.desc || row.name || spokenName).trim();
+    return buildCandidate({
+      fdcId: key,
+      name: displayName,
+      confidence: 'high',
+      confidenceScore: 1,
+      reason: 'Preferenza personale',
+      source,
+      row,
+      matchKind: 'exact',
+    });
+  }
+  return null;
+}
+
 /**
  * Entry point a livelli: L1 locale; se vuoto e non deferito → L2 esterni.
  * @param {string} foodName
@@ -748,6 +777,72 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
         searchLevel: 1,
         needsExternalSearch: false,
         fromCoffeeShop: true,
+      };
+    }
+  }
+
+  const preferredKey = String(ctx.preferredFoodDbKey || '').trim();
+  if (preferredKey) {
+    const preferredCandidate = candidateFromKnownFoodDbKey(preferredKey, name, ctx);
+    if (preferredCandidate) {
+      return {
+        needsDisambiguation: false,
+        match: preferredCandidate,
+        source: preferredCandidate.source,
+        confidenceScore: 1,
+        candidates: [preferredCandidate],
+        alternatives: [],
+        searchLevel: 1,
+        needsExternalSearch: false,
+        fromPersonalPreference: true,
+      };
+    }
+  }
+
+  const preference = getUserFoodPreferenceContext(name, {
+    personalDb: ctx.personalDb,
+    personalFoods: ctx.personalFoods,
+    userFoodAliases: ctx.userFoodAliases,
+    userPortions: ctx.userPortions,
+  });
+  if (preference.decision === 'auto' && preference.foodDbKey) {
+    const prefCandidate = candidateFromKnownFoodDbKey(preference.foodDbKey, name, ctx);
+    if (prefCandidate) {
+      return {
+        needsDisambiguation: false,
+        match: prefCandidate,
+        source: prefCandidate.source,
+        confidenceScore: 1,
+        candidates: [prefCandidate],
+        alternatives: [],
+        searchLevel: 1,
+        needsExternalSearch: false,
+        fromPersonalPreference: true,
+      };
+    }
+  }
+  if (preference.decision === 'ambiguous') {
+    const mapped = (preference.candidates || [])
+      .map((c) => candidateFromKnownFoodDbKey(c.foodDbKey, c.name || name, ctx))
+      .filter(Boolean);
+    if (mapped.length >= 2) {
+      return {
+        needsDisambiguation: true,
+        match: null,
+        source: null,
+        confidenceScore: Number(mapped[0]?.confidenceScore) || 1,
+        candidates: mapped,
+        alternatives: mapped.slice(1).map((c) => ({
+          foodDbKey: c.fdcId || null,
+          foodName: c.name,
+          confidence: c.confidence,
+          confidenceScore: c.confidenceScore,
+          source: c.source,
+          row: c.row,
+        })),
+        searchLevel: 1,
+        needsExternalSearch: false,
+        fromPersonalPreference: true,
       };
     }
   }

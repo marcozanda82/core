@@ -2,10 +2,17 @@ import {
   dayNutritionProjectionTitle,
   formatSignedRemainingLabel,
   hasCountableProjectedMeal,
+  isDinnerMealSlot,
 } from './formatDayNutritionRemaining.js';
 import './DayNutritionProjectionCard.css';
 
 const MACRO_ROWS = [
+  { key: 'prot', label: 'P', unit: 'g' },
+  { key: 'carb', label: 'C', unit: 'g' },
+  { key: 'fat', label: 'F', unit: 'g' },
+];
+
+const MACRO_ROWS_FULL = [
   { key: 'prot', label: 'Proteine', unit: 'g' },
   { key: 'carb', label: 'Carboidrati', unit: 'g' },
   { key: 'fat', label: 'Grassi', unit: 'g' },
@@ -37,14 +44,45 @@ export default function DayNutritionProjectionCard({
   const after = projection.after || {};
   const remaining = projection.remaining || {};
   const status = projection.status || {};
-  const isDinner = String(mealType || '').toLowerCase().split('_')[0] === 'cena';
+  const isDinner = isDinnerMealSlot(mealType);
   const title = dayNutritionProjectionTitle(mealType);
-  const kcalCopy = formatSignedRemainingLabel(remaining.kcal, { unit: 'kcal', capitalize: true });
+  const kcalCopy = formatSignedRemainingLabel(remaining.kcal, {
+    unit: 'kcal',
+    capitalize: true,
+    positiveVerb: isDinner ? 'Resterebbero' : 'Restano',
+  });
   const kcalStatus = statusClass(status.kcal);
+
+  if (compact) {
+    return (
+      <section
+        className={`kentu-day-projection kentu-day-projection--compact ${isDinner ? 'kentu-day-projection--dinner' : ''}`}
+        aria-label={title}
+      >
+        <h4 className="kentu-day-projection__title">{title}</h4>
+        <div className={`kentu-day-projection__compact-kcal kentu-day-projection__kcal--${kcalStatus}`}>
+          <span className="kentu-day-projection__kcal-values">
+            {formatQty(after.kcal, 'kcal')} / {formatQty(target.kcal, 'kcal')} kcal
+          </span>
+          <span className="kentu-day-projection__kcal-delta">{kcalCopy.text}</span>
+        </div>
+        <ul className="kentu-day-projection__chips">
+          {MACRO_ROWS.map((row) => (
+            <li
+              key={row.key}
+              className={`kentu-day-projection__chip kentu-day-projection__macro--${statusClass(status[row.key])}`}
+            >
+              {row.label} {formatQty(after[row.key], 'g')} / {formatQty(target[row.key], 'g')}
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
 
   return (
     <section
-      className={`kentu-day-projection ${compact ? 'kentu-day-projection--compact' : ''} ${isDinner ? 'kentu-day-projection--dinner' : ''}`}
+      className={`kentu-day-projection ${isDinner ? 'kentu-day-projection--dinner' : ''}`}
       aria-label={title}
     >
       <h4 className="kentu-day-projection__title">{title}</h4>
@@ -60,7 +98,7 @@ export default function DayNutritionProjectionCard({
       </div>
 
       <ul className="kentu-day-projection__macros">
-        {MACRO_ROWS.map((row) => {
+        {MACRO_ROWS_FULL.map((row) => {
           const st = statusClass(status[row.key]);
           const copy = formatSignedRemainingLabel(remaining[row.key], { unit: row.unit, capitalize: false });
           return (

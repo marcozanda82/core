@@ -35,6 +35,15 @@ import { lookupRecentFoodPortionGrams } from '../commandTerminal/conversation/us
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 import { useDayNutritionProjection } from '../mealEngine/useDayNutritionProjection.js';
 import DayNutritionProjectionCard from '../mealEngine/DayNutritionProjectionCard.jsx';
+import {
+  formatSlotReferenceHint,
+  isDinnerMealSlot,
+  slotReferenceHeading,
+} from '../mealEngine/formatDayNutritionRemaining.js';
+import {
+  formatAssistedGramsLabel,
+  isEstimatedQuantitySource,
+} from '../commandTerminal/conversation/assistedQuantityPresentation.js';
 
 /** Normalizza status lavagna per UI (validating → processing). */
 function resolveMcDriveVisualStatus(item) {
@@ -208,7 +217,7 @@ function MealItemActionSheet({
   const grams = Math.max(0, Math.round(Number(item.grams ?? item.qta) || 0));
   const kcal = Math.round(Number(item.kcal) || 0);
   const emoji = resolveMealItemDisplayIcon(item, { isDraft: false });
-  const qtyLine = `${grams} g${kcal > 0 ? ` • ${kcal} kcal` : ''}`;
+  const qtyLine = `${formatAssistedGramsLabel(grams, item.quantitySource)}${kcal > 0 ? ` • ${kcal} kcal` : ''}${isEstimatedQuantitySource(item.quantitySource) ? ' · stimati' : ''}`;
   const visualStatus = resolveMcDriveVisualStatus(item);
   const unassociated = isUnassociatedTrayItem(item, visualStatus);
   const canChoose = visualStatus === 'pending_enrichment'
@@ -344,22 +353,27 @@ function MealItemActionSheet({
   );
 }
 
-function MacroCompareRow({ label, actual, target, unit = 'g' }) {
+function MacroCompareRow({ label, actual, target, unit = 'g', mealType = null }) {
   const a = Number(actual) || 0;
   const t = Number(target) || 0;
   const status = classifyMcdriveMacroVsTarget(a, t);
   const pct = t > 0 ? Math.min(100, Math.round((a / t) * 100)) : 0;
-  const actualLabel = unit === 'kcal' ? Math.round(a) : Math.round(a);
-  const targetLabel = unit === 'kcal' ? Math.round(t) : Math.round(t);
+  const actualLabel = Math.round(a);
+  const targetLabel = Math.round(t);
+  const dinner = isDinnerMealSlot(mealType);
+  const unitText = unit === 'kcal' ? ' kcal' : ' g';
 
   return (
     <div className={`kentu-meal-tray__macro-row kentu-meal-tray__macro-row--${status}`}>
-      <div className="kentu-meal-tray__macro-row-top">
-        <span className="kentu-meal-tray__macro-label">{label}</span>
-        <span className="kentu-meal-tray__macro-values">
-          {actualLabel}{unit === 'kcal' ? '' : unit} / {targetLabel || '—'}{unit === 'kcal' ? ' kcal' : unit}
-        </span>
-      </div>
+      <span className="kentu-meal-tray__macro-label">{label}</span>
+      <span className="kentu-meal-tray__macro-actual">
+        {actualLabel}{unitText}
+      </span>
+      <span className="kentu-meal-tray__macro-ref">
+        {dinner && unit === 'kcal'
+          ? formatSlotReferenceHint(mealType, t, 'kcal')
+          : `Riferimento ${targetLabel || '—'}${unitText}`}
+      </span>
       <div className="kentu-meal-tray__macro-bar" aria-hidden>
         <div
           className="kentu-meal-tray__macro-bar-fill"
@@ -714,11 +728,12 @@ function LiveMealTray({
           />
         </div>
         {hasTargets ? (
-          <div className="kentu-meal-tray__target-grid" aria-label="Confronto vassoio / target pasto">
-            <MacroCompareRow label="Kcal" actual={resolvedTotals.kcal} target={mealTargets.kcal} unit="kcal" />
-            <MacroCompareRow label="Proteine" actual={resolvedTotals.pro} target={mealTargets.pro} />
-            <MacroCompareRow label="Carboidrati" actual={resolvedTotals.carbo} target={mealTargets.carbo} />
-            <MacroCompareRow label="Grassi" actual={resolvedTotals.fat} target={mealTargets.fat} />
+          <div className="kentu-meal-tray__target-grid" aria-label={slotReferenceHeading(mealType)}>
+            <p className="kentu-meal-tray__ref-caption">{slotReferenceHeading(mealType)}</p>
+            <MacroCompareRow label="Kcal" actual={resolvedTotals.kcal} target={mealTargets.kcal} unit="kcal" mealType={mealType} />
+            <MacroCompareRow label="Proteine" actual={resolvedTotals.pro} target={mealTargets.pro} mealType={mealType} />
+            <MacroCompareRow label="Carboidrati" actual={resolvedTotals.carbo} target={mealTargets.carbo} mealType={mealType} />
+            <MacroCompareRow label="Grassi" actual={resolvedTotals.fat} target={mealTargets.fat} mealType={mealType} />
           </div>
         ) : (
           <div className="kentu-meal-tray__calibration-macros" aria-label="Totali risolti sul vassoio">
@@ -771,12 +786,10 @@ function LiveMealTray({
               const isLatestInsert = displayIndex === 0;
               const highlightLatest = isLatestInsert && isRaw;
               const highlightSolver = solverHighlightIds.has(String(item?.id || ''));
-              const habitualGrams = lookupRecentFoodPortionGrams({
-                id: item?.foodDbKey,
-                name,
-              });
-              const showHabitualBadge = item?.habitualPortion === true
-                || (habitualGrams > 0 && grams === habitualGrams && item?.isEstimated === true);
+              const showHabitualBadge = item?.quantitySource === 'user-history'
+                || item?.habitualPortion === true;
+              const quantityEstimated = isEstimatedQuantitySource(item?.quantitySource);
+              const gramsLabel = formatAssistedGramsLabel(grams, item?.quantitySource);
               const kcal = Math.round(Number(item?.kcal) || 0);
               const key = String(item?.id || item?.foodDbKey || `${name}-${index}`);
               const isEditing = editingIndex === index && active;
@@ -842,7 +855,7 @@ function LiveMealTray({
                   } : undefined}
                   role={rowClickable ? 'button' : undefined}
                   tabIndex={rowClickable ? 0 : undefined}
-                  aria-label={isPending ? `Scegli ${name}` : `Azioni per ${name}`}
+                  aria-label={isPending ? `Scegli ${name}` : (quantityEstimated ? `Azioni per ${name}, ${gramsLabel} stimati` : `Azioni per ${name}`)}
                 >
                   <div className="kentu-meal-tray__row-main flex min-w-0 flex-1 items-center gap-2">
                     <McDriveStatusIcon
@@ -911,16 +924,28 @@ function LiveMealTray({
                     <span
                       className={[
                         'kentu-meal-tray__grams font-mono shrink-0 transition-all duration-300',
+                        quantityEstimated ? 'kentu-meal-tray__grams--estimated' : '',
                         highlightLatest
                           ? 'text-base font-bold text-cyan-300'
                           : isSkipped
                             ? 'text-sm text-slate-500'
                             : 'text-sm font-medium text-white',
                       ].filter(Boolean).join(' ')}
-                      title={showHabitualBadge ? `Porzione abituale ${grams} g` : undefined}
+                      title={
+                        quantityEstimated
+                          ? `${gramsLabel} stimati — tocca per correggere`
+                          : (showHabitualBadge ? `Porzione abituale ${grams} g` : undefined)
+                      }
+                      onClick={quantityEstimated && active && !disabled && !isEditing ? (event) => {
+                        event.stopPropagation();
+                        setEditingIndex(index);
+                      } : undefined}
                     >
-                      {grams} g
+                      {gramsLabel}
                     </span>
+                    {quantityEstimated ? (
+                      <span className="kentu-meal-tray__qty-est shrink-0">stimati</span>
+                    ) : null}
                     {showHabitualBadge ? (
                       <span className="shrink-0 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-cyan-300/90">
                         abituale

@@ -5,16 +5,16 @@
   margin: 8px 0 4px;
   padding: 10px 12px;
   border-radius: 14px;
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: rgba(8, 47, 73, 0.45);
 }
 
 .kentu-day-projection--dinner {
-  border-color: rgba(125, 211, 252, 0.35);
+  border-color: rgba(125, 211, 252, 0.4);
 }
 
 .kentu-day-projection__title {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 0.68rem;
   font-weight: 650;
   letter-spacing: 0.06em;
@@ -87,10 +87,59 @@
 }
 
 .kentu-day-projection--compact {
+  margin: 6px 0 2px;
   padding: 8px 10px;
 }
 
-.kentu-day-projection--compact .kentu-day-projection__kcal-values,
-.kentu-day-projection--compact .kentu-day-projection__macro-values {
-  font-size: 0.76rem;
+.kentu-day-projection--compact .kentu-day-projection__title {
+  margin-bottom: 4px;
+}
+
+.kentu-day-projection__compact-kcal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.kentu-day-projection--compact .kentu-day-projection__kcal-values {
+  font-size: 0.88rem;
+}
+
+.kentu-day-projection--compact .kentu-day-projection__kcal-delta {
+  margin: 0;
+}
+
+.kentu-day-projection__chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kentu-day-projection__chip {
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #cbd5e1;
+  text-align: center;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.kentu-day-projection__chip.kentu-day-projection__macro--on-target {
+  color: #86efac;
+}
+
+.kentu-day-projection__chip.kentu-day-projection__macro--over {
+  color: #fcd34d;
 }

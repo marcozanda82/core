@@ -70,6 +70,10 @@ import {
 import { resolveFoodItemForProposal } from './utils/foodResolver.js';
 import { ensureRecipeDiaryFields } from './utils/recipeDiaryFields.js';
 import {
+  toCanonicalDiaryFoodItem,
+  pickCanonicalNutrientFields,
+} from './features/mealEngine/canonicalMealCommit.js';
+import {
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
 } from './features/commandTerminal/conversation/userPortionsMemory.js';
@@ -3545,9 +3549,42 @@ export default function SalaComandi() {
           const name = String(item?.name || item?.foodName || item?.desc || '').trim();
           if (!name) return null;
           const preservedId = item?.id != null && String(item.id).trim() ? String(item.id).trim() : null;
-          const qtyRaw = Number(item?.qty ?? item?.grams);
-          const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
+          const qtyRaw = Number(item?.qty ?? item?.grams ?? item?.qta ?? item?.weight);
           const preferredKey = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
+          const mealContextBase = {
+            mealType: batchMealType,
+            mealTime: mealDec,
+            batchId: batchIdFood,
+          };
+
+          const alreadyHasPortion = Number.isFinite(Number(item?.kcal ?? item?.cal ?? item?.prot ?? item?.pro));
+          if (
+            !isUnresolvedMealDraftItem(item)
+            && Number.isFinite(qtyRaw)
+            && qtyRaw > 0
+            && (preferredKey || alreadyHasPortion)
+          ) {
+            const canonical = toCanonicalDiaryFoodItem({
+              food: {
+                ...item,
+                desc: name,
+                name,
+                foodDbKey: preferredKey || item.foodDbKey,
+              },
+              grams: qtyRaw,
+              mealContext: {
+                ...mealContextBase,
+                id: preservedId || `ai_${batchIdFood}_${index}`,
+              },
+              sourceMetadata: { entrySource: 'chat' },
+            });
+            if (canonical) {
+              rememberFavoriteFromFoodItem(canonical);
+              return ensureRecipeDiaryFields(canonical);
+            }
+          }
+
+          const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 100;
 
           if (isUnresolvedMealDraftItem(item)) {
             const status = String(item.status || 'raw').toLowerCase();
@@ -3618,13 +3655,8 @@ export default function SalaComandi() {
           const dati = estraiDatiFoodDb(name, qty, batchMealType, preferredKey || null);
           if (dati && String(dati.status || '') !== 'NEEDS_RESOLUTION') {
             const isRecipe = dati.type === 'recipe';
-            return ensureRecipeDiaryFields({
+            const mergedFood = {
               ...dati,
-              id: preservedId || dati.id || `ai_${batchIdFood}_${index}`,
-              mealType: batchMealType,
-              mealTime: mealDec,
-              batchId: batchIdFood,
-              isEstimated: false,
               type: isRecipe ? 'recipe' : 'food',
               ...(Number.isFinite(Number(item.caffeineMg))
                 ? { caffeineMg: Math.max(0, Number(item.caffeineMg)) }
@@ -3633,6 +3665,24 @@ export default function SalaComandi() {
                 ? { isFastingSafe: item.isFastingSafe }
                 : {}),
               ...(sanitizeFoodIcon(item.icon) ? { icon: sanitizeFoodIcon(item.icon) } : {}),
+            };
+            const canonical = toCanonicalDiaryFoodItem({
+              food: mergedFood,
+              grams: qty,
+              mealContext: {
+                ...mealContextBase,
+                id: preservedId || dati.id || `ai_${batchIdFood}_${index}`,
+              },
+              sourceMetadata: { entrySource: 'chat' },
+            });
+            if (canonical) return ensureRecipeDiaryFields(canonical);
+            return ensureRecipeDiaryFields({
+              ...mergedFood,
+              id: preservedId || dati.id || `ai_${batchIdFood}_${index}`,
+              mealType: batchMealType,
+              mealTime: mealDec,
+              batchId: batchIdFood,
+              isEstimated: false,
               entrySource: 'chat',
             });
           }
@@ -3854,6 +3904,8 @@ export default function SalaComandi() {
           grams,
           status: 'raw',
           itemId: `voice_calc_${Date.now()}_${index}`,
+          ...(item?.quantitySource ? { quantitySource: item.quantitySource } : {}),
+          ...(item?.isEstimated === true ? { isEstimated: true } : {}),
         };
       }).filter((row) => row.foodName);
 
@@ -6582,9 +6634,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       const items = itemsSource.map((item) => {
         const name = sanitizeFoodDisplayName(item?.foodName || item?.name || '');
-        const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qty) || 0));
+        const gramsRaw = Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight);
+        const grams = Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : null;
         if (!name) throw new Error('foodName mancante');
-        if (!Number.isFinite(grams) || grams <= 0) throw new Error('grams non valido');
+        if (grams == null) throw new Error('grams non valido');
         const dbKey = item?.foodDbKey ?? item?.matchedKey;
         const icon = sanitizeFoodIcon(item?.icon);
         const kcal = Number(item?.kcal);
@@ -6593,6 +6646,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         const fat = Number(item?.fat ?? item?.fatTotal);
         const itemId = item?.id != null ? String(item.id).trim() : '';
         const status = String(item?.status || '').toLowerCase();
+        const nutrientFields = pickCanonicalNutrientFields(item);
         return {
           name,
           foodName: name,
@@ -6600,6 +6654,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           grams,
           isEstimated: item?.isEstimated === true,
           wasEstimated: item?.wasEstimated === true || item?.isEstimated === true,
+          ...nutrientFields,
           ...(itemId ? { id: itemId } : {}),
           ...(status ? { status } : {}),
           ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
@@ -6612,8 +6667,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             ? { matchedKey: String(dbKey).trim(), foodDbKey: String(dbKey).trim() }
             : {}),
           ...(Number.isFinite(kcal) ? { kcal: Math.round(kcal), estKcal: Math.round(kcal) } : {}),
-          ...(Number.isFinite(pro) ? { prot: pro, estPro: pro } : {}),
-          ...(Number.isFinite(carbo) ? { carb: carbo, estCar: carbo } : {}),
+          ...(Number.isFinite(pro) ? { prot: pro, estPro: pro, pro } : {}),
+          ...(Number.isFinite(carbo) ? { carb: carbo, estCar: carbo, carbo } : {}),
           ...(Number.isFinite(fat) ? { fat, estFat: fat } : {}),
         };
       });

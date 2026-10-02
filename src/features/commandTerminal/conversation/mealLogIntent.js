@@ -6,10 +6,9 @@ import {
   isMealWipSessionStart,
 } from '../../wipMealBuilder/mealWipEngine.js';
 import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting.js';
-import { resolveSmartDefaultGrams } from '../../../utils/smartFoodPortions.js';
 import { splitFoodListSegments } from './foodPhraseSplit.js';
-import { lookupRecentFoodPortionGrams } from './userPortionsMemory.js';
 import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
+import { resolveAssistedPortion } from './assistedPortionResolver.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -106,15 +105,6 @@ const DRAFT_FRACTION_PATTERNS = [
   { pattern: /\btre\s+quarti\s+di\s+/i, multiplier: 0.75 },
   { pattern: /\b(?:una|un)\s+/i, multiplier: 1 },
 ];
-
-const DRAFT_FOOD_DEFAULT_GRAMS = {
-  pizza: 300,
-  pasta: 200,
-  riso: 180,
-  pane: 50,
-  patate: 200,
-  gnocchi: 200,
-};
 
 /** Follow-up CTA del navigatore What-If: calcolo porzioni riparate. */
 const FIX_MEAL_DRAFT_STRONG_PATTERNS = [
@@ -1860,15 +1850,7 @@ function pushUniqueItem(items, seen, foodName, grams, extra = {}) {
 }
 
 function defaultGramsForDraftFood(foodName) {
-  const recent = lookupRecentFoodPortionGrams({ name: foodName });
-  if (recent > 0) return recent;
-  const smart = resolveSmartDefaultGrams(foodName, 100);
-  if (smart && smart !== 100) return smart;
-  const normalized = String(foodName || '').trim().toLowerCase();
-  for (const [token, grams] of Object.entries(DRAFT_FOOD_DEFAULT_GRAMS)) {
-    if (normalized.includes(token)) return grams;
-  }
-  return smart || 100;
+  return resolveAssistedPortion({ foodName }).grams;
 }
 
 function stripDraftSegmentPrefixes(segmentText) {

@@ -6,7 +6,9 @@ import {
   createHoldToTalkSession,
   playHoldToTalkHaptic,
 } from '../../platform/kentuHoldToTalk';
-import { createPendingInboxDraft, inferDraftType, parseDraftWithGemini } from '../../utils/draftParser';
+import { createPendingInboxDraft, inferDraftType } from '../../utils/draftParser';
+import { interpretAssistedMealInput } from '../../features/commandTerminal/conversation/assistedMealPipeline.js';
+import { buildVoiceInboxItemsFromAssistedDraft } from '../../features/commandTerminal/conversation/assistedQuantityPresentation.js';
 
 const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
@@ -234,7 +236,7 @@ export default function KentuChatFab({
     return { items, text };
   }, []);
 
-  const handleSaveDrafts = useCallback(() => {
+  const handleSaveDrafts = useCallback(async () => {
     if (isParsingDraft || isListeningRef.current) return;
     const { items, text } = collectVoiceText();
     if (!text) {
@@ -243,26 +245,41 @@ export default function KentuChatFab({
     }
     const stamp = Date.now();
     const draft = createPendingInboxDraft(text, { timestamp: stamp });
-    enqueueInboxDraftAppend({
-      id: draft.id,
-      rawText: text,
-      inferredType: draft.inferredType || inferDraftType(text),
-      timestamp: stamp,
-      createdAt: stamp,
-      status: 'pending',
-      timeString: currentTimeHHmm(),
-      items: items.map((foodName, index) => ({
-        id: `voice_inbox_${stamp}_${index}`,
-        foodName,
-        name: foodName,
-        desc: foodName,
-        spokenFoodName: foodName,
-        grams: 1,
+    setIsParsingDraft(true);
+    try {
+      const interpreted = await interpretAssistedMealInput(text, { source: 'voice' });
+      const parsedItems = buildVoiceInboxItemsFromAssistedDraft(interpreted, stamp);
+      const inboxItems = parsedItems.length > 0
+        ? parsedItems
+        : items.map((foodName, index) => {
+          const name = String(foodName || '').trim();
+          return {
+            id: `voice_inbox_${stamp}_${index}`,
+            foodName: name,
+            name,
+            desc: name,
+            spokenFoodName: name,
+            status: 'pending',
+          };
+        }).filter((row) => row.foodName);
+      enqueueInboxDraftAppend({
+        id: draft.id,
+        rawText: text,
+        inferredType: draft.inferredType || inferDraftType(text),
+        timestamp: stamp,
+        createdAt: stamp,
         status: 'pending',
-      })),
-    });
-    resetVoiceSession();
-    showToast(items.length > 1 ? `Inbox: ${items.length} alimenti` : 'Bozza salvata in Inbox');
+        timeString: currentTimeHHmm(),
+        items: inboxItems,
+      });
+      resetVoiceSession();
+      showToast(inboxItems.length > 1 ? `Inbox: ${inboxItems.length} alimenti` : 'Bozza salvata in Inbox');
+    } catch (error) {
+      console.warn('[KentuChatFab] inbox interpret failed', error);
+      showToast('Non sono riuscito a salvare la bozza. Riprova.');
+    } finally {
+      setIsParsingDraft(false);
+    }
   }, [collectVoiceText, isParsingDraft, resetVoiceSession, showToast]);
 
   const handleCalcolaOra = useCallback(async () => {
@@ -280,17 +297,17 @@ export default function KentuChatFab({
     resetVoiceSession();
     setIsParsingDraft(true);
     try {
-      const parsed = await parseDraftWithGemini(text);
-      const foodItems = parsed.map((entry) => {
-        const foodName = typeof entry === 'string'
-          ? entry
-          : String(entry?.nome || entry?.foodName || '').trim();
+      const interpreted = await interpretAssistedMealInput(text, { source: 'voice' });
+      const foodItems = (interpreted.items || []).map((entry) => {
+        const foodName = String(entry?.foodName || '').trim();
         const grams = Number(entry?.grams);
         return {
           foodName,
           name: foodName,
           spokenFoodName: foodName,
           grams: Number.isFinite(grams) && grams > 0 ? grams : 100,
+          quantitySource: entry?.quantitySource || null,
+          isEstimated: entry?.isEstimated === true,
         };
       }).filter((item) => item.foodName);
       if (foodItems.length === 0) {
@@ -301,7 +318,11 @@ export default function KentuChatFab({
         return;
       }
       const opened = typeof onOpenAiMealBuilder === 'function'
-        ? onOpenAiMealBuilder({ items: foodItems })
+        ? onOpenAiMealBuilder({
+          items: foodItems,
+          mealType: interpreted.mealType || null,
+          source: 'voice',
+        })
         : false;
       if (!opened) {
         showToast('Costruttore pasti non disponibile');
@@ -311,7 +332,7 @@ export default function KentuChatFab({
         return;
       }
     } catch (error) {
-      console.warn('[KentuChatFab] parseDraftWithGemini failed', error);
+      console.warn('[KentuChatFab] interpretAssistedMealInput failed', error);
       showToast('Non sono riuscito a calcolare gli alimenti. Riprova.');
       voiceItemsRef.current = items;
       setVoiceItemsList(items);

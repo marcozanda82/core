@@ -65,19 +65,19 @@ export function serializeInboxDraftItem(item) {
   const foodName = String(item.foodName || item.name || item.desc || item.label || '').trim();
   if (!foodName) return null;
   const gramsRaw = Number(item.grams ?? item.qta ?? item.weight ?? item.qty);
-  const grams = Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : 1;
+  const hasGrams = Number.isFinite(gramsRaw) && gramsRaw > 0;
+  const grams = hasGrams ? Math.round(gramsRaw) : null;
   const itemId = (item.id != null && String(item.id).trim())
     || (item.itemId != null && String(item.itemId).trim())
     || '';
   const status = String(item.status || 'raw').toLowerCase() || 'raw';
+  const quantitySource = String(item.quantitySource || '').trim();
+  const knownSources = new Set(['explicit', 'household', 'user-history', 'database', 'estimated']);
   return {
     foodName,
     name: foodName,
     desc: foodName,
-    grams,
-    qta: grams,
-    weight: grams,
-    qty: grams,
+    ...(hasGrams ? { grams, qta: grams, weight: grams, qty: grams } : {}),
     status,
     kcal: 0,
     cal: 0,
@@ -91,6 +91,7 @@ export function serializeInboxDraftItem(item) {
       ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }
       : {}),
     ...(item.icon ? { icon: item.icon } : {}),
+    ...(knownSources.has(quantitySource) ? { quantitySource } : {}),
   };
 }
 

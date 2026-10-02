@@ -1,4 +1,4 @@
-import React from 'react';
+import { slotReferenceHeading } from '../../mealEngine/formatDayNutritionRemaining.js';
 
 const DEFAULT_TARGETS = {
   kcal: 2000,
@@ -9,8 +9,8 @@ const DEFAULT_TARGETS = {
 
 const MACRO_ROWS = [
   { id: 'kcal', label: 'Kcal', unit: 'kcal', accent: 'bg-amber-400' },
-  { id: 'prot', label: 'Prot', unit: 'g', accent: 'bg-red-500' },
-  { id: 'carb', label: 'Carb', unit: 'g', accent: 'bg-blue-500' },
+  { id: 'prot', label: 'Prot', unit: 'g', accent: 'bg-sky-500' },
+  { id: 'carb', label: 'Carb', unit: 'g', accent: 'bg-cyan-500' },
   { id: 'fat', label: 'Fat', unit: 'g', accent: 'bg-amber-600' },
 ];
 
@@ -44,9 +44,9 @@ function MacroBar({ label, consumed, draft, target, unit, accentClass }) {
   const targetValue = Math.max(0, Number(target) || 0);
   const safeTarget = targetValue > 0 ? targetValue : 1;
   const total = consumato + bozza;
-  const isOverflow = targetValue > 0 && total > targetValue;
+  const isOverRef = targetValue > 0 && total > targetValue;
 
-  const draftColor = isOverflow ? 'bg-red-500' : accentClass;
+  const draftColor = isOverRef ? 'bg-amber-400' : accentClass;
   const unitSuffix = unit === 'kcal' ? ' kcal' : unit;
   const consumedPct = Math.min((consumato / safeTarget) * 100, 100);
   const draftPct = Math.min((bozza / safeTarget) * 100, Math.max(0, 100 - consumedPct));
@@ -73,22 +73,12 @@ function MacroBar({ label, consumed, draft, target, unit, accentClass }) {
         </div>
       </div>
       <p className="mt-0.5 truncate text-[10px] leading-tight text-slate-500">
-        <span>{formatMacroValue(consumato)}</span>
-        {bozza > 0 ? (
-          <span className={isOverflow ? 'text-red-400' : 'text-cyan-400'}>
-            +{formatMacroValue(bozza)}
-          </span>
-        ) : null}
+        <span className="font-medium text-slate-200">{formatMacroValue(total)}</span>
         <span>
           {' '}
-          / {formatMacroValue(targetValue)}
+          · rif. {formatMacroValue(targetValue)}
           {unitSuffix}
         </span>
-        {isOverflow ? (
-          <span className="ml-1 text-red-400" aria-label="Budget superato">
-            ⚠
-          </span>
-        ) : null}
       </p>
     </div>
   );
@@ -151,6 +141,7 @@ export default function LiveMacroHud({
   draftTotals = {},
   className = '',
   compact = false,
+  mealType = null,
 }) {
   const consumed = normalizeMacroBundle(mealConsumed);
   const draft = normalizeMacroBundle(draftTotals);
@@ -172,7 +163,7 @@ export default function LiveMacroHud({
       }
     >
       <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
-        Target pasto
+        {slotReferenceHeading(mealType)}
       </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-2.5">
         {MACRO_ROWS.map(({ id, label, unit, accent }) => (

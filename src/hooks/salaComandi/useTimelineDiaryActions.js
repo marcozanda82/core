@@ -7,6 +7,7 @@ import { normalizeMealHour } from '../../features/salaComandi/utils/metabolicPha
 import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/fourCylinderRebuild';
 import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
+import { toCanonicalDiaryFoodItem } from '../../features/mealEngine/canonicalMealCommit';
 import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
 import { coerceDiaryMealTime, getFoodItemsForMealSlotFromLog, parseCompositeMealSlotId } from '../../utils/mealProposalBuilders';
 
@@ -297,47 +298,30 @@ export function useTimelineDiaryActions({
       }
 
       const nuoviAlimenti = draftFoods.map((f, index) => {
-        const weight = Number(f.weight ?? f.qta) || 100;
+        const weight = Number(f.weight ?? f.qta ?? f.grams ?? f.qty);
         const cleanName = sanitizeFoodDisplayName(f.desc || f.name || f.label || 'Alimento');
-        rememberRecentFoodPortion({
-          id: f.foodDbKey || f.id || f.key,
-          foodDbKey: f.foodDbKey,
-          name: cleanName,
+        if (Number.isFinite(weight) && weight > 0) {
+          rememberRecentFoodPortion({
+            id: f.foodDbKey || f.id || f.key,
+            foodDbKey: f.foodDbKey,
+            name: cleanName,
+            grams: weight,
+          });
+        }
+        const canonical = toCanonicalDiaryFoodItem({
+          food: f,
           grams: weight,
+          mealContext: {
+            mealType: mealTypeToUse,
+            mealTime: mealTimeToUse,
+            id: `f_${batchId}_${index}`,
+          },
+          sourceMetadata: { entrySource: 'ui' },
         });
-        const {
-          row,
-          units,
-          defaultUnit,
-          multiplier,
-          selectedUnit,
-          qtyLabel,
-          _searchSource,
-          mealTime: _oldMealTime,
-          time: _oldTime,
-          ...rest
-        } = f || {};
-        return ensureRecipeDiaryFields({
-          ...rest,
-          desc: cleanName,
-          name: cleanName,
-          label: cleanName,
-          type: f.type === 'recipe' ? 'recipe' : 'food',
-          mealType: mealTypeToUse,
-          mealTime: mealTimeToUse,
-          time: mealTimeToUse,
-          id: `f_${batchId}_${index}`,
-          qta: weight,
-          weight,
-          kcal: Number(f.kcal ?? f.cal) || 0,
-          cal: Number(f.cal ?? f.kcal) || 0,
-          prot: Number(f.prot) || 0,
-          carb: Number(f.carb ?? f.cho) || 0,
-          fat: Number(f.fatTotal ?? f.fat) || 0,
-          fatTotal: Number(f.fatTotal ?? f.fat) || 0,
-          entrySource: 'ui',
-        });
-      });
+        if (!canonical) return null;
+        return ensureRecipeDiaryFields(canonical);
+      }).filter(Boolean);
+      if (nuoviAlimenti.length === 0) return false;
 
       let nuovoLog;
       if (editMealId) {
