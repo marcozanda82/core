@@ -251,6 +251,7 @@ import { markPredictiveGreetingsSuperseded } from './features/predictive/predict
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
 import WaterActionModal from './components/modals/WaterActionModal';
 import KentuLazySectionFallback from './components/KentuLazySectionFallback';
+import SectionErrorBoundary from './components/SectionErrorBoundary';
 import {
   FastChargeNapQuickPanel,
   FastChargeMeditationQuickPanel,
@@ -8896,6 +8897,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         />
       )}
       {activeBottomTab === 'hub' && (
+        <SectionErrorBoundary label="Hub">
         <HubPage
           activeTab={hubInnerTab}
           onTabChange={handleHubInnerTabChange}
@@ -9018,6 +9020,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
           )}
         />
+        </SectionErrorBoundary>
       )}
       </>
       )}
@@ -9340,6 +9343,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       {/* Chat Full-Screen — montata dalla prima apertura; slide dal basso */}
       <KentuChatShell mounted={chatShellMounted} open={isChatOpen}>
+        <SectionErrorBoundary label="Chat" onClose={closeChat}>
           <Suspense fallback={<div className="flex flex-1 items-center justify-center bg-zinc-950" aria-busy />}>
           <KentuChatUI
             chatHistory={chatHistory}
@@ -9429,6 +9433,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             isHistoryVisible={isHistoryVisible}
           />
           </Suspense>
+        </SectionErrorBoundary>
       </KentuChatShell>
 
       <ChatFoodEnrichmentModal
@@ -10067,6 +10072,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : null}
 
       {showFastLogger ? (
+        <SectionErrorBoundary label="Logger pasti" onClose={closeFastLogger}>
         <Suspense
           fallback={
             <KentuLazySectionFallback label="Logger pasti…" variant="fullscreen" />
@@ -10100,6 +10106,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           onDeleteRecipe={deleteRecipeFromFoodDb}
         />
         </Suspense>
+        </SectionErrorBoundary>
       ) : null}
 
       {fixedAppBottomChrome}

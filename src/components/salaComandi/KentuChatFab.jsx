@@ -9,6 +9,7 @@ import {
 import { createPendingInboxDraft, inferDraftType } from '../../utils/draftParser';
 import { interpretAssistedMealInput } from '../../features/commandTerminal/conversation/assistedMealPipeline.js';
 import { buildVoiceInboxItemsFromAssistedDraft } from '../../features/commandTerminal/conversation/assistedQuantityPresentation.js';
+import { shouldRouteFabVoiceToChat } from '../../features/chat/fabVoiceRouting.js';
 import { isMealAdviceIntent } from '../../features/commandTerminal/conversation/mealLogIntent.js';
 import { isWorkoutLogIntent } from '../../features/commandTerminal/conversation/workoutRegistrationSlots.js';
 
@@ -307,8 +308,13 @@ export default function KentuChatFab({
       return;
     }
 
+    const fabRouteOpts = {
+      isWorkout: isWorkoutLogIntent,
+      isAdvice: isMealAdviceIntent,
+    };
+
     // Workout / consiglio: stesso routing della chat (non forzare Meal Engine).
-    if (isWorkoutLogIntent(text) || isMealAdviceIntent(text)) {
+    if (shouldRouteFabVoiceToChat(text, fabRouteOpts)) {
       if (routeVoiceTextToChat(text)) return;
     }
 
@@ -328,7 +334,7 @@ export default function KentuChatFab({
           isEstimated: entry?.isEstimated === true,
         };
       }).filter((item) => item.foodName);
-      if (foodItems.length === 0) {
+      if (shouldRouteFabVoiceToChat(text, { ...fabRouteOpts, foodItemCount: foodItems.length })) {
         // 0 food: lascia decidere al CommandTerminal (workout/advice/clarification).
         if (routeVoiceTextToChat(text)) return;
         showToast('Nessun alimento riconosciuto. Riprova.');

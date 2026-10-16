@@ -30,7 +30,8 @@ googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /** Web Client ID (OAuth client_type 3). Non usare gli ID Android (client_type 1). */
 const GOOGLE_WEB_CLIENT_ID =
-  '382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com';
+  import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID
+  || '382993217593-ekmjfc66dh22su9qva0dmnj8nmle936j.apps.googleusercontent.com';
 
 const NATIVE_GOOGLE_SIGNIN_OPTS = {
   skipNativeAuth: true,
