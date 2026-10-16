@@ -1956,10 +1956,8 @@ export class CommandTerminalController {
     const exactTime = selectedExactTime;
     const resolvedMealType = String(payload?.mealType || mealTypeForPayload).trim().toLowerCase() || mealTypeForPayload;
 
-    this.clearMcdriveWizard();
-    if (typeof this.onRequestUsdaEnrichment === 'function') {
-      this.onRequestUsdaEnrichment({ foodName: '', resume: null });
-    }
+    // Non clearare la lavagna prima del commit: se lo writer fallisce i dati restano.
+    // clearMcdriveWizard avviene in onMealCommitSuccess (correlationId mcdrive_save_confirm).
 
     // 🔥 FIX GHOST NODE BUG: Se mealType è cambiato, elimina il vecchio slot prima
     if (mealTypeChanged && editingMealId) {

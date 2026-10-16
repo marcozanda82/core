@@ -9,6 +9,8 @@ import {
 import { createPendingInboxDraft, inferDraftType } from '../../utils/draftParser';
 import { interpretAssistedMealInput } from '../../features/commandTerminal/conversation/assistedMealPipeline.js';
 import { buildVoiceInboxItemsFromAssistedDraft } from '../../features/commandTerminal/conversation/assistedQuantityPresentation.js';
+import { isMealAdviceIntent } from '../../features/commandTerminal/conversation/mealLogIntent.js';
+import { isWorkoutLogIntent } from '../../features/commandTerminal/conversation/workoutRegistrationSlots.js';
 
 const KENTU_CHAT_EMBLEM_SRC = '/EmblemaKbianca2.png';
 const HOLD_MS = 500;
@@ -53,6 +55,8 @@ export default function KentuChatFab({
   onOpen = null,
   onBlockedOpen = null,
   onOpenAiMealBuilder = null,
+  /** Escape hatch: workout / consiglio / 0-food → CommandTerminal (come chat). */
+  onSendChatMessage = null,
   showNotificationBadge = false,
 }) {
   const pressTimer = useRef(null);
@@ -282,6 +286,15 @@ export default function KentuChatFab({
     }
   }, [collectVoiceText, isParsingDraft, resetVoiceSession, showToast]);
 
+  const routeVoiceTextToChat = useCallback((text) => {
+    const trimmed = String(text || '').trim();
+    if (!trimmed || typeof onSendChatMessage !== 'function') return false;
+    resetVoiceSession();
+    onOpen?.();
+    void onSendChatMessage(trimmed, { fromVoice: true });
+    return true;
+  }, [onOpen, onSendChatMessage, resetVoiceSession]);
+
   const handleCalcolaOra = useCallback(async () => {
     if (isParsingDraft || isListeningRef.current) return;
     if (!engineReady) {
@@ -292,6 +305,11 @@ export default function KentuChatFab({
     if (!text) {
       showToast('Nessun alimento da calcolare');
       return;
+    }
+
+    // Workout / consiglio: stesso routing della chat (non forzare Meal Engine).
+    if (isWorkoutLogIntent(text) || isMealAdviceIntent(text)) {
+      if (routeVoiceTextToChat(text)) return;
     }
 
     resetVoiceSession();
@@ -311,6 +329,8 @@ export default function KentuChatFab({
         };
       }).filter((item) => item.foodName);
       if (foodItems.length === 0) {
+        // 0 food: lascia decidere al CommandTerminal (workout/advice/clarification).
+        if (routeVoiceTextToChat(text)) return;
         showToast('Nessun alimento riconosciuto. Riprova.');
         voiceItemsRef.current = items;
         setVoiceItemsList(items);
@@ -340,7 +360,16 @@ export default function KentuChatFab({
     } finally {
       setIsParsingDraft(false);
     }
-  }, [collectVoiceText, engineReady, isParsingDraft, onBlockedOpen, onOpenAiMealBuilder, resetVoiceSession, showToast]);
+  }, [
+    collectVoiceText,
+    engineReady,
+    isParsingDraft,
+    onBlockedOpen,
+    onOpenAiMealBuilder,
+    resetVoiceSession,
+    routeVoiceTextToChat,
+    showToast,
+  ]);
 
   const handlePointerDown = useCallback((event) => {
     if (event.button != null && event.button !== 0) return;

@@ -546,7 +546,22 @@ export function useCommandTerminal({
         },
         onMealCommitSuccess: (envelope) => {
           const skipCloseId = String(envelope?.meta?.correlationId || '');
-          if (skipCloseId === 'mcdrive_draft_persist' || skipCloseId === 'meal_inbox_persist') return;
+          if (skipCloseId === 'mcdrive_save_confirm') {
+            if (typeof controller.clearMcdriveWizard === 'function') {
+              controller.clearMcdriveWizard();
+            }
+            if (typeof controller.onRequestUsdaEnrichment === 'function') {
+              controller.onRequestUsdaEnrichment({ foodName: '', resume: null });
+            }
+          }
+          if (
+            skipCloseId === 'mcdrive_draft_persist'
+            || skipCloseId === 'meal_inbox_persist'
+            || skipCloseId === 'inbox_triage_assign'
+            || skipCloseId === 'mcdrive_delete_old_slot'
+          ) {
+            return;
+          }
           scheduleChatCloseAfterMealCommit();
         },
       }),

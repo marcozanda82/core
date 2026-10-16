@@ -808,6 +808,8 @@ export default function SalaComandi() {
   });
   const [dailyLog, setDailyLog] = useState([]);
   const dailyLogRef = useRef(dailyLog);
+  /** Writer pasto SSOT (valorizzato dopo commitAddFoodCommand). */
+  const commitAddFoodCommandRef = useRef(null);
   dailyLogRef.current = dailyLog;
   /** Idempotenza commit pasti chat (ADD_FOOD + UPSERT_MEAL entro finestra breve). */
   const mealCommitGuardRef = useRef({ fingerprint: null, at: 0 });
@@ -5128,6 +5130,46 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     setInboxTriageBlock(matched);
   }, []);
 
+  const mapInboxItemsToCommitPayload = useCallback((items) => (
+    (Array.isArray(items) ? items : [])
+      .map((item) => {
+        const foodName = String(item?.foodName || item?.name || item?.desc || '').trim();
+        if (!foodName) return null;
+        const gramsRaw = Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight);
+        const grams = Number.isFinite(gramsRaw) && gramsRaw > 0 ? Math.round(gramsRaw) : 100;
+        const dbKey = item?.foodDbKey ?? item?.matchedKey ?? item?.dbKey ?? null;
+        const itemId = item?.id != null ? String(item.id).trim() : '';
+        const status = String(item?.status || '').toLowerCase();
+        return {
+          foodName,
+          name: foodName,
+          grams,
+          qty: grams,
+          ...(dbKey != null && String(dbKey).trim() !== ''
+            ? { foodDbKey: String(dbKey).trim(), matchedKey: String(dbKey).trim() }
+            : {}),
+          ...(itemId ? { id: itemId } : {}),
+          ...(status ? { status } : {}),
+          ...(item?.spokenFoodName ? { spokenFoodName: item.spokenFoodName } : {}),
+          ...(Number.isFinite(Number(item?.kcal ?? item?.cal))
+            ? { kcal: Number(item.kcal ?? item.cal) }
+            : {}),
+          ...(Number.isFinite(Number(item?.prot ?? item?.pro))
+            ? { prot: Number(item.prot ?? item.pro), pro: Number(item.prot ?? item.pro) }
+            : {}),
+          ...(Number.isFinite(Number(item?.carb ?? item?.carbo))
+            ? { carb: Number(item.carb ?? item.carbo) }
+            : {}),
+          ...(Number.isFinite(Number(item?.fat ?? item?.fatTotal))
+            ? { fat: Number(item.fat ?? item.fatTotal) }
+            : {}),
+          ...(item?.isEstimated === true ? { isEstimated: true } : {}),
+          ...(item?.quantitySource ? { quantitySource: item.quantitySource } : {}),
+        };
+      })
+      .filter(Boolean)
+  ), []);
+
   const handleCreateMealFromInbox = useCallback((block, mealTypeRaw = 'snack') => {
     if (!block) return;
     const originalBlock = normalizeInboxDraftBlock(block);
@@ -5137,37 +5179,84 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ?? parseFlexibleTimeToDecimal(String(block.timeHHmm || ''))
       ?? getCurrentTimeRoundedTo15Min();
     const baseType = toCanonicalMealType(String(mealTypeRaw || '').split('_')[0]) || 'snack';
-    const newMealType = getGhostMealType(baseType, without);
+    const timeHHmm = String(block.timeHHmm || decimalToTimeStr(mealDec)).trim();
     const sourceItems = Array.isArray(block.items) && block.items.length > 0
       ? block.items
       : (block.rawText ? [{ foodName: block.rawText, name: block.rawText, status: 'raw' }] : []);
-    const foods = mapProposalItemsToDiaryFoods(
-      sourceItems,
-      mealDec,
-      baseType,
-      { mealType: newMealType, mealTime: mealDec },
-    );
-    if (!foods.length) return;
-    writeAssignedInboxLog([...without, ...foods]);
+    if (!sourceItems.length) return;
+
+    // Rimuovi bozza Inbox prima del commit (undo ripristina il blocco).
+    writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     setShowDiarySheet(false);
     const mealLabel = MEAL_LABELS_SAVE[baseType] || baseType;
-    armInboxUndo(
-      {
-        originalBlock,
-        assignedItemIds: foods.map((food) => String(food.id)).filter(Boolean),
-      },
-      `Bozza assegnata a ${mealLabel}`,
+
+    // Unresolved: niente kcal:0 in diario → lavagna McDrive.
+    if (countUnresolvedMealDraftItems(sourceItems) > 0) {
+      armInboxUndo({ originalBlock, assignedItemIds: [] }, `Bozza aperta in lavagna`);
+      openChat();
+      if (typeof sendMessageRef.current === 'function') {
+        void sendMessageRef.current('', {
+          intent: 'START_MCDRIVE_WIZARD',
+          mealType: baseType,
+          editingFoods: sourceItems.map((item, index) => ({
+            foodName: String(item?.foodName || item?.name || item?.desc || '').trim(),
+            grams: Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight) || 0,
+            status: item?.status || 'raw',
+            itemId: item?.id ?? item?.itemId ?? `inbox_${index}`,
+            spokenFoodName: item?.spokenFoodName || item?.foodName || item?.name || '',
+            foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? null,
+            quantitySource: item?.quantitySource || null,
+            isEstimated: item?.isEstimated === true,
+          })).filter((row) => row.foodName),
+          editingExactTime: timeHHmm,
+          skipUserBubble: true,
+        });
+      }
+      return;
+    }
+
+    const commitItems = mapInboxItemsToCommitPayload(sourceItems);
+    if (!commitItems.length || typeof commitAddFoodCommandRef.current !== 'function') return;
+
+    const idsBefore = new Set(
+      (dailyLogRef.current || [])
+        .map((item) => (item?.id != null ? String(item.id) : ''))
+        .filter(Boolean),
     );
-    openMealEditorForEdit(`${newMealType}_${mealDec}`, foods, mealDec);
+    commitAddFoodCommandRef.current({
+      mealType: baseType,
+      items: commitItems,
+      timeString: timeHHmm,
+      exactTime: timeHHmm,
+      mealTime: mealDec,
+      forceNewMealSlot: true,
+      action: 'append',
+      upsertAction: 'append',
+      source: 'inbox_triage',
+    });
+    const assigned = (dailyLogRef.current || []).filter((item) => {
+      const id = item?.id != null ? String(item.id) : '';
+      return id && !idsBefore.has(id) && (item.type === 'food' || item.type === 'recipe' || !item.type);
+    });
+    const assignedItemIds = assigned.map((food) => String(food.id)).filter(Boolean);
+    armInboxUndo({ originalBlock, assignedItemIds }, `Bozza assegnata a ${mealLabel}`);
+    const slotId = assigned[0]?.mealType
+      ? String(assigned[0].mealType)
+      : null;
+    if (slotId) {
+      openMealEditorForEdit(slotId, getFoodItemsForMealSlot(dailyLogRef.current || [], slotId), mealDec);
+    }
   }, [
-    mapProposalItemsToDiaryFoods,
     parseFlexibleTimeToDecimal,
     getCurrentTimeRoundedTo15Min,
-    getGhostMealType,
     toCanonicalMealType,
+    decimalToTimeStr,
     writeAssignedInboxLog,
+    mapInboxItemsToCommitPayload,
+    openChat,
     openMealEditorForEdit,
+    getFoodItemsForMealSlot,
     armInboxUndo,
   ]);
 
@@ -5181,45 +5270,86 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     if (!existing.length && Array.isArray(meal.foods) && meal.foods.length > 0) {
       existing = meal.foods.filter((item) => item && (item.type === 'food' || item.type === 'recipe' || !item.type));
     }
-    const forcedMealSlot = {
-      mealType: existing[0]?.mealType || meal.mealType || meal.mealTypeBase || 'snack',
-      mealTime: typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
-        ? existing[0].mealTime
-        : (Number.isFinite(Number(meal.mealTime)) ? Number(meal.mealTime) : getCurrentTimeRoundedTo15Min()),
-    };
-    const incoming = mapProposalItemsToDiaryFoods(
-      block.items,
-      forcedMealSlot.mealTime,
-      toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
-      forcedMealSlot,
-    );
-    if (!incoming.length) return false;
-    const merged = [...existing, ...incoming];
-    const existingIds = new Set(existing.map((item) => String(item?.id)).filter((id) => id && id !== 'undefined'));
-    const nextLog = existingIds.size > 0
-      ? [...without.filter((item) => !existingIds.has(String(item?.id))), ...merged]
-      : [...without, ...incoming];
-    writeAssignedInboxLog(nextLog);
+    const mealTime = typeof existing[0]?.mealTime === 'number' && !Number.isNaN(existing[0].mealTime)
+      ? existing[0].mealTime
+      : (Number.isFinite(Number(meal.mealTime)) ? Number(meal.mealTime) : getCurrentTimeRoundedTo15Min());
+    const mealTypeCanon = toCanonicalMealType(
+      String(existing[0]?.mealType || meal.mealType || meal.mealTypeBase || 'snack').split('_')[0],
+    ) || 'snack';
+    const timeHHmm = decimalToTimeStr(mealTime);
+    const sourceItems = Array.isArray(block.items) ? block.items : [];
+    if (!sourceItems.length) return false;
+
+    writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     const mealLabel = String(meal.label || meal.title || meal.mealTypeBase || 'pasto').split(' - ')[0];
-    armInboxUndo(
-      {
-        originalBlock,
-        assignedItemIds: incoming.map((food) => String(food.id)).filter(Boolean),
-      },
-      `Bozza assegnata a ${mealLabel}`,
+
+    if (countUnresolvedMealDraftItems(sourceItems) > 0) {
+      armInboxUndo({ originalBlock, assignedItemIds: [] }, `Bozza aperta in lavagna`);
+      if (openTray) {
+        setShowDiarySheet(false);
+        openChat();
+        if (typeof sendMessageRef.current === 'function') {
+          void sendMessageRef.current('', {
+            intent: 'START_MCDRIVE_WIZARD',
+            mealType: mealTypeCanon,
+            editingMealId: slotKey,
+            editingFoods: sourceItems.map((item, index) => ({
+              foodName: String(item?.foodName || item?.name || item?.desc || '').trim(),
+              grams: Number(item?.grams ?? item?.qty ?? item?.qta ?? item?.weight) || 0,
+              status: item?.status || 'raw',
+              itemId: item?.id ?? item?.itemId ?? `inbox_${index}`,
+              spokenFoodName: item?.spokenFoodName || item?.foodName || item?.name || '',
+              foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? null,
+            })).filter((row) => row.foodName),
+            editingExactTime: timeHHmm,
+            skipUserBubble: true,
+          });
+        }
+      }
+      return true;
+    }
+
+    const commitItems = mapInboxItemsToCommitPayload(sourceItems);
+    if (!commitItems.length || typeof commitAddFoodCommandRef.current !== 'function') return false;
+
+    const idsBefore = new Set(
+      (dailyLogRef.current || [])
+        .map((item) => (item?.id != null ? String(item.id) : ''))
+        .filter(Boolean),
     );
+    commitAddFoodCommandRef.current({
+      mealType: mealTypeCanon,
+      items: commitItems,
+      targetNodeId: slotKey,
+      action: 'merge',
+      upsertAction: 'merge',
+      timeString: timeHHmm,
+      exactTime: timeHHmm,
+      mealTime,
+      source: 'inbox_triage',
+    });
+    const assignedItemIds = (dailyLogRef.current || [])
+      .filter((item) => {
+        const id = item?.id != null ? String(item.id) : '';
+        return id && !idsBefore.has(id) && (item.type === 'food' || item.type === 'recipe' || !item.type);
+      })
+      .map((food) => String(food.id));
+    armInboxUndo({ originalBlock, assignedItemIds }, `Bozza assegnata a ${mealLabel}`);
     if (openTray) {
       setShowDiarySheet(false);
-      openMealEditorForEdit(slotKey, merged, forcedMealSlot.mealTime);
+      const merged = getFoodItemsForMealSlot(dailyLogRef.current || [], slotKey);
+      openMealEditorForEdit(slotKey, merged, mealTime);
     }
     return true;
   }, [
     getFoodItemsForMealSlot,
-    mapProposalItemsToDiaryFoods,
     toCanonicalMealType,
     getCurrentTimeRoundedTo15Min,
+    decimalToTimeStr,
     writeAssignedInboxLog,
+    mapInboxItemsToCommitPayload,
+    openChat,
     openMealEditorForEdit,
     armInboxUndo,
   ]);
@@ -6572,7 +6702,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         || String(payload?.source || '') === 'mcdrive_draft_persist'
         || String(payload?.source || '') === 'meal_inbox_persist'
         || String(payload?.source || '') === 'mcdrive_wizard_edit'
-        || String(payload?.source || '') === 'mcdrive_wizard';
+        || String(payload?.source || '') === 'mcdrive_wizard'
+        || String(payload?.source || '') === 'inbox_triage';
       if (
         !skipDedupe
         && fingerprint
@@ -6794,6 +6925,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       patchFoodDbEntriesBatch,
     ],
   );
+
+  commitAddFoodCommandRef.current = commitAddFoodCommand;
 
   const cancelMealBuilder = useCallback(() => {
     setMealBuilder({ active: false, mealType: '', foods: [] });
@@ -8385,6 +8518,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
       onOpen={handleOpenKentuChat}
       onOpenAiMealBuilder={openAiAssistedMealFromVoiceItems}
+      onSendChatMessage={handleHomeActionSend}
       onBlockedOpen={showEngineAlignToast}
       engineReady={isEngineReady}
       showNotificationBadge={!!kentuChatNotificationBadge}
