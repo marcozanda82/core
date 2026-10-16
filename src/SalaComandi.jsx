@@ -87,7 +87,6 @@ import { WipMealProvider } from './features/wipMealBuilder/context/WipMealContex
 import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter';
 import { useActivityDrafts } from './hooks/useActivityDrafts';
 import { useAiWorkoutDrafts } from './hooks/useAiWorkoutDrafts';
-import DailySessionsView from './features/chat/DailySessionsView';
 import { dismissSessionNavStack } from './features/chat/sessionNavStack';
 import { getActiveDailyProtocol, useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore';
 import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols';
@@ -104,7 +103,6 @@ import {
   enrichDbRowWithFoodUnits,
 } from './foodUnits';
 import { withDefaultUsageStats, recordDraftFoodsUsageStats, getCurrentTimeSlot } from './features/mealBuilder/utils/timeSlotUtils';
-import TargetSettingsModal from './components/modals/TargetSettingsModal';
 import MainMenuDrawer from './layout/MainMenuDrawer';
 import { isHealthDiabetesChatMode } from './features/chat/healthChatMode.js';
 import { useStrategicPlanner } from './hooks/useStrategicPlanner';
@@ -114,8 +112,6 @@ import {
   getTimePositionPercent,
   getWallClockDecimalHour,
 } from './timeLayout';
-import DailyMacroSheet from './DailyMacroSheet';
-import FoodLabelModal from './FoodLabelModal';
 import FirebaseDataLoadingLayer from './components/FirebaseDataLoadingLayer';
 import { buildMetabolicMapThresholdsFromSplit } from './features/planning/trainingBlockTargets';
 import useTrainingBlock from './hooks/planning/useTrainingBlock';
@@ -125,8 +121,6 @@ import {
   resolveActiveCompensationDailyDelta,
   resolveActiveCompensationOnDate,
 } from './utils/activeCompensation';
-import TimelineNodeReport from './components/TimelineNodeReport';
-import MetabolicTimelineSheet from './components/MetabolicTimelineSheet';
 import {
   MAIN_BOTTOM_TAB_ORDER,
   PERSISTED_BOTTOM_TAB_IDS,
@@ -202,7 +196,6 @@ import {
 } from './features/commandTerminal/meals/mealUpsert';
 import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, appendUnassignedDraftBlock, removeUnassignedDraftBlock, restoreUnassignedDraftBlock, mergeUnassignedDraftBlocks, extractUnassignedDraftBlocks, removeLogItemsByIds, normalizeInboxDraftBlock, serializeInboxDraftItem, INBOX_UNDO_TOAST_MS } from './utils/mealDraftStatus';
 import { injectMealClockIntoCommandPayload, parseTimeStringToDecimalHour } from './features/commandTerminal/conversation/mealSmartDefaults';
-import InboxTriageSheet from './components/InboxTriageSheet';
 import InboxUndoToast from './components/InboxUndoToast';
 import { registerInboxDraftAppendHandler } from './platform/inboxDraftAppendBus';
 import { useMealTrash } from './hooks/salaComandi/useMealTrash';
@@ -220,14 +213,6 @@ import {
 import AppBottomNavigation from './layout/AppBottomNavigation';
 import AppHeader from './layout/AppHeader';
 import EnergyArcWidget from './components/EnergyArcWidget';
-import DiaryDetailsSheet from './components/DiaryDetailsSheet';
-import EnergyBalanceSheet from './components/EnergyBalanceSheet';
-import CalorieDetailsModal from './components/CalorieDetailsModal';
-import FatDetailsSheet from './components/FatDetailsSheet';
-import CarbsDetailsSheet from './components/CarbsDetailsSheet';
-import ProteinDetailsSheet from './components/ProteinDetailsSheet';
-import MineralsDetailsSheet from './components/MineralsDetailsSheet';
-import VitaminsDetailsSheet from './components/VitaminsDetailsSheet';
 import { buildFatDetailsData } from './features/nutrition/buildFatDetailsData';
 import { buildCarbsDetailsData } from './features/nutrition/buildCarbsDetailsData';
 import { buildProteinDetailsData } from './features/nutrition/buildProteinDetailsData';
@@ -261,9 +246,6 @@ import {
 import { persistFourCylinderState } from './features/salaComandi/utils/fourCylinderPersist';
 import useTimelineDiaryActions from './hooks/salaComandi/useTimelineDiaryActions';
 import useSleepEngine from './hooks/useSleepEngine';
-import ReportModalOverlay from './features/salaComandi/overlays/ReportModalOverlay';
-import AlcoholPopupOverlay from './features/salaComandi/overlays/AlcoholPopupOverlay';
-import SleepModalOverlay from './features/salaComandi/overlays/SleepModalOverlay';
 import SleepPromptOverlay from './features/salaComandi/overlays/SleepPromptOverlay';
 import { markPredictiveGreetingsSuperseded } from './features/predictive/predictiveGreeting';
 import QuickNodeEditOverlay from './features/salaComandi/overlays/QuickNodeEditOverlay';
@@ -275,7 +257,6 @@ import {
   FastChargeSupplementsQuickPanel,
 } from './components/modals/FastChargeQuickActionPanels';
 import TimelineInsertOverlay from './components/modals/TimelineInsertOverlay';
-import FoodInspectorModal from './components/modals/FoodInspectorModal';
 import useBodyMetricsEngine from './features/salaComandi/hooks/useBodyMetricsEngine';
 import {
   estraiDatiFoodDb as resolveFoodDataFromEngine,
@@ -493,6 +474,26 @@ const KentuChatUI = lazyWithRetry(() => import('./features/chat/KentuChatWithWip
 const HealthReportView = lazyWithRetry(() => import('./features/health/HealthReportView'));
 const TherapyPlanView = lazyWithRetry(() => import('./features/health/TherapyPlanView'));
 const TrendMetricLineChart = lazyWithRetry(() => import('./components/charts/TrendMetricLineChart'));
+/** Overlay secondari: fuori dal chunk SalaComandi, caricati solo all’apertura. */
+const DailySessionsView = lazyWithRetry(() => import('./features/chat/DailySessionsView'));
+const TargetSettingsModal = lazyWithRetry(() => import('./components/modals/TargetSettingsModal'));
+const DailyMacroSheet = lazyWithRetry(() => import('./DailyMacroSheet'));
+const FoodLabelModal = lazyWithRetry(() => import('./FoodLabelModal'));
+const TimelineNodeReport = lazyWithRetry(() => import('./components/TimelineNodeReport'));
+const MetabolicTimelineSheet = lazyWithRetry(() => import('./components/MetabolicTimelineSheet'));
+const InboxTriageSheet = lazyWithRetry(() => import('./components/InboxTriageSheet'));
+const DiaryDetailsSheet = lazyWithRetry(() => import('./components/DiaryDetailsSheet'));
+const EnergyBalanceSheet = lazyWithRetry(() => import('./components/EnergyBalanceSheet'));
+const CalorieDetailsModal = lazyWithRetry(() => import('./components/CalorieDetailsModal'));
+const FatDetailsSheet = lazyWithRetry(() => import('./components/FatDetailsSheet'));
+const CarbsDetailsSheet = lazyWithRetry(() => import('./components/CarbsDetailsSheet'));
+const ProteinDetailsSheet = lazyWithRetry(() => import('./components/ProteinDetailsSheet'));
+const MineralsDetailsSheet = lazyWithRetry(() => import('./components/MineralsDetailsSheet'));
+const VitaminsDetailsSheet = lazyWithRetry(() => import('./components/VitaminsDetailsSheet'));
+const ReportModalOverlay = lazyWithRetry(() => import('./features/salaComandi/overlays/ReportModalOverlay'));
+const AlcoholPopupOverlay = lazyWithRetry(() => import('./features/salaComandi/overlays/AlcoholPopupOverlay'));
+const SleepModalOverlay = lazyWithRetry(() => import('./features/salaComandi/overlays/SleepModalOverlay'));
+const FoodInspectorModal = lazyWithRetry(() => import('./components/modals/FoodInspectorModal'));
 
 export default function SalaComandi() {
   const navigate = useNavigate();
@@ -8574,39 +8575,41 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       ) : (
       <>
       {activeBottomTab === 'analisi' && (
-        <DiaryDetailsSheet
-          embedded
-          isOpen
-          onClose={() => {}}
-          activeLog={activeLog}
-          groupedFoods={groupedFoods}
-          workoutsLog={workoutsLog}
-          totali={totali}
-          dynamicDailyKcal={dynamicDailyKcal}
-          decimalToTimeStr={decimalToTimeStr}
-          fastingData={fastingData}
-          currentHour={isViewingPastDate ? 24 : currentTime}
-          selectedDate={currentTrackerDate || getTodayString()}
-          isToday={!isViewingPastDate}
-          fullHistory={fullHistory}
-          isIntentionalFast={currentDayIntentionalFast}
-          onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
-          onClearIntentionalFast={() => handleSetIntentionalFast(false)}
-          onEditMeal={(slotKey) => {
-            loadMealToConstructor(slotKey);
-          }}
-          onEditWorkout={openWorkoutEditorFromLogItem}
-          onDeleteItem={removeLogItem}
-          onInspectFood={setSelectedFoodForInfo}
-          onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
-          onSaveSleep={handleSaveSleepFromDiary}
-          onSelectInboxDraft={handleSelectInboxDraft}
-          onReturnRawToInbox={handleReturnRawToDiaryInbox}
-          onTrashMeal={handleTrashMeal}
-          trashMeals={trashMeals}
-          onRestoreTrashMeal={handleRestoreTrashMeal}
-          onPurgeTrashMeal={handlePurgeTrashMeal}
-        />
+        <Suspense fallback={null}>
+          <DiaryDetailsSheet
+            embedded
+            isOpen
+            onClose={() => {}}
+            activeLog={activeLog}
+            groupedFoods={groupedFoods}
+            workoutsLog={workoutsLog}
+            totali={totali}
+            dynamicDailyKcal={dynamicDailyKcal}
+            decimalToTimeStr={decimalToTimeStr}
+            fastingData={fastingData}
+            currentHour={isViewingPastDate ? 24 : currentTime}
+            selectedDate={currentTrackerDate || getTodayString()}
+            isToday={!isViewingPastDate}
+            fullHistory={fullHistory}
+            isIntentionalFast={currentDayIntentionalFast}
+            onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
+            onClearIntentionalFast={() => handleSetIntentionalFast(false)}
+            onEditMeal={(slotKey) => {
+              loadMealToConstructor(slotKey);
+            }}
+            onEditWorkout={openWorkoutEditorFromLogItem}
+            onDeleteItem={removeLogItem}
+            onInspectFood={setSelectedFoodForInfo}
+            onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
+            onSaveSleep={handleSaveSleepFromDiary}
+            onSelectInboxDraft={handleSelectInboxDraft}
+            onReturnRawToInbox={handleReturnRawToDiaryInbox}
+            onTrashMeal={handleTrashMeal}
+            trashMeals={trashMeals}
+            onRestoreTrashMeal={handleRestoreTrashMeal}
+            onPurgeTrashMeal={handlePurgeTrashMeal}
+          />
+        </Suspense>
       )}
 
       {activeBottomTab === 'oggi' && (
@@ -9313,16 +9316,20 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onOpenSessions={handleOpenDailySessions}
       />
 
-      <DailySessionsView
-        open={dailySessionsOpen}
-        pendingDrafts={sessionPendingDrafts}
-        completedToday={sessionCompletedToday}
-        onClose={handleCloseDailySessions}
-        onConfirmDraft={handleConfirmSessionDraft}
-        onEditDraft={handleEditSessionDraft}
-        onCancelDraft={handleCancelSessionDraft}
-        onEditCompleted={handleEditCompletedSession}
-      />
+      {dailySessionsOpen ? (
+        <Suspense fallback={null}>
+          <DailySessionsView
+            open={dailySessionsOpen}
+            pendingDrafts={sessionPendingDrafts}
+            completedToday={sessionCompletedToday}
+            onClose={handleCloseDailySessions}
+            onConfirmDraft={handleConfirmSessionDraft}
+            onEditDraft={handleEditSessionDraft}
+            onCancelDraft={handleCancelSessionDraft}
+            onEditCompleted={handleEditCompletedSession}
+          />
+        </Suspense>
+      ) : null}
 
       {showBiochemicalDiagnostics ? (
         <Suspense fallback={<KentuLazySectionFallback label="Diagnostica…" />}>
@@ -9343,15 +9350,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
       {createPortal(
         <>
-          <DailyMacroSheet
-            open={dailyMacroSheetOpen}
-            onClose={() => setDailyMacroSheetOpen(false)}
-            dailyLog={activeLog || []}
-            userTargets={userTargets}
-            dailyKcalTarget={dynamicDailyKcal}
-          />
+          {dailyMacroSheetOpen ? (
+            <Suspense fallback={null}>
+              <DailyMacroSheet
+                open={dailyMacroSheetOpen}
+                onClose={() => setDailyMacroSheetOpen(false)}
+                dailyLog={activeLog || []}
+                userTargets={userTargets}
+                dailyKcalTarget={dynamicDailyKcal}
+              />
+            </Suspense>
+          ) : null}
           {selectedFoodForInfo ? (
-            <FoodLabelModal foodItem={selectedFoodForInfo} foodDb={csvFoodDb} onClose={() => setSelectedFoodForInfo(null)} />
+            <Suspense fallback={null}>
+              <FoodLabelModal foodItem={selectedFoodForInfo} foodDb={csvFoodDb} onClose={() => setSelectedFoodForInfo(null)} />
+            </Suspense>
           ) : null}
         </>,
         document.body
@@ -9363,22 +9376,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onApply={applyRecalibrationProposal}
       />
 
-      <TargetSettingsModal
-        open={showProfile}
-        onClose={() => setShowProfile(false)}
-        userProfile={userProfile}
-        setUserProfile={setUserProfile}
-        birthDate={birthDate}
-        setBirthDate={setBirthDate}
-        userTargets={userTargets}
-        applyTargetModeUpdate={applyTargetModeUpdate}
-        calculateAge={calculateAge}
-        calculateSmartTargets={calculateSmartTargets}
-        csvInputRef={csvInputRef}
-        handleCSVUpload={handleCSVUpload}
-        saveProfileToFirebase={saveProfileToFirebase}
-        onAppModeChange={handleAppModeChange}
-      />
+      {showProfile ? (
+        <Suspense fallback={null}>
+          <TargetSettingsModal
+            open={showProfile}
+            onClose={() => setShowProfile(false)}
+            userProfile={userProfile}
+            setUserProfile={setUserProfile}
+            birthDate={birthDate}
+            setBirthDate={setBirthDate}
+            userTargets={userTargets}
+            applyTargetModeUpdate={applyTargetModeUpdate}
+            calculateAge={calculateAge}
+            calculateSmartTargets={calculateSmartTargets}
+            csvInputRef={csvInputRef}
+            handleCSVUpload={handleCSVUpload}
+            saveProfileToFirebase={saveProfileToFirebase}
+            onAppModeChange={handleAppModeChange}
+          />
+        </Suspense>
+      ) : null}
       <DateCalendarOverlay
         showDateCalendarModal={showDateCalendarModal}
         onClose={() => setShowDateCalendarModal(false)}
@@ -9469,24 +9486,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onUseAverage={handleSleepPromptUseAverage}
       />
 
-      <SleepModalOverlay
-        sleepModal={sleepModal}
-        onClose={() => setSleepModal(null)}
-        trackerDate={currentTrackerDate}
-        sleepFormWakeStr={sleepFormWakeStr}
-        setSleepFormWakeStr={setSleepFormWakeStr}
-        sleepFormDurationHours={sleepFormDurationHours}
-        setSleepFormDurationHours={setSleepFormDurationHours}
-        sleepFormDurationMinutes={sleepFormDurationMinutes}
-        setSleepFormDurationMinutes={setSleepFormDurationMinutes}
-        sleepFormNotes={sleepFormNotes}
-        setSleepFormNotes={setSleepFormNotes}
-        sleepFormQuality={sleepFormQuality}
-        setSleepFormQuality={setSleepFormQuality}
-        sleepDurationLabel={sleepDurationLabel}
-        computedBedtimeLabel={computedSleepBedtimeLabel}
-        onSave={handleSaveSleepModal}
-      />
+      {sleepModal != null ? (
+        <Suspense fallback={null}>
+          <SleepModalOverlay
+            sleepModal={sleepModal}
+            onClose={() => setSleepModal(null)}
+            trackerDate={currentTrackerDate}
+            sleepFormWakeStr={sleepFormWakeStr}
+            setSleepFormWakeStr={setSleepFormWakeStr}
+            sleepFormDurationHours={sleepFormDurationHours}
+            setSleepFormDurationHours={setSleepFormDurationHours}
+            sleepFormDurationMinutes={sleepFormDurationMinutes}
+            setSleepFormDurationMinutes={setSleepFormDurationMinutes}
+            sleepFormNotes={sleepFormNotes}
+            setSleepFormNotes={setSleepFormNotes}
+            sleepFormQuality={sleepFormQuality}
+            setSleepFormQuality={setSleepFormQuality}
+            sleepDurationLabel={sleepDurationLabel}
+            computedBedtimeLabel={computedSleepBedtimeLabel}
+            onSave={handleSaveSleepModal}
+          />
+        </Suspense>
+      ) : null}
 
       <QuickNodeEditOverlay
         editingQuickNode={editingQuickNode}
@@ -9547,98 +9568,106 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }}
       />
 
-      {selectedNodeReport && (
-        <TimelineNodeReport
-          report={selectedNodeReport}
-          activeLog={activeLog}
-          displayTime={displayTime}
-          currentTime={currentTime}
-          onClose={() => setSelectedNodeReport(null)}
-          getFoodItemsForMealSlot={getFoodItemsForMealSlot}
-          expandedRecipes={expandedRecipes}
-          toggleRecipe={toggleRecipe}
-          setSelectedFoodForInfo={setSelectedFoodForInfo}
-          setInspectedFood={setInspectedFood}
-          setEditFoodData={setEditFoodData}
-          onEditFromReport={(node) => {
-            setSelectedNodeReport(null);
-            if (node.type === 'ghost_meal') {
-              openGhostMealEditorFromTimelineNode(node);
-              return;
-            }
-            if (node.type === 'meal') {
-              const slotId = String(node.mealId || node.id);
-              const foodsForSlot =
-                Array.isArray(node.items) && node.items.length > 0
-                  ? node.items
-                  : Array.isArray(node.foods) && node.foods.length > 0
-                    ? node.foods
-                    : getFoodItemsForMealSlot(activeLog, slotId);
-              const mealTime = typeof node.time === 'number' && !Number.isNaN(node.time)
-                ? node.time
-                : (typeof foodsForSlot[0]?.mealTime === 'number' ? foodsForSlot[0].mealTime : null);
-              openMealEditorForEdit(slotId, foodsForSlot, mealTime);
-              return;
-            }
-            // ghost_workout / workout / work / cognitive: stesso idratazione form
-            openWorkoutEditorFromLogItem(node);
-          }}
-        />
-      )}
+      {selectedNodeReport ? (
+        <Suspense fallback={null}>
+          <TimelineNodeReport
+            report={selectedNodeReport}
+            activeLog={activeLog}
+            displayTime={displayTime}
+            currentTime={currentTime}
+            onClose={() => setSelectedNodeReport(null)}
+            getFoodItemsForMealSlot={getFoodItemsForMealSlot}
+            expandedRecipes={expandedRecipes}
+            toggleRecipe={toggleRecipe}
+            setSelectedFoodForInfo={setSelectedFoodForInfo}
+            setInspectedFood={setInspectedFood}
+            setEditFoodData={setEditFoodData}
+            onEditFromReport={(node) => {
+              setSelectedNodeReport(null);
+              if (node.type === 'ghost_meal') {
+                openGhostMealEditorFromTimelineNode(node);
+                return;
+              }
+              if (node.type === 'meal') {
+                const slotId = String(node.mealId || node.id);
+                const foodsForSlot =
+                  Array.isArray(node.items) && node.items.length > 0
+                    ? node.items
+                    : Array.isArray(node.foods) && node.foods.length > 0
+                      ? node.foods
+                      : getFoodItemsForMealSlot(activeLog, slotId);
+                const mealTime = typeof node.time === 'number' && !Number.isNaN(node.time)
+                  ? node.time
+                  : (typeof foodsForSlot[0]?.mealTime === 'number' ? foodsForSlot[0].mealTime : null);
+                openMealEditorForEdit(slotId, foodsForSlot, mealTime);
+                return;
+              }
+              // ghost_workout / workout / work / cognitive: stesso idratazione form
+              openWorkoutEditorFromLogItem(node);
+            }}
+          />
+        </Suspense>
+      ) : null}
 
       {/* MODALE ISPEZIONE E MODIFICA ALIMENTO */}
-      {inspectedFood && editFoodData && (
-        <FoodInspectorModal
-          inspectedFood={inspectedFood}
-          editFoodData={editFoodData}
-          setEditFoodData={setEditFoodData}
-          isAIVerifying={isAIVerifying}
-          onVerifyAI={handleVerifyFoodAI}
-          onSave={() => {
-            const qty = editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0;
-            const kcal = editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0;
-            const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
-            const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
-            const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
-            const updated = ensureRecipeDiaryFields({
-              ...inspectedFood,
-              weight: qty,
-              qta: qty,
-              kcal,
-              cal: kcal,
-              prot,
-              carb,
-              fat,
-              fatTotal: fat,
-              fibre: editFoodData.fibre,
-              name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
-              desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome,
-              entrySource: 'ui',
-            });
-            if (isSimulationMode) {
-              setSimulatedLog(prev => (prev || []).map(item => item.id === inspectedFood.id ? updated : item));
+      {inspectedFood && editFoodData ? (
+        <Suspense fallback={null}>
+          <FoodInspectorModal
+            inspectedFood={inspectedFood}
+            editFoodData={editFoodData}
+            setEditFoodData={setEditFoodData}
+            isAIVerifying={isAIVerifying}
+            onVerifyAI={handleVerifyFoodAI}
+            onSave={() => {
+              const qty = editFoodData.qty ?? editFoodData.quantita ?? editFoodData.weight ?? 0;
+              const kcal = editFoodData.kcal ?? editFoodData.calorie ?? editFoodData.cal ?? 0;
+              const prot = editFoodData.prot ?? editFoodData.proteine ?? 0;
+              const carb = editFoodData.carb ?? editFoodData.carboidrati ?? 0;
+              const fat = editFoodData.fat ?? editFoodData.grassi ?? editFoodData.fatTotal ?? 0;
+              const updated = ensureRecipeDiaryFields({
+                ...inspectedFood,
+                weight: qty,
+                qta: qty,
+                kcal,
+                cal: kcal,
+                prot,
+                carb,
+                fat,
+                fatTotal: fat,
+                fibre: editFoodData.fibre,
+                name: editFoodData.name ?? editFoodData.nome ?? editFoodData.desc,
+                desc: editFoodData.desc ?? editFoodData.name ?? editFoodData.nome,
+                entrySource: 'ui',
+              });
+              if (isSimulationMode) {
+                setSimulatedLog(prev => (prev || []).map(item => item.id === inspectedFood.id ? updated : item));
+                setInspectedFood(null);
+                setEditFoodData(null);
+                return;
+              }
+              const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
+              setDailyLog(nextLog);
+              syncDatiFirebase(nextLog, manualNodes);
               setInspectedFood(null);
               setEditFoodData(null);
-              return;
-            }
-            const nextLog = dailyLog.map(item => item.id === inspectedFood.id ? updated : item);
-            setDailyLog(nextLog);
-            syncDatiFirebase(nextLog, manualNodes);
-            setInspectedFood(null);
-            setEditFoodData(null);
-          }}
-          onCancel={() => { setInspectedFood(null); setEditFoodData(null); }}
-        />
-      )}
+            }}
+            onCancel={() => { setInspectedFood(null); setEditFoodData(null); }}
+          />
+        </Suspense>
+      ) : null}
 
-      <ReportModalOverlay
-        showReportModal={showReportModal}
-        dailyReport={dailyReport}
-        dailyReportDisplay={dailyReportDisplay}
-        onClose={() => setShowReportModal(false)}
-        currentDateObj={currentDateObj}
-        setTrendModalMetric={setTrendModalMetric}
-      />
+      {showReportModal ? (
+        <Suspense fallback={null}>
+          <ReportModalOverlay
+            showReportModal={showReportModal}
+            dailyReport={dailyReport}
+            dailyReportDisplay={dailyReportDisplay}
+            onClose={() => setShowReportModal(false)}
+            currentDateObj={currentDateObj}
+            setTrendModalMetric={setTrendModalMetric}
+          />
+        </Suspense>
+      ) : null}
 
       {/* Trend storico valutazioni report (cumulativo) */}
       {trendModalMetric && (
@@ -9691,51 +9720,59 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         </div>
       )}
 
-      <DiaryDetailsSheet
-        isOpen={showDiarySheet}
-        onClose={() => setShowDiarySheet(false)}
-        activeLog={activeLog}
-        groupedFoods={groupedFoods}
-        workoutsLog={workoutsLog}
-        totali={totali}
-        dynamicDailyKcal={dynamicDailyKcal}
-        decimalToTimeStr={decimalToTimeStr}
-        fastingData={fastingData}
-        currentHour={isViewingPastDate ? 24 : currentTime}
-        selectedDate={currentTrackerDate || getTodayString()}
-        isToday={!isViewingPastDate}
-        fullHistory={fullHistory}
-        isIntentionalFast={currentDayIntentionalFast}
-        onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
-        onClearIntentionalFast={() => handleSetIntentionalFast(false)}
-        onEditMeal={(slotKey) => {
-          setShowDiarySheet(false);
-          loadMealToConstructor(slotKey);
-        }}
-        onEditWorkout={openWorkoutEditorFromLogItem}
-        onDeleteItem={removeLogItem}
-        onInspectFood={setSelectedFoodForInfo}
-        onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
-        onSaveSleep={handleSaveSleepFromDiary}
-        onSelectInboxDraft={handleSelectInboxDraft}
-        onReturnRawToInbox={handleReturnRawToDiaryInbox}
-        onTrashMeal={handleTrashMeal}
-        trashMeals={trashMeals}
-        onRestoreTrashMeal={handleRestoreTrashMeal}
-        onPurgeTrashMeal={handlePurgeTrashMeal}
-      />
+      {showDiarySheet ? (
+        <Suspense fallback={null}>
+          <DiaryDetailsSheet
+            isOpen={showDiarySheet}
+            onClose={() => setShowDiarySheet(false)}
+            activeLog={activeLog}
+            groupedFoods={groupedFoods}
+            workoutsLog={workoutsLog}
+            totali={totali}
+            dynamicDailyKcal={dynamicDailyKcal}
+            decimalToTimeStr={decimalToTimeStr}
+            fastingData={fastingData}
+            currentHour={isViewingPastDate ? 24 : currentTime}
+            selectedDate={currentTrackerDate || getTodayString()}
+            isToday={!isViewingPastDate}
+            fullHistory={fullHistory}
+            isIntentionalFast={currentDayIntentionalFast}
+            onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
+            onClearIntentionalFast={() => handleSetIntentionalFast(false)}
+            onEditMeal={(slotKey) => {
+              setShowDiarySheet(false);
+              loadMealToConstructor(slotKey);
+            }}
+            onEditWorkout={openWorkoutEditorFromLogItem}
+            onDeleteItem={removeLogItem}
+            onInspectFood={setSelectedFoodForInfo}
+            onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
+            onSaveSleep={handleSaveSleepFromDiary}
+            onSelectInboxDraft={handleSelectInboxDraft}
+            onReturnRawToInbox={handleReturnRawToDiaryInbox}
+            onTrashMeal={handleTrashMeal}
+            trashMeals={trashMeals}
+            onRestoreTrashMeal={handleRestoreTrashMeal}
+            onPurgeTrashMeal={handlePurgeTrashMeal}
+          />
+        </Suspense>
+      ) : null}
 
-      <InboxTriageSheet
-        block={inboxTriageBlock}
-        todayMeals={inboxTriageMeals}
-        inboxDrafts={inboxTriageDrafts}
-        dailyLog={activeLog}
-        onCreateNewMeal={handleCreateMealFromInbox}
-        onMergeIntoMeal={handleMergeInboxIntoMeal}
-        onMergeIntoDraft={handleMergeInboxDrafts}
-        onDeleteDraft={handleDeleteInboxDraft}
-        onClose={() => setInboxTriageBlock(null)}
-      />
+      {inboxTriageBlock ? (
+        <Suspense fallback={null}>
+          <InboxTriageSheet
+            block={inboxTriageBlock}
+            todayMeals={inboxTriageMeals}
+            inboxDrafts={inboxTriageDrafts}
+            dailyLog={activeLog}
+            onCreateNewMeal={handleCreateMealFromInbox}
+            onMergeIntoMeal={handleMergeInboxIntoMeal}
+            onMergeIntoDraft={handleMergeInboxDrafts}
+            onDeleteDraft={handleDeleteInboxDraft}
+            onClose={() => setInboxTriageBlock(null)}
+          />
+        </Suspense>
+      ) : null}
 
       <InboxUndoToast
         message={trashToast?.message || inboxUndoToast?.message || ''}
@@ -9744,92 +9781,124 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onDismiss={trashToast ? clearTrashToast : clearInboxUndoToast}
       />
 
-      <EnergyBalanceSheet
-        isOpen={showEnergySheet}
-        onClose={() => setShowEnergySheet(false)}
-        userAge={calculateAge(birthDate) ?? userProfile?.age ?? 30}
-        recoveryScore={sleepRecoveryScore}
-        totalSleepHours={totalSleepHours}
-        dynamicDailyKcal={dynamicDailyKcal}
-        consumedKcal={totali?.kcal}
-        workoutBurnKcal={workoutsLog.reduce(
-          (sum, wk) => sum + (Number(wk?.kcal ?? wk?.cal) || 0),
-          0,
-        )}
-      />
+      {showEnergySheet ? (
+        <Suspense fallback={null}>
+          <EnergyBalanceSheet
+            isOpen={showEnergySheet}
+            onClose={() => setShowEnergySheet(false)}
+            userAge={calculateAge(birthDate) ?? userProfile?.age ?? 30}
+            recoveryScore={sleepRecoveryScore}
+            totalSleepHours={totalSleepHours}
+            dynamicDailyKcal={dynamicDailyKcal}
+            consumedKcal={totali?.kcal}
+            workoutBurnKcal={workoutsLog.reduce(
+              (sum, wk) => sum + (Number(wk?.kcal ?? wk?.cal) || 0),
+              0,
+            )}
+          />
+        </Suspense>
+      ) : null}
 
-      <CalorieDetailsModal
-        isOpen={showCalorieDetailsSheet}
-        onClose={() => setShowCalorieDetailsSheet(false)}
-        tdeeBaseKcal={dogmaticSettingsBaseKcal}
-        workoutBurnKcal={dogmaticBurnKcal}
-        deltaKcal={dogmaticDeltaKcal}
-        compensationKcal={dogmaticCompensationKcal}
-        compensationDaysRemaining={
-          dogmaticCompensationStatus.isActive
-            ? dogmaticCompensationStatus.daysRemaining
-            : null
-        }
-        autopilotOffset={dogmaticAutoCompensationKcal}
-        ghostAutoPilotEnabled={ghostAutoPilotEnabled}
-        onOpenCalibrazione={openCalibrazioneFromCalorieModal}
-        targetKcal={dogmaticTargetKcal}
-        consumedKcal={Math.round(Number(totali?.kcal) || 0)}
-        proteinConsumed={Number(totali?.prot) || 0}
-        proteinTarget={
-          effectiveTargetsForCurrentDate?.prot
-          ?? userTargets?.prot
-          ?? 150
-        }
-      />
+      {showCalorieDetailsSheet ? (
+        <Suspense fallback={null}>
+          <CalorieDetailsModal
+            isOpen={showCalorieDetailsSheet}
+            onClose={() => setShowCalorieDetailsSheet(false)}
+            tdeeBaseKcal={dogmaticSettingsBaseKcal}
+            workoutBurnKcal={dogmaticBurnKcal}
+            deltaKcal={dogmaticDeltaKcal}
+            compensationKcal={dogmaticCompensationKcal}
+            compensationDaysRemaining={
+              dogmaticCompensationStatus.isActive
+                ? dogmaticCompensationStatus.daysRemaining
+                : null
+            }
+            autopilotOffset={dogmaticAutoCompensationKcal}
+            ghostAutoPilotEnabled={ghostAutoPilotEnabled}
+            onOpenCalibrazione={openCalibrazioneFromCalorieModal}
+            targetKcal={dogmaticTargetKcal}
+            consumedKcal={Math.round(Number(totali?.kcal) || 0)}
+            proteinConsumed={Number(totali?.prot) || 0}
+            proteinTarget={
+              effectiveTargetsForCurrentDate?.prot
+              ?? userTargets?.prot
+              ?? 150
+            }
+          />
+        </Suspense>
+      ) : null}
 
-      <MetabolicTimelineSheet
-        isOpen={showMetabolicSheet}
-        metabolicSnapshot={metabolicSnapshot}
-        onClose={() => setShowMetabolicSheet(false)}
-        onNeuralReset={() => {
-          setShowMetabolicSheet(false);
-          setActiveAction('focus');
-          setIsDrawerOpen(false);
-        }}
-      />
+      {showMetabolicSheet ? (
+        <Suspense fallback={null}>
+          <MetabolicTimelineSheet
+            isOpen={showMetabolicSheet}
+            metabolicSnapshot={metabolicSnapshot}
+            onClose={() => setShowMetabolicSheet(false)}
+            onNeuralReset={() => {
+              setShowMetabolicSheet(false);
+              setActiveAction('focus');
+              setIsDrawerOpen(false);
+            }}
+          />
+        </Suspense>
+      ) : null}
 
-      <FatDetailsSheet
-        isOpen={showFatSheet}
-        onClose={() => setShowFatSheet(false)}
-        data={realFatData}
-        dailyLog={activeLog}
-      />
+      {showFatSheet ? (
+        <Suspense fallback={null}>
+          <FatDetailsSheet
+            isOpen={showFatSheet}
+            onClose={() => setShowFatSheet(false)}
+            data={realFatData}
+            dailyLog={activeLog}
+          />
+        </Suspense>
+      ) : null}
 
-      <CarbsDetailsSheet
-        isOpen={showCarbsSheet}
-        onClose={() => setShowCarbsSheet(false)}
-        data={realCarbsData}
-        dailyLog={activeLog}
-      />
+      {showCarbsSheet ? (
+        <Suspense fallback={null}>
+          <CarbsDetailsSheet
+            isOpen={showCarbsSheet}
+            onClose={() => setShowCarbsSheet(false)}
+            data={realCarbsData}
+            dailyLog={activeLog}
+          />
+        </Suspense>
+      ) : null}
 
-      <ProteinDetailsSheet
-        isOpen={showProteinSheet}
-        onClose={() => setShowProteinSheet(false)}
-        data={realProteinData}
-        dailyLog={activeLog}
-      />
+      {showProteinSheet ? (
+        <Suspense fallback={null}>
+          <ProteinDetailsSheet
+            isOpen={showProteinSheet}
+            onClose={() => setShowProteinSheet(false)}
+            data={realProteinData}
+            dailyLog={activeLog}
+          />
+        </Suspense>
+      ) : null}
 
-      <MineralsDetailsSheet
-        isOpen={showMineralsSheet}
-        onClose={() => setShowMineralsSheet(false)}
-        data={realMineralsData}
-        dailyLog={activeLog}
-      />
+      {showMineralsSheet ? (
+        <Suspense fallback={null}>
+          <MineralsDetailsSheet
+            isOpen={showMineralsSheet}
+            onClose={() => setShowMineralsSheet(false)}
+            data={realMineralsData}
+            dailyLog={activeLog}
+          />
+        </Suspense>
+      ) : null}
 
-      <VitaminsDetailsSheet
-        isOpen={showVitaminsSheet}
-        onClose={() => setShowVitaminsSheet(false)}
-        dailyLog={activeLog}
-        userTargets={userTargets}
-        anchorDate={currentTrackerDate}
-        fullHistory={fullHistory}
-      />
+      {showVitaminsSheet ? (
+        <Suspense fallback={null}>
+          <VitaminsDetailsSheet
+            isOpen={showVitaminsSheet}
+            onClose={() => setShowVitaminsSheet(false)}
+            dailyLog={activeLog}
+            userTargets={userTargets}
+            anchorDate={currentTrackerDate}
+            fullHistory={fullHistory}
+          />
+        </Suspense>
+      ) : null}
 
       <SncStressPopup
         open={showSncPopup}
@@ -9837,17 +9906,21 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onClose={() => setShowSncPopup(false)}
       />
 
-      <AlcoholPopupOverlay
-        showAlcoholPopup={showAlcoholPopup}
-        onClose={() => setShowAlcoholPopup(false)}
-        alcoholForm={alcoholForm}
-        setAlcoholForm={setAlcoholForm}
-        manualNodes={manualNodes}
-        getTimePositionPercent={getTimePositionPercent}
-        getAlcoholBaseMl={getAlcoholBaseMl}
-        getAlcoholGlassIcon={getAlcoholGlassIcon}
-        handleSaveAlcohol={handleSaveAlcohol}
-      />
+      {showAlcoholPopup ? (
+        <Suspense fallback={null}>
+          <AlcoholPopupOverlay
+            showAlcoholPopup={showAlcoholPopup}
+            onClose={() => setShowAlcoholPopup(false)}
+            alcoholForm={alcoholForm}
+            setAlcoholForm={setAlcoholForm}
+            manualNodes={manualNodes}
+            getTimePositionPercent={getTimePositionPercent}
+            getAlcoholBaseMl={getAlcoholBaseMl}
+            getAlcoholGlassIcon={getAlcoholGlassIcon}
+            handleSaveAlcohol={handleSaveAlcohol}
+          />
+        </Suspense>
+      ) : null}
 
       {showFastLogger ? (
         <Suspense
