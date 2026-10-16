@@ -1245,8 +1245,8 @@ export default function SalaComandi() {
   const [biochemicalDetailModal, setBiochemicalDetailModal] = useState(null);
   const [engineAlignToastVisible, setEngineAlignToastVisible] = useState(false);
   const engineAlignToastTimerRef = useRef(null);
-  const [chatInput, setChatInput] = useState('');
-  const [chatImages, setChatImages] = useState([]);
+  // chatInput/chatImages: gestiti in ChatLocalDraftBridge (KentuChatUI / GlobalChatOverlay)
+  // per isolare i re-render di digitazione dalla shell SalaComandi.
   const {
     chatShellMounted,
     chatHistory,
@@ -7306,10 +7306,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   // 🔥 FIX LOOP: Memoizza l'oggetto handlers per evitare ricreazione ad ogni render
   const chatHandlers = useMemo(() => ({
     chatHistory,
-    chatInput: commandChatInput,
-    setChatInput: setCommandChatInput,
-    chatImages: commandChatImages,
-    setChatImages: setCommandChatImages,
+    // chatInput/chatImages: isolati in ChatLocalDraftBridge (GlobalChatOverlay / KentuChatUI)
     onSendMessage: sendMessage,
     activeQuickReplies,
     onSlotQuickReplyClick: handleQuickReplyClick,
@@ -7371,10 +7368,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   }), [
     // ⚠️ RIMOSSO registerHandlers: causava loop perché non usato nell'oggetto!
     chatHistory,
-    commandChatInput,
-    setCommandChatInput,
-    commandChatImages,
-    setCommandChatImages,
     sendMessage,
     cancelGeneration,
     activeQuickReplies,

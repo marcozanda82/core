@@ -1,0 +1,17 @@
+﻿# Exclude duplicate / build / heavy trees from AI indexing.
+# Files remain on disk — do not delete.
+
+# Nested legacy app copy (not Vite entry)
+src/src/
+
+# Collateral / legacy trees
+Nuova cartella/
+consulto/
+Landing page/
+
+# Build outputs
+dist/
+node_modules/
+android/app/build/
+android/.gradle/
+android/app/release/

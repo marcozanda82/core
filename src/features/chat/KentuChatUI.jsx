@@ -1,5 +1,6 @@
 import AiCluster from '../../AiCluster';
 import { DEFAULT_TARGETS } from '../../useBiochimico';
+import ChatLocalDraftBridge from './ChatLocalDraftBridge';
 
 function normalizeDailyLog(log) {
   return Array.isArray(log) ? log : [];
@@ -22,10 +23,12 @@ function normalizeHealthScore(score) {
  */
 export default function KentuChatUI({
   chatHistory = [],
-  chatInput,
-  setChatInput,
-  chatImages = [],
-  setChatImages,
+  // Draft controllato dal parent ignorato: digitazione isolata in ChatLocalDraftBridge
+  // per non re-renderizzare SalaComandi. Submit/voce usano comunque handleChatSubmit.
+  chatInput: _externalChatInput,
+  setChatInput: _externalSetChatInput,
+  chatImages: _externalChatImages,
+  setChatImages: _externalSetChatImages,
   handleChatSubmit,
   activeQuickReplies = [],
   handleQuickReplyClick,
@@ -116,7 +119,6 @@ export default function KentuChatUI({
   const safeUserTargets = normalizeUserTargets(userTargets);
   const safeHealthScore = normalizeHealthScore(healthScore);
   const safeChatHistory = Array.isArray(chatHistory) ? chatHistory.filter((m) => m && typeof m === 'object') : [];
-  const safeChatImages = Array.isArray(chatImages) ? chatImages : [];
 
   if (!diaryReady) {
     return (
@@ -165,11 +167,13 @@ export default function KentuChatUI({
         maxHeight: '100%',
       }}
     >
+      <ChatLocalDraftBridge>
+        {({ chatInput, setChatInput, chatImages, setChatImages }) => (
       <AiCluster
         chatHistory={safeChatHistory}
         chatInput={chatInput}
         setChatInput={setChatInput}
-        chatImages={safeChatImages}
+        chatImages={chatImages}
         setChatImages={setChatImages}
         onSendMessage={handleChatSubmit}
         activeQuickReplies={activeQuickReplies}
@@ -255,6 +259,8 @@ export default function KentuChatUI({
         isLoadingPreviousMessages={isLoadingPreviousMessages}
         isHistoryVisible={isHistoryVisible}
       />
+        )}
+      </ChatLocalDraftBridge>
     </div>
   );
 }

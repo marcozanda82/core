@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import AiCluster from '../AiCluster';
+import ChatLocalDraftBridge from '../features/chat/ChatLocalDraftBridge';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
 
 /**
@@ -98,10 +99,18 @@ export default function GlobalChatOverlay() {
 
         <div className="kentu-os flex min-h-0 flex-1 flex-col overflow-hidden">
           {handlersReady ? (
-            <AiCluster
-              {...actionHandlers}
-              onBack={closeChat}
-            />
+            <ChatLocalDraftBridge>
+              {({ chatInput, setChatInput, chatImages, setChatImages }) => (
+                <AiCluster
+                  {...actionHandlers}
+                  chatInput={chatInput}
+                  setChatInput={setChatInput}
+                  chatImages={chatImages}
+                  setChatImages={setChatImages}
+                  onBack={closeChat}
+                />
+              )}
+            </ChatLocalDraftBridge>
           ) : (
             <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">
               Caricamento chat…

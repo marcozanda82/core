@@ -1,9 +1,10 @@
 /**
  * Tab Home / Oggi: quadrante pie + strip nutrienti + widget training/metabolico.
  * Dati dial da `useMealPieDialData` via props.
+ * Memo: evita re-paint dial/macro quando SalaComandi re-renderizza per chat/history.
  */
 
-import { Suspense } from 'react';
+import { Suspense, memo } from 'react';
 import { LayoutGrid, MousePointerClick } from 'lucide-react';
 import DialMaintenanceMarker from '../DialMaintenanceMarker';
 import KcalFuelTelemetryRing from '../KcalFuelTelemetryRing';
@@ -20,7 +21,7 @@ const HomeMealPieDial = lazyWithRetry(() => import('../charts/HomeMealPieDial'))
 /**
  * @param {object} props
  */
-export default function HomeOggiDialSection({
+function HomeOggiDialSection({
   activeDialMode = 'kcal',
   setActiveDialMode = null,
   dialHud = null,
@@ -415,3 +416,5 @@ export default function HomeOggiDialSection({
     </div>
   );
 }
+
+export default memo(HomeOggiDialSection);

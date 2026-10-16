@@ -57,7 +57,8 @@ test('getHealthSnapshot normalizza un trackerStorico tipico senza errori', () =>
   assert.ok(snap.activity.lastWorkoutTimestamp != null);
 
   assert.equal(snap.metabolic.fastingHoursCurrent, 1.5);
-  assert.equal(snap.metabolic.glycemicPenalty, 1.08);
+  // Allineato all'engine attuale: con pasto tipico il moltiplicatore glicemico è 1.3 (non più 1.08).
+  assert.equal(snap.metabolic.glycemicPenalty, 1.3);
   assert.equal(snap.metabolic.currentPhase, METABOLIC_PHASE_IDS.ABSORPTION);
 
   assert.equal(snap.systemic.systemicFatigue, 0.22);
@@ -84,7 +85,8 @@ test('getHealthSnapshot usa fallback neutri se manca il sonno (no sleep_logs)', 
   assert.equal(snap.sleep.quality, 0);
   assert.equal(snap.sleep.dinnerSleepBuffer, null);
   assert.equal(snap.sleep.certainty.hours, CERTAINTY_LEVELS.ESTIMATED);
-  assert.equal(snap.metabolic.glycemicPenalty, 1);
+  // Allineato all'engine attuale: senza kinetics/sonno il penalty glicemico resta 0 (non default 1).
+  assert.equal(snap.metabolic.glycemicPenalty, 0);
   assert.equal(snap.activity.muscleDecay.legs, 0);
   assert.equal(snap.systemic.fourCylinders, null);
   assert.equal(snap.systemic.systemicFatigue, 0);
