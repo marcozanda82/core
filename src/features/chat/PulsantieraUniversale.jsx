@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SESSION_NAV_DISMISS_EVENT } from './sessionNavStack';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
@@ -13,9 +13,11 @@ import {
 import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
-import StimulusCockpitOverlay from './StimulusCockpitOverlay';
 import { collectPendingSessionDrafts } from './attivitaWorkoutSummary';
 import { useSmartQuickActions } from '../predictive/useSmartQuickActions';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const StimulusCockpitOverlay = lazyWithRetry(() => import('./StimulusCockpitOverlay'));
 
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti', sigla: 'PAS' },
@@ -1216,30 +1218,32 @@ export default function PulsantieraUniversale({
     )
   ) : null;
 
-  const attivitaCockpit = (
-    <StimulusCockpitOverlay
-      open={activeCategory === 'attivita'}
-      onClose={handleOverlayClose}
-      fourCylinder={fourCylinder}
-      fullHistory={fullHistory}
-      dailyLog={dailyLog}
-      disabled={disabled}
-      isDiabetesAppMode={isDiabetesAppMode}
-      onOpenActivity={(payload) => dispatchItem({
-        action: 'openActivity',
-        ...payload,
-      })}
-      onOpenPlan={() => dispatchItem({ action: 'openPlan' })}
-      onDeleteWorkout={onDeleteWorkout}
-      extraPendingDrafts={extraPendingDrafts}
-      manualNodes={manualNodes}
-      onConfirmSessionDraft={dismissThenConfirmSessionDraft}
-      onEditSessionDraft={dismissThenEditSessionDraft}
-      onCancelSessionDraft={onCancelSessionDraft}
-      onEditCompletedSession={dismissThenEditCompletedSession}
-      onOpenSessions={onOpenSessions}
-    />
-  );
+  const attivitaCockpit = activeCategory === 'attivita' ? (
+    <Suspense fallback={null}>
+      <StimulusCockpitOverlay
+        open
+        onClose={handleOverlayClose}
+        fourCylinder={fourCylinder}
+        fullHistory={fullHistory}
+        dailyLog={dailyLog}
+        disabled={disabled}
+        isDiabetesAppMode={isDiabetesAppMode}
+        onOpenActivity={(payload) => dispatchItem({
+          action: 'openActivity',
+          ...payload,
+        })}
+        onOpenPlan={() => dispatchItem({ action: 'openPlan' })}
+        onDeleteWorkout={onDeleteWorkout}
+        extraPendingDrafts={extraPendingDrafts}
+        manualNodes={manualNodes}
+        onConfirmSessionDraft={dismissThenConfirmSessionDraft}
+        onEditSessionDraft={dismissThenEditSessionDraft}
+        onCancelSessionDraft={onCancelSessionDraft}
+        onEditCompletedSession={dismissThenEditCompletedSession}
+        onOpenSessions={onOpenSessions}
+      />
+    </Suspense>
+  ) : null;
 
   const submenuOverlay = pastiOverlay || (overlayConfig ? (
     <SubmenuFocusOverlay

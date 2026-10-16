@@ -458,8 +458,6 @@ import { useTimelineChartShell } from './hooks/salaComandi/useTimelineChartShell
 import { useKentuChatShell } from './hooks/salaComandi/useKentuChatShell';
 import KentuChatFab from './components/salaComandi/KentuChatFab';
 import KentuChatShell from './components/salaComandi/KentuChatShell';
-import StimulusCockpitOverlay from './features/chat/StimulusCockpitOverlay';
-
 export { calculateAge } from './utils/profileAge';
 
 const CentroAnalisiView = lazyWithRetry(() => import('./features/centroAnalisi/CentroAnalisiView'));
@@ -474,6 +472,7 @@ const KentuChatUI = lazyWithRetry(() => import('./features/chat/KentuChatWithWip
 const HealthReportView = lazyWithRetry(() => import('./features/health/HealthReportView'));
 const TherapyPlanView = lazyWithRetry(() => import('./features/health/TherapyPlanView'));
 const TrendMetricLineChart = lazyWithRetry(() => import('./components/charts/TrendMetricLineChart'));
+const StimulusCockpitOverlay = lazyWithRetry(() => import('./features/chat/StimulusCockpitOverlay'));
 /** Overlay secondari: fuori dal chunk SalaComandi, caricati solo all’apertura. */
 const DailySessionsView = lazyWithRetry(() => import('./features/chat/DailySessionsView'));
 const TargetSettingsModal = lazyWithRetry(() => import('./components/modals/TargetSettingsModal'));
@@ -2572,13 +2571,20 @@ export default function SalaComandi() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const updateTime = () => {
-      setCurrentTime(getWallClockDecimalHour());
+    /** Aggiorna lo state solo se il minuto wall-clock è cambiato e il tab è visibile. */
+    const syncWallClockMinute = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const next = getWallClockDecimalHour();
+      setCurrentTime((prev) => {
+        const prevMin = Math.floor(Number(prev) * 60 + 1e-9);
+        const nextMin = Math.floor(Number(next) * 60 + 1e-9);
+        return prevMin === nextMin ? prev : next;
+      });
     };
-    updateTime();
-    const interval = window.setInterval(updateTime, 45_000);
+    syncWallClockMinute();
+    const interval = window.setInterval(syncWallClockMinute, 45_000);
     const onVis = () => {
-      if (document.visibilityState === 'visible') updateTime();
+      if (document.visibilityState === 'visible') syncWallClockMinute();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => {
@@ -9104,8 +9110,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           </Suspense>
         )}
 
-        {/* DEV CONSOLE — fullscreen admin overlay */}
-        {activeAction === 'dev_console' && createPortal(
+        {/* DEV CONSOLE — fullscreen admin overlay (solo DEV) */}
+        {import.meta.env.DEV && activeAction === 'dev_console' && createPortal(
                                 <div
                                   style={{
               position: 'fixed',
@@ -9297,24 +9303,28 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         onSkip={handleChatUsdaEnrichmentSkip}
       />
 
-      <StimulusCockpitOverlay
-        open={stimulusCockpitOpen}
-        onClose={handleCloseStimulusCockpit}
-        fourCylinder={userModel?.fourCylinder ?? null}
-        fullHistory={fullHistory}
-        dailyLog={activeLog}
-        isDiabetesAppMode={isDiabetesAppMode}
-        onOpenActivity={handleOpenActivityFromStimulusCockpit}
-        onOpenPlan={handleOpenPlanFromStimulusCockpit}
-        onDeleteWorkout={removeLogItem}
-        extraPendingDrafts={extraPendingSessionDrafts}
-        manualNodes={manualNodes}
-        onConfirmSessionDraft={handleConfirmSessionDraft}
-        onEditSessionDraft={handleEditSessionDraft}
-        onCancelSessionDraft={handleCancelSessionDraft}
-        onEditCompletedSession={handleEditCompletedSession}
-        onOpenSessions={handleOpenDailySessions}
-      />
+      {stimulusCockpitOpen ? (
+        <Suspense fallback={null}>
+          <StimulusCockpitOverlay
+            open={stimulusCockpitOpen}
+            onClose={handleCloseStimulusCockpit}
+            fourCylinder={userModel?.fourCylinder ?? null}
+            fullHistory={fullHistory}
+            dailyLog={activeLog}
+            isDiabetesAppMode={isDiabetesAppMode}
+            onOpenActivity={handleOpenActivityFromStimulusCockpit}
+            onOpenPlan={handleOpenPlanFromStimulusCockpit}
+            onDeleteWorkout={removeLogItem}
+            extraPendingDrafts={extraPendingSessionDrafts}
+            manualNodes={manualNodes}
+            onConfirmSessionDraft={handleConfirmSessionDraft}
+            onEditSessionDraft={handleEditSessionDraft}
+            onCancelSessionDraft={handleCancelSessionDraft}
+            onEditCompletedSession={handleEditCompletedSession}
+            onOpenSessions={handleOpenDailySessions}
+          />
+        </Suspense>
+      ) : null}
 
       {dailySessionsOpen ? (
         <Suspense fallback={null}>

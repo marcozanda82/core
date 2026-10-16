@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ListChecks, X } from 'lucide-react';
 import { getMuscleGroupsForMacro, stashActivitySheetTempTab } from '../../activityCatalog';
@@ -10,7 +10,9 @@ import {
   collectPendingSessionDrafts,
 } from './attivitaWorkoutSummary';
 import AttivitaWorkoutHistoryModal from './AttivitaWorkoutHistoryModal';
-import DailySessionsView from './DailySessionsView';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const DailySessionsView = lazyWithRetry(() => import('./DailySessionsView'));
 
 function OverlayActionButton({ icon, label, onClick, disabled }) {
   return (
@@ -291,16 +293,20 @@ export default function StimulusCockpitOverlay({
         onClose={() => setShowWorkoutHistory(false)}
         onDeleteWorkout={onDeleteWorkout}
       />
-      <DailySessionsView
-        open={showDailySessions}
-        pendingDrafts={pendingSessionDrafts}
-        completedToday={workoutSummary.todayWorkouts}
-        onClose={() => setShowDailySessions(false)}
-        onConfirmDraft={handleConfirmSessionDraft}
-        onEditDraft={handleEditSessionDraft}
-        onCancelDraft={onCancelSessionDraft}
-        onEditCompleted={handleEditCompletedSession}
-      />
+      {showDailySessions ? (
+        <Suspense fallback={null}>
+          <DailySessionsView
+            open={showDailySessions}
+            pendingDrafts={pendingSessionDrafts}
+            completedToday={workoutSummary.todayWorkouts}
+            onClose={() => setShowDailySessions(false)}
+            onConfirmDraft={handleConfirmSessionDraft}
+            onEditDraft={handleEditSessionDraft}
+            onCancelDraft={onCancelSessionDraft}
+            onEditCompleted={handleEditCompletedSession}
+          />
+        </Suspense>
+      ) : null}
     </>
   );
 }

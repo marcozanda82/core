@@ -159,13 +159,15 @@ export default function MainMenuDrawer({
                       iconFilter="drop-shadow(0 0 8px rgba(176, 190, 197, 0.5))"
                       onClick={() => openDrawerAction('storico')}
                     />
-                    <MenuGlassButton
-                      icon="🧭"
-                      label="Centro Analisi (Legacy)"
-                      labelClassName="text-[#7dd3fc]"
-                      iconFilter="drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))"
-                      onClick={() => runAndClose(() => onOpenLegacyCentroAnalisi?.())}
-                    />
+                    {import.meta.env.DEV && typeof onOpenLegacyCentroAnalisi === 'function' ? (
+                      <MenuGlassButton
+                        icon="🧭"
+                        label="Centro Analisi (Legacy)"
+                        labelClassName="text-[#7dd3fc]"
+                        iconFilter="drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))"
+                        onClick={() => runAndClose(() => onOpenLegacyCentroAnalisi?.())}
+                      />
+                    ) : null}
                     {isDiabetesAppMode ? (
                       <MenuGlassButton
                         icon="🩺"
@@ -250,17 +252,19 @@ export default function MainMenuDrawer({
                         }}
                       />
                     ) : null}
-                    <MenuGlassButton
-                      span={import.meta.env.DEV && typeof onSanitizeFoodDb === 'function' ? 1 : 2}
-                      icon="🛠️"
-                      label="Dev Console"
-                      labelClassName="text-[#cbd5e1]"
-                      iconFilter="drop-shadow(0 0 8px rgba(148, 163, 184, 0.45))"
-                      onClick={() => {
-                        setActiveAction('dev_console');
-                        setIsDrawerOpen?.(false);
-                      }}
-                    />
+                    {import.meta.env.DEV ? (
+                      <MenuGlassButton
+                        span={typeof onSanitizeFoodDb === 'function' ? 1 : 2}
+                        icon="🛠️"
+                        label="Dev Console"
+                        labelClassName="text-[#cbd5e1]"
+                        iconFilter="drop-shadow(0 0 8px rgba(148, 163, 184, 0.45))"
+                        onClick={() => {
+                          setActiveAction('dev_console');
+                          setIsDrawerOpen?.(false);
+                        }}
+                      />
+                    ) : null}
                     <MenuGlassButton
                       icon="⚕️"
                       label="Disclaimer Medico"

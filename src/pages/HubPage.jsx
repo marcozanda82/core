@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 
 const HUB_SEGMENTS = [
   { id: 'timeline', label: 'Timeline' },
@@ -9,7 +9,7 @@ const HUB_SEGMENTS = [
  * Pagina Hub (`/hub` e slot bottom-nav): solo chrome a schede.
  * Timeline e Strumenti restano componenti esterni passati come slot.
  */
-export default function HubPage({
+function HubPage({
   activeTab = 'timeline',
   onTabChange,
   timeline = null,
@@ -71,3 +71,5 @@ export default function HubPage({
     </div>
   );
 }
+
+export default memo(HubPage);

@@ -2,14 +2,14 @@
  * Tab Longevità: shell scrollabile + LongevityView lazy.
  */
 
-import { Suspense } from 'react';
+import { Suspense, memo } from 'react';
 import KentuLazySectionFallback from '../KentuLazySectionFallback';
 import SimulationJsonCopyButton from '../SimulationJsonCopyButton';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const LongevityView = lazyWithRetry(() => import('../../LongevityView'));
 
-export default function LongevityTabShell({
+function LongevityTabShell({
   longevityData = null,
   userAge = null,
   bodyMetricsHistory = null,
@@ -88,3 +88,5 @@ export default function LongevityTabShell({
     </div>
   );
 }
+
+export default memo(LongevityTabShell);
