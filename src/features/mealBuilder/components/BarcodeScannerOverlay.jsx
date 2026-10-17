@@ -31,8 +31,10 @@ export default function BarcodeScannerOverlay({
     >
       <header className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-4">
         <div>
-          <h2 className="text-lg font-semibold">Scansiona barcode</h2>
-          <p className="mt-0.5 text-xs text-slate-400">Inquadra il codice a barre del prodotto</p>
+          <h2 className="text-lg font-semibold">Scansiona barcode / QR</h2>
+          <p className="mt-0.5 text-xs text-slate-400">
+            EAN, UPC o QR GS1 Digital Link — lookup locale poi Open Food Facts online
+          </p>
         </div>
         <button
           type="button"
@@ -77,7 +79,7 @@ export default function BarcodeScannerOverlay({
           <p className="mt-4 max-w-md text-center text-sm text-red-300">{error}</p>
         ) : (
           <p className="mt-4 text-center text-xs text-slate-500">
-            EAN-13 · EAN-8 · UPC-A · UPC-E
+            EAN-13 · EAN-8 · UPC-A · UPC-E · QR (GS1)
           </p>
         )}
       </div>

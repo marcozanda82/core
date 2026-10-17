@@ -939,6 +939,7 @@ function FastMealLoggerContent({
     notFound: scannerNotFound,
   } = useBarcodeScanner({
     personalDb,
+    offDb,
     onAcquireExternalFood,
     onFoodResolved: handleFoodSelection,
     enrichOffProduct,

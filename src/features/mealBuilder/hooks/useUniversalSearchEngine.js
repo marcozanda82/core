@@ -9,6 +9,7 @@ import {
 } from '../../../foodSearch';
 import { hasUsableOffKcal } from '../../../foodLoader';
 import { searchOpenFoodFactsApi } from '../utils/openFoodFactsSearchApi';
+import { resolveBarcodeCascade } from '../utils/barcodeOpenFoodFacts';
 import {
   searchCoffeeShopProducts,
   coffeeShopProductToSearchResult,
@@ -699,7 +700,8 @@ export async function searchGlobalDb(query, globalDb, existingResults = [], over
 }
 
 /**
- * Tier 4 — Open Food Facts: prima dump locale (`offDb`), poi fallback REST se vuoto.
+ * Tier 4 — Open Food Facts: dump locale + API online (parallelo), dedupe per barcode/id.
+ * Se la query è un EAN/GTIN (8–14 cifre) → lookup O(1) locale poi API prodotto v2.
  */
 export async function searchOffDb(query, offDb, existingResults = [], overrides = {}) {
   const trimmedQuery = String(query || '').trim();
@@ -716,10 +718,42 @@ export async function searchOffDb(query, offDb, existingResults = [], overrides 
     && !Array.isArray(offDb)
     && Object.keys(offDb).length > 0;
 
+  // Query barcode tipizzata nella search bar: cascata locale → API v2.
+  const qDigits = trimmedQuery.replace(/\D/g, '');
+  const looksLikeBarcode = qDigits.length >= 8
+    && qDigits.length <= 14
+    && trimmedQuery.replace(/[\s-]/g, '') === qDigits;
+  if (looksLikeBarcode) {
+    try {
+      const cascade = await resolveBarcodeCascade(qDigits, { offDb });
+      if (cascade.success && cascade.entry) {
+        const id = String(cascade.id || cascade.entry.id || `OFF_${qDigits}`);
+        const mapped = mapCatalogHitToResult(
+          { id, name: cascade.entry.desc || cascade.entry.name, textScore: 1, matchScore: 1 },
+          { ...cascade.entry, id, barcode: qDigits },
+          'off',
+          FOOD_DB_SOURCE.OFF,
+        );
+        mapped.matchType = 'barcode';
+        if (!isDuplicateOfExisting(mapped, existingResults)) {
+          return [mapped];
+        }
+      }
+    } catch {
+      /* fall through to text search */
+    }
+  }
+
+  // Online in parallelo (non blocca la scan locale); se offline/timeout → [].
+  const onlineLimit = Math.min(15, limit);
+  const onlinePromise = searchOpenFoodFactsApi(trimmedQuery, {
+    limit: onlineLimit,
+    signal: overrides.signal,
+  }).catch(() => []);
+
+  let local = [];
   if (hasLocalOff) {
-    // Chunked + yield: evita di bloccare il main thread su ~200k voci;
-    // early-exit quando si raggiunge `limit` (tipicamente top 25).
-    const local = await searchCatalogDbChunked(
+    local = await searchCatalogDbChunked(
       trimmedQuery,
       offDb,
       existingResults,
@@ -733,17 +767,14 @@ export async function searchOffDb(query, offDb, existingResults = [], overrides 
       },
       overrides.signal ?? null,
     );
-    return local.slice(0, limit);
   }
 
-  const rows = await searchOpenFoodFactsApi(trimmedQuery, {
-    limit,
-    signal: overrides.signal,
-  });
+  if (isSearchAborted(overrides.signal)) return local.slice(0, limit);
 
-  const results = [];
-  rows.forEach((row, index) => {
-    const id = String(row.id || row.barcode || `off_${index}`).trim();
+  const onlineRows = await onlinePromise;
+  const results = [...local];
+  onlineRows.forEach((row, index) => {
+    const id = String(row.id || row.barcode || `off_online_${index}`).trim();
     const mapped = mapCatalogHitToResult(
       {
         id,

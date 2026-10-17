@@ -2,19 +2,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getBarcodeNutritionOverride } from '../../../barcodeFoodOverrides';
 import { enrichDbRowWithFoodUnits } from '../../../foodUnits';
+import { FOOD_DB_SOURCE, FOOD_PROVENANCE } from '../../../foodDbSource';
 import { calculateAutoIconTag } from '../../../utils/iconEngine';
 import { triggerSelectionHaptic } from '../utils/hapticFeedback';
 import {
   BARCODE_NO_MATCH_MESSAGE,
-  mapOpenFoodFactsProduct,
-  searchBarcode,
+  extractBarcodeFromScan,
+  normalizeGtinDigits,
+  resolveBarcodeCascade,
 } from '../utils/barcodeOpenFoodFacts';
+
+/** Formati BarcodeDetector: EAN/UPC classici + QR (GS1 Digital Link). */
+const SCANNER_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code'];
 
 /**
  * Fotocamera + risoluzione barcode → oggetto alimento compatibile con UniversalSearch / draft cart.
  *
+ * Cascata: DB personale → dump OFF locale / cache → Open Food Facts API v2.
+ *
  * @param {{
  *   personalDb?: object,
+ *   offDb?: object|null,
  *   onAcquireExternalFood?: (entry: object) => Promise<{ key?: string, row?: object } | void>,
  *   onFoodResolved?: (food: object) => void,
  *   enrichOffProduct?: (offEntry: object) => Promise<object | null | undefined>,
@@ -22,10 +30,9 @@ import {
  */
 export default function useBarcodeScanner({
   personalDb,
+  offDb = null,
   onAcquireExternalFood,
   onFoodResolved,
-  enrichOffProduct,
-  onBarcodeNotFound,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [error, setError] = useState('');
@@ -35,6 +42,8 @@ export default function useBarcodeScanner({
   const streamRef = useRef(null);
   const scanIntervalRef = useRef(null);
   const isScanningRef = useRef(false);
+  const offDbRef = useRef(offDb);
+  offDbRef.current = offDb;
 
   const stopCamera = useCallback(() => {
     if (scanIntervalRef.current) {
@@ -68,8 +77,8 @@ export default function useBarcodeScanner({
   }, []);
 
   const resolveBarcodeToFood = useCallback(
-    async (barcode) => {
-      const code = String(barcode ?? '').trim();
+    async (rawBarcode) => {
+      const code = extractBarcodeFromScan(rawBarcode) || normalizeGtinDigits(rawBarcode);
       if (!code) throw new Error(BARCODE_NO_MATCH_MESSAGE);
 
       const applyLocalOverride = (base) => {
@@ -84,43 +93,63 @@ export default function useBarcodeScanner({
         return next;
       };
 
-      const existingDbKey = Object.keys(personalDb || {}).find(
-        (k) => personalDb[k] && String(personalDb[k].barcode ?? '').trim() === code,
-      );
+      const existingDbKey = Object.keys(personalDb || {}).find((k) => {
+        const row = personalDb[k];
+        if (!row) return false;
+        const rowCode = normalizeGtinDigits(row.barcode);
+        return rowCode && rowCode === code;
+      });
 
-      let entryPer100 = existingDbKey ? { ...(personalDb[existingDbKey] || {}) } : null;
+      if (existingDbKey) {
+        const row = personalDb[existingDbKey];
+        const name = String(row.desc || row.name || '').trim() || `Barcode ${code}`;
+        return {
+          _source: 'personal',
+          id: existingDbKey,
+          key: existingDbKey,
+          desc: name,
+          name,
+          row,
+          barcode: code,
+          provenance: FOOD_PROVENANCE.PERSONAL,
+        };
+      }
+
+      let entryPer100 = null;
       let generatedIconTag = null;
+      let offSource = null;
 
-      if (!entryPer100) {
-        const localOv = getBarcodeNutritionOverride(code);
-        if (localOv && (localOv.desc || localOv.kcal != null)) {
-          entryPer100 = {
-            desc: localOv.desc || `Barcode ${code}`,
-            kcal: localOv.kcal,
-            prot: localOv.prot,
-            carb: localOv.carb,
-            fatTotal: localOv.fat,
-            barcode: code,
-          };
-        } else {
-          const lookup = await searchBarcode(code);
-          if (!lookup.success) {
-            const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
-            fail.reason = lookup.reason || 'not_found';
-            fail.barcode = code;
-            throw fail;
-          }
-          entryPer100 = applyLocalOverride({
-            ...(mapOpenFoodFactsProduct(code, lookup.product) || {}),
-            barcode: code,
-          });
-          if (!entryPer100?.desc) {
-            const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
-            fail.reason = 'not_found';
-            fail.barcode = code;
-            throw fail;
-          }
-          generatedIconTag = calculateAutoIconTag(entryPer100.desc, '');
+      const localOv = getBarcodeNutritionOverride(code);
+      if (localOv && (localOv.desc || localOv.kcal != null)) {
+        entryPer100 = {
+          desc: localOv.desc || `Barcode ${code}`,
+          kcal: localOv.kcal,
+          prot: localOv.prot,
+          carb: localOv.carb,
+          fatTotal: localOv.fat,
+          barcode: code,
+        };
+      } else {
+        const cascade = await resolveBarcodeCascade(code, { offDb: offDbRef.current });
+        if (!cascade.success) {
+          const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
+          fail.reason = cascade.reason || 'not_found';
+          fail.barcode = code;
+          throw fail;
+        }
+        entryPer100 = applyLocalOverride({
+          ...cascade.entry,
+          barcode: code,
+        });
+        offSource = cascade.source;
+        if (!entryPer100?.desc) {
+          const fail = new Error(BARCODE_NO_MATCH_MESSAGE);
+          fail.reason = 'not_found';
+          fail.barcode = code;
+          throw fail;
+        }
+        if (offSource === 'online' || offSource === 'cache') {
+          generatedIconTag = calculateAutoIconTag(entryPer100.desc, entryPer100.brand || '');
         }
       }
 
@@ -136,21 +165,35 @@ export default function useBarcodeScanner({
 
       const name = String(entryPer100.desc || '').trim() || `Barcode ${code}`;
 
-      if (existingDbKey) {
-        const row = personalDb[existingDbKey];
+      // Hit locale OFF: usa direttamente senza forzare acquire personale (UI immediata).
+      if (offSource === 'local' || offSource === 'cache') {
+        const id = String(entryPer100.id || `OFF_${code}`);
+        const row = enrichDbRowWithFoodUnits(
+          { ...entryPer100, desc: name, barcode: code, source: FOOD_DB_SOURCE.OFF },
+          id,
+        );
         return {
-          _source: 'personal',
-          id: existingDbKey,
-          key: existingDbKey,
-          desc: row.desc || row.name || name,
-          name: row.desc || row.name || name,
+          _source: 'off',
+          id,
+          key: id,
+          desc: name,
+          name,
+          brand: row.brand,
           row,
           barcode: code,
+          source: FOOD_DB_SOURCE.OFF,
+          provenance: FOOD_PROVENANCE.OFF,
         };
       }
 
       let dbKey = `food_${Date.now()}_${code}`;
-      let row = { ...entryPer100, desc: name, barcode: code };
+      let row = {
+        ...entryPer100,
+        desc: name,
+        barcode: code,
+        source: FOOD_DB_SOURCE.OFF,
+        foodSource: 'OFF',
+      };
 
       if (typeof onAcquireExternalFood === 'function') {
         try {
@@ -190,20 +233,21 @@ export default function useBarcodeScanner({
         name: String(row.desc || name).trim() || name,
         row,
         barcode: code,
+        provenance: FOOD_PROVENANCE.PERSONAL,
       };
     },
     [personalDb, onAcquireExternalFood],
   );
 
   const handleBarcodeDetected = useCallback(
-    async (barcode) => {
+    async (rawBarcode) => {
       if (isScanningRef.current) return;
       isScanningRef.current = true;
       setIsResolving(true);
       setError('');
       setNotFound(null);
       stopCamera();
-      const code = String(barcode ?? '').trim();
+      const code = extractBarcodeFromScan(rawBarcode) || normalizeGtinDigits(rawBarcode);
       try {
         if (!code) throw new Error(BARCODE_NO_MATCH_MESSAGE);
         const food = await resolveBarcodeToFood(code);
@@ -235,9 +279,21 @@ export default function useBarcodeScanner({
     }
 
     let stream = null;
-    const barcodeDetector = new BarcodeDetector({
-      formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
-    });
+    let barcodeDetector;
+    try {
+      barcodeDetector = new BarcodeDetector({ formats: SCANNER_FORMATS });
+    } catch {
+      // Alcuni browser accettano solo un sottoinsieme: fallback senza QR.
+      try {
+        barcodeDetector = new BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'],
+        });
+      } catch {
+        setError('Scanner barcode non disponibile su questo dispositivo.');
+        setIsOpen(false);
+        return undefined;
+      }
+    }
 
     navigator.mediaDevices
       .getUserMedia({ video: { facingMode: 'environment' } })
@@ -253,7 +309,8 @@ export default function useBarcodeScanner({
           try {
             const barcodes = await barcodeDetector.detect(videoRef.current);
             if (barcodes.length > 0) {
-              const code = String(barcodes[0].rawValue ?? '').trim();
+              const raw = String(barcodes[0].rawValue ?? '').trim();
+              const code = extractBarcodeFromScan(raw);
               if (code) handleBarcodeDetected(code);
             }
           } catch {

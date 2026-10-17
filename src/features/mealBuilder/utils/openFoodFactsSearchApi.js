@@ -6,7 +6,7 @@ const OFF_SEARCH_USER_AGENT = 'GhostApp/1.0 (KentuOS; food-search)';
 /** Timeout rigido ricerca testuale OFF (ms). */
 export const OFF_SEARCH_TIMEOUT_MS = 6000;
 
-export const OFF_SEARCH_DEFAULT_PAGE_SIZE = 5;
+export const OFF_SEARCH_DEFAULT_PAGE_SIZE = 15;
 
 const OFF_SEARCH_BASE_URL = 'https://it.openfoodfacts.org/cgi/search.pl';
 
@@ -80,7 +80,7 @@ function buildOffSearchUrl(query, pageSize) {
     search_simple: '1',
     action: 'process',
     json: '1',
-    page_size: String(Math.max(1, Math.min(10, pageSize))),
+    page_size: String(Math.max(1, Math.min(20, pageSize))),
   });
   return `${OFF_SEARCH_BASE_URL}?${params.toString()}`;
 }
