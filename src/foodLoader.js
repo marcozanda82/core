@@ -7,6 +7,8 @@ import { KENTU_MASTER_DB_VERSION, USDA_DB_VERSION } from './constants/foodDbVers
 const USDA_DB_FILENAME = 'kentu_smart_master_usda_FINAL.json';
 const KENTU_IT_DB_URL = '/kentu_smart_master_db.json';
 const GLOBAL_DB_URL = `/${USDA_DB_FILENAME}`;
+/** Dump locale Open Food Facts (array di prodotti con barcode / kcal / macro). */
+const OFF_DB_URL = '/kentu_off_master_db.json';
 
 function toNumber(value) {
   if (typeof value === 'number') {
@@ -280,7 +282,7 @@ async function fetchKentuJson(url, { cacheBust = false, version } = {}) {
  * Carica i pilastri del database KentuOS:
  * - Kentu DB IT (CREA unificato): `/kentu_smart_master_db.json`
  * - Kentu DB USDA arricchito: `/kentu_smart_master_usda_FINAL.json`
- * - Open Food Facts: solo REST API (non più in bundle/RAM)
+ * - Open Food Facts locale: `/kentu_off_master_db.json` (graceful se assente)
  *
  * @returns {Promise<{
  *   kentuItDb: Record<string, object>,
@@ -307,13 +309,17 @@ async function loadKentuDatabasesUncached() {
   };
 
   try {
-    const [kentuItJson, globalJson] = await Promise.all([
+    const [kentuItJson, globalJson, offJson] = await Promise.all([
       fetchKentuJson(KENTU_IT_DB_URL).catch((error) => {
         console.warn('[foodLoader] Kentu DB IT unavailable', error);
         return null;
       }),
       fetchKentuJson(GLOBAL_DB_URL, { cacheBust: true, version: USDA_DB_VERSION }).catch((error) => {
         console.warn('[foodLoader] Kentu DB global unavailable', error);
+        return null;
+      }),
+      fetchKentuJson(OFF_DB_URL).catch((error) => {
+        console.warn('[foodLoader] Open Food Facts DB unavailable — using empty offDb', error);
         return null;
       }),
     ]);
@@ -323,6 +329,7 @@ async function loadKentuDatabasesUncached() {
 
     const kentuItRecords = kentuItJson != null ? extractRecords(kentuItJson) : [];
     const globalRecords = globalJson != null ? extractRecords(globalJson) : [];
+    const offRecords = offJson != null ? extractRecords(offJson) : [];
 
     console.time('[perf] foodLoader:indexKentuIt');
     const kentuItDb = indexRecords(kentuItRecords, FOOD_DB_SOURCE.KENTU_IT);
@@ -333,6 +340,14 @@ async function loadKentuDatabasesUncached() {
     console.time('[perf] foodLoader:indexGlobal');
     const globalDbRaw = indexRecords(globalRecords, FOOD_DB_SOURCE.GLOBAL);
     console.timeEnd('[perf] foodLoader:indexGlobal');
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    console.time('[perf] foodLoader:indexOff');
+    const offDb = offJson != null
+      ? indexRecords(offRecords, FOOD_DB_SOURCE.OFF)
+      : {};
+    console.timeEnd('[perf] foodLoader:indexOff');
 
     const globalDb = { ...globalDbRaw };
     Object.keys(kentuItDb).forEach((key) => {
@@ -347,14 +362,14 @@ async function loadKentuDatabasesUncached() {
     console.log('[foodLoader] loaded Kentu databases', {
       kentuIt: Object.keys(kentuItDb).length,
       global: Object.keys(globalDb).length,
-      off: 0,
+      off: Object.keys(offDb).length,
     });
 
     return {
       kentuItDb,
       globalDb,
       masterDb: globalDb,
-      offDb: {},
+      offDb,
       // Alias Fase 4 / legacy naming
       unifiedDb: kentuItDb,
       usdaDb: globalDb,

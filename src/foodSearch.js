@@ -680,17 +680,20 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       && !/^\d+$/.test(keyAsName)
       && !/^food[_-]?\d+/i.test(keyAsName)
       && /[\p{L}]/u.test(keyAsName);
+    const brandRaw = String(food?.brand || food?.brands || food?.marca || '').trim();
     const name = descName || altName || (keyLooksLikeName ? keyAsName.replace(/[_-]+/g, ' ') : '');
-    if (!name) continue;
+    // OFF / brand-led: senza nome prodotto ma con brand, resta ricercabile.
+    if (!name && !brandRaw) continue;
 
     const normalizedName = normalizeSearchText(name);
     const normalizedAlt = altName && altName !== name ? normalizeSearchText(altName) : '';
     const normalizedKey = keyLooksLikeName && keyAsName !== name
       ? normalizeSearchText(keyAsName.replace(/[_-]+/g, ' '))
       : '';
-    if (!normalizedName && !normalizedAlt && !normalizedKey) continue;
+    const normalizedBrand = brandRaw ? normalizeSearchText(brandRaw) : '';
+    if (!normalizedName && !normalizedAlt && !normalizedKey && !normalizedBrand) continue;
 
-    const primaryNorm = normalizedName || normalizedAlt || normalizedKey;
+    const primaryNorm = normalizedName || normalizedAlt || normalizedKey || normalizedBrand;
     const itemWords = primaryNorm.split(' ').filter(Boolean);
     if (itemWords.length === 0) continue;
 
@@ -704,13 +707,17 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       queryWords,
     );
 
-    // Secondo passaggio su `name` / key se diversi da `desc`.
+    // Secondo passaggio su `name` / key / brand se diversi da `desc`.
     const altCandidates = [
       normalizedAlt && normalizedAlt !== primaryNorm
         ? { norm: normalizedAlt, words: normalizedAlt.split(' ').filter(Boolean) }
         : null,
       normalizedKey && normalizedKey !== primaryNorm && normalizedKey !== normalizedAlt
         ? { norm: normalizedKey, words: normalizedKey.split(' ').filter(Boolean) }
+        : null,
+      normalizedBrand && normalizedBrand !== primaryNorm
+        && normalizedBrand !== normalizedAlt && normalizedBrand !== normalizedKey
+        ? { norm: normalizedBrand, words: normalizedBrand.split(' ').filter(Boolean) }
         : null,
     ].filter(Boolean);
 
@@ -723,11 +730,12 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       }
     }
 
-    // Boost esplicito uguaglianza esatta (case-insensitive) su desc, name o key.
+    // Boost esplicito uguaglianza esatta (case-insensitive) su desc, name, key o brand.
     if (
       primaryNorm === normalizedQuery
       || normalizedAlt === normalizedQuery
       || normalizedKey === normalizedQuery
+      || normalizedBrand === normalizedQuery
     ) {
       strictScore = SCORE_EXACT_OR_PREFIX;
       matchTier = 'exact';
@@ -753,7 +761,11 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     }
 
     // Match stem garantito (banana ↔ banane / bananas): entra in ranking e supera soglie AI.
-    if (foodNameMatchesQuery(name, trimmedQuery)) {
+    // Include brand (es. query "Barilla" su prodotto "Spaghetti" brand Barilla).
+    if (
+      foodNameMatchesQuery(name, trimmedQuery)
+      || (brandRaw && foodNameMatchesQuery(brandRaw, trimmedQuery))
+    ) {
       if (strictScore < SCORE_STEM_GUARANTEED) {
         strictScore = SCORE_STEM_GUARANTEED;
         if ((MATCH_TIER_RANK[matchTier] || 0) < MATCH_TIER_RANK.token_exact) {
@@ -781,9 +793,10 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
     const score = strictScore + (usageBoost + historyBoost) * 0.01;
     const matchScore = strictScore / 100;
 
+    const displayName = name || brandRaw;
     results.push({
       id,
-      name,
+      name: displayName,
       matchScore,
       recencyScore,
       frequencyScore,
@@ -792,7 +805,10 @@ export function searchFoodsDetailed(foodDb, query, options = {}) {
       strictScore,
       matchTier,
       allTokensMatch,
-      queryTokenCoverage: countQueryTokenCoverage(name, trimmedQuery),
+      queryTokenCoverage: countQueryTokenCoverage(
+        [name, brandRaw].filter(Boolean).join(' '),
+        trimmedQuery,
+      ),
       lastUsedAt: Number(food?.lastUsedAt ?? food?.lastUsed ?? 0) || 0,
     });
 

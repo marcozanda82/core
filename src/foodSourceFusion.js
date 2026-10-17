@@ -1,5 +1,6 @@
 import { searchOpenFoodFactsApi } from './features/mealBuilder/utils/openFoodFactsSearchApi.js';
 import { FOOD_DB_SOURCE } from './foodDbSource.js';
+import { searchFoodsDetailed } from './foodSearch.js';
 
 const MASTER_SOURCE = 'KENTU';
 const OFF_SOURCE = 'OFF';
@@ -104,12 +105,11 @@ export function getMasterFusionPayload(masterDb, query, options = {}) {
 }
 
 /**
- * Ricerca Open Food Facts via REST (prodotti confezionati) — `_source: 'off'`, brand.
+ * Ricerca Open Food Facts: dump locale `offDb` se popolato, altrimenti REST.
  *
  * @returns {Promise<{ offNormalized: object[], uiItems: object[] }>}
  */
-export async function getOffFusionPayload(_offDb, query, options = {}) {
-  void _offDb;
+export async function getOffFusionPayload(offDb, query, options = {}) {
   const q = String(query || '').trim();
   const limit = Number.isFinite(options.limit) && options.limit > 0
     ? Math.floor(options.limit)
@@ -121,7 +121,34 @@ export async function getOffFusionPayload(_offDb, query, options = {}) {
     return { offNormalized: [], uiItems: [] };
   }
 
-  const rows = await searchOpenFoodFactsApi(q, { limit });
+  const hasLocalOff = offDb != null
+    && typeof offDb === 'object'
+    && !Array.isArray(offDb)
+    && Object.keys(offDb).length > 0;
+
+  let rows = [];
+  if (hasLocalOff) {
+    const detailed = searchFoodsDetailed(offDb, q, {
+      includeUserHistory: false,
+      limit,
+      mode: 'search',
+      enableFuzzy: false,
+    });
+    rows = detailed.map((hit) => {
+      const row = offDb[hit.id] || {};
+      return {
+        ...row,
+        id: hit.id,
+        desc: row.desc || row.name || hit.name,
+        name: row.name || row.desc || hit.name,
+        brand: row.brand || null,
+        textScore: hit.textScore,
+        matchScore: hit.matchScore,
+      };
+    });
+  } else {
+    rows = await searchOpenFoodFactsApi(q, { limit });
+  }
 
   const offNormalized = rows.map((row) => {
     const name = String(row.desc ?? row.name ?? '').trim();
@@ -141,8 +168,8 @@ export async function getOffFusionPayload(_offDb, query, options = {}) {
         source: FOOD_DB_SOURCE.OFF,
         brand,
       },
-      textScore: 0.9,
-      matchScore: 0.9,
+      textScore: Number(row.textScore) || 0.9,
+      matchScore: Number(row.matchScore) || 0.9,
       recencyScore: 0,
       frequencyScore: 0,
       iconTag: row.iconTag ?? null,

@@ -21,9 +21,15 @@ const KENTU_IT_SEARCH_LIMIT = 40;
 const GLOBAL_SEARCH_LIMIT = 40;
 /** Ricerca locale Kentu IT / USDA (L1/L2 resolver): cap stretto + yield. */
 const LOCAL_CATALOG_RESOLVER_LIMIT = 5;
-const OFF_SEARCH_LIMIT = 5;
-/** Cataloghi pesanti (USDA / OFF): cap su Object.entries per non bloccare il main thread. */
+/** Top match OFF in UI ricerca manuale (cap sensato per non appesantire la lista). */
+const OFF_SEARCH_LIMIT = 25;
+/** Cataloghi pesanti (USDA): cap su Object.entries per non bloccare il main thread. */
 const HEAVY_CATALOG_MAX_SCAN = 4000;
+/**
+ * OFF locale (~200k): scan più ampio del USDA ma con early-exit al limit.
+ * Senza questo, brand comuni oltre i primi 4k entry restano invisibili.
+ */
+const OFF_LOCAL_MAX_SCAN = 80000;
 /** Cap assoluto risultati UI / merge (mai renderizzare migliaia di nodi). */
 export const MERGED_SEARCH_RESULT_CAP = 40;
 /** Bonus ranking per hit catalogo caffetteria locale. */
@@ -559,7 +565,7 @@ export async function searchMegaDbsOnlyAsync(query, options = {}, signal = null)
 
   const offResults = await searchOffDb(
     trimmedQuery,
-    null,
+    offDb,
     [...kentuItResults, ...globalResults],
     { limit: OFF_SEARCH_LIMIT, signal },
   );
@@ -693,11 +699,9 @@ export async function searchGlobalDb(query, globalDb, existingResults = [], over
 }
 
 /**
- * Tier 4 — Open Food Facts via REST API (Livello 2 cloud).
- * Il parametro offDb è ignorato (legacy compat).
+ * Tier 4 — Open Food Facts: prima dump locale (`offDb`), poi fallback REST se vuoto.
  */
-export async function searchOffDb(query, _offDb, existingResults = [], overrides = {}) {
-  void _offDb;
+export async function searchOffDb(query, offDb, existingResults = [], overrides = {}) {
   const trimmedQuery = String(query || '').trim();
   if (!trimmedQuery) return [];
 
@@ -706,6 +710,31 @@ export async function searchOffDb(query, _offDb, existingResults = [], overrides
     : OFF_SEARCH_LIMIT;
 
   if (isSearchAborted(overrides.signal)) return [];
+
+  const hasLocalOff = offDb != null
+    && typeof offDb === 'object'
+    && !Array.isArray(offDb)
+    && Object.keys(offDb).length > 0;
+
+  if (hasLocalOff) {
+    // Chunked + yield: evita di bloccare il main thread su ~200k voci;
+    // early-exit quando si raggiunge `limit` (tipicamente top 25).
+    const local = await searchCatalogDbChunked(
+      trimmedQuery,
+      offDb,
+      existingResults,
+      {
+        limit,
+        legacySource: 'off',
+        dbSource: FOOD_DB_SOURCE.OFF,
+        enableFuzzy: false,
+        requireUsableKcal: true,
+        maxEntriesToScan: OFF_LOCAL_MAX_SCAN,
+      },
+      overrides.signal ?? null,
+    );
+    return local.slice(0, limit);
+  }
 
   const rows = await searchOpenFoodFactsApi(trimmedQuery, {
     limit,
@@ -735,11 +764,10 @@ export async function searchOffDb(query, _offDb, existingResults = [], overrides
 }
 
 /**
- * Slice OFF sicuro per lookup AI: REST, max 5 risultati.
+ * Slice OFF sicuro per lookup AI: locale se presente, altrimenti REST.
  */
-export async function searchOffDbForAi(query, _offDb) {
-  void _offDb;
-  return searchOffDb(query, null, [], { limit: OFF_SEARCH_LIMIT });
+export async function searchOffDbForAi(query, offDb) {
+  return searchOffDb(query, offDb, [], { limit: OFF_SEARCH_LIMIT });
 }
 
 /**
@@ -899,6 +927,12 @@ export function useSplitFoodSearch(liveQuery, personalDb, options = {}) {
     offDb = null,
     searchGlobal = true,
     cap = MERGED_SEARCH_RESULT_CAP,
+    /**
+     * Se > 0 (es. ricerca manuale FastMealLogger), avvia i cataloghi mega
+     * (CREA / USDA / OFF) mentre si digita, senza richiedere Invio.
+     * Lasciare 0/null per pipeline vocale / flussi Enter-only.
+     */
+    autoCommitMegaMinChars = 0,
   } = options;
 
   const liveTrimmed = String(liveQuery || '').trim();
@@ -939,6 +973,22 @@ export function useSplitFoodSearch(liveQuery, personalDb, options = {}) {
       clearMegaSearch();
     }
   }, [liveTrimmed, clearMegaSearch]);
+
+  // Ricerca manuale: cataloghi (incluso OFF locale) mentre si digita.
+  // Non attivo di default → voce / Invio-only restano invariati.
+  useEffect(() => {
+    const minChars = Number(autoCommitMegaMinChars);
+    if (!Number.isFinite(minChars) || minChars <= 0) return undefined;
+    if (liveTrimmed.length >= minChars) {
+      commitMegaSearch(liveTrimmed);
+      return undefined;
+    }
+    if (liveTrimmed.length > 0) {
+      // Query troppo corta: non lasciare mega results di una query precedente.
+      clearMegaSearch();
+    }
+    return undefined;
+  }, [liveTrimmed, autoCommitMegaMinChars, commitMegaSearch, clearMegaSearch]);
 
   useEffect(() => {
     const gen = ++searchGenRef.current;

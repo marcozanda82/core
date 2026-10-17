@@ -1,4 +1,4 @@
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   MealComposerProvider,
@@ -1068,37 +1068,34 @@ function FastMealLoggerContent({
   }, [gridFoods, personalDb, catalogServingOverrides, masterContext]);
 
   const savedRecipes = useMemo(() => fetchRecipesFromDb(personalDb), [personalDb]);
-  /**
-   * Input immediato (live) vs query deferred per scansione cataloghi.
-   * La tastiera resta fluida; CREA/USDA/filtri usano useDeferredValue.
-   * Mega DB esterni solo su Invio (commitMegaSearch con query live).
-   */
+  /** Query live: personale istantaneo + cataloghi (CREA/USDA/OFF) da ≥2 caratteri. */
   const liveVetrinaQuery = vetrinaSearchQuery.trim();
-  const deferredVetrinaQuery = useDeferredValue(liveVetrinaQuery);
   const isVetrinaSearching = liveVetrinaQuery.length > 0;
 
   const {
     results: vetrinaUnifiedResults,
     isSearchingMega: isVetrinaDbSearching,
     commitMegaSearch,
-  } = useSplitFoodSearch(deferredVetrinaQuery, personalDb, {
+  } = useSplitFoodSearch(liveVetrinaQuery, personalDb, {
     kentuItDb,
     globalDb: globalDb ?? masterDb,
     offDb,
     searchGlobal: true,
+    // Solo ricerca manuale UI: voce / altri caller restano Enter-only (default 0).
+    autoCommitMegaMinChars: 2,
   });
 
   const submitVetrinaSearch = useCallback(() => {
-    commitMegaSearch(liveVetrinaQuery);
-  }, [commitMegaSearch, liveVetrinaQuery]);
+    commitMegaSearch();
+  }, [commitMegaSearch]);
 
-  /** Filter → slice (solo grezzi, zero merge) sulla query deferred. */
+  /** Filter → slice (solo grezzi, zero merge). Istantaneo sulla query live. */
   const filteredQuickFoodsRaw = useMemo(() => {
-    if (!deferredVetrinaQuery) return [];
+    if (!liveVetrinaQuery) return [];
     return quickFoods
-      .filter((tile) => textMatchesQuery(resolveRawTileSearchText(tile), deferredVetrinaQuery))
+      .filter((tile) => textMatchesQuery(resolveRawTileSearchText(tile), liveVetrinaQuery))
       .slice(0, VETRINA_SEARCH_RESULT_LIMIT);
-  }, [quickFoods, deferredVetrinaQuery]);
+  }, [quickFoods, liveVetrinaQuery]);
 
   /** Map pesante solo sui match visibili della ricerca. */
   const filteredQuickFoodDisplayByKey = useMemo(() => {
@@ -1136,8 +1133,8 @@ function FastMealLoggerContent({
   }, []);
 
   const filteredSavedRecipes = useMemo(
-    () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, deferredVetrinaQuery)),
-    [savedRecipes, deferredVetrinaQuery],
+    () => savedRecipes.filter((recipe) => textMatchesQuery(recipe.name, liveVetrinaQuery)),
+    [savedRecipes, liveVetrinaQuery],
   );
 
   const quickFoodIdentityKeys = useMemo(() => {
@@ -1832,8 +1829,8 @@ function FastMealLoggerContent({
                 />
                 <p className="mt-2 text-center text-[11px] font-medium text-slate-600">
                   {isVetrinaSearching
-                    ? 'Il tuo DB si aggiorna mentre digiti · Invio per cercare nei cataloghi'
-                    : 'Digita per filtrare il tuo DB · Invio per cercare Kentu IT / Global / OFF'}
+                    ? 'Risultati da DB personale, CREA, USDA e Open Food Facts mentre digiti'
+                    : 'Digita almeno 2 caratteri per cercare in tutti i cataloghi (incluso OFF)'}
                 </p>
               </div>
 
