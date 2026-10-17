@@ -12,6 +12,7 @@ import {
   getTileDisplayStats,
 } from '../utils/draftFoodMatchUtils';
 import { buildRecipeDraftPayloadFromSearchResult } from '../utils/recipePayloadUtils';
+import { normalizeGtinDigits } from '../utils/barcodeOpenFoodFacts';
 
 const SEARCH_UNIT_WEIGHT = 100;
 
@@ -132,6 +133,11 @@ export default function UniversalSearchModal({
   preferManualEntry = false,
   /** EAN da precompilare nel form manuale. */
   preferManualBarcode = '',
+  /**
+   * Macro /100g da precompilare (es. dopo Vision etichetta).
+   * Shape: { kcal?, prot?|pro?, carb?|carbo?, fat? }
+   */
+  preferManualMacros = null,
   /** Sopra overlay più alti (es. modifica ricetta). */
   elevated = false,
 }) {
@@ -156,6 +162,7 @@ export default function UniversalSearchModal({
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualError, setManualError] = useState('');
   const searchInputRef = useRef(null);
+  const manualNameInputRef = useRef(null);
 
   useEffect(() => {
     const el = searchInputRef.current;
@@ -179,14 +186,31 @@ export default function UniversalSearchModal({
     if (seed) runSearch(seed);
     if (preferManualEntry) {
       setIsManualEntryOpen(true);
+      const macros = preferManualMacros && typeof preferManualMacros === 'object'
+        ? preferManualMacros
+        : null;
+      const barcode = normalizeGtinDigits(preferManualBarcode)
+        || String(preferManualBarcode || '').trim();
       setManualForm({
         ...EMPTY_MANUAL_FORM,
-        barcode: String(preferManualBarcode || '').trim(),
+        barcode,
+        kcal: macros?.kcal != null && macros.kcal !== '' ? String(macros.kcal) : '',
+        prot: macros?.prot != null && macros.prot !== ''
+          ? String(macros.prot)
+          : (macros?.pro != null && macros.pro !== '' ? String(macros.pro) : ''),
+        carb: macros?.carb != null && macros.carb !== ''
+          ? String(macros.carb)
+          : (macros?.carbo != null && macros.carbo !== '' ? String(macros.carbo) : ''),
+        fat: macros?.fat != null && macros.fat !== '' ? String(macros.fat) : '',
+      });
+      // Focus sul nome prodotto (barcode già precompilato).
+      requestAnimationFrame(() => {
+        manualNameInputRef.current?.focus?.();
       });
     }
     // Solo all'apertura / cambio seed — non a ogni keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- clearSearch/runSearch sono stabili
-  }, [isOpen, initialQuery, preferManualEntry, preferManualBarcode]);
+  }, [isOpen, initialQuery, preferManualEntry, preferManualBarcode, preferManualMacros]);
 
   if (!isOpen) return null;
 
@@ -220,15 +244,17 @@ export default function UniversalSearchModal({
       return;
     }
 
+    const barcode = normalizeGtinDigits(manualForm.barcode)
+      || String(manualForm.barcode || '').trim();
     const entry = {
       desc,
       kcal: Number(manualForm.kcal) || 0,
       prot: Number(manualForm.prot) || 0,
       carb: Number(manualForm.carb) || 0,
       fatTotal: Number(manualForm.fat) || 0,
-      ...(String(manualForm.barcode || '').trim()
-        ? { barcode: String(manualForm.barcode).trim() }
-        : {}),
+      fat: Number(manualForm.fat) || 0,
+      // Persistenza barcode → Level 1 cascade (0 ms) alle scan successive.
+      ...(barcode ? { barcode } : {}),
     };
 
     setIsSavingManual(true);
@@ -366,24 +392,28 @@ export default function UniversalSearchModal({
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-slate-300">Nome</span>
               <input
+                ref={manualNameInputRef}
                 type="text"
                 value={manualForm.name}
                 onChange={handleManualFieldChange('name')}
                 autoFocus
-                placeholder="Es. Pollo arrosto"
+                placeholder="Es. Yogurt greco marca X"
                 className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
               />
             </label>
 
             {manualForm.barcode ? (
               <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-300">Codice a barre</span>
+                <span className="mb-1 block text-xs font-medium text-slate-300">
+                  Codice a barre (salvato nel DB personale)
+                </span>
                 <input
                   type="text"
                   value={manualForm.barcode}
                   onChange={handleManualFieldChange('barcode')}
                   inputMode="numeric"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 font-mono text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20"
+                  readOnly={Boolean(preferManualBarcode)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-2.5 font-mono text-sm text-slate-100 focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/20 read-only:opacity-90"
                 />
               </label>
             ) : null}

@@ -4368,6 +4368,15 @@ Slot esistente aggiornato (nessun ghost).`;
     const payload = { ...entry, desc: name, isRecipe: false };
     delete payload.ingredients;
     delete payload.type;
+    // Barcode da scanner / creazione rapida: normalizza cifre e persisti per Level-1 cascade.
+    if (payload.barcode != null && String(payload.barcode).trim()) {
+      const digits = String(payload.barcode).replace(/\D/g, '');
+      payload.barcode = digits.length >= 8 && digits.length <= 14
+        ? (digits.length === 14 && digits.startsWith('0') ? digits.slice(1) : digits)
+        : String(payload.barcode).trim();
+    } else {
+      delete payload.barcode;
+    }
     if (strictLearned) {
       payload.kcal = Math.round(Number(payload.kcal) || 0);
       payload.prot = Math.round((Number(payload.prot) || 0) * 10) / 10;

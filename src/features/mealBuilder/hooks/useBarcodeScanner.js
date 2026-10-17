@@ -76,6 +76,14 @@ export default function useBarcodeScanner({
     setIsOpen(true);
   }, []);
 
+  /** Dopo not-found: ripulisci e riattiva la fotocamera senza chiudere l'overlay. */
+  const retryScan = useCallback(() => {
+    setNotFound(null);
+    setError('');
+    setIsResolving(false);
+    isScanningRef.current = false;
+  }, []);
+
   const resolveBarcodeToFood = useCallback(
     async (rawBarcode) => {
       const code = extractBarcodeFromScan(rawBarcode) || normalizeGtinDigits(rawBarcode);
@@ -332,6 +340,7 @@ export default function useBarcodeScanner({
     isOpen,
     open,
     close,
+    retryScan,
     videoRef,
     error,
     setError,

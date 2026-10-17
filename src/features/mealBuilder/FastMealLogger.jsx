@@ -64,6 +64,9 @@ import {
   findSemanticUsdaMatches,
   mergeOffAndUsda,
 } from './utils/SemanticMatchmaker';
+import { normalizeGtinDigits } from './utils/barcodeOpenFoodFacts';
+import { requestCameraPermissionsAsync, launchCameraAsync } from '../../platform/expoNativeCamera.js';
+import { processFoodImage } from '../foodResolution/processFoodImage.js';
 import useFoodDb from '../../useFoodDb';
 import {
   FOOD_DB_SOURCE,
@@ -484,6 +487,12 @@ function FastMealLoggerContent({
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [preferManualSearchEntry, setPreferManualSearchEntry] = useState(false);
   const [preferManualBarcode, setPreferManualBarcode] = useState('');
+  /** Macro /100g da Vision etichetta (prefill form creazione rapida). */
+  const [preferManualMacros, setPreferManualMacros] = useState(null);
+  /** Barcode in attesa dopo not-found (apprendimento Level 1). */
+  const [pendingBarcode, setPendingBarcode] = useState('');
+  const [isLabelScanBusy, setIsLabelScanBusy] = useState(false);
+  const labelFileInputRef = useRef(null);
   const [isSavingMeal, setIsSavingMeal] = useState(false);
   const [isSaveRecipeOpen, setIsSaveRecipeOpen] = useState(false);
   const [recipeName, setRecipeName] = useState('');
@@ -922,8 +931,11 @@ function FastMealLoggerContent({
     finishEnrichment(enrichmentOffRef.current || null);
   }, [finishEnrichment]);
 
-  const handleBarcodeNotFound = useCallback(({ barcode } = {}) => {
-    setPreferManualBarcode(String(barcode || '').trim());
+  const openQuickFoodWithBarcode = useCallback((barcode, macros = null) => {
+    const code = normalizeGtinDigits(barcode) || String(barcode || '').trim();
+    setPendingBarcode(code);
+    setPreferManualBarcode(code);
+    setPreferManualMacros(macros && typeof macros === 'object' ? macros : null);
     setPreferManualSearchEntry(true);
     setIsSearchModalOpen(true);
   }, []);
@@ -932,6 +944,7 @@ function FastMealLoggerContent({
     isOpen: isScannerOpen,
     open: openScanner,
     close: closeScanner,
+    retryScan,
     videoRef,
     error: scannerError,
     setError: setScannerError,
@@ -944,6 +957,94 @@ function FastMealLoggerContent({
     onFoodResolved: handleFoodSelection,
     enrichOffProduct,
   });
+
+  const handleCreateQuickFoodFromScan = useCallback((barcode) => {
+    const code = normalizeGtinDigits(barcode)
+      || String(barcode || scannerNotFound?.barcode || pendingBarcode || '').trim();
+    closeScanner();
+    openQuickFoodWithBarcode(code);
+  }, [closeScanner, openQuickFoodWithBarcode, scannerNotFound, pendingBarcode]);
+
+  const processLabelImageForPendingBarcode = useCallback(async (imageUri, barcode) => {
+    const code = normalizeGtinDigits(barcode) || String(barcode || '').trim();
+    setIsLabelScanBusy(true);
+    try {
+      const result = await processFoodImage(imageUri, 'label', { grams: 0 });
+      const macros = result?.prefilledMacros;
+      const preferMacros = macros && Number(macros.kcal) > 0
+        ? {
+          kcal: Math.round(Number(macros.kcal) || 0),
+          prot: Number(macros.pro ?? macros.prot) || 0,
+          carb: Number(macros.carbo ?? macros.carb) || 0,
+          fat: Number(macros.fat) || 0,
+        }
+        : null;
+      openQuickFoodWithBarcode(code, preferMacros);
+      if (result?.errorToast) {
+        setAddFeedback(result.errorToast);
+      }
+    } catch (err) {
+      console.warn('[FastMealLogger] label vision failed', err);
+      openQuickFoodWithBarcode(code, null);
+      setAddFeedback('Lettura etichetta fallita — completa i valori a mano');
+    } finally {
+      setIsLabelScanBusy(false);
+    }
+  }, [openQuickFoodWithBarcode]);
+
+  const handleScanNutritionLabelFromBarcode = useCallback(async (barcode) => {
+    const code = normalizeGtinDigits(barcode)
+      || String(barcode || scannerNotFound?.barcode || pendingBarcode || '').trim();
+    setPendingBarcode(code);
+    closeScanner();
+
+    try {
+      const perm = await requestCameraPermissionsAsync();
+      if (perm?.granted) {
+        const shot = await launchCameraAsync({ quality: 0.85 });
+        if (shot?.uri && !shot.canceled) {
+          await processLabelImageForPendingBarcode(shot.uri, code);
+          return;
+        }
+        if (shot?.reason === 'native_camera_unavailable') {
+          // Web / stub: fallback input file con capture.
+          labelFileInputRef.current?.click();
+          return;
+        }
+        // Annullato: apri comunque creazione rapida con barcode.
+        openQuickFoodWithBarcode(code);
+        return;
+      }
+    } catch (err) {
+      console.warn('[FastMealLogger] camera label failed', err);
+    }
+
+    // Permessi negati o runtime web → file input.
+    labelFileInputRef.current?.click();
+  }, [
+    closeScanner,
+    scannerNotFound,
+    pendingBarcode,
+    processLabelImageForPendingBarcode,
+    openQuickFoodWithBarcode,
+  ]);
+
+  const handleLabelFileSelected = useCallback(async (event) => {
+    const file = event?.target?.files?.[0];
+    event.target.value = '';
+    const code = normalizeGtinDigits(pendingBarcode)
+      || String(preferManualBarcode || '').trim();
+    if (!file) {
+      if (code) openQuickFoodWithBarcode(code);
+      return;
+    }
+    const uri = URL.createObjectURL(file);
+    try {
+      await processLabelImageForPendingBarcode(uri, code);
+    } finally {
+      URL.revokeObjectURL(uri);
+    }
+  }, [pendingBarcode, preferManualBarcode, processLabelImageForPendingBarcode, openQuickFoodWithBarcode]);
 
   useEffect(() => {
     if (!autoOpenBarcodeScanner) return;
@@ -1453,12 +1554,17 @@ function FastMealLoggerContent({
   const handleOpenScanner = () => {
     setIsSearchModalOpen(false);
     setPreferManualSearchEntry(false);
+    setPreferManualBarcode('');
+    setPreferManualMacros(null);
+    setPendingBarcode('');
     setScannerError('');
     openScanner();
   };
 
   const openManualFoodCreator = () => {
     setPreferManualBarcode('');
+    setPreferManualMacros(null);
+    setPendingBarcode('');
     setPreferManualSearchEntry(true);
     setIsSearchModalOpen(true);
   };
@@ -2297,12 +2403,25 @@ function FastMealLoggerContent({
         </div>
       ) : null}
 
+      <input
+        ref={labelFileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-hidden
+        tabIndex={-1}
+        onChange={handleLabelFileSelected}
+      />
+
       <UniversalSearchModal
         isOpen={isSearchModalOpen}
         onClose={() => {
           setIsSearchModalOpen(false);
           setPreferManualSearchEntry(false);
           setPreferManualBarcode('');
+          setPreferManualMacros(null);
+          setPendingBarcode('');
         }}
         personalDb={personalDb}
         kentuItDb={kentuItDb}
@@ -2319,7 +2438,8 @@ function FastMealLoggerContent({
         scannerError={scannerError}
         isScannerResolving={isScannerResolving}
         preferManualEntry={preferManualSearchEntry}
-        preferManualBarcode={preferManualBarcode}
+        preferManualBarcode={preferManualBarcode || pendingBarcode}
+        preferManualMacros={preferManualMacros}
       />
 
       <BarcodeScannerOverlay
@@ -2327,13 +2447,31 @@ function FastMealLoggerContent({
         onClose={closeScanner}
         videoRef={videoRef}
         error={scannerError}
-        isResolving={isScannerResolving}
+        isResolving={isScannerResolving || isLabelScanBusy}
         notFound={scannerNotFound}
+        onCreateQuickFood={handleCreateQuickFoodFromScan}
+        onScanNutritionLabel={handleScanNutritionLabelFromBarcode}
+        onRetryScan={retryScan}
         onInsertManually={(ean) => {
-          closeScanner();
-          handleBarcodeNotFound({ barcode: ean });
+          handleCreateQuickFoodFromScan(ean);
         }}
       />
+
+      {isLabelScanBusy ? (
+        <div
+          className="fixed inset-0 z-[100065] flex items-center justify-center bg-black/70 px-6"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="rounded-2xl border border-cyan-500/30 bg-slate-950/95 px-6 py-5 text-center shadow-xl">
+            <span className="mx-auto mb-3 block h-6 w-6 animate-spin rounded-full border-2 border-slate-600 border-t-cyan-400" />
+            <p className="text-sm font-medium text-cyan-100">Lettura etichetta nutrizionale…</p>
+            {pendingBarcode ? (
+              <p className="mt-1 font-mono text-xs text-slate-400">{pendingBarcode}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <MicronutrientEnrichmentModal
         isOpen={Boolean(enrichmentSession)}
