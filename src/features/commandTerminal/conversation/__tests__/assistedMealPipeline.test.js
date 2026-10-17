@@ -135,3 +135,36 @@ test('invariante: source metadata non cambia gli item', async () => {
   assert.equal(a.source, 'text');
   assert.equal(b.source, 'voice');
 });
+
+test('Caso 11 — lista 11 alimenti separati da virgola: non si ferma a 6', async () => {
+  const phrase = [
+    'pane',
+    'pasta olive',
+    'pomodoro',
+    'passato di pomodoro',
+    'salmone',
+    'merluzzo',
+    'orate',
+    'patate',
+    'quinoa',
+    'edamame',
+    'mix fagioli rossi',
+  ].join(', ');
+  const { textDraft, voiceDraft } = await bothSources(phrase, {
+    geminiParser: async () => {
+      throw new Error('force_local');
+    },
+  });
+  assert.deepEqual(serializeAssistedMealDraft(textDraft), serializeAssistedMealDraft(voiceDraft));
+  assert.equal(textDraft.items.length, 11, 'attesi 11 item, non il vecchio cap a 6');
+  const names = textDraft.items.map((i) => String(i.foodName || '').toLowerCase());
+  assert.ok(names.some((n) => n.includes('pane')));
+  assert.ok(names.some((n) => n.includes('merluzzo')));
+  assert.ok(names.some((n) => n.includes('orate')));
+  assert.ok(names.some((n) => n.includes('quinoa')));
+  assert.ok(names.some((n) => n.includes('edamame')));
+  assert.ok(names.some((n) => /fagioli/.test(n)));
+
+  const local = parseAssistedMealLocal(phrase, { source: 'text' });
+  assert.equal(local.items.length, 11);
+});

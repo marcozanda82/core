@@ -756,11 +756,12 @@ function LiveMealTray({
         )}
       </div>
 
+      {/* Lista scrollabile: footer Calcola/Salva resta flex-none sotto (anche con 20+ voci). */}
       <div
         className={
           immersive
-            ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive min-h-0 flex-1 overflow-y-auto overscroll-contain'
-            : 'kentu-meal-tray__scroll min-h-0 max-h-[40vh] flex-1 overflow-y-auto overscroll-contain'
+            ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
+            : 'kentu-meal-tray__scroll min-h-0 max-h-[min(42vh,360px)] flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
         }
       >
         {items.length === 0 ? (

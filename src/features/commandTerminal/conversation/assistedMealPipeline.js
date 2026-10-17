@@ -19,6 +19,9 @@ export const QUANTITY_SOURCE = Object.freeze({
   estimated: 'estimated',
 });
 
+/** Cap alimenti per singolo input (liste virgola / «e»). */
+export const ASSISTED_MEAL_MAX_ITEMS = 20;
+
 const COUNT_WORDS = Object.freeze({
   un: 1,
   una: 1,
@@ -61,7 +64,7 @@ function extractBareAssistedNames(text) {
   return splitFoodListSegments(body)
     .map((p) => cleanFoodName(p))
     .filter((p) => p.length >= 2 && p.length <= 80 && !/^\d+$/.test(p))
-    .slice(0, 6);
+    .slice(0, ASSISTED_MEAL_MAX_ITEMS);
 }
 
 function cleanFoodName(raw) {
@@ -582,6 +585,14 @@ export function parseAssistedMealLocal(text, context = {}) {
       push(toAssistedItem(plate.foodName, { platePortion: true, ...extras }, ctx));
       continue;
     }
+
+    // Segmento senza grammi/unità: trattalo come nome bare (non scartare oltre il vecchio cap 6).
+    const bareName = cleanFoodName(segment);
+    if (bareName.length >= 2 && !/^\d+$/.test(bareName)) {
+      splitJuxtaposedSimpleFoods(bareName).forEach((part) => {
+        push(toAssistedItem(part, { ...extras }, ctx));
+      });
+    }
   }
 
   if (items.length === 0) {
@@ -594,6 +605,10 @@ export function parseAssistedMealLocal(text, context = {}) {
         }, ctx));
       });
     });
+  }
+
+  if (items.length > ASSISTED_MEAL_MAX_ITEMS) {
+    items.length = ASSISTED_MEAL_MAX_ITEMS;
   }
 
   return {

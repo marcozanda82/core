@@ -9,6 +9,7 @@ import { isPredictiveGreetingMessage } from '../../predictive/predictiveGreeting
 import { splitFoodListSegments } from './foodPhraseSplit.js';
 import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
 import { resolveAssistedPortion } from './assistedPortionResolver.js';
+import { ASSISTED_MEAL_MAX_ITEMS } from './assistedMealPipeline.js';
 
 const WEIGHT_PATTERN = /(\d+(?:[.,]\d+)?)\s*(?:g|grammi|gr|kg)\b|\bporzion/i;
 const TIME_PATTERN =
@@ -1695,7 +1696,7 @@ export function extractBareFoodNamesFromText(text) {
   const parts = splitFoodListSegments(body)
     .map((p) => p.trim().replace(/^(?:di|un|una|il|lo|la|i|gli|le)\s+/i, '').trim())
     .filter((p) => p.length >= 2 && p.length <= 80 && !/^\d+$/.test(p));
-  return parts.slice(0, 6);
+  return parts.slice(0, ASSISTED_MEAL_MAX_ITEMS);
 }
 
 /**
