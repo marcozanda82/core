@@ -1,0 +1,60 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "planning": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "weeklyPlanning": {
+      "$uid": {
+        ".read": "$uid === auth.uid",
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "kentu_focus": {
+      "$uid": {
+        ".read": false,
+        ".write": false,
+        "editions": {
+          "$publicationDate": {
+            ".read": false,
+            ".write": false,
+            "meta": {
+              ".read": "$uid === auth.uid",
+              ".write": false
+            },
+            "rev": {
+              "$revision": {
+                ".read": "$uid === auth.uid && root.child('kentu_focus').child($uid).child('editions').child($publicationDate).child('meta').child('currentRevision').val() + '' === $revision",
+                ".write": false
+              }
+            }
+          }
+        },
+        "archive_index": {
+          ".read": "$uid === auth.uid",
+          ".write": false
+        },
+        "jobs": {
+          ".read": false,
+          ".write": false
+        },
+        "dossiers": {
+          ".read": false,
+          ".write": false
+        },
+        "editorial_memory": {
+          ".read": false,
+          ".write": false
+        }
+      }
+    }
+  }
+}

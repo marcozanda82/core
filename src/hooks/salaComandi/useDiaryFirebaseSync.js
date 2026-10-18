@@ -65,6 +65,12 @@ export function useDiaryFirebaseSync({
   const lastLogFromFirebaseRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [isProfileHydrated, setIsProfileHydrated] = useState(false);
+  /**
+   * Bootstrap dello storico completo (albero tracker_data), distinto da isInitialLoadComplete
+   * (oggi+profile). Usato dal laboratorio Focus per non spacciare la cache 15g come d30 completo.
+   * @type {'idle'|'loading'|'ready'|'error'}
+   */
+  const [fullHistoryLoadState, setFullHistoryLoadState] = useState('idle');
 
   const applyProfileTargets = useCallback((data) => {
     if (!data || typeof data !== 'object') return;
@@ -120,6 +126,7 @@ export function useDiaryFirebaseSync({
     if (!user) {
       setIsInitialLoadComplete(false);
       setIsProfileHydrated(false);
+      setFullHistoryLoadState('idle');
       setWeeklyPlan(createInitialWeeklyPlan());
       weeklyPlanningListenerReadyRef.current = false;
       weeklyPlanningRemoteSigRef.current = '';
@@ -133,6 +140,8 @@ export function useDiaryFirebaseSync({
     const basePath = `users/${user.uid}/tracker_data`;
     const todayRef = ref(db, `${basePath}/${TRACKER_STORICO_KEY(today)}`);
     const profileRef = ref(db, `users/${user.uid}/profile_targets`);
+    // Cache 15g ≠ storico completo: finché get(tracker_data) non termina restiamo in loading.
+    setFullHistoryLoadState('loading');
 
     // Stale-While-Revalidate: idratazione immediata da cache locale (zero-latency cold start)
     try {
@@ -240,8 +249,12 @@ export function useDiaryFirebaseSync({
               setFullStorico(tree);
               setFullHistory(tree || {});
               writeRecentHistoryCache(user.uid, tree || {}, getTodayString());
+              setFullHistoryLoadState('ready');
             })
-            .catch((err) => console.warn('tracker_data background load:', err));
+            .catch((err) => {
+              console.warn('tracker_data background load:', err);
+              if (!cancelled) setFullHistoryLoadState('error');
+            });
         }, { timeout: 4000 });
         backgroundCancels.push(cancelHist);
       })
@@ -251,6 +264,7 @@ export function useDiaryFirebaseSync({
         setIsProfileHydrated(true);
         setActiveAction((prev) => (prev === 'ai_chat' ? 'ai_chat' : 'home'));
         setIsInitialLoadComplete(true);
+        setFullHistoryLoadState('error');
         attachTodayLiveListener();
       });
 
@@ -426,6 +440,8 @@ export function useDiaryFirebaseSync({
     syncDatiFirebase,
     isInitialLoadComplete,
     isProfileHydrated,
+    /** idle | loading | ready | error — bootstrap albero tracker_data completo */
+    fullHistoryLoadState,
     lastLogFromFirebaseRef,
   };
 }

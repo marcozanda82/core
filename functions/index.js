@@ -1,14 +1,14 @@
 const functions = require('firebase-functions');
+const {
+  DEFAULT_GEMINI_MODEL,
+  sanitizeGeminiModel,
+  normalizeGenerationConfig,
+  extractGeminiText,
+  postGeminiGenerateContent: postGeminiHttp,
+} = require('./lib/geminiHttp');
 
 /** REST v1 — payload JSON in camelCase (REST Gemini). */
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
-
-function sanitizeGeminiModel(raw) {
-  const id = String(raw || '').trim();
-  if (/^[a-zA-Z0-9._-]+$/.test(id)) return id;
-  return GEMINI_MODEL;
-}
+const GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
 
 function readLegacyConfigKey() {
   try {
@@ -81,36 +81,6 @@ function buildUserParts(userText, systemText, images, image) {
   return parts;
 }
 
-/**
- * generationConfig compatibile con REST v1 (camelCase).
- * Esclude responseMimeType / responseSchema (non supportati su questo endpoint).
- */
-function normalizeGenerationConfig(rawConfig = {}) {
-  const src = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
-  const config = {};
-
-  const temp = Number(src.temperature);
-  config.temperature = Number.isFinite(temp) ? temp : 0.3;
-
-  const maxOut = Number(src.maxOutputTokens ?? src.max_output_tokens);
-  if (Number.isFinite(maxOut) && maxOut > 0) {
-    config.maxOutputTokens = Math.round(maxOut);
-  }
-
-  const topP = Number(src.topP ?? src.top_p);
-  if (Number.isFinite(topP)) config.topP = topP;
-
-  const topK = Number(src.topK ?? src.top_k);
-  if (Number.isFinite(topK)) config.topK = Math.round(topK);
-
-  const stop = src.stopSequences ?? src.stop_sequences;
-  if (Array.isArray(stop) && stop.length > 0) {
-    config.stopSequences = stop.map((s) => String(s)).filter(Boolean);
-  }
-
-  return config;
-}
-
 function appendJsonSchemaHint(systemInstruction, responseSchema) {
   const base = String(systemInstruction || '').trim();
   if (!responseSchema || typeof responseSchema !== 'object') return base;
@@ -118,13 +88,6 @@ function appendJsonSchemaHint(systemInstruction, responseSchema) {
     'Rispondi SOLO con JSON valido (nessun markdown) conforme a questo schema: '
     + JSON.stringify(responseSchema);
   return base ? `${base}\n\n${hint}` : hint;
-}
-
-function extractGeminiText(geminiData) {
-  const parts = geminiData?.candidates?.[0]?.content?.parts;
-  if (!Array.isArray(parts)) return '';
-  const textPart = parts.find((part) => typeof part?.text === 'string');
-  return textPart?.text || '';
 }
 
 /**
@@ -171,25 +134,6 @@ function normalizeGeminiContents(raw) {
   return out.length > 0 ? out : null;
 }
 
-async function postGeminiGenerateContent(url, geminiPayload) {
-  let response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiPayload),
-    });
-  } catch (error) {
-    throw new functions.https.HttpsError(
-      'unavailable',
-      `Gemini fetch failed: ${error?.message || 'network error'}`,
-    );
-  }
-
-  const rawBody = await response.text();
-  return { response, rawBody };
-}
-
 async function callGeminiGenerateContent({
   prompt,
   systemText,
@@ -206,17 +150,23 @@ async function callGeminiGenerateContent({
   };
   const apiKey = getGeminiApiKey();
   const modelId = sanitizeGeminiModel(model || GEMINI_MODEL);
-  const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${apiKey}`;
+  const genConfig = normalizeGenerationConfig(generationConfig);
 
-  const buildPayload = (turns) => ({
-    contents: turns,
-    generationConfig,
-  });
-
-  let { response, rawBody } = await postGeminiGenerateContent(
-    url,
-    buildPayload([...history, userTurn]),
-  );
+  let response;
+  let rawBody;
+  try {
+    ({ response, rawBody } = await postGeminiHttp({
+      apiKey,
+      model: modelId,
+      contents: [...history, userTurn],
+      generationConfig: genConfig,
+    }));
+  } catch (error) {
+    throw new functions.https.HttpsError(
+      'unavailable',
+      `Gemini fetch failed: ${error?.message || 'network error'}`,
+    );
+  }
 
   if (!response.ok && history.length > 0 && response.status >= 400 && response.status < 500) {
     console.warn(
@@ -224,7 +174,19 @@ async function callGeminiGenerateContent({
       response.status,
       rawBody.slice(0, 400),
     );
-    ({ response, rawBody } = await postGeminiGenerateContent(url, buildPayload([userTurn])));
+    try {
+      ({ response, rawBody } = await postGeminiHttp({
+        apiKey,
+        model: modelId,
+        contents: [userTurn],
+        generationConfig: genConfig,
+      }));
+    } catch (error) {
+      throw new functions.https.HttpsError(
+        'unavailable',
+        `Gemini fetch failed: ${error?.message || 'network error'}`,
+      );
+    }
   }
 
   if (!response.ok) {

@@ -2,3 +2,7 @@ node_modules
 dist
 .env
 src/dev/.sleepCoachTestRun.mjs
+functions/_shared
+firebase-debug.log
+firebase-debug.*.log
+database-debug.log

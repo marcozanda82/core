@@ -1,65 +1,20 @@
 import { useMemo } from 'react';
 import { isUnresolvedMealDraftItem } from './utils/mealDraftStatus.js';
+import {
+  ALL_NUTRIENT_KEYS,
+  DEFAULT_TARGETS,
+  TARGETS,
+  computeTotali,
+  readLogItemNutrient,
+} from './utils/computeTotaliCore.js';
 
-/**
- * TARGET BIOCHIMICI — Tutti i 40+ parametri (macro, aminoacidi, vitamine, minerali, omega).
- * Nessun dato biochimico deve essere perso: ogni chiave è usata per somma e delta correction.
- */
-export const TARGETS = {
-  macro: { prot: 140, carb: 300, fatTotal: 85, fibre: 30 },
-  amino: { leu: 2900, iso: 1500, val: 1900, lys: 2200, met: 1100, phe: 1800, thr: 1100, trp: 300, his: 750 },
-  vit: { vitA: 900, vitB1: 1.2, vitB2: 1.3, vitB3: 16, vitB5: 5, vitB6: 1.3, b9: 400, vitB12: 2.4, vitc: 90, vitD: 15, vitE: 15, vitK: 120 },
-  min: { ca: 1000, fe: 18, mg: 420, p: 700, k: 3400, na: 2000, zn: 11, cu: 0.9, se: 55 },
-  fat: { fatSat: 20, fatTrans: 2, fatMono: 45, fatPoly: 20, omega3: 2, omega6: 10, colest: 300 }
-};
-
-/** Target piatti per Profilo Utente (salvati su Firebase). Fallback per l'app quando non ci sono target custom. */
-export const DEFAULT_TARGETS = {
-  kcal: 2000, prot: 150, carb: 200, fatTotal: 60, fibre: 30,
-  vitc: 90, vitD: 20, omega3: 1.5, mg: 400, k: 3000, fe: 18, ca: 1000, water: 2500
-};
-
-/** Elenco piatto di tutte le chiavi nutrizionali (macro + amino + vit + min + fat) per iterazione */
-export const ALL_NUTRIENT_KEYS = Object.values(TARGETS).flatMap(g => Object.keys(g));
-
-/** Alias legacy su voci diario → chiave canonica TARGETS (somma widget Home). */
-const LOG_ITEM_NUTRIENT_ALIASES = {
-  vitB2: ['b2'],
-  vitB6: ['b6'],
-  fibre: ['fibreTotali', 'fiber'],
-  na: ['sodium', 'sale'],
-  fatTotal: ['fat', 'fatTot'],
-};
-
-const SALT_G_TO_SODIUM_MG = 393.4;
-
-/**
- * @param {Record<string, unknown> | null | undefined} item
- * @param {string} key — chiave canonica TARGETS
- * @returns {number | null}
- */
-function readLogItemNutrient(item, key) {
-  if (!item || typeof item !== 'object') return null;
-
-  if (key === 'fatTotal') {
-    const fat = item.fatTotal ?? item.fat ?? item.fatTot;
-    return fat != null && typeof fat === 'number' && Number.isFinite(fat) ? fat : null;
-  }
-
-  const direct = item[key];
-  if (direct != null && typeof direct === 'number' && Number.isFinite(direct)) return direct;
-
-  for (const alias of LOG_ITEM_NUTRIENT_ALIASES[key] || []) {
-    const raw = item[alias];
-    if (raw == null || typeof raw !== 'number' || !Number.isFinite(raw)) continue;
-    if (key === 'na' && alias === 'sale') {
-      return Math.round(raw * SALT_G_TO_SODIUM_MG * 100) / 100;
-    }
-    return raw;
-  }
-
-  return null;
-}
+export {
+  ALL_NUTRIENT_KEYS,
+  DEFAULT_TARGETS,
+  TARGETS,
+  computeTotali,
+  readLogItemNutrient,
+} from './utils/computeTotaliCore.js';
 
 /** Ordine pasti per calcolo a cascata (4 pasti ufficiali). */
 export const MEAL_ORDER = ['colazione', 'snack', 'pranzo', 'cena'];
@@ -94,48 +49,6 @@ export function getTargetForNutrient(key) {
   return null;
 }
 
-/**
- * Inizializza un oggetto totali con tutte le chiavi nutrizionali a 0.
- */
-function buildEmptyTotali() {
-  const init = { kcal: 0, workout: 0 };
-  ALL_NUTRIENT_KEYS.forEach(k => { init[k] = 0; });
-  return init;
-}
-
-/**
- * Somma i nutrienti da dailyLog (food e recipe) e workout.
- * Ogni singolo item viene iterato con ALL_NUTRIENT_KEYS: nessun dato biochimico perso.
- */
-export function computeTotali(dailyLog) {
-  const totali = buildEmptyTotali();
-  let workoutKcal = 0;
-  const log = Array.isArray(dailyLog) ? dailyLog : [];
-  log.forEach(item => {
-    if (item.type === 'food' || item.type === 'recipe') {
-      if (isUnresolvedMealDraftItem(item)) return;
-      totali.kcal += Number(item.kcal || item.cal || 0) || 0;
-      ALL_NUTRIENT_KEYS.forEach(k => {
-        const raw = readLogItemNutrient(item, k);
-        if (raw != null) totali[k] += raw;
-      });
-    } else if (item.type === 'stimulant' || item.type === 'energizer') {
-      const kcal = Number(item.kcal || item.cal || 0) || 0;
-      const carb = Number(item.carb || item.carbs || 0) || 0;
-      if (item.isFastingSafe === true || (kcal <= 5 && carb <= 0)) return;
-      totali.kcal += kcal;
-      ALL_NUTRIENT_KEYS.forEach(k => {
-        const raw = readLogItemNutrient(item, k);
-        if (raw != null) totali[k] += raw;
-      });
-    } else if (item.type === 'workout') {
-      workoutKcal += Number(item.kcal || item.cal || 0) || 0;
-    }
-  });
-  totali.workout = workoutKcal;
-  return totali;
-}
-
 const TRACKER_STORICO_PREFIX = 'trackerStorico_';
 
 function getLogArrayFromTrackerNode(node) {
@@ -151,7 +64,7 @@ function getLogArrayFromTrackerNode(node) {
  */
 function averageDailyNutrientFromTrackerData(trackerData, key) {
   if (!trackerData || typeof trackerData !== 'object') return null;
-  const dayKeys = Object.keys(trackerData).filter(k => k.startsWith(TRACKER_STORICO_PREFIX));
+  const dayKeys = Object.keys(trackerData).filter((k) => k.startsWith(TRACKER_STORICO_PREFIX));
   if (dayKeys.length === 0) return null;
   const samples = [];
   for (const dk of dayKeys) {
@@ -200,15 +113,19 @@ export function getDefaultNutrientValue(key, trackerData) {
  */
 function computeConsumedPerMeal(dailyLog) {
   const consumed = {};
-  MEAL_ORDER.forEach(m => { consumed[m] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { consumed[m][k] = 0; }); });
+  MEAL_ORDER.forEach((m) => {
+    consumed[m] = { kcal: 0 };
+    ALL_NUTRIENT_KEYS.forEach((k) => { consumed[m][k] = 0; });
+  });
   const log = Array.isArray(dailyLog) ? dailyLog : [];
-  log.forEach(item => {
+  log.forEach((item) => {
     if ((item.type !== 'food' && item.type !== 'recipe') || !item.mealType) return;
     if (isUnresolvedMealDraftItem(item)) return;
     const meal = bucketMealTypeForBio(item.mealType);
-    if (!consumed[meal]) consumed[meal] = { kcal: 0 }; ALL_NUTRIENT_KEYS.forEach(k => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
+    if (!consumed[meal]) consumed[meal] = { kcal: 0 };
+    ALL_NUTRIENT_KEYS.forEach((k) => { if (!consumed[meal][k]) consumed[meal][k] = 0; });
     consumed[meal].kcal += Number(item.kcal || item.cal || 0) || 0;
-    ALL_NUTRIENT_KEYS.forEach(k => {
+    ALL_NUTRIENT_KEYS.forEach((k) => {
       const raw = readLogItemNutrient(item, k);
       if (raw != null) consumed[meal][k] += raw;
     });
@@ -234,7 +151,7 @@ export function calcolaObiettiviPastoConArray(dailyLog, targetKcal, targetNutrie
     obiettivi[meal] = { kcal: 0 };
     // Target pasto = rimanente proporzionato al peso del pasto (cascata)
     obiettivi[meal].kcal = Math.max(0, (remainingKcal * weight) / sumWeightsLeft);
-    ALL_NUTRIENT_KEYS.forEach(k => {
+    ALL_NUTRIENT_KEYS.forEach((k) => {
       const targetVal = targetNutrients[k] != null ? targetNutrients[k] : getTargetForNutrient(k);
       const rem = remainingNutrients[k] != null ? remainingNutrients[k] : (targetVal || 0);
       obiettivi[meal][k] = Math.max(0, (rem * weight) / sumWeightsLeft);
@@ -242,7 +159,7 @@ export function calcolaObiettiviPastoConArray(dailyLog, targetKcal, targetNutrie
 
     // Aggiorna rimanenti per i pasti successivi
     remainingKcal -= consumed.kcal || 0;
-    ALL_NUTRIENT_KEYS.forEach(k => {
+    ALL_NUTRIENT_KEYS.forEach((k) => {
       if (remainingNutrients[k] == null) remainingNutrients[k] = getTargetForNutrient(k) || 0;
       remainingNutrients[k] -= (consumed[k] || 0);
       if (remainingNutrients[k] < 0) remainingNutrients[k] = 0;
@@ -264,7 +181,7 @@ export function useBiochimico(dailyLog, targetKcal) {
 
   const targetNutrients = useMemo(() => {
     const t = {};
-    ALL_NUTRIENT_KEYS.forEach(k => { t[k] = getTargetForNutrient(k) ?? 0; });
+    ALL_NUTRIENT_KEYS.forEach((k) => { t[k] = getTargetForNutrient(k) ?? 0; });
     return t;
   }, []);
 
@@ -272,7 +189,7 @@ export function useBiochimico(dailyLog, targetKcal) {
 
   const obiettiviPasti = useMemo(
     () => calcolaObiettiviPastoConArray(safeLog, safeTargetKcal, targetNutrients),
-    [safeLog, safeTargetKcal, targetNutrients]
+    [safeLog, safeTargetKcal, targetNutrients],
   );
 
   return { totali, obiettiviPasti, targetNutrients };

@@ -172,6 +172,7 @@ import {
 } from './utils/dayTrackingStatus';
 import { useChatOverlayApi } from './contexts/ChatOverlayContext';
 import { SimulationModeProvider } from './contexts/SimulationModeContext';
+import SimulationFocusDossierExportButton from './components/SimulationFocusDossierExportButton';
 import { getCurrentTimeRoundedTo15Min, getDefaultWorkoutEndTimeDecimal } from './utils/decimalTimeUtils';
 import {
   getStrategyKey,
@@ -1669,7 +1670,12 @@ export default function SalaComandi() {
     isSimulationMode,
   });
 
-  const { syncDatiFirebase, isInitialLoadComplete, isProfileHydrated } = useDiaryFirebaseSync({
+  const {
+    syncDatiFirebase,
+    isInitialLoadComplete,
+    isProfileHydrated,
+    fullHistoryLoadState,
+  } = useDiaryFirebaseSync({
     db,
     auth,
     user,
@@ -10150,6 +10156,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           ) : null}
           {salaContent}
           {kentuEmblemFab}
+          <SimulationFocusDossierExportButton
+            fullHistory={fullHistory}
+            fullHistoryLoadState={fullHistoryLoadState}
+            bodyMetricsHistory={bodyMetricsHistory}
+            userTargets={userTargets}
+            userProfile={userProfile}
+            currentTrackerDate={currentTrackerDate}
+            simulatedLog={simulatedLog}
+          />
         </>
       </WipMealProvider>
     </UserNutritionGoalsProvider>
