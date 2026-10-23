@@ -203,10 +203,11 @@ test('I3-bis: evidenza — dedupe e REM/deep e ipotesi cena', () => {
   assert.equal(signals.some((s) => String(s.id).includes('deep') || String(s.id).includes('rem')), false);
   const selection = selectFocusEditorial({ dossier });
   assert.equal(selection.concerns.some((c) => c.topicId === 'dinner_sleep_buffer_short'), false);
-  const hyp = selection.features.find((f) => f.topicId === 'dinner_sleep_buffer_short');
-  if (hyp) {
-    assert.equal(hyp.claimType, 'hypothesis');
-    assert.ok(hyp.doNotClaim.some((d) => d.toLowerCase().includes('causa') || d.toLowerCase().includes('rovin')));
+  assert.equal(selection.features.some((f) => f.topicId === 'dinner_sleep_buffer_short'), false);
+  const hypSig = signals.find((s) => s.topicId === 'dinner_sleep_buffer_short');
+  if (hypSig) {
+    assert.equal(hypSig.claimType, 'hypothesis');
+    assert.ok(hypSig.doNotClaim.some((d) => d.toLowerCase().includes('causa') || d.toLowerCase().includes('rovin')));
   }
 });
 

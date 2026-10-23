@@ -22,6 +22,17 @@ export function focusEditionRevisionPath(uid, publicationDate, revision) {
   return `${focusRootPath(uid)}/editions/${publicationDate}/rev/${revision}`;
 }
 
+/**
+ * Snapshot memoria editoriale (create-only), associato a (publicationDate, revision).
+ * Sibling di `rev/{n}`, non annidato nel documento revisione lettore.
+ * @param {string} uid
+ * @param {string} publicationDate
+ * @param {number|string} revision
+ */
+export function focusEditionMemoryEventPath(uid, publicationDate, revision) {
+  return `${focusRootPath(uid)}/editions/${publicationDate}/memory_events/${revision}`;
+}
+
 /** @param {string} uid @param {string} publicationDate */
 export function focusArchiveIndexPath(uid, publicationDate) {
   return `${focusRootPath(uid)}/archive_index/${publicationDate}`;

@@ -24,6 +24,10 @@ export function createEmptyDayBrief(date) {
     activity: {
       workoutKcal: null,
       cardioMinutes: null,
+      aerobicMinutes: null,
+      walkingMinutes: null,
+      moderateIntensityMinutes: null,
+      vigorousIntensityMinutes: null,
       workoutCount: 0,
     },
     body: { weightKg: null },

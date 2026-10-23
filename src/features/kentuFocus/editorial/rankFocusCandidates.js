@@ -5,6 +5,7 @@
 import {
   FOCUS_RANK_WEIGHTS,
   FOCUS_SCORE_THRESHOLDS,
+  FOCUS_STORY_CLASS,
 } from './focusEditorialConfig.js';
 import { isTopicInLeadCooldown } from './focusEditorialMemory.js';
 
@@ -43,10 +44,23 @@ export function scoreFocusCandidate(candidate, ctx = {}) {
   const novelty = NOVELTY_SCORE[candidate.novelty] ?? 0.4;
   const persistence = PERSISTENCE_SCORE[candidate.persistence] ?? 0.45;
 
-  const relevance = candidate.tone === 'positive' ? 0.85
-    : candidate.typology === 'window_comparison' ? 0.8
-      : candidate.domain === 'habits' ? 0.7
-        : 0.55;
+  const storyClass = candidate.storyClass || null;
+  let relevance = 0.55;
+  if (storyClass === FOCUS_STORY_CLASS.significant_pattern) {
+    relevance = 0.92;
+  } else if (storyClass === FOCUS_STORY_CLASS.routine_log) {
+    relevance = 0.32;
+  } else if (storyClass === FOCUS_STORY_CLASS.routine_confirmation) {
+    relevance = 0.52;
+  } else if (candidate.typology === 'sleep_weekly_rhythm') {
+    relevance = 0.9;
+  } else if (candidate.typology === 'window_comparison') {
+    relevance = 0.8;
+  } else if (candidate.tone === 'positive') {
+    relevance = 0.85;
+  } else if (candidate.domain === 'habits') {
+    relevance = 0.7;
+  }
 
   const actionability = clamp01(Number(candidate.actionability) || 0);
 
@@ -116,7 +130,7 @@ function hardGate(candidate, ctx) {
     // still allow scoring but lead selection will block
   }
   if (candidate.evidenceQuality === 'low' && candidate.claimType === 'hypothesis') {
-    // ok as feature only
+    // P6.4.1: non promuovibile a feature/lead; selezione omette con insufficient_evidence
   }
   if (
     ctx.publicationDate
@@ -129,6 +143,14 @@ function hardGate(candidate, ctx) {
   const refs = candidate.refs || [];
   if (refs.some((r) => String(r).includes('deepMin') || String(r).includes('remMin'))) {
     return 'unreliable_sleep_stages';
+  }
+  if (candidate.omitReason) return candidate.omitReason;
+  if (candidate.publishable === false) return 'not_publishable';
+  if (
+    candidate.reliability === 'insufficient_evidence'
+    && candidate.typology === 'sleep_weekly_rhythm'
+  ) {
+    return 'insufficient_evidence';
   }
   if (candidate.score === 0 && candidate.omitReason) return candidate.omitReason;
   return null;

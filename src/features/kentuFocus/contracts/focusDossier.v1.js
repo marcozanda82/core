@@ -5,7 +5,7 @@
 
 export const FOCUS_DOSSIER_SCHEMA_VERSION = '1.0.0';
 
-/** @typedef {'recorded'|'calculated'|'estimated'|'missing'} FocusProvenance */
+/** @typedef {'recorded'|'calculated'|'estimated'|'missing'|'ambiguous'} FocusProvenance */
 /** @typedef {'high'|'medium'|'low'} FocusCertainty */
 
 export const FOCUS_PROVENANCE = Object.freeze({
@@ -13,6 +13,8 @@ export const FOCUS_PROVENANCE = Object.freeze({
   calculated: 'calculated',
   estimated: 'estimated',
   missing: 'missing',
+  /** Origine non ricostruibile dal formato storico (es. bedtime = wake−duration già persistito). */
+  ambiguous: 'ambiguous',
 });
 
 export const FOCUS_CERTAINTY = Object.freeze({
@@ -229,6 +231,9 @@ export function createEmptyFocusDossier(metaInput) {
         unclassifiedOccasions: 0,
         totalOccasions: 0,
         uniqueIdentities: 0,
+        windowDays: 0,
+        firstDate: null,
+        lastDate: null,
       },
     },
     signals: {

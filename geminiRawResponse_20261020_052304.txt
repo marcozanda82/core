@@ -1,0 +1,368 @@
+{
+  "schema": "kentu.focusGeminiPreview.v1",
+  "kind": "FocusGeminiReviewClipboard",
+  "exportedAt": "2026-10-20T05:23:04.825Z",
+  "note": "Revisione Gemini (anche se respinta) · solo RAM · nessuna pubblicazione",
+  "preset": {
+    "id": "sunday_past",
+    "label": "Domenicale 18/10/2026 (storico RAM)",
+    "publicationDate": "2026-10-18",
+    "dataOriginHint": "historical_real",
+    "forceSimulation": false
+  },
+  "editionKind": "sunday_plus",
+  "dates": {
+    "analysisDate": "2026-10-17",
+    "publicationDate": "2026-10-18",
+    "asOfDate": "2026-10-19"
+  },
+  "verificationStatus": "historical_real",
+  "model": "gemini-3.8-flash",
+  "callCount": 1,
+  "status": "gemini_rejected_or_unavailable",
+  "authorizedArticles": [
+    {
+      "id": "news_sleep_weekly_rhythm",
+      "topicId": "sleep_weekly_rhythm",
+      "role": "lead",
+      "editorialScale": "episode",
+      "storyKind": null,
+      "headlineSeed": "Sveglia precisa in settimana, ritmo diverso nel weekend",
+      "summarySeed": "sveglia feriale stabile intorno alle 6:30; nel weekend la sveglia si sposta di circa 1 h (più tardi). Osservazione sulle abitudini, non un giudizio sulla qualità del recupero.",
+      "evidenceFingerprint": "S|W1|-|-|-|A0",
+      "observedPeriod": {
+        "from": "2026-09-19",
+        "to": "2026-10-18",
+        "windowDays": 30
+      },
+      "metrics": [
+        {
+          "path": "sleepRoutine.ordinary.wake.weekday.median",
+          "value": 6.5,
+          "unit": "hour_decimal",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.regularity.wakeWeekdayIqrH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH",
+          "value": 1,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        }
+      ],
+      "limitations": [
+        "Pattern su notti ordinary; orari atipici conservati ma esclusi dai confronti forti",
+        "Differenza di durata ≠ debito o recupero di sonno",
+        "Bedtime spesso ambiguo se persistito come wake−duration"
+      ],
+      "doNotClaim": [
+        "debito di sonno",
+        "recupero weekend automatico",
+        "insonnia",
+        "diagnosi",
+        "risvegli notturni non registrati"
+      ]
+    },
+    {
+      "id": "news_week_habits_story",
+      "topicId": "week_habits_story",
+      "role": "centerpiece",
+      "editorialScale": "week_interpretation",
+      "storyKind": "significant_change",
+      "headlineSeed": "Proteine medie in calo nella settimana",
+      "summarySeed": "Media proteine ≈145.06 nel periodo 2026-10-11→2026-10-17 (Δ -12.1 vs 2026-10-04→2026-10-10) su 7 giorni con cibo. Riferimento: finestra equivalente precedente 2026-10-04→2026-10-10. Perché può interessare: Lo scostamento è abbastanza ampio e la copertura alimentare è allineata fra le finestre. Limiti: Non implica causalità né conclusioni fisiologiche.",
+      "evidenceFingerprint": "week|2026-10-11|2026-10-17|protein_intake_shift|food7|sleep6|str3|cmp-12.1",
+      "observedPeriod": {
+        "from": "2026-10-11",
+        "to": "2026-10-17",
+        "sleepWakeFrom": "2026-10-11",
+        "sleepWakeTo": "2026-10-17"
+      },
+      "metrics": [
+        {
+          "path": "edition.week.nutrition.daysWithFood",
+          "value": 7,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.nutrition.avgProteinG",
+          "value": 145.06,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.sleep.nightsLogged",
+          "value": 6,
+          "unit": "nights",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.sleep.avgHours",
+          "value": 6.95,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.activity.strengthDaysLogged",
+          "value": 3,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.comparison.deltas.avgProteinG",
+          "value": -12.1,
+          "unit": "g",
+          "provenance": "calculated"
+        }
+      ],
+      "limitations": [
+        "Giorno senza log ≠ comportamento assente",
+        "Nodo presente ≠ osservazione registrata",
+        "Data futura ≠ giornata osservata",
+        "Assenza aerobica etichettata ≠ inattività fisica",
+        "Niente conclusioni corporee da misure fuori finestra",
+        "Fibre: non giudicare se fonte inattendibile",
+        "Non è un mese solare precedente: finestra di eguale lunghezza immediatamente precedente. Differenze di conteggio possono riflettere copertura diversa, non solo comportamento.",
+        "Nessuna causalità tra domini senza evidenza dedicata",
+        "Lo scostamento proteico non è un deficit dimostrato"
+      ],
+      "doNotClaim": [
+        "correlazione causale inventata",
+        "diagnosi",
+        "inattività da assenza di log",
+        "conclusione corporea da misure vecchie",
+        "consiglio proteico automatico",
+        "deficit proteico",
+        "peggioramento fisiologico"
+      ],
+      "storySpine": {
+        "mainFactId": "week_protein_intake_shift",
+        "mainMetricPath": "edition.week.comparison.deltas.avgProteinG",
+        "mainMetricValue": -12.1,
+        "mainUnit": "g",
+        "periodFrom": "2026-10-11",
+        "periodTo": "2026-10-17",
+        "comparisonFrom": "2026-10-04",
+        "comparisonTo": "2026-10-10",
+        "levelMetricPath": "edition.week.nutrition.avgProteinG",
+        "levelMetricValue": 145.06,
+        "levelUnit": "g",
+        "coverageMetricPath": "edition.week.nutrition.daysWithFood",
+        "coverageMetricValue": 7,
+        "coverageUnit": "days",
+        "essentialContextIds": [
+          "equal_length_window_not_calendar_month"
+        ]
+      }
+    },
+    {
+      "id": "news_protein_near_target",
+      "topicId": "protein_near_target",
+      "role": "good",
+      "editorialScale": "episode",
+      "storyKind": null,
+      "headlineSeed": "Proteine in linea con il riferimento registrato",
+      "summarySeed": "Ieri circa 136.8 g di proteine su riferimento 127 g (rapporto 108%); fonte targets.targetHistory, valido al 2026-10-02.",
+      "evidenceFingerprint": null,
+      "observedPeriod": null,
+      "metrics": [
+        {
+          "path": "day.nutrition.totals.proteinG",
+          "value": 136.8,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "day.nutrition.targets.proteinG",
+          "value": 127,
+          "unit": "g",
+          "provenance": "recorded"
+        }
+      ],
+      "limitations": [],
+      "doNotClaim": [
+        "ottimizzazione metabolica",
+        "miglioramento fisiologico",
+        "eccesso proteico problematico"
+      ]
+    },
+    {
+      "id": "news_strength_continuity_d30",
+      "topicId": "strength_continuity_d30",
+      "role": "feature",
+      "editorialScale": "episode",
+      "storyKind": null,
+      "headlineSeed": "Continuità della forza negli ultimi 30 giorni",
+      "summarySeed": "14 giorni con sessioni di forza registrate nella finestra d30. L’assenza di minuti aerobici etichettati non implica inattività fisica.",
+      "evidenceFingerprint": null,
+      "observedPeriod": null,
+      "metrics": [
+        {
+          "path": "history.d30.activity.strengthDaysLogged",
+          "value": 14,
+          "unit": "days",
+          "provenance": "calculated"
+        }
+      ],
+      "limitations": [
+        "Classificazione strength euristica sui label",
+        "Assenza aerobica documentata ≠ sedentarietà"
+      ],
+      "doNotClaim": [
+        "inattività fisica",
+        "sedentarietà",
+        "volume insufficiente"
+      ]
+    }
+  ],
+  "essentialEvidence": [
+    {
+      "id": "news_sleep_weekly_rhythm",
+      "role": "lead",
+      "metrics": [
+        {
+          "path": "sleepRoutine.ordinary.wake.weekday.median",
+          "value": 6.5,
+          "unit": "hour_decimal",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.regularity.wakeWeekdayIqrH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH",
+          "value": 1,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        }
+      ],
+      "observedPeriod": {
+        "from": "2026-09-19",
+        "to": "2026-10-18",
+        "windowDays": 30
+      }
+    },
+    {
+      "id": "news_week_habits_story",
+      "role": "centerpiece",
+      "metrics": [
+        {
+          "path": "edition.week.nutrition.daysWithFood",
+          "value": 7,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.nutrition.avgProteinG",
+          "value": 145.06,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.sleep.nightsLogged",
+          "value": 6,
+          "unit": "nights",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.sleep.avgHours",
+          "value": 6.95,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.activity.strengthDaysLogged",
+          "value": 3,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.comparison.deltas.avgProteinG",
+          "value": -12.1,
+          "unit": "g",
+          "provenance": "calculated"
+        }
+      ],
+      "observedPeriod": {
+        "from": "2026-10-11",
+        "to": "2026-10-17",
+        "sleepWakeFrom": "2026-10-11",
+        "sleepWakeTo": "2026-10-17"
+      }
+    },
+    {
+      "id": "news_protein_near_target",
+      "role": "good",
+      "metrics": [
+        {
+          "path": "day.nutrition.totals.proteinG",
+          "value": 136.8,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "day.nutrition.targets.proteinG",
+          "value": 127,
+          "unit": "g",
+          "provenance": "recorded"
+        }
+      ],
+      "observedPeriod": null
+    },
+    {
+      "id": "news_strength_continuity_d30",
+      "role": "feature",
+      "metrics": [
+        {
+          "path": "history.d30.activity.strengthDaysLogged",
+          "value": 14,
+          "unit": "days",
+          "provenance": "calculated"
+        }
+      ],
+      "observedPeriod": null
+    }
+  ],
+  "validationErrors": [
+    "articles[1]_unauthorized_number_in_prose:145"
+  ],
+  "validation": {
+    "ok": false,
+    "errors": [
+      "articles[1]_unauthorized_number_in_prose:145"
+    ],
+    "proseSource": "fallback",
+    "usedFallback": true,
+    "diag": "ok",
+    "geminiAccepted": false
+  },
+  "geminiRawResponse": "{\n  \"schemaVersion\": \"1.0.0\",\n  \"kind\": \"FocusWrittenEdition\",\n  \"analysisDate\": \"2026-10-17\",\n  \"publicationDate\": \"2026-10-18\",\n  \"openingMode\": \"progress\",\n  \"articles\": [\n    {\n      \"id\": \"news_sleep_weekly_rhythm\",\n      \"role\": \"lead\",\n      \"title\": \"Orari di sveglia stabili nei giorni feriali e variazione nel fine settimana\",\n      \"body\": \"Nell'arco delle ultime quattro settimane analizzate, il risveglio nei giorni feriali mostra una regolarità marcata: l'orario mediano si attesta alle 6:30, con una variabilità interquartile contenuta entro 0,5 ore. Nel fine settimana si osserva uno slittamento dell'orario di risveglio di circa 1 ora in avanti, accompagnato da una durata registrata del sonno superiore di 0,5 ore. Si tratta di una fotografia descrittiva della routine delle notti ordinarie: queste variazioni di orario e durata descrivono le abitudini del periodo e non costituiscono una stima di debito di sonno pregresso né una misura di recupero.\",\n      \"evidenceIds\": [\n        \"sleepRoutine.ordinary.wake.weekday.median\",\n        \"sleepRoutine.ordinary.regularity.wakeWeekdayIqrH\",\n        \"sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH\",\n        \"sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"sleepRoutine.ordinary.wake.weekday.median\",\n          \"value\": 6.5,\n          \"unit\": \"hour_decimal\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.regularity.wakeWeekdayIqrH\",\n          \"value\": 0.5,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH\",\n          \"value\": 1,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH\",\n          \"value\": 0.5,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        }\n      ],\n      \"cautions\": [\n        \"Pattern su notti ordinary; orari atipici conservati ma esclusi dai confronti forti\",\n        \"Differenza di durata ≠ debito o recupero di sonno\",\n        \"Bedtime spesso ambiguo se persistito come wake−duration\"\n      ],\n      \"selectionIndex\": 0\n    },\n    {\n      \"id\": \"news_week_habits_story\",\n      \"role\": \"centerpiece\",\n      \"title\": \"Apporto proteico medio settimanale a 145 grammi, in diminuzione rispetto alla finestra precedente\",\n      \"body\": \"Nella settimana compresa tra l'11 e il 17 ottobre 2026, l'apporto proteico medio si è attestato a 145,06 g al giorno, calcolato su una copertura alimentare completa di 7 giorni registrati su 7. Rispetto alla finestra di eguale durata immediatamente precedente (4-10 ottobre 2026), il valore medio evidenzia una variazione negativa pari a -12,1 g.\\n\\nIl confronto è condotto su due blocchi consecutivi di sette giorni e non su mesi di calendario. La flessione registrata rappresenta una variazione quantitativa della media del periodo e non configura una carenza o un deficit nutrizionale. Nel medesimo arco temporale sono state rilevate 6 notti con sonno registrato (con una media di 6,95 ore per notte) e 3 giorni con attività di forza registrata: i dati descrivono contesti differenti della routine settimanale e non implicano relazioni di causa ed effetto tra le diverse aree osservate.\",\n      \"evidenceIds\": [\n        \"edition.week.comparison.deltas.avgProteinG\",\n        \"edition.week.nutrition.avgProteinG\",\n        \"edition.week.nutrition.daysWithFood\",\n        \"edition.week.sleep.nightsLogged\",\n        \"edition.week.sleep.avgHours\",\n        \"edition.week.activity.strengthDaysLogged\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"edition.week.comparison.deltas.avgProteinG\",\n          \"value\": -12.1,\n          \"unit\": \"g\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.nutrition.avgProteinG\",\n          \"value\": 145.06,\n          \"unit\": \"g\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.nutrition.daysWithFood\",\n          \"value\": 7,\n          \"unit\": \"days\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.sleep.nightsLogged\",\n          \"value\": 6,\n          \"unit\": \"nights\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.sleep.avgHours\",\n          \"value\": 6.95,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.activity.strengthDaysLogged\",\n          \"value\": 3,\n          \"unit\": \"days\",\n          \"provenance\": \"calculated\"\n        }\n      ],\n      \"cautions\": [\n        \"Non è un mese solare precedente: finestra di eguale lunghezza immediatamente precedente. Differenze di conteggio possono riflettere copertura diversa, non solo…\",\n        \"Nessuna causalità tra domini senza evidenza dedicata\",\n        \"Lo scostamento proteico non è un deficit dimostrato\"\n      ],\n      \"selectionIndex\": 1\n    },\n    {\n      \"id\": \"news_protein_near_target\",\n      \"role\": \"good\",\n      \"title\": \"Proteine giornaliere a 136,8 grammi, a ridosso del valore di riferimento\",\n      \"body\": \"Nella giornata di ieri l'introito proteico registrato ha raggiunto 136,8 g, a fronte del valore di riferimento di 127 g registrato nella cronologia degli obiettivi. Il dato descrive la misura contabile del consumo alimentare giornaliero in relazione al parametro di riferimento impostato.\",\n      \"evidenceIds\": [\n        \"day.nutrition.totals.proteinG\",\n        \"day.nutrition.targets.proteinG\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"day.nutrition.totals.proteinG\",\n          \"value\": 136.8,\n          \"unit\": \"g\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"day.nutrition.targets.proteinG\",\n          \"value\": 127,\n          \"unit\": \"g\",\n          \"provenance\": \"recorded\"\n        }\n      ],\n      \"cautions\": [\n        \"ottimizzazione metabolica\",\n        \"miglioramento fisiologico\",\n        \"eccesso proteico problematico\"\n      ],\n      \"selectionIndex\": 2\n    },\n    {\n      \"id\": \"news_strength_continuity_d30\",\n      \"role\": \"feature\",\n      \"title\": \"Registrati quattordici giorni con allenamento di forza negli ultimi trenta giorni\",\n      \"body\": \"Nel corso degli ultimi 30 giorni sono stati conteggiati 14 giorni con almeno una sessione di forza registrata. La catalogazione deriva dai registri disponibili nel periodo; l'assenza di specifiche etichette relative ad attività aerobica documenta la tracciatura corrente e non costituisce prova di inattività o sedentarietà generale.\",\n      \"evidenceIds\": [\n        \"history.d30.activity.strengthDaysLogged\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"history.d30.activity.strengthDaysLogged\",\n          \"value\": 14,\n          \"unit\": \"days\",\n          \"provenance\": \"calculated\"\n        }\n      ],\n      \"cautions\": [\n        \"Classificazione strength euristica sui label\",\n        \"Assenza aerobica documentata ≠ sedentarietà\"\n      ],\n      \"selectionIndex\": 3\n    }\n  ],\n  \"coach\": null,\n  \"mastheadTeaser\": \"Ritmi di sonno ordinari a confronto tra feriali e weekend, andamento delle medie proteiche settimanali e continuità dell'attività di forza negli ultimi trenta giorni.\"\n}",
+  "rawAiAvailableInSession": true,
+  "writtenTextsAccepted": null,
+  "persistence": {
+    "firebaseWrites": 0,
+    "editorialMemoryPersisted": false,
+    "published": false
+  }
+}

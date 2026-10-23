@@ -7,9 +7,15 @@ import { FOCUS_EDITORIAL_SCHEMA_VERSION } from '../focusEditorialConfig.js';
 
 export const FOCUS_WRITTEN_SCHEMA_VERSION = FOCUS_EDITORIAL_SCHEMA_VERSION;
 
-/** @typedef {'lead'|'good'|'feature'|'concern'} FocusArticleRole */
+/** @typedef {'lead'|'centerpiece'|'good'|'feature'|'concern'} FocusArticleRole */
 
-export const FOCUS_ARTICLE_ROLES = Object.freeze(['lead', 'good', 'feature', 'concern']);
+export const FOCUS_ARTICLE_ROLES = Object.freeze([
+  'lead',
+  'centerpiece',
+  'good',
+  'feature',
+  'concern',
+]);
 
 export const FOCUS_PROSE_SOURCE = Object.freeze({
   fallback: 'fallback',
@@ -21,11 +27,20 @@ export const FOCUS_PROSE_SOURCE = Object.freeze({
 export const FOCUS_WRITING_LIMITS = Object.freeze({
   titleMaxChars: 120,
   bodyMaxChars: 900,
+  /** Articolo centrale week/month: pezzo più articolato ammesso. */
+  centerpieceBodyMaxChars: 1400,
   bodyMinChars: 40,
-  cautionsMax: 6,
+  cautionsMax: 8,
   evidenceIdsMax: 12,
   coachBodyMaxChars: 400,
 });
+
+/** @param {string} role */
+export function bodyMaxCharsForRole(role) {
+  return role === 'centerpiece'
+    ? FOCUS_WRITING_LIMITS.centerpieceBodyMaxChars
+    : FOCUS_WRITING_LIMITS.bodyMaxChars;
+}
 
 /**
  * Cosa la validazione deterministica NON può garantire.
@@ -38,14 +53,14 @@ export const FOCUS_SEMANTIC_VALIDATION_LIMITS = Object.freeze({
     'affermazioni qualitative non supportate oltre i seed',
     'tono sensazionalistico sottile senza keyword esplicite',
     'numeri scritti a parole (cento, due) che contraddicono metricsCited',
-    'omissioni narrative di contesto non coperte da requiredCautions',
+    'omissioni narrative di contesto non coperte da mandatoryContext',
     'fatti del brief attribuiti alla giornata sbagliata senza date esplicite errate',
     'unità semanticamente sbagliate se la stringa unit è comunque una stringa',
   ],
   mitigation: [
     'metricsCited byte-identici agli autorizzati; preferire placeholder {{path}}',
     'cifre in prosa ⊆ allowlist (metriche + date + seed editoriali)',
-    'requiredCautions (doNotClaim+limitations) devono comparire in cautions[]',
+    'mandatoryContext compreso in body/cautions (parafrasi ok); doNotClaim = divieti non da stampare; contextualLimitations = writer-only',
     'evidenceIds ⊆ refs; ruoli/id immutabili; no articoli extra',
     'hypothesis: rifiuto pattern causali tipici; missing/estimated ≠ “misurato”',
     'brief: stringhe utente sanitizzate; prompt DATA fence',

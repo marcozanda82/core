@@ -283,7 +283,8 @@ describe('P5.2.2 focusLabDossier', () => {
     assert.equal(dj.includes('segreto pasto'), true);
     assert.equal(dj.includes('Yogurt SECRET'), true);
 
-    assert.equal(classifyActivityHint({ name: 'Camminata' }).kind, 'aerobic_hint');
+    assert.equal(classifyActivityHint({ name: 'Camminata' }).kind, 'aerobic');
+    assert.equal(classifyActivityHint({ name: 'Sollevamento Pesi (bicipiti)' }).kind, 'strength');
     const summary = summarizeFocusLabDossier(essential);
     assert.equal(summary.freeTextLabelsIncluded, false);
   });

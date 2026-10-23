@@ -15,7 +15,12 @@
  */
 
 import { addCalendarDays, isIsoDateString } from '../../normalize/focusDateUtils.js';
+import { AdminRtdbFocusPersistence } from '../persist/AdminRtdbFocusPersistence.js';
 import { runFocusEditionPipeline } from '../pipeline/runFocusEditionPipeline.js';
+import {
+  buildFocusAdminPublishOperatorReport,
+  sanitizeFocusAdminPublishOperatorReport,
+} from './buildFocusAdminPublishOperatorReport.js';
 
 const UID_RE = /^[A-Za-z0-9_-]{6,128}$/;
 const PROJECT_RE = /^[A-Za-z0-9_-]{4,64}$/;
@@ -142,9 +147,17 @@ export function sanitizeFocusAdminCliResult(result, ctx = {}) {
     }
     : null;
 
+  const operatorReport = sanitizeFocusAdminPublishOperatorReport(
+    result?.operatorReport,
+  );
+
   return {
     ok: Boolean(result?.ok),
     error: result?.error || null,
+    // Mai presentare successo operativo se le verifiche essenziali falliscono
+    operatorSafe: operatorReport
+      ? Boolean(operatorReport.operatorSafe)
+      : false,
     publicationDate: result?.publicationDate || null,
     analysisDate: result?.analysisDate || null,
     revision: result?.revision ?? null,
@@ -163,6 +176,7 @@ export function sanitizeFocusAdminCliResult(result, ctx = {}) {
           : null,
       }
       : null,
+    operatorReport,
     report,
     subject: ctx.uid ? maskFocusAdminUid(ctx.uid) : null,
     projectId: ctx.projectId || null,
@@ -258,6 +272,10 @@ export async function runFocusAdminEdition(input) {
   rl.lastAtMs = now;
   globalThis.__focusAdminRateLimit = rl;
 
+  // Persistence condivisa: pipeline + verifica indipendente post-publish (sola lettura)
+  const persistence = input.persistence
+    || (input.db ? new AdminRtdbFocusPersistence(input.db) : null);
+
   // Mai accettare bypass sonno / flags client / Gemini da input non vettato
   // geminiProvider: solo se caller server esplicito lo passa; CLI non lo passa (null → fallback)
   const stripped = {
@@ -266,7 +284,7 @@ export async function runFocusAdminEdition(input) {
     analysisDate: addCalendarDays(publicationDate, -1),
     db: input.db,
     reader: input.reader,
-    persistence: input.persistence,
+    persistence,
     horizon: input.horizon || 'd30',
     historyDays: input.historyDays,
     explicitRegen,
@@ -279,9 +297,21 @@ export async function runFocusAdminEdition(input) {
 
   const result = await runFocusEditionPipeline(stripped);
 
+  // P6.10a: report operatore — rilettura store, nessuna scrittura / recovery
+  const operatorReport = await buildFocusAdminPublishOperatorReport({
+    uid,
+    publicationDate,
+    publishResult: result.publishResult,
+    pipelineOk: result.ok,
+    pipelineError: result.error,
+    persistence,
+  });
+
   return {
     ok: result.ok,
     error: result.error || null,
+    operatorSafe: Boolean(operatorReport?.operatorSafe),
+    operatorReport,
     publicationDate: result.publicationDate,
     analysisDate: result.analysisDate,
     revision: result.publishResult?.revision ?? null,

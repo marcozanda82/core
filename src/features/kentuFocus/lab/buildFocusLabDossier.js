@@ -7,6 +7,10 @@ import { buildDayBrief } from '../aggregate/buildDayBrief.js';
 import { alignBriefsToCalendarWindow } from '../aggregate/calendarWindow.js';
 import { evaluateDomainCoverage } from '../aggregate/focusCoverageConfig.js';
 import { buildHistoryWindows } from '../aggregate/historyWindows.js';
+import { aggregateSleepRoutine } from '../aggregate/aggregateSleepRoutine.js';
+import { buildSleepNightSeries } from '../aggregate/buildSleepNightSeries.js';
+import { buildSleepRoutineSignals } from '../aggregate/buildSleepRoutineSignals.js';
+import { DEFAULT_SLEEP_ROUTINE_THRESHOLDS } from '../aggregate/sleepRoutineConfig.js';
 import {
   FOCUS_PROVENANCE,
   FOCUS_TIMEZONE_MODE,
@@ -21,11 +25,18 @@ import {
 import {
   collectDayLogForNutritionWithQuality,
   normalizeFoodEvents,
-  normalizeMealType,
-  resolveFoodClockHour,
+  resolveFocusMealIdentity,
+  resolveFoodClockHourDetailed,
 } from '../normalize/normalizeFoodEvents.js';
+import { compareMealSlots } from '../normalize/focusMealSlots.js';
+import {
+  evaluateBodyMeasurementPlausibility,
+  FOCUS_BODY_RECENCY_DAYS,
+} from '../normalize/focusBodyPlausibility.js';
+import { evaluateDayNutritionPlausibility } from '../normalize/focusNutritionPlausibility.js';
 import { normalizeSleepNight } from '../normalize/normalizeSleepNight.js';
 import {
+  classifyFocusActivity,
   durationToMinutes,
   isCardioWorkout,
   normalizeWorkoutEvents,
@@ -48,26 +59,9 @@ import {
 
 export const FOCUS_LAB_DOSSIER_SCHEMA = 'kentu.focusLabDossier.v1';
 export { resolveFocusLabEditionDates, resolveFocusLabHistoryGate } from './focusLabHistoryGate.js';
+export { classifyFocusActivity, isCardioWorkout } from '../normalize/normalizeWorkoutEvents.js';
 
 const FOOD_TYPES = new Set(['food', 'recipe']);
-
-const STRENGTH_HINTS = [
-  'pesi',
-  'strength',
-  'forza',
-  'gym',
-  'palestra',
-  'squat',
-  'deadlift',
-  'panca',
-  'bench',
-  'hypertrophy',
-  'ipertrof',
-  'powerlift',
-  'bodybuild',
-  'manubri',
-  'bilanciere',
-];
 
 /**
  * @param {object|null|undefined} fullHistory
@@ -114,35 +108,16 @@ function workoutLabel(entry) {
 }
 
 /**
+ * Adapter lab → classifyFocusActivity (categorie strength|aerobic|other_activity|unclassified).
  * @param {object} entry
  */
 export function classifyActivityHint(entry) {
-  const label = workoutLabel(entry).toLowerCase();
-  if (isCardioWorkout(entry)) {
-    return {
-      kind: 'aerobic_hint',
-      provenance: FOCUS_PROVENANCE.calculated,
-      source: 'isCardioWorkout',
-    };
-  }
-  if (label && STRENGTH_HINTS.some((h) => label.includes(h))) {
-    return {
-      kind: 'strength_hint',
-      provenance: FOCUS_PROVENANCE.calculated,
-      source: 'strength_label_hints',
-    };
-  }
-  if (label) {
-    return {
-      kind: 'other_labeled',
-      provenance: FOCUS_PROVENANCE.calculated,
-      source: 'label_present_no_forced_class',
-    };
-  }
+  const c = classifyFocusActivity(entry);
   return {
-    kind: 'unclassified',
-    provenance: FOCUS_PROVENANCE.missing,
-    source: 'no_label',
+    kind: c.kind,
+    provenance: c.provenance,
+    source: c.source,
+    isWalking: c.isWalking,
   };
 }
 
@@ -225,7 +200,10 @@ function buildFoodItemExport(item, opts) {
  * @param {{ includeNotes: boolean, includeFreeTextLabels: boolean, targets?: object|null }} opts
  */
 function buildAnalysisDayNutrition(analysisDayNode, opts) {
-  const food = normalizeFoodEvents(analysisDayNode, { targets: opts.targets || undefined });
+  const food = normalizeFoodEvents(analysisDayNode, {
+    targets: opts.targets || undefined,
+    targetMeta: opts.targetMeta || undefined,
+  });
   const mealTimes = analysisDayNode?.mealTimes && typeof analysisDayNode.mealTimes === 'object'
     ? analysisDayNode.mealTimes
     : {};
@@ -234,43 +212,59 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
     (e) => e && FOOD_TYPES.has(e.type) && !isUnresolvedMealDraftItem(e),
   );
 
-  /** @type {Map<string, object[]>} */
-  const byMeal = new Map();
+  /** @type {Map<string, { identity: object, items: object[], clockHour: number|null, clockSource: string|null }>} */
+  const bySlot = new Map();
   for (const item of foods) {
-    const mealType = normalizeMealType(item.mealType);
-    if (!byMeal.has(mealType)) byMeal.set(mealType, []);
-    byMeal.get(mealType).push(item);
+    const identity = resolveFocusMealIdentity(item);
+    const key = identity.mealSlotId;
+    if (!bySlot.has(key)) {
+      bySlot.set(key, {
+        identity,
+        items: [],
+        clockHour: null,
+        clockSource: null,
+      });
+    }
+    const bucket = bySlot.get(key);
+    bucket.items.push(item);
+    const clock = resolveFoodClockHourDetailed(item, mealTimes);
+    if (clock.hour != null && (bucket.clockHour == null || clock.hour > bucket.clockHour)) {
+      bucket.clockHour = clock.hour;
+      bucket.clockSource = clock.source;
+    }
   }
 
+  const sortedSlots = [...bySlot.values()].sort((a, b) => compareMealSlots({
+    mealSlotId: a.identity.mealSlotId,
+    canonicalMealType: a.identity.canonicalMealType,
+    clockHour: a.clockHour,
+  }, {
+    mealSlotId: b.identity.mealSlotId,
+    canonicalMealType: b.identity.canonicalMealType,
+    clockHour: b.clockHour,
+  }));
+
   let opaqueIndex = 0;
-  const mealOrder = ['colazione', 'pranzo', 'snack', 'cena', 'unknown'];
-  const meals = mealOrder
-    .filter((k) => byMeal.has(k))
-    .map((mealType) => {
-      const items = byMeal.get(mealType) || [];
-      let clockHour = null;
-      for (const item of items) {
-        const h = resolveFoodClockHour(item, mealTimes);
-        if (h != null) clockHour = clockHour == null ? h : Math.max(clockHour, h);
-      }
-      return {
-        mealType,
-        clockHour: clockHour == null
-          ? missingMetric('hour_decimal')
-          : focusMetric(clockHour, {
-            unit: 'hour_decimal',
-            provenance: FOCUS_PROVENANCE.recorded,
-          }),
-        items: items.map((item) => {
-          opaqueIndex += 1;
-          return buildFoodItemExport(item, {
-            includeNotes: opts.includeNotes,
-            includeFreeTextLabels: opts.includeFreeTextLabels,
-            opaqueIndex,
-          });
-        }),
-      };
-    });
+  const meals = sortedSlots.map((slot) => ({
+    mealSlotId: slot.identity.mealSlotId,
+    mealType: slot.identity.canonicalMealType,
+    canonicalMealType: slot.identity.canonicalMealType,
+    clockHour: slot.clockHour == null
+      ? missingMetric('hour_decimal')
+      : focusMetric(slot.clockHour, {
+        unit: 'hour_decimal',
+        provenance: FOCUS_PROVENANCE.recorded,
+        source: slot.clockSource || undefined,
+      }),
+    items: slot.items.map((item) => {
+      opaqueIndex += 1;
+      return buildFoodItemExport(item, {
+        includeNotes: opts.includeNotes,
+        includeFreeTextLabels: opts.includeFreeTextLabels,
+        opaqueIndex,
+      });
+    }),
+  }));
 
   const fieldsMissing = [];
   if (!food.hasFood) fieldsMissing.push('nutrition.meals');
@@ -282,6 +276,10 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
       totals: food.nutrition.totals,
       meals,
       quality: food.quality || null,
+      plausibility: food.nutrition.plausibility || null,
+      timingCoverage: food.nutrition.timingCoverage || null,
+      firstMealHour: food.nutrition.firstMealHour || missingMetric('hour_decimal'),
+      lastMealHour: food.nutrition.lastMealHour || missingMetric('hour_decimal'),
     },
     fieldsMissing,
   };
@@ -325,6 +323,16 @@ function buildAnalysisDayActivity(analysisDayNode, opts) {
         provenance: FOCUS_PROVENANCE.calculated,
         source: 'isCardioWorkout',
       }),
+      isWalking: focusMetric(Boolean(hint.isWalking), {
+        provenance: FOCUS_PROVENANCE.calculated,
+        source: hint.source,
+      }),
+      activityKind: {
+        value: hint.kind,
+        provenance: hint.provenance,
+        source: hint.source,
+      },
+      /** @deprecated alias di activityKind */
       activityKindHint: {
         value: hint.kind,
         provenance: hint.provenance,
@@ -349,7 +357,12 @@ function buildAnalysisDayActivity(analysisDayNode, opts) {
     block: {
       workouts,
       cardioMinutesTotal: activityPack.activity.cardioMinutes,
+      aerobicMinutesTotal: activityPack.activity.aerobicMinutes,
+      walkingMinutesTotal: activityPack.activity.walkingMinutes,
+      moderateIntensityMinutes: activityPack.activity.moderateIntensityMinutes,
+      vigorousIntensityMinutes: activityPack.activity.vigorousIntensityMinutes,
       workoutKcalTotal: activityPack.activity.workoutKcalTotal,
+      intensityNote: 'moderate/vigorous solo se intensity|mets|hr presenti nel log; aerobicMinutes ≠ moderate verificata',
     },
     fieldsMissing,
   };
@@ -478,12 +491,22 @@ function buildWorkoutHistoryWindow(dayNodes, analysisDate, windowDays, includeFr
             unit: 'kcal',
             provenance: FOCUS_PROVENANCE.recorded,
           }),
+        activityKind: {
+          value: hint.kind,
+          provenance: hint.provenance,
+          source: hint.source,
+          note: 'hint_only_not_forced_classification',
+        },
         activityKindHint: {
           value: hint.kind,
           provenance: hint.provenance,
           source: hint.source,
           note: 'hint_only_not_forced_classification',
         },
+        isWalking: focusMetric(Boolean(hint.isWalking), {
+          provenance: FOCUS_PROVENANCE.calculated,
+          source: hint.source,
+        }),
         isCardioHint: focusMetric(isCardioWorkout(entry), {
           provenance: FOCUS_PROVENANCE.calculated,
           source: 'isCardioWorkout',
@@ -495,11 +518,50 @@ function buildWorkoutHistoryWindow(dayNodes, analysisDate, windowDays, includeFr
 }
 
 /**
+ * Dedupe export-only: id Firebase, poi fingerprint date|timestamp|weight.
+ * Conserva pesate stesso giorno con timestamp diversi.
+ * @param {object[]} list
+ */
+export function dedupeBodyMetricsForLabExport(list) {
+  const seenIds = new Set();
+  const seenFingerprints = new Set();
+  /** @type {object[]} */
+  const out = [];
+  let duplicatesCollapsed = 0;
+
+  for (const entry of Array.isArray(list) ? list : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = entry.id != null ? String(entry.id) : '';
+    if (id && seenIds.has(id)) {
+      duplicatesCollapsed += 1;
+      continue;
+    }
+    const date = typeof entry.date === 'string'
+      ? entry.date.trim().slice(0, 10)
+      : (typeof entry.effectiveDate === 'string' ? entry.effectiveDate.trim().slice(0, 10) : '');
+    const weight = finiteNumber(entry.weight ?? entry.weightKg);
+    const timestamp = Number(entry.timestamp) || 0;
+    if (!date || weight == null) continue;
+    const fingerprint = `${date}|${timestamp}|${Math.round(weight * 1000) / 1000}`;
+    if (seenFingerprints.has(fingerprint)) {
+      duplicatesCollapsed += 1;
+      continue;
+    }
+    if (id) seenIds.add(id);
+    seenFingerprints.add(fingerprint);
+    out.push(entry);
+  }
+
+  return { entries: out, duplicatesCollapsed };
+}
+
+/**
  * @param {object[]|Record<string, object>|null|undefined} bodyMetrics
  * @param {object|null|undefined} profile
  * @param {string} analysisDate
  */
 function buildBodyMeasurements(bodyMetrics, profile, analysisDate) {
+  // resolveFocusBodyWeight resta sull'elenco grezzo (non alterato dalla dedupe export).
   const weightPack = resolveFocusBodyWeight(bodyMetrics, profile, analysisDate);
   /** @type {object[]} */
   const measurements = [];
@@ -507,9 +569,9 @@ function buildBodyMeasurements(bodyMetrics, profile, analysisDate) {
   const list = Array.isArray(bodyMetrics)
     ? bodyMetrics
     : (bodyMetrics && typeof bodyMetrics === 'object' ? Object.values(bodyMetrics) : []);
+  const { entries: deduped, duplicatesCollapsed } = dedupeBodyMetricsForLabExport(list);
 
-  for (const entry of list) {
-    if (!entry || typeof entry !== 'object') continue;
+  for (const entry of deduped) {
     const date = typeof entry.date === 'string'
       ? entry.date.trim().slice(0, 10)
       : (typeof entry.effectiveDate === 'string' ? entry.effectiveDate.trim().slice(0, 10) : null);
@@ -518,10 +580,27 @@ function buildBodyMeasurements(bodyMetrics, profile, analysisDate) {
     if (weight == null || !(weight > 0)) continue;
 
     const bodyFat = finiteNumber(entry.bodyFat ?? entry.bodyFatPct ?? entry.bf);
-    const leanMass = finiteNumber(entry.leanMass ?? entry.muscleMassKg);
+    // Non usare `muscle` ambiguo come kg di massa magra.
+    const leanMass = finiteNumber(entry.leanMass ?? entry.leanMassKg ?? entry.muscleMassKg);
+    const timestamp = Number(entry.timestamp) || null;
+    const plausibility = evaluateBodyMeasurementPlausibility({
+      ...entry,
+      date,
+      weight,
+      bodyFat,
+      leanMass,
+      leanMassKg: leanMass,
+      muscleMassKg: leanMass,
+      muscle: entry.muscle,
+    }, {
+      analysisDate,
+      recencyDays: FOCUS_BODY_RECENCY_DAYS,
+    });
 
     measurements.push({
+      id: entry.id != null ? String(entry.id) : undefined,
       date,
+      timestamp: timestamp && timestamp > 0 ? timestamp : null,
       weightKg: focusMetric(weight, {
         unit: 'kg',
         provenance: FOCUS_PROVENANCE.recorded,
@@ -545,13 +624,23 @@ function buildBodyMeasurements(bodyMetrics, profile, analysisDate) {
       attribution: date === analysisDate
         ? 'recorded_on_analysis_date'
         : 'last_available_on_or_before',
+      plausibility,
     });
   }
 
-  measurements.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  measurements.sort((a, b) => {
+    const d = String(a.date).localeCompare(String(b.date));
+    if (d !== 0) return d;
+    return (Number(a.timestamp) || 0) - (Number(b.timestamp) || 0);
+  });
 
   return {
     measurements,
+    dedupe: {
+      duplicatesCollapsed,
+      policy: 'id_then_date_timestamp_weight',
+      note: 'Solo export; body_metrics RTDB non modificato. Pesate stesso giorno con timestamp diversi conservate.',
+    },
     profileWeightNotAttributed: {
       value: weightPack.profileWeightKg,
       note: weightPack.attribution === 'profile_weight_not_attributed_to_day'
@@ -574,6 +663,20 @@ function buildBodyMeasurements(bodyMetrics, profile, analysisDate) {
       conflict: weightPack.conflict,
     },
   };
+}
+
+/**
+ * Flag anomalie sospette dal dayLog espanso, senza alterare i valori esportati.
+ * @param {object[]} dayLog
+ * @param {{ fiberG?: number|null, hasFood?: boolean }} [dayTotals]
+ */
+export function detectNutritionAnomaliesFromDayLog(dayLog, dayTotals = {}) {
+  const evaluation = evaluateDayNutritionPlausibility(dayLog, dayTotals);
+  return evaluation.flags.map((f) => ({
+    ...f,
+    provenance: FOCUS_PROVENANCE.recorded,
+    source: 'focusNutritionPlausibility',
+  }));
 }
 
 /**
@@ -728,7 +831,19 @@ export function buildFocusLabDossier(input) {
     includeNotes,
     includeFreeTextLabels,
     targets: targetsPack.targets,
+    targetMeta: {
+      referenceDate: targetsPack.provenance?.referenceDate || null,
+      proteinSource: targetsPack.provenance?.proteinSource || null,
+      kcalSource: targetsPack.provenance?.kcalSource || null,
+    },
   });
+  const nutritionAnomalies = detectNutritionAnomaliesFromDayLog(
+    collectDayLogForNutritionWithQuality(analysisDayNode).dayLog,
+    {
+      fiberG: nutritionPack.food.kentuTotals?.fibre ?? null,
+      hasFood: nutritionPack.food.hasFood,
+    },
+  );
   const activityPack = buildAnalysisDayActivity(analysisDayNode, {
     includeNotes,
     includeFreeTextLabels,
@@ -823,20 +938,12 @@ export function buildFocusLabDossier(input) {
   ];
   if (!sleepPack.sleepAvailable) fieldsMissing.push('lastCompletedNight.hours');
 
-  let firstMealHourValue = null;
-  for (const meal of nutritionPack.block.meals) {
-    const h = meal.clockHour?.value;
-    if (typeof h === 'number' && Number.isFinite(h)) {
-      if (firstMealHourValue == null || h < firstMealHourValue) firstMealHourValue = h;
-    }
-  }
-  const firstMealHour = firstMealHourValue == null
-    ? missingMetric('hour_decimal')
-    : focusMetric(firstMealHourValue, {
-      unit: 'hour_decimal',
-      provenance: FOCUS_PROVENANCE.calculated,
-      source: 'buildFocusLabDossier',
-    });
+  const sleepRoutine = buildSleepRoutineLabBlock({
+    dayNodes,
+    publicationDate,
+    historyDays,
+    d30Allowed,
+  });
 
   const dossier = {
     schema: FOCUS_LAB_DOSSIER_SCHEMA,
@@ -897,10 +1004,12 @@ export function buildFocusLabDossier(input) {
       nutrition: nutritionPack.block,
       activity: activityPack.block,
       timing: {
-        firstMealHour,
-        lastMealHour: nutritionPack.food.nutrition.lastMealHour || missingMetric('hour_decimal'),
+        firstMealHour: nutritionPack.block.firstMealHour,
+        lastMealHour: nutritionPack.block.lastMealHour,
         dinnerSleepBufferH: sleepPack.sleep.dinnerSleepBufferH || missingMetric('h'),
+        coverage: nutritionPack.block.timingCoverage,
       },
+      plausibility: nutritionPack.block.plausibility,
       coverage: {
         hasFood: nutritionPack.food.hasFood,
         hasWorkout: activityPack.activityPack.hasWorkout,
@@ -908,6 +1017,7 @@ export function buildFocusLabDossier(input) {
       },
     },
     lastCompletedNight: buildLastCompletedNight(sleepPack, publicationDayNode),
+    sleepRoutine,
     history: {
       d7: historyDays >= 7 ? {
         nutritionTrend: historyWindows.d7.nutrition,
@@ -944,10 +1054,11 @@ export function buildFocusLabDossier(input) {
         workoutHistory: d30WorkoutHistory,
         habitSignals: {
           note: 'hint_based_activity_kinds_only',
-          strengthHintCount: d30WorkoutHistory.filter((w) => w.activityKindHint?.value === 'strength_hint').length,
-          aerobicHintCount: d30WorkoutHistory.filter((w) => w.activityKindHint?.value === 'aerobic_hint').length,
-          otherLabeledCount: d30WorkoutHistory.filter((w) => w.activityKindHint?.value === 'other_labeled').length,
-          unclassifiedCount: d30WorkoutHistory.filter((w) => w.activityKindHint?.value === 'unclassified').length,
+          strengthCount: d30WorkoutHistory.filter((w) => w.activityKind?.value === 'strength').length,
+          aerobicCount: d30WorkoutHistory.filter((w) => w.activityKind?.value === 'aerobic').length,
+          walkingCount: d30WorkoutHistory.filter((w) => w.isWalking?.value === true).length,
+          otherActivityCount: d30WorkoutHistory.filter((w) => w.activityKind?.value === 'other_activity').length,
+          unclassifiedCount: d30WorkoutHistory.filter((w) => w.activityKind?.value === 'unclassified').length,
         },
       } : {
         available: false,
@@ -1000,12 +1111,21 @@ export function buildFocusLabDossier(input) {
         activity: d30Allowed ? (historyWindows.d30.coverage?.activity || null) : null,
         body: d30Allowed ? (historyWindows.d30.coverage?.body || null) : null,
       },
+      nutritionAnomalies,
+      nutritionPlausibility: nutritionPack.block.plausibility || null,
+      bodyRecencyDays: FOCUS_BODY_RECENCY_DAYS,
       reliabilityNotes: [
         'Non inventare nutrienti, risvegli, fasi sonno o misure assenti.',
         'bodyFat/leanMass solo se presenti e positivi in body_metrics (nessuna deduzione).',
-        'activityKindHint è euristico, non etichetta utente.',
+        'activityKind è euristico (token/boundary), non etichetta utente.',
+        'aerobicMinutes ≠ intensità moderata verificata.',
         'Stage sonno 60/60 senza indizio wearable → provenance missing.',
+        'sleepRoutine: feriali/weekend = mattina di risveglio (nightEndedOn); wakeTime ≠ risvegli notturni.',
+        'sleepRoutine: timingClass ordinary|unusual|ambiguous; confronti forti su ordinary.',
+        'bedtime matches wake−duration senza flag → provenance ambiguous (non recorded).',
+        'sleep_weekly_rhythm: un’unica storia editoriale; member signals come evidenze.',
         'missingDays = nodi assenti nello storico in memoria, non prova di bootstrap incompleto.',
+        'nutritionAnomalies sono segnali; i valori originali non vengono corretti.',
       ],
     },
     exclusions: {
@@ -1018,6 +1138,97 @@ export function buildFocusLabDossier(input) {
   };
 
   return dossier;
+}
+
+/**
+ * Blocco laboratorio routine sonno (serie + aggregati + segnali, nessuna I/O).
+ * @param {{
+ *   dayNodes: Map<string, object|null>,
+ *   publicationDate: string,
+ *   historyDays: number,
+ *   d30Allowed: boolean,
+ * }} opts
+ */
+export function buildSleepRoutineLabBlock(opts) {
+  const publicationDate = opts.publicationDate;
+  const historyDays = Math.max(1, Number(opts.historyDays) || 1);
+  // dayNodes carica [analysisDate-(historyDays-1) … analysisDate] + publicationDate
+  // → fino a historyDays+1 mattine di risveglio possibili.
+  const availableNights = historyDays + 1;
+  const windowDays = Math.min(
+    DEFAULT_SLEEP_ROUTINE_THRESHOLDS.preferredWindowDaysMax,
+    availableNights,
+  );
+  const fromDate = addCalendarDays(publicationDate, -(windowDays - 1));
+  const nights = buildSleepNightSeries({
+    dayNodes: opts.dayNodes,
+    fromDate,
+    toDate: publicationDate,
+  });
+  const aggregate = aggregateSleepRoutine({
+    nights,
+    fromDate,
+    toDate: publicationDate,
+    windowDays,
+    acceptCalculatedBedtime: true,
+  });
+  const signals = buildSleepRoutineSignals({
+    aggregate,
+    fromDate,
+    toDate: publicationDate,
+  });
+
+  let d30 = null;
+  if (opts.d30Allowed && historyDays >= 30) {
+    const from30 = addCalendarDays(publicationDate, -29);
+    const nights30 = buildSleepNightSeries({
+      dayNodes: opts.dayNodes,
+      fromDate: from30,
+      toDate: publicationDate,
+    });
+    const agg30 = aggregateSleepRoutine({
+      nights: nights30,
+      fromDate: from30,
+      toDate: publicationDate,
+      windowDays: 30,
+      acceptCalculatedBedtime: true,
+    });
+    d30 = {
+      available: true,
+      nights: nights30,
+      aggregate: agg30,
+      signals: buildSleepRoutineSignals({
+        aggregate: agg30,
+        fromDate: from30,
+        toDate: publicationDate,
+      }),
+    };
+  } else {
+    d30 = {
+      available: false,
+      reason: opts.d30Allowed ? 'history_days_lt_30' : 'history_incomplete_for_d30',
+    };
+  }
+
+  return {
+    schema: 'kentu.focusSleepRoutine.v1',
+    convention: aggregate.convention,
+    thresholds: aggregate.thresholds,
+    primaryWindow: {
+      from: fromDate,
+      to: publicationDate,
+      windowDays,
+    },
+    nights,
+    aggregate,
+    signals,
+    d30,
+    notes: [
+      'nightEndedOn = data registrazione/risveglio; segmento da mattina di sveglia.',
+      'deep/REM esclusi dalle osservazioni di routine.',
+      'Segnali non generano articoli in questa fase.',
+    ],
+  };
 }
 
 /**
@@ -1049,6 +1260,13 @@ export function summarizeFocusLabDossier(dossier) {
     workoutsLogged: workouts.length,
     sleepAvailable: Boolean(dossier?.lastCompletedNight?.provenanceSummary?.sleepAvailable),
     sleepStagesNote: dossier?.lastCompletedNight?.stagesNote || null,
+    sleepRoutineNights: dossier?.sleepRoutine?.nights?.length ?? 0,
+    sleepRoutineLogged: dossier?.sleepRoutine?.aggregate?.coverage?.nightsLogged ?? 0,
+    sleepRoutineSignalsPublishable: Array.isArray(dossier?.sleepRoutine?.signals)
+      ? dossier.sleepRoutine.signals.filter((s) => s.publishable).length
+      : 0,
+    sleepRoutineWeekdayWeekendReliability:
+      dossier?.sleepRoutine?.aggregate?.reliability?.weekdayWeekendCompare?.status || null,
     d10DaysWithFood: d10.filter((d) => d.nutrition?.hasFood).length,
     d10DaysWithSleep: d10.filter((d) => d.sleep?.available).length,
     d30WorkoutEvents: dossier?.history?.d30?.workoutHistory?.length || 0,

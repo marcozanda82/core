@@ -8,13 +8,20 @@ import {
   deriveHistoryThinFlags,
 } from '../aggregate/historyWindows.js';
 import { buildFoodFrequency } from '../aggregate/foodFrequency.js';
+import { aggregateSleepRoutine } from '../aggregate/aggregateSleepRoutine.js';
+import { buildSleepNightSeriesFromBriefs } from '../aggregate/buildSleepNightSeries.js';
+import { buildSleepRoutineSignals } from '../aggregate/buildSleepRoutineSignals.js';
+import { DEFAULT_SLEEP_ROUTINE_THRESHOLDS } from '../aggregate/sleepRoutineConfig.js';
 import {
   createEmptyFocusDossier,
   focusMetric,
   FOCUS_PROVENANCE,
   missingMetric,
 } from '../contracts/focusDossier.v1.js';
-import { assertPublicationFollowsAnalysis, isIsoDateString } from '../normalize/focusDateUtils.js';
+import {
+  assertPublicationFollowsAnalysis,
+  isIsoDateString,
+} from '../normalize/focusDateUtils.js';
 import { normalizeFoodEvents } from '../normalize/normalizeFoodEvents.js';
 import { normalizeSleepNight } from '../normalize/normalizeSleepNight.js';
 import { normalizeStimuliEvents } from '../normalize/normalizeStimuliEvents.js';
@@ -29,6 +36,11 @@ import { finiteNumber } from '../normalize/logUtils.js';
  *   analysisDayNode?: object|null,
  *   publicationDayNode?: object|null,
  *   targets?: { kcal?: number, proteinG?: number },
+ *   targetMeta?: {
+ *     referenceDate?: string|null,
+ *     proteinSource?: string|null,
+ *     kcalSource?: string|null,
+ *   },
  *   bodyWeightKg?: number|null,
  *   bodyMeasuredOn?: string|null,
  *   generatedAt?: string,
@@ -43,6 +55,7 @@ export function buildFocusDossier(input) {
     analysisDayNode = null,
     publicationDayNode = null,
     targets,
+    targetMeta = null,
     bodyWeightKg = null,
     bodyMeasuredOn = null,
     generatedAt = new Date().toISOString(),
@@ -57,7 +70,10 @@ export function buildFocusDossier(input) {
     throw new Error(`buildFocusDossier: ${relation.reason}`);
   }
 
-  const food = normalizeFoodEvents(analysisDayNode, { targets });
+  const food = normalizeFoodEvents(analysisDayNode, {
+    targets,
+    targetMeta: targetMeta || undefined,
+  });
   const activity = normalizeWorkoutEvents(analysisDayNode);
   const stimuli = normalizeStimuliEvents(analysisDayNode);
   const lastMealHour = food.nutrition.lastMealHour?.value ?? null;
@@ -79,6 +95,7 @@ export function buildFocusDossier(input) {
       { id: 'normalizeSleepNight', role: 'sleep' },
       { id: 'buildHistoryWindows', role: 'history' },
       { id: 'buildFoodFrequency', role: 'food_frequency' },
+      { id: 'aggregateSleepRoutine', role: 'sleep_routine' },
     ],
   });
 
@@ -136,6 +153,10 @@ export function buildFocusDossier(input) {
 
     const allFoodItems = historyDayBriefs.flatMap((b) => b.foodItems || []);
     dossier.habits.foodFrequency = buildFoodFrequency(allFoodItems);
+    dossier.sleepRoutine = buildSleepRoutineFromHistoryBriefs(
+      historyDayBriefs,
+      publicationDate,
+    );
   } else {
     // Solo giorno analisi: frequenza sul giorno corrente; history resta guscio.
     dossier.habits.foodFrequency = buildFoodFrequency(
@@ -143,7 +164,60 @@ export function buildFocusDossier(input) {
     );
     dossier.meta.flags.historyThin30 = true;
     dossier.meta.flags.historyThin90 = true;
+    dossier.sleepRoutine = null;
   }
 
   return dossier;
+}
+
+/**
+ * @param {object[]} historyDayBriefs
+ * @param {string} publicationDate
+ */
+function buildSleepRoutineFromHistoryBriefs(historyDayBriefs, publicationDate) {
+  const nights = buildSleepNightSeriesFromBriefs(historyDayBriefs);
+  if (nights.length === 0) {
+    return {
+      schema: 'kentu.focusSleepRoutine.v1',
+      nights: [],
+      aggregate: null,
+      signals: [],
+      primaryWindow: null,
+      note: 'no_nights_from_briefs',
+    };
+  }
+  const toDate = nights[nights.length - 1].nightEndedOn;
+  const windowDays = Math.min(
+    DEFAULT_SLEEP_ROUTINE_THRESHOLDS.preferredWindowDaysMax,
+    nights.length,
+  );
+  const fromDate = nights.length >= windowDays
+    ? nights[nights.length - windowDays].nightEndedOn
+    : nights[0].nightEndedOn;
+  const windowNights = nights.filter(
+    (n) => n.nightEndedOn >= fromDate && n.nightEndedOn <= toDate,
+  );
+  const aggregate = aggregateSleepRoutine({
+    nights: windowNights,
+    fromDate,
+    toDate: toDate || publicationDate,
+    windowDays: windowNights.length,
+    acceptCalculatedBedtime: true,
+    acceptAmbiguousBedtime: true,
+  });
+  return {
+    schema: 'kentu.focusSleepRoutine.v1',
+    primaryWindow: { from: fromDate, to: toDate, windowDays: windowNights.length },
+    nights: windowNights,
+    aggregate,
+    signals: buildSleepRoutineSignals({
+      aggregate,
+      fromDate,
+      toDate,
+    }),
+    /** Compat: ultima notte attesa su publicationDate. */
+    expectedLastNightEndedOn: publicationDate,
+    alignedToPublication: toDate === publicationDate
+      || nights.some((n) => n.nightEndedOn === publicationDate),
+  };
 }

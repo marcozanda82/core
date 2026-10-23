@@ -4,9 +4,12 @@
 
 import { normalizeFoodEvents } from '../normalize/normalizeFoodEvents.js';
 import { normalizeSleepNight } from '../normalize/normalizeSleepNight.js';
-import { normalizeWorkoutEvents } from '../normalize/normalizeWorkoutEvents.js';
+import {
+  classifyFocusActivity,
+  normalizeWorkoutEvents,
+} from '../normalize/normalizeWorkoutEvents.js';
 import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
-import { finiteNumber } from '../normalize/logUtils.js';
+import { finiteNumber, getLogArray, getManualNodesArray } from '../normalize/logUtils.js';
 
 /**
  * @param {{
@@ -35,6 +38,15 @@ export function buildDayBrief(input) {
   const hours = sleepPack.sleep.hours?.provenance === 'missing'
     ? null
     : sleepPack.sleep.hours?.value;
+  const wakeTime = sleepPack.sleep.wakeTime?.provenance === 'missing'
+    ? null
+    : sleepPack.sleep.wakeTime?.value;
+  const bedtime = sleepPack.sleep.bedtime?.provenance === 'missing'
+    ? null
+    : sleepPack.sleep.bedtime?.value;
+  const qualityStars = sleepPack.sleep.qualityStars?.provenance === 'missing'
+    ? null
+    : sleepPack.sleep.qualityStars?.value;
 
   return {
     date,
@@ -52,11 +64,29 @@ export function buildDayBrief(input) {
     },
     sleep: {
       hours: sleepPack.sleepAvailable ? hours : null,
+      nightEndedOn: sleepStorageDate,
+      wakeTime: sleepPack.sleepAvailable ? wakeTime : null,
+      bedtime: sleepPack.sleepAvailable ? bedtime : null,
+      bedtimeProvenance: sleepPack.sleep.bedtime?.provenance || 'missing',
+      bedtimeSource: sleepPack.sleep.bedtime?.source || null,
+      wakeProvenance: sleepPack.sleep.wakeTime?.provenance || 'missing',
+      qualityStars: sleepPack.sleepAvailable ? qualityStars : null,
+      partial: Boolean(sleepPack.sleepPartial),
+      mainNightStatus: sleepPack.sleep.mainNightStatus || null,
+      mainNightReason: sleepPack.sleep.mainNightReason || null,
     },
+    sleepStorageDate,
     activity: {
       workoutKcal: activity.activity.workoutKcalTotal?.value ?? null,
+      /** Minuti label-aerobici (non intensità moderata verificata). */
       cardioMinutes: activity.activity.cardioMinutes?.value ?? null,
+      aerobicMinutes: activity.activity.aerobicMinutes?.value ?? null,
+      walkingMinutes: activity.activity.walkingMinutes?.value ?? null,
+      moderateIntensityMinutes: activity.activity.moderateIntensityMinutes?.value ?? null,
+      vigorousIntensityMinutes: activity.activity.vigorousIntensityMinutes?.value ?? null,
       workoutCount: activity.activity.workouts.length,
+      /** Sessioni euristiche strength (non prova di intensità). */
+      strengthSessionCount: countStrengthSessions(input.dayNode),
     },
     body: {
       weightKg: weight,
@@ -66,4 +96,15 @@ export function buildDayBrief(input) {
       date,
     })),
   };
+}
+
+/** @param {object|null|undefined} dayNode */
+function countStrengthSessions(dayNode) {
+  const fromLog = getLogArray(dayNode).filter((e) => e && e.type === 'workout');
+  const fromManual = getManualNodesArray(dayNode).filter((e) => e && e.type === 'workout');
+  let n = 0;
+  for (const entry of [...fromLog, ...fromManual]) {
+    if (classifyFocusActivity(entry).kind === 'strength') n += 1;
+  }
+  return n;
 }

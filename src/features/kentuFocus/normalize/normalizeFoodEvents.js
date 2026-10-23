@@ -10,31 +10,25 @@ import {
   focusMetric,
   missingMetric,
 } from '../contracts/focusDossier.v1.js';
-import { parseDecimalHour } from './focusDateUtils.js';
 import { dedupeByIdWithStats, finiteNumber, getLogArray, getManualNodesArray } from './logUtils.js';
+import {
+  compareMealSlots,
+  normalizeMealType,
+  resolveFocusMealIdentity,
+  resolveFoodClockHour,
+  resolveFoodClockHourDetailed,
+} from './focusMealSlots.js';
+import { evaluateDayNutritionPlausibility } from './focusNutritionPlausibility.js';
+
+export {
+  normalizeMealType,
+  canonicalizeMealType,
+  resolveFocusMealIdentity,
+  resolveFoodClockHour,
+  resolveFoodClockHourDetailed,
+} from './focusMealSlots.js';
 
 const FOOD_TYPES = new Set(['food', 'recipe']);
-
-/** @param {unknown} mealType */
-export function normalizeMealType(mealType) {
-  const t = String(mealType || '').trim().toLowerCase();
-  if (t === 'colazione' || t === 'pranzo' || t === 'cena' || t === 'snack') return t;
-  return 'unknown';
-}
-
-/**
- * @param {object} item
- * @param {Record<string, number>} [mealTimes]
- */
-export function resolveFoodClockHour(item, mealTimes) {
-  const direct = parseDecimalHour(item?.mealTime ?? item?.time ?? item?.clockHour);
-  if (direct != null) return direct;
-  const mt = normalizeMealType(item?.mealType);
-  if (mt !== 'unknown' && mealTimes && mealTimes[mt] != null) {
-    return parseDecimalHour(mealTimes[mt]);
-  }
-  return null;
-}
 
 /** @param {object} item */
 function foodDisplayName(item) {
@@ -77,7 +71,14 @@ export function collectDayLogForNutritionWithQuality(analysisDayNode) {
 
 /**
  * @param {object|null|undefined} analysisDayNode
- * @param {{ targets?: { kcal?: number, proteinG?: number } }} [opts]
+ * @param {{
+ *   targets?: { kcal?: number, proteinG?: number },
+ *   targetMeta?: {
+ *     referenceDate?: string|null,
+ *     proteinSource?: string|null,
+ *     kcalSource?: string|null,
+ *   },
+ * }} [opts]
  */
 export function normalizeFoodEvents(analysisDayNode, opts = {}) {
   const mealTimes = analysisDayNode?.mealTimes && typeof analysisDayNode.mealTimes === 'object'
@@ -95,57 +96,87 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
   const names = new Set();
   let unclassifiedCount = 0;
 
-  /** @type {Map<string, { mealType: string, clockHour: number|null, kcal: number, itemCount: number }>} */
+  /**
+   * Raggruppa per mealSlotId (non per sola categoria): snack_1 ≠ snack_2.
+   * @type {Map<string, {
+   *   mealSlotId: string,
+   *   canonicalMealType: string,
+   *   clockHour: number|null,
+   *   clockSource: string|null,
+   *   itemHours: number[],
+   *   kcal: number,
+   *   itemCount: number,
+   * }>}
+   */
   const mealMap = new Map();
 
   for (const item of foods) {
     const itemKcal = Number(item.kcal || item.cal || 0) || 0;
     const name = foodDisplayName(item);
     if (name) names.add(name.toLowerCase());
-    const mealType = normalizeMealType(item.mealType);
-    if (mealType === 'unknown') unclassifiedCount += 1;
+    const identity = resolveFocusMealIdentity(item);
+    if (identity.canonicalMealType === 'unknown') unclassifiedCount += 1;
 
-    const clockHour = resolveFoodClockHour(item, mealTimes);
-    const prev = mealMap.get(mealType) || {
-      mealType,
+    const clock = resolveFoodClockHourDetailed(item, mealTimes);
+    const key = identity.mealSlotId;
+    const prev = mealMap.get(key) || {
+      mealSlotId: identity.mealSlotId,
+      canonicalMealType: identity.canonicalMealType,
       clockHour: null,
+      clockSource: null,
+      itemHours: [],
       kcal: 0,
       itemCount: 0,
     };
     prev.kcal += itemKcal;
     prev.itemCount += 1;
-    if (prev.clockHour == null && clockHour != null) prev.clockHour = clockHour;
-    else if (clockHour != null && prev.clockHour != null) {
-      prev.clockHour = Math.max(prev.clockHour, clockHour);
+    if (clock.hour != null) {
+      prev.itemHours.push(clock.hour);
+      if (prev.clockHour == null || clock.hour > prev.clockHour) {
+        prev.clockHour = clock.hour;
+        prev.clockSource = clock.source;
+      }
     }
-    mealMap.set(mealType, prev);
+    mealMap.set(key, prev);
   }
 
-  const mealOrder = ['colazione', 'pranzo', 'snack', 'cena', 'unknown'];
-  const meals = mealOrder
-    .filter((k) => mealMap.has(k))
-    .map((k) => {
-      const m = mealMap.get(k);
-      return {
-        mealType: m.mealType,
-        clockHour: m.clockHour == null
-          ? missingMetric()
-          : focusMetric(m.clockHour, { provenance: FOCUS_PROVENANCE.recorded }),
-        kcal: focusMetric(Math.round(m.kcal * 10) / 10, {
-          provenance: FOCUS_PROVENANCE.calculated,
-          source: 'normalizeFoodEvents',
-        }),
-        itemCount: m.itemCount,
-      };
-    });
+  const mealSlots = [...mealMap.values()].sort(compareMealSlots);
+  const meals = mealSlots.map((m) => ({
+    mealSlotId: m.mealSlotId,
+    mealType: m.canonicalMealType,
+    canonicalMealType: m.canonicalMealType,
+    clockHour: m.clockHour == null
+      ? missingMetric('hour_decimal')
+      : focusMetric(m.clockHour, {
+        unit: 'hour_decimal',
+        provenance: FOCUS_PROVENANCE.recorded,
+        source: m.clockSource || undefined,
+      }),
+    kcal: focusMetric(Math.round(m.kcal * 10) / 10, {
+      provenance: FOCUS_PROVENANCE.calculated,
+      source: 'normalizeFoodEvents',
+    }),
+    itemCount: m.itemCount,
+  }));
 
+  /** Orari item effettivamente risolti (non inventati). */
+  const availableItemHours = mealSlots.flatMap((m) => m.itemHours);
+  let firstMealHour = null;
   let lastMealHour = null;
-  for (const m of meals) {
-    const h = m.clockHour?.value;
-    if (typeof h === 'number' && Number.isFinite(h)) {
-      if (lastMealHour == null || h > lastMealHour) lastMealHour = h;
-    }
+  for (const h of availableItemHours) {
+    if (typeof h !== 'number' || !Number.isFinite(h)) continue;
+    if (firstMealHour == null || h < firstMealHour) firstMealHour = h;
+    if (lastMealHour == null || h > lastMealHour) lastMealHour = h;
   }
+
+  const slotsWithTime = mealSlots.filter((m) => m.clockHour != null).length;
+  const timingCoverage = {
+    mealSlotsTotal: mealSlots.length,
+    mealSlotsWithTime: slotsWithTime,
+    itemHoursResolved: availableItemHours.length,
+    windowComplete: mealSlots.length > 0 && slotsWithTime === mealSlots.length,
+    partial: mealSlots.length > 0 && slotsWithTime > 0 && slotsWithTime < mealSlots.length,
+  };
 
   const hasFood = foods.length > 0;
   const kcal = Number(totali.kcal) || 0;
@@ -160,6 +191,11 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
 
   const round1 = (n) => Math.round(n * 10) / 10;
 
+  const plausibility = evaluateDayNutritionPlausibility(dayLog, {
+    fiberG: hasFood ? fiberG : null,
+    hasFood,
+  });
+
   return {
     hasFood,
     foodIds: foods.map((f) => f.id).filter(Boolean),
@@ -173,13 +209,17 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
       fibre: fiberG,
       workout: Number(totali.workout) || 0,
     },
-    foodItemsForFrequency: foods.map((item) => ({
-      id: item.id != null ? String(item.id) : undefined,
-      type: item.type === 'recipe' ? 'recipe' : 'food',
-      foodDbKey: item.foodDbKey != null ? String(item.foodDbKey) : null,
-      name: foodDisplayName(item),
-      mealType: normalizeMealType(item.mealType),
-    })),
+    foodItemsForFrequency: foods.map((item) => {
+      const identity = resolveFocusMealIdentity(item);
+      return {
+        id: item.id != null ? String(item.id) : undefined,
+        type: item.type === 'recipe' ? 'recipe' : 'food',
+        foodDbKey: item.foodDbKey != null ? String(item.foodDbKey) : null,
+        name: foodDisplayName(item),
+        mealType: identity.canonicalMealType,
+        mealSlotId: identity.mealSlotId,
+      };
+    }),
     nutrition: {
       totals: {
         kcal: hasNutritionTotals
@@ -223,13 +263,15 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
           ? missingMetric()
           : focusMetric(targetKcal, {
             provenance: FOCUS_PROVENANCE.recorded,
-            source: 'profile_targets',
+            source: opts.targetMeta?.kcalSource || 'profile_targets',
+            measuredOn: opts.targetMeta?.referenceDate || undefined,
           }),
         proteinG: targetProtein == null
           ? missingMetric()
           : focusMetric(targetProtein, {
             provenance: FOCUS_PROVENANCE.recorded,
-            source: 'profile_targets',
+            source: opts.targetMeta?.proteinSource || 'profile_targets',
+            measuredOn: opts.targetMeta?.referenceDate || undefined,
           }),
       },
       balance: {
@@ -245,13 +287,24 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
         uniqueNames: names.size,
         itemsLogged: foods.length,
         unclassifiedCount,
+        mealSlotsLogged: mealSlots.length,
       },
-      lastMealHour: lastMealHour == null
-        ? missingMetric()
-        : focusMetric(lastMealHour, {
+      firstMealHour: firstMealHour == null
+        ? missingMetric('hour_decimal')
+        : focusMetric(firstMealHour, {
+          unit: 'hour_decimal',
           provenance: FOCUS_PROVENANCE.calculated,
           source: 'normalizeFoodEvents',
         }),
+      lastMealHour: lastMealHour == null
+        ? missingMetric('hour_decimal')
+        : focusMetric(lastMealHour, {
+          unit: 'hour_decimal',
+          provenance: FOCUS_PROVENANCE.calculated,
+          source: 'normalizeFoodEvents',
+        }),
+      timingCoverage,
+      plausibility,
     },
   };
 }

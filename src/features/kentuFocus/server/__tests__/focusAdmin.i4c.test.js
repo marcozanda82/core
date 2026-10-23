@@ -134,12 +134,24 @@ test('I4-C.3 lease scaduto e riassegnato — vecchio owner non pubblica', { skip
     inputFingerprint: 'fp2',
   });
   await p2.saveRevisionImmutable(uid, PUBLICATION_DATE, builtEd.revisionDoc);
+  const { buildFocusMemoryEvent } = await import('../contracts/focusMemoryEvent.v1.js');
+  await p2.saveMemoryEventImmutable(uid, PUBLICATION_DATE, buildFocusMemoryEvent({
+    publicationDate: PUBLICATION_DATE,
+    revision: 1,
+    selection,
+  }));
+  const acqOld = await p2.acquirePublishBarrier(uid, {
+    attemptId: 'old2_attempt',
+    jobDate: PUBLICATION_DATE,
+  });
+  assert.equal(acqOld.ok, true, acqOld.error);
   const pubOld = await p2.publishCurrentRevision(uid, PUBLICATION_DATE, {
     ownerId: 'old2',
     leaseVersion: claimOld.job.leaseVersion,
     editionMeta: builtEd.editionMeta,
     archiveEntry: builtEd.archiveEntry,
     publishedRevision: 1,
+    barrierHold: acqOld.hold,
   });
   assert.equal(pubOld.ok, false);
   assert.equal(pubOld.error, 'job_owner_mismatch_on_publish');
@@ -275,12 +287,30 @@ test('I4-C.9 fallimento indice → repair puntatori', { skip: !EMULATOR }, async
     inputFingerprint: 'arch-fail',
   });
   await persistence.saveRevisionImmutable(uid, PUBLICATION_DATE, built.revisionDoc);
+  const { buildFocusMemoryEvent } = await import('../contracts/focusMemoryEvent.v1.js');
+  const memoryEvent = buildFocusMemoryEvent({
+    publicationDate: PUBLICATION_DATE,
+    revision: 1,
+    selection,
+  });
+  const savedEvent = await persistence.saveMemoryEventImmutable(
+    uid,
+    PUBLICATION_DATE,
+    memoryEvent,
+  );
+  assert.equal(savedEvent.ok, true, savedEvent.error);
+  const acq = await persistence.acquirePublishBarrier(uid, {
+    attemptId: 'arch_fail',
+    jobDate: PUBLICATION_DATE,
+  });
+  assert.equal(acq.ok, true, acq.error);
   const pub = await persistence.publishCurrentRevision(uid, PUBLICATION_DATE, {
     ownerId: 'w1',
     leaseVersion: claim.job.leaseVersion,
     editionMeta: built.editionMeta,
     archiveEntry: built.archiveEntry,
     publishedRevision: 1,
+    barrierHold: acq.hold,
   });
   assert.equal(pub.ok, false);
   assert.equal(pub.error, 'archive_update_failed');
@@ -288,17 +318,24 @@ test('I4-C.9 fallimento indice → repair puntatori', { skip: !EMULATOR }, async
   assert.equal(archSnap.exists(), false);
   const metaSnap = await db.ref(focusEditionMetaPath(uid, PUBLICATION_DATE)).get();
   assert.equal(metaSnap.exists(), true);
+  // esito parziale: barriera resta (non unlock silenzioso)
+  assert.equal(
+    (await persistence.getEditorialMemory(uid)).publishBarrier,
+    'publishing',
+  );
 
   const repaired = await persistence.repairPublishPointers(uid, PUBLICATION_DATE, {
     editionMeta: built.editionMeta,
     archiveEntry: built.archiveEntry,
     publishedRevision: 1,
+    barrierHold: acq.hold,
   });
   assert.equal(repaired.ok, true);
   const arch2 = await db.ref(focusArchiveIndexPath(uid, PUBLICATION_DATE)).get();
   assert.equal(arch2.exists(), true);
   const job = await persistence.getJob(uid, PUBLICATION_DATE);
   assert.equal(job.status, FOCUS_JOB_STATUS.succeeded);
+  await persistence.releasePublishBarrier(uid, acq.hold);
 });
 
 test('I4-C.10 lettura archivio durante pubblicazione', { skip: !EMULATOR }, async () => {

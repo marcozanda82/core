@@ -109,7 +109,8 @@ test('I4-F pipeline: target presenti → protein signal; assenti → no protein 
     ...withT.dossierInput,
   }));
   assert.ok(sigs.some((s) => s.id === 'sig_protein_near_target'));
-  assert.ok(sigs.some((s) => s.id === 'sig_body_weight_logged'));
+  // Peso 2026-10-15 vs analysisDate: last_available → nessuna notizia “aggiornato”
+  assert.ok(!sigs.some((s) => s.id === 'sig_body_weight_logged'));
 
   const noT = await runFocusEditionPipeline({
     uid: 'f_not',

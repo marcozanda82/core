@@ -6,6 +6,18 @@
 
 import { createEmptyEditorialMemory } from '../../editorial/focusEditorialMemory.js';
 import {
+  evaluateEditorialMemoryReplace,
+} from '../memory/editorialMemoryCommit.js';
+import {
+  evaluateAcquirePublishBarrier,
+  evaluateAssertPublishBarrierHeld,
+  evaluateReleasePublishBarrier,
+  preservePublishCoordination,
+} from '../memory/publishBarrier.js';
+import {
+  validateFocusMemoryEvent,
+} from '../contracts/focusMemoryEvent.v1.js';
+import {
   FOCUS_JOB_STATUS,
   createFocusGenerationJob,
 } from '../contracts/focusPersistence.v1.js';
@@ -30,9 +42,19 @@ export class MemoryFocusPersistence {
     this.archiveIndex = new Map();
     /** @type {Map<string, object>} */
     this.memoryByUid = new Map();
+    /** @type {Map<string, object>} */
+    this.memoryEvents = new Map();
     /** @type {Map<string, Promise<void>>} */
     this.locks = new Map();
     this.atomicityNotes = FOCUS_PERSISTENCE_ATOMICITY_NOTES;
+    /** Test hook: simula fallimento salvataggio memory_event una volta. */
+    this._failMemoryEventOnce = false;
+    /** Test hook: simula fallimento replace memoria una volta. */
+    this._failMemoryReplaceOnce = false;
+  }
+
+  memoryLockKey(uid) {
+    return `${uid}::editorial_memory`;
   }
 
   /** @param {string} key @param {() => Promise<T>} fn @returns {Promise<T>} */
@@ -65,6 +87,10 @@ export class MemoryFocusPersistence {
 
   archiveKey(uid, publicationDate) {
     return `${uid}::arch::${publicationDate}`;
+  }
+
+  memoryEventKey(uid, publicationDate, revision) {
+    return `${uid}::memevt::${publicationDate}::${Number(revision)}`;
   }
 
   async getJob(uid, publicationDate) {
@@ -174,7 +200,119 @@ export class MemoryFocusPersistence {
   }
 
   /**
-   * Pubblica solo se owner/lease ancora validi.
+   * Create-only su (publicationDate, revision).
+   * Stesso contentFingerprint → idempotente; contenuto diverso → conflitto.
+   * @param {string} uid
+   * @param {string} publicationDate
+   * @param {object} memoryEvent
+   */
+  async saveMemoryEventImmutable(uid, publicationDate, memoryEvent) {
+    if (this._failMemoryEventOnce) {
+      this._failMemoryEventOnce = false;
+      return { ok: false, error: 'memory_event_save_failed' };
+    }
+    const validation = validateFocusMemoryEvent(memoryEvent);
+    if (!validation.ok) {
+      return { ok: false, error: `memory_event_invalid:${validation.errors.join(',')}` };
+    }
+    if (memoryEvent.publicationDate !== publicationDate) {
+      return { ok: false, error: 'memory_event_date_mismatch' };
+    }
+    const key = this.memoryEventKey(uid, publicationDate, memoryEvent.revision);
+    const existing = this.memoryEvents.get(key);
+    if (existing) {
+      if (existing.contentFingerprint === memoryEvent.contentFingerprint) {
+        return {
+          ok: true,
+          alreadyExists: true,
+          memoryEvent: toRtdbJson(existing),
+        };
+      }
+      return {
+        ok: false,
+        error: 'memory_event_conflict',
+        memoryEvent: toRtdbJson(existing),
+      };
+    }
+    const stored = toRtdbJson(memoryEvent);
+    this.memoryEvents.set(key, stored);
+    return { ok: true, alreadyExists: false, memoryEvent: stored };
+  }
+
+  async getMemoryEvent(uid, publicationDate, revision) {
+    const doc = this.memoryEvents.get(
+      this.memoryEventKey(uid, publicationDate, revision),
+    );
+    return doc ? toRtdbJson(doc) : null;
+  }
+
+  /**
+   * Acquisisce barriera publishing + bump generation (TX su editorial_memory).
+   * @param {string} uid
+   * @param {{ attemptId: string, jobDate: string }} input
+   */
+  async acquirePublishBarrier(uid, input) {
+    return this.withLock(this.memoryLockKey(uid), async () => {
+      const current = this.memoryByUid.has(uid)
+        ? toRtdbJson(this.memoryByUid.get(uid))
+        : null;
+      const decision = evaluateAcquirePublishBarrier(current, input);
+      if (!decision.ok) {
+        return {
+          ok: false,
+          error: decision.error,
+          coordination: decision.coordination,
+        };
+      }
+      this.memoryByUid.set(uid, decision.memory);
+      return { ok: true, hold: decision.hold, memory: decision.memory };
+    });
+  }
+
+  /**
+   * Rilascio condizionato: solo attemptId + epoch/generation corrispondenti.
+   * @param {string} uid
+   * @param {{ attemptId: string, publishGeneration: number, publishBarrierEpoch: number }} hold
+   */
+  async releasePublishBarrier(uid, hold) {
+    return this.withLock(this.memoryLockKey(uid), async () => {
+      const current = this.memoryByUid.has(uid)
+        ? toRtdbJson(this.memoryByUid.get(uid))
+        : null;
+      const decision = evaluateReleasePublishBarrier(current, hold);
+      if (!decision.ok) {
+        return {
+          ok: false,
+          error: decision.error,
+          coordination: decision.coordination,
+          memory: current,
+        };
+      }
+      this.memoryByUid.set(uid, decision.memory);
+      return { ok: true, memory: decision.memory, coordination: decision.coordination };
+    });
+  }
+
+  /**
+   * @param {string} uid
+   * @param {{ attemptId: string, publishGeneration: number, publishBarrierEpoch: number }} hold
+   */
+  async assertPublishBarrierHeld(uid, hold) {
+    return this.withLock(this.memoryLockKey(uid), async () => {
+      const current = this.memoryByUid.has(uid)
+        ? toRtdbJson(this.memoryByUid.get(uid))
+        : null;
+      const decision = evaluateAssertPublishBarrierHeld(current, hold);
+      return {
+        ok: decision.ok,
+        error: decision.error,
+        coordination: decision.coordination,
+      };
+    });
+  }
+
+  /**
+   * Pubblica solo se owner/lease ancora validi, memory_event presente e barrierHold valido.
    * In RTDB: update atomico multi-path.
    */
   async publishCurrentRevision(uid, publicationDate, opts) {
@@ -186,10 +324,28 @@ export class MemoryFocusPersistence {
         return { ok: false, error: 'job_owner_mismatch_on_publish' };
       }
 
+      if (!opts?.barrierHold) {
+        return { ok: false, error: 'barrier_hold_required', job: toRtdbJson(job) };
+      }
+      const mem = this.memoryByUid.has(uid)
+        ? toRtdbJson(this.memoryByUid.get(uid))
+        : null;
+      const held = evaluateAssertPublishBarrierHeld(mem, opts.barrierHold);
+      if (!held.ok) {
+        return { ok: false, error: held.error || 'barrier_not_held', job: toRtdbJson(job) };
+      }
+
       const rev = this.revisions.get(
         this.revKey(uid, publicationDate, opts.publishedRevision),
       );
       if (!rev) return { ok: false, error: 'revision_missing' };
+
+      const memoryEvent = this.memoryEvents.get(
+        this.memoryEventKey(uid, publicationDate, opts.publishedRevision),
+      );
+      if (!memoryEvent) {
+        return { ok: false, error: 'memory_event_missing' };
+      }
 
       const metaV = validateFocusEditionMeta(opts.editionMeta);
       if (!metaV.ok) return { ok: false, error: metaV.errors.join(',') };
@@ -260,7 +416,7 @@ export class MemoryFocusPersistence {
     if (nextMemory?.lastAppliedEdition !== editionKey) {
       return { ok: false, error: 'memory_edition_key_mismatch' };
     }
-    const stored = toRtdbJson(nextMemory);
+    const stored = preservePublishCoordination(toRtdbJson(nextMemory), current);
     this.memoryByUid.set(uid, stored);
 
     // marca sul job se presente
@@ -275,6 +431,89 @@ export class MemoryFocusPersistence {
     }
 
     return { ok: true, alreadyApplied: false, memory: stored };
+  }
+
+  /**
+   * Sostituisce editorial_memory solo se il cursore letto è ancora invariato.
+   * Non usato dal publish in questa fase. Richiede authority authoritative_replay_v1.
+   *
+   * @param {string} uid
+   * @param {{
+   *   expected: { lastAppliedEdition?: string|null, stateFingerprint: string },
+   *   nextMemory: object,
+   *   authority: string,
+   * }} input
+   */
+  async replaceEditorialMemoryIfUnchanged(uid, input) {
+    return this.withLock(this.memoryLockKey(uid), async () => {
+      if (this._failMemoryReplaceOnce) {
+        this._failMemoryReplaceOnce = false;
+        return {
+          ok: false,
+          committed: false,
+          conflict: false,
+          unchanged: false,
+          error: 'memory_replace_transaction_failed',
+          memory: this.memoryByUid.has(uid)
+            ? toRtdbJson(this.memoryByUid.get(uid))
+            : null,
+        };
+      }
+
+      const current = this.memoryByUid.has(uid)
+        ? toRtdbJson(this.memoryByUid.get(uid))
+        : null;
+
+      const decision = evaluateEditorialMemoryReplace({
+        current,
+        expected: input?.expected,
+        nextMemory: input?.nextMemory,
+        authority: input?.authority,
+      });
+
+      if (decision.action === 'reject') {
+        return {
+          ok: false,
+          committed: false,
+          conflict: false,
+          unchanged: false,
+          error: decision.error,
+          memory: current,
+          cursor: decision.cursor,
+        };
+      }
+      if (decision.action === 'conflict') {
+        return {
+          ok: false,
+          committed: false,
+          conflict: true,
+          unchanged: false,
+          error: decision.error,
+          memory: decision.memory,
+          cursor: decision.cursor,
+        };
+      }
+      if (decision.action === 'unchanged') {
+        return {
+          ok: true,
+          committed: false,
+          conflict: false,
+          unchanged: true,
+          memory: decision.memory,
+          cursor: decision.cursor,
+        };
+      }
+
+      this.memoryByUid.set(uid, decision.memory);
+      return {
+        ok: true,
+        committed: true,
+        conflict: false,
+        unchanged: false,
+        memory: decision.memory,
+        cursor: decision.cursor,
+      };
+    });
   }
 
   /** Test helper: marca job interrupted senza pubblicare. */

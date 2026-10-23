@@ -4,6 +4,7 @@ import { get, ref } from 'firebase/database';
 import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
 import CentroAnalisiPage from './pages/CentroAnalisiPage';
 import ConsultoPreview from './pages/ConsultoPreview';
+import KentuFocusPage from './pages/KentuFocusPage';
 import { ChatOverlayProvider } from './contexts/ChatOverlayContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import GlobalChatOverlay from './components/GlobalChatOverlay';
@@ -127,6 +128,8 @@ function AuthenticatedApp() {
           <Route path="/centro-analisi" element={<CentroAnalisiPage />} />
           <Route path="/analisi" element={<CentroAnalisiPage />} />
           <Route path="/consulto" element={<ConsultoPreview />} />
+          {/* Kentu Focus: prima pagina prodotto (fixture locali, fuori simulazione). */}
+          <Route path="/kentu-focus" element={<KentuFocusPage />} />
           <Route path="/salute" element={<Navigate to="/" replace />} />
           <Route path="/hub" element={<Navigate to="/" replace state={{ openHub: true }} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

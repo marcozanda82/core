@@ -12,12 +12,25 @@
 
 import { createEmptyEditorialMemory } from '../../editorial/focusEditorialMemory.js';
 import {
+  validateFocusMemoryEvent,
+} from '../contracts/focusMemoryEvent.v1.js';
+import {
   FOCUS_JOB_STATUS,
   createFocusGenerationJob,
 } from '../contracts/focusPersistence.v1.js';
 import {
+  evaluateEditorialMemoryReplace,
+} from '../memory/editorialMemoryCommit.js';
+import {
+  evaluateAcquirePublishBarrier,
+  evaluateAssertPublishBarrierHeld,
+  evaluateReleasePublishBarrier,
+  preservePublishCoordination,
+} from '../memory/publishBarrier.js';
+import {
   focusArchiveIndexPath,
   focusArchiveIndexRootPath,
+  focusEditionMemoryEventPath,
   focusEditionMetaPath,
   focusEditionRevisionPath,
   focusEditorialMemoryPath,
@@ -60,14 +73,24 @@ export class AdminRtdbFocusPersistence {
       ...FOCUS_PERSISTENCE_ATOMICITY_NOTES,
       claimJob: 'RTDB transaction on jobs/{publicationDate}',
       saveRevisionImmutable: 'RTDB transaction create-only on editions/.../rev/{n}',
+      saveMemoryEventImmutable:
+        'RTDB transaction create-only on editions/.../memory_events/{n}; same contentFingerprint → idempotent',
       publishCurrentRevision:
-        'RTDB transaction → committing, then atomic multi-path update(meta+archive+job)',
+        'RTDB transaction → committing, then assert barrierHold, then atomic multi-path update(meta+archive+job)',
       applyEditorialMemoryIfNeeded:
-        'RTDB transaction on editorial_memory keyed by lastAppliedEdition',
+        'RTDB transaction on editorial_memory keyed by lastAppliedEdition; preserves publishGeneration/barrier',
+      replaceEditorialMemoryIfUnchanged:
+        'RTDB transaction on editorial_memory; abort if publishing barrier or fingerprint/generation mismatch',
+      acquirePublishBarrier:
+        'RTDB transaction on editorial_memory: bump generation, set publishing + attemptId',
+      releasePublishBarrier:
+        'RTDB transaction on editorial_memory: release only if attemptId+epoch+generation match',
       leaseTtlInsufficient: true,
     };
     /** @type {boolean} */
     this._failArchiveOnce = Boolean(testHooks.failArchiveOnce);
+    /** @type {boolean} */
+    this._failMemoryReplaceOnce = Boolean(testHooks.failMemoryReplaceOnce);
   }
 
   ref(path) {
@@ -251,9 +274,150 @@ export class AdminRtdbFocusPersistence {
   }
 
   /**
-   * Gate transaction su job → poi update() atomico meta+archive+job fields.
+   * Create-only su memory_events/{revision}. Stesso fingerprint → idempotente.
+   * @param {string} uid
+   * @param {string} publicationDate
+   * @param {object} memoryEvent
+   */
+  async saveMemoryEventImmutable(uid, publicationDate, memoryEvent) {
+    const validation = validateFocusMemoryEvent(memoryEvent);
+    if (!validation.ok) {
+      return { ok: false, error: `memory_event_invalid:${validation.errors.join(',')}` };
+    }
+    if (memoryEvent.publicationDate !== publicationDate) {
+      return { ok: false, error: 'memory_event_date_mismatch' };
+    }
+    const path = focusEditionMemoryEventPath(
+      uid,
+      publicationDate,
+      memoryEvent.revision,
+    );
+    let conflict = false;
+    let alreadyExists = false;
+    let existingVal = null;
+    const tx = await this.runTx(this.ref(path), (current) => {
+      conflict = false;
+      alreadyExists = false;
+      existingVal = current;
+      if (current != null) {
+        if (current.contentFingerprint === memoryEvent.contentFingerprint) {
+          alreadyExists = true;
+          return current;
+        }
+        conflict = true;
+        return;
+      }
+      return toRtdbJson(memoryEvent);
+    });
+
+    if (conflict) {
+      return {
+        ok: false,
+        error: 'memory_event_conflict',
+        memoryEvent: existingVal ? toRtdbJson(existingVal) : null,
+      };
+    }
+    if (alreadyExists) {
+      return {
+        ok: true,
+        alreadyExists: true,
+        memoryEvent: toRtdbJson(tx.snapshot.val()),
+      };
+    }
+    if (!tx.committed) {
+      return { ok: false, error: 'memory_event_save_failed' };
+    }
+    return {
+      ok: true,
+      alreadyExists: false,
+      memoryEvent: toRtdbJson(tx.snapshot.val()),
+    };
+  }
+
+  async getMemoryEvent(uid, publicationDate, revision) {
+    const snap = await this.ref(
+      focusEditionMemoryEventPath(uid, publicationDate, revision),
+    ).get();
+    return snap.exists() ? toRtdbJson(snap.val()) : null;
+  }
+
+  async acquirePublishBarrier(uid, input) {
+    let decision = null;
+    const tx = await this.runTx(this.ref(focusEditorialMemoryPath(uid)), (current) => {
+      decision = evaluateAcquirePublishBarrier(
+        current == null ? null : current,
+        input,
+      );
+      if (!decision.ok) return;
+      return toRtdbJson(decision.memory);
+    }, { prime: true });
+
+    if (!decision?.ok) {
+      return {
+        ok: false,
+        error: decision?.error || 'barrier_acquire_failed',
+        coordination: decision?.coordination,
+      };
+    }
+    if (!tx.committed) {
+      return { ok: false, error: 'barrier_acquire_failed' };
+    }
+    return {
+      ok: true,
+      hold: decision.hold,
+      memory: toRtdbJson(tx.snapshot.val()),
+    };
+  }
+
+  async releasePublishBarrier(uid, hold) {
+    let decision = null;
+    const tx = await this.runTx(this.ref(focusEditorialMemoryPath(uid)), (current) => {
+      decision = evaluateReleasePublishBarrier(
+        current == null ? null : current,
+        hold,
+      );
+      if (!decision.ok) return;
+      return toRtdbJson(decision.memory);
+    }, { prime: true });
+
+    if (!decision?.ok) {
+      return {
+        ok: false,
+        error: decision?.error || 'barrier_release_failed',
+        coordination: decision?.coordination,
+        memory: tx.snapshot?.exists?.() ? toRtdbJson(tx.snapshot.val()) : null,
+      };
+    }
+    if (!tx.committed) {
+      return { ok: false, error: 'barrier_release_failed' };
+    }
+    return {
+      ok: true,
+      memory: toRtdbJson(tx.snapshot.val()),
+      coordination: decision.coordination,
+    };
+  }
+
+  async assertPublishBarrierHeld(uid, hold) {
+    const snap = await this.ref(focusEditorialMemoryPath(uid)).get();
+    const current = snap.exists() ? toRtdbJson(snap.val()) : null;
+    const decision = evaluateAssertPublishBarrierHeld(current, hold);
+    return {
+      ok: decision.ok,
+      error: decision.error,
+      coordination: decision.coordination,
+    };
+  }
+
+  /**
+   * Gate transaction su job → assert barrierHold → update() atomico meta+archive+job.
+   * `barrierHold` obbligatorio (P6.7.2m).
    */
   async publishCurrentRevision(uid, publicationDate, opts) {
+    if (!opts?.barrierHold) {
+      return { ok: false, error: 'barrier_hold_required' };
+    }
+
     const metaV = validateFocusEditionMeta(opts.editionMeta);
     if (!metaV.ok) return { ok: false, error: metaV.errors.join(',') };
     const archV = validateFocusArchiveIndexEntry(opts.archiveEntry);
@@ -263,6 +427,11 @@ export class AdminRtdbFocusPersistence {
       focusEditionRevisionPath(uid, publicationDate, opts.publishedRevision),
     ).get();
     if (!revSnap.exists()) return { ok: false, error: 'revision_missing' };
+
+    const held = await this.assertPublishBarrierHeld(uid, opts.barrierHold);
+    if (!held.ok) {
+      return { ok: false, error: held.error || 'barrier_not_held' };
+    }
 
     let gateError = null;
     const jobPath = focusJobPath(uid, publicationDate);
@@ -307,6 +476,22 @@ export class AdminRtdbFocusPersistence {
       };
     }
 
+    // Fencing: ri-verifica barriera dopo gate job, prima dei pointer.
+    // Solo il proprietario del hold può rilasciare → niente unlock concorrente esterno.
+    const heldAfterGate = await this.assertPublishBarrierHeld(uid, opts.barrierHold);
+    if (!heldAfterGate.ok) {
+      return {
+        ok: false,
+        error: heldAfterGate.error || 'barrier_not_held',
+        job: gate.snapshot.exists() ? toRtdbJson(gate.snapshot.val()) : null,
+      };
+    }
+
+    const eventSnap = await this.ref(
+      focusEditionMemoryEventPath(uid, publicationDate, opts.publishedRevision),
+    ).get();
+    if (!eventSnap.exists()) return { ok: false, error: 'memory_event_missing' };
+
     // Test hook: simula fallimento indice (non atomico rotto a posteriori)
     if (this._failArchiveOnce) {
       this._failArchiveOnce = false;
@@ -341,8 +526,22 @@ export class AdminRtdbFocusPersistence {
 
   /**
    * Ripara meta+archive se job succeeded/committing ma puntatori incompleti.
+   * Richiede barrierHold valido (nessuna scorciatoia sui pointer). Separato da recovery memoria.
    */
-  async repairPublishPointers(uid, publicationDate, { editionMeta, archiveEntry, publishedRevision }) {
+  async repairPublishPointers(uid, publicationDate, {
+    editionMeta,
+    archiveEntry,
+    publishedRevision,
+    barrierHold,
+  }) {
+    if (!barrierHold) {
+      return { ok: false, error: 'barrier_hold_required' };
+    }
+    const held = await this.assertPublishBarrierHeld(uid, barrierHold);
+    if (!held.ok) {
+      return { ok: false, error: held.error || 'barrier_not_held' };
+    }
+
     const job = await this.getJob(uid, publicationDate);
     if (!job) return { ok: false, error: 'job_missing' };
     if (
@@ -436,7 +635,7 @@ export class AdminRtdbFocusPersistence {
         mismatch = true;
         return;
       }
-      return toRtdbJson(nextMemory);
+      return preservePublishCoordination(toRtdbJson(nextMemory), cur);
     }, { prime: true });
 
     if (mismatch || (!tx.committed && !alreadyApplied)) {
@@ -455,6 +654,107 @@ export class AdminRtdbFocusPersistence {
     }
 
     return { ok: true, alreadyApplied, memory };
+  }
+
+  /**
+   * Sostituisce editorial_memory solo se il cursore letto è ancora invariato.
+   * Transazione RTDB atomica. Authority authoritative_replay_v1 obbligatoria.
+   *
+   * @param {string} uid
+   * @param {{
+   *   expected: { lastAppliedEdition?: string|null, stateFingerprint: string },
+   *   nextMemory: object,
+   *   authority: string,
+   * }} input
+   */
+  async replaceEditorialMemoryIfUnchanged(uid, input) {
+    if (this._failMemoryReplaceOnce) {
+      this._failMemoryReplaceOnce = false;
+      const snap = await this.ref(focusEditorialMemoryPath(uid)).get();
+      return {
+        ok: false,
+        committed: false,
+        conflict: false,
+        unchanged: false,
+        error: 'memory_replace_transaction_failed',
+        memory: snap.exists() ? toRtdbJson(snap.val()) : null,
+      };
+    }
+
+    let decision = null;
+    const tx = await this.runTx(this.ref(focusEditorialMemoryPath(uid)), (current) => {
+      decision = evaluateEditorialMemoryReplace({
+        current: current == null ? null : current,
+        expected: input?.expected,
+        nextMemory: input?.nextMemory,
+        authority: input?.authority,
+      });
+      if (decision.action === 'reject' || decision.action === 'conflict') {
+        return;
+      }
+      if (decision.action === 'unchanged') {
+        return current == null ? null : toRtdbJson(current);
+      }
+      return toRtdbJson(decision.memory);
+    }, { prime: true });
+
+    if (!decision) {
+      return {
+        ok: false,
+        committed: false,
+        conflict: false,
+        unchanged: false,
+        error: 'memory_replace_transaction_failed',
+        memory: null,
+      };
+    }
+
+    if (decision.action === 'reject') {
+      return {
+        ok: false,
+        committed: false,
+        conflict: false,
+        unchanged: false,
+        error: decision.error,
+        memory: tx.snapshot?.exists?.() ? toRtdbJson(tx.snapshot.val()) : null,
+        cursor: decision.cursor,
+      };
+    }
+
+    if (decision.action === 'conflict' || !tx.committed) {
+      const snapVal = tx.snapshot?.exists?.() ? toRtdbJson(tx.snapshot.val()) : null;
+      return {
+        ok: false,
+        committed: false,
+        conflict: true,
+        unchanged: false,
+        error: decision.action === 'conflict'
+          ? decision.error
+          : 'memory_conflict_state',
+        memory: snapVal,
+        cursor: decision.cursor,
+      };
+    }
+
+    if (decision.action === 'unchanged') {
+      return {
+        ok: true,
+        committed: false,
+        conflict: false,
+        unchanged: true,
+        memory: decision.memory,
+        cursor: decision.cursor,
+      };
+    }
+
+    return {
+      ok: true,
+      committed: true,
+      conflict: false,
+      unchanged: false,
+      memory: toRtdbJson(tx.snapshot.val()),
+      cursor: decision.cursor,
+    };
   }
 
   async markJobInterrupted(uid, publicationDate) {

@@ -96,6 +96,8 @@ export async function generateFocusWrittenEdition(input) {
     proseSource,
     usedFallback,
     aiValidation,
+    /** Risposta grezza Gemini (RAM) — utile in diagnostica anteprima; non persistita. */
+    rawAiOutput: rawAi,
     diag: usedFallback
       ? (diag || (aiValidation?.ok === false ? 'validation_failed' : 'fallback_default'))
       : 'ok',

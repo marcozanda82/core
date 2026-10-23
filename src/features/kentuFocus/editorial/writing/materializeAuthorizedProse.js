@@ -1,8 +1,10 @@
 /**
  * Inserimento deterministico delle cifre autorizzate.
- * Gemini può usare placeholder {{path}} nel title/body; il backend li materializza.
+ * Preferire prosa con numeri già scritti; i {{path}} restano un fallback controllato.
  * L’edizione finale non deve contenere placeholder irrisolti.
  */
+
+import { formatAuthorizedMetricDisplay } from './focusMetricUnitGuard.js';
 
 const PLACEHOLDER_RE = /\{\{([a-zA-Z0-9_.]+)\}\}/g;
 /** Sintassi simile a placeholder ma non conforme (es. {{sleep hours}}, {{a-b}}). */
@@ -19,8 +21,7 @@ function isValidMetricValue(value) {
 }
 
 function formatMetricValue(m) {
-  const unit = m.unit != null && m.unit !== '' ? ` ${m.unit}` : '';
-  return `${m.value}${unit}`.trim();
+  return formatAuthorizedMetricDisplay(m);
 }
 
 /**

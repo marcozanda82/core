@@ -2,6 +2,55 @@
  * Memoria alimentare minima (frequenza) — nessuna classificazione nutrizionale / giudizio salute.
  */
 
+import { isIsoDateString } from '../normalize/focusDateUtils.js';
+
+/**
+ * Giorni di calendario inclusivi tra due YYYY-MM-DD.
+ * @param {string} from
+ * @param {string} to
+ */
+export function inclusiveCalendarDays(from, to) {
+  if (!isIsoDateString(from) || !isIsoDateString(to)) return null;
+  const a = new Date(`${from}T12:00:00`);
+  const b = new Date(`${to}T12:00:00`);
+  const days = Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
+  return days > 0 ? days : null;
+}
+
+/**
+ * @param {{ distinctDays?: number, occasions?: number }} item
+ * @param {number|null|undefined} windowDays
+ * @param {{
+ *   consolidatedDistinctDays?: number,
+ *   consolidatedMinWindowDays?: number,
+ *   consolidatedMinDensity?: number,
+ *   emergingDistinctDays?: number,
+ *   emergingOccasions?: number,
+ * }} [thresholds]
+ * @returns {'consolidated'|'emerging_candidate'|'descriptive'}
+ */
+export function classifyFoodFrequencyHabit(item, windowDays, thresholds = {}) {
+  const distinct = Number(item?.distinctDays) || 0;
+  const occasions = Number(item?.occasions) || 0;
+  const win = Number(windowDays) || 0;
+  const consolidatedDistinct = thresholds.consolidatedDistinctDays ?? 10;
+  const minWin = thresholds.consolidatedMinWindowDays ?? 21;
+  const minDensity = thresholds.consolidatedMinDensity ?? 0.4;
+  const emergingDays = thresholds.emergingDistinctDays ?? 3;
+  const emergingOcc = thresholds.emergingOccasions ?? 4;
+
+  if (
+    distinct >= consolidatedDistinct
+    || (win >= minWin && distinct >= Math.ceil(win * minDensity))
+  ) {
+    return 'consolidated';
+  }
+  if (distinct >= emergingDays && occasions >= emergingOcc && win > 0 && win <= 14) {
+    return 'emerging_candidate';
+  }
+  return 'descriptive';
+}
+
 /**
  * @param {string} name
  */
@@ -71,8 +120,17 @@ export function buildFoodFrequency(foodItemsAcrossDays) {
    * }>} */
   const map = new Map();
   let unclassifiedOccasions = 0;
+  /** @type {string|null} */
+  let firstDate = null;
+  /** @type {string|null} */
+  let lastDate = null;
 
   for (const item of items) {
+    const dateStr = item?.date && isIsoDateString(item.date) ? String(item.date) : null;
+    if (dateStr) {
+      if (!firstDate || dateStr < firstDate) firstDate = dateStr;
+      if (!lastDate || dateStr > lastDate) lastDate = dateStr;
+    }
     const identity = resolveFoodIdentity(item);
     const unclassified = identity.keyType === 'unclassified' || item?.mealType === 'unknown';
     if (identity.keyType === 'unclassified') {
@@ -95,7 +153,7 @@ export function buildFoodFrequency(foodItemsAcrossDays) {
       map.set(mapKey, row);
     }
     row.occasions += 1;
-    if (item?.date) row.distinctDays.add(String(item.date));
+    if (dateStr) row.distinctDays.add(dateStr);
     if (unclassified) row.unclassified = true;
   }
 
@@ -111,10 +169,17 @@ export function buildFoodFrequency(foodItemsAcrossDays) {
     }))
     .sort((a, b) => b.occasions - a.occasions || a.label.localeCompare(b.label));
 
+  const windowDays = firstDate && lastDate
+    ? inclusiveCalendarDays(firstDate, lastDate)
+    : 0;
+
   return {
     items: frequencyItems,
     unclassifiedOccasions,
     totalOccasions: items.length,
     uniqueIdentities: frequencyItems.length,
+    windowDays: windowDays || 0,
+    firstDate,
+    lastDate,
   };
 }

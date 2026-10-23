@@ -1,0 +1,245 @@
+{
+  "schema": "kentu.focusGeminiPreview.v1",
+  "kind": "FocusGeminiReviewClipboard",
+  "exportedAt": "2026-10-20T16:14:10.422Z",
+  "note": "Revisione Gemini (anche se respinta) · solo RAM · nessuna pubblicazione",
+  "preset": {
+    "id": "sunday_past",
+    "label": "Domenicale 18/10/2026 (storico RAM)",
+    "publicationDate": "2026-10-18",
+    "dataOriginHint": "historical_real",
+    "forceSimulation": false
+  },
+  "editionKind": "sunday_plus",
+  "dates": {
+    "analysisDate": "2026-10-17",
+    "publicationDate": "2026-10-18",
+    "asOfDate": "2026-10-19"
+  },
+  "verificationStatus": "historical_real",
+  "model": "gemini-3.8-flash",
+  "callCount": 1,
+  "status": "gemini_rejected_or_unavailable",
+  "authorizedArticles": [
+    {
+      "id": "news_sleep_weekly_rhythm",
+      "topicId": "sleep_weekly_rhythm",
+      "role": "lead",
+      "editorialScale": "episode",
+      "storyKind": null,
+      "headlineSeed": "Sveglia precisa in settimana, ritmo diverso nel weekend",
+      "summarySeed": "sveglia feriale stabile intorno alle 6:30; nel weekend la sveglia si sposta di circa 1 h (più tardi). Osservazione sulle abitudini, non un giudizio sulla qualità del recupero.",
+      "evidenceFingerprint": "S|W1|-|-|-|A0",
+      "observedPeriod": {
+        "from": "2026-09-19",
+        "to": "2026-10-18",
+        "windowDays": 30
+      },
+      "metrics": [
+        {
+          "path": "sleepRoutine.ordinary.wake.weekday.median",
+          "value": 6.5,
+          "unit": "hour_decimal",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.regularity.wakeWeekdayIqrH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH",
+          "value": 1,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        }
+      ],
+      "limitations": [
+        "Pattern su notti ordinary; orari atipici conservati ma esclusi dai confronti forti",
+        "Differenza di durata ≠ debito o recupero di sonno",
+        "Bedtime spesso ambiguo se persistito come wake−duration"
+      ],
+      "doNotClaim": [
+        "debito di sonno",
+        "recupero weekend automatico",
+        "insonnia",
+        "diagnosi",
+        "risvegli notturni non registrati"
+      ]
+    },
+    {
+      "id": "news_week_habits_story",
+      "topicId": "week_habits_story",
+      "role": "centerpiece",
+      "editorialScale": "week_interpretation",
+      "storyKind": "significant_change",
+      "headlineSeed": "Proteine medie in calo nella settimana",
+      "summarySeed": "Nella settimana 11–17 ottobre la media delle proteine registrate è circa 145,06 g/giorno su 7 giorni con alimentazione annotata. Rispetto ai sette giorni precedenti (4–10 ottobre) la media è inferiore di 12,1 g al giorno. Descrizione delle sole registrazioni: non implica deficit proteico né effetti fisiologici.",
+      "evidenceFingerprint": "week|2026-10-11|2026-10-17|protein_intake_shift|food7|sleep6|str3|cmp-12.1",
+      "observedPeriod": {
+        "from": "2026-10-11",
+        "to": "2026-10-17",
+        "sleepWakeFrom": "2026-10-11",
+        "sleepWakeTo": "2026-10-17"
+      },
+      "metrics": [
+        {
+          "path": "edition.week.nutrition.daysWithFood",
+          "value": 7,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.nutrition.avgProteinG",
+          "value": 145.06,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.comparison.deltas.avgProteinG",
+          "value": -12.1,
+          "unit": "g",
+          "provenance": "calculated"
+        }
+      ],
+      "limitations": [
+        "Giorno senza log ≠ comportamento assente",
+        "Nodo presente ≠ osservazione registrata",
+        "Data futura ≠ giornata osservata",
+        "Assenza aerobica etichettata ≠ inattività fisica",
+        "Niente conclusioni corporee da misure fuori finestra",
+        "Fibre: non giudicare se fonte inattendibile",
+        "Non è un mese solare precedente: finestra di eguale lunghezza immediatamente precedente. Differenze di conteggio possono riflettere copertura diversa, non solo comportamento.",
+        "Nessuna causalità tra domini senza evidenza dedicata",
+        "Lo scostamento proteico non è un deficit dimostrato"
+      ],
+      "doNotClaim": [
+        "correlazione causale inventata",
+        "diagnosi",
+        "inattività da assenza di log",
+        "conclusione corporea da misure vecchie",
+        "consiglio proteico automatico",
+        "deficit proteico",
+        "peggioramento fisiologico"
+      ],
+      "storySpine": {
+        "mainFactId": "week_protein_intake_shift",
+        "mainMetricPath": "edition.week.comparison.deltas.avgProteinG",
+        "mainMetricValue": -12.1,
+        "mainUnit": "g",
+        "periodFrom": "2026-10-11",
+        "periodTo": "2026-10-17",
+        "comparisonFrom": "2026-10-04",
+        "comparisonTo": "2026-10-10",
+        "levelMetricPath": "edition.week.nutrition.avgProteinG",
+        "levelMetricValue": 145.06,
+        "levelUnit": "g",
+        "coverageMetricPath": "edition.week.nutrition.daysWithFood",
+        "coverageMetricValue": 7,
+        "coverageUnit": "days",
+        "essentialContextIds": [
+          "equal_length_window_not_calendar_month"
+        ]
+      }
+    }
+  ],
+  "essentialEvidence": [
+    {
+      "id": "news_sleep_weekly_rhythm",
+      "role": "lead",
+      "metrics": [
+        {
+          "path": "sleepRoutine.ordinary.wake.weekday.median",
+          "value": 6.5,
+          "unit": "hour_decimal",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.regularity.wakeWeekdayIqrH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH",
+          "value": 1,
+          "unit": "h",
+          "provenance": "calculated"
+        },
+        {
+          "path": "sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH",
+          "value": 0.5,
+          "unit": "h",
+          "provenance": "calculated"
+        }
+      ],
+      "observedPeriod": {
+        "from": "2026-09-19",
+        "to": "2026-10-18",
+        "windowDays": 30
+      }
+    },
+    {
+      "id": "news_week_habits_story",
+      "role": "centerpiece",
+      "metrics": [
+        {
+          "path": "edition.week.nutrition.daysWithFood",
+          "value": 7,
+          "unit": "days",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.nutrition.avgProteinG",
+          "value": 145.06,
+          "unit": "g",
+          "provenance": "calculated"
+        },
+        {
+          "path": "edition.week.comparison.deltas.avgProteinG",
+          "value": -12.1,
+          "unit": "g",
+          "provenance": "calculated"
+        }
+      ],
+      "observedPeriod": {
+        "from": "2026-10-11",
+        "to": "2026-10-17",
+        "sleepWakeFrom": "2026-10-11",
+        "sleepWakeTo": "2026-10-17"
+      }
+    }
+  ],
+  "validationErrors": [
+    "mandatory_context_missing:equal_length_window_not_calendar_month",
+    "mandatory_context_missing:no_domain_causality_without_evidence",
+    "mandatory_context_missing:protein_delta_not_proven_deficit"
+  ],
+  "validation": {
+    "ok": false,
+    "errors": [
+      "mandatory_context_missing:equal_length_window_not_calendar_month",
+      "mandatory_context_missing:no_domain_causality_without_evidence",
+      "mandatory_context_missing:protein_delta_not_proven_deficit"
+    ],
+    "proseSource": "fallback",
+    "usedFallback": true,
+    "diag": "ok",
+    "geminiAccepted": false
+  },
+  "geminiRawResponse": "{\n  \"schemaVersion\": \"1.0.0\",\n  \"kind\": \"FocusWrittenEdition\",\n  \"analysisDate\": \"2026-10-17\",\n  \"publicationDate\": \"2026-10-18\",\n  \"openingMode\": \"progress\",\n  \"articles\": [\n    {\n      \"id\": \"news_sleep_weekly_rhythm\",\n      \"role\": \"lead\",\n      \"title\": \"Risveglio regolare nei giorni feriali e più tardivo nel fine settimana\",\n      \"body\": \"Nelle quattro settimane tra il 19 settembre e il 18 ottobre, le notti ordinarie mostrano una sveglia feriale costante, con una mediana collocata alle 6:30 e una dispersione contenuta entro una variabilità di 0,5 ore. Nel fine settimana l'orario di alzata si sposta in avanti di circa 1 ora rispetto ai giorni lavorativi, a cui si associa un incremento medio della durata del sonno di 0,5 ore. Il quadro descrive l'articolazione abituale degli orari tra settimana lavorativa e weekend, senza costituire una misura di debito accumulato o di recupero fisiologico.\",\n      \"evidenceIds\": [\n        \"sleepRoutine.ordinary.wake.weekday.median\",\n        \"sleepRoutine.ordinary.regularity.wakeWeekdayIqrH\",\n        \"sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH\",\n        \"sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"sleepRoutine.ordinary.wake.weekday.median\",\n          \"value\": 6.5,\n          \"unit\": \"hour_decimal\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.regularity.wakeWeekdayIqrH\",\n          \"value\": 0.5,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.wake.deltaWeekendMinusWeekdayH\",\n          \"value\": 1,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"sleepRoutine.ordinary.duration.deltaWeekendMinusWeekdayH\",\n          \"value\": 0.5,\n          \"unit\": \"h\",\n          \"provenance\": \"calculated\"\n        }\n      ],\n      \"cautions\": [],\n      \"selectionIndex\": 0\n    },\n    {\n      \"id\": \"news_week_habits_story\",\n      \"role\": \"centerpiece\",\n      \"title\": \"Proteine registrate in calo nella settimana a fronte di una copertura completa\",\n      \"body\": \"Nella settimana compresa tra l'11 e il 17 ottobre, con alimentazione annotata su tutti i 7 giorni disponibili, l'apporto proteico medio si è attestato a 145,06 g al giorno. Il confronto con la finestra precedente di pari durata (4–10 ottobre) evidenzia una flessione media di 12,1 g giornalieri. Lo scostamento riflette i valori registrati nei due intervalli temporali equivalenti consecutivi e non costituisce di per sé un deficit nutrizionale né attesta effetti sull'organismo.\",\n      \"evidenceIds\": [\n        \"edition.week.nutrition.daysWithFood\",\n        \"edition.week.nutrition.avgProteinG\",\n        \"edition.week.comparison.deltas.avgProteinG\"\n      ],\n      \"metricsCited\": [\n        {\n          \"path\": \"edition.week.nutrition.daysWithFood\",\n          \"value\": 7,\n          \"unit\": \"days\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.nutrition.avgProteinG\",\n          \"value\": 145.06,\n          \"unit\": \"g\",\n          \"provenance\": \"calculated\"\n        },\n        {\n          \"path\": \"edition.week.comparison.deltas.avgProteinG\",\n          \"value\": -12.1,\n          \"unit\": \"g\",\n          \"provenance\": \"calculated\"\n        }\n      ],\n      \"cautions\": [\n        \"Il confronto è calcolato sui sette giorni immediatamente precedenti e non sull'intero mese di calendario.\"\n      ],\n      \"selectionIndex\": 1\n    }\n  ],\n  \"coach\": null,\n  \"mastheadTeaser\": \"Routine del sonno tra feriali e weekend, affiancata dall'andamento dell'apporto proteico settimanale.\"\n}",
+  "rawAiAvailableInSession": true,
+  "writtenTextsAccepted": null,
+  "persistence": {
+    "firebaseWrites": 0,
+    "editorialMemoryPersisted": false,
+    "published": false
+  }
+}

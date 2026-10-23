@@ -16,6 +16,9 @@
  *
  * Non deploy. Non DB reale. Non Gemini live.
  * Output sanitizzato (niente UID completi / headline / dossier / token).
+ *
+ * P6.11a: `--pilot` / FOCUS_PILOT_ENABLE abortiscono (path pilota non attivato).
+ * Validazione offline profilo: scripts/focusAdminValidatePilotConfig.mjs
  */
 
 import {
@@ -29,18 +32,37 @@ import {
 } from '../src/features/kentuFocus/server/admin/runFocusAdminEdition.js';
 
 function parseArgs(argv) {
-  const out = { uid: null, date: null, regen: false, horizon: 'd30' };
+  const out = {
+    uid: null,
+    date: null,
+    regen: false,
+    horizon: 'd30',
+    mode: 'emulator',
+  };
   for (let i = 2; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--uid') out.uid = argv[++i];
     else if (a === '--date') out.date = argv[++i];
     else if (a === '--regen') out.regen = true;
     else if (a === '--horizon') out.horizon = argv[++i];
+    else if (a === '--mode') out.mode = String(argv[++i] || '').trim();
+    else if (a === '--pilot') out.mode = 'pilot';
   }
   return out;
 }
 
 async function main() {
+  // P6.11a: percorso pilota predisposto ma NON attivabile da flag/env
+  const argsEarly = parseArgs(process.argv);
+  if (
+    argsEarly.mode === 'pilot'
+    || process.env.FOCUS_PILOT_ENABLE === '1'
+    || process.env.FOCUS_PILOT_RUN === '1'
+  ) {
+    console.error('FOCUS_ADMIN_ABORT reason=pilot_runtime_not_activated_in_p611a');
+    process.exit(2);
+  }
+
   if (!process.env.FIREBASE_DATABASE_EMULATOR_HOST) {
     console.error('FOCUS_ADMIN_ABORT reason=emulator_required');
     process.exit(2);
@@ -58,7 +80,7 @@ async function main() {
     process.exit(2);
   }
 
-  const args = parseArgs(process.argv);
+  const args = argsEarly;
   if (!args.uid || !args.date) {
     console.error('FOCUS_ADMIN_ABORT reason=usage --uid UID --date YYYY-MM-DD');
     process.exit(2);
@@ -93,7 +115,9 @@ async function main() {
     });
     const safe = sanitizeFocusAdminCliResult(result, { uid: args.uid, projectId });
     console.log(JSON.stringify(safe, null, 2));
-    process.exit(result.ok ? 0 : 1);
+    // Exit 0 solo se pipeline ok E verifiche operatore essenziali soddisfatte
+    const safeSuccess = Boolean(result.ok) && Boolean(safe.operatorSafe);
+    process.exit(safeSuccess ? 0 : 1);
   } finally {
     await deleteEmulatorAdminApp();
   }

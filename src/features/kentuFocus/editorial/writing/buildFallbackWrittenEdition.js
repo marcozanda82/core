@@ -4,7 +4,9 @@
  * lead null NON svuota good/feature/concern: articles[] riflette la selection.
  */
 
+import { classifyArticleCautionLayers } from './focusCautionContract.js';
 import {
+  bodyMaxCharsForRole,
   createFocusWrittenArticle,
   createFocusWrittenEdition,
   FOCUS_PROSE_SOURCE,
@@ -37,10 +39,9 @@ function articleFromSeed(item, role, selectionIndex, dates) {
       provenance: m.provenance,
     }));
 
-  const cautions = [
-    ...(item.limitations || []),
-    ...(item.doNotClaim || []),
-  ].slice(0, FOCUS_WRITING_LIMITS.cautionsMax);
+  const cautions = classifyArticleCautionLayers(item).mandatoryContext
+    .map((m) => m.sourceText)
+    .slice(0, FOCUS_WRITING_LIMITS.cautionsMax);
 
   return createFocusWrittenArticle({
     id: item.id,
@@ -61,6 +62,7 @@ function soberTitle(seed, role) {
 }
 
 function defaultTitle(role) {
+  if (role === 'centerpiece') return 'Articolo centrale';
   if (role === 'concern') return 'Un punto da osservare con calma';
   if (role === 'feature') return 'Uno spunto dal diario';
   if (role === 'good') return 'Un segnale positivo';
@@ -118,8 +120,9 @@ function soberBody(item, role, dates) {
       .replace(/\s+/g, ' ')
       .trim();
   }
-  if (body.length > FOCUS_WRITING_LIMITS.bodyMaxChars) {
-    body = `${body.slice(0, FOCUS_WRITING_LIMITS.bodyMaxChars - 1)}…`;
+  const bodyMax = bodyMaxCharsForRole(role);
+  if (body.length > bodyMax) {
+    body = `${body.slice(0, bodyMax - 1)}…`;
   }
   return body;
 }
@@ -140,6 +143,10 @@ export function buildFallbackWrittenEdition(input) {
   let index = 0;
   if (selection.lead) {
     articles.push(articleFromSeed(selection.lead, 'lead', index, dates));
+    index += 1;
+  }
+  if (selection.centerpiece) {
+    articles.push(articleFromSeed(selection.centerpiece, 'centerpiece', index, dates));
     index += 1;
   }
   for (const n of selection.goodNews || []) {

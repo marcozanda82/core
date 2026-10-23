@@ -261,32 +261,46 @@ test('I4-B owner mismatch al commit finale', async () => {
     analysisDate: ANALYSIS_DATE,
     inputFingerprint: 'fp1',
   });
+  const editionMeta = {
+    schemaVersion: FOCUS_PERSISTENCE_SCHEMA_VERSION,
+    kind: 'FocusEdition',
+    publicationDate: PUBLICATION_DATE,
+    analysisDate: ANALYSIS_DATE,
+    currentRevision: 1,
+    status: 'published',
+    headline: 'x',
+    teaser: 'y',
+    publishedAt: new Date().toISOString(),
+  };
+  const archiveEntry = {
+    schemaVersion: FOCUS_PERSISTENCE_SCHEMA_VERSION,
+    kind: 'FocusArchiveIndexEntry',
+    publicationDate: PUBLICATION_DATE,
+    analysisDate: ANALYSIS_DATE,
+    revision: 1,
+    status: 'published',
+    headline: 'x',
+    teaser: 'y',
+    publishedAt: new Date().toISOString(),
+  };
+
+  // hold obbligatorio
+  const noHold = await persistence.publishCurrentRevision('user_h', PUBLICATION_DATE, {
+    ownerId: 'w1',
+    leaseVersion: claim.job.leaseVersion,
+    editionMeta,
+    archiveEntry,
+    publishedRevision: 1,
+  });
+  assert.equal(noHold.ok, false);
+  assert.equal(noHold.error, 'barrier_hold_required');
+
   // un altro worker non può publishare con lease sbagliato
   const published = await persistence.publishCurrentRevision('user_h', PUBLICATION_DATE, {
     ownerId: 'w2',
     leaseVersion: claim.job.leaseVersion,
-    editionMeta: {
-      schemaVersion: FOCUS_PERSISTENCE_SCHEMA_VERSION,
-      kind: 'FocusEdition',
-      publicationDate: PUBLICATION_DATE,
-      analysisDate: ANALYSIS_DATE,
-      currentRevision: 1,
-      status: 'published',
-      headline: 'x',
-      teaser: 'y',
-      publishedAt: new Date().toISOString(),
-    },
-    archiveEntry: {
-      schemaVersion: FOCUS_PERSISTENCE_SCHEMA_VERSION,
-      kind: 'FocusArchiveIndexEntry',
-      publicationDate: PUBLICATION_DATE,
-      analysisDate: ANALYSIS_DATE,
-      revision: 1,
-      status: 'published',
-      headline: 'x',
-      teaser: 'y',
-      publishedAt: new Date().toISOString(),
-    },
+    editionMeta,
+    archiveEntry,
     publishedRevision: 1,
   });
   assert.equal(published.ok, false);

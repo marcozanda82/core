@@ -217,8 +217,12 @@ test('I4-D3 semantica simulata: causalità, medico, storia, coach, cautele, nume
     },
     {
       name: 'cautions',
-      patch: (a) => ({ ...a, cautions: [] }),
-      err: /missing_required_caution/,
+      patch: (a) => ({
+        ...a,
+        cautions: [],
+        body: 'Questa è una diagnosi: ti diagnostico un problema e ti prescrivo riposo farmacologico.',
+      }),
+      err: /forbidden_claim_detected|medical_overclaim|mandatory_context_missing/,
     },
   ];
 

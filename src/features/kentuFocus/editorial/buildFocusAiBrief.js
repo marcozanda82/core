@@ -7,9 +7,13 @@
 import { FOCUS_EDITORIAL_SCHEMA_VERSION } from './focusEditorialConfig.js';
 import { normalizeEditorialMemory } from './focusEditorialMemory.js';
 import {
+  classifyArticleCautionLayers,
+} from './writing/focusCautionContract.js';
+import {
   sanitizeStringList,
   sanitizeUntrustedText,
 } from './writing/sanitizeBriefText.js';
+import { FOCUS_WRITING_LIMITS } from './writing/focusWrittenEdition.v1.js';
 
 /**
  * @param {{
@@ -33,9 +37,13 @@ export function buildFocusAiBrief(input) {
       tone: item.tone,
       claimType: item.claimType,
       domain: item.domain,
+      typology: item.typology || null,
+      storyKind: item.storyKind || null,
+      editorialScale: item.editorialScale || null,
       // Seed editoriali (motore), comunque trattati come non-istruzioni
       headlineSeed: sanitizeUntrustedText(item.headlineSeed, 120),
-      summarySeed: sanitizeUntrustedText(item.summarySeed, 200),
+      // P6.7.3b: seed naturali week/month ~300 char; resta orientamento, non articolo
+      summarySeed: sanitizeUntrustedText(item.summarySeed, 360),
       metrics: (item.metrics || []).map((m) => ({
         path: m.path,
         value: m.value,
@@ -44,13 +52,65 @@ export function buildFocusAiBrief(input) {
       })),
       refs: Array.isArray(item.refs) ? item.refs.filter((r) => typeof r === 'string') : [],
       evidenceQuality: item.evidenceQuality,
-      limitations: sanitizeStringList(item.limitations, 100, 6),
-      doNotClaim: sanitizeStringList(item.doNotClaim, 100, 6),
-      requiredCautions: sanitizeStringList(
-        [...(item.limitations || []), ...(item.doNotClaim || [])],
-        100,
-        8,
-      ),
+      observedPeriod: item.observedPeriod
+        ? {
+          from: item.observedPeriod.from || null,
+          to: item.observedPeriod.to || null,
+          sleepWakeFrom: item.observedPeriod.sleepWakeFrom || null,
+          sleepWakeTo: item.observedPeriod.sleepWakeTo || null,
+        }
+        : null,
+      coverageHint: item.coverage
+        ? {
+          comparisonKind: item.coverage.comparisonKind || null,
+          comparisonLabel: item.coverage.comparisonLabel || null,
+          dominantTheme: item.coverage.dominantTheme || null,
+          storyKind: item.coverage.storyKind || null,
+        }
+        : null,
+      limitations: sanitizeStringList(item.limitations, 120, 8),
+      doNotClaim: sanitizeStringList(item.doNotClaim, 120, 8),
+      ...(() => {
+        const layers = classifyArticleCautionLayers(item);
+        return {
+          mandatoryContext: layers.mandatoryContext
+            .slice(0, FOCUS_WRITING_LIMITS.cautionsMax)
+            .map((m) => ({
+              id: m.id,
+              text: sanitizeUntrustedText(m.sourceText, 160),
+            })),
+          // Legacy alias: solo mandatory (non doNotClaim)
+          requiredCautions: sanitizeStringList(
+            layers.mandatoryContext.map((m) => m.sourceText),
+            160,
+            FOCUS_WRITING_LIMITS.cautionsMax,
+          ),
+          contextualLimitations: sanitizeStringList(
+            layers.contextualLimitations,
+            120,
+            8,
+          ),
+        };
+      })(),
+      storySpine: item.storySpine
+        ? {
+          mainFactId: item.storySpine.mainFactId,
+          mainMetricPath: item.storySpine.mainMetricPath,
+          mainMetricValue: item.storySpine.mainMetricValue,
+          mainUnit: item.storySpine.mainUnit || null,
+          periodFrom: item.storySpine.periodFrom || null,
+          periodTo: item.storySpine.periodTo || null,
+          comparisonFrom: item.storySpine.comparisonFrom || null,
+          comparisonTo: item.storySpine.comparisonTo || null,
+          levelMetricPath: item.storySpine.levelMetricPath || null,
+          levelMetricValue: item.storySpine.levelMetricValue ?? null,
+          levelUnit: item.storySpine.levelUnit || null,
+          coverageMetricPath: item.storySpine.coverageMetricPath || null,
+          coverageMetricValue: item.storySpine.coverageMetricValue ?? null,
+          coverageUnit: item.storySpine.coverageUnit || null,
+          essentialContextIds: item.storySpine.essentialContextIds || [],
+        }
+        : null,
     };
   };
 
@@ -80,7 +140,12 @@ export function buildFocusAiBrief(input) {
   }
   warnings.push('Assenza di log ≠ assenza di comportamento');
   warnings.push('Nessun uso di deep/REM come evidenza se non attendibili');
-  warnings.push('Usa placeholder {{path}} per i numeri; il backend inserirà i valori autorizzati');
+  warnings.push('Preferisci numeri e unità già scritti nel testo finale (valori del brief)');
+  warnings.push('I {{path}} sono ammessi solo su metriche autorizzate e verranno risolti; nessun {{…}} residuo');
+
+  warnings.push('Gemini è il giornalista, non il caporedattore: non inventare notizie né cambiare i fatti');
+  warnings.push('Non usare etichette tecniche (topicId, storyKind, solidDomains) nei titoli');
+  warnings.push('Uno scostamento numerico non è automaticamente un deficit, un successo o un consiglio');
 
   return {
     schemaVersion: FOCUS_EDITORIAL_SCHEMA_VERSION,
@@ -89,9 +154,12 @@ export function buildFocusAiBrief(input) {
       analysisDate: selection.analysisDate,
       publicationDate: selection.publicationDate,
     },
+    editionKind: selection.editionKind || null,
     openingMode: selection.openingMode,
+    overlapResolution: selection.overlapResolution || null,
     selection: {
       lead: slim(selection.lead),
+      centerpiece: slim(selection.centerpiece),
       goodNews: (selection.goodNews || []).map(slim),
       features: (selection.features || []).map(slim),
       concerns: (selection.concerns || []).map(slim),
@@ -104,8 +172,12 @@ export function buildFocusAiBrief(input) {
       forbidInventedNewsOrAdvice: true,
       positiveToneWithoutFakeWins: true,
       forbidEatLessOrTrainMoreDefaults: true,
+      forbidProteinAdviceUnlessAuthorizedCoach: true,
+      forbidTurningAbsenceOfLogsIntoBehavior: true,
+      forbidFillingEmptySections: true,
       preferMetricPlaceholders: true,
       untrustedUserStrings: true,
+      variableLengthOk: true,
     },
     warnings,
     memoryContext: {

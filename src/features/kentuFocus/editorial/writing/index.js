@@ -6,6 +6,7 @@ export {
   FOCUS_SEMANTIC_VALIDATION_LIMITS,
   FOCUS_WRITING_LIMITS,
   FOCUS_WRITTEN_SCHEMA_VERSION,
+  bodyMaxCharsForRole,
   createFocusWrittenArticle,
   createFocusWrittenEdition,
 } from './focusWrittenEdition.v1.js';
@@ -16,7 +17,26 @@ export {
   parseFocusWrittenEditionJson,
   validateFocusWrittenEdition,
   buildAuthorizedCatalog,
+  selectRequiredCautionsForArticle,
+  isRequiredCautionSatisfied,
+  isMandatoryContextSatisfied,
+  classifyArticleCautionLayers,
+  detectForbiddenClaims,
+  evaluateProteinDeltaDeficitGuard,
 } from './validateFocusWrittenEdition.js';
+export {
+  FOCUS_AGGREGATE_BOILERPLATE_LIMITATIONS,
+  selectContextualLimitations,
+} from './focusCautionContract.js';
+export {
+  attachStorySpine,
+  buildCenterpieceStorySpine,
+  validateStorySpinePreserved,
+} from './focusStorySpine.js';
+export {
+  detectMetricUnitMismatches,
+  formatAuthorizedMetricDisplay,
+} from './focusMetricUnitGuard.js';
 export { resolveWrittenEdition } from './resolveWrittenEdition.js';
 export { applyWrittenEditionToRevision } from './applyWrittenEditionToRevision.js';
 export { generateFocusWrittenEdition } from './generateFocusWrittenEdition.js';
@@ -26,3 +46,18 @@ export {
   materializeWrittenEdition,
 } from './materializeAuthorizedProse.js';
 export { sanitizeUntrustedText, sanitizeStringList } from './sanitizeBriefText.js';
+export {
+  FOCUS_GEMINI_PREVIEW_SCHEMA,
+  FOCUS_GEMINI_PROMPT_FIELDS_DOC,
+  assessFocusGeminiPreviewEligibility,
+  listSelectedArticlesForPreview,
+  formatFocusWrittenEditionText,
+  runFocusGeminiPreview,
+  validateFocusGeminiPreviewRaw,
+  buildFocusGeminiReviewJson,
+  buildFocusGeminiReviewClipboardPayload,
+} from './runFocusGeminiPreview.js';
+export {
+  createAskAiFocusGeminiProvider,
+  FOCUS_ASKAI_DEFAULT_MODEL,
+} from './createAskAiFocusGeminiProvider.js';

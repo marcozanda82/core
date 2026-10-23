@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   CENTRO_ANALISI_AREAS,
   findCentroAnalisiArea,
@@ -68,6 +69,7 @@ export default function CentroAnalisiView({
   /** Handler Ghost Car / autopilota (solo da SalaComandi embedded). */
   calibrazioneHandlers = null,
 } = {}) {
+  const navigate = useNavigate();
   const deepLinkedAreaRef = useRef((() => {
     const id = String(initialAreaId || '').toLowerCase();
     return id === 'strumentazione' || id === 'calibrazione_target' ? id : null;
@@ -373,6 +375,17 @@ export default function CentroAnalisiView({
         >
           {!area ? (
             <div className="grid w-full grid-cols-2 gap-3">
+              <CentroAnalisiLiveCard
+                title="Kentu Focus"
+                description="Ieri · Settimana · Mese — anteprima editoriale (dati dimostrativi)"
+                wide
+                preview={(
+                  <p className="m-0 text-[0.7rem] leading-snug text-zinc-400">
+                    Cosa hai fatto bene · Attenzione · Migliora
+                  </p>
+                )}
+                onClick={() => navigate('/kentu-focus')}
+              />
               {CENTRO_ANALISI_AREAS.map((item) => {
                 if (item.id === 'timeline_metabolica' && typeof onOpenTimelineMetabolica !== 'function') {
                   return null;

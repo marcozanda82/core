@@ -72,22 +72,27 @@ test('copertura storica non comparabile: nessun segnale trend kcal', () => {
   assert.equal(trend.length, 0);
 });
 
-test('abitudine alimentare emergente → feature', () => {
+test('abitudine alimentare: frequenza non è approfondimento automatico', () => {
   const dossier = buildRichDossier(14);
   const signals = extractFocusSignals(dossier, null);
   const habitSig = signals.find((s) => String(s.topicId || '').startsWith('habit_food_'));
   assert.ok(habitSig, 'segnale abitudine atteso');
   assert.equal(habitSig.claimType, 'fact');
   assert.ok(habitSig.doNotClaim.some((d) => d.includes('troppo') || d.includes('sano')));
+  assert.equal(habitSig.publishable, false);
+  assert.match(habitSig.headlineSeed, /frequenza/i);
+  assert.equal(/emergente/i.test(habitSig.headlineSeed), false);
 
   const selection = selectFocusEditorial({ dossier });
   const habit = selection.features.find((f) => String(f.topicId || '').startsWith('habit_food_'));
-  const omittedHabit = selection.omitted.some((o) => String(o.candidateId || '').includes('habit_food'));
-  assert.ok(habit || omittedHabit, 'abitudine selezionata o omessa per cap/ranking');
-  if (habit) assert.equal(habit.claimType, 'fact');
+  assert.equal(habit, undefined, 'frequenza sola non riempie feature');
+  assert.ok(
+    selection.omitted.some((o) => String(o.candidateId || '').includes('habit_food')
+      && o.reason === 'descriptive_habit_no_novelty'),
+  );
 });
 
-test('ipotesi buffer cena non diventa concern', () => {
+test('ipotesi buffer cena non diventa concern né feature', () => {
   const fixture = buildFullDayFixture();
   // cena 21.25, bedtime ~23.8 → buffer ~2.55; forza buffer corto
   fixture.analysisDayNode.log = fixture.analysisDayNode.log.map((e) => (
@@ -99,11 +104,11 @@ test('ipotesi buffer cena non diventa concern', () => {
   });
   const selection = selectFocusEditorial({ dossier });
   assert.ok(!selection.concerns.some((c) => c.topicId === 'dinner_sleep_buffer_short'));
-  const asFeature = selection.features.find((f) => f.topicId === 'dinner_sleep_buffer_short');
-  if (asFeature) assert.equal(asFeature.claimType, 'hypothesis');
-  assert.ok(selection.omitted.some((o) => o.reason === 'hypothesis_not_concern'
-    || o.reason === 'hypothesis_not_elevated'
-    || o.candidateId.includes('dinner')));
+  assert.ok(!selection.features.some((f) => f.topicId === 'dinner_sleep_buffer_short'));
+  assert.ok(
+    selection.omitted.some((o) => String(o.candidateId || '').includes('dinner')
+      && o.reason === 'insufficient_evidence'),
+  );
 });
 
 test('ripetizione lead: cooldown memoria esclude stesso topic', () => {

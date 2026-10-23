@@ -13,12 +13,27 @@ import { selectFocusEditorial } from '../../editorial/selectFocusEditorial.js';
 import { applyWrittenEditionToRevision } from '../../editorial/writing/applyWrittenEditionToRevision.js';
 import { generateFocusWrittenEdition } from '../../editorial/writing/generateFocusWrittenEdition.js';
 import {
+  assessMemoryEventRecoverability,
+  buildFocusMemoryEvent,
+  memoryEventToPublishEvent,
+} from '../contracts/focusMemoryEvent.v1.js';
+import {
   createFocusPublishResult,
   FOCUS_JOB_STATUS,
 } from '../contracts/focusPersistence.v1.js';
 import { stableFingerprint } from '../sanitize/rtdbSanitize.js';
 import { validateFocusEditionRevision } from '../validate/validateFocusEdition.js';
 import { buildEssentialEditionFromSelection } from './buildEssentialEdition.js';
+import { publishRevisionWithBarrier } from './publishRevisionWithBarrier.js';
+import {
+  PUBLISH_BARRIER_PUBLISHING,
+  readPublishCoordination,
+} from '../memory/publishBarrier.js';
+import {
+  commitCurrentOnlyMemoryAfterPublish,
+  isSupersedingPublishedRevision,
+} from '../memory/commitCurrentOnlyMemoryAfterPublish.js';
+import { buildSelectionMemoryForExplicitRegen } from '../memory/buildSelectionMemoryForExplicitRegen.js';
 
 /**
  * @param {{
@@ -87,20 +102,36 @@ export async function publishFocusEdition(input) {
     });
   }
 
-  // Replay idempotente: edizione già pubblicata con stesso fingerprint
+  // Replay idempotente: nessuna acquisizione barriera; verifica stati esistenti
   if (claim.replay && claim.job?.status === FOCUS_JOB_STATUS.succeeded) {
     const published = await persistence.getPublishedEdition(uid, publicationDate);
+    const expectedRev = Number(claim.job.publishedRevision);
+    if (!published.meta || Number(published.meta.currentRevision) !== expectedRev) {
+      return createFocusPublishResult({
+        ok: false,
+        publicationDate,
+        job: claim.job,
+        error: 'idempotent_replay_pointers_inconsistent',
+      });
+    }
     const memory = await persistence.getEditorialMemory(uid);
-    return createFocusPublishResult({
-      ok: true,
-      publicationDate,
-      revision: published.meta?.currentRevision ?? claim.job.publishedRevision,
-      editionMeta: published.meta,
-      revisionDoc: published.revision,
-      job: claim.job,
-      memory,
-      idempotentReplay: true,
-    });
+    const coord = readPublishCoordination(memory);
+    return {
+      ...createFocusPublishResult({
+        ok: true,
+        publicationDate,
+        revision: published.meta.currentRevision,
+        editionMeta: published.meta,
+        revisionDoc: published.revision,
+        job: claim.job,
+        memory,
+        idempotentReplay: true,
+      }),
+      // diagnostica: barriera bloccata non cancellata silenziosamente
+      barrierDiagnostic: coord.publishBarrier === PUBLISH_BARRIER_PUBLISHING
+        ? 'publish_barrier_still_held'
+        : null,
+    };
   }
 
   const job = claim.job;
@@ -123,21 +154,10 @@ export async function publishFocusEdition(input) {
   }
 
   try {
+    // Stato persistito: CAS / commit post-pointer. Non usarlo per selezione in regen.
     const memoryBefore = normalizeEditorialMemory(
       await persistence.getEditorialMemory(uid),
     );
-
-    const dossier = buildFocusDossier({
-      uid,
-      ...dossierInput,
-      generatedAt: input.nowIso || new Date().toISOString(),
-    });
-
-    const selection = selectFocusEditorial({
-      dossier,
-      memory: memoryBefore,
-      dossierContentHash: inputFingerprint,
-    });
 
     const existingMeta = (await persistence.getPublishedEdition(uid, publicationDate)).meta;
     let revisionNumber = 1;
@@ -148,9 +168,45 @@ export async function publishFocusEdition(input) {
       revisionNumber = existingMeta.currentRevision;
     }
 
+    // P6.7.2p: selezione/scrittura su memoria prior-dates-only se si sostituisce una rev.
+    let selectionMemory = memoryBefore;
+    if (explicitRegen && Number(existingMeta?.currentRevision) >= 1) {
+      const selMem = await buildSelectionMemoryForExplicitRegen({
+        uid,
+        persistence,
+        publicationDate,
+        updatedAt: input.nowIso || new Date().toISOString(),
+      });
+      if (!selMem.ok) {
+        await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
+          status: FOCUS_JOB_STATUS.failed,
+          error: selMem.error || 'selection_memory_unrecoverable',
+        }).catch(() => null);
+        return createFocusPublishResult({
+          ok: false,
+          publicationDate,
+          error: selMem.error || 'selection_memory_unrecoverable',
+          job: await persistence.getJob(uid, publicationDate),
+        });
+      }
+      selectionMemory = normalizeEditorialMemory(selMem.memory);
+    }
+
+    const dossier = buildFocusDossier({
+      uid,
+      ...dossierInput,
+      generatedAt: input.nowIso || new Date().toISOString(),
+    });
+
+    const selection = selectFocusEditorial({
+      dossier,
+      memory: selectionMemory,
+      dossierContentHash: inputFingerprint,
+    });
+
     const generated = await generateFocusWrittenEdition({
       selection,
-      memory: memoryBefore,
+      memory: selectionMemory,
       locale: input.locale || 'it-IT',
       rawAiOutput: input.simulatedGeminiOutput ?? null,
       geminiProvider: input.geminiProvider ?? null,
@@ -195,7 +251,7 @@ export async function publishFocusEdition(input) {
     );
     if (!saveRev.ok) {
       if (saveRev.error === 'revision_already_exists' && !explicitRegen) {
-        // ripresa: revisione già scritta, prova publish + memory
+        // ripresa: revisione già scritta — richiede memory_event prima del publish
         return resumeAfterRevisionSaved({
           uid,
           persistence,
@@ -205,7 +261,8 @@ export async function publishFocusEdition(input) {
           revisionNumber,
           built,
           memoryBefore,
-          inputFingerprint,
+          selection,
+          nowIso: input.nowIso,
         });
       }
       await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
@@ -220,7 +277,34 @@ export async function publishFocusEdition(input) {
       });
     }
 
-    const published = await persistence.publishCurrentRevision(uid, publicationDate, {
+    const eventGate = await ensureMemoryEventSaved({
+      uid,
+      persistence,
+      publicationDate,
+      revision: revisionNumber,
+      selection,
+      capturedAt: input.nowIso || new Date().toISOString(),
+    });
+    if (!eventGate.ok) {
+      await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
+        status: FOCUS_JOB_STATUS.interrupted,
+        error: eventGate.error,
+        targetRevision: revisionNumber,
+      }).catch(() => null);
+      return createFocusPublishResult({
+        ok: false,
+        publicationDate,
+        revision: revisionNumber,
+        revisionDoc: built.revisionDoc,
+        error: eventGate.error,
+        job: await persistence.getJob(uid, publicationDate),
+      });
+    }
+
+    const published = await publishRevisionWithBarrier({
+      uid,
+      persistence,
+      publicationDate,
       ownerId,
       leaseVersion,
       editionMeta: built.editionMeta,
@@ -229,7 +313,8 @@ export async function publishFocusEdition(input) {
     });
 
     if (!published.ok) {
-      // revisione salvata ma publish fallito (owner mismatch / crash) → recuperabile
+      // revisione + memory_event salvati ma publish fallito → riprendibile
+      // se barrier ancora held (crash/parziale), resta diagnosticabile
       await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
         status: FOCUS_JOB_STATUS.interrupted,
         error: published.error,
@@ -246,37 +331,41 @@ export async function publishFocusEdition(input) {
       });
     }
 
-    const editionKey = `${publicationDate}#${revisionNumber}`;
-    const nextMemory = applyEditorialMemoryAfterPublish(memoryBefore, {
+    const editionKey = eventGate.memoryEvent.editionKey;
+    const memResult = await applyMemoryAfterPointersPublished({
+      uid,
+      persistence,
       publicationDate,
-      revision: revisionNumber,
-      selection,
+      ownerId,
+      leaseVersion,
+      revisionNumber,
+      editionKey,
+      memoryBefore,
+      memoryEvent: eventGate.memoryEvent,
       updatedAt: input.nowIso || new Date().toISOString(),
     });
-
-    const memResult = await persistence.applyEditorialMemoryIfNeeded(
-      uid,
-      nextMemory,
-      editionKey,
-    );
 
     const archiveList = await persistence.listArchiveIndex(uid, {
       endAt: publicationDate,
       limit: 1,
     });
 
-    return createFocusPublishResult({
-      ok: true,
-      publicationDate,
-      revision: revisionNumber,
-      editionMeta: published.editionMeta,
-      revisionDoc: built.revisionDoc,
-      archiveEntry: archiveList[0] || built.archiveEntry,
-      job: await persistence.getJob(uid, publicationDate),
-      memory: memResult.memory || nextMemory,
-      idempotentReplay: false,
-      error: memResult.ok ? null : memResult.error,
-    });
+    return {
+      ...createFocusPublishResult({
+        ok: true,
+        publicationDate,
+        revision: revisionNumber,
+        editionMeta: published.editionMeta,
+        revisionDoc: built.revisionDoc,
+        archiveEntry: archiveList[0] || built.archiveEntry,
+        job: await persistence.getJob(uid, publicationDate),
+        memory: memResult.memory,
+        idempotentReplay: false,
+        error: memResult.ok ? null : memResult.error,
+      }),
+      memoryStatus: memResult.memoryStatus,
+      memoryPersisted: memResult.memoryPersisted,
+    };
   } catch (err) {
     await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
       status: FOCUS_JOB_STATUS.interrupted,
@@ -293,7 +382,63 @@ export async function publishFocusEdition(input) {
 }
 
 /**
- * Ripresa: revisione già su disco, manca publish e/o memory.
+ * Persiste (o conferma) lo snapshot memory_event prima di qualsiasi publish.
+ * @param {{
+ *   uid: string,
+ *   persistence: object,
+ *   publicationDate: string,
+ *   revision: number,
+ *   selection: object,
+ *   capturedAt?: string,
+ * }} input
+ */
+async function ensureMemoryEventSaved(input) {
+  const {
+    uid,
+    persistence,
+    publicationDate,
+    revision,
+    selection,
+    capturedAt,
+  } = input;
+  if (typeof persistence.saveMemoryEventImmutable !== 'function'
+    || typeof persistence.getMemoryEvent !== 'function') {
+    return { ok: false, error: 'memory_event_persistence_unavailable' };
+  }
+
+  const memoryEvent = buildFocusMemoryEvent({
+    publicationDate,
+    revision,
+    selection,
+    capturedAt: capturedAt || null,
+  });
+
+  const saved = await persistence.saveMemoryEventImmutable(
+    uid,
+    publicationDate,
+    memoryEvent,
+  );
+  if (!saved.ok) {
+    return { ok: false, error: saved.error || 'memory_event_save_failed' };
+  }
+
+  const stored = saved.memoryEvent
+    || await persistence.getMemoryEvent(uid, publicationDate, revision);
+  const recoverability = assessMemoryEventRecoverability(stored, {
+    publicationDate,
+    revision,
+  });
+  if (!recoverability.recoverable) {
+    return {
+      ok: false,
+      error: recoverability.reason || 'memory_event_missing',
+    };
+  }
+  return { ok: true, memoryEvent: stored, alreadyExists: Boolean(saved.alreadyExists) };
+}
+
+/**
+ * Ripresa: revisione già su disco; memory_event obbligatorio prima del publish.
  */
 async function resumeAfterRevisionSaved(ctx) {
   const {
@@ -305,9 +450,38 @@ async function resumeAfterRevisionSaved(ctx) {
     revisionNumber,
     built,
     memoryBefore,
+    selection,
+    nowIso,
   } = ctx;
 
-  const published = await persistence.publishCurrentRevision(uid, publicationDate, {
+  const eventGate = await ensureMemoryEventSaved({
+    uid,
+    persistence,
+    publicationDate,
+    revision: revisionNumber,
+    selection,
+    capturedAt: nowIso || new Date().toISOString(),
+  });
+  if (!eventGate.ok) {
+    await persistence.updateJobIfOwner(uid, publicationDate, ownerId, leaseVersion, {
+      status: FOCUS_JOB_STATUS.interrupted,
+      error: eventGate.error,
+      targetRevision: revisionNumber,
+    }).catch(() => null);
+    return createFocusPublishResult({
+      ok: false,
+      publicationDate,
+      revision: revisionNumber,
+      revisionDoc: built.revisionDoc,
+      error: eventGate.error,
+      job: await persistence.getJob(uid, publicationDate),
+    });
+  }
+
+  const published = await publishRevisionWithBarrier({
+    uid,
+    persistence,
+    publicationDate,
     ownerId,
     leaseVersion,
     editionMeta: built.editionMeta,
@@ -316,38 +490,41 @@ async function resumeAfterRevisionSaved(ctx) {
   });
 
   if (!published.ok) {
-    // forse già pubblicato da altro worker — verifica
+    // forse già pubblicato da altro worker — verifica senza acquisire barriera
     const existing = await persistence.getPublishedEdition(uid, publicationDate);
     if (existing.meta?.currentRevision === revisionNumber) {
-      const editionKey = `${publicationDate}#${revisionNumber}`;
-      const selectionStub = {
-        publicationDate,
-        lead: built.revisionDoc.lead,
-        goodNews: built.revisionDoc.goodNews,
-        features: built.revisionDoc.features,
-        concerns: built.revisionDoc.concerns,
-        coach: built.revisionDoc.coach,
-      };
-      const nextMemory = applyEditorialMemoryAfterPublish(memoryBefore, {
-        publicationDate,
-        revision: revisionNumber,
-        selection: selectionStub,
-      });
-      const memResult = await persistence.applyEditorialMemoryIfNeeded(
+      const editionKey = eventGate.memoryEvent.editionKey;
+      const memResult = await applyMemoryAfterPointersPublished({
         uid,
-        nextMemory,
-        editionKey,
-      );
-      return createFocusPublishResult({
-        ok: true,
+        persistence,
         publicationDate,
-        revision: revisionNumber,
-        editionMeta: existing.meta,
-        revisionDoc: existing.revision,
-        job: await persistence.getJob(uid, publicationDate),
-        memory: memResult.memory,
-        idempotentReplay: true,
+        ownerId,
+        leaseVersion,
+        revisionNumber,
+        editionKey,
+        memoryBefore: memoryBefore || createEmptyEditorialMemory(),
+        memoryEvent: eventGate.memoryEvent,
+        updatedAt: nowIso || new Date().toISOString(),
       });
+      const coord = readPublishCoordination(await persistence.getEditorialMemory(uid));
+      return {
+        ...createFocusPublishResult({
+          ok: true,
+          publicationDate,
+          revision: revisionNumber,
+          editionMeta: existing.meta,
+          revisionDoc: existing.revision,
+          job: await persistence.getJob(uid, publicationDate),
+          memory: memResult.memory,
+          idempotentReplay: true,
+          error: memResult.ok ? null : memResult.error,
+        }),
+        memoryStatus: memResult.memoryStatus,
+        memoryPersisted: memResult.memoryPersisted,
+        barrierDiagnostic: coord.publishBarrier === PUBLISH_BARRIER_PUBLISHING
+          ? 'publish_barrier_still_held'
+          : null,
+      };
     }
     return createFocusPublishResult({
       ok: false,
@@ -358,21 +535,85 @@ async function resumeAfterRevisionSaved(ctx) {
     });
   }
 
-  const editionKey = `${publicationDate}#${revisionNumber}`;
-  const selectionStub = {
+  const editionKey = eventGate.memoryEvent.editionKey;
+  const memResult = await applyMemoryAfterPointersPublished({
+    uid,
+    persistence,
     publicationDate,
-    lead: built.revisionDoc.lead,
-    goodNews: built.revisionDoc.goodNews,
-    features: built.revisionDoc.features,
-    concerns: built.revisionDoc.concerns,
-    coach: built.revisionDoc.coach,
+    ownerId,
+    leaseVersion,
+    revisionNumber,
+    editionKey,
+    memoryBefore: memoryBefore || createEmptyEditorialMemory(),
+    memoryEvent: eventGate.memoryEvent,
+    updatedAt: nowIso || new Date().toISOString(),
+  });
+
+  return {
+    ...createFocusPublishResult({
+      ok: true,
+      publicationDate,
+      revision: revisionNumber,
+      editionMeta: published.editionMeta,
+      revisionDoc: built.revisionDoc,
+      job: await persistence.getJob(uid, publicationDate),
+      memory: memResult.memory,
+      idempotentReplay: true,
+      error: memResult.ok ? null : memResult.error,
+    }),
+    memoryStatus: memResult.memoryStatus,
+    memoryPersisted: memResult.memoryPersisted,
   };
+}
+
+/**
+ * Memoria post-pointer: incremental per prima revisione; current-only rebuild su sostitutive.
+ * Puntatori già pubblicati → non degradare ok pubblicazione se memoria pending.
+ */
+async function applyMemoryAfterPointersPublished(ctx) {
+  const {
+    uid,
+    persistence,
+    publicationDate,
+    ownerId,
+    leaseVersion,
+    revisionNumber,
+    editionKey,
+    memoryBefore,
+    memoryEvent,
+    updatedAt,
+  } = ctx;
+
+  if (isSupersedingPublishedRevision(revisionNumber)) {
+    const committed = await commitCurrentOnlyMemoryAfterPublish({
+      uid,
+      persistence,
+      updatedAt,
+    });
+    if (committed.ok && committed.memoryPersisted) {
+      await persistence.updateJobIfOwner(
+        uid,
+        publicationDate,
+        ownerId,
+        leaseVersion,
+        { memoryAppliedKey: editionKey },
+      ).catch(() => null);
+    }
+    return {
+      ok: committed.ok,
+      memoryPersisted: Boolean(committed.memoryPersisted),
+      memoryStatus: committed.memoryStatus || 'pending',
+      memory: committed.memory ?? (await persistence.getEditorialMemory(uid)),
+      error: committed.ok ? null : (committed.error || 'memory_current_only_commit_failed'),
+      details: committed.details ?? null,
+    };
+  }
+
   const nextMemory = applyEditorialMemoryAfterPublish(
     memoryBefore || createEmptyEditorialMemory(),
     {
-      publicationDate,
-      revision: revisionNumber,
-      selection: selectionStub,
+      ...memoryEventToPublishEvent(memoryEvent),
+      updatedAt,
     },
   );
   const memResult = await persistence.applyEditorialMemoryIfNeeded(
@@ -380,17 +621,17 @@ async function resumeAfterRevisionSaved(ctx) {
     nextMemory,
     editionKey,
   );
-
-  return createFocusPublishResult({
-    ok: true,
-    publicationDate,
-    revision: revisionNumber,
-    editionMeta: published.editionMeta,
-    revisionDoc: built.revisionDoc,
-    job: await persistence.getJob(uid, publicationDate),
-    memory: memResult.memory,
-    idempotentReplay: true,
-  });
+  return {
+    ok: Boolean(memResult.ok),
+    memoryPersisted: Boolean(memResult.ok),
+    memoryStatus: memResult.ok
+      ? (memResult.alreadyApplied ? 'unchanged' : 'applied')
+      : 'pending',
+    memory: memResult.ok
+      ? (memResult.memory || null)
+      : (await persistence.getEditorialMemory(uid)),
+    error: memResult.ok ? null : (memResult.error || 'memory_apply_failed'),
+  };
 }
 
 /**

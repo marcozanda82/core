@@ -5,11 +5,31 @@
 
 import { isIsoDateString } from '../../normalize/focusDateUtils.js';
 import {
+  classifyArticleCautionLayers,
+  detectForbiddenClaims,
+  evaluateProteinDeltaDeficitGuard,
+  isMandatoryContextSatisfied,
+  isRequiredCautionSatisfied,
+  selectRequiredCautionsForArticle,
+} from './focusCautionContract.js';
+import { detectMetricUnitMismatches } from './focusMetricUnitGuard.js';
+import { validateStorySpinePreserved } from './focusStorySpine.js';
+import {
+  bodyMaxCharsForRole,
   FOCUS_ARTICLE_ROLES,
   FOCUS_SEMANTIC_VALIDATION_LIMITS,
   FOCUS_WRITING_LIMITS,
   FOCUS_WRITTEN_SCHEMA_VERSION,
 } from './focusWrittenEdition.v1.js';
+
+export {
+  classifyArticleCautionLayers,
+  selectRequiredCautionsForArticle,
+  isRequiredCautionSatisfied,
+  isMandatoryContextSatisfied,
+  detectForbiddenClaims,
+  evaluateProteinDeltaDeficitGuard,
+} from './focusCautionContract.js';
 
 const ROLE_SET = new Set(FOCUS_ARTICLE_ROLES);
 
@@ -36,15 +56,51 @@ function buildNumberAllowlist(authItem, dates) {
     set.add(s);
     set.add(s.replace(',', '.'));
     set.add(s.replace('.', ','));
+    // Valore assoluto (es. Δ −12.1 → «riduzione di 12,1»)
+    const n = Number(String(v).replace(',', '.'));
+    if (Number.isFinite(n) && n < 0) {
+      const abs = String(Math.abs(n));
+      set.add(abs);
+      set.add(abs.replace('.', ','));
+    }
+    // Giorno/mese ISO senza zero iniziale («04» → «4»)
+    if (/^0\d+$/.test(s)) add(String(Number(s)));
   };
-  for (const m of authItem.metrics || []) add(m.value);
-  for (const d of [dates.analysisDate, dates.publicationDate]) {
+  /**
+   * P6.6.4 — arrotondamento intero naturale di metriche frazionarie
+   * (es. 145.06 g → «145 grammi»). Non tolleranza %, non interi vicini.
+   */
+  const addAuthorizedMetricNumber = (v) => {
+    add(v);
+    const n = Number(String(v).replace(',', '.'));
+    if (!Number.isFinite(n) || Number.isInteger(n)) return;
+    add(String(Math.round(n)));
+  };
+  for (const m of authItem.metrics || []) addAuthorizedMetricNumber(m.value);
+  for (const d of [
+    dates.analysisDate,
+    dates.publicationDate,
+    authItem.observedPeriod?.from,
+    authItem.observedPeriod?.to,
+    authItem.observedPeriod?.sleepWakeFrom,
+    authItem.observedPeriod?.sleepWakeTo,
+    authItem.storySpine?.periodFrom,
+    authItem.storySpine?.periodTo,
+    authItem.storySpine?.comparisonFrom,
+    authItem.storySpine?.comparisonTo,
+  ]) {
+    if (!d) continue;
     for (const part of String(d).split(/[-T:.Z]/)) {
       if (part && /^\d+$/.test(part)) add(part);
     }
   }
+  if (authItem.storySpine) {
+    addAuthorizedMetricNumber(authItem.storySpine.mainMetricValue);
+    addAuthorizedMetricNumber(authItem.storySpine.levelMetricValue);
+    addAuthorizedMetricNumber(authItem.storySpine.coverageMetricValue);
+  }
   const seedText = `${authItem.headlineSeed || ''} ${authItem.summarySeed || ''}`;
-  for (const m of seedText.matchAll(/\d+(?:[.,]\d+)?/g)) add(m[0]);
+  for (const m of seedText.matchAll(/\d+(?:[.,]\d+)?/g)) addAuthorizedMetricNumber(m[0]);
   return set;
 }
 
@@ -72,6 +128,7 @@ export function buildAuthorizedCatalog(selection) {
     index += 1;
   };
   if (selection.lead) add(selection.lead, 'lead');
+  if (selection.centerpiece) add(selection.centerpiece, 'centerpiece');
   for (const n of selection.goodNews || []) add(n, 'good');
   for (const n of selection.features || []) add(n, 'feature');
   for (const n of selection.concerns || []) add(n, 'concern');
@@ -170,9 +227,10 @@ export function validateFocusWrittenEdition(raw, ctx) {
     if (!title || title.length > FOCUS_WRITING_LIMITS.titleMaxChars) {
       errors.push(`${label}_title_length`);
     }
+    const bodyMax = bodyMaxCharsForRole(article.role);
     if (
       body.length < FOCUS_WRITING_LIMITS.bodyMinChars
-      || body.length > FOCUS_WRITING_LIMITS.bodyMaxChars
+      || body.length > bodyMax
     ) {
       errors.push(`${label}_body_length`);
     }
@@ -210,15 +268,20 @@ export function validateFocusWrittenEdition(raw, ctx) {
       errors.push(`${label}_cautions_too_many`);
     }
 
-    const required = [
-      ...(auth.item.doNotClaim || []),
-      ...(auth.item.limitations || []),
-    ];
-    for (const req of required) {
-      if (typeof req === 'string' && req && !cautions.includes(req)) {
-        errors.push(`${label}_missing_required_caution`);
-        break;
+    const layers = classifyArticleCautionLayers(auth.item);
+    // mandatoryContext: limiti essenziali da comprendere (non tutti i doNotClaim)
+    for (const ctx of layers.mandatoryContext) {
+      if (!isMandatoryContextSatisfied(ctx, cautions, title, body)) {
+        errors.push(`mandatory_context_missing:${ctx.id}`);
       }
+    }
+    // doNotClaim: vietano affermazioni indebite; non vanno ripetuti obbligatoriamente
+    for (const hit of detectForbiddenClaims(layers.doNotClaim, title, body)) {
+      errors.push(`${label}_${hit}`);
+    }
+    // Δ proteico: proibizione/contestualizzazione condizionale (non stampa obbligatoria)
+    for (const hit of evaluateProteinDeltaDeficitGuard(auth.item, title, body, cautions)) {
+      errors.push(hit);
     }
 
     if (auth.item.claimType === 'hypothesis' && HYPOTHESIS_CAUSAL.test(`${title} ${body}`)) {
@@ -236,18 +299,37 @@ export function validateFocusWrittenEdition(raw, ctx) {
       errors.push(`${label}_unreliable_presented_as_measured`);
     }
 
-    // Placeholder: solo path presenti in metricsCited; nessun lookalike
+    // Placeholder: path sconosciuti / lookalike → unresolved_metric_placeholder
     const citedPaths = new Set((cited || []).map((m) => m?.path).filter(Boolean));
+    const authPaths = new Set((auth.item.metrics || []).map((m) => m?.path).filter(Boolean));
     for (const field of [title, body]) {
       const anyPh = field.match(PLACEHOLDER_ANY_RE) || [];
       const validPh = [...field.matchAll(PLACEHOLDER_TOKEN_RE)];
       if (anyPh.length > validPh.length) {
         errors.push(`${label}_lookalike_placeholder`);
+        errors.push('unresolved_metric_placeholder');
       }
       for (const m of validPh) {
-        if (!citedPaths.has(m[1])) {
+        if (!citedPaths.has(m[1]) || !authPaths.has(m[1])) {
+          errors.push('unresolved_metric_placeholder');
           errors.push(`${label}_placeholder_not_in_metricsCited_${m[1]}`);
         }
+      }
+    }
+
+    for (const uErr of detectMetricUnitMismatches(auth.item, title, body)) {
+      errors.push(uErr);
+    }
+
+    if (auth.item.storySpine) {
+      const spineCheck = validateStorySpinePreserved(
+        auth.item.storySpine,
+        title,
+        body,
+        cited,
+      );
+      if (!spineCheck.ok && spineCheck.error) {
+        errors.push(spineCheck.error);
       }
     }
 
@@ -269,7 +351,8 @@ export function validateFocusWrittenEdition(raw, ctx) {
       ...findUnauthorizedNumbers(body, allowNums),
     ];
     if (badNums.length > 0) {
-      errors.push(`${label}_unauthorized_number_in_prose`);
+      const uniq = [...new Set(badNums)];
+      errors.push(`${label}_unauthorized_number_in_prose:${uniq.slice(0, 6).join(',')}`);
     }
   }
 

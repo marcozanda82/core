@@ -39,10 +39,14 @@ export function aggregateHistoryWindow(windowBriefs, windowKey, meta = {}) {
   const activityCoverage = evaluateDomainCoverage(workoutDays.length, windowDays, thresholds);
   const bodyCoverage = evaluateDomainCoverage(weighIns.length, windowDays, thresholds);
 
-  const cardioMinutesTotal = workoutDays.reduce((acc, b) => {
-    const m = b.activity?.cardioMinutes;
+  const sumActivityMinutes = (key) => workoutDays.reduce((acc, b) => {
+    const m = b.activity?.[key];
     return acc + (typeof m === 'number' && Number.isFinite(m) ? m : 0);
   }, 0);
+  const cardioMinutesTotal = sumActivityMinutes('cardioMinutes');
+  const aerobicMinutesTotal = sumActivityMinutes('aerobicMinutes');
+  const walkingMinutesTotal = sumActivityMinutes('walkingMinutes');
+  const moderateIntensityMinutesTotal = sumActivityMinutes('moderateIntensityMinutes');
 
   const weights = weighIns.map((b) => b.body.weightKg);
   let weightDeltaKg = null;
@@ -76,6 +80,10 @@ export function aggregateHistoryWindow(windowBriefs, windowKey, meta = {}) {
     nightsMissing: briefs.length - sleepDays.length,
   };
 
+  const strengthDays = briefs.filter(
+    (b) => (b.activity?.strengthSessionCount || 0) > 0,
+  );
+
   const activity = {
     /**
      * Giorni con almeno un workout registrato.
@@ -83,13 +91,23 @@ export function aggregateHistoryWindow(windowBriefs, windowKey, meta = {}) {
      */
     workoutDaysLogged: workoutDays.length,
     workoutDays: workoutDays.length,
+    /**
+     * Giorni con almeno una sessione euristica strength.
+     * Distinto da aerobicMinutes (assenza aerobica ≠ inattività).
+     */
+    strengthDaysLogged: strengthDays.length,
     avgWorkoutKcal: averageOrNull(
       workoutDays
         .map((b) => b.activity?.workoutKcal)
         .filter((v) => v != null),
     ),
     cardioMinutesTotal: Math.round(cardioMinutesTotal * 10) / 10,
+    aerobicMinutesTotal: Math.round((aerobicMinutesTotal || cardioMinutesTotal) * 10) / 10,
+    walkingMinutesTotal: Math.round(walkingMinutesTotal * 10) / 10,
+    moderateIntensityMinutesTotal: Math.round(moderateIntensityMinutesTotal * 10) / 10,
+    moderateIntensityNote: 'solo_minuti_con_intensita_esplicita_nei_log',
     zeroLoggedWorkoutsMeans: 'no_workout_events_found',
+    noAerobicMinutesMeans: 'no_aerobic_labeled_minutes_not_physical_inactivity',
   };
 
   const body = {

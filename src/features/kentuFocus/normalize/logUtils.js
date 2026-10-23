@@ -2,20 +2,17 @@
  * Utility log trackerStorico (pure).
  */
 
+import { expandTrackerLogEntries, pickDayLogRaw } from './expandTrackerDayLog.js';
+
 /** @param {unknown} node */
 export function getLogArray(node) {
-  if (!node || typeof node !== 'object') return [];
-  const raw = node.log;
-  if (raw == null) return [];
-  return Array.isArray(raw) ? raw : Object.values(raw);
+  return expandTrackerLogEntries(pickDayLogRaw(node));
 }
 
 /** @param {unknown} node */
 export function getManualNodesArray(node) {
   if (!node || typeof node !== 'object') return [];
-  const raw = node.manualNodes;
-  if (raw == null) return [];
-  return Array.isArray(raw) ? raw : Object.values(raw);
+  return expandTrackerLogEntries(node.manualNodes);
 }
 
 /**

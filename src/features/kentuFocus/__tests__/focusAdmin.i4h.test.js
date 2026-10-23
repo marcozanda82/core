@@ -127,4 +127,7 @@ test('I4-H sanitize CLI: maschera UID, niente headline/token/dossier', () => {
   assert.equal(safe.edition.headlineChars, 'Dettaglio personale sensibile'.length);
   assert.equal(safe.subject, masked);
   assert.ok(!('dossierInput' in safe));
+  // Senza operatorReport verificato → mai successo operativo
+  assert.equal(safe.operatorSafe, false);
+  assert.equal(safe.operatorReport, null);
 });

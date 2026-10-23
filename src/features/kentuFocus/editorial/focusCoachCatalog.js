@@ -4,6 +4,7 @@
  */
 
 import { FOCUS_PROVENANCE } from '../contracts/focusDossier.v1.js';
+import { FOCUS_EDITION_KIND } from '../edition/editionCalendar.js';
 import { FOCUS_SCORE_THRESHOLDS } from './focusEditorialConfig.js';
 import { isCoachTemplateInCooldown } from './focusEditorialMemory.js';
 
@@ -15,9 +16,14 @@ import { isCoachTemplateInCooldown } from './focusEditorialMemory.js';
  * @returns {object|null}
  */
 export function selectFocusCoach(dossier, selectedNews, memory, publicationDate) {
+  const editionKind = dossier?.edition?.editionKind
+    || dossier?.meta?.editionKind
+    || FOCUS_EDITION_KIND.daily;
+  const isSpecial = editionKind !== FOCUS_EDITION_KIND.daily;
+
   const candidates = [
     coachEarlierDinner(dossier),
-    coachHitProtein(dossier),
+    coachHitProtein(dossier, { isSpecial, selectedNews }),
     coachLogConsistency(dossier, memory),
     coachStabilizeWake(dossier),
   ].filter(Boolean);
@@ -27,8 +33,10 @@ export function selectFocusCoach(dossier, selectedNews, memory, publicationDate)
     if (isCoachTemplateInCooldown(memory, c.templateId, publicationDate)) return false;
     if (!isCompatibleWithRecovery(dossier, c)) return false;
     if (contradictsOpenExperiment(memory, c.templateId)) return false;
-    // Max 1 esperimento aperto: nessun nuovo coach con follow-up finché ne resta uno.
     if (openExperiments.length > 0 && c.horizonDays) return false;
+    if (isSpecial && c.editionScale === 'episode' && !c.allowInSpecialEdition) {
+      return false;
+    }
     return c.supportScore >= FOCUS_SCORE_THRESHOLDS.coachMin;
   });
 
@@ -48,6 +56,7 @@ export function selectFocusCoach(dossier, selectedNews, memory, publicationDate)
     horizonDays: best.horizonDays,
     followUp: best.followUp,
     supportScore: best.supportScore,
+    editionScale: best.editionScale || 'episode',
     suppressed: false,
     suppressReason: null,
     doNotClaim: best.doNotClaim || ['prescrizione medica', 'diagnosi'],
@@ -58,32 +67,41 @@ function coachEarlierDinner(dossier) {
   const buffer = dossier.sleep?.dinnerSleepBufferH;
   if (buffer?.provenance === FOCUS_PROVENANCE.missing || buffer?.value == null) return null;
   if (buffer.value >= FOCUS_SCORE_THRESHOLDS.dinnerBufferShortH) return null;
-  return {
-    templateId: 'EARLIER_DINNER',
-    textSeed: 'Prova ad anticipare la cena di circa 30–45 minuti per 3 sere.',
-    refs: ['sleep.dinnerSleepBufferH', 'day.nutrition.lastMealHour'],
-    horizonDays: 3,
-    followUp: {
-      metricPaths: ['sleep.dinnerSleepBufferH'],
-      windowDays: 7,
-    },
-    supportScore: 70,
-    doNotClaim: ['la cena tardi causa insonnia'],
-  };
+  // Singola notte / ipotesi low: non proporre un intervento motivato sul sonno.
+  // (Template EARLIER_DINNER resta nel catalogo per eventuale evidenza multi-notte futura.)
+  return null;
 }
 
-function coachHitProtein(dossier) {
+/**
+ * @param {object} dossier
+ * @param {{ isSpecial?: boolean, selectedNews?: object[] }} [opts]
+ */
+function coachHitProtein(dossier, opts = {}) {
   const prot = dossier.day?.nutrition?.totals?.proteinG;
   const target = dossier.day?.nutrition?.targets?.proteinG;
   if (prot?.value == null || target?.value == null || target.value <= 0) return null;
-  // Target assenti/missing o non recorded → non affidabili per un intervento.
   if (target.provenance !== FOCUS_PROVENANCE.recorded) return null;
   const ratio = prot.value / target.value;
   if (ratio >= FOCUS_SCORE_THRESHOLDS.proteinNearTargetRatio) return null;
-  if (ratio < 0.5) return null; // troppo lontano: non spingere un “hit” irrealistico in un giorno
+  if (ratio < 0.5) return null;
+
+  // In edizioni speciali: un giorno sotto target ≠ consiglio mensile/settimanale.
+  // Consentito solo se c’è già una storia proteica di scala week/month selezionata.
+  const proteinStory = (opts.selectedNews || []).some((n) => (
+    /protein/i.test(String(n?.topicId || ''))
+    || /protein/i.test(String(n?.coverage?.dominantTheme || ''))
+    || n?.coverage?.storyKind === 'significant_change'
+      && n?.domain === 'nutrition'
+  ));
+  if (opts.isSpecial && !proteinStory) {
+    return null;
+  }
+
   return {
     templateId: 'HIT_PROTEIN_PORTION',
-    textSeed: 'Aggiungi una porzione proteica a un pasto già previsto (es. yogurt, uova, legumi).',
+    textSeed: opts.isSpecial
+      ? 'Se ti è utile, puoi aggiungere una porzione proteica a un pasto già previsto — osservazione legata alla tendenza già in edizione, non una prescrizione.'
+      : 'Osservazione sulla giornata analizzata: se ti è utile, aggiungi una porzione proteica a un pasto già previsto (es. yogurt, uova, legumi).',
     refs: ['day.nutrition.totals.proteinG', 'day.nutrition.targets.proteinG'],
     horizonDays: 3,
     followUp: {
@@ -91,7 +109,9 @@ function coachHitProtein(dossier) {
       windowDays: 7,
     },
     supportScore: 62,
-    doNotClaim: ['devi mangiare di meno', 'deficit calorico'],
+    editionScale: 'episode',
+    allowInSpecialEdition: Boolean(proteinStory),
+    doNotClaim: ['devi mangiare di meno', 'deficit calorico', 'intervento nutrizionale obbligatorio'],
   };
 }
 

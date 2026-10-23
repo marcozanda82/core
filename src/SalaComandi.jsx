@@ -8633,6 +8633,27 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         }}
         accessory={
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/kentu-focus')}
+              title="Kentu Focus"
+              aria-label="Apri Kentu Focus"
+              style={{
+                border: '1px solid rgba(243, 239, 230, 0.35)',
+                background: 'rgba(243, 239, 230, 0.08)',
+                color: '#f3efe6',
+                borderRadius: 999,
+                padding: '0.35rem 0.65rem',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+              }}
+            >
+              Focus
+            </button>
             <EnergyArcWidget
               variant="mini"
               longevityScore={unifiedLongevityScore}

@@ -66,6 +66,66 @@ export function computeBedtimeFromWakeAndDuration(wakeDec, durationHours) {
 }
 
 /**
+ * Giorno ISO della settimana (lunedì=1 … domenica=7) per data calendario noon-anchor.
+ * @param {string} dateStr YYYY-MM-DD
+ * @returns {number|null}
+ */
+export function isoWeekdayFromDate(dateStr) {
+  if (!isIsoDateString(dateStr)) return null;
+  const js = new Date(`${dateStr}T12:00:00`).getDay(); // 0=dom … 6=sab
+  return js === 0 ? 7 : js;
+}
+
+/** Nomi corti IT allineati a isoWeekday 1–7. */
+export const ISO_WEEKDAY_LABELS_IT = Object.freeze([
+  null,
+  'lunedì',
+  'martedì',
+  'mercoledì',
+  'giovedì',
+  'venerdì',
+  'sabato',
+  'domenica',
+]);
+
+/**
+ * Segmento routine: classificazione sulla **mattina di risveglio** (nightEndedOn).
+ * lun–ven → weekday; sab–dom → weekend.
+ * @param {string} nightEndedOn
+ * @returns {'weekday'|'weekend'|null}
+ */
+export function wakeSegmentFromDate(nightEndedOn) {
+  const wd = isoWeekdayFromDate(nightEndedOn);
+  if (wd == null) return null;
+  return wd <= 5 ? 'weekday' : 'weekend';
+}
+
+/**
+ * Ore decimali “lineari di notte” per bedtime: se < 12h → +24 (attraversa mezzanotte).
+ * Per wake mattutini tipici non usare questo helper.
+ * @param {number} hourDecimal
+ * @returns {number|null}
+ */
+export function bedtimeLinearOffset(hourDecimal) {
+  const h = Number(hourDecimal);
+  if (!Number.isFinite(h)) return null;
+  const wrapped = wrap24(h);
+  if (wrapped == null) return null;
+  return wrapped < 12 ? wrapped + 24 : wrapped;
+}
+
+/**
+ * Inverse di bedtimeLinearOffset → ore 0–24.
+ * @param {number} linear
+ * @returns {number|null}
+ */
+export function bedtimeFromLinearOffset(linear) {
+  const x = Number(linear);
+  if (!Number.isFinite(x)) return null;
+  return wrap24(x);
+}
+
+/**
  * @param {string} analysisDate
  * @param {string} publicationDate
  */

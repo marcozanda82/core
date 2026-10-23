@@ -27,12 +27,18 @@
             ".read": false,
             ".write": false,
             "meta": {
-              ".read": "$uid === auth.uid",
+              ".read": "$uid === auth.uid && (data.child('status').val() === 'published' || data.child('status').val() === 'published_fallback')",
               ".write": false
             },
             "rev": {
               "$revision": {
-                ".read": "$uid === auth.uid && root.child('kentu_focus').child($uid).child('editions').child($publicationDate).child('meta').child('currentRevision').val() + '' === $revision",
+                ".read": "$uid === auth.uid && root.child('kentu_focus').child($uid).child('editions').child($publicationDate).child('meta').child('currentRevision').val() + '' === $revision && (root.child('kentu_focus').child($uid).child('editions').child($publicationDate).child('meta').child('status').val() === 'published' || root.child('kentu_focus').child($uid).child('editions').child($publicationDate).child('meta').child('status').val() === 'published_fallback')",
+                ".write": false
+              }
+            },
+            "memory_events": {
+              "$revision": {
+                ".read": false,
                 ".write": false
               }
             }

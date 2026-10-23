@@ -159,16 +159,18 @@ test('I4-D2 validazione rafforzata: numeri/cautele/ipotesi/missing', () => {
       .some((e) => e.includes('unreliable_presented_as_measured')),
   );
 
-  const missingCaution = {
+  const forbiddenClaim = {
     ...base,
     articles: base.articles.map((a) => ({
       ...a,
       cautions: [],
+      body: 'Questa è una diagnosi: ti diagnostico un deficit e ti prescrivo riposo.',
+      metricsCited: a.metricsCited,
     })),
   };
   assert.ok(
-    validateFocusWrittenEdition(missingCaution, { selection: sel }).errors
-      .some((e) => e.includes('missing_required_caution')),
+    validateFocusWrittenEdition(forbiddenClaim, { selection: sel }).errors
+      .some((e) => e.includes('forbidden_claim_detected') || e.includes('medical_overclaim')),
   );
 });
 

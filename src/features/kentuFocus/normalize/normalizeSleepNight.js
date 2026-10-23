@@ -20,6 +20,7 @@ import {
 import {
   computeBedtimeFromWakeAndDuration,
   parseDecimalHour,
+  wrap24,
 } from './focusDateUtils.js';
 import { finiteNumber, getLogArray } from './logUtils.js';
 import {
@@ -29,6 +30,106 @@ import {
 } from './resolveMainNightSleep.js';
 
 export { sleepHoursFromEntry, resolveMainNightSleep, MAIN_NIGHT_STATUS };
+
+/** Tolleranza (ore) per match bedtime ≈ wake − duration. */
+export const BEDTIME_FORMULA_MATCH_EPS_H = 0.05;
+
+/**
+ * Provenienza bedtime senza indovinare quando il diario ha già persistito wake−duration.
+ * - calculated: campo assente, ricavato ora da wake e durata
+ * - recorded: presente e diverso dalla formula (o flag esplicito recorded)
+ * - ambiguous: presente ma coincide con wake−duration (origine non ricostruibile)
+ * - missing: non disponibile
+ *
+ * @param {object} entry
+ * @param {number|null} wakeTime
+ * @param {number|null} hours
+ * @returns {{
+ *   value: number|null,
+ *   provenance: string,
+ *   source?: string,
+ *   certainty?: string,
+ * }}
+ */
+export function resolveBedtimeProvenance(entry, wakeTime, hours) {
+  const explicit = String(
+    entry?.bedtimeProvenance
+      ?? entry?.bedtimeSource
+      ?? entry?._bedtimeOrigin
+      ?? '',
+  ).trim().toLowerCase();
+  const bedtimeRaw = parseDecimalHour(entry?.bedtime ?? entry?.sleepStart);
+  const expected = (wakeTime != null && hours != null && hours > 0)
+    ? computeBedtimeFromWakeAndDuration(wakeTime, hours)
+    : null;
+
+  if (
+    explicit === 'recorded'
+    || explicit === 'user'
+    || explicit === 'manual'
+  ) {
+    if (bedtimeRaw == null) {
+      return { value: null, provenance: FOCUS_PROVENANCE.missing };
+    }
+    return {
+      value: bedtimeRaw,
+      provenance: FOCUS_PROVENANCE.recorded,
+      source: 'explicit_bedtime_flag',
+    };
+  }
+  if (explicit === 'calculated' || explicit === 'derived' || explicit === 'formula') {
+    const value = bedtimeRaw != null
+      ? bedtimeRaw
+      : expected;
+    if (value == null) {
+      return { value: null, provenance: FOCUS_PROVENANCE.missing };
+    }
+    return {
+      value,
+      provenance: FOCUS_PROVENANCE.calculated,
+      source: 'explicit_bedtime_flag',
+    };
+  }
+
+  if (bedtimeRaw == null) {
+    if (expected != null) {
+      return {
+        value: expected,
+        provenance: FOCUS_PROVENANCE.calculated,
+        source: 'computeBedtimeFromWakeAndDuration',
+      };
+    }
+    return { value: null, provenance: FOCUS_PROVENANCE.missing };
+  }
+
+  if (expected != null) {
+    const delta = circularAbsHourDelta(bedtimeRaw, expected);
+    if (delta != null && delta <= BEDTIME_FORMULA_MATCH_EPS_H) {
+      return {
+        value: bedtimeRaw,
+        provenance: FOCUS_PROVENANCE.ambiguous,
+        source: 'matches_wake_minus_duration_unverified_origin',
+        certainty: FOCUS_CERTAINTY.low,
+      };
+    }
+  }
+
+  return {
+    value: bedtimeRaw,
+    provenance: FOCUS_PROVENANCE.recorded,
+    source: 'sleep_entry_bedtime_field',
+  };
+}
+
+/** @param {number} a @param {number} b */
+function circularAbsHourDelta(a, b) {
+  const wa = wrap24(a);
+  const wb = wrap24(b);
+  if (wa == null || wb == null) return null;
+  let d = Math.abs(wa - wb);
+  if (d > 12) d = 24 - d;
+  return d;
+}
 
 /** Placeholder tipico scritto dal diario quando deep/REM non sono misurati. */
 export const DEFAULT_SLEEP_STAGE_PLACEHOLDER_MIN = 60;
@@ -137,13 +238,9 @@ export function normalizeSleepNight(publicationDayNode, opts) {
 
   const hours = sleepHoursFromEntry(entry);
   const wakeTime = parseDecimalHour(entry.wakeTime ?? entry.sleepEnd);
-  const bedtimeRecorded = parseDecimalHour(entry.bedtime ?? entry.sleepStart);
-  let bedtime = bedtimeRecorded;
-  let bedtimeProvenance = FOCUS_PROVENANCE.recorded;
-  if (bedtime == null && wakeTime != null && hours != null && hours > 0) {
-    bedtime = computeBedtimeFromWakeAndDuration(wakeTime, hours);
-    bedtimeProvenance = FOCUS_PROVENANCE.calculated;
-  }
+  const bedtimeResolved = resolveBedtimeProvenance(entry, wakeTime, hours);
+  const bedtime = bedtimeResolved.value;
+  const bedtimeProvenance = bedtimeResolved.provenance;
 
   const qualityStars = normalizeQualityStars(entry.quality ?? entry.sleepQuality ?? entry.rating);
   const qualityBand = qualityBandFromStars(qualityStars);
@@ -187,9 +284,8 @@ export function normalizeSleepNight(publicationDayNode, opts) {
         : focusMetric(bedtime, {
           unit: 'hour_decimal',
           provenance: bedtimeProvenance,
-          source: bedtimeProvenance === FOCUS_PROVENANCE.calculated
-            ? 'computeBedtimeFromWakeAndDuration'
-            : undefined,
+          source: bedtimeResolved.source,
+          certainty: bedtimeResolved.certainty,
         }),
       qualityStars: qualityStars == null
         ? missingMetric()
