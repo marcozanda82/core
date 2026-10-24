@@ -3,6 +3,7 @@
  */
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
 import { Home, X } from 'lucide-react';
 import { matchReportCommand, REPORT_ANIMATION_SRC, REPORT_COVER_SRC } from './features/commandTerminal/conversation/reportCommandIntent.js';
 import MenuProposalCard from './MenuProposalCard';
@@ -185,6 +186,7 @@ export default function AiCluster({
   onOpenManualView = null,
   onOpenActivityView = null,
   onOpenPlanView = null,
+  onOpenFocus = null,
   onSelectInboxDraft = null,
   onDropInboxOntoMeal = null,
   onDropInboxOntoDraft = null,
@@ -219,6 +221,15 @@ export default function AiCluster({
   isLoadingPreviousMessages = false,
   isHistoryVisible = false,
 }) {
+  const navigate = useNavigate();
+  const handleOpenFocus = useCallback(() => {
+    if (typeof onOpenFocus === 'function') {
+      onOpenFocus();
+      return;
+    }
+    navigate('/kentu-focus');
+  }, [onOpenFocus, navigate]);
+
   const safeDailyLog = useMemo(
     () => (Array.isArray(dailyLog) ? dailyLog : []),
     [dailyLog],
@@ -2219,6 +2230,7 @@ export default function AiCluster({
             onOpenManualView={handlePulsantieraOpenManual}
             onOpenActivityView={handlePulsantieraOpenActivity}
             onOpenPlanView={handlePulsantieraOpenPlan}
+            onOpenFocus={handleOpenFocus}
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
             onSelectInboxDraft={onSelectInboxDraft}

@@ -7,6 +7,7 @@ import {
   buildFocusDossierFromInMemoryHistory,
   runFocusEditorialBench,
 } from '../lab/runFocusEditorialBench.js';
+import { buildFocusLabDossier } from '../lab/buildFocusLabDossier.js';
 import { generateFocusWrittenEdition } from '../editorial/writing/generateFocusWrittenEdition.js';
 import {
   buildFocusDemoProfilePack,
@@ -173,6 +174,28 @@ export async function buildFocusProductEdition(periodId) {
     dates,
   });
 
+  /** Evidenze nutrizionali usable (lab) — senza nomi in product demo (privacy). */
+  let nutritionEvidence = null;
+  try {
+    const analysisDate = dates.analysisDate;
+    const publicationDate = dates.publicationDate;
+    if (analysisDate && publicationDate) {
+      const lab = buildFocusLabDossier({
+        historyLoadState: 'ready',
+        editionMode: 'focus_standard',
+        analysisDate,
+        publicationDate,
+        dataOrigin: 'real',
+        fullHistory,
+        exportTier: 'essential',
+        historyDays: 45,
+      });
+      nutritionEvidence = lab?.analysisDay?.nutrition?.coachEvidence || null;
+    }
+  } catch {
+    nutritionEvidence = null;
+  }
+
   const hasAnyItem = ['bene', 'attenzione', 'migliora']
     .some((key) => (coachView.sections[key]?.items || []).length > 0)
     || Boolean(coachView.coachAdvice);
@@ -194,11 +217,13 @@ export async function buildFocusProductEdition(periodId) {
     empty: !hasAnyItem,
     coachView,
     charts,
+    nutritionEvidence,
     diagnostics: {
       verificationStatus: bench.diagnostics?.verificationStatus || null,
       editionKind: bench.dates?.editionKind || null,
       centerpieceStatus: bench.centerpiece?.status || null,
       dossierOk: Boolean(built.ok),
+      nutritionEvidenceOk: Boolean(nutritionEvidence),
     },
   };
 }

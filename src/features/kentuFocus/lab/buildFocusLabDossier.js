@@ -56,10 +56,33 @@ import {
   resolveFocusLabEditionDates,
   resolveFocusLabHistoryGate,
 } from './focusLabHistoryGate.js';
+import {
+  aggregateDayMicronutrients,
+  buildFoodItemCatalogRef,
+  buildFoodItemMicronutrients,
+  FOCUS_LAB_MICRONUTRIENT_KEYS,
+} from './focusLabMicronutrients.js';
+import {
+  buildNutritionCoachEvidence,
+  isNutrientUnusable,
+  mapAnomalyFlagsToUnusableNutrients,
+  projectCatalogRefForExport,
+  withUsability,
+} from './focusLabNutritionUsability.js';
 
 export const FOCUS_LAB_DOSSIER_SCHEMA = 'kentu.focusLabDossier.v1';
 export { resolveFocusLabEditionDates, resolveFocusLabHistoryGate } from './focusLabHistoryGate.js';
 export { classifyFocusActivity, isCardioWorkout } from '../normalize/normalizeWorkoutEvents.js';
+export {
+  FOCUS_LAB_MICRONUTRIENT_KEYS,
+  FOCUS_NUTRIENT_AVAILABILITY,
+  resolveMicronutrientPresence,
+} from './focusLabMicronutrients.js';
+export {
+  buildNutritionCoachEvidence,
+  FOCUS_COACH_MICRO_KEYS,
+  mapAnomalyFlagsToUnusableNutrients,
+} from './focusLabNutritionUsability.js';
 
 const FOOD_TYPES = new Set(['food', 'recipe']);
 
@@ -135,10 +158,42 @@ function resolveFoodGrams(item) {
 
 /**
  * @param {object} item
- * @param {{ includeNotes: boolean, includeFreeTextLabels: boolean, opaqueIndex: number }} opts
+ * @param {{
+ *   includeNotes: boolean,
+ *   includeFreeTextLabels: boolean,
+ *   opaqueIndex: number,
+ *   unusableByItemId?: Map<string, Set<string>>,
+ *   dayUnusableNutrients?: Set<string>,
+ * }} opts
  */
 function buildFoodItemExport(item, opts) {
-  const rawName = String(item?.name || item?.desc || item?.label || item?.foodDbKey || '').trim() || null;
+  // Nome: solo campi display — mai foodDbKey (evita leak in deep e in audit).
+  const rawName = String(item?.name || item?.desc || item?.label || '').trim() || null;
+  const itemId = item?.id != null ? String(item.id) : null;
+  const byItem = opts.unusableByItemId || new Map();
+  const dayUnusable = opts.dayUnusableNutrients || new Set();
+
+  const reasonFor = (nutrient) => {
+    if (dayUnusable.has(nutrient) || dayUnusable.has('nutrition')) {
+      return 'day_anomaly';
+    }
+    if (itemId && byItem.get(itemId)?.has(nutrient)) {
+      return 'item_anomaly';
+    }
+    return null;
+  };
+
+  const macroMetric = (nutrient, value, unit) => {
+    const base = value == null
+      ? missingMetric(unit)
+      : focusMetric(Math.round(value * 10) / 10, {
+        unit,
+        provenance: FOCUS_PROVENANCE.recorded,
+      });
+    const unusable = isNutrientUnusable(itemId, nutrient, byItem, dayUnusable);
+    return withUsability(base, !unusable && value != null, unusable ? reasonFor(nutrient) : null);
+  };
+
   const kcal = finiteNumber(item?.kcal ?? item?.cal);
   const proteinG = finiteNumber(item?.prot ?? item?.proteinG ?? item?.protein);
   const carbG = finiteNumber(item?.carb ?? item?.carbs ?? item?.carbG);
@@ -146,37 +201,30 @@ function buildFoodItemExport(item, opts) {
   const fiberG = finiteNumber(item?.fibre ?? item?.fiber ?? item?.fiberG);
 
   const macros = {
-    kcal: kcal == null
-      ? missingMetric('kcal')
-      : focusMetric(Math.round(kcal * 10) / 10, {
-        unit: 'kcal',
-        provenance: FOCUS_PROVENANCE.recorded,
-      }),
-    proteinG: proteinG == null
-      ? missingMetric('g')
-      : focusMetric(Math.round(proteinG * 10) / 10, {
-        unit: 'g',
-        provenance: FOCUS_PROVENANCE.recorded,
-      }),
-    carbG: carbG == null
-      ? missingMetric('g')
-      : focusMetric(Math.round(carbG * 10) / 10, {
-        unit: 'g',
-        provenance: FOCUS_PROVENANCE.recorded,
-      }),
-    fatG: fatG == null
-      ? missingMetric('g')
-      : focusMetric(Math.round(fatG * 10) / 10, {
-        unit: 'g',
-        provenance: FOCUS_PROVENANCE.recorded,
-      }),
-    fiberG: fiberG == null
-      ? missingMetric('g')
-      : focusMetric(Math.round(fiberG * 10) / 10, {
-        unit: 'g',
-        provenance: FOCUS_PROVENANCE.recorded,
-      }),
+    kcal: macroMetric('kcal', kcal, 'kcal'),
+    proteinG: macroMetric('proteinG', proteinG, 'g'),
+    carbG: macroMetric('carbG', carbG, 'g'),
+    fatG: macroMetric('fatG', fatG, 'g'),
+    fiberG: macroMetric('fiberG', fiberG, 'g'),
   };
+
+  const microsRaw = buildFoodItemMicronutrients(item);
+  /** @type {Record<string, object>} */
+  const micronutrients = {};
+  for (const [key, metric] of Object.entries(microsRaw)) {
+    const unusable = isNutrientUnusable(itemId, key, byItem, dayUnusable);
+    const available = metric?.availability === 'present' || metric?.availability === 'real_zero';
+    micronutrients[key] = withUsability(
+      metric,
+      !unusable && available,
+      unusable ? reasonFor(key) : (available ? null : metric?.availability || 'not_available'),
+    );
+  }
+
+  const catalogRef = projectCatalogRefForExport(
+    buildFoodItemCatalogRef(item),
+    Boolean(opts.includeFreeTextLabels),
+  );
 
   const out = {
     name: opts.includeFreeTextLabels ? rawName : null,
@@ -184,6 +232,8 @@ function buildFoodItemExport(item, opts) {
     opaqueId: `food_item_${opts.opaqueIndex}`,
     grams: resolveFoodGrams(item),
     macros,
+    micronutrients,
+    catalogRef,
     provenance: FOCUS_PROVENANCE.recorded,
   };
 
@@ -244,6 +294,9 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
     clockHour: b.clockHour,
   }));
 
+  const plausibility = food.nutrition.plausibility || null;
+  const anomalyUsability = mapAnomalyFlagsToUnusableNutrients(plausibility?.flags || []);
+
   let opaqueIndex = 0;
   const meals = sortedSlots.map((slot) => ({
     mealSlotId: slot.identity.mealSlotId,
@@ -262,9 +315,32 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
         includeNotes: opts.includeNotes,
         includeFreeTextLabels: opts.includeFreeTextLabels,
         opaqueIndex,
+        unusableByItemId: anomalyUsability.byItemId,
+        dayUnusableNutrients: anomalyUsability.dayNutrients,
       });
     }),
   }));
+
+  const micronutrientTotals = aggregateDayMicronutrients(foods);
+  const dayFiberUnusable = anomalyUsability.dayNutrients.has('fiberG');
+  const totals = {
+    ...food.nutrition.totals,
+    fiberG: withUsability(
+      food.nutrition.totals.fiberG,
+      !dayFiberUnusable && food.nutrition.totals.fiberG?.provenance !== 'missing',
+      dayFiberUnusable ? 'daily_fiber_unusually_high' : null,
+    ),
+    micronutrients: micronutrientTotals,
+  };
+
+  const coachEvidence = buildNutritionCoachEvidence({
+    foods,
+    meals,
+    micronutrientTotals,
+    plausibility,
+    timingCoverage: food.nutrition.timingCoverage || null,
+    includeFoodLabels: Boolean(opts.includeFreeTextLabels),
+  });
 
   const fieldsMissing = [];
   if (!food.hasFood) fieldsMissing.push('nutrition.meals');
@@ -273,10 +349,11 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
   return {
     food,
     block: {
-      totals: food.nutrition.totals,
+      totals,
       meals,
       quality: food.quality || null,
-      plausibility: food.nutrition.plausibility || null,
+      plausibility,
+      coachEvidence,
       timingCoverage: food.nutrition.timingCoverage || null,
       firstMealHour: food.nutrition.firstMealHour || missingMetric('hour_decimal'),
       lastMealHour: food.nutrition.lastMealHour || missingMetric('hour_decimal'),
@@ -284,7 +361,6 @@ function buildAnalysisDayNutrition(analysisDayNode, opts) {
     fieldsMissing,
   };
 }
-
 /**
  * @param {object|null} analysisDayNode
  * @param {{ includeNotes: boolean, includeFreeTextLabels: boolean }} opts
@@ -1126,6 +1202,12 @@ export function buildFocusLabDossier(input) {
         'sleep_weekly_rhythm: un’unica storia editoriale; member signals come evidenze.',
         'missingDays = nodi assenti nello storico in memoria, non prova di bootstrap incompleto.',
         'nutritionAnomalies sono segnali; i valori originali non vengono corretti.',
+        'Micronutrienti: zero senza dbProvidedNutrientKeys → ambiguous/unverified_zero (non sommati).',
+        'Micronutrienti: nessuna etichetta carenza/adeguato/eccessivo in questa fase.',
+        'EPA/DHA/ALA non modellati; non stimare da omega3 aggregato.',
+        'usableForJudgement=false sui nutrienti flaggati (es. fibre su pesce): non usarli per consigli.',
+        'essential: foodDbKey e nomi redatti; catalogRef.foodDbKeyRedacted indica presenza senza rivelare la chiave.',
+        `Micronutrienti esportati (lista chiusa): ${FOCUS_LAB_MICRONUTRIENT_KEYS.join(', ')}.`,
       ],
     },
     exclusions: {
@@ -1134,6 +1216,7 @@ export function buildFocusLabDossier(input) {
       tokens: true,
       firebasePaths: true,
       rawDiaryDump: true,
+      foodDbKeysInEssential: true,
     },
   };
 
@@ -1257,6 +1340,11 @@ export function summarizeFocusLabDossier(dossier) {
     d30Complete: Boolean(dossier?.history?.d30?.presentedAsComplete),
     mealsLogged: meals.length,
     foodItems: itemCount,
+    micronutrientKeys: Array.isArray(
+      dossier?.analysisDay?.nutrition?.totals?.micronutrients?.keys,
+    )
+      ? dossier.analysisDay.nutrition.totals.micronutrients.keys.length
+      : 0,
     workoutsLogged: workouts.length,
     sleepAvailable: Boolean(dossier?.lastCompletedNight?.provenanceSummary?.sleepAvailable),
     sleepStagesNote: dossier?.lastCompletedNight?.stagesNote || null,

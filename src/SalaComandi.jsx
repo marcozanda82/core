@@ -328,6 +328,7 @@ import {
   useSmartKentuTriggers,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue } from './useBiochimico';
+import { stashFocusDiaryForUser } from './features/kentuFocus/product/focusDiaryHandoff.js';
 import {
   DEFAULT_NO_SLEEP_ENERGY,
   getTodayString,
@@ -1291,6 +1292,30 @@ export default function SalaComandi() {
 
   const [fullStorico, setFullStorico] = useState(() => readRecentHistoryCache(userUid) || null);
   const [fullHistory, setFullHistory] = useState(() => readRecentHistoryCache(userUid) || {});
+
+  /** Handoff diario → Kentu Focus (in-RAM, isolato per uid). Nessuna write Firebase. */
+  useEffect(() => {
+    if (!userUid) return;
+    stashFocusDiaryForUser(userUid, {
+      fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
+      analysisDate: getYesterdayString(),
+      publicationDate: getTodayString(),
+      userTargets: userTargets && typeof userTargets === 'object' ? userTargets : null,
+    });
+  }, [userUid, fullHistory, userTargets]);
+
+  const openKentuFocus = useCallback(() => {
+    if (userUid) {
+      stashFocusDiaryForUser(userUid, {
+        fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
+        analysisDate: getYesterdayString(),
+        publicationDate: getTodayString(),
+        userTargets: userTargets && typeof userTargets === 'object' ? userTargets : null,
+      });
+    }
+    navigate('/kentu-focus');
+  }, [userUid, fullHistory, userTargets, navigate]);
+
   const {
     bodyMetricsHistory,
     predictiveCalibration,
@@ -8635,7 +8660,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <button
               type="button"
-              onClick={() => navigate('/kentu-focus')}
+              onClick={openKentuFocus}
               title="Kentu Focus"
               aria-label="Apri Kentu Focus"
               style={{
@@ -8842,6 +8867,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onOpenManualView: handleOpenManualMealFromChat,
             onOpenActivityView: handleOpenActivityFromStimulusCockpit,
             onOpenPlanView: handleOpenPlanFromStimulusCockpit,
+            onOpenFocus: openKentuFocus,
             onManualShortcut: handleHomeManualShortcut,
             onSendChatMessage: handleHomeActionSend,
             onSelectInboxDraft: handleSelectInboxDraft,

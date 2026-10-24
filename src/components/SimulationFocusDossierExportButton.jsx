@@ -803,6 +803,7 @@ export default function SimulationFocusDossierExportButton({
                       <li>Pubblicazione: {summary.publicationDate || '—'}</li>
                       <li className="col-span-2">Ruolo: {summary.analyzedDayRole || '—'}</li>
                       <li>Pasti: {summary.mealsLogged} ({summary.foodItems} voci)</li>
+                      <li>Chiavi micro: {summary.micronutrientKeys ?? 0}</li>
                       <li>Allenamenti giorno: {summary.workoutsLogged}</li>
                       <li>Sonno: {summary.sleepAvailable ? 'disponibile' : 'mancante'}</li>
                       <li>d30 completo: {summary.d30Complete ? 'sì' : 'no'}</li>

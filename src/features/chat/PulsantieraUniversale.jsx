@@ -23,7 +23,8 @@ const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti', sigla: 'PAS' },
   { id: 'rapidi', icon: '⚡', label: 'Rapidi', sigla: 'RAP' },
   { id: 'attivita', icon: '🏃', label: 'Attività', sigla: 'ATT' },
-  { id: 'report', icon: '📊', label: 'Report', sigla: 'RPT' },
+  /** Ex RPT: apre Kentu Focus. Il sottomenu report resta in codice (ALL / legacy). */
+  { id: 'focus', icon: '◎', label: 'Focus', sigla: 'FOCUS', openFocus: true },
   { id: 'tutti', icon: '⋯', label: 'Tutti', sigla: 'ALL' },
 ];
 
@@ -32,6 +33,7 @@ const CATEGORY_LABELS = {
   rapidi: 'Rapidi',
   attivita: 'Attività',
   report: 'Report',
+  focus: 'Focus',
   tutti: 'Tutte le azioni',
   'guidato-pasto': 'Per quale pasto vuoi che ti guidi?',
 };
@@ -472,6 +474,7 @@ export default function PulsantieraUniversale({
   onOpenManualView,
   onOpenActivityView,
   onOpenPlanView = null,
+  onOpenFocus = null,
   onManualShortcut,
   onSendChatMessage,
   onSelectInboxDraft = null,
@@ -668,8 +671,16 @@ export default function PulsantieraUniversale({
 
   const handlePillarClick = useCallback((pillarId) => {
     if (disabled) return;
+    const pillar = PILLARS.find((p) => p.id === pillarId);
+    if (pillar?.openFocus) {
+      closeMenus();
+      if (typeof onOpenFocus === 'function') {
+        onOpenFocus();
+      }
+      return;
+    }
     setActiveCategory((prev) => (prev === pillarId ? null : pillarId));
-  }, [disabled]);
+  }, [disabled, closeMenus, onOpenFocus]);
 
   const overlayConfig = useMemo(() => {
     if (!activeCategory) return null;

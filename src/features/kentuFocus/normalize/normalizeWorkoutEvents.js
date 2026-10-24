@@ -14,6 +14,7 @@ import {
   getLogArray,
   getManualNodesArray,
 } from './logUtils.js';
+import { normalizeMuscleGroupArray } from '../../../activityCatalog.js';
 
 /** @typedef {'strength'|'aerobic'|'other_activity'|'unclassified'} FocusActivityKind */
 
@@ -110,6 +111,45 @@ export function durationToMinutes(durationRaw) {
 /** @param {object} entry */
 function workoutLabel(entry) {
   return String(entry?.name || entry?.desc || entry?.workoutType || entry?.label || '').trim();
+}
+
+/**
+ * Gruppi muscolari registrati (non singoli esercizi / serie).
+ * @param {object} entry
+ * @returns {string[]}
+ */
+export function extractRecordedMuscleGroups(entry) {
+  const raw = entry?.muscles ?? entry?.muscleGroups ?? entry?.groups ?? null;
+  if (raw == null || (Array.isArray(raw) && raw.length === 0)) return [];
+  try {
+    return normalizeMuscleGroupArray(raw);
+  } catch {
+    const list = Array.isArray(raw) ? raw : [raw];
+    return list.map((m) => String(m || '').trim()).filter(Boolean);
+  }
+}
+
+/**
+ * Orario sessione in ore decimali se registrato.
+ * @param {object} entry
+ * @returns {number|null}
+ */
+export function extractWorkoutClockHour(entry) {
+  const t = finiteNumber(entry?.time ?? entry?.mealTime ?? entry?.startTime ?? entry?.hour);
+  if (t == null || t < 0 || t >= 24) return null;
+  return Math.round(t * 100) / 100;
+}
+
+/**
+ * Tipo attività di diario (pesi, camminata, corsa, …) se presente.
+ * @param {object} entry
+ * @returns {string|null}
+ */
+export function extractWorkoutTypeId(entry) {
+  const raw = String(
+    entry?.workoutType || entry?.subType || entry?.activityType || entry?.activity || '',
+  ).trim();
+  return raw || null;
 }
 
 /**
@@ -257,6 +297,9 @@ export function normalizeWorkoutEvents(analysisDayNode) {
     const kcalBurn = finiteNumber(entry.kcal ?? entry.cal ?? entry.kcalBurn);
     const classification = classifyFocusActivity(entry);
     const intensity = resolveRecordedIntensityMinutes(entry, durationMin);
+    const muscleGroups = extractRecordedMuscleGroups(entry);
+    const clockHour = extractWorkoutClockHour(entry);
+    const workoutTypeId = extractWorkoutTypeId(entry);
 
     if (kcalBurn != null) {
       anyKcal = true;
@@ -294,6 +337,31 @@ export function normalizeWorkoutEvents(analysisDayNode) {
           unit: 'kcal',
           provenance: FOCUS_PROVENANCE.recorded,
         }),
+      clockHour: clockHour == null
+        ? missingMetric()
+        : focusMetric(clockHour, {
+          unit: 'hour',
+          provenance: FOCUS_PROVENANCE.recorded,
+          source: 'workout.time|mealTime',
+        }),
+      muscleGroups: {
+        value: muscleGroups,
+        provenance: muscleGroups.length > 0
+          ? FOCUS_PROVENANCE.recorded
+          : FOCUS_PROVENANCE.missing,
+        source: 'muscles|muscleGroups|groups',
+      },
+      workoutTypeId: workoutTypeId
+        ? {
+          value: workoutTypeId,
+          provenance: FOCUS_PROVENANCE.recorded,
+          source: 'workoutType|subType',
+        }
+        : {
+          value: null,
+          provenance: FOCUS_PROVENANCE.missing,
+          source: 'workoutType|subType',
+        },
       activityKind: {
         value: classification.kind,
         provenance: classification.provenance,
@@ -303,7 +371,13 @@ export function normalizeWorkoutEvents(analysisDayNode) {
         provenance: FOCUS_PROVENANCE.calculated,
         source: classification.source,
       }),
+      intensitySupported: intensity.intensitySupported,
+      intensityBand: intensity.intensitySupported
+        ? (intensity.vigorousIntensityMinutes != null ? 'vigorous' : 'moderate')
+        : null,
       detailLevel: detailLevel(entry),
+      // Serie/ripetizioni/carichi: non estratti — assenti o non affidabili qui.
+      setsRepsLoadsInvented: false,
     };
   });
 
