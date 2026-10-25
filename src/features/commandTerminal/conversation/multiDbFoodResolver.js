@@ -13,6 +13,8 @@ import {
 } from '../../mealBuilder/utils/SemanticMatchmaker.js';
 import {
   computeRelevanceScore,
+  mergeAndRankSearchResults,
+  MIN_RELEVANCE_SCORE,
   searchGlobalDb,
   searchKentuItDb,
   searchOffDb,
@@ -297,7 +299,12 @@ function sortCandidates(list) {
  * @param {string} fallbackSource
  * @returns {object|null}
  */
-export function searchResultToResolverCandidate(searchResult, fallbackSource = 'kentu') {
+/**
+ * @param {object} searchResult
+ * @param {string} [fallbackSource]
+ * @param {string} [query] — query utente (obbligatoria per score 300–1100 coerente con ricerca manuale)
+ */
+export function searchResultToResolverCandidate(searchResult, fallbackSource = 'kentu', query = '') {
   if (!searchResult || typeof searchResult !== 'object') return null;
   const row = searchResult.row && typeof searchResult.row === 'object'
     ? searchResult.row
@@ -318,12 +325,21 @@ export function searchResultToResolverCandidate(searchResult, fallbackSource = '
     source = 'usda';
   }
 
-  const relevance = Number(
-    searchResult.rankingScore
-    ?? searchResult.matchScore
-    ?? searchResult.textScore
-    ?? computeRelevanceScore(searchResult, name),
-  ) || 0;
+  const q = String(query || '').trim();
+  const ranking = Number(searchResult.rankingScore);
+  const computed = q ? computeRelevanceScore(searchResult, q) : 0;
+  let relevance = 0;
+  if (Number.isFinite(ranking) && ranking >= MIN_RELEVANCE_SCORE) {
+    relevance = ranking;
+  } else if (Number.isFinite(computed) && computed >= MIN_RELEVANCE_SCORE) {
+    relevance = computed;
+  } else {
+    // foodSearch textScore/matchScore sono 0–1: non passarli a relevanceScoreToConfidence (scala 300+).
+    const unit = Number(searchResult.textScore ?? searchResult.matchScore);
+    if (Number.isFinite(unit) && unit > 0 && unit <= 1.5) {
+      relevance = Math.round(unit * 1000);
+    }
+  }
 
   return buildCandidate({
     fdcId: String(searchResult.key || searchResult.id || searchResult.fdcId || row.id || '').trim() || null,
@@ -335,7 +351,11 @@ export function searchResultToResolverCandidate(searchResult, fallbackSource = '
       ...row,
       desc: row.desc || name,
       name: row.name || name,
+      ...(row.brand || searchResult.brand
+        ? { brand: row.brand || searchResult.brand }
+        : {}),
     },
+    matchKind: relevance >= 980 ? 'exact' : undefined,
   });
 }
 
@@ -365,9 +385,9 @@ function semanticMatchToCandidate(semanticMatch, source) {
   });
 }
 
-function pushLexicalHits(pool, hits, source) {
+function pushLexicalHits(pool, hits, source, query = '') {
   (Array.isArray(hits) ? hits : []).slice(0, 6).forEach((hit) => {
-    const candidate = searchResultToResolverCandidate(hit, source);
+    const candidate = searchResultToResolverCandidate(hit, source, query);
     if (candidate) mergeCandidatePool(pool, candidate);
   });
 }
@@ -442,13 +462,14 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
   }
 
   if (personalDb && Object.keys(personalDb).length > 0) {
-    pushLexicalHits(pool, searchPersonalDb(personalDb, name).slice(0, 4), 'personal');
+    pushLexicalHits(pool, searchPersonalDb(personalDb, name).slice(0, 4), 'personal', name);
   }
   if (kentuItDb && Object.keys(kentuItDb).length > 0) {
     pushLexicalHits(
       pool,
       (await searchKentuItDb(name, kentuItDb, [], { limit: HEAVY_STEP2_RESULT_LIMIT, signal: ctx.signal })).slice(0, 4),
       'kentu',
+      name,
     );
   }
 
@@ -519,26 +540,32 @@ export async function collectLevel2ExternalCandidates(foodName, ctx = {}) {
 
   if (signalAborted(ctx.signal)) return [];
 
-  pushLexicalHits(
-    pool,
-    await searchOffDb(name, null, [], {
-      limit: HEAVY_STEP2_RESULT_LIMIT,
-      signal: ctx.signal,
-    }),
-    'off',
-  );
+  // Stesso motore della ricerca manuale: OFF locale + USDA, poi mergeAndRank.
+  const offDb = ctx.offDb && typeof ctx.offDb === 'object' ? ctx.offDb : null;
+  const offHits = await searchOffDb(name, offDb, [], {
+    limit: Math.max(HEAVY_STEP2_RESULT_LIMIT, 12),
+    signal: ctx.signal,
+  });
   if (signalAborted(ctx.signal)) return [];
 
-  if (globalDb && Object.keys(globalDb).length > 0) {
-    pushLexicalHits(
-      pool,
-      await searchGlobalDb(name, globalDb, [], {
-        limit: HEAVY_STEP2_RESULT_LIMIT,
+  let usdaHits = [];
+  if (globalDb) {
+    let hasGlobal = false;
+    for (const _k in globalDb) {
+      hasGlobal = true;
+      break;
+    }
+    if (hasGlobal) {
+      usdaHits = await searchGlobalDb(name, globalDb, [], {
+        limit: Math.max(HEAVY_STEP2_RESULT_LIMIT, 12),
         signal: ctx.signal,
-      }),
-      'usda',
-    );
+      });
+    }
   }
+  if (signalAborted(ctx.signal)) return [];
+
+  const ranked = mergeAndRankSearchResults(name, [...offHits, ...usdaHits], 12);
+  pushLexicalHits(pool, ranked, 'off', name);
 
   return filterAcceptableDisambiguationCandidates(name, sortCandidates([...pool.values()]));
 }

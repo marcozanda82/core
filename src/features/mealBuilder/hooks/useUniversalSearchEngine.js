@@ -346,8 +346,10 @@ function computeRankingScore(item, query, relevanceScore) {
 }
 
 /**
- * Unisce i hit dei vari DB. Priorità assoluta Master (Kentu/CREA/GLOBAL) su OFF,
- * poi rankingScore (Master +100, exact +10, relevance).
+ * Unisce i hit dei vari DB.
+ * Ordine: pertinenza/rankingScore (exact ≫ parziale), poi tie-break Master vs OFF,
+ * lunghezza nome, provenienza. NON demotare OFF prima dello score — altrimenti
+ * "Nutella" Ferrero finisce sotto pasta/USDA deboli.
  */
 export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESULT_CAP) {
   const list = Array.isArray(items) ? items : [];
@@ -368,6 +370,11 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
       bestByKey.set(key, scored);
       continue;
     }
+    // A parità di score, preferisci Master; mai scartare un exact OFF per un Master debole.
+    if (scored.rankingScore !== prev.rankingScore) {
+      if (scored.rankingScore > prev.rankingScore) bestByKey.set(key, scored);
+      continue;
+    }
     const preferScoredMaster = isMasterSearchResult(scored) && !isMasterSearchResult(prev);
     const preferPrevMaster = isMasterSearchResult(prev) && !isMasterSearchResult(scored);
     if (preferScoredMaster) {
@@ -375,10 +382,6 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
       continue;
     }
     if (preferPrevMaster) continue;
-    if (scored.rankingScore !== prev.rankingScore) {
-      if (scored.rankingScore > prev.rankingScore) bestByKey.set(key, scored);
-      continue;
-    }
     if (compareProvenancePriority(scored, prev) < 0) {
       bestByKey.set(key, scored);
     }
@@ -387,12 +390,19 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
   return Array.from(bestByKey.values())
     .filter((item) => Number(item.relevanceScore) >= MIN_RELEVANCE_SCORE)
     .sort((a, b) => {
-      const aOff = isOffSearchResult(a);
-      const bOff = isOffSearchResult(b);
-      if (aOff !== bOff) return aOff ? 1 : -1;
+      const exactA = isExactNameMatch(a, query) ? 1 : 0;
+      const exactB = isExactNameMatch(b, query) ? 1 : 0;
+      if (exactB !== exactA) return exactB - exactA;
+
       const scoreA = Number(a.rankingScore) || 0;
       const scoreB = Number(b.rankingScore) || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
+
+      // Tie-break morbido: Master prima di OFF solo a score uguale.
+      const aOff = isOffSearchResult(a);
+      const bOff = isOffSearchResult(b);
+      if (aOff !== bOff) return aOff ? 1 : -1;
+
       const lenA = normalizeSearchText(a?.name || a?.desc || '').length;
       const lenB = normalizeSearchText(b?.name || b?.desc || '').length;
       if (lenA !== lenB) return lenA - lenB;

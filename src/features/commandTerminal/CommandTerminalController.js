@@ -1779,6 +1779,12 @@ export class CommandTerminalController {
         kentuItDb: dbCtx.kentuItDb,
         globalDb: dbCtx.globalDb,
         offDb: dbCtx.offDb,
+        offReady: (() => {
+          const off = dbCtx.offDb;
+          if (!off || typeof off !== 'object') return false;
+          for (const _k in off) return true;
+          return false;
+        })(),
         resume: (match) => this.resumeMcdriveValidationEnrichment(match, idx),
       });
     }

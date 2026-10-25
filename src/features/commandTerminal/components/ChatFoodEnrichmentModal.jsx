@@ -102,12 +102,21 @@ export default function ChatFoodEnrichmentModal({
       ? filterAcceptableDisambiguationCandidates(foodName, preloadedRaw)
       : null;
     const forceExternal = session.needsExternalSearch === true;
+    const offDb = session.offDb && typeof session.offDb === 'object' ? session.offDb : null;
+    let offHasEntries = false;
+    if (offDb) {
+      for (const _k in offDb) {
+        offHasEntries = true;
+        break;
+      }
+    }
+    const offStillLoading = session.offReady === false && !offHasEntries;
 
     const dbCtx = {
       kentuItDb: session.kentuItDb,
       personalDb: session.personalDb,
       globalDb: session.globalDb,
-      offDb: session.offDb,
+      offDb,
       signal: controller.signal,
       onProgress: (info) => {
         if (controller.signal.aborted) return;
@@ -183,10 +192,25 @@ export default function ChatFoodEnrichmentModal({
         matches = await collectLevel2ExternalCandidates(foodName, dbCtx);
         if (controller.signal.aborted) return;
 
+        const filtered = filterAcceptableDisambiguationCandidates(foodName, matches);
+        // OFF ancora in background: non chiudere con "nessuna corrispondenza" definitiva.
+        if (filtered.length === 0 && offStillLoading) {
+          setLocalSession({
+            foodName,
+            isLoading: true,
+            matches: [],
+            error: '',
+            loadingMessage: 'Catalogo prodotti in caricamento… riprovo appena pronto.',
+            searchPhase: 'external',
+            canInterrupt: true,
+          });
+          return;
+        }
+
         setLocalSession({
           foodName,
           isLoading: false,
-          matches: filterAcceptableDisambiguationCandidates(foodName, matches),
+          matches: filtered,
           error: '',
           loadingMessage: '',
           searchPhase: null,
@@ -216,6 +240,7 @@ export default function ChatFoodEnrichmentModal({
     session?.personalDb,
     session?.globalDb,
     session?.offDb,
+    session?.offReady,
     session?.matches,
     session?.needsExternalSearch,
   ]);
