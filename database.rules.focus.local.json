@@ -3,7 +3,27 @@
     "users": {
       "$uid": {
         ".read": "$uid === auth.uid",
-        ".write": "$uid === auth.uid"
+        ".write": "$uid === auth.uid",
+        "kentu_focus_ai": {
+          "$periodId": {
+            ".validate": "$periodId === 'ieri' || $periodId === 'settimana' || $periodId === 'mese'",
+            "$windowKey": {
+              "current": {
+                ".validate": "newData.hasChildren(['revisionId', 'dataVersion', 'generatedAt', 'periodId', 'windowKey']) && newData.child('periodId').val() === $periodId && newData.child('windowKey').val() === $windowKey && newData.child('revisionId').isString() && newData.child('dataVersion').isString() && newData.child('generatedAt').isNumber()"
+              },
+              "revisions": {
+                "$revisionId": {
+                  ".validate": "newData.hasChildren(['schema', 'revisionId', 'uid', 'periodId', 'analysis', 'dataVersion', 'generatedAt', 'notDemo', 'source', 'notHealthReports']) && newData.child('uid').val() === $uid && newData.child('periodId').val() === $periodId && newData.child('revisionId').val() === $revisionId && newData.child('notDemo').val() === true && newData.child('source').val() === 'kentu_focus_ai_coach' && newData.child('notHealthReports').val() === true && newData.child('generatedAt').isNumber() && newData.child('analysis').hasChildren() && newData.child('schema').val() === 'kentu.focusAiAnalysisRecord.v1'"
+                }
+              }
+            }
+          }
+        },
+        "kentu_focus_ai_index": {
+          "$indexKey": {
+            ".validate": "newData.hasChildren(['periodId', 'windowKey', 'revisionId', 'dataVersion', 'generatedAt']) && (newData.child('periodId').val() === 'ieri' || newData.child('periodId').val() === 'settimana' || newData.child('periodId').val() === 'mese') && newData.child('revisionId').isString() && newData.child('generatedAt').isNumber()"
+          }
+        }
       }
     },
     "planning": {

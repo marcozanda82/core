@@ -1,9 +1,16 @@
 /**
- * Dossier AI coach Kentu Focus — solo evidenze da sessione reale già coerente.
- * Nessun demo, nessun score, nessun dato inventato.
+ * Dossier AI interpretativo Kentu Focus — evidenze ricche + traiettoria Bussola.
+ * Nessun demo, nessuno score, nessun dato inventato.
  */
 
+import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
+import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
+import { normalizeFoodEvents, collectDayLogForNutrition } from '../normalize/normalizeFoodEvents.js';
+import { normalizeStimuliEvents } from '../normalize/normalizeStimuliEvents.js';
 import { FOCUS_PAGE_MODE } from './buildFocusPageSession.js';
+import { buildFocusCompassSignalsForDossier } from './buildFocusCompassSignalsForDossier.js';
+import { buildFocusKentuEnginesForDossier } from './buildFocusKentuEnginesForDossier.js';
+import { buildFocusEditorialReadingContext } from './buildFocusEditorialReadingContext.js';
 
 /**
  * @param {unknown} value
@@ -26,6 +33,16 @@ function shortHash(text) {
   return (h >>> 0).toString(16);
 }
 
+function foodName(item) {
+  return String(item?.name || item?.desc || item?.label || item?.foodName || '').trim();
+}
+
+function readNova(tags) {
+  if (!tags || typeof tags !== 'object') return null;
+  const n = Number(tags.novaGroup ?? tags.nova ?? null);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * @param {object|null|undefined} session
  */
@@ -40,6 +57,89 @@ export function canBuildFocusAiCoachDossier(session) {
     return { ok: false, reason: 'wellness_unavailable' };
   }
   return { ok: true, reason: null };
+}
+
+/**
+ * @param {object} fullHistory
+ * @param {string} analysisDate
+ * @param {number} windowDays
+ */
+function collectFoodFrequency(fullHistory, analysisDate, windowDays) {
+  /** @type {Map<string, { name: string, days: Set<string>, occasions: number, nova: number|null }>} */
+  const map = new Map();
+  for (let i = windowDays - 1; i >= 0; i -= 1) {
+    const date = addCalendarDays(analysisDate, -i);
+    const node = getTrackerDayNode(fullHistory, date);
+    if (!node) continue;
+    const pack = normalizeFoodEvents(node);
+    if (!pack.hasFood) continue;
+    for (const item of collectDayLogForNutrition(node)) {
+      if (item?.type && item.type !== 'food' && item.type !== 'recipe') continue;
+      const name = foodName(item);
+      if (!name) continue;
+      const key = name.toLowerCase();
+      let row = map.get(key);
+      if (!row) {
+        row = { name, days: new Set(), occasions: 0, nova: readNova(item.semanticTags) };
+        map.set(key, row);
+      }
+      row.days.add(date);
+      row.occasions += 1;
+      if (row.nova == null) row.nova = readNova(item.semanticTags);
+    }
+  }
+  return [...map.values()]
+    .map((r) => ({
+      name: r.name,
+      distinctDays: r.days.size,
+      occasions: r.occasions,
+      novaGroupDocumented: r.nova,
+      persistentHabit: r.days.size >= 3,
+    }))
+    .sort((a, b) => b.occasions - a.occasions || b.distinctDays - a.distinctDays)
+    .slice(0, 40);
+}
+
+/**
+ * @param {object} fullHistory
+ * @param {string} analysisDate
+ * @param {number} windowDays
+ */
+function collectStimuliWindow(fullHistory, analysisDate, windowDays) {
+  let stimulantEvents = 0;
+  let alcoholEvents = 0;
+  let waterMl = 0;
+  let daysWithStimuli = 0;
+  /** @type {object[]} */
+  const byDay = [];
+  for (let i = windowDays - 1; i >= 0; i -= 1) {
+    const date = addCalendarDays(analysisDate, -i);
+    const node = getTrackerDayNode(fullHistory, date);
+    if (!node) continue;
+    const pack = normalizeStimuliEvents(node);
+    const s = Number(pack.stimuli?.stimulantEvents?.value) || 0;
+    const a = Number(pack.stimuli?.alcoholEvents?.value) || 0;
+    const w = pack.stimuli?.waterMl?.provenance === 'recorded'
+      ? Number(pack.stimuli.waterMl.value)
+      : null;
+    if (s > 0 || a > 0 || w != null) daysWithStimuli += 1;
+    stimulantEvents += s;
+    alcoholEvents += a;
+    if (w != null) waterMl += w;
+    if (s > 0 || a > 0) {
+      byDay.push({ date, stimulantEvents: s, alcoholEvents: a, waterMl: w });
+    }
+  }
+  return {
+    available: daysWithStimuli > 0,
+    stimulantEventsTotal: stimulantEvents,
+    alcoholEventsTotal: alcoholEvents,
+    waterMlTotalRecorded: waterMl > 0 ? waterMl : null,
+    daysWithAny: byDay.slice(-14),
+    note: daysWithStimuli > 0
+      ? 'Stimolanti/alcol/acqua solo se tipizzati nel diario; orario caffeina spesso assente.'
+      : 'Nessun evento stimolante/alcol/acqua tipizzato nel periodo.',
+  };
 }
 
 /**
@@ -60,6 +160,10 @@ export function buildFocusAiCoachDossier(session) {
   const nutrition = session.nutrition || null;
   const wellness = session.wellness;
   const pillarsById = wellness.pillarsById || {};
+  const fullHistory = session.fullHistory && typeof session.fullHistory === 'object'
+    ? session.fullHistory
+    : null;
+  const windowDays = periodId === 'mese' ? 30 : periodId === 'settimana' ? 7 : 1;
 
   /** @type {object[]} */
   const meals = [];
@@ -69,12 +173,26 @@ export function buildFocusAiCoachDossier(session) {
         mealLabel: meal.mealLabel || null,
         mealType: meal.mealType || null,
         clockLabel: meal.clockLabel || null,
+        clockHour: meal.clockHour ?? null,
+        distribution: meal.distribution
+          ? {
+            kcal: meal.distribution.kcal ?? null,
+            proteinG: meal.distribution.proteinG ?? null,
+            carbG: meal.distribution.carbG ?? null,
+            fatG: meal.distribution.fatG ?? null,
+          }
+          : null,
         items: (meal.items || [])
           .map((item) => ({
             name: item.name || null,
             grams: item.grams ?? null,
             kcal: item.macros?.kcal ?? null,
             proteinG: item.macros?.proteinG ?? null,
+            carbG: item.macros?.carbG ?? null,
+            fatG: item.macros?.fatG ?? null,
+            fiberG: item.macros?.fiberG ?? null,
+            micronutrients: item.micronutrients || null,
+            novaGroupDocumented: readNova(item.semanticTags),
             toVerify: (item.toVerify || []).map((f) => ({
               nutrient: f.nutrient || null,
               reason: f.reason || null,
@@ -85,7 +203,6 @@ export function buildFocusAiCoachDossier(session) {
     }
   }
 
-  /** Nutrienti giorno — solo se usable */
   let usableMacros = null;
   let usableMicros = [];
   if (periodId === 'ieri' && nutrition?.ieri?.totals) {
@@ -115,8 +232,24 @@ export function buildFocusAiCoachDossier(session) {
       daysInWindow: nutrition.trends.daysInWindow ?? null,
       averagesFromRecordedDaysOnly: nutrition.trends.averagesFromRecordedDaysOnly || null,
       note: nutrition.trends.note || null,
+      seriesRecorded: (nutrition.trends.series || [])
+        .filter((s) => s.status === 'recorded')
+        .map((s) => ({
+          date: s.date,
+          kcal: s.kcal,
+          proteinG: s.proteinG,
+          fiberG: s.fiberG ?? null,
+        })),
     }
     : null;
+
+  const foodFrequency = fullHistory && isIsoDateString(session.analysisDate)
+    ? collectFoodFrequency(fullHistory, session.analysisDate, Math.max(windowDays, 7))
+    : [];
+
+  const stimuli = fullHistory && isIsoDateString(session.analysisDate)
+    ? collectStimuliWindow(fullHistory, session.analysisDate, Math.max(windowDays, 7))
+    : { available: false, note: 'Diario non allegato alla sessione per stimolanti.' };
 
   const exercisePillar = pillarsById.exercise || null;
   const sleepPillar = pillarsById.sleep || null;
@@ -133,8 +266,12 @@ export function buildFocusAiCoachDossier(session) {
       workoutTypeId: w.workoutTypeId || null,
       kindLabel: w.kindLabel || null,
       kind: w.kind || null,
-      // Solo se registrato nel diario — mai inventato
+      isWalking: Boolean(w.isWalking),
+      intensityDocumented: Boolean(w.intensityDocumented),
+      intensityBand: w.intensityBand || null,
       kcalBurn: w.kcalBurn ?? null,
+      setsRepsLoadsPresent: false,
+      note: 'Serie/ripetizioni/carichi non esportati se non verificabili nella normalizzazione Focus.',
     }))
     : [];
 
@@ -150,8 +287,18 @@ export function buildFocusAiCoachDossier(session) {
         sessions: r.sessions,
         durationMinTotal: r.durationMinTotal ?? null,
         muscleGroups: Array.isArray(r.muscleGroups) ? r.muscleGroups : [],
+        aerobicMinutes: r.aerobicMinutes ?? null,
+        moderateMinutes: r.moderateMinutes ?? null,
+        vigorousMinutes: r.vigorousMinutes ?? null,
       }))
     : [];
+
+  const cardio = exercisePillar?.cardio
+    ? {
+      ...exercisePillar.cardio,
+      strengthSessionCount: exercisePillar.strengthSessionCount ?? null,
+    }
+    : null;
 
   const sleepDay = periodId === 'ieri'
     ? {
@@ -162,6 +309,7 @@ export function buildFocusAiCoachDossier(session) {
       nightEndedOn: sleepPillar?.nightEndedOn || session.publicationDate,
       analysisDay: sleepPillar?.analysisDay || session.analysisDate,
       metrics: sleepPillar?.metrics || [],
+      convention: 'notte_D_conclusa_al_risveglio_D_plus_1',
     }
     : null;
 
@@ -186,21 +334,74 @@ export function buildFocusAiCoachDossier(session) {
     ? (nutrition?.ieri?.comment?.technicalNotes || [])
     : [];
 
-  const deterministicCoach = wellness.coach
+  const compass = buildFocusCompassSignalsForDossier({
+    fullHistory,
+    analysisDate: session.analysisDate,
+    publicationDate: session.publicationDate,
+    periodId,
+    userTargets: session.userTargets,
+  });
+
+  const habitCompass = session.habitCompass?.available
     ? {
-      wentWell: wellness.coach.wentWell || null,
-      needsAttention: wellness.coach.needsAttention || null,
-      concreteAction: wellness.coach.concreteAction || null,
-      primaryPillarId: wellness.coach.primaryPillarId || null,
+      title: session.habitCompass.title || null,
+      reason: session.habitCompass.reason || null,
+      cardio: session.habitCompass.cardio || null,
+      highlights: session.habitCompass.highlights || null,
+      evaluations: (session.habitCompass.evaluations || []).map((e) => ({
+        id: e.id,
+        pillarLabel: e.pillarLabel,
+        directionLabel: e.directionLabel,
+        habitObserved: e.habitObserved,
+        motivation: e.motivation,
+        proposal: e.proposal,
+        limits: e.limits || [],
+      })),
     }
     : null;
 
+  const kentuEngines = buildFocusKentuEnginesForDossier({
+    session,
+    compassSignals: compass,
+    habitCompass,
+  });
+
+  const horizonBrief = periodId === 'ieri'
+    ? 'Orizzonte IERI: racconta la giornata nel contesto recente. Un giorno ≠ traiettoria. Nessun verdetto settimanale di forza.'
+    : periodId === 'mese'
+      ? 'Orizzonte MESE: andamento e comportamenti ricorrenti; asteniti se i dati non bastano.'
+      : 'Orizzonte SETTIMANA: abitudini e persistenza (non un singolo pasto).';
+
+  const editorialReadingContext = buildFocusEditorialReadingContext({
+    periodId,
+    analysisDate: session.analysisDate,
+    publicationDate: session.publicationDate,
+    fullHistory,
+    userTargets: session.userTargets,
+    meals,
+    workouts,
+    dayIntakeKcal: usableMacros?.kcal ?? null,
+    compassSignals: compass,
+  });
+
   const dossier = {
-    schema: 'kentu.focusAiCoachDossier.v1',
+    schema: 'kentu.focusAiCoachDossier.v2',
     periodId,
     analysisDate: session.analysisDate,
     publicationDate: session.publicationDate,
     windowLabel: session.windowLabel || null,
+    horizonBrief,
+    editorialReadingContext,
+    mandate: {
+      doNotRestateCardNumbers: true,
+      teachOrHypothesizeOrImproveDecision: true,
+      distinguish: ['recorded_fact', 'general_knowledge', 'founded_inference', 'hypothesis_to_test'],
+      declaredGoalVsObservedConduct: true,
+      episodeVersusTrajectory: true,
+      humanReadableHeadline: true,
+      concreteFoodManeuverPreferred: true,
+      noUnmeasuredSleepPhysiology: true,
+    },
     pillars: {
       nutrition: {
         primaryValue: nutritionPillar?.primaryValue || null,
@@ -226,18 +427,23 @@ export function buildFocusAiCoachDossier(session) {
       usableMacros,
       usableMicros,
       trend: nutritionTrend,
+      foodFrequency,
       privateComment: periodId === 'ieri' ? (nutrition?.ieri?.comment?.text || null) : null,
+      stimuli,
     },
     exercise: {
       workouts,
       muscleGroupFrequency,
       seriesRecorded: exerciseSeries,
+      cardio,
       detailNote: exercisePillar?.detailNote || null,
       policy: {
         muscleGroupsAreNotExercises: true,
         noInventedSetsRepsLoads: true,
         noInventedIntensity: true,
         missingLogNotInactivity: true,
+        strengthOnlyIfLogged: true,
+        cardioForEveryone: true,
       },
     },
     sleep: {
@@ -245,17 +451,22 @@ export function buildFocusAiCoachDossier(session) {
       seriesRecorded: sleepSeries,
       detailNote: sleepPillar?.detailNote || null,
     },
+    compassSignals: compass,
+    habitCompass,
+    kentuEngines,
     anomalies,
     technicalNotes,
-    deterministicCoach,
     mealManeuver: session.mealManeuver
       ? {
         suggested: Boolean(session.mealManeuver.suggested),
         status: session.mealManeuver.status || null,
         message: session.mealManeuver.message || null,
+        criticality: session.mealManeuver.criticality || null,
+        objective: session.mealManeuver.objective || null,
         observation: session.mealManeuver.observation || null,
         suggestedChange: session.mealManeuver.suggestedChange || null,
-        motivation: session.mealManeuver.motivation || null,
+        expectedAdvantage: session.mealManeuver.expectedAdvantage || null,
+        tradeoffs: session.mealManeuver.tradeoffs || null,
         watchNextDays: session.mealManeuver.watchNextDays || null,
         limits: session.mealManeuver.limits || [],
         simulation: session.mealManeuver.simulation
@@ -264,6 +475,7 @@ export function buildFocusAiCoachDossier(session) {
             dailyKcalBefore: session.mealManeuver.simulation.dailyKcalBefore,
             dailyKcalAfter: session.mealManeuver.simulation.dailyKcalAfter,
             item: session.mealManeuver.simulation.item || null,
+            addressesCriticality: session.mealManeuver.simulation.addressesCriticality || null,
           }
           : null,
       }
@@ -272,16 +484,31 @@ export function buildFocusAiCoachDossier(session) {
       ? {
         kcal: session.userTargets.kcal ?? null,
         prot: session.userTargets.prot ?? null,
+        carb: session.userTargets.carb ?? null,
+        fat: session.userTargets.fat ?? null,
+      }
+      : null,
+    fallbackDeterministicCoach: wellness.coach
+      ? {
+        note: 'Fallback se AI assente — non è interpretazione approfondita.',
+        wentWell: wellness.coach.wentWell || null,
+        needsAttention: wellness.coach.needsAttention || null,
+        concreteAction: wellness.coach.concreteAction || null,
       }
       : null,
     policy: {
       equalPillars: true,
       noHealthScore: true,
-      noCausalClaims: true,
+      noProvenCausalityRequired: true,
+      allowPlausibleMechanisms: true,
       noClinicalDiagnosis: true,
+      noInventedBodyInflammation: true,
+      noInventedDII: true,
       missingNotZero: true,
       foodNamesFromDiaryOnly: true,
       mealManeuverSimulationOnly: true,
+      noQuadrantCopy: true,
+      targetIsNotTdee: true,
     },
   };
 
@@ -292,8 +519,11 @@ export function buildFocusAiCoachDossier(session) {
     publicationDate: session.publicationDate,
     pillars: dossier.pillars,
     meals: dossier.nutrition.meals,
+    foodFrequency: dossier.nutrition.foodFrequency?.slice?.(0, 12),
     workouts: dossier.exercise.workouts,
+    cardio: dossier.exercise.cardio,
     sleep: dossier.sleep,
+    compass: dossier.compassSignals?.observedTrajectory || null,
     anomalies: dossier.anomalies,
   }));
 
@@ -308,6 +538,7 @@ export function buildFocusAiCoachDossier(session) {
       analysisDate: session.analysisDate,
       publicationDate: session.publicationDate,
       dataVersion,
+      windowKey: session.analysisDate,
     },
   };
 }

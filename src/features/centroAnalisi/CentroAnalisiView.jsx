@@ -64,12 +64,21 @@ export default function CentroAnalisiView({
   onOpenFotografiaProgressione = null,
   onOpenTimelineMetabolica = null,
   initialAreaId = null,
+  /** Deep-link stanza strumenti: bussola | mappa | radar */
+  initialRoomId = null,
   /** Anteprime live da SalaComandi (SSOT giorno selezionato). */
   livePreview = null,
   /** Handler Ghost Car / autopilota (solo da SalaComandi embedded). */
   calibrazioneHandlers = null,
 } = {}) {
   const navigate = useNavigate();
+  const resolveRoom = (area, room) => {
+    const a = String(area || '').toLowerCase();
+    const r = String(room || '').toLowerCase();
+    if (a !== 'strumentazione') return null;
+    if (['bussola', 'mappa', 'radar'].includes(r)) return r;
+    return DEFAULT_STRUMENTAZIONE_ROOM;
+  };
   const deepLinkedAreaRef = useRef((() => {
     const id = String(initialAreaId || '').toLowerCase();
     return id === 'strumentazione' || id === 'calibrazione_target' ? id : null;
@@ -80,10 +89,7 @@ export default function CentroAnalisiView({
     if (id === 'strumentazione' || id === 'calibrazione_target') return id;
     return null;
   });
-  const [roomId, setRoomId] = useState(() => {
-    const id = String(initialAreaId || '').toLowerCase();
-    return id === 'strumentazione' ? DEFAULT_STRUMENTAZIONE_ROOM : null;
-  });
+  const [roomId, setRoomId] = useState(() => resolveRoom(initialAreaId, initialRoomId));
   const centroAnalisiStore = useCentroAnalisiReadStore();
   const { mapData } = useStrumentazioneMapData(centroAnalisiStore);
 
@@ -97,14 +103,14 @@ export default function CentroAnalisiView({
     }
     if (id === 'strumentazione') {
       setAreaId('strumentazione');
-      setRoomId(DEFAULT_STRUMENTAZIONE_ROOM);
+      setRoomId(resolveRoom(id, initialRoomId));
       deepLinkedAreaRef.current = 'strumentazione';
       return;
     }
     setAreaId(null);
     setRoomId(null);
     deepLinkedAreaRef.current = null;
-  }, [initialAreaId]);
+  }, [initialAreaId, initialRoomId]);
 
   const preview = livePreview && typeof livePreview === 'object' ? livePreview : {};
 

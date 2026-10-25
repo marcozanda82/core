@@ -713,10 +713,14 @@ export async function searchOffDb(query, offDb, existingResults = [], overrides 
 
   if (isSearchAborted(overrides.signal)) return [];
 
-  const hasLocalOff = offDb != null
-    && typeof offDb === 'object'
-    && !Array.isArray(offDb)
-    && Object.keys(offDb).length > 0;
+  // Evita Object.keys(offDb) su ~200k entry (allocazione enorme a ogni ricerca).
+  let hasLocalOff = false;
+  if (offDb != null && typeof offDb === 'object' && !Array.isArray(offDb)) {
+    for (const _k in offDb) {
+      hasLocalOff = true;
+      break;
+    }
+  }
 
   // Query barcode tipizzata nella search bar: cascata locale → API v2.
   const qDigits = trimmedQuery.replace(/\D/g, '');

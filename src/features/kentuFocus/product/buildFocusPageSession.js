@@ -147,6 +147,7 @@ export function resolveFocusPageSession(input) {
       userTargets,
       mealManeuver,
       habitCompass,
+      fullHistory: handoff.fullHistory,
       editorial: {
         available: false,
         message: 'Osservazioni deterministiche dai tuoi dati · analisi editoriale lunga non ancora disponibile',
@@ -183,6 +184,7 @@ export function resolveFocusPageSession(input) {
       userTargets: null,
       mealManeuver: null,
       habitCompass: null,
+      fullHistory: null,
       editorial: {
         available: true,
         message: null,
@@ -211,6 +213,7 @@ export function resolveFocusPageSession(input) {
       userTargets: null,
       mealManeuver: null,
       habitCompass: null,
+      fullHistory: null,
       editorial: { available: false, message: 'Nessun dato disponibile.' },
       demoEdition: null,
       showDemoEditorial: false,

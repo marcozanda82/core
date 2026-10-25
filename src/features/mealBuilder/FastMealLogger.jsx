@@ -2619,7 +2619,36 @@ export default function FastMealLogger({
   effectiveDailyKcal = null,
   dailyMacroTargets = null,
 }) {
-  const { kentuItDb: loadedKentuItDb, globalDb: loadedGlobalDb, offDb: loadedOffDb } = useFoodDb({ defer: false });
+  const {
+    kentuItDb: loadedKentuItDb,
+    globalDb: loadedGlobalDb,
+    offDb: loadedOffDb,
+    isLoading: catalogsLoading,
+    offReady: catalogsOffReady,
+  } = useFoodDb({ defer: false });
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || typeof performance === 'undefined') return undefined;
+    const t0 = performance.now();
+    performance.mark('meal-logger-open');
+    // eslint-disable-next-line no-console
+    console.info('[FoodDBPerf] FastMealLogger:mount', { catalogsLoading, catalogsOffReady });
+    return () => {
+      // eslint-disable-next-line no-console
+      console.info('[FoodDBPerf] FastMealLogger:unmount', {
+        openMs: Math.round(performance.now() - t0),
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || catalogsLoading) return;
+    // eslint-disable-next-line no-console
+    console.info('[FoodDBPerf] FastMealLogger:core-catalogs-ready', {
+      offReady: catalogsOffReady,
+    });
+  }, [catalogsLoading, catalogsOffReady]);
+
   const resolvedKentuItDb = loadedKentuItDb;
   const resolvedGlobalDb = masterDbProp ?? loadedGlobalDb;
   const resolvedOffDb = loadedOffDb;

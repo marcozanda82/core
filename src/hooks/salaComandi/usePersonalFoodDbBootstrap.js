@@ -50,12 +50,14 @@ export function usePersonalFoodDbBootstrap({
   userFoodAliasesRef.current = userFoodAliases;
 
   const [foodDbNeeded, setFoodDbNeeded] = useState(false);
+  // Apertura pasti/chat: niente defer idle (prima c’erano fino a ~3.5s morti prima del fetch).
   const {
     kentuItDb: kentuCatalogItDb,
     masterDb: csvFoodDb,
     offDb: offFoodDb,
     isLoading: csvFoodDbLoading,
-  } = useFoodDb({ defer: true, enabled: foodDbNeeded });
+    offReady: csvOffReady,
+  } = useFoodDb({ defer: false, enabled: foodDbNeeded });
 
   useEffect(() => {
     if (!userUid) return;
@@ -162,6 +164,7 @@ export function usePersonalFoodDbBootstrap({
     csvFoodDb,
     offFoodDb,
     csvFoodDbLoading,
+    csvOffReady,
     kentuCatalogItDbRef,
     csvFoodDbRef,
     offFoodDbRef,

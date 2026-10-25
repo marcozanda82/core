@@ -38,14 +38,31 @@ const FRUIT_UNIT_GRAMS = [
   [/pompelm|mandarin/i, 130],
 ];
 
+/** Cache breve: indexRecords/enrich bulk non devono fare JSON.parse localStorage per ogni riga. */
+let usageRootMemo = null;
+let usageRootMemoAt = 0;
+const USAGE_ROOT_MEMO_MS = 4000;
+
 function loadUsageRoot() {
+  const now = Date.now();
+  if (usageRootMemo && now - usageRootMemoAt < USAGE_ROOT_MEMO_MS) {
+    return usageRootMemo;
+  }
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(FOOD_UNIT_USAGE_STORAGE_KEY) : null;
     const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    usageRootMemo = parsed && typeof parsed === 'object' ? parsed : {};
   } catch (_) {
-    return {};
+    usageRootMemo = {};
   }
+  usageRootMemoAt = now;
+  return usageRootMemo;
+}
+
+/** Invalida dopo scrittura uso porzioni. */
+function invalidateUsageRootMemo() {
+  usageRootMemo = null;
+  usageRootMemoAt = 0;
 }
 
 function persistUsageRoot(root) {
@@ -53,7 +70,11 @@ function persistUsageRoot(root) {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(FOOD_UNIT_USAGE_STORAGE_KEY, JSON.stringify(root));
     }
-  } catch (_) {}
+    usageRootMemo = root && typeof root === 'object' ? root : {};
+    usageRootMemoAt = Date.now();
+  } catch (_) {
+    invalidateUsageRootMemo();
+  }
 }
 
 function getUsageCountsForFood(foodDbKey) {

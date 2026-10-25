@@ -1,0 +1,18 @@
+{
+  "_comment": "PROPOSTA integrata in database.rules.focus.local.json / database.rules.json (repo). NON deployata in produzione finché non c’è consenso esplicito. Non tocca kentu_focus edizioni né health_reports.",
+  "paths": [
+    "users/{uid}/kentu_focus_ai/{periodId}/{windowKey}/current",
+    "users/{uid}/kentu_focus_ai/{periodId}/{windowKey}/revisions/{revisionId}",
+    "users/{uid}/kentu_focus_ai_index/{periodId}_{windowKey}"
+  ],
+  "retentionDays": {
+    "ieri": 30,
+    "settimana": 90,
+    "mese": 365
+  },
+  "notes": [
+    "Parent users/$uid resta .read/.write = $uid === auth.uid (nessun allargamento).",
+    "Validazioni nested rifiutano periodi non ammessi, uid mismatch, demo, e source diversi da kentu_focus_ai_coach.",
+    "kentu_focus (edizioni pubblicate) invariato."
+  ]
+}

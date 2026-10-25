@@ -16,6 +16,8 @@ import {
   previewFocusAiCoachPayload,
   focusAiCoachCacheKey,
   __resetFocusAiCoachMemoryForTests,
+  __resetFocusAiAnalysisPersistenceForTests,
+  createMemoryFocusAiAnalysisStore,
   resolveFocusPageSession,
   stashFocusDiaryForUser,
   __resetFocusDiaryHandoffForTests,
@@ -102,6 +104,7 @@ describe('Focus AI coach P1e', () => {
   beforeEach(() => {
     __resetFocusDiaryHandoffForTests();
     __resetFocusAiCoachMemoryForTests();
+    __resetFocusAiAnalysisPersistenceForTests();
   });
 
   it('demo / sessione non reale: non inviabile', async () => {
@@ -139,10 +142,13 @@ describe('Focus AI coach P1e', () => {
 
     const systemText = buildFocusAiCoachSystemInstruction();
     const userText = buildFocusAiCoachUserPrompt(built.dossier);
-    assert.match(systemText, /tre pilastri/i);
-    assert.match(systemText, /Vietato:.*score/i);
-    assert.match(systemText, /stato infiammatorio/i); // vietato esplicitamente
-    assert.match(systemText, /Niente campi extra tipo dailyScore/i);
+    assert.match(systemText, /NON riepilogare il diario/i);
+    assert.match(systemText, /score 0–100|score/i);
+    assert.match(systemText, /infiammazione clinica|glicemia/i);
+    assert.match(systemText, /headline|rapporto/i);
+    assert.ok(built.dossier.schema === 'kentu.focusAiCoachDossier.v2'
+      || built.dossier.compassSignals != null);
+    assert.ok(built.dossier.kentuEngines);
     assert.match(userText, /FOCUS_AI_COACH_DOSSIER/);
     assert.equal(/Score 90/i.test(userText), false);
     assert.equal(/### 🔬 Stato Infiammatorio/i.test(userText), false);
@@ -247,10 +253,12 @@ describe('Focus AI coach P1e', () => {
     const key = focusAiCoachCacheKey(built.binding);
     assert.match(key, /^uid_test\|ieri\|/);
 
-    // Validazione fallita → non cache-a testo cattivo
+    // Validazione fallita → non cache-a testo cattivo (store fresco, no persist hit)
     __resetFocusAiCoachMemoryForTests();
     const bad = await requestFocusAiCoachAnalysis({
       session,
+      persistence: createMemoryFocusAiAnalysisStore(),
+      force: true,
       askAiFn: async () => JSON.stringify({
         integratedComment: 'Score 90 e citochine ridotte.',
         pillarObservations: { nutrition: 'x', exercise: 'y', sleep: 'z' },
@@ -261,7 +269,7 @@ describe('Focus AI coach P1e', () => {
     });
     assert.equal(bad.ok, false);
     assert.equal(bad.status, 'validation_failed');
-    assert.match(bad.userMessage, /controlli di qualità|deterministico/i);
+    assert.match(bad.userMessage, /controlli di qualità|deterministico|riassunto/i);
   });
 
   it('HealthAnalyzer / Focus Metabolico non importati da questo modulo', async () => {
