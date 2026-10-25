@@ -1,5 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { BookOpenText } from 'lucide-react';
 import { SESSION_NAV_DISMISS_EVENT } from './sessionNavStack';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
@@ -19,12 +20,22 @@ import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const StimulusCockpitOverlay = lazyWithRetry(() => import('./StimulusCockpitOverlay'));
 
+/** Icona Lucide book-open-text — accento turchese Kentu OS. */
+const FOCUS_PILLAR_ICON = (
+  <BookOpenText
+    size={18}
+    strokeWidth={2.2}
+    className="text-cyan-300"
+    aria-hidden
+  />
+);
+
 const PILLARS = [
   { id: 'pasti', icon: '🍽', label: 'Pasti', sigla: 'PAS' },
   { id: 'rapidi', icon: '⚡', label: 'Rapidi', sigla: 'RAP' },
   { id: 'attivita', icon: '🏃', label: 'Attività', sigla: 'ATT' },
   /** Ex RPT: apre Kentu Focus. Il sottomenu report resta in codice (ALL / legacy). */
-  { id: 'focus', icon: '◎', label: 'Focus', sigla: 'FOCUS', openFocus: true },
+  { id: 'focus', icon: FOCUS_PILLAR_ICON, label: 'Focus', sigla: 'FOCUS', openFocus: true },
   { id: 'tutti', icon: '⋯', label: 'Tutti', sigla: 'ALL' },
 ];
 
@@ -267,7 +278,15 @@ function PillarButton({
             : 'border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-cyan-400/35 hover:bg-zinc-800',
         ].join(' ')}
       >
-        <span className={large ? 'text-xl leading-none' : 'text-base leading-none'} aria-hidden>{icon}</span>
+        <span
+          className={[
+            'flex items-center justify-center leading-none',
+            large ? 'h-5 text-xl' : 'h-4 text-base',
+          ].join(' ')}
+          aria-hidden
+        >
+          {icon}
+        </span>
         <span className={[
           'font-bold uppercase leading-none tracking-wide',
           large ? 'text-[0.68rem]' : 'text-[0.58rem]',
