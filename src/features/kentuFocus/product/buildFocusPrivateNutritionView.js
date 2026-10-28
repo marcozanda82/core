@@ -406,10 +406,27 @@ function buildYesterdayMealsBlock(analysisDayNode) {
         });
       }
 
+      const foodDbKey = item?.foodDbKey != null && String(item.foodDbKey).trim()
+        ? String(item.foodDbKey).trim()
+        : (item?.matchedKey != null && String(item.matchedKey).trim()
+          ? String(item.matchedKey).trim()
+          : null);
+      const semanticTags = item?.semanticTags && typeof item.semanticTags === 'object'
+        && !Array.isArray(item.semanticTags)
+        ? { ...item.semanticTags }
+        : null;
+      const novaScore = Number.isFinite(Number(item?.novaScore))
+        ? Number(item.novaScore)
+        : null;
+
       return {
         id: itemId,
         name,
         nameSource: 'diary_display_fields',
+        foodDbKey,
+        matchedKey: foodDbKey,
+        semanticTags,
+        ...(novaScore != null ? { novaScore } : {}),
         grams,
         macros: {
           kcal,

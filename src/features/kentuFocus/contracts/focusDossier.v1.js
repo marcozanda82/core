@@ -5,15 +5,18 @@
 
 export const FOCUS_DOSSIER_SCHEMA_VERSION = '1.0.0';
 
-/** @typedef {'recorded'|'calculated'|'estimated'|'missing'|'ambiguous'} FocusProvenance */
+/** @typedef {'recorded'|'calculated'|'derived'|'estimated'|'missing'|'ambiguous'} FocusProvenance */
 /** @typedef {'high'|'medium'|'low'} FocusCertainty */
 
 export const FOCUS_PROVENANCE = Object.freeze({
   recorded: 'recorded',
+  /** @deprecated Preferire `derived` per bedtime = wake−hours. */
   calculated: 'calculated',
+  /** Valore ricavato da altri campi recorded (es. bedtime = wakeTime − hours). */
+  derived: 'derived',
   estimated: 'estimated',
   missing: 'missing',
-  /** Origine non ricostruibile dal formato storico (es. bedtime = wake−duration già persistito). */
+  /** Origine non ricostruibile (micronutrienti / legacy); non usare per bedtime nuovi. */
   ambiguous: 'ambiguous',
 });
 

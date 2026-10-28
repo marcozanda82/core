@@ -182,7 +182,7 @@ function resolvePathId(id, dossier, session) {
     if (!parts.length) return null;
     return {
       id,
-      label: 'Pilota energetico',
+      label: 'Energia e target',
       detail: parts.join(' · '),
       available: true,
     };
@@ -203,8 +203,8 @@ function resolvePathId(id, dossier, session) {
     if (!parts.length) return null;
     return {
       id,
-      label: 'Bussola metabolica',
-      detail: parts.join(' · '),
+      label: 'Andamento recente',
+      detail: parts.filter((p) => !/dead[-\s]?band|timeframe/i.test(p)).join(' · '),
       available: true,
     };
   }
@@ -229,7 +229,7 @@ function resolvePathId(id, dossier, session) {
     if (n == null && groups.length === 0) return null;
     return {
       id,
-      label: 'Stimolo muscolare',
+      label: 'Forza e muscoli',
       detail: [
         n != null ? `${n} sessioni di forza (${periodHint})` : null,
         groups.length ? `gruppi: ${groups.join(', ')}` : null,

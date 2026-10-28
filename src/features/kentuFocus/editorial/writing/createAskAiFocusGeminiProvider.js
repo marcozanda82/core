@@ -13,6 +13,7 @@ export const FOCUS_ASKAI_DEFAULT_MODEL = 'gemini-3.8-flash';
  *   temperature?: number,
  *   timeoutMs?: number,
  *   signal?: AbortSignal|null,
+ *   responseSchema?: object|null,
  * }} [opts]
  */
 export function createAskAiFocusGeminiProvider(opts = {}) {
@@ -23,7 +24,7 @@ export function createAskAiFocusGeminiProvider(opts = {}) {
     model,
     getCallCount: () => calls,
     /**
-     * @param {{ systemText: string, userText: string }} prompt
+     * @param {{ systemText: string, userText: string, timeoutMs?: number }} prompt
      */
     async generate(prompt) {
       calls += 1;
@@ -31,11 +32,15 @@ export function createAskAiFocusGeminiProvider(opts = {}) {
         const ask = typeof opts.askAiFn === 'function'
           ? opts.askAiFn
           : (await import('../../../../services/aiService.js')).askAI;
+        const callTimeout = Number.isFinite(Number(prompt?.timeoutMs)) && Number(prompt.timeoutMs) > 0
+          ? Math.floor(Number(prompt.timeoutMs))
+          : opts.timeoutMs;
         const text = await ask(prompt.userText, prompt.systemText, {
           model,
           temperature: opts.temperature ?? 0.35,
-          timeoutMs: opts.timeoutMs,
+          timeoutMs: callTimeout,
           signal: opts.signal || undefined,
+          responseSchema: opts.responseSchema || undefined,
         });
         if (!text || !String(text).trim()) {
           return { ok: false, text: null, diag: 'empty_text', status: null };

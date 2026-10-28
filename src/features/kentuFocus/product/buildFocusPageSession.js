@@ -46,14 +46,48 @@ export function buildRealSleepNightBrief(fullHistory, analysisDate, publicationD
     publicationDate,
     lastMealHour: null,
   });
+  const sleep = pack?.sleep || {};
+
+  const qualityStars = sleep.qualityStars?.provenance === 'recorded'
+    ? (sleep.qualityStars.value ?? null)
+    : null;
+  const qualityBand = sleep.qualityBand?.provenance === 'calculated'
+    || sleep.qualityBand?.provenance === 'recorded'
+    ? (sleep.qualityBand.value ?? null)
+    : null;
+  const deepMin = sleep.deepMin?.provenance === 'recorded'
+    ? (sleep.deepMin.value ?? null)
+    : null;
+  const remMin = sleep.remMin?.provenance === 'recorded'
+    ? (sleep.remMin.value ?? null)
+    : null;
+  const stagesSuppressed = String(sleep.deepMin?.source || '') === 'form_placeholder_60_suppressed'
+    || String(sleep.remMin?.source || '') === 'form_placeholder_60_suppressed';
+
   return {
     analysisDay: analysisDate,
     nightEndedOn: publicationDate,
     convention: 'giornata_D_notte_conclusa_al_risveglio_D_plus_1',
     sleepAvailable: Boolean(pack?.sleepAvailable),
-    hours: pack?.sleep?.hours?.value ?? null,
-    wakeTime: pack?.sleep?.wakeTime?.value ?? null,
-    bedtime: pack?.sleep?.bedtime?.value ?? null,
+    hours: sleep.hours?.value ?? null,
+    wakeTime: sleep.wakeTime?.value ?? null,
+    bedtime: sleep.bedtime?.value ?? null,
+    bedtimeProvenance: sleep.bedtime?.provenance || null,
+    qualityStars,
+    qualityBand,
+    qualityProvenance: sleep.qualityStars?.provenance === 'recorded'
+      ? 'recorded'
+      : (sleep.qualityStars?.provenance || null),
+    deepMin,
+    remMin,
+    deepMinProvenance: sleep.deepMin?.provenance || null,
+    remMinProvenance: sleep.remMin?.provenance || null,
+    stagesSuppressed,
+    stagesNote: stagesSuppressed
+      ? 'Fasi 60/60 soppresse (placeholder form senza indizio wearable).'
+      : (deepMin != null && remMin != null
+        ? 'Fasi deep/REM con provenance recorded.'
+        : 'Fasi deep/REM non disponibili come recorded.'),
     note: pack?.sleepAvailable
       ? `Notte conclusa al risveglio del ${publicationDate} (dopo la giornata ${analysisDate}).`
       : `Nessun sonno registrato per il risveglio del ${publicationDate}.`,

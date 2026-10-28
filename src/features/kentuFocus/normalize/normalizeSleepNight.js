@@ -35,11 +35,11 @@ export { sleepHoursFromEntry, resolveMainNightSleep, MAIN_NIGHT_STATUS };
 export const BEDTIME_FORMULA_MATCH_EPS_H = 0.05;
 
 /**
- * Provenienza bedtime senza indovinare quando il diario ha già persistito wake−duration.
- * - calculated: campo assente, ricavato ora da wake e durata
- * - recorded: presente e diverso dalla formula (o flag esplicito recorded)
- * - ambiguous: presente ma coincide con wake−duration (origine non ricostruibile)
- * - missing: non disponibile
+ * Provenienza bedtime (tre stati prodotto):
+ * - recorded: bedtime inserito dall'utente o da dispositivo
+ * - derived: bedtime = wakeTime − hours, con entrambi disponibili (recorded)
+ * - missing: manca wakeTime o hours (e non c'è bedtime recorded affidabile);
+ *   bedtime 0 non è mai mezzanotte in questo caso
  *
  * @param {object} entry
  * @param {number|null} wakeTime
@@ -59,9 +59,13 @@ export function resolveBedtimeProvenance(entry, wakeTime, hours) {
       ?? '',
   ).trim().toLowerCase();
   const bedtimeRaw = parseDecimalHour(entry?.bedtime ?? entry?.sleepStart);
-  const expected = (wakeTime != null && hours != null && hours > 0)
+  const wakeOk = wakeTime != null && Number.isFinite(Number(wakeTime));
+  const hoursOk = hours != null && Number.isFinite(Number(hours)) && Number(hours) > 0;
+  const expected = (wakeOk && hoursOk)
     ? computeBedtimeFromWakeAndDuration(wakeTime, hours)
     : null;
+  const looksMidnight = bedtimeRaw != null
+    && (bedtimeRaw === 0 || bedtimeRaw >= 23.95 || bedtimeRaw < 0.05);
 
   if (
     explicit === 'recorded'
@@ -77,47 +81,64 @@ export function resolveBedtimeProvenance(entry, wakeTime, hours) {
       source: 'explicit_bedtime_flag',
     };
   }
-  if (explicit === 'calculated' || explicit === 'derived' || explicit === 'formula') {
-    const value = bedtimeRaw != null
-      ? bedtimeRaw
-      : expected;
-    if (value == null) {
-      return { value: null, provenance: FOCUS_PROVENANCE.missing };
+
+  if (
+    explicit === 'derived'
+    || explicit === 'calculated'
+    || explicit === 'formula'
+  ) {
+    if (expected == null) {
+      return {
+        value: null,
+        provenance: FOCUS_PROVENANCE.missing,
+        source: 'derived_flag_without_wake_hours',
+      };
     }
     return {
-      value,
-      provenance: FOCUS_PROVENANCE.calculated,
+      value: bedtimeRaw != null ? bedtimeRaw : expected,
+      provenance: FOCUS_PROVENANCE.derived,
       source: 'explicit_bedtime_flag',
     };
   }
 
-  if (bedtimeRaw == null) {
-    if (expected != null) {
+  // wake + hours disponibili → bedtime derivabile
+  if (expected != null) {
+    if (bedtimeRaw == null) {
       return {
         value: expected,
-        provenance: FOCUS_PROVENANCE.calculated,
+        provenance: FOCUS_PROVENANCE.derived,
         source: 'computeBedtimeFromWakeAndDuration',
       };
     }
-    return { value: null, provenance: FOCUS_PROVENANCE.missing };
-  }
-
-  if (expected != null) {
     const delta = circularAbsHourDelta(bedtimeRaw, expected);
     if (delta != null && delta <= BEDTIME_FORMULA_MATCH_EPS_H) {
       return {
         value: bedtimeRaw,
-        provenance: FOCUS_PROVENANCE.ambiguous,
-        source: 'matches_wake_minus_duration_unverified_origin',
-        certainty: FOCUS_CERTAINTY.low,
+        provenance: FOCUS_PROVENANCE.derived,
+        source: 'wake_minus_hours',
       };
     }
+    // Presente e diverso dalla formula → inserito da utente/dispositivo
+    return {
+      value: bedtimeRaw,
+      provenance: FOCUS_PROVENANCE.recorded,
+      source: 'sleep_entry_bedtime_field',
+    };
+  }
+
+  // Manca wake o hours: 0 / ~00:00 non è mezzanotte
+  if (bedtimeRaw == null || looksMidnight) {
+    return {
+      value: null,
+      provenance: FOCUS_PROVENANCE.missing,
+      source: 'wake_or_hours_missing',
+    };
   }
 
   return {
     value: bedtimeRaw,
     provenance: FOCUS_PROVENANCE.recorded,
-    source: 'sleep_entry_bedtime_field',
+    source: 'bedtime_without_wake_hours',
   };
 }
 

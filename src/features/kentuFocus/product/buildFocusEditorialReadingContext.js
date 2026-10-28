@@ -158,7 +158,7 @@ export function buildFocusEditorialReadingContext(input) {
         intakeKcal: dayIntake != null && Number.isFinite(dayIntake) ? Math.round(dayIntake) : null,
         balanceVsTargetKcal: dayBalance,
         role: 'episode',
-        note: 'Singolo giorno di analisi — NON è la traiettoria Bussola settimanale.',
+        note: 'Singolo giorno di analisi — NON è l’andamento Bussola settimanale.',
       },
       recent7dExcludingAnalysisDay: {
         recordedDays: recent.length,
@@ -168,12 +168,12 @@ export function buildFocusEditorialReadingContext(input) {
         note: 'Media introito sui giorni registrati nei 7 giorni precedenti (escluso il giorno di analisi).',
       },
       readingHint: dayFarFromTarget && recentNearTarget
-        ? 'Episodio giornaliero lontano dal target, ma media recente vicina al riferimento: privilegia il contrasto episodio/traiettoria nel titolo, non lo scostamento isolato come verdetto.'
+        ? 'Giorno lontano dal target, ma media recente vicina al riferimento: privilegia il contrasto giorno/andamento nel titolo, non lo scostamento isolato come verdetto.'
         : dayFarFromTarget
-          ? 'Giorno lontano dal target: contestualizza sempre con la media recente se disponibile; non chiamare «traiettoria» un solo giorno.'
+          ? 'Giorno lontano dal target: contestualizza sempre con la media recente se disponibile; non chiamare «andamento» un solo giorno.'
           : 'Confronta comunque giorno e contesto recente prima del titolo.',
       bussolaTimeframeOnIeri: input.compassSignals?.observedTrajectory?.timeframe || '1d',
-      bussolaNote: 'Su Ieri la Bussola nel dossier usa timeframe 1d: è l’episodio. La media recente qui è contesto editoriale, non un secondo motore.',
+      bussolaNote: 'Su Ieri la Bussola nei dati di input usa timeframe 1d: è il giorno. La media recente qui è contesto editoriale, non un secondo motore.',
     };
   }
 
@@ -181,7 +181,7 @@ export function buildFocusEditorialReadingContext(input) {
     'Prima del titolo: confronta fatto giornaliero e contesto recente (se presente).',
     'Titolo umano, specifico, comprensibile — niente gergo da relazione tecnica.',
     'Cerca una scoperta o un’apparente contraddizione interessante (anche positiva).',
-    'Pilota/Bussola: non chiamare traiettoria lo scostamento di un solo giorno.',
+    'Pilota/Bussola: non chiamare andamento di lungo periodo lo scostamento di un solo giorno.',
     'Sonno: non affermare compromissione del sonno profondo o fisiologia individuale non misurata.',
     'Manovra alimentare: preferisci alimenti+grammi+orari già nel diario; distingui redistribuzione (kcal giorno ~invariate) da riduzione.',
     'Non forzare un capitolo per ogni motore; non ripetere sempre la stessa raccomandazione sulla cena.',

@@ -127,17 +127,17 @@ describe('P6.3 timing plausibility', () => {
 });
 
 describe('P6.3 bedtime provenance', () => {
-  it('distinguie calculated, ambiguous, recorded', () => {
-    const calc = resolveBedtimeProvenance({ hours: 8, wakeTime: 7 }, 7, 8);
-    assert.equal(calc.provenance, 'calculated');
-    assert.equal(calc.value, 23);
+  it('distinguie derived, recorded, missing', () => {
+    const derivedOmit = resolveBedtimeProvenance({ hours: 8, wakeTime: 7 }, 7, 8);
+    assert.equal(derivedOmit.provenance, 'derived');
+    assert.equal(derivedOmit.value, 23);
 
-    const amb = resolveBedtimeProvenance({
+    const derivedMatch = resolveBedtimeProvenance({
       hours: 7.5,
       wakeTime: 18.75,
       bedtime: 11.25,
     }, 18.75, 7.5);
-    assert.equal(amb.provenance, 'ambiguous');
+    assert.equal(derivedMatch.provenance, 'derived');
 
     const rec = resolveBedtimeProvenance({
       hours: 7,
@@ -149,9 +149,13 @@ describe('P6.3 bedtime provenance', () => {
     const pack = normalizeSleepNight(sleepNode('2026-10-19', {
       hours: 7,
       wakeTime: 7,
-      bedtime: 0, // 7 - 7 = 0 → ambiguous
+      bedtime: 0, // 7 - 7 = 0 → derived
     }), { publicationDate: '2026-10-19' });
-    assert.equal(pack.sleep.bedtime.provenance, 'ambiguous');
+    assert.equal(pack.sleep.bedtime.provenance, 'derived');
+
+    const missing = resolveBedtimeProvenance({ wakeTime: 7, bedtime: 0 }, 7, null);
+    assert.equal(missing.provenance, 'missing');
+    assert.equal(missing.value, null);
   });
 
   it('non inferisce risvegli notturni da wakeTime', () => {
@@ -304,7 +308,8 @@ describe('P6.3 editorial integration', () => {
     });
     assert.ok(dossier.sleepRoutine?.aggregate);
     assert.ok(
-      dossier.sleepRoutine.nights.some((n) => n.bedtime?.provenance === 'calculated'
+      dossier.sleepRoutine.nights.some((n) => n.bedtime?.provenance === 'derived'
+        || n.bedtime?.provenance === 'calculated'
         || n.bedtime?.provenance === 'ambiguous'),
     );
 

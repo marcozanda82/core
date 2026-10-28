@@ -20,25 +20,25 @@ export function buildFocusKentuDeepLinks(ctx = {}) {
   return {
     pilotaEnergetico: {
       engineId: 'pilota_energetico',
-      label: 'Pilota energetico',
+      label: 'Target e bilanci',
       to: '/centro-analisi?area=calibrazione_target',
       state: null,
     },
     bussola: {
       engineId: 'bussola_metabolica',
-      label: 'Bussola metabolica',
+      label: 'Andamento settimanale',
       to: '/centro-analisi?area=strumentazione&room=bussola',
       state: null,
     },
     stimoloMuscolare: {
       engineId: 'stimolo_muscolare',
-      label: 'Stimolo muscolare',
-      to: '/',
+      label: 'Forza e muscoli',
+      to: '/centro-analisi?area=progressione',
       state: { openFotografia: 'progressione' },
     },
     cardio: {
       engineId: 'cardio',
-      label: 'Cardio / allenamento',
+      label: 'Cardio',
       to: '/centro-analisi?area=progressione',
       state: null,
     },

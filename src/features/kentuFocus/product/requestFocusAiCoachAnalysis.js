@@ -16,7 +16,17 @@ import {
   buildFocusAiAnalysisRecord,
   getDefaultMemoryFocusAiAnalysisStore,
 } from './focusAiAnalysisPersistence.js';
-import { resolveFocusAiCoachTimeoutMs } from './focusAiCoachTimeouts.js';
+import {
+  FOCUS_AI_COACH_RETRY_MIN_REMAINING_MS,
+  resolveFocusAiCoachTimeoutMs,
+} from './focusAiCoachTimeouts.js';
+import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
+import {
+  FOCUS_OFF_WAIT_TIMEOUT_MS,
+  focusWindowNeedsOffCatalog,
+  waitFocusOffCatalogForAnalysis,
+} from './waitFocusOffCatalogForAnalysis.js';
+import { formatBannedPhraseRetryHint } from './focusAiCoachBannedUserPhrases.js';
 
 export { focusAiAnalysisBasePath } from './focusAiAnalysisPersistence.js';
 
@@ -24,13 +34,34 @@ export { focusAiAnalysisBasePath } from './focusAiAnalysisPersistence.js';
  * Diagnostica minima (niente contenuti diario).
  * @param {object} payload
  */
+function isFocusAiCoachDev() {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) return true;
+  } catch {
+    /* ignore */
+  }
+  try {
+    return process.env.NODE_ENV !== 'production';
+  } catch {
+    return false;
+  }
+}
+
 function logFocusAiCoachDiag(payload) {
+  if (!isFocusAiCoachDev()) return;
   try {
     // eslint-disable-next-line no-console
     console.info('[FocusAiCoach]', JSON.stringify(payload));
   } catch {
     /* ignore */
   }
+}
+
+/** ~4 chars ≈ 1 token (stima grezza). */
+function estimateTokens(chars) {
+  const n = Number(chars);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n / 4);
 }
 
 /**
@@ -86,6 +117,10 @@ export function peekFocusAiCoachMemory(key, binding) {
  *   signal?: AbortSignal|null,
  *   force?: boolean,
  *   persistence?: object|null,
+ *   foodCatalogs?: object|null,
+ *   offWaitTimeoutMs?: number,
+ *   waitOffFn?: Function,
+ *   peekOffFn?: Function,
  * }} input
  */
 export async function requestFocusAiCoachAnalysis(input) {
@@ -104,7 +139,58 @@ export async function requestFocusAiCoachAnalysis(input) {
     };
   }
 
-  const built = buildFocusAiCoachDossier(session);
+  let foodCatalogs = input?.foodCatalogs
+    || session?.foodCatalogs
+    || null;
+
+  const fullHistory = session?.fullHistory && typeof session.fullHistory === 'object'
+    ? session.fullHistory
+    : null;
+  const analysisDate = String(session?.analysisDate || '').trim();
+  const windowDays = session?.periodId === 'mese' ? 30 : session?.periodId === 'settimana' ? 7 : 1;
+  /** @type {string[]} */
+  const windowDates = [];
+  if (fullHistory && isIsoDateString(analysisDate)) {
+    for (let i = Math.max(windowDays, 7) - 1; i >= 0; i -= 1) {
+      windowDates.push(addCalendarDays(analysisDate, -i));
+    }
+  }
+
+  const timing = {
+    requestStartedAt: Date.now(),
+    offWaitMs: 0,
+    dossierBuildMs: 0,
+    geminiMs: 0,
+    validateMs: 0,
+    retryGeminiMs: 0,
+    retryValidateMs: 0,
+    totalMs: null,
+  };
+
+  let offWaitMeta = { attempted: false, timedOut: false, offReady: false };
+  if (focusWindowNeedsOffCatalog(foodCatalogs, fullHistory, windowDates)) {
+    offWaitMeta.attempted = true;
+    const tOff0 = Date.now();
+    const waited = await waitFocusOffCatalogForAnalysis({
+      timeoutMs: Number.isFinite(input?.offWaitTimeoutMs)
+        ? Number(input.offWaitTimeoutMs)
+        : FOCUS_OFF_WAIT_TIMEOUT_MS,
+      waitFn: input?.waitOffFn,
+      peekFn: input?.peekOffFn,
+    });
+    timing.offWaitMs = Date.now() - tOff0;
+    offWaitMeta.timedOut = Boolean(waited.timedOut);
+    offWaitMeta.offReady = Boolean(waited.offReady);
+    foodCatalogs = {
+      ...(foodCatalogs && typeof foodCatalogs === 'object' ? foodCatalogs : {}),
+      ...waited.catalogsPatch,
+      offReady: waited.offReady,
+    };
+  }
+
+  const tDossier0 = Date.now();
+  const built = buildFocusAiCoachDossier(session, { foodCatalogs });
+  timing.dossierBuildMs = Date.now() - tDossier0;
   if (!built.ok || !built.dossier || !built.binding) {
     return {
       ok: false,
@@ -113,8 +199,22 @@ export async function requestFocusAiCoachAnalysis(input) {
       userMessage: 'Non riesco a preparare i dati per l’analisi AI.',
       analysis: null,
       binding: null,
+      timing,
     };
   }
+
+  // Limiti dossier: catalogo OFF incompleto dopo timeout
+  if (built.dossier.nutrition?.foodQuality?.completeness === 'partial') {
+    const limits = Array.isArray(built.dossier.technicalNotes)
+      ? built.dossier.technicalNotes
+      : [];
+    built.dossier.generationLimits = [
+      ...(built.dossier.generationLimits || []),
+      'Catalogo Open Food Facts non pronto entro il timeout: classificazione NOVA/qualità alimentare incompleta (completeness=partial, reason=off_catalog_not_ready). Non trattare gli alimenti non classificati come verificati.',
+      ...limits.filter((x) => typeof x === 'string'),
+    ].slice(0, 6);
+  }
+  built.dossier.offWaitMeta = offWaitMeta;
 
   const persistence = input.persistence || getDefaultMemoryFocusAiAnalysisStore();
   const key = focusAiCoachCacheKey(built.binding);
@@ -191,7 +291,7 @@ export async function requestFocusAiCoachAnalysis(input) {
     return inflight.get(key);
   }
 
-  const requestStartedAt = Date.now();
+  const requestStartedAt = timing.requestStartedAt;
   const requestId = `fac_${requestStartedAt.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const timeoutMs = Number.isFinite(Number(input.timeoutMs)) && Number(input.timeoutMs) > 0
     ? Math.floor(Number(input.timeoutMs))
@@ -208,16 +308,27 @@ export async function requestFocusAiCoachAnalysis(input) {
         return null;
       }
     })();
+    const sizes = {
+      dossierChars,
+      dossierEstTokens: estimateTokens(dossierChars),
+      userPromptChars: userText.length,
+      userEstTokens: estimateTokens(userText.length),
+      systemChars: systemText.length,
+      systemEstTokens: estimateTokens(systemText.length),
+    };
 
     logFocusAiCoachDiag({
       phase: 'start',
       requestId,
       periodId: built.binding.periodId,
+      analysisDate: built.binding.analysisDate,
       timeoutMs,
-      dossierChars,
-      userPromptChars: userText.length,
-      systemChars: systemText.length,
+      offWaitMs: timing.offWaitMs,
+      dossierBuildMs: timing.dossierBuildMs,
+      offWaitMeta,
+      sizes,
       force: Boolean(input.force),
+      note: 'timeouts: CF callGemini=120s; httpsCallable race client-side; OFF wait default 8s',
     });
 
     const provider = createAskAiFocusGeminiProvider({
@@ -226,6 +337,7 @@ export async function requestFocusAiCoachAnalysis(input) {
       temperature: 0.4,
       signal: input.signal || null,
       timeoutMs,
+      responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
     });
 
     let raw;
@@ -233,12 +345,16 @@ export async function requestFocusAiCoachAnalysis(input) {
     try {
       raw = await provider.generate({ systemText, userText });
     } catch (err) {
+      timing.geminiMs = Date.now() - tProvider0;
+      timing.totalMs = Date.now() - t0;
       logFocusAiCoachDiag({
         phase: 'provider_throw',
         requestId,
         periodId: built.binding.periodId,
-        ms: Date.now() - tProvider0,
+        ms: timing.geminiMs,
+        timing,
         errorType: err?.name || 'Error',
+        error: err?.message || String(err),
       });
       return {
         ok: false,
@@ -249,25 +365,38 @@ export async function requestFocusAiCoachAnalysis(input) {
         binding: built.binding,
         error: err?.message || String(err),
         requestId,
+        timing,
+        sizes,
       };
     }
 
+    timing.geminiMs = Date.now() - tProvider0;
     logFocusAiCoachDiag({
       phase: 'provider_done',
       requestId,
       periodId: built.binding.periodId,
-      ms: Date.now() - tProvider0,
+      ms: timing.geminiMs,
       diag: raw?.diag || null,
       ok: Boolean(raw?.ok),
       responseChars: raw?.text ? String(raw.text).length : 0,
+      timing,
+      sizes,
     });
 
     if (!raw?.ok || !raw.text) {
+      timing.totalMs = Date.now() - t0;
       const msg = raw?.diag === 'timeout'
-        ? 'La risposta AI sta impiegando troppo: attendi qualche secondo prima di ritentare (una richiesta precedente potrebbe ancora completarsi sul server).'
+        ? 'Sta impiegando più del previsto. Attendi un momento e riprova.'
         : raw?.diag === 'aborted'
-          ? 'Analisi AI interrotta.'
-          : 'Analisi AI non disponibile al momento.';
+          ? 'Analisi interrotta.'
+          : 'Non sono riuscito a preparare il rapporto. Puoi riprovare.';
+      logFocusAiCoachDiag({
+        phase: 'provider_failed',
+        requestId,
+        reason: raw?.diag || 'empty_ai',
+        timing,
+        sizes,
+      });
       return {
         ok: false,
         status: 'error',
@@ -277,34 +406,146 @@ export async function requestFocusAiCoachAnalysis(input) {
         binding: built.binding,
         error: raw?.error || null,
         requestId,
+        timing,
+        sizes,
       };
     }
 
     const tVal0 = Date.now();
-    const validated = validateFocusAiCoachResponse(raw.text, { dossier: built.dossier });
+    let validated = validateFocusAiCoachResponse(raw.text, {
+      dossier: built.dossier,
+      requireSummary: true,
+    });
+    timing.validateMs = Date.now() - tVal0;
     logFocusAiCoachDiag({
       phase: 'validated',
+      attempt: 1,
       requestId,
       periodId: built.binding.periodId,
-      ms: Date.now() - tVal0,
+      ms: timing.validateMs,
       ok: Boolean(validated.ok),
       reason: validated.reason || null,
+      failedRules: validated.failedRules || null,
+      bannedHits: validated.bannedHits || null,
+      droppedEventRefs: validated.droppedEventRefs || null,
     });
+
+    // Una sola retry se la regola è correggibile e resta tempo sufficiente
+    const canRetry = !validated.ok
+      && validated.severity !== 'blocking'
+      && (
+        validated.reason === 'banned_user_facing_phrase'
+        || /_too_long$/.test(String(validated.reason || ''))
+        || validated.reason === 'summary_item_invalid'
+        || validated.reason === 'claimLayers_required'
+        || validated.reason === 'claimLayers_incomplete'
+        || validated.reason === 'quantitativeProposal_required'
+        || validated.reason === 'todayAction_mismatch_first_toImprove'
+      );
+    if (canRetry) {
+      const elapsed = Date.now() - t0;
+      const remainingMs = timeoutMs - elapsed;
+      const skipRetry = remainingMs < FOCUS_AI_COACH_RETRY_MIN_REMAINING_MS;
+      let retryHint = '';
+      if (validated.reason === 'banned_user_facing_phrase' && Array.isArray(validated.bannedHits)) {
+        retryHint = formatBannedPhraseRetryHint(validated.bannedHits);
+      } else if (/_too_long$/.test(String(validated.reason || ''))) {
+        const fr = validated.failedRules?.[0];
+        retryHint = [
+          'RETRY: un campo summary era troppo lungo.',
+          fr?.message || validated.reason,
+          'Accorcia headline (≤70), wentWell/toImprove text (≤120), todayAction (≤140).',
+        ].join(' ');
+      } else {
+        retryHint = [
+          'RETRY: la risposta non rispettava lo schema summary.',
+          `Motivo: ${validated.reason}.`,
+          'wentWell/toImprove DEVONO essere array di oggetti { "text", "area", "eventRefs" }, non stringhe.',
+          'eventRefs: solo alias e1, e2, … da eventIndex.aliases.',
+          'Includi claimLayers e la chiave quantitativeProposal (anche null).',
+        ].join(' ');
+      }
+      logFocusAiCoachDiag({
+        phase: 'validation_retry',
+        requestId,
+        periodId: built.binding.periodId,
+        reason: validated.reason,
+        failedRules: validated.failedRules || null,
+        remainingMs,
+        skipRetry,
+      });
+      if (!skipRetry) {
+        try {
+          const tRetry0 = Date.now();
+          const retryRaw = await provider.generate({
+            systemText,
+            userText: `${userText}\n\n${retryHint}`,
+            timeoutMs: remainingMs,
+          });
+          timing.retryGeminiMs = Date.now() - tRetry0;
+          if (retryRaw?.ok && retryRaw.text) {
+            raw = retryRaw;
+            const tValRetry = Date.now();
+            validated = validateFocusAiCoachResponse(raw.text, {
+              dossier: built.dossier,
+              requireSummary: true,
+            });
+            timing.retryValidateMs = Date.now() - tValRetry;
+            logFocusAiCoachDiag({
+              phase: 'validated_after_retry',
+              attempt: 2,
+              requestId,
+              periodId: built.binding.periodId,
+              ok: Boolean(validated.ok),
+              reason: validated.reason || null,
+              failedRules: validated.failedRules || null,
+              bannedHits: validated.bannedHits || null,
+              timing,
+            });
+          }
+        } catch (err) {
+          logFocusAiCoachDiag({
+            phase: 'validation_retry_throw',
+            requestId,
+            errorType: err?.name || 'Error',
+            error: err?.message || String(err),
+          });
+        }
+      }
+    }
+
     if (!validated.ok || !validated.analysis) {
+      timing.totalMs = Date.now() - t0;
+      const afterRetry = timing.retryGeminiMs > 0 || timing.retryValidateMs > 0;
+      const errorPayload = {
+        reason: validated.reason || 'validation_failed',
+        failedRules: validated.failedRules || null,
+        bannedHits: validated.bannedHits || null,
+        droppedEventRefs: validated.droppedEventRefs || null,
+        severity: validated.severity || null,
+        timing,
+        sizes,
+        requestId,
+      };
+      logFocusAiCoachDiag({
+        phase: 'validation_failed',
+        ...errorPayload,
+      });
       return {
         ok: false,
-        status: 'validation_failed',
+        status: afterRetry ? 'validation_failed_after_retry' : 'validation_failed',
         reason: validated.reason || 'validation_failed',
-        userMessage: validated.reason === 'editorial_restate_only'
-          ? 'La risposta AI era solo un riassunto numerico: non la mostro. Riprova.'
-          : validated.reason === 'technical_headline'
-            ? 'La risposta aveva un titolo troppo tecnico: non la mostro. Riprova.'
-            : validated.reason === 'vague_food_proposal_with_candidates'
-              ? 'La proposta alimentare era troppo vaga rispetto agli alimenti del diario: non la mostro. Riprova.'
-              : 'La risposta AI non ha superato i controlli di qualità.',
+        userMessage: 'Non sono riuscito a preparare il rapporto. Puoi riprovare.',
         analysis: null,
         binding: built.binding,
         requestId,
+        bannedHits: validated.bannedHits || null,
+        failedRules: validated.failedRules || null,
+        droppedEventRefs: validated.droppedEventRefs || null,
+        severity: validated.severity || null,
+        timing,
+        sizes,
+        error: errorPayload,
       };
     }
 
@@ -368,6 +609,10 @@ export async function requestFocusAiCoachAnalysis(input) {
       ),
       clientRequestStartedAt: requestStartedAt,
       clientRequestId: requestId,
+      definitive: built.definitive !== false,
+      foodQualityCompleteness: built.foodQualityCompleteness || 'complete',
+      foodQualityCompletenessReason: built.foodQualityCompletenessReason || null,
+      offWaitTimedOut: Boolean(offWaitMeta.timedOut),
     };
 
     try {

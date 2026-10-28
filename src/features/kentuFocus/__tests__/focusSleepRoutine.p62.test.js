@@ -108,7 +108,7 @@ describe('P6.2 sleep routine — date e classificazione', () => {
       wakeTime: 7,
       // no bedtime → wake − hours
     }));
-    assert.equal(calculated.bedtime.provenance, 'calculated');
+    assert.equal(calculated.bedtime.provenance, 'derived');
     assert.equal(calculated.bedtime.value, 23);
 
     const wrap = buildSleepNightRecord('2026-10-19', sleepNode('2026-10-19', {

@@ -1,6 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Dumbbell, Moon, Sparkles, Utensils } from 'lucide-react';
+import {
+  Activity,
+  Apple,
+  Clock,
+  Dumbbell,
+  Moon,
+  Sparkles,
+  Utensils,
+  Zap,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ref, set, get } from 'firebase/database';
 import { db } from '../firebaseConfig.js';
@@ -35,7 +44,13 @@ import {
   loadFocusPageDemoEditionIfAllowed,
   resolveFocusPageSession,
 } from '../features/kentuFocus/product/buildFocusPageSession.js';
-import { addCalendarDays } from '../features/kentuFocus/normalize/focusDateUtils.js';
+import {
+  addCalendarDays,
+  formatFocusGeneratedAtNatural,
+  formatFocusHoursIt,
+  formatFocusItNumber,
+  formatFocusPeriodNaturalLabel,
+} from '../features/kentuFocus/normalize/focusDateUtils.js';
 import { focusLocalIsoDate } from '../features/kentuFocus/product/loadFocusAuthenticatedDiary.js';
 import './kentuFocusPage.css';
 
@@ -470,27 +485,6 @@ function NutritionTrendsSection({ nutrition, periodLabel, analysisDate }) {
   );
 }
 
-function PillarCard({ pillar, onOpen, selected }) {
-  if (!pillar) return null;
-  const tone = pillar.tone || 'muted';
-  const detailKey = pillar.detailKey || pillar.id;
-  return (
-    <button
-      type="button"
-      className={`kf-pillar kf-pillar--${pillar.id} kf-pillar--${tone}${selected ? ' kf-pillar--open' : ''}`}
-      aria-pressed={selected}
-      onClick={() => onOpen?.(detailKey)}
-    >
-      <span className="kf-pillar-icon" aria-hidden>
-        <DomainIcon domain={pillar.id} />
-      </span>
-      <span className="kf-pillar-kicker">{pillar.title}</span>
-      <strong className="kf-pillar-value">{pillar.primaryValue || 'Dati insufficienti'}</strong>
-      <span className="kf-pillar-phrase">{pillar.shortPhrase || ''}</span>
-    </button>
-  );
-}
-
 function HabitCompassBlock({ compass }) {
   if (!compass?.available) return null;
   const hl = compass.highlights || {};
@@ -763,93 +757,260 @@ function SleepDetailSection({ pillar, sleepNight, periodId }) {
   );
 }
 
-function MealManeuverBlock({ maneuver }) {
-  if (!maneuver) return null;
-  const sim = maneuver.simulation;
+/** Manovra pasti: motore ancora nel dossier; UI nascosta (eventuale sim in “Perché te lo dico” in futuro). */
+
+const FOCUS_GENERATION_STEPS = Object.freeze([
+  'Sto leggendo il tuo diario…',
+  'Sto confrontando i segnali della giornata…',
+  'Sto preparando il rapporto…',
+]);
+
+function FocusGenerationProgress() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setStep((s) => Math.min(s + 1, FOCUS_GENERATION_STEPS.length - 1));
+    }, 12_000);
+    return () => window.clearInterval(id);
+  }, []);
   return (
-    <section className="kf-block kf-maneuver" aria-label="Manovra pasti">
-      <h2 className="kf-block-title">Manovra · redistribuzione pasti</h2>
-      {!maneuver.suggested ? (
-        <p className="kf-card-empty">{maneuver.message || 'Nessuna manovra specifica consigliata'}</p>
-      ) : (
-        <div className="kf-maneuver-body">
-          {maneuver.criticality ? (
-            <div>
-              <h3>Criticità</h3>
-              <p>{maneuver.criticality}</p>
-            </div>
-          ) : null}
-          {maneuver.objective ? (
-            <div>
-              <h3>Obiettivo della modifica</h3>
-              <p>{maneuver.objective}</p>
-            </div>
-          ) : null}
-          {maneuver.suggestedChange?.text ? (
-            <div className="kf-maneuver-change">
-              <h3>Modifica suggerita</h3>
-              <p>{maneuver.suggestedChange.text}</p>
-              {sim?.dailyKcalUnchanged ? (
-                <p className="kf-nutrition-note">
-                  Simulazione: energia giornaliera invariata
-                  {sim.dailyKcalBefore != null ? ` (${Math.round(sim.dailyKcalBefore)} kcal)` : ''}
-                  . Nessuna modifica al diario.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {sim?.mealTotalsBefore && sim?.mealTotalsAfter ? (
-            <div>
-              <h3>Prima / dopo (macro documentati)</h3>
-              <ul className="kf-maneuver-limits">
-                {sim.mealTotalsAfter.map((row) => {
-                  const prev = sim.mealTotalsBefore.find((b) => b.mealSlotId === row.mealSlotId);
-                  return (
-                    <li key={row.mealSlotId || row.clockLabel}>
-                      {row.mealLabel} {row.clockLabel ? `(${row.clockLabel})` : ''}
-                      {': '}
-                      {prev ? `${Math.round(prev.kcal)}→${Math.round(row.kcal)} kcal` : `${Math.round(row.kcal)} kcal`}
-                      {row.proteinG != null && prev
-                        ? ` · P ${Math.round(prev.proteinG)}→${Math.round(row.proteinG)} g`
-                        : ''}
-                      {row.carbG != null && prev
-                        ? ` · C ${Math.round(prev.carbG || 0)}→${Math.round(row.carbG)} g`
-                        : ''}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ) : null}
-          {maneuver.expectedAdvantage ? (
-            <div>
-              <h3>Vantaggio atteso</h3>
-              <p>{maneuver.expectedAdvantage}</p>
-            </div>
-          ) : null}
-          {maneuver.tradeoffs ? (
-            <div>
-              <h3>Compromessi</h3>
-              <p>{maneuver.tradeoffs}</p>
-            </div>
-          ) : null}
-          {maneuver.watchNextDays ? (
-            <div>
-              <h3>Cosa osservare</h3>
-              <p>{maneuver.watchNextDays}</p>
-            </div>
-          ) : null}
-        </div>
-      )}
-      {(maneuver.limits || []).length > 0 ? (
-        <ul className="kf-maneuver-limits">
-          {maneuver.limits.map((line, i) => (
-            <li key={`lim_${i}`}>{line}</li>
-          ))}
-        </ul>
-      ) : null}
+    <p className="kf-state kf-gen-progress" aria-live="polite">
+      {FOCUS_GENERATION_STEPS[step]}
+    </p>
+  );
+}
+
+const SUMMARY_AREA_ICONS = Object.freeze({
+  energia: Zap,
+  qualita: Apple,
+  ritmo: Clock,
+  sonno: Moon,
+  movimento: Activity,
+});
+
+function SummaryAreaIcon({ area, size = 15 }) {
+  const Icon = SUMMARY_AREA_ICONS[String(area || '').toLowerCase()] || Sparkles;
+  return <Icon size={size} aria-hidden />;
+}
+
+/**
+ * Cinque aree diario con tono allineato alla summary.
+ * @param {{ session: object, periodId: string, openDetail: string|null, onOpenDetail: Function }} props
+ */
+function DiaryNumbersBlock({ session, periodId, openDetail, onOpenDetail }) {
+  const cards = useMemo(() => buildDiaryNumberCards(session, periodId), [session, periodId]);
+  const title = periodId === 'settimana'
+    ? 'La settimana in numeri'
+    : periodId === 'mese'
+      ? 'Il mese in numeri'
+      : 'Ieri in numeri';
+
+  return (
+    <section className="kf-diary-numbers" aria-label={title}>
+      <h2 className="kf-block-title">{title}</h2>
+      <div className="kf-diary-grid">
+        {cards.map((card) => {
+          const clickable = Boolean(card.detailKey);
+          const selected = openDetail === card.detailKey;
+          const className = [
+            'kf-diary-card',
+            `kf-diary-card--${card.tone || 'muted'}`,
+            selected ? 'kf-diary-card--open' : '',
+            !card.hasData ? 'kf-diary-card--empty' : '',
+          ].filter(Boolean).join(' ');
+          const body = (
+            <>
+              <span className="kf-diary-card-icon" aria-hidden>
+                <SummaryAreaIcon area={card.area} />
+              </span>
+              <span className="kf-diary-card-label">{card.label}</span>
+              <strong className="kf-diary-card-value">{card.value}</strong>
+              {card.compare ? <span className="kf-diary-card-compare">{card.compare}</span> : null}
+            </>
+          );
+          if (!clickable) {
+            return <div key={card.area} className={className}>{body}</div>;
+          }
+          return (
+            <button
+              key={card.area}
+              type="button"
+              className={className}
+              aria-pressed={selected}
+              onClick={() => onOpenDetail?.(card.detailKey)}
+            >
+              {body}
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
+}
+
+/**
+ * @param {object|null|undefined} session
+ * @param {string} periodId
+ */
+function buildDiaryNumberCards(session, periodId) {
+  const nutrition = session?.nutrition || null;
+  const sleepNight = session?.sleepNight || null;
+  const byId = session?.wellness?.pillarsById || {};
+  const targets = session?.userTargets || null;
+  const targetKcal = Number(targets?.kcal);
+  const hasTarget = Number.isFinite(targetKcal) && targetKcal > 0;
+
+  /** @type {object[]} */
+  const out = [];
+
+  // Energia
+  if (periodId === 'ieri') {
+    const kcal = nutrition?.ieri?.totals?.kcal?.value;
+    if (kcal != null && Number.isFinite(Number(kcal))) {
+      const k = Math.round(Number(kcal));
+      const tone = hasTarget
+        ? (Math.abs(k - targetKcal) <= targetKcal * 0.08 ? 'bene' : 'attenzione')
+        : 'bene';
+      out.push({
+        area: 'energia',
+        label: 'Energia',
+        value: `${formatFocusItNumber(k)} kcal`,
+        compare: hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null,
+        tone,
+        hasData: true,
+        detailKey: 'nutrition',
+      });
+    } else {
+      out.push({
+        area: 'energia', label: 'Energia', value: 'non registrato', compare: null,
+        tone: 'muted', hasData: false, detailKey: 'nutrition',
+      });
+    }
+  } else {
+    const avg = nutrition?.trends?.averagesFromRecordedDaysOnly?.kcal
+      ?? nutrition?.trends?.series?.filter((s) => s.status === 'recorded')
+        ?.reduce((acc, s, _, arr) => acc + (Number(s.kcal) || 0) / arr.length, 0);
+    const days = nutrition?.trends?.daysWithFood;
+    if (avg != null && Number.isFinite(Number(avg))) {
+      out.push({
+        area: 'energia',
+        label: 'Energia',
+        value: `${formatFocusItNumber(Math.round(Number(avg)))} kcal`,
+        compare: days != null ? `media su ${days} giorni` : (hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null),
+        tone: 'bene',
+        hasData: true,
+        detailKey: 'nutrition',
+      });
+    } else {
+      out.push({
+        area: 'energia', label: 'Energia', value: 'non registrato', compare: null,
+        tone: 'muted', hasData: false, detailKey: 'nutrition',
+      });
+    }
+  }
+
+  // Qualità — proxy da diario (foodQuality completo vive nel dossier AI)
+  if (periodId === 'ieri' && nutrition?.ieri?.hasFood) {
+    const flags = (nutrition.ieri.toVerify || []).length;
+    const plantHint = nutrition.ieri.comment?.text || null;
+    out.push({
+      area: 'qualita',
+      label: 'Qualità',
+      value: flags > 0 ? 'da verificare' : 'registrata',
+      compare: plantHint && plantHint.length < 80 ? plantHint : (flags > 0 ? `${flags} voci da controllare` : 'pasti in diario'),
+      tone: flags > 0 ? 'attenzione' : 'bene',
+      hasData: true,
+      detailKey: 'nutrition',
+    });
+  } else if (periodId !== 'ieri' && (nutrition?.trends?.daysWithFood || 0) > 0) {
+    out.push({
+      area: 'qualita',
+      label: 'Qualità',
+      value: `${nutrition.trends.daysWithFood} giorni`,
+      compare: 'con pasti registrati',
+      tone: 'bene',
+      hasData: true,
+      detailKey: 'nutrition',
+    });
+  } else {
+    out.push({
+      area: 'qualita', label: 'Qualità', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: null,
+    });
+  }
+
+  // Ritmo (orari pasti / cena)
+  const mealsIeri = nutrition?.ieri?.meals || [];
+  if (periodId === 'ieri' && mealsIeri.length > 0) {
+    const clocks = mealsIeri
+      .map((m) => Number(m.clockHour))
+      .filter((h) => Number.isFinite(h));
+    const latest = clocks.length ? Math.max(...clocks) : null;
+    const hh = latest != null ? Math.floor(latest) : null;
+    const mm = latest != null ? Math.round((latest - hh) * 60) : null;
+    const clockLabel = hh != null
+      ? `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+      : null;
+    const attention = latest != null && latest >= 21;
+    out.push({
+      area: 'ritmo',
+      label: 'Ritmo',
+      value: clockLabel ? `ultimo pasto ${clockLabel}` : `${mealsIeri.length} pasti`,
+      compare: attention ? 'sera avanzata' : 'orari in diario',
+      tone: attention ? 'attenzione' : 'bene',
+      hasData: true,
+      detailKey: null,
+    });
+  } else {
+    out.push({
+      area: 'ritmo', label: 'Ritmo', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: null,
+    });
+  }
+
+  // Sonno
+  const sleepHours = sleepNight?.hours ?? byId.sleep?.hours ?? null;
+  const sleepAvailable = Boolean(sleepNight?.sleepAvailable || byId.sleep?.hasEvidence);
+  if (sleepAvailable && sleepHours != null && Number.isFinite(Number(sleepHours))) {
+    const h = Number(sleepHours);
+    const labelH = formatFocusHoursIt(h);
+    const under7 = h < 7;
+    out.push({
+      area: 'sonno',
+      label: 'Sonno',
+      value: labelH || `${formatFocusItNumber(h, { maxFrac: 1 })} h`,
+      compare: under7 ? 'sotto le 7 ore' : null,
+      tone: under7 ? 'attenzione' : 'bene',
+      hasData: true,
+      detailKey: 'sleep',
+    });
+  } else {
+    out.push({
+      area: 'sonno', label: 'Sonno', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: 'sleep',
+    });
+  }
+
+  // Movimento
+  const ex = byId.exercise;
+  if (ex?.hasEvidence) {
+    out.push({
+      area: 'movimento',
+      label: 'Movimento',
+      value: ex.primaryValue || 'registrato',
+      compare: ex.shortPhrase || null,
+      tone: ex.attention ? 'attenzione' : 'bene',
+      hasData: true,
+      detailKey: 'exercise',
+    });
+  } else {
+    out.push({
+      area: 'movimento', label: 'Movimento', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: 'exercise',
+    });
+  }
+
+  return out;
 }
 
 function FocusDeepLinksBar({ session }) {
@@ -862,7 +1023,7 @@ function FocusDeepLinksBar({ session }) {
   );
   const items = [links.pilotaEnergetico, links.bussola, links.stimoloMuscolare, links.cardio];
   return (
-    <nav className="kf-deep-links" aria-label="Apri strumenti Kentu OS">
+    <nav className="kf-deep-links" aria-label="Apri strumenti correlati">
       {items.map((link) => (
         <Link
           key={link.engineId}
@@ -888,9 +1049,9 @@ function FocusEditorialReport({
 }) {
   const analysis = aiState?.analysis || null;
   const editorial = useMemo(() => normalizeFocusEditorialAnalysis(analysis), [analysis]);
+  const summary = editorial?.summary || analysis?.summary || null;
+
   const evidenceItems = useMemo(() => {
-    // Preferisci i raw salvati in RTDB (possono essere oggetti {label,value} o mappe {"0":…}),
-    // non solo gli id stringa della normalize — altrimenti le righe restano vuote.
     const rawRefs = analysis?.evidenceRefs;
     const hasRaw = (Array.isArray(rawRefs) && rawRefs.length > 0)
       || (rawRefs && typeof rawRefs === 'object' && !Array.isArray(rawRefs) && Object.keys(rawRefs).length > 0);
@@ -910,6 +1071,7 @@ function FocusEditorialReport({
       const label = String(ev?.label || '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim();
       const detail = String(ev?.detail || '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim();
       if (!/[\p{L}\p{N}]/u.test(label) && !/[\p{L}\p{N}]/u.test(detail)) continue;
+      if (/pilota energetico|bussola metabolica|dead[-\s]?band/i.test(`${label} ${detail}`)) continue;
       visible.push({
         id: String(ev?.id || label || `ev_${visible.length + 1}`),
         label: /[\p{L}\p{N}]/u.test(label) ? label : detail,
@@ -917,20 +1079,9 @@ function FocusEditorialReport({
         available: Boolean(ev?.available),
       });
     }
-    if (import.meta.env.DEV && typeof window !== 'undefined') {
-      const shape = Array.isArray(rawRefs)
-        ? `array:${rawRefs.length}`
-        : (rawRefs && typeof rawRefs === 'object' ? `object:${Object.keys(rawRefs).length}` : typeof rawRefs);
-      // Solo metadati: nessuna riga diario.
-      // eslint-disable-next-line no-console
-      console.info('[FocusEvidence]', {
-        rawShape: shape,
-        resolvedCount: visible.length,
-        labels: visible.map((v) => v.label),
-      });
-    }
     return visible;
   }, [analysis?.evidenceRefs, editorial?.evidenceRefs, session]);
+
   const bindingOk = Boolean(
     analysis
     && (
@@ -949,43 +1100,77 @@ function FocusEditorialReport({
   );
   const isMock = Boolean(analysis?._mock || aiState?.isMock);
   const isHarnessMock = Boolean(aiState?.isHarnessMock);
-  const hasFreshReport = bindingOk && editorial && (!aiState?.diaryStale || isMock || isHarnessMock);
+  const schema = String(analysis?.schema || editorial?.schema || '');
+  const isV4 = schema === 'kentu.focusAiCoachAnalysis.v4';
+  const isOutdated = Boolean(
+    bindingOk
+    && editorial
+    && !isMock
+    && !isHarnessMock
+    && (aiState?.diaryStale || (schema && !isV4)),
+  );
+  const hasFreshReport = bindingOk && editorial && (!isOutdated || isMock || isHarnessMock);
+  const foodQualityPartial = !isOutdated && (
+    aiState?.record?.foodQualityCompleteness === 'partial'
+    || aiState?.binding?.foodQualityCompleteness === 'partial'
+  );
+  const generatedNatural = aiState?.record?.generatedAt
+    ? formatFocusGeneratedAtNatural(aiState.record.generatedAt)
+    : null;
   const statusLabel = aiState?.status === 'loading'
     ? 'Generazione in corso'
     : aiState?.regenerateFailed
-      ? 'Rigenerazione non riuscita · rapporto precedente'
-      : isMock
-        ? 'Anteprima MOCK (non Gemini)'
-        : isHarnessMock
-          ? 'Provider mock di test (non Gemini)'
-          : aiState?.diaryStale
-            ? 'Analisi precedente (diario aggiornato)'
-            : hasFreshReport
-              ? (editorial?.legacyCompat ? 'Rapporto salvato (formato precedente)' : 'Rapporto pronto')
-              : 'In attesa di analisi';
+      ? 'Rigenerazione non riuscita'
+      : null;
+
+  const wentWell = Array.isArray(summary?.wentWell) ? summary.wentWell : [];
+  const toImprove = Array.isArray(summary?.toImprove) ? summary.toImprove : [];
+  const todayAction = summary?.todayAction || null;
+  const headline = summary?.headline || editorial?.headline;
 
   return (
     <section className="kf-editorial" aria-label="Rapporto Kentu Focus">
-      {isMock ? (
+      {isMock && import.meta.env.DEV ? (
         <p className="kf-mock-banner" role="status">
-          {analysis?._mockLabel || 'SIMULAZIONE EDITORIALE — non è un’analisi Gemini reale'}
+          {analysis?._mockLabel || 'SIMULAZIONE EDITORIALE'}
         </p>
       ) : null}
-      {isHarnessMock && !isMock ? (
+      {isHarnessMock && !isMock && import.meta.env.DEV ? (
         <p className="kf-mock-banner kf-mock-banner--harness" role="status">
-          RISPOSTA PROVIDER MOCK — non è Gemini reale (flusso diario reale)
+          Provider mock di test
         </p>
       ) : null}
-      <header className="kf-editorial-head">
-        <div>
-          <p className="kf-editorial-kicker">Kentu Focus</p>
-          <p className="kf-editorial-meta">
-            {session?.windowLabel || session?.metaLine || 'Periodo'}
-            {' · '}
-            <span className="kf-editorial-status">{statusLabel}</span>
-          </p>
-        </div>
-        <div className="kf-editorial-actions">
+      {(statusLabel || (allowGenerate && !isOutdated)) ? (
+        <header className="kf-editorial-head">
+          <div>
+            {statusLabel ? (
+              <p className="kf-editorial-meta">
+                <span className="kf-editorial-status">{statusLabel}</span>
+              </p>
+            ) : null}
+          </div>
+          <div className="kf-editorial-actions">
+            {allowGenerate && !isOutdated ? (
+              <button
+                type="button"
+                className="kf-ai-generate"
+                disabled={aiState?.status === 'loading' || aiState?.busy}
+                onClick={onGenerate}
+              >
+                {aiState?.status === 'loading'
+                  ? 'Generazione…'
+                  : hasFreshReport
+                    ? 'Rigenera'
+                    : 'Genera'}
+              </button>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
+
+      {isOutdated ? (
+        <div className="kf-stale-banner" role="status">
+          <p>Il diario è cambiato da quando è stata generata questa analisi</p>
           {allowGenerate ? (
             <button
               type="button"
@@ -993,175 +1178,210 @@ function FocusEditorialReport({
               disabled={aiState?.status === 'loading' || aiState?.busy}
               onClick={onGenerate}
             >
-              {aiState?.status === 'loading'
-                ? 'Generazione…'
-                : hasFreshReport
-                  ? 'Rigenera analisi'
-                  : 'Genera analisi'}
+              {aiState?.status === 'loading' ? 'Generazione…' : 'Rigenera'}
             </button>
           ) : null}
         </div>
-      </header>
+      ) : null}
 
-      {allowGenerate && !hasFreshReport && !aiState?.diaryStale && aiState?.status !== 'loading' ? (
+      {foodQualityPartial && hasFreshReport ? (
+        <div className="kf-partial-banner" role="status">
+          <p>
+            Catalogo alimenti incompleto al momento dell’analisi: conviene rigenerare
+            quando i dati sono pronti.
+          </p>
+          {allowGenerate ? (
+            <button
+              type="button"
+              className="kf-ai-generate kf-ai-generate--compact"
+              disabled={aiState?.status === 'loading' || aiState?.busy}
+              onClick={onGenerate}
+            >
+              Rigenera
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {allowGenerate && !hasFreshReport && !isOutdated && aiState?.status !== 'loading' ? (
         <div className="kf-editorial-empty">
           <h2 className="kf-report-headline">Il tuo rapporto personale</h2>
           <p className="kf-report-lead">
-            Qui compare l’interpretazione delle abitudini — titolo, capitoli e una proposta concreta —
-            non un riassunto delle card del diario.
-          </p>
-          <p className="kf-ai-consent">
-            I dati della finestra possono essere inviati all’AI con il tuo consenso. Nessuno score di salute.
+            Qui compare l’interpretazione delle abitudini.
           </p>
         </div>
       ) : null}
 
       {aiState?.persistError ? (
         <p className="kf-state kf-state--error" role="status">
-          Analisi generata in sessione, ma salvataggio cloud non riuscito ({aiState.persistError}).
-          Su altri dispositivi potrebbe non comparire finché non si ripete con rete ok.
+          Analisi generata, ma salvataggio cloud non riuscito.
         </p>
       ) : null}
 
       {aiState?.status === 'loading' ? (
-        <p className="kf-state" aria-live="polite">Sto preparando il rapporto…</p>
+        <FocusGenerationProgress />
       ) : null}
 
-      {aiState?.status === 'error' || aiState?.status === 'validation_failed' || aiState?.status === 'blocked' ? (
-        <p className="kf-state kf-state--error" role="alert">
-          {aiState.userMessage || 'Analisi AI non disponibile.'}
-        </p>
-      ) : null}
-
-      {aiState?.diaryStale ? (
-        <p className="kf-nutrition-note" role="status">
-          {aiState.userMessage || 'Analisi riferita a una versione precedente del diario.'}
-        </p>
+      {aiState?.status === 'error'
+        || aiState?.status === 'validation_failed'
+        || aiState?.status === 'validation_failed_after_retry'
+        || aiState?.status === 'blocked' ? (
+        <div className="kf-gen-fail" role="alert">
+          <p className="kf-state kf-state--error">
+            {aiState.userMessage || 'Non sono riuscito a preparare il rapporto. Puoi riprovare.'}
+          </p>
+          {allowGenerate ? (
+            <button
+              type="button"
+              className="kf-ai-generate"
+              disabled={aiState?.busy}
+              onClick={onGenerate}
+            >
+              Riprova
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {bindingOk && editorial ? (
-        <article className="kf-report">
-          {aiState?.record?.generatedAt ? (
-            <p className="kf-nutrition-note">
-              Generata il {new Date(aiState.record.generatedAt).toLocaleString('it-IT')}
-              {aiState.record.windowLabel ? ` · ${aiState.record.windowLabel}` : ''}
-              {aiState.record.revisionId ? ` · rev ${aiState.record.revisionId}` : ''}
-              {editorial.legacyCompat ? ' · formato precedente' : ''}
-            </p>
-          ) : null}
+        <article className={`kf-report${isOutdated ? ' kf-report--outdated' : ''}`}>
+          {headline ? <h2 className="kf-report-headline">{headline}</h2> : null}
 
-          <h2 className="kf-report-headline">{editorial.headline}</h2>
-          <p className="kf-report-lead">{editorial.lead}</p>
-
-          {(editorial.sections || []).map((sec) => (
-            <section key={sec.id || sec.title} className="kf-report-chapter">
-              <h3>{sec.title}</h3>
-              <p>{sec.body}</p>
-            </section>
-          ))}
-
-          {editorial.keyInsight ? (
-            <aside className="kf-report-insight">
-              <h3>Collegamento importante</h3>
-              <p>{editorial.keyInsight}</p>
-            </aside>
-          ) : null}
-
-          <section className="kf-report-action">
-            <h3>La scelta che farei</h3>
-            <p>{editorial.recommendedAction}</p>
-            {editorial.expectedChange ? (
-              <p className="kf-report-expected">
-                <strong>Cosa cambia / cosa no:</strong>
-                {' '}
-                {editorial.expectedChange}
-              </p>
-            ) : null}
-          </section>
-
-          {editorial.verifyNext ? (
-            <section className="kf-report-verify">
-              <h3>Cosa osservare dopo</h3>
-              <p>{editorial.verifyNext}</p>
-            </section>
-          ) : null}
-
-          {(editorial.limits || []).length > 0 ? (
-            <ul className="kf-report-limits">
-              {editorial.limits.map((l, i) => (
-                <li key={`lim_${i}`}>{l}</li>
+          {(wentWell.length > 0 || toImprove.length > 0) ? (
+            <div className="kf-summary-lists">
+              {wentWell.map((row, i) => (
+                <div key={`ww_${i}`} className="kf-summary-item kf-summary-item--bene">
+                  <span className="kf-summary-icon" aria-hidden>
+                    <SummaryAreaIcon area={row.area} />
+                  </span>
+                  <p>{row.text}</p>
+                </div>
               ))}
-            </ul>
+              {toImprove.map((row, i) => (
+                <div key={`ti_${i}`} className="kf-summary-item kf-summary-item--attenzione">
+                  <span className="kf-summary-icon" aria-hidden>
+                    <SummaryAreaIcon area={row.area} />
+                  </span>
+                  <p>{row.text}</p>
+                </div>
+              ))}
+            </div>
           ) : null}
 
-          {evidenceItems.length > 0 ? (
-            <details className="kf-report-evidence" open data-testid="kf-report-evidence">
-              <summary>Evidenze citate ({evidenceItems.length})</summary>
-              <ul className="kf-evidence-list">
-                {evidenceItems.map((ev, idx) => {
-                  const label = String(ev.label || '').trim();
-                  const detail = String(ev.detail || '').trim();
-                  if (!label || /citato nel rapporto|non risolto/i.test(detail)) return null;
-                  return (
-                    <li
-                      key={`${ev.id || 'ev'}_${idx}`}
-                      className="kf-evidence-item"
-                      data-evidence-id={ev.id || undefined}
-                    >
-                      <div className="kf-evidence-label">{label}</div>
-                      {detail && detail !== label ? (
-                        <div className="kf-evidence-detail">{detail}</div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </details>
+          {!isOutdated && todayAction ? (
+            <section className="kf-report-action kf-today-action" aria-label="Azione di oggi">
+              <h3>Oggi prova così</h3>
+              <p>{todayAction}</p>
+            </section>
           ) : null}
 
-          {editorial.quantitativeProposal ? (
-            <details className="kf-report-evidence">
-              <summary>Proposta quantitativa</summary>
-              <p>
-                {editorial.quantitativeProposal.foodName
-                  ? `${editorial.quantitativeProposal.foodName}`
-                  : 'Alimento'}
-                {editorial.quantitativeProposal.grams != null
-                  ? ` · ${editorial.quantitativeProposal.grams} g`
-                  : ''}
-                {editorial.quantitativeProposal.fromMeal
-                  ? ` · da ${editorial.quantitativeProposal.fromMeal}`
-                  : ''}
-                {editorial.quantitativeProposal.toTiming
-                  ? ` → ${editorial.quantitativeProposal.toTiming}`
-                  : ''}
-              </p>
-              {editorial.quantitativeProposal.rationale ? (
-                <p className="kf-nutrition-note">{editorial.quantitativeProposal.rationale}</p>
+          <details className="kf-report-why" data-testid="kf-report-why">
+            <summary>Perché te lo dico</summary>
+            <div className="kf-report-why-body">
+              {generatedNatural ? (
+                <p className="kf-nutrition-note">{generatedNatural}</p>
               ) : null}
-            </details>
-          ) : null}
 
-          <FocusDeepLinksBar session={session} />
+              {editorial.lead ? (
+                <p className="kf-report-lead">{editorial.lead}</p>
+              ) : null}
+
+              {(editorial.sections || []).map((sec) => (
+                <section key={sec.id || sec.title} className="kf-report-chapter">
+                  <h3>{sec.title}</h3>
+                  <p>{sec.body}</p>
+                </section>
+              ))}
+
+              {editorial.keyInsight ? (
+                <aside className="kf-report-insight">
+                  <h3>Collegamento importante</h3>
+                  <p>{editorial.keyInsight}</p>
+                </aside>
+              ) : null}
+
+              {editorial.recommendedAction && editorial.recommendedAction !== todayAction ? (
+                <section className="kf-report-action">
+                  <h3>In sintesi</h3>
+                  <p>{editorial.recommendedAction}</p>
+                  {editorial.expectedChange ? (
+                    <p className="kf-report-expected">{editorial.expectedChange}</p>
+                  ) : null}
+                </section>
+              ) : editorial.expectedChange ? (
+                <p className="kf-report-expected">{editorial.expectedChange}</p>
+              ) : null}
+
+              {editorial.verifyNext ? (
+                <section className="kf-report-verify">
+                  <h3>Cosa osservare dopo</h3>
+                  <p>{editorial.verifyNext}</p>
+                </section>
+              ) : null}
+
+              {(editorial.limits || []).length > 0 ? (
+                <ul className="kf-report-limits">
+                  {editorial.limits
+                    .filter((l) => !/dead[-\s]?band|pilota|bussola metabolica|contesto,\s*non score|Simulazione:|nessuna scrittura sul diario/i.test(String(l)))
+                    .map((l, i) => (
+                      <li key={`lim_${i}`}>{l}</li>
+                    ))}
+                </ul>
+              ) : null}
+
+              {evidenceItems.length > 0 ? (
+                <div className="kf-report-evidence" data-testid="kf-report-evidence">
+                  <p className="kf-evidence-heading">Evidenze citate</p>
+                  <ul className="kf-evidence-list">
+                    {evidenceItems.map((ev, idx) => {
+                      const label = String(ev.label || '').trim();
+                      const detail = String(ev.detail || '').trim();
+                      if (!label || /citato nel rapporto|non risolto/i.test(detail)) return null;
+                      return (
+                        <li
+                          key={`${ev.id || 'ev'}_${idx}`}
+                          className="kf-evidence-item"
+                          data-evidence-id={ev.id || undefined}
+                        >
+                          <div className="kf-evidence-label">{label}</div>
+                          {detail && detail !== label ? (
+                            <div className="kf-evidence-detail">{detail}</div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              <FocusDeepLinksBar session={session} />
+            </div>
+          </details>
         </article>
       ) : null}
 
       {(historyRows || []).length > 0 ? (
         <div className="kf-ai-history">
-          <h3>Storico analisi</h3>
+          <h3>Storico</h3>
           <ul>
-            {historyRows.map((row) => (
-              <li key={`${row.periodId}_${row.windowKey}_${row.revisionId}`}>
-                <button
-                  type="button"
-                  className="kf-ai-history-btn"
-                  onClick={() => onOpenHistory?.(row)}
-                >
-                  {row.periodId} · {row.windowKey}
-                  {row.windowLabel ? ` · ${row.windowLabel}` : ''}
-                </button>
-              </li>
-            ))}
+            {historyRows.map((row) => {
+              const label = formatFocusPeriodNaturalLabel({
+                periodId: row.periodId,
+                analysisDate: row.windowKey,
+                todayIso: focusLocalIsoDate(),
+              }) || row.windowLabel || row.windowKey;
+              return (
+                <li key={`${row.periodId}_${row.windowKey}_${row.revisionId}`}>
+                  <button
+                    type="button"
+                    className="kf-ai-history-btn"
+                    onClick={() => onOpenHistory?.(row)}
+                  >
+                    {label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}
@@ -1178,13 +1398,16 @@ function RealWellnessDashboard({
   onGenerateAi,
   onOpenAiHistory,
 }) {
-  const wellness = session?.wellness;
-  const pillars = wellness?.pillars || [];
-  const byId = wellness?.pillarsById || {};
+  const byId = session?.wellness?.pillarsById || {};
   const nutrition = session?.nutrition || null;
-  const hasFreshAi = Boolean(
-    aiState?.analysis && (!aiState?.diaryStale || aiState?.isMock || aiState?.isHarnessMock),
+  const schema = String(aiState?.analysis?.schema || '');
+  const isOutdated = Boolean(
+    aiState?.analysis
+    && !aiState?.isMock
+    && !aiState?.isHarnessMock
+    && (aiState?.diaryStale || (schema && schema !== 'kentu.focusAiCoachAnalysis.v4')),
   );
+  const hasFreshAi = Boolean(aiState?.analysis && !isOutdated);
 
   const toggleDetail = (key) => {
     setOpenDetail(key === openDetail ? null : key);
@@ -1200,32 +1423,19 @@ function RealWellnessDashboard({
         onOpenHistory={onOpenAiHistory}
       />
 
-      <details className="kf-evidence" open={!hasFreshAi}>
-        <summary className="kf-evidence-summary">
-          {hasFreshAi ? 'Prove e approfondimenti' : 'Dati del diario (non sono un rapporto AI)'}
-        </summary>
+      <DiaryNumbersBlock
+        session={session}
+        periodId={periodId}
+        openDetail={openDetail}
+        onOpenDetail={toggleDetail}
+      />
 
-        <section className="kf-pillars kf-pillars--compact" aria-label="Tre pilastri del benessere">
-          {pillars.map((p) => (
-            <PillarCard
-              key={p.id}
-              pillar={p}
-              selected={openDetail === (p.detailKey || p.id)}
-              onOpen={toggleDetail}
-            />
-          ))}
-        </section>
-
-        {periodId === 'settimana' || periodId === 'mese' ? (
+      {periodId === 'settimana' || periodId === 'mese' ? (
+        <details className="kf-evidence" open={!hasFreshAi}>
+          <summary className="kf-evidence-summary">Abitudini in costruzione</summary>
           <HabitCompassBlock compass={session?.habitCompass} />
-        ) : null}
-
-        {periodId === 'ieri' || session?.mealManeuver?.suggested ? (
-          <MealManeuverBlock maneuver={session?.mealManeuver} />
-        ) : null}
-
-        <p className="kf-deepen-hint">Tocca una card per aprire l’approfondimento.</p>
-      </details>
+        </details>
+      ) : null}
 
       {openDetail === 'nutrition' ? (
         periodId === 'ieri' ? (
@@ -1670,7 +1880,9 @@ export default function KentuFocusPage() {
         setDiaryLoadState(source === 'firebase_tracker_data' ? 'ready' : 'ready_ram');
         setSession({
           ...base,
-          banner: focusHarness ? 'DIARIO TEST (harness · non produzione)' : 'DIARIO REALE',
+          banner: import.meta.env.DEV
+            ? (focusHarness ? 'DIARIO TEST (harness · non produzione)' : 'DIARIO REALE')
+            : null,
           diagnostics: {
             ...base.diagnostics,
             diarySource: source,
@@ -1942,7 +2154,7 @@ export default function KentuFocusPage() {
             className="kf-back"
             onClick={() => navigate('/', { replace: false })}
           >
-            ← Sala Comandi
+            ← Home
           </button>
           <div className="kf-brand">
             <p className="kf-brand-kicker">Kentu</p>
@@ -1950,11 +2162,17 @@ export default function KentuFocusPage() {
           </div>
         </div>
 
-        <div className="kf-banner" role="status">
-          {diaryLoadState === 'loading' || (!session && pageStatus === 'loading')
+        {(() => {
+          const loadingBanner = diaryLoadState === 'loading' || (!session && pageStatus === 'loading');
+          const rawBanner = loadingBanner
             ? 'CARICAMENTO DIARIO…'
-            : (session?.banner || FOCUS_PRODUCT_DEMO_BANNER)}
-        </div>
+            : (session?.banner || (session?.mode === FOCUS_PAGE_MODE.real_diary ? null : FOCUS_PRODUCT_DEMO_BANNER));
+          const showDevOnly = rawBanner === 'DIARIO REALE' || String(rawBanner || '').startsWith('DIARIO TEST');
+          const bannerText = showDevOnly && !import.meta.env.DEV ? null : rawBanner;
+          return bannerText ? (
+            <div className="kf-banner" role="status">{bannerText}</div>
+          ) : null;
+        })()}
 
         {!aiState?.analysis && session?.mode === FOCUS_PAGE_MODE.real_diary ? null : !aiState?.analysis ? (
           <header className="kf-hero">
@@ -1964,7 +2182,7 @@ export default function KentuFocusPage() {
               <span className="kf-domain-chip"><Moon size={15} /></span>
             </div>
             <h2>{session?.headline?.title || 'Rapporto personale'}</h2>
-            <p>{session?.headline?.subtitle || 'Interpretazione delle abitudini — non un riassunto del diario.'}</p>
+            <p>{session?.headline?.subtitle || 'Interpretazione delle abitudini.'}</p>
           </header>
         ) : null}
 
@@ -1983,8 +2201,22 @@ export default function KentuFocusPage() {
           ))}
         </div>
 
-        {session?.metaLine ? (
-          <p className="kf-meta">{session.metaLine}</p>
+        {session ? (
+          <p className="kf-meta">
+            {formatFocusPeriodNaturalLabel({
+              periodId: session.periodId,
+              analysisDate: session.analysisDate,
+              publicationDate: session.publicationDate,
+              windowFrom: session.windowFrom
+                || (session.periodId === 'settimana' && session.analysisDate
+                  ? addCalendarDays(session.analysisDate, -6)
+                  : session.periodId === 'mese' && session.analysisDate
+                    ? addCalendarDays(session.analysisDate, -29)
+                    : null),
+              windowTo: session.windowTo || session.analysisDate,
+              todayIso: focusLocalIsoDate(),
+            }) || session.windowLabel || 'Periodo'}
+          </p>
         ) : null}
 
         {(pageStatus === 'loading' || diaryLoadState === 'loading') && !session ? (

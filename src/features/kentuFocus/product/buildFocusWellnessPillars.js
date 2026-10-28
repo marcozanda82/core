@@ -404,7 +404,15 @@ function buildSleepDayPillar(fullHistory, analysisDate, publicationDate) {
 
   const hours = sleep.hours?.value ?? null;
   const wake = formatClock(sleep.wakeTime?.value);
-  const bed = formatClock(sleep.bedtime?.value);
+  // Mostra addormentamento per recorded e derived (wake−hours).
+  const bedProvenance = String(sleep.bedtime?.provenance || '').trim().toLowerCase();
+  const bedRaw = sleep.bedtime?.value;
+  const bedUsable = (bedProvenance === 'recorded'
+    || bedProvenance === 'derived'
+    || bedProvenance === 'calculated')
+    && bedRaw != null
+    && Number.isFinite(Number(bedRaw));
+  const bed = bedUsable ? formatClock(bedRaw) : null;
   const qualityStars = sleep.qualityStars?.value ?? null;
   const qualityOk = sleep.qualityStars?.provenance === 'recorded' && qualityStars != null;
   const stagesOk = sleep.deepMin?.provenance === 'recorded'

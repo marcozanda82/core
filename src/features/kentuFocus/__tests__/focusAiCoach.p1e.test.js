@@ -86,18 +86,29 @@ function realSession(periodId = 'ieri') {
 }
 
 const VALID_AI_JSON = JSON.stringify({
-  integratedComment: 'Quadro equilibrato tra pasti, una camminata e un riposo documentato.',
-  pillarObservations: {
-    nutrition: 'Yogurt greco compare a pranzo con un profilo proteico leggibile.',
-    exercise: 'Hai una camminata registrata; minuti e tipo restano distinti.',
-    sleep: 'La notte conclusa al risveglio risulta documentata senza forzature.',
+  summary: {
+    headline: 'Giorno equilibrato e leggibile',
+    wentWell: [{ text: 'Yogurt a pranzo e camminata registrati', area: 'energia', eventRefs: [] }],
+    toImprove: [{ text: 'Mantieni continuità di registrazione', area: 'ritmo', eventRefs: [] }],
+    todayAction: 'Registra pasti, movimento e sonno nella stessa giornata.',
   },
-  focusAspects: [
-    'Varietà dei pasti nella finestra',
-    'Continuità della camminata',
+  headline: 'Giorno equilibrato e leggibile',
+  lead: 'Introito vicino al target con 140 kcal sul diario e 30 minuti di camminata.',
+  sections: [
+    { id: 'nutrition', title: 'Alimentazione', body: 'Yogurt greco compare a pranzo con un profilo proteico leggibile.' },
+    { id: 'exercise', title: 'Movimento', body: 'Hai una camminata registrata; minuti e tipo restano distinti.' },
+    { id: 'sleep', title: 'Sonno', body: 'La notte conclusa al risveglio risulta documentata con 7,5 ore.' },
   ],
-  practicalAction: 'Mantieni la registrazione di pasti, movimento e sonno nella stessa giornata.',
+  recommendedAction: 'Registra pasti, movimento e sonno nella stessa giornata.',
+  verifyNext: 'Osserva se la registrazione resta costante per una settimana.',
   primaryPillarId: 'balanced',
+  claimLayers: {
+    recordedFacts: ['Camminata e yogurt registrati'],
+    generalKnowledge: [],
+    foundedInferences: [],
+    hypothesesToTest: [],
+  },
+  quantitativeProposal: null,
 });
 
 describe('Focus AI coach P1e', () => {
@@ -149,7 +160,7 @@ describe('Focus AI coach P1e', () => {
     assert.ok(built.dossier.schema === 'kentu.focusAiCoachDossier.v2'
       || built.dossier.compassSignals != null);
     assert.ok(built.dossier.kentuEngines);
-    assert.match(userText, /FOCUS_AI_COACH_DOSSIER/);
+    assert.match(userText, /FOCUS_INPUT_DATA/);
     assert.equal(/Score 90/i.test(userText), false);
     assert.equal(/### 🔬 Stato Infiammatorio/i.test(userText), false);
 
@@ -225,7 +236,7 @@ describe('Focus AI coach P1e', () => {
 
     const clinical = validateFocusAiCoachResponse(JSON.stringify({
       ...JSON.parse(VALID_AI_JSON),
-      integratedComment: 'Ottimo stato infiammatorio e stabilità insulinica.',
+      lead: 'Ottimo stato infiammatorio e stabilità insulinica con 140 kcal.',
     }));
     assert.equal(clinical.ok, false);
     assert.equal(clinical.reason, 'banned_clinical_or_score_claim');
@@ -269,7 +280,7 @@ describe('Focus AI coach P1e', () => {
     });
     assert.equal(bad.ok, false);
     assert.equal(bad.status, 'validation_failed');
-    assert.match(bad.userMessage, /controlli di qualità|deterministico|riassunto/i);
+    assert.match(bad.userMessage, /riprovare|rapporto/i);
   });
 
   it('HealthAnalyzer / Focus Metabolico non importati da questo modulo', async () => {

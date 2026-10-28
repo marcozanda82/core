@@ -65,9 +65,9 @@ export function buildFocusKentuEnginesForDossier(input) {
     observedEnergy: compass?.observedTrajectory || null,
     declaredGoal: compass?.declaredGoal || null,
     signalStrength: compass?.signalStrength || null,
-    /** Su Ieri: timeframe Bussola = 1d (episodio). La media recente sta in editorialReadingContext. */
+    /** Su Ieri: timeframe Bussola = 1d (giorno). La media recente sta in editorialReadingContext. */
     timeframeNote: periodId === 'ieri'
-      ? 'observedEnergy su Ieri è l’episodio del giorno di analisi (timeframe 1d), non la media settimanale.'
+      ? 'observedEnergy su Ieri è il giorno di analisi (timeframe 1d), non la media settimanale.'
       : periodId === 'mese'
         ? 'observedEnergy su Mese usa finestra ~30g.'
         : 'observedEnergy su Settimana usa finestra ~7g.',

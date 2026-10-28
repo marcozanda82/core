@@ -127,7 +127,10 @@ function nightNumeric(night, field, opts = {}) {
   if (!m || m.value == null || !Number.isFinite(Number(m.value))) return null;
   if (m.provenance === FOCUS_PROVENANCE.missing) return null;
   if (field === 'bedtime') {
-    if (m.provenance === FOCUS_PROVENANCE.calculated && !opts.acceptCalculatedBedtime) {
+    if (
+      (m.provenance === FOCUS_PROVENANCE.calculated || m.provenance === FOCUS_PROVENANCE.derived)
+      && !opts.acceptCalculatedBedtime
+    ) {
       return null;
     }
     if (m.provenance === FOCUS_PROVENANCE.ambiguous && opts.acceptAmbiguousBedtime === false) {
@@ -330,9 +333,14 @@ export function aggregateSleepRoutine(input) {
   const bedtimeRecordedN = nights.filter(
     (n) => n.bedtime?.provenance === FOCUS_PROVENANCE.recorded && n.bedtime?.value != null,
   ).length;
-  const bedtimeCalculatedN = nights.filter(
-    (n) => n.bedtime?.provenance === FOCUS_PROVENANCE.calculated && n.bedtime?.value != null,
+  const bedtimeDerivedN = nights.filter(
+    (n) => (
+      n.bedtime?.provenance === FOCUS_PROVENANCE.derived
+      || n.bedtime?.provenance === FOCUS_PROVENANCE.calculated
+    ) && n.bedtime?.value != null,
   ).length;
+  /** Alias storico: calculated ≡ derived. */
+  const bedtimeCalculatedN = bedtimeDerivedN;
   const bedtimeAmbiguousN = nights.filter(
     (n) => n.bedtime?.provenance === FOCUS_PROVENANCE.ambiguous && n.bedtime?.value != null,
   ).length;
@@ -357,6 +365,7 @@ export function aggregateSleepRoutine(input) {
     ordinaryWakeWeekdayN: ordinaryStats.wake.weekday.n,
     ordinaryWakeWeekendN: ordinaryStats.wake.weekend.n,
     bedtimeRecordedN,
+    bedtimeDerivedN,
     bedtimeCalculatedN,
     bedtimeAmbiguousN,
     coverageRatio: nights.length > 0

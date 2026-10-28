@@ -1,0 +1,106 @@
+﻿{
+  "schema": "kentu.focusAiCoachAnalysis.v4",
+  "summary": {
+    "headline": "Pranzo dolce e sonno sotto le 7 ore",
+    "wentWell": [
+      {
+        "text": "Energia ok: 2369 kcal vs target 2456, in linea con la media recente.",
+        "area": "energia",
+        "eventRefs": []
+      },
+      {
+        "text": "A cena c’è salmone: grassi buoni utili nella giornata.",
+        "area": "qualita",
+        "eventRefs": [
+          "food:mcdrive_raw_1793166881549_hbz2zje"
+        ]
+      }
+    ],
+    "toImprove": [
+      {
+        "text": "A pranzo la torta gelato è un dessert ultra-processato.",
+        "area": "qualita",
+        "eventRefs": [
+          "food:mcdrive_raw_1793112984698_wj1b2sz"
+        ]
+      },
+      {
+        "text": "Cena abbondante alle 21:40 e notte da 6,5 ore",
+        "area": "sonno",
+        "eventRefs": [
+          "sleep:2026-10-28"
+        ]
+      }
+    ],
+    "todayAction": "A pranzo sostituisci il dessert ultra-processato con Mandorle (~22 g)."
+  },
+  "headline": "Pranzo dolce e sonno sotto le 7 ore",
+  "lead": "Introito 2369 kcal (target 2456, media 7g 2347): il margine chiaro resta il dessert a pranzo.",
+  "sections": [
+    {
+      "id": "qualita",
+      "title": "Qualità a pranzo",
+      "body": "La Torta gelato Duchessa risulta NOVA 4 dal catalogo Open Food Facts. In diario ci sono già alternative meno lavorate per la stessa occasione."
+    },
+    {
+      "id": "sonno",
+      "title": "Sonno e orari",
+      "body": "Notte da 6,5 ore. Cena intorno alle 21:40 con carico elevato: da osservare insieme nei prossimi giorni."
+    }
+  ],
+  "keyInsight": "La leva più diretta è il dessert a pranzo, non un taglio calorico generico.",
+  "recommendedAction": "Al prossimo pranzo simile, sostituisci il dessert ultra-processato con Mandorle (~22 g), lasciando il resto del pasto.",
+  "expectedChange": "Meno carico ultra-processato a pranzo; calorie giorno da rivedere solo se cambi anche le porzioni.",
+  "verifyNext": "Per 7–14 giorni: dessert ultra-processati a pranzo, ora cena e ore di sonno al risveglio.",
+  "evidenceRefs": [
+    "nutrition.foodQuality.day.nova4Items",
+    "deterministicSignals.sleep_under_7h",
+    "deterministicSignals.meal_within_3h_of_bedtime",
+    "nutrition.substitutionCandidates"
+  ],
+  "limits": [
+    "Nessuna attività registrata.",
+    "Un solo giorno non descrive un’abitudine."
+  ],
+  "claimLayers": {
+    "recordedFacts": [
+      "Duchessa classificato NOVA 4",
+      "Sonno 6,5 h",
+      "Ultimo pasto entro 3 h dal bedtime",
+      "Cena 1126 kcal"
+    ],
+    "generalKnowledge": [],
+    "foundedInferences": [
+      "Il dessert a pranzo è la leva più chiara del giorno"
+    ],
+    "hypothesesToTest": [
+      "Sostituire il dessert con un’alternativa già in diario migliora la qualità del pranzo"
+    ]
+  },
+  "quantitativeProposal": null,
+  "primaryPillarId": "nutrition",
+  "theEmergingPicture": "Introito 2369 kcal (target 2456, media 7g 2347): il margine chiaro resta il dessert a pranzo.",
+  "nutrition": "La Torta gelato Duchessa risulta NOVA 4 dal catalogo Open Food Facts. In diario ci sono già alternative meno lavorate per la stessa occasione.",
+  "exercise": "La Torta gelato Duchessa risulta NOVA 4 dal catalogo Open Food Facts. In diario ci sono già alternative meno lavorate per la stessa occasione.",
+  "sleep": "Notte da 6,5 ore. Cena intorno alle 21:40 con carico elevato: da osservare insieme nei prossimi giorni.",
+  "importantConnections": [
+    "La leva più diretta è il dessert a pranzo, non un taglio calorico generico."
+  ],
+  "theChoiceIWouldMake": "Al prossimo pranzo simile, sostituisci il dessert ultra-processato con Mandorle (~22 g), lasciando il resto del pasto.",
+  "whatToWatchNext": "Per 7–14 giorni: dessert ultra-processati a pranzo, ora cena e ore di sonno al risveglio.",
+  "integratedComment": "Introito 2369 kcal (target 2456, media 7g 2347): il margine chiaro resta il dessert a pranzo.",
+  "pillarObservations": {
+    "nutrition": "La Torta gelato Duchessa risulta NOVA 4 dal catalogo Open Food Facts. In diario ci sono già alternative meno lavorate per la stessa occasione.",
+    "exercise": "La Torta gelato Duchessa risulta NOVA 4 dal catalogo Open Food Facts. In diario ci sono già alternative meno lavorate per la stessa occasione.",
+    "sleep": "Notte da 6,5 ore. Cena intorno alle 21:40 con carico elevato: da osservare insieme nei prossimi giorni."
+  },
+  "focusAspects": [
+    "La leva più diretta è il dessert a pranzo, non un taglio calorico generico."
+  ],
+  "practicalAction": "Al prossimo pranzo simile, sostituisci il dessert ultra-processato con Mandorle (~22 g), lasciando il resto del pasto.",
+  "proposalVerification": {
+    "ok": true,
+    "mode": "none",
+    "reason": null
+  }
+}

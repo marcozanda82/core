@@ -47,17 +47,24 @@ export function isFocusAiAnalysisExpired(periodId, generatedAtMs, nowMs = Date.n
  */
 export function markFocusAiAnalysisFreshness(record, currentDataVersion) {
   if (!record) return null;
-  const stale = Boolean(
+  const versionStale = Boolean(
     currentDataVersion
     && record.dataVersion
     && String(record.dataVersion) !== String(currentDataVersion),
   );
+  // Analisi non definitiva (es. OFF timeout → foodQuality partial): sempre stale
+  // così alla riapertura viene proposta la rigenerazione.
+  const nonDefinitive = record.definitive === false
+    || record.foodQualityCompleteness === 'partial';
+  const stale = versionStale || nonDefinitive;
   return {
     ...record,
     diaryStale: stale,
-    freshnessNote: stale
-      ? 'Analisi riferita a una versione precedente del diario: consultabile, non generata sui dati attuali.'
-      : 'Allineata alla versione dati corrente al momento della generazione.',
+    freshnessNote: nonDefinitive && !versionStale
+      ? 'Analisi non definitiva: catalogo alimentare incompleto al momento della generazione. Consigliata rigenerazione.'
+      : stale
+        ? 'Analisi riferita a una versione precedente del diario: consultabile, non generata sui dati attuali.'
+        : 'Allineata alla versione dati corrente al momento della generazione.',
   };
 }
 
@@ -341,5 +348,8 @@ export function buildFocusAiAnalysisRecord(binding, analysis, dossier, revisionS
     source: 'kentu_focus_ai_coach',
     notHealthReports: true,
     notDemo: true,
+    definitive: binding.definitive !== false,
+    foodQualityCompleteness: binding.foodQualityCompleteness || 'complete',
+    foodQualityCompletenessReason: binding.foodQualityCompletenessReason || null,
   };
 }

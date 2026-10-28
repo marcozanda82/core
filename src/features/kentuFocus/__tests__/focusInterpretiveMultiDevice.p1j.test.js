@@ -98,20 +98,47 @@ function weekLateCaffeineSleepHistory() {
 }
 
 const MOCK_INTERPRETIVE = JSON.stringify({
-  theEmergingPicture:
-    'La giornata non è «tanti pasti e un allenamento»: emerge un supporto proteico serale dopo una sessione di forza, con carboidrati concentrati a pranzo e un possibile buco energetico pomeridiano. La Bussola indica una condotta da leggere rispetto al target dichiarato, non come volontà di cut.',
-  nutrition:
-    'Il salmone documentato porta omega-3 osservabili; spostare solo pollo a pranzo non chiuderebbe un eventuale gap pre-workout. Un modello con vegetali a cena è favorevole, ma la distribuzione dei carboidrati merita attenzione intorno all’allenamento.',
-  exercise:
-    'La sessione di forza è contestualizzabile ai pasti e al sonno della stessa giornata: non è un verdetto settimanale di ipertrofia. I minuti da soli non dimostrano progressione dei carichi.',
-  sleep:
-    'Otto ore al risveglio D+1 sono coerenti con un recupero plausibile; senza qualità soggettiva non invento fasi del sonno. Un caffè tipizzato esiste, ma senza orario non posso legarlo al bedtime.',
-  importantConnections: [
-    'Ipotesi da verificare: carboidrati lontani dall’orario di forza riducono il supporto percepito in sessione, senza dimostrare causalità su una sola giornata.',
+  summary: {
+    headline: 'Proteine serali e gap pre-forza',
+    wentWell: [
+      {
+        text: 'Salmone a pranzo e 8 ore di sonno documentate.',
+        area: 'qualita',
+        eventRefs: [],
+      },
+    ],
+    toImprove: [
+      {
+        text: 'Carboidrati lontani dall’orario di forza: da avvicinare.',
+        area: 'energia',
+        eventRefs: [],
+      },
+    ],
+    todayAction: 'Avvicina una porzione di riso già in diario allo spuntino pre-forza.',
+  },
+  headline: 'Proteine serali e gap pre-forza',
+  lead: 'Introito e target da Bussola: il margine chiaro è il timing dei carboidrati rispetto ai 50 minuti di forza.',
+  sections: [
+    {
+      id: 'nutrition',
+      title: 'Alimentazione',
+      body: 'Il salmone documentato porta omega-3 osservabili; la distribuzione dei carboidrati merita attenzione intorno all’allenamento.',
+    },
+    {
+      id: 'exercise',
+      title: 'Movimento',
+      body: 'La sessione di forza è contestualizzabile ai pasti e al sonno della stessa giornata.',
+    },
+    {
+      id: 'sleep',
+      title: 'Sonno',
+      body: 'Otto ore al risveglio D+1 sono coerenti con un recupero plausibile.',
+    },
   ],
-  theChoiceIWouldMake:
-    'Se ripeti uno schema simile, valuta di avvicinare una porzione di «Riso» già registrata a uno spuntino pre-allenamento simulato, lasciando il pollo a cena.',
-  whatToWatchNext:
+  keyInsight: 'Ipotesi: carboidrati lontani dall’orario di forza riducono il supporto percepito in sessione.',
+  recommendedAction:
+    'Se ripeti uno schema simile, valuta di avvicinare una porzione di «Riso» già registrata a uno spuntino pre-allenamento, lasciando il pollo a cena.',
+  verifyNext:
     'Nelle prossime 1–2 sessioni di forza, nota energia e sazietà serale senza aggiungere digiuni inventati.',
   claimLayers: {
     recordedFacts: ['Salmone e riso a pranzo', 'Pesi petto 50 min', 'Sonno 8 h'],
@@ -220,19 +247,31 @@ describe('Focus interpretive + multi-device P1j', () => {
     const built = buildFocusAiCoachDossier(session);
     const ok = validateFocusAiCoachResponse(MOCK_INTERPRETIVE, { dossier: built.dossier });
     assert.equal(ok.ok, true);
-    assert.equal(ok.analysis.schema, 'kentu.focusAiCoachAnalysis.v2');
-    assert.match(ok.analysis.theEmergingPicture, /gap|supporto|Bussola/i);
+    assert.equal(ok.analysis.schema, 'kentu.focusAiCoachAnalysis.v4');
+    assert.match(ok.analysis.lead, /gap|Bussola|carboidrati|50/i);
     assert.equal(ok.analysis.quantitativeProposal?.foodName, 'Riso');
+    assert.equal(Object.prototype.hasOwnProperty.call(ok.analysis, 'theEmergingPicture'), false);
 
     const bad = validateFocusAiCoachResponse(JSON.stringify({
-      theEmergingPicture: 'Hai registrato quattro pasti, 3196 kcal, 50 minuti di pesi e otto ore di sonno.',
-      nutrition: 'Hai mangiato.',
-      exercise: 'Ti sei allenato.',
-      sleep: 'Hai dormito.',
-      importantConnections: [],
-      theChoiceIWouldMake: 'Continua così.',
-      whatToWatchNext: 'Osserva.',
+      summary: {
+        headline: 'Riassunto numerico',
+        wentWell: [{ text: 'Ok energia', area: 'energia', eventRefs: [] }],
+        toImprove: [{ text: 'Niente da migliorare', area: 'ritmo', eventRefs: [] }],
+        todayAction: 'Continua così senza altri cambiamenti.',
+      },
+      headline: 'Riassunto numerico',
+      lead: 'Hai registrato quattro pasti, 3196 kcal, 50 minuti di pesi e otto ore di sonno.',
+      sections: [{ id: 'nutrition', title: 'Alimentazione', body: 'Hai mangiato.' }],
+      recommendedAction: 'Continua così.',
+      verifyNext: 'Osserva.',
       primaryPillarId: 'balanced',
+      claimLayers: {
+        recordedFacts: [],
+        generalKnowledge: [],
+        foundedInferences: [],
+        hypothesesToTest: [],
+      },
+      quantitativeProposal: null,
     }));
     assert.equal(bad.ok, false);
     assert.equal(bad.reason, 'editorial_restate_only');
@@ -274,7 +313,7 @@ describe('Focus interpretive + multi-device P1j', () => {
     assert.equal(fromB.ok, true);
     assert.equal(fromB.fromPersistence || fromB.fromCache, true);
     assert.equal(geminiCalls, 1, 'nessuna nuova chiamata Gemini su client B');
-    assert.equal(fromB.analysis.theEmergingPicture, fromA.analysis.theEmergingPicture);
+    assert.equal(fromB.analysis.lead, fromA.analysis.lead);
 
     const loaded = await loadFocusAiAnalysisFromStore({
       uid: 'uid-E',
@@ -290,7 +329,7 @@ describe('Focus interpretive + multi-device P1j', () => {
     console.log('\n===== TEST_E_MULTIDEVICE =====\n', JSON.stringify({
       geminiCalls,
       revisionId: fromA.record.revisionId,
-      samePicture: fromB.analysis.theEmergingPicture === fromA.analysis.theEmergingPicture,
+      sameLead: fromB.analysis.lead === fromA.analysis.lead,
       persistenceKind: fromB.persistenceKind,
     }, null, 2));
   });

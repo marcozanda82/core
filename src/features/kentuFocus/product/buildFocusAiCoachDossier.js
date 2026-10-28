@@ -11,6 +11,9 @@ import { FOCUS_PAGE_MODE } from './buildFocusPageSession.js';
 import { buildFocusCompassSignalsForDossier } from './buildFocusCompassSignalsForDossier.js';
 import { buildFocusKentuEnginesForDossier } from './buildFocusKentuEnginesForDossier.js';
 import { buildFocusEditorialReadingContext } from './buildFocusEditorialReadingContext.js';
+import { buildFocusFoodQualityBlock } from './buildFocusFoodQualityBlock.js';
+import { buildFocusDeterministicSignals } from './buildFocusDeterministicSignals.js';
+import { buildFocusSubstitutionCandidates } from './buildFocusSubstitutionCandidates.js';
 
 /**
  * @param {unknown} value
@@ -35,6 +38,19 @@ function shortHash(text) {
 
 function foodName(item) {
   return String(item?.name || item?.desc || item?.label || item?.foodName || '').trim();
+}
+
+/**
+ * @param {number} hour
+ * @returns {string}
+ */
+function formatClockHour(hour) {
+  const h = Number(hour);
+  if (!Number.isFinite(h)) return '';
+  const wrapped = ((h % 24) + 24) % 24;
+  const hh = Math.floor(wrapped);
+  const mm = Math.round((wrapped - hh) * 60);
+  return `${String(hh).padStart(2, '0')}:${String(mm === 60 ? 0 : mm).padStart(2, '0')}`;
 }
 
 function readNova(tags) {
@@ -144,8 +160,17 @@ function collectStimuliWindow(fullHistory, analysisDate, windowDays) {
 
 /**
  * @param {object} session — resolveFocusPageSession real_diary
+ * @param {{
+ *   foodCatalogs?: {
+ *     personalDb?: object|null,
+ *     kentuItDb?: object|null,
+ *     globalDb?: object|null,
+ *     offDb?: object|null,
+ *     offReady?: boolean|null,
+ *   }|null,
+ * }} [options]
  */
-export function buildFocusAiCoachDossier(session) {
+export function buildFocusAiCoachDossier(session, options = {}) {
   const gate = canBuildFocusAiCoachDossier(session);
   if (!gate.ok) {
     return {
@@ -155,6 +180,12 @@ export function buildFocusAiCoachDossier(session) {
       dataVersion: null,
     };
   }
+
+  const foodCatalogs = options?.foodCatalogs && typeof options.foodCatalogs === 'object'
+    ? options.foodCatalogs
+    : (session.foodCatalogs && typeof session.foodCatalogs === 'object'
+      ? session.foodCatalogs
+      : null);
 
   const periodId = session.periodId;
   const nutrition = session.nutrition || null;
@@ -183,21 +214,30 @@ export function buildFocusAiCoachDossier(session) {
           }
           : null,
         items: (meal.items || [])
-          .map((item) => ({
-            name: item.name || null,
-            grams: item.grams ?? null,
-            kcal: item.macros?.kcal ?? null,
-            proteinG: item.macros?.proteinG ?? null,
-            carbG: item.macros?.carbG ?? null,
-            fatG: item.macros?.fatG ?? null,
-            fiberG: item.macros?.fiberG ?? null,
-            micronutrients: item.micronutrients || null,
-            novaGroupDocumented: readNova(item.semanticTags),
-            toVerify: (item.toVerify || []).map((f) => ({
-              nutrient: f.nutrient || null,
-              reason: f.reason || null,
-            })),
-          }))
+          .map((item, idx) => {
+            const rawId = String(item.id || item.foodDbKey || item.matchedKey || `idx_${idx}`).trim();
+            const eventId = `food:${rawId}`;
+            return {
+              id: rawId || null,
+              eventId,
+              name: item.name || null,
+              foodDbKey: item.foodDbKey || item.matchedKey || null,
+              grams: item.grams ?? null,
+              kcal: item.macros?.kcal ?? null,
+              proteinG: item.macros?.proteinG ?? null,
+              carbG: item.macros?.carbG ?? null,
+              fatG: item.macros?.fatG ?? null,
+              fiberG: item.macros?.fiberG ?? null,
+              micronutrients: item.micronutrients || null,
+              semanticTags: item.semanticTags || null,
+              novaGroupDocumented: readNova(item.semanticTags),
+              novaScore: item.novaScore ?? null,
+              toVerify: (item.toVerify || []).map((f) => ({
+                nutrient: f.nutrient || null,
+                reason: f.reason || null,
+              })),
+            };
+          })
           .filter((it) => it.name),
       });
     }
@@ -256,23 +296,30 @@ export function buildFocusAiCoachDossier(session) {
   const nutritionPillar = pillarsById.nutrition || null;
 
   const workouts = Array.isArray(exercisePillar?.workouts)
-    ? exercisePillar.workouts.map((w) => ({
-      date: w.date || (periodId === 'ieri' ? session.analysisDate : null),
-      label: w.label || null,
-      durationMin: w.durationMin ?? null,
-      clockLabel: w.clockLabel || null,
-      clockHour: w.clockHour ?? null,
-      muscleGroups: Array.isArray(w.muscleGroups) ? w.muscleGroups : [],
-      workoutTypeId: w.workoutTypeId || null,
-      kindLabel: w.kindLabel || null,
-      kind: w.kind || null,
-      isWalking: Boolean(w.isWalking),
-      intensityDocumented: Boolean(w.intensityDocumented),
-      intensityBand: w.intensityBand || null,
-      kcalBurn: w.kcalBurn ?? null,
-      setsRepsLoadsPresent: false,
-      note: 'Serie/ripetizioni/carichi non esportati se non verificabili nella normalizzazione Focus.',
-    }))
+    ? exercisePillar.workouts.map((w, idx) => {
+      const date = w.date || (periodId === 'ieri' ? session.analysisDate : null);
+      const rawId = String(w.id || w.workoutTypeId || `${date || 'd'}_${idx}`).trim();
+      const eventId = `workout:${rawId}`;
+      return {
+        id: rawId || null,
+        eventId,
+        date,
+        label: w.label || null,
+        durationMin: w.durationMin ?? null,
+        clockLabel: w.clockLabel || null,
+        clockHour: w.clockHour ?? null,
+        muscleGroups: Array.isArray(w.muscleGroups) ? w.muscleGroups : [],
+        workoutTypeId: w.workoutTypeId || null,
+        kindLabel: w.kindLabel || null,
+        kind: w.kind || null,
+        isWalking: Boolean(w.isWalking),
+        intensityDocumented: Boolean(w.intensityDocumented),
+        intensityBand: w.intensityBand || null,
+        kcalBurn: w.kcalBurn ?? null,
+        setsRepsLoadsPresent: false,
+        note: 'Serie/ripetizioni/carichi non esportati se non verificabili nella normalizzazione Focus.',
+      };
+    })
     : [];
 
   const muscleGroupFrequency = Array.isArray(exercisePillar?.muscleGroupFrequency)
@@ -300,18 +347,123 @@ export function buildFocusAiCoachDossier(session) {
     }
     : null;
 
+  const sleepBrief = session.sleepNight || null;
+  const sleepNightEndedOn = sleepPillar?.nightEndedOn || session.publicationDate;
+  const sleepEventId = periodId === 'ieri' && (sleepPillar?.hasEvidence || sleepBrief?.sleepAvailable)
+    ? `sleep:${sleepNightEndedOn || session.analysisDate}`
+    : null;
   const sleepDay = periodId === 'ieri'
     ? {
-      available: Boolean(sleepPillar?.hasEvidence),
-      hours: session.sleepNight?.hours ?? null,
-      wakeTime: session.sleepNight?.wakeTime ?? null,
-      bedtime: session.sleepNight?.bedtime ?? null,
-      nightEndedOn: sleepPillar?.nightEndedOn || session.publicationDate,
+      available: Boolean(sleepPillar?.hasEvidence || sleepBrief?.sleepAvailable),
+      eventId: sleepEventId,
+      hours: sleepBrief?.hours ?? null,
+      wakeTime: sleepBrief?.wakeTime ?? null,
+      bedtime: sleepBrief?.bedtime ?? null,
+      bedtimeProvenance: sleepBrief?.bedtimeProvenance ?? null,
+      qualityStars: sleepBrief?.qualityStars ?? null,
+      qualityBand: sleepBrief?.qualityBand ?? null,
+      qualityProvenance: sleepBrief?.qualityProvenance ?? null,
+      deepMin: sleepBrief?.deepMin ?? null,
+      remMin: sleepBrief?.remMin ?? null,
+      deepMinProvenance: sleepBrief?.deepMinProvenance ?? null,
+      remMinProvenance: sleepBrief?.remMinProvenance ?? null,
+      stagesSuppressed: Boolean(sleepBrief?.stagesSuppressed),
+      stagesNote: sleepBrief?.stagesNote || null,
+      nightEndedOn: sleepNightEndedOn,
       analysisDay: sleepPillar?.analysisDay || session.analysisDate,
       metrics: sleepPillar?.metrics || [],
       convention: 'notte_D_conclusa_al_risveglio_D_plus_1',
     }
     : null;
+
+  const foodQuality = fullHistory && isIsoDateString(session.analysisDate)
+    ? buildFocusFoodQualityBlock({
+      fullHistory,
+      analysisDate: session.analysisDate,
+      periodId,
+      catalogs: foodCatalogs,
+      recentDays: periodId === 'ieri' ? 7 : windowDays,
+    })
+    : {
+      available: false,
+      reason: 'diary_unavailable',
+      day: null,
+      recent: null,
+      catalogStatus: null,
+    };
+
+  const intermittentFasting = session?.userProfile?.intermittentFasting === true
+    || session?.profile?.intermittentFasting === true
+    || session?.handoff?.userProfile?.intermittentFasting === true
+    || false;
+
+  const deterministicSignals = fullHistory && isIsoDateString(session.analysisDate)
+    ? buildFocusDeterministicSignals({
+      fullHistory,
+      analysisDate: session.analysisDate,
+      publicationDate: session.publicationDate,
+      sleepNight: sleepBrief,
+      periodId,
+      windowDays,
+      intermittentFasting,
+    })
+    : { available: false, signals: [], activeIds: [] };
+
+  // Cena abbondante (ritmo): utile da accostare al sonno senza causalità
+  let heavyLateMeal = null;
+  if (periodId === 'ieri' && meals.length) {
+    const dinner = meals.find((m) => /cena/i.test(String(m.mealLabel || m.mealType || '')));
+    const dinnerKcal = Number(dinner?.distribution?.kcal);
+    const dayKcal = Number(usableMacros?.kcal);
+    if (dinner && Number.isFinite(dinnerKcal) && dinnerKcal > 0) {
+      const share = Number.isFinite(dayKcal) && dayKcal > 0 ? dinnerKcal / dayKcal : null;
+      const heavy = dinnerKcal >= 900 || (share != null && share >= 0.4);
+      if (heavy) {
+        const topItem = [...(dinner.items || [])]
+          .filter((it) => it?.eventId)
+          .sort((a, b) => (Number(b.kcal) || 0) - (Number(a.kcal) || 0))[0] || null;
+        heavyLateMeal = {
+          active: true,
+          mealLabel: dinner.mealLabel || 'Cena',
+          clockHour: dinner.clockHour ?? null,
+          kcal: dinnerKcal,
+          dayIntakeKcal: Number.isFinite(dayKcal) ? dayKcal : null,
+          shareOfDay: share != null ? Math.round(share * 100) / 100 : null,
+          eventId: topItem?.eventId || null,
+          detail: `Cena ${dinnerKcal} kcal${dinner.clockHour != null ? ` alle ${formatClockHour(dinner.clockHour)}` : ''}.`,
+        };
+      }
+    }
+  }
+  if (heavyLateMeal && deterministicSignals && typeof deterministicSignals === 'object') {
+    deterministicSignals.heavyLateMeal = heavyLateMeal;
+    if (!Array.isArray(deterministicSignals.activeIds)) deterministicSignals.activeIds = [];
+    if (!deterministicSignals.activeIds.includes('heavy_late_meal')) {
+      deterministicSignals.activeIds = [...deterministicSignals.activeIds, 'heavy_late_meal'];
+    }
+    if (Array.isArray(deterministicSignals.signals)) {
+      deterministicSignals.signals.push({
+        id: 'heavy_late_meal',
+        area: 'rhythm',
+        active: true,
+        ...heavyLateMeal,
+      });
+    }
+  }
+
+  const substitutionCandidates = fullHistory && isIsoDateString(session.analysisDate)
+    ? buildFocusSubstitutionCandidates({
+      fullHistory,
+      analysisDate: session.analysisDate,
+      catalogs: foodCatalogs,
+      lookbackDays: 30,
+      excludeNames: (meals || [])
+        .flatMap((m) => m.items || [])
+        .filter((it) => (it.novaGroupDocumented != null && it.novaGroupDocumented >= 4)
+          || /duchessa|gelato|torta/i.test(String(it.name || '')))
+        .map((it) => it.name),
+    })
+    : { available: false, reason: 'diary_unavailable', candidates: [], byOccasion: {} };
 
   const sleepSeries = Array.isArray(sleepPillar?.series)
     ? sleepPillar.series
@@ -367,7 +519,7 @@ export function buildFocusAiCoachDossier(session) {
   });
 
   const horizonBrief = periodId === 'ieri'
-    ? 'Orizzonte IERI: racconta la giornata nel contesto recente. Un giorno ≠ traiettoria. Nessun verdetto settimanale di forza.'
+    ? 'Orizzonte IERI: racconta la giornata nel contesto recente. Un giorno non è l’andamento di lungo periodo. Nessun verdetto settimanale di forza.'
     : periodId === 'mese'
       ? 'Orizzonte MESE: andamento e comportamenti ricorrenti; asteniti se i dati non bastano.'
       : 'Orizzonte SETTIMANA: abitudini e persistenza (non un singolo pasto).';
@@ -384,6 +536,57 @@ export function buildFocusAiCoachDossier(session) {
     compassSignals: compass,
   });
 
+  /** @type {object[]} */
+  const eventIndexEvents = [];
+  for (const meal of meals) {
+    for (const it of meal.items || []) {
+      if (!it?.eventId) continue;
+      eventIndexEvents.push({
+        id: it.eventId,
+        kind: 'food',
+        name: it.name || null,
+        mealLabel: meal.mealLabel || null,
+        date: session.analysisDate,
+      });
+    }
+  }
+  if (sleepDay?.eventId) {
+    eventIndexEvents.push({
+      id: sleepDay.eventId,
+      kind: 'sleep',
+      date: sleepDay.nightEndedOn || session.publicationDate,
+      hours: sleepDay.hours ?? null,
+    });
+  }
+  for (const w of workouts) {
+    if (!w?.eventId) continue;
+    eventIndexEvents.push({
+      id: w.eventId,
+      kind: 'workout',
+      label: w.label || null,
+      date: w.date || null,
+    });
+  }
+  /** Alias corti per il modello (e1, e2, …); ids resta la lista reale per il validatore. */
+  /** @type {Record<string, string>} */
+  const aliasToId = {};
+  /** @type {Record<string, string>} */
+  const idToAlias = {};
+  const eventsWithAlias = eventIndexEvents.map((e, i) => {
+    const alias = `e${i + 1}`;
+    aliasToId[alias] = e.id;
+    idToAlias[e.id] = alias;
+    return { ...e, alias };
+  });
+  const eventIndex = {
+    schema: 'kentu.focusAiCoachEventIndex.v2',
+    events: eventsWithAlias,
+    ids: eventsWithAlias.map((e) => e.id),
+    aliases: eventsWithAlias.map((e) => e.alias),
+    aliasToId,
+    idToAlias,
+  };
+
   const dossier = {
     schema: 'kentu.focusAiCoachDossier.v2',
     periodId,
@@ -392,6 +595,7 @@ export function buildFocusAiCoachDossier(session) {
     windowLabel: session.windowLabel || null,
     horizonBrief,
     editorialReadingContext,
+    eventIndex,
     mandate: {
       doNotRestateCardNumbers: true,
       teachOrHypothesizeOrImproveDecision: true,
@@ -401,6 +605,8 @@ export function buildFocusAiCoachDossier(session) {
       humanReadableHeadline: true,
       concreteFoodManeuverPreferred: true,
       noUnmeasuredSleepPhysiology: true,
+      namePatternAndEstimatedAreIndicative: true,
+      fiveAreas: ['energia', 'qualita', 'ritmo', 'sonno', 'movimento'],
     },
     pillars: {
       nutrition: {
@@ -428,9 +634,12 @@ export function buildFocusAiCoachDossier(session) {
       usableMicros,
       trend: nutritionTrend,
       foodFrequency,
+      foodQuality,
+      substitutionCandidates,
       privateComment: periodId === 'ieri' ? (nutrition?.ieri?.comment?.text || null) : null,
       stimuli,
     },
+    deterministicSignals,
     exercise: {
       workouts,
       muscleGroupFrequency,
@@ -512,6 +721,10 @@ export function buildFocusAiCoachDossier(session) {
     },
   };
 
+  const foodQualityCompleteness = dossier.nutrition.foodQuality?.completeness || 'complete';
+  const foodQualityCompletenessReason = dossier.nutrition.foodQuality?.completenessReason || null;
+  const definitive = foodQualityCompleteness !== 'partial';
+
   const dataVersion = shortHash(stableStringify({
     uid: session.uid,
     periodId,
@@ -520,6 +733,10 @@ export function buildFocusAiCoachDossier(session) {
     pillars: dossier.pillars,
     meals: dossier.nutrition.meals,
     foodFrequency: dossier.nutrition.foodFrequency?.slice?.(0, 12),
+    foodQuality: dossier.nutrition.foodQuality?.day || null,
+    foodQualityCompleteness,
+    foodQualityCompletenessReason,
+    deterministicSignals: dossier.deterministicSignals?.activeIds || [],
     workouts: dossier.exercise.workouts,
     cardio: dossier.exercise.cardio,
     sleep: dossier.sleep,
@@ -532,6 +749,9 @@ export function buildFocusAiCoachDossier(session) {
     reason: null,
     dossier,
     dataVersion,
+    foodQualityCompleteness,
+    foodQualityCompletenessReason,
+    definitive,
     binding: {
       uid: session.uid,
       periodId,
@@ -539,6 +759,9 @@ export function buildFocusAiCoachDossier(session) {
       publicationDate: session.publicationDate,
       dataVersion,
       windowKey: session.analysisDate,
+      foodQualityCompleteness,
+      foodQualityCompletenessReason,
+      definitive,
     },
   };
 }

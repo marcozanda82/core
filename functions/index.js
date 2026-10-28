@@ -226,7 +226,7 @@ async function callGeminiGenerateContent({
  */
 exports.callGemini = functions
   .region('europe-west1')
-  .runWith({ timeoutSeconds: 120, memory: '512MB' })
+  .runWith({ timeoutSeconds: 180, memory: '512MB' })
   .https.onCall(async (data) => {
     try {
       const payload = data || {};

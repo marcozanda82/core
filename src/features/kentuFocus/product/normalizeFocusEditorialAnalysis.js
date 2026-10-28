@@ -52,18 +52,25 @@ function firstSentence(text, max = 90) {
 export function normalizeFocusEditorialAnalysis(analysis) {
   if (!analysis || typeof analysis !== 'object') return null;
 
-  // Solo lo schema v3 marca le analisi nuove; v2 può avere headline/sections
-  // ricostruite dal validatore per la UI, ma resta legacyCompat.
+  // v4 (summary) e v3: analisi nuove; v2 resta legacyCompat.
+  const isV4 = analysis.schema === 'kentu.focusAiCoachAnalysis.v4';
   const isV3 = analysis.schema === 'kentu.focusAiCoachAnalysis.v3';
 
-  if (isV3) {
+  if (isV4 || isV3) {
+    // Lettura: accetta alias legacy da analisi vecchie; non li espone come campi primari.
     return {
-      schema: 'kentu.focusAiCoachAnalysis.v3',
-      headline: analysis.headline,
-      lead: analysis.lead,
+      schema: isV4 ? 'kentu.focusAiCoachAnalysis.v4' : 'kentu.focusAiCoachAnalysis.v3',
+      summary: analysis.summary || null,
+      headline: analysis.headline || analysis.summary?.headline,
+      lead: analysis.lead ?? analysis.theEmergingPicture ?? analysis.integratedComment ?? null,
       sections: (analysis.sections || []).filter((s) => s?.title && s?.body),
-      keyInsight: analysis.keyInsight || null,
-      recommendedAction: analysis.recommendedAction || analysis.theChoiceIWouldMake || analysis.practicalAction,
+      keyInsight: analysis.keyInsight
+        || (analysis.importantConnections || analysis.focusAspects || [])[0]
+        || null,
+      recommendedAction: analysis.recommendedAction
+        || analysis.theChoiceIWouldMake
+        || analysis.practicalAction
+        || analysis.summary?.todayAction,
       expectedChange: analysis.expectedChange || null,
       verifyNext: analysis.verifyNext || analysis.whatToWatchNext,
       evidenceRefs: cleanEvidenceRefList(analysis.evidenceRefs),
@@ -73,10 +80,6 @@ export function normalizeFocusEditorialAnalysis(analysis) {
       primaryPillarId: analysis.primaryPillarId || 'balanced',
       proposalVerification: analysis.proposalVerification || null,
       legacyCompat: false,
-      // campi legacy per codice che li legge ancora
-      theEmergingPicture: analysis.lead || analysis.theEmergingPicture,
-      theChoiceIWouldMake: analysis.recommendedAction || analysis.theChoiceIWouldMake,
-      whatToWatchNext: analysis.verifyNext || analysis.whatToWatchNext,
     };
   }
 

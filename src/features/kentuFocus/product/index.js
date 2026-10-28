@@ -43,6 +43,44 @@ export {
 } from './buildFocusAiCoachDossier.js';
 
 export {
+  buildFocusFoodQualityBlock,
+  resolveFoodItemClassification,
+  resolveOffCatalogStatus,
+  readNovaGroup,
+  FOOD_QUALITY_PROVENANCE,
+  OFF_CATALOG_STATUS,
+} from './buildFocusFoodQualityBlock.js';
+
+export {
+  assessNova4CritiqueProfile,
+  isDarkChocolateGe70,
+  readNutriScoreGrade,
+} from './assessNova4CritiqueProfile.js';
+
+export {
+  FOCUS_OFF_WAIT_TIMEOUT_MS,
+  focusWindowNeedsOffCatalog,
+  waitFocusOffCatalogForAnalysis,
+} from './waitFocusOffCatalogForAnalysis.js';
+
+export {
+  buildFocusDeterministicSignals,
+  hoursBetweenClock,
+} from './buildFocusDeterministicSignals.js';
+
+export {
+  buildFocusSubstitutionCandidates,
+  inferUseOccasion,
+  resolveUseOccasion,
+  formatFoodNameForMidSentence,
+  pickPreferredSubstitution,
+  occasionFromCatalogCategories,
+  occasionFromWhitelist,
+  FOCUS_USE_OCCASION,
+  FOCUS_GENERIC_OCCASION_LABEL,
+} from './buildFocusSubstitutionCandidates.js';
+
+export {
   FOCUS_AI_COACH_MODEL,
   FOCUS_AI_COACH_RESPONSE_SCHEMA,
   buildFocusAiCoachSystemInstruction,
@@ -50,6 +88,13 @@ export {
 } from './buildFocusAiCoachPrompt.js';
 
 export { validateFocusAiCoachResponse } from './validateFocusAiCoachResponse.js';
+
+export {
+  FOCUS_AI_COACH_BANNED_USER_PHRASES,
+  FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES,
+  findBannedPhrasesInAnalysis,
+  formatBannedPhraseRetryHint,
+} from './focusAiCoachBannedUserPhrases.js';
 
 export {
   requestFocusAiCoachAnalysis,

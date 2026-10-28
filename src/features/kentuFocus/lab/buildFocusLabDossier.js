@@ -1198,7 +1198,7 @@ export function buildFocusLabDossier(input) {
         'Stage sonno 60/60 senza indizio wearable → provenance missing.',
         'sleepRoutine: feriali/weekend = mattina di risveglio (nightEndedOn); wakeTime ≠ risvegli notturni.',
         'sleepRoutine: timingClass ordinary|unusual|ambiguous; confronti forti su ordinary.',
-        'bedtime matches wake−duration senza flag → provenance ambiguous (non recorded).',
+        'bedtime = wake−hours con entrambi disponibili → provenance derived; recorded se diverso; missing se manca wake/hours.',
         'sleep_weekly_rhythm: un’unica storia editoriale; member signals come evidenze.',
         'missingDays = nodi assenti nello storico in memoria, non prova di bootstrap incompleto.',
         'nutritionAnomalies sono segnali; i valori originali non vengono corretti.',
