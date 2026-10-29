@@ -15,6 +15,7 @@ import {
   readNovaGroup,
   FOOD_QUALITY_PROVENANCE,
 } from './buildFocusFoodQualityBlock.js';
+import { withFocusCatalogLookupSession } from './focusAiCoachCatalogLookup.js';
 
 /**
  * NOVA effettivo: preferisci catalogo documentato se il diario ha 0/placeholder.
@@ -258,8 +259,11 @@ export function buildFocusSubstitutionCandidates(input) {
     : null;
   const analysisDate = String(input?.analysisDate || '').trim();
   const lookbackDays = Math.max(1, Number(input.lookbackDays) || 30);
-  const catalogs = input.catalogs || null;
+  const { catalogs } = withFocusCatalogLookupSession(input.catalogs || null);
   const offStatus = resolveOffCatalogStatus(catalogs);
+  const maxPerOccasion = Math.max(1, Math.min(5, Number(input.maxPerOccasion) || 5));
+  const maxCandidates = Math.max(1, Math.min(8, Number(input.maxCandidates) || 5));
+
   const exclude = new Set(
     (input.excludeNames || []).map((n) => String(n || '').trim().toLowerCase()).filter(Boolean),
   );
@@ -356,29 +360,19 @@ export function buildFocusSubstitutionCandidates(input) {
   const proposable = candidates.filter((c) => c.proposable);
 
   const byOccasion = {
-    dolce: proposable.filter((c) => c.occasion === 'dolce').slice(0, 8),
-    snack: proposable.filter((c) => c.occasion === 'snack').slice(0, 8),
-    bevanda: proposable.filter((c) => c.occasion === 'bevanda').slice(0, 8),
-    unknown: candidates.filter((c) => c.occasion === 'unknown').slice(0, 8),
-    dessert: proposable.filter((c) => c.occasion === 'dolce').slice(0, 8),
-    drink: proposable.filter((c) => c.occasion === 'bevanda').slice(0, 8),
+    dolce: proposable.filter((c) => c.occasion === 'dolce').slice(0, maxPerOccasion),
+    snack: proposable.filter((c) => c.occasion === 'snack').slice(0, maxPerOccasion),
+    bevanda: proposable.filter((c) => c.occasion === 'bevanda').slice(0, maxPerOccasion),
+    unknown: [],
   };
 
   return {
     available: proposable.length > 0,
     reason: null,
     lookbackDays,
-    policy: {
-      excludeNova4: true,
-      sameUseOccasionOnly: true,
-      preferDiaryFoods: true,
-      noCrossOccasionFallback: true,
-      unknownNotProposable: true,
-      windowDays: lookbackDays,
-    },
     byOccasion,
-    candidates: candidates.slice(0, 32),
-    proposable: proposable.slice(0, 24),
+    candidates: proposable.slice(0, maxCandidates),
+    proposable: proposable.slice(0, maxCandidates),
     genericFallback: { ...FOCUS_GENERIC_OCCASION_LABEL },
   };
 }

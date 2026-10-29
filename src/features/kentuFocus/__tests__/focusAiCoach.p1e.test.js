@@ -90,7 +90,12 @@ const VALID_AI_JSON = JSON.stringify({
     headline: 'Giorno equilibrato e leggibile',
     wentWell: [{ text: 'Yogurt a pranzo e camminata registrati', area: 'energia', eventRefs: [] }],
     toImprove: [{ text: 'Mantieni continuità di registrazione', area: 'ritmo', eventRefs: [] }],
-    todayAction: 'Registra pasti, movimento e sonno nella stessa giornata.',
+    todayAction: {
+      text: 'Registra pasti, movimento e sonno nella stessa giornata.',
+      toImproveIndex: 0,
+      eventRefs: [],
+      area: 'ritmo',
+    },
   },
   headline: 'Giorno equilibrato e leggibile',
   lead: 'Introito vicino al target con 140 kcal sul diario e 30 minuti di camminata.',

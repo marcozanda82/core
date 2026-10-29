@@ -3,7 +3,11 @@ import { functions } from '../firebaseConfig';
 import { recordUsage } from './apiUsageDiary';
 import { logSystemError } from '../utils/devToolsPersistence';
 
-const callAiFunction = httpsCallable(functions, 'callGemini');
+/** Allineato a callGemini CF (timeoutSeconds: 120). Default SDK httpsCallable = 70s. */
+const CALL_GEMINI_CALLABLE_TIMEOUT_MS = 120_000;
+const callAiFunction = httpsCallable(functions, 'callGemini', {
+  timeout: CALL_GEMINI_CALLABLE_TIMEOUT_MS,
+});
 
 function extractAiText(data) {
   if (data == null) return '';
@@ -149,6 +153,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   if (opts.temperature != null) payload.temperature = opts.temperature;
   if (opts.responseSchema) payload.responseSchema = opts.responseSchema;
   if (opts.generationConfig) payload.generationConfig = opts.generationConfig;
+  if (opts.callTag) payload.callTag = String(opts.callTag).slice(0, 64);
 
   let abortListener = null;
   const abortPromise = signal

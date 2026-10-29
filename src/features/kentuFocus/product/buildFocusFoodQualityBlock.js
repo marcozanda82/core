@@ -9,6 +9,10 @@ import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { collectDayLogForNutrition } from '../normalize/normalizeFoodEvents.js';
 import { resolveFocusMealIdentity } from '../normalize/focusMealSlots.js';
 import { assessNova4CritiqueProfile } from './assessNova4CritiqueProfile.js';
+import {
+  catalogDbNonEmpty,
+  withFocusCatalogLookupSession,
+} from './focusAiCoachCatalogLookup.js';
 
 export const FOOD_QUALITY_PROVENANCE = Object.freeze({
   documented: 'documented',
@@ -16,6 +20,23 @@ export const FOOD_QUALITY_PROVENANCE = Object.freeze({
   name_pattern: 'name_pattern',
   unclassified: 'unclassified',
 });
+
+/** Codici brevi nel dossier inviato al modello. */
+export const FOOD_QUALITY_PROVENANCE_CODE = Object.freeze({
+  documented: 'd',
+  estimated: 'e',
+  name_pattern: 'n',
+  unclassified: 'u',
+});
+
+/**
+ * @param {string|null|undefined} provenance
+ * @returns {string|null}
+ */
+export function compactFoodQualityProvenance(provenance) {
+  const p = String(provenance || '');
+  return FOOD_QUALITY_PROVENANCE_CODE[p] || (p ? p.slice(0, 1) : null);
+}
 
 export const OFF_CATALOG_STATUS = Object.freeze({
   ready: 'ready',
@@ -113,7 +134,7 @@ export function resolveOffCatalogStatus(catalogs) {
       note: 'OFF ancora in caricamento: senza match su CREA/USDA/personale la classificazione resta unclassified (off_catalog_not_ready).',
     };
   }
-  if (catalogs.offDb && typeof catalogs.offDb === 'object' && Object.keys(catalogs.offDb).length > 0) {
+  if (catalogs.offReady === true || catalogDbNonEmpty(catalogs.offDb)) {
     return {
       status: OFF_CATALOG_STATUS.ready,
       note: 'OFF disponibile per lookup per foodDbKey.',
@@ -172,6 +193,9 @@ function classificationFromCatalogRow(row, sourceLabel) {
  */
 function lookupCatalogRow(catalogs, key) {
   if (!key || !catalogs || typeof catalogs !== 'object') return null;
+  if (catalogs.__focusLookupSession?.lookup) {
+    return catalogs.__focusLookupSession.lookup(key);
+  }
   const layers = [
     { db: catalogs.personalDb, label: 'personal' },
     { db: catalogs.kentuItDb, label: 'crea' },
@@ -180,6 +204,7 @@ function lookupCatalogRow(catalogs, key) {
   ];
   for (const layer of layers) {
     if (!layer.db || typeof layer.db !== 'object') continue;
+    if (layer.label === 'off' && !catalogDbNonEmpty(layer.db)) continue;
     const row = layer.db[key];
     if (!row) continue;
     return { row, sourceLabel: `catalog:${layer.label}`, layer: layer.label };
@@ -246,24 +271,10 @@ export function resolveFoodItemClassification(item, catalogs, offStatus) {
     };
   }
 
-  const layers = [
-    { db: catalogs.personalDb, label: 'personal' },
-    { db: catalogs.kentuItDb, label: 'crea' },
-    { db: catalogs.globalDb, label: 'usda' },
-    { db: catalogs.offDb, label: 'off' },
-  ];
-
-  let sawOffLayer = false;
-  for (const layer of layers) {
-    if (!layer.db || typeof layer.db !== 'object') continue;
-    // offDb vuoto non conta come layer consultabile
-    if (layer.label === 'off') {
-      if (Object.keys(layer.db).length === 0) continue;
-      sawOffLayer = true;
-    }
-    const row = layer.db[key];
-    if (!row) continue;
-    const hit = classificationFromCatalogRow(row, `catalog:${layer.label}`);
+  // Lookup O(1) per chiave (memo se catalogs.__focusLookupSession presente)
+  const cached = lookupCatalogRow(catalogs, key);
+  if (cached?.row) {
+    const hit = classificationFromCatalogRow(cached.row, cached.sourceLabel);
     if (hit.provenance) {
       return {
         name,
@@ -273,27 +284,31 @@ export function resolveFoodItemClassification(item, catalogs, offStatus) {
         provenance: hit.provenance,
         source: hit.source,
         reason: null,
-        catalogRow: row,
-        catalogLayer: layer.label,
+        catalogRow: cached.row,
+        catalogLayer: cached.layer,
       };
     }
-    // Match senza NOVA: tieni la riga per categorie/nutrienti
     return {
       name,
       foodDbKey: key,
       novaGroup: null,
       semanticTags: hit.semanticTags || diaryTags,
       provenance: FOOD_QUALITY_PROVENANCE.unclassified,
-      source: hit.source || `catalog:${layer.label}`,
+      source: hit.source || cached.sourceLabel,
       reason: 'catalog_without_nova',
-      catalogRow: row,
-      catalogLayer: layer.label,
+      catalogRow: cached.row,
+      catalogLayer: cached.layer,
     };
   }
 
+  const offConsultable = catalogs.offReady === true
+    || (catalogs.__focusLookupSession?.dbNonEmpty
+      ? catalogs.__focusLookupSession.dbNonEmpty(catalogs.offDb)
+      : catalogDbNonEmpty(catalogs.offDb));
+
   if (
     offStatus?.status === OFF_CATALOG_STATUS.not_ready
-    && !sawOffLayer
+    && !offConsultable
   ) {
     return {
       name,
@@ -639,7 +654,7 @@ export function buildFocusFoodQualityBlock(input) {
     };
   }
 
-  const catalogs = input.catalogs || null;
+  const { catalogs } = withFocusCatalogLookupSession(input.catalogs || null);
   const offStatus = input.offStatusOverride && typeof input.offStatusOverride === 'object'
     ? input.offStatusOverride
     : resolveOffCatalogStatus(catalogs);

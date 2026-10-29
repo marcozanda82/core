@@ -180,7 +180,12 @@ export function buildRealOct27ReportJson(dossier) {
           eventRefs: sleepImproveRefs,
         },
       ],
-      todayAction: `A pranzo sostituisci il dessert ultra-processato con ${subPhrase}.`,
+      todayAction: {
+        text: `A pranzo sostituisci il dessert ultra-processato con ${subPhrase}.`,
+        toImproveIndex: 0,
+        eventRefs: duchessaEvent ? [duchessaEvent] : [],
+        area: 'qualita',
+      },
     },
     headline: 'Pranzo dolce e sonno sotto le 7 ore',
     lead: dayKcal != null && target != null && mean7 != null
@@ -199,7 +204,7 @@ export function buildRealOct27ReportJson(dossier) {
       },
     ],
     keyInsight: 'La leva più diretta è il dessert a pranzo, non un taglio calorico generico.',
-    recommendedAction: `Al prossimo pranzo simile, sostituisci il dessert ultra-processato con ${subPhrase}, lasciando il resto del pasto.`,
+    recommendedAction: `A pranzo sostituisci il dessert ultra-processato con ${subPhrase}; lascia invariato il resto del pasto.`,
     expectedChange: 'Meno carico ultra-processato a pranzo; calorie giorno da rivedere solo se cambi anche le porzioni.',
     verifyNext: 'Per 7–14 giorni: dessert ultra-processati a pranzo, ora cena e ore di sonno al risveglio.',
     evidenceRefs: [

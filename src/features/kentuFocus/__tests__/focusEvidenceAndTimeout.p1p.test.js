@@ -62,11 +62,11 @@ describe('Focus evidence + timeout P1P', () => {
     __resetFocusAiAnalysisPersistenceForTests();
   });
 
-  it('timeout Focus > askAI default; mese > settimana ≥ ieri; sotto tetto CF 180s', () => {
+  it('timeout Focus > askAI default; mese > settimana ≥ ieri; sotto tetto CF 120s', () => {
     assert.ok(resolveFocusAiCoachTimeoutMs('ieri') > ASK_AI_DEFAULT_TIMEOUT_MS);
     assert.ok(resolveFocusAiCoachTimeoutMs('settimana') >= resolveFocusAiCoachTimeoutMs('ieri'));
     assert.ok(resolveFocusAiCoachTimeoutMs('mese') >= resolveFocusAiCoachTimeoutMs('settimana'));
-    assert.ok(resolveFocusAiCoachTimeoutMs('mese') < 180_000);
+    assert.ok(resolveFocusAiCoachTimeoutMs('mese') < 120_000);
     assert.equal(FOCUS_AI_COACH_TIMEOUT_MS.ieri, resolveFocusAiCoachTimeoutMs('ieri'));
     // Nota: questo non dimostra assenza di timeout su Gemini reale.
   });

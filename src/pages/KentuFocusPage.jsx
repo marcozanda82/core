@@ -34,6 +34,7 @@ import {
   resolveFocusEvidenceRefs,
   buildFocusAiAnalysisRecord,
   buildFocusSavedEvidenceHarnessAnalysis,
+  buildFocusFoodQualityBlock,
   FOCUS_SAVED_EVIDENCE_HARNESS_REVISION_ID,
   FOCUS_SAVED_EVIDENCE_HARNESS_GENERATED_AT,
   __resetFocusAiAnalysisPersistenceForTests,
@@ -794,11 +795,14 @@ function SummaryAreaIcon({ area, size = 15 }) {
 }
 
 /**
- * Cinque aree diario con tono allineato alla summary.
- * @param {{ session: object, periodId: string, openDetail: string|null, onOpenDetail: Function }} props
+ * Cinque aree diario; sottotitoli da fatti dossier (non dalla summary).
+ * @param {{ session: object, periodId: string, openDetail?: string|null, onOpenDetail?: Function }} props
  */
-function DiaryNumbersBlock({ session, periodId, openDetail, onOpenDetail }) {
-  const cards = useMemo(() => buildDiaryNumberCards(session, periodId), [session, periodId]);
+function DiaryNumbersBlock({ session, periodId, openDetail = null, onOpenDetail = null }) {
+  const cards = useMemo(
+    () => buildDiaryNumberCards(session, periodId),
+    [session, periodId],
+  );
   const title = periodId === 'settimana'
     ? 'La settimana in numeri'
     : periodId === 'mese'
@@ -849,6 +853,89 @@ function DiaryNumbersBlock({ session, periodId, openDetail, onOpenDetail }) {
 }
 
 /**
+ * Conta alimenti al plurale italiano breve.
+ * @param {number} n
+ * @param {string} singular
+ * @param {string} plural
+ */
+function focusCountLabel(n, singular, plural) {
+  const k = Math.max(0, Math.round(Number(n) || 0));
+  if (k === 1) return `1 ${singular}`;
+  return `${k} ${plural}`;
+}
+
+/**
+ * Card Qualità da foodQuality del dossier (mai testo summary; niente troncamento).
+ * @param {object|null|undefined} fqDay
+ * @param {object|null|undefined} nutrition
+ * @param {string} periodId
+ */
+function buildQualityCardFromDossier(fqDay, nutrition, periodId) {
+  if (periodId !== 'ieri') {
+    const days = nutrition?.trends?.daysWithFood || 0;
+    if (days > 0) {
+      return {
+        area: 'qualita',
+        label: 'Qualità',
+        value: `${days} giorni`,
+        compare: 'con pasti registrati',
+        tone: 'bene',
+        hasData: true,
+        detailKey: 'nutrition',
+      };
+    }
+    return {
+      area: 'qualita', label: 'Qualità', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: null,
+    };
+  }
+
+  const hasFood = Boolean(fqDay?.hasFood || nutrition?.ieri?.hasFood);
+  if (!hasFood) {
+    return {
+      area: 'qualita', label: 'Qualità', value: 'non registrato', compare: null,
+      tone: 'muted', hasData: false, detailKey: null,
+    };
+  }
+
+  const nova4 = Array.isArray(fqDay?.nova4Items) ? fqDay.nova4Items : [];
+  const whole = Array.isArray(fqDay?.wholeGrainFoods) ? fqDay.wholeGrainFoods : [];
+  const omega = Array.isArray(fqDay?.omega3Sources) ? fqDay.omega3Sources : [];
+
+  if (nova4.length > 0) {
+    const mealRaw = String(nova4[0]?.mealLabel || '').trim().toLowerCase();
+    const mealBit = mealRaw ? ` a ${mealRaw}` : '';
+    return {
+      area: 'qualita',
+      label: 'Qualità',
+      value: focusCountLabel(nova4.length, 'ultra-processato', 'ultra-processati'),
+      compare: `${focusCountLabel(nova4.length, 'alimento ultra-processato', 'alimenti ultra-processati')}${mealBit}`,
+      tone: 'attenzione',
+      hasData: true,
+      detailKey: 'nutrition',
+    };
+  }
+
+  /** @type {string[]} */
+  const facts = ['nessun ultra-processato'];
+  if (whole.length > 0) {
+    facts.push(focusCountLabel(whole.length, 'alimento integrale', 'alimenti integrali'));
+  } else if (omega.length > 0) {
+    facts.push(focusCountLabel(omega.length, 'fonte di grassi vegetali', 'fonti di grassi vegetali'));
+  }
+
+  return {
+    area: 'qualita',
+    label: 'Qualità',
+    value: 'buona',
+    compare: facts.length > 1 ? `${facts[0]} · ${facts[1]}` : facts[0],
+    tone: 'bene',
+    hasData: true,
+    detailKey: 'nutrition',
+  };
+}
+
+/**
  * @param {object|null|undefined} session
  * @param {string} periodId
  */
@@ -859,6 +946,20 @@ function buildDiaryNumberCards(session, periodId) {
   const targets = session?.userTargets || null;
   const targetKcal = Number(targets?.kcal);
   const hasTarget = Number.isFinite(targetKcal) && targetKcal > 0;
+
+  let fqDay = null;
+  try {
+    if (session?.fullHistory && session?.analysisDate) {
+      const fq = buildFocusFoodQualityBlock({
+        fullHistory: session.fullHistory,
+        analysisDate: session.analysisDate,
+        periodId,
+      });
+      fqDay = fq?.day || null;
+    }
+  } catch {
+    fqDay = null;
+  }
 
   /** @type {object[]} */
   const out = [];
@@ -909,35 +1010,7 @@ function buildDiaryNumberCards(session, periodId) {
     }
   }
 
-  // Qualità — proxy da diario (foodQuality completo vive nel dossier AI)
-  if (periodId === 'ieri' && nutrition?.ieri?.hasFood) {
-    const flags = (nutrition.ieri.toVerify || []).length;
-    const plantHint = nutrition.ieri.comment?.text || null;
-    out.push({
-      area: 'qualita',
-      label: 'Qualità',
-      value: flags > 0 ? 'da verificare' : 'registrata',
-      compare: plantHint && plantHint.length < 80 ? plantHint : (flags > 0 ? `${flags} voci da controllare` : 'pasti in diario'),
-      tone: flags > 0 ? 'attenzione' : 'bene',
-      hasData: true,
-      detailKey: 'nutrition',
-    });
-  } else if (periodId !== 'ieri' && (nutrition?.trends?.daysWithFood || 0) > 0) {
-    out.push({
-      area: 'qualita',
-      label: 'Qualità',
-      value: `${nutrition.trends.daysWithFood} giorni`,
-      compare: 'con pasti registrati',
-      tone: 'bene',
-      hasData: true,
-      detailKey: 'nutrition',
-    });
-  } else {
-    out.push({
-      area: 'qualita', label: 'Qualità', value: 'non registrato', compare: null,
-      tone: 'muted', hasData: false, detailKey: null,
-    });
-  }
+  out.push(buildQualityCardFromDossier(fqDay, nutrition, periodId));
 
   // Ritmo (orari pasti / cena)
   const mealsIeri = nutrition?.ieri?.meals || [];
@@ -1046,10 +1119,13 @@ function FocusEditorialReport({
   onOpenHistory,
   allowGenerate = true,
   showHistoryOnly = false,
+  openDetail = null,
+  onOpenDetail = null,
 }) {
   const analysis = aiState?.analysis || null;
   const editorial = useMemo(() => normalizeFocusEditorialAnalysis(analysis), [analysis]);
   const summary = editorial?.summary || analysis?.summary || null;
+  const periodId = session?.periodId || 'ieri';
 
   const evidenceItems = useMemo(() => {
     const rawRefs = analysis?.evidenceRefs;
@@ -1114,6 +1190,16 @@ function FocusEditorialReport({
     aiState?.record?.foodQualityCompleteness === 'partial'
     || aiState?.binding?.foodQualityCompleteness === 'partial'
   );
+  const showDiscreteRegen = Boolean(
+    allowGenerate
+    && hasFreshReport
+    && !isOutdated
+    && !foodQualityPartial
+    && !aiState?.regenerateFailed,
+  );
+  const showEmptyGenerate = Boolean(
+    allowGenerate && !hasFreshReport && !isOutdated && aiState?.status !== 'loading',
+  );
   const generatedNatural = aiState?.record?.generatedAt
     ? formatFocusGeneratedAtNatural(aiState.record.generatedAt)
     : null;
@@ -1125,8 +1211,23 @@ function FocusEditorialReport({
 
   const wentWell = Array.isArray(summary?.wentWell) ? summary.wentWell : [];
   const toImprove = Array.isArray(summary?.toImprove) ? summary.toImprove : [];
-  const todayAction = summary?.todayAction || null;
+  const todayActionRaw = summary?.todayAction || null;
+  const todayAction = typeof todayActionRaw === 'string'
+    ? todayActionRaw
+    : (todayActionRaw?.text || null);
+  const actionHeading = todayAction && /^\s*domani\b/i.test(todayAction)
+    ? 'Prossima occasione'
+    : 'Oggi prova così';
   const headline = summary?.headline || editorial?.headline;
+
+  const diaryNumbers = (
+    <DiaryNumbersBlock
+      session={session}
+      periodId={periodId}
+      openDetail={openDetail}
+      onOpenDetail={onOpenDetail}
+    />
+  );
 
   return (
     <section className="kf-editorial" aria-label="Rapporto Kentu Focus">
@@ -1140,37 +1241,33 @@ function FocusEditorialReport({
           Provider mock di test
         </p>
       ) : null}
-      {(statusLabel || (allowGenerate && !isOutdated)) ? (
+      {statusLabel ? (
         <header className="kf-editorial-head">
-          <div>
-            {statusLabel ? (
-              <p className="kf-editorial-meta">
-                <span className="kf-editorial-status">{statusLabel}</span>
-              </p>
-            ) : null}
-          </div>
-          <div className="kf-editorial-actions">
-            {allowGenerate && !isOutdated ? (
+          <p className="kf-editorial-meta">
+            <span className="kf-editorial-status">{statusLabel}</span>
+          </p>
+          {aiState?.regenerateFailed && allowGenerate ? (
+            <div className="kf-editorial-actions">
               <button
                 type="button"
                 className="kf-ai-generate"
                 disabled={aiState?.status === 'loading' || aiState?.busy}
                 onClick={onGenerate}
               >
-                {aiState?.status === 'loading'
-                  ? 'Generazione…'
-                  : hasFreshReport
-                    ? 'Rigenera'
-                    : 'Genera'}
+                {aiState?.status === 'loading' ? 'Generazione…' : 'Rigenera'}
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </header>
       ) : null}
 
       {isOutdated ? (
         <div className="kf-stale-banner" role="status">
-          <p>Il diario è cambiato da quando è stata generata questa analisi</p>
+          <p>
+            {aiState?.diaryStale
+              ? 'Il diario è cambiato da quando è stata generata questa analisi'
+              : 'Questa analisi usa uno schema precedente: conviene rigenerarla'}
+          </p>
           {allowGenerate ? (
             <button
               type="button"
@@ -1203,12 +1300,20 @@ function FocusEditorialReport({
         </div>
       ) : null}
 
-      {allowGenerate && !hasFreshReport && !isOutdated && aiState?.status !== 'loading' ? (
+      {showEmptyGenerate ? (
         <div className="kf-editorial-empty">
           <h2 className="kf-report-headline">Il tuo rapporto personale</h2>
           <p className="kf-report-lead">
             Qui compare l’interpretazione delle abitudini.
           </p>
+          <button
+            type="button"
+            className="kf-ai-generate"
+            disabled={aiState?.status === 'loading' || aiState?.busy}
+            onClick={onGenerate}
+          >
+            Genera
+          </button>
         </div>
       ) : null}
 
@@ -1249,31 +1354,43 @@ function FocusEditorialReport({
 
           {(wentWell.length > 0 || toImprove.length > 0) ? (
             <div className="kf-summary-lists">
-              {wentWell.map((row, i) => (
-                <div key={`ww_${i}`} className="kf-summary-item kf-summary-item--bene">
-                  <span className="kf-summary-icon" aria-hidden>
-                    <SummaryAreaIcon area={row.area} />
-                  </span>
-                  <p>{row.text}</p>
+              {wentWell.length > 0 ? (
+                <div className="kf-summary-group kf-summary-group--bene">
+                  <p className="kf-summary-group-label">Bene</p>
+                  {wentWell.map((row, i) => (
+                    <div key={`ww_${i}`} className="kf-summary-item kf-summary-item--bene">
+                      <span className="kf-summary-icon" aria-hidden>
+                        <SummaryAreaIcon area={row.area} />
+                      </span>
+                      <p>{row.text}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-              {toImprove.map((row, i) => (
-                <div key={`ti_${i}`} className="kf-summary-item kf-summary-item--attenzione">
-                  <span className="kf-summary-icon" aria-hidden>
-                    <SummaryAreaIcon area={row.area} />
-                  </span>
-                  <p>{row.text}</p>
+              ) : null}
+              {toImprove.length > 0 ? (
+                <div className="kf-summary-group kf-summary-group--attenzione">
+                  <p className="kf-summary-group-label">Da migliorare</p>
+                  {toImprove.map((row, i) => (
+                    <div key={`ti_${i}`} className="kf-summary-item kf-summary-item--attenzione">
+                      <span className="kf-summary-icon" aria-hidden>
+                        <SummaryAreaIcon area={row.area} />
+                      </span>
+                      <p>{row.text}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              ) : null}
             </div>
           ) : null}
 
           {!isOutdated && todayAction ? (
-            <section className="kf-report-action kf-today-action" aria-label="Azione di oggi">
-              <h3>Oggi prova così</h3>
+            <section className="kf-report-action kf-today-action" aria-label={actionHeading}>
+              <h3>{actionHeading}</h3>
               <p>{todayAction}</p>
             </section>
           ) : null}
+
+          {diaryNumbers}
 
           <details className="kf-report-why" data-testid="kf-report-why">
             <summary>Perché te lo dico</summary>
@@ -1300,7 +1417,7 @@ function FocusEditorialReport({
                 </aside>
               ) : null}
 
-              {editorial.recommendedAction && editorial.recommendedAction !== todayAction ? (
+              {editorial.recommendedAction && todayAction && editorial.recommendedAction !== todayAction ? (
                 <section className="kf-report-action">
                   <h3>In sintesi</h3>
                   <p>{editorial.recommendedAction}</p>
@@ -1355,13 +1472,28 @@ function FocusEditorialReport({
               ) : null}
 
               <FocusDeepLinksBar session={session} />
+
+              {showDiscreteRegen ? (
+                <p className="kf-regen-inline">
+                  <button
+                    type="button"
+                    className="kf-regen-link"
+                    disabled={aiState?.status === 'loading' || aiState?.busy}
+                    onClick={onGenerate}
+                  >
+                    {aiState?.status === 'loading' ? 'Generazione…' : 'Rigenera analisi'}
+                  </button>
+                </p>
+              ) : null}
             </div>
           </details>
         </article>
-      ) : null}
+      ) : (
+        diaryNumbers
+      )}
 
       {(historyRows || []).length > 0 ? (
-        <div className="kf-ai-history">
+        <aside className="kf-ai-history" aria-label="Storico analisi">
           <h3>Storico</h3>
           <ul>
             {historyRows.map((row) => {
@@ -1383,7 +1515,7 @@ function FocusEditorialReport({
               );
             })}
           </ul>
-        </div>
+        </aside>
       ) : null}
     </section>
   );
@@ -1421,11 +1553,6 @@ function RealWellnessDashboard({
         onGenerate={onGenerateAi}
         historyRows={aiState?.historyRows || []}
         onOpenHistory={onOpenAiHistory}
-      />
-
-      <DiaryNumbersBlock
-        session={session}
-        periodId={periodId}
         openDetail={openDetail}
         onOpenDetail={toggleDetail}
       />

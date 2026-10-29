@@ -1,29 +1,23 @@
 /**
- * Timeout client Focus AI coach — allineati al vincolo CF callGemini.
- *
- * Budget osservato (2026-10-28, diario reale 2026-10-27):
- * - OFF wait ≈ 0–2s (max 8s)
- * - build dossier ≈ 17–19s (foodQuality + cataloghi)
- * - Gemini sul prompt ~95k char ≈ 35–55s+
- * - un retry richiede ancora margine
+ * Timeout client Focus AI coach — allineati al vincolo CF callGemini (120s)
+ * e a httpsCallable({ timeout: 120_000 }).
  *
  * Diagnosi (repo):
  * - askAI default: ASK_AI_TIMEOUT_MS = 30_000
- * - functions callGemini: runWith({ timeoutSeconds: 180 })
- * - httpsCallable non è abortabile: dopo timeout client la CF può continuare.
+ * - functions callGemini: runWith({ timeoutSeconds: 120 })
+ * - httpsCallable: timeout esplicito 120s (default SDK era 70s → deadline-exceeded)
  */
 
 /** @type {Readonly<{ ieri: number, settimana: number, mese: number, default: number }>} */
 export const FOCUS_AI_COACH_TIMEOUT_MS = Object.freeze({
-  // Solo la chiamata Gemini (OFF + dossier sono fuori da questo budget)
   ieri: 95_000,
-  settimana: 110_000,
-  mese: 130_000,
+  settimana: 105_000,
+  mese: 110_000,
   default: 95_000,
 });
 
-/** Sotto il tetto CF (180s) con margine per overhead callable. */
-export const FOCUS_AI_COACH_TIMEOUT_MS_CAP = 160_000;
+/** Sotto il tetto CF/callable (120s) con margine. */
+export const FOCUS_AI_COACH_TIMEOUT_MS_CAP = 115_000;
 
 /** Tempo minimo residuo per tentare un retry Gemini. */
 export const FOCUS_AI_COACH_RETRY_MIN_REMAINING_MS = 35_000;

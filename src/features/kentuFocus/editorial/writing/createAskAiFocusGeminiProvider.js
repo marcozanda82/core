@@ -7,6 +7,12 @@
 export const FOCUS_ASKAI_DEFAULT_MODEL = 'gemini-3.8-flash';
 
 /**
+ * Gemini 3.8 Flash: `minimal` non supportato; `low` = latenza minima.
+ * Override via opts.thinkingLevel / opts.generationConfig.thinkingConfig.
+ */
+export const FOCUS_ASKAI_THINKING_LEVEL = 'low';
+
+/**
  * @param {{
  *   askAiFn?: Function,
  *   model?: string,
@@ -14,14 +20,21 @@ export const FOCUS_ASKAI_DEFAULT_MODEL = 'gemini-3.8-flash';
  *   timeoutMs?: number,
  *   signal?: AbortSignal|null,
  *   responseSchema?: object|null,
+ *   generationConfig?: object|null,
+ *   thinkingLevel?: string|null,
+ *   callTag?: string|null,
  * }} [opts]
  */
 export function createAskAiFocusGeminiProvider(opts = {}) {
   const model = opts.model || FOCUS_ASKAI_DEFAULT_MODEL;
+  const thinkingLevel = opts.thinkingLevel != null
+    ? opts.thinkingLevel
+    : FOCUS_ASKAI_THINKING_LEVEL;
   let calls = 0;
 
   return {
     model,
+    thinkingLevel,
     getCallCount: () => calls,
     /**
      * @param {{ systemText: string, userText: string, timeoutMs?: number }} prompt
@@ -35,12 +48,20 @@ export function createAskAiFocusGeminiProvider(opts = {}) {
         const callTimeout = Number.isFinite(Number(prompt?.timeoutMs)) && Number(prompt.timeoutMs) > 0
           ? Math.floor(Number(prompt.timeoutMs))
           : opts.timeoutMs;
+        const baseGen = opts.generationConfig && typeof opts.generationConfig === 'object'
+          ? { ...opts.generationConfig }
+          : {};
+        if (thinkingLevel && !baseGen.thinkingConfig) {
+          baseGen.thinkingConfig = { thinkingLevel: String(thinkingLevel) };
+        }
         const text = await ask(prompt.userText, prompt.systemText, {
           model,
           temperature: opts.temperature ?? 0.35,
           timeoutMs: callTimeout,
           signal: opts.signal || undefined,
           responseSchema: opts.responseSchema || undefined,
+          generationConfig: Object.keys(baseGen).length ? baseGen : undefined,
+          callTag: opts.callTag || 'focus_ai_coach',
         });
         if (!text || !String(text).trim()) {
           return { ok: false, text: null, diag: 'empty_text', status: null };

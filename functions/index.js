@@ -4,11 +4,15 @@ const {
   sanitizeGeminiModel,
   normalizeGenerationConfig,
   extractGeminiText,
+  extractGeminiUsageStats,
   postGeminiGenerateContent: postGeminiHttp,
 } = require('./lib/geminiHttp');
 
-/** REST v1 — payload JSON in camelCase (REST Gemini). */
+/** REST v1beta — payload JSON in camelCase (REST Gemini + thinkingConfig). */
 const GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
+
+/** Cold start: prima invocazione su questa istanza del container. */
+let callGeminiInstanceWarm = false;
 
 function readLegacyConfigKey() {
   try {
@@ -142,6 +146,9 @@ async function callGeminiGenerateContent({
   image,
   historyContents,
   model,
+  schemaChars = null,
+  coldStart = false,
+  callTag = null,
 }) {
   const history = normalizeGeminiContents(historyContents) || [];
   const userTurn = {
@@ -151,9 +158,12 @@ async function callGeminiGenerateContent({
   const apiKey = getGeminiApiKey();
   const modelId = sanitizeGeminiModel(model || GEMINI_MODEL);
   const genConfig = normalizeGenerationConfig(generationConfig);
+  const thinkingLevel = genConfig?.thinkingConfig?.thinkingLevel ?? null;
+  const thinkingBudget = genConfig?.thinkingConfig?.thinkingBudget ?? null;
 
   let response;
   let rawBody;
+  const tGemini0 = Date.now();
   try {
     ({ response, rawBody } = await postGeminiHttp({
       apiKey,
@@ -189,6 +199,8 @@ async function callGeminiGenerateContent({
     }
   }
 
+  const geminiMs = Date.now() - tGemini0;
+
   if (!response.ok) {
     console.error('Gemini API HTTP error', response.status, rawBody.slice(0, 1200));
     throw new functions.https.HttpsError(
@@ -208,15 +220,30 @@ async function callGeminiGenerateContent({
     );
   }
 
+  const usage = geminiData.usageMetadata || null;
+  const usageStats = extractGeminiUsageStats(usage);
   const text = extractGeminiText(geminiData);
   if (!text) {
     console.warn('Gemini empty text payload', JSON.stringify(geminiData).slice(0, 800));
   }
 
+  const meta = {
+    model: modelId,
+    geminiMs,
+    coldStart: Boolean(coldStart),
+    schemaChars: Number.isFinite(Number(schemaChars)) ? Number(schemaChars) : null,
+    thinkingLevel,
+    thinkingBudget,
+    callTag: callTag || null,
+    ...usageStats,
+  };
+  console.info('[callGemini]', JSON.stringify(meta));
+
   return {
     text,
     candidates: geminiData.candidates || [],
-    usage: geminiData.usageMetadata || null,
+    usage,
+    meta,
   };
 }
 
@@ -226,12 +253,21 @@ async function callGeminiGenerateContent({
  */
 exports.callGemini = functions
   .region('europe-west1')
-  .runWith({ timeoutSeconds: 180, memory: '512MB' })
+  .runWith({ timeoutSeconds: 120, memory: '512MB' })
   .https.onCall(async (data) => {
     try {
+      const coldStart = !callGeminiInstanceWarm;
+      callGeminiInstanceWarm = true;
+
       const payload = data || {};
       const prompt = String(payload.prompt || '');
       const responseSchema = payload.responseSchema || null;
+      let schemaChars = null;
+      try {
+        schemaChars = responseSchema ? JSON.stringify(responseSchema).length : 0;
+      } catch {
+        schemaChars = null;
+      }
       const systemText = appendJsonSchemaHint(
         String(payload.systemInstruction || '').trim(),
         responseSchema,
@@ -244,8 +280,15 @@ exports.callGemini = functions
         throw new functions.https.HttpsError('invalid-argument', 'prompt o images richiesti.');
       }
 
-      const generationConfig = normalizeGenerationConfig(payload.generationConfig);
+      // Unisce temperature top-level (legacy askAI) + generationConfig (thinkingConfig, …).
+      const generationConfig = normalizeGenerationConfig({
+        ...(payload.generationConfig && typeof payload.generationConfig === 'object'
+          ? payload.generationConfig
+          : {}),
+        ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
+      });
       const modelName = payload.model || 'gemini-3.8-flash';
+      const callTag = payload.callTag != null ? String(payload.callTag).slice(0, 64) : null;
 
       return await callGeminiGenerateContent({
         prompt,
@@ -255,6 +298,9 @@ exports.callGemini = functions
         image: payload.image,
         historyContents: payload.contents,
         model: modelName,
+        schemaChars,
+        coldStart,
+        callTag,
       });
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {

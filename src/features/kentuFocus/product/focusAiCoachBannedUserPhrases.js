@@ -4,17 +4,16 @@
  */
 
 export const FOCUS_AI_COACH_BANNED_USER_PHRASES = Object.freeze([
+  // Solo gergo interno / tecnico + frasi difensive esplicite (non italiano comune).
   { id: 'sixty_sixty', re: /\b60\s*\/\s*60\b/i, label: '60/60' },
   { id: 'provenance', re: /\bprovenance\b/i, label: 'provenance' },
   { id: 'dossier', re: /\bdossier\b/i, label: 'dossier' },
-  { id: 'episodio', re: /\bepisodi[oa]\b/i, label: 'episodio' },
   { id: 'traiettoria', re: /\btraiettoria\b/i, label: 'traiettoria' },
   { id: 'non_diagnosi', re: /\bnon\s+[eè]\s+una\s+diagnosi\b/i, label: 'non è una diagnosi' },
   { id: 'nesso_certo', re: /\bnesso\s+certo\b/i, label: 'nesso certo' },
   { id: 'fixture', re: /\bfixture\b/i, label: 'fixture' },
   { id: 'dead_band', re: /\bdead[-\s]?band\b/i, label: 'dead-band' },
   { id: 'name_pattern', re: /\bname[_\s-]?pattern\b/i, label: 'name_pattern' },
-  // Meta-commenti sui limiti del ragionamento (vietati fuori da limits)
   { id: 'senza_forzare_cause', re: /\bsenza\s+forzare\s+cause\b/i, label: 'senza forzare cause' },
   { id: 'non_si_puo_affermare', re: /\bnon\s+si\s+pu[oò]\s+affermare\b/i, label: 'non si può affermare' },
   { id: 'senza_pretendere_causal', re: /\bsenza\s+pretendere\s+causal/i, label: 'senza pretendere causalità' },
@@ -70,7 +69,10 @@ export function findBannedPhrasesInAnalysis(analysis) {
       ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
       ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
     ]);
-    push('summary.todayAction', summary.todayAction, [
+    const todayActionText = typeof summary.todayAction === 'string'
+      ? summary.todayAction
+      : summary.todayAction?.text;
+    push('summary.todayAction', todayActionText, [
       ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
       ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
     ]);
@@ -90,11 +92,24 @@ export function findBannedPhrasesInAnalysis(analysis) {
 
   push('headline', analysis.headline, FOCUS_AI_COACH_BANNED_USER_PHRASES);
   push('lead', analysis.lead, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+  push('keyInsight', analysis.keyInsight, FOCUS_AI_COACH_BANNED_USER_PHRASES);
   push('recommendedAction', analysis.recommendedAction, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+  push('expectedChange', analysis.expectedChange, FOCUS_AI_COACH_BANNED_USER_PHRASES);
   push('verifyNext', analysis.verifyNext, FOCUS_AI_COACH_BANNED_USER_PHRASES);
   for (const [i, s] of (analysis.sections || []).entries()) {
     push(`sections[${i}].title`, s?.title, FOCUS_AI_COACH_BANNED_USER_PHRASES);
     push(`sections[${i}].body`, s?.body, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+  }
+  for (const [i, lim] of (analysis.limits || []).entries()) {
+    push(`limits[${i}]`, lim, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+  }
+  const layers = analysis.claimLayers;
+  if (layers && typeof layers === 'object') {
+    for (const key of ['recordedFacts', 'generalKnowledge', 'foundedInferences', 'hypothesesToTest']) {
+      for (const [i, row] of (layers[key] || []).entries()) {
+        push(`claimLayers.${key}[${i}]`, row, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+      }
+    }
   }
 
   if (!hits.length) return { ok: true, reason: null, hits: [] };
@@ -109,12 +124,13 @@ export function findBannedPhrasesInAnalysis(analysis) {
  * @param {{ id: string, label: string, where: string }[]} hits
  */
 export function formatBannedPhraseRetryHint(hits) {
-  const labels = [...new Set((hits || []).map((h) => h.label).filter(Boolean))];
+  // Non ripetere i termini vietati nel hint: il modello li ricopia.
+  const where = [...new Set((hits || []).map((h) => h.where).filter(Boolean))];
   return [
-    'RETRY: la risposta precedente conteneva termini vietati nel testo utente.',
-    `Rimuovi: ${labels.join(', ') || 'meta-frasi interne'}.`,
-    'In summary usa «ultra-processato» al posto di «NOVA 4»; NOVA solo nelle sections se serve.',
-    'Non scrivere meta-frasi difensive (es. «non è una diagnosi», «nesso certo»). Preferisci «giorno» / «andamento» a termini da laboratorio.',
-    'Applica le cautele NON affermando, non dichiarando i limiti nel tono.',
-  ].join(' ');
+    'RETRY: la risposta precedente usava termini da laboratorio / meta-frasi vietate nel testo utente.',
+    where.length ? `Campi da riscrivere: ${where.join(', ')}.` : '',
+    'Nel summary usa «ultra-processato»; il codice di classificazione industriale degli alimenti solo nelle sections se serve.',
+    'Niente meta-commenti sui limiti del ragionamento. Preferisci «giorno analizzato» e «andamento».',
+    'Applica le cautele NON affermando, senza dichiarare i limiti nel tono.',
+  ].filter(Boolean).join(' ');
 }

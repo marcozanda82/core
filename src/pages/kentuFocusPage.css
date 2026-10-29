@@ -7,10 +7,12 @@
   --kf-stroke: rgba(255, 255, 255, 0.12);
   --kf-text: #eef3fb;
   --kf-muted: #9aa8bc;
-  --kf-bene: #2fbf7a;
-  --kf-bene-bg: rgba(47, 191, 122, 0.12);
-  --kf-attenzione: #e2a13a;
-  --kf-attenzione-bg: rgba(226, 161, 58, 0.12);
+  --kf-bene: #1fa968;
+  --kf-bene-bg: rgba(31, 169, 104, 0.22);
+  --kf-bene-border: rgba(31, 169, 104, 0.55);
+  --kf-attenzione: #d4891a;
+  --kf-attenzione-bg: rgba(212, 137, 26, 0.24);
+  --kf-attenzione-border: rgba(212, 137, 26, 0.58);
   --kf-azione: #4ea1ff;
   --kf-azione-bg: rgba(78, 161, 255, 0.12);
   --kf-banner: #8b2e2e;
@@ -928,9 +930,49 @@
 }
 
 .kf-ai-history {
-  margin-top: 0.85rem;
-  padding-top: 0.55rem;
-  border-top: 1px solid var(--kf-stroke);
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.kf-ai-history h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8fa3ba;
+}
+
+.kf-regen-inline {
+  margin: 0.85rem 0 0;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kf-regen-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #8fa3ba;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.kf-regen-link:hover,
+.kf-regen-link:focus-visible {
+  color: #c5d4e8;
+}
+
+.kf-regen-link:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .kf-ai-history ul {
@@ -1207,8 +1249,31 @@
 .kf-summary-lists {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.7rem;
   margin: 0 0 0.85rem;
+}
+
+.kf-summary-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.kf-summary-group-label {
+  margin: 0 0 0.1rem 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aafc4;
+}
+
+.kf-summary-group--bene .kf-summary-group-label {
+  color: var(--kf-bene);
+}
+
+.kf-summary-group--attenzione .kf-summary-group-label {
+  color: var(--kf-attenzione);
 }
 
 .kf-summary-item {
@@ -1216,16 +1281,22 @@
   grid-template-columns: 1.6rem 1fr;
   gap: 0.45rem;
   align-items: start;
-  padding: 0.55rem 0.6rem;
+  padding: 0.6rem 0.65rem;
   border-radius: 0.7rem;
-  border: 1px solid transparent;
+  border: 1.5px solid transparent;
 }
 
 .kf-summary-item p {
   margin: 0;
-  font-size: 0.88rem;
+  font-size: 1rem;
   line-height: 1.45;
   color: #e8eef8;
+}
+
+@media (max-width: 640px) {
+  .kf-summary-item p {
+    font-size: 0.9375rem; /* 15px */
+  }
 }
 
 .kf-summary-icon {
@@ -1240,26 +1311,45 @@
 
 .kf-summary-item--bene {
   background: var(--kf-bene-bg);
-  border-color: rgba(47, 191, 122, 0.28);
+  border-color: var(--kf-bene-border);
 }
 
 .kf-summary-item--bene .kf-summary-icon {
   color: var(--kf-bene);
-  background: rgba(47, 191, 122, 0.16);
+  background: rgba(31, 169, 104, 0.22);
 }
 
 .kf-summary-item--attenzione {
   background: var(--kf-attenzione-bg);
-  border-color: rgba(226, 161, 58, 0.3);
+  border-color: var(--kf-attenzione-border);
 }
 
 .kf-summary-item--attenzione .kf-summary-icon {
   color: var(--kf-attenzione);
-  background: rgba(226, 161, 58, 0.16);
+  background: rgba(212, 137, 26, 0.22);
 }
 
 .kf-today-action {
-  margin-bottom: 0.85rem !important;
+  margin: 0 0 1rem !important;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.85rem;
+  background:
+    linear-gradient(165deg, rgba(78, 161, 255, 0.2), transparent 60%),
+    var(--kf-azione-bg);
+  border: 1.5px solid rgba(78, 161, 255, 0.58);
+  box-shadow: 0 0 0 1px rgba(78, 161, 255, 0.12);
+}
+
+.kf-today-action h3 {
+  color: var(--kf-azione) !important;
+  letter-spacing: 0.08em;
+}
+
+.kf-today-action p {
+  font-size: 0.95rem !important;
+  font-weight: 650;
+  line-height: 1.5;
+  color: #eef5ff !important;
 }
 
 .kf-report-why {
@@ -1340,6 +1430,10 @@
 
 .kf-diary-numbers {
   margin: 0 0 1rem;
+}
+
+.kf-report .kf-diary-numbers {
+  margin: 0.15rem 0 1rem;
 }
 
 .kf-diary-grid {
@@ -1425,8 +1519,9 @@ button.kf-diary-card:focus-visible {
 
 .kf-diary-card-compare {
   font-size: 0.72rem;
-  line-height: 1.3;
+  line-height: 1.35;
   color: var(--kf-muted);
+  overflow-wrap: anywhere;
 }
 
 .kf-diary-card--empty .kf-diary-card-value {

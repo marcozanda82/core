@@ -14,6 +14,12 @@ import { buildFocusEditorialReadingContext } from './buildFocusEditorialReadingC
 import { buildFocusFoodQualityBlock } from './buildFocusFoodQualityBlock.js';
 import { buildFocusDeterministicSignals } from './buildFocusDeterministicSignals.js';
 import { buildFocusSubstitutionCandidates } from './buildFocusSubstitutionCandidates.js';
+import { withFocusCatalogLookupSession } from './focusAiCoachCatalogLookup.js';
+import {
+  logFocusDossierSizeBreakdown,
+  measureFocusDossierSizeBreakdown,
+  slimFocusAiCoachDossier,
+} from './slimFocusAiCoachDossier.js';
 
 /**
  * @param {unknown} value
@@ -181,11 +187,20 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     };
   }
 
-  const foodCatalogs = options?.foodCatalogs && typeof options.foodCatalogs === 'object'
+  const buildStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  /** @type {Record<string, number>} */
+  const profileMs = {};
+  const mark = (label, started) => {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    profileMs[label] = Math.round(now - started);
+  };
+
+  const rawCatalogs = options?.foodCatalogs && typeof options.foodCatalogs === 'object'
     ? options.foodCatalogs
     : (session.foodCatalogs && typeof session.foodCatalogs === 'object'
       ? session.foodCatalogs
       : null);
+  const { catalogs: foodCatalogs } = withFocusCatalogLookupSession(rawCatalogs);
 
   const periodId = session.periodId;
   const nutrition = session.nutrition || null;
@@ -227,9 +242,8 @@ export function buildFocusAiCoachDossier(session, options = {}) {
               proteinG: item.macros?.proteinG ?? null,
               carbG: item.macros?.carbG ?? null,
               fatG: item.macros?.fatG ?? null,
-              fiberG: item.macros?.fiberG ?? null,
-              micronutrients: item.micronutrients || null,
-              semanticTags: item.semanticTags || null,
+              // fiber: solo valore numerico (niente provenance verbosa)
+              fiberG: item.macros?.fiberG?.value ?? item.macros?.fiberG ?? null,
               novaGroupDocumented: readNova(item.semanticTags),
               novaScore: item.novaScore ?? null,
               toVerify: (item.toVerify || []).map((f) => ({
@@ -376,6 +390,7 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     }
     : null;
 
+  const tFq = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const foodQuality = fullHistory && isIsoDateString(session.analysisDate)
     ? buildFocusFoodQualityBlock({
       fullHistory,
@@ -391,6 +406,7 @@ export function buildFocusAiCoachDossier(session, options = {}) {
       recent: null,
       catalogStatus: null,
     };
+  mark('foodQuality', tFq);
 
   const intermittentFasting = session?.userProfile?.intermittentFasting === true
     || session?.profile?.intermittentFasting === true
@@ -451,12 +467,15 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     }
   }
 
+  const tSubs = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const substitutionCandidates = fullHistory && isIsoDateString(session.analysisDate)
     ? buildFocusSubstitutionCandidates({
       fullHistory,
       analysisDate: session.analysisDate,
       catalogs: foodCatalogs,
-      lookbackDays: 30,
+      lookbackDays: periodId === 'ieri' ? 14 : Math.min(30, Math.max(windowDays, 14)),
+      maxPerOccasion: 5,
+      maxCandidates: 5,
       excludeNames: (meals || [])
         .flatMap((m) => m.items || [])
         .filter((it) => (it.novaGroupDocumented != null && it.novaGroupDocumented >= 4)
@@ -464,6 +483,7 @@ export function buildFocusAiCoachDossier(session, options = {}) {
         .map((it) => it.name),
     })
     : { available: false, reason: 'diary_unavailable', candidates: [], byOccasion: {} };
+  mark('substitutionCandidates', tSubs);
 
   const sleepSeries = Array.isArray(sleepPillar?.series)
     ? sleepPillar.series
@@ -725,29 +745,55 @@ export function buildFocusAiCoachDossier(session, options = {}) {
   const foodQualityCompletenessReason = dossier.nutrition.foodQuality?.completenessReason || null;
   const definitive = foodQualityCompleteness !== 'partial';
 
+  const beforeBreakdown = measureFocusDossierSizeBreakdown(dossier);
+  logFocusDossierSizeBreakdown('before_slim', dossier, { profile: { ...profileMs } });
+
+  const tSlim = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const slimDossier = slimFocusAiCoachDossier(dossier);
+  mark('slim', tSlim);
+  const buildMs = Math.round(
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) - buildStartedAt,
+  );
+  mark('total', buildStartedAt);
+  profileMs.total = buildMs;
+  profileMs.lookupMemoSize = foodCatalogs?.__focusLookupSession?.memoSize?.() ?? null;
+
+  const afterBreakdown = measureFocusDossierSizeBreakdown(slimDossier);
+  logFocusDossierSizeBreakdown('after_slim', slimDossier, {
+    buildMs,
+    profile: profileMs,
+  });
+
   const dataVersion = shortHash(stableStringify({
     uid: session.uid,
     periodId,
     analysisDate: session.analysisDate,
     publicationDate: session.publicationDate,
-    pillars: dossier.pillars,
-    meals: dossier.nutrition.meals,
-    foodFrequency: dossier.nutrition.foodFrequency?.slice?.(0, 12),
-    foodQuality: dossier.nutrition.foodQuality?.day || null,
+    pillars: slimDossier.pillars,
+    meals: slimDossier.nutrition?.meals,
+    foodFrequency: slimDossier.nutrition?.foodFrequency,
+    foodQuality: slimDossier.nutrition?.foodQuality?.day || null,
     foodQualityCompleteness,
     foodQualityCompletenessReason,
-    deterministicSignals: dossier.deterministicSignals?.activeIds || [],
-    workouts: dossier.exercise.workouts,
-    cardio: dossier.exercise.cardio,
-    sleep: dossier.sleep,
-    compass: dossier.compassSignals?.observedTrajectory || null,
-    anomalies: dossier.anomalies,
+    deterministicSignals: slimDossier.deterministicSignals?.activeIds || [],
+    workouts: slimDossier.exercise?.workouts,
+    cardio: slimDossier.exercise?.cardio,
+    sleep: slimDossier.sleep,
+    compass: slimDossier.compassSignals?.observedTrajectory || null,
   }));
 
   return {
     ok: true,
     reason: null,
-    dossier,
+    dossier: slimDossier,
+    dossierSize: {
+      beforeChars: beforeBreakdown.totalChars,
+      afterChars: afterBreakdown.totalChars,
+      beforeSections: beforeBreakdown.sections,
+      afterSections: afterBreakdown.sections,
+      buildMs,
+      profileMs,
+    },
     dataVersion,
     foodQualityCompleteness,
     foodQualityCompletenessReason,

@@ -174,6 +174,68 @@ function resolveEventRefAlias(ref, dossier) {
 }
 
 /**
+ * Orari HH:MM / HH.MM e quantità in grammi presenti nel testo.
+ * @param {string} text
+ * @returns {{ clocks: string[], grams: string[] }}
+ */
+export function extractActionQuantities(text) {
+  const raw = String(text || '');
+  /** @type {string[]} */
+  const clocks = [];
+  for (const m of raw.matchAll(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/g)) {
+    clocks.push(`${String(m[1]).padStart(2, '0')}:${m[2]}`);
+  }
+  /** @type {string[]} */
+  const grams = [];
+  for (const m of raw.matchAll(/\b(\d+(?:[.,]\d+)?)\s*g\b/gi)) {
+    const n = String(m[1]).replace(',', '.');
+    const num = Number(n);
+    if (!Number.isFinite(num)) continue;
+    grams.push(Number.isInteger(num) ? String(Math.round(num)) : String(num));
+  }
+  return { clocks, grams };
+}
+
+/**
+ * todayAction e recommendedAction devono condividere gli stessi orari/grammi
+ * quando presenti in entrambe (o in todayAction da riusare in recommended).
+ * @param {string} todayAction
+ * @param {string} recommendedAction
+ */
+export function findActionQuantityMismatches(todayAction, recommendedAction) {
+  const a = extractActionQuantities(todayAction);
+  const b = extractActionQuantities(recommendedAction);
+  /** @type {{ kind: string, expected: string, found: string[] }[]} */
+  const mismatches = [];
+  for (const clock of a.clocks) {
+    if (!b.clocks.includes(clock)) {
+      mismatches.push({ kind: 'clock', expected: clock, found: b.clocks });
+    }
+  }
+  for (const g of a.grams) {
+    if (!b.grams.includes(g)) {
+      mismatches.push({ kind: 'grams', expected: g, found: b.grams });
+    }
+  }
+  // Orari nuovi in recommended diversi da quelli di todayAction
+  if (a.clocks.length > 0) {
+    for (const clock of b.clocks) {
+      if (!a.clocks.includes(clock)) {
+        mismatches.push({ kind: 'clock_extra', expected: a.clocks.join('|'), found: [clock] });
+      }
+    }
+  }
+  if (a.grams.length > 0) {
+    for (const g of b.grams) {
+      if (!a.grams.includes(g)) {
+        mismatches.push({ kind: 'grams_extra', expected: a.grams.join('|'), found: [g] });
+      }
+    }
+  }
+  return mismatches;
+}
+
+/**
  * @param {string} rule
  * @param {unknown} value
  * @param {string} [message]
@@ -262,24 +324,33 @@ function normalizeSummaryItems(raw, allowedIds, maxItems, dossier) {
 /**
  * @param {object} parsed
  * @param {object|null|undefined} dossier
+ * @param {{ salvage?: boolean }} [opts]
  */
-export function validateFocusAiCoachSummary(parsed, dossier) {
+export function validateFocusAiCoachSummary(parsed, dossier, opts = {}) {
+  const salvage = Boolean(opts.salvage);
   const summary = parsed?.summary;
   if (!summary || typeof summary !== 'object') {
     return failRule('summary_missing', summary, 'summary assente');
   }
-  const headline = cleanText(summary.headline) || cleanText(parsed.headline);
+  let headline = cleanText(summary.headline) || cleanText(parsed.headline);
   if (!headline) return failRule('summary_headline_missing', summary.headline, 'headline vuota');
   const headlineSoft = softMaxLen(SUMMARY_HEADLINE_MAX);
+  /** @type {string[]} */
+  const autoFixes = [];
   if (headline.length > headlineSoft) {
-    return {
-      ...failRule(
-        'summary_headline_too_long',
-        { length: headline.length, max: SUMMARY_HEADLINE_MAX, softMax: headlineSoft, text: headline },
-        `headline ${headline.length} > softMax ${headlineSoft}`,
-      ),
-      severity: 'fixable',
-    };
+    if (salvage) {
+      headline = `${headline.slice(0, SUMMARY_HEADLINE_MAX - 1).trim()}…`;
+      autoFixes.push('headline_truncated');
+    } else {
+      return {
+        ...failRule(
+          'summary_headline_too_long',
+          { length: headline.length, max: SUMMARY_HEADLINE_MAX, softMax: headlineSoft, text: headline },
+          `headline ${headline.length} > softMax ${headlineSoft}`,
+        ),
+        severity: 'retryable',
+      };
+    }
   }
 
   const allowedIds = dossierEventIdSet(dossier);
@@ -304,37 +375,223 @@ export function validateFocusAiCoachSummary(parsed, dossier) {
     };
   }
 
-  let todayAction = cleanText(summary.todayAction);
-  if (!todayAction && summary.todayAction && typeof summary.todayAction === 'object') {
-    todayAction = cleanText(summary.todayAction.text);
-  }
-  if (!todayAction) return failRule('summary_todayAction_missing', summary.todayAction, 'todayAction vuota');
-  const actionSoft = softMaxLen(SUMMARY_ACTION_MAX);
-  if (todayAction.length > actionSoft) {
+  const todayNorm = normalizeTodayActionObject(
+    summary.todayAction,
+    improve.items,
+    allowedIds,
+    dossier,
+    salvage,
+  );
+  if (!todayNorm.ok) {
     return {
-      ...failRule(
-        'summary_todayAction_too_long',
-        { length: todayAction.length, max: SUMMARY_ACTION_MAX, softMax: actionSoft, text: todayAction },
-        `todayAction ${todayAction.length} > softMax ${actionSoft}`,
-      ),
-      severity: 'fixable',
+      ok: false,
+      reason: todayNorm.reason || 'summary_todayAction_invalid',
+      failedRules: todayNorm.failedRules || [{ rule: todayNorm.reason, value: summary.todayAction }],
+      severity: todayNorm.severity || 'retryable',
+      summary: null,
+      autoFixes: todayNorm.autoFixes || [],
     };
   }
 
   const droppedEventRefs = [
     ...(went.droppedEventRefs || []),
     ...(improve.droppedEventRefs || []),
+    ...(todayNorm.droppedEventRefs || []),
   ];
 
   return {
     ok: true,
     reason: null,
     droppedEventRefs,
+    autoFixes: [...autoFixes, ...(todayNorm.autoFixes || [])],
     summary: {
       headline,
       wentWell: went.items,
       toImprove: improve.items,
-      todayAction,
+      todayAction: todayNorm.todayAction,
+    },
+  };
+}
+
+/**
+ * todayAction strutturato: { text, toImproveIndex, eventRefs }.
+ * Compat: stringa legacy → oggetto con index 0.
+ * @param {unknown} raw
+ * @param {object[]} improveItems
+ * @param {Set<string>} allowedIds
+ * @param {object|null|undefined} dossier
+ * @param {boolean} salvage
+ */
+export function normalizeTodayActionObject(raw, improveItems, allowedIds, dossier, salvage = false) {
+  /** @type {string[]} */
+  const autoFixes = [];
+  /** @type {string[]} */
+  const droppedEventRefs = [];
+
+  let obj = raw;
+  if (typeof raw === 'string') {
+    obj = { text: raw, toImproveIndex: 0, eventRefs: [] };
+    autoFixes.push('todayAction_coerced_from_string');
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    return {
+      ok: false,
+      reason: 'summary_todayAction_invalid',
+      severity: 'retryable',
+      failedRules: [{ rule: 'summary_todayAction_invalid', value: raw, message: 'todayAction non oggetto' }],
+      autoFixes,
+    };
+  }
+
+  let text = cleanText(obj.text);
+  if (!text) {
+    return {
+      ok: false,
+      reason: 'summary_todayAction_missing',
+      severity: 'retryable',
+      failedRules: [{ rule: 'summary_todayAction_missing', value: obj, message: 'todayAction.text vuoto' }],
+      autoFixes,
+    };
+  }
+
+  if (/\s+o\s+/i.test(text)) {
+    if (salvage) {
+      const cut = text.split(/\s+o\s+/i)[0].trim();
+      if (cut) {
+        text = /[.!?]$/.test(cut) ? cut : `${cut}.`;
+        autoFixes.push('todayAction_stripped_or_alternative');
+      } else {
+        return {
+          ok: false,
+          reason: 'todayAction_has_or_alternative',
+          severity: 'retryable',
+          failedRules: [{ rule: 'todayAction_has_or_alternative', value: text, message: 'todayAction con alternative « o »' }],
+          autoFixes,
+        };
+      }
+    } else {
+      return {
+        ok: false,
+        reason: 'todayAction_has_or_alternative',
+        severity: 'retryable',
+        failedRules: [{ rule: 'todayAction_has_or_alternative', value: text, message: 'todayAction con alternative « o »' }],
+        autoFixes,
+      };
+    }
+  }
+
+  const actionSoft = softMaxLen(SUMMARY_ACTION_MAX);
+  if (text.length > actionSoft) {
+    if (salvage) {
+      text = `${text.slice(0, SUMMARY_ACTION_MAX - 1).trim()}…`;
+      autoFixes.push('todayAction_truncated');
+    } else {
+      return {
+        ok: false,
+        reason: 'summary_todayAction_too_long',
+        severity: 'retryable',
+        failedRules: [{
+          rule: 'summary_todayAction_too_long',
+          value: { length: text.length, max: SUMMARY_ACTION_MAX, softMax: actionSoft, text },
+          message: `todayAction ${text.length} > softMax ${actionSoft}`,
+        }],
+        autoFixes,
+      };
+    }
+  }
+
+  let index = Number(obj.toImproveIndex);
+  if (!Number.isInteger(index)) {
+    if (salvage) {
+      index = 0;
+      autoFixes.push('todayAction_index_default_0');
+    } else {
+      return {
+        ok: false,
+        reason: 'todayAction_index_invalid',
+        severity: 'retryable',
+        failedRules: [{ rule: 'todayAction_index_invalid', value: obj.toImproveIndex, message: 'toImproveIndex non intero' }],
+        autoFixes,
+      };
+    }
+  }
+  if (index < 0 || index >= (improveItems || []).length) {
+    if (salvage && (improveItems || []).length > 0) {
+      index = 0;
+      autoFixes.push('todayAction_index_clamped_0');
+    } else {
+      return {
+        ok: false,
+        reason: 'todayAction_index_invalid',
+        severity: 'retryable',
+        failedRules: [{
+          rule: 'todayAction_index_invalid',
+          value: { toImproveIndex: index, toImproveCount: (improveItems || []).length },
+          message: 'toImproveIndex fuori range',
+        }],
+        autoFixes,
+      };
+    }
+  }
+
+  const target = improveItems[index];
+  const refsRaw = Array.isArray(obj.eventRefs) ? obj.eventRefs : [];
+  /** @type {string[]} */
+  const eventRefs = [];
+  const seen = new Set();
+  for (const r of refsRaw) {
+    const aliasOrId = cleanText(r);
+    if (!aliasOrId) continue;
+    const id = resolveEventRefAlias(aliasOrId, dossier);
+    if (!id || (allowedIds.size > 0 && !allowedIds.has(id))) {
+      droppedEventRefs.push(aliasOrId);
+      continue;
+    }
+    if (seen.has(id)) continue;
+    seen.add(id);
+    eventRefs.push(id);
+  }
+
+  const targetRefs = Array.isArray(target?.eventRefs) ? target.eventRefs : [];
+  const areaRaw = cleanText(obj.area);
+  const area = areaRaw && SUMMARY_AREAS.has(areaRaw) ? areaRaw : null;
+  const sameArea = Boolean(area && target?.area && area === target.area);
+  const hasIntersection = eventRefs.some((id) => targetRefs.includes(id));
+  const refsCompatible = eventRefs.length === 0
+    || targetRefs.length === 0
+    || hasIntersection
+    || sameArea;
+
+  if (!refsCompatible) {
+    if (salvage) {
+      eventRefs.length = 0;
+      for (const id of targetRefs.slice(0, 4)) eventRefs.push(id);
+      autoFixes.push('todayAction_eventRefs_aligned_to_toImprove');
+    } else {
+      return {
+        ok: false,
+        reason: 'todayAction_refs_incompatible',
+        severity: 'retryable',
+        failedRules: [{
+          rule: 'todayAction_refs_incompatible',
+          value: { eventRefs, targetRefs, toImproveIndex: index, area },
+          message: 'eventRefs non compatibili con toImprove[index]',
+        }],
+        autoFixes,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    reason: null,
+    droppedEventRefs,
+    autoFixes,
+    todayAction: {
+      text,
+      toImproveIndex: index,
+      eventRefs,
+      ...(area ? { area } : {}),
     },
   };
 }
@@ -417,10 +674,13 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
 
   // summary: obbligatorio per nuove generazioni (prompt/schema v4);
   // se assente → compat v3; se presente → validazione stretta.
+  const salvage = Boolean(opts.salvage);
+  /** @type {string[]} */
+  const autoFixes = [];
   const summaryRequested = parsed.summary != null || opts.requireSummary === true;
   const summaryCheck = summaryRequested
-    ? validateFocusAiCoachSummary(parsed, opts.dossier || null)
-    : { ok: true, reason: null, summary: null, droppedEventRefs: [] };
+    ? validateFocusAiCoachSummary(parsed, opts.dossier || null, { salvage })
+    : { ok: true, reason: null, summary: null, droppedEventRefs: [], autoFixes: [] };
   if (summaryRequested && !summaryCheck.ok) {
     return {
       ok: false,
@@ -433,13 +693,18 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
         message: summaryCheck.reason || 'summary_invalid',
       }],
       droppedEventRefs: summaryCheck.droppedEventRefs || [],
+      autoFixes: summaryCheck.autoFixes || [],
     };
   }
+  if (Array.isArray(summaryCheck.autoFixes)) autoFixes.push(...summaryCheck.autoFixes);
   /** @type {string[]} */
   const droppedEventRefs = [...(summaryCheck.droppedEventRefs || [])];
   const hasSummary = Boolean(summaryCheck.ok && summaryCheck.summary);
 
-  let headline = cleanText(parsed.headline) || summaryCheck.summary?.headline || null;
+  // Un solo titolo: headline top-level = summary.headline
+  let headline = hasSummary
+    ? (summaryCheck.summary?.headline || cleanText(parsed.headline) || null)
+    : (cleanText(parsed.headline) || summaryCheck.summary?.headline || null);
   // lead: o dato concreto, o omesso (null). Stringa vuota → null.
   let lead = parsed.lead === null
     ? null
@@ -449,10 +714,13 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
     lead = cleanText(parsed.theEmergingPicture) || cleanText(parsed.integratedComment);
   }
 
+  const summaryTodayText = typeof summaryCheck.summary?.todayAction === 'string'
+    ? summaryCheck.summary.todayAction
+    : cleanText(summaryCheck.summary?.todayAction?.text);
   let recommendedAction = cleanText(parsed.recommendedAction)
     || cleanText(parsed.theChoiceIWouldMake)
     || cleanText(parsed.practicalAction)
-    || summaryCheck.summary?.todayAction
+    || summaryTodayText
     || null;
 
   const hasEditorial = Boolean(
@@ -466,15 +734,32 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
   // claimLayers + quantitativeProposal obbligatori in v4 (chiave presente)
   if (summaryRequested || hasSummary || parsed.summary != null) {
     if (!parsed.claimLayers || typeof parsed.claimLayers !== 'object' || Array.isArray(parsed.claimLayers)) {
-      return reject('claimLayers_required', parsed.claimLayers, 'claimLayers obbligatorio');
+      if (salvage) {
+        parsed.claimLayers = {
+          recordedFacts: [], generalKnowledge: [], foundedInferences: [], hypothesesToTest: [],
+        };
+        autoFixes.push('claimLayers_default_empty');
+      } else {
+        return reject('claimLayers_required', parsed.claimLayers, 'claimLayers obbligatorio');
+      }
     }
     for (const k of ['recordedFacts', 'generalKnowledge', 'foundedInferences', 'hypothesesToTest']) {
       if (!Array.isArray(parsed.claimLayers[k])) {
-        return reject('claimLayers_incomplete', { key: k, value: parsed.claimLayers[k] }, `claimLayers.${k} non array`);
+        if (salvage) {
+          parsed.claimLayers[k] = [];
+          autoFixes.push(`claimLayers_${k}_default_empty`);
+        } else {
+          return reject('claimLayers_incomplete', { key: k, value: parsed.claimLayers[k] }, `claimLayers.${k} non array`);
+        }
       }
     }
     if (!Object.prototype.hasOwnProperty.call(parsed, 'quantitativeProposal')) {
-      return reject('quantitativeProposal_required', null, 'chiave quantitativeProposal assente');
+      if (salvage) {
+        parsed.quantitativeProposal = null;
+        autoFixes.push('quantitativeProposal_default_null');
+      } else {
+        return reject('quantitativeProposal_required', null, 'chiave quantitativeProposal assente');
+      }
     }
   }
 
@@ -494,6 +779,7 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
   let evidenceRefs = [];
   {
     const seen = new Set();
+    const allowedIds = dossierEventIdSet(opts.dossier || null);
     for (const raw of coerceEvidenceRefArray(parsed.evidenceRefs)) {
       let id = normalizeEvidenceRefId(raw);
       if (!id && raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -501,10 +787,17 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
         if (label) id = label;
       }
       if (!id) continue;
-      const key = id.toLowerCase();
+      // Alias e1… → id evento reale (come eventRefs)
+      const resolved = resolveEventRefAlias(id, opts.dossier || null) || id;
+      if (allowedIds.size > 0 && /^e\d+$/i.test(id) && !allowedIds.has(resolved)) {
+        droppedEventRefs.push(id);
+        continue;
+      }
+      const finalId = resolved;
+      const key = finalId.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
-      evidenceRefs.push(id);
+      evidenceRefs.push(finalId);
       if (evidenceRefs.length >= 6) break;
     }
   }
@@ -640,43 +933,61 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
   }
 
   const summary = hasSummary ? summaryCheck.summary : null;
-  if (summary?.todayAction) {
-    const actionNorm = summary.todayAction.toLowerCase().replace(/\s+/g, ' ').trim();
+  const todayText = typeof summary?.todayAction === 'string'
+    ? summary.todayAction
+    : cleanText(summary?.todayAction?.text);
+  if (todayText) {
+    const actionNorm = todayText.toLowerCase().replace(/\s+/g, ' ').trim();
     const sectionBlob = sections.map((s) => `${s.title}\n${s.body}`).join('\n')
       .toLowerCase()
       .replace(/\s+/g, ' ');
     if (actionNorm.length >= 24 && sectionBlob.includes(actionNorm)) {
-      return reject('todayAction_repeated_in_sections', summary.todayAction, 'todayAction ripetuta nelle sections');
+      return reject('todayAction_repeated_in_sections', todayText, 'todayAction ripetuta nelle sections');
     }
   }
 
-  // todayAction ↔ primo toImprove: stessa leva (overlap lessicale minimo)
-  if (summary?.todayAction && Array.isArray(summary.toImprove) && summary.toImprove[0]?.text) {
-    const actionTokens = new Set(
-      summary.todayAction.toLowerCase().split(/[^a-zàèéìòù0-9]+/i).filter((t) => t.length >= 4),
-    );
-    const firstImprove = String(summary.toImprove[0].text).toLowerCase();
-    let overlap = 0;
-    for (const t of actionTokens) {
-      if (firstImprove.includes(t)) overlap += 1;
+  // todayAction ↔ recommendedAction: stessi orari e grammi
+  if (todayText && actionText) {
+    const qtyMismatches = findActionQuantityMismatches(todayText, actionText);
+    if (qtyMismatches.length > 0) {
+      if (salvage) {
+        actionText = todayText;
+        autoFixes.push('recommendedAction_aligned_to_todayAction');
+      } else {
+        return reject('action_quantity_mismatch', {
+          todayAction: todayText,
+          recommendedAction: actionText,
+          mismatches: qtyMismatches,
+        }, 'orari/grammi diversi tra todayAction e recommendedAction');
+      }
     }
-    if (actionTokens.size >= 3 && overlap < 1) {
-      return reject('todayAction_mismatch_first_toImprove', {
-        todayAction: summary.todayAction,
-        firstToImprove: summary.toImprove[0].text,
-        overlap,
-      }, 'todayAction non allineata al primo toImprove');
-    }
+  }
+
+  // headline top-level allineato a summary
+  if (summary?.headline) {
+    headline = summary.headline;
   }
 
   // Limiti: se foodQuality partial, assicurati che limits lo citino (soft: aggiungi se assente)
   if (
     opts.dossier?.nutrition?.foodQuality?.completeness === 'partial'
-    && !limits.some((l) => /off|catalogo|incomplet|partial/i.test(l))
+    && !limits.some((l) => /off|catalogo|incomplet|partial|lavorazione/i.test(l))
   ) {
     limits = [
       ...limits,
-      'Catalogo OFF non pronto: qualità alimentare parziale (off_catalog_not_ready).',
+      'Catalogo alimenti incompleto: alcuni dati di qualità non erano disponibili.',
+    ].slice(0, 4);
+  }
+  const unclassifiedN = Number(opts.dossier?.nutrition?.foodQuality?.day?.provenanceCounts?.unclassified) || 0;
+  if (
+    unclassifiedN > 0
+    && !limits.some((l) => /senza dati sulla lavorazione|non classificat|lavorazione/i.test(l))
+  ) {
+    limits = [
+      ...limits,
+      unclassifiedN === 1
+        ? '1 alimento senza dati sulla lavorazione.'
+        : `${unclassifiedN} alimenti senza dati sulla lavorazione.`,
     ].slice(0, 4);
   }
 
@@ -741,19 +1052,23 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
 
   const banned = findBannedPhrasesInAnalysis(analysis);
   if (!banned.ok) {
-    return {
-      ok: false,
-      reason: banned.reason || 'banned_user_facing_phrase',
-      analysis: null,
-      severity: 'fixable',
-      bannedHits: banned.hits,
-      failedRules: (banned.hits || []).map((h) => ({
-        rule: 'banned_user_facing_phrase',
-        value: { id: h.id, label: h.label, where: h.where },
-        message: `termine vietato «${h.label}» in ${h.where}`,
-      })),
-      droppedEventRefs,
-    };
+    if (salvage) {
+      autoFixes.push('banned_phrases_accepted_after_salvage');
+    } else {
+      return {
+        ok: false,
+        reason: banned.reason || 'banned_user_facing_phrase',
+        analysis: null,
+        severity: 'retryable',
+        bannedHits: banned.hits,
+        failedRules: (banned.hits || []).map((h) => ({
+          rule: 'banned_user_facing_phrase',
+          value: { id: h.id, label: h.label, where: h.where },
+          message: `termine vietato «${h.label}» in ${h.where}`,
+        })),
+        droppedEventRefs,
+      };
+    }
   }
 
   if (droppedEventRefs.length) {
@@ -768,5 +1083,12 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
     }
   }
 
-  return { ok: true, reason: null, analysis, droppedEventRefs };
+  return {
+    ok: true,
+    reason: null,
+    analysis,
+    droppedEventRefs,
+    autoFixes,
+    softAccepted: salvage && autoFixes.length > 0,
+  };
 }

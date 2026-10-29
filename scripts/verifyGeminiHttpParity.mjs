@@ -42,6 +42,8 @@ const configs = [
   { temperature: 0.7, maxOutputTokens: 100, topP: 0.9, topK: 40 },
   { max_output_tokens: 50, top_p: 0.5, top_k: 10, stop_sequences: ['END', ''] },
   { temperature: 'x', stopSequences: ['A'] },
+  { thinkingConfig: { thinkingLevel: 'low' } },
+  { thinking_config: { thinking_budget: 0 } },
 ];
 for (const cfg of configs) {
   assert.deepEqual(esmNorm(cfg), cjs.normalizeGenerationConfig(cfg));

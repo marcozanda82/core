@@ -74,6 +74,34 @@ const memoryCache = new Map();
 const inflight = new Map();
 
 /**
+ * Contatore DEV dei retry per regola validatore (solo log, nessuna UI).
+ * @type {Map<string, number>}
+ */
+const focusAiCoachRetryCountsByRule = new Map();
+
+/**
+ * @param {string|null|undefined} reason
+ * @param {{ requestId?: string, periodId?: string, skipped?: boolean }} [extra]
+ */
+function recordFocusAiCoachRetry(reason, extra = {}) {
+  const rule = String(reason || 'unknown');
+  const count = (focusAiCoachRetryCountsByRule.get(rule) || 0) + 1;
+  focusAiCoachRetryCountsByRule.set(rule, count);
+  /** @type {Record<string, number>} */
+  const totals = {};
+  for (const [k, v] of focusAiCoachRetryCountsByRule.entries()) totals[k] = v;
+  logFocusAiCoachDiag({
+    phase: 'retry_counter',
+    rule,
+    count,
+    skipped: Boolean(extra.skipped),
+    totals,
+    requestId: extra.requestId || null,
+    periodId: extra.periodId || null,
+  });
+}
+
+/**
  * @param {{ uid: string, periodId: string, analysisDate: string, publicationDate: string, dataVersion: string }} binding
  */
 export function focusAiCoachCacheKey(binding) {
@@ -89,6 +117,12 @@ export function focusAiCoachCacheKey(binding) {
 export function __resetFocusAiCoachMemoryForTests() {
   memoryCache.clear();
   inflight.clear();
+  focusAiCoachRetryCountsByRule.clear();
+}
+
+/** Snapshot contatori retry (test / debug). */
+export function __getFocusAiCoachRetryCountsForTests() {
+  return Object.fromEntries(focusAiCoachRetryCountsByRule.entries());
 }
 
 /**
@@ -300,7 +334,7 @@ export async function requestFocusAiCoachAnalysis(input) {
   const run = (async () => {
     const t0 = Date.now();
     const systemText = buildFocusAiCoachSystemInstruction();
-    const userText = buildFocusAiCoachUserPrompt(built.dossier);
+    const userText = buildFocusAiCoachUserPrompt(built.dossier, { generatedAt: new Date() });
     const dossierChars = (() => {
       try {
         return JSON.stringify(built.dossier || {}).length;
@@ -308,6 +342,12 @@ export async function requestFocusAiCoachAnalysis(input) {
         return null;
       }
     })();
+    let schemaChars = null;
+    try {
+      schemaChars = JSON.stringify(FOCUS_AI_COACH_RESPONSE_SCHEMA).length;
+    } catch {
+      schemaChars = null;
+    }
     const sizes = {
       dossierChars,
       dossierEstTokens: estimateTokens(dossierChars),
@@ -315,6 +355,8 @@ export async function requestFocusAiCoachAnalysis(input) {
       userEstTokens: estimateTokens(userText.length),
       systemChars: systemText.length,
       systemEstTokens: estimateTokens(systemText.length),
+      schemaChars,
+      schemaEstTokens: estimateTokens(schemaChars),
     };
 
     logFocusAiCoachDiag({
@@ -327,8 +369,9 @@ export async function requestFocusAiCoachAnalysis(input) {
       dossierBuildMs: timing.dossierBuildMs,
       offWaitMeta,
       sizes,
+      thinkingLevel: 'low',
       force: Boolean(input.force),
-      note: 'timeouts: CF callGemini=120s; httpsCallable race client-side; OFF wait default 8s',
+      note: 'timeouts: CF callGemini=120s; httpsCallable race client-side; OFF wait default 8s; thinkingLevel=low',
     });
 
     const provider = createAskAiFocusGeminiProvider({
@@ -338,6 +381,8 @@ export async function requestFocusAiCoachAnalysis(input) {
       signal: input.signal || null,
       timeoutMs,
       responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+      thinkingLevel: 'low',
+      callTag: 'focus_ai_coach',
     });
 
     let raw;
@@ -431,8 +476,8 @@ export async function requestFocusAiCoachAnalysis(input) {
     });
 
     // Una sola retry se la regola è correggibile e resta tempo sufficiente
-    const canRetry = !validated.ok
-      && validated.severity !== 'blocking'
+    const isRetryable = !validated.ok && validated.severity !== 'blocking';
+    const canRetry = isRetryable
       && (
         validated.reason === 'banned_user_facing_phrase'
         || /_too_long$/.test(String(validated.reason || ''))
@@ -440,7 +485,12 @@ export async function requestFocusAiCoachAnalysis(input) {
         || validated.reason === 'claimLayers_required'
         || validated.reason === 'claimLayers_incomplete'
         || validated.reason === 'quantitativeProposal_required'
-        || validated.reason === 'todayAction_mismatch_first_toImprove'
+        || validated.reason === 'todayAction_index_invalid'
+        || validated.reason === 'todayAction_refs_incompatible'
+        || validated.reason === 'todayAction_has_or_alternative'
+        || validated.reason === 'summary_todayAction_invalid'
+        || validated.reason === 'summary_todayAction_missing'
+        || validated.reason === 'action_quantity_mismatch'
       );
     if (canRetry) {
       const elapsed = Date.now() - t0;
@@ -449,22 +499,39 @@ export async function requestFocusAiCoachAnalysis(input) {
       let retryHint = '';
       if (validated.reason === 'banned_user_facing_phrase' && Array.isArray(validated.bannedHits)) {
         retryHint = formatBannedPhraseRetryHint(validated.bannedHits);
+      } else if (validated.reason === 'action_quantity_mismatch') {
+        retryHint = [
+          'RETRY: todayAction.text e recommendedAction devono usare gli stessi orari e grammi.',
+          'todayAction = { text, toImproveIndex, eventRefs }; una sola leva senza alternative « o ».',
+          'headline top-level = summary.headline.',
+        ].join(' ');
+      } else if (/todayAction_/.test(String(validated.reason || ''))) {
+        retryHint = [
+          'RETRY: todayAction deve essere { "text", "toImproveIndex", "eventRefs" }.',
+          'toImproveIndex deve puntare a una voce di toImprove; eventRefs compatibili (intersezione o stessa area).',
+          'Una sola leva: niente alternative con « o ». Se il momento è già passato, usa «Domani a…».',
+        ].join(' ');
       } else if (/_too_long$/.test(String(validated.reason || ''))) {
         const fr = validated.failedRules?.[0];
         retryHint = [
           'RETRY: un campo summary era troppo lungo.',
           fr?.message || validated.reason,
-          'Accorcia headline (≤70), wentWell/toImprove text (≤120), todayAction (≤140).',
+          'Accorcia headline (≤70), wentWell/toImprove text (≤120), todayAction.text (≤140).',
         ].join(' ');
       } else {
         retryHint = [
           'RETRY: la risposta non rispettava lo schema summary.',
           `Motivo: ${validated.reason}.`,
-          'wentWell/toImprove DEVONO essere array di oggetti { "text", "area", "eventRefs" }, non stringhe.',
+          'wentWell/toImprove = oggetti { text, area, eventRefs }; todayAction = { text, toImproveIndex, eventRefs }.',
           'eventRefs: solo alias e1, e2, … da eventIndex.aliases.',
           'Includi claimLayers e la chiave quantitativeProposal (anche null).',
         ].join(' ');
       }
+      recordFocusAiCoachRetry(validated.reason, {
+        requestId,
+        periodId: built.binding.periodId,
+        skipped: skipRetry,
+      });
       logFocusAiCoachDiag({
         phase: 'validation_retry',
         requestId,
@@ -511,6 +578,26 @@ export async function requestFocusAiCoachAnalysis(input) {
             error: err?.message || String(err),
           });
         }
+      }
+    }
+
+    // Retryable ancora fallita → soft-accept con correzioni automatiche
+    if (!validated.ok && validated.severity !== 'blocking' && raw?.text) {
+      const priorReason = validated.reason;
+      const salvaged = validateFocusAiCoachResponse(raw.text, {
+        dossier: built.dossier,
+        requireSummary: true,
+        salvage: true,
+      });
+      if (salvaged.ok && salvaged.analysis) {
+        logFocusAiCoachDiag({
+          phase: 'soft_accept',
+          requestId,
+          periodId: built.binding.periodId,
+          priorReason,
+          autoFixes: salvaged.autoFixes || [],
+        });
+        validated = salvaged;
       }
     }
 
@@ -819,6 +906,6 @@ export function previewFocusAiCoachPayload(session) {
     binding: built.binding,
     dossier: built.dossier,
     systemText: buildFocusAiCoachSystemInstruction(),
-    userText: buildFocusAiCoachUserPrompt(built.dossier),
+    userText: buildFocusAiCoachUserPrompt(built.dossier, { generatedAt: new Date() }),
   };
 }

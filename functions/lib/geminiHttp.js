@@ -7,13 +7,35 @@
  * Non unificare con createRequire in questo step: rischio packaging CF / Vite.
  */
 
-const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1';
+/** v1beta: richiesto per thinkingConfig (thinkingLevel / thinkingBudget). */
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
 function sanitizeGeminiModel(raw, fallback = DEFAULT_GEMINI_MODEL) {
   const id = String(raw || '').trim();
   if (/^[a-zA-Z0-9._-]+$/.test(id)) return id;
   return fallback;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {object|null}
+ */
+function normalizeThinkingConfig(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  /** @type {Record<string, unknown>} */
+  const out = {};
+  const levelRaw = raw.thinkingLevel ?? raw.thinking_level;
+  if (typeof levelRaw === 'string' && levelRaw.trim()) {
+    const level = String(levelRaw).trim().toLowerCase();
+    if (/^(minimal|low|medium|high)$/.test(level)) out.thinkingLevel = level;
+  }
+  const budgetRaw = raw.thinkingBudget ?? raw.thinking_budget;
+  const budget = Number(budgetRaw);
+  if (Number.isFinite(budget)) out.thinkingBudget = Math.round(budget);
+  const includeThoughts = raw.includeThoughts ?? raw.include_thoughts;
+  if (typeof includeThoughts === 'boolean') out.includeThoughts = includeThoughts;
+  return Object.keys(out).length ? out : null;
 }
 
 function normalizeGenerationConfig(rawConfig = {}) {
@@ -33,7 +55,36 @@ function normalizeGenerationConfig(rawConfig = {}) {
   if (Array.isArray(stop) && stop.length > 0) {
     config.stopSequences = stop.map((s) => String(s)).filter(Boolean);
   }
+  const thinking = normalizeThinkingConfig(src.thinkingConfig ?? src.thinking_config);
+  if (thinking) config.thinkingConfig = thinking;
   return config;
+}
+
+/**
+ * Estrae token usage (input/output/thinking) da usageMetadata Gemini.
+ * @param {object|null|undefined} usage
+ */
+function extractGeminiUsageStats(usage) {
+  if (!usage || typeof usage !== 'object') {
+    return {
+      promptTokenCount: null,
+      candidatesTokenCount: null,
+      totalTokenCount: null,
+      thoughtsTokenCount: null,
+    };
+  }
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  return {
+    promptTokenCount: num(usage.promptTokenCount ?? usage.prompt_token_count),
+    candidatesTokenCount: num(usage.candidatesTokenCount ?? usage.candidates_token_count),
+    totalTokenCount: num(usage.totalTokenCount ?? usage.total_token_count),
+    thoughtsTokenCount: num(
+      usage.thoughtsTokenCount
+      ?? usage.thoughts_token_count
+      ?? usage.thinkingTokenCount
+      ?? usage.thinking_token_count,
+    ),
+  };
 }
 
 function extractGeminiText(geminiData) {
@@ -90,6 +141,8 @@ module.exports = {
   DEFAULT_GEMINI_MODEL,
   sanitizeGeminiModel,
   normalizeGenerationConfig,
+  normalizeThinkingConfig,
   extractGeminiText,
+  extractGeminiUsageStats,
   postGeminiGenerateContent,
 };

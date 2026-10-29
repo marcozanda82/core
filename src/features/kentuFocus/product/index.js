@@ -104,6 +104,7 @@ export {
   focusAiCoachCacheKey,
   peekFocusAiCoachMemory,
   __resetFocusAiCoachMemoryForTests,
+  __getFocusAiCoachRetryCountsForTests,
 } from './requestFocusAiCoachAnalysis.js';
 
 export {

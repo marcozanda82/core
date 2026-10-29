@@ -61,6 +61,14 @@
           ".write": false
         }
       }
+    },
+    "logs": {
+      "system_errors": {
+        "$pushId": {
+          ".read": false,
+          ".write": "!data.exists() && auth != null && newData.child('uid').val() === auth.uid && newData.hasChildren(['timestamp', 'uid', 'error', 'context']) && newData.child('error').isString() && newData.child('error').val().length() <= 2000 && newData.child('context').isString() && newData.child('context').val().length() <= 200 && (!newData.hasChild('code') || (newData.child('code').isString() && newData.child('code').val().length() <= 200)) && (!newData.hasChild('details') || (newData.child('details').isString() && newData.child('details').val().length() <= 4000)) && (!newData.hasChild('route') || (newData.child('route').isString() && newData.child('route').val().length() <= 300)) && newData.child('timestamp').val() === now"
+        }
+      }
     }
   }
 }

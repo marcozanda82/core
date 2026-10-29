@@ -47,7 +47,7 @@ describe('Focus AI Coach summary P1u (fixture reale)', () => {
     assert.match(sys, /wentWell/i);
     assert.match(sys, /energia/i);
     assert.match(sys, /qualit/i);
-    assert.match(sys, /primo elemento di toImprove|todayAction DEVE/i);
+    assert.match(sys, /toImproveIndex|stessa leva|UNA sola leva/i);
     assert.match(sys, /ultra-processato/i);
     assert.match(sys, /meta-frasi|NON affermando/i);
   });
@@ -96,11 +96,12 @@ describe('Focus AI Coach summary P1u (fixture reale)', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(validated.analysis, 'exercise'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(validated.analysis, 'theEmergingPicture'), false);
     // Stesso-occasione dolce (mela) oppure fallback generico — non mandorle/snack
-    assert.match(validated.analysis.summary.todayAction, /mela|frutta fresca|yogurt/i);
+    assert.match(validated.analysis.summary.todayAction.text, /mela|frutta fresca|yogurt/i);
     assert.equal(
-      /mandorl/i.test(validated.analysis.summary.todayAction),
+      /mandorl/i.test(validated.analysis.summary.todayAction.text),
       false,
     );
+    assert.equal(typeof validated.analysis.summary.todayAction.toImproveIndex, 'number');
     if (validated.analysis.lead) {
       assert.match(validated.analysis.lead, /\d/);
       assert.match(validated.analysis.lead, /kcal|target|media/i);
@@ -144,13 +145,101 @@ describe('Focus AI Coach summary P1u (fixture reale)', () => {
   it('rifiuta todayAction ripetuta nelle sezioni', () => {
     const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
     const report = buildRealOct27ReportJson(built.dossier);
-    report.sections[0].body += ` ${report.summary.todayAction}`;
+    report.sections[0].body += ` ${report.summary.todayAction.text}`;
     const bad = validateFocusAiCoachResponse(JSON.stringify(report), {
       dossier: built.dossier,
       requireSummary: true,
     });
     assert.equal(bad.ok, false);
     assert.equal(bad.reason, 'todayAction_repeated_in_sections');
+  });
+
+  it('rifiuta orari diversi tra todayAction e recommendedAction', () => {
+    const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
+    const report = buildRealOct27ReportJson(built.dossier);
+    report.summary.todayAction = {
+      text: 'Anticipa la cena alle 20:00 e alleggerisci la portata.',
+      toImproveIndex: 0,
+      eventRefs: [],
+      area: 'ritmo',
+    };
+    report.recommendedAction = 'Anticipa la cena alle 20:30 e alleggerisci la portata.';
+    report.summary.toImprove[0] = {
+      text: 'Cena tardiva da alleggerire',
+      area: 'ritmo',
+      eventRefs: [],
+    };
+    const bad = validateFocusAiCoachResponse(JSON.stringify(report), {
+      dossier: built.dossier,
+      requireSummary: true,
+    });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.reason, 'action_quantity_mismatch');
+  });
+
+  it('soft-accept allinea recommendedAction dopo retry fallito', () => {
+    const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
+    const report = buildRealOct27ReportJson(built.dossier);
+    report.summary.todayAction = {
+      text: 'Anticipa la cena alle 20:00 e alleggerisci la portata.',
+      toImproveIndex: 0,
+      eventRefs: [],
+      area: 'ritmo',
+    };
+    report.recommendedAction = 'Anticipa la cena alle 20:30 e alleggerisci la portata.';
+    report.summary.toImprove[0] = {
+      text: 'Cena tardiva da alleggerire',
+      area: 'ritmo',
+      eventRefs: [],
+    };
+    const soft = validateFocusAiCoachResponse(JSON.stringify(report), {
+      dossier: built.dossier,
+      requireSummary: true,
+      salvage: true,
+    });
+    assert.equal(soft.ok, true, soft.reason);
+    assert.equal(soft.analysis.recommendedAction, report.summary.todayAction.text);
+    assert.ok((soft.autoFixes || []).includes('recommendedAction_aligned_to_todayAction'));
+  });
+
+  it('rifiuta todayAction con alternative « o »', () => {
+    const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
+    const report = buildRealOct27ReportJson(built.dossier);
+    report.summary.todayAction = {
+      ...report.summary.todayAction,
+      text: 'Sostituisci il dessert con mela o yogurt.',
+    };
+    report.recommendedAction = report.summary.todayAction.text;
+    const bad = validateFocusAiCoachResponse(JSON.stringify(report), {
+      dossier: built.dossier,
+      requireSummary: true,
+    });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.reason, 'todayAction_has_or_alternative');
+  });
+
+  it('rifiuta frasi vietate in limits e claimLayers', () => {
+    const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
+    const report = buildRealOct27ReportJson(built.dossier);
+    report.limits = ['Questo episodio non è una traiettoria.'];
+    const bad = validateFocusAiCoachResponse(JSON.stringify(report), {
+      dossier: built.dossier,
+      requireSummary: true,
+    });
+    assert.equal(bad.ok, false);
+    assert.equal(bad.reason, 'banned_user_facing_phrase');
+  });
+
+  it('allinea headline top-level a summary.headline', () => {
+    const built = buildFocusAiCoachDossier(buildSession(), { foodCatalogs: CATALOGS });
+    const report = buildRealOct27ReportJson(built.dossier);
+    report.headline = 'Titolo diverso dal summary';
+    const ok = validateFocusAiCoachResponse(JSON.stringify(report), {
+      dossier: built.dossier,
+      requireSummary: true,
+    });
+    assert.equal(ok.ok, true, ok.reason);
+    assert.equal(ok.analysis.headline, report.summary.headline);
   });
 
   it('scarta eventRefs assenti', () => {

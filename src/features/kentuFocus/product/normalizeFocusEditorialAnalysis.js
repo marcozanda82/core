@@ -70,7 +70,10 @@ export function normalizeFocusEditorialAnalysis(analysis) {
       recommendedAction: analysis.recommendedAction
         || analysis.theChoiceIWouldMake
         || analysis.practicalAction
-        || analysis.summary?.todayAction,
+        || (typeof analysis.summary?.todayAction === 'string'
+          ? analysis.summary.todayAction
+          : analysis.summary?.todayAction?.text)
+        || null,
       expectedChange: analysis.expectedChange || null,
       verifyNext: analysis.verifyNext || analysis.whatToWatchNext,
       evidenceRefs: cleanEvidenceRefList(analysis.evidenceRefs),
