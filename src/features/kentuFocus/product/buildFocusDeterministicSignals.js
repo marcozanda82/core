@@ -6,6 +6,12 @@ import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js
 import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { collectDayLogForNutrition } from '../normalize/normalizeFoodEvents.js';
 import { resolveFoodClockHourDetailed } from '../normalize/focusMealSlots.js';
+import {
+  assessEnergyIrregularity,
+  ENERGY_IRREGULAR_MIN_OUTLIER_DAYS,
+  ENERGY_IRREGULAR_PCT,
+  ENERGY_IRREGULAR_WINDOW_DAYS,
+} from './focusEnergyVariability.js';
 
 const SLEEP_SHORT_HOURS = 7;
 const LONG_FAST_HOURS = 14;
@@ -91,6 +97,8 @@ function overnightFastForDate(fullHistory, date) {
  *   periodId?: string|null,
  *   windowDays?: number|null,
  *   intermittentFasting?: boolean|null,
+ *   userTargets?: object|null,
+ *   targetKcal?: number|null,
  * }} input
  */
 export function buildFocusDeterministicSignals(input) {
@@ -109,6 +117,11 @@ export function buildFocusDeterministicSignals(input) {
       || (periodId === 'mese' ? 30 : periodId === 'settimana' ? 7 : 1),
   );
   const intermittentFasting = input?.intermittentFasting === true;
+  const targetKcal = input?.targetKcal != null && Number.isFinite(Number(input.targetKcal))
+    ? Number(input.targetKcal)
+    : (input?.userTargets?.kcal != null && Number.isFinite(Number(input.userTargets.kcal))
+      ? Number(input.userTargets.kcal)
+      : null);
 
   /** @type {object[]} */
   const signals = [];
@@ -305,6 +318,40 @@ export function buildFocusDeterministicSignals(input) {
     });
   }
 
+  const energyVar = assessEnergyIrregularity({
+    fullHistory,
+    analysisDate,
+    targetKcal,
+    periodId,
+    calendarDays: ENERGY_IRREGULAR_WINDOW_DAYS,
+  });
+  signals.push({
+    id: 'energy_irregular',
+    area: 'energy',
+    active: Boolean(energyVar.irregular),
+    recordedDays: energyVar.recordedDays,
+    minIntakeKcal: energyVar.minIntakeKcal,
+    maxIntakeKcal: energyVar.maxIntakeKcal,
+    meanIntakeKcal: energyVar.meanIntakeKcal,
+    stdevKcal: energyVar.stdevKcal,
+    daysAboveBand: energyVar.daysAboveBand,
+    daysBelowBand: energyVar.daysBelowBand,
+    daysBeyondBand: energyVar.daysBeyondBand,
+    bandPct: ENERGY_IRREGULAR_PCT,
+    targetKcal: energyVar.targetKcal,
+    detail: energyVar.irregular
+      ? `Energia irregolare: ${energyVar.daysBeyondBand} giorni oltre ±${Math.round(ENERGY_IRREGULAR_PCT * 100)}% dal target (↑${energyVar.daysAboveBand}/↓${energyVar.daysBelowBand}), escursione ${energyVar.minIntakeKcal}–${energyVar.maxIntakeKcal} kcal, σ ${energyVar.stdevKcal}.`
+      : (energyVar.recordedDays < 2
+        ? 'Variabilità energetica: giorni insufficienti.'
+        : `Energia nei 7g: σ ${energyVar.stdevKcal ?? 'n/d'}, giorni oltre banda ${energyVar.daysBeyondBand} (soglia ${ENERGY_IRREGULAR_MIN_OUTLIER_DAYS}).`),
+    inactiveReason: energyVar.irregular ? null : (
+      energyVar.recordedDays < 2
+        ? 'insufficient_days'
+        : 'within_variability_thresholds'
+    ),
+    summaryEligible: periodId === 'settimana' || periodId === 'mese',
+  });
+
   return {
     available: true,
     reason: null,
@@ -316,6 +363,9 @@ export function buildFocusDeterministicSignals(input) {
       sleepShortHours: SLEEP_SHORT_HOURS,
       longFastHours: LONG_FAST_HOURS,
       lateMealBeforeBedHours: LATE_MEAL_BEFORE_BED_HOURS,
+      energyIrregularPct: ENERGY_IRREGULAR_PCT,
+      energyIrregularMinOutlierDays: ENERGY_IRREGULAR_MIN_OUTLIER_DAYS,
+      energyIrregularWindowDays: ENERGY_IRREGULAR_WINDOW_DAYS,
     },
   };
 }

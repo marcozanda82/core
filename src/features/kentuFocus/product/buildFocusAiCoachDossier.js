@@ -422,6 +422,8 @@ export function buildFocusAiCoachDossier(session, options = {}) {
       periodId,
       windowDays,
       intermittentFasting,
+      userTargets: session.userTargets || null,
+      targetKcal: session.userTargets?.kcal ?? null,
     })
     : { available: false, signals: [], activeIds: [] };
 

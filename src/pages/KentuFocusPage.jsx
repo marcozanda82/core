@@ -7,12 +7,22 @@ import {
   Dumbbell,
   Moon,
   Sparkles,
+  Sun,
   Utensils,
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ref, set, get } from 'firebase/database';
 import { db } from '../firebaseConfig.js';
+import {
+  getSystemColorScheme,
+  loadFocusThemeFromRtdb,
+  normalizeFocusTheme,
+  readFocusThemeLocal,
+  resolveFocusColorScheme,
+  writeFocusThemeLocal,
+  writeFocusThemeToRtdb,
+} from '../features/kentuFocus/product/focusTheme.js';
 import {
   FOCUS_PRODUCT_DEMO_BANNER,
   FOCUS_PRODUCT_PERIODS,
@@ -35,6 +45,8 @@ import {
   buildFocusAiAnalysisRecord,
   buildFocusSavedEvidenceHarnessAnalysis,
   buildFocusFoodQualityBlock,
+  assessEnergyIrregularity,
+  formatEnergyExcursionSubtitle,
   FOCUS_SAVED_EVIDENCE_HARNESS_REVISION_ID,
   FOCUS_SAVED_EVIDENCE_HARNESS_GENERATED_AT,
   __resetFocusAiAnalysisPersistenceForTests,
@@ -53,7 +65,19 @@ import {
   formatFocusPeriodNaturalLabel,
 } from '../features/kentuFocus/normalize/focusDateUtils.js';
 import { focusLocalIsoDate } from '../features/kentuFocus/product/loadFocusAuthenticatedDiary.js';
+import { FOCUS_AREAS } from '../features/kentuFocus/product/focusAreas.js';
+import { AreaChip } from '../features/kentuFocus/product/ui/AreaChip.jsx';
+import { FocusHero } from '../features/kentuFocus/product/ui/FocusHero.jsx';
+import { FocusVerdict } from '../features/kentuFocus/product/ui/FocusVerdict.jsx';
+import { FocusAction } from '../features/kentuFocus/product/ui/FocusAction.jsx';
+import { FocusNumbers } from '../features/kentuFocus/product/ui/FocusNumbers.jsx';
+import { FocusWhy } from '../features/kentuFocus/product/ui/FocusWhy.jsx';
+import { useFocusHeroImageSrc } from '../features/kentuFocus/product/ui/FocusHeroImage.jsx';
 import './kentuFocusPage.css';
+import './kentuFocusV3.css';
+
+const KF_GOOGLE_FONTS_ID = 'kf-google-fonts';
+const KF_GOOGLE_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,600&display=swap';
 
 function resolveFocusAiPersistence(options = {}) {
   // Harness / test: memoria di sessione — nessuna write Firebase produzione.
@@ -948,6 +972,7 @@ function buildDiaryNumberCards(session, periodId) {
   const hasTarget = Number.isFinite(targetKcal) && targetKcal > 0;
 
   let fqDay = null;
+  let energyVar = null;
   try {
     if (session?.fullHistory && session?.analysisDate) {
       const fq = buildFocusFoodQualityBlock({
@@ -956,10 +981,19 @@ function buildDiaryNumberCards(session, periodId) {
         periodId,
       });
       fqDay = fq?.day || null;
+      energyVar = assessEnergyIrregularity({
+        fullHistory: session.fullHistory,
+        analysisDate: session.analysisDate,
+        targetKcal: hasTarget ? targetKcal : null,
+        periodId,
+      });
     }
   } catch {
     fqDay = null;
+    energyVar = null;
   }
+  const energyIrregular = Boolean(energyVar?.irregular);
+  const energyExcursion = energyIrregular ? formatEnergyExcursionSubtitle(energyVar) : null;
 
   /** @type {object[]} */
   const out = [];
@@ -969,14 +1003,16 @@ function buildDiaryNumberCards(session, periodId) {
     const kcal = nutrition?.ieri?.totals?.kcal?.value;
     if (kcal != null && Number.isFinite(Number(kcal))) {
       const k = Math.round(Number(kcal));
-      const tone = hasTarget
-        ? (Math.abs(k - targetKcal) <= targetKcal * 0.08 ? 'bene' : 'attenzione')
-        : 'bene';
+      const nearTarget = hasTarget && Math.abs(k - targetKcal) <= targetKcal * 0.08;
+      const tone = energyIrregular
+        ? 'attenzione'
+        : (hasTarget ? (nearTarget ? 'bene' : 'attenzione') : 'bene');
       out.push({
         area: 'energia',
         label: 'Energia',
         value: `${formatFocusItNumber(k)} kcal`,
-        compare: hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null,
+        compare: energyExcursion
+          || (hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null),
         tone,
         hasData: true,
         detailKey: 'nutrition',
@@ -997,8 +1033,9 @@ function buildDiaryNumberCards(session, periodId) {
         area: 'energia',
         label: 'Energia',
         value: `${formatFocusItNumber(Math.round(Number(avg)))} kcal`,
-        compare: days != null ? `media su ${days} giorni` : (hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null),
-        tone: 'bene',
+        compare: energyExcursion
+          || (days != null ? `media su ${days} giorni` : (hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null)),
+        tone: energyIrregular ? 'attenzione' : 'bene',
         hasData: true,
         detailKey: 'nutrition',
       });
@@ -1220,10 +1257,35 @@ function FocusEditorialReport({
     : 'Oggi prova così';
   const headline = summary?.headline || editorial?.headline;
 
+  const energyIrregular = useMemo(() => {
+    try {
+      if (!session?.fullHistory || !session?.analysisDate) return false;
+      return Boolean(assessEnergyIrregularity({
+        fullHistory: session.fullHistory,
+        analysisDate: session.analysisDate,
+        targetKcal: session?.userTargets?.kcal ?? null,
+        periodId,
+      }).irregular);
+    } catch {
+      return false;
+    }
+  }, [session, periodId]);
+
+  const activeSignalIds = aiState?.record?.deterministicSignals?.activeIds
+    || analysis?.deterministicSignals?.activeIds
+    || [];
+  const heroImage = useFocusHeroImageSrc({
+    periodId,
+    toImprove,
+    energyIrregular,
+    activeSignalIds,
+  });
+
   const diaryNumbers = (
-    <DiaryNumbersBlock
+    <FocusNumbers
       session={session}
       periodId={periodId}
+      toImprove={toImprove}
       openDetail={openDetail}
       onOpenDetail={onOpenDetail}
     />
@@ -1350,143 +1412,111 @@ function FocusEditorialReport({
 
       {bindingOk && editorial ? (
         <article className={`kf-report${isOutdated ? ' kf-report--outdated' : ''}`}>
-          {headline ? <h2 className="kf-report-headline">{headline}</h2> : null}
-
-          {(wentWell.length > 0 || toImprove.length > 0) ? (
-            <div className="kf-summary-lists">
-              {wentWell.length > 0 ? (
-                <div className="kf-summary-group kf-summary-group--bene">
-                  <p className="kf-summary-group-label">Bene</p>
-                  {wentWell.map((row, i) => (
-                    <div key={`ww_${i}`} className="kf-summary-item kf-summary-item--bene">
-                      <span className="kf-summary-icon" aria-hidden>
-                        <SummaryAreaIcon area={row.area} />
-                      </span>
-                      <p>{row.text}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              {toImprove.length > 0 ? (
-                <div className="kf-summary-group kf-summary-group--attenzione">
-                  <p className="kf-summary-group-label">Da migliorare</p>
-                  {toImprove.map((row, i) => (
-                    <div key={`ti_${i}`} className="kf-summary-item kf-summary-item--attenzione">
-                      <span className="kf-summary-icon" aria-hidden>
-                        <SummaryAreaIcon area={row.area} />
-                      </span>
-                      <p>{row.text}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
+          {isOutdated ? (
+            <p className="kf-v-prev-label">Versione precedente</p>
           ) : null}
 
+          <FocusHero headline={headline} imageSrc={heroImage.src} />
+
+          <FocusVerdict wentWell={wentWell} toImprove={toImprove} />
+
           {!isOutdated && todayAction ? (
-            <section className="kf-report-action kf-today-action" aria-label={actionHeading}>
-              <h3>{actionHeading}</h3>
-              <p>{todayAction}</p>
-            </section>
+            <FocusAction text={todayAction} label={actionHeading} />
           ) : null}
 
           {diaryNumbers}
 
-          <details className="kf-report-why" data-testid="kf-report-why">
-            <summary>Perché te lo dico</summary>
-            <div className="kf-report-why-body">
-              {generatedNatural ? (
-                <p className="kf-nutrition-note">{generatedNatural}</p>
-              ) : null}
+          <FocusWhy>
+            {generatedNatural ? (
+              <p className="kf-nutrition-note">{generatedNatural}</p>
+            ) : null}
 
-              {editorial.lead ? (
-                <p className="kf-report-lead">{editorial.lead}</p>
-              ) : null}
+            {editorial.lead ? (
+              <p className="kf-report-lead">{editorial.lead}</p>
+            ) : null}
 
-              {(editorial.sections || []).map((sec) => (
-                <section key={sec.id || sec.title} className="kf-report-chapter">
-                  <h3>{sec.title}</h3>
-                  <p>{sec.body}</p>
-                </section>
-              ))}
+            {editorial.keyInsight ? (
+              <p className="kf-report-insight-intro">{editorial.keyInsight}</p>
+            ) : null}
 
-              {editorial.keyInsight ? (
-                <aside className="kf-report-insight">
-                  <h3>Collegamento importante</h3>
-                  <p>{editorial.keyInsight}</p>
-                </aside>
-              ) : null}
+            {(editorial.sections || []).map((sec) => (
+              <section key={sec.id || sec.title} className="kf-report-chapter">
+                <h3>{sec.title}</h3>
+                <p>{sec.body}</p>
+              </section>
+            ))}
 
-              {editorial.recommendedAction && todayAction && editorial.recommendedAction !== todayAction ? (
-                <section className="kf-report-action">
-                  <h3>In sintesi</h3>
-                  <p>{editorial.recommendedAction}</p>
-                  {editorial.expectedChange ? (
-                    <p className="kf-report-expected">{editorial.expectedChange}</p>
-                  ) : null}
-                </section>
-              ) : editorial.expectedChange ? (
+            {editorial.recommendedAction && todayAction && editorial.recommendedAction !== todayAction ? (
+              <section className="kf-report-action">
+                <h3>In sintesi</h3>
+                <p>{editorial.recommendedAction}</p>
+              </section>
+            ) : null}
+
+            {editorial.expectedChange ? (
+              <section className="kf-report-expected-block">
+                <h3>Cosa cambia</h3>
                 <p className="kf-report-expected">{editorial.expectedChange}</p>
-              ) : null}
+              </section>
+            ) : null}
 
-              {editorial.verifyNext ? (
-                <section className="kf-report-verify">
-                  <h3>Cosa osservare dopo</h3>
-                  <p>{editorial.verifyNext}</p>
-                </section>
-              ) : null}
+            {editorial.verifyNext ? (
+              <section className="kf-report-verify">
+                <h3>Cosa osservare dopo</h3>
+                <p>{editorial.verifyNext}</p>
+              </section>
+            ) : null}
 
-              {(editorial.limits || []).length > 0 ? (
-                <ul className="kf-report-limits">
-                  {editorial.limits
-                    .filter((l) => !/dead[-\s]?band|pilota|bussola metabolica|contesto,\s*non score|Simulazione:|nessuna scrittura sul diario/i.test(String(l)))
-                    .map((l, i) => (
-                      <li key={`lim_${i}`}>{l}</li>
-                    ))}
+            {(editorial.limits || []).length > 0 ? (
+              <ul className="kf-report-limits">
+                {editorial.limits
+                  .filter((l) => !/dead[-\s]?band|pilota|bussola metabolica|contesto,\s*non score|Simulazione:|nessuna scrittura sul diario/i.test(String(l)))
+                  .map((l, i) => (
+                    <li key={`lim_${i}`}>{l}</li>
+                  ))}
+              </ul>
+            ) : null}
+
+            {evidenceItems.length > 0 ? (
+              <div className="kf-report-evidence" data-testid="kf-report-evidence">
+                <p className="kf-evidence-heading">Evidenze citate</p>
+                <ul className="kf-evidence-list">
+                  {evidenceItems.map((ev, idx) => {
+                    const label = String(ev.label || '').trim();
+                    const detail = String(ev.detail || '').trim();
+                    if (!label || /citato nel rapporto|non risolto/i.test(detail)) return null;
+                    return (
+                      <li
+                        key={`${ev.id || 'ev'}_${idx}`}
+                        className="kf-evidence-item"
+                        data-evidence-id={ev.id || undefined}
+                      >
+                        <div className="kf-evidence-label">{label}</div>
+                        {detail && detail !== label ? (
+                          <div className="kf-evidence-detail">{detail}</div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
                 </ul>
-              ) : null}
+              </div>
+            ) : null}
 
-              {evidenceItems.length > 0 ? (
-                <div className="kf-report-evidence" data-testid="kf-report-evidence">
-                  <p className="kf-evidence-heading">Evidenze citate</p>
-                  <ul className="kf-evidence-list">
-                    {evidenceItems.map((ev, idx) => {
-                      const label = String(ev.label || '').trim();
-                      const detail = String(ev.detail || '').trim();
-                      if (!label || /citato nel rapporto|non risolto/i.test(detail)) return null;
-                      return (
-                        <li
-                          key={`${ev.id || 'ev'}_${idx}`}
-                          className="kf-evidence-item"
-                          data-evidence-id={ev.id || undefined}
-                        >
-                          <div className="kf-evidence-label">{label}</div>
-                          {detail && detail !== label ? (
-                            <div className="kf-evidence-detail">{detail}</div>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
+            <FocusDeepLinksBar session={session} />
 
-              <FocusDeepLinksBar session={session} />
-
-              {showDiscreteRegen ? (
-                <p className="kf-regen-inline">
-                  <button
-                    type="button"
-                    className="kf-regen-link"
-                    disabled={aiState?.status === 'loading' || aiState?.busy}
-                    onClick={onGenerate}
-                  >
-                    {aiState?.status === 'loading' ? 'Generazione…' : 'Rigenera analisi'}
-                  </button>
-                </p>
-              ) : null}
-            </div>
-          </details>
+            {showDiscreteRegen ? (
+              <p className="kf-regen-inline">
+                <button
+                  type="button"
+                  className="kf-regen-link"
+                  disabled={aiState?.status === 'loading' || aiState?.busy}
+                  onClick={onGenerate}
+                >
+                  {aiState?.status === 'loading' ? 'Generazione…' : 'Rigenera analisi'}
+                </button>
+              </p>
+            ) : null}
+          </FocusWhy>
         </article>
       ) : (
         diaryNumbers
@@ -1699,6 +1729,47 @@ export default function KentuFocusPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, authReady } = useAuth();
+
+  const focusDebug = import.meta.env.DEV
+    && (searchParams.get('focusDebug') === '1' || searchParams.get('focusDebug') === 'true');
+  const [themePreference, setThemePreference] = useState(() => readFocusThemeLocal());
+  const [systemScheme, setSystemScheme] = useState(() => getSystemColorScheme());
+  const colorScheme = resolveFocusColorScheme(themePreference, systemScheme);
+  const themeLongPressRef = useRef(null);
+  const themeLongPressFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    let link = document.getElementById(KF_GOOGLE_FONTS_ID);
+    if (!link) {
+      link = document.createElement('link');
+      link.id = KF_GOOGLE_FONTS_ID;
+      link.rel = 'stylesheet';
+      link.href = KF_GOOGLE_FONTS_HREF;
+      document.head.appendChild(link);
+    }
+    return () => {
+      const el = document.getElementById(KF_GOOGLE_FONTS_ID);
+      if (el) el.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) {
+      setSystemScheme('dark');
+      return undefined;
+    }
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const apply = () => setSystemScheme(mq.matches ? 'light' : 'dark');
+    apply();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', apply);
+      return () => mq.removeEventListener('change', apply);
+    }
+    mq.addListener(apply);
+    return () => mq.removeListener(apply);
+  }, []);
+
   const mockEditorial = searchParams.get('mockEditorial') === '1'
     || searchParams.get('mockEditorial') === 'true';
   const focusHarness = import.meta.env.DEV
@@ -1707,6 +1778,60 @@ export default function KentuFocusPage() {
   const focusSavedEvidence = focusHarness
     && (searchParams.get('focusSavedEvidence') === '1' || searchParams.get('focusSavedEvidence') === 'true');
   const uid = focusHarness ? 'focus-harness-uid' : (user?.uid || null);
+
+  const persistFocusTheme = (pref) => {
+    const next = normalizeFocusTheme(pref) || 'system';
+    writeFocusThemeLocal(next);
+    setThemePreference(next);
+    if (!uid || focusHarness || !db) return;
+    writeFocusThemeToRtdb({ uid, pref: next, set, ref, db }).catch(() => {});
+  };
+
+  useEffect(() => {
+    if (!uid || focusHarness || !db) return undefined;
+    let cancelled = false;
+    loadFocusThemeFromRtdb({ uid, get, set, ref, db })
+      .then((remote) => {
+        if (cancelled || !remote) return;
+        writeFocusThemeLocal(remote);
+        setThemePreference(remote);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [uid, focusHarness]);
+
+  const clearThemeLongPress = () => {
+    if (themeLongPressRef.current != null) {
+      clearTimeout(themeLongPressRef.current);
+      themeLongPressRef.current = null;
+    }
+  };
+
+  const onThemePointerDown = () => {
+    themeLongPressFiredRef.current = false;
+    clearThemeLongPress();
+    themeLongPressRef.current = setTimeout(() => {
+      themeLongPressFiredRef.current = true;
+      persistFocusTheme('system');
+    }, 550);
+  };
+
+  const onThemePointerUp = () => {
+    clearThemeLongPress();
+  };
+
+  const onThemePointerCancel = () => {
+    clearThemeLongPress();
+  };
+
+  const onThemeClick = (event) => {
+    if (themeLongPressFiredRef.current) {
+      event.preventDefault();
+      themeLongPressFiredRef.current = false;
+      return;
+    }
+    persistFocusTheme(colorScheme === 'dark' ? 'light' : 'dark');
+  };
   const periodFromUrl = String(searchParams.get('period') || '').toLowerCase();
   const [periodId, setPeriodId] = useState(
     ['ieri', 'settimana', 'mese'].includes(periodFromUrl) ? periodFromUrl : 'ieri',
@@ -2273,21 +2398,52 @@ export default function KentuFocusPage() {
   const edition = session?.demoEdition || null;
 
   return (
-    <div className="kf-page">
+    <div className={`kf-page kf-${colorScheme === 'light' ? 'light' : 'dark'}`}>
       <div className="kf-shell">
         <div className="kf-topbar">
+          <div className="kf-topbar-start">
+            <button
+              type="button"
+              className="kf-back"
+              onClick={() => navigate('/', { replace: false })}
+            >
+              ← Home
+            </button>
+            <div className="kf-brand">
+              <p className="kf-brand-kicker">Kentu</p>
+              <h1 className="kf-brand-title">Focus</h1>
+            </div>
+          </div>
           <button
             type="button"
-            className="kf-back"
-            onClick={() => navigate('/', { replace: false })}
+            className="kf-theme-toggle"
+            aria-label={colorScheme === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro'}
+            title={themePreference === 'system'
+              ? 'Tema: sistema (tieni premuto per ripristinare)'
+              : (colorScheme === 'dark' ? 'Tema scuro (tieni premuto: sistema)' : 'Tema chiaro (tieni premuto: sistema)')}
+            onClick={onThemeClick}
+            onPointerDown={onThemePointerDown}
+            onPointerUp={onThemePointerUp}
+            onPointerCancel={onThemePointerCancel}
+            onPointerLeave={onThemePointerCancel}
           >
-            ← Home
+            {colorScheme === 'dark'
+              ? <Sun size={20} strokeWidth={2.2} aria-hidden="true" />
+              : <Moon size={20} strokeWidth={2.2} aria-hidden="true" />}
           </button>
-          <div className="kf-brand">
-            <p className="kf-brand-kicker">Kentu</p>
-            <h1 className="kf-brand-title">Focus</h1>
-          </div>
         </div>
+
+        {focusDebug ? (
+          <figure className="kf-fase1-areas" aria-label="Anteprima aree Focus">
+            <figcaption>Aree · debug</figcaption>
+            {FOCUS_AREAS.map((area) => (
+              <div key={area.id} className="kf-fase1-area">
+                <AreaChip area={area.id} size="md" />
+                <span>{area.label}</span>
+              </div>
+            ))}
+          </figure>
+        ) : null}
 
         {(() => {
           const loadingBanner = diaryLoadState === 'loading' || (!session && pageStatus === 'loading');

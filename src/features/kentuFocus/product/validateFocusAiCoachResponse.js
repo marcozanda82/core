@@ -1050,7 +1050,12 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
     return reject('normalize_failed', { schema: view.schema, lead: view.lead }, 'normalize senza lead (non-v4)');
   }
 
-  const banned = findBannedPhrasesInAnalysis(analysis);
+  const energyIrregular = Boolean(
+    opts.dossier?.deterministicSignals?.activeIds?.includes?.('energy_irregular')
+    || opts.dossier?.editorialReadingContext?.dayVersusRecent?.recent7dExcludingAnalysisDay?.irregular
+    || opts.dossier?.editorialReadingContext?.energyVariability?.irregular,
+  );
+  const banned = findBannedPhrasesInAnalysis(analysis, { energyIrregular });
   if (!banned.ok) {
     if (salvage) {
       autoFixes.push('banned_phrases_accepted_after_salvage');

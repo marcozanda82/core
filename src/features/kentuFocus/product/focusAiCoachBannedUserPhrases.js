@@ -19,6 +19,11 @@ export const FOCUS_AI_COACH_BANNED_USER_PHRASES = Object.freeze([
   { id: 'senza_pretendere_causal', re: /\bsenza\s+pretendere\s+causal/i, label: 'senza pretendere causalità' },
   { id: 'cause_non_misurate', re: /\bcause\s+non\s+misurat/i, label: 'cause non misurate' },
   { id: 'senza_affermare_un_nesso', re: /\bsenza\s+affermare\s+(un\s+)?nesso\b/i, label: 'senza affermare un nesso' },
+  { id: 'fascia_neutra', re: /\bfascia\s+neutra\b/i, label: 'fascia neutra' },
+  { id: 'documentato', re: /\bdocumentat[oi]\b/i, label: 'documentato' },
+  { id: 'calcolato', re: /\bcalcolat[oi]\b/i, label: 'calcolato' },
+  { id: 'derivato', re: /\bderivat[oi]\b/i, label: 'derivato' },
+  { id: 'polisonnografia', re: /\bpolisonnografi/i, label: 'polisonnografia' },
 ]);
 
 /** Solo in summary (headline + wentWell + toImprove + todayAction). */
@@ -45,14 +50,31 @@ export function findBannedPhrasesInText(text, rules) {
   return hits;
 }
 
+/** Vietati sull’energia quando energy_irregular è attivo. */
+export const FOCUS_AI_COACH_BANNED_ENERGY_STABILITY_PHRASES = Object.freeze([
+  { id: 'energia_costante', re: /\bcostante\b/i, label: 'costante' },
+  { id: 'energia_stabile', re: /\bstabile\b/i, label: 'stabile' },
+  { id: 'energia_regolare', re: /\bregolare\b/i, label: 'regolare' },
+]);
+
 /**
  * @param {object|null|undefined} analysis
+ * @param {{ energyIrregular?: boolean }} [opts]
  * @returns {{ ok: boolean, reason: string|null, hits: { id: string, label: string, where: string }[] }}
  */
-export function findBannedPhrasesInAnalysis(analysis) {
+export function findBannedPhrasesInAnalysis(analysis, opts = {}) {
   if (!analysis || typeof analysis !== 'object') {
     return { ok: true, reason: null, hits: [] };
   }
+
+  const energyStabilityRules = opts.energyIrregular
+    ? FOCUS_AI_COACH_BANNED_ENERGY_STABILITY_PHRASES
+    : [];
+  const userRules = [...FOCUS_AI_COACH_BANNED_USER_PHRASES, ...energyStabilityRules];
+  const summaryRules = [
+    ...userRules,
+    ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
+  ];
 
   /** @type {{ id: string, label: string, where: string }[]} */
   const hits = [];
@@ -65,49 +87,37 @@ export function findBannedPhrasesInAnalysis(analysis) {
 
   const summary = analysis.summary;
   if (summary && typeof summary === 'object') {
-    push('summary.headline', summary.headline, [
-      ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
-      ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
-    ]);
+    push('summary.headline', summary.headline, summaryRules);
     const todayActionText = typeof summary.todayAction === 'string'
       ? summary.todayAction
       : summary.todayAction?.text;
-    push('summary.todayAction', todayActionText, [
-      ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
-      ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
-    ]);
+    push('summary.todayAction', todayActionText, summaryRules);
     for (const [i, row] of (summary.wentWell || []).entries()) {
-      push(`summary.wentWell[${i}]`, row?.text, [
-        ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
-        ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
-      ]);
+      push(`summary.wentWell[${i}]`, row?.text, summaryRules);
     }
     for (const [i, row] of (summary.toImprove || []).entries()) {
-      push(`summary.toImprove[${i}]`, row?.text, [
-        ...FOCUS_AI_COACH_BANNED_USER_PHRASES,
-        ...FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES.filter((r) => r.re),
-      ]);
+      push(`summary.toImprove[${i}]`, row?.text, summaryRules);
     }
   }
 
-  push('headline', analysis.headline, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-  push('lead', analysis.lead, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-  push('keyInsight', analysis.keyInsight, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-  push('recommendedAction', analysis.recommendedAction, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-  push('expectedChange', analysis.expectedChange, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-  push('verifyNext', analysis.verifyNext, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+  push('headline', analysis.headline, userRules);
+  push('lead', analysis.lead, userRules);
+  push('keyInsight', analysis.keyInsight, userRules);
+  push('recommendedAction', analysis.recommendedAction, userRules);
+  push('expectedChange', analysis.expectedChange, userRules);
+  push('verifyNext', analysis.verifyNext, userRules);
   for (const [i, s] of (analysis.sections || []).entries()) {
-    push(`sections[${i}].title`, s?.title, FOCUS_AI_COACH_BANNED_USER_PHRASES);
-    push(`sections[${i}].body`, s?.body, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+    push(`sections[${i}].title`, s?.title, userRules);
+    push(`sections[${i}].body`, s?.body, userRules);
   }
   for (const [i, lim] of (analysis.limits || []).entries()) {
-    push(`limits[${i}]`, lim, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+    push(`limits[${i}]`, lim, userRules);
   }
   const layers = analysis.claimLayers;
   if (layers && typeof layers === 'object') {
     for (const key of ['recordedFacts', 'generalKnowledge', 'foundedInferences', 'hypothesesToTest']) {
       for (const [i, row] of (layers[key] || []).entries()) {
-        push(`claimLayers.${key}[${i}]`, row, FOCUS_AI_COACH_BANNED_USER_PHRASES);
+        push(`claimLayers.${key}[${i}]`, row, userRules);
       }
     }
   }

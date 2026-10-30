@@ -4,8 +4,11 @@
  * Serve a distinguere episodio giornaliero vs media recente e a proporre manovre concrete.
  */
 
-import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
-import { buildFocusCompassDailyHistoryFromDiary } from './buildFocusCompassSignalsForDossier.js';
+import { isIsoDateString } from '../normalize/focusDateUtils.js';
+import {
+  assessEnergyIrregularity,
+  ENERGY_IRREGULAR_PCT,
+} from './focusEnergyVariability.js';
 
 /**
  * @param {object[]} meals — dossier.nutrition.meals
@@ -109,47 +112,65 @@ export function buildFocusEditorialReadingContext(input) {
 
   /** @type {object|null} */
   let dayVersusRecent = null;
+  /** @type {object|null} */
+  let energyVariability = null;
+
+  if (input.fullHistory && isIsoDateString(analysisDate)) {
+    energyVariability = assessEnergyIrregularity({
+      fullHistory: input.fullHistory,
+      analysisDate,
+      targetKcal: target,
+      periodId,
+    });
+  }
 
   if (
     periodId === 'ieri'
     && input.fullHistory
     && isIsoDateString(analysisDate)
   ) {
-    const history = buildFocusCompassDailyHistoryFromDiary(
-      input.fullHistory,
+    const recentPack = assessEnergyIrregularity({
+      fullHistory: input.fullHistory,
       analysisDate,
-      target,
-      14,
-    );
-    const dayRow = history.find((d) => d.date === analysisDate && !d.skipEnergyAverage);
-    const recent = history.filter((d) => {
-      if (!d || d.skipEnergyAverage || !Number.isFinite(Number(d.intakeKcal))) return false;
-      if (d.date === analysisDate) return false;
-      // ultimi 7 giorni di calendario prima dell’analisi
-      const min = addCalendarDays(analysisDate, -7);
-      return d.date >= min && d.date < analysisDate;
+      targetKcal: target,
+      periodId: 'ieri',
     });
+    energyVariability = recentPack;
 
-    const dayIntake = dayRow?.intakeKcal != null
-      ? Number(dayRow.intakeKcal)
+    const dayPack = assessEnergyIrregularity({
+      fullHistory: input.fullHistory,
+      analysisDate,
+      targetKcal: target,
+      periodId: 'ieri',
+      calendarDays: 1,
+      excludeAnalysisDay: false,
+    });
+    const dayIntake = dayPack.intakesKcal?.[0] != null
+      ? dayPack.intakesKcal[0]
       : (input.dayIntakeKcal != null ? Number(input.dayIntakeKcal) : null);
-    const dayBalance = dayRow?.kcalBalance != null
-      ? Number(dayRow.kcalBalance)
-      : (dayIntake != null && target != null ? Math.round(dayIntake - target) : null);
+    const dayBalance = dayIntake != null && target != null
+      ? Math.round(dayIntake - target)
+      : null;
 
-    let recentMeanIntake = null;
-    let recentMeanBalance = null;
-    if (recent.length > 0) {
-      recentMeanIntake = Math.round(
-        recent.reduce((s, d) => s + Number(d.intakeKcal), 0) / recent.length,
-      );
-      if (target != null) {
-        recentMeanBalance = Math.round(recentMeanIntake - target);
-      }
-    }
+    const recentMeanIntake = recentPack.meanIntakeKcal;
+    const recentMeanBalance = recentMeanIntake != null && target != null
+      ? Math.round(recentMeanIntake - target)
+      : null;
 
     const dayFarFromTarget = dayBalance != null && Math.abs(dayBalance) >= 250;
     const recentNearTarget = recentMeanBalance != null && Math.abs(recentMeanBalance) <= 120;
+
+    let readingHint = dayFarFromTarget && recentNearTarget
+      ? 'Giorno lontano dal target, ma media recente vicina al riferimento: privilegia il contrasto giorno/andamento nel titolo, non lo scostamento isolato come verdetto.'
+      : dayFarFromTarget
+        ? 'Giorno lontano dal target: contestualizza sempre con la media recente se disponibile; non chiamare «andamento» un solo giorno.'
+        : 'Confronta comunque giorno e contesto recente prima del titolo.';
+    if (recentPack.irregular) {
+      readingHint = [
+        readingHint,
+        `Energia irregolare nei 7g precedenti (min ${recentPack.minIntakeKcal}, max ${recentPack.maxIntakeKcal}, σ ${recentPack.stdevKcal}; ${recentPack.daysBeyondBand} giorni oltre ±${Math.round(ENERGY_IRREGULAR_PCT * 100)}% dal target): non dire che l’aderenza è costante/stabile/regolare; citala come contesto.`,
+      ].join(' ');
+    }
 
     dayVersusRecent = {
       analysisDate,
@@ -161,17 +182,22 @@ export function buildFocusEditorialReadingContext(input) {
         note: 'Singolo giorno di analisi — NON è l’andamento Bussola settimanale.',
       },
       recent7dExcludingAnalysisDay: {
-        recordedDays: recent.length,
+        recordedDays: recentPack.recordedDays,
         meanIntakeKcal: recentMeanIntake,
         meanBalanceVsTargetKcal: recentMeanBalance,
+        minIntakeKcal: recentPack.minIntakeKcal,
+        maxIntakeKcal: recentPack.maxIntakeKcal,
+        stdevKcal: recentPack.stdevKcal,
+        daysAboveBand: recentPack.daysAboveBand,
+        daysBelowBand: recentPack.daysBelowBand,
+        daysBeyondBand: recentPack.daysBeyondBand,
+        bandPct: ENERGY_IRREGULAR_PCT,
+        irregular: recentPack.irregular,
+        irregularReason: recentPack.irregularReason,
         role: 'recent_context',
-        note: 'Media introito sui giorni registrati nei 7 giorni precedenti (escluso il giorno di analisi).',
+        note: 'Media e variabilità introito sui giorni registrati nei 7 giorni precedenti (escluso il giorno di analisi).',
       },
-      readingHint: dayFarFromTarget && recentNearTarget
-        ? 'Giorno lontano dal target, ma media recente vicina al riferimento: privilegia il contrasto giorno/andamento nel titolo, non lo scostamento isolato come verdetto.'
-        : dayFarFromTarget
-          ? 'Giorno lontano dal target: contestualizza sempre con la media recente se disponibile; non chiamare «andamento» un solo giorno.'
-          : 'Confronta comunque giorno e contesto recente prima del titolo.',
+      readingHint,
       bussolaTimeframeOnIeri: input.compassSignals?.observedTrajectory?.timeframe || '1d',
       bussolaNote: 'Su Ieri la Bussola nei dati di input usa timeframe 1d: è il giorno. La media recente qui è contesto editoriale, non un secondo motore.',
     };
@@ -191,6 +217,7 @@ export function buildFocusEditorialReadingContext(input) {
     schema: 'kentu.focusEditorialReadingContext.v1',
     periodId,
     dayVersusRecent,
+    energyVariability,
     mealTiming,
     workoutTiming,
     trainingThenEating: Boolean(

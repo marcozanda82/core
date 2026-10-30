@@ -306,6 +306,7 @@ function slimDeterministicSignals(signals) {
         || s?.id === 'sleep_under_7h'
         || s?.id === 'fasting_over_14h'
         || s?.id === 'heavy_late_meal'
+        || s?.id === 'energy_irregular'
       ))
       .map((s) => omitNulls({
         id: s.id,
@@ -316,6 +317,12 @@ function slimDeterministicSignals(signals) {
         bedtimeProvenance: s.bedtimeProvenance || undefined,
         inactiveReason: s.inactiveReason || undefined,
         summaryEligible: s.summaryEligible,
+        minIntakeKcal: s.minIntakeKcal,
+        maxIntakeKcal: s.maxIntakeKcal,
+        stdevKcal: s.stdevKcal,
+        daysBeyondBand: s.daysBeyondBand,
+        daysAboveBand: s.daysAboveBand,
+        daysBelowBand: s.daysBelowBand,
       })),
     heavyLateMeal: signals.heavyLateMeal?.active
       ? omitNulls({
@@ -373,12 +380,28 @@ export function slimFocusAiCoachDossier(dossier) {
     editorialReadingContext: dossier.editorialReadingContext
       ? omitNulls({
         dayVersusRecent: dossier.editorialReadingContext.dayVersusRecent,
+        energyVariability: dossier.editorialReadingContext.energyVariability
+          ? omitNulls({
+            recordedDays: dossier.editorialReadingContext.energyVariability.recordedDays,
+            minIntakeKcal: dossier.editorialReadingContext.energyVariability.minIntakeKcal,
+            maxIntakeKcal: dossier.editorialReadingContext.energyVariability.maxIntakeKcal,
+            meanIntakeKcal: dossier.editorialReadingContext.energyVariability.meanIntakeKcal,
+            stdevKcal: dossier.editorialReadingContext.energyVariability.stdevKcal,
+            daysAboveBand: dossier.editorialReadingContext.energyVariability.daysAboveBand,
+            daysBelowBand: dossier.editorialReadingContext.energyVariability.daysBelowBand,
+            daysBeyondBand: dossier.editorialReadingContext.energyVariability.daysBeyondBand,
+            irregular: dossier.editorialReadingContext.energyVariability.irregular,
+            irregularReason: dossier.editorialReadingContext.energyVariability.irregularReason,
+          })
+          : null,
         mealTiming: dossier.editorialReadingContext.mealTiming,
+        workoutTiming: dossier.editorialReadingContext.workoutTiming,
+        trainingThenEating: dossier.editorialReadingContext.trainingThenEating,
         readingHint: dossier.editorialReadingContext.readingHint
           || dossier.editorialReadingContext.dayVersusRecent?.readingHint
           || null,
         redistributionCandidates: (dossier.editorialReadingContext.redistributionCandidates || [])
-          .slice(0, 4),
+          .slice(0, 12),
       })
       : null,
     nutrition: {

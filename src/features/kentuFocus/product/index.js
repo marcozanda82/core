@@ -69,6 +69,23 @@ export {
 } from './buildFocusDeterministicSignals.js';
 
 export {
+  assessEnergyIrregularity,
+  collectRecentEnergyIntakes,
+  computeEnergyIntakeVariability,
+  formatEnergyExcursionSubtitle,
+  populationStdev,
+  ENERGY_IRREGULAR_PCT,
+  ENERGY_IRREGULAR_MIN_OUTLIER_DAYS,
+  ENERGY_IRREGULAR_WINDOW_DAYS,
+} from './focusEnergyVariability.js';
+
+export {
+  FOCUS_AREAS,
+  FOCUS_AREAS_BY_ID,
+  resolveFocusArea,
+} from './focusAreas.js';
+
+export {
   buildFocusSubstitutionCandidates,
   inferUseOccasion,
   resolveUseOccasion,

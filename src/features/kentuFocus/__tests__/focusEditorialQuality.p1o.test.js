@@ -164,12 +164,12 @@ function sessionOct24() {
 /** MOCK — esempio di risposta editoriale accettabile (non Gemini reale). */
 const MOCK_GOOD_V3 = JSON.stringify({
   headline: 'Un giorno generoso sul piatto, mentre la settimana resta in linea',
-  lead: 'Il 24 ottobre l’introito supera sensibilmente il target dichiarato, ma la media dei giorni precedenti resta vicina al riferimento: è un episodio, non una nuova traiettoria. L’allenamento è mattutino; la cena arriva tardi e abbondante — da osservare, senza inventare un danno al sonno.',
+  lead: 'Il 24 ottobre l’introito supera sensibilmente il target dichiarato, ma la media dei giorni precedenti resta vicina al riferimento: è un giorno fuori linea, non un nuovo andamento. L’allenamento è mattutino; la cena arriva tardi e abbondante — da osservare, senza inventare un danno al sonno.',
   sections: [
     {
       id: 'episodio',
-      title: 'Episodio e contesto',
-      body: 'Il contrasto utile è tra il giorno di analisi e la media recente: il primo è lontano dal target, la seconda no. La Bussola su Ieri legge l’episodio giornaliero; non va confusa con un verdetto settimanale.',
+      title: 'Giorno e contesto',
+      body: 'Il contrasto utile è tra il giorno di analisi e la media recente: il primo è lontano dal target, la seconda no. La Bussola su Ieri legge il giorno; non va confusa con un verdetto settimanale.',
     },
     {
       id: 'timing',
@@ -179,7 +179,7 @@ const MOCK_GOOD_V3 = JSON.stringify({
     {
       id: 'sera',
       title: 'Cena tardiva, senza certezze sul sonno',
-      body: 'La cena è documentata a orario avanzato e consistente. In generale pasti molto tardivi possono disturbare l’addormentamento in alcune persone; sul diario non abbiamo fasi del sonno né qualità soggettiva, quindi non affermiamo che abbiano compromesso il sonno profondo.',
+      body: 'La cena risulta a orario avanzato e consistente. In generale pasti molto tardivi possono disturbare l’addormentamento in alcune persone; sul diario non abbiamo fasi del sonno né qualità soggettiva, quindi non affermiamo che abbiano compromesso il sonno profondo.',
     },
   ],
   keyInsight: 'Scoperta: surplus giornaliero appariscente con media settimanale ancora allineata — il titolo merita il contrasto, non solo il +kcal del giorno.',
@@ -199,7 +199,7 @@ const MOCK_GOOD_V3 = JSON.stringify({
   claimLayers: {
     recordedFacts: ['Giorno sopra target', 'Media recente vicina al target', 'Allenamento mattutino', 'Pane 80 g a cena'],
     generalKnowledge: ['Pasti molto tardivi possono influenzare l’addormentamento in alcune persone'],
-    foundedInferences: ['Lo scostamento del 24 è un episodio rispetto alla media recente'],
+    foundedInferences: ['Lo scostamento del 24 è un giorno fuori linea rispetto alla media recente'],
     hypothesesToTest: ['Spostare 80 g di pane verso il peri-allenamento migliora la sensazione in sala'],
   },
   primaryPillarId: 'nutrition',
@@ -262,8 +262,8 @@ describe('Focus editorial quality P1O', () => {
   it('prompt espone contesto temporale e mandato anti-tecnico', () => {
     const preview = previewFocusAiCoachPayload(sessionOct24());
     assert.equal(preview.ok, true);
-    assert.match(preview.systemText, /episodio|CONTESTO RECENTE|divulgatore/i);
-    assert.match(preview.systemText, /sonno profondo|fisiolog/i);
+    assert.match(preview.systemText, /energy_irregular|giorno analizzato|andamento/i);
+    assert.match(preview.systemText, /sonno|fisiolog|non [eè] misurato/i);
     assert.match(preview.userText, /CONTESTO TEMPORALE/);
     assert.match(preview.userText, /Media recente 7g/);
     assert.match(preview.userText, /editorialReadingContext/);

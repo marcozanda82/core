@@ -1,5 +1,110 @@
 /* Kentu Focus — Dashboard benessere V2 */
 
+/* —— Tema chiaro (scope solo pagina Focus) —— */
+.kf-light {
+  --kf-bg: #F6F2EA;
+  --kf-surface: #FFFFFF;
+  --kf-surface-muted: #EDE8DD;
+  --kf-track: #E9E3D7;
+  --kf-ink: #0F1614;
+  --kf-ink-muted: #3F4A45;
+  --kf-border: #DDD5C6;
+  --kf-brand: #1F4D3F;
+  --kf-good-bg: #E6F0E9;
+  --kf-good-chip: #CFE3D6;
+  --kf-good-ink: #2E6B4C;
+  --kf-good-title: #234F3A;
+  --kf-improve-bg: #FBEADB;
+  --kf-improve-chip: #F5D6BA;
+  --kf-improve-ink: #A4520F;
+  --kf-improve-title: #8A430B;
+  --kf-improve-border: #F0C9A6;
+  --kf-improve-soft: #FFF6EE;
+  --kf-action-bg: #0B5F66;
+  --kf-action-chip: #1C7A82;
+  --kf-action-label: #BFE7EA;
+  --kf-action-sub: #DDF1F2;
+  --kf-chart-band: #F3EEE4;
+  --kf-chart-target: #8A948F;
+  --kf-hero-slot: #D9CDB6;
+  --kf-danger: #8A430B;
+  --kf-danger-bg: #FBEADB;
+  --kf-danger-border: #F0C9A6;
+  --kf-font-display: "Fraunces", "Georgia", serif;
+  --kf-font-body: "DM Sans", "Segoe UI", sans-serif;
+}
+
+.kf-page.kf-light {
+  min-height: 100dvh;
+  background: var(--kf-bg);
+  color: var(--kf-ink);
+  font-family: var(--kf-font-body);
+  font-weight: 500;
+}
+
+.kf-page.kf-light .kf-brand-title {
+  font-family: var(--kf-font-display);
+  font-weight: 600;
+  color: var(--kf-ink);
+}
+
+.kf-page.kf-light .kf-brand-kicker {
+  color: var(--kf-ink-muted);
+  letter-spacing: 0.18em;
+}
+
+.kf-page.kf-light .kf-back {
+  border-color: var(--kf-border);
+  background: var(--kf-surface);
+  color: var(--kf-ink);
+  min-height: 44px;
+}
+
+.kf-area-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  box-sizing: border-box;
+}
+
+.kf-fase1-areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 0 0 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 1.25rem;
+  background: var(--kf-surface);
+  border: 1px solid var(--kf-border);
+}
+
+.kf-fase1-areas figcaption {
+  flex: 1 0 100%;
+  margin: 0 0 0.15rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kf-ink-muted);
+}
+
+.kf-fase1-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 3.4rem;
+}
+
+.kf-fase1-area span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--kf-ink-muted);
+}
+
+/* Legacy dark tokens (finché i componenti non migrano tutti a .kf-light) */
 .kf-page {
   --kf-bg0: #050a12;
   --kf-bg1: #0d1522;
@@ -1420,14 +1525,6 @@
   width: 100%;
 }
 
-.kf-report--outdated .kf-report-headline {
-  opacity: 0.42;
-}
-
-.kf-report--outdated .kf-summary-lists {
-  opacity: 0.55;
-}
-
 .kf-diary-numbers {
   margin: 0 0 1rem;
 }
@@ -1585,7 +1682,8 @@ button.kf-diary-card:focus-visible {
 .kf-report-chapter h3,
 .kf-report-insight h3,
 .kf-report-action h3,
-.kf-report-verify h3 {
+.kf-report-verify h3,
+.kf-report-expected-block h3 {
   margin: 0 0 0.3rem;
   font-size: 0.68rem;
   font-weight: 800;
@@ -1610,6 +1708,29 @@ button.kf-diary-card:focus-visible {
   border-radius: 0.65rem;
   background: rgba(47, 191, 122, 0.1);
   border: 1px solid rgba(47, 191, 122, 0.22);
+}
+
+.kf-report-insight-intro {
+  margin: 0 0 0.85rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #e4ecf7;
+}
+
+.kf-report-expected-block {
+  margin: 0 0 0.95rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kf-report-expected-block h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #a8b8cc;
 }
 
 .kf-report-action {

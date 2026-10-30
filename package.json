@@ -43,6 +43,7 @@
     "test:meal:p1s": "node --test src/features/mealBuilder/__tests__/foodSearchNutella.p1s.test.js",
     "test:focus:p1t": "node --test src/features/kentuFocus/__tests__/focusFoodQualitySleep.p1t.test.js",
     "test:focus:p1u": "node --test src/features/kentuFocus/__tests__/focusAiCoachSummary.p1u.test.js",
+    "test:focus:p1w": "node --test src/features/kentuFocus/__tests__/focusThemeStale.p1w.test.js",
     "focus:export-diary-fixture": "node scripts/exportFocusDiaryFixture.mjs",
     "test:focus:p1k": "node scripts/runFocusAiHistoryEmulatorTests.mjs",
     "test:focus:p1hi": "node --test src/features/kentuFocus/__tests__/focusWeeklyHabitCompass.p1h.test.js src/features/kentuFocus/__tests__/focusCardioStrength.p1i.test.js src/features/kentuFocus/__tests__/focusMealManeuver.p1g.test.js",

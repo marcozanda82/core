@@ -147,10 +147,12 @@ export function buildFocusAiCoachSystemInstruction() {
     'NON riepilogare il diario: l’utente conosce già pasti, kcal, minuti e ore delle card.',
     'Obbligatorio summary: headline (≤70), wentWell (1–2), toImprove (1–2), todayAction oggetto { text ≤140, toImproveIndex, eventRefs }.',
     'headline top-level DEVE essere identica a summary.headline (un solo titolo).',
-    'wentWell: 1–2 segnali positivi più significativi. Valuta SEMPRE energia (bilancio vs target dichiarato e vs media recente) e qualità (grassi buoni, integrali, vegetali documentati). Distingui obiettivo DICHIARATO e condotta OSSERVATA.',
+    'wentWell: 1–2 segnali positivi più significativi. Valuta SEMPRE energia (bilancio vs target dichiarato e vs media recente) e qualità (grassi buoni, integrali, vegetali). Distingui obiettivo DICHIARATO e condotta OSSERVATA.',
     'toImprove: leve concrete con segnale nei dati analizzati. Se due voci condividono la stessa causa (es. cena abbondante → surplus kcal), uniscile in UNA voce; il secondo posto va a un segnale diverso oppure resta un solo item.',
     'Area: pasti tardivi o abbondanti → «ritmo». Area «sonno» SOLO se il segnale riguarda il sonno in sé (durata < 7 h, qualità bassa). Un alimento ultra-processato entra in toImprove SOLO se foodQuality.day.nova4Items[].critiqueWorthy=true (Nutri-Score D/E oppure zuccheri≥15g o saturi≥5g/porzione). Fondente ≥70% e altri ultra-processati favorevoli: non criticare.',
-    'Se ritmo attivo (meal_within_3h_of_bedtime, heavy_late_meal) e anche sleep_under_7h: una sola voce (area sonno) che accosta orario cena e ore di sonno, senza causalità — es. «Cena abbondante alle 21:40 e notte da 6,5 ore». eventRefs: sleep:* e food:* del pasto. Se solo ritmo (sonno ≥7 h): area ritmo, senza inventare un effetto sul sonno.',
+    'Durate sempre in formato «1 h 35» / «6 h 30» (ore e minuti), mai decimali («6,5 ore», «1.5 h»). Orari stimati o arrotondati: «verso le 21:40» o «circa le 21:40», non come orario esatto se il dato è approssimato.',
+    'Se giorno e media 7g differiscono anche di poco, NON dire «identico» / «uguale»: indica entrambi i valori o la differenza.',
+    'Se ritmo attivo (meal_within_3h_of_bedtime, heavy_late_meal) e anche sleep_under_7h: una sola voce (area sonno) che accosta orario cena e ore di sonno, senza causalità — es. «Cena abbondante verso le 21:40 e notte da 6 h 30». eventRefs: sleep:* e food:* del pasto. Se solo ritmo (sonno ≥7 h): area ritmo, senza inventare un effetto sul sonno.',
     'Non usare fasting_over_14h in summary sul giorno; in settimana/mese solo se active/summaryEligible.',
     'todayAction: UNA sola leva (niente alternative con « o »). toImproveIndex punta alla voce toImprove scelta; eventRefs compatibili con quella voce (almeno un ref in comune, o stessa area). recommendedAction approfondisce la STESSA leva e riusa gli stessi orari/grammi di todayAction.text.',
     'Se l’ora locale di generazione è già oltre il momento dell’azione (es. cena e sono le 20+), formula todayAction per la prossima occorrenza («Domani a cena…»), non per oggi.',
@@ -163,7 +165,9 @@ export function buildFocusAiCoachSystemInstruction() {
     'Esempi NEGATIVI di tono da evitare: scuse sul metodo («meglio osservare senza…»), dichiarazioni su cosa non si può concludere, avvertenze da laboratorio. Preferisci «giorno analizzato» e «andamento».',
     'Cautele: NON affermare ciò che non è misurato; non dichiararlo con meta-frasi.',
     'Segnali deterministici attivi (deterministicSignals.activeIds) vanno considerati quando pertinenti.',
+    'Se energy_irregular è attivo: VIETATO usare «costante», «stabile», «regolare» riferiti all’energia/aderenza calorica (la media può essere a target con escursioni ampie). Su Settimana/Mese l’irregolarità energetica è candidato prioritario in toImprove (area energia); su Ieri citabile come contesto, non come verdetto del solo giorno.',
     'Vietato: diagnosi, score 0–100, causalità certe da 1–2 giorni, infiammazione clinica, glicemia non misurata, «sei pronto a spingere».',
+    'Vietato nel testo utente: «fascia neutra», «documentato», «calcolato», «derivato», «polisonnografia» (e varianti).',
     'eventRefs e evidenceRefs: usa solo gli alias corti di eventIndex.aliases (e1, e2, …) oppure []. Mai id lunghi.',
     'wentWell/toImprove: array di oggetti { text, area, eventRefs }, mai stringhe semplici.',
     'Rispondi SOLO JSON conforme allo schema.',
@@ -218,6 +222,7 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
       '[CONTESTO TEMPORALE — leggi prima del titolo]',
       `Giorno analisi (${dvr.analysisDate}): introito ${dvr.day?.intakeKcal ?? 'n/d'} kcal · bilancio vs target ${dvr.day?.balanceVsTargetKcal ?? 'n/d'} kcal.`,
       `Media recente 7g (escluso giorno analisi): ${dvr.recent7dExcludingAnalysisDay?.recordedDays ?? 0} giorni · media introito ${dvr.recent7dExcludingAnalysisDay?.meanIntakeKcal ?? 'n/d'} kcal · bilancio medio vs target ${dvr.recent7dExcludingAnalysisDay?.meanBalanceVsTargetKcal ?? 'n/d'} kcal.`,
+      `Variabilità 7g: min ${dvr.recent7dExcludingAnalysisDay?.minIntakeKcal ?? 'n/d'} · max ${dvr.recent7dExcludingAnalysisDay?.maxIntakeKcal ?? 'n/d'} · σ ${dvr.recent7dExcludingAnalysisDay?.stdevKcal ?? 'n/d'} · oltre ±15% target: ${dvr.recent7dExcludingAnalysisDay?.daysBeyondBand ?? 'n/d'} (↑${dvr.recent7dExcludingAnalysisDay?.daysAboveBand ?? 'n/d'} / ↓${dvr.recent7dExcludingAnalysisDay?.daysBelowBand ?? 'n/d'}) · irregular=${dvr.recent7dExcludingAnalysisDay?.irregular === true ? 'true' : 'false'}.`,
       `Target dichiarato: ${dvr.declaredTargetKcal ?? 'n/d'} kcal.`,
       erc?.mealTiming?.lateDinnerLikely
         ? `Pasto più tardivo ~${erc.mealTiming.latestMealHour} (${erc.mealTiming.latestMealLabel || 'pasto'}).`
@@ -227,8 +232,11 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
     : [
       '[CONTESTO TEMPORALE]',
       'Usa kentuEngines + compassSignals; confronta giorno e media recente se presenti.',
+      erc?.energyVariability
+        ? `Variabilità energia finestra: min ${erc.energyVariability.minIntakeKcal ?? 'n/d'} · max ${erc.energyVariability.maxIntakeKcal ?? 'n/d'} · σ ${erc.energyVariability.stdevKcal ?? 'n/d'} · oltre ±15%: ${erc.energyVariability.daysBeyondBand ?? 'n/d'} (↑${erc.energyVariability.daysAboveBand ?? 'n/d'}/↓${erc.energyVariability.daysBelowBand ?? 'n/d'}) · irregular=${erc.energyVariability.irregular === true ? 'true' : 'false'}.`
+        : '',
       '[/CONTESTO TEMPORALE]',
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
   const qualityBlock = [
     '[QUALITÀ / SEGNALI]',

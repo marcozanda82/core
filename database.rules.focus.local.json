@@ -4,6 +4,13 @@
       "$uid": {
         ".read": "$uid === auth.uid",
         ".write": "$uid === auth.uid",
+        "ui_preferences": {
+          ".read": "$uid === auth.uid",
+          ".write": "$uid === auth.uid",
+          "focusTheme": {
+            ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'system' || newData.val() === 'light' || newData.val() === 'dark'))"
+          }
+        },
         "kentu_focus_ai": {
           "$periodId": {
             ".validate": "$periodId === 'ieri' || $periodId === 'settimana' || $periodId === 'mese'",
