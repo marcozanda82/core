@@ -740,6 +740,40 @@ button.kf-v-num-card:focus-visible {
 .kf-v-spark-leg--band::before { background: var(--kf-chart-band); border: 1px solid var(--kf-border); }
 .kf-v-spark-leg--out::before { background: var(--kf-improve-ink); }
 
+/* Deep-link: chip separati, path relativi, tema chiaro/scuro */
+.kf-page .kf-deep-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.kf-page .kf-deep-link {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  max-width: 100%;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--kf-border);
+  background: var(--kf-surface-muted);
+  color: var(--kf-ink);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.kf-page .kf-deep-link:hover {
+  border-color: var(--kf-brand);
+  color: var(--kf-brand);
+}
+
+.kf-page .kf-deep-link + .kf-deep-link {
+  margin-left: 0;
+}
+
 .kf-v-why {
   margin: 0 0 10px;
   border-radius: 20px;

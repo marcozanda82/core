@@ -26,6 +26,7 @@ import {
   toCanonicalDiaryFoodItem,
   toMcDriveUpsertItem,
 } from '../../mealEngine/canonicalMealCommit.js';
+import { classifyFoodMatchQuality } from '../../mealBuilder/utils/foodMatchQuality.js';
 
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
@@ -596,6 +597,18 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
   const row = match?.row && typeof match.row === 'object' ? match.row : {};
   const officialName = String(match?.name || row.desc || row.name || spokenName || '').trim();
   const foodDbKey = String(match?.fdcId || row.id || row.foodDbKey || '').trim() || null;
+  const sourceText = String(
+    extra?.sourceText ?? spokenName ?? '',
+  ).trim() || null;
+  const rawMatchQuality = String(
+    extra?.matchQuality
+    || match?.matchQuality
+    || '',
+  ).trim().toLowerCase();
+  const matchQuality = (rawMatchQuality === 'exact' || rawMatchQuality === 'prefix'
+    || rawMatchQuality === 'contains' || rawMatchQuality === 'fuzzy')
+    ? rawMatchQuality
+    : classifyFoodMatchQuality(officialName || spokenName, spokenName);
   const coffeeId = row.coffeeShopProductId || extra.coffeeShopProductId || null;
   const product = (coffeeId ? getCoffeeShopProductById(coffeeId) : null)
     || findCoffeeShopProductByName(spokenName)
@@ -662,6 +675,8 @@ export function buildMcDriveItemFromMatch(spokenName, grams, match, source = 'ke
     emoji: icon,
     servingLabel: product?.servingLabel || row.servingLabel || null,
     coffeeShopProductId: product?.id || coffeeId || null,
+    ...(sourceText ? { sourceText } : {}),
+    ...(matchQuality ? { matchQuality } : {}),
     ...(product ? coffeeShopExtrasFromProduct(product) : {}),
     ...(catalogRow || Object.keys(row).length > 0
       ? { row: catalogRow || { ...row } }
@@ -814,6 +829,8 @@ export function mapMcDriveItemsToCommitPayload(items) {
       return {
         ...upsert,
         spokenFoodName: foodName,
+        ...(item?.sourceText ? { sourceText: String(item.sourceText) } : { sourceText: foodName }),
+        ...(item?.matchQuality ? { matchQuality: String(item.matchQuality) } : {}),
         ...(itemId ? { id: itemId } : {}),
         ...(item?.isEstimated === true ? { isEstimated: true } : {}),
       };

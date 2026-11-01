@@ -7,10 +7,18 @@
 
 import { normalizeSearchText } from '../../../foodSearch.js';
 import {
-  findExactLiteralFoodInDb,
   findFastLexicalFoodMatches,
   findSemanticKentuMatches,
 } from '../../mealBuilder/utils/SemanticMatchmaker.js';
+import {
+  annotateCandidatesMatchQuality,
+  classifyFoodMatchQuality,
+  decideFoodMatchResolution,
+  findStrongFoodMatchesInCatalog,
+  isStrongFoodMatchQuality,
+  levelHasStrongMatch,
+  sortCandidatesByMatchQuality,
+} from '../../mealBuilder/utils/foodMatchQuality.js';
 import {
   computeRelevanceScore,
   mergeAndRankSearchResults,
@@ -238,6 +246,7 @@ export function filterAcceptableDisambiguationCandidates(query, candidates = [],
   const list = Array.isArray(candidates) ? candidates : [];
   return sortCandidates(
     list.filter((c) => isAcceptableDisambiguationCandidate(query, c)),
+    query,
   ).slice(0, limit);
 }
 
@@ -263,6 +272,8 @@ function buildCandidate(partial = {}) {
     }
     : null;
 
+  const matchQuality = partial.matchQuality
+    || classifyFoodMatchQuality(name, partial.query || '');
   return {
     fdcId,
     name,
@@ -273,7 +284,10 @@ function buildCandidate(partial = {}) {
     sourceBadge: badge.short,
     sourceLabel: badge.label,
     row,
+    matchQuality,
     ...(partial.matchKind ? { matchKind: partial.matchKind } : {}),
+    ...(Number.isFinite(Number(partial.usageCount)) ? { usageCount: Number(partial.usageCount) } : {}),
+    ...(Number.isFinite(Number(partial.recencyScore)) ? { recencyScore: Number(partial.recencyScore) } : {}),
   };
 }
 
@@ -281,17 +295,24 @@ function mergeCandidatePool(pool, next) {
   if (!next?.row || !next?.name) return;
   const key = candidateIdentity(next);
   const existing = pool.get(key);
-  if (!existing || next.confidenceScore > existing.confidenceScore) {
+  if (!existing) {
     pool.set(key, next);
+    return;
   }
+  // Preferisci qualità match migliore; a parità confidenza più alta.
+  const ranked = sortCandidatesByMatchQuality(
+    [existing, next],
+    (c) => SOURCE_PRIORITY[c.source] ?? 9,
+  );
+  pool.set(key, ranked[0]);
 }
 
-function sortCandidates(list) {
-  return [...list].sort((a, b) => {
-    const scoreDiff = (Number(b.confidenceScore) || 0) - (Number(a.confidenceScore) || 0);
-    if (Math.abs(scoreDiff) > 0.001) return scoreDiff;
-    return (SOURCE_PRIORITY[a.source] ?? 9) - (SOURCE_PRIORITY[b.source] ?? 9);
-  });
+function sortCandidates(list, query = '') {
+  const annotated = annotateCandidatesMatchQuality(query, list);
+  return sortCandidatesByMatchQuality(
+    annotated,
+    (c) => SOURCE_PRIORITY[c.source] ?? 9,
+  );
 }
 
 /**
@@ -341,12 +362,17 @@ export function searchResultToResolverCandidate(searchResult, fallbackSource = '
     }
   }
 
+  const matchQuality = classifyFoodMatchQuality(name, q);
   return buildCandidate({
     fdcId: String(searchResult.key || searchResult.id || searchResult.fdcId || row.id || '').trim() || null,
     name,
     confidenceScore: relevanceScoreToConfidence(relevance),
     reason: `Corrispondenza lessicale (${Math.round(relevance)})`,
     source,
+    query: q,
+    matchQuality,
+    usageCount: Number(searchResult.usageCount ?? row.usageCount) || undefined,
+    recencyScore: Number(searchResult.recencyScore) || undefined,
     row: {
       ...row,
       desc: row.desc || name,
@@ -355,7 +381,7 @@ export function searchResultToResolverCandidate(searchResult, fallbackSource = '
         ? { brand: row.brand || searchResult.brand }
         : {}),
     },
-    matchKind: relevance >= 980 ? 'exact' : undefined,
+    matchKind: matchQuality === 'exact' || relevance >= 980 ? 'exact' : undefined,
   });
 }
 
@@ -392,34 +418,52 @@ function pushLexicalHits(pool, hits, source, query = '') {
   });
 }
 
+function matchKindToQuality(matchKind, candidateName, query) {
+  const kind = String(matchKind || '').toLowerCase();
+  if (kind === 'exact') return 'exact';
+  if (kind === 'starts_with') return 'prefix';
+  if (kind === 'whole_token') return 'contains';
+  return classifyFoodMatchQuality(candidateName, query);
+}
+
 function pushFastHits(pool, name, db, source) {
   if (!db || Object.keys(db).length === 0) return;
-  const exact = findExactLiteralFoodInDb(name, db);
-  if (exact) {
+  // Exact+prefix a catalogo intero (nessun HEAVY_DB_MAX_SCAN / early-break):
+  // include italianName CREA ("Spinaci, crudi" ← "spinaci") anche con molti contains personali.
+  findStrongFoodMatchesInCatalog(name, db, { limit: 12 }).forEach((hit) => {
+    const matchQuality = hit.matchQuality || matchKindToQuality(hit.matchKind, hit.name, name);
+    const score = matchQuality === 'exact' ? 1 : matchQuality === 'prefix' ? 0.94 : 0.85;
     mergeCandidatePool(pool, buildCandidate({
-      ...exact,
+      ...hit,
       confidence: 'high',
-      confidenceScore: 1,
-      reason: exact.reason || 'Match letterale esatto',
+      confidenceScore: score,
+      reason: hit.reason || 'Match letterale forte',
       source,
-      matchKind: 'exact',
+      query: name,
+      matchKind: hit.matchKind || (matchQuality === 'exact' ? 'exact' : 'starts_with'),
+      matchQuality,
     }));
-  }
+  });
   findFastLexicalFoodMatches(name, db, { limit: 4 }).forEach((hit) => {
-    const score = hit.matchKind === 'exact'
+    const matchQuality = matchKindToQuality(hit.matchKind, hit.name, name);
+    const score = matchQuality === 'exact'
       ? 1
-      : hit.matchKind === 'whole_token'
-        ? 0.96
-        : 0.92;
+      : matchQuality === 'prefix'
+        ? 0.94
+        : hit.matchKind === 'whole_token'
+          ? 0.72
+          : 0.65;
     mergeCandidatePool(pool, buildCandidate({
       fdcId: hit.fdcId,
       name: hit.name,
-      confidence: 'high',
+      confidence: matchQuality === 'exact' || matchQuality === 'prefix' ? 'high' : 'medium',
       confidenceScore: score,
       reason: hit.reason,
       source,
       row: hit.row,
+      query: name,
       matchKind: hit.matchKind,
+      matchQuality,
     }));
   });
 }
@@ -451,11 +495,14 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
   pushFastHits(pool, name, personalDb, 'personal');
   pushFastHits(pool, name, kentuItDb, 'kentu');
 
-  let ranked = sortCandidates([...pool.values()]);
+  let ranked = sortCandidates([...pool.values()], name);
   const finalize = (list) => filterAcceptableDisambiguationCandidates(name, list);
 
+  // Early-exit solo con match forte (exact/prefix). Un contains (es. ravioli…spinaci)
+  // non deve bloccare la scansione CREA/lessicale.
   if (
     ranked[0]
+    && isStrongFoodMatchQuality(ranked[0].matchQuality)
     && Number(ranked[0].confidenceScore) >= LEVEL1_STRONG_CONFIDENCE
   ) {
     return finalize(ranked);
@@ -473,9 +520,10 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
     );
   }
 
-  ranked = sortCandidates([...pool.values()]);
+  ranked = sortCandidates([...pool.values()], name);
   if (
     ranked[0]
+    && isStrongFoodMatchQuality(ranked[0].matchQuality)
     && Number(ranked[0].confidenceScore) >= LEVEL1_STRONG_CONFIDENCE
   ) {
     return finalize(ranked);
@@ -514,7 +562,7 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
     }
   }
 
-  return finalize(sortCandidates([...pool.values()]));
+  return finalize(sortCandidates([...pool.values()], name));
 }
 
 /**
@@ -567,7 +615,7 @@ export async function collectLevel2ExternalCandidates(foodName, ctx = {}) {
   const ranked = mergeAndRankSearchResults(name, [...offHits, ...usdaHits], 12);
   pushLexicalHits(pool, ranked, 'off', name);
 
-  return filterAcceptableDisambiguationCandidates(name, sortCandidates([...pool.values()]));
+  return filterAcceptableDisambiguationCandidates(name, sortCandidates([...pool.values()], name));
 }
 
 function signalAborted(signal) {
@@ -594,15 +642,25 @@ export async function collectMultiDbFoodCandidates(foodName, ctx = {}) {
   const name = String(foodName || '').trim();
   if (!name) return [];
 
-  const level1 = await collectLevel1LocalCandidates(name, ctx);
+  const level1 = annotateCandidatesMatchQuality(
+    name,
+    await collectLevel1LocalCandidates(name, ctx),
+  );
   if (signalAborted(ctx.signal)) return level1;
 
-  // Match forti o comunque accettabili in L1 → non mischiare cataloghi esterni.
-  if (level1.length > 0) return level1;
+  // Solo un match exact/prefix in L1 può evitare i cataloghi esterni.
+  // Contains (piatto composto con la query come ingrediente) non basta.
+  if (levelHasStrongMatch(level1)) {
+    return sortCandidates(level1, name);
+  }
 
-  if (ctx.skipExternal === true) return [];
+  if (ctx.skipExternal === true) return sortCandidates(level1, name);
 
-  return collectLevel2ExternalCandidates(name, ctx);
+  const level2 = annotateCandidatesMatchQuality(
+    name,
+    await collectLevel2ExternalCandidates(name, ctx),
+  );
+  return sortCandidates([...level1, ...level2], name);
 }
 
 /**
@@ -628,30 +686,11 @@ export function decideMultiDbResolution(candidates = [], query = '', opts = {}) 
     query,
     Array.isArray(candidates) ? candidates.filter((c) => c?.row) : [],
   );
-  const topN = filtered.slice(0, DISAMBIGUATION_CANDIDATE_LIMIT);
+  const topN = sortCandidates(filtered, query).slice(0, DISAMBIGUATION_CANDIDATE_LIMIT);
+  const decision = decideFoodMatchResolution(topN, {
+    autoAcceptThreshold: autoThreshold,
+  });
   const top = topN[0] || null;
-  const second = topN[1] || null;
-
-  if (!top) {
-    return {
-      needsDisambiguation: true,
-      match: null,
-      source: null,
-      confidenceScore: 0,
-      candidates: [],
-      alternatives: [],
-    };
-  }
-
-  const topScore = Number(top.confidenceScore) || 0;
-  const secondScore = Number(second?.confidenceScore) || 0;
-  const closeRace = Boolean(
-    second
-    && topScore < 0.98
-    && secondScore >= autoThreshold - 0.05
-    && (topScore - secondScore) < 0.08,
-  );
-  const needsDisambiguation = topScore < autoThreshold || closeRace;
 
   const altMap = (c) => ({
     foodDbKey: c.fdcId || null,
@@ -660,15 +699,18 @@ export function decideMultiDbResolution(candidates = [], query = '', opts = {}) 
     confidenceScore: c.confidenceScore,
     source: c.source,
     sourceBadge: c.sourceBadge,
+    matchQuality: c.matchQuality || null,
     row: c.row,
   });
 
-  if (needsDisambiguation) {
+  if (!top || decision.needsDisambiguation) {
     return {
       needsDisambiguation: true,
       match: null,
       source: null,
-      confidenceScore: topScore,
+      confidenceScore: decision.confidenceScore || Number(top?.confidenceScore) || 0,
+      matchQuality: decision.matchQuality || top?.matchQuality || null,
+      decisionReason: decision.reason || null,
       candidates: topN,
       alternatives: topN.slice(1).map(altMap),
     };
@@ -676,9 +718,11 @@ export function decideMultiDbResolution(candidates = [], query = '', opts = {}) 
 
   return {
     needsDisambiguation: false,
-    match: top,
-    source: top.source,
-    confidenceScore: topScore,
+    match: decision.match || top,
+    source: (decision.match || top).source,
+    confidenceScore: decision.confidenceScore,
+    matchQuality: decision.matchQuality,
+    decisionReason: decision.reason,
     candidates: topN,
     alternatives: topN.slice(1).map(altMap),
   };
@@ -748,7 +792,9 @@ function candidateFromKnownFoodDbKey(foodDbKey, spokenName, ctx = {}) {
       reason: 'Preferenza personale',
       source,
       row,
+      query: spokenName,
       matchKind: 'exact',
+      matchQuality: classifyFoodMatchQuality(displayName, spokenName),
     });
   }
   return null;
@@ -834,12 +880,15 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
   });
   if (preference.decision === 'auto' && preference.foodDbKey) {
     const prefCandidate = candidateFromKnownFoodDbKey(preference.foodDbKey, name, ctx);
-    if (prefCandidate) {
+    // Preferenza personale auto solo se il nome è exact/prefix sulla query
+    // (mai "ravioli…spinaci" per query "spinaci").
+    if (prefCandidate && isStrongFoodMatchQuality(prefCandidate.matchQuality)) {
       return {
         needsDisambiguation: false,
         match: prefCandidate,
         source: prefCandidate.source,
         confidenceScore: 1,
+        matchQuality: prefCandidate.matchQuality,
         candidates: [prefCandidate],
         alternatives: [],
         searchLevel: 1,
@@ -874,7 +923,10 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
     }
   }
 
-  const level1 = await collectLevel1LocalCandidates(name, ctx);
+  const level1 = annotateCandidatesMatchQuality(
+    name,
+    await collectLevel1LocalCandidates(name, ctx),
+  );
   if (signalAborted(ctx.signal)) {
     return {
       needsDisambiguation: true,
@@ -893,34 +945,45 @@ export async function resolveFoodAcrossDatabases(foodName, ctx = {}) {
     autoAcceptThreshold: LEVEL1_STRONG_CONFIDENCE,
   });
 
-  // Match forte L1 (≥80%) → restituisci subito, senza cataloghi esterni.
-  if (!decision1.needsDisambiguation && decision1.match) {
+  // Match exact/prefix auto-accept in L1 → stop senza cataloghi esterni.
+  if (!decision1.needsDisambiguation && decision1.match
+    && isStrongFoodMatchQuality(decision1.matchQuality || decision1.match.matchQuality)) {
     return { ...decision1, searchLevel: 1, needsExternalSearch: false };
   }
 
-  // Candidati L1 accettabili ma ambigui → disambiguazione locale, stop (niente OFF/USDA).
-  if (decision1.candidates.length > 0) {
+  // L1 con match forti ma ambigui (close race exact/prefix) → disambiguazione locale.
+  if (levelHasStrongMatch(level1) && decision1.candidates.length > 0) {
     return { ...decision1, searchLevel: 1, needsExternalSearch: false };
   }
 
-  // L1 vuoto: deferisci L2 alla UI (feedback + Interrompi) oppure esegui subito.
+  // Nessun exact/prefix in L1: interroga i cataloghi prima di decidere
+  // (anche se L1 ha contains tipo "ravioli…spinaci").
   if (ctx.deferExternalSearch === true || ctx.skipExternal === true) {
     return {
       needsDisambiguation: true,
       match: null,
       source: null,
-      confidenceScore: 0,
-      candidates: [],
-      alternatives: [],
+      confidenceScore: decision1.confidenceScore || 0,
+      matchQuality: decision1.matchQuality || null,
+      candidates: decision1.candidates || [],
+      alternatives: decision1.alternatives || [],
       searchLevel: 1,
       needsExternalSearch: ctx.skipExternal !== true,
     };
   }
 
-  const level2 = await collectLevel2ExternalCandidates(name, ctx);
-  const decision2 = decideMultiDbResolution(level2, name, {
+  const level2 = annotateCandidatesMatchQuality(
+    name,
+    await collectLevel2ExternalCandidates(name, ctx),
+  );
+  const merged = sortCandidates([...level1, ...level2], name);
+  const decision2 = decideMultiDbResolution(merged, name, {
     autoAcceptThreshold: AUTO_ACCEPT_CONFIDENCE,
   });
-  return { ...decision2, searchLevel: 2, needsExternalSearch: false };
+  return {
+    ...decision2,
+    searchLevel: level2.length > 0 ? 2 : 1,
+    needsExternalSearch: false,
+  };
 }
 

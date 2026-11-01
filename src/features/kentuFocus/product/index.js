@@ -80,6 +80,17 @@ export {
 } from './focusEnergyVariability.js';
 
 export {
+  assessEnergyLowDay,
+  assessHeavyLateMeal,
+  ENERGY_LOW_DAY_DEFICIT_RATIO,
+  HEAVY_LATE_MEAL_ABS_KCAL,
+  HEAVY_LATE_MEAL_ABS_TARGET_SHARE,
+  HEAVY_LATE_MEAL_DAY_SHARE,
+  LATE_FIRST_MEAL_HOUR,
+  SUBSTANTIAL_MEAL_MIN_KCAL,
+} from './focusMealEnergySignals.js';
+
+export {
   FOCUS_AREAS,
   FOCUS_AREAS_BY_ID,
   resolveFocusArea,
@@ -143,7 +154,10 @@ export { buildFocusCompassSignalsForDossier } from './buildFocusCompassSignalsFo
 
 export { buildFocusKentuEnginesForDossier } from './buildFocusKentuEnginesForDossier.js';
 
-export { buildFocusKentuDeepLinks } from './focusKentuDeepLinks.js';
+export {
+  buildFocusKentuDeepLinks,
+  toFocusRelativeDeepLink,
+} from './focusKentuDeepLinks.js';
 
 export { normalizeFocusEditorialAnalysis } from './normalizeFocusEditorialAnalysis.js';
 

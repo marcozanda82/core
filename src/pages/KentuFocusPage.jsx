@@ -924,36 +924,19 @@ function buildQualityCardFromDossier(fqDay, nutrition, periodId) {
 
   const nova4 = Array.isArray(fqDay?.nova4Items) ? fqDay.nova4Items : [];
   const whole = Array.isArray(fqDay?.wholeGrainFoods) ? fqDay.wholeGrainFoods : [];
-  const omega = Array.isArray(fqDay?.omega3Sources) ? fqDay.omega3Sources : [];
-
-  if (nova4.length > 0) {
-    const mealRaw = String(nova4[0]?.mealLabel || '').trim().toLowerCase();
-    const mealBit = mealRaw ? ` a ${mealRaw}` : '';
-    return {
-      area: 'qualita',
-      label: 'Qualità',
-      value: focusCountLabel(nova4.length, 'ultra-processato', 'ultra-processati'),
-      compare: `${focusCountLabel(nova4.length, 'alimento ultra-processato', 'alimenti ultra-processati')}${mealBit}`,
-      tone: 'attenzione',
-      hasData: true,
-      detailKey: 'nutrition',
-    };
-  }
-
-  /** @type {string[]} */
-  const facts = ['nessun ultra-processato'];
-  if (whole.length > 0) {
-    facts.push(focusCountLabel(whole.length, 'alimento integrale', 'alimenti integrali'));
-  } else if (omega.length > 0) {
-    facts.push(focusCountLabel(omega.length, 'fonte di grassi vegetali', 'fonti di grassi vegetali'));
-  }
+  const critiqueN = nova4.filter((r) => r?.critiqueWorthy === true).length;
+  const status = critiqueN > 0
+    ? 'Da migliorare'
+    : (nova4.length > 0 ? 'Mista' : 'Buona');
+  const upLabel = focusCountLabel(nova4.length, 'ultra-processato', 'ultra-processati');
+  const wholeLabel = focusCountLabel(whole.length, 'integrale', 'integrali');
 
   return {
     area: 'qualita',
     label: 'Qualità',
-    value: 'buona',
-    compare: facts.length > 1 ? `${facts[0]} · ${facts[1]}` : facts[0],
-    tone: 'bene',
+    value: status,
+    compare: `${upLabel} · ${wholeLabel}`,
+    tone: status === 'Da migliorare' ? 'attenzione' : (status === 'Mista' ? 'attenzione' : 'bene'),
     hasData: true,
     detailKey: 'nutrition',
   };
@@ -1003,10 +986,10 @@ function buildDiaryNumberCards(session, periodId) {
     const kcal = nutrition?.ieri?.totals?.kcal?.value;
     if (kcal != null && Number.isFinite(Number(kcal))) {
       const k = Math.round(Number(kcal));
-      const nearTarget = hasTarget && Math.abs(k - targetKcal) <= targetKcal * 0.08;
+      const inBand = hasTarget && Math.abs(k - targetKcal) <= targetKcal * 0.15;
       const tone = energyIrregular
         ? 'attenzione'
-        : (hasTarget ? (nearTarget ? 'bene' : 'attenzione') : 'bene');
+        : (hasTarget ? (inBand ? 'bene' : 'attenzione') : 'bene');
       out.push({
         area: 'energia',
         label: 'Energia',
@@ -1131,7 +1114,8 @@ function FocusDeepLinksBar({ session }) {
     }),
     [session?.analysisDate, session?.periodId],
   );
-  const items = [links.pilotaEnergetico, links.bussola, links.stimoloMuscolare, links.cardio];
+  const items = [links.pilotaEnergetico, links.bussola, links.stimoloMuscolare, links.cardio]
+    .filter(Boolean);
   return (
     <nav className="kf-deep-links" aria-label="Apri strumenti correlati">
       {items.map((link) => (
@@ -1180,11 +1164,23 @@ function FocusEditorialReport({
     }
     const resolved = resolveFocusEvidenceRefs(refs, { dossier, session });
     const visible = [];
+    const seenLabels = new Set();
     for (const ev of resolved) {
       const label = String(ev?.label || '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim();
-      const detail = String(ev?.detail || '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim();
+      let detail = String(ev?.detail || '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, ' ').replace(/\s+/g, ' ').trim();
+      // Durate decimali → italiano («7.5 h» → «7 h 30»).
+      detail = detail.replace(
+        /\b(\d+)[.,](\d+)\s*h\b/gi,
+        (_, whole, frac) => {
+          const hours = Number(`${whole}.${frac}`);
+          return formatFocusHoursIt(hours) || `${whole} h`;
+        },
+      );
       if (!/[\p{L}\p{N}]/u.test(label) && !/[\p{L}\p{N}]/u.test(detail)) continue;
       if (/pilota energetico|bussola metabolica|dead[-\s]?band/i.test(`${label} ${detail}`)) continue;
+      const dedupeKey = label.toLowerCase();
+      if (seenLabels.has(dedupeKey)) continue;
+      seenLabels.add(dedupeKey);
       visible.push({
         id: String(ev?.id || label || `ev_${visible.length + 1}`),
         label: /[\p{L}\p{N}]/u.test(label) ? label : detail,
@@ -1445,13 +1441,6 @@ function FocusEditorialReport({
                 <p>{sec.body}</p>
               </section>
             ))}
-
-            {editorial.recommendedAction && todayAction && editorial.recommendedAction !== todayAction ? (
-              <section className="kf-report-action">
-                <h3>In sintesi</h3>
-                <p>{editorial.recommendedAction}</p>
-              </section>
-            ) : null}
 
             {editorial.expectedChange ? (
               <section className="kf-report-expected-block">

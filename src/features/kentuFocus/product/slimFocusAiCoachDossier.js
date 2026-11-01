@@ -307,6 +307,7 @@ function slimDeterministicSignals(signals) {
         || s?.id === 'fasting_over_14h'
         || s?.id === 'heavy_late_meal'
         || s?.id === 'energy_irregular'
+        || s?.id === 'energy_low_day'
       ))
       .map((s) => omitNulls({
         id: s.id,
@@ -317,6 +318,14 @@ function slimDeterministicSignals(signals) {
         bedtimeProvenance: s.bedtimeProvenance || undefined,
         inactiveReason: s.inactiveReason || undefined,
         summaryEligible: s.summaryEligible,
+        summaryPriority: s.summaryPriority,
+        preferMorningAction: s.preferMorningAction,
+        firstMealAfter13: s.firstMealAfter13,
+        overnightFastOver14h: s.overnightFastOver14h,
+        deficitRatio: s.deficitRatio,
+        dayIntakeKcal: s.dayIntakeKcal,
+        targetKcal: s.targetKcal,
+        shareOfDay: s.shareOfDay,
         minIntakeKcal: s.minIntakeKcal,
         maxIntakeKcal: s.maxIntakeKcal,
         stdevKcal: s.stdevKcal,
@@ -330,8 +339,25 @@ function slimDeterministicSignals(signals) {
         clockHour: signals.heavyLateMeal.clockHour,
         eventId: signals.heavyLateMeal.eventId,
         detail: signals.heavyLateMeal.detail,
+        shareOfDay: signals.heavyLateMeal.shareOfDay,
       })
       : null,
+    energyLowDay: signals.energyLowDay
+      ? omitNulls({
+        active: Boolean(signals.energyLowDay.active),
+        dayIntakeKcal: signals.energyLowDay.dayIntakeKcal,
+        targetKcal: signals.energyLowDay.targetKcal,
+        deficitRatio: signals.energyLowDay.deficitRatio,
+        deficitKcal: signals.energyLowDay.deficitKcal,
+        preferMorningAction: signals.energyLowDay.preferMorningAction,
+        firstMealAfter13: signals.energyLowDay.firstMealAfter13,
+        overnightFastOver14h: signals.energyLowDay.overnightFastOver14h,
+        detail: signals.energyLowDay.detail,
+      })
+      : null,
+    summaryPriorityIds: Array.isArray(signals.summaryPriorityIds)
+      ? signals.summaryPriorityIds
+      : undefined,
   });
 }
 
@@ -520,6 +546,27 @@ export function slimFocusAiCoachDossier(dossier) {
               ?? dossier.kentuEngines.bussola.reference,
           })
           : null,
+        muscleStimulus: dossier.kentuEngines.muscleStimulus
+          ? omitNulls({
+            available: dossier.kentuEngines.muscleStimulus.available,
+            strengthSessionCount: dossier.kentuEngines.muscleStimulus.strengthSessionCount,
+            muscleGroupFrequency: (dossier.kentuEngines.muscleStimulus.muscleGroupFrequency || [])
+              .slice(0, 8),
+            deepLinkId: dossier.kentuEngines.muscleStimulus.deepLinkId || 'stimoloMuscolare',
+          })
+          : null,
+        cardio: dossier.kentuEngines.cardio
+          ? omitNulls({
+            available: dossier.kentuEngines.cardio.available,
+            aerobicMinutesDocumented: dossier.kentuEngines.cardio.aerobicMinutesDocumented,
+            moderateMinutes: dossier.kentuEngines.cardio.moderateMinutes,
+            vigorousMinutes: dossier.kentuEngines.cardio.vigorousMinutes,
+            intensityDocumented: dossier.kentuEngines.cardio.intensityDocumented,
+            metricDefinitions: (dossier.kentuEngines.cardio.metricDefinitions || []).slice(0, 4),
+            deepLinkId: dossier.kentuEngines.cardio.deepLinkId || 'cardio',
+          })
+          : null,
+        deepLinks: dossier.kentuEngines.deepLinks || null,
       })
       : null,
     habitCompass: dossier.habitCompass

@@ -10,6 +10,11 @@ import {
 } from '../../../foodSearch.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 import { expandFoodPayloadItems } from './conversationState.js';
+import {
+  classifyFoodMatchQuality,
+  findStrongFoodMatchesInCatalog,
+  isStrongFoodMatchQuality,
+} from '../../mealBuilder/utils/foodMatchQuality.js';
 
 const DEFAULT_GRAMS = 100;
 
@@ -83,7 +88,23 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
     }
   }
 
-  // Sequenziale bloccante: niente bestFallback debole tra layer.
+  // Sequenziale bloccante: exact+prefix a catalogo intero (include italianName CREA)
+  // prima della keyword search (che può essere saturata da contains personali).
+  for (let i = 0; i < layers.length; i += 1) {
+    const strongHits = findStrongFoodMatchesInCatalog(spokenName, layers[i].db, { limit: 1 });
+    if (strongHits[0]) {
+      const mq = strongHits[0].matchQuality || 'exact';
+      return {
+        foodName: String(strongHits[0].name).trim(),
+        foodDbKey: strongHits[0].fdcId,
+        matchTier: mq === 'exact' ? 'exact' : 'prefix',
+        matchQuality: mq,
+        strictScore: mq === 'exact' ? 100 : 94,
+        source: layers[i].source,
+      };
+    }
+  }
+
   for (let i = 0; i < layers.length; i += 1) {
     const hits = searchFoodsWithKeywords(layers[i].db, keywords, {
       originalQuery: spokenName,
@@ -93,13 +114,15 @@ function findTopHitCascading(spokenName, keywords, preferredDbKey, ctx = {}) {
     });
     const strong = hits.find((top) => {
       if (!top?.name) return false;
-      return isExactNormalizedFoodName(top.name, spokenName);
+      const q = classifyFoodMatchQuality(top.name, spokenName);
+      return isStrongFoodMatchQuality(q) || isExactNormalizedFoodName(top.name, spokenName);
     });
     if (strong?.name) {
       return {
         foodName: String(strong.name).trim(),
         foodDbKey: strong.id,
-        matchTier: String(strong.matchTier || ''),
+        matchTier: String(strong.matchTier || 'exact'),
+        matchQuality: classifyFoodMatchQuality(strong.name, spokenName),
         strictScore: Number(strong.strictScore) || 0,
         source: layers[i].source,
       };

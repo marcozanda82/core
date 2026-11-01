@@ -4,6 +4,11 @@
  * Nessun ML, nessuna scrittura.
  */
 
+import {
+  classifyFoodMatchQuality,
+  isStrongFoodMatchQuality,
+} from '../../mealBuilder/utils/foodMatchQuality.js';
+
 export const PERSONAL_AUTO_MIN_USAGE = 3;
 export const PERSONAL_AUTO_USAGE_RATIO = 2;
 export const PERSONAL_AUTO_USAGE_GAP = 2;
@@ -195,6 +200,9 @@ export function getUserFoodPreferenceContext(query, memory = {}) {
       )
     );
 
+  const bestMatchQuality = classifyFoodMatchQuality(nameOf(best), q);
+  const strongName = isStrongFoodMatchQuality(bestMatchQuality);
+
   if (second && !dominant && secondUsage > 0 && bestUsage < secondUsage * PERSONAL_AUTO_USAGE_RATIO) {
     return {
       query: q,
@@ -205,11 +213,13 @@ export function getUserFoodPreferenceContext(query, memory = {}) {
       habitualGrams: null,
       quantitySourceHint: null,
       alias: false,
+      matchQuality: bestMatchQuality,
       candidates: ranked.slice(0, 4),
     };
   }
 
-  if (!dominant) {
+  // Frequenza/recenza solo spareggio: auto solo con exact/prefix sul nome.
+  if (!dominant || !strongName) {
     return {
       query: q,
       decision: 'none',
@@ -219,6 +229,7 @@ export function getUserFoodPreferenceContext(query, memory = {}) {
       habitualGrams: gramsFor(best) || Math.round(Number(portions[normalizeFoodKey(q)]) || 0) || null,
       quantitySourceHint: null,
       alias: false,
+      matchQuality: bestMatchQuality,
       candidates: ranked.slice(0, 4),
     };
   }
@@ -233,6 +244,7 @@ export function getUserFoodPreferenceContext(query, memory = {}) {
     habitualGrams,
     quantitySourceHint: habitualGrams ? 'user-history' : null,
     alias: false,
+    matchQuality: bestMatchQuality,
     candidates: ranked.slice(0, 4),
   };
 }

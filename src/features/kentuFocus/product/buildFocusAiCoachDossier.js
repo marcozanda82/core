@@ -13,6 +13,10 @@ import { buildFocusKentuEnginesForDossier } from './buildFocusKentuEnginesForDos
 import { buildFocusEditorialReadingContext } from './buildFocusEditorialReadingContext.js';
 import { buildFocusFoodQualityBlock } from './buildFocusFoodQualityBlock.js';
 import { buildFocusDeterministicSignals } from './buildFocusDeterministicSignals.js';
+import {
+  assessEnergyLowDay,
+  assessHeavyLateMeal,
+} from './focusMealEnergySignals.js';
 import { buildFocusSubstitutionCandidates } from './buildFocusSubstitutionCandidates.js';
 import { withFocusCatalogLookupSession } from './focusAiCoachCatalogLookup.js';
 import {
@@ -427,45 +431,132 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     })
     : { available: false, signals: [], activeIds: [] };
 
-  // Cena abbondante (ritmo): utile da accostare al sonno senza causalità
+  // Cena abbondante (ritmo): soglia assoluta E quota giorno (non bastano i %).
+  // Energy low day: sotto target >25% → priorità toImprove su Ieri.
   let heavyLateMeal = null;
-  if (periodId === 'ieri' && meals.length) {
+  let energyLowDay = null;
+  if (periodId === 'ieri' && deterministicSignals && typeof deterministicSignals === 'object') {
+    const dayKcal = Number(usableMacros?.kcal);
+    const targetKcal = Number(
+      session.userTargets?.kcal
+      ?? deterministicSignals?.thresholds?.targetKcal
+      ?? null,
+    );
     const dinner = meals.find((m) => /cena/i.test(String(m.mealLabel || m.mealType || '')));
     const dinnerKcal = Number(dinner?.distribution?.kcal);
-    const dayKcal = Number(usableMacros?.kcal);
-    if (dinner && Number.isFinite(dinnerKcal) && dinnerKcal > 0) {
-      const share = Number.isFinite(dayKcal) && dayKcal > 0 ? dinnerKcal / dayKcal : null;
-      const heavy = dinnerKcal >= 900 || (share != null && share >= 0.4);
-      if (heavy) {
-        const topItem = [...(dinner.items || [])]
-          .filter((it) => it?.eventId)
-          .sort((a, b) => (Number(b.kcal) || 0) - (Number(a.kcal) || 0))[0] || null;
-        heavyLateMeal = {
-          active: true,
-          mealLabel: dinner.mealLabel || 'Cena',
-          clockHour: dinner.clockHour ?? null,
-          kcal: dinnerKcal,
-          dayIntakeKcal: Number.isFinite(dayKcal) ? dayKcal : null,
-          shareOfDay: share != null ? Math.round(share * 100) / 100 : null,
-          eventId: topItem?.eventId || null,
-          detail: `Cena ${dinnerKcal} kcal${dinner.clockHour != null ? ` alle ${formatClockHour(dinner.clockHour)}` : ''}.`,
-        };
-      }
+    const assessedHeavy = assessHeavyLateMeal(dinnerKcal, dayKcal, targetKcal);
+    if (dinner && assessedHeavy.active) {
+      const topItem = [...(dinner.items || [])]
+        .filter((it) => it?.eventId)
+        .sort((a, b) => (Number(b.kcal) || 0) - (Number(a.kcal) || 0))[0] || null;
+      heavyLateMeal = {
+        active: true,
+        mealLabel: dinner.mealLabel || 'Cena',
+        clockHour: dinner.clockHour ?? null,
+        kcal: assessedHeavy.dinnerKcal,
+        dayIntakeKcal: assessedHeavy.dayIntakeKcal,
+        targetKcal: assessedHeavy.targetKcal,
+        shareOfDay: assessedHeavy.shareOfDay,
+        absoluteOk: assessedHeavy.absoluteOk,
+        shareOk: assessedHeavy.shareOk,
+        eventId: topItem?.eventId || null,
+        detail: `Cena ${assessedHeavy.dinnerKcal} kcal`
+          + (dinner.clockHour != null ? ` alle ${formatClockHour(dinner.clockHour)}` : '')
+          + (assessedHeavy.shareOfDay != null
+            ? ` (${Math.round(assessedHeavy.shareOfDay * 100)}% del giorno)`
+            : '')
+          + '.',
+      };
+    } else if (Array.isArray(deterministicSignals.signals) && dinner) {
+      deterministicSignals.signals.push({
+        id: 'heavy_late_meal',
+        area: 'rhythm',
+        active: false,
+        mealLabel: dinner.mealLabel || 'Cena',
+        clockHour: dinner.clockHour ?? null,
+        kcal: assessedHeavy.dinnerKcal,
+        dayIntakeKcal: assessedHeavy.dayIntakeKcal,
+        targetKcal: assessedHeavy.targetKcal,
+        shareOfDay: assessedHeavy.shareOfDay,
+        absoluteOk: assessedHeavy.absoluteOk,
+        shareOk: assessedHeavy.shareOk,
+        detail: assessedHeavy.detail,
+        inactiveReason: assessedHeavy.inactiveReason,
+      });
     }
-  }
-  if (heavyLateMeal && deterministicSignals && typeof deterministicSignals === 'object') {
-    deterministicSignals.heavyLateMeal = heavyLateMeal;
+
+    const fastingSig = (deterministicSignals.signals || [])
+      .find((s) => s?.id === 'fasting_over_14h');
+    // Escludi caffè / micro-pasti: il «primo pasto» utile è quello sostanziale (≥50 kcal).
+    const substantialHours = meals
+      .filter((m) => Number(m?.distribution?.kcal) >= 50)
+      .map((m) => Number(m.clockHour))
+      .filter((h) => Number.isFinite(h));
+    const anyMealHours = meals
+      .map((m) => Number(m.clockHour))
+      .filter((h) => Number.isFinite(h));
+    const firstMealHour = substantialHours.length
+      ? Math.min(...substantialHours)
+      : (anyMealHours.length
+        ? Math.min(...anyMealHours)
+        : (Number.isFinite(Number(fastingSig?.firstMealHour))
+          ? Number(fastingSig.firstMealHour)
+          : null));
+    // Ore digiuno dal segnale anche se inactive sul giorno (observed / day_report_excludes).
+    const overnightFromSignal = Number.isFinite(Number(fastingSig?.hours))
+      ? Number(fastingSig.hours)
+      : null;
+    energyLowDay = assessEnergyLowDay(dayKcal, targetKcal, {
+      firstMealHour,
+      overnightFastHours: overnightFromSignal,
+      longFastThresholdHours: deterministicSignals?.thresholds?.longFastHours ?? 14,
+    });
+
     if (!Array.isArray(deterministicSignals.activeIds)) deterministicSignals.activeIds = [];
-    if (!deterministicSignals.activeIds.includes('heavy_late_meal')) {
-      deterministicSignals.activeIds = [...deterministicSignals.activeIds, 'heavy_late_meal'];
-    }
-    if (Array.isArray(deterministicSignals.signals)) {
+    if (!Array.isArray(deterministicSignals.signals)) deterministicSignals.signals = [];
+
+    if (heavyLateMeal) {
+      deterministicSignals.heavyLateMeal = heavyLateMeal;
+      if (!deterministicSignals.activeIds.includes('heavy_late_meal')) {
+        deterministicSignals.activeIds = [...deterministicSignals.activeIds, 'heavy_late_meal'];
+      }
       deterministicSignals.signals.push({
         id: 'heavy_late_meal',
         area: 'rhythm',
         active: true,
         ...heavyLateMeal,
       });
+    }
+
+    deterministicSignals.energyLowDay = {
+      active: energyLowDay.active,
+      dayIntakeKcal: energyLowDay.dayIntakeKcal,
+      targetKcal: energyLowDay.targetKcal,
+      deficitRatio: energyLowDay.deficitRatio,
+      deficitKcal: energyLowDay.deficitKcal,
+      firstMealHour: energyLowDay.firstMealHour,
+      firstMealAfter13: energyLowDay.firstMealAfter13,
+      overnightFastOver14h: energyLowDay.overnightFastOver14h,
+      preferMorningAction: energyLowDay.preferMorningAction,
+      detail: energyLowDay.detail,
+      inactiveReason: energyLowDay.inactiveReason,
+    };
+    deterministicSignals.signals.push({
+      id: 'energy_low_day',
+      area: 'energy',
+      active: energyLowDay.active,
+      ...deterministicSignals.energyLowDay,
+      summaryEligible: energyLowDay.active && periodId === 'ieri',
+      summaryPriority: energyLowDay.active ? 1 : null,
+    });
+    if (energyLowDay.active && !deterministicSignals.activeIds.includes('energy_low_day')) {
+      deterministicSignals.activeIds = ['energy_low_day', ...deterministicSignals.activeIds];
+    }
+    if (energyLowDay.active) {
+      deterministicSignals.summaryPriorityIds = [
+        'energy_low_day',
+        ...(deterministicSignals.activeIds || []).filter((id) => id !== 'energy_low_day'),
+      ];
     }
   }
 

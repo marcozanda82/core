@@ -4,7 +4,7 @@ import {
   findFoodDbMatchCascading,
   FOOD_RESOLUTION_STATUS,
 } from '../features/salaComandi/engines/foodDataEngine.js';
-import { findExactLiteralFoodInDb } from '../features/mealBuilder/utils/SemanticMatchmaker.js';
+import { findStrongFoodMatchesInCatalog } from '../features/mealBuilder/utils/foodMatchQuality.js';
 
 const DEFAULT_RESOLVE_LIMIT = 8;
 const MIN_ALTERNATIVES_FOR_UI = 2;
@@ -224,13 +224,14 @@ function orderCandidates(candidates, preferredDbKey) {
 }
 
 /**
- * Match forte su catalogo: letterale esatto, poi stem con preferenza nome più corto.
+ * Match forte su catalogo: exact+prefix a scan intero (include italianName CREA).
  * @param {string} query
  * @param {Record<string, object>|null|undefined} foodDb
- * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
+ * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object, matchQuality?: string } | null}
  */
 function findStrongDbMatchInCatalog(query, foodDb) {
-  return findExactLiteralFoodInDb(query, foodDb);
+  const hits = findStrongFoodMatchesInCatalog(query, foodDb, { limit: 1 });
+  return hits[0] || null;
 }
 
 /**
@@ -259,13 +260,14 @@ export function tryExactDbMatchFastPath(query, grams, context = {}) {
     const { db, source } = layers[i];
     if (!db || typeof db !== 'object' || Object.keys(db).length === 0) continue;
 
-    const exact = findStrongDbMatchInCatalog(q, db);
-    if (!exact?.fdcId) continue;
+    const strong = findStrongDbMatchInCatalog(q, db);
+    if (!strong?.fdcId) continue;
 
+    const matchQuality = strong.matchQuality || 'exact';
     const portion = buildPortionFromDbMatch(
       {
-        foodDbKey: exact.fdcId,
-        foodName: exact.name,
+        foodDbKey: strong.fdcId,
+        foodName: strong.name,
         matchScore: 1,
         strictScore: EXACT_DB_MATCH_STRICT_SCORE,
         dbSource: source,
@@ -279,7 +281,8 @@ export function tryExactDbMatchFastPath(query, grams, context = {}) {
         ...portion,
         rawQuery: q,
         strictScore: EXACT_DB_MATCH_STRICT_SCORE,
-        matchTier: 'exact',
+        matchTier: matchQuality === 'exact' ? 'exact' : 'prefix',
+        matchQuality,
         resolutionSource: 'exact_db_match',
         alternatives: [],
       };

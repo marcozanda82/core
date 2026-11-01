@@ -147,15 +147,18 @@ export function buildFocusAiCoachSystemInstruction() {
     'NON riepilogare il diario: l’utente conosce già pasti, kcal, minuti e ore delle card.',
     'Obbligatorio summary: headline (≤70), wentWell (1–2), toImprove (1–2), todayAction oggetto { text ≤140, toImproveIndex, eventRefs }.',
     'headline top-level DEVE essere identica a summary.headline (un solo titolo).',
+    'headline: un solo messaggio chiaro. VIETATO bilanciare un segnale negativo con una giustificazione nella stessa frase (es. «sotto il target con media allineata»). Il contesto della media recente va in lead/sections, non nel titolo.',
     'wentWell: 1–2 segnali positivi più significativi. Valuta SEMPRE energia (bilancio vs target dichiarato e vs media recente) e qualità (grassi buoni, integrali, vegetali). Distingui obiettivo DICHIARATO e condotta OSSERVATA.',
     'toImprove: leve concrete con segnale nei dati analizzati. Se due voci condividono la stessa causa (es. cena abbondante → surplus kcal), uniscile in UNA voce; il secondo posto va a un segnale diverso oppure resta un solo item.',
-    'Area: pasti tardivi o abbondanti → «ritmo». Area «sonno» SOLO se il segnale riguarda il sonno in sé (durata < 7 h, qualità bassa). Un alimento ultra-processato entra in toImprove SOLO se foodQuality.day.nova4Items[].critiqueWorthy=true (Nutri-Score D/E oppure zuccheri≥15g o saturi≥5g/porzione). Fondente ≥70% e altri ultra-processati favorevoli: non criticare.',
+    'Se energy_low_day è attivo (Ieri): è il PRIMO candidato per toImprove (area «energia»), prima dei segnali di ritmo. Il target è già corretto per cut/maintain/bulk: confronta solo introito vs target.',
+    'heavy_late_meal attivo solo se la cena supera una soglia assoluta (≥900 kcal oppure ≥40% del target) E ≥45% del totale del giorno. Una cena moderata in un giorno low-energy NON è «abbondante»/«consistente»: non metterla in toImprove come problema di ritmo.',
+    'Area: pasti tardivi o abbondanti (solo se heavy_late_meal o meal_within_3h_of_bedtime attivi) → «ritmo». Area «sonno» SOLO se il segnale riguarda il sonno in sé (durata < 7 h, qualità bassa). Un alimento ultra-processato entra in toImprove SOLO se foodQuality.day.nova4Items[].critiqueWorthy=true (Nutri-Score D/E oppure zuccheri≥15g o saturi≥5g/porzione). Fondente ≥70% e altri ultra-processati favorevoli: non criticare.',
     'Durate sempre in formato «1 h 35» / «6 h 30» (ore e minuti), mai decimali («6,5 ore», «1.5 h»). Orari stimati o arrotondati: «verso le 21:40» o «circa le 21:40», non come orario esatto se il dato è approssimato.',
     'Se giorno e media 7g differiscono anche di poco, NON dire «identico» / «uguale»: indica entrambi i valori o la differenza.',
     'Se ritmo attivo (meal_within_3h_of_bedtime, heavy_late_meal) e anche sleep_under_7h: una sola voce (area sonno) che accosta orario cena e ore di sonno, senza causalità — es. «Cena abbondante verso le 21:40 e notte da 6 h 30». eventRefs: sleep:* e food:* del pasto. Se solo ritmo (sonno ≥7 h): area ritmo, senza inventare un effetto sul sonno.',
-    'Non usare fasting_over_14h in summary sul giorno; in settimana/mese solo se active/summaryEligible.',
+    'Non usare fasting_over_14h come voce toImprove sul giorno; in settimana/mese solo se active/summaryEligible. Sul giorno, se energy_low_day.preferMorningAction (digiuno >14h osservato oppure primo pasto dopo le 13): todayAction riguarda il PRIMO pasto (aggiungere colazione o anticipare il pranzo), NON la cena.',
     'todayAction: UNA sola leva (niente alternative con « o »). toImproveIndex punta alla voce toImprove scelta; eventRefs compatibili con quella voce (almeno un ref in comune, o stessa area). recommendedAction approfondisce la STESSA leva e riusa gli stessi orari/grammi di todayAction.text.',
-    'Se l’ora locale di generazione è già oltre il momento dell’azione (es. cena e sono le 20+), formula todayAction per la prossima occorrenza («Domani a cena…»), non per oggi.',
+    'Se l’ora locale di generazione è già oltre il momento dell’azione (es. cena e sono le 20+), formula todayAction per la prossima occorrenza («Domani a cena…»), non per oggi. Se preferMorningAction: «Domani a colazione…» / «Domani anticipa il pranzo…».',
     'Se substitutionCandidates.byOccasion[occasione] ha voci: usale come sostituto concreto (displayNameMidSentence + porzione). Se la lista stessa-occasione è vuota: proponi la categoria generica in genericFallback (es. «frutta fresca»), MAI un alimento di un’altra occasione. Ignora occasion=unknown.',
     'lead: o contiene almeno un dato concreto (es. kcal del giorno vs target vs media 7g), oppure omettilo (null).',
     'claimLayers e quantitativeProposal sono obbligatori (quantitativeProposal può essere null).',
@@ -165,7 +168,7 @@ export function buildFocusAiCoachSystemInstruction() {
     'Esempi NEGATIVI di tono da evitare: scuse sul metodo («meglio osservare senza…»), dichiarazioni su cosa non si può concludere, avvertenze da laboratorio. Preferisci «giorno analizzato» e «andamento».',
     'Cautele: NON affermare ciò che non è misurato; non dichiararlo con meta-frasi.',
     'Segnali deterministici attivi (deterministicSignals.activeIds) vanno considerati quando pertinenti.',
-    'Se energy_irregular è attivo: VIETATO usare «costante», «stabile», «regolare» riferiti all’energia/aderenza calorica (la media può essere a target con escursioni ampie). Su Settimana/Mese l’irregolarità energetica è candidato prioritario in toImprove (area energia); su Ieri citabile come contesto, non come verdetto del solo giorno.',
+    'Se energy_irregular è attivo: VIETATO usare «costante», «stabile», «regolare» riferiti all’energia/aderenza calorica (la media può essere a target con escursioni ampie). Su Settimana/Mese l’irregolarità energetica è candidato prioritario in toImprove (area energia); su Ieri citabile come contesto, non come verdetto del solo giorno (su Ieri governa energy_low_day se attivo).',
     'Vietato: diagnosi, score 0–100, causalità certe da 1–2 giorni, infiammazione clinica, glicemia non misurata, «sei pronto a spingere».',
     'Vietato nel testo utente: «fascia neutra», «documentato», «calcolato», «derivato», «polisonnografia» (e varianti).',
     'eventRefs e evidenceRefs: usa solo gli alias corti di eventIndex.aliases (e1, e2, …) oppure []. Mai id lunghi.',
@@ -208,10 +211,20 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
     })
     : [];
   const activeSignals = dossier?.deterministicSignals?.activeIds || [];
+  const energyLow = dossier?.deterministicSignals?.energyLowDay
+    || (dossier?.deterministicSignals?.signals || []).find((s) => s?.id === 'energy_low_day');
   const signalDetails = (dossier?.deterministicSignals?.signals || [])
-    .filter((s) => s?.active)
-    .map((s) => `${s.id}: ${s.detail || ''}`.trim())
-    .slice(0, 6);
+    .filter((s) => s?.active || s?.id === 'energy_low_day' || s?.id === 'heavy_late_meal')
+    .map((s) => `${s.id}${s.active ? '' : ' (inactive)'}: ${s.detail || ''}`.trim())
+    .slice(0, 8);
+  const priorityHint = energyLow?.active
+    ? [
+      'PRIORITÀ IERI: energy_low_day attivo → toImprove[0] area «energia» (deficit vs target).',
+      energyLow.preferMorningAction
+        ? 'todayAction: primo pasto della giornata (colazione o anticipo pranzo), NON la cena.'
+        : 'todayAction: allinea l’introito al target; evita di criticare una cena moderata.',
+    ].join(' ')
+    : '';
   const subs = dossier?.nutrition?.substitutionCandidates;
   const dessertSubs = (subs?.byOccasion?.dolce || subs?.byOccasion?.dessert || [])
     .slice(0, 5);
@@ -246,6 +259,7 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
     activeSignals.length
       ? `Segnali attivi: ${activeSignals.join(', ')}.`
       : 'Nessun segnale deterministico attivo.',
+    priorityHint,
     ...signalDetails.map((d) => `· ${d}`),
     dessertSubs.length
       ? `substitutionCandidates dolce (preferisci in todayAction): ${dessertSubs.map((c) => `${c.displayNameMidSentence || c.name}${c.typicalGrams != null ? ` ~${c.typicalGrams}g` : ''}`).join('; ')}.`
@@ -310,6 +324,9 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
     'FALLIMENTO se todayAction ignora substitutionCandidates quando pertinenti.',
     'FALLIMENTO se due toImprove ripetono la stessa causa (es. cena → surplus e cena → ritmo) senza unirle.',
     'FALLIMENTO se area «sonno» senza segnale sul sonno in sé (durata/qualità); pasti tardivi/abbondanti → area «ritmo».',
+    'FALLIMENTO se energy_low_day attivo e toImprove[0] non è area «energia».',
+    'FALLIMENTO se energy_low_day.preferMorningAction e todayAction parla di cena invece del primo pasto.',
+    'FALLIMENTO se headline bilancia un negativo con la media recente nella stessa frase.',
     'FALLIMENTO se toImprove con sleep_under_7h + ritmo attivo non accosta cena e ore di sonno in una voce.',
     'FALLIMENTO se lead esiste ma senza dato concreto (numero + contesto: kcal/target/media/ore).',
     'FALLIMENTO se commenti i limiti del ragionamento fuori da limits con meta-frasi difensive.',

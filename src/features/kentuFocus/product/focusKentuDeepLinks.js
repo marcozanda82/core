@@ -1,9 +1,27 @@
 /**
  * Deep-link reali verso Kentu OS (route esistenti).
- * Non inventa path: solo `/`, `/centro-analisi`, `/kentu-focus`.
+ * Sempre path relativi (`/centro-analisi?...`), mai origin assoluto.
  */
 
 /** @typedef {{ to: string, state?: object|null, label: string, engineId: string }} FocusDeepLink */
+
+/**
+ * @param {string} to
+ * @returns {string}
+ */
+export function toFocusRelativeDeepLink(to) {
+  const raw = String(to || '').trim();
+  if (!raw) return '/';
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const u = new URL(raw);
+      return `${u.pathname}${u.search}${u.hash}` || '/';
+    }
+  } catch {
+    /* keep */
+  }
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
 
 /**
  * @param {{ analysisDate?: string|null, periodId?: string|null }} [ctx]
@@ -17,7 +35,8 @@ export function buildFocusKentuDeepLinks(ctx = {}) {
   if (date) focusQuery.set('date', date);
   const focusSuffix = focusQuery.toString() ? `?${focusQuery}` : '';
 
-  return {
+  /** @type {Record<string, FocusDeepLink>} */
+  const links = {
     pilotaEnergetico: {
       engineId: 'pilota_energetico',
       label: 'Target e bilanci',
@@ -33,13 +52,13 @@ export function buildFocusKentuDeepLinks(ctx = {}) {
     stimoloMuscolare: {
       engineId: 'stimolo_muscolare',
       label: 'Forza e muscoli',
-      to: '/centro-analisi?area=progressione',
+      to: '/centro-analisi?area=progressione&focus=forza',
       state: { openFotografia: 'progressione' },
     },
     cardio: {
       engineId: 'cardio',
       label: 'Cardio',
-      to: '/centro-analisi?area=progressione',
+      to: '/centro-analisi?area=progressione&focus=cardio',
       state: null,
     },
     focusPeriod: {
@@ -49,4 +68,12 @@ export function buildFocusKentuDeepLinks(ctx = {}) {
       state: null,
     },
   };
+
+  for (const key of Object.keys(links)) {
+    links[key] = {
+      ...links[key],
+      to: toFocusRelativeDeepLink(links[key].to),
+    };
+  }
+  return links;
 }

@@ -15,6 +15,10 @@ import {
 } from '../../../foodSearch.js';
 import { lookupHabitualGrams } from './mealButlerProposal.js';
 import { sanitizeFoodDisplayName } from '../../../utils/foodVisualResolver.js';
+import {
+  classifyFoodMatchQuality,
+  foodMatchQualityRank,
+} from '../../mealBuilder/utils/foodMatchQuality.js';
 
 export const MEAL_WIZARD_STATE = 'AWAITING_MEAL_WIZARD_ITEM';
 export const MEAL_WIZARD_CONFIRM = 'AWAITING_MEAL_WIZARD_CONFIRM';
@@ -261,6 +265,7 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
         if (matchTier === 'exact' || matchTier === 'prefix') matchTier = 'token_exact';
       }
       const familyBoost = familyHit && !contains && matchTier !== 'exact' ? 5 : 0;
+      const matchQuality = classifyFoodMatchQuality(name, needle);
       return {
         id: String(hit.id),
         name,
@@ -270,6 +275,7 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
         familyHit,
         strictScore: strict + familyBoost,
         matchTier,
+        matchQuality,
         score: strict + familyBoost,
       };
     })
@@ -278,7 +284,12 @@ export function findWizardCandidates(personalDb, spokenName, userPortions = {}, 
       if (needleTokens.length >= 2) return row.contains === true;
       return row.contains || row.familyHit || row.strictScore >= 50;
     })
-    .sort((a, b) => compareFoodSearchHits(a, b));
+    .sort((a, b) => {
+      const qa = foodMatchQualityRank(a.matchQuality);
+      const qb = foodMatchQualityRank(b.matchQuality);
+      if (qa !== qb) return qa - qb;
+      return compareFoodSearchHits(a, b);
+    });
 
   // Dedup per nome normalizzato
   const seenNames = new Set();

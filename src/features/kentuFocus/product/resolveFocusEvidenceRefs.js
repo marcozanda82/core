@@ -4,6 +4,22 @@
  * Non inventa metriche; esclude voci senza testo visibile.
  */
 
+import { formatFocusHoursIt } from '../normalize/focusDateUtils.js';
+
+/**
+ * «7.5 h» / «7,5 h» → «7 h 30».
+ * @param {string} text
+ */
+function formatEvidenceHoursIt(text) {
+  return String(text || '').replace(
+    /\b(\d+)[.,](\d+)\s*h\b/gi,
+    (_, whole, frac) => {
+      const hours = Number(`${whole}.${frac}`);
+      return formatFocusHoursIt(hours) || `${whole} h`;
+    },
+  );
+}
+
 /**
  * Firebase a volte deserializza array come oggetti {"0":...}.
  * @param {unknown} refs
@@ -305,7 +321,7 @@ function resolvePathId(id, dossier, session) {
       id,
       label: 'Sonno / recupero',
       detail: hours != null
-        ? `notte al risveglio: ${hours} h`
+        ? `notte al risveglio: ${formatFocusHoursIt(Number(hours)) || `${hours} h`}`
         : `${seriesN} notti in serie`,
       available: true,
     };
@@ -391,11 +407,12 @@ export function resolveFocusEvidenceRefs(refs, ctx = {}) {
     const resolved = resolveRawEntry(raw, dossier, session);
     if (!resolved || !resolved.available) continue;
     const label = visibleText(resolved.label);
-    const detail = visibleText(resolved.detail);
+    const detail = formatEvidenceHoursIt(visibleText(resolved.detail));
     if (!hasVisibleGlyph(label) && !hasVisibleGlyph(detail)) continue;
     if (looksLikeTechnicalPath(label)) continue;
     if (/citato nel rapporto|dettaglio metrico non risolto|riferimento:/i.test(detail)) continue;
-    const key = `${label.toLowerCase()}|${detail.toLowerCase()}|${String(resolved.id || '').toLowerCase()}`;
+    // Dedup per etichetta utente (stesso blocco citato con id diversi).
+    const key = label.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({

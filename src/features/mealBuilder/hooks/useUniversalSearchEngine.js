@@ -7,6 +7,12 @@ import {
   textMatchesSearchQuery,
   tokenSharesStem,
 } from '../../../foodSearch';
+import {
+  classifyFoodMatchQuality,
+  findStrongFoodMatchesInCatalog,
+  foodMatchQualityRank,
+  isStrongFoodMatchQuality,
+} from '../utils/foodMatchQuality.js';
 import { hasUsableOffKcal } from '../../../foodLoader';
 import { searchOpenFoodFactsApi } from '../utils/openFoodFactsSearchApi';
 import { resolveBarcodeCascade } from '../utils/barcodeOpenFoodFacts';
@@ -312,11 +318,8 @@ function isMasterSearchResult(item) {
 }
 
 function isExactNameMatch(item, query) {
-  const q = normalizeSearchText(query);
-  const name = normalizeSearchText(item?.name || item?.desc || '');
-  if (!q || !name) return false;
-  if (name === q || name.startsWith(`${q} `)) return true;
-  return foodNameMatchesQuery(name, q) && name.split(/\s+/).length <= q.split(/\s+/).length + 1;
+  const quality = classifyFoodMatchQuality(item?.name || item?.desc || '', query);
+  return isStrongFoodMatchQuality(quality);
 }
 
 /** Bonus se il nome visualizzato è corto rispetto ad alternative stem-equivalenti. */
@@ -362,8 +365,9 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
     if (!Number.isFinite(relevanceScore) || relevanceScore < MIN_RELEVANCE_SCORE) {
       continue;
     }
+    const matchQuality = classifyFoodMatchQuality(item?.name || item?.desc || '', query);
     const rankingScore = computeRankingScore(item, query, relevanceScore);
-    const scored = { ...item, relevanceScore, rankingScore };
+    const scored = { ...item, relevanceScore, rankingScore, matchQuality };
     const key = dedupeKeyForResult(scored);
     const prev = bestByKey.get(key);
     if (!prev) {
@@ -390,13 +394,22 @@ export function mergeAndRankSearchResults(query, items, cap = MERGED_SEARCH_RESU
   return Array.from(bestByKey.values())
     .filter((item) => Number(item.relevanceScore) >= MIN_RELEVANCE_SCORE)
     .sort((a, b) => {
-      const exactA = isExactNameMatch(a, query) ? 1 : 0;
-      const exactB = isExactNameMatch(b, query) ? 1 : 0;
-      if (exactB !== exactA) return exactB - exactA;
+      // Qualità match prima di tutto: exact > prefix > contains > fuzzy.
+      const qa = foodMatchQualityRank(a.matchQuality || classifyFoodMatchQuality(a?.name || a?.desc || '', query));
+      const qb = foodMatchQualityRank(b.matchQuality || classifyFoodMatchQuality(b?.name || b?.desc || '', query));
+      if (qa !== qb) return qa - qb;
 
       const scoreA = Number(a.rankingScore) || 0;
       const scoreB = Number(b.rankingScore) || 0;
       if (scoreB !== scoreA) return scoreB - scoreA;
+
+      // Frequenza / recenza solo spareggio a parità di qualità e score.
+      const usageA = Number(a.usageCount ?? a.row?.usageCount) || 0;
+      const usageB = Number(b.usageCount ?? b.row?.usageCount) || 0;
+      if (usageB !== usageA) return usageB - usageA;
+      const recA = Number(a.recencyScore) || 0;
+      const recB = Number(b.recencyScore) || 0;
+      if (recB !== recA) return recB - recA;
 
       // Tie-break morbido: Master prima di OFF solo a score uguale.
       const aOff = isOffSearchResult(a);
@@ -493,6 +506,28 @@ async function searchCatalogDbChunked(query, catalogDb, existingResults, options
   const hardScanEnd = scanCap != null
     ? Math.min(entries.length, scanCap)
     : entries.length;
+
+  // Exact+prefix a catalogo intero (niente scan cap / early-exit): CREA italianName incluso.
+  findStrongFoodMatchesInCatalog(q, safeDb, { limit: Math.min(8, effectiveLimit) }).forEach((hit) => {
+    if (results.length >= effectiveLimit) return;
+    const row = hit.row || safeDb[hit.fdcId];
+    if (!row) return;
+    if (requireUsableKcal && !hasUsableOffKcal(row)) return;
+    const mapped = buildUnifiedResult({
+      id: hit.fdcId,
+      desc: hit.name || row.desc || row.name,
+      row,
+      source: dbSource,
+      legacySource,
+      matchScore: hit.matchQuality === 'exact' ? 1 : 0.96,
+      matchType: hit.matchKind || 'exact',
+      textScore: hit.matchQuality === 'exact' ? 1 : 0.96,
+    });
+    mapped.matchQuality = hit.matchQuality;
+    if (!isDuplicateOfExisting(mapped, existingResults) && !isDuplicateOfExisting(mapped, results)) {
+      results.push(mapped);
+    }
+  });
 
   for (let start = 0; start < hardScanEnd; start += MEGA_SEARCH_CHUNK_SIZE) {
     if (isSearchAborted(signal)) return results.slice(0, effectiveLimit);
@@ -631,6 +666,24 @@ export function searchPersonalDb(personalDb, query) {
       );
     });
   }
+  findStrongFoodMatchesInCatalog(q, db, { limit: 8 }).forEach((hit) => {
+    if (seenIds.has(hit.fdcId)) return;
+    const row = hit.row || db[hit.fdcId];
+    if (!row || isRecipeRow(row)) return;
+    seenIds.add(hit.fdcId);
+    const mapped = buildUnifiedResult({
+      id: hit.fdcId,
+      desc: hit.name || row.desc || row.name,
+      row,
+      source: FOOD_DB_SOURCE.KENTU_IT,
+      legacySource: 'personal',
+      matchScore: hit.matchQuality === 'exact' ? 1 : 0.96,
+      matchType: hit.matchKind || 'exact',
+      textScore: hit.matchQuality === 'exact' ? 1 : 0.96,
+    });
+    mapped.matchQuality = hit.matchQuality;
+    results.push(mapped);
+  });
   const detailed = searchFoodsDetailed(db, q, {
     mode: 'search',
     limit: PERSONAL_SEARCH_LIMIT,

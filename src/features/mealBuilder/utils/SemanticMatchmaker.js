@@ -12,6 +12,12 @@ import {
   buildPer100TargetNutrientsFromRow,
   pickFiniteNumber,
 } from './foodMacroUtils.js';
+import {
+  catalogRowDisplayNames,
+  exactQueryNormForms,
+  findExactFoodMatchesInCatalog,
+  findStrongFoodMatchesInCatalog,
+} from './foodMatchQuality.js';
 
 const GEMINI_MATCH_MODEL = 'gemini-3.7-flash';
 const DEFAULT_LOCAL_CANDIDATE_LIMIT = 20;
@@ -332,55 +338,12 @@ export function sanitizeProductNameForSearch(productName) {
  * @returns {{ fdcId: string, name: string, confidence: 'high', reason: string, row: object } | null}
  */
 export function findExactLiteralFoodInDb(foodName, foodDb, opts = {}) {
-  const needle = normalizeSearchText(foodName);
-  if (!needle || !foodDb || typeof foodDb !== 'object') return null;
-
-  const entries = Object.entries(foodDb);
-  const maxScan = Number.isFinite(opts.maxEntriesToScan) && opts.maxEntriesToScan > 0
-    ? Math.floor(opts.maxEntriesToScan)
-    : (entries.length > HEAVY_DB_ENTRY_THRESHOLD ? HEAVY_DB_MAX_SCAN : entries.length);
-  const scanEnd = Math.min(entries.length, maxScan);
-
-  for (let i = 0; i < scanEnd; i += 1) {
-    const [id, food] = entries[i];
-    if (!food || typeof food !== 'object') continue;
-
-    const descName = String(food.desc || '').trim();
-    const altName = String(food.name || '').trim();
-    const keyAsName = String(id || '').trim();
-    const keyLooksLikeName = keyAsName.length >= 2
-      && !/^\d+$/.test(keyAsName)
-      && !/^food[_-]?\d+/i.test(keyAsName)
-      && /[\p{L}]/u.test(keyAsName);
-
-    const candidates = [
-      descName,
-      altName,
-      keyLooksLikeName ? keyAsName.replace(/[_-]+/g, ' ') : '',
-    ].filter(Boolean);
-
-    for (const candidate of candidates) {
-      if (normalizeSearchText(candidate) !== needle) continue;
-      const displayName = descName || altName || candidate;
-      const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
-      return {
-        fdcId,
-        name: displayName,
-        confidence: 'high',
-        reason: 'Match letterale esatto',
-        row: {
-          ...food,
-          id: food.id ?? id,
-          fdcId,
-          foodDbKey: food.foodDbKey ?? fdcId,
-          desc: food.desc || displayName,
-          name: food.name || displayName,
-        },
-      };
-    }
-  }
-
-  return null;
+  // Exact: scan completo del catalogo caricato (nessun HEAVY_DB_MAX_SCAN).
+  // opts.maxEntriesToScan è ignorato di proposito per non perdere match esatti.
+  const hits = findExactFoodMatchesInCatalog(foodName, foodDb, {
+    limit: Number.isFinite(opts.limit) && opts.limit > 0 ? Math.floor(opts.limit) : 1,
+  });
+  return hits[0] || null;
 }
 
 /**
@@ -422,10 +385,26 @@ export function findFastLexicalFoodMatches(foodName, foodDb, opts = {}) {
   const limit = Math.min(8, Math.max(1, Number(opts.limit) || 4));
   if (!needle || !foodDb || typeof foodDb !== 'object') return [];
 
-  const exact = [];
-  const wholeToken = [];
-  const startsWith = [];
+  // Passata 1 — exact+prefix a catalogo intero (mai truncato; include italianName).
+  const strong = findStrongFoodMatchesInCatalog(foodName, foodDb, { limit })
+    .map((hit) => ({
+      fdcId: hit.fdcId,
+      name: hit.name,
+      confidence: 'high',
+      reason: hit.reason,
+      row: hit.row,
+      matchKind: hit.matchKind || (hit.matchQuality === 'exact' ? 'exact' : 'starts_with'),
+      matchQuality: hit.matchQuality,
+    }));
+  const exact = strong.filter((h) => h.matchKind === 'exact');
+  const startsWithFromStrong = strong.filter((h) => h.matchKind !== 'exact');
+  const exactIds = new Set(strong.map((h) => h.fdcId));
 
+  const wholeToken = [];
+  const startsWith = [...startsWithFromStrong];
+  const needleForms = exactQueryNormForms(foodName);
+
+  // Passata 2 — contains / residual prefix: può avere cap (non deve rubare slot agli strong).
   const entries = Object.entries(foodDb);
   const maxScan = Number.isFinite(opts.maxEntriesToScan) && opts.maxEntriesToScan > 0
     ? Math.floor(opts.maxEntriesToScan)
@@ -435,19 +414,21 @@ export function findFastLexicalFoodMatches(foodName, foodDb, opts = {}) {
   for (let i = 0; i < scanEnd; i += 1) {
     const [id, food] = entries[i];
     if (!food || typeof food !== 'object') continue;
-    const descName = String(food.desc || '').trim();
-    const altName = String(food.name || '').trim();
-    const displayName = descName || altName;
-    if (!displayName) continue;
+    const nameCandidates = catalogRowDisplayNames(id, food);
+    if (nameCandidates.length === 0) continue;
+    const displayName = String(food.italianName || food.desc || food.name || nameCandidates[0]).trim();
     const norm = normalizeSearchText(displayName);
     if (!norm) continue;
+
+    const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
+    if (exactIds.has(fdcId)) continue;
+    if (needleForms.has(norm)) continue; // già coperto da exact
 
     // Scarta collisioni prefisso (fagioli vs fagiolini) salvo match intero.
     if (isPrefixTokenCollision(needle, norm) && !isWholeTokenFoodMatch(needle, norm)) {
       continue;
     }
 
-    const fdcId = String(food.fdcId ?? food.id ?? food.foodDbKey ?? id ?? '').trim() || String(id);
     const row = {
       ...food,
       id: food.id ?? id,
@@ -463,28 +444,24 @@ export function findFastLexicalFoodMatches(foodName, foodDb, opts = {}) {
       row,
     };
 
-    if (norm === needle) {
-      exact.push({ ...base, reason: 'Match letterale esatto', matchKind: 'exact' });
-    } else if (isWholeTokenFoodMatch(needle, norm)) {
+    if (isWholeTokenFoodMatch(needle, norm)) {
       wholeToken.push({ ...base, reason: 'Match token intero', matchKind: 'whole_token' });
-    } else if (norm.startsWith(`${needle} `) || norm.startsWith(needle)) {
-      // starts-with solo se non è collisione tipo "fagiolo"→"fagiolini"
-      if (norm === needle || norm.startsWith(`${needle} `) || /\s/.test(norm.slice(needle.length, needle.length + 1))) {
-        startsWith.push({
-          ...base,
-          confidence: 'high',
-          reason: 'Match inizia-con',
-          matchKind: 'starts_with',
-        });
-      }
+    } else if (norm.startsWith(`${needle} `)) {
+      // Prefisso a confine di parola (mai "riso" → "risotto").
+      startsWith.push({
+        ...base,
+        confidence: 'high',
+        reason: 'Match inizia-con',
+        matchKind: 'starts_with',
+      });
     }
 
-    if (exact.length + wholeToken.length + startsWith.length >= limit * 3) {
+    if (wholeToken.length + startsWith.length >= limit * 3) {
       break;
     }
   }
 
-  return [...exact, ...wholeToken, ...startsWith].slice(0, limit);
+  return [...exact, ...startsWith, ...wholeToken].slice(0, limit);
 }
 
 /**

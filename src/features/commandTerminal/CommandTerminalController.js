@@ -1708,6 +1708,8 @@ export class CommandTerminalController {
           id: item.id,
           isEstimated: item?.isEstimated === true,
           alternatives: resolved.alternatives || [],
+          sourceText: item?.sourceText || item?.spokenFoodName || foodName,
+          matchQuality: resolved.matchQuality || resolved.match?.matchQuality || null,
         },
       );
       const after = [...this.pendingMcDriveDraft];
@@ -1716,6 +1718,8 @@ export class CommandTerminalController {
         id: item.id || built.id,
         status: 'resolved',
         confidenceScore: Number(resolved.confidenceScore) || null,
+        matchQuality: built.matchQuality || resolved.matchQuality || null,
+        sourceText: built.sourceText || foodName,
       };
       this.pendingMcDriveDraft = after;
       this.publishMcdriveTraySync();
@@ -1836,6 +1840,8 @@ export class CommandTerminalController {
           id: pending.id,
           isEstimated: pending?.isEstimated === true || match?.isCustom === true,
           alternatives: Array.isArray(pending.alternatives) ? pending.alternatives : [],
+          sourceText: pending?.sourceText || pending?.spokenFoodName || foodName,
+          matchQuality: match?.matchQuality || null,
         },
       );
       list[idx] = {

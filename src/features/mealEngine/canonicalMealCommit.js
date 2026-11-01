@@ -307,6 +307,13 @@ export function toCanonicalDiaryFoodItem({
   }
   if (food.icon) item.icon = food.icon;
   if (food.spokenFoodName) item.spokenFoodName = String(food.spokenFoodName);
+  if (food.sourceText) item.sourceText = String(food.sourceText).trim();
+  if (food.matchQuality) {
+    const mq = String(food.matchQuality).trim().toLowerCase();
+    if (mq === 'exact' || mq === 'prefix' || mq === 'contains' || mq === 'fuzzy') {
+      item.matchQuality = mq;
+    }
+  }
   if (typeof food.isFastingSafe === 'boolean') item.isFastingSafe = food.isFastingSafe;
   if (asFiniteNumber(food.caffeineMg) != null && item.caffeineMg == null) {
     item.caffeineMg = asFiniteNumber(food.caffeineMg);

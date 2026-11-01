@@ -174,8 +174,11 @@ describe('Focus editorial experience P1L', () => {
     const links = buildFocusKentuDeepLinks({ analysisDate: DAY, periodId: 'ieri' });
     assert.equal(links.pilotaEnergetico.to, '/centro-analisi?area=calibrazione_target');
     assert.equal(links.bussola.to, '/centro-analisi?area=strumentazione&room=bussola');
-    assert.equal(links.stimoloMuscolare.to, '/');
-    assert.ok(links.cardio.to.startsWith('/centro-analisi'));
+    assert.equal(links.stimoloMuscolare.to, '/centro-analisi?area=progressione&focus=forza');
+    assert.equal(links.cardio.to, '/centro-analisi?area=progressione&focus=cardio');
+    assert.equal(links.stimoloMuscolare.label, 'Forza e muscoli');
+    assert.equal(links.cardio.label, 'Cardio');
+    assert.equal(/^https?:/i.test(links.stimoloMuscolare.to), false);
   });
 
   it('prompt editoriale: niente obbligo di tre pilastri fissi', () => {

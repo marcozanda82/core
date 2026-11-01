@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "readOnly": true,
+  "source": "fixture:src/features/kentuFocus/__tests__/fixtures/focusDiary.2026-10-27.real.json",
+  "reads": 0,
+  "daysRequested": 90,
+  "ratio": 3,
+  "catalogEntries": 900,
+  "diaryItemsScanned": 107,
+  "suspectCount": 1,
+  "suspects": [
+    {
+      "date": "2026-10-27",
+      "meal": "Pranzo",
+      "recorded": "Ravioli di ricotta e spinaci",
+      "entrySource": "chat",
+      "sourceText": "Ravioli di ricotta e spinaci",
+      "recordedKcalPer100g": 214,
+      "simpleAlternative": "Spinaci, crudi",
+      "simpleKcalPer100g": 35,
+      "densityRatio": 6.11,
+      "kcalDeltaPer100g": 179,
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci",
+      "grams": 200,
+      "recordedPortionKcal": 428
+    }
+  ]
+}

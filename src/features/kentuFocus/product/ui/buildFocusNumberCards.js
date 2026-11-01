@@ -7,8 +7,26 @@ import { buildFocusFoodQualityBlock } from '../buildFocusFoodQualityBlock.js';
 import {
   assessEnergyIrregularity,
   collectRecentEnergyIntakes,
+  ENERGY_IRREGULAR_PCT,
   formatEnergyExcursionSubtitle,
 } from '../focusEnergyVariability.js';
+
+/**
+ * Stato qualità deterministico per la card.
+ * @param {{ nova4Items?: object[], wholeGrainFoods?: object[], omega3Sources?: object[] }|null|undefined} fqDay
+ * @returns {'Buona'|'Mista'|'Da migliorare'|null}
+ */
+export function resolveFocusQualityCardStatus(fqDay) {
+  if (!fqDay?.hasFood && !(fqDay?.nova4Items || fqDay?.wholeGrainFoods)) return null;
+  const nova4 = Array.isArray(fqDay?.nova4Items) ? fqDay.nova4Items : [];
+  const whole = Array.isArray(fqDay?.wholeGrainFoods) ? fqDay.wholeGrainFoods : [];
+  const omega = Array.isArray(fqDay?.omega3Sources) ? fqDay.omega3Sources : [];
+  const critiqueN = nova4.filter((r) => r?.critiqueWorthy === true).length;
+  if (critiqueN > 0) return 'Da migliorare';
+  if (nova4.length > 0) return 'Mista';
+  if (whole.length > 0 || omega.length > 0) return 'Buona';
+  return 'Buona';
+}
 
 /**
  * @param {number|null|undefined} hour
@@ -99,11 +117,16 @@ export function buildFocusNumberCards(session, periodId, opts = {}) {
     const kcal = nutrition?.ieri?.totals?.kcal?.value;
     if (kcal != null && Number.isFinite(Number(kcal))) {
       const k = Math.round(Number(kcal));
+      const outOfBand = hasTarget
+        && Math.abs(k - targetKcal) > targetKcal * ENERGY_IRREGULAR_PCT;
       energy = {
         ...energy,
         value: `${formatFocusItNumber(k)} kcal`,
         subtitle: hasTarget ? `obiettivo ${formatFocusItNumber(targetKcal)}` : null,
         hasData: true,
+        // Ambra se toImprove energia OPPURE giorno fuori fascia ±15%.
+        flagged: flagged('energia') || outOfBand,
+        outOfBand,
         excursionLine: energyVar?.irregular
           ? `la settimana oscilla tra ${Math.round((energyVar.minIntakeKcal || 0) / 100) * 100} e ${Math.round((energyVar.maxIntakeKcal || 0) / 100) * 100}`
           : null,
@@ -149,13 +172,16 @@ export function buildFocusNumberCards(session, periodId, opts = {}) {
       ? '0 ultra-processati'
       : (nova4.length === 1 ? '1 ultra-processato' : `${nova4.length} ultra-processati`);
     const wholeLabel = whole.length === 0
-      ? null
+      ? '0 integrali'
       : (whole.length === 1 ? '1 integrale' : `${whole.length} integrali`);
+    const status = resolveFocusQualityCardStatus(fqDay) || 'Buona';
     quality = {
       ...quality,
-      value: nova4.length === 0 && wholeLabel ? wholeLabel : upLabel,
-      subtitle: [upLabel, wholeLabel].filter(Boolean).join(' · '),
+      value: status,
+      subtitle: `${upLabel} · ${wholeLabel}`,
       hasData: true,
+      flagged: flagged('qualita') || status === 'Da migliorare',
+      qualityStatus: status,
     };
   } else if (hasFood && periodId !== 'ieri') {
     quality = {
