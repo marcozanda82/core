@@ -413,44 +413,6 @@ const defaultColdStartItems = Object.freeze([
 ]);
 const MCDRIVE_HABIT_FALLBACKS = defaultColdStartItems;
 
-function DraftResumeBanner({
-  itemCount = 0,
-  mealLabel = 'pasto',
-  kcal = 0,
-  disabled = false,
-  onResume = null,
-}) {
-  if (itemCount <= 0 || typeof onResume !== 'function') return null;
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onResume}
-      className={[
-        'kentu-meal-tray__draft-banner mb-1.5 flex w-full items-center justify-between gap-2 rounded-xl',
-        'border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-left',
-        'transition hover:border-amber-300/50 hover:bg-amber-500/15',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50',
-        'disabled:pointer-events-none disabled:opacity-45',
-      ].join(' ')}
-    >
-      <span className="min-w-0">
-        <span className="block text-[0.72rem] font-semibold text-amber-100">
-          Hai una bozza in sospeso — Riprendi
-        </span>
-        <span className="mt-0.5 block truncate text-[0.65rem] text-amber-100/70">
-          {mealLabel}
-          {' · '}
-          {itemCount}
-          {itemCount === 1 ? ' alimento' : ' alimenti'}
-          {kcal > 0 ? ` · ${Math.round(kcal)} kcal` : ''}
-        </span>
-      </span>
-      <span className="shrink-0 text-sm" aria-hidden>⚠️</span>
-    </button>
-  );
-}
-
 function normalizeHabitMatchKey(value) {
   return String(value || '')
     .normalize('NFD')
@@ -648,14 +610,9 @@ function LiveMealTray({
   openScannerNonce = 0,
   onAcquireExternalFood = null,
   onChangeMealType = null,
-  wipMealItems = null,
-  wipMealTotals = null,
-  wipMealType = null,
-  onClearWipMeal = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
   const [mealBackdropUrl] = useState(() => pickMealBackdropUrl(MEAL_BACKDROP_URLS));
-  const wipItems = Array.isArray(wipMealItems) ? wipMealItems : [];
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
     ? tray.resolvedTotals
     : (tray?.totals && typeof tray.totals === 'object' ? tray.totals : EMPTY_MCDRIVE_TOTALS);
@@ -757,55 +714,6 @@ function LiveMealTray({
       onQuickAdd(resolvedItem);
     }
   }, [onAppendSolverItems, onQuickAdd]);
-
-  const wipDraftForSlot = useMemo(() => {
-    if (wipItems.length === 0) return null;
-    const traySlot = normalizeMcdriveMealType(mealType);
-    const wipSlot = normalizeMcdriveMealType(wipMealType);
-    return {
-      items: wipItems,
-      count: wipItems.length,
-      mealLabel: formatMcdriveMealTypeLabel(wipSlot || traySlot || 'pranzo'),
-      kcal: Number(wipMealTotals?.kcal) || wipItems.reduce((sum, it) => sum + (Number(it?.kcal) || 0), 0),
-      slotMismatch: Boolean(traySlot && wipSlot && traySlot !== wipSlot),
-    };
-  }, [wipItems, wipMealType, wipMealTotals, mealType]);
-
-  // Banner bozze: force-on temporaneo per smoke test UI, poi ripristinare a false.
-  const FORCE_SHOW_WIP_BANNER = true; // TODO: restore condition → false
-  const showWipBanner = FORCE_SHOW_WIP_BANNER || Boolean(wipDraftForSlot);
-  const wipMealState = {
-    wipItemsCount: wipItems.length,
-    wipMealType,
-    wipDraftForSlot,
-    FORCE_SHOW_WIP_BANNER,
-    showWipBanner,
-  };
-  const currentMealSlot = mealType;
-  console.log('Stato Bozza Corrente:', wipMealState, 'Slot Attuale:', currentMealSlot);
-
-  const handleResumeWipDraft = useCallback(() => {
-    if (!wipDraftForSlot?.items?.length) return;
-    const resolved = wipDraftForSlot.items
-      .map((item) => buildMcDriveItemFromHabitShortcut({
-        id: item?.id,
-        name: item?.foodName || item?.name,
-        foodName: item?.foodName || item?.name,
-        foodDbKey: item?.foodDbKey || item?.key || '',
-        qty: item?.grams ?? item?.weight ?? item?.qta,
-        unit: 'g',
-        kcal: item?.kcal ?? item?.cal,
-        proteins: item?.pro ?? item?.prot ?? item?.proteins,
-        carbs: item?.carbo ?? item?.carb ?? item?.carbs,
-        fats: item?.fat ?? item?.fatTotal ?? item?.fats,
-        emoji: item?.emoji || item?.icon,
-      }))
-      .filter(Boolean);
-    if (resolved.length === 0) return;
-    onAppendSolverItems?.(resolved);
-    onClearWipMeal?.();
-    setHabitsOpen(true);
-  }, [wipDraftForSlot, onAppendSolverItems, onClearWipMeal]);
 
   const [editingIndex, setEditingIndex] = useState(null);
   const [renamingIndex, setRenamingIndex] = useState(null);
@@ -1043,56 +951,25 @@ function LiveMealTray({
     [items],
   );
 
+  const selectedMealType = normalizeMcdriveMealType(mealType) || 'pranzo';
+
   return (
     <div
       className={
         immersive
-          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-cover bg-center'
-          : 'kentu-meal-tray kentu-meal-tray--native relative flex h-full max-h-[min(62vh,100%)] w-full min-h-0 flex-col overflow-hidden bg-cover bg-center'
+          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive relative flex h-full min-h-0 w-full flex-1 flex-col overflow-y-auto'
+          : 'kentu-meal-tray kentu-meal-tray--native relative flex h-full max-h-[min(62vh,100%)] w-full min-h-0 flex-col overflow-y-auto'
       }
-      style={mealBackdropUrl ? {
-        backgroundImage: `url("${mealBackdropUrl}")`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        backgroundRepeat: 'no-repeat',
-      } : undefined}
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
     >
-      {mealBackdropUrl ? (
-        <div
-          className="pointer-events-none absolute inset-0 z-0 bg-black/80 backdrop-blur-xs"
-          aria-hidden
-        />
-      ) : null}
-      <div className="relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       {/* Header fisso: flex-none — lo scroll è solo sulla lista sotto */}
-      <div className={`kentu-meal-tray__header kentu-meal-tray__header--calibration flex-none${mealBackdropUrl ? ' !bg-transparent' : ''}`}>
+      <div className="kentu-meal-tray__header kentu-meal-tray__header--calibration flex-none">
         <div className="kentu-meal-tray__calibration-title-row">
           <div className="kentu-meal-tray__calibration-title-group">
             <span className="kentu-meal-tray__badge">Calibrazione</span>
             <h3 className="kentu-meal-tray__calibration-title">
-              {typeof onChangeMealType === 'function' ? (
-                <label className="inline-flex min-w-0 items-center">
-                  <span className="sr-only">Tipo pasto</span>
-                  <select
-                    value={normalizeMcdriveMealType(mealType) || 'pranzo'}
-                    disabled={disabled}
-                    aria-label="Tipo pasto"
-                    className="max-w-[11rem] truncate rounded-md border border-white/15 bg-zinc-900/80 px-1.5 py-0.5 text-inherit font-inherit outline-none focus:border-cyan-400/80 disabled:opacity-50"
-                    onChange={(event) => {
-                      const next = String(event.target.value || '').trim();
-                      if (next) onChangeMealType(next);
-                    }}
-                  >
-                    {MCDRIVE_MEAL_TYPE_OPTIONS.map((opt) => (
-                      <option key={opt.id} value={opt.id}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : mealTypeLabel}
+              {mealTypeLabel}
             </h3>
           </div>
           <KentuTimeSelector
@@ -1101,37 +978,73 @@ function LiveMealTray({
             onChange={handleTrayTimeChange}
           />
         </div>
+        <div
+          role="tablist"
+          aria-label="Tipo pasto"
+          className="grid grid-cols-4 gap-1"
+        >
+          {MCDRIVE_MEAL_TYPE_OPTIONS.map((opt) => {
+            const selected = selectedMealType === opt.id;
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                disabled={disabled || typeof onChangeMealType !== 'function'}
+                className={[
+                  'min-w-0 truncate rounded-lg px-1 py-2 text-center text-[0.78rem] font-semibold leading-none',
+                  'transition focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80',
+                  'disabled:cursor-default',
+                  selected
+                    ? 'bg-cyan-400 text-slate-950'
+                    : 'bg-slate-800 text-slate-200 ring-1 ring-white/10 hover:bg-slate-700 disabled:opacity-70',
+                ].join(' ')}
+                onClick={() => {
+                  if (selected || typeof onChangeMealType !== 'function') return;
+                  onChangeMealType(opt.id);
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
         <MacroActualTargetStrip
           actual={resolvedTotals}
           targets={mealTargets}
         />
-        {showWipBanner ? (
-          <DraftResumeBanner
-            itemCount={wipDraftForSlot?.count || (FORCE_SHOW_WIP_BANNER ? 2 : 0)}
-            mealLabel={wipDraftForSlot?.mealLabel || mealTypeLabel || 'Pasto'}
-            kcal={wipDraftForSlot?.kcal || 0}
-            disabled={disabled || isSaving}
-            onResume={wipDraftForSlot ? handleResumeWipDraft : () => {
-              console.log('[LiveMealTray] Banner bozze tap (demo — nessuna WIP reale)');
-            }}
-          />
-        ) : null}
       </div>
 
-      {/* Lista scrollabile: footer Salva resta flex-none sotto (anche con 20+ voci). */}
+      {/* Solo il box alimenti porta lo sfondo: header, macro e footer restano sul tema della lavagna. */}
       <div
-        className={
-          immersive
-            ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
-            : 'kentu-meal-tray__scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
-        }
+        className="relative mx-2.5 mb-1 mt-2 flex-[1_0_9rem] overflow-hidden rounded-2xl border border-white/10 bg-cover bg-center"
+        style={mealBackdropUrl ? {
+          backgroundImage: `url("${mealBackdropUrl}")`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+        } : undefined}
       >
+        {mealBackdropUrl ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-0 bg-black/40"
+            aria-hidden
+          />
+        ) : null}
+        <div
+          className={
+            immersive
+              ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive relative z-10 min-h-0 h-full flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
+              : 'kentu-meal-tray__scroll relative z-10 min-h-0 h-full flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
+          }
+        >
         {items.length === 0 ? (
           <div className="kentu-meal-tray__empty flex min-h-[3.5rem] flex-col items-center justify-center gap-1 px-4 py-3 text-center">
-            <p className="text-[0.85rem] font-medium text-zinc-400">
+            <p className="text-[0.85rem] font-semibold text-white">
               Vassoio vuoto
             </p>
-            <p className="max-w-[16rem] text-[0.72rem] leading-snug text-zinc-500">
+            <p className="max-w-[16rem] text-[0.72rem] leading-snug text-slate-100">
               Scrivi un alimento, usa lo Scanner o scegli dalle abitudini sotto.
             </p>
           </div>
@@ -1165,19 +1078,19 @@ function LiveMealTray({
               const alternatives = Array.isArray(item?.alternatives) ? item.alternatives : [];
 
               const rowStatusClass = highlightSolver
-                ? 'kentu-meal-tray__row--solver border-l-4 border-violet-400 bg-violet-500/15 ring-1 ring-violet-300/30'
+                ? 'kentu-meal-tray__row--solver border-l-4 border-violet-300/80'
                 : highlightLatest
-                ? 'kentu-meal-tray__row--latest-raw border-l-4 border-cyan-400 bg-cyan-500/10'
+                ? 'kentu-meal-tray__row--latest-raw border-l-4 border-cyan-300/80'
                 : isRaw
                   ? 'kentu-meal-tray__row--raw text-white'
                   : isProcessing
-                    ? 'kentu-meal-tray__row--processing font-medium text-cyan-500 animate-pulse'
+                    ? 'kentu-meal-tray__row--processing font-medium text-cyan-200 animate-pulse'
                     : isResolved
-                      ? 'kentu-meal-tray__row--resolved font-bold text-white bg-transparent'
+                      ? 'kentu-meal-tray__row--resolved font-bold text-white'
                       : isSkipped
-                        ? 'kentu-meal-tray__row--skipped line-through text-slate-500'
+                        ? 'kentu-meal-tray__row--skipped line-through text-slate-300'
                         : isPending
-                          ? 'kentu-meal-tray__row--pending cursor-pointer border border-amber-400/70 bg-amber-500/10 text-amber-200 shadow-[inset_0_0_0_1px_rgba(251,191,36,0.25)]'
+                          ? 'kentu-meal-tray__row--pending cursor-pointer border-amber-300/50 text-amber-100'
                           : '';
 
               const nameStatusClass = highlightLatest
@@ -1207,6 +1120,7 @@ function LiveMealTray({
                   className={[
                     'kentu-meal-tray__row',
                     'kentu-meal-tray__row--enter',
+                    'rounded-2xl border border-white/15 bg-black/25 shadow-lg backdrop-blur-lg',
                     'transition-all duration-300',
                     'animate-in fade-in slide-in-from-top-2 duration-300',
                     rowStatusClass,
@@ -1329,7 +1243,7 @@ function LiveMealTray({
                     ) : (isResolved || kcal > 0) ? (
                       <span
                         className={[
-                          'kentu-meal-tray__kcal shrink-0 font-mono text-xs tabular-nums',
+                          'kentu-meal-tray__kcal shrink-0 font-mono text-xs tabular-nums text-slate-50',
                           nameStatusClass,
                         ].filter(Boolean).join(' ')}
                       >
@@ -1465,10 +1379,11 @@ function LiveMealTray({
             })}
           </ul>
         )}
+        </div>
       </div>
 
       {active ? (
-        <div className={`kentu-meal-tray__footer flex-none shrink-0${mealBackdropUrl ? ' !bg-transparent' : ''}`}>
+        <div className="kentu-meal-tray__footer flex-none shrink-0">
           <div className="kentu-meal-tray__habits-dock mb-1.5 flex flex-col gap-1">
             <div className="flex items-center justify-between gap-2 px-0.5">
               <span className="inline-flex items-center gap-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-zinc-500">
@@ -1725,7 +1640,6 @@ function LiveMealTray({
         </div>,
         document.body,
       ) : null}
-      </div>
     </div>
   );
 }

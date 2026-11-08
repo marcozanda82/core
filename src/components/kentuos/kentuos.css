@@ -2261,9 +2261,12 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 10px 15px -3px rgba(0, 0, 0, 0.28);
   transition: background-color 0.3s ease, border-color 0.3s ease, opacity 0.3s ease, box-shadow 0.3s ease, color 0.3s ease;
 }
 
@@ -2287,8 +2290,8 @@
 }
 
 .kentu-meal-tray__row--processing {
-  border-color: rgba(56, 189, 248, 0.45);
-  background: rgba(14, 116, 144, 0.14);
+  border-color: rgba(125, 211, 252, 0.45);
+  background: rgba(0, 0, 0, 0.25);
   opacity: 1;
 }
 
@@ -2299,8 +2302,8 @@
 }
 
 .kentu-meal-tray__row--pending {
-  border-color: rgba(251, 146, 60, 0.55);
-  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(252, 211, 77, 0.45);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .kentu-meal-tray__row--pending .kentu-meal-tray__name,
@@ -2308,9 +2311,12 @@
   color: #fb923c;
 }
 
-.kentu-meal-tray__row--resolved {
-  border-color: rgba(34, 197, 94, 0.55);
-  background: rgba(34, 197, 94, 0.1);
+.kentu-meal-tray__row--resolved,
+.kentu-meal-tray__row--raw,
+.kentu-meal-tray__row--latest-raw,
+.kentu-meal-tray__row--solver {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .kentu-meal-tray__row--resolved .kentu-meal-tray__name {
@@ -2343,14 +2349,14 @@
 }
 
 .kentu-meal-tray__row--skipped {
-  opacity: 0.4;
+  background: rgba(0, 0, 0, 0.25);
 }
 
 .kentu-meal-tray__row--skipped .kentu-meal-tray__name,
 .kentu-meal-tray__row--skipped .kentu-meal-tray__kcal,
 .kentu-meal-tray__row--skipped .kentu-meal-tray__grams {
   text-decoration: line-through;
-  color: #4b5563;
+  color: #cbd5e1;
 }
 
 .kentu-meal-tray__status-icon {
@@ -2363,7 +2369,8 @@
 
 .kentu-meal-tray__grams {
   font-variant-numeric: tabular-nums;
-  color: #e2e8f0;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   letter-spacing: 0.02em;
 }
 
@@ -2405,7 +2412,8 @@
 .kentu-meal-tray__name {
   font-size: 0.9rem;
   font-weight: 500;
-  color: #f8fafc;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2414,7 +2422,8 @@
 
 .kentu-meal-tray__kcal {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   display: inline-flex;
   align-items: center;
   gap: 6px;

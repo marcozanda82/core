@@ -216,6 +216,17 @@ export function clearDailyProtocol() {
   return setActiveDailyProtocol(null);
 }
 
+export function dismissProtocolMealDraft(draftId) {
+  const id = String(draftId || '').trim();
+  if (!id) return getDailyProtocolSnapshot();
+  const current = refreshIfNewDay();
+  const next = asDraftList(current.protocolMealDrafts).filter(
+    (draft) => String(draft?.id || '') !== id,
+  );
+  emit(persistableSnapshot(current, { protocolMealDrafts: next }));
+  return getDailyProtocolSnapshot();
+}
+
 export function setProtocolBannerDismissed(dismissed = true) {
   const current = refreshIfNewDay();
   emit(persistableSnapshot(current, {

@@ -1,6 +1,6 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BookOpenText } from 'lucide-react';
+import { BookOpenText, Pencil, Trash2 } from 'lucide-react';
 import { SESSION_NAV_DISMISS_EVENT } from './sessionNavStack';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
@@ -10,7 +10,11 @@ import {
   countUnresolvedMealDraftItems,
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
+  isUnresolvedMealDraftItem,
 } from '../../utils/mealDraftStatus';
+import DailyMealsList from '../../components/salaComandi/DailyMealsList';
+import PendingMealDrafts from '../../components/salaComandi/PendingMealDrafts';
+import { useWipMealOptional } from '../wipMealBuilder/context/WipMealContext.jsx';
 import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
 import { subscribeMealEntryOpen } from '../../platform/mealEntryOpenBus';
 import {
@@ -68,6 +72,75 @@ function mealEntryQuestion(mode) {
 
 function mealEntrySubtitle(mode) {
   return mode === PREFERRED_MEAL_MODE.MANUAL ? 'Inserimento manuale' : 'Guidato AI';
+}
+
+function toEditingFoods(foods) {
+  return (Array.isArray(foods) ? foods : []).map((food) => ({
+    foodName: food.foodName || food.name || food.desc || food.label || '',
+    grams: food.grams ?? food.qta ?? food.weight ?? food.qty ?? 0,
+    kcal: food.kcal ?? food.cal ?? 0,
+    pro: food.pro ?? food.prot ?? 0,
+    carb: food.carb ?? food.carbo ?? food.cho ?? 0,
+    fat: food.fat ?? food.fatTotal ?? 0,
+    foodDbKey: food.foodDbKey ?? food.matchedKey ?? null,
+    itemId: food.itemId ?? food.id ?? null,
+    status: food.status || null,
+    spokenFoodName: food.spokenFoodName || food.foodName || food.name || food.desc || '',
+    servingLabel: food.servingLabel || null,
+    coffeeShopProductId: food.coffeeShopProductId || null,
+  })).filter((row) => row.foodName);
+}
+
+const DRAFT_MEAL_LABELS = {
+  colazione: 'Colazione',
+  pranzo: 'Pranzo',
+  cena: 'Cena',
+  snack: 'Spuntino',
+  spuntino: 'Spuntino',
+  merenda: 'Spuntino',
+};
+
+function mealTypeFromClock(timeLabel) {
+  const match = String(timeLabel || '').match(/(\d{1,2}):(\d{2})/);
+  if (!match) return 'pranzo';
+  const hour = Number(match[1]) + Number(match[2]) / 60;
+  if (hour < 10.5) return 'colazione';
+  if (hour < 12) return 'snack';
+  if (hour < 16) return 'pranzo';
+  if (hour < 18) return 'snack';
+  return 'cena';
+}
+
+function draftMealLabel(mealType) {
+  const key = String(mealType || '').split('_')[0].trim().toLowerCase();
+  return DRAFT_MEAL_LABELS[key] || 'Pasto';
+}
+
+function draftSummary(items) {
+  const names = (Array.isArray(items) ? items : [])
+    .map((item) => String(item?.foodName || item?.name || item?.desc || item?.label || '').trim())
+    .filter(Boolean);
+  const countLabel = names.length === 1 ? '1 alimento' : `${names.length} alimenti`;
+  const preview = names.slice(0, 2).join(', ');
+  return preview ? `${countLabel} · ${preview}` : countLabel;
+}
+
+function foodsOfExtraDraft(entry) {
+  const payload = entry?.mealDraft?.payload || entry?.mealDraft || entry?.payload || {};
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+function summarizeMealFoods(foods) {
+  const rows = Array.isArray(foods) ? foods : [];
+  const resolved = rows.filter((item) => !isUnresolvedMealDraftItem(item));
+  const sum = (pick) => Math.round(resolved.reduce((total, item) => total + (Number(pick(item)) || 0), 0));
+  return {
+    pending: rows.some(isUnresolvedMealDraftItem),
+    kcal: sum((item) => item.kcal ?? item.cal),
+    prot: sum((item) => item.prot ?? item.pro),
+    carb: sum((item) => item.carb ?? item.carbo ?? item.cho),
+    fat: sum((item) => item.fatTotal ?? item.fat),
+  };
 }
 
 function pointFromPointerOrTouch(event) {
@@ -410,6 +483,7 @@ function SubmenuFocusOverlay({
   cancelLabel = 'Annulla',
   emptyMessage = '',
   headerAccessory = null,
+  belowGrid = null,
 }) {
   const isCatalog = layout === 'catalog';
   const hasSections = Array.isArray(sections) && sections.length > 0;
@@ -420,7 +494,7 @@ function SubmenuFocusOverlay({
   const emptyText = String(emptyMessage || '').trim();
 
   if (typeof document === 'undefined') return null;
-  if (!itemCount && !emptyText) return null;
+  if (!itemCount && !emptyText && !belowGrid) return null;
 
   const gridClass = isCatalog ? GRID_CATALOG : resolveCompactGridClass(itemCount);
   const panelMaxWidth = isCatalog ? 'max-w-3xl' : 'max-w-lg';
@@ -484,6 +558,9 @@ function SubmenuFocusOverlay({
                 gridClass={gridClass}
               />
             )}
+            {belowGrid ? (
+              <div className="mt-4 w-full px-1">{belowGrid}</div>
+            ) : null}
           </div>
 
           <button
@@ -522,6 +599,7 @@ export default function PulsantieraUniversale({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onDismissPendingMealDraft = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
   extraPendingMealDrafts = [],
@@ -885,11 +963,141 @@ export default function PulsantieraUniversale({
         ...g,
         pendingCount: countUnresolvedMealDraftItems(g.foods),
         timeStr: decimalToTimeStr(g.mealTime),
+        label: labelByBase[g.mealTypeBase] || g.mealTypeBase,
         title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
       }));
   }, [dailyLog]);
 
+  const loggedMealsGrouped = useMemo(() => {
+    const grouped = {};
+    pastiToday.forEach((meal) => {
+      grouped[meal.slotId] = meal.foods;
+    });
+    return grouped;
+  }, [pastiToday]);
+
+  const reloadLoggedMealInMcDrive = useCallback((meal) => {
+    const foods = meal?.items || meal?.foods || [];
+    const editingFoods = toEditingFoods(foods);
+    if (editingFoods.length === 0) return;
+    const slotKey = String(meal?.slotKey || meal?.slotId || '');
+    const mealType = toCanonicalMealType(
+      String(meal?.mealType || meal?.mealTypeBase || foods[0]?.mealType || slotKey).split('_')[0],
+    ) || 'pranzo';
+    closeMenus();
+    onSendChatMessage?.('', {
+      intent: 'START_MCDRIVE_WIZARD',
+      mealType,
+      editingMealId: slotKey,
+      editingFoods,
+      editingExactTime: meal?.timeLabel || meal?.timeStr || undefined,
+      skipUserBubble: true,
+    });
+  }, [closeMenus, onSendChatMessage]);
+
+  const deleteLoggedMeal = useCallback((meal) => {
+    const foods = meal?.items || meal?.foods || [];
+    onTrashMeal?.({
+      slotKey: meal?.slotKey || meal?.slotId,
+      slotId: meal?.slotKey || meal?.slotId,
+      mealType: meal?.mealType || meal?.mealTypeBase || foods[0]?.mealType,
+      mealTime: meal?.sortTime ?? meal?.mealTime,
+      foods,
+      label: meal?.label || meal?.title,
+    });
+  }, [onTrashMeal]);
+
   const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
+  const wipMeal = useWipMealOptional();
+
+  const pendingMealDrafts = useMemo(() => {
+    const rows = [];
+    const wipItems = Array.isArray(wipMeal?.wipMealItems) ? wipMeal.wipMealItems : [];
+    if (wipItems.length > 0) {
+      const mealType = toCanonicalMealType(wipMeal?.mealType) || mealTypeFromClock('');
+      const timeLabel = wipMeal?.mealTime != null && Number.isFinite(Number(wipMeal.mealTime))
+        ? decimalToTimeStr(Number(wipMeal.mealTime))
+        : '';
+      rows.push({
+        id: 'wip-meal',
+        kind: 'wip',
+        mealType,
+        label: draftMealLabel(mealType),
+        timeLabel,
+        summary: draftSummary(wipItems),
+        items: wipItems,
+      });
+    }
+    inboxBlocks
+      .filter((block) => block?.inferredType !== 'workout')
+      .forEach((block) => {
+        const mealType = mealTypeFromClock(block.timeHHmm);
+        rows.push({
+          id: `inbox:${block.id}`,
+          kind: 'inbox',
+          mealType,
+          label: draftMealLabel(mealType),
+          timeLabel: String(block.timeHHmm || '').trim(),
+          summary: draftSummary(block.items),
+          items: block.items,
+          source: block,
+        });
+      });
+    (Array.isArray(extraPendingMealDrafts) ? extraPendingMealDrafts : []).forEach((entry) => {
+      const payload = entry?.mealDraft?.payload || entry?.mealDraft || {};
+      const items = foodsOfExtraDraft(entry);
+      if (items.length === 0 && !payload.title) return;
+      const mealType = toCanonicalMealType(payload.mealType) || mealTypeFromClock(payload.exactTime || payload.timeString);
+      rows.push({
+        id: `extra:${entry.id}`,
+        kind: entry.kind || 'extra',
+        mealType,
+        label: draftMealLabel(mealType),
+        timeLabel: String(payload.exactTime || payload.timeString || '').trim(),
+        summary: draftSummary(items.length > 0 ? items : [{ foodName: payload.title }]),
+        items,
+        source: entry,
+      });
+    });
+    return rows;
+  }, [extraPendingMealDrafts, inboxBlocks, wipMeal]);
+
+  const foodsForDraftTray = useCallback((items) => (
+    toEditingFoods(items).map((row) => {
+      const kcal = Number(row.kcal) || 0;
+      const status = String(row.status || '').toLowerCase();
+      const resolved = Boolean(row.foodDbKey) && kcal > 0 && status !== 'raw' && status !== 'pending';
+      return {
+        ...row,
+        status: resolved ? 'resolved' : 'raw',
+        kcal: resolved ? kcal : 0,
+      };
+    })
+  ), []);
+
+  const resumePendingDraft = useCallback((draft) => {
+    const editingFoods = foodsForDraftTray(draft?.items);
+    if (editingFoods.length === 0) return;
+    if (draft?.kind === 'wip') wipMeal?.clearWipMeal?.();
+    onDismissPendingMealDraft?.(draft);
+    closeMenus();
+    void onSendChatMessage?.('', {
+      intent: 'START_MCDRIVE_WIZARD',
+      mealType: draft.mealType || 'pranzo',
+      editingFoods,
+      editingExactTime: draft.timeLabel || undefined,
+      skipUserBubble: true,
+    });
+  }, [closeMenus, foodsForDraftTray, onDismissPendingMealDraft, onSendChatMessage, wipMeal]);
+
+  const deletePendingDraft = useCallback((draft) => {
+    if (!draft) return;
+    if (draft.kind === 'wip') {
+      wipMeal?.clearWipMeal?.();
+      return;
+    }
+    onDismissPendingMealDraft?.(draft);
+  }, [onDismissPendingMealDraft, wipMeal]);
   const mealDraftsCount = useMemo(
     () => countPendingMealDrafts({
       dailyLog,
@@ -1191,20 +1399,7 @@ export default function PulsantieraUniversale({
                   ) : (
                     <div className="flex flex-col gap-2">
                       {pastiToday.map((meal) => {
-                        const foodsForMcDrive = meal.foods.map((f) => ({
-                          foodName: f.foodName || f.name || f.desc || f.label || '',
-                          grams: f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0,
-                          kcal: f.kcal ?? f.cal ?? 0,
-                          pro: f.pro ?? f.prot ?? 0,
-                          carb: f.carb ?? f.carbo ?? f.cho ?? 0,
-                          fat: f.fat ?? f.fatTotal ?? 0,
-                          foodDbKey: f.foodDbKey ?? f.matchedKey ?? null,
-                          itemId: f.itemId ?? f.id ?? null,
-                          status: f.status || null,
-                          spokenFoodName: f.spokenFoodName || f.foodName || f.name || f.desc || '',
-                          servingLabel: f.servingLabel || null,
-                          coffeeShopProductId: f.coffeeShopProductId || null,
-                        }));
+                        const summary = summarizeMealFoods(meal.foods);
                         const isDropTarget = inboxDrag?.dropTarget?.kind === 'meal'
                           && inboxDrag.dropTarget.id === meal.slotId;
 
@@ -1214,78 +1409,47 @@ export default function PulsantieraUniversale({
                             data-inbox-drop-kind="meal"
                             data-inbox-drop-id={meal.slotId}
                             className={[
-                              'flex items-center justify-between gap-3 rounded-xl border bg-slate-900/40 px-3 py-2',
+                              'flex items-center gap-2 rounded-xl border bg-slate-900/40 px-3 py-2',
                               isDropTarget
                                 ? 'border-amber-400/80 ring-2 ring-amber-400/50'
                                 : 'border-slate-800/80',
                             ].join(' ')}
                           >
-                            <div className="min-w-0">
-                              <div className="flex min-w-0 items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-baseline gap-2">
                                 <div className="truncate text-sm font-semibold text-slate-100">
-                                  {meal.title}
+                                  {meal.label}
                                 </div>
-                                {meal.pendingCount > 0 ? (
-                                  <span className="inline-flex shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-400">
-                                    {meal.pendingCount} da calcolare
-                                  </span>
-                                ) : null}
+                                <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                                  {summary.pending ? 'Da calcolare' : meal.timeStr}
+                                </span>
                               </div>
+                              <p className="m-0 mt-0.5 truncate text-xs tabular-nums text-slate-300">
+                                {`${summary.kcal} kcal · P ${summary.prot}g · C ${summary.carb}g · G ${summary.fat}g`}
+                              </p>
                             </div>
-
-                            <div className="flex shrink-0 items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  closeMenus();
-                                  onOpenManualView?.({ editingMealId: meal.slotId });
-                                }}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                                aria-label="Modifica pasto"
-                                title="Modifica"
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  onTrashMeal?.({
-                                    slotKey: meal.slotId,
-                                    slotId: meal.slotId,
-                                    mealType: meal.foods[0]?.mealType || meal.mealTypeBase,
-                                    mealTime: meal.mealTime,
-                                    foods: meal.foods,
-                                    label: meal.title,
-                                  });
-                                }}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-rose-300 transition-colors hover:border-rose-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                                aria-label="Sposta pasto nel cestino"
-                                title="Cestino"
-                              >
-                                🗑️
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  closeMenus();
-                                  onSendChatMessage?.('', {
-                                    intent: 'START_MCDRIVE_WIZARD',
-                                    mealType: meal.mealTypeBase,
-                                    editingMealId: meal.slotId,
-                                    editingFoods: foodsForMcDrive,
-                                    editingExactTime: meal.timeStr,
-                                    skipUserBubble: true,
-                                  });
-                                }}
-                                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700/80 bg-slate-800/60 text-cyan-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/90 active:scale-[0.98]"
-                                aria-label="Guidami modifica"
-                                title="Guidato AI"
-                              >
-                                ✨
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => reloadLoggedMealInMcDrive(meal)}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-cyan-200 transition hover:bg-cyan-400/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
+                              aria-label={`Modifica ${meal.label}`}
+                              title={`Modifica ${meal.label}`}
+                            >
+                              <Pencil className="h-4 w-4" strokeWidth={2} aria-hidden />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                deleteLoggedMeal(meal);
+                              }}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-rose-300 transition hover:bg-rose-500/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
+                              aria-label={`Elimina ${meal.label}`}
+                              title={`Elimina ${meal.label}`}
+                            >
+                              <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                            </button>
                           </div>
                         );
                       })}
@@ -1370,6 +1534,21 @@ export default function PulsantieraUniversale({
           disabled={disabled}
           onChange={switchMealEntryMode}
         />
+      ) : null}
+      belowGrid={activeCategory === MEAL_ENTRY_PICKER_ID ? (
+        <div className="flex w-full flex-col gap-4">
+          <PendingMealDrafts
+            drafts={pendingMealDrafts}
+            onEditDraft={resumePendingDraft}
+            onDeleteDraft={deletePendingDraft}
+          />
+          <DailyMealsList
+            groupedFoods={loggedMealsGrouped}
+            decimalToTimeStr={decimalToTimeStr}
+            onEditMeal={reloadLoggedMealInMcDrive}
+            onDeleteMeal={deleteLoggedMeal}
+          />
+        </div>
       ) : null}
     />
   ) : null);

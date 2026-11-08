@@ -192,6 +192,7 @@ export default function AiCluster({
   onOpenPlanView = null,
   onOpenFocus = null,
   onSelectInboxDraft = null,
+  onDismissPendingMealDraft = null,
   onDropInboxOntoMeal = null,
   onDropInboxOntoDraft = null,
   onTrashMeal = null,
@@ -2077,10 +2078,6 @@ export default function AiCluster({
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
               onAppendSolverItems={onMcDriveAppendSolverItems}
               onRequestDisambiguation={onMcDriveRequestDisambiguation}
-              wipMealItems={wipMealItems}
-              wipMealTotals={wipMealTotals}
-              wipMealType={wipMealType}
-              onClearWipMeal={onClearWipMeal}
               openScannerNonce={mcdriveBarcodeOpenNonce}
               onAcquireExternalFood={onSaveNewFoodEntry}
               onChangeMealType={(nextMealType) => {
@@ -2240,6 +2237,7 @@ export default function AiCluster({
             onManualShortcut={onManualShortcut}
             onSendChatMessage={handlePulsantieraSend}
             onSelectInboxDraft={onSelectInboxDraft}
+            onDismissPendingMealDraft={onDismissPendingMealDraft}
             onDropInboxOntoMeal={onDropInboxOntoMeal}
             onDropInboxOntoDraft={onDropInboxOntoDraft}
             onTrashMeal={onTrashMeal}

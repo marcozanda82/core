@@ -204,3 +204,8 @@ export function useWipMeal() {
   }
   return ctx;
 }
+
+/** Lettura sicura fuori dal provider: la schermata Pasti può vivere in test isolati. */
+export function useWipMealOptional() {
+  return useContext(WipMealContext);
+}

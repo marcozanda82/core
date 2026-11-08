@@ -93,7 +93,7 @@ import {
   setPreferredMealMode,
 } from './platform/preferredMealMode.js';
 import { requestOpenMealEntry } from './platform/mealEntryOpenBus.js';
-import { getActiveDailyProtocol, useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore';
+import { dismissProtocolMealDraft, getActiveDailyProtocol, useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore';
 import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols';
 import { PROTOCOL_ACTIVITY_DRAFT_SOURCE } from './features/dailyProtocols/generateDraftsFromTimeline';
 import { registerProtocolDraftCommitHandler } from './features/dailyProtocols/protocolDraftCommitBus';
@@ -5464,6 +5464,26 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     writeAssignedInboxLog(removeUnassignedDraftBlock(logSnap, block));
     setInboxTriageBlock(null);
   }, [writeAssignedInboxLog]);
+
+  const handleDismissPendingMealDraft = useCallback((draft) => {
+    if (!draft || draft.kind === 'wip') return;
+    if (draft.kind === 'inbox') {
+      handleDeleteInboxDraft(draft.source || draft);
+      return;
+    }
+    const id = String(draft.source?.id || draft.id || '').replace(/^extra:/, '');
+    if (draft.kind === 'chat-meal-draft') {
+      setChatHistory?.((prev) => (Array.isArray(prev) ? prev : []).map((message) => {
+        const messageId = String(message?.draftId || message?.id || '');
+        if (!messageId || messageId !== id) return message;
+        return { ...message, draftResolved: true, mealDraft: null };
+      }));
+      return;
+    }
+    if (draft.kind === 'protocol-meal-draft') {
+      dismissProtocolMealDraft(id);
+    }
+  }, [handleDeleteInboxDraft, setChatHistory]);
   
   const workoutsLog = (activeLog || []).filter(item => item.type === 'workout');
 
@@ -8891,6 +8911,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onManualShortcut: handleHomeManualShortcut,
             onSendChatMessage: handleHomeActionSend,
             onSelectInboxDraft: handleSelectInboxDraft,
+            onDismissPendingMealDraft: handleDismissPendingMealDraft,
             onDropInboxOntoMeal: handleDropInboxOntoMeal,
             onDropInboxOntoDraft: handleMergeInboxDrafts,
             onTrashMeal: handleTrashMeal,
@@ -9486,6 +9507,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onOpenActivityView={handleOpenActivityFromChat}
             onOpenPlanView={handleOpenPlanFromChat}
             onSelectInboxDraft={handleSelectInboxDraft}
+            onDismissPendingMealDraft={handleDismissPendingMealDraft}
             onDropInboxOntoMeal={handleDropInboxOntoMeal}
             onDropInboxOntoDraft={handleMergeInboxDrafts}
             onTrashMeal={handleTrashMeal}
