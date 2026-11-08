@@ -297,6 +297,12 @@ export function useCommandTerminal({
       avatarAsset,
       purgeTray,
     });
+    if (purgeTray) {
+      // Chiusura/annullo McDrive: sblocca sempre isProcessing per la riapertura successiva.
+      setIsLoading(false);
+      abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
+    }
     setChatHistoryRef.current((prev) => {
       let base = Array.isArray(prev) ? prev : [];
       if (purgeTray) {
@@ -1053,7 +1059,9 @@ export function useCommandTerminal({
       }
 
       const mcdriveSnap = controller.getConversationSnapshot?.() || {};
-      const inMcdriveLoop = mcdriveSnap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP;
+      const inMcdriveLoop = mcdriveSnap.activeWizard === ACTIVE_WIZARD.MCDRIVE_LOOP
+        || intentUpper === 'MCDRIVE_QUICK_ADD'
+        || intentUpper === 'MCDRIVE_LOOP';
       // Loop McDrive: nessun bubble utente — solo aggiornamento lavagna.
       const skipUserBubble = Boolean(options?.skipUserBubble) || inMcdriveLoop;
       const quietMcdriveAppend = inMcdriveLoop && !isMcdriveWizardIntent && Boolean(resolvedText);
@@ -1188,12 +1196,15 @@ export function useCommandTerminal({
         }
       }
 
-      if (abortControllerRef.current) {
+      // McDrive quiet append: non abortire il match DB in corso (altrimenti lock coda / isLoading stuck).
+      if (abortControllerRef.current && !quietMcdriveAppend) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
       const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+      if (!quietMcdriveAppend) {
+        abortControllerRef.current = abortController;
+      }
       const generationToken = ++generationTokenRef.current;
 
       if (!quietMcdriveAppend) {
@@ -1422,13 +1433,22 @@ export function useCommandTerminal({
             : {}),
         });
 
-        if (
-          abortController.signal.aborted
-          || generationToken !== generationTokenRef.current
-          || result?.aborted
-        ) {
-          appendAiMessage('Generazione annullata.', { type: 'system' });
-          return { ok: false, aborted: true, userNotified: true };
+        // Quiet McDrive: tap multipli incrementano generationToken senza abortire —
+        // non trattare il mismatch come cancellazione (altrimenti UI pensa che l'append sia fallito).
+        const superseded = !quietMcdriveAppend
+          && generationToken !== generationTokenRef.current;
+        if (abortController.signal.aborted || result?.aborted || superseded) {
+          if (!quietMcdriveAppend) {
+            appendAiMessage('Generazione annullata.', { type: 'system' });
+          }
+          return { ok: false, aborted: true, userNotified: !quietMcdriveAppend };
+        }
+
+        if (result?.liveMealTray && typeof setChatHistoryRef.current === 'function') {
+          setChatHistoryRef.current((prev) => upsertMcDriveTrayChatEntry(prev, {
+            tray: result.liveMealTray,
+            keepText: true,
+          }));
         }
 
         if (result?.wipSeed && typeof onWipMealSeedRef.current === 'function') {
@@ -1467,7 +1487,11 @@ export function useCommandTerminal({
         if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
         }
-        if (generationToken === generationTokenRef.current) {
+        // Sempre sblocca loading: un abort concorrente non deve lasciare isProcessing=true
+        // (rompe QuickAdd McDrive anche dopo chiusura/riapertura lavagna).
+        if (quietMcdriveAppend || generationToken === generationTokenRef.current) {
+          setIsLoading(false);
+        } else if (!abortControllerRef.current) {
           setIsLoading(false);
         }
         syncActiveQuickRepliesFromController();
@@ -2559,6 +2583,20 @@ export function useCommandTerminal({
     return result;
   }, [controller, syncMcDriveTrayInChat]);
 
+  /** Fast-track abitudini carosello: resolved immediato, zero NLP. */
+  const handleMcDriveAppendHabitShortcut = useCallback((habit) => {
+    if (typeof controller.appendMcDriveHabitShortcut === 'function') {
+      const currentState =
+        typeof getCurrentStateRef.current === 'function' ? getCurrentStateRef.current() ?? {} : {};
+      const result = controller.appendMcDriveHabitShortcut(habit, currentState);
+      if (result?.liveMealTray) syncMcDriveTrayInChat(result.liveMealTray);
+      return result;
+    }
+    return handleMcDriveAppendSolverItems(
+      Array.isArray(habit) ? habit : [habit].filter(Boolean),
+    );
+  }, [controller, syncMcDriveTrayInChat, handleMcDriveAppendSolverItems]);
+
   const handleMcDriveRequestDisambiguation = useCallback((index) => {
     if (typeof controller.openMcdriveDisambiguationForItem !== 'function') {
       return { ok: false, reason: 'mcdrive_disambiguation_unavailable' };
@@ -2627,6 +2665,7 @@ export function useCommandTerminal({
     handleMcDriveApplyAlternative,
     handleMcDriveReplaceFromSearch,
     handleMcDriveAppendSolverItems,
+    handleMcDriveAppendHabitShortcut,
     handleMcDriveRequestDisambiguation,
     chatUsdaEnrichmentSession,
     handleChatUsdaEnrichmentSelect,

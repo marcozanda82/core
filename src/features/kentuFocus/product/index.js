@@ -64,6 +64,16 @@ export {
 } from './waitFocusOffCatalogForAnalysis.js';
 
 export {
+  ENERGY_DENSITY_CONFIRM_RATIO,
+  auditCompoundFoodMatches,
+  formatCompoundFoodAuditPlainText,
+  iterDiaryItemsForCompoundAudit,
+  normalizeAuditCatalog,
+  sliceHistoryLastDays,
+  summarizeCompoundFoodAudit,
+} from './auditCompoundFoodMatchesCore.js';
+
+export {
   buildFocusDeterministicSignals,
   hoursBetweenClock,
 } from './buildFocusDeterministicSignals.js';

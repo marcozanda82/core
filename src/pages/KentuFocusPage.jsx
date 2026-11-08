@@ -73,6 +73,7 @@ import { FocusAction } from '../features/kentuFocus/product/ui/FocusAction.jsx';
 import { FocusNumbers } from '../features/kentuFocus/product/ui/FocusNumbers.jsx';
 import { FocusWhy } from '../features/kentuFocus/product/ui/FocusWhy.jsx';
 import { useFocusHeroImageSrc } from '../features/kentuFocus/product/ui/FocusHeroImage.jsx';
+import { FocusCompoundFoodAuditDev } from '../features/kentuFocus/product/ui/FocusCompoundFoodAuditDev.jsx';
 import './kentuFocusPage.css';
 import './kentuFocusV3.css';
 
@@ -1535,6 +1536,10 @@ function FocusEditorialReport({
             })}
           </ul>
         </aside>
+      ) : null}
+
+      {import.meta.env.DEV ? (
+        <FocusCompoundFoodAuditDev session={session} />
       ) : null}
     </section>
   );

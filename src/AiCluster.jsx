@@ -58,7 +58,11 @@ import { PROTOCOL_TIMELINE_GENERATING_TEXT, PROTOCOL_TIMELINE_REVISE_TEXT } from
 import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols.js';
 import { useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore.js';
 import { isKentuIntroSeedMessage } from './utils/salaComandiUtils';
-import { resolveChatInputPlaceholder } from './features/chat/chatPlaceholder.js';
+import {
+  MCDRIVE_INPUT_PLACEHOLDERS,
+  MCDRIVE_PLACEHOLDER_ROTATE_MS,
+  resolveChatInputPlaceholder,
+} from './features/chat/chatPlaceholder.js';
 import {
   AVATAR_MOOD,
   AVATAR_MOOD_LABEL,
@@ -415,13 +419,28 @@ export default function AiCluster({
 
   const dockedMcDriveTray = dockedMcDriveTrayMsg?.liveMealTray || null;
 
+  const [mcdrivePlaceholderIndex, setMcdrivePlaceholderIndex] = useState(0);
+  useEffect(() => {
+    if (!dockedMcDriveTray) {
+      setMcdrivePlaceholderIndex(0);
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      setMcdrivePlaceholderIndex((prev) => (prev + 1) % MCDRIVE_INPUT_PLACEHOLDERS.length);
+    }, MCDRIVE_PLACEHOLDER_ROTATE_MS);
+    return () => window.clearInterval(timer);
+  }, [dockedMcDriveTray]);
+
   const chatInputPlaceholder = useMemo(
     () => resolveChatInputPlaceholder({
       isNotesMode,
       hasImages: safeImages.length > 0,
       isAiGuidedMode: Boolean(dockedMcDriveTray),
+      guidedPlaceholder: MCDRIVE_INPUT_PLACEHOLDERS[
+        mcdrivePlaceholderIndex % MCDRIVE_INPUT_PLACEHOLDERS.length
+      ],
     }),
-    [isNotesMode, safeImages.length, dockedMcDriveTray],
+    [isNotesMode, safeImages.length, dockedMcDriveTray, mcdrivePlaceholderIndex],
   );
 
   const mcdriveTrayItems = useMemo(
@@ -631,32 +650,8 @@ export default function AiCluster({
       };
     }
 
-    // Inserimento Pasti: video elaborazione SOLO durante validazione post-«Calcola Valori»
-    // (status processing/validating), non mentre l'utente compila i raw sulla lavagna.
-    const mcdriveValidating = Boolean(dockedMcDriveTray) && (
-      showTypingIndicator
-      || (
-        Array.isArray(mcdriveTrayItems)
-        && mcdriveTrayItems.some((item) => {
-          const status = String(item?.status || '').toLowerCase();
-          return status === 'processing' || status === 'validating';
-        })
-      )
-    );
-    if (mcdriveValidating) {
-      const mealPoster = getAvatarSrcForMood(AVATAR_MOOD.KITCHEN, AVATAR_MOOD_SRC[AVATAR_MOOD.CODING]);
-      const mealVideo = getAvatarVideoForMood(AVATAR_MOOD.KITCHEN)
-        || getAvatarVideoForMood(AVATAR_MOOD.CODING)
-        || '/Hacker4animazione.mp4';
-      return {
-        posterSrc: mealPoster || typingAvatarPosterSrc,
-        videoSrc: mealVideo,
-        label: AVATAR_MOOD_LABEL[AVATAR_MOOD.KITCHEN] || typingIndicatorLabel,
-        loop: true,
-        messageKey: null,
-        source: 'processing',
-      };
-    }
+    // McDrive auto-calcolo / match DB: niente video cinema (lookup rapidissimo).
+    // Feedback solo inline in LiveMealTray («Calcolo in corso…» / status riga).
 
     // Report: stesso layout cinema, senza bloccare McDrive.
     if (reportVideoActive) {
@@ -673,7 +668,8 @@ export default function AiCluster({
     if (isReportSequenceActive) {
       return null;
     }
-    if (showTypingIndicator) {
+    // Con lavagna McDrive aperta: niente cinema processing (feedback solo inline sul vassoio).
+    if (showTypingIndicator && !dockedMcDriveTray) {
       return {
         posterSrc: typingAvatarPosterSrc,
         videoSrc: typingAvatarVideoSrc || null,
@@ -688,7 +684,6 @@ export default function AiCluster({
     quickEventCinema,
     dismissedCinemaKeys,
     dockedMcDriveTray,
-    mcdriveTrayItems,
     showTypingIndicator,
     typingAvatarPosterSrc,
     typingIndicatorLabel,
@@ -2053,7 +2048,7 @@ export default function AiCluster({
             className={
               isAiGuidedImmersive || hoistedVideo
                 ? 'kentu-mcdrive-dock kentu-mcdrive-dock--immersive flex min-h-0 w-full flex-1 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
-                : 'kentu-mcdrive-dock flex max-h-[55vh] min-h-0 w-full shrink-0 flex-col border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
+                : 'kentu-mcdrive-dock flex max-h-[min(62vh,100%)] min-h-0 w-full shrink-0 flex-col overflow-hidden border-t border-zinc-800/80 bg-zinc-950/95 px-2 pt-2'
             }
             style={isAiGuidedImmersive || hoistedVideo ? undefined : { paddingBottom: 'max(0.25rem, env(safe-area-inset-bottom, 0px))' }}
             role="region"
@@ -2063,13 +2058,14 @@ export default function AiCluster({
               tray={dockedMcDriveTray}
               active
               immersive={isAiGuidedImmersive}
-              disabled={isProcessing}
+              disabled={false}
               personalDb={foodDatabase}
               kentuItDb={kentuItDatabase}
               globalDb={globalFoodDatabase}
               offDb={offDb}
               getMealTargets={getMcDriveMealTargets}
               todayLog={safeDailyLog}
+              fullHistory={fullHistory}
               effectiveDailyKcal={effectiveDailyKcal}
               dailyMacroTargets={safeUserTargets}
               onRemoveItem={onMcDriveRemoveItem}
@@ -2081,6 +2077,10 @@ export default function AiCluster({
               onReplaceFromSearch={onMcDriveReplaceFromSearch}
               onAppendSolverItems={onMcDriveAppendSolverItems}
               onRequestDisambiguation={onMcDriveRequestDisambiguation}
+              wipMealItems={wipMealItems}
+              wipMealTotals={wipMealTotals}
+              wipMealType={wipMealType}
+              onClearWipMeal={onClearWipMeal}
               openScannerNonce={mcdriveBarcodeOpenNonce}
               onAcquireExternalFood={onSaveNewFoodEntry}
               onChangeMealType={(nextMealType) => {
@@ -2119,6 +2119,12 @@ export default function AiCluster({
                   skipUserBubble: true,
                   fromQuickReply: true,
                 });
+              }}
+              onQuickAdd={(habit) => {
+                // Safety net: LiveMealTray preferisce onAppendSolverItems (fast-track resolved).
+                // Qui accettiamo solo oggetti strutturati — mai stringhe NLP.
+                if (!habit || typeof habit !== 'object') return;
+                onMcDriveAppendSolverItems?.(Array.isArray(habit) ? habit : [habit]);
               }}
             />
           </div>

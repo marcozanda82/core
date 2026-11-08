@@ -1100,6 +1100,163 @@
   cursor: pointer;
 }
 
+.kf-compound-audit {
+  margin-top: 1.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.kf-compound-audit h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8fa3ba;
+}
+
+.kf-compound-audit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.kf-compound-audit-btn {
+  border: 1px solid var(--kf-stroke, rgba(255, 255, 255, 0.18));
+  background: rgba(255, 255, 255, 0.06);
+  color: #d7e2f2;
+  border-radius: 0.55rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.kf-compound-audit-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.kf-compound-audit-btn--ghost {
+  background: transparent;
+  font-weight: 550;
+}
+
+.kf-compound-audit-summary,
+.kf-compound-audit-empty,
+.kf-compound-audit-error,
+.kf-compound-audit-note {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: #c5d4e8;
+}
+
+.kf-compound-audit-error {
+  color: #f0a8a8;
+}
+
+.kf-compound-audit-note {
+  color: #8fa3ba;
+  font-size: 0.7rem;
+}
+
+.kf-compound-audit-list {
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.kf-compound-audit-row {
+  border: 1px solid var(--kf-stroke, rgba(255, 255, 255, 0.14));
+  border-radius: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 0.28rem;
+}
+
+.kf-compound-audit-row-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  font-size: 0.72rem;
+  color: #8fa3ba;
+}
+
+.kf-compound-audit-date {
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  color: #d7e2f2;
+}
+
+.kf-compound-audit-foods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.4rem;
+  font-size: 0.8rem;
+  color: #eaf1fb;
+}
+
+.kf-compound-audit-arrow {
+  color: #8fa3ba;
+}
+
+.kf-compound-audit-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  font-size: 0.72rem;
+  color: #a8b8cc;
+  font-variant-numeric: tabular-nums;
+}
+
+.kf-compound-audit-link {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #8eb6e8;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  width: fit-content;
+}
+
+.kf-page.kf-light .kf-compound-audit,
+.kf-page.kf-light .kf-compound-audit h3,
+.kf-page.kf-light .kf-compound-audit-summary,
+.kf-page.kf-light .kf-compound-audit-empty,
+.kf-page.kf-light .kf-compound-audit-note,
+.kf-page.kf-light .kf-compound-audit-row-main,
+.kf-page.kf-light .kf-compound-audit-arrow,
+.kf-page.kf-light .kf-compound-audit-metrics {
+  color: var(--kf-ink-muted);
+}
+
+.kf-page.kf-light .kf-compound-audit {
+  border-top-color: var(--kf-border);
+}
+
+.kf-page.kf-light .kf-compound-audit-btn {
+  border-color: var(--kf-border);
+  background: var(--kf-surface-muted, #f2f4f7);
+  color: var(--kf-ink);
+}
+
+.kf-page.kf-light .kf-compound-audit-row {
+  border-color: var(--kf-border);
+  background: var(--kf-surface);
+}
+
+.kf-page.kf-light .kf-compound-audit-date,
+.kf-page.kf-light .kf-compound-audit-foods {
+  color: var(--kf-ink);
+}
+
+.kf-page.kf-light .kf-compound-audit-link {
+  color: var(--kf-brand, #2f6fed);
+}
+
 .kf-ai-consent {
   margin: 0 0 0.65rem;
   font-size: 0.72rem;

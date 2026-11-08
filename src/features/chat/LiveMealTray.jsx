@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeftRight, ChevronRight, Inbox, Info, Pencil, ScanBarcode, Search, Trash2, Utensils } from 'lucide-react';
+import { ArrowLeftRight, ChevronDown, ChevronRight, ChevronUp, Inbox, Info, Pencil, ScanBarcode, Search, Trash2, Utensils, Zap } from 'lucide-react';
 import AmountStepper from '../mealBuilder/components/AmountStepper';
 import FoodDetailModal from '../mealBuilder/components/FoodDetailModal';
 import UniversalSearchModal from '../mealBuilder/components/UniversalSearchModal';
@@ -19,10 +19,9 @@ import useBarcodeScanner from '../mealBuilder/hooks/useBarcodeScanner';
 import {
   EMPTY_MCDRIVE_TOTALS,
   MCDRIVE_CANCEL_CHIP,
-  MCDRIVE_FINISH_CHIP,
   MCDRIVE_SAVE_CONFIRM_CHIP,
+  buildMcDriveItemFromHabitShortcut,
   buildMcDriveItemFromSearchResult,
-  classifyMcdriveMacroVsTarget,
   draftHasRawMcDriveItems,
   formatMcdriveMealTypeLabel,
   normalizeMcdriveMealType,
@@ -33,17 +32,52 @@ import {
 } from '../commandTerminal/conversation/mcdriveWizard.js';
 import { lookupRecentFoodPortionGrams } from '../commandTerminal/conversation/userPortionsMemory.js';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
-import { useDayNutritionProjection } from '../mealEngine/useDayNutritionProjection.js';
-import DayNutritionProjectionCard from '../mealEngine/DayNutritionProjectionCard.jsx';
-import {
-  formatSlotReferenceHint,
-  isDinnerMealSlot,
-  slotReferenceHeading,
-} from '../mealEngine/formatDayNutritionRemaining.js';
 import {
   formatAssistedGramsLabel,
   isEstimatedQuantitySource,
 } from '../commandTerminal/conversation/assistedQuantityPresentation.js';
+import { usePredictiveFoodBlocks } from '../mealBuilder/hooks/usePredictiveFoodBlocks.js';
+
+/**
+ * Libreria completa degli sfondi pasto (pasti, stagioni, festività, evergreen).
+ * Vite risolve ogni `.webp` in URL di asset a build time, sottocartelle incluse.
+ */
+const mealBackdropModules = import.meta.glob(
+  '../../assets/sfondi-pasti/**/*.webp',
+  { eager: true, import: 'default' },
+);
+
+const MEAL_BACKDROP_URLS = Object.keys(mealBackdropModules)
+  .sort((a, b) => a.localeCompare(b, 'it'))
+  .map((key) => {
+    const value = mealBackdropModules[key];
+    if (typeof value === 'string' && value.length > 0) return value;
+    if (value && typeof value.default === 'string' && value.default.length > 0) return value.default;
+    return '';
+  })
+  .filter(Boolean);
+
+/** Uno sfondo diverso a ogni apertura della lavagna, senza ripetere subito l'ultimo. */
+function pickMealBackdropUrl(urls) {
+  if (!urls.length) return '';
+  let previous = -1;
+  try {
+    const stored = Number(sessionStorage.getItem('kentu-meal-tray-backdrop'));
+    if (Number.isInteger(stored)) previous = stored;
+  } catch {
+    previous = -1;
+  }
+  let index = Math.floor(Math.random() * urls.length);
+  if (urls.length > 1 && index === previous) {
+    index = (index + 1) % urls.length;
+  }
+  try {
+    sessionStorage.setItem('kentu-meal-tray-backdrop', String(index));
+  } catch {
+    /* sessione non disponibile: la scelta casuale resta valida per questa apertura */
+  }
+  return urls[index];
+}
 
 /** Normalizza status lavagna per UI (validating → processing). */
 function resolveMcDriveVisualStatus(item) {
@@ -353,40 +387,236 @@ function MealItemActionSheet({
   );
 }
 
-function MacroCompareRow({ label, actual, target, unit = 'g', mealType = null }) {
-  const a = Number(actual) || 0;
-  const t = Number(target) || 0;
-  const status = classifyMcdriveMacroVsTarget(a, t);
-  const pct = t > 0 ? Math.min(100, Math.round((a / t) * 100)) : 0;
-  const actualLabel = Math.round(a);
-  const targetLabel = Math.round(t);
-  const dinner = isDinnerMealSlot(mealType);
-  const unitText = unit === 'kcal' ? ' kcal' : ' g';
+/** Cold-start: catalogo base strutturato (fast-track) se l'utente non ha ancora abitudini. */
+/** Cold-start: 20 card sempre disponibili se l'utente non ha abitudini. */
+const defaultColdStartItems = Object.freeze([
+  { id: 'caffe', name: 'Caffè espresso', text: 'Caffè espresso', emoji: '☕', qty: 30, unit: 'ml', kcal: 3, proteins: 0.2, carbs: 0, fats: 0 },
+  { id: 'cappuccino', name: 'Cappuccino', text: 'Cappuccino', emoji: '☕', qty: 180, unit: 'ml', kcal: 120, proteins: 6, carbs: 10, fats: 6 },
+  { id: 'cornetto', name: 'Cornetto', text: 'Cornetto', emoji: '🥐', qty: 50, unit: 'g', kcal: 200, proteins: 4, carbs: 26, fats: 9 },
+  { id: 'latte', name: 'Latte parz. scremato', text: 'Latte parz. scremato', emoji: '🥛', qty: 200, unit: 'ml', kcal: 90, proteins: 7, carbs: 10, fats: 3 },
+  { id: 'yogurt', name: 'Yogurt greco', text: 'Yogurt greco', emoji: '🥣', qty: 150, unit: 'g', kcal: 120, proteins: 15, carbs: 5, fats: 4 },
+  { id: 'mela', name: 'Mela', text: 'Mela', emoji: '🍎', qty: 150, unit: 'g', kcal: 80, proteins: 0.4, carbs: 21, fats: 0.3 },
+  { id: 'banana', name: 'Banana', text: 'Banana', emoji: '🍌', qty: 120, unit: 'g', kcal: 105, proteins: 1.3, carbs: 27, fats: 0.3 },
+  { id: 'pane', name: 'Pane bianco', text: 'Pane bianco', emoji: '🍞', qty: 50, unit: 'g', kcal: 130, proteins: 4.5, carbs: 25, fats: 1 },
+  { id: 'pasta', name: 'Pasta al pomodoro', text: 'Pasta al pomodoro', emoji: '🍝', qty: 100, unit: 'g', kcal: 350, proteins: 12, carbs: 70, fats: 2 },
+  { id: 'riso', name: 'Riso basmati', text: 'Riso basmati', emoji: '🍚', qty: 80, unit: 'g', kcal: 280, proteins: 5.5, carbs: 62, fats: 0.5 },
+  { id: 'pollo', name: 'Petto di pollo', text: 'Petto di pollo', emoji: '🍗', qty: 150, unit: 'g', kcal: 165, proteins: 31, carbs: 0, fats: 3.6 },
+  { id: 'uova', name: 'Uova sode', text: 'Uova sode', emoji: '🥚', qty: 100, unit: 'g', kcal: 140, proteins: 12, carbs: 1, fats: 10 },
+  { id: 'tonno', name: 'Tonno al naturale', text: 'Tonno al naturale', emoji: '🐟', qty: 80, unit: 'g', kcal: 90, proteins: 20, carbs: 0, fats: 1 },
+  { id: 'insalata', name: 'Insalata mista', text: 'Insalata mista', emoji: '🥗', qty: 120, unit: 'g', kcal: 35, proteins: 1.5, carbs: 5, fats: 0.4 },
+  { id: 'olio', name: 'Olio EVO', text: 'Olio EVO', emoji: '🫒', qty: 10, unit: 'g', kcal: 90, proteins: 0, carbs: 0, fats: 10 },
+  { id: 'parmigiano', name: 'Parmigiano', text: 'Parmigiano', emoji: '🧀', qty: 20, unit: 'g', kcal: 80, proteins: 7, carbs: 0, fats: 6 },
+  { id: 'prosciutto', name: 'Prosciutto crudo', text: 'Prosciutto crudo', emoji: '🥓', qty: 40, unit: 'g', kcal: 100, proteins: 10, carbs: 0, fats: 7 },
+  { id: 'avena', name: 'Fiocchi d\'avena', text: 'Fiocchi d\'avena', emoji: '🌾', qty: 40, unit: 'g', kcal: 150, proteins: 5, carbs: 27, fats: 3 },
+  { id: 'mandorle', name: 'Mandorle', text: 'Mandorle', emoji: '🥜', qty: 20, unit: 'g', kcal: 115, proteins: 4, carbs: 4, fats: 10 },
+  { id: 'acqua', name: 'Acqua', text: 'Acqua', emoji: '💧', qty: 250, unit: 'ml', kcal: 0, proteins: 0, carbs: 0, fats: 0 },
+]);
+const MCDRIVE_HABIT_FALLBACKS = defaultColdStartItems;
+
+function DraftResumeBanner({
+  itemCount = 0,
+  mealLabel = 'pasto',
+  kcal = 0,
+  disabled = false,
+  onResume = null,
+}) {
+  if (itemCount <= 0 || typeof onResume !== 'function') return null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onResume}
+      className={[
+        'kentu-meal-tray__draft-banner mb-1.5 flex w-full items-center justify-between gap-2 rounded-xl',
+        'border border-amber-400/35 bg-amber-500/10 px-3 py-2 text-left',
+        'transition hover:border-amber-300/50 hover:bg-amber-500/15',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/50',
+        'disabled:pointer-events-none disabled:opacity-45',
+      ].join(' ')}
+    >
+      <span className="min-w-0">
+        <span className="block text-[0.72rem] font-semibold text-amber-100">
+          Hai una bozza in sospeso — Riprendi
+        </span>
+        <span className="mt-0.5 block truncate text-[0.65rem] text-amber-100/70">
+          {mealLabel}
+          {' · '}
+          {itemCount}
+          {itemCount === 1 ? ' alimento' : ' alimenti'}
+          {kcal > 0 ? ` · ${Math.round(kcal)} kcal` : ''}
+        </span>
+      </span>
+      <span className="shrink-0 text-sm" aria-hidden>⚠️</span>
+    </button>
+  );
+}
+
+function normalizeHabitMatchKey(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|kg|ml|pz|x)?\b/gi, ' ')
+    .replace(/[^a-z0-9\s]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function collectTrayHabitMatchKeys(items = []) {
+  const keys = new Set();
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const id = String(item?.id || '').trim();
+    const foodDbKey = String(item?.foodDbKey || item?.key || '').trim();
+    const name = sanitizeFoodDisplayName(item?.foodName || item?.name || '', '');
+    if (id) keys.add(`id:${id.toLowerCase()}`);
+    if (foodDbKey) keys.add(`db:${foodDbKey.toLowerCase()}`);
+    const nameKey = normalizeHabitMatchKey(name);
+    if (nameKey) keys.add(`name:${nameKey}`);
+  });
+  return keys;
+}
+
+function habitCardIsOnTray(card, trayKeys) {
+  if (!(trayKeys instanceof Set) || trayKeys.size === 0) return false;
+  const id = String(card?.id || '').trim();
+  const foodDbKey = String(card?.foodDbKey || '').trim();
+  const nameKey = normalizeHabitMatchKey(card?.name || card?.label || '');
+  if (id && (trayKeys.has(`id:${id.toLowerCase()}`) || trayKeys.has(`db:${id.toLowerCase()}`))) {
+    return true;
+  }
+  if (foodDbKey && trayKeys.has(`db:${foodDbKey.toLowerCase()}`)) return true;
+  if (nameKey && trayKeys.has(`name:${nameKey}`)) return true;
+  return false;
+}
+
+/**
+ * Carosello orizzontale abitudini / quick-add (sopra Scanner / Annulla).
+ * Cold start obbligatorio: se habits è vuoto → catalogo default 20 item.
+ */
+function HabitsCarousel({
+  habits = [],
+  disabled = false,
+  onQuickAdd = null,
+}) {
+  const userHabits = Array.isArray(habits) ? habits : [];
+  // Cold start: array vuoto `[]` → sempre i 20 default (mai carosello vuoto).
+  const itemsToRender = (userHabits && userHabits.length > 0)
+    ? userHabits
+    : defaultColdStartItems.map((card) => ({ ...card }));
+  const canAdd = typeof onQuickAdd === 'function' && !disabled;
 
   return (
-    <div className={`kentu-meal-tray__macro-row kentu-meal-tray__macro-row--${status}`}>
-      <span className="kentu-meal-tray__macro-label">{label}</span>
-      <span className="kentu-meal-tray__macro-actual">
-        {actualLabel}{unitText}
-      </span>
-      <span className="kentu-meal-tray__macro-ref">
-        {dinner && unit === 'kcal'
-          ? formatSlotReferenceHint(mealType, t, 'kcal')
-          : `Riferimento ${targetLabel || '—'}${unitText}`}
-      </span>
-      <div className="kentu-meal-tray__macro-bar" aria-hidden>
-        <div
-          className="kentu-meal-tray__macro-bar-fill"
-          style={{ width: `${t > 0 ? pct : 0}%` }}
-        />
+    <div
+      className="kentu-meal-tray__habits w-full flex-none"
+      role="region"
+      aria-label="Abitudini rapide"
+    >
+      <div
+        className={[
+          'kentu-meal-tray__habits-scroll flex gap-2 overflow-x-auto overscroll-x-contain px-0.5 pb-1 pt-0.5',
+          'snap-x snap-mandatory scroll-smooth',
+          '[-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+        ].join(' ')}
+      >
+        {itemsToRender.map((card) => {
+          const name = String(card.name || card.label || '').trim() || 'Alimento';
+          const kcal = Math.round(Number(card.kcal) || 0);
+          const emoji = card.emoji || '🍽️';
+          const text = String(card.text || name).trim();
+          const dimmed = card.dimmed === true;
+          return (
+            <button
+              key={card.id || `${name}-${text}`}
+              type="button"
+              disabled={!canAdd || dimmed}
+              aria-label={dimmed ? `${name} già nel vassoio` : `Aggiungi ${name}`}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!canAdd || dimmed) return;
+                onQuickAdd(card);
+              }}
+              className={[
+                'kentu-meal-tray__habit-card flex w-[5.75rem] shrink-0 snap-start flex-col items-stretch gap-1 rounded-2xl',
+                'border border-white/12 bg-zinc-900/80 px-2.5 py-2 text-left',
+                'shadow-[0_8px_20px_rgba(0,0,0,0.28)]',
+                'touch-manipulation select-none',
+                'transition-all duration-150',
+                dimmed
+                  ? 'opacity-35'
+                  : 'hover:border-cyan-400/45 hover:bg-cyan-500/10 active:scale-[0.97]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+                'disabled:pointer-events-none disabled:opacity-45',
+              ].join(' ')}
+            >
+              <span className="text-lg leading-none" aria-hidden>{emoji}</span>
+              <span className="truncate text-[0.72rem] font-semibold leading-tight text-zinc-100">
+                {name}
+              </span>
+              <span className="text-[0.65rem] font-medium tabular-nums text-zinc-400">
+                {kcal > 0 ? `${kcal} kcal` : '—'}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-/**
- * Lavagna McDrive: vassoio interattivo + confronto target + edit potenziato.
- */
+/** Striscia compatta Attuale / Target sotto il selettore pasto. */
+function MacroActualTargetStrip({ actual = EMPTY_MCDRIVE_TOTALS, targets = EMPTY_MCDRIVE_TOTALS }) {
+  const aKcal = Math.round(Number(actual?.kcal) || 0);
+  const aPro = Math.round(Number(actual?.pro) || 0);
+  const aCarbo = Math.round(Number(actual?.carbo) || 0);
+  const aFat = Math.round(Number(actual?.fat) || 0);
+  const tKcal = Math.round(Number(targets?.kcal) || 0);
+  const tPro = Math.round(Number(targets?.pro) || 0);
+  const tCarbo = Math.round(Number(targets?.carbo) || 0);
+  const tFat = Math.round(Number(targets?.fat) || 0);
+  const hasTargets = tKcal > 0 || tPro > 0 || tCarbo > 0 || tFat > 0;
+
+  return (
+    <div
+      className="kentu-meal-tray__calibration-macros kentu-meal-tray__calibration-macros--compare gap-x-3 gap-y-1 text-[0.78rem] leading-tight"
+      aria-label={hasTargets ? 'Totali vassoio rispetto al riferimento pasto' : 'Totali risolti sul vassoio'}
+    >
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-semibold text-cyan-300">{aKcal}</span>
+        {hasTargets ? (
+          <span className="font-medium text-slate-400">{` / ${tKcal} kcal`}</span>
+        ) : (
+          <span className="font-medium text-slate-400"> kcal</span>
+        )}
+      </span>
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-semibold text-cyan-300">{`P ${aPro}`}</span>
+        {hasTargets ? (
+          <span className="font-medium text-slate-400">{`/${tPro}g`}</span>
+        ) : (
+          <span className="font-medium text-slate-400">g</span>
+        )}
+      </span>
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-semibold text-cyan-300">{`C ${aCarbo}`}</span>
+        {hasTargets ? (
+          <span className="font-medium text-slate-400">{`/${tCarbo}g`}</span>
+        ) : (
+          <span className="font-medium text-slate-400">g</span>
+        )}
+      </span>
+      <span className="whitespace-nowrap tabular-nums">
+        <span className="font-semibold text-cyan-300">{`G ${aFat}`}</span>
+        {hasTargets ? (
+          <span className="font-medium text-slate-400">{`/${tFat}g`}</span>
+        ) : (
+          <span className="font-medium text-slate-400">g</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 function LiveMealTray({
   tray = null,
   active = true,
@@ -396,6 +626,7 @@ function LiveMealTray({
   onFinish,
   onSave,
   onAddMore,
+  onQuickAdd = null,
   onRemoveItem,
   onReturnItemToInbox = null,
   onUpdateGrams,
@@ -407,6 +638,7 @@ function LiveMealTray({
   onRequestDisambiguation = null,
   getMealTargets = null,
   todayLog = null,
+  fullHistory = null,
   effectiveDailyKcal = null,
   dailyMacroTargets = null,
   personalDb = null,
@@ -416,22 +648,14 @@ function LiveMealTray({
   openScannerNonce = 0,
   onAcquireExternalFood = null,
   onChangeMealType = null,
+  wipMealItems = null,
+  wipMealTotals = null,
+  wipMealType = null,
+  onClearWipMeal = null,
 }) {
   const items = Array.isArray(tray?.items) ? tray.items : [];
-  const projectionTargets = useMemo(() => ({
-    kcal: Number(effectiveDailyKcal) || 0,
-    prot: Number(dailyMacroTargets?.prot ?? dailyMacroTargets?.pro) || 0,
-    carb: Number(dailyMacroTargets?.carb ?? dailyMacroTargets?.carbo) || 0,
-    fat: Number(dailyMacroTargets?.fat ?? dailyMacroTargets?.fatTotal) || 0,
-  }), [effectiveDailyKcal, dailyMacroTargets]);
-  const dayNutritionProjection = useDayNutritionProjection({
-    effectiveTargets: projectionTargets,
-    currentDailyLog: todayLog,
-    draftMeal: items,
-    editingContext: Array.isArray(tray?.editingSlotItems) && tray.editingSlotItems.length > 0
-      ? { slotItems: tray.editingSlotItems }
-      : null,
-  });
+  const [mealBackdropUrl] = useState(() => pickMealBackdropUrl(MEAL_BACKDROP_URLS));
+  const wipItems = Array.isArray(wipMealItems) ? wipMealItems : [];
   const resolvedTotals = tray?.resolvedTotals && typeof tray.resolvedTotals === 'object'
     ? tray.resolvedTotals
     : (tray?.totals && typeof tray.totals === 'object' ? tray.totals : EMPTY_MCDRIVE_TOTALS);
@@ -440,7 +664,149 @@ function LiveMealTray({
     || formatMcdriveMealTypeLabel(mealType);
   const hasRaw = tray?.hasRaw === true || draftHasRawMcDriveItems(items);
   const hasDisambiguationPending = hasPendingMcDriveEnrichment(items);
-  const needsCalculate = hasRaw || hasDisambiguationPending;
+  /** Auto-calcolo in corso: raw/processing ancora da risolvere (senza bottone Calcola). */
+  const isAutoResolving = hasRaw && !hasDisambiguationPending;
+
+  const predictiveBlocks = usePredictiveFoodBlocks(fullHistory, mealType, 12);
+  const baseHabitCards = useMemo(() => {
+    const fromHistory = (Array.isArray(predictiveBlocks) ? predictiveBlocks : []).map((block) => {
+      const name = sanitizeFoodDisplayName(block?.desc || block?.label || '', '') || 'Alimento';
+      const qta = Math.max(1, Math.round(Number(block?.qta) || 0) || 100);
+      const visual = resolveFoodVisual(
+        { name, desc: name, foodDbKey: block?.foodDbKey },
+        personalDb,
+      );
+      return {
+        id: String(block?.key || block?.foodDbKey || name),
+        foodDbKey: block?.foodDbKey ? String(block.foodDbKey) : '',
+        name,
+        foodName: name,
+        qty: qta,
+        grams: qta,
+        unit: 'g',
+        kcal: Number(block?.kcal ?? block?.cal) || 0,
+        proteins: Number(block?.prot) || 0,
+        carbs: Number(block?.carb) || 0,
+        fats: Number(block?.fat ?? block?.fatTotal) || 0,
+        emoji: visual?.customEmoji || visual?.fallbackEmoji || '🍽️',
+        status: 'resolved',
+      };
+    });
+
+    // Cold start / catalogo ricco: se niente storico → default 20.
+    // Se storico scarso, completa con i default non già presenti (per nome).
+    if (fromHistory.length === 0) {
+      return MCDRIVE_HABIT_FALLBACKS.map((card) => ({ ...card }));
+    }
+    const seen = new Set(
+      fromHistory.map((card) => normalizeHabitMatchKey(card.name)).filter(Boolean),
+    );
+    const padded = [...fromHistory];
+    MCDRIVE_HABIT_FALLBACKS.forEach((fb) => {
+      const key = normalizeHabitMatchKey(fb.name);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      padded.push({ ...fb });
+    });
+    return padded;
+  }, [predictiveBlocks, personalDb]);
+
+  const [habitsOpen, setHabitsOpen] = useState(true);
+
+  useEffect(() => {
+    // Sempre aperto di default; riapri se il vassoio si svuota.
+    if (items.length === 0) setHabitsOpen(true);
+  }, [items.length]);
+
+  const trayHabitKeys = useMemo(
+    () => collectTrayHabitMatchKeys(Array.isArray(items) ? items : []),
+    [items],
+  );
+
+  const habitCards = useMemo(() => {
+    const source = Array.isArray(baseHabitCards) ? baseHabitCards : [];
+    const filtered = source
+      .filter((card) => card && typeof card === 'object' && !habitCardIsOnTray(card, trayHabitKeys))
+      .map((card) => ({ ...card, dimmed: false }));
+    // Mai passare un array "pseudo-vuoto": se filtro azzera tutto → cold start 20.
+    if (filtered.length === 0) {
+      return defaultColdStartItems.map((card) => ({ ...card, dimmed: false }));
+    }
+    return filtered;
+  }, [baseHabitCards, trayHabitKeys]);
+
+  const handleHabitQuickAdd = useCallback((habitCard) => {
+    const habit = habitCard && typeof habitCard === 'object' ? habitCard : null;
+    if (!habit) return;
+
+    const resolvedItem = buildMcDriveItemFromHabitShortcut(habit);
+    if (!resolvedItem?.foodName) {
+      console.warn('[LiveMealTray] Habit shortcut invalida:', habit);
+      return;
+    }
+
+    setHabitsOpen(true);
+
+    // Iniezione diretta resolved → niente NLP / match DB.
+    if (typeof onAppendSolverItems === 'function') {
+      onAppendSolverItems([resolvedItem]);
+      return;
+    }
+    // Fallback bridge: item già resolved (mai stringa testuale).
+    if (typeof onQuickAdd === 'function') {
+      onQuickAdd(resolvedItem);
+    }
+  }, [onAppendSolverItems, onQuickAdd]);
+
+  const wipDraftForSlot = useMemo(() => {
+    if (wipItems.length === 0) return null;
+    const traySlot = normalizeMcdriveMealType(mealType);
+    const wipSlot = normalizeMcdriveMealType(wipMealType);
+    return {
+      items: wipItems,
+      count: wipItems.length,
+      mealLabel: formatMcdriveMealTypeLabel(wipSlot || traySlot || 'pranzo'),
+      kcal: Number(wipMealTotals?.kcal) || wipItems.reduce((sum, it) => sum + (Number(it?.kcal) || 0), 0),
+      slotMismatch: Boolean(traySlot && wipSlot && traySlot !== wipSlot),
+    };
+  }, [wipItems, wipMealType, wipMealTotals, mealType]);
+
+  // Banner bozze: force-on temporaneo per smoke test UI, poi ripristinare a false.
+  const FORCE_SHOW_WIP_BANNER = true; // TODO: restore condition → false
+  const showWipBanner = FORCE_SHOW_WIP_BANNER || Boolean(wipDraftForSlot);
+  const wipMealState = {
+    wipItemsCount: wipItems.length,
+    wipMealType,
+    wipDraftForSlot,
+    FORCE_SHOW_WIP_BANNER,
+    showWipBanner,
+  };
+  const currentMealSlot = mealType;
+  console.log('Stato Bozza Corrente:', wipMealState, 'Slot Attuale:', currentMealSlot);
+
+  const handleResumeWipDraft = useCallback(() => {
+    if (!wipDraftForSlot?.items?.length) return;
+    const resolved = wipDraftForSlot.items
+      .map((item) => buildMcDriveItemFromHabitShortcut({
+        id: item?.id,
+        name: item?.foodName || item?.name,
+        foodName: item?.foodName || item?.name,
+        foodDbKey: item?.foodDbKey || item?.key || '',
+        qty: item?.grams ?? item?.weight ?? item?.qta,
+        unit: 'g',
+        kcal: item?.kcal ?? item?.cal,
+        proteins: item?.pro ?? item?.prot ?? item?.proteins,
+        carbs: item?.carbo ?? item?.carb ?? item?.carbs,
+        fats: item?.fat ?? item?.fatTotal ?? item?.fats,
+        emoji: item?.emoji || item?.icon,
+      }))
+      .filter(Boolean);
+    if (resolved.length === 0) return;
+    onAppendSolverItems?.(resolved);
+    onClearWipMeal?.();
+    setHabitsOpen(true);
+  }, [wipDraftForSlot, onAppendSolverItems, onClearWipMeal]);
+
   const [editingIndex, setEditingIndex] = useState(null);
   const [renamingIndex, setRenamingIndex] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -624,11 +990,6 @@ function LiveMealTray({
     [items],
   );
 
-  const hasTargets = Number(mealTargets.kcal) > 0
-    || Number(mealTargets.pro) > 0
-    || Number(mealTargets.carbo) > 0
-    || Number(mealTargets.fat) > 0;
-
   const solverExistingFoods = useMemo(
     () => draftFoodsToSolverItems(items),
     [items],
@@ -686,14 +1047,27 @@ function LiveMealTray({
     <div
       className={
         immersive
-          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden'
-          : 'kentu-meal-tray kentu-meal-tray--native relative flex h-full max-h-[min(55vh,100%)] w-full flex-col overflow-hidden'
+          ? 'kentu-meal-tray kentu-meal-tray--native kentu-meal-tray--immersive relative flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-cover bg-center'
+          : 'kentu-meal-tray kentu-meal-tray--native relative flex h-full max-h-[min(62vh,100%)] w-full min-h-0 flex-col overflow-hidden bg-cover bg-center'
       }
+      style={mealBackdropUrl ? {
+        backgroundImage: `url("${mealBackdropUrl}")`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+      } : undefined}
       role="group"
       aria-label={`Calibrazione ${mealTypeLabel}`}
     >
+      {mealBackdropUrl ? (
+        <div
+          className="pointer-events-none absolute inset-0 z-0 bg-black/80 backdrop-blur-xs"
+          aria-hidden
+        />
+      ) : null}
+      <div className="relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-hidden">
       {/* Header fisso: flex-none — lo scroll è solo sulla lista sotto */}
-      <div className="kentu-meal-tray__header kentu-meal-tray__header--calibration flex-none">
+      <div className={`kentu-meal-tray__header kentu-meal-tray__header--calibration flex-none${mealBackdropUrl ? ' !bg-transparent' : ''}`}>
         <div className="kentu-meal-tray__calibration-title-row">
           <div className="kentu-meal-tray__calibration-title-group">
             <span className="kentu-meal-tray__badge">Calibrazione</span>
@@ -727,47 +1101,38 @@ function LiveMealTray({
             onChange={handleTrayTimeChange}
           />
         </div>
-        {hasTargets ? (
-          <div className="kentu-meal-tray__target-grid" aria-label={slotReferenceHeading(mealType)}>
-            <p className="kentu-meal-tray__ref-caption">{slotReferenceHeading(mealType)}</p>
-            <MacroCompareRow label="Kcal" actual={resolvedTotals.kcal} target={mealTargets.kcal} unit="kcal" mealType={mealType} />
-            <MacroCompareRow label="Proteine" actual={resolvedTotals.pro} target={mealTargets.pro} mealType={mealType} />
-            <MacroCompareRow label="Carboidrati" actual={resolvedTotals.carbo} target={mealTargets.carbo} mealType={mealType} />
-            <MacroCompareRow label="Grassi" actual={resolvedTotals.fat} target={mealTargets.fat} mealType={mealType} />
-          </div>
-        ) : (
-          <div className="kentu-meal-tray__calibration-macros" aria-label="Totali risolti sul vassoio">
-            {hasAnyResolvedMacros ? (
-              <>
-                <span>{Math.round(Number(resolvedTotals.kcal) || 0)} kcal</span>
-                <span>P {Math.round(Number(resolvedTotals.pro) || 0)}g</span>
-                <span>C {Math.round(Number(resolvedTotals.carbo) || 0)}g</span>
-                <span>G {Math.round(Number(resolvedTotals.fat) || 0)}g</span>
-              </>
-            ) : (
-              <>
-                <span>— kcal</span>
-                <span>P —</span>
-                <span>C —</span>
-                <span>G —</span>
-              </>
-            )}
-          </div>
-        )}
+        <MacroActualTargetStrip
+          actual={resolvedTotals}
+          targets={mealTargets}
+        />
+        {showWipBanner ? (
+          <DraftResumeBanner
+            itemCount={wipDraftForSlot?.count || (FORCE_SHOW_WIP_BANNER ? 2 : 0)}
+            mealLabel={wipDraftForSlot?.mealLabel || mealTypeLabel || 'Pasto'}
+            kcal={wipDraftForSlot?.kcal || 0}
+            disabled={disabled || isSaving}
+            onResume={wipDraftForSlot ? handleResumeWipDraft : () => {
+              console.log('[LiveMealTray] Banner bozze tap (demo — nessuna WIP reale)');
+            }}
+          />
+        ) : null}
       </div>
 
-      {/* Lista scrollabile: footer Calcola/Salva resta flex-none sotto (anche con 20+ voci). */}
+      {/* Lista scrollabile: footer Salva resta flex-none sotto (anche con 20+ voci). */}
       <div
         className={
           immersive
             ? 'kentu-meal-tray__scroll kentu-meal-tray__scroll--immersive min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
-            : 'kentu-meal-tray__scroll min-h-0 max-h-[min(42vh,360px)] flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
+            : 'kentu-meal-tray__scroll min-h-0 flex-1 overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]'
         }
       >
         {items.length === 0 ? (
-          <div className="kentu-meal-tray__empty rounded-2xl border border-dashed border-slate-700/80 bg-slate-900/50 px-4 py-6">
-            <p className="text-center text-sm leading-relaxed text-slate-400" role="status">
-              Vassoio vuoto. Dettaglia i cibi in basso, usa il microfono o scansiona un codice a barre.
+          <div className="kentu-meal-tray__empty flex min-h-[3.5rem] flex-col items-center justify-center gap-1 px-4 py-3 text-center">
+            <p className="text-[0.85rem] font-medium text-zinc-400">
+              Vassoio vuoto
+            </p>
+            <p className="max-w-[16rem] text-[0.72rem] leading-snug text-zinc-500">
+              Scrivi un alimento, usa lo Scanner o scegli dalle abitudini sotto.
             </p>
           </div>
         ) : (
@@ -777,7 +1142,8 @@ function LiveMealTray({
               const grams = Math.max(1, Math.round(Number(item?.grams ?? item?.qta) || 0));
               const visualStatus = resolveMcDriveVisualStatus(item);
               const isRaw = visualStatus === 'raw';
-              const isProcessing = visualStatus === 'processing';
+              const isProcessing = visualStatus === 'processing'
+                || (isAutoResolving && isRaw);
               const isPending = visualStatus === 'pending_enrichment'
                 || visualStatus === 'requires_disambiguation'
                 || isMcDriveDisambiguationStatus(item);
@@ -785,7 +1151,7 @@ function LiveMealTray({
               const isSkipped = visualStatus === 'skipped';
               // LIFO: displayIndex 0 = ultimo inserimento (in cima).
               const isLatestInsert = displayIndex === 0;
-              const highlightLatest = isLatestInsert && isRaw;
+              const highlightLatest = isLatestInsert && isRaw && !isAutoResolving;
               const highlightSolver = solverHighlightIds.has(String(item?.id || ''));
               const showHabitualBadge = item?.quantitySource === 'user-history'
                 || item?.habitualPortion === true;
@@ -1099,15 +1465,58 @@ function LiveMealTray({
             })}
           </ul>
         )}
-        <DayNutritionProjectionCard
-          projection={dayNutritionProjection}
-          mealType={mealType}
-          compact
-        />
       </div>
 
       {active ? (
-        <div className="kentu-meal-tray__footer flex-none">
+        <div className={`kentu-meal-tray__footer flex-none shrink-0${mealBackdropUrl ? ' !bg-transparent' : ''}`}>
+          <div className="kentu-meal-tray__habits-dock mb-1.5 flex flex-col gap-1">
+            <div className="flex items-center justify-between gap-2 px-0.5">
+              <span className="inline-flex items-center gap-1 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                <Zap className="h-3 w-3 text-amber-300/90" aria-hidden />
+                Abitudini
+              </span>
+              <button
+                type="button"
+                className={[
+                  'inline-flex h-7 w-7 items-center justify-center rounded-full',
+                  'border border-white/12 bg-white/[0.06] text-zinc-300',
+                  'transition hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-100',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50',
+                  'disabled:opacity-45',
+                ].join(' ')}
+                disabled={disabled}
+                aria-expanded={habitsOpen}
+                aria-controls="kentu-meal-tray-habits"
+                title={habitsOpen ? 'Nascondi abitudini' : 'Mostra abitudini'}
+                onClick={() => setHabitsOpen((open) => !open)}
+              >
+                {habitsOpen ? (
+                  <ChevronDown className="h-4 w-4" aria-hidden />
+                ) : (
+                  <ChevronUp className="h-4 w-4" aria-hidden />
+                )}
+              </button>
+            </div>
+            {/* Niente grid-rows-[0fr]/hidden: aperti = montati nel DOM, chiusi = unmount (evita h=0). */}
+            {habitsOpen ? (
+              <div id="kentu-meal-tray-habits">
+                {isAutoResolving ? (
+                  <p
+                    className="mb-1 px-0.5 text-[0.7rem] font-medium text-cyan-300/90"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    Calcolo in corso…
+                  </p>
+                ) : null}
+                <HabitsCarousel
+                  habits={habitCards}
+                  disabled={disabled || isSaving}
+                  onQuickAdd={handleHabitQuickAdd}
+                />
+              </div>
+            ) : null}
+          </div>
           <div className="kentu-meal-tray__footer-row">
             <KentuButton
               variant="secondary"
@@ -1130,63 +1539,63 @@ function LiveMealTray({
               {MCDRIVE_CANCEL_CHIP.label}
             </KentuButton>
           </div>
-          {needsCalculate ? (
-            <KentuButton
-              variant="primary"
-              className={[
-                'kentu-meal-tray__confirm',
-                hasDisambiguationPending ? 'ring-2 ring-amber-400/70' : '',
-              ].filter(Boolean).join(' ')}
-              disabled={disabled || isSaving || items.length === 0 || hasDisambiguationPending}
-              onClick={() => onFinish?.()}
-              title={hasDisambiguationPending
+          <KentuButton
+            variant="primary"
+            className={[
+              'kentu-meal-tray__confirm',
+              hasDisambiguationPending ? 'ring-2 ring-amber-400/70' : '',
+            ].filter(Boolean).join(' ')}
+            disabled={
+              disabled
+              || isSaving
+              || items.length === 0
+              || isAutoResolving
+              || hasDisambiguationPending
+              || !hasAnyResolvedMacros
+            }
+            title={
+              hasDisambiguationPending
                 ? 'Ci sono alimenti da confermare — tocca le voci evidenziate'
-                : undefined}
-            >
-              {hasDisambiguationPending
-                ? '⚠️ Risolvi alimenti dubbi'
-                : MCDRIVE_FINISH_CHIP.label}
-            </KentuButton>
-          ) : (
-            <>
-              <KentuButton
-                variant="primary"
-                className={[
-                  'kentu-meal-tray__confirm',
-                  hasDisambiguationPending ? 'ring-2 ring-amber-400/70' : '',
-                ].filter(Boolean).join(' ')}
-                disabled={disabled || isSaving || items.length === 0 || !hasAnyResolvedMacros || hasDisambiguationPending}
-                title={hasDisambiguationPending
-                  ? 'Ci sono alimenti da confermare — tocca le voci evidenziate'
-                  : undefined}
-                onClick={async () => {
-                  if (isSaving) return;
-                  try {
-                    await withMealSavingOverlay(async () => {
-                      setIsSaving(true);
-                      const timeToSave = String(
-                        localExactTimeRef.current || localExactTime || exactTimeValue || getCurrentTimeHHmm(),
-                      ).trim();
-                      await Promise.resolve(onSave?.(items, {
-                        exactTime: timeToSave,
-                        timeString: timeToSave,
-                      }));
-                    });
-                  } catch (err) {
-                    console.error('[LiveMealTray] salvataggio fallito', err);
-                  } finally {
-                    setIsSaving(false);
-                  }
-                }}
-              >
-                {isSaving
-                  ? 'Salvataggio…'
-                  : hasDisambiguationPending
-                    ? '⚠️ Risolvi alimenti dubbi'
-                    : MCDRIVE_SAVE_CONFIRM_CHIP.label}
-              </KentuButton>
-            </>
-          )}
+                : isAutoResolving
+                  ? 'Calcolo automatico in corso…'
+                  : undefined
+            }
+            onClick={async () => {
+              if (isSaving || isAutoResolving || hasDisambiguationPending) return;
+              try {
+                await withMealSavingOverlay(async () => {
+                  setIsSaving(true);
+                  const timeToSave = String(
+                    localExactTimeRef.current || localExactTime || exactTimeValue || getCurrentTimeHHmm(),
+                  ).trim();
+                  await Promise.resolve(onSave?.(items, {
+                    exactTime: timeToSave,
+                    timeString: timeToSave,
+                  }));
+                });
+              } catch (err) {
+                console.error('[LiveMealTray] salvataggio fallito', err);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+          >
+            {isSaving
+              ? 'Salvataggio…'
+              : isAutoResolving
+                ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span
+                      className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-950/30 border-t-slate-950"
+                      aria-hidden
+                    />
+                    Calcolo in corso…
+                  </span>
+                )
+                : hasDisambiguationPending
+                  ? '⚠️ Risolvi alimenti dubbi'
+                  : MCDRIVE_SAVE_CONFIRM_CHIP.label}
+          </KentuButton>
         </div>
       ) : null}
 
@@ -1316,6 +1725,7 @@ function LiveMealTray({
         </div>,
         document.body,
       ) : null}
+      </div>
     </div>
   );
 }

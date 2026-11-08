@@ -28,6 +28,7 @@ import {
 } from '../../mealEngine/canonicalMealCommit.js';
 import { classifyFoodMatchQuality } from '../../mealBuilder/utils/foodMatchQuality.js';
 
+/** @deprecated Auto-resolve: il calcolo parte subito dopo il parse; intent tenuto per compat. */
 export const MCDRIVE_FINISH_CHIP = Object.freeze({
   label: '🔄 Calcola Valori',
   intent: 'FINISH_MCDRIVE_WIZARD',
@@ -84,7 +85,7 @@ export const MCDRIVE_SAVE_CONFIRM_QUICK_REPLIES = Object.freeze([
 
 /** Messaggio di avvio lavagna (dopo scelta pasto). */
 export const MCDRIVE_START_MESSAGE =
-  'Lavagna aperta. Digita gli alimenti (es. «un caffè zuccherato e un croissant» o «100g pasta»), poi tocca Calcola Valori.';
+  'Lavagna aperta. Digita gli alimenti (es. «un caffè zuccherato e un croissant» o «100g pasta»): li calcolo subito. Poi conferma con Salva nel Diario.';
 
 export const EMPTY_MCDRIVE_TOTALS = Object.freeze({
   kcal: 0,
@@ -272,10 +273,10 @@ export function draftHasRawMcDriveItems(items = []) {
  */
 export function buildMcdriveActionQuickReplies(items = []) {
   const list = Array.isArray(items) ? items : [];
+  // Durante auto-calcolo o disambiguazione: solo Annulla (niente «Calcola Valori»).
   if (draftHasRawMcDriveItems(list) || hasPendingMcDriveEnrichment(list)) {
     return [
       { label: MCDRIVE_CANCEL_CHIP.label, intent: MCDRIVE_CANCEL_CHIP.intent },
-      { label: MCDRIVE_FINISH_CHIP.label, intent: MCDRIVE_FINISH_CHIP.intent, variant: 'primary' },
     ];
   }
   if (list.length === 0) {
@@ -416,6 +417,56 @@ export function buildMcDriveRawItem(parsed = {}) {
     } : {}),
     ...(parsed?.restaurantGuess === true ? { restaurantGuess: true } : {}),
   };
+}
+
+/**
+ * Fast-track abitudine/scorciatoia: item già risolto, nessun parser NLP / match DB.
+ * @param {object} habit
+ * @returns {object|null}
+ */
+export function buildMcDriveItemFromHabitShortcut(habit = {}) {
+  if (!habit || typeof habit !== 'object') return null;
+  const foodName = sanitizeFoodDisplayName(
+    habit.foodName || habit.name || habit.label || habit.desc || '',
+    '',
+  );
+  if (!foodName) return null;
+
+  const grams = Math.max(
+    1,
+    Math.round(Number(habit.qty ?? habit.grams ?? habit.qta ?? habit.weight) || 0) || 100,
+  );
+  const unit = String(habit.unit || 'g').trim() || 'g';
+  const kcal = Math.round(Number(habit.kcal ?? habit.cal) || 0);
+  const pro = Math.round((Number(habit.proteins ?? habit.prot ?? habit.pro) || 0) * 10) / 10;
+  const carbo = Math.round((Number(habit.carbs ?? habit.carb ?? habit.carbo) || 0) * 10) / 10;
+  const fat = Math.round((Number(habit.fats ?? habit.fat ?? habit.fatTotal) || 0) * 10) / 10;
+  const foodDbKey = String(habit.foodDbKey || habit.key || habit.id || '').trim() || null;
+  const icon = habit.emoji || habit.icon || resolveFoodVisualEmoji(foodName);
+  const id = `mcdrive_habit_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  return attachResolvedFoodIcon({
+    id,
+    foodName,
+    spokenFoodName: foodName,
+    grams,
+    unit,
+    kcal,
+    pro,
+    carbo,
+    fat,
+    foodDbKey,
+    source: 'habit_shortcut',
+    status: 'resolved',
+    isEstimated: false,
+    quantitySource: 'user-history',
+    habitualPortion: true,
+    servingLabel: habit.servingLabel || (unit === 'g' ? `${grams} g` : `${grams}${unit}`),
+    icon,
+    emoji: icon,
+    alternatives: [],
+    sourceText: habit.text || foodName,
+  });
 }
 
 /**

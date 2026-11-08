@@ -1,0 +1,66 @@
+CATALOGO SFONDI — 52 FILE
+Abbinamento suggerito per l’app: usa il momento indicato per selezionare lo sfondo.
+
+PASTI
+-----
+cena.webp — Cena
+colazione.webp — Colazione
+pranzo.webp — Pranzo
+snack.webp — Spuntino o merenda
+
+STAGIONI
+--------
+autunno_01_zucche_uva_foglie.webp — Autunno
+autunno_02_castagne_funghi_tavola_rustica.webp — Autunno
+autunno_03_vendemmia_vigneto.webp — Autunno
+autunno_04_tisana_mele_noci.webp — Autunno
+estate_01_terrazza_mare_limoni.webp — Estate
+estate_02_frutta_estiva_giardino.webp — Estate
+estate_03_tramonto_costiera_bouganville.webp — Estate
+estate_04_picnic_ulivi_fichi.webp — Estate
+inverno_01_neve_tavola_nordica.webp — Inverno
+inverno_02_avena_mela_noci.webp — Inverno
+inverno_03_agrumi_mandarini_pino.webp — Inverno
+inverno_04_camino_tavola_piatti_caldi.webp — Inverno
+primavera_01_fioritura_ciliegi.webp — Primavera
+primavera_02_fragole_yogurt_avena.webp — Primavera
+primavera_03_campagna_margherite.webp — Primavera
+primavera_04_pergolato_glicine.webp — Primavera
+
+FESTIVITÀ E RICORRENZE
+----------------------
+anniversario_tavola_celebrativa.webp — Anniversario (data personale)
+capodanno_tavola_mezzanotte.webp — Capodanno (31 dicembre–1 gennaio)
+carnevale_dolci_maschere_tavola.webp — Carnevale (periodo variabile)
+compleanno_torta_candeline.webp — Compleanno (data personale)
+epifania_tavola_befana.webp — Epifania (6 gennaio)
+ferragosto_tavola_mediterranea.webp — Ferragosto (15 agosto)
+festa_donna_mimosa_tavola.webp — Festa della Donna (8 marzo)
+festa_mamma_tavola_fiori.webp — Festa della Mamma (seconda domenica di maggio)
+festa_papa_tavola_pranzo.webp — Festa del Papà (19 marzo, Italia)
+fine_scuola_tavola_festa.webp — Fine dell'anno scolastico (giugno)
+giornata_terra_tavola_naturale.webp — Giornata della Terra (22 aprile)
+halloween_tavola_zucca.webp — Halloween (31 ottobre)
+immacolata_tavola_invernale.webp — Immacolata (8 dicembre)
+inizio_estate_tavola_terrazza.webp — Inizio estate (giugno)
+natale_tavola_festiva.webp — Natale (25 dicembre)
+ognissanti_tavola_autunnale.webp — Ognissanti (1 novembre)
+pasqua_tavola_primaverile.webp — Pasqua (data variabile)
+pasquetta_picnic_giardino.webp — Pasquetta (lunedì dopo Pasqua)
+rientro_scuola_tavola_merenda.webp — Rientro a scuola (settembre)
+san_martino_tavola_castagne_vino.webp — San Martino (11 novembre)
+san_valentino_tavola_romantica.webp — San Valentino (14 febbraio)
+santo_stefano_tavola_famiglia.webp — Santo Stefano (26 dicembre)
+vacanze_estive_tavola_mare.webp — Vacanze estive (luglio–agosto)
+vendemmia_tavola_uva_vigneto.webp — Vendemmia (settembre–ottobre)
+
+EVERGREEN
+---------
+alimentazione_vegana_tavola.webp — Quando l'utente sceglie Alimentazione Vegana
+alimentazione_vegetariana_tavola.webp — Quando l'utente sceglie Alimentazione Vegetariana
+cucina_mediterranea_tavola.webp — Quando l'utente sceglie Cucina Mediterranea
+giornata_benessere_tavola_naturale.webp — Quando l'utente sceglie Benessere
+giornata_sport_tavola_energia.webp — Quando l'utente sceglie Sport o recupero attivo
+picnic_mediterraneo.webp — Quando l'utente sceglie Picnic Mediterraneo
+viaggio_vacanze_tavola_aperto.webp — Quando l'utente sceglie Viaggio o Vacanze
+weekend_campagna_tavola.webp — Quando l'utente sceglie Weekend in Campagna

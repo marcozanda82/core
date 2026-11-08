@@ -12,11 +12,18 @@ import {
   formatInboxDraftCardLabel,
 } from '../../utils/mealDraftStatus';
 import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
+import { subscribeMealEntryOpen } from '../../platform/mealEntryOpenBus';
+import {
+  PREFERRED_MEAL_MODE,
+  getPreferredMealMode,
+  setPreferredMealMode,
+} from '../../platform/preferredMealMode';
 import MealTrashSection from '../../components/MealTrashSection';
 import MealTrashSheet from '../../components/MealTrashSheet';
 import { collectPendingSessionDrafts } from './attivitaWorkoutSummary';
 import { useSmartQuickActions } from '../predictive/useSmartQuickActions';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import MealModeToggle from './MealModeToggle';
 
 const StimulusCockpitOverlay = lazyWithRetry(() => import('./StimulusCockpitOverlay'));
 
@@ -46,10 +53,22 @@ const CATEGORY_LABELS = {
   report: 'Report',
   focus: 'Focus',
   tutti: 'Tutte le azioni',
-  'guidato-pasto': 'Per quale pasto vuoi che ti guidi?',
+  'guidato-pasto': 'Quale pasto vuoi inserire?',
 };
 
-const GUIDED_MEAL_PICKER_ID = 'guidato-pasto';
+const MEAL_ENTRY_PICKER_ID = 'guidato-pasto';
+/** @deprecated alias — anticamera pasti condivisa Manuale/AI */
+const GUIDED_MEAL_PICKER_ID = MEAL_ENTRY_PICKER_ID;
+
+function mealEntryQuestion(mode) {
+  return mode === PREFERRED_MEAL_MODE.MANUAL
+    ? 'Quale pasto vuoi inserire?'
+    : 'Per quale pasto vuoi che ti guidi?';
+}
+
+function mealEntrySubtitle(mode) {
+  return mode === PREFERRED_MEAL_MODE.MANUAL ? 'Inserimento manuale' : 'Guidato AI';
+}
 
 function pointFromPointerOrTouch(event) {
   if (event?.touches?.length) {
@@ -94,10 +113,6 @@ const CLINICAL_INSIGHT_ITEM = {
 };
 
 const SUBMENUS = {
-  pasti: [
-    { id: 'manuale', icon: '🔎', label: 'Manuale', sigla: 'MAN', action: 'openManual' },
-    { id: 'guidato', icon: '✨', label: 'Guidato AI', sigla: 'AI', action: 'pickGuidedMeal' },
-  ],
   rapidi: [
     PROTOCOL_PLANNER_ITEM,
     { id: 'acqua', icon: '💧', label: 'Acqua', sigla: 'H2O', action: 'shortcut', shortcutId: 'acqua' },
@@ -394,6 +409,7 @@ function SubmenuFocusOverlay({
   onSelectItem,
   cancelLabel = 'Annulla',
   emptyMessage = '',
+  headerAccessory = null,
 }) {
   const isCatalog = layout === 'catalog';
   const hasSections = Array.isArray(sections) && sections.length > 0;
@@ -431,6 +447,9 @@ function SubmenuFocusOverlay({
               {subtitle}
             </p>
             <h2 className="mt-1 text-xl font-semibold text-zinc-50">{categoryLabel}</h2>
+            {headerAccessory ? (
+              <div className="mt-3 flex w-full justify-center px-1">{headerAccessory}</div>
+            ) : null}
           </div>
 
           <div
@@ -522,6 +541,7 @@ export default function PulsantieraUniversale({
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
+  const [mealEntryMode, setMealEntryMode] = useState(() => getPreferredMealMode());
   const [inboxDrag, setInboxDrag] = useState(null);
   const [showMealTrash, setShowMealTrash] = useState(false);
   const inboxDragRef = useRef({
@@ -555,6 +575,26 @@ export default function PulsantieraUniversale({
       setActiveCategory('pasti');
     }, { embedded })
   ), [embedded]);
+
+  const openPreferredMealEntry = useCallback((forcedMode = null) => {
+    const mode = forcedMode != null
+      ? (forcedMode === PREFERRED_MEAL_MODE.MANUAL
+        ? PREFERRED_MEAL_MODE.MANUAL
+        : PREFERRED_MEAL_MODE.AI)
+      : getPreferredMealMode();
+    if (forcedMode != null) {
+      setPreferredMealMode(mode);
+    }
+    setMealEntryMode(mode);
+    setGuidedMealOrigin(null);
+    setActiveCategory(MEAL_ENTRY_PICKER_ID);
+  }, []);
+
+  useEffect(() => (
+    subscribeMealEntryOpen((mode) => {
+      openPreferredMealEntry(mode);
+    }, { embedded })
+  ), [embedded, openPreferredMealEntry]);
 
   useEffect(() => {
     const onDismissSessionNav = () => closeMenus();
@@ -607,11 +647,22 @@ export default function PulsantieraUniversale({
     return { ...item, icon: '🗓️', label: 'Piano' };
   }, [isDiabetesAppMode]);
 
+  const switchMealEntryMode = useCallback((nextMode) => {
+    if (disabled) return;
+    const mode = nextMode === PREFERRED_MEAL_MODE.MANUAL
+      ? PREFERRED_MEAL_MODE.MANUAL
+      : PREFERRED_MEAL_MODE.AI;
+    setPreferredMealMode(mode);
+    setMealEntryMode(mode);
+  }, [disabled]);
+
   const dispatchItem = useCallback((item) => {
     if (disabled || !item) return;
     if (item.action === 'openManual') {
-      closeMenus();
-      onOpenManualView?.();
+      setPreferredMealMode(PREFERRED_MEAL_MODE.MANUAL);
+      setMealEntryMode(PREFERRED_MEAL_MODE.MANUAL);
+      setGuidedMealOrigin(activeCategory === MEAL_ENTRY_PICKER_ID ? guidedMealOrigin : activeCategory);
+      setActiveCategory(MEAL_ENTRY_PICKER_ID);
       return;
     }
     if (item.action === 'openActivity') {
@@ -649,14 +700,27 @@ export default function PulsantieraUniversale({
       return;
     }
     if (item.action === 'pickGuidedMeal') {
-      setGuidedMealOrigin(activeCategory === GUIDED_MEAL_PICKER_ID ? guidedMealOrigin : activeCategory);
-      setActiveCategory(GUIDED_MEAL_PICKER_ID);
+      setPreferredMealMode(PREFERRED_MEAL_MODE.AI);
+      setMealEntryMode(PREFERRED_MEAL_MODE.AI);
+      setGuidedMealOrigin(activeCategory === MEAL_ENTRY_PICKER_ID ? guidedMealOrigin : activeCategory);
+      setActiveCategory(MEAL_ENTRY_PICKER_ID);
       return;
     }
     if (item.action === 'startGuidedMeal') {
       const mealType = String(item.mealType || '').trim();
       if (!mealType) return;
+      const mode = mealEntryMode === PREFERRED_MEAL_MODE.MANUAL
+        ? PREFERRED_MEAL_MODE.MANUAL
+        : PREFERRED_MEAL_MODE.AI;
+      setPreferredMealMode(mode);
       closeMenus();
+      if (mode === PREFERRED_MEAL_MODE.MANUAL) {
+        onOpenManualView?.({
+          mealType,
+          initialMealSlot: mealType,
+        });
+        return;
+      }
       onSendChatMessage?.('', {
         intent: 'START_MCDRIVE_WIZARD',
         mealType,
@@ -681,6 +745,7 @@ export default function PulsantieraUniversale({
     disabled,
     activeCategory,
     guidedMealOrigin,
+    mealEntryMode,
     onOpenManualView,
     onOpenActivityView,
     onOpenPlanView,
@@ -698,16 +763,24 @@ export default function PulsantieraUniversale({
       }
       return;
     }
+    if (pillarId === 'pasti') {
+      if (activeCategory === 'pasti' || activeCategory === GUIDED_MEAL_PICKER_ID) {
+        closeMenus();
+        return;
+      }
+      openPreferredMealEntry();
+      return;
+    }
     setActiveCategory((prev) => (prev === pillarId ? null : pillarId));
-  }, [disabled, closeMenus, onOpenFocus]);
+  }, [disabled, closeMenus, onOpenFocus, activeCategory, openPreferredMealEntry]);
 
   const overlayConfig = useMemo(() => {
     if (!activeCategory) return null;
 
-    if (activeCategory === GUIDED_MEAL_PICKER_ID) {
+    if (activeCategory === MEAL_ENTRY_PICKER_ID) {
       return {
-        categoryLabel: CATEGORY_LABELS[GUIDED_MEAL_PICKER_ID],
-        subtitle: 'Guidato AI',
+        categoryLabel: mealEntryQuestion(mealEntryMode),
+        subtitle: mealEntrySubtitle(mealEntryMode),
         items: GUIDED_MEAL_ITEMS,
         layout: 'compact',
       };
@@ -766,7 +839,7 @@ export default function PulsantieraUniversale({
       items,
       layout: 'compact',
     };
-  }, [activeCategory, resolveItemPresentation, smartRapidi]);
+  }, [activeCategory, mealEntryMode, resolveItemPresentation, smartRapidi]);
 
   const pastiToday = useMemo(() => {
     const log = Array.isArray(dailyLog) ? dailyLog : [];
@@ -1012,7 +1085,7 @@ export default function PulsantieraUniversale({
           >
             <div className="relative w-full shrink-0 text-center">
               <p className="text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                Scegli pasto
+                Inbox e pasti
               </p>
               <h2 className="mt-1 text-xl font-semibold text-zinc-50">Pasti</h2>
               {Array.isArray(trashMeals) && trashMeals.length > 0 ? (
@@ -1031,19 +1104,22 @@ export default function PulsantieraUniversale({
                   <span className="meal-trash-badge-btn__count">{trashMeals.length}</span>
                 </button>
               ) : null}
-            </div>
-
-            <div className="mx-auto grid w-full max-w-sm shrink-0 grid-cols-2 gap-3 px-4 [&>button]:w-full">
-              <OverlayActionButton
-                icon={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.icon || '🔎'}
-                label={SUBMENUS.pasti.find((i) => i.id === 'manuale')?.label || 'Manuale'}
-                onClick={() => dispatchItem(SUBMENUS.pasti.find((i) => i.id === 'manuale'))}
-              />
-              <OverlayActionButton
-                icon={SUBMENUS.pasti.find((i) => i.id === 'guidato')?.icon || '✨'}
-                label={SUBMENUS.pasti.find((i) => i.id === 'guidato')?.label || 'Guidato AI'}
-                onClick={() => dispatchItem(SUBMENUS.pasti.find((i) => i.id === 'guidato'))}
-              />
+              <div className="mt-3 flex justify-center px-4">
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => openPreferredMealEntry()}
+                  className={[
+                    'rounded-full border border-cyan-400/40 bg-cyan-500/15 px-4 py-2',
+                    'text-sm font-semibold text-cyan-100 transition-colors',
+                    'hover:border-cyan-400/70 hover:bg-cyan-500/25',
+                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
+                    'disabled:pointer-events-none disabled:opacity-45',
+                  ].join(' ')}
+                >
+                  Aggiungi pasto
+                </button>
+              </div>
             </div>
 
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
@@ -1287,7 +1363,14 @@ export default function PulsantieraUniversale({
       disabled={disabled}
       onClose={handleOverlayClose}
       onSelectItem={dispatchItem}
-      cancelLabel={activeCategory === GUIDED_MEAL_PICKER_ID ? 'Indietro' : 'Annulla'}
+      cancelLabel={activeCategory === MEAL_ENTRY_PICKER_ID ? 'Indietro' : 'Annulla'}
+      headerAccessory={activeCategory === MEAL_ENTRY_PICKER_ID ? (
+        <MealModeToggle
+          mode={mealEntryMode}
+          disabled={disabled}
+          onChange={switchMealEntryMode}
+        />
+      ) : null}
     />
   ) : null);
 

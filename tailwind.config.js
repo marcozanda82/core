@@ -6,7 +6,11 @@ export default {
     "./src/features/**/*.{js,ts,jsx,tsx}"
   ],
   theme: {
-    extend: {},
+    extend: {
+      backdropBlur: {
+        xs: '4px',
+      },
+    },
   },
   plugins: [],
 };

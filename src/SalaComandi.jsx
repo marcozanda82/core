@@ -88,6 +88,11 @@ import { mapChatWorkoutToNativePayload } from './features/workout/workoutAdapter
 import { useActivityDrafts } from './hooks/useActivityDrafts';
 import { useAiWorkoutDrafts } from './hooks/useAiWorkoutDrafts';
 import { dismissSessionNavStack } from './features/chat/sessionNavStack';
+import {
+  PREFERRED_MEAL_MODE,
+  setPreferredMealMode,
+} from './platform/preferredMealMode.js';
+import { requestOpenMealEntry } from './platform/mealEntryOpenBus.js';
 import { getActiveDailyProtocol, useDailyProtocol } from './features/dailyProtocols/dailyProtocolStore';
 import { DAILY_PROTOCOL_STATUS } from './features/dailyProtocols/dailyProtocols';
 import { PROTOCOL_ACTIVITY_DRAFT_SOURCE } from './features/dailyProtocols/generateDraftsFromTimeline';
@@ -999,6 +1004,18 @@ export default function SalaComandi() {
     const offset = currentDateObj.getTimezoneOffset() * 60000;
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
+
+  /** Deep-link Focus audit / altri: apri il diario sul giorno ISO indicato. */
+  useEffect(() => {
+    const raw = String(location.state?.openDiaryDate || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
+    setCurrentDateObj(new Date(`${raw}T12:00:00`));
+    setSnapshotOverlayOpen(false);
+    setActiveAction(null);
+    setIsDrawerOpen(false);
+    navigate(location.pathname || '/', { replace: true, state: {} });
+    return undefined;
+  }, [location.state, location.pathname, navigate]);
 
   const nutritionGoalsValue = useMemo(
     () => buildNutritionGoalsSnapshot(userProfile, userTargets),
@@ -3265,10 +3282,36 @@ export default function SalaComandi() {
     setPendingGhostMealId(null);
   }, []);
 
-  const openFastLoggerNew = useCallback(() => {
+  const switchFastLoggerToAiMode = useCallback((mealTypeHint = null) => {
+    setPreferredMealMode(PREFERRED_MEAL_MODE.AI);
+    const rawSlot = String(mealTypeHint || '').trim().split('_')[0];
+    const mealType = rawSlot
+      ? (toCanonicalMealType(rawSlot) || rawSlot)
+      : '';
+    closeFastLogger();
+    // Microtask: lascia smontare FastMealLogger prima di aprire il flusso AI.
+    void Promise.resolve().then(() => {
+      if (mealType && typeof sendMessageRef.current === 'function') {
+        void sendMessageRef.current('', {
+          intent: 'START_MCDRIVE_WIZARD',
+          mealType,
+          skipUserBubble: true,
+        });
+        return;
+      }
+      requestOpenMealEntry(PREFERRED_MEAL_MODE.AI);
+    });
+  }, [closeFastLogger]);
+
+  const openFastLoggerNew = useCallback((opts = null) => {
+    const slotRaw = opts?.initialMealSlot ?? opts?.mealType ?? opts?.mealSlot ?? null;
+    const slotBase = slotRaw != null ? String(slotRaw).trim().split('_')[0] : '';
+    const slot = slotBase
+      ? (toCanonicalMealType(slotBase) || slotBase)
+      : '';
     setMealToEdit(null);
     setEditingMealId(null);
-    setFastLoggerInitialSlot(null);
+    setFastLoggerInitialSlot(slot || null);
     setPendingGhostMealId(null);
     setFastLoggerRemountKey((k) => k + 1);
     setShowFastLogger(true);
@@ -8311,7 +8354,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       loadMealToConstructor(editingMealId);
       return;
     }
-    openFastLoggerNew();
+    openFastLoggerNew(payload && typeof payload === 'object' ? payload : null);
   }, [openFastLoggerNew, loadMealToConstructor]);
 
   const handleOpenActivityFromChat = useCallback((payload = {}) => {
@@ -10138,6 +10181,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           autoOpenBarcodeScanner={fastLoggerAutoOpenScanner}
           onAutoOpenBarcodeScannerConsumed={() => setFastLoggerAutoOpenScanner(false)}
           onClose={closeFastLogger}
+          onSwitchToAiMode={switchFastLoggerToAiMode}
           onSave={handleFastLoggerSave}
           onAcquireExternalFood={saveFoodEntryPer100ToFoodDb}
           onPatchFoodDbEntry={patchFoodDbEntry}

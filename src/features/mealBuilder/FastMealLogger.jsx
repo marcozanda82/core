@@ -85,6 +85,8 @@ import {
 import { decimalToTimeStr } from '../../coreEngine';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 import { rememberRecentFoodPortion } from '../commandTerminal/conversation/userPortionsMemory';
+import MealModeToggle from '../chat/MealModeToggle';
+import { PREFERRED_MEAL_MODE } from '../../platform/preferredMealMode';
 import {
   getTimeSlotForDecimalHour,
   mergePredictiveWithPersonalDb,
@@ -457,6 +459,7 @@ function FastMealLoggerContent({
   fullHistory,
   todayLog = null,
   onClose,
+  onSwitchToAiMode = null,
   onSave,
   personalDb,
   kentuItDb,
@@ -478,8 +481,14 @@ function FastMealLoggerContent({
   effectiveDailyKcal = null,
   dailyMacroTargets = null,
 }) {
+  const explicitInitialSlot = !editingMealId && initialMealSlot != null && String(initialMealSlot).trim() !== ''
+    ? normalizeMealSlotType(String(initialMealSlot).split('_')[0])
+    : null;
+
   const [selectedSlot, setSelectedSlot] = useState(() => {
-    const initial = initialMealSlot || resolveInitialMealSlot(initialDraft, editingMealId);
+    const initial = explicitInitialSlot
+      || initialMealSlot
+      || resolveInitialMealSlot(initialDraft, editingMealId);
     if (editingMealId) return initial;
     if (isTimestampMealSlot(initial) || isGhostInstanceMealType(initial)) return initial;
     return createSessionMealSlotId(initial);
@@ -581,7 +590,8 @@ function FastMealLoggerContent({
   });
 
   const canonicalSelectedSlot = normalizeMealSlotType(selectedSlot);
-  const mealTypeManualRef = useRef(false);
+  /** Se l'anticamera ha passato uno slot esplicito, non sovrascrivere con lo slot «appreso» dall'ora. */
+  const mealTypeManualRef = useRef(Boolean(explicitInitialSlot));
   const handleMealTypeChange = useCallback((nextSlot) => {
     const next = normalizeMealSlotType(nextSlot);
     mealTypeManualRef.current = true;
@@ -592,6 +602,12 @@ function FastMealLoggerContent({
     ));
     setMealType(next);
   }, [setMealType]);
+
+  useEffect(() => {
+    if (!explicitInitialSlot) return;
+    mealTypeManualRef.current = true;
+    setMealType(explicitInitialSlot);
+  }, [explicitInitialSlot, setMealType]);
 
   /** Imposta l'orario bozza senza vincoli rispetto ai pasti già loggati (solo bound 0–24). */
   const commitDraftMealTime = useCallback((hour, { fromNativeInput = false } = {}) => {
@@ -639,6 +655,7 @@ function FastMealLoggerContent({
   useEffect(() => {
     if (editingMealId) return;
     if (mealTypeManualRef.current) return;
+    if (explicitInitialSlot) return;
     if (!Number.isFinite(Number(mealTime))) return;
     const nextSlot = getLearnedMealSlot(mealTime, fullHistory);
     setSelectedSlot((prev) => {
@@ -648,7 +665,7 @@ function FastMealLoggerContent({
       }
       return prev === nextSlot ? prev : nextSlot;
     });
-  }, [mealTime, fullHistory, editingMealId]);
+  }, [mealTime, fullHistory, editingMealId, explicitInitialSlot]);
 
   const notifyItemAdded = (label) => {
     setAddFeedback(label || 'Aggiunto al piatto');
@@ -1870,6 +1887,19 @@ function FastMealLoggerContent({
             {isSavingMeal ? '…' : headerConfirmLabel}
           </button>
         </div>
+        {!isEditMode && typeof onSwitchToAiMode === 'function' ? (
+          <div className="flex w-full justify-center px-4 pb-2">
+            <MealModeToggle
+              mode={PREFERRED_MEAL_MODE.MANUAL}
+              disabled={isSavingMeal}
+              onChange={(next) => {
+                if (next === PREFERRED_MEAL_MODE.AI) {
+                  onSwitchToAiMode?.(canonicalSelectedSlot);
+                }
+              }}
+            />
+          </div>
+        ) : null}
         <div className="px-4 pb-3">
           <div
             role="tablist"
@@ -2601,6 +2631,7 @@ export default function FastMealLogger({
   fullHistory,
   todayLog = null,
   onClose,
+  onSwitchToAiMode = null,
   onSave,
   personalDb,
   masterDb: masterDbProp,
@@ -2662,13 +2693,19 @@ export default function FastMealLogger({
     }
     return getCurrentDecimalHours();
   }, [initialMealTime, initialDraft]);
-  const composerInitialMealType =
-    (Array.isArray(initialDraft) && initialDraft[0]?.mealType
-      ? String(initialDraft[0].mealType).split('_')[0]
-      : null)
-    || (initialMealSlot ? String(initialMealSlot).split('_')[0] : null)
-    || (editingMealId ? String(editingMealId).split('_')[0] : null)
-    || inferMealSlotFromCurrentHour();
+  const composerInitialMealType = (() => {
+    // Nuovo pasto dall'anticamera: lo slot esplicito ha priorità sullo storico draft.
+    if (!editingMealId && initialMealSlot != null && String(initialMealSlot).trim() !== '') {
+      return normalizeMealSlotType(String(initialMealSlot).split('_')[0]);
+    }
+    if (Array.isArray(initialDraft) && initialDraft[0]?.mealType) {
+      return normalizeMealSlotType(String(initialDraft[0].mealType).split('_')[0]);
+    }
+    if (editingMealId) {
+      return normalizeMealSlotType(String(editingMealId).split('_')[0]);
+    }
+    return inferMealSlotFromCurrentHour();
+  })();
 
   const isEditMode = Boolean(editingMealId);
 
@@ -2690,6 +2727,7 @@ export default function FastMealLogger({
             fullHistory={fullHistory}
             todayLog={todayLog}
             onClose={onClose}
+            onSwitchToAiMode={onSwitchToAiMode}
             onSave={onSave}
             personalDb={personalDb}
             kentuItDb={resolvedKentuItDb}

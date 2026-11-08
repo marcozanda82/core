@@ -1,0 +1,53 @@
+﻿filename,categoria,sottocategoria,nome_visualizzato,momento_abbinato,descrizione,formato,larghezza,altezza
+colazione.webp,pasti,colazione,Colazione,Colazione,"Cappuccino, caffè, cornetto, frutti di bosco e miele su tavola in legno in luce mattutina.",WebP,1080,1920
+pranzo.webp,pasti,pranzo,Pranzo,Pranzo,"Pasta al pomodoro e basilico, insalata, olio extravergine e pane su tavola mediterranea luminosa.",WebP,1080,1920
+snack.webp,pasti,snack,Snack,Spuntino o merenda,"Yogurt, frutta fresca, frutta secca, biscotti e tè su tavola in luce pomeridiana.",WebP,1080,1920
+cena.webp,pasti,cena,Cena,Cena,"Zuppa, verdure arrosto, pane ed erbe aromatiche su tavola serale con luce calda.",WebP,1080,1920
+primavera_01_fioritura_ciliegi.webp,stagioni,primavera,Primavera 01 — Fioritura dei ciliegi,Primavera,"Tavolo in legno in giardino mediterraneo con ciliegi fioriti, fragole e luce delicata.",WebP,1080,1920
+primavera_02_fragole_yogurt_avena.webp,stagioni,primavera,"Primavera 02 — Fragole, yogurt e avena",Primavera,"Tavolo in terrazza con fragole, yogurt bianco, avena, chia e noci tra i fiori primaverili.",WebP,1080,1920
+primavera_03_campagna_margherite.webp,stagioni,primavera,Primavera 03 — Campagna e margherite,Primavera,"Tavola in campagna verde con margherite, erbe fresche e frutta di stagione.",WebP,1080,1920
+primavera_04_pergolato_glicine.webp,stagioni,primavera,Primavera 04 — Pergolato di glicine,Primavera,"Tavolo in pietra sotto glicine fiorito, con vegetazione primaverile e luce filtrata.",WebP,1080,1920
+estate_01_terrazza_mare_limoni.webp,stagioni,estate,Estate 01 — Terrazza sul mare e limoni,Estate,"Tavolo in terrazza vista mare con limoni, agrumi e luce estiva intensa.",WebP,1080,1920
+estate_02_frutta_estiva_giardino.webp,stagioni,estate,Estate 02 — Frutta estiva in giardino,Estate,"Tavola da giardino con anguria, pesche, albicocche e altra frutta estiva.",WebP,1080,1920
+estate_03_tramonto_costiera_bouganville.webp,stagioni,estate,Estate 03 — Tramonto sulla costiera,Estate,"Tavolo all'aperto con bouganville, frutta e tramonto sulla costa mediterranea.",WebP,1080,1920
+estate_04_picnic_ulivi_fichi.webp,stagioni,estate,Estate 04 — Picnic tra ulivi e fichi,Estate,"Tavolo da picnic sotto ulivi con fichi, uva, pane e luce estiva.",WebP,1080,1920
+autunno_01_zucche_uva_foglie.webp,stagioni,autunno,"Autunno 01 — Zucche, uva e foglie",Autunno,"Tavola rustica con zucche, uva e foglie autunnali in un giardino di campagna.",WebP,1080,1920
+autunno_02_castagne_funghi_tavola_rustica.webp,stagioni,autunno,Autunno 02 — Castagne e funghi,Autunno,"Tavolo in legno con castagne, funghi di bosco e zuppa in luce autunnale.",WebP,1080,1920
+autunno_03_vendemmia_vigneto.webp,stagioni,autunno,Autunno 03 — Vendemmia nel vigneto,Autunno,"Tavola da vendemmia tra filari, cassette di legno e grappoli d'uva.",WebP,1080,1920
+autunno_04_tisana_mele_noci.webp,stagioni,autunno,"Autunno 04 — Tisana, mele e noci",Autunno,"Tavola in cucina con tisana, mele, noci e luce ambrata pomeridiana.",WebP,1080,1920
+inverno_01_neve_tavola_nordica.webp,stagioni,inverno,Inverno 01 — Tavola nordica tra la neve,Inverno,"Tavolo di legno vicino a un paesaggio innevato, con bacche e tessuto caldo.",WebP,1080,1920
+inverno_02_avena_mela_noci.webp,stagioni,inverno,"Inverno 02 — Avena, mela e noci",Inverno,"Tavola invernale con avena calda, mela, yogurt bianco, noci, clementine e tisana.",WebP,1080,1920
+inverno_03_agrumi_mandarini_pino.webp,stagioni,inverno,"Inverno 03 — Agrumi, mandarini e pino",Inverno,"Tavola in cucina con mandarini, arance, rami di pino e luce invernale.",WebP,1080,1920
+inverno_04_camino_tavola_piatti_caldi.webp,stagioni,inverno,Inverno 04 — Camino e piatti caldi,Inverno,Tavola di legno con zuppa e pane davanti a un camino acceso.,WebP,1080,1920
+capodanno_tavola_mezzanotte.webp,festivita,gennaio,Capodanno — Tavola di mezzanotte,Capodanno (31 dicembre–1 gennaio),"Tavola elegante con uva, melograno, calici e luci della mezzanotte.",WebP,1080,1920
+epifania_tavola_befana.webp,festivita,gennaio,Epifania — Tavola della Befana,Epifania (6 gennaio),"Tavola invernale con calza della Befana, biscotti tradizionali, latte e mandarini.",WebP,1080,1920
+san_valentino_tavola_romantica.webp,festivita,febbraio,San Valentino — Tavola romantica,San Valentino (14 febbraio),"Tavola romantica con rose, cioccolato, frutti rossi e luce di candela.",WebP,1080,1920
+carnevale_dolci_maschere_tavola.webp,festivita,febbraio,Carnevale — Dolci e maschere,Carnevale (periodo variabile),"Tavola di Carnevale con chiacchiere, piccoli dolci tradizionali, maschera e nastri.",WebP,1080,1920
+festa_donna_mimosa_tavola.webp,festivita,marzo,Festa della Donna — Tavola alla mimosa,Festa della Donna (8 marzo),"Tavola con mimosa, agrumi, ceci, verdure fresche e pane integrale.",WebP,1080,1920
+festa_papa_tavola_pranzo.webp,festivita,marzo,Festa del Papà — Pranzo italiano,"Festa del Papà (19 marzo, Italia)","Tavola per il pranzo del Papà con zeppole tradizionali, espresso e rosmarino.",WebP,1080,1920
+pasqua_tavola_primaverile.webp,festivita,aprile,Pasqua — Tavola primaverile,Pasqua (data variabile),"Tavola pasquale con uova decorate, Colomba, tulipani e tessuti chiari.",WebP,1080,1920
+pasquetta_picnic_giardino.webp,festivita,aprile,Pasquetta — Picnic in giardino,Pasquetta (lunedì dopo Pasqua),"Tavolo da picnic con frittata, pane, insalata e vegetazione primaverile.",WebP,1080,1920
+festa_mamma_tavola_fiori.webp,festivita,maggio,Festa della Mamma — Tavola fiorita,Festa della Mamma (seconda domenica di maggio),"Tavola con fiori, fragole, yogurt bianco, frutta e pane integrale.",WebP,1080,1920
+giornata_terra_tavola_naturale.webp,festivita,aprile,Giornata della Terra — Tavola naturale,Giornata della Terra (22 aprile),"Tavola in legno recuperato con verdure stagionali, erbe e materiali riutilizzabili.",WebP,1080,1920
+fine_scuola_tavola_festa.webp,festivita,giugno,Fine Scuola — Merenda di festa,Fine dell'anno scolastico (giugno),"Tavola da merenda con frutti di bosco, mele, yogurt, crackers integrali e quaderno.",WebP,1080,1920
+inizio_estate_tavola_terrazza.webp,festivita,giugno,Inizio Estate — Tavola in terrazza,Inizio estate (giugno),"Tavola in terrazza con ciliegie, albicocche e limonata in luce estiva.",WebP,1080,1920
+vacanze_estive_tavola_mare.webp,festivita,luglio_agosto,Vacanze Estive — Tavola al mare,Vacanze estive (luglio–agosto),"Tavolo vicino al mare con melone, pesche e frutta fresca.",WebP,1080,1920
+ferragosto_tavola_mediterranea.webp,festivita,agosto,Ferragosto — Tavola mediterranea,Ferragosto (15 agosto),"Tavola conviviale con pomodori, verdure grigliate, anguria e acqua al limone.",WebP,1080,1920
+rientro_scuola_tavola_merenda.webp,festivita,settembre,Rientro a Scuola — Merenda,Rientro a scuola (settembre),"Tavola da merenda con mela, pera, yogurt con avena, pane integrale e basilico.",WebP,1080,1920
+vendemmia_tavola_uva_vigneto.webp,festivita,settembre,Vendemmia — Tavola tra i vigneti,Vendemmia (settembre–ottobre),"Tavola da raccolta con uva, cassette e vigneto in luce dorata.",WebP,1080,1920
+halloween_tavola_zucca.webp,festivita,ottobre,Halloween — Tavola con zucca,Halloween (31 ottobre),"Tavola autunnale con zucca arrosto, semi, mele, uva e lanterne a forma di zucca.",WebP,1080,1920
+ognissanti_tavola_autunnale.webp,festivita,novembre,Ognissanti — Tavola autunnale,Ognissanti (1 novembre),"Tavola di famiglia con zuppa di verdure, ceci, melograno, noci e crisantemi.",WebP,1080,1920
+san_martino_tavola_castagne_vino.webp,festivita,novembre,San Martino — Castagne e vino novello,San Martino (11 novembre),"Tavola rustica con castagne, uva, pane casereccio e un piccolo calice di vino novello.",WebP,1080,1920
+immacolata_tavola_invernale.webp,festivita,dicembre,Immacolata — Tavola invernale,Immacolata (8 dicembre),"Tavola invernale con agrumi, olive, verdure arrosto e rami sempreverdi.",WebP,1080,1920
+natale_tavola_festiva.webp,festivita,dicembre,Natale — Tavola festiva,Natale (25 dicembre),"Tavola natalizia con una piccola porzione di panettone, agrumi, noci, melograno e abete.",WebP,1080,1920
+santo_stefano_tavola_famiglia.webp,festivita,dicembre,Santo Stefano — Pranzo in famiglia,Santo Stefano (26 dicembre),"Tavola di famiglia con zuppa di lenticchie, verdure invernali e agrumi.",WebP,1080,1920
+compleanno_torta_candeline.webp,ricorrenze,personali,Compleanno — Torta e candeline,Compleanno (data personale),"Tavola di compleanno con torta ai frutti di bosco, candeline e fiori.",WebP,1080,1920
+anniversario_tavola_celebrativa.webp,ricorrenze,personali,Anniversario — Tavola celebrativa,Anniversario (data personale),"Tavola romantica con pesce, verdure arrosto, melograno, olive e candele.",WebP,1080,1920
+picnic_mediterraneo.webp,evergreen,picnic,Picnic Mediterraneo,Quando l'utente sceglie Picnic Mediterraneo,"Tavolo da picnic con fichi, ceci, insalata, olive, pane integrale e noci.",WebP,1080,1920
+giornata_benessere_tavola_naturale.webp,evergreen,benessere,Giornata del Benessere,Quando l'utente sceglie Benessere,"Tavola luminosa con yogurt naturale, frutti di bosco, chia, agrumi e noci.",WebP,1080,1920
+giornata_sport_tavola_energia.webp,evergreen,sport,Giornata dello Sport,Quando l'utente sceglie Sport o recupero attivo,"Tavola post-attività con uova, hummus, pomodori, banana, noci e acqua.",WebP,1080,1920
+alimentazione_vegetariana_tavola.webp,evergreen,vegetariano,Alimentazione Vegetariana,Quando l'utente sceglie Alimentazione Vegetariana,"Tavola vegetariana con lenticchie, verdure arrosto, uovo, yogurt e semi.",WebP,1080,1920
+alimentazione_vegana_tavola.webp,evergreen,vegano,Alimentazione Vegana,Quando l'utente sceglie Alimentazione Vegana,"Tavola vegetale con ceci, lenticchie, quinoa, peperoni, hummus, semi e olio.",WebP,1080,1920
+cucina_mediterranea_tavola.webp,evergreen,mediterraneo,Cucina Mediterranea,Quando l'utente sceglie Cucina Mediterranea,"Tavola mediterranea con pane integrale, pomodori, fagioli, sardine, olive e rosmarino.",WebP,1080,1920
+weekend_campagna_tavola.webp,evergreen,campagna,Weekend in Campagna,Quando l'utente sceglie Weekend in Campagna,"Tavola rustica con verdure, mele, noci, fagioli bianchi ed erbe aromatiche.",WebP,1080,1920
+viaggio_vacanze_tavola_aperto.webp,evergreen,viaggio,Viaggio e Vacanze,Quando l'utente sceglie Viaggio o Vacanze,"Tavola costiera con pesche, fichi, pomodori, olive, focaccia integrale e acqua.",WebP,1080,1920

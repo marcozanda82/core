@@ -122,7 +122,6 @@ import {
 import { createSessionMealSlotId, retargetSessionMealSlotId } from '../../coreEngine.jsx';
 import {
   MCDRIVE_CANCEL_CHIP,
-  MCDRIVE_FINISH_CHIP,
   MCDRIVE_START_MESSAGE,
   MCDRIVE_ADD_MORE_CHIP,
   MCDRIVE_MEAL_TYPE_PROMPT,
@@ -136,6 +135,7 @@ import {
   parseMcdriveFoodInput,
   parseMcdriveFoodInputs,
   buildMcDriveItemFromMatch,
+  buildMcDriveItemFromHabitShortcut,
   buildMcDriveItemFromSearchResult,
   buildMcDriveRawItem,
   resolveMcdriveFoodViaSemanticMatchmaker,
@@ -144,6 +144,7 @@ import {
   findNextRawMcDriveIndex,
   hasPendingMcDriveEnrichment,
   isMcDriveDisambiguationStatus,
+  draftHasRawMcDriveItems,
   normalizeMcdriveMealType,
   formatMcdriveMealTypeLabel,
   normalizeMcdriveExactTimeHHmm,
@@ -487,6 +488,10 @@ export class CommandTerminalController {
     this.mcdriveDraftPersisted = false;
     /** Evita overlap se processNext viene richiamato mentre è in corso. */
     this.mcdriveValidationRunning = false;
+    /** Se arriva un nuovo raw mentre la coda gira, riparte a fine ciclo. */
+    this.mcdriveValidationQueued = false;
+    /** Indice scheda disambiguazione McDrive (se aperta). */
+    this.mcdriveDisambiguationIndex = null;
   }
 
   setPendingMealUpdate(ctx) {
@@ -555,6 +560,8 @@ export class CommandTerminalController {
     this.mcdriveMealType = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
+    this.mcdriveValidationQueued = false;
+    this.mcdriveDisambiguationIndex = null;
     this.mcdriveDraftPersisted = false;
     this.mcdriveEditingMealId = null;
     this.mcdriveSessionSlotId = null;
@@ -594,6 +601,8 @@ export class CommandTerminalController {
     this.mcdriveContextState = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
+    this.mcdriveValidationQueued = false;
+    this.mcdriveDisambiguationIndex = null;
     this.mcdriveDraftPersisted = false;
     if (
       this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP
@@ -761,6 +770,8 @@ export class CommandTerminalController {
     this.pendingFreeMealLogContext = null;
     this.mcdriveValidationContext = null;
     this.mcdriveValidationRunning = false;
+    this.mcdriveValidationQueued = false;
+    this.mcdriveDisambiguationIndex = null;
 
     const editingMealId = options?.editingMealId != null
       ? String(options.editingMealId).trim()
@@ -885,7 +896,12 @@ export class CommandTerminalController {
       : createSessionMealSlotId(mealType);
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-    return this.publishMcdriveTrayMessage('');
+    const published = this.publishMcdriveTrayMessage('');
+    if (draftHasRawMcDriveItems(this.pendingMcDriveDraft)) {
+      // Auto-calcolo: seed raw (voce / editing unresolved) → match immediato.
+      return this.finishMcdriveWizard(currentState).then(() => published);
+    }
+    return published;
   }
 
   shouldOpenAssistedMealPipeline(userText, options = {}, chatHistory = []) {
@@ -941,17 +957,14 @@ export class CommandTerminalController {
       itemId: `assisted_${Date.now()}_${index}`,
     }));
 
-    const started = this.startMcdriveWizard(currentState, {
+    // startMcdriveWizard auto-avvia il match se ci sono raw.
+    return this.startMcdriveWizard(currentState, {
       ...options,
       mealType,
       mealTypeHint: mealType,
       editingFoods,
       userText,
     });
-    if (!this.mcdriveMealType || !Array.isArray(this.pendingMcDriveDraft) || this.pendingMcDriveDraft.length === 0) {
-      return started;
-    }
-    return this.finishMcdriveWizard(currentState);
   }
 
   continueMcdriveAddMore() {
@@ -962,6 +975,73 @@ export class CommandTerminalController {
       ok: true,
       intent: 'ADD_MORE_MCDRIVE',
       conversationState: this.conversationState,
+    };
+  }
+
+  /**
+   * Percorso unico tastiera/QuickAdd: parse locale → raw su draft → sync UI immediata → auto-calcolo.
+   * Non va direttamente al DB matcher senza prima aggiornare la lavagna.
+   */
+  async appendMcDriveQuickFoodText(userText, currentState = {}, options = {}) {
+    this.rememberMcdriveContextState(currentState);
+    const text = String(userText || '').trim();
+    if (!text) {
+      return { ok: false, reason: 'empty_text', liveMealTray: this.buildMcdriveTrayPayload() };
+    }
+
+    // Ripristina loop se la lavagna è aperta ma lo stato controller è driftato.
+    this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
+    if (
+      this.conversationState !== CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP
+      && this.conversationState !== CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM
+    ) {
+      this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    }
+    if (!this.mcdriveMealType) {
+      this.mcdriveMealType = normalizeMcdriveMealType(options?.mealType || options?.mealTypeHint)
+        || inferDefaultMealType(currentState)
+        || 'pranzo';
+    }
+
+    const memory = buildAssistedMemoryFromState({
+      ...currentState,
+      personalDb: this.getFastPathContext(currentState).personalDb,
+    });
+    const source = options?.fromVoice === true ? 'voice' : 'text';
+
+    let parsedItems = parseMcdriveFoodInputs(text, { source, ...memory });
+    if (parsedItems.length === 0) {
+      const interpreted = await interpretAssistedMealInput(text, {
+        source,
+        mealTypeHint: this.mcdriveMealType,
+        ...memory,
+      });
+      parsedItems = toMcDriveParsedItems(interpreted);
+    }
+    // Ultimo fallback: non perdere il tap — tratta l'intera stringa come nome alimento.
+    if (parsedItems.length === 0) {
+      parsedItems = [{
+        foodName: text,
+        grams: 100,
+        isEstimated: true,
+        quantitySource: 'estimated',
+      }];
+    }
+
+    const draftItems = parsedItems.map((parsed) => buildMcDriveRawItem(parsed));
+
+    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
+    this.appendMcDriveDraftItems(draftItems);
+    // Optimistic UI: lavagna aggiornata PRIMA del match DB.
+    this.publishMcdriveTraySync();
+    const trayAfterAppend = this.buildMcdriveTrayPayload();
+
+    const finishResult = await this.finishMcdriveWizard(currentState);
+    return {
+      ...(finishResult && typeof finishResult === 'object' ? finishResult : { ok: true }),
+      liveMealTray: this.buildMcdriveTrayPayload() || trayAfterAppend,
+      quickAdded: true,
+      addedCount: draftItems.length,
     };
   }
 
@@ -999,83 +1079,36 @@ export class CommandTerminalController {
       return this.finishMcdriveWizard(currentState);
     }
 
+    if (forcedIntent === 'MCDRIVE_QUICK_ADD') {
+      return this.appendMcDriveQuickFoodText(text, currentState, options);
+    }
+
     if (this.conversationState === CONVERSATION_STATE.AWAITING_MCDRIVE_SAVE_CONFIRM) {
-      // Testo libero in conferma: tratta come append se sembra cibo, altrimenti ripropone i chip.
-      const maybeFoods = parseMcdriveFoodInputs(text, {
+      // Testo libero in conferma: stesso percorso QuickAdd / tastiera.
+      const probe = parseMcdriveFoodInputs(text, {
         source: options?.fromVoice === true ? 'voice' : 'text',
         ...buildAssistedMemoryFromState({
           ...currentState,
           personalDb: this.getFastPathContext(currentState).personalDb,
         }),
       });
-      if (maybeFoods.length > 0) {
-        this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-        const draftItems = maybeFoods.map((parsed) => buildMcDriveRawItem(parsed));
-        this.appendMcDriveDraftItems(draftItems);
-        this.publishMcdriveTraySync();
-        return { ok: true, appended: true, intent: 'MCDRIVE_APPEND_RAW' };
+      if (probe.length > 0 || text) {
+        return this.appendMcDriveQuickFoodText(text, currentState, options);
       }
       return this.promptMcdriveSaveConfirm();
     }
 
     if (!this.mcdriveMealType) {
-      return this.promptMcdriveMealType();
-    }
-
-    const parsedItems = parseMcdriveFoodInputs(text, {
-      source: options?.fromVoice === true ? 'voice' : 'text',
-      ...buildAssistedMemoryFromState({
-        ...currentState,
-        personalDb: this.getFastPathContext(currentState).personalDb,
-      }),
-    });
-    if (parsedItems.length === 0) {
-      const interpreted = await interpretAssistedMealInput(text, {
-        source: options?.fromVoice === true ? 'voice' : 'text',
-        mealTypeHint: this.mcdriveMealType,
-        ...buildAssistedMemoryFromState({
-          ...currentState,
-          personalDb: this.getFastPathContext(currentState).personalDb,
-        }),
-      });
-      const fromPipeline = toMcDriveParsedItems(interpreted);
-      if (fromPipeline.length === 0) {
-        this.publishMcdriveTraySync();
-        this.bus.publish(
-          DISPATCH_SYSTEM_MESSAGE,
-          {
-            type: 'system',
-            text: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
-            message: 'Non ho riconosciuto l\'alimento. Prova tipo «100g sardine» o «un caffè e un croissant».',
-            isSystem: true,
-          },
-          { source: 'CommandTerminalController' },
-        );
-        return { ok: false, reason: 'unparsed_food' };
+      const hinted = normalizeMcdriveMealType(options?.mealType || options?.mealTypeHint);
+      if (hinted) {
+        this.mcdriveMealType = hinted;
+      } else {
+        return this.promptMcdriveMealType();
       }
-      const draftItems = fromPipeline.map((parsed) => buildMcDriveRawItem(parsed));
-      this.appendMcDriveDraftItems(draftItems);
-      this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-      this.publishMcdriveTraySync();
-      return {
-        ok: true,
-        appended: true,
-        intent: 'MCDRIVE_APPEND_RAW',
-        pendingMcDriveDraft: [...this.pendingMcDriveDraft],
-      };
     }
 
-    // Append raw sulla lavagna (multi-item: «caffè e croissant»).
-    const draftItems = parsedItems.map((parsed) => buildMcDriveRawItem(parsed));
-    this.appendMcDriveDraftItems(draftItems);
-    this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
-    this.publishMcdriveTraySync();
-    return {
-      ok: true,
-      appended: true,
-      intent: 'MCDRIVE_APPEND_RAW',
-      pendingMcDriveDraft: [...this.pendingMcDriveDraft],
-    };
+    // Testo libero (tastiera o chip): stesso percorso della card carosello.
+    return this.appendMcDriveQuickFoodText(text, currentState, options);
   }
 
   appendMcDriveDraftItem(item) {
@@ -1101,12 +1134,33 @@ export class CommandTerminalController {
     this.activeWizard = ACTIVE_WIZARD.MCDRIVE_LOOP;
     this.conversationState = CONVERSATION_STATE.AWAITING_MCDRIVE_LOOP;
     this.persistMcDriveDraftItemsToDiary(toAdd);
+    this.publishMcdriveTraySync();
     return {
       ok: true,
       liveMealTray: this.buildMcdriveTrayPayload(),
       pendingMcDriveDraft: [...this.pendingMcDriveDraft],
       addedCount: toAdd.length,
     };
+  }
+
+  /**
+   * Fast-track scorciatoia abitudine: oggetto strutturato → resolved immediato.
+   * Bypass totale di parser NLP / interpretAssistedMealInput / match DB.
+   */
+  appendMcDriveHabitShortcut(habit, currentState = {}) {
+    this.rememberMcdriveContextState(currentState);
+    const item = habit?.status === 'resolved' && habit?.foodName
+      ? { ...habit, id: habit.id || `mcdrive_habit_${Date.now()}_${Math.random().toString(36).slice(2, 9)}` }
+      : buildMcDriveItemFromHabitShortcut(habit);
+    if (!item?.foodName) {
+      return { ok: false, reason: 'invalid_habit', liveMealTray: this.buildMcdriveTrayPayload() };
+    }
+    if (!this.mcdriveMealType) {
+      this.mcdriveMealType = normalizeMcdriveMealType(
+        habit?.mealType || inferDefaultMealType(currentState),
+      ) || 'pranzo';
+    }
+    return this.appendMcDriveDraftItems([item]);
   }
 
   /**
@@ -1576,7 +1630,8 @@ export class CommandTerminalController {
   }
 
   /**
-   * Termina → avvia validazione sequenziale (nessun DISPATCH_UPSERT_MEAL diretto).
+   * Avvia validazione sequenziale (nessun DISPATCH_UPSERT_MEAL diretto).
+   * Chiamata automaticamente dopo ogni append/seed raw (auto-calcolo).
    */
   async finishMcdriveWizard(currentState = {}) {
     const draftItems = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
@@ -1594,164 +1649,189 @@ export class CommandTerminalController {
   }
 
   /**
-   * Ciclo validazione: primo raw → processing (+ delay UI) → match DB → resolved e continua; fail → enrichment pause.
-   * Parte solo da «Calcola Valori» (finishMcdriveWizard) — mai in automatico sull'append.
+   * Ciclo validazione: primo raw → processing → match DB → resolved e continua; fail → enrichment pause.
+   * Trigger: append/seed automatico (o intent FINISH legacy).
+   * Se arriva un nuovo raw mentre gira, viene messo in coda (`mcdriveValidationQueued`) e riparte in `finally`.
    */
   async processNextRawMcdriveItem() {
     if (this.mcdriveValidationRunning) {
-      return { ok: true, busy: true };
-    }
-
-    const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
-    if (hasPendingMcDriveEnrichment(list)) {
-      return { ok: true, paused: true, reason: 'requires_disambiguation' };
-    }
-
-    const idx = findNextRawMcDriveIndex(list);
-    if (idx < 0) {
-      return this.promptMcdriveSaveConfirm();
+      this.mcdriveValidationQueued = true;
+      return { ok: true, busy: true, queued: true };
     }
 
     this.mcdriveValidationRunning = true;
-    const item = list[idx];
-    const foodName = String(item?.foodName || item?.name || '').trim();
-    const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
-    this.rememberMcdriveContextState(currentState);
+    this.mcdriveValidationQueued = false;
+    let lastResult = { ok: true };
 
-    // Nome vuoto: fallimento immediato, niente delay / lookup.
-    if (!foodName) {
-      this.mcdriveValidationRunning = false;
-      const afterEmpty = [...this.pendingMcDriveDraft];
-      afterEmpty[idx] = {
-        ...item,
-        id: item.id,
-        foodName: '',
-        spokenFoodName: '',
-        status: 'requires_disambiguation',
-        candidates: [],
-        alternatives: [],
-        confidenceScore: 0,
-        needsExternalSearch: false,
-        searchLevel: 1,
-        kcal: 0,
-        pro: 0,
-        carbo: 0,
-        fat: 0,
-        foodDbKey: null,
-      };
-      this.pendingMcDriveDraft = afterEmpty;
-      this.publishMcdriveTraySync();
-      this.openMcdriveDisambiguationForItem(idx);
-      return { ok: true, paused: true, reason: 'requires_disambiguation' };
-    }
-
-    // Paint minimo "processing" senza timer artificiali (niente 80ms per elemento).
-    const nextList = [...list];
-    nextList[idx] = { ...item, status: 'processing' };
-    this.pendingMcDriveDraft = nextList;
-    this.publishMcdriveTraySync();
-    await new Promise((resolve) => {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => resolve());
-      } else {
-        queueMicrotask(resolve);
-      }
-    });
-
-    let resolved = null;
     try {
-      const dbCtx = this.getFastPathContext(currentState);
-      resolved = await resolveMcdriveFoodViaSemanticMatchmaker(foodName, {
-        personalDb: dbCtx.personalDb,
-        kentuItDb: dbCtx.kentuItDb,
-        globalDb: dbCtx.globalDb,
-        offDb: dbCtx.offDb,
-        userFoodAliases: dbCtx.userFoodAliases,
-        userPortions: currentState?.userPortions || currentState?.nutrition?.userPortions || null,
-        preferredFoodDbKey: item?.preferredFoodDbKey || null,
-      });
-    } catch (error) {
-      if (isAbortError(error)) {
-        this.mcdriveValidationRunning = false;
-        throw error;
-      }
-      console.warn('[CommandTerminalController] McDrive sequential match failed', error);
-      // Fallimento ricerca: esci subito verso disambiguazione (niente retry/wait).
-      resolved = {
-        match: null,
-        needsDisambiguation: true,
-        candidates: [],
-        alternatives: [],
-        confidenceScore: 0,
-        source: null,
-      };
-    }
+      // Loop interno: evita overlap e processa tutti i raw già in draft.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
+        if (hasPendingMcDriveEnrichment(list)) {
+          lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
+          break;
+        }
 
-    this.mcdriveValidationRunning = false;
+        const idx = findNextRawMcDriveIndex(list);
+        if (idx < 0) {
+          lastResult = this.promptMcdriveSaveConfirm();
+          break;
+        }
 
-    if (resolved?.match && !resolved?.needsDisambiguation) {
-      const matchFoodDbKey = String(
-        resolved.match?.fdcId || resolved.match?.row?.id || resolved.match?.row?.foodDbKey || '',
-      ).trim() || null;
-      const matchName = String(resolved.match?.name || foodName).trim();
-      const grams = resolveMcdriveGramsWithHistory(
-        item,
-        { foodDbKey: matchFoodDbKey, foodName: matchName },
-        currentState,
-      );
-      const built = buildMcDriveItemFromMatch(
-        foodName,
-        grams,
-        resolved.match,
-        resolved.source,
-        {
+        const item = list[idx];
+        const foodName = String(item?.foodName || item?.name || '').trim();
+        const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
+        this.rememberMcdriveContextState(currentState);
+
+        // Nome vuoto: fallimento immediato, niente delay / lookup.
+        if (!foodName) {
+          const afterEmpty = [...(this.pendingMcDriveDraft || [])];
+          afterEmpty[idx] = {
+            ...item,
+            id: item.id,
+            foodName: '',
+            spokenFoodName: '',
+            status: 'requires_disambiguation',
+            candidates: [],
+            alternatives: [],
+            confidenceScore: 0,
+            needsExternalSearch: false,
+            searchLevel: 1,
+            kcal: 0,
+            pro: 0,
+            carbo: 0,
+            fat: 0,
+            foodDbKey: null,
+          };
+          this.pendingMcDriveDraft = afterEmpty;
+          this.publishMcdriveTraySync();
+          this.openMcdriveDisambiguationForItem(idx);
+          lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
+          break;
+        }
+
+        // Paint minimo "processing" senza timer artificiali.
+        const nextList = [...list];
+        nextList[idx] = { ...item, status: 'processing' };
+        this.pendingMcDriveDraft = nextList;
+        this.publishMcdriveTraySync();
+        await new Promise((resolve) => {
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => resolve());
+          } else {
+            queueMicrotask(resolve);
+          }
+        });
+
+        let resolved = null;
+        try {
+          const dbCtx = this.getFastPathContext(currentState);
+          resolved = await resolveMcdriveFoodViaSemanticMatchmaker(foodName, {
+            personalDb: dbCtx.personalDb,
+            kentuItDb: dbCtx.kentuItDb,
+            globalDb: dbCtx.globalDb,
+            offDb: dbCtx.offDb,
+            userFoodAliases: dbCtx.userFoodAliases,
+            userPortions: currentState?.userPortions || currentState?.nutrition?.userPortions || null,
+            preferredFoodDbKey: item?.preferredFoodDbKey || null,
+          });
+        } catch (error) {
+          if (isAbortError(error)) throw error;
+          console.warn('[CommandTerminalController] McDrive sequential match failed', error);
+          resolved = {
+            match: null,
+            needsDisambiguation: true,
+            candidates: [],
+            alternatives: [],
+            confidenceScore: 0,
+            source: null,
+          };
+        }
+
+        if (resolved?.match && !resolved?.needsDisambiguation) {
+          const matchFoodDbKey = String(
+            resolved.match?.fdcId || resolved.match?.row?.id || resolved.match?.row?.foodDbKey || '',
+          ).trim() || null;
+          const matchName = String(resolved.match?.name || foodName).trim();
+          const grams = resolveMcdriveGramsWithHistory(
+            item,
+            { foodDbKey: matchFoodDbKey, foodName: matchName },
+            currentState,
+          );
+          const built = buildMcDriveItemFromMatch(
+            foodName,
+            grams,
+            resolved.match,
+            resolved.source,
+            {
+              id: item.id,
+              isEstimated: item?.isEstimated === true,
+              alternatives: resolved.alternatives || [],
+              sourceText: item?.sourceText || item?.spokenFoodName || foodName,
+              matchQuality: resolved.matchQuality || resolved.match?.matchQuality || null,
+            },
+          );
+          const after = [...(this.pendingMcDriveDraft || [])];
+          after[idx] = {
+            ...built,
+            id: item.id || built.id,
+            status: 'resolved',
+            confidenceScore: Number(resolved.confidenceScore) || null,
+            matchQuality: built.matchQuality || resolved.matchQuality || null,
+            sourceText: built.sourceText || foodName,
+          };
+          this.pendingMcDriveDraft = after;
+          this.publishMcdriveTraySync();
+          await Promise.resolve();
+          // Continua col prossimo raw (anche quelli arrivati a metà match).
+          continue;
+        }
+
+        // Confidenza insufficiente o più candidati simili: scheda disambiguazione.
+        const candidates = Array.isArray(resolved?.candidates) ? resolved.candidates : [];
+        const afterAmbiguous = [...(this.pendingMcDriveDraft || [])];
+        afterAmbiguous[idx] = {
+          ...item,
           id: item.id,
-          isEstimated: item?.isEstimated === true,
-          alternatives: resolved.alternatives || [],
-          sourceText: item?.sourceText || item?.spokenFoodName || foodName,
-          matchQuality: resolved.matchQuality || resolved.match?.matchQuality || null,
-        },
-      );
-      const after = [...this.pendingMcDriveDraft];
-      after[idx] = {
-        ...built,
-        id: item.id || built.id,
-        status: 'resolved',
-        confidenceScore: Number(resolved.confidenceScore) || null,
-        matchQuality: built.matchQuality || resolved.matchQuality || null,
-        sourceText: built.sourceText || foodName,
-      };
-      this.pendingMcDriveDraft = after;
-      this.publishMcdriveTraySync();
-      // Passaggio coda immediato (microtask): niente delay tra item risolti.
-      await Promise.resolve();
-      return this.processNextRawMcdriveItem();
+          foodName,
+          spokenFoodName: foodName,
+          status: 'requires_disambiguation',
+          candidates,
+          alternatives: resolved?.alternatives || [],
+          confidenceScore: Number(resolved?.confidenceScore) || 0,
+          needsExternalSearch: resolved?.needsExternalSearch === true,
+          searchLevel: Number(resolved?.searchLevel) || 1,
+          kcal: 0,
+          pro: 0,
+          carbo: 0,
+          fat: 0,
+          foodDbKey: null,
+        };
+        this.pendingMcDriveDraft = afterAmbiguous;
+        this.publishMcdriveTraySync();
+        this.openMcdriveDisambiguationForItem(idx);
+        lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
+        break;
+      }
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      console.error('[CommandTerminalController] processNextRawMcdriveItem fatal', error);
+      lastResult = { ok: false, reason: 'mcdrive_validation_error' };
+    } finally {
+      this.mcdriveValidationRunning = false;
+      if (this.mcdriveValidationQueued) {
+        this.mcdriveValidationQueued = false;
+        // Riparti fuori dallo stack corrente: nuovi raw aggiunti mentre eravamo busy.
+        void Promise.resolve().then(() => {
+          if (!this.mcdriveValidationRunning) {
+            void this.processNextRawMcdriveItem();
+          }
+        });
+      }
     }
 
-    // Confidenza insufficiente o più candidati simili: non indovinare — scheda disambiguazione.
-    const candidates = Array.isArray(resolved?.candidates) ? resolved.candidates : [];
-    const afterAmbiguous = [...this.pendingMcDriveDraft];
-    afterAmbiguous[idx] = {
-      ...item,
-      id: item.id,
-      foodName,
-      spokenFoodName: foodName,
-      status: 'requires_disambiguation',
-      candidates,
-      alternatives: resolved?.alternatives || [],
-      confidenceScore: Number(resolved?.confidenceScore) || 0,
-      needsExternalSearch: resolved?.needsExternalSearch === true,
-      searchLevel: Number(resolved?.searchLevel) || 1,
-      kcal: 0,
-      pro: 0,
-      carbo: 0,
-      fat: 0,
-      foodDbKey: null,
-    };
-    this.pendingMcDriveDraft = afterAmbiguous;
-    this.publishMcdriveTraySync();
-    this.openMcdriveDisambiguationForItem(idx);
-    return { ok: true, paused: true, reason: 'requires_disambiguation' };
+    return lastResult;
   }
 
   /**
@@ -6188,6 +6268,10 @@ export class CommandTerminalController {
     if (forcedIntentEarly === 'START_MEAL_BUILDER_WIZARD') {
       // Legacy Guidami → McDrive
       return this.startMealBuilderWizard(userText, currentState, options);
+    }
+    if (forcedIntentEarly === 'MCDRIVE_QUICK_ADD') {
+      // Card carosello / append forzato: parser locale → raw → sync UI → auto-calcolo.
+      return this.appendMcDriveQuickFoodText(userText, currentState, options);
     }
     if (forcedIntentEarly === 'FINISH_MCDRIVE_WIZARD') {
       return this.finishMcdriveWizard(currentState);
