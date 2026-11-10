@@ -10,6 +10,13 @@
           "focusTheme": {
             ".validate": "!newData.exists() || (newData.isString() && (newData.val() === 'system' || newData.val() === 'light' || newData.val() === 'dark'))"
           }
+        },
+        "day_status": {
+          "$date": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['confirmed', 'approximate', 'paused']) && newData.child('confirmed').isBoolean() && newData.child('approximate').isBoolean() && newData.child('paused').isBoolean() && (!newData.hasChild('confirmedAt') || (newData.child('confirmed').val() === true && newData.child('confirmedAt').isNumber())) && (!newData.hasChild('loggedLateAt') || newData.child('loggedLateAt').isNumber()) && (!newData.hasChild('pauseReason') || (newData.child('paused').val() === true && newData.child('pauseReason').isString() && (newData.child('pauseReason').val() === 'vacanza' || newData.child('pauseReason').val() === 'malattia' || newData.child('pauseReason').val() === 'altro'))))"
+          }
         }
       }
     },

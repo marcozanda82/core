@@ -68,13 +68,14 @@ test('P6.12 diff: users base .read/.write invariati (nessun allargamento)', () =
 test('P6.12 diff: database.rules.json users senza nested AI (non ancora deploy)', () => {
   const prod = loadLocal('database.rules.json');
   const keys = Object.keys(prod.rules.users.$uid).filter((k) => !k.startsWith('.')).sort();
-  assert.deepEqual(keys, [], 'production rules file must not yet include kentu_focus_ai until deploy consent');
+  assert.equal(prod.rules.users.$uid.kentu_focus_ai, undefined);
+  assert.deepEqual(keys, ['day_status', 'ui_preferences']);
 });
 
-test('P6.12 diff: focus.local aggiunge solo kentu_focus_ai* sotto users', () => {
+test('P6.12 diff: focus.local aggiunge kentu_focus_ai* e day_status sotto users', () => {
   const focusLocal = loadLocal('database.rules.focus.local.json');
   const keys = Object.keys(focusLocal.rules.users.$uid).filter((k) => !k.startsWith('.')).sort();
-  assert.deepEqual(keys, ['kentu_focus_ai', 'kentu_focus_ai_index']);
+  assert.deepEqual(keys, ['day_status', 'kentu_focus_ai', 'kentu_focus_ai_index', 'ui_preferences']);
   assert.ok(focusLocal.rules.users.$uid.kentu_focus_ai.$periodId['.validate']);
   assert.ok(focusLocal.rules.users.$uid.kentu_focus_ai_index.$indexKey['.validate']);
 });
