@@ -3,8 +3,8 @@
  * Aggrega nutrizione, cilindri muscolari, cilindro cardio (rolling 7d) e diario di oggi.
  */
 
-import { addDays } from '../../../calendarDateUtils';
-import { getTodayString, getLogFromStoricoTree } from '../../../coreEngine';
+import { getTodayString } from '../../../coreEngine';
+import { collectRecentWorkoutLogs } from './recentWorkoutLogs.js';
 import { buildNutritionContextForState } from '../../../conversation/ConsultantEngine.js';
 import { computeTotali } from '../../../useBiochimico.js';
 import { buildFourCylinderStrategicMetrics } from '../../salaComandi/utils/fourCylinderStrategicBridge.js';
@@ -236,64 +236,7 @@ function buildNutritionContextBlock(nutritionState = {}, activeLog = []) {
   };
 }
 
-/**
- * Raccoglie workout degli ultimi ~8 giorni di calendario da fullHistory + activeLog
- * (poi filtrati a 168h esatte da calculateCardioStatus).
- *
- * @param {object} fullHistory
- * @param {Array<object>} activeLog
- * @param {string} activeDate
- * @returns {{ cardioLogs: object[], workoutLogs: object[] }}
- */
-export function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activeDate = '') {
-  const anchor = asTrimmedString(activeDate).slice(0, 10) || getTodayString();
-  const byId = new Map();
-
-  const ingestDay = (dateKey, log) => {
-    (Array.isArray(log) ? log : []).forEach((entry) => {
-      if (!entry || typeof entry !== 'object') return;
-      const kind = asTrimmedString(entry.type).toLowerCase();
-      if (kind && kind !== 'workout') return;
-      const id = asTrimmedString(entry.id) || `${dateKey}:${entry.desc || entry.name || Math.random()}`;
-      if (byId.has(id)) return;
-      byId.set(id, { ...entry, type: 'workout', __dateKey: dateKey });
-    });
-  };
-
-  for (let back = 0; back <= 8; back += 1) {
-    let dateKey = anchor;
-    try {
-      dateKey = addDays(anchor, -back);
-    } catch {
-      break;
-    }
-    if (back === 0 && Array.isArray(activeLog) && activeLog.length) {
-      ingestDay(dateKey, activeLog);
-    } else {
-      try {
-        ingestDay(dateKey, getLogFromStoricoTree(fullHistory, dateKey) || []);
-      } catch {
-        // ignore missing days
-      }
-    }
-  }
-
-  const all = [...byId.values()];
-  const cardioLogs = [];
-  const workoutLogs = [];
-  all.forEach((entry) => {
-    const typeId = asTrimmedString(
-      entry.workoutType ?? entry.subType ?? entry.activityType ?? '',
-    ).toLowerCase();
-    if (['cardio', 'hiit', 'liss'].includes(typeId)) {
-      cardioLogs.push(entry);
-    } else {
-      workoutLogs.push(entry);
-    }
-  });
-
-  return { cardioLogs, workoutLogs, all };
-}
+export { collectRecentWorkoutLogs };
 
 /**
  * @param {object|Array} diaryState

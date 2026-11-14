@@ -13,7 +13,7 @@ export default function AuthLoadingScreen() {
         justifyContent: 'center',
       }}
       aria-busy
-      aria-label="Verifica accesso KentuOS"
+      aria-label="Verifica accesso Kentu"
     />
   );
 }

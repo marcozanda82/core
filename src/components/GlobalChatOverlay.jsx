@@ -1,8 +1,10 @@
-import React, { useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import AiCluster from '../AiCluster';
 import ChatLocalDraftBridge from '../features/chat/ChatLocalDraftBridge';
 import { useChatOverlay } from '../contexts/ChatOverlayContext';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const AiCluster = lazyWithRetry(() => import('../AiCluster'));
 
 /**
  * Overlay chat globale (AiCluster) — niente FAB duplicato.
@@ -84,7 +86,7 @@ export default function GlobalChatOverlay() {
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <img
               src="/nuovo%20logo%20trasparente2.png"
-              alt="KentuOS"
+              alt="Kentu"
               decoding="async"
               className="h-8 w-auto max-w-[120px] shrink-0 object-contain object-left"
             />
@@ -101,14 +103,16 @@ export default function GlobalChatOverlay() {
           {handlersReady ? (
             <ChatLocalDraftBridge>
               {({ chatInput, setChatInput, chatImages, setChatImages }) => (
-                <AiCluster
-                  {...actionHandlers}
-                  chatInput={chatInput}
-                  setChatInput={setChatInput}
-                  chatImages={chatImages}
-                  setChatImages={setChatImages}
-                  onBack={closeChat}
-                />
+                <Suspense fallback={<div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-slate-500">Caricamento chat…</div>}>
+                  <AiCluster
+                    {...actionHandlers}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    chatImages={chatImages}
+                    setChatImages={setChatImages}
+                    onBack={closeChat}
+                  />
+                </Suspense>
               )}
             </ChatLocalDraftBridge>
           ) : (

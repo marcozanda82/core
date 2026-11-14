@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 
 const TIMEFRAME_OPTIONS = ['AUTO', 'IERI', '7G', '14G', '30G'];
 const BOTTOM_MENU_ITEMS = ['Oggi', 'Timeline', 'Strumenti', 'Progetti', 'Menu'];
@@ -267,7 +267,7 @@ export default function MetabolicUI() {
       </BrushedMetalPanel>
 
       <BrushedMetalPanel style={{ marginTop: 12, padding: 12 }}>
-        <svg viewBox="0 0 400 400" role="img" aria-label="KentuOS Metabolic Map" style={{ width: '100%', borderRadius: 16 }}>
+        <svg viewBox="0 0 400 400" role="img" aria-label="Kentu Metabolic Map" style={{ width: '100%', borderRadius: 16 }}>
           <defs>
             <pattern id="kentu-grid-minor" width="20" height="20" patternUnits="userSpaceOnUse">
               <path d="M20 0H0V20" fill="none" stroke="rgba(148,163,184,0.08)" strokeWidth="0.8" />

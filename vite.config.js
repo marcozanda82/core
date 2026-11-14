@@ -97,6 +97,14 @@ function resolveManualChunk(id) {
     return 'pdf-chunk';
   }
   if (id.includes('framer-motion')) return 'ui-chunk';
+  if (
+    id.includes('react-markdown')
+    || id.includes('micromark')
+    || id.includes('remark-')
+    || id.includes('mdast')
+  ) {
+    return 'markdown-chunk';
+  }
 
   return undefined;
 }

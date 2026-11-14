@@ -35,6 +35,7 @@ import {
  * }} params
  */
 export function useLongevityDashboardData({
+  enabled = true,
   fullHistory = null,
   userTargets = null,
   longevityDays = 7,
@@ -49,7 +50,7 @@ export function useLongevityDashboardData({
   currentTrackerDate = null,
 } = {}) {
   const longevityData = useDeferredMemo(() => {
-    if (!fullHistory || !userTargets) return null;
+    if (!enabled || !fullHistory || !userTargets) return null;
     if (Object.keys(fullHistory || {}).length === 0) return null;
 
     console.time('[perf] longevityData');
@@ -63,9 +64,10 @@ export function useLongevityDashboardData({
 
     console.timeEnd('[perf] longevityData');
     return { ...matrix, masterScore, color };
-  }, [fullHistory, userTargets, longevityDays], null);
+  }, [enabled, fullHistory, userTargets, longevityDays], null);
 
   const longevityPayload = useMemo(() => {
+    if (!enabled) return null;
     const nutritionTotals =
       totali && typeof totali === 'object'
         ? {
@@ -133,22 +135,23 @@ export function useLongevityDashboardData({
     dailyWaterGoal,
     sleepStatus,
     longevityData,
+    enabled,
     chartData,
   ]);
 
   const longevityEngineScore = useMemo(
-    () => computeLongevityScore(longevityPayload),
-    [longevityPayload],
+    () => (enabled && longevityPayload ? computeLongevityScore(longevityPayload) : null),
+    [enabled, longevityPayload],
   );
 
   const longevityExplanation = useMemo(
-    () => buildLongevityExplanation(longevityEngineScore),
+    () => (longevityEngineScore ? buildLongevityExplanation(longevityEngineScore) : null),
     [longevityEngineScore],
   );
 
   const [longevityScoreHistory, setLongevityScoreHistory] = useState([]);
   useEffect(() => {
-    if (!fullHistory || !userTargets) { setLongevityScoreHistory([]); return; }
+    if (!enabled || !fullHistory || !userTargets) { setLongevityScoreHistory([]); return; }
     const histKeys = Object.keys(fullHistory);
     if (histKeys.length === 0) { setLongevityScoreHistory([]); return; }
 
@@ -189,10 +192,10 @@ export function useLongevityDashboardData({
     });
 
     return () => { cancelled = true; cancelAnimationFrame(rafId); };
-  }, [fullHistory, userTargets, currentTrackerDate]);
+  }, [enabled, fullHistory, userTargets, currentTrackerDate]);
 
   const longevityTodayScore = useMemo(() => {
-    if (!fullHistory || !userTargets) return 0;
+    if (!enabled || !fullHistory || !userTargets) return 0;
     if (currentTrackerDate === getTodayString()) {
       const s = longevityEngineScore?.score;
       if (typeof s === 'number' && !Number.isNaN(s)) return s;
@@ -200,7 +203,7 @@ export function useLongevityDashboardData({
     const matrix = computeRiskMatrix(fullHistory, userTargets, 1, addDays(currentTrackerDate, 1));
     const m = computeLongevityMasterScoreFromMatrix(matrix);
     return typeof m === 'number' && !Number.isNaN(m) ? m : 0;
-  }, [currentTrackerDate, longevityEngineScore, fullHistory, userTargets]);
+  }, [enabled, currentTrackerDate, longevityEngineScore, fullHistory, userTargets]);
 
   return {
     longevityData,

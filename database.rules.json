@@ -17,6 +17,43 @@
             ".write": "$uid === auth.uid",
             ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['confirmed', 'approximate', 'paused']) && newData.child('confirmed').isBoolean() && newData.child('approximate').isBoolean() && newData.child('paused').isBoolean() && (!newData.hasChild('confirmedAt') || (newData.child('confirmed').val() === true && newData.child('confirmedAt').isNumber())) && (!newData.hasChild('loggedLateAt') || newData.child('loggedLateAt').isNumber()) && (!newData.hasChild('pauseReason') || (newData.child('paused').val() === true && newData.child('pauseReason').isString() && (newData.child('pauseReason').val() === 'vacanza' || newData.child('pauseReason').val() === 'malattia' || newData.child('pauseReason').val() === 'altro'))))"
           }
+        },
+        "focus_day_scores": {
+          "$date": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'reliability', 'cylinders', 'dataVersion']) && (newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2' || newData.child('version').val() == 'kds-3') && (newData.child('reliability').val() == 'high' || newData.child('reliability').val() == 'low') && newData.child('dataVersion').isString() && ((newData.child('version').val() == 'kds-3' && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'movimento', 'forza'])) || (newData.child('version').val() != 'kds-3' && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'forza', 'cardio']))) && newData.child('cylinders/alimentazione/keyFact').isString() && newData.child('cylinders/sonno/keyFact').isString() && newData.child('cylinders/forza/keyFact').isString() && newData.child('cylinders/cardio/keyFact').isString() && (newData.child('cylinders/alimentazione/status').val() == 'on_track' || newData.child('cylinders/alimentazione/status').val() == 'halfway' || newData.child('cylinders/alimentazione/status').val() == 'off_track' || newData.child('cylinders/alimentazione/status').val() == 'no_data') && (newData.child('cylinders/sonno/status').val() == 'on_track' || newData.child('cylinders/sonno/status').val() == 'halfway' || newData.child('cylinders/sonno/status').val() == 'off_track' || newData.child('cylinders/sonno/status').val() == 'no_data') && (newData.child('cylinders/forza/status').val() == 'on_track' || newData.child('cylinders/forza/status').val() == 'halfway' || newData.child('cylinders/forza/status').val() == 'off_track' || newData.child('cylinders/forza/status').val() == 'no_data' || newData.child('cylinders/forza/status').val() == 'inactive') && (newData.child('cylinders/cardio/status').val() == 'on_track' || newData.child('cylinders/cardio/status').val() == 'halfway' || newData.child('cylinders/cardio/status').val() == 'off_track' || newData.child('cylinders/cardio/status').val() == 'no_data') && ((newData.child('scoreIsNull').val() == true && !newData.hasChild('score')) || (newData.child('score').isNumber() && newData.child('score').val() >= 0 && newData.child('score').val() <= 1 && !newData.hasChild('scoreIsNull'))))"
+          }
+        },
+        "safety_status": {
+          "$date": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'level', 'signals']) && newData.child('version').val() == 'sfv-1' && (newData.child('level').val() == 'none' || newData.child('level').val() == 'watch' || newData.child('level').val() == 'act') && newData.child('signals').hasChildren())"
+          }
+        },
+        "score_feedback": {
+          "$date": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['answer', 'scoreVersion', 'cylinders', 'answeredAt']) && (newData.child('answer').val() == 'yes' || newData.child('answer').val() == 'better' || newData.child('answer').val() == 'worse') && newData.child('scoreVersion').isString() && newData.child('answeredAt').isNumber() && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'forza', 'cardio']) && (!newData.hasChild('reason') || (newData.child('reason').isString() && newData.child('reason').val().length <= 200)) && ((newData.child('scoreIsNull').val() == true && !newData.hasChild('score')) || (newData.child('score').isNumber() && newData.child('score').val() >= 0 && newData.child('score').val() <= 1 && !newData.hasChild('scoreIsNull'))))"
+          }
+        },
+        "cylinders": {
+          "forza": {
+            "enabled": {
+              ".read": "$uid === auth.uid",
+              ".write": "$uid === auth.uid",
+              ".validate": "newData.isBoolean()"
+            }
+          }
+        },
+        "movement_checkin": {
+          "$date": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['walked', 'minutes', 'estimated', 'answeredAt']) && (newData.child('walked').val() == 'poco' || newData.child('walked').val() == 'mezzora' || newData.child('walked').val() == 'ora') && newData.child('minutes').isNumber() && newData.child('minutes').val() > 0 && newData.child('minutes').val() <= 180 && newData.child('estimated').val() == true && newData.child('answeredAt').isNumber())"
+          }
         }
       }
     },
@@ -80,7 +117,7 @@
       "system_errors": {
         "$pushId": {
           ".read": false,
-          ".write": "!data.exists() && auth != null && newData.child('uid').val() === auth.uid && newData.hasChildren(['timestamp', 'uid', 'error', 'context']) && newData.child('error').isString() && newData.child('error').val().length() <= 2000 && newData.child('context').isString() && newData.child('context').val().length() <= 200 && (!newData.hasChild('code') || (newData.child('code').isString() && newData.child('code').val().length() <= 200)) && (!newData.hasChild('details') || (newData.child('details').isString() && newData.child('details').val().length() <= 4000)) && (!newData.hasChild('route') || (newData.child('route').isString() && newData.child('route').val().length() <= 300)) && newData.child('timestamp').val() === now"
+          ".write": "!data.exists() && auth != null && newData.child('uid').val() === auth.uid && newData.hasChildren(['timestamp', 'uid', 'error', 'context']) && newData.child('error').isString() && newData.child('error').val().length <= 2000 && newData.child('context').isString() && newData.child('context').val().length <= 200 && (!newData.hasChild('code') || (newData.child('code').isString() && newData.child('code').val().length <= 200)) && (!newData.hasChild('details') || (newData.child('details').isString() && newData.child('details').val().length <= 4000)) && (!newData.hasChild('route') || (newData.child('route').isString() && newData.child('route').val().length <= 300)) && newData.child('timestamp').val() === now"
         }
       }
     }

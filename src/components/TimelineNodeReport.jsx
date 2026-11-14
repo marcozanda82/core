@@ -1,5 +1,7 @@
 import React from 'react';
 import { ghostMealModalFoodRows } from '../features/salaComandi/utils/foodUtils';
+import CondimentChoices from '../features/nutrition/CondimentChoices.jsx';
+import { applyCondimentToFoods, resolveCondimentChoice } from '../features/nutrition/condiments.js';
 import { getMealTimeFromLogItem } from '../features/salaComandi/utils/timelineUtils';
 
 /**
@@ -344,6 +346,9 @@ export default function TimelineNodeReport({
                               }}
                             >
                               {item.name || item.desc}
+                              {item.condimentKind && item.estimated ? (
+                                <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>stimato</span>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -455,6 +460,16 @@ export default function TimelineNodeReport({
                               })}
                             </div>
                           )}
+                          {resolveCondimentChoice(item) ? (
+                            <CondimentChoices
+                              food={item}
+                              onChange={(choice) => {
+                                window.dispatchEvent(new CustomEvent('kentu-condiment', {
+                                  detail: { parent: item, choice },
+                                }));
+                              }}
+                            />
+                          ) : null}
                         </li>
                       );
                     })}

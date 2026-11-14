@@ -6,6 +6,7 @@ import {
   loginWithEmailPassword,
   createAccountWithEmailPassword,
 } from '../services/firebaseAuth';
+import { EMULATOR_USER, isFirebaseEmulatorMode } from '../config/emulatorUser.js';
 
 const AuthContext = createContext(null);
 
@@ -14,7 +15,14 @@ export function AuthProvider({ children }) {
   const [authReady, setAuthReady] = useState(false);
 
   useEffect(() => {
+    let triedEmulatorLogin = false;
     return subscribeToAuth((firebaseUser) => {
+      if (!firebaseUser && isFirebaseEmulatorMode() && !triedEmulatorLogin) {
+        triedEmulatorLogin = true;
+        loginWithEmailPassword(EMULATOR_USER.email, EMULATOR_USER.password).catch((error) => {
+          console.warn('[emulator] accesso automatico non riuscito', error?.code || 'errore');
+        });
+      }
       setUser(firebaseUser);
       setAuthReady(true);
       

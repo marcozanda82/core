@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const functions = require('firebase-functions');
 const {
   DEFAULT_GEMINI_MODEL,
@@ -24,8 +26,19 @@ function readLegacyConfigKey() {
   }
 }
 
+function readLocalSecretFile() {
+  try {
+    const file = path.join(__dirname, '.secret.local');
+    if (!fs.existsSync(file)) return null;
+    const text = fs.readFileSync(file, 'utf8').trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
 function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY || readLegacyConfigKey();
+  const key = process.env.GEMINI_API_KEY || readLocalSecretFile() || readLegacyConfigKey();
   if (!key || !String(key).trim()) {
     throw new functions.https.HttpsError(
       'failed-precondition',
@@ -253,7 +266,7 @@ async function callGeminiGenerateContent({
  */
 exports.callGemini = functions
   .region('europe-west1')
-  .runWith({ timeoutSeconds: 120, memory: '512MB' })
+  .runWith({ timeoutSeconds: 120, memory: '512MB', secrets: ['GEMINI_API_KEY'] })
   .https.onCall(async (data) => {
     try {
       const coldStart = !callGeminiInstanceWarm;

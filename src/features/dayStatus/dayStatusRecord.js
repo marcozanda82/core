@@ -92,5 +92,7 @@ export function buildDayStatusRecord(input = {}) {
 export function finiteEpoch(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
-  return n < 1e11 ? Math.round(n * 1000) : Math.round(n);
+  if (n >= 1e12) return Math.round(n);
+  if (n >= 1e9) return Math.round(n * 1000);
+  return null;
 }

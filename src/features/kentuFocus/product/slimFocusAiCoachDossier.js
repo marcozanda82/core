@@ -395,6 +395,7 @@ export function slimFocusAiCoachDossier(dossier) {
 
   const slim = omitNulls({
     schema: 'kentu.focusAiCoachDossier.v3',
+    periodBrief: dossier.periodBrief || null,
     periodId: dossier.periodId,
     analysisDate: dossier.analysisDate,
     publicationDate: dossier.publicationDate,

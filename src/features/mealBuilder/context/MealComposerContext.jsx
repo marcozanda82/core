@@ -10,6 +10,7 @@ import {
   scaleNutrientsForWeight,
 } from '../utils/foodMacroUtils';
 import { roundToOneDecimal } from '../utils/numberFormatUtils';
+import { applyCondimentToFoods } from '../../nutrition/condiments.js';
 
 const MealComposerContext = createContext(null);
 
@@ -123,10 +124,19 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
     if (foodId == null) return;
 
     setDraftFoods((prev) => {
-      const next = prev.filter((item) => String(item.id) !== String(foodId));
+      const next = prev.filter(
+        (item) => String(item.id) !== String(foodId)
+          && String(item.condimentOf) !== String(foodId),
+      );
       setStatus(next.length === 0 ? 'idle' : 'composing');
       return next;
     });
+  }, []);
+
+  const setFoodCondiment = useCallback((food, choice) => {
+    if (!food?.id || !choice) return;
+    setDraftFoods((prev) => applyCondimentToFoods(prev, food, choice));
+    setStatus('composing');
   }, []);
 
   const updateFoodAmount = useCallback((foodId, multiplier, unitId) => {
@@ -201,6 +211,7 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       updateFoodAmount,
       updateFoodQuantity,
       updateFoodInDraft,
+      setFoodCondiment,
       clearDraft,
       loadInitialDraft,
       setMealTime,
@@ -219,6 +230,7 @@ function useMealComposerState({ initialMealType, initialMealTime } = {}) {
       updateFoodAmount,
       updateFoodQuantity,
       updateFoodInDraft,
+      setFoodCondiment,
       clearDraft,
       loadInitialDraft,
       setMealTime,

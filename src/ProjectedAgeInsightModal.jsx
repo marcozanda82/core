@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { takeNextKentuIntroPhrase } from './kentuIntroPhrases';
 
 export default function ProjectedAgeInsightModal({ open, onClose, contextBlock, callGeminiAPIWithRotation }) {
@@ -20,7 +20,7 @@ export default function ProjectedAgeInsightModal({ open, onClose, contextBlock, 
     let cancelled = false;
     setPhase('loading');
     setText('');
-    const prompt = `Sei KentuOS. Contesto dati utente (sintesi):
+    const prompt = `Sei Kentu. Contesto dati utente (sintesi):
 ${contextBlock}
 
 L'utente ha appena cliccato sulla sua Età Biologica Proiettata, che è variata rispetto al periodo precedente. Analizza i dati recenti (sonno, variazioni di peso/grasso, allenamenti). Spiega in MODO SECCO e in 3 punti elenco PERCHÉ c'è stato questo miglioramento o peggioramento. Lo scopo è confermare le buone abitudini o evidenziare gli errori. Non superare le 4 righe totali. Rispondi in italiano.`;

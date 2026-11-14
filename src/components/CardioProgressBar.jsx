@@ -139,7 +139,7 @@ export default function CardioProgressBar({
     <>
       <div
         className={`w-full cursor-pointer transition-transform duration-200 active:scale-[0.99] ${className}`.trim()}
-        aria-label={`Monitoraggio cardio 7 giorni: ${accumulated} su ${target} minuti, ${remaining} al target. Tocca per l'estratto conto.`}
+        aria-label={`Movimento, ultimi 7 giorni: ${accumulated} minuti equivalenti su ${target}, ${remaining} al target. Tocca per l'estratto conto.`}
         role="button"
         tabIndex={0}
         onClick={openDetails}

@@ -3,7 +3,7 @@
  * Impedisce di mescolare diario reale e edizione dimostrativa.
  */
 
-import { isIsoDateString } from '../normalize/focusDateUtils.js';
+import { formatFocusHistoryLabel, isIsoDateString } from '../normalize/focusDateUtils.js';
 import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { normalizeSleepNight } from '../normalize/normalizeSleepNight.js';
 import { peekFocusDiaryForUser } from './focusDiaryHandoff.js';
@@ -156,11 +156,8 @@ export function resolveFocusPageSession(input) {
       mealManeuver,
     });
 
-    const windowLabel = periodId === 'ieri'
-      ? `Giorno ${analysisDate}`
-      : periodId === 'settimana'
-        ? `Settimana che termina il ${analysisDate}`
-        : `Mese che termina il ${analysisDate}`;
+    const windowLabel = formatFocusHistoryLabel(periodId, analysisDate)
+      || (periodId === 'ieri' ? `Giorno ${analysisDate}` : analysisDate);
 
     return {
       mode: FOCUS_PAGE_MODE.real_diary,
@@ -169,7 +166,7 @@ export function resolveFocusPageSession(input) {
       analysisDate,
       publicationDate,
       windowLabel,
-      banner: 'DIARIO REALE',
+      banner: null,
       headline: {
         title: `Focus · ${periodId === 'ieri' ? 'Ieri' : periodId === 'settimana' ? 'Settimana' : 'Mese'}`,
         subtitle: windowLabel,
@@ -179,6 +176,9 @@ export function resolveFocusPageSession(input) {
       sleepNight,
       wellness,
       userTargets,
+      profile_targets: handoff.profile_targets && typeof handoff.profile_targets === 'object'
+        ? handoff.profile_targets
+        : null,
       mealManeuver,
       habitCompass,
       fullHistory: handoff.fullHistory,

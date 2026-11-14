@@ -10,6 +10,8 @@ import BarcodeScannerOverlay from './components/BarcodeScannerOverlay';
 import MicronutrientEnrichmentModal from './components/MicronutrientEnrichmentModal';
 import { withMealSavingOverlay } from '../../utils/mealSavingOverlayController';
 import DraftCartSmartRow from './components/DraftCartSmartRow';
+import CondimentChoices from '../nutrition/CondimentChoices.jsx';
+import { rememberCondiment, withCondiments } from '../nutrition/condiments.js';
 import RecipeEditor from './components/RecipeEditor';
 import RecipeBuilder from './components/RecipeBuilder';
 import FoodDeepEditModal from './components/FoodDeepEditModal';
@@ -565,6 +567,7 @@ function FastMealLoggerContent({
     removeFoodFromDraft,
     updateFoodAmount,
     updateFoodInDraft,
+    setFoodCondiment,
     clearDraft,
     loadInitialDraft,
   } = useMealComposer();
@@ -582,10 +585,14 @@ function FastMealLoggerContent({
     ),
     [editingMealId, initialDraft],
   );
+  const draftFoodsWithCondiments = useMemo(
+    () => withCondiments(draftFoods),
+    [draftFoods],
+  );
   const dayNutritionProjection = useDayNutritionProjection({
     effectiveTargets: projectionTargets,
     currentDailyLog: todayLog,
-    draftMeal: draftFoods,
+    draftMeal: draftFoodsWithCondiments,
     editingContext: projectionEditingContext,
   });
 
@@ -1523,6 +1530,10 @@ function FastMealLoggerContent({
   };
 
   const draftMealKcal = Math.round(Number(draftTotals?.kcal) || 0);
+  const draftHostFoodCount = useMemo(
+    () => (draftFoods || []).filter((food) => !food?.condimentKind).length,
+    [draftFoods],
+  );
   const checkoutMealTitle = formatCheckoutMealTitle(selectedSlot);
   const miniCartMealLabel = formatMiniCartMealLabel(selectedSlot);
 
@@ -1931,7 +1942,7 @@ function FastMealLoggerContent({
               }`}
             >
               Riepilogo
-              {draftFoods.length > 0 ? (
+              {draftHostFoodCount > 0 ? (
                 <span
                   className={`inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums ${
                     activeTab === 'riepilogo'
@@ -1939,7 +1950,7 @@ function FastMealLoggerContent({
                       : 'bg-cyan-500/20 text-cyan-300'
                   }`}
                 >
-                  {draftFoods.length}
+                  {draftHostFoodCount}
                 </span>
               ) : null}
             </button>
@@ -2298,16 +2309,27 @@ function FastMealLoggerContent({
                 </div>
               ) : (
                 <ul className={`min-w-0 flex-1 ${viewMode === 'compact' ? 'space-y-1.5' : 'space-y-2'}`}>
-                  {draftFoods.map((food) => (
-                    <DraftCartSmartRow
-                      key={food.id}
-                      item={food}
-                      personalDb={personalDb}
-                      onUpdateAmount={updateFoodAmount}
-                      onRemove={removeFoodFromDraft}
-                      onDeepEdit={handleOpenDraftDeepEdit}
-                      variant={viewMode === 'compact' ? 'compact' : 'card'}
-                    />
+                  {draftFoods.filter((food) => !food.condimentKind).map((food) => (
+                    <li key={food.id} className="list-none">
+                      <DraftCartSmartRow
+                        item={food}
+                        personalDb={personalDb}
+                        onUpdateAmount={updateFoodAmount}
+                        onRemove={removeFoodFromDraft}
+                        onDeepEdit={handleOpenDraftDeepEdit}
+                        embedded
+                        variant={viewMode === 'compact' ? 'compact' : 'card'}
+                      />
+                      <CondimentChoices
+                        food={food}
+                        commitDefault
+                        onChange={(choice) => {
+                          const label = food.desc || food.name || food.foodName || '';
+                          rememberCondiment(label, choice);
+                          setFoodCondiment(food, choice);
+                        }}
+                      />
+                    </li>
                   ))}
                   <li>
                     <button
@@ -2416,8 +2438,8 @@ function FastMealLoggerContent({
                   {miniCartMealLabel}
                 </span>
                 <span className="mt-0.5 block text-xs font-semibold text-slate-900/75">
-                  {draftFoods.length}{' '}
-                  {draftFoods.length === 1 ? 'alimento' : 'alimenti'}
+                  {draftHostFoodCount}{' '}
+                  {draftHostFoodCount === 1 ? 'alimento' : 'alimenti'}
                 </span>
               </span>
             </span>

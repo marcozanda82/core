@@ -5,6 +5,7 @@
 import { Suspense, memo } from 'react';
 import KentuLazySectionFallback from '../KentuLazySectionFallback';
 import SimulationJsonCopyButton from '../SimulationJsonCopyButton';
+import { featureFlags } from '../../config/featureFlags.js';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const LongevityView = lazyWithRetry(() => import('../../LongevityView'));
@@ -30,6 +31,7 @@ function LongevityTabShell({
   weeklyKcalChartReference = null,
   longevityResult = null,
 }) {
+  if (!featureFlags.longevityDashboard) return null;
   return (
     <div
       className="relative"

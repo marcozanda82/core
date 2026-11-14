@@ -26,6 +26,22 @@ export const FOCUS_AI_COACH_BANNED_USER_PHRASES = Object.freeze([
   { id: 'polisonnografia', re: /\bpolisonnografi/i, label: 'polisonnografia' },
 ]);
 
+/** Registro v5: forme impersonali e giri di parole che non vanno nel testo per l'utente. */
+export const FOCUS_AI_COACH_BANNED_V5_PHRASES = Object.freeze([
+  { id: 'introito', re: /\bintroito\b/i, label: 'introito' },
+  { id: 'apporto', re: /\bapporto\b/i, label: 'apporto' },
+  { id: 'quota', re: /\bquota\b/i, label: 'quota' },
+  { id: 'riferimento_giornaliero', re: /\briferimento\s+giornaliero\b/i, label: 'riferimento giornaliero' },
+  { id: 'fascia_abituale', re: /\bfascia\s+abituale\b/i, label: 'fascia abituale' },
+  { id: 'fascia_consueta', re: /\bfascia\s+consueta\b/i, label: 'fascia consueta' },
+  { id: 'nel_contesto', re: /\bnel\s+contesto\b/i, label: 'nel contesto' },
+  { id: 'uscite_variabili', re: /\buscite\s+variabili\b/i, label: 'uscite variabili' },
+  { id: 'target', re: /\btarget\b/i, label: 'target' },
+]);
+
+/** Limite visibile quando un alimento resta senza dati di lavorazione. */
+export const FOCUS_UNCLASSIFIED_FOOD_LIMIT = 'Alcuni alimenti non hanno dati sulla lavorazione.';
+
 /** Solo in summary (headline + wentWell + toImprove + todayAction). */
 export const FOCUS_AI_COACH_BANNED_SUMMARY_PHRASES = Object.freeze([
   { id: 'nova_in_summary', re: /\bnova\s*4\b|\bnova\b/i, label: 'NOVA (in summary)' },

@@ -1,6 +1,7 @@
 import { TARGETS } from '../../useBiochimico.js';
 import { isUnresolvedMealDraftItem, INBOX_DRAFT_TYPE, UNASSIGNED_DRAFTS_TYPE } from '../../utils/mealDraftStatus.js';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver.js';
+import { withCondiments } from '../nutrition/condiments.js';
 
 export const ALL_DIARY_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
 
@@ -353,14 +354,17 @@ export function buildCanonicalMealCommitPayload({
       },
       sourceMetadata,
     });
-    if (canonical) items.push(canonical);
+    if (!canonical) return;
+    if (food?.condiment) canonical.condiment = food.condiment;
+    if (!canonical.id) canonical.id = `condiment-host-${index}`;
+    items.push(canonical);
   });
   return {
     mealType: mealType || null,
     slotId: slotId || null,
     mealTime: mealTime ?? null,
     timeString: timeString || null,
-    items,
+    items: withCondiments(items),
     sourceMetadata: { ...sourceMetadata },
   };
 }

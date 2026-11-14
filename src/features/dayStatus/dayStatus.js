@@ -24,7 +24,8 @@ export const DAY_STATUSES = Object.freeze([
   'approximate',
 ]);
 
-const MAIN_MEALS = new Set(['colazione', 'pranzo', 'cena']);
+const MAIN_MEAL_ORDER = ['colazione', 'pranzo', 'cena'];
+const MAIN_MEALS = new Set(MAIN_MEAL_ORDER);
 const REGISTERED_TYPES = new Set(['food', 'recipe', 'meal', 'sleep', 'workout']);
 /** Ore dopo la fine del giorno civile oltre le quali il recupero è "late". */
 export const LATE_AFTER_HOURS = 48;
@@ -95,7 +96,7 @@ export function detectDayGaps(date, context = {}) {
     foods
       .map((item) => resolveFocusMealIdentity(item).canonicalMealType)
       .filter((meal) => MAIN_MEALS.has(meal)),
-  )];
+  )].sort((a, b) => MAIN_MEAL_ORDER.indexOf(a) - MAIN_MEAL_ORDER.indexOf(b));
   const hours = foods
     .map((item) => resolveFoodClockHourDetailed(item, dayNode?.mealTimes).hour)
     .filter((hour) => hour != null && Number.isFinite(hour));

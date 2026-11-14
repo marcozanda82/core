@@ -1,4 +1,10 @@
 import { TARGETS } from '../../../useBiochimico';
+import { withCondiments } from '../../nutrition/condiments.js';
+
+/** Espande olio/sale collegati senza duplicare voci già presenti nel draft. */
+export function expandDraftWithCondiments(draftFoods) {
+  return withCondiments(Array.isArray(draftFoods) ? draftFoods : []);
+}
 
 /** g sale / 100g → mg sodio (NaCl → frazione Na ~0,3934). */
 export const SALT_G_TO_SODIUM_MG = 393.4;
@@ -305,8 +311,10 @@ export function createEmptyDraftTotals() {
 
 export function computeDraftTotals(draftFoods) {
   const totals = createEmptyDraftTotals();
+  // Olio/sale collegati (condiment) o già espansi come voci entrano entrambi nei totali.
+  const foods = expandDraftWithCondiments(draftFoods);
 
-  (draftFoods || []).forEach((item) => {
+  foods.forEach((item) => {
     const nutrients = computeDraftItemNutrients(item);
     totals.kcal += nutrients.kcal || 0;
     totals.prot += nutrients.prot || 0;

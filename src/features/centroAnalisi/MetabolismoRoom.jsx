@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import MetabolicMonitorCard from '../../components/MetabolicMonitorCard';
 import MetabolicReportCard from '../trendHub/components/MetabolicReportCard';
 import SaluteLongevityHero from '../trendHub/components/SaluteLongevityHero';
@@ -160,7 +160,7 @@ export default function MetabolismoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere diario, target e cilindri in sola lettura."
+        body="Accedi da Kentu per leggere diario, target e cilindri in sola lettura."
       />
     );
   }

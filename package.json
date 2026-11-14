@@ -9,6 +9,7 @@
   "scripts": {
     "postinstall": "echo 'Build environment ready.'",
     "dev": "vite",
+    "dev:emulators": "node scripts/devEmulators.mjs",
     "build": "node node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "lint": "eslint .",
@@ -50,7 +51,6 @@
     "focus:export-diary-fixture": "node scripts/exportFocusDiaryFixture.mjs",
     "test:focus:p1k": "node scripts/runFocusAiHistoryEmulatorTests.mjs",
     "test:focus:p1hi": "node --test src/features/kentuFocus/__tests__/focusWeeklyHabitCompass.p1h.test.js src/features/kentuFocus/__tests__/focusCardioStrength.p1i.test.js src/features/kentuFocus/__tests__/focusMealManeuver.p1g.test.js",
-
     "test:focus:p531": "node --test src/features/kentuFocus/__tests__/focusDataQuality.p531.test.js src/features/kentuFocus/__tests__/focusLabDossier.p52.test.js src/features/kentuFocus/__tests__/focusNutritionParity.test.js",
     "test:focus:p533": "node --test src/features/kentuFocus/__tests__/focusMealTiming.p533.test.js src/features/kentuFocus/__tests__/focusDataQuality.p531.test.js src/features/kentuFocus/__tests__/focusNutritionParity.test.js",
     "test:focus:p62": "node --test src/features/kentuFocus/__tests__/focusSleepRoutine.p62.test.js src/features/kentuFocus/__tests__/focusLabDossier.p52.test.js src/features/kentuFocus/__tests__/focusMainNight.i4e.test.js",
@@ -102,6 +102,7 @@
     "@capacitor/camera": "^8.2.2",
     "@capacitor/core": "^8.4.1",
     "@capacitor/haptics": "^8.0.2",
+    "@capacitor/local-notifications": "^8.3.1",
     "@capacitor/splash-screen": "^8.0.2",
     "@google/generative-ai": "^0.24.1",
     "browserslist": "^4.28.7",

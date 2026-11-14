@@ -19,6 +19,8 @@ import {
   FOCUS_REAL_OCT27_CATALOGS as CATALOGS,
   loadFocusDiaryRealOct27,
   buildRealOct27ReportJson,
+  realFixtureSkipReason,
+  FOCUS_REAL_OCT27_FIXTURE,
 } from './fixtures/focusDiaryRealOct27.js';
 
 function buildSession() {
@@ -36,7 +38,9 @@ function buildSession() {
   });
 }
 
-describe('Focus AI Coach summary P1u (fixture reale)', () => {
+describe('Focus AI Coach summary P1u (fixture reale)', {
+  skip: realFixtureSkipReason(FOCUS_REAL_OCT27_FIXTURE),
+}, () => {
   beforeEach(() => {
     __resetFocusDiaryHandoffForTests();
   });

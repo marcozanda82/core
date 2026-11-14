@@ -13,7 +13,10 @@ const BY_UID = new Map();
  *   analysisDate: string,
  *   publicationDate: string,
  *   userTargets?: object|null,
+ *   profile_targets?: object|null,
+ *   diarySource?: string|null,
  *   stashedAt?: string,
+ *   partial?: boolean,
  * }} snapshot
  */
 export function stashFocusDiaryForUser(uid, snapshot) {
@@ -28,12 +31,21 @@ export function stashFocusDiaryForUser(uid, snapshot) {
       fat: snapshot.userTargets.fat ?? null,
     }
     : null;
+  const prev = BY_UID.get(id);
+  const mergedHistory = snapshot.partial && prev?.fullHistory
+    ? { ...prev.fullHistory, ...snapshot.fullHistory }
+    : snapshot.fullHistory;
   BY_UID.set(id, {
     uid: id,
-    fullHistory: snapshot.fullHistory,
+    fullHistory: mergedHistory,
     analysisDate: snapshot.analysisDate || null,
     publicationDate: snapshot.publicationDate || null,
     userTargets: targets,
+    profile_targets: snapshot.profile_targets && typeof snapshot.profile_targets === 'object'
+      ? snapshot.profile_targets
+      : (prev?.profile_targets || null),
+    diarySource: snapshot.diarySource || prev?.diarySource || null,
+    partial: Boolean(snapshot.partial),
     stashedAt: snapshot.stashedAt || new Date().toISOString(),
   });
   return true;

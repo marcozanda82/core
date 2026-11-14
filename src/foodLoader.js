@@ -303,7 +303,7 @@ function emptyCatalogs() {
 }
 
 function foodDbPerfMark(name, detail = undefined) {
-  if (!import.meta.env.DEV || typeof performance === 'undefined') return;
+  if (!import.meta.env?.DEV || typeof performance === 'undefined') return;
   try {
     performance.mark(name);
     if (detail != null) {
@@ -434,7 +434,7 @@ async function loadOffDatabaseBackground(coreSnapshot) {
     offDb,
   };
   emitKentuDatabasesSnapshot(next);
-  if (import.meta.env.DEV) {
+  if (import.meta.env?.DEV) {
     // eslint-disable-next-line no-console
     console.info('[foodLoader] OFF ready (background)', {
       off: Object.keys(offDb).length,

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+﻿import React, { useCallback, useMemo, useState } from 'react';
 import { Share2 } from 'lucide-react';
 import { REPORT_COVER_SRC } from '../commandTerminal/conversation/reportCommandIntent';
 import { shareOrDownloadKentuReportPdf } from './downloadKentuReportPdf';
@@ -59,7 +59,7 @@ export default function ChatReportCard({
       const today = new Date().toISOString().slice(0, 10);
       await shareOrDownloadKentuReportPdf({
         title: title || 'Kentu Daily Report',
-        filename: `KentuOS_DailyReport_${today}.pdf`,
+        filename: `Kentu_DailyReport_${today}.pdf`,
         elementId: PHANTOM_REPORT_ROOT_ID,
       });
     } catch (error) {

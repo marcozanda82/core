@@ -270,7 +270,7 @@ function resolvePathId(id, dossier, session) {
     if (!parts.length) return null;
     return {
       id,
-      label: 'Cardio / allenamento',
+      label: 'Movimento',
       detail: parts.join(' · '),
       available: true,
     };

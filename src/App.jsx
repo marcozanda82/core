@@ -1,10 +1,6 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { get, ref } from 'firebase/database';
-import WeeklyPlannerPage from './pages/WeeklyPlannerPage';
-import CentroAnalisiPage from './pages/CentroAnalisiPage';
-import ConsultoPreview from './pages/ConsultoPreview';
-import KentuFocusPage from './pages/KentuFocusPage';
 import { ChatOverlayProvider } from './contexts/ChatOverlayContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import GlobalChatOverlay from './components/GlobalChatOverlay';
@@ -18,9 +14,17 @@ import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListene
 import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
 import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
+import { featureFlags } from './config/featureFlags.js';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 const SalaComandi = lazyWithRetry(() => import('./SalaComandi'));
+const WeeklyPlannerPage = lazyWithRetry(() => import('./pages/WeeklyPlannerPage'));
+const CentroAnalisiPage = lazyWithRetry(() => import('./pages/CentroAnalisiPage'));
+const ConsultoPreview = lazyWithRetry(() => import('./pages/ConsultoPreview'));
+const KentuFocusPage = lazyWithRetry(() => import('./pages/KentuFocusPage'));
+const ScoreFeedbackReviewPage = import.meta.env.DEV
+  ? lazyWithRetry(() => import('./pages/ScoreFeedbackReviewPage.jsx'))
+  : null;
 
 function AppBootFallback() {
   return <AuthLoadingScreen />;
@@ -82,6 +86,20 @@ function AuthenticatedApp() {
     setNeedsOnboarding(false);
   }, []);
 
+  useEffect(() => {
+    if (!user?.uid || !profileCheckReady || needsOnboarding) return undefined;
+    let cancelled = false;
+    import('./features/kentuFocus/product/runMorningFocus.js')
+      .then((mod) => {
+        if (!cancelled) return mod.runMorningFocus({ uid: user.uid });
+        return undefined;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, profileCheckReady, needsOnboarding]);
+
   if (!authReady) {
     return <AuthLoadingScreen />;
   }
@@ -123,13 +141,22 @@ function AuthenticatedApp() {
             }
           />
           {/* Legacy deep-link: `/planner` → home (WeeklyBuilder smantellato). */}
-          <Route path="/planner" element={<WeeklyPlannerPage />} />
+          <Route
+            path="/planner"
+            element={featureFlags.legacyPlanner ? <WeeklyPlannerPage /> : <Navigate to="/" replace />}
+          />
           {/* Centro Analisi: scheletro isolato, non tocca Storico / Timeline. */}
           <Route path="/centro-analisi" element={<CentroAnalisiPage />} />
           <Route path="/analisi" element={<CentroAnalisiPage />} />
-          <Route path="/consulto" element={<ConsultoPreview />} />
+          <Route
+            path="/consulto"
+            element={featureFlags.consultoPreview ? <ConsultoPreview /> : <Navigate to="/" replace />}
+          />
           {/* Kentu Focus: prima pagina prodotto (fixture locali, fuori simulazione). */}
           <Route path="/kentu-focus" element={<KentuFocusPage />} />
+          {import.meta.env.DEV && ScoreFeedbackReviewPage ? (
+            <Route path="/dev/score-feedback" element={<ScoreFeedbackReviewPage />} />
+          ) : null}
           <Route path="/salute" element={<Navigate to="/" replace />} />
           <Route path="/hub" element={<Navigate to="/" replace state={{ openHub: true }} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

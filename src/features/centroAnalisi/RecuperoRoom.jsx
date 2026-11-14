@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import MetabolicDiagnostics from '../../MetabolicDiagnostics';
 import { calculateBodyBattery, computeAccumuloSNC } from '../../coreEngine';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
@@ -94,7 +94,7 @@ export default function RecuperoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere cilindri, SNC e recupero in sola lettura."
+        body="Accedi da Kentu per leggere cilindri, SNC e recupero in sola lettura."
       />
     );
   }

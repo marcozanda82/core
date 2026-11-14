@@ -14,6 +14,11 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { ref, set, get } from 'firebase/database';
 import { db } from '../firebaseConfig.js';
+import { isFirebaseEmulatorMode } from '../config/emulatorUser.js';
+import { createMovementCheckinStore } from '../features/kentuFocus/score/movementCheckin.js';
+import { resolveEmulatorFocusAskAi } from '../features/kentuFocus/product/emulatorFocusAskAi.js';
+import DayScoreFeedback from '../features/kentuFocus/score/DayScoreFeedback.jsx';
+import DayScorePanel from '../features/kentuFocus/score/DayScorePanel.jsx';
 import {
   getSystemColorScheme,
   loadFocusThemeFromRtdb,
@@ -31,8 +36,6 @@ import {
   clearFocusDiaryForUser,
   requestFocusAiCoachAnalysis,
   buildFocusAiCoachDossier,
-  peekFocusAiCoachMemory,
-  focusAiCoachCacheKey,
   loadFocusAiAnalysisFromStore,
   listFocusAiAnalysisHistory,
   createFirebaseFocusAiAnalysisStore,
@@ -41,6 +44,7 @@ import {
   buildFocusKentuDeepLinks,
   buildFocusEditorialMockAnalysis,
   loadFocusAuthenticatedDiary,
+  loadFocusDiaryDateRange,
   resolveFocusEvidenceRefs,
   buildFocusAiAnalysisRecord,
   buildFocusSavedEvidenceHarnessAnalysis,
@@ -65,6 +69,7 @@ import {
   formatFocusPeriodNaturalLabel,
 } from '../features/kentuFocus/normalize/focusDateUtils.js';
 import { focusLocalIsoDate } from '../features/kentuFocus/product/loadFocusAuthenticatedDiary.js';
+import { featureFlags } from '../config/featureFlags.js';
 import { FOCUS_AREAS } from '../features/kentuFocus/product/focusAreas.js';
 import { AreaChip } from '../features/kentuFocus/product/ui/AreaChip.jsx';
 import { FocusHero } from '../features/kentuFocus/product/ui/FocusHero.jsx';
@@ -74,6 +79,15 @@ import { FocusNumbers } from '../features/kentuFocus/product/ui/FocusNumbers.jsx
 import { FocusWhy } from '../features/kentuFocus/product/ui/FocusWhy.jsx';
 import { useFocusHeroImageSrc } from '../features/kentuFocus/product/ui/FocusHeroImage.jsx';
 import { FocusCompoundFoodAuditDev } from '../features/kentuFocus/product/ui/FocusCompoundFoodAuditDev.jsx';
+import FocusBoard from '../features/kentuFocus/product/ui/FocusBoard.jsx';
+import FocusNotificationAsk from '../features/kentuFocus/product/ui/FocusNotificationAsk.jsx';
+import { patchMorningState } from '../features/kentuFocus/product/morningFocusStore.js';
+import { cursorForDay, focusPeriodWindow } from '../features/kentuFocus/product/ui/focusPeriodCursor.js';
+import {
+  focusOpenPerfDone,
+  focusOpenPerfMark,
+  focusOpenPerfStart,
+} from '../features/kentuFocus/product/focusOpenPerf.js';
 import './kentuFocusPage.css';
 import './kentuFocusV3.css';
 
@@ -91,13 +105,12 @@ function resolveFocusAiPersistence(options = {}) {
   return getDefaultMemoryFocusAiAnalysisStore();
 }
 
-/** Provider askAI iniettabile (test/harness). Mai Gemini reale se impostato. */
+/** Provider askAI iniettabile (test/harness). Sull'emulatore, mock v5 di default. */
 function resolveFocusAskAiFn() {
-  if (typeof window === 'undefined') return undefined;
-  if (typeof window.__KENTU_FOCUS_ASK_AI__ === 'function') {
-    return window.__KENTU_FOCUS_ASK_AI__;
-  }
-  return undefined;
+  const harness = typeof window !== 'undefined' && typeof window.__KENTU_FOCUS_ASK_AI__ === 'function'
+    ? window.__KENTU_FOCUS_ASK_AI__
+    : undefined;
+  return resolveEmulatorFocusAskAi(harness);
 }
 
 /**
@@ -788,7 +801,7 @@ function SleepDetailSection({ pillar, sleepNight, periodId }) {
 const FOCUS_GENERATION_STEPS = Object.freeze([
   'Sto leggendo il tuo diario…',
   'Sto confrontando i segnali della giornata…',
-  'Sto preparando il rapporto…',
+  'Sto preparando il rapporto di ieri…',
 ]);
 
 function FocusGenerationProgress() {
@@ -1719,6 +1732,18 @@ function DemoEditorialBlock({ edition, status }) {
   );
 }
 
+function focusReportIsFresh(aiState, session, periodId) {
+  const analysis = aiState?.analysis;
+  if (!analysis || analysis.schema !== 'kentu.focusAiCoachAnalysis.v5') return false;
+  if (aiState.diaryStale || aiState.status === 'stale_available' || aiState.status === 'error') return false;
+  if (aiState.status !== 'ready') return false;
+  const binding = aiState.binding || {};
+  if (binding.periodId !== periodId || binding.periodId !== session?.periodId) return false;
+  if (binding.analysisDate !== session?.analysisDate) return false;
+  if (aiState.expectedDataVersion && binding.dataVersion !== aiState.expectedDataVersion) return false;
+  return true;
+}
+
 export default function KentuFocusPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1827,8 +1852,23 @@ export default function KentuFocusPage() {
     persistFocusTheme(colorScheme === 'dark' ? 'light' : 'dark');
   };
   const periodFromUrl = String(searchParams.get('period') || '').toLowerCase();
+  const openedFromNotification = searchParams.get('from') === 'notifica';
   const [periodId, setPeriodId] = useState(
     ['ieri', 'settimana', 'mese'].includes(periodFromUrl) ? periodFromUrl : 'ieri',
+  );
+  const [cursor, setCursor] = useState(0);
+  const todayIso = focusLocalIsoDate();
+
+  useEffect(() => {
+    patchMorningState({ focusOpenedOn: todayIso });
+    import('../features/kentuFocus/product/focusMorningNotifications.js')
+      .then((mod) => mod.cancelTodayFocusNotification(todayIso))
+      .catch(() => {});
+  }, [todayIso]);
+
+  const periodWindow = useMemo(
+    () => focusPeriodWindow(periodId, todayIso, cursor),
+    [periodId, todayIso, cursor],
   );
   const [pageStatus, setPageStatus] = useState('loading');
   const [diaryLoadState, setDiaryLoadState] = useState('idle');
@@ -1845,6 +1885,8 @@ export default function KentuFocusPage() {
   const aiInflightRef = useRef(false);
   /** Snapshot rapporto precedente: se la rigenerazione fallisce resta consultabile. */
   const previousAiRef = useRef(null);
+  const autoTriedRef = useRef(new Set());
+  const generateRef = useRef(null);
 
   useEffect(() => {
     if (['ieri', 'settimana', 'mese'].includes(periodFromUrl) && periodFromUrl !== periodId) {
@@ -1853,6 +1895,7 @@ export default function KentuFocusPage() {
   }, [periodFromUrl, periodId]);
 
   const selectPeriod = (id) => {
+    setCursor(0);
     setPeriodId(id);
     const next = new URLSearchParams(searchParams);
     next.set('period', id);
@@ -1894,46 +1937,49 @@ export default function KentuFocusPage() {
     let cancelled = false;
 
     const applyAiForRealSession = async (base) => {
-      const built = buildFocusAiCoachDossier(base);
-      if (!built.ok || !built.binding) {
-        if (!cancelled) {
-          setAiState((prev) => ({
-            ...prev,
-            status: 'idle',
-            analysis: null,
-            expectedDataVersion: null,
-            busy: false,
-            isMock: false,
-            isHarnessMock: false,
-          }));
-        }
-        return;
-      }
-      const key = focusAiCoachCacheKey(built.binding);
-      const cached = peekFocusAiCoachMemory(key, built.binding);
+      // Store-first: dossier solo se serve generare (seed harness / Rigenera / mattino).
+      const windowKey = base.analysisDate;
+      const lightBinding = {
+        uid: base.uid,
+        periodId: base.periodId,
+        analysisDate: base.analysisDate,
+        publicationDate: base.publicationDate,
+        windowKey,
+        dataVersion: null,
+      };
       const persistence = resolveFocusAiPersistence({ forceMemory: focusHarness });
 
-      // Seed rapporto v3 “già salvato” → stesso percorso loadFocusAiAnalysisFromStore (no Gemini).
+      // Seed rapporto v3 “già salvato” (harness): qui il dossier serve per la revision.
       if (focusSavedEvidence && persistence?.kind === 'memory') {
         try {
-          __resetFocusAiAnalysisPersistenceForTests();
-          const seededPersistence = resolveFocusAiPersistence({ forceMemory: true });
-          const analysis = buildFocusSavedEvidenceHarnessAnalysis();
-          const record = {
-            ...buildFocusAiAnalysisRecord(built.binding, analysis, built.dossier, 1),
-            revisionId: FOCUS_SAVED_EVIDENCE_HARNESS_REVISION_ID,
-            revisionSeq: 1,
-            generatedAt: FOCUS_SAVED_EVIDENCE_HARNESS_GENERATED_AT,
-            analysis,
-            isHarnessMock: true,
-            meta: { harnessMock: true, savedEvidenceFixture: true },
-          };
-          await seededPersistence.saveRevision({
-            uid: base.uid,
-            periodId: base.periodId,
-            windowKey: built.binding.windowKey || built.binding.analysisDate,
-            record,
+          const tDossier = typeof performance !== 'undefined' ? performance.now() : Date.now();
+          const built = buildFocusAiCoachDossier(base);
+          focusOpenPerfMark('ai_dossier_built', {
+            ms: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tDossier),
+            ok: Boolean(built?.ok),
+            reason: 'saved_evidence_seed',
+            syncMainThread: true,
           });
+          if (built.ok && built.binding) {
+            __resetFocusAiAnalysisPersistenceForTests();
+            const seededPersistence = resolveFocusAiPersistence({ forceMemory: true });
+            const analysis = buildFocusSavedEvidenceHarnessAnalysis();
+            const record = {
+              ...buildFocusAiAnalysisRecord(built.binding, analysis, built.dossier, 1),
+              revisionId: FOCUS_SAVED_EVIDENCE_HARNESS_REVISION_ID,
+              revisionSeq: 1,
+              generatedAt: FOCUS_SAVED_EVIDENCE_HARNESS_GENERATED_AT,
+              analysis,
+              isHarnessMock: true,
+              meta: { harnessMock: true, savedEvidenceFixture: true },
+            };
+            await seededPersistence.saveRevision({
+              uid: base.uid,
+              periodId: base.periodId,
+              windowKey: built.binding.windowKey || built.binding.analysisDate,
+              record,
+            });
+          }
         } catch {
           /* seed best-effort */
         }
@@ -1949,8 +1995,10 @@ export default function KentuFocusPage() {
             : persistence,
         });
         historyRows = hist.rows || [];
+        focusOpenPerfMark('kentu_focus_ai_history', { rows: historyRows.length });
       } catch {
         historyRows = [];
+        focusOpenPerfMark('kentu_focus_ai_history', { rows: 0, error: true });
       }
       if (cancelled) return;
 
@@ -1965,7 +2013,7 @@ export default function KentuFocusPage() {
           status: extra.status || 'ready',
           analysis,
           binding,
-          expectedDataVersion: built.dataVersion,
+          expectedDataVersion: binding?.dataVersion || extra.expectedDataVersion || null,
           userMessage: extra.userMessage || null,
           busy: false,
           diaryStale: Boolean(extra.diaryStale),
@@ -1976,15 +2024,6 @@ export default function KentuFocusPage() {
         });
       };
 
-      // Con fixture salvata: salta cache RAM e vai allo store (percorso recupero storico).
-      if (cached?.analysis && !focusSavedEvidence) {
-        applyLoaded(cached.analysis, built.binding, {
-          record: cached.record || null,
-          isHarnessMock: Boolean(cached.record?.isHarnessMock),
-        });
-        return;
-      }
-
       try {
         const storeForLoad = focusSavedEvidence
           ? resolveFocusAiPersistence({ forceMemory: true })
@@ -1992,14 +2031,28 @@ export default function KentuFocusPage() {
         const remote = await loadFocusAiAnalysisFromStore({
           uid: base.uid,
           periodId: base.periodId,
-          windowKey: built.binding.windowKey || built.binding.analysisDate,
-          currentDataVersion: built.dataVersion,
+          windowKey,
+          // Senza dossier non confrontiamo dataVersion: mostriamo il rapporto salvato.
+          currentDataVersion: null,
           persistence: storeForLoad,
         });
         if (remote.ok && remote.record?.analysis) {
+          focusOpenPerfMark('kentu_focus_ai_store_hit', {
+            diaryStale: Boolean(remote.record.diaryStale),
+            skippedDossier: true,
+          });
+          focusOpenPerfMark('ai_dossier_built', {
+            ms: 0,
+            ok: true,
+            skipped: true,
+            reason: 'store_hit',
+          });
           applyLoaded(remote.record.analysis, {
-            ...built.binding,
-            dataVersion: remote.record.dataVersion,
+            ...lightBinding,
+            dataVersion: remote.record.dataVersion || null,
+            foodQualityCompleteness: remote.record.foodQualityCompleteness,
+            foodQualityCompletenessReason: remote.record.foodQualityCompletenessReason,
+            definitive: remote.record.definitive,
           }, {
             status: remote.record.diaryStale ? 'stale_available' : 'ready',
             diaryStale: remote.record.diaryStale,
@@ -2009,17 +2062,25 @@ export default function KentuFocusPage() {
           });
           return;
         }
+        focusOpenPerfMark('kentu_focus_ai_store_miss');
       } catch {
-        /* ignore */
+        focusOpenPerfMark('kentu_focus_ai_store_error');
       }
 
+      // Nessun rapporto: idle senza costruire il dossier (Rigenera / mattino lo faranno).
+      focusOpenPerfMark('ai_dossier_built', {
+        ms: 0,
+        ok: true,
+        skipped: true,
+        reason: 'defer_until_generate',
+      });
       if (!cancelled) {
         setAiState((prev) => ({
           ...prev,
           status: 'idle',
           analysis: null,
-          binding: built.binding,
-          expectedDataVersion: built.dataVersion,
+          binding: lightBinding,
+          expectedDataVersion: null,
           historyRows,
           busy: false,
           isMock: false,
@@ -2029,6 +2090,12 @@ export default function KentuFocusPage() {
     };
 
     (async () => {
+      focusOpenPerfStart({
+        periodId,
+        authReady: Boolean(authReady),
+        hasUid: Boolean(uid),
+        mode: import.meta.env.PROD ? 'prod' : 'dev',
+      });
       setPageStatus('loading');
       setOpenDetail(null);
       setAiState((prev) => ({
@@ -2046,19 +2113,24 @@ export default function KentuFocusPage() {
 
       // Auth non ancora pronta: non mostrare demo al posto del diario reale.
       if (!focusHarness && !authReady) {
+        focusOpenPerfMark('auth_wait');
         setDiaryLoadState('loading');
         setSession(null);
         return;
       }
+      focusOpenPerfMark('auth_ready', { uid: Boolean(uid) });
 
       // Utente non autenticato (e non harness): anteprima demo esplicita.
       if (!uid) {
         setDiaryLoadState('unauthenticated');
         const base = resolveFocusPageSession({ uid: null, periodId, handoff: null });
-        const loaded = await loadFocusPageDemoEditionIfAllowed(base);
+        const loaded = featureFlags.focusServerEditions
+          ? await loadFocusPageDemoEditionIfAllowed(base)
+          : { ...base, demoEdition: null, status: 'ready' };
         if (cancelled) return;
         setSession(loaded);
         setPageStatus(loaded.status || 'ready');
+        focusOpenPerfDone({ outcome: 'demo' });
         return;
       }
 
@@ -2066,7 +2138,15 @@ export default function KentuFocusPage() {
       if (focusHarness) clearFocusDiaryForUser(uid);
 
       let handoff = peekFocusDiaryForUser(uid);
-      if (!handoffBelongsToUser(uid, handoff)) {
+      const handoffHit = handoffBelongsToUser(uid, handoff)
+        && Boolean(handoff?.fullHistory)
+        && Object.prototype.hasOwnProperty.call(handoff, 'profile_targets');
+      focusOpenPerfMark('handoff_check', {
+        hit: handoffHit,
+        hasProfileTargets: Boolean(handoff?.profile_targets),
+        partial: Boolean(handoff?.partial),
+      });
+      if (!handoffHit) {
         setDiaryLoadState('loading');
         setSession(null);
         setPageStatus('loading');
@@ -2078,6 +2158,7 @@ export default function KentuFocusPage() {
             get: buildFocusHarnessDiaryGet(periodId),
             ref: (_db, path) => ({ toString: () => path, _path: path }),
             stash: true,
+            mode: 'full',
           })
           : await loadFocusAuthenticatedDiary({
             uid,
@@ -2085,6 +2166,7 @@ export default function KentuFocusPage() {
             get,
             ref,
             stash: true,
+            mode: 'recent',
           });
 
         if (cancelled) return;
@@ -2109,33 +2191,97 @@ export default function KentuFocusPage() {
             diagnostics: { diaryLoadState: loadedDiary.status },
           });
           setPageStatus('error');
+          focusOpenPerfDone({ outcome: 'diary_error', status: loadedDiary.status });
           return;
         }
 
         handoff = loadedDiary.snapshot;
         setDiaryLoadState(loadedDiary.status);
+        focusOpenPerfMark('diary_loaded', {
+          days: loadedDiary.dayNodeCount,
+          source: loadedDiary.diarySource,
+          status: loadedDiary.status,
+          partial: Boolean(loadedDiary.partial),
+        });
       } else {
         setDiaryLoadState(handoff.diarySource === 'firebase_tracker_data' ? 'ready' : 'ready_ram');
+        focusOpenPerfMark('diary_from_handoff', {
+          days: Object.keys(handoff.fullHistory || {}).filter((k) => k.startsWith('trackerStorico_')).length,
+          source: handoff.diarySource || 'handoff_ram',
+          partial: Boolean(handoff?.partial),
+        });
       }
 
-      const base = resolveFocusPageSession({ uid, periodId, handoff });
+      const focusWindow = focusPeriodWindow(periodId, focusLocalIsoDate(), cursor);
+      const datedHandoff = handoff ? {
+        ...handoff,
+        analysisDate: focusWindow.analysisDate,
+        publicationDate: addCalendarDays(focusWindow.analysisDate, 1),
+      } : handoff;
+      const base = resolveFocusPageSession({ uid, periodId, handoff: datedHandoff });
       if (cancelled) return;
+      focusOpenPerfMark('session_resolved', { mode: base.mode });
 
       if (base.mode === FOCUS_PAGE_MODE.real_diary) {
         const source = handoff?.diarySource || 'handoff_ram';
         setDiaryLoadState(source === 'firebase_tracker_data' ? 'ready' : 'ready_ram');
-        setSession({
+        const readySession = {
           ...base,
+          movementCheckins: {},
           banner: import.meta.env.DEV
-            ? (focusHarness ? 'DIARIO TEST (harness · non produzione)' : 'DIARIO REALE')
+            ? (focusHarness
+              ? 'DIARIO TEST (harness · non produzione)'
+              : (isFirebaseEmulatorMode() ? 'DIARIO TEST' : 'DIARIO REALE'))
             : null,
           diagnostics: {
             ...base.diagnostics,
             diarySource: source,
+            diaryPartial: Boolean(handoff?.partial),
           },
-        });
+        };
+        // Primo render utile subito: calendario + punteggi. AI e check-in in background.
+        setSession(readySession);
         setPageStatus('ready');
-        await applyAiForRealSession(base);
+        focusOpenPerfMark('first_useful_render', {
+          note: 'session set — AI non bloccante',
+        });
+        focusOpenPerfDone({ outcome: 'real_diary' });
+
+        void (async () => {
+          // Dopo il primo paint: check-in e AI, senza contendere il calendario.
+          await new Promise((resolve) => {
+            if (typeof requestIdleCallback === 'function') {
+              requestIdleCallback(() => resolve(), { timeout: 400 });
+            } else if (typeof requestAnimationFrame === 'function') {
+              requestAnimationFrame(() => setTimeout(resolve, 0));
+            } else {
+              setTimeout(resolve, 50);
+            }
+          });
+          if (cancelled) return;
+          let movementCheckins = {};
+          try {
+            movementCheckins = await createMovementCheckinStore({ db, uid }).readAll() || {};
+          } catch {
+            movementCheckins = {};
+          }
+          if (cancelled) return;
+          focusOpenPerfMark('checkins_loaded');
+          const withCheckins = { ...readySession, movementCheckins };
+          setSession((prev) => (
+            prev && prev.mode === FOCUS_PAGE_MODE.real_diary
+              ? { ...prev, movementCheckins }
+              : prev
+          ));
+          try {
+            await applyAiForRealSession(withCheckins);
+            focusOpenPerfMark('ai_hydrate_done');
+          } catch (err) {
+            focusOpenPerfMark('ai_hydrate_error', {
+              message: String(err?.message || err || 'error').slice(0, 120),
+            });
+          }
+        })();
         return;
       }
 
@@ -2157,7 +2303,7 @@ export default function KentuFocusPage() {
     return () => {
       cancelled = true;
     };
-  }, [uid, periodId, authReady, mockEditorial, focusHarness, focusSavedEvidence]);
+  }, [uid, periodId, cursor, authReady, mockEditorial, focusHarness, focusSavedEvidence]);
 
   const handleGenerateAi = async () => {
     if (!session || session.mode !== FOCUS_PAGE_MODE.real_diary) {
@@ -2177,7 +2323,22 @@ export default function KentuFocusPage() {
     }
     if (aiInflightRef.current) return;
 
+    // Dossier solo su Genera/Rigenera: cedi il main thread prima del lavoro pesante.
+    await new Promise((resolve) => {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => resolve(), { timeout: 120 });
+      } else {
+        setTimeout(resolve, 0);
+      }
+    });
+    const tDossier = typeof performance !== 'undefined' ? performance.now() : Date.now();
     const built = buildFocusAiCoachDossier(session);
+    focusOpenPerfMark('ai_dossier_built', {
+      ms: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tDossier),
+      ok: Boolean(built?.ok),
+      reason: 'generate_or_regenerate',
+      syncMainThread: true,
+    });
     if (!built.ok || !built.binding) {
       setAiState({
         status: 'blocked',
@@ -2216,11 +2377,16 @@ export default function KentuFocusPage() {
       const persistence = resolveFocusAiPersistence({ forceMemory: focusHarness });
       const askAiFn = resolveFocusAskAiFn();
       // Click esplicito Genera/Rigenera: sempre force, anche se esiste cache/RTDB per la stessa dataVersion.
+      focusOpenPerfMark('morning_ai_request_start');
       const result = await requestFocusAiCoachAnalysis({
         session,
         persistence,
         askAiFn,
         force: true,
+      });
+      focusOpenPerfMark('morning_ai_request_done', {
+        ok: Boolean(result?.ok),
+        status: result?.status || null,
       });
       const usedHarness = Boolean(askAiFn);
       let historyRows = [];
@@ -2352,6 +2518,87 @@ export default function KentuFocusPage() {
     }
   };
 
+  generateRef.current = handleGenerateAi;
+
+  // Estendi il diario se il periodo visibile esce dalla finestra già caricata.
+  useEffect(() => {
+    if (focusHarness || !uid || !db || !session || session.mode !== FOCUS_PAGE_MODE.real_diary) return;
+    const from = periodWindow?.from;
+    const to = periodWindow?.to;
+    if (!from || !to) return;
+    const history = session.fullHistory;
+    if (!history || typeof history !== 'object') return;
+    const keys = Object.keys(history).filter((k) => /^trackerStorico_\d{4}-\d{2}-\d{2}$/.test(k));
+    if (!keys.length) return;
+    const sortedDates = keys.map((k) => k.slice(15)).sort();
+    const minLoaded = sortedDates[0];
+    const maxLoaded = sortedDates[sortedDates.length - 1];
+    if (from >= minLoaded && to <= maxLoaded) return;
+
+    let cancelled = false;
+    void loadFocusDiaryDateRange({
+      uid,
+      db,
+      get,
+      ref,
+      from: from < minLoaded ? from : minLoaded,
+      to: to > maxLoaded ? to : maxLoaded,
+      existingHistory: history,
+      stash: true,
+      userTargets: session.userTargets,
+      profile_targets: session.profile_targets,
+      analysisDate: session.analysisDate,
+      publicationDate: session.publicationDate,
+    }).then((ext) => {
+      if (cancelled || !ext?.ok) return;
+      setSession((prev) => {
+        if (!prev || prev.mode !== FOCUS_PAGE_MODE.real_diary) return prev;
+        return { ...prev, fullHistory: ext.fullHistory };
+      });
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    focusHarness,
+    uid,
+    session?.mode,
+    session?.fullHistory,
+    session?.userTargets,
+    session?.profile_targets,
+    session?.analysisDate,
+    session?.publicationDate,
+    periodWindow?.from,
+    periodWindow?.to,
+  ]);
+
+  useEffect(() => {
+    if (focusHarness || mockEditorial) return;
+    if (!session || session.mode !== FOCUS_PAGE_MODE.real_diary) return;
+    if (session.periodId !== periodId) return;
+    if (periodWindow?.analysisDate && session.analysisDate !== periodWindow.analysisDate) return;
+    if (periodId === 'ieri' && periodWindow?.inProgress) return;
+    if (!aiState?.expectedDataVersion) return;
+    if (aiState.status === 'loading' || aiState.busy) return;
+    if (focusReportIsFresh(aiState, session, periodId)) return;
+    const key = `${session.uid}|${periodId}|${session.analysisDate}|${aiState.expectedDataVersion}`;
+    if (autoTriedRef.current.has(key)) return;
+    autoTriedRef.current.add(key);
+    focusOpenPerfMark('morning_ai_auto_start', {
+      periodId,
+      analysisDate: session.analysisDate,
+    });
+    generateRef.current?.();
+  }, [
+    focusHarness,
+    mockEditorial,
+    session,
+    periodId,
+    periodWindow?.analysisDate,
+    periodWindow?.inProgress,
+    aiState,
+  ]);
+
   const handleOpenAiHistory = async (row) => {
     if (!row || !uid) return;
     const persistence = resolveFocusAiPersistence({ forceMemory: focusHarness });
@@ -2404,8 +2651,7 @@ export default function KentuFocusPage() {
               ← Home
             </button>
             <div className="kf-brand">
-              <p className="kf-brand-kicker">Kentu</p>
-              <h1 className="kf-brand-title">Focus</h1>
+              <h1 className="kf-brand-title">KENTU Focus</h1>
             </div>
           </div>
           <button
@@ -2451,7 +2697,44 @@ export default function KentuFocusPage() {
           ) : null;
         })()}
 
-        {!aiState?.analysis && session?.mode === FOCUS_PAGE_MODE.real_diary ? null : !aiState?.analysis ? (
+        {isReal ? (
+          <>
+            {(pageStatus === 'loading' || diaryLoadState === 'loading') && !session ? (
+              <div className="kf-state" aria-live="polite">
+                {uid ? 'Sto caricando il tuo diario reale…' : 'Sto preparando Focus…'}
+              </div>
+            ) : null}
+            {session ? (
+              <>
+              <FocusNotificationAsk />
+              <FocusBoard
+                uid={uid}
+                session={session}
+                today={todayIso}
+                periodId={periodId}
+                periodWindow={periodWindow}
+                cursor={cursor}
+                onSelectPeriod={selectPeriod}
+                onCursor={(next) => setCursor(Math.min(1, next))}
+                promptCheckIn={openedFromNotification}
+                onOpenDay={(date) => {
+                  if (date > todayIso) return;
+                  setCursor(cursorForDay(todayIso, date));
+                  setPeriodId('ieri');
+                  const next = new URLSearchParams(searchParams);
+                  next.set('period', 'ieri');
+                  setSearchParams(next, { replace: true });
+                }}
+                aiState={aiState}
+                onRegenerate={handleGenerateAi}
+                onOpenHistory={handleOpenAiHistory}
+              />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>
+        {!aiState?.analysis ? (
           <header className="kf-hero">
             <div className="kf-hero-icons" aria-hidden>
               <span className="kf-domain-chip"><Utensils size={15} /></span>
@@ -2496,24 +2779,18 @@ export default function KentuFocusPage() {
           </p>
         ) : null}
 
+        {periodId === 'ieri' && session?.analysisDate ? (
+          <>
+            <DayScorePanel uid={uid} session={session} />
+            <DayScoreFeedback uid={uid} session={session} />
+          </>
+        ) : null}
+
         {(pageStatus === 'loading' || diaryLoadState === 'loading') && !session ? (
           <div className="kf-state" aria-live="polite">
             {uid ? 'Sto caricando il tuo diario reale…' : 'Sto preparando Focus…'}
           </div>
         ) : null}
-
-        {isReal ? (
-          <RealWellnessDashboard
-            session={session}
-            periodId={periodId}
-            openDetail={openDetail}
-            setOpenDetail={setOpenDetail}
-            aiState={aiState}
-            onGenerateAi={handleGenerateAi}
-            onOpenAiHistory={handleOpenAiHistory}
-          />
-        ) : (
-          <>
             <FocusEditorialReport
               session={session}
               aiState={aiState}
@@ -2523,12 +2800,14 @@ export default function KentuFocusPage() {
               allowGenerate={!mockEditorial && Boolean(uid)}
               showHistoryOnly
             />
-            <details className="kf-evidence" open={!aiState?.analysis}>
-              <summary className="kf-evidence-summary">
-                Anteprima dimostrativa e dati di esempio
-              </summary>
-              <DemoEditorialBlock edition={edition} status={pageStatus} />
-            </details>
+            {featureFlags.focusServerEditions ? (
+              <details className="kf-evidence" open={!aiState?.analysis}>
+                <summary className="kf-evidence-summary">
+                  Anteprima dimostrativa e dati di esempio
+                </summary>
+                <DemoEditorialBlock edition={edition} status={pageStatus} />
+              </details>
+            ) : null}
           </>
         )}
       </div>

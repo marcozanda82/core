@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { featureFlags } from '../../../config/featureFlags.js';
 import { METABOLIC_FOCUS_LABEL } from '../../chat/metabolicFocus';
 import { useSaluteExperienceData } from '../hooks/useSaluteExperienceData';
 import {
@@ -98,7 +99,7 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
 
   const data = useSaluteExperienceData({
     host,
-    loadReports: allowP1,
+    loadReports: allowP1 && featureFlags.healthAnalyzerBulletin,
     loadSleepLog: activeDetail === 'sleep',
     loadSheetMetrics: Boolean(activeDetail),
   });
@@ -313,7 +314,7 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
           )}
         </section>
 
-        {allowP1 ? (
+        {allowP1 && featureFlags.healthAnalyzerBulletin ? (
           <Suspense fallback={null}>
             <SaluteFocusMetabolicoCard
               report={data.reportRead?.latestReport}
@@ -333,7 +334,7 @@ export default function SaluteExperience({ embedded = false, host = null } = {})
           onClose={() => setActiveDetail(null)}
         >
           <Suspense fallback={<p className="m-0 text-[13px] text-slate-400">Apertura…</p>}>
-            {activeDetail === 'focus' ? (
+            {activeDetail === 'focus' && featureFlags.healthAnalyzerBulletin ? (
               <SaluteFocusMetabolicoBody
                 report={data.reportRead?.latestReport}
                 analysisDate={data.reportRead?.latestDate}

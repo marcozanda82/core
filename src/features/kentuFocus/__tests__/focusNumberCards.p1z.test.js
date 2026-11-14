@@ -64,7 +64,7 @@ describe('Focus number cards P1Z', () => {
     );
     const links = buildFocusKentuDeepLinks({ analysisDate: '2026-10-30', periodId: 'ieri' });
     assert.equal(links.stimoloMuscolare.label, 'Forza e muscoli');
-    assert.equal(links.cardio.label, 'Cardio');
+    assert.equal(links.cardio.label, 'Movimento');
     assert.notEqual(links.stimoloMuscolare.to, links.cardio.to);
     assert.match(links.stimoloMuscolare.to, /^\/centro-analisi/);
     assert.match(links.cardio.to, /^\/centro-analisi/);

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import LazyMarkdown from '../../../components/LazyMarkdown.jsx';
 import {
   isHealthReportGeneratedToday,
   stripClinicalBulletinImages,
@@ -163,7 +163,7 @@ export default function SaluteClinicalInsight({
             loading="lazy"
           />
           {isMarkdownBulletin ? (
-            <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
+            <LazyMarkdown components={markdownComponents}>{markdown}</LazyMarkdown>
           ) : (
             <p className="m-0 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">
               {markdown}

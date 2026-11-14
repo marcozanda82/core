@@ -434,6 +434,61 @@ export async function requestHealthAnalyzerReport(analysisContext, options = {})
   return parseHealthAnalyzerResponse(rawText);
 }
 
+const foodLabelSchema = {
+  type: 'object',
+  properties: {
+    newLabels: healthReportSchema.properties.newLabels,
+  },
+  required: ['newLabels'],
+};
+
+/**
+ * Solo classificazione novaScore degli alimenti ancora senza etichetta.
+ * Non chiede il bollettino.
+ * @param {ReturnType<typeof buildHealthAnalysisContext>} analysisContext
+ * @param {{ signal?: AbortSignal }} [options]
+ */
+export async function requestHealthFoodLabels(analysisContext, options = {}) {
+  const unknownFoods = Array.isArray(analysisContext?.unknownFoods)
+    ? analysisContext.unknownFoods
+    : [];
+  if (unknownFoods.length === 0) return [];
+  const prompt = [
+    'Classifica questi alimenti personali. Non scrivere un bollettino.',
+    JSON.stringify(unknownFoods),
+    'Per ciascuno: foodDbKey (copia se presente, altrimenti null), foodName, novaScore intero 1-4, inflammationFactor -1|0|1, hasSaturatedFats boolean.',
+    'Rispondi solo JSON { "newLabels": [] }.',
+  ].join('\n');
+  const rawText = await askAI(
+    prompt,
+    'Classifichi NOVA. Solo JSON, nessun bollettino.',
+    {
+      model: HEALTH_ANALYZER_MODEL,
+      temperature: 0.1,
+      responseSchema: foodLabelSchema,
+      generationConfig: {
+        temperature: 0.1,
+        response_mime_type: 'application/json',
+        responseMimeType: 'application/json',
+        response_schema: foodLabelSchema,
+        responseSchema: foodLabelSchema,
+      },
+      ...(options.signal ? { signal: options.signal } : {}),
+    },
+  );
+  const cleaned = unwrapJsonText(rawText);
+  if (!cleaned) return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error('Health Analyzer: etichette JSON malformate');
+  }
+  return (Array.isArray(parsed?.newLabels) ? parsed.newLabels : [])
+    .map(normalizeNewHealthLabel)
+    .filter(Boolean);
+}
+
 /**
  * Costruisce il multi-path patch Firebase per lazy labeling.
  * Path relativi a `users/{uid}/tracker_data`.

@@ -71,14 +71,14 @@ export default function CardioAnalysisCard({
   return (
     <section
       className="flex flex-col gap-2 rounded-2xl border border-cyan-500/30 bg-gradient-to-b from-cyan-950/35 to-slate-950/90 p-2.5"
-      aria-label="Indicatore cardio settimanale"
+      aria-label="Movimento, ultimi 7 giorni"
     >
       <header>
         <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300/90">
-          Indicatore cardio
+          Movimento
         </p>
         <p className="m-0 mt-0.5 text-[11px] leading-snug text-slate-400">
-          Minuti aerobici 7g, calorie bruciate e zone di intensità
+          Minuti equivalenti degli ultimi 7 giorni. Camminata ×1, vigoroso ×2, pesi esclusi.
         </p>
       </header>
 
@@ -95,7 +95,7 @@ export default function CardioAnalysisCard({
           unit={`/ ${analysis.weeklyTarget}`}
         />
         <KpiTile
-          label="Kcal cardio 7g"
+          label="Kcal 7g"
           value={String(analysis.weeklyKcal)}
           unit="kcal"
         />

@@ -240,7 +240,7 @@ export function formatHealthReportForWhatsApp(rows, opts = {}) {
     lines.push('');
   });
 
-  lines.push('_Inviato da KentuOS_');
+  lines.push('_Inviato da Kentu_');
   return lines.join('\n').trim();
 }
 

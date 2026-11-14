@@ -8,6 +8,7 @@ import {
   normalizeEvidenceRefId,
 } from './resolveFocusEvidenceRefs.js';
 import { findBannedPhrasesInAnalysis } from './focusAiCoachBannedUserPhrases.js';
+import { isFocusAiCoachV5, validateFocusAiCoachV5 } from './validateFocusAiCoachV5.js';
 
 const SUMMARY_AREAS = new Set(['energia', 'qualita', 'ritmo', 'sonno', 'movimento']);
 const SUMMARY_HEADLINE_MAX = 70;
@@ -670,6 +671,10 @@ export function validateFocusAiCoachResponse(rawText, opts = {}) {
     if (Object.prototype.hasOwnProperty.call(parsed, key) && parsed[key] != null && parsed[key] !== '') {
       return reject(`forbidden_field_${key}`, parsed[key], `campo vietato ${key}`);
     }
+  }
+
+  if (isFocusAiCoachV5(parsed) && parsed.summary == null) {
+    return validateFocusAiCoachV5(parsed, opts);
   }
 
   // summary: obbligatorio per nuove generazioni (prompt/schema v4);

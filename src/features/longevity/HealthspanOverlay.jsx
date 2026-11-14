@@ -1,4 +1,5 @@
 import React from 'react';
+import { featureFlags } from '../../config/featureFlags.js';
 import HomeView from '../../components/HomeView';
 import LongevityView from '../../LongevityView';
 
@@ -36,6 +37,7 @@ export default function HealthspanOverlay({
   expandedRiskId,
   setExpandedRiskId,
 }) {
+  if (!featureFlags.longevityDashboard) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(10,10,12,0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100000, overflowY: 'auto', padding: '20px', backdropFilter: 'blur(10px)' }}>
       <div style={{ width: '100%', maxWidth: '500px', marginTop: '40px' }}>

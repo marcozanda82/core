@@ -6,9 +6,9 @@
 import { buildFocusAiCoachDossier, canBuildFocusAiCoachDossier } from './buildFocusAiCoachDossier.js';
 import {
   FOCUS_AI_COACH_MODEL,
-  FOCUS_AI_COACH_RESPONSE_SCHEMA,
-  buildFocusAiCoachSystemInstruction,
-  buildFocusAiCoachUserPrompt,
+  FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
+  buildFocusAiCoachSystemInstructionV5,
+  buildFocusAiCoachUserPromptV5,
 } from './buildFocusAiCoachPrompt.js';
 import { validateFocusAiCoachResponse } from './validateFocusAiCoachResponse.js';
 import { createAskAiFocusGeminiProvider } from '../editorial/writing/createAskAiFocusGeminiProvider.js';
@@ -159,6 +159,16 @@ export function peekFocusAiCoachMemory(key, binding) {
  */
 export async function requestFocusAiCoachAnalysis(input) {
   const session = input?.session;
+  if (session?.periodId === 'anno') {
+    return {
+      ok: false,
+      status: 'blocked',
+      reason: 'year_has_no_ai',
+      userMessage: 'Per l’anno non preparo ancora un rapporto.',
+      analysis: null,
+      binding: null,
+    };
+  }
   const gate = canBuildFocusAiCoachDossier(session);
   if (!gate.ok) {
     return {
@@ -237,15 +247,14 @@ export async function requestFocusAiCoachAnalysis(input) {
     };
   }
 
-  // Limiti dossier: catalogo OFF incompleto dopo timeout
-  if (built.dossier.nutrition?.foodQuality?.completeness === 'partial') {
-    const limits = Array.isArray(built.dossier.technicalNotes)
-      ? built.dossier.technicalNotes
-      : [];
+  const quality = built.dossier.nutrition?.foodQuality;
+  const unclassified = Number(quality?.day?.provenanceCounts?.unclassified || 0)
+    + Number(quality?.recent?.provenanceCounts?.unclassified || 0);
+  if (quality?.completeness === 'partial' || unclassified > 0) {
+    const limits = Array.isArray(built.dossier.generationLimits) ? built.dossier.generationLimits : [];
     built.dossier.generationLimits = [
-      ...(built.dossier.generationLimits || []),
-      'Catalogo Open Food Facts non pronto entro il timeout: classificazione NOVA/qualità alimentare incompleta (completeness=partial, reason=off_catalog_not_ready). Non trattare gli alimenti non classificati come verificati.',
-      ...limits.filter((x) => typeof x === 'string'),
+      ...limits.filter((line) => !/catalogo|open food|classificaz/i.test(String(line))),
+      'Alcuni alimenti non hanno dati sulla lavorazione.',
     ].slice(0, 6);
   }
   built.dossier.offWaitMeta = offWaitMeta;
@@ -333,8 +342,8 @@ export async function requestFocusAiCoachAnalysis(input) {
 
   const run = (async () => {
     const t0 = Date.now();
-    const systemText = buildFocusAiCoachSystemInstruction();
-    const userText = buildFocusAiCoachUserPrompt(built.dossier, { generatedAt: new Date() });
+    const systemText = buildFocusAiCoachSystemInstructionV5();
+    const userText = buildFocusAiCoachUserPromptV5(built.dossier);
     const dossierChars = (() => {
       try {
         return JSON.stringify(built.dossier || {}).length;
@@ -344,7 +353,7 @@ export async function requestFocusAiCoachAnalysis(input) {
     })();
     let schemaChars = null;
     try {
-      schemaChars = JSON.stringify(FOCUS_AI_COACH_RESPONSE_SCHEMA).length;
+      schemaChars = JSON.stringify(FOCUS_AI_COACH_RESPONSE_SCHEMA_V5).length;
     } catch {
       schemaChars = null;
     }
@@ -380,7 +389,7 @@ export async function requestFocusAiCoachAnalysis(input) {
       temperature: 0.4,
       signal: input.signal || null,
       timeoutMs,
-      responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+      responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
       thinkingLevel: 'low',
       callTag: 'focus_ai_coach',
     });
@@ -490,7 +499,28 @@ export async function requestFocusAiCoachAnalysis(input) {
         || validated.reason === 'todayAction_has_or_alternative'
         || validated.reason === 'summary_todayAction_invalid'
         || validated.reason === 'summary_todayAction_missing'
-        || validated.reason === 'action_quantity_mismatch'
+        ||         validated.reason === 'action_quantity_mismatch'
+        || validated.reason === 'pillar_tone_mismatch'
+        || validated.reason === 'action_pillar_mismatch'
+        || validated.reason === 'safety_action_mismatch'
+        || validated.reason === 'suppress_numbers'
+        || validated.reason === 'suppress_numbers_tone'
+        || validated.reason === 'low_reliability_headline'
+        || validated.reason === 'low_reliability_limits'
+        || validated.reason === 'medium_reliability_limits'
+        || validated.reason === 'medium_reliability_headline'
+        || validated.reason === 'support_missing'
+        || validated.reason === 'support_unexpected'
+        || validated.reason === 'horizon_glued'
+        || validated.reason === 'headline_excuse'
+        || validated.reason === 'action_has_or_alternative'
+        || validated.reason === 'duration_decimal'
+        || validated.reason === 'missing_accent'
+        || validated.reason === 'register_impersonal'
+        || validated.reason === 'period_single_day'
+        || validated.reason === 'action_quantity_short'
+        || validated.reason === 'unclassified_food_limit'
+        || validated.reason === 'unconfirmed_days_omitted'
       );
     if (canRetry) {
       const elapsed = Date.now() - t0;
@@ -517,6 +547,24 @@ export async function requestFocusAiCoachAnalysis(input) {
           'RETRY: un campo summary era troppo lungo.',
           fr?.message || validated.reason,
           'Accorcia headline (≤70), wentWell/toImprove text (≤120), todayAction.text (≤140).',
+        ].join(' ');
+      } else if (String(validated.reason || '').startsWith('pillar_') || String(validated.reason || '').startsWith('action_pillar') || String(validated.reason || '').startsWith('safety_') || String(validated.reason || '').startsWith('suppress_') || String(validated.reason || '').startsWith('low_reliability') || String(validated.reason || '').startsWith('medium_reliability') || String(validated.reason || '').startsWith('support_') || validated.reason === 'horizon_glued' || validated.reason === 'headline_excuse' || validated.reason === 'action_has_or_alternative' || validated.reason === 'duration_decimal' || validated.reason === 'missing_accent' || validated.reason === 'register_impersonal' || validated.reason === 'period_single_day' || validated.reason === 'action_quantity_short' || validated.reason === 'unclassified_food_limit' || validated.reason === 'unconfirmed_days_omitted') {
+        const fr = validated.failedRules?.[0];
+        retryHint = [
+          'RETRY: il rapporto v5 non rispetta lo stato già deciso o il registro.',
+          `Motivo: ${validated.reason}. ${fr?.message || ''}`.trim(),
+          'Seconda persona diretta: «Hai mangiato…», «Hai dormito…», «Non hai camminato». Niente introito, apporto, quota, target: scrivi obiettivo. Niente riferimento giornaliero, fascia abituale, fascia consueta, nel contesto, uscite variabili.',
+          'Settimana e mese: l’azione chiude almeno un terzo della distanza, con la quantità di periodBrief.actionClose.',
+          'Se mancano dati di lavorazione, nei limits scrivi esattamente «Alcuni alimenti non hanno dati sulla lavorazione.»',
+          'Se periodBrief.unconfirmedNote è presente, nei limits inserisci quella frase esatta.',
+          'Se un pilastro ha penalties, la sua line cita la causa anche se è sulla rotta: cena abbondante, ultimo pasto vicino al sonno, ultra-processato sfavorevole.',
+          'Il titolo non giustifica un segnale negativo con «ma la media resta allineata».',
+          'L’azione ha una sola leva, senza « o ». Durate «6 h 50», mai decimali. Accenti: attività, più, perché.',
+          'Settimana e mese: niente ultima notte, ieri, oggi o stanotte. Se un giorno è il fatto principale, usa la data.',
+          'tone: on_track → positive, halfway → neutral o improve, off_track → improve.',
+          'action.pillar deve essere periodBrief.actionPillar. L’azione act riguarda quel segnale.',
+          'Con suppressNumbers niente calorie, peso o grammi. L’invito al professionista sta in support, l’azione resta semplice.',
+          'Con affidabilità bassa: headline senza giudizi netti e una riga nei limits.',
         ].join(' ');
       } else {
         retryHint = [
@@ -679,7 +727,7 @@ export async function requestFocusAiCoachAnalysis(input) {
           requestId,
           _meta: {
             model: FOCUS_AI_COACH_MODEL,
-            responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+            responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
           },
         };
       }
@@ -734,7 +782,7 @@ export async function requestFocusAiCoachAnalysis(input) {
             requestId,
             _meta: {
               model: FOCUS_AI_COACH_MODEL,
-              responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+              responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
             },
           };
         }
@@ -780,7 +828,7 @@ export async function requestFocusAiCoachAnalysis(input) {
           requestId,
           _meta: {
             model: FOCUS_AI_COACH_MODEL,
-            responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+            responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
           },
         };
       }
@@ -809,7 +857,7 @@ export async function requestFocusAiCoachAnalysis(input) {
         requestId,
         _meta: {
           model: FOCUS_AI_COACH_MODEL,
-          responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+          responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
         },
       };
     }
@@ -843,7 +891,7 @@ export async function requestFocusAiCoachAnalysis(input) {
       requestId,
       _meta: {
         model: FOCUS_AI_COACH_MODEL,
-        responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA,
+        responseSchema: FOCUS_AI_COACH_RESPONSE_SCHEMA_V5,
       },
     };
   })();
@@ -905,7 +953,7 @@ export function previewFocusAiCoachPayload(session) {
     reason: null,
     binding: built.binding,
     dossier: built.dossier,
-    systemText: buildFocusAiCoachSystemInstruction(),
-    userText: buildFocusAiCoachUserPrompt(built.dossier, { generatedAt: new Date() }),
+    systemText: buildFocusAiCoachSystemInstructionV5(),
+    userText: buildFocusAiCoachUserPromptV5(built.dossier),
   };
 }

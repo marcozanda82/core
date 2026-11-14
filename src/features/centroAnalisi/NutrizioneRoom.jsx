@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import MacroPlateVisualizer from '../nutrition/MacroPlateVisualizer';
 import { computeTotali } from '../../useBiochimico';
 import { computeAdherence } from '../../adherenceEngine';
@@ -214,7 +214,7 @@ export default function NutrizioneRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere medie caloriche e aderenza nutrizionale in sola lettura."
+        body="Accedi da Kentu per leggere medie caloriche e aderenza nutrizionale in sola lettura."
       />
     );
   }

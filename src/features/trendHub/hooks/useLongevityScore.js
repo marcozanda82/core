@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { getTodayString } from '../../../coreEngine';
 import { computeTotali } from '../../../useBiochimico';
 import { computeSleepEngineSnapshot } from '../../../hooks/useSleepEngine';
+import { featureFlags } from '../../../config/featureFlags.js';
 import { useHealthContext } from './useHealthContext';
 import { useHealthDailyReport } from './useHealthDailyReport';
 import {
@@ -208,8 +209,10 @@ export function useLongevityScore({
     ?? bootstrapSnapshot?.longevityNutrition
     ?? null;
 
+  // Con bollettino spento generateReport lasciava status='idle' → chat/Guidato bloccati.
   const nutritionInsightSettled = !healthReportEnabled
-    || (health.cacheHydrated && health.status !== 'loading' && health.status !== 'idle');
+    || (health.cacheHydrated && health.status !== 'loading'
+      && (health.status !== 'idle' || !featureFlags.healthAnalyzerBulletin));
 
   const isEngineReady = Boolean(
     enabled

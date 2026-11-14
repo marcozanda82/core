@@ -11,6 +11,7 @@ import SaluteLongevityHero from './components/SaluteLongevityHero';
 import SalutePillarNavGrid from './components/SalutePillarNavGrid';
 import SaluteSleepGhostCard from './components/SaluteSleepGhostCard';
 import SleepTrackerWidget from './components/SleepTrackerWidget';
+import { featureFlags } from '../../config/featureFlags.js';
 import { METABOLIC_FOCUS_LABEL } from '../chat/metabolicFocus.js';
 import { useHealthDailyReport } from './hooks/useHealthDailyReport';
 import { useSleepLog } from './hooks/useSleepLog';
@@ -502,7 +503,7 @@ export default function SaluteView({
         </section>
       ) : null}
 
-      {activePillar === 'nutrition' ? (
+      {activePillar === 'nutrition' && featureFlags.healthAnalyzerBulletin ? (
         <section
           className="rounded-2xl border border-emerald-500/25 bg-emerald-950/15 p-1"
           aria-label={METABOLIC_FOCUS_LABEL}

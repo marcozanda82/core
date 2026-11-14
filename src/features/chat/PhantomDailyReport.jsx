@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import {
   buildPhantomDailyReportData,
   createEmptyPhantomDailyReportData,
@@ -356,7 +356,7 @@ export default function PhantomDailyReport({
       </section>
 
       <footer className="mt-8 border-t border-slate-800 pt-3 text-center text-[10px] uppercase tracking-[0.18em] text-slate-600">
-        KentuOS · Telemetria Giornaliera · Confidenziale
+        Kentu · Telemetria Giornaliera · Confidenziale
       </footer>
     </div>
   );

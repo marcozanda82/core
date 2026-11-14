@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import SaluteClinicalInsight from '../trendHub/components/SaluteClinicalInsight';
 import SaluteGlycemicRiskBar from '../trendHub/components/SaluteGlycemicRiskBar';
+import { featureFlags } from '../../config/featureFlags.js';
 import { useHealthDailyReport } from '../trendHub/hooks/useHealthDailyReport';
 import { buildBiometricsHealthSnapshot } from '../trendHub/utils/healthBiometrics';
 import {
@@ -198,7 +199,7 @@ export default function ClinicaRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere insight clinici, report e piano terapeutico."
+        body="Accedi da Kentu per leggere insight clinici, report e piano terapeutico."
       />
     );
   }
@@ -213,17 +214,19 @@ export default function ClinicaRoom({ store }) {
         breakdown={glycemicBreakdown}
       />
 
-      <SaluteClinicalInsight
-        report={health.report}
-        analysisDate={health.analysisDate || analysisDate}
-        todayDate={todayDate}
-        status={health.status}
-        errorMessage={health.errorMessage}
-        isRefreshing={health.isRefreshing}
-        isUpdatedToday={health.isUpdatedToday}
-        onRefresh={health.refresh}
-        defaultExpanded
-      />
+      {featureFlags.healthAnalyzerBulletin ? (
+        <SaluteClinicalInsight
+          report={health.report}
+          analysisDate={health.analysisDate || analysisDate}
+          todayDate={todayDate}
+          status={health.status}
+          errorMessage={health.errorMessage}
+          isRefreshing={health.isRefreshing}
+          isUpdatedToday={health.isUpdatedToday}
+          onRefresh={health.refresh}
+          defaultExpanded
+        />
+      ) : null}
 
       <section
         className={`overflow-hidden rounded-2xl ${GLASS_SURFACE_CLASS}`}

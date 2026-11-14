@@ -1,4 +1,4 @@
-import ReactMarkdown from 'react-markdown';
+import LazyMarkdown from '../../components/LazyMarkdown.jsx';
 
 const PROSE_P = 'mb-2 mt-0 last:mb-0 text-base font-normal leading-relaxed text-slate-200';
 const PROSE_H = 'mb-2 mt-0 text-base font-semibold leading-snug text-slate-50';
@@ -36,7 +36,7 @@ export default function ChatAiProse({ text, className = '' }) {
   if (!source) return null;
   return (
     <div className={['kentu-ai-prose max-w-full', className].filter(Boolean).join(' ')}>
-      <ReactMarkdown components={markdownComponents}>{source}</ReactMarkdown>
+      <LazyMarkdown components={markdownComponents}>{source}</LazyMarkdown>
     </div>
   );
 }

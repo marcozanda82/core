@@ -65,11 +65,19 @@ export {
 
 export {
   ENERGY_DENSITY_CONFIRM_RATIO,
+  AUDIT_CHUNK_SIZE,
   auditCompoundFoodMatches,
+  auditCompoundFoodMatchesAsync,
+  buildAuditCatalogBundle,
+  buildAuditCatalogBundleAsync,
+  collectCompoundAuditCandidates,
+  findSimpleAlternativeIndexed,
   formatCompoundFoodAuditPlainText,
+  groupCompoundAuditSuspects,
   iterDiaryItemsForCompoundAudit,
   normalizeAuditCatalog,
   sliceHistoryLastDays,
+  sourceTextPointsToSimple,
   summarizeCompoundFoodAudit,
 } from './auditCompoundFoodMatchesCore.js';
 
@@ -175,9 +183,11 @@ export { buildFocusEditorialMockAnalysis } from './buildFocusEditorialMockAnalys
 
 export {
   loadFocusAuthenticatedDiary,
+  loadFocusDiaryDateRange,
   extractFocusUserTargetsFromProfile,
   countFocusTrackerDayNodes,
   focusLocalIsoDate,
+  focusRecentDiaryWindow,
 } from './loadFocusAuthenticatedDiary.js';
 
 export { buildFocusEditorialReadingContext } from './buildFocusEditorialReadingContext.js';

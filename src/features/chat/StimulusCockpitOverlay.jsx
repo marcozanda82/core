@@ -214,7 +214,7 @@ export default function StimulusCockpitOverlay({
               <div className="w-full shrink-0 px-3 pb-3 pt-2">
                 <section className="mb-3">
                   <h3 className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                    Monitoraggio Cardio
+                    Movimento
                   </h3>
                   <CardioProgressBar
                     compact

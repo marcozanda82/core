@@ -1,5 +1,5 @@
 import { Suspense, useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import LazyMarkdown from '../../../components/LazyMarkdown.jsx';
 import CardioAnalysisCard from '../../trendHub/components/CardioAnalysisCard';
 import { formatFastingHoursLabel } from '../../trendHub/utils/saluteDashboardMetrics';
 import { MUSCLE_STIMULUS_DAILY_DECAY_FACTOR } from '../../trendHub/utils/muscleSpillover';
@@ -223,7 +223,7 @@ function NutritionDetail({ pillar, reportRead, healthReportStatus, recentNutriti
           {reportRead && !reportRead.hydrated ? (
             <p className="m-0 text-[13px] text-slate-400">Caricamento referto…</p>
           ) : markdown ? (
-            <ReactMarkdown components={markdownComponents}>{markdown}</ReactMarkdown>
+            <LazyMarkdown components={markdownComponents}>{markdown}</LazyMarkdown>
           ) : healthReportStatus === 'empty' ? (
             <p className="m-0 text-[13px] text-slate-400">
               Nessun diario ieri — il bollettino comparirà dopo il primo giorno completo.

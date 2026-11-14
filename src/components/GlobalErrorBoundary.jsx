@@ -105,7 +105,7 @@ export default class GlobalErrorBoundary extends React.Component {
         >
           <img
             src="/EmblemaKbianca.png"
-            alt="KentuOS"
+            alt="Kentu"
             width={72}
             height={72}
             style={{ marginBottom: 24, opacity: 0.95 }}
@@ -131,7 +131,7 @@ export default class GlobalErrorBoundary extends React.Component {
           >
             {chunkError
               ? 'Un modulo dell’app non è stato caricato (chunk obsoleto o rete). Aggiorna per riprendere.'
-              : 'KentuOS ha incontrato un errore imprevisto. Ricarica l\'app per riprendere.'}
+              : 'Kentu ha incontrato un errore imprevisto. Ricarica l\'app per riprendere.'}
           </p>
           <button
             type="button"

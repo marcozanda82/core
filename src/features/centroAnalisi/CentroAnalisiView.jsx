@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CENTRO_ANALISI_AREAS,
@@ -339,7 +339,7 @@ export default function CentroAnalisiView({
               'transition-all duration-150 hover:border-white/25 hover:bg-white/[0.08]',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40',
             ].join(' ')}
-            aria-label={areaId || roomId ? 'Torna indietro' : 'Torna a KentuOS'}
+            aria-label={areaId || roomId ? 'Torna indietro' : 'Torna a Kentu'}
             title="Indietro"
           >
             {backLabel}

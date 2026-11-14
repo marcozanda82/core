@@ -2,6 +2,7 @@ import { commandBus } from './dispatcher/CommandBus.js';
 import { contextComposer } from './context/ContextComposer.js';
 import { geminiStructuredClient } from './llm/GeminiStructuredClient.js';
 import { isAbortError } from '../../services/aiService.js';
+import { featureFlags } from '../../config/featureFlags.js';
 import {
   DISPATCH_ADD_FOOD,
   DISPATCH_ADD_WORKOUT,
@@ -2941,6 +2942,10 @@ export class CommandTerminalController {
    * @param {object} [options]
    */
   async processReportCommand(userText, currentState = {}, options = {}) {
+    if (!featureFlags.periodReport) {
+      this.publishSystemMessage('Il rapporto di periodo non è più qui. Aprilo dal Focus.');
+      return { ok: false, reason: 'period_report_disabled', userNotified: true };
+    }
     const matched = matchReportCommand(userText, {
       intent: options?.intent,
       reportKind: options?.reportKind || options?.kind,
@@ -3701,7 +3706,10 @@ export class CommandTerminalController {
     const explicit = String(options.intent || '').trim().toUpperCase();
     if (explicit && explicit !== 'UNKNOWN') return explicit;
 
-    if (/^(focus\s*metabolico|insight\s*clinico|nutrizione\s*clinica)\b/i.test(String(userText || '').trim())) {
+    if (
+      featureFlags.metabolicFocusChat
+      && /^(focus\s*metabolico|insight\s*clinico|nutrizione\s*clinica)\b/i.test(String(userText || '').trim())
+    ) {
       return 'REQUEST_CLINICAL_INSIGHT';
     }
 
@@ -5480,6 +5488,9 @@ export class CommandTerminalController {
    * Focus Metabolico — readiness e sintesi del mattino sul pacchetto dati silenzioso.
    */
   async handleClinicalInsightRequest(userText, currentState = {}, options = {}) {
+    if (!featureFlags.metabolicFocusChat) {
+      return { ok: false, reason: 'metabolic_focus_disabled', userNotified: false };
+    }
     let payloadPack;
     try {
       const built = buildClinicalInsightPayload(currentState);
@@ -6436,6 +6447,10 @@ export class CommandTerminalController {
       return this.handleHealthDiagnosisRequest(userText, currentState, options);
     }
     if (forcedIntentEarly === 'REQUEST_CLINICAL_INSIGHT') {
+      if (!featureFlags.metabolicFocusChat) {
+        this.publishSystemMessage('Il Focus è nella sua pagina.');
+        return { ok: false, reason: 'metabolic_focus_disabled', userNotified: true };
+      }
       return this.handleClinicalInsightRequest(userText, currentState, options);
     }
 
@@ -6594,6 +6609,10 @@ export class CommandTerminalController {
     }
 
     if (inferredIntent === 'REQUEST_CLINICAL_INSIGHT') {
+      if (!featureFlags.metabolicFocusChat) {
+        this.publishSystemMessage('Il Focus è nella sua pagina.');
+        return { ok: false, reason: 'metabolic_focus_disabled', userNotified: true };
+      }
       return this.handleClinicalInsightRequest(userText, currentState, options);
     }
 

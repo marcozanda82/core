@@ -456,6 +456,7 @@ import {
   selectTodayLog,
   LONGEVITY_WINDOW_DAYS,
 } from './features/trendHub/utils/saluteHistorySeries';
+import { featureFlags } from './config/featureFlags.js';
 import { useLongevityDashboardData } from './hooks/salaComandi/useLongevityDashboardData';
 import { useDailyWeeklyPlanningSync } from './hooks/salaComandi/useDailyWeeklyPlanningSync';
 import { useGhostSimCompensation } from './hooks/salaComandi/useGhostSimCompensation';
@@ -762,7 +763,7 @@ export default function SalaComandi() {
         window.history.pushState({ noExit: true }, '');
         return;
       }
-      const confirmExit = window.confirm('Vuoi uscire da KentuOS?');
+      const confirmExit = window.confirm('Vuoi uscire da Kentu?');
       if (!confirmExit) {
         window.history.pushState({ noExit: true }, '');
       }
@@ -1717,6 +1718,7 @@ export default function SalaComandi() {
     isInitialLoadComplete,
     isProfileHydrated,
     fullHistoryLoadState,
+    ensureDeepHistory,
   } = useDiaryFirebaseSync({
     db,
     auth,
@@ -1745,6 +1747,15 @@ export default function SalaComandi() {
 
   // 🔥 FIX UX: Segnala ad App.jsx che i dati sono pronti (per splash screen)
   useSignalAppReady(isInitialLoadComplete && isProfileHydrated);
+
+  // Centro Analisi / Longevità: getDaysSinceLastStimulus può scansionare 365g (> Home 90g).
+  useEffect(() => {
+    const needDeep = (activeBottomTab === 'hub' && hubInnerTab === 'strumenti')
+      || activeBottomTab === 'longevita';
+    if (!needDeep || !isInitialLoadComplete || typeof ensureDeepHistory !== 'function') return undefined;
+    ensureDeepHistory('stimulus').catch(() => {});
+    return undefined;
+  }, [activeBottomTab, hubInnerTab, isInitialLoadComplete, ensureDeepHistory]);
 
   useAiWorkoutDrafts({
     enabled: Boolean(
@@ -1918,6 +1929,8 @@ export default function SalaComandi() {
         kcal: workoutKcal,
         cal: workoutKcal,
         duration,
+        durationMinutes: durationMin,
+        durationMin,
         muscles: musclesCanon,
         time: startDec,
         mealTime: startDec,
@@ -1929,6 +1942,8 @@ export default function SalaComandi() {
         type: 'workout',
         time: startDec,
         duration,
+        durationMinutes: durationMin,
+        durationMin,
         kcal: workoutKcal,
         icon: workoutType === 'cardio' ? '🏃' : '🏋️',
         subType: workoutType,
@@ -5851,6 +5866,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     longevityScoreHistory,
     longevityTodayScore,
   } = useLongevityDashboardData({
+    enabled: featureFlags.longevityDashboard,
     fullHistory,
     userTargets,
     longevityDays: 7,
@@ -8719,7 +8735,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
           setIsSimulationMode(false);
           setSimulatedLog(null);
         }}
-        accessory={
+        accessory={featureFlags.homeLongevityArc ? (
           <EnergyArcWidget
             variant="mini"
             longevityScore={unifiedLongevityScore}
@@ -8734,7 +8750,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             physiologySnapshot={physiologySnapshot}
             onClick={handleOpenEnergyArc}
           />
-        }
+        ) : null}
       />
 
       {MAIN_BOTTOM_TAB_ORDER.includes(activeBottomTab) && (
@@ -9129,7 +9145,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       )}
       </div>
       )}
-      {activeBottomTab === 'longevita' && (
+      {featureFlags.longevityDashboard && activeBottomTab === 'longevita' && (
         <LongevityTabShell
           longevityResult={longevityResult}
           longevityData={longevityData}

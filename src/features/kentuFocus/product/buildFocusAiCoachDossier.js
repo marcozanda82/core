@@ -24,6 +24,7 @@ import {
   measureFocusDossierSizeBreakdown,
   slimFocusAiCoachDossier,
 } from './slimFocusAiCoachDossier.js';
+import { buildFocusPeriodBrief } from './focusPeriodBrief.js';
 
 /**
  * @param {unknown} value
@@ -700,8 +701,26 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     idToAlias,
   };
 
+  const periodBrief = fullHistory && isIsoDateString(session.analysisDate)
+    ? buildFocusPeriodBrief(periodId, session.analysisDate, {
+      today: session.today || session.publicationDate,
+      fullHistory,
+      records: session.dayStatusRecords || session.records || null,
+      record: session.dayStatusRecord || undefined,
+      userTargets: session.userTargets || null,
+      targetKcal: session.userTargets?.kcal ?? null,
+      profile: session.profile || session.profile_targets?.profile || null,
+      profile_targets: session.profile_targets || null,
+      cylinders: session.cylinders || null,
+      movementCheckins: session.movementCheckins || null,
+      catalogs: foodCatalogs,
+      bodyMetrics: session.bodyMetrics || null,
+    })
+    : null;
+
   const dossier = {
     schema: 'kentu.focusAiCoachDossier.v2',
+    periodBrief,
     periodId,
     analysisDate: session.analysisDate,
     publicationDate: session.publicationDate,
@@ -869,6 +888,17 @@ export function buildFocusAiCoachDossier(session, options = {}) {
     foodQualityCompleteness,
     foodQualityCompletenessReason,
     deterministicSignals: slimDossier.deterministicSignals?.activeIds || [],
+    periodBrief: slimDossier.periodBrief
+      ? {
+        score: slimDossier.periodBrief.score,
+        actionPillar: slimDossier.periodBrief.actionPillar,
+        safety: slimDossier.periodBrief.safety?.level || null,
+        keyFacts: (slimDossier.periodBrief.pillars || []).map((item) => item.keyFact || ''),
+        reliability: slimDossier.periodBrief.reliability || null,
+        actionHorizon: slimDossier.periodBrief.actionHorizon || null,
+        actionClose: slimDossier.periodBrief.actionClose?.phrase || null,
+      }
+      : null,
     workouts: slimDossier.exercise?.workouts,
     cardio: slimDossier.exercise?.cardio,
     sleep: slimDossier.sleep,

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+﻿import React, { useCallback, useMemo } from 'react';
 import BiometricsHealthCard from '../trendHub/components/BiometricsHealthCard';
 import SaluteWeightTrendChart from '../trendHub/components/SaluteWeightTrendChart';
 import { buildBiometricsHealthSnapshot } from '../trendHub/utils/healthBiometrics';
@@ -123,7 +123,7 @@ export default function BiometrieRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere peso, girovita e trend in sola lettura."
+        body="Accedi da Kentu per leggere peso, girovita e trend in sola lettura."
       />
     );
   }

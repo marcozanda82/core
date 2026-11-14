@@ -14,6 +14,7 @@ import {
   PHASE_DIGESTION_HOURS,
   SLEEP_SOURCES,
 } from '../contracts/healthSnapshot.types.js';
+import { resolveWorkoutDurationMinutes } from '../../commandTerminal/context/workoutMovement.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const NIGHT_SLEEP_MIN_HOURS = 3;
@@ -382,12 +383,7 @@ export function circularStdevHours(hoursList) {
 }
 
 export function durationToMinutes(entry) {
-  const explicitMin = Number(entry?.durationMinutes ?? entry?.durationMin ?? entry?.minutes);
-  if (Number.isFinite(explicitMin) && explicitMin > 0) return Math.round(explicitMin);
-  const dur = Number(entry?.duration ?? entry?.hours);
-  if (!Number.isFinite(dur) || dur <= 0) return 0;
-  if (dur > 5) return Math.round(dur);
-  return Math.round(dur * 60);
+  return Math.round(resolveWorkoutDurationMinutes(entry));
 }
 
 function workoutTypeLabel(entry) {

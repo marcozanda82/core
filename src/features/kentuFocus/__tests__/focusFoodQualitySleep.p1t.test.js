@@ -25,6 +25,8 @@ import {
   FOCUS_REAL_PUBLICATION_DATE as PUB,
   FOCUS_REAL_OCT27_CATALOGS as CATALOGS,
   loadFocusDiaryRealOct27,
+  realFixtureSkipReason,
+  FOCUS_REAL_OCT27_FIXTURE,
 } from './fixtures/focusDiaryRealOct27.js';
 
 function realSession(uid = 'uid_p1t_real') {
@@ -42,7 +44,9 @@ function realSession(uid = 'uid_p1t_real') {
   });
 }
 
-describe('Focus food quality + sleep P1t (fixture reale 2026-10-27)', () => {
+describe('Focus food quality + sleep P1t (fixture reale 2026-10-27)', {
+  skip: realFixtureSkipReason(FOCUS_REAL_OCT27_FIXTURE),
+}, () => {
   beforeEach(() => {
     __resetFocusDiaryHandoffForTests();
     __resetFocusAiCoachMemoryForTests();

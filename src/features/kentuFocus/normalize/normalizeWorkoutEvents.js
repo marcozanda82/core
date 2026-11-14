@@ -15,6 +15,10 @@ import {
   getManualNodesArray,
 } from './logUtils.js';
 import { normalizeMuscleGroupArray } from '../../../activityCatalog.js';
+import {
+  classifyWorkoutByType,
+  resolveWorkoutDurationMinutes,
+} from '../../commandTerminal/context/workoutMovement.js';
 
 /** @typedef {'strength'|'aerobic'|'other_activity'|'unclassified'} FocusActivityKind */
 
@@ -38,7 +42,22 @@ const STRENGTH_PATTERNS = [
   'bicipit*',
   'tricipit*',
   'avambracc*',
+  'corpo libero',
+  'elastici',
+  'elastico',
+  'lavori pesanti',
+  'scale',
+  'alzate',
 ];
+
+const STRENGTH_TYPE_IDS = new Set([
+  'pesi',
+  'corpo_libero',
+  'elastici',
+  'lavori_pesanti',
+  'scale',
+  'alzate_sedia',
+]);
 
 const AEROBIC_PATTERNS = [
   'camminat*',
@@ -100,12 +119,21 @@ export function labelMatchesActivityPatterns(label, patterns) {
   return false;
 }
 
-/** @param {unknown} durationRaw */
+/**
+ * Minuti di una durata grezza, o di una sessione intera.
+ * Su una sessione vince durationMinutes. Altrimenti: sopra 5 sono minuti, sotto sono ore.
+ * @param {unknown} durationRaw
+ * @returns {number|null}
+ */
 export function durationToMinutes(durationRaw) {
+  if (durationRaw && typeof durationRaw === 'object') {
+    const minutes = resolveWorkoutDurationMinutes(durationRaw);
+    return minutes > 0 ? minutes : null;
+  }
   const dur = finiteNumber(durationRaw);
   if (dur == null || dur < 0) return null;
-  // Allineato a coreEngine dayHasTrainingFromLogs: >5 → minuti, altrimenti ore.
-  return dur > 5 ? dur : dur * 60;
+  if (dur === 0) return 0;
+  return resolveWorkoutDurationMinutes(dur) || null;
 }
 
 /** @param {object} entry */
@@ -162,8 +190,8 @@ export function extractWorkoutTypeId(entry) {
  * }}
  */
 export function classifyFocusActivity(entry) {
-  const label = workoutLabel(entry);
-  if (!label) {
+  const movement = classifyWorkoutByType(entry);
+  if (movement.source === 'none') {
     return {
       kind: 'unclassified',
       isWalking: false,
@@ -171,26 +199,22 @@ export function classifyFocusActivity(entry) {
       source: 'no_label',
     };
   }
-
-  if (labelMatchesActivityPatterns(label, STRENGTH_PATTERNS)) {
+  if (movement.kind === 'strength') {
     return {
       kind: 'strength',
       isWalking: false,
       provenance: FOCUS_PROVENANCE.calculated,
-      source: 'strength_patterns_precede_aerobic',
+      source: movement.source === 'workoutType' ? 'workout_type' : 'strength_patterns_precede_aerobic',
     };
   }
-
-  const isWalking = labelMatchesActivityPatterns(label, WALKING_PATTERNS);
-  if (labelMatchesActivityPatterns(label, AEROBIC_PATTERNS) || isWalking) {
+  if (movement.kind === 'walk' || movement.kind === 'vigorous') {
     return {
       kind: 'aerobic',
-      isWalking,
+      isWalking: movement.kind === 'walk',
       provenance: FOCUS_PROVENANCE.calculated,
-      source: isWalking ? 'walking_patterns' : 'aerobic_patterns',
+      source: movement.kind === 'walk' ? 'walking_patterns' : 'aerobic_patterns',
     };
   }
-
   return {
     kind: 'other_activity',
     isWalking: false,
@@ -293,7 +317,7 @@ export function normalizeWorkoutEvents(analysisDayNode) {
   let anyVigorous = false;
 
   const workouts = merged.map((entry) => {
-    const durationMin = durationToMinutes(entry.duration ?? entry.durationMin ?? entry.minutes);
+    const durationMin = durationToMinutes(entry);
     const kcalBurn = finiteNumber(entry.kcal ?? entry.cal ?? entry.kcalBurn);
     const classification = classifyFocusActivity(entry);
     const intensity = resolveRecordedIntensityMinutes(entry, durationMin);

@@ -1,4 +1,4 @@
-import React, { Suspense, useCallback, useMemo } from 'react';
+﻿import React, { Suspense, useCallback, useMemo } from 'react';
 import { GLASS_SURFACE_CLASS } from './glassStyles';
 import { useStrumentazioneMapData } from './useStrumentazioneMapData';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -210,7 +210,7 @@ export default function StrumentazioneToolRoom({
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere bussola, mappa e radar in sola lettura."
+        body="Accedi da Kentu per leggere bussola, mappa e radar in sola lettura."
       />
     );
   }

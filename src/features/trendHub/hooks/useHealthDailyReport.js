@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, onValue, ref, update } from 'firebase/database';
+import { featureFlags } from '../../../config/featureFlags.js';
 import {
   buildFoodHealthLabelsFirebasePatch,
   buildHealthAnalysisContext,
   buildHealthReportDocument,
   isHealthReportGeneratedToday,
   requestHealthAnalyzerReport,
+  requestHealthFoodLabels,
 } from '../engines/HealthAnalyzerEngine';
 import {
   readHealthReportCache,
@@ -114,6 +116,35 @@ export function useHealthDailyReport({
   const generateReport = useCallback(
     async ({ force = false } = {}) => {
       if (!enabled || !db || !uid || !todayDate) return null;
+      if (!featureFlags.healthAnalyzerBulletin) {
+        // Bollettino spento: etichette opzionali, ma lo status deve lasciare 'idle'
+        // altrimenti isEngineReady resta false e Guidato AI / chat restano bloccati.
+        if (!context.hasFoods) {
+          setStatus('empty');
+          setErrorMessage(null);
+          return null;
+        }
+        if (!context.needsLabeling || inFlightRef.current) {
+          setStatus('ready');
+          setErrorMessage(null);
+          return null;
+        }
+        inFlightRef.current = true;
+        try {
+          const labels = await requestHealthFoodLabels(context);
+          await applyLazyLabels(labels);
+          setStatus('ready');
+          setErrorMessage(null);
+          return null;
+        } catch (err) {
+          console.error('[HealthAnalyzer] etichette', err);
+          setStatus('error');
+          setErrorMessage(String(err?.message || err || 'Errore etichette'));
+          return null;
+        } finally {
+          inFlightRef.current = false;
+        }
+      }
       if (inFlightRef.current) return null;
 
       if (!context.hasFoods) {
@@ -171,6 +202,7 @@ export function useHealthDailyReport({
 
   // Cache-first: idratazione immediata da localStorage (0 ms percepiti).
   useEffect(() => {
+    if (!featureFlags.healthAnalyzerBulletin) return undefined;
     if (!enabled || !uid) return undefined;
     const cachedScores = readHealthScoresIndexCache(uid);
     if (cachedScores) {
@@ -191,7 +223,12 @@ export function useHealthDailyReport({
   }, [enabled, uid, analysisDate]);
 
   // Fetch remoto in parallelo + listener live (Stale-While-Revalidate).
+  // Col bollettino spento non si leggono i referti: resta solo l'etichettatura novaScore.
   useEffect(() => {
+    if (!featureFlags.healthAnalyzerBulletin) {
+      if (enabled && uid) setCacheHydrated(true);
+      return undefined;
+    }
     if (!enabled || !db || !uid || !analysisDate) {
       setCacheHydrated(false);
       return undefined;

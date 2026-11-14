@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import CardioProgressBar from '../../components/CardioProgressBar';
 import TelemetryChart from '../../TelemetryChart';
 import ProgressionScoreWidget from '../trendHub/components/ProgressionScoreWidget';
@@ -130,7 +130,7 @@ export default function AllenamentoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere sessioni, volume cardio e trend di carico in sola lettura."
+        body="Accedi da Kentu per leggere sessioni, volume cardio e trend di carico in sola lettura."
       />
     );
   }

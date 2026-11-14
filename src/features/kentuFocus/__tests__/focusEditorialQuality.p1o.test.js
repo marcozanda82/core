@@ -262,10 +262,10 @@ describe('Focus editorial quality P1O', () => {
   it('prompt espone contesto temporale e mandato anti-tecnico', () => {
     const preview = previewFocusAiCoachPayload(sessionOct24());
     assert.equal(preview.ok, true);
-    assert.match(preview.systemText, /energy_irregular|giorno analizzato|andamento/i);
-    assert.match(preview.systemText, /sonno|fisiolog|non [eè] misurato/i);
-    assert.match(preview.userText, /CONTESTO TEMPORALE/);
-    assert.match(preview.userText, /Media recente 7g/);
+    assert.match(preview.systemText, /stato di ogni pilastro è già deciso/i);
+    assert.match(preview.systemText, /actionPillar/);
+    assert.match(preview.userText, /periodBrief/);
+    assert.match(preview.userText, /"headline"/);
     assert.match(preview.userText, /editorialReadingContext/);
     assert.match(preview.userText, /Pane|pane/);
     assert.match(preview.dossier.horizonBrief, /giorno|traiettoria/i);

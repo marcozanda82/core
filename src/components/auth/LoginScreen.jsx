@@ -235,7 +235,7 @@ export default function LoginScreen() {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
           <img
             src={KENTU_LOGIN_LOGO_SRC}
-            alt="KentuOS"
+            alt="Kentu"
             decoding="async"
             draggable={false}
             className="h-auto w-auto max-h-16 max-w-[min(280px,88vw)] object-contain"

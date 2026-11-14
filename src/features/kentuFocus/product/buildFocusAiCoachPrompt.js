@@ -357,3 +357,136 @@ export function buildFocusAiCoachUserPrompt(dossier, opts = {}) {
     '}',
   ].filter(Boolean).join('\n');
 }
+
+export const FOCUS_AI_COACH_RESPONSE_SCHEMA_V5 = Object.freeze({
+  type: 'object',
+  properties: {
+    headline: { type: 'string' },
+    pillars: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', enum: ['alimentazione', 'sonno', 'movimento', 'forza'] },
+          line: { type: 'string' },
+          tone: { type: 'string', enum: ['positive', 'neutral', 'improve'] },
+          eventRefs: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['id', 'line', 'tone', 'eventRefs'],
+      },
+    },
+    action: {
+      type: 'object',
+      properties: {
+        text: { type: 'string' },
+        pillar: { type: 'string', enum: ['alimentazione', 'sonno', 'movimento', 'forza'] },
+      },
+      required: ['text', 'pillar'],
+    },
+    support: {
+      type: 'object',
+      nullable: true,
+      properties: { text: { type: 'string' } },
+    },
+    deepDive: {
+      type: 'object',
+      properties: {
+        lead: { type: 'string' },
+        sections: { type: 'array' },
+        limits: { type: 'array', items: { type: 'string' } },
+        evidenceRefs: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['lead', 'sections', 'limits', 'evidenceRefs'],
+    },
+  },
+  required: ['headline', 'pillars', 'action', 'deepDive'],
+});
+
+/**
+ * I pilastri arrivano con lo stato già deciso. L'AI lo spiega, non lo giudica di nuovo.
+ * @returns {string}
+ */
+export function buildFocusAiCoachSystemInstructionV5() {
+  return [
+    'Sei il redattore del rapporto Kentu Focus.',
+    'Registro: diretto, asciutto, frasi brevi, seconda persona. «Hai mangiato 3196 kcal», «Hai dormito 8 ore», «Non hai camminato». Mai forme impersonali come «Introito a…» o «Riposo registrato…».',
+    'Vietate nel testo per l’utente: introito, apporto, quota, target, riferimento giornaliero, fascia abituale, fascia consueta, nel contesto, uscite variabili. Per il target scrivi «obiettivo».',
+    'Per Settimana e Mese, se periodBrief.actionClose è presente, l’azione chiude almeno un terzo della distanza dal riferimento e usa quella quantità esplicita, già arrotondata (almeno 10 minuti, almeno 100 kcal). Una sola leva.',
+    'Per Settimana e Mese la line di ogni pilastro racconta il periodo con il keyFact già aggregato (media kcal e giorni fuori fascia, media del sonno e notti, minuti su riferimento, forza come «parte alta N sessioni · parte bassa: nessuna» quando un macro non ha sessioni). Lo stato «ferma da» della forza solo se quel pilastro è fuori rotta. Non raccontare solo l’ultimo giorno.',
+    'L’azione inizia una sola volta con periodBrief.actionHorizon: «Oggi» nel giorno, «Questa settimana» o «La prossima settimana», «Questo mese» o «A novembre». Un periodo già concluso parla del periodo successivo. Nel mese la quantità è settimanale («due camminate da 20 minuti ogni settimana»). Se il pilastro è on_track e non c’è una causa dei giorni fuori fascia, l’azione è di mantenimento («Continua così con le camminate»), senza «tieni la stessa linea».',
+    'Se la media delle kcal è in fascia ma l’energia è irregolare o i giorni fuori fascia sono almeno 2, l’azione parla della causa di quei giorni (cene abbondanti, primo pasto tardivo, ultimo pasto vicino al sonno), non di aggiungere o togliere kcal sulla media.',
+    'Se alcuni alimenti non hanno dati di lavorazione, nei limits scrivi esattamente «Alcuni alimenti non hanno dati sulla lavorazione.» Non citare il catalogo.',
+    'Se periodBrief.unconfirmedNote è presente, nei limits inserisci quella frase esatta, per esempio «4 giorni su 7 non confermati».',
+    'headline: un solo messaggio chiaro. VIETATO bilanciare un segnale negativo con una giustificazione nella stessa frase (es. «sotto il target con media allineata», «ma la media resta allineata»).',
+    'L’azione ha una sola leva: niente alternative con « o ».',
+    'Durate nel formato «6 h 50», «7 h 04» o «8 h». I minuti hanno sempre due cifre. Mai decimali come «6,5 ore» o «6.8 h». Accenti: attività, più, perché.',
+    'Nei rapporti Settimana e Mese nessun riferimento all’ultima notte o a un giorno singolo (ieri, oggi, stanotte). Se un giorno è il fatto più rilevante del periodo, nominalo con la data, senza «ultima notte».',
+    'Lo stato di ogni pilastro è già deciso nel dossier (periodBrief.pillars.status). Spiegalo con un fatto concreto del dossier. Non assegnare un altro stato.',
+    'Se periodBrief.pillars[].penalties elenca una penalità, la line di quel pilastro deve citarne la causa anche se lo stato è on_track: heavy_late_meal → «cena abbondante»; late_meal_before_sleep → «ultimo pasto vicino al sonno»; nova4_critique → «ultra-processato sfavorevole».',
+    'headline massimo 70 caratteri. Ogni pillars.line massimo 110. action.text massimo 140.',
+    'pillars contiene solo i pilastri con active=true. I pilastri senza dati non vanno scritti: il codice aggiunge «non registrato».',
+    'tone: on_track → positive; halfway → neutral o improve; off_track → improve. Se c’è restrictive_pattern, il tone di alimentazione non è mai positive: al massimo neutral.',
+    'action.pillar deve essere identico a periodBrief.actionPillar. L’orizzonte è il campo action non scritto: periodBrief.horizon. Se il testo inizia già con oggi, questa settimana o questo mese, non aggiungerlo di nuovo.',
+    'deepDive è «Perché te lo dico»: lead, sections, limits, evidenceRefs.',
+    'Non usare summary, wentWell o toImprove.',
+    'Se safety.suppressNumbers è true: nessun numero di calorie, peso o grammi in nessun testo. L’azione propone qualcosa di semplice, senza numeri e senza invitare un professionista.',
+    'Se periodBrief.support è presente, compila support.text con un invito delicato a un professionista, senza numeri e senza ripetere l’orizzonte. Se periodBrief.support è null, support è null.',
+    'Se c’è un segnale act del salvavita diverso da restrictive_pattern, l’azione riguarda quel segnale.',
+    'Se reliability è low e l’orizzonte è il giorno: headline «Un giorno da leggere con calma» e una riga nei limits. Succede solo se il giorno è approssimato o ha buchi. Se reliability è medium (giorno solo non confermato): titolo normale e nei limits «Affidabilità media: il giorno non è confermato». La headline dice lo stato della giornata o del periodo (periodBrief.score: sulla rotta, a metà, fuori rotta), non lo stato del pilastro peggiore. Forma: «Giornata a metà: pasti sotto l\'obiettivo», «Settimana fuori rotta: …», «Mese sulla rotta: …». Dopo i due punti c\'è la causa, presa dal pilastro dell\'azione.',
+    'Se il pilastro forza è inactive: nessun riferimento alla forza.',
+    'Vietato: diagnosi, punteggi numerici, «sei pronto a spingere», gergo interno (dossier, calcolato, documentato, derivato).',
+    'eventRefs e evidenceRefs: solo alias corti del dossier, oppure [].',
+    'Rispondi SOLO JSON conforme allo schema v5.',
+  ].join(' ');
+}
+
+/**
+ * @param {object} dossier
+ * @returns {string}
+ */
+export function buildFocusAiCoachUserPromptV5(dossier) {
+  const brief = dossier?.periodBrief || {};
+  const periodLabel = brief.periodId === 'settimana' || brief.horizon === 'questa settimana'
+    ? 'Settimana'
+    : brief.periodId === 'mese' || brief.horizon === 'questo mese'
+      ? 'Mese'
+      : 'Giorno';
+  return [
+    `Genera il rapporto Kentu Focus per ${periodLabel}.`,
+    `Orizzonte dell’azione: ${brief.actionHorizon || brief.horizon || 'oggi'}.`,
+    `Pilastro dell’azione, già scelto: ${brief.actionPillar || 'alimentazione'}.`,
+    `Affidabilità: ${brief.reliability || 'high'}. Stato del giorno: ${brief.dayStatus || 'n/d'}.`,
+    `Salvavita: ${brief.safety?.level || 'none'}.`,
+    brief.safety?.suppressNumbers ? 'suppressNumbers attivo: niente calorie, peso o grammi. L’azione resta semplice.' : '',
+    brief.support ? 'Card di sostegno dovuta: invito a un professionista in support.text.' : 'Nessuna card di sostegno: support null.',
+    brief.periodId === 'settimana' || brief.periodId === 'mese'
+      ? 'Periodo: parla dell’insieme. Niente ultima notte, ieri, oggi o stanotte, salvo un fatto del periodo detto con la data.'
+      : '',
+    brief.actionClose
+      ? `Azione: almeno ${brief.actionClose.minimum} ${brief.actionClose.unit}. Forma: «${brief.actionClose.phrase}».`
+      : '',
+    ...(Array.isArray(brief.pillars) ? brief.pillars.flatMap((pillar) => (
+      Array.isArray(pillar.penalties) && pillar.penalties.length
+        ? [`Line di ${pillar.id}: cita ${pillar.penalties.join(', ')}, anche se è sulla rotta.`]
+        : []
+    )) : []),
+    (dossier?.generationLimits || []).some((line) => line === 'Alcuni alimenti non hanno dati sulla lavorazione.')
+      ? 'Nei limits inserisci «Alcuni alimenti non hanno dati sulla lavorazione.»'
+      : '',
+    brief.unconfirmedNote ? `Nei limits inserisci «${brief.unconfirmedNote}».` : '',
+    brief.movementEstimateNote ? `Nei limits inserisci «${brief.movementEstimateNote}».` : '',
+    '',
+    '[FOCUS_INPUT_DATA]',
+    JSON.stringify(dossier),
+    '[/FOCUS_INPUT_DATA]',
+    '',
+    'Compila questo JSON:',
+    '{',
+    '  "headline": "",',
+    '  "pillars": [ { "id": "", "line": "", "tone": "positive|neutral|improve", "eventRefs": [] } ],',
+    '  "action": { "text": "", "pillar": "" },',
+    '  "support": null,',
+    '  "deepDive": { "lead": "", "sections": [], "limits": [], "evidenceRefs": [] }',
+    '}',
+  ].filter(Boolean).join('\n');
+}

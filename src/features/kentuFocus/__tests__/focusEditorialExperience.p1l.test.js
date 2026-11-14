@@ -177,7 +177,7 @@ describe('Focus editorial experience P1L', () => {
     assert.equal(links.stimoloMuscolare.to, '/centro-analisi?area=progressione&focus=forza');
     assert.equal(links.cardio.to, '/centro-analisi?area=progressione&focus=cardio');
     assert.equal(links.stimoloMuscolare.label, 'Forza e muscoli');
-    assert.equal(links.cardio.label, 'Cardio');
+    assert.equal(links.cardio.label, 'Movimento');
     assert.equal(/^https?:/i.test(links.stimoloMuscolare.to), false);
   });
 
@@ -187,7 +187,7 @@ describe('Focus editorial experience P1L', () => {
     assert.match(preview.systemText, /headline|rapporto/i);
     assert.match(preview.userText, /"headline"/);
     assert.match(preview.userText, /kentuEngines/);
-    assert.match(preview.userText, /expectedChange/);
+    assert.match(preview.userText, /deepDive/);
   });
 
   it('proposizione quantitativa: food nel diario verificata', () => {

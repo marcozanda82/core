@@ -13,8 +13,45 @@ import {
 import { db } from '../../firebaseConfig';
 import { BODY_WEIGHT_KG_MAX, BODY_WEIGHT_KG_MIN, clampBodyWeightKg } from '../../utils/inputSanity';
 import { calculateAge } from '../../utils/profileAge';
+import OnboardingIllustration from './OnboardingIllustration.jsx';
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 8;
+
+/** Titoli e sottotitoli rivolti all’utente, senza termini tecnici interni. */
+const STEP_COPY = {
+  1: {
+    title: 'Iniziamo da te',
+    subtitle: 'Nome, sesso, età e altezza: così Kentu ti conosce meglio.',
+  },
+  2: {
+    title: 'Il tuo peso di oggi',
+    subtitle: 'Serve solo come riferimento. Potrai aggiornarlo quando vuoi.',
+  },
+  3: {
+    title: 'Come ti muovi di solito?',
+    subtitle: 'Una stima semplice della tua giornata tipo.',
+  },
+  4: {
+    title: 'Cosa vuoi per il corpo?',
+    subtitle: 'Kentu adatta calorie e proteine a questo obiettivo.',
+  },
+  5: {
+    title: 'Controlla e conferma',
+    subtitle: 'Rivedi i dati prima di continuare. Tocca una riga per correggere.',
+  },
+  6: {
+    title: 'Raccontaci di te',
+    subtitle: 'Così Kentu sa cosa guardare con più attenzione.',
+  },
+  7: {
+    title: 'Raccontaci di te',
+    subtitle: 'Così Kentu sa cosa guardare con più attenzione.',
+  },
+  8: {
+    title: 'Kentu',
+    subtitle: '',
+  },
+};
 const PUBLIC_BASE = String(import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const PARTY_VIDEO_SRC = `${PUBLIC_BASE}party.mp4`;
 const PARTY_CLIP_END_SEC = 8.5;
@@ -86,6 +123,19 @@ const GOAL_OPTIONS = [
     Icon: Dumbbell,
   },
 ];
+
+const OUTCOME_OPTIONS = [
+  { id: 'autonomia', title: 'Mantenermi autonomo e in salute', Icon: Scale },
+  { id: 'forma', title: 'Migliorare la mia forma', Icon: Zap },
+  { id: 'regolarita', title: 'Mi alleno con regolarità', Icon: Dumbbell },
+];
+
+function previewStep() {
+  if (typeof window === 'undefined') return 1;
+  const raw = Number(new URLSearchParams(window.location.search).get('step'));
+  if (!Number.isFinite(raw) || raw < 1 || raw > TOTAL_STEPS) return 1;
+  return Math.round(raw);
+}
 
 function clampFloat(value, min, max, fallback) {
   const n = Number.parseFloat(String(value ?? '').replace(',', '.'));
@@ -203,6 +253,8 @@ function buildInitialState() {
     pal: null,
     goalId: '',
     displayName: '',
+    outcomeId: '',
+    forzaEnabled: false,
   };
 }
 
@@ -210,7 +262,7 @@ function StepDots({ step }) {
   return (
     <div className="mb-6 flex items-center justify-between gap-3">
       <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
-        Step {step} di {TOTAL_STEPS}
+        Passo {step} di {TOTAL_STEPS}
       </p>
       <div className="flex items-center gap-1.5" aria-hidden>
         {Array.from({ length: TOTAL_STEPS }, (_, i) => {
@@ -350,58 +402,6 @@ function OptionCard({ selected, onClick, title, description, Icon = null }) {
   );
 }
 
-/** Mascotte wizard.mp4 in loop continuo (autoplay muted + ridondanza onEnded). */
-function MascotLoopVideo({ className = '' }) {
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return undefined;
-    el.muted = true;
-    const tryPlay = () => {
-      const p = el.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => {
-          /* autoplay bloccato: ritenta al primo gesture via attributes */
-        });
-      }
-    };
-    tryPlay();
-    const onVis = () => {
-      if (document.visibilityState === 'visible') tryPlay();
-    };
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, []);
-
-  return (
-    <div
-      className={[
-        'aspect-video w-full overflow-hidden rounded-2xl border border-emerald-500/20 bg-black shadow-lg',
-        className,
-      ].join(' ')}
-    >
-      <video
-        ref={videoRef}
-        src="/wizard.mp4"
-        className="h-full w-full object-cover"
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="auto"
-        onEnded={() => {
-          const el = videoRef.current;
-          if (!el) return;
-          el.currentTime = 0;
-          el.play().catch(() => {});
-        }}
-        aria-label="Mascotte KentuOS"
-      />
-    </div>
-  );
-}
-
 /**
  * Video celebrativo party.mp4 — una sola riproduzione automatica + replay manuale.
  */
@@ -516,19 +516,19 @@ function MacroSummaryCard({ summary, goalLabel }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left sm:p-5">
       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-cyan-400/80">
-        Riepilogo motore
+        Il tuo punto di partenza
       </p>
       <dl className="mt-4 space-y-2.5 text-sm">
         <div className="flex justify-between gap-3 border-b border-white/5 pb-2">
-          <dt className="text-zinc-500">BMR</dt>
+          <dt className="text-zinc-500">Energia a riposo</dt>
           <dd className="font-medium text-zinc-100">{Math.round(summary.bmr)} kcal</dd>
         </div>
         <div className="flex justify-between gap-3 border-b border-white/5 pb-2">
-          <dt className="text-zinc-500">TDEE</dt>
+          <dt className="text-zinc-500">Energia della giornata</dt>
           <dd className="font-medium text-zinc-100">{Math.round(summary.tdee)} kcal</dd>
         </div>
         <div className="flex justify-between gap-3 border-b border-white/5 pb-2">
-          <dt className="text-zinc-500">Kcal obiettivo</dt>
+          <dt className="text-zinc-500">Obiettivo calorie</dt>
           <dd className="font-medium text-cyan-200">{summary.kcal} kcal</dd>
         </div>
         <div className="flex justify-between gap-3 border-b border-white/5 pb-2">
@@ -585,15 +585,15 @@ function OnboardingFinaleScreen({
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_24px_64px_rgba(0,0,0,0.35)]">
           <p className="mb-4 text-center text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-emerald-400/80">
-            KentuOS · Battesimo
+            Kentu
           </p>
 
           <PartyCelebrationVideo />
 
           <h2 className="mb-6 text-center text-xl font-bold text-white">
-            {welcomeWord} in KentuOS,{' '}
+            {welcomeWord} in Kentu,{' '}
             <span className="text-emerald-400">{name}</span>
-            ! Il tuo motore è pronto.
+            ! Sei pronto per iniziare.
           </h2>
 
           <MacroSummaryCard summary={summary} goalLabel={goalLabel} />
@@ -643,8 +643,24 @@ export default function UserOnboardingWizard({
   onCompleted,
 }) {
   const navigate = useNavigate();
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState(() => buildInitialState());
+  const [step, setStep] = useState(() => (isSimulationMode ? previewStep() : 1));
+  const [form, setForm] = useState(() => {
+    const base = buildInitialState();
+    // Anteprima ?step=…: dati minimi così lo step finale resta navigabile.
+    if (!isSimulationMode) return base;
+    return {
+      ...base,
+      displayName: String(displayName || '').trim() || 'Marco',
+      gender: 'M',
+      birthDate: '1990-05-12',
+      height: 176,
+      weight: 72,
+      pal: 1.4,
+      goalId: 'maintain',
+      outcomeId: 'forma',
+      forzaEnabled: true,
+    };
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   /** True dopo un tentativo di avanzare con campi incompleti. */
@@ -671,13 +687,19 @@ export default function UserOnboardingWizard({
   const canContinueStep4 = Boolean(form.goalId) && GOAL_OPTIONS.some((o) => o.id === form.goalId);
   const canContinueStep5 =
     canContinueStep1 && canContinueStep2 && canContinueStep3 && canContinueStep4;
+  const canContinueStep6 = OUTCOME_OPTIONS.some((opt) => opt.id === form.outcomeId);
+  const canContinueStep7 = true;
+  const canContinueStep8 = canContinueStep5 && canContinueStep6;
 
   const canContinueCurrent =
     step === 1 ? canContinueStep1
       : step === 2 ? canContinueStep2
         : step === 3 ? canContinueStep3
           : step === 4 ? canContinueStep4
-            : canContinueStep5;
+            : step === 5 ? canContinueStep5
+              : step === 6 ? canContinueStep6
+                : step === 7 ? canContinueStep7
+                  : canContinueStep8;
 
   const selectedGoal = GOAL_OPTIONS.find((g) => g.id === form.goalId) || null;
   const selectedPal = PAL_OPTIONS.find((o) => o.pal === form.pal) || null;
@@ -716,7 +738,9 @@ export default function UserOnboardingWizard({
           ? 'Dimmi quanto ti muovi durante il giorno.'
           : step === 4
             ? 'Scegli il tuo obiettivo.'
-            : 'Completa tutti i parametri vitali prima di procedere.';
+            : step === 6
+              ? 'Scegli cosa vuoi ottenere.'
+              : 'Completa i passi precedenti prima di continuare.';
 
   const bumpWeight = (delta) => {
     setForm((prev) => {
@@ -750,9 +774,10 @@ export default function UserOnboardingWizard({
 
   const handleSubmit = async () => {
     if (saving) return;
-    if (!canContinueStep5) {
+    if (!canContinueStep8) {
       setShowStepHints(true);
-      setError('Completa sesso, data di nascita, altezza, peso, attività e obiettivo prima del calcolo.');
+      setShowStepHints(true);
+      setError('Torna indietro e completa i passi mancanti prima di iniziare.');
       return;
     }
     setSaving(true);
@@ -761,7 +786,7 @@ export default function UserOnboardingWizard({
     try {
       const computed = buildComputedPayload();
       if (!computed) {
-        setError('Parametri vitali incompleti: impossibile avviare il calcolo.');
+        setError('Mancano ancora alcuni dati: torna ai passi precedenti e completa i campi obbligatori.');
         setSaving(false);
         return;
       }
@@ -815,6 +840,9 @@ export default function UserOnboardingWizard({
         proteinTarget: macros.prot,
         firstSetupCompleted: true,
         onboardingCompletedAt: new Date().toISOString(),
+        registeredAt: prevProfile.registeredAt || new Date().toISOString(),
+        outcome: form.outcomeId,
+        forzaEnabled: form.forzaEnabled === true,
       };
 
       const targets = {
@@ -843,6 +871,7 @@ export default function UserOnboardingWizard({
         profile,
         targets,
       });
+      await set(ref(db, `users/${uid}/cylinders/forza/enabled`), form.forzaEnabled === true);
       // Non chiamare onCompleted qui: App smonterebbe il wizard prima del party.
       setCompletedPayload(payload);
       setSaving(false);
@@ -964,21 +993,40 @@ export default function UserOnboardingWizard({
         ) : null}
 
         <header className="mb-3">
-          <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-cyan-400/80">
-            KentuOS · Battesimo{isSimulationMode ? ' · Preview' : ''}
-          </p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
-            Configura il motore metabolico
-          </h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-gray-400">
-            Cinque passaggi per calibrare BMR, TDEE e macro senza fallback generici.
-          </p>
+          {step === TOTAL_STEPS ? (
+            <>
+              <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                Passo {step} di {TOTAL_STEPS}
+              </p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                {(STEP_COPY[step] || STEP_COPY[1]).title}
+              </h1>
+            </>
+          ) : (
+            <>
+              <p className="text-[0.65rem] font-semibold uppercase tracking-[0.22em] text-cyan-400/80">
+                Kentu
+              </p>
+              <h1 className="mt-1 text-xl font-semibold tracking-tight text-white sm:text-2xl">
+                {(STEP_COPY[step] || STEP_COPY[1]).title}
+              </h1>
+              {(STEP_COPY[step] || STEP_COPY[1]).subtitle ? (
+                <p className="mt-1.5 text-sm leading-relaxed text-gray-400">
+                  {(STEP_COPY[step] || STEP_COPY[1]).subtitle}
+                </p>
+              ) : null}
+            </>
+          )}
         </header>
 
-        <StepDots step={step} />
+        {step === TOTAL_STEPS ? null : <StepDots step={step} />}
 
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-[0_24px_64px_rgba(0,0,0,0.35)] sm:p-5">
-          <MascotLoopVideo className="mb-4" />
+          <OnboardingIllustration
+            className="mb-4"
+            variant={step === TOTAL_STEPS ? 'landscape' : 'mark'}
+            label={step === TOTAL_STEPS ? 'Paesaggio Blue Zone' : 'Kentu'}
+          />
           {step === 1 && (
             <div className="space-y-5">
               <div>
@@ -1038,7 +1086,7 @@ export default function UserOnboardingWizard({
                   </PillButton>
                 </div>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">
-                  Parametro fisiologico per il calcolo del metabolismo basale (BMR).
+                  Serve a Kentu per stimare meglio il tuo fabbisogno energetico.
                 </p>
               </div>
 
@@ -1060,8 +1108,8 @@ export default function UserOnboardingWizard({
                 />
                 <p className="mt-2 text-xs leading-relaxed text-zinc-500">
                   {parsedAge != null
-                    ? `Età calcolata: ${parsedAge} anni (usata per BMR/TDEE).`
-                    : 'Inserisci la data di nascita (età operativa 15–99 anni).'}
+                    ? `Età calcolata: ${parsedAge} anni.`
+                    : 'Inserisci la data di nascita (dai 15 ai 99 anni).'}
                 </p>
               </div>
 
@@ -1195,7 +1243,7 @@ export default function UserOnboardingWizard({
               ))}
               {preview ? (
                 <div className="mt-4 rounded-xl border border-white/10 bg-black/25 px-4 py-3 text-xs text-zinc-400">
-                  <p className="font-semibold uppercase tracking-[0.14em] text-zinc-500">Anteprima motore</p>
+                  <p className="font-semibold uppercase tracking-[0.14em] text-zinc-500">Anteprima</p>
                   <p className="mt-2 text-zinc-300">
                     ~{Math.round(preview.kcal)} kcal · P {preview.prot}g · C {preview.carb}g · F {preview.fat}g
                   </p>
@@ -1209,7 +1257,7 @@ export default function UserOnboardingWizard({
               <div>
                 <FieldLabel>Riepilogo & conferma</FieldLabel>
                 <p className="mb-3 text-xs leading-relaxed text-zinc-500">
-                  Controlla i dati. Tocca una riga o «Modifica» per correggere prima di attivare il motore.
+                  Controlla i dati. Tocca una riga o «Modifica» per correggere prima di continuare.
                 </p>
               </div>
 
@@ -1256,19 +1304,19 @@ export default function UserOnboardingWizard({
               {preview ? (
                 <div className="mt-2 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3">
                   <p className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-400/80">
-                    Anteprima metabolica
+                    Anteprima
                   </p>
                   <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                     <div>
-                      <dt className="text-xs text-zinc-500">BMR stimato</dt>
+                      <dt className="text-xs text-zinc-500">Energia a riposo</dt>
                       <dd className="font-medium text-zinc-100">{Math.round(preview.bmr)} kcal</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-500">TDEE</dt>
+                      <dt className="text-xs text-zinc-500">Energia della giornata</dt>
                       <dd className="font-medium text-zinc-100">{Math.round(preview.tdee)} kcal</dd>
                     </div>
                     <div>
-                      <dt className="text-xs text-zinc-500">Kcal target</dt>
+                      <dt className="text-xs text-zinc-500">Obiettivo calorie</dt>
                       <dd className="font-medium text-cyan-200">{preview.kcal} kcal</dd>
                     </div>
                     <div>
@@ -1282,9 +1330,59 @@ export default function UserOnboardingWizard({
                 </div>
               ) : (
                 <p className="text-sm text-amber-200/90" role="status">
-                  Completa tutti i campi obbligatori per vedere l&apos;anteprima e attivare il motore.
+                  Completa tutti i campi obbligatori per vedere l&apos;anteprima.
                 </p>
               )}
+            </div>
+          )}
+
+          {step === 6 && (
+            <div className="space-y-3" role="radiogroup" aria-label="Cosa vuoi ottenere?">
+              <QuestionLabel>Cosa vuoi ottenere?</QuestionLabel>
+              {showStepHints && !canContinueStep6 ? (
+                <p className="text-xs text-rose-300">Scegli cosa vuoi ottenere.</p>
+              ) : null}
+              {OUTCOME_OPTIONS.map((opt) => (
+                <OptionCard
+                  key={opt.id}
+                  selected={form.outcomeId === opt.id}
+                  onClick={() => setForm((p) => ({
+                    ...p,
+                    outcomeId: opt.id,
+                    forzaEnabled: opt.id === 'regolarita' ? true : p.forzaEnabled,
+                  }))}
+                  title={opt.title}
+                  Icon={opt.Icon}
+                />
+              ))}
+            </div>
+          )}
+
+          {step === 7 && (
+            <div className="space-y-3">
+              <QuestionLabel>Cosa fai già, o cosa vuoi iniziare?</QuestionLabel>
+              <p className="text-sm leading-relaxed text-zinc-400">
+                La camminata è già inclusa: è il movimento di tutti i giorni.
+              </p>
+              <OptionCard
+                selected={form.forzaEnabled === true}
+                onClick={() => setForm((p) => ({ ...p, forzaEnabled: !p.forzaEnabled }))}
+                title={parsedAge != null && parsedAge >= 65 ? 'Forza ed equilibrio' : 'Forza'}
+                Icon={Dumbbell}
+              />
+              <p className="text-xs leading-relaxed text-zinc-500">
+                {parsedAge != null && parsedAge >= 65
+                  ? 'Corpo libero, scale, lavori pesanti, pesi, equilibrio su una gamba, alzarsi dalla sedia.'
+                  : 'Corpo libero, scale, lavori pesanti, pesi.'}
+              </p>
+            </div>
+          )}
+
+          {step === 8 && (
+            <div className="space-y-3">
+              <p className="text-sm leading-relaxed text-zinc-200">
+                Kentu vuol dire cento, in sardo. Il blu che vedrai nell&apos;app è il colore delle Blue Zones, i luoghi dove si vive più a lungo: la Sardegna è una di queste.
+              </p>
             </div>
           )}
 
@@ -1292,7 +1390,7 @@ export default function UserOnboardingWizard({
             <p className="mt-4 text-sm text-rose-300" role="alert">
               {error}
             </p>
-          ) : !canContinueCurrent && !saving ? (
+          ) : step !== TOTAL_STEPS && !canContinueCurrent && !saving ? (
             <p className="mt-4 text-sm text-amber-200/90" role="status">
               {stepHintMessage}
             </p>
@@ -1342,7 +1440,7 @@ export default function UserOnboardingWizard({
               {saving
                 ? (isSimulationMode ? 'Calcolo…' : 'Salvataggio…')
                 : step === TOTAL_STEPS
-                  ? (isSimulationMode ? 'Simula motore' : 'Attiva KentuOS')
+                  ? 'Inizia'
                   : step === 4
                     ? 'Vai al riepilogo'
                     : 'Continua'}

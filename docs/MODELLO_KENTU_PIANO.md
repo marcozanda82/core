@@ -318,6 +318,13 @@ Solo dopo che il rapporto del mattino esiste, altrimenti si toglie l’unica let
 
 Non è una fase di codice in questo piano. Il Modello la mette in v1 e va trattata fuori dal repository (informativa, base giuridica dei dati di sonno/peso/glicemia, parere sul confine con i dispositivi medici, scheda Play). Nessun modulo va scritto «nel frattempo» per sembrare conformi.
 
+### Backlog
+
+- Riallineare la Home al Modello Kentu. L’arco (per esempio 44%) va spiegato: oggi è il punteggio di longevità leggero degli ultimi 14 giorni (`useLongevityScore`), non il punteggio del giorno del Focus, e i due numeri non sono la stessa cosa. Le frasi metaboliche a tempo («Brucio grassi tra 2h e 53m») vanno tolte oppure dichiarate come stima. Il blu è il colore positivo, come nel Focus.
+- La mappa metabolica deve leggere le barre di `hypertrophyMath` (`computeHypertrophyLevels01`). Dopo quel collegamento si smette di aggiornare il residuo 0,50 di `fourCylinderEngine.js`. La fatica sistemica resta.
+- Ricalibrare la fatica di `fourCylinderEngine`: il recupero notturno è 0,08 e ogni sessione aggiunge 0,03–0,05, quindi la fatica sistemica non supera circa 0,17 e la soglia 0,8 non scatta mai. Lo sfv-2 non la legge più.
+- Il DataGuard non deve bloccare le sessioni senza distretti muscolari. Le camminate con somma dei decadimenti a zero restano ferme.
+
 ### Dopo la v1 (non in queste fasi)
 
 Nell’ordine del Modello: misure e vista Mese «Cosa hai ottenuto»; ago infiammatorio; anno; esperimenti e proiezioni; «Chiedi all’assistente»; MCP / Gemini sul telefono; prova di un modello più grande. I dati peso/vita e WHtR già ci sono e restano in Salute finché non entra quella vista.

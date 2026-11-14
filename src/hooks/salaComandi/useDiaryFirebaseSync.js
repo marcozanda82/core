@@ -9,6 +9,15 @@ import {
   patchRecentHistoryDay,
 } from '../../utils/trackerCacheUtils';
 import {
+  ensureTrackerHistoryRange,
+  homeHistoryWindow,
+  loadTrackerHistoryRange,
+  peekTrackerHistoryMemory,
+  stashTrackerHistoryMemory,
+  stimulusHistoryWindow,
+  trackerHistoryMemoryCoversHome,
+} from '../../utils/trackerHistoryMemory.js';
+import {
   readProfileTargetsCache,
   writeProfileTargetsCache,
 } from '../../utils/longevityBootstrapCache';
@@ -121,7 +130,15 @@ export function useDiaryFirebaseSync({
     }
   }, [fullStorico, currentTrackerDateRef, setManualNodes]);
 
-  // Bootstrap: today node + profile_targets in parallelo (gate UI); storico completo in background
+  /*
+   * Consumer storico (dopo taglio Home 90g):
+   * - Home: SNC60, body battery (3 notti), trend 14g, calibrazione settimanale 7g → ≤90g
+   * - Centro Analisi rooms / Longevità: finestre ≤14–60g; stimolo muscolare fino a 365g
+   *   → ensureDeepHistory('stimulus') on-demand all’apertura strumenti/longevità
+   * - Chat: audit 30g, habit scanner 14g, ConsultantEngine habit 45g → ≤90g
+   * - Focus: loadFocusAuthenticatedDiary + loadFocusDiaryDateRange (non questo bootstrap)
+   */
+  // Bootstrap: today + profile_targets (gate UI); storico Home 90g in background
   useEffect(() => {
     if (!user) {
       setIsInitialLoadComplete(false);
@@ -173,6 +190,14 @@ export function useDiaryFirebaseSync({
       setFullStorico((prev) => (
         prev && typeof prev === 'object' ? prev : recentHistory
       ));
+      // Seed RAM subito: il download 90g non deve partire con existing={} e azzerare la cache.
+      stashTrackerHistoryMemory(user.uid, recentHistory, {
+        from: Object.keys(recentHistory)
+          .filter((k) => /^trackerStorico_\d{4}-\d{2}-\d{2}$/.test(k))
+          .map((k) => k.slice('trackerStorico_'.length))
+          .sort()[0] || today,
+        to: today,
+      });
     }
 
     const cachedProfile = readProfileTargetsCache(user.uid);
@@ -238,17 +263,53 @@ export function useDiaryFirebaseSync({
         setIsInitialLoadComplete(true);
         attachTodayLiveListener();
 
-        // Storico completo: dopo il primo paint della dashboard (non blocca TTI).
+        // Storico Home: ultimi 90 giorni. Se già in RAM (remount) non riscaricare.
         const cancelHist = scheduleAfterPaint(() => {
+          if (cancelled) return;
+          const todayIso = getTodayString();
+          if (trackerHistoryMemoryCoversHome(user.uid, todayIso)) {
+            const mem = peekTrackerHistoryMemory(user.uid);
+            // eslint-disable-next-line no-console
+            console.log('[perf] bootstrap:fullHistory-download skipped (memory hit)', {
+              from: mem?.from,
+              to: mem?.to,
+            });
+            setFullStorico(mem.tree);
+            setFullHistory(mem.tree || {});
+            writeRecentHistoryCache(user.uid, mem.tree || {}, todayIso);
+            setFullHistoryLoadState('ready');
+            return;
+          }
+          const win = homeHistoryWindow(todayIso);
+          const existing = peekTrackerHistoryMemory(user.uid)?.tree
+            || readRecentHistoryCache(user.uid, todayIso)
+            || {};
           console.time('[perf] bootstrap:fullHistory-download');
-          get(ref(db, basePath))
-            .then((histSnap) => {
+          loadTrackerHistoryRange({
+            db,
+            uid: user.uid,
+            from: win.from,
+            to: win.to,
+            existing,
+          })
+            .then((loaded) => {
               console.timeEnd('[perf] bootstrap:fullHistory-download');
               if (cancelled) return;
-              const tree = histSnap.exists() ? histSnap.val() : null;
+              const tree = loaded.ok ? loaded.tree : existing;
+              const dayCount = Object.keys(tree || {}).filter((k) => k.startsWith('trackerStorico_')).length;
+              // Non azzerare la cache SWR se il range torna vuoto (rete/indice).
+              if (dayCount === 0 && Object.keys(existing).length > 0) {
+                stashTrackerHistoryMemory(user.uid, existing, win);
+                setFullStorico(existing);
+                setFullHistory(existing);
+                writeRecentHistoryCache(user.uid, existing, todayIso);
+                setFullHistoryLoadState('ready');
+                return;
+              }
+              stashTrackerHistoryMemory(user.uid, tree || {}, win);
               setFullStorico(tree);
               setFullHistory(tree || {});
-              writeRecentHistoryCache(user.uid, tree || {}, getTodayString());
+              writeRecentHistoryCache(user.uid, tree || {}, todayIso);
               setFullHistoryLoadState('ready');
             })
             .catch((err) => {
@@ -436,12 +497,39 @@ export function useDiaryFirebaseSync({
     [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory, autopilotCorrectionRef],
   );
 
+  /**
+   * Estende lo storico oltre i 90g Home (es. scan stimolo 365g in Centro Analisi / Longevità).
+   * No-op se la RAM copre già la finestra richiesta.
+   */
+  const ensureDeepHistory = useCallback(async (kind = 'stimulus') => {
+    if (!user?.uid) return { ok: false, skipped: true };
+    const todayIso = getTodayString();
+    const win = kind === 'stimulus' ? stimulusHistoryWindow(todayIso) : homeHistoryWindow(todayIso);
+    const existing = peekTrackerHistoryMemory(user.uid)?.tree || {};
+    const loaded = await ensureTrackerHistoryRange({
+      db,
+      uid: user.uid,
+      from: win.from,
+      to: win.to,
+      existing,
+    });
+    if (!loaded?.ok) return loaded;
+    const tree = loaded.tree || existing;
+    stashTrackerHistoryMemory(user.uid, tree || {}, { from: win.from, to: win.to });
+    setFullStorico(tree);
+    setFullHistory(tree || {});
+    writeRecentHistoryCache(user.uid, tree || {}, todayIso);
+    return loaded;
+  }, [db, user?.uid, setFullHistory, setFullStorico]);
+
   return {
     syncDatiFirebase,
     isInitialLoadComplete,
     isProfileHydrated,
     /** idle | loading | ready | error — bootstrap albero tracker_data completo */
     fullHistoryLoadState,
+    /** Carica range oltre 90g on-demand (stimulus=365g). */
+    ensureDeepHistory,
     lastLogFromFirebaseRef,
   };
 }

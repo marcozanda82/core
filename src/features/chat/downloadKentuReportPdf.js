@@ -146,7 +146,7 @@ export async function shareOrDownloadKentuReportPdf(opts = {}) {
     try {
       await navigator.share({
         title,
-        text: `${title} — KentuOS`,
+        text: `${title} — Kentu`,
         files: [file],
       });
       return { shared: true };

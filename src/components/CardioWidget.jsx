@@ -40,10 +40,11 @@ export function splitCardioIntensity(breakdown) {
   }
   for (const session of structured) {
     const zone = String(session?.intensity?.id || '').toLowerCase();
+    const counted = Number(session?.equivalentMinutes ?? session?.minutes) || 0;
     if (zone === 'z4' || zone === 'z5' || zone === 'z3') {
-      highMinutes += Number(session?.minutes) || 0;
+      highMinutes += counted;
     } else {
-      moderateMinutes += Number(session?.minutes) || 0;
+      moderateMinutes += counted;
     }
   }
 
@@ -191,7 +192,7 @@ export default function CardioWidget({
 
         <div className="min-w-0 flex-1">
           <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-            Cardio (7g)
+            Movimento
           </p>
           <p className="m-0 mt-0.5 flex flex-wrap items-baseline gap-x-1.5 leading-tight">
             <span className={`font-bold tabular-nums text-white ${compact ? 'text-lg' : 'text-xl'}`}>

@@ -8,6 +8,7 @@ import { isFourCylinderTimelineTarget } from '../../features/salaComandi/utils/f
 import { ensureRecipeDiaryFields } from '../../utils/recipeDiaryFields';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver';
 import { toCanonicalDiaryFoodItem } from '../../features/mealEngine/canonicalMealCommit';
+import { applyCondimentToFoods, withCondiments } from '../../features/nutrition/condiments.js';
 import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
 import { coerceDiaryMealTime, getFoodItemsForMealSlotFromLog, parseCompositeMealSlotId } from '../../utils/mealProposalBuilders';
 
@@ -57,6 +58,19 @@ export function useTimelineDiaryActions({
     historyStackRef.current = historyStack;
     historyIndexRef.current = historyIndex;
   }, [historyStack, historyIndex]);
+
+  useEffect(() => {
+    const onCondiment = (event) => {
+      const parent = event?.detail?.parent;
+      const choice = event?.detail?.choice;
+      if (!parent?.id || !choice) return;
+      const next = applyCondimentToFoods(dailyLogRef.current || [], parent, choice);
+      setDailyLog(next);
+      syncDatiFirebase(next, manualNodesRef.current || []);
+    };
+    window.addEventListener('kentu-condiment', onCondiment);
+    return () => window.removeEventListener('kentu-condiment', onCondiment);
+  }, [dailyLogRef, manualNodesRef, setDailyLog, syncDatiFirebase]);
 
   const triggerFourCylinderRebuild = useCallback(
     (removed, newLog, newNodes) => {
@@ -319,9 +333,10 @@ export function useTimelineDiaryActions({
           sourceMetadata: { entrySource: 'ui' },
         });
         if (!canonical) return null;
-        return ensureRecipeDiaryFields(canonical);
+        return ensureRecipeDiaryFields({ ...canonical, condiment: f.condiment });
       }).filter(Boolean);
-      if (nuoviAlimenti.length === 0) return false;
+      const alimentiConCondimento = withCondiments(nuoviAlimenti);
+      if (alimentiConCondimento.length === 0) return false;
 
       let nuovoLog;
       if (editMealId) {
@@ -337,7 +352,7 @@ export function useTimelineDiaryActions({
 
         if (foodsToRemove.length > 0 && !draftTouchesExisting) {
           // Aggiunta a pasto già registrato: accoda, non crea un nuovo nodo.
-          nuovoLog = [...logToUse, ...nuoviAlimenti];
+          nuovoLog = [...logToUse, ...alimentiConCondimento];
         } else if (foodsToRemove.length > 0) {
           const removeRefs = new Set(foodsToRemove);
           nuovoLog = logToUse.filter((item) => {
@@ -345,12 +360,12 @@ export function useTimelineDiaryActions({
             const id = String(item?.id || '');
             return !(id && existingIds.has(id));
           });
-          nuovoLog = [...nuoviAlimenti, ...nuovoLog];
+          nuovoLog = [...alimentiConCondimento, ...nuovoLog];
         } else {
-          nuovoLog = [...logToUse, ...nuoviAlimenti];
+          nuovoLog = [...logToUse, ...alimentiConCondimento];
         }
       } else {
-        nuovoLog = [...logToUse, ...nuoviAlimenti];
+        nuovoLog = [...logToUse, ...alimentiConCondimento];
         if (pendingGhostMealId) {
           nuovoLog = nuovoLog.filter(
             (e) =>

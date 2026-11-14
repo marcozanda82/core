@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+﻿import React, { useMemo } from 'react';
 import SaluteSleepGhostCard from '../trendHub/components/SaluteSleepGhostCard';
 import SleepCoachCard from '../salaComandi/components/SleepCoachCard';
 import { useSleepCoach } from '../salaComandi/hooks/useSleepCoach';
@@ -129,7 +129,7 @@ export default function SonnoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da KentuOS per leggere diario e profilo in sola lettura."
+        body="Accedi da Kentu per leggere diario e profilo in sola lettura."
       />
     );
   }

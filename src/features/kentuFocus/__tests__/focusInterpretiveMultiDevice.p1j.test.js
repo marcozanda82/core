@@ -210,8 +210,8 @@ describe('Focus interpretive + multi-device P1j', () => {
     });
     const preview = previewFocusAiCoachPayload(session);
     assert.equal(preview.ok, true);
-    assert.match(preview.systemText, /obiettivo DICHIARATO|condotta OSSERVATA/i);
-    assert.match(preview.userText, /compassSignals|FALLIMENTO/i);
+    assert.match(preview.systemText, /stato di ogni pilastro è già deciso/i);
+    assert.match(preview.userText, /compassSignals|periodBrief/i);
     const c = preview.dossier.compassSignals;
     assert.ok(c.declaredGoal);
     assert.equal(c.declaredGoal.kcalTargetDeclared, 2200);
@@ -415,6 +415,6 @@ describe('Focus interpretive + multi-device P1j', () => {
     console.log('\n===== PROMPT_SYSTEM =====\n', preview.systemText);
     // eslint-disable-next-line no-console
     console.log('\n===== PROMPT_USER_HEAD =====\n', preview.userText.slice(0, 900));
-    assert.match(preview.systemText, /NON riepilogare il diario/i);
+    assert.match(preview.systemText, /stato di ogni pilastro è già deciso/i);
   });
 });

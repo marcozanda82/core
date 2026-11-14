@@ -1,10 +1,19 @@
 /**
- * Cilindro Cardio — finestra mobile 7 giorni (168h) + spillover dai pesi.
+ * Movimento — finestra mobile 7 giorni (168h).
+ * Minuti equivalenti: camminata ×1, vigoroso ×2, pesi esclusi.
  * Nessun reset domenicale: la finestra scorre con Date.now().
  */
 
+import {
+  classifyWorkoutByType,
+  equivalentAerobicMinutes,
+  resolveWorkoutDurationMinutes as movementDurationMinutes,
+  VIGOROUS_EQUIVALENT_FACTOR,
+} from './workoutMovement.js';
+
 export const CARDIO_WEEKLY_TARGET_MINUTES = 150;
-export const STRENGTH_CARDIO_SPILLOVER_RATIO = 0.3;
+/** I pesi non entrano nel Movimento. Il rapporto resta esportato per i chiamanti vecchi. */
+export const STRENGTH_CARDIO_SPILLOVER_RATIO = 0;
 export const ROLLING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 168 ore
 
 const PURE_CARDIO_TYPES = new Set([
@@ -40,16 +49,6 @@ const PURE_CARDIO_TYPES = new Set([
 /** Match su tipo/etichetta quando l'id non è nel set (es. "Tapis Roulant", "Cyclette"). */
 const CARDIO_LABEL_PATTERN =
   /\b(cardio|hiit|liss|corsa|correr|running|run|bike|cicl|cyclette|spinning|nuoto|swim|camminat|walking|walk|passi|tapis|treadmill|ellitt|remo|rowing|zona\s?2|\bz2\b)\b/i;
-
-/** Tipi / keyword trattati come quota «passi / camminate» nello scontrino. */
-const WALKING_OR_STEPS_TYPES = new Set([
-  'liss',
-  'camminata',
-  'walking',
-  'passi',
-  'walk',
-  'passeggio',
-]);
 
 /** Stima kcal da passi se il log non porta kcal (≈0.04 kcal/passo). */
 export const KCAL_PER_STEP_ESTIMATE = 0.04;
@@ -96,17 +95,7 @@ export function resolveWorkoutTypeId(entry) {
  * @returns {number}
  */
 export function resolveWorkoutDurationMinutes(entry) {
-  if (!entry || typeof entry !== 'object') return 0;
-  const mins = Number(entry.durationMinutes ?? entry.durationMin);
-  if (Number.isFinite(mins) && mins > 0) return mins;
-  const hours = Number(entry.duration);
-  if (Number.isFinite(hours) && hours > 0) {
-    // Convention Kentu: duration sul log è in ore (es. 0.75 = 45 min).
-    // Se qualcuno passa già i minuti (>24), trattali come minuti.
-    if (hours > 24) return hours;
-    return hours * 60;
-  }
-  return 0;
+  return movementDurationMinutes(entry);
 }
 
 /**
@@ -231,18 +220,11 @@ export function classifyCardioIntensityZone(entry) {
  */
 export function isWalkingOrStepsWorkout(entry) {
   if (!entry || typeof entry !== 'object') return false;
-  const typeId = resolveWorkoutTypeId(entry);
-  if (WALKING_OR_STEPS_TYPES.has(typeId)) return true;
+  const kind = classifyWorkoutByType(entry).kind;
+  if (kind === 'walk') return true;
+  if (kind === 'vigorous' || kind === 'strength') return false;
   const steps = Number(entry.steps ?? entry.stepCount ?? entry.passi);
-  if (Number.isFinite(steps) && steps > 0) return true;
-  const hay = [
-    entry.desc,
-    entry.name,
-    entry.title,
-    entry.label,
-    entry.activityType,
-  ].map((v) => asTrimmedString(v).toLowerCase()).join(' ');
-  return /\b(cammin|walk|passi|passegg|liss|neat)\b/.test(hay);
+  return Number.isFinite(steps) && steps > 0;
 }
 
 /**
@@ -324,9 +306,6 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
     1,
     Number(options.weeklyTargetMinutes) || CARDIO_WEEKLY_TARGET_MINUTES,
   );
-  const spilloverRatio = clamp01(
-    options.spilloverRatio != null ? options.spilloverRatio : STRENGTH_CARDIO_SPILLOVER_RATIO,
-  );
 
   const pool = mergeWorkoutPools(cardioLogs, workoutLogs);
 
@@ -337,21 +316,18 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
     const eventMs = resolveWorkoutEventMs(entry, entry.__dateKey || null);
     if (eventMs == null || eventMs < windowStartMs || eventMs > windowEndMs) continue;
 
-    const typeId = resolveWorkoutTypeId(entry);
     const minutes = resolveWorkoutDurationMinutes(entry);
     if (!(minutes > 0)) continue;
-
-    if (isPureCardioWorkoutType(typeId) || isPureCardioEntry(entry)) {
-      pureCardioMinutes += minutes;
+    const kind = classifyWorkoutByType(entry).kind;
+    if (kind === 'walk' || kind === 'vigorous') {
+      pureCardioMinutes += equivalentAerobicMinutes(entry);
       continue;
     }
-    if (isStrengthWorkoutType(typeId)) {
-      strengthMinutes += minutes;
-    }
+    if (kind === 'strength') strengthMinutes += minutes;
   }
 
-  const spilloverMinutes = strengthMinutes * spilloverRatio;
-  const accumulatedMinutes = pureCardioMinutes + spilloverMinutes;
+  const spilloverMinutes = 0;
+  const accumulatedMinutes = pureCardioMinutes;
   const fillRatio = clamp01(accumulatedMinutes / weeklyTargetMinutes);
   const fillPercent = Math.round(fillRatio * 100);
   const remainingMinutes = Math.max(0, weeklyTargetMinutes - accumulatedMinutes);
@@ -406,9 +382,6 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
   const status = calculateCardioStatus(cardioLogs, workoutLogs, options);
   const nowMs = status.windowEndMs;
   const windowStartMs = status.windowStartMs;
-  const spilloverRatio = clamp01(
-    options.spilloverRatio != null ? options.spilloverRatio : STRENGTH_CARDIO_SPILLOVER_RATIO,
-  );
 
   const pool = mergeWorkoutPools(cardioLogs, workoutLogs);
   /** @type {Array<object>} */
@@ -433,17 +406,20 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
     const minutes = resolveWorkoutDurationMinutes(entry);
     if (!(minutes > 0) && !(resolveEntrySteps(entry) > 0)) continue;
 
+    const kind = classifyWorkoutByType(entry).kind;
+    const equivalent = kind === 'vigorous' ? minutes * VIGOROUS_EQUIVALENT_FACTOR : minutes;
     const row = {
       id: asTrimmedString(entry.id || entry.nodeId) || null,
       label: resolveEntryLabel(entry),
       typeId,
       minutes: Math.round(minutes * 10) / 10,
+      equivalentMinutes: Math.round(equivalent * 10) / 10,
       kcal: resolveEntryKcal(entry),
       steps: resolveEntrySteps(entry),
       dateKey: asTrimmedString(entry.__dateKey || entry.dateISO || entry.date).slice(0, 10) || null,
     };
 
-    if (isWalkingOrStepsWorkout(entry)) {
+    if (kind === 'walk') {
       walkingSessions.push({
         ...row,
         equipment: classifyCardioEquipment(entry),
@@ -455,22 +431,21 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
       continue;
     }
 
-    if (isPureCardioWorkoutType(typeId) || isPureCardioEntry(entry)) {
+    if (kind === 'vigorous') {
       cardioSessions.push({
         ...row,
         equipment: classifyCardioEquipment(entry),
         intensity: classifyCardioIntensityZone(entry),
       });
-      structuredCardioMinutes += minutes;
+      structuredCardioMinutes += equivalent;
       structuredCardioKcal += row.kcal;
       continue;
     }
 
-    if (isStrengthWorkoutType(typeId)) {
-      const spill = Math.round(minutes * spilloverRatio * 10) / 10;
+    if (kind === 'strength') {
       strengthSessions.push({
         ...row,
-        spilloverMinutes: spill,
+        spilloverMinutes: 0,
       });
       strengthKcal += row.kcal;
     }
@@ -503,7 +478,7 @@ export function buildCardioDetailsBreakdown(cardioLogs = [], workoutLogs = [], o
       spilloverRatio,
       kcal: strengthKcal,
       sessions: strengthSessions,
-      ruleLabel: `${Math.round(spilloverRatio * 100)}% della durata pesi conta come cardio`,
+      ruleLabel: 'I pesi non entrano nei minuti di movimento',
     },
   };
 }

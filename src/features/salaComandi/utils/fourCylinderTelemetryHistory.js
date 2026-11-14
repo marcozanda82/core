@@ -15,7 +15,7 @@ import {
   computeHypertrophyLevels01,
   HYPERTROPHY_DECAY_HORIZON_DAYS,
 } from '../../../utils/hypertrophyMath.js';
-import { longevitySpilloverPrimariesFromWorkout } from '../../trendHub/utils/saluteHistorySeries.js';
+import { strengthSessionPrimaries } from '../../commandTerminal/context/workoutMovement.js';
 
 /** @typedef {import('../engines/fourCylinderEngine').MuscleCylinderId} MuscleCylinderKey */
 
@@ -52,7 +52,7 @@ function collectSpilloverSessionPrimariesForDate(tree, dateIso, overrideLog = nu
   const sessions = [];
   for (const entry of log || []) {
     if (!entry || entry.type !== 'workout') continue;
-    const primaries = longevitySpilloverPrimariesFromWorkout(entry);
+    const primaries = strengthSessionPrimaries(entry);
     if (primaries.length > 0) sessions.push(primaries);
   }
   return sessions;

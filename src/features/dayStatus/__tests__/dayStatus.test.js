@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { loadFocusDiaryRealOct27 } from '../../kentuFocus/__tests__/fixtures/focusDiaryRealOct27.js';
+import {
+  loadFocusDiaryRealOct27,
+  realFixtureSkipReason,
+  FOCUS_REAL_OCT27_FIXTURE,
+} from '../../kentuFocus/__tests__/fixtures/focusDiaryRealOct27.js';
 import {
   buildDayStatusRecord,
   dayStatusPath,
@@ -187,16 +191,16 @@ describe('detectDayGaps', () => {
 
 describe('getCoverage', () => {
   it('conta registrati, confermati, buchi e pause', () => {
-    const coverage = getCoverage('2026-11-08', '2026-11-12', {
+    const coverage = getCoverage('2026-11-07', '2026-11-12', {
       today: TODAY,
       fullHistory: historyWith('2026-11-08', [food('a', 'cena', 20, 700)]),
       records: {
-        '2026-11-08': { confirmed: true, approximate: false, paused: false, confirmedAt: 10 },
+        '2026-11-08': { confirmed: true, approximate: false, paused: false, confirmedAt: 1_700_000_000_000 },
         '2026-11-09': { confirmed: false, approximate: true, paused: false },
         '2026-11-11': { confirmed: false, approximate: false, paused: true, pauseReason: 'altro' },
       },
     });
-    assert.equal(coverage.days, 5);
+    assert.equal(coverage.days, 6);
     assert.equal(coverage.byStatus.closed, 1);
     assert.equal(coverage.byStatus.approximate, 1);
     assert.equal(coverage.byStatus.hole, 1);
@@ -214,22 +218,18 @@ describe('record e regole', () => {
     assert.equal(dayStatusPath('abc', '2026-11-01'), 'users/abc/day_status/2026-11-01');
     const stored = buildDayStatusRecord({
       confirmed: true,
-      confirmedAt: 1000,
+      confirmedAt: 1_700_000_000_000,
       approximate: false,
       paused: false,
       pauseReason: 'vacanza',
-      loggedLateAt: 50,
+      loggedLateAt: 1_700_000_100,
     });
     assert.equal(stored.pauseReason, undefined);
-    assert.equal(stored.loggedLateAt, 50000);
-    assert.deepEqual(normalizeDayStatusRecord(stored), {
-      confirmed: true,
-      confirmedAt: 1000,
-      approximate: false,
-      paused: false,
-      pauseReason: null,
-      loggedLateAt: 50000,
-    });
+    assert.equal(stored.loggedLateAt, 1_700_000_100_000);
+    const again = normalizeDayStatusRecord(stored);
+    assert.equal(again.confirmedAt, 1_700_000_000_000);
+    assert.equal(again.loggedLateAt, 1_700_000_100_000);
+    assert.equal(again.pauseReason, null);
   });
 
   it('le rules RTDB limitano day_status all’uid', () => {
@@ -245,7 +245,7 @@ describe('record e regole', () => {
   });
 });
 
-describe('fixture 27–30 ottobre 2026', () => {
+describe('fixture 27–30 ottobre 2026', { skip: realFixtureSkipReason(FOCUS_REAL_OCT27_FIXTURE) }, () => {
   const { fullHistory, userTargets } = loadFocusDiaryRealOct27();
   const context = {
     today: TODAY,
@@ -254,23 +254,42 @@ describe('fixture 27–30 ottobre 2026', () => {
     targetKcal: userTargets.kcal,
   };
 
-  for (const date of ['2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30']) {
-    it(`${date} è un giorno passato con dati, non confermato`, () => {
-      const status = getDayStatus(date, context);
-      const gaps = detectDayGaps(date, context);
-      assert.equal(status, 'unconfirmed', `${date} → ${status}, kcal ${gaps.kcal}, pasti ${gaps.mainMeals.join(',')}`);
-      assert.equal(gaps.hasFood, true);
-      assert.equal(typeof gaps.kcal, 'number');
-    });
-  }
+  it('27 ottobre: pranzo e cena, nessuna buco evidente', () => {
+    assert.equal(getDayStatus('2026-10-27', context), 'unconfirmed');
+    const gaps = detectDayGaps('2026-10-27', context);
+    assert.equal(gaps.hasFood, true);
+    assert.equal(gaps.hasGaps, false);
+    assert.deepEqual(gaps.mainMeals, ['pranzo', 'cena']);
+    assert.equal(gaps.kcal, 2369);
+    assert.ok(gaps.lastMealHour > 17);
+  });
 
-  it('la copertura dei quattro giorni non ha buchi né pause', () => {
+  it('28 ottobre: solo pranzo, niente dopo le 17, energia sotto metà obiettivo', () => {
+    assert.equal(getDayStatus('2026-10-28', context), 'unconfirmed');
+    const gaps = detectDayGaps('2026-10-28', context);
+    assert.deepEqual(gaps.reasons, ['singleMainMeal', 'noMealAfter17', 'lowEnergy']);
+    assert.deepEqual(gaps.mainMeals, ['pranzo']);
+    assert.equal(gaps.kcal, 1217);
+    assert.ok(gaps.lastMealHour <= 17);
+  });
+
+  it('29 e 30 ottobre non sono nel fixture: buchi, non giorni inventati', () => {
+    for (const date of ['2026-10-29', '2026-10-30']) {
+      assert.equal(getDayStatus(date, context), 'hole');
+      const gaps = detectDayGaps(date, context);
+      assert.equal(gaps.hasFood, false);
+      assert.equal(gaps.hasGaps, false);
+    }
+  });
+
+  it('la copertura 27–30 ha due registrati e due buchi', () => {
     const coverage = getCoverage('2026-10-27', '2026-10-30', context);
     assert.equal(coverage.days, 4);
-    assert.equal(coverage.registered, 4);
+    assert.equal(coverage.registered, 2);
     assert.equal(coverage.confirmed, 0);
-    assert.equal(coverage.holes, 0);
+    assert.equal(coverage.holes, 2);
     assert.equal(coverage.pauses, 0);
-    assert.equal(coverage.byStatus.unconfirmed, 4);
+    assert.equal(coverage.byStatus.unconfirmed, 2);
+    assert.equal(coverage.byStatus.hole, 2);
   });
 });

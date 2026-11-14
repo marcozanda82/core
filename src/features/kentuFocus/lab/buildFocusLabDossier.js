@@ -372,7 +372,7 @@ function buildAnalysisDayActivity(analysisDayNode, opts) {
   const merged = dedupeById([...fromLog, ...fromManual], (e) => e.id);
 
   const workouts = merged.map((entry, idx) => {
-    const durationMin = durationToMinutes(entry.duration ?? entry.durationMin ?? entry.minutes);
+    const durationMin = durationToMinutes(entry);
     const kcalBurn = finiteNumber(entry.kcal ?? entry.cal ?? entry.kcalBurn);
     const hint = classifyActivityHint(entry);
     const rawLabel = workoutLabel(entry) || null;
@@ -547,7 +547,7 @@ function buildWorkoutHistoryWindow(dayNodes, analysisDate, windowDays, includeFr
     const fromManual = getManualNodesArray(node).filter((e) => e && e.type === 'workout');
     const merged = dedupeById([...fromLog, ...fromManual], (e) => e.id);
     for (const entry of merged) {
-      const durationMin = durationToMinutes(entry.duration ?? entry.durationMin ?? entry.minutes);
+      const durationMin = durationToMinutes(entry);
       const kcalBurn = finiteNumber(entry.kcal ?? entry.cal ?? entry.kcalBurn);
       const hint = classifyActivityHint(entry);
       const rawLabel = workoutLabel(entry) || null;

@@ -4,6 +4,8 @@
  */
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import NutrientProgressBar from './telemetry/NutrientProgressBar';
+import CondimentChoices from './features/nutrition/CondimentChoices.jsx';
+import { applyCondimentToFoods } from './features/nutrition/condiments.js';
 import { TARGETS } from './useBiochimico';
 import {
   MEAL_TYPES,
@@ -5018,6 +5020,7 @@ export default function MealBuilder({
             ) : (
               <>
               {addedFoods.map((food) => {
+                if (food.condimentKind) return null;
                 const isRecipeItem = food.type === 'recipe' || food.isRecipe === true;
                 const omega3G = (food.omega3 != null && food.omega3 > 0) ? (food.omega3 >= 1 ? food.omega3 : food.omega3 / 1000) : 0;
                 const omega3Rich = omega3G > 0.5;
@@ -5313,7 +5316,7 @@ export default function MealBuilder({
                           {isRecipeItem ? (
                             <button type="button" className="food-pill-btn" onClick={() => handleEditAddedRecipe(food.id)} title="Modifica bozza ricetta">✏️</button>
                           ) : null}
-                          <button type="button" className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id))}>✕</button>
+                          <button type="button" className="food-pill-btn btn-delete" onClick={() => setAddedFoods(prev => prev.filter(f => f.id !== food.id && f.condimentOf !== food.id))}>✕</button>
                         </div>
                       </div>
                     </div>
@@ -5351,6 +5354,11 @@ export default function MealBuilder({
                         )}
                       </div>
                     ) : null}
+                    <CondimentChoices
+                      food={food}
+                      commitDefault
+                      onChange={(choice) => setAddedFoods((prev) => applyCondimentToFoods(prev, food, choice))}
+                    />
                     {String(swapPanelFoodId) === String(food.id) && (
                       <div
                         className="ai-card"

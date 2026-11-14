@@ -4,10 +4,35 @@
  * (o dalla cache browser allineata a RTDB).
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const RAW = require('./focusDiary.2026-10-27.real.json');
+const FIXTURE_DIR = path.dirname(fileURLToPath(import.meta.url));
+export const FOCUS_REAL_OCT27_FIXTURE = 'focusDiary.2026-10-27.real.json';
+
+/**
+ * Messaggio di skip se il diario locale non c'è. `false` se il file è presente.
+ * @param {string} fileName
+ * @returns {string|false}
+ */
+export function realFixtureSkipReason(fileName) {
+  const filePath = path.join(FIXTURE_DIR, fileName);
+  if (fs.existsSync(filePath)) return false;
+  return `Manca ${fileName}: diario locale, non è nel repository. Esportalo con node scripts/exportFocusDiaryFixture.mjs.`;
+}
+
+function readRealFixture(fileName) {
+  const reason = realFixtureSkipReason(fileName);
+  if (reason) {
+    const error = new Error(reason);
+    error.code = 'REAL_FIXTURE_MISSING';
+    throw error;
+  }
+  return require(`./${fileName}`);
+}
 
 export const FOCUS_REAL_ANALYSIS_DATE = '2026-10-27';
 export const FOCUS_REAL_PUBLICATION_DATE = '2026-10-28';
@@ -76,6 +101,7 @@ export const FOCUS_REAL_OCT27_CATALOGS = Object.freeze({
  * }}
  */
 export function loadFocusDiaryRealOct27() {
+  const RAW = readRealFixture(FOCUS_REAL_OCT27_FIXTURE);
   const analysisDate = String(RAW.analysisDate || FOCUS_REAL_ANALYSIS_DATE);
   const publicationDate = String(RAW.publicationDate || FOCUS_REAL_PUBLICATION_DATE);
   const targets = RAW.profile_targets?.targets || {};

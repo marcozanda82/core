@@ -1,6 +1,5 @@
 import { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { STRENGTH_CARDIO_SPILLOVER_RATIO } from '../features/commandTerminal/context/cardioCylinderStatus.js';
 
 function round1(value) {
   const n = Number(value);
@@ -45,12 +44,6 @@ export default function CardioDetailsModal({
     const walkingKcal = Math.round(Number(breakdown?.walking?.kcal) || 0);
     const cardioMin = round1(breakdown?.structuredCardio?.minutes);
     const cardioKcal = Math.round(Number(breakdown?.structuredCardio?.kcal) || 0);
-    const spillMin = round1(breakdown?.strengthSpillover?.spilloverMinutes ?? breakdown?.spilloverMinutes);
-    const strengthMin = round1(breakdown?.strengthSpillover?.strengthMinutes ?? breakdown?.strengthMinutes);
-    const spillRatio = Number(breakdown?.strengthSpillover?.spilloverRatio);
-    const ratioPct = Math.round(
-      (Number.isFinite(spillRatio) ? spillRatio : STRENGTH_CARDIO_SPILLOVER_RATIO) * 100,
-    );
     const fillPercent = Math.round(Number(breakdown?.fillPercent) || (total / target) * 100);
     return {
       total,
@@ -65,9 +58,6 @@ export default function CardioDetailsModal({
       cardioSessions: Array.isArray(breakdown?.structuredCardio?.sessions)
         ? breakdown.structuredCardio.sessions
         : [],
-      spillMin,
-      strengthMin,
-      ratioPct,
       fillPercent: Math.max(0, Math.min(100, fillPercent)),
       remaining: round1(breakdown?.remainingMinutes),
     };
@@ -105,7 +95,7 @@ export default function CardioDetailsModal({
         <div className="calorie-details-panel__body">
           <header className="calorie-details-header">
             <h2 id="cardio-details-title" className="calorie-details-title">
-              Estratto conto Cardio
+              Estratto conto Movimento
             </h2>
             <p className="calorie-details-subtitle">
               Finestra mobile 7 giorni (168h) — distinta trasparente, niente scatole nere.
@@ -114,11 +104,11 @@ export default function CardioDetailsModal({
 
           <section className="calorie-details-section" aria-label="Totale cardio">
             <h3 className="calorie-details-section__title">Il Totale</h3>
-            <p className="calorie-details-section__hint">Accumulo cilindro cardio</p>
+            <p className="calorie-details-section__hint">Minuti equivalenti, pesi esclusi</p>
 
             <div className="calorie-receipt" role="list">
               <div className="calorie-receipt__row calorie-receipt__row--total" role="listitem">
-                <span className="calorie-receipt__label">Cardio totale (7g)</span>
+                <span className="calorie-receipt__label">Movimento (7g)</span>
                 <span className="calorie-receipt__value calorie-receipt__value--total">
                   {formatMin(receipt.total)}
                   <span className="calorie-receipt__unit">
@@ -163,7 +153,7 @@ export default function CardioDetailsModal({
               <div className="calorie-receipt__row" role="listitem">
                 <span className="calorie-receipt__label">
                   <span className="calorie-receipt__op" aria-hidden>+</span>
-                  Allenamenti cardio
+                  Vigorose ×2
                 </span>
                 <span className="calorie-receipt__value">
                   {formatMin(receipt.cardioMin)}
@@ -174,26 +164,12 @@ export default function CardioDetailsModal({
                 <p className="cardio-details-row-note">≈ {receipt.cardioKcal} kcal bruciate</p>
               ) : null}
 
-              <div className="calorie-receipt__row" role="listitem">
-                <span className="calorie-receipt__label">
-                  <span className="calorie-receipt__op" aria-hidden>+</span>
-                  Spillover pesi ({receipt.ratioPct}%)
-                  <span className="calorie-receipt__hint">
-                    da {formatMin(receipt.strengthMin)} min forza
-                  </span>
-                </span>
-                <span className="calorie-receipt__value">
-                  {formatMin(receipt.spillMin)}
-                  <span className="calorie-receipt__unit">min</span>
-                </span>
-              </div>
-
               <div className="calorie-receipt__divider" aria-hidden />
 
               <div className="calorie-receipt__row calorie-receipt__row--total" role="listitem">
                 <span className="calorie-receipt__label">Somma distinta</span>
                 <span className="calorie-receipt__value calorie-receipt__value--total">
-                  {formatMin(receipt.walkingMin + receipt.cardioMin + receipt.spillMin)}
+                  {formatMin(receipt.walkingMin + receipt.cardioMin)}
                   <span className="calorie-receipt__unit">min</span>
                 </span>
               </div>
@@ -202,7 +178,7 @@ export default function CardioDetailsModal({
 
           {receipt.cardioSessions.length > 0 ? (
             <section className="calorie-details-section" aria-label="Sessioni cardio">
-              <h3 className="calorie-details-section__title">Sessioni cardio</h3>
+              <h3 className="calorie-details-section__title">Attività vigorose</h3>
               <ul className="cardio-details-session-list">
                 {receipt.cardioSessions.map((s, i) => (
                   <li

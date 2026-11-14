@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+﻿import React, { useMemo, useState } from 'react';
 import {
   clamp01,
   createDefaultFourCylinderState,
@@ -220,7 +220,7 @@ export default function MetabolicDiagnostics({
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">
-            KentuOS · Telemetria
+            Kentu · Telemetria
           </p>
           <h2 className="text-sm font-semibold tracking-wide text-slate-100">
             Diagnostica muscolare

@@ -130,6 +130,12 @@ const MONTHS_IT = Object.freeze([
   'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
 ]);
 
+/** Nome del mese in italiano, minuscolo, da una data ISO. */
+export function focusMonthName(isoDate) {
+  if (!isIsoDateString(isoDate)) return null;
+  return MONTHS_IT[Number(isoDate.slice(5, 7)) - 1] || null;
+}
+
 /**
  * Data in linguaggio naturale IT (niente ISO).
  * @param {string} isoDate YYYY-MM-DD
@@ -174,6 +180,31 @@ export function formatFocusNaturalRange(fromIso, toIso) {
  * Etichetta periodo Focus per UI.
  * @param {{ periodId?: string, analysisDate?: string, publicationDate?: string, windowFrom?: string, windowTo?: string, todayIso?: string }} ctx
  */
+/**
+ * Etichetta dello storico: «Venerdì 31 ottobre», «Settimana 26 ottobre – 1 novembre», «Ottobre 2026».
+ * @param {string} periodId
+ * @param {string} analysisDate ultimo giorno del periodo
+ * @returns {string|null}
+ */
+export function formatFocusHistoryLabel(periodId, analysisDate) {
+  if (!isIsoDateString(analysisDate)) return null;
+  if (periodId === 'settimana') {
+    const from = addCalendarDays(analysisDate, -6);
+    return `Settimana ${historyDayMonth(from)} – ${historyDayMonth(analysisDate)}`;
+  }
+  if (periodId === 'mese') {
+    const date = new Date(`${analysisDate}T12:00:00`);
+    const name = MONTHS_IT[date.getMonth()] || '';
+    return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${date.getFullYear()}`;
+  }
+  return formatFocusNaturalDay(analysisDate, { preferIeri: false });
+}
+
+function historyDayMonth(iso) {
+  const date = new Date(`${iso}T12:00:00`);
+  return `${date.getDate()} ${MONTHS_IT[date.getMonth()]}`;
+}
+
 export function formatFocusPeriodNaturalLabel(ctx = {}) {
   const periodId = String(ctx.periodId || 'ieri');
   const today = ctx.todayIso || null;
@@ -208,18 +239,19 @@ export function formatFocusItNumber(value, opts = {}) {
 }
 
 /**
- * Ore decimali → "6 h 30" / "7 h".
+ * Ore decimali → "6 h 30" / "7 h". Sotto un'ora: "58 min".
  * @param {number|null|undefined} hours
  * @returns {string|null}
  */
 export function formatFocusHoursIt(hours) {
   const n = Number(hours);
   if (!Number.isFinite(n) || n < 0) return null;
-  const h = Math.floor(n);
-  const mins = Math.round((n - h) * 60);
+  const totalMin = Math.round(n * 60);
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
   if (mins <= 0) return `${h} h`;
-  if (mins >= 60) return `${h + 1} h`;
-  return `${h} h ${mins}`;
+  return `${h} h ${String(mins).padStart(2, '0')}`;
 }
 
 /**

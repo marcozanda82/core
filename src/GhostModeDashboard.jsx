@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { featureFlags } from './config/featureFlags.js';
 import {
   LineChart,
   Line,
@@ -46,7 +47,7 @@ function getMotivationalMessage(avgSync) {
   return MESSAGES.critical[Math.floor(Math.random() * MESSAGES.critical.length)];
 }
 
-export default function GhostModeDashboard({
+function GhostModeDashboardLive({
   mealsData = {},
   activeLog: _activeLog,
   userTargets: _userTargets,
@@ -180,4 +181,9 @@ export default function GhostModeDashboard({
       )}
     </div>
   );
+}
+
+export default function GhostModeDashboard(props) {
+  if (!featureFlags.longevityDashboard) return null;
+  return <GhostModeDashboardLive {...props} />;
 }

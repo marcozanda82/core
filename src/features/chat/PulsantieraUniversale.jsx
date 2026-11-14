@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { BookOpenText, Pencil, Trash2 } from 'lucide-react';
 import { SESSION_NAV_DISMISS_EVENT } from './sessionNavStack';
 import { stashActivitySheetTempTab } from '../../activityCatalog';
+import { featureFlags } from '../../config/featureFlags.js';
 import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
 import {
@@ -312,6 +313,12 @@ const VOCABULARY_SECTIONS = [
     ],
   },
 ];
+
+function legacyActionVisible(item) {
+  if (item?.intent === 'GENERATE_PERIOD_REPORT' && !featureFlags.periodReport) return false;
+  if (item?.intent === 'REQUEST_CLINICAL_INSIGHT' && !featureFlags.metabolicFocusChat) return false;
+  return true;
+}
 
 function actionSigla(item) {
   const explicit = String(item?.sigla || '').trim();
@@ -887,11 +894,11 @@ export default function PulsantieraUniversale({
       const sections = VOCABULARY_SECTIONS.map((section) => ({
         id: section.id,
         title: section.title,
-        items: section.items.map((rawItem) => ({
+        items: section.items.filter(legacyActionVisible).map((rawItem) => ({
           ...resolveItemPresentation(rawItem),
           id: `${section.id}-${rawItem.id}`,
         })),
-      }));
+      })).filter((section) => section.items.length > 0);
       const itemCount = sections.reduce((sum, section) => sum + section.items.length, 0);
       if (itemCount === 0) return null;
       return {
@@ -905,7 +912,7 @@ export default function PulsantieraUniversale({
     // "Pasti" e "Attività" usano overlay custom (lista pasti / sismografi stimolo).
     if (activeCategory === 'pasti' || activeCategory === 'attivita') return null;
 
-    const items = (SUBMENUS[activeCategory] || []).map((rawItem) => ({
+    const items = (SUBMENUS[activeCategory] || []).filter(legacyActionVisible).map((rawItem) => ({
       ...resolveItemPresentation(rawItem),
       id: rawItem.id,
     }));

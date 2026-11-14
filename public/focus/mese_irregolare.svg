@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7EC8F5"/>
+      <stop offset="0.45" stop-color="#B9DCF7"/>
+      <stop offset="1" stop-color="#E8F4FC"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="280" x2="0" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1FA8D6"/>
+      <stop offset="0.55" stop-color="#0B6FA8"/>
+      <stop offset="1" stop-color="#0A4F7A"/>
+    </linearGradient>
+    <linearGradient id="hill" x1="0" y1="200" x2="0" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6B8F3C"/>
+      <stop offset="1" stop-color="#3F5E28"/>
+    </linearGradient>
+    <linearGradient id="rock" x1="0" y1="240" x2="0" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C4B09A"/>
+      <stop offset="1" stop-color="#8A7460"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="url(#sky)"/>
+  <circle cx="780" cy="110" r="42" fill="#FFE7A8" opacity="0.95"/>
+  <path d="M0 320 C120 290 180 250 280 255 C380 260 420 300 520 295 C640 288 720 250 820 260 C900 268 940 290 960 300 L960 360 L0 360 Z" fill="url(#hill)"/>
+  <path d="M0 340 C90 320 160 300 250 310 C360 322 430 350 540 345 C650 340 740 310 840 320 C900 326 940 340 960 348 L960 380 L0 380 Z" fill="url(#rock)" opacity="0.9"/>
+  <rect y="350" width="960" height="190" fill="url(#sea)"/>
+  <path d="M0 360 C80 352 160 368 240 358 C320 348 400 370 480 360 C560 350 640 368 720 358 C800 348 880 366 960 356 L960 380 L0 380 Z" fill="#5FD0E8" opacity="0.35"/>
+  <path d="M120 300 C125 280 135 265 150 255 C160 270 168 290 170 310 C155 312 135 308 120 300 Z" fill="#2F4A1F"/>
+  <path d="M200 305 C206 282 218 268 235 258 C244 276 250 295 252 318 C232 318 212 312 200 305 Z" fill="#3A5A24"/>
+  <path d="M680 290 C688 268 702 252 722 244 C730 264 736 286 738 308 C715 308 692 300 680 290 Z" fill="#2F4A1F"/>
+  <path d="M0 500 C120 485 240 510 360 492 C480 474 600 508 720 490 C840 472 900 495 960 488 L960 540 L0 540 Z" fill="#083A5C" opacity="0.45"/>
+</svg>

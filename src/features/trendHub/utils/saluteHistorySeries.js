@@ -1,4 +1,5 @@
 import { addDays } from '../../../calendarDateUtils';
+import { resolveWorkoutDurationMinutes } from '../../commandTerminal/context/workoutMovement.js';
 import {
   normalizeMuscleGroupArray,
   WORKOUT_MUSCLE_GROUP_DEFS,
@@ -278,13 +279,7 @@ export function isPesiWorkoutEntry(workout) {
 }
 
 export function workoutDurationMinutes(workout) {
-  let d = Number(workout?.duration);
-  if (!Number.isFinite(d) || d <= 0) {
-    d = Number(workout?.durationMin ?? workout?.minutes ?? workout?.durationMinutes);
-  }
-  if (!Number.isFinite(d) || d <= 0) return 0;
-  if (d > 5) return Math.min(600, Math.round(d));
-  return Math.min(600, Math.round(d * 60));
+  return Math.min(600, Math.round(resolveWorkoutDurationMinutes(workout)));
 }
 
 /**

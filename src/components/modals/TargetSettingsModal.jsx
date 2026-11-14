@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { get, ref, set, update } from 'firebase/database';
+import { auth, db } from '../../firebaseConfig';
 import { deleteAccountAndUserData, logout } from '../../services/firebaseAuth';
 import { MANUAL_TARGET_EDIT_EXCLUDED_KEYS } from '../../constants/salaComandiConstants';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
@@ -13,6 +15,7 @@ import {
   MEDICAL_DISCLAIMER_TITLE,
   PRIVACY_POLICY_URL,
 } from '../../constants/legalContent.js';
+import { patchMorningState, readMorningState } from '../../features/kentuFocus/product/morningFocusStore.js';
 
 const CONTROL_CLASS = [
   'min-w-0 shrink-0 rounded-lg border border-white/10 bg-white/[0.06]',
@@ -20,6 +23,13 @@ const CONTROL_CLASS = [
   'focus:border-cyan-400/45 focus:ring-1 focus:ring-cyan-400/30',
   'disabled:opacity-50',
 ].join(' ');
+
+function localToday() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${now.getFullYear()}-${month}-${day}`;
+}
 
 function SettingsSection({ title, children }) {
   return (
@@ -80,6 +90,40 @@ export default function TargetSettingsModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [deleteError, setDeleteError] = useState('');
+  const [focusNotice, setFocusNotice] = useState(() => readMorningState().notification);
+  const [forzaOn, setForzaOn] = useState(userProfile?.forzaEnabled === true);
+
+  const ageYears = useMemo(() => {
+    const direct = Number(userProfile?.age);
+    if (Number.isFinite(direct) && direct > 0) return direct;
+    const fromBirth = calculateAge?.(birthDate);
+    return Number.isFinite(fromBirth) ? fromBirth : null;
+  }, [userProfile?.age, birthDate, calculateAge]);
+  const forzaTitle = ageYears >= 65 ? 'Forza ed equilibrio' : 'Forza';
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const uid = auth.currentUser?.uid;
+    if (!uid) return undefined;
+    let cancelled = false;
+    get(ref(db, `users/${uid}/cylinders/forza/enabled`)).then((snap) => {
+      if (!cancelled && snap.exists()) setForzaOn(snap.val() === true);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const savePillarChoice = useCallback(async (patch, forzaEnabled) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    setUserProfile((prev) => ({ ...(prev || {}), ...patch }));
+    await update(ref(db, `users/${uid}/profile_targets/profile`), patch);
+    if (typeof forzaEnabled === 'boolean') {
+      await set(ref(db, `users/${uid}/cylinders/forza/enabled`), forzaEnabled);
+      setForzaOn(forzaEnabled);
+    }
+  }, [setUserProfile]);
 
   const selectedAppMode = useMemo(
     () => resolveSelectableAppMode(userProfile),
@@ -506,6 +550,99 @@ export default function TargetSettingsModal({
                     Carica CSV
                   </button>
                 </>
+              )}
+            />
+          </SettingsSection>
+
+          <SettingsSection title="Obiettivo e pilastri">
+            <SettingsRow
+              title="Cosa vuoi ottenere"
+              control={(
+                <select
+                  aria-label="Cosa vuoi ottenere"
+                  className={CONTROL_CLASS}
+                  value={userProfile?.outcome || ''}
+                  onChange={(event) => {
+                    void savePillarChoice({ outcome: event.target.value });
+                  }}
+                >
+                  <option value="">Scegli</option>
+                  <option value="autonomia">Mantenermi autonomo e in salute</option>
+                  <option value="forma">Migliorare la mia forma</option>
+                  <option value="regolarita">Mi alleno con regolarità</option>
+                </select>
+              )}
+            />
+            <SettingsRow
+              title={forzaTitle}
+              description={ageYears >= 65
+                ? 'Corpo libero, scale, lavori pesanti, pesi, equilibrio. La camminata resta sempre inclusa.'
+                : 'Corpo libero, scale, lavori pesanti, pesi. La camminata resta sempre inclusa.'}
+              last
+              control={(
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label={forzaTitle}
+                  checked={forzaOn}
+                  onChange={(event) => {
+                    void savePillarChoice({ forzaEnabled: event.target.checked }, event.target.checked);
+                  }}
+                />
+              )}
+            />
+          </SettingsSection>
+
+          <SettingsSection title="Focus del mattino">
+            <SettingsRow
+              title="Notifica"
+              description={readMorningState().permission === 'denied'
+                ? 'Il permesso è stato negato. Puoi attivarlo dalle impostazioni di Android.'
+                : 'Ogni mattina, all’orario che scegli. Se lo lasci vuoto, arriva mezz’ora dopo il risveglio abituale.'}
+              control={(
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-label="Notifica del Focus"
+                  checked={focusNotice.enabled !== false}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    const next = patchMorningState({ notification: { enabled } }).notification;
+                    setFocusNotice(next);
+                    const refresh = () => import('../../features/kentuFocus/product/focusMorningNotifications.js')
+                      .then((mod) => mod.scheduleFocusNotifications({ today: localToday() }))
+                      .catch(() => {});
+                    if (!enabled || readMorningState().permission === 'denied') {
+                      refresh();
+                      return;
+                    }
+                    import('../../features/kentuFocus/product/focusMorningNotifications.js')
+                      .then((mod) => mod.requestFocusNotificationPermission())
+                      .then(refresh)
+                      .catch(() => {});
+                  }}
+                />
+              )}
+            />
+            <SettingsRow
+              title="Orario"
+              description="Vuoto: 30 minuti dopo la mediana del risveglio, altrimenti le 8:00."
+              last
+              control={(
+                <input
+                  type="time"
+                  aria-label="Orario della notifica"
+                  className={CONTROL_CLASS}
+                  value={focusNotice.time || ''}
+                  onChange={(event) => {
+                    const time = event.target.value || null;
+                    const next = patchMorningState({ notification: { time } }).notification;
+                    setFocusNotice(next);
+                    import('../../features/kentuFocus/product/focusMorningNotifications.js')
+                      .then((mod) => mod.scheduleFocusNotifications({ today: localToday() }))
+                      .catch(() => {});
+                  }}
+                />
               )}
             />
           </SettingsSection>

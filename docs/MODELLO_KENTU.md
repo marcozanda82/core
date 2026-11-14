@@ -1,6 +1,6 @@
 # Modello Kentu
 
-Nov 10, 2026 · @Marco
+Nov 12, 2026 · @Marco
 
 Kentu mostra all'utente gli effetti del proprio stile di vita, giorno dopo giorno, con un'evidenza che non si può contestare perché dichiara sempre da dove viene e quanto è sicura. Questo documento è il riferimento per prodotto, codice e prompt dell'AI.
 
@@ -16,79 +16,91 @@ Tre principi guidano ogni scelta:
 
 Il valore per cui l'utente paga: dati affidabili, memoria lunga delle abitudini, un giudizio coerente nel tempo e un rapporto che arriva da solo ogni mattina. I chatbot conversano meglio; Kentu ricorda, misura e parla per primo.
 
-## I quattro cilindri
+## I quattro pilastri
 
-Lo stile di vita si legge su quattro cilindri, più una misura del corpo. Ogni cilindro ha quattro livelli: la **rotta** (cosa hai fatto, ogni giorno), i **segnali rapidi** (cosa senti e misuri in pochi giorni), gli **effetti** (cosa è cambiato in settimane e mesi), i **limiti** (le soglie del salvavita).
+Lo stile di vita si legge su quattro pilastri, più una misura del corpo. Il colore di una giornata nasce da alimentazione, sonno e movimento, sempre attivi; la forza, a scelta, rende il blu più intenso. Ogni pilastro ha quattro livelli: la **rotta** (cosa hai fatto, ogni giorno), i **segnali rapidi** (cosa senti in pochi giorni), gli **effetti** (cosa è cambiato in settimane e mesi), i **limiti** (le soglie del salvavita).
 
-| Cilindro | Rotta (ogni giorno) | Segnali rapidi | Effetti misurati | Riferimenti |
-| --- | --- | --- | --- | --- |
-| Alimentazione | energia rispetto all'obiettivo, qualità (ultra-processati sfavorevoli, fibra, integrali, pesce azzurro, olio extravergine), primo pasto e ultimo pasto | fame, digestione, gonfiore | peso (media mobile), vita, esami del sangue | fabbisogno stimato, poi ricalibrato sui dati reali; LARN per i nutrienti |
-| Sonno | durata, orari, distanza dall'ultimo pasto | qualità percepita, energia al risveglio (check-in) | frequenza cardiaca a riposo, regolarità nel tempo | almeno 7 ore per l'adulto |
-| Forza | gruppi allenati e giorni dall'ultimo stimolo per gruppo, riposo tra le sessioni | fatica, indolenzimento | carichi e ripetizioni nei movimenti principali | 48 ore di recupero per gruppo |
-| Cardio | minuti negli ultimi 7 giorni (finestra mobile) | fiato, fatica percepita | frequenza a riposo, tempo sullo stesso percorso, battiti allo stesso ritmo | 150-300 min a settimana di attività moderata (OMS) |
-| Corpo | — | — | circonferenza vita e rapporto vita/altezza, una misura a settimana | rapporto vita/altezza sotto 0,5 |
+| Pilastro | Attivo | Rotta (ogni giorno) | Segnali rapidi | Effetti misurati | Riferimenti |
+| --- | --- | --- | --- | --- | --- |
+| Alimentazione | sempre | energia rispetto all'obiettivo; qualità (ultra-processati sfavorevoli, fibra, integrali, pesce azzurro, olio extravergine); ritmo (cena abbondante o a meno di 2 ore dal sonno) | fame, digestione | peso (media mobile), vita, esami del sangue | obiettivo dal profilo, poi ricalibrato sui dati reali; LARN |
+| Sonno | sempre | durata e orari | qualità ed energia al risveglio (check-in) | frequenza cardiaca a riposo, regolarità | da 7 a 9 ore |
+| Movimento | sempre | camminata di oggi e minuti equivalenti degli ultimi 7 giorni (camminata ×1, attività vigorosa ×2, pesi esclusi) | fiato, fatica percepita | frequenza a riposo, tempo sullo stesso percorso | 30 minuti al giorno o 8.000 passi sotto i 60 anni, 6.500 dai 60; 150 minuti a settimana |
+| Forza | a scelta | macro-gruppi allenati negli ultimi 7 giorni (parte alta, parte bassa, core facoltativo); carica dallo stimolo muscolare del cruscotto | indolenzimento | carichi; alzate dalla sedia in 30 secondi, equilibrio su una gamba | 2 giorni a settimana; dai 65 anni "Forza ed equilibrio" |
+| Corpo | misura | — | — | rapporto vita/altezza, una misura a settimana | sotto 0,5 |
 
-**Forza e cardio si leggono sempre su finestre mobili**, anche nel rapporto di ieri: un giorno di riposo non è un giorno negativo.
+**Si giudica solo ciò che l'utente ha scelto, più la base per tutti.** Alimentazione, sonno e movimento valgono per chiunque. La forza si attiva nell'onboarding o nelle impostazioni: se non è attiva non compare e non penalizza. Kentu può ricordarne il valore al massimo una volta al mese, nella lingua dell'obiettivo della persona (a un corridore: meno infortuni, corsa migliore), con un pulsante "Non mi interessa" che lo fa smettere.
 
-**I cilindri sono collegati**, e il rapporto può accostare due fatti senza affermare una causa: la cena tardiva e il sonno, il sonno corto e l'appetito, il cardio regolare e la qualità del sonno, il recupero insufficiente e i carichi che calano.
+**La forza non è solo pesi.** Contano corpo libero, elastici, scale, alzate dalla sedia, lavori pesanti. I centenari sardi non hanno mai sollevato un bilanciere, ma hanno usato il corpo ogni giorno.
 
-**L'orologio degli effetti** va dichiarato fin dall'onboarding, perché molti abbandonano aspettando un risultato nel momento sbagliato:
+**Una sola fonte di verità.** Movimento e stimolo muscolare si leggono dagli stessi dati in cruscotto, Home e Focus: un unico lettore delle sessioni, il tipo di attività preso dal campo workoutType, la durata salvata in minuti.
+
+**Il movimento si misura senza fatica.** Oggi: una domanda nel check-in del mattino ("Ieri quanto hai camminato?"), marcata come stima. Poi: i passi letti da Health Connect.
+
+**Test mensili, a casa, in due minuti:** alzate dalla sedia in 30 secondi, secondi in equilibrio su una gamba, tempo per salire una rampa di scale. Sono effetti misurati, comprensibili a ogni età.
+
+**L'orologio degli effetti** va dichiarato fin dall'onboarding:
 
 1. in pochi giorni: sonno, energia, digestione;
-2. in 1-3 settimane: andamento del peso, frequenza a riposo, ago infiammatorio;
-3. in 3-6 settimane: vita, forza, ritmo nel cardio;
+2. in 1-3 settimane: andamento del peso, frequenza a riposo;
+3. in 3-6 settimane: vita, forza, ritmo nella camminata o nella corsa;
 4. in 2-3 mesi: composizione corporea, esami del sangue.
 
-**Le evidenze più forti sono quelle personali.** Il "conto delle gocce" somma i comportamenti rispetto al proprio periodo precedente ("38 cene prima delle 20:30 in più in tre mesi"). Gli esperimenti personali confrontano i propri periodi ("dopo le cene entro le 20:30 hai dormito 34 minuti in più, 18 notti contro 22"), un'ipotesi alla volta, con una durata minima e il coraggio di dire "non è ancora chiaro".
-
-Le misure di effetto si presentano sempre in unità vere, come prima → dopo: centimetri, chili, battiti, minuti. Mai in punteggi.
+**Le evidenze più forti sono quelle personali**: il "conto delle gocce" (i comportamenti sommati rispetto alla propria linea di partenza) e gli esperimenti personali (i propri periodi a confronto, un'ipotesi alla volta, con il coraggio di dire "non è ancora chiaro"). Le misure di effetto si mostrano in unità vere, come prima → dopo: centimetri, chili, battiti, minuti.
 
 ## Il Focus e il calendario
 
-Il Focus si apre con il calendario: a colpo d'occhio deve rispondere a "come sto andando?", senza scorrere e senza toccare niente. Tutto il resto è un livello sotto, a un tocco.
+Il Focus si apre con il calendario e risponde a colpo d'occhio a "come sto andando?", senza scorrere e senza toccare niente. Tutto il resto è un livello sotto, a un tocco.
 
 **Struttura della pagina**, uguale per ogni periodo:
 
-1. schede Giorno · Settimana · Mese · Anno;
-2. intestazione del periodo con il pallino aggregato (colore medio) e lo stato a parole: sulla rotta, a metà, fuori rotta;
-3. il calendario del periodo: striscia di 7 giorni (Giorno, Settimana), griglia con le scie (Mese), 12 mini-calendari (Anno);
-4. il titolo del periodo, una frase;
-5. i quattro cilindri come righe compatte (icona, un numero, pallino), apribili per il dettaglio;
-6. una sola azione, con l'orizzonte del periodo: "Oggi prova così", "Questa settimana", "Questo mese";
-7. "Chiedi all'assistente" e "Perché te lo dico".
+1. schede Giorno · Settimana · Mese (l'Anno arriva dopo la v1);
+2. intestazione del periodo: pallino aggregato con il colore medio e lo stato a parole (sulla rotta, a metà, fuori rotta, dati insufficienti, in corso);
+3. calendario: striscia di 7 giorni (Giorno, Settimana), griglia del mese di calendario con le scie (Mese);
+4. titolo del periodo, in seconda persona: sui periodi sulla rotta prima ciò che è andato bene, poi il punto da migliorare;
+5. righe dei pilastri attivi (icona, una frase, pallino), apribili per il dettaglio; nei periodi i dati sono aggregati (medie, giorni fuori fascia, sessioni per macro-gruppo);
+6. una sola azione, con quantità e momento; card di sostegno quando serve;
+7. "Ti torna?" (solo nella vista Giorno) e "Perché te lo dico" (approfondimento, limiti, metodo, linea di partenza, Rigenera).
 
-**Si apre sempre l'ultimo periodo completo.** Giorno si apre su ieri, il più recente tra i giorni chiusi. Il lunedì, Settimana si apre sulla settimana appena conclusa; il primo del mese, Mese sul mese precedente. Il periodo in corso è a una freccia di distanza.
+**Si apre sull'ultimo periodo completo**: Giorno su ieri, Settimana sull'ultima settimana conclusa, Mese sull'ultimo mese concluso. Il periodo in corso è a una freccia di distanza. Oggi è "in corso": bordo tratteggiato, nessun colore, "Il giudizio arriva domattina".
 
-**Oggi è "in corso".** Bordo tratteggiato, nessun colore: mostra cosa è già registrato e se finora sei sulla rotta, ma il giudizio arriva domattina. I giorni futuri sono spenti.
+**Il punteggio del giorno (metodo kds-3)** è deterministico e versionato; lo calcola il codice, mai l'AI.
 
-**Il punteggio del giorno** è deterministico: lo calcola il codice dai quattro cilindri, sempre con lo stesso metodo, mai l'AI. Diventa un colore su una scala continua.
+- Ogni pilastro ha un punteggio continuo da 0 a 1. Alimentazione: 1 entro ±10% dell'obiettivo, poi scende fino a 0,15 a ±35%; −0,15 per una cena abbondante o a meno di 2 ore dal sonno (insieme al massimo −0,20); ×0,8 con un ultra-processato sfavorevole. Sonno: 1 tra 7 e 9 ore, fino a 0,15 a 5 ore. Movimento: metà camminata di oggi, metà minuti equivalenti dei 7 giorni su 150.
+- Punteggio del giorno = media pesata di alimentazione (0,45), sonno (0,30) e movimento (0,25). La forza non entra nella media.
+- Stato di ogni pilastro e del giorno dallo stesso punteggio: da 0,75 sulla rotta, da 0,45 a 0,75 a metà, sotto 0,45 fuori rotta.
+- Intensità della forza = distretto più acceso delle barre dello stimolo muscolare diviso 0,65, fino a 1. Vale solo sui giorni sulla rotta e con la forza attiva: una sessione di pesi non rende blu una giornata storta. Lo stimolo sfuma nei giorni dopo l'allenamento, e il calendario mostra "onde" di blu intenso.
+
+**I colori** sono una scala divergente senza verde né ciano, calcolata in OKLab: arancio-rosso, ambra, sabbia chiaro a metà, azzurro, blu profondo; con la forza il blu si spinge fino al blu elettrico.
 
 | Stato | Aspetto | Significato |
 | --- | --- | --- |
-| Sulla rotta | dall'azzurro al blu profondo | giornata positiva; più è profondo, più era vicina all'ideale |
-| A metà | giallo | qualcosa ha funzionato, qualcosa no |
+| Sulla rotta | dall'azzurro al blu profondo, più intenso con la forza | giornata positiva |
+| A metà | ambra e sabbia | qualcosa ha funzionato, qualcosa no |
 | Fuori rotta | dall'arancio al rosso | giornata negativa |
+| Non confermato | stesso colore, meno pieno | dati presenti ma giorno non confermato nel check-in |
 | Buco | nero, con bordo e ombra interna | giorno non registrato |
-| Pausa | grigio con icona | pausa dichiarata prima (vacanza, malattia) |
-| In corso | bordo tratteggiato ciano | oggi, non ancora giudicabile |
+| Pausa | grigio con icona | pausa dichiarata |
+| In corso | bordo tratteggiato ciano | oggi |
 
-**Il buco nero.** Registrare è parte della routine: un giorno non registrato è un'interruzione dell'attenzione e deve vedersi. Non è rosso, perché il rosso giudica come hai vissuto, mentre il nero dice che Kentu non lo sa. Accortezze:
+**Buchi, recupero, pausa.** Un giorno non registrato è un buco nero e interrompe la scia: registrare fa parte della routine. Registrato entro 48 ore, il buco si riempie con il segno "registrato dopo"; "ricordato a grandi linee" lo riempie con peso minore. La pausa dichiarata (vacanza, malattia) non è un buco. Al ritorno Kentu accoglie, non rimprovera.
 
-- un giorno registrato entro 48 ore riempie il buco, con il segno "registrato dopo";
-- "giornata ricordata a grandi linee" è un'opzione onesta: riempie il buco ma pesa meno nei calcoli;
-- al ritorno dopo una pausa non dichiarata, Kentu accoglie ("Bentornato, ripartiamo da oggi"), non rimprovera.
+**Le scie**: almeno 3 giorni di fila sulla rotta, sottolineati; un buco interrompe, un solo giorno a metà mette in pausa. Accanto si mostrano sempre i giorni sulla rotta del periodo; senza scie: "Nessuna scia ancora".
 
-**Le scie.** Una scia è una serie di almeno 3 giorni sulla rotta, sottolineata nel calendario. Un buco la interrompe; un solo giorno giallo la mette in pausa senza spezzarla. Accanto alla scia più lunga si mostrano sempre i giorni sulla rotta del periodo, un numero che non si azzera mai.
+**Affidabilità.** I giorni non confermati contano nelle medie con peso 0,8 e affidabilità media (una riga nei limiti). Affidabilità bassa, con titolo prudente, solo per giorni con buchi evidenti o ricordati a grandi linee. I pallini dei periodi si calcolano sui giorni con dati; sotto il 60% di copertura: "dati insufficienti".
 
-**Il giorno chiuso.** Nel check-in del mattino: "Ieri hai registrato tutto?". I giorni non confermati, o con buchi evidenti (un solo pasto, nessuna cena), hanno affidabilità bassa: colore meno pieno, nessun giudizio forte.
+**L'azione.** Il pilastro lo sceglie il codice: un segnale del salvavita, altrimenti l'impatto più alto, cioè (1 − punteggio) × peso. Nella vista Giorno conta l'acuto (il movimento di oggi), nei periodi il cronico. Dopo due giorni sullo stesso pilastro si passa a un altro, ma solo se non è sulla rotta; se tutto va bene, l'azione è di mantenimento. L'azione chiude almeno un terzo della distanza dal riferimento (mai oltre la metà), con una quantità e un momento. Per un periodo concluso riguarda il periodo successivo ("La prossima settimana…", "A novembre…").
 
-**I pallini aggregati** si calcolano solo sui giorni chiusi e registrati. Se la copertura del periodo è troppo bassa, niente pallino, né scie, né medie: "dati insufficienti". Da decidere: media semplice o con più peso ai giorni recenti.
+**"Ti torna?"** Ogni mattina l'utente può dire se il giudizio di ieri gli torna. Le risposte non cambiano il punteggio: si rivedono periodicamente per tarare il metodo, distinguendo "il motore sbaglia" da "il riferimento non piace".
+
+**Taratura e linea di partenza.** I primi 14 giorni con dati (al massimo 28 di calendario) sono "taratura": colori visibili, nessun giudizio netto, nessuna scia, salvavita sempre attivo. Alla fine Kentu calcola la linea di partenza (calorie medie e giorni fuori fascia, sonno, movimento, forza, orario dell'ultimo pasto, copertura), la mostra una volta e la usa come riferimento per tutti i confronti futuri.
+
+**Rapporto al mattino.** Alla prima apertura del giorno Kentu prepara il rapporto di ieri (il lunedì anche la settimana, il primo del mese anche il mese), al massimo una volta per periodo. Una notifica locale, mezz'ora dopo il risveglio abituale, invita ad aprirlo.
 
 ## Il potenziale infiammatorio
 
 Kentu stima il **potenziale infiammatorio dello stile di vita**, non lo stato infiammatorio della persona, che si misura solo con gli esami. Il concetto è studiato in letteratura e verificato contro marcatori nel sangue (PCR, interleuchine): nel Dietary and Lifestyle Inflammation Score (Journal of Nutrition, 2019) il fattore singolo più pesante è l'obesità, più di qualunque alimento.
 
-**Lo strumento** è un indicatore a zero centrale, come un voltmetro: ago a sinistra = tendente anti, al centro = neutro, a destra = tendente pro. Scala blu → giallo → arancio, senza rosso. L'ago è **smorzato** da una media mobile di 4 settimane (7 giorni nel Focus di Giorno e Settimana), così una giornata storta non lo fa saltare. Un ago tratteggiato mostra il periodo precedente. Un **alone** attorno all'ago mostra l'incertezza: più dati stimati, alone più largo. Sotto, "Cosa muove l'ago": ogni fattore è una barra che parte dal centro, verso sinistra o verso destra.
+**Lo strumento** è un indicatore a zero centrale, come un voltmetro: ago a sinistra = tendente anti, al centro = neutro, a destra = tendente pro. Stessa scala del calendario: blu a sinistra, sabbia al centro, arancio a destra. L'ago è **smorzato** da una media mobile di 4 settimane (7 giorni nel Focus di Giorno e Settimana), così una giornata storta non lo fa saltare. Un ago tratteggiato mostra il periodo precedente. Un **alone** attorno all'ago mostra l'incertezza: più dati stimati, alone più largo. Sotto, "Cosa muove l'ago": ogni fattore è una barra che parte dal centro, verso sinistra o verso destra.
 
 | Fattore | Cilindro | Direzione | Nota sui dati |
 | --- | --- | --- | --- |
@@ -100,7 +112,7 @@ Kentu stima il **potenziale infiammatorio dello stile di vita**, non lo stato in
 | Ultra-processati sfavorevoli, carni lavorate, zuccheri | Alimentazione | pro | già distinti nel dossier |
 | Alcol oltre le quantità moderate | Alimentazione | pro |  |
 | Sonno corto e cronico | Sonno | pro |  |
-| Attività fisica regolare | Cardio, Forza | anti |  |
+| Attività fisica regolare | Movimento, Forza | anti |  |
 | Rapporto vita/altezza | Corpo | pro sopra 0,5 | il fattore più pesante |
 | Spezie (curcuma e simili) | Alimentazione | anti, peso basso | quasi mai registrate: "dati insufficienti" |
 
@@ -117,17 +129,21 @@ Kentu stima il **potenziale infiammatorio dello stile di vita**, non lo stato in
 
 ## Il salvavita
 
-Il salvavita è un livello di controlli deterministici che scatta quando qualcosa supera una soglia, qualunque cosa dica l'AI. Kentu deve saper dire "rallenta" e trattare il riposo come un obiettivo, non come un passo indietro.
+Il salvavita (metodo sfv-2) è un livello di controlli deterministici che scatta quando qualcosa supera una soglia, qualunque cosa dica l'AI. Kentu deve saper dire "rallenta" e trattare il riposo come un obiettivo, non come un passo indietro. Usa solo giorni chiusi, mai i giorni in pausa.
 
-| Area | Soglia | Cosa fa Kentu |
-| --- | --- | --- |
-| Energia | deficit grande e protratto rispetto al fabbisogno; giornate molto basse ripetute | sotto osservazione, poi invito a rallentare il deficit |
-| Peso | perdita oltre l'1% del peso corporeo a settimana | invito a rallentare |
-| Proteine | sotto il minimo in fase di deficit | segnalazione nell'alimentazione |
-| Allenamento | carico settimanale che cresce troppo in fretta; troppi giorni di fila senza riposo; stesso gruppo senza 48 ore di recupero | proposta di riposo o settimana di scarico |
-| Sovraccarico | frequenza a riposo in aumento, sonno peggiore, energia al risveglio bassa, prestazioni in calo, insieme | "rallenta", settimana di scarico trattata come un successo |
+| Segnale | Soglia iniziale | Livello | Cosa fa Kentu |
+| --- | --- | --- | --- |
+| Deficit protratto | media degli ultimi 7 giorni sotto il 75% dell'obiettivo | osservazione | segnalazione nel rapporto |
+| Giorni molto bassi ripetuti | almeno 3 giorni sotto il 60% in 7, o 2 sotto il metabolismo basale | intervento | la giornata non può essere blu; invito a rallentare il deficit |
+| Peso in calo rapido | oltre l'1% a settimana per 2 settimane (con almeno 4 pesate in 14 giorni) | intervento | invito a rallentare |
+| Proteine basse in deficit | deficit oltre il 10% e proteine sotto 1,2 g/kg | osservazione | segnalazione nell'alimentazione |
+| Nessun riposo | 6 giorni di fila con pesi o attività vigorosa (8: intervento) | osservazione / intervento | proposta di riposo |
+| Stesso distretto senza recupero | meno di 48 ore, 2 volte in 7 giorni | osservazione | proposta di alternare |
+| Picco di carico | minuti settimanali di pesi e attività vigorosa oltre il 150% della media delle 4 settimane prima | osservazione | proposta di gradualità |
+| Sovraccarico | nessun riposo o picco di carico, più due tra: sonno sotto 6 ore, energia al risveglio ≤ 2, qualità del sonno ≤ 2 (2 volte su 3) | intervento | "rallenta", settimana di scarico trattata come un successo |
+| Restrizione | almeno 5 giorni sotto il 60% dell'obiettivo o sotto il basale in 14 | intervento | nessun numero su calorie e peso, card di sostegno che propone un confronto con un professionista |
 
-Le soglie numeriche esatte vanno definite con le fonti, prima del codice.
+Le soglie sono valori iniziali prudenti, in un file di configurazione versionato: prima del lancio vanno riviste da un professionista. La fatica sistemica del vecchio motore muscolare non è usata finché non viene ricalibrata.
 
 **Regole di comportamento:**
 
@@ -179,61 +195,76 @@ Nessuna stima è incontrovertibile; un'evidenza diventa inattaccabile quando si 
 
 **Cosa Kentu non dice mai:** diagnosi, "stato infiammatorio", "carenza", "anni di vita guadagnati", rischio di una malattia specifica. Parla di stile di vita e di andamento. Il confine con i dispositivi medici (normativa europea) va verificato con un esperto prima della pubblicazione.
 
+**Sicurezza e dati di prova.** Le chiavi API vivono solo come segreti del server, mai nel codice; un controllo prima di ogni commit blocca le chiavi; il repository è privato. Le verifiche si fanno sull'emulatore con un utente di prova e un diario finto realistico: i dati reali degli utenti non entrano mai nel repository.
+
 ## Linguaggio visivo e brand
 
 Blu per la rotta, arancio per la deriva, nero per i buchi: lo stesso significato in tutta l'app.
 
 **Colori con significato:**
 
-- **blu** = sulla rotta (giorni, pallini dei cilindri, zona anti dell'ago, "Bene" nel rapporto). Il verde non si usa più come "positivo";
-- **giallo** = a metà; **arancio e rosso** = fuori rotta; **nero** = non registrato; **grigio** = pausa o dato assente;
-- **ciano** (#22D3EE) = azione, giorno in corso, pulsanti. Deve restare chiaramente diverso dal blu dei giorni: da verificare su un telefono vero, in piena luce;
-- blu e arancio sono anche la coppia più leggibile per chi distingue male rosso e verde (circa un uomo su dodici).
+- **blu** = sulla rotta (giorni, pallini, zona anti dell'ago); più intenso con la forza, fino al blu elettrico;
+- **ambra e sabbia** = a metà; **arancio e rosso** = fuori rotta; **nero** = non registrato; **grigio** = pausa o dato assente;
+- **ciano** (#22D3EE) = azione, giorno in corso, pulsanti; non compare mai nella scala dei giorni;
+- il **verde** non significa più "positivo": resta solo come colore dell'icona della forza;
+- blu e arancio sono la coppia più leggibile anche per chi distingue male rosso e verde.
 
-**Colori delle aree** (icone nei cerchi): alimentazione arancio, sonno viola, forza verde, cardio ciano. Ogni cilindro ha sempre la stessa icona e lo stesso colore, in Focus, diario e timeline.
+**Icone dei pilastri** (sempre uguali in Focus, diario, Home e cruscotto): alimentazione arancio, sonno viola, movimento ciano, forza verde.
 
-**Temi.** Scuro come predefinito, coerente con il resto dell'app; chiaro disponibile con lo switch in alto, salvato in `ui_preferences`.
+**Temi.** Scuro come predefinito, chiaro con lo switch in alto.
 
-**Tono.** Seconda persona, diretto, mai consolatorio né da cartolina. "Hai cenato alle 21:46", non "Spunto di riflessione". Frasi brevi, numeri veri, formati italiani (6 h 30, virgola decimale).
+**Tono.** Seconda persona, diretto, mai consolatorio né burocratico: "Hai cenato alle 21:46", non "Introito registrato". Niente titoli che giustificano un segnale negativo. Una sola leva per azione. Formati italiani (6 h 30, virgola decimale, "obiettivo" e non "target").
 
 **Il brand, presente ma non dichiarato:**
 
 | Elemento | Dove vive |
 | --- | --- |
-| Kentu = cento | nome; spiegato una volta, nell'onboarding |
-| Il blu delle Blue Zones | calendario e tutti gli stati positivi; una riga di legenda e una frase nell'onboarding: "Il blu è il colore delle Blue Zones, i luoghi dove si vive più a lungo. La Sardegna è una di queste." |
-| Paesaggi dell'entroterra sardo | immagini del Focus, scelte dal codice in base a periodo ed esito; generate con un prompt fisso, mai luoghi riconoscibili |
-| "A kent'annos" | solo ai traguardi (un mese blu, un esperimento riuscito, il compleanno); una sola grafia in tutta l'app |
-| Costanza e moderazione | il salvavita, il riposo come obiettivo, nessun premio all'eccesso |
+| Kentu = cento | ultima schermata dell'onboarding, con un paesaggio dell'entroterra sardo: "Kentu vuol dire cento, in sardo. Il blu che vedrai nell'app è il colore delle Blue Zones, i luoghi dove si vive più a lungo: la Sardegna è una di queste." |
+| Il blu delle Blue Zones | calendario e tutti gli stati positivi; una riga di legenda sotto il calendario |
+| Paesaggi dell'entroterra sardo | immagini generate con un prompt fisso, mai luoghi riconoscibili, scelte dal codice in base a periodo ed esito (public/focus/) |
+| "A kent'annos" | solo ai traguardi; una sola grafia in tutta l'app |
+| Costanza e moderazione | salvavita, riposo come obiettivo, nessun premio all'eccesso |
 
-Nomi per l'utente: solo **Kentu**; KentuOS resta un nome interno.
+**Nomi.** Per l'utente solo **Kentu**: "KentuOS", "Battesimo", "motore metabolico" e simili restano interni. Nel Focus i quattro elementi si chiamano pilastri; "cilindri" resta il nome interno del motore muscolare. La vecchia mascotte è stata tolta dall'onboarding (ricordava un virus ed era verde): al suo posto il simbolo di Kentu o i paesaggi.
 
 ## Perimetro della v1
 
-La v1 punta su dati affidabili e onestà sull'incertezza, non sul numero di funzioni: le funzioni più ambiziose arrivano quando ci sono abbastanza dati per renderle credibili. Piattaforme: Android e web; iOS escluso per ora.
+La v1 punta su dati affidabili e onestà sull'incertezza, non sul numero di funzioni. Piattaforme: Android e web; iOS escluso per ora. Al 12 novembre il Focus della v1 è completo; restano i lavori sui dati storici, sulla Home e sulla pubblicazione.
 
-**Nella v1**
+**Fatto**
 
+- [x] Ricerca degli alimenti corretta (corrispondenza esatta prima dei piatti composti, nomi italiani di CREA)
+- [x] Stato del giorno, check-in del mattino (giorno chiuso, sonno, energia, camminata), pausa, recupero entro 48 ore
+- [x] Punteggio del giorno kds-3 con i pilastri, intensità della forza, una sola fonte di verità con il cruscotto
+- [x] Salvavita sfv-2
+- [x] Schema AI v5: stati dal codice, parole dall'AI, validatore
+- [x] Focus con calendario (Giorno, Settimana, Mese), scala arancio-sabbia-blu, buchi, scie, temi scuro e chiaro
+- [x] "Ti torna?"
+- [x] Rapporto al mattino e notifica locale
+- [x] Spegnimento delle superfici legacy con feature flag
+- [x] Condimenti suggeriti, taratura e linea di partenza, onboarding dei pilastri e racconto del nome
+- [x] Emulatore con utente di prova e diario finto realistico
+
+**Da fare prima della pubblicazione**
+
+- [ ] Le tre immagini mancanti (mese buono, mese irregolare, riserva)
 - [ ] Audit dello storico (alimenti composti al posto di quelli semplici) e correzione delle voci sbagliate
-- [ ] Giorno chiuso nel check-in del mattino, con energia al risveglio e qualità del sonno
-- [ ] Condimenti suggeriti alla registrazione di un piatto
-- [ ] Copertura dei dati visibile; buchi neri, recupero entro 48 ore, pausa dichiarata
-- [ ] Punteggio del giorno deterministico e versionato, dai quattro cilindri
-- [ ] Focus con calendario: Giorno (su ieri), Settimana, Mese; quattro cilindri; una sola azione
-- [ ] Salvavita con soglie documentate
-- [ ] Periodo di taratura di 1-2 settimane per i nuovi utenti, che fissa la linea di partenza
-- [ ] Generazione automatica del rapporto al mattino, con notifica locale
-- [ ] Spegnimento delle vecchie superfici di feedback (Focus Metabolico in chat, Health Analyzer, report dal tasto ALL, longevity legacy)
-- [ ] Crash reporting ed eventi chiave; privacy e GDPR per i dati sanitari; verifica del confine con i dispositivi medici; Play Console
+- [ ] Riallineare la Home al Modello: via l'arco del punteggio di longevità e le frasi metaboliche a tempo, blu come colore positivo, collegamento al Focus
+- [ ] Prova sul telefono: notifiche, permessi, build Android
+- [ ] Sicurezza: repository privato, verifica di chi ha distrutto le versioni del segreto, limiti sulle chiavi Firebase
+- [ ] Crash reporting ed eventi chiave; privacy e GDPR per i dati sanitari; verifica del confine con i dispositivi medici; Play Console con le dichiarazioni necessarie
+- [ ] Revisione delle soglie del salvavita da parte di un professionista
 
-**Dopo la v1**, in quest'ordine indicativo:
+**Dopo la v1**, in ordine indicativo:
 
-1. misure del corpo (vita, peso, frequenza a riposo) e la vista Mese "Cosa hai ottenuto";
-2. ago del potenziale infiammatorio, con la tabella dei fattori, pesi e fonti;
-3. vista Anno;
-4. esperimenti personali e proiezioni;
-5. "Chiedi all'assistente" (condivisione verso il chatbot) e importazione dei pasti dal chatbot nell'Inbox;
-6. connettore MCP e integrazione con Gemini sul telefono (AppFunctions), quando Google la aprirà;
-7. prova alla cieca di un modello di fascia alta per il Focus.
+1. passi da Health Connect e misure del corpo (vita, peso, frequenza a riposo), con la vista Mese "Cosa hai ottenuto";
+2. test mensili (alzate dalla sedia, equilibrio, scale) e modalità semplice per gli utenti più anziani;
+3. ago del potenziale infiammatorio, con la tabella dei fattori, dei pesi e delle fonti;
+4. vista Anno;
+5. esperimenti personali e proiezioni;
+6. "Chiedi al tuo assistente" (condivisione verso il chatbot) e importazione dei pasti dal chatbot nell'Inbox;
+7. connettore MCP e Gemini sul telefono (AppFunctions), quando Google lo aprirà;
+8. ricalibrazione della fatica sistemica e passaggio della mappa metabolica alle barre dello stimolo muscolare;
+9. prova alla cieca di un modello di fascia alta per il Focus.
 
-**Prossimo passo concreto:** l'audit dello storico, che è in attesa e condiziona l'affidabilità di tutto il resto.
+**Prossimo passo concreto:** l'audit dello storico, che condiziona l'affidabilità delle linee di partenza.

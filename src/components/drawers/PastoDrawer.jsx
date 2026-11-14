@@ -1,6 +1,8 @@
-import React from 'react';
-import MealBuilder from '../../MealBuilder';
+import React, { Suspense } from 'react';
 import FoodCommandSection from '@/features/salaComandi/components/FoodCommandSection';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const MealBuilder = lazyWithRetry(() => import('../../MealBuilder'));
 
 function normalizeName(value) {
   return String(value ?? '')
@@ -211,6 +213,7 @@ export default function PastoDrawer({
         />
       </div>
 
+      <Suspense fallback={null}>
       <MealBuilder
         onClose={onClose}
         mealType={mealType}
@@ -288,6 +291,7 @@ export default function PastoDrawer({
         consumedMacros={consumedMacros}
         remainingMeals={remainingMeals}
       />
+      </Suspense>
     </>
   );
 }

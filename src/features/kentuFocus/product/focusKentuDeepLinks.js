@@ -57,7 +57,7 @@ export function buildFocusKentuDeepLinks(ctx = {}) {
     },
     cardio: {
       engineId: 'cardio',
-      label: 'Cardio',
+      label: 'Movimento',
       to: '/centro-analisi?area=progressione&focus=cardio',
       state: null,
     },
