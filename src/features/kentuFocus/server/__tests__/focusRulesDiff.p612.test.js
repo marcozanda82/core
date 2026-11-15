@@ -65,14 +65,17 @@ test('P6.12 diff: users base .read/.write invariati (nessun allargamento)', () =
   assert.equal(focusLocal.rules.users.$uid['.write'], PUBLISHED_ONLINE.rules.users.$uid['.write']);
 });
 
-test('P6.12 diff: database.rules.json users senza nested AI (non ancora deploy)', () => {
+test('P6.12 diff: database.rules.json users senza nested kentu_focus_ai (non ancora deploy)', () => {
   const prod = loadLocal('database.rules.json');
   const keys = Object.keys(prod.rules.users.$uid).filter((k) => !k.startsWith('.')).sort();
   assert.equal(prod.rules.users.$uid.kentu_focus_ai, undefined);
+  assert.ok(prod.rules.users.$uid.focus_ai_locks);
   assert.deepEqual(keys, [
     'cylinders',
     'day_status',
+    'focus_ai_locks',
     'focus_day_scores',
+    'mcp_tokens',
     'movement_checkin',
     'safety_status',
     'score_feedback',
@@ -80,15 +83,17 @@ test('P6.12 diff: database.rules.json users senza nested AI (non ancora deploy)'
   ]);
 });
 
-test('P6.12 diff: focus.local aggiunge kentu_focus_ai* e day_status sotto users', () => {
+test('P6.12 diff: focus.local aggiunge kentu_focus_ai*, focus_ai_locks e day_status sotto users', () => {
   const focusLocal = loadLocal('database.rules.focus.local.json');
   const keys = Object.keys(focusLocal.rules.users.$uid).filter((k) => !k.startsWith('.')).sort();
   assert.deepEqual(keys, [
     'cylinders',
     'day_status',
+    'focus_ai_locks',
     'focus_day_scores',
     'kentu_focus_ai',
     'kentu_focus_ai_index',
+    'mcp_tokens',
     'movement_checkin',
     'safety_status',
     'score_feedback',
@@ -96,14 +101,26 @@ test('P6.12 diff: focus.local aggiunge kentu_focus_ai* e day_status sotto users'
   ]);
   assert.ok(focusLocal.rules.users.$uid.kentu_focus_ai.$periodId['.validate']);
   assert.ok(focusLocal.rules.users.$uid.kentu_focus_ai_index.$indexKey['.validate']);
+  assert.ok(focusLocal.rules.users.$uid.focus_ai_locks.$periodId['.validate']);
+  assert.equal(focusLocal.rules.ai_call_quota.$uid['.write'], false);
+  assert.equal(focusLocal.rules.ai_call_quota.$uid.$day['.write'], false);
+  assert.match(String(focusLocal.rules.ai_call_quota.$uid['.read']), /auth\.uid/);
+  assert.match(String(focusLocal.rules.ai_call_quota.$uid.$day['.read']), /auth\.uid/);
 });
 
-test('P6.12 diff: nessun .read/.write alla radice; rami = kentu_focus + planning + users + weeklyPlanning', () => {
+test('P6.12 diff: nessun .read/.write alla radice; rami noti incl. ai_call_quota', () => {
   const local = loadLocal('database.rules.json');
   assert.equal(local.rules['.read'], undefined);
   assert.equal(local.rules['.write'], undefined);
   const keys = Object.keys(local.rules).sort();
-  assert.deepEqual(keys, ['kentu_focus', 'planning', 'users', 'weeklyPlanning']);
+  assert.ok(keys.includes('ai_call_quota'));
+  assert.ok(keys.includes('kentu_focus'));
+  assert.ok(keys.includes('planning'));
+  assert.ok(keys.includes('users'));
+  assert.ok(keys.includes('weeklyPlanning'));
+  assert.equal(local.rules.ai_call_quota.$uid['.write'], false);
+  assert.equal(local.rules.ai_call_quota.$uid.$day['.write'], false);
+  assert.match(String(local.rules.ai_call_quota.$uid.$day['.read']), /auth\.uid/);
 });
 
 test('P6.12 diff: kentu_focus edizioni identiche tra prod file e focus.local', () => {

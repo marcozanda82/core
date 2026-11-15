@@ -1,30 +1,21 @@
 /**
- * Modello ad Accumulo Dinamico — stimolo muscolare (sismografi + grafico linee).
+ * @deprecated mm-1 / Costanza — non usare per nuovi calcoli.
+ * Thin compat: livelli pilastro da costanza; triage labels ancora usati in UI legacy.
  *
- * Single Source of Truth: boost sessione + decadimento non-lineare 7gg.
- * Nessun reset a mezzanotte: ogni hit decade lungo la curva fino a 0.
+ * Preferire: `src/features/kentuFocus/costanza/`.
  */
 
-/** Punti % aggiunti da una sessione su un pilastro. */
+import { computeCostanzaPillarLevels01 } from '../features/kentuFocus/costanza/costanzaForza.js';
+
+/** @deprecated */
 export const HYPERTROPHY_SESSION_BOOST = 65;
-
-/** Cap assoluto dello stato muscolare. */
+/** @deprecated */
 export const HYPERTROPHY_STIMULUS_CAP = 100;
-
-/**
- * Sottrazioni giornaliere cumulative dopo l'allenamento (totale = 65).
- * Index 0 = Giorno 1 (−5), … index 6 = Giorno 7 (−4 → residuo 0).
- * @type {readonly number[]}
- */
+/** @deprecated */
 export const HYPERTROPHY_DAILY_DECAY = Object.freeze([5, 9, 13, 14, 12, 8, 4]);
-
-/** Giorni oltre i quali un hit non contribuisce più (lunghezza curva). */
+/** @deprecated */
 export const HYPERTROPHY_DECAY_HORIZON_DAYS = HYPERTROPHY_DAILY_DECAY.length;
-
-/** Soglia triage: ≤15 → DA STIMOLARE. */
 export const HYPERTROPHY_TRIAGE_STIMULATE_MAX = 15;
-
-/** Soglia triage: 16–80 → IN RECUPERO; >80 → STIMOLO OTTIMALE. */
 export const HYPERTROPHY_TRIAGE_RECOVERY_MAX = 80;
 
 /** @type {readonly string[]} */
@@ -36,7 +27,6 @@ export const HYPERTROPHY_PILLAR_IDS = Object.freeze([
   'core',
 ]);
 
-/** Spillover IT / alias → pilastro cilindro. */
 const SPILLOVER_TO_PILLAR = Object.freeze({
   petto: 'chest',
   chest: 'chest',
@@ -53,44 +43,34 @@ const SPILLOVER_TO_PILLAR = Object.freeze({
   shoulders: 'back_shoulders',
 });
 
-/**
- * @param {string} iso
- * @returns {{ y: number, m: number, d: number } | null}
- */
-function parseIsoParts(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || '').slice(0, 10));
-  if (!m) return null;
-  return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
+function warnDeprecated(fn) {
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(`[hypertrophyMath] ${fn} is deprecated — use costanza mm-1`);
+  }
 }
 
 /**
- * Giorni di calendario UTC tra due ISO (to − from).
  * @param {string} fromIso
  * @param {string} toIso
  * @returns {number | null}
  */
 export function hypertrophyDiffCalendarDays(fromIso, toIso) {
-  const a = parseIsoParts(fromIso);
-  const b = parseIsoParts(toIso);
+  const a = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(fromIso || '').slice(0, 10));
+  const b = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(toIso || '').slice(0, 10));
   if (!a || !b) return null;
-  const fromMs = Date.UTC(a.y, a.m - 1, a.d);
-  const toMs = Date.UTC(b.y, b.m - 1, b.d);
+  const fromMs = Date.UTC(Number(a[1]), Number(a[2]) - 1, Number(a[3]));
+  const toMs = Date.UTC(Number(b[1]), Number(b[2]) - 1, Number(b[3]));
   return Math.round((toMs - fromMs) / 86400000);
 }
 
-/**
- * Residuo % di un singolo allenamento dopo `daysElapsed` giorni interi.
- * Giorno 0 (giorno sessione) = 65; dopo 7 giorni di curva = 0.
- *
- * @param {number} daysElapsed
- * @returns {number}
- */
+/** @deprecated residuo +65 — non SSOT; ritorna 0 fuori orizzonte per non rompere import. */
 export function hypertrophySessionResidual(daysElapsed) {
+  warnDeprecated('hypertrophySessionResidual');
   const days = Math.floor(Number(daysElapsed));
   if (!Number.isFinite(days) || days < 0) return 0;
   if (days === 0) return HYPERTROPHY_SESSION_BOOST;
   if (days >= HYPERTROPHY_DECAY_HORIZON_DAYS) return 0;
-
   let value = HYPERTROPHY_SESSION_BOOST;
   for (let i = 0; i < days; i += 1) {
     value -= HYPERTROPHY_DAILY_DECAY[i];
@@ -98,11 +78,6 @@ export function hypertrophySessionResidual(daysElapsed) {
   return Math.max(0, value);
 }
 
-/**
- * Mappa primari spillover / label → set di pilastri (dedupe per sessione).
- * @param {Iterable<string> | null | undefined} primaryKeys
- * @returns {Set<string>}
- */
 export function mapSessionPrimariesToPillars(primaryKeys) {
   /** @type {Set<string>} */
   const pillars = new Set();
@@ -119,14 +94,9 @@ export function mapSessionPrimariesToPillars(primaryKeys) {
   return pillars;
 }
 
-/**
- * Stimolo % per un pilastro: somma residui degli hit, cap 100.
- *
- * @param {Iterable<string>} sessionDates ISO YYYY-MM-DD (un entry = una sessione su quel pilastro)
- * @param {string} asOfDate
- * @returns {number} 0–100
- */
+/** @deprecated */
 export function computePillarStimulusPercent(sessionDates, asOfDate) {
+  warnDeprecated('computePillarStimulusPercent');
   const asOf = String(asOfDate || '').slice(0, 10);
   let total = 0;
   for (const raw of sessionDates || []) {
@@ -139,57 +109,62 @@ export function computePillarStimulusPercent(sessionDates, asOfDate) {
 }
 
 /**
- * Livelli 0–1 per i 5 pilastri alla data `asOfDate`.
+ * Livelli 0–1: ora Costanza mm-1 (non più +65/7gg).
+ * Accetta ancora la firma legacy (Map sessioni, asOf) ma se `fullHistory` è passato
+ * come primo argomento oggetto plain senza Map, usa costanza direttamente.
  *
- * @param {Map<string, string[][]> | Record<string, string[][]>} sessionPrimariesByDate
- *   chiave = ISO giorno, valore = lista sessioni (ognuna = array primari spillover)
- * @param {string} asOfDate
+ * @param {Map|Record|object} sessionPrimariesByDateOrHistory
+ * @param {string} [asOfDate]
  * @returns {{ legs: number, chest: number, back_shoulders: number, arms: number, core: number }}
  */
-export function computeHypertrophyLevels01(sessionPrimariesByDate, asOfDate) {
-  /** @type {Record<string, string[]>} */
-  const hitsByPillar = {
-    legs: [],
-    chest: [],
-    back_shoulders: [],
-    arms: [],
-    core: [],
-  };
-
+export function computeHypertrophyLevels01(sessionPrimariesByDateOrHistory, asOfDate) {
+  warnDeprecated('computeHypertrophyLevels01');
   const asOf = String(asOfDate || '').slice(0, 10);
-  const entries = sessionPrimariesByDate instanceof Map
-    ? sessionPrimariesByDate.entries()
-    : Object.entries(sessionPrimariesByDate || {});
+
+  // Path Costanza: se sembra un fullHistory (chiavi trackerStorico_*)
+  if (
+    sessionPrimariesByDateOrHistory
+    && typeof sessionPrimariesByDateOrHistory === 'object'
+    && !(sessionPrimariesByDateOrHistory instanceof Map)
+  ) {
+    const keys = Object.keys(sessionPrimariesByDateOrHistory);
+    if (keys.some((k) => k.startsWith('trackerStorico_'))) {
+      return computeCostanzaPillarLevels01({
+        fullHistory: sessionPrimariesByDateOrHistory,
+        asOfDate: asOf,
+      });
+    }
+  }
+
+  // Compat Map sessioni → ricostruisce livelli grezzi da primari (status-like)
+  /** @type {Record<string, number>} */
+  const hits = {
+    legs: 0,
+    chest: 0,
+    back_shoulders: 0,
+    arms: 0,
+    core: 0,
+  };
+  const entries = sessionPrimariesByDateOrHistory instanceof Map
+    ? sessionPrimariesByDateOrHistory.entries()
+    : Object.entries(sessionPrimariesByDateOrHistory || {});
 
   for (const [dateRaw, daySessions] of entries) {
     const date = String(dateRaw || '').slice(0, 10);
     const elapsed = hypertrophyDiffCalendarDays(date, asOf);
-    if (elapsed == null || elapsed < 0 || elapsed >= HYPERTROPHY_DECAY_HORIZON_DAYS) {
-      continue;
-    }
+    if (elapsed == null || elapsed < 0 || elapsed > 6) continue;
     for (const primaries of daySessions || []) {
       const pillars = mapSessionPrimariesToPillars(primaries);
       for (const pillar of pillars) {
-        if (hitsByPillar[pillar]) hitsByPillar[pillar].push(date);
+        if (hits[pillar] != null) {
+          hits[pillar] = Math.max(hits[pillar], elapsed === 0 ? 1 : 0.4);
+        }
       }
     }
   }
-
-  const pct = (id) => computePillarStimulusPercent(hitsByPillar[id], asOf);
-  return {
-    legs: pct('legs') / 100,
-    chest: pct('chest') / 100,
-    back_shoulders: pct('back_shoulders') / 100,
-    arms: pct('arms') / 100,
-    core: pct('core') / 100,
-  };
+  return hits;
 }
 
-/**
- * Etichetta triage dinamico (barre Progressione).
- * @param {number} percent 0–100
- * @returns {'DA STIMOLARE'|'IN RECUPERO'|'STIMOLO OTTIMALE'}
- */
 export function hypertrophyTriageLabel(percent) {
   const p = Math.round(Number(percent) || 0);
   if (p > HYPERTROPHY_TRIAGE_RECOVERY_MAX) return 'STIMOLO OTTIMALE';
@@ -197,14 +172,11 @@ export function hypertrophyTriageLabel(percent) {
   return 'DA STIMOLARE';
 }
 
-/**
- * Tone triage allineato alle soglie % (0–15 / 16–80 / >80).
- * @param {number} percent0to100
- * @returns {'critical'|'warning'|'good'}
- */
 export function hypertrophyTriageTone(percent0to100) {
   const p = Math.round(Number(percent0to100) || 0);
   if (p > HYPERTROPHY_TRIAGE_RECOVERY_MAX) return 'good';
   if (p > HYPERTROPHY_TRIAGE_STIMULATE_MAX) return 'warning';
   return 'critical';
 }
+
+export { computeCostanzaPillarLevels01 };

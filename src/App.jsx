@@ -15,6 +15,7 @@ import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
 import { useAppReadyState } from './hooks/useAppReadyState';
 import { db } from './firebaseConfig';
 import { featureFlags } from './config/featureFlags.js';
+import { isEmulatorRealAiEnabled, isFirebaseEmulatorMode } from './config/emulatorUser.js';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 const SalaComandi = lazyWithRetry(() => import('./SalaComandi'));
@@ -126,6 +127,28 @@ function AuthenticatedApp() {
 
   return (
     <>
+      {isFirebaseEmulatorMode() && isEmulatorRealAiEnabled() ? (
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            zIndex: 10000,
+            padding: '0.35rem 0.75rem',
+            background: '#7a2e0e',
+            color: '#fff7ed',
+            fontSize: '0.75rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            textAlign: 'center',
+            textTransform: 'uppercase',
+          }}
+        >
+          AI reale attiva
+        </div>
+      ) : null}
       <Suspense fallback={<AppBootFallback />}>
         <Routes>
           <Route path="/" element={<SalaComandi />} />

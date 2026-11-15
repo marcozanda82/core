@@ -21,7 +21,7 @@ function resolveTacticalCopy(remainingKcal) {
       tone: 'deficit',
       title: 'Forte deficit ancora aperto',
       text:
-        'Se ti fermi ora, chiudi in forte deficit. Ottimo per tagliare peso, ma assicurati di aver coperto la quota proteica per preservare i cilindri muscolari.',
+        'Se ti fermi ora, chiudi in forte deficit. Ottimo per tagliare peso, ma assicurati di aver coperto la quota proteica per preservare i muscoli.',
     };
   }
   if (remaining >= -150) {
@@ -48,6 +48,7 @@ function resolveTacticalCopy(remainingKcal) {
  *   onClose: () => void,
  *   tdeeBaseKcal?: number,
  *   workoutBurnKcal?: number,
+ *   workoutBurnLabel?: string | null,
  *   deltaKcal?: number | null,
  *   compensationKcal?: number | null,
  *   compensationDaysRemaining?: number | null,
@@ -65,6 +66,7 @@ export default function CalorieDetailsModal({
   onClose,
   tdeeBaseKcal = 0,
   workoutBurnKcal = 0,
+  workoutBurnLabel = null,
   deltaKcal = null,
   compensationKcal = null,
   compensationDaysRemaining = null,
@@ -169,7 +171,7 @@ export default function CalorieDetailsModal({
               <div className="calorie-receipt__row" role="listitem">
                 <span className="calorie-receipt__label">
                   <span className="calorie-receipt__op" aria-hidden>+</span>
-                  Allenamento / Cardio
+                  {workoutBurnLabel || 'Allenamento / Cardio'}
                 </span>
                 <span className="calorie-receipt__value">{receipt.burn}</span>
               </div>

@@ -1,11 +1,12 @@
 /**
- * Soglie del salvavita, versione sfv-2.
+ * Soglie del salvavita, versione sfv-3.
  * Ogni numero sta qui, con il motivo. Il calcolo non ne inventa altri.
  * L'overreaching non usa più la fatica del motore: quella quota non sale
  * oltre circa 0,17 e la soglia 0,8 non scattava mai.
+ * sfv-3: same_district_no_recovery su muscolo allenato (peso 1, mm-1).
  */
 
-export const SAFETY_VERSION = 'sfv-2';
+export const SAFETY_VERSION = 'sfv-3';
 
 /**
  * Quanti giorni di calendario si risale per trovare gli ultimi giorni chiusi.

@@ -131,6 +131,7 @@ export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) 
         model: GEMINI_MATCH_MODEL,
         temperature: 0,
         responseSchema: SPELLING_NORMALIZE_SCHEMA,
+        callTag: 'semantic_spell',
         signal: opts.signal,
       },
     );
@@ -543,6 +544,7 @@ export async function rankKentuCandidatesWithGemini(productName, candidates, opt
     model: GEMINI_MATCH_MODEL,
     temperature: 0.1,
     responseSchema: SEMANTIC_MATCH_RESPONSE_SCHEMA,
+    callTag: 'semantic_match',
     signal: opts.signal,
   });
 

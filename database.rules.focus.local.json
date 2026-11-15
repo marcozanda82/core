@@ -22,14 +22,14 @@
           "$date": {
             ".read": "$uid === auth.uid",
             ".write": "$uid === auth.uid",
-            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'reliability', 'cylinders', 'dataVersion']) && (newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2' || newData.child('version').val() == 'kds-3') && (newData.child('reliability').val() == 'high' || newData.child('reliability').val() == 'low') && newData.child('dataVersion').isString() && ((newData.child('version').val() == 'kds-3' && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'movimento', 'forza'])) || (newData.child('version').val() != 'kds-3' && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'forza', 'cardio']))) && newData.child('cylinders/alimentazione/keyFact').isString() && newData.child('cylinders/sonno/keyFact').isString() && newData.child('cylinders/forza/keyFact').isString() && newData.child('cylinders/cardio/keyFact').isString() && (newData.child('cylinders/alimentazione/status').val() == 'on_track' || newData.child('cylinders/alimentazione/status').val() == 'halfway' || newData.child('cylinders/alimentazione/status').val() == 'off_track' || newData.child('cylinders/alimentazione/status').val() == 'no_data') && (newData.child('cylinders/sonno/status').val() == 'on_track' || newData.child('cylinders/sonno/status').val() == 'halfway' || newData.child('cylinders/sonno/status').val() == 'off_track' || newData.child('cylinders/sonno/status').val() == 'no_data') && (newData.child('cylinders/forza/status').val() == 'on_track' || newData.child('cylinders/forza/status').val() == 'halfway' || newData.child('cylinders/forza/status').val() == 'off_track' || newData.child('cylinders/forza/status').val() == 'no_data' || newData.child('cylinders/forza/status').val() == 'inactive') && (newData.child('cylinders/cardio/status').val() == 'on_track' || newData.child('cylinders/cardio/status').val() == 'halfway' || newData.child('cylinders/cardio/status').val() == 'off_track' || newData.child('cylinders/cardio/status').val() == 'no_data') && ((newData.child('scoreIsNull').val() == true && !newData.hasChild('score')) || (newData.child('score').isNumber() && newData.child('score').val() >= 0 && newData.child('score').val() <= 1 && !newData.hasChild('scoreIsNull'))))"
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'reliability', 'cylinders', 'dataVersion']) && (newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2' || newData.child('version').val() == 'kds-3' || newData.child('version').val() == 'kds-4') && (newData.child('reliability').val() == 'high' || newData.child('reliability').val() == 'low') && newData.child('dataVersion').isString() && (((newData.child('version').val() == 'kds-3' || newData.child('version').val() == 'kds-4') && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'movimento', 'forza'])) || ((newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2') && newData.child('cylinders').hasChildren(['alimentazione', 'sonno', 'forza', 'cardio']))) && newData.child('cylinders/alimentazione/keyFact').isString() && newData.child('cylinders/sonno/keyFact').isString() && newData.child('cylinders/forza/keyFact').isString() && (((newData.child('version').val() == 'kds-3' || newData.child('version').val() == 'kds-4') && newData.child('cylinders/movimento/keyFact').isString()) || ((newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2') && newData.child('cylinders/cardio/keyFact').isString())) && (newData.child('cylinders/alimentazione/status').val() == 'on_track' || newData.child('cylinders/alimentazione/status').val() == 'halfway' || newData.child('cylinders/alimentazione/status').val() == 'off_track' || newData.child('cylinders/alimentazione/status').val() == 'no_data') && (newData.child('cylinders/sonno/status').val() == 'on_track' || newData.child('cylinders/sonno/status').val() == 'halfway' || newData.child('cylinders/sonno/status').val() == 'off_track' || newData.child('cylinders/sonno/status').val() == 'no_data') && (newData.child('cylinders/forza/status').val() == 'on_track' || newData.child('cylinders/forza/status').val() == 'halfway' || newData.child('cylinders/forza/status').val() == 'off_track' || newData.child('cylinders/forza/status').val() == 'no_data' || newData.child('cylinders/forza/status').val() == 'inactive') && (((newData.child('version').val() == 'kds-3' || newData.child('version').val() == 'kds-4') && (newData.child('cylinders/movimento/status').val() == 'on_track' || newData.child('cylinders/movimento/status').val() == 'halfway' || newData.child('cylinders/movimento/status').val() == 'off_track' || newData.child('cylinders/movimento/status').val() == 'no_data')) || ((newData.child('version').val() == 'kds-1' || newData.child('version').val() == 'kds-2') && (newData.child('cylinders/cardio/status').val() == 'on_track' || newData.child('cylinders/cardio/status').val() == 'halfway' || newData.child('cylinders/cardio/status').val() == 'off_track' || newData.child('cylinders/cardio/status').val() == 'no_data'))) && ((newData.child('scoreIsNull').val() == true && !newData.hasChild('score')) || (newData.child('score').isNumber() && newData.child('score').val() >= 0 && newData.child('score').val() <= 1 && !newData.hasChild('scoreIsNull'))))"
           }
         },
         "safety_status": {
           "$date": {
             ".read": "$uid === auth.uid",
             ".write": "$uid === auth.uid",
-            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'level', 'signals']) && newData.child('version').val() == 'sfv-1' && (newData.child('level').val() == 'none' || newData.child('level').val() == 'watch' || newData.child('level').val() == 'act') && newData.child('signals').hasChildren())"
+            ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['version', 'level', 'signals']) && (newData.child('version').val() == 'sfv-1' || newData.child('version').val() == 'sfv-2' || newData.child('version').val() == 'sfv-3') && (newData.child('level').val() == 'none' || newData.child('level').val() == 'watch' || newData.child('level').val() == 'act') && newData.child('signals').hasChildren())"
           }
         },
         "kentu_focus_ai": {
@@ -52,6 +52,13 @@
             ".validate": "newData.hasChildren(['periodId', 'windowKey', 'revisionId', 'dataVersion', 'generatedAt']) && (newData.child('periodId').val() === 'ieri' || newData.child('periodId').val() === 'settimana' || newData.child('periodId').val() === 'mese') && newData.child('revisionId').isString() && newData.child('generatedAt').isNumber()"
           }
         },
+        "focus_ai_locks": {
+          "$periodId": {
+            ".read": "$uid === auth.uid",
+            ".write": "$uid === auth.uid",
+            ".validate": "!newData.exists() || (($periodId === 'ieri' || $periodId === 'settimana' || $periodId === 'mese') && (!newData.hasChild('status') || newData.child('status').val() === 'running' || newData.child('status').val() === 'done' || newData.child('status').val() === 'failed') && (!newData.hasChild('dataVersion') || newData.child('dataVersion').isString()) && (!newData.hasChild('on') || newData.child('on').isString()) && (!newData.hasChild('updatedAt') || newData.child('updatedAt').isNumber()) && (!newData.hasChild('force') || (newData.child('force').hasChildren(['dataVersion', 'at']) && newData.child('force/dataVersion').isString() && newData.child('force/at').isNumber())))"
+          }
+        },
         "score_feedback": {
           "$date": {
             ".read": "$uid === auth.uid",
@@ -65,6 +72,11 @@
               ".read": "$uid === auth.uid",
               ".write": "$uid === auth.uid",
               ".validate": "newData.isBoolean()"
+            },
+            "weeklyGoalDays": {
+              ".read": "$uid === auth.uid",
+              ".write": "$uid === auth.uid",
+              ".validate": "newData.isNumber() && (newData.val() == 2 || newData.val() == 3 || newData.val() == 4)"
             }
           }
         },
@@ -74,6 +86,31 @@
             ".write": "$uid === auth.uid",
             ".validate": "!newData.exists() || ($date.matches(/^\\d{4}-\\d{2}-\\d{2}$/) && newData.hasChildren(['walked', 'minutes', 'estimated', 'answeredAt']) && (newData.child('walked').val() == 'poco' || newData.child('walked').val() == 'mezzora' || newData.child('walked').val() == 'ora') && newData.child('minutes').isNumber() && newData.child('minutes').val() > 0 && newData.child('minutes').val() <= 180 && newData.child('estimated').val() == true && newData.child('answeredAt').isNumber())"
           }
+        },
+        "mcp_tokens": {
+          "$tokenId": {
+            ".read": "$uid === auth.uid",
+            ".write": false,
+            ".validate": "false"
+          }
+        }
+      }
+    },
+    "mcp_token_lookup": {
+      "$hash": {
+        ".read": false,
+        ".write": false,
+        ".validate": "false"
+      }
+    },
+    "ai_call_quota": {
+      "$uid": {
+        ".read": "auth != null && $uid === auth.uid",
+        ".write": false,
+        "$day": {
+          ".read": "auth != null && $uid === auth.uid",
+          ".write": false,
+          ".validate": "false"
         }
       }
     },

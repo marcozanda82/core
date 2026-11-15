@@ -8,6 +8,8 @@ import {
   MEDICAL_DISCLAIMER_TITLE,
   PRIVACY_POLICY_URL,
 } from '../constants/legalContent.js';
+import { featureFlags } from '../config/featureFlags.js';
+import McpDevTokenPanel from '../features/mcpDev/McpDevTokenPanel.jsx';
 
 const MENU_BTN_CLASS = [
   'flex items-center justify-center rounded-2xl border',
@@ -77,6 +79,7 @@ export default function MainMenuDrawer({
   const showHome = !activeAction || activeAction === 'home';
   const showSecondary = activeAction === 'menu_secondary';
   const [showMedicalDisclaimer, setShowMedicalDisclaimer] = useState(false);
+  const [showMcpPanel, setShowMcpPanel] = useState(false);
 
   const closeMenu = useCallback(() => {
     setActiveAction(null);
@@ -166,6 +169,17 @@ export default function MainMenuDrawer({
                         labelClassName="text-[#7dd3fc]"
                         iconFilter="drop-shadow(0 0 8px rgba(56, 189, 248, 0.5))"
                         onClick={() => runAndClose(() => onOpenLegacyCentroAnalisi?.())}
+                      />
+                    ) : null}
+                    {featureFlags.mcpDevTokens ? (
+                      <MenuGlassButton
+                        icon="🔌"
+                        label="MCP Claude (DEV)"
+                        labelClassName="text-[#c4b5fd]"
+                        iconFilter="drop-shadow(0 0 8px rgba(167, 139, 250, 0.45))"
+                        onClick={() => {
+                          setShowMcpPanel(true);
+                        }}
                       />
                     ) : null}
                     {isDiabetesAppMode ? (
@@ -310,6 +324,10 @@ export default function MainMenuDrawer({
           document.body,
         )
         : null}
+
+      {showMcpPanel ? (
+        <McpDevTokenPanel onClose={() => setShowMcpPanel(false)} />
+      ) : null}
     </>
   );
 }

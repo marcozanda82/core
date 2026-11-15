@@ -5,13 +5,14 @@
 
 import { get, ref, set } from 'firebase/database';
 import { isIsoDate } from '../../dayStatus/dayStatusRecord.js';
+import { withRtdbPermissionLog } from '../../../services/rtdbPermissionDenied.js';
 import { computeDayScore } from './computeDayScore.js';
 import {
   dayScorePath,
   decodeDayScoreFromRtdb,
   encodeDayScoreForRtdb,
 } from './dayScoreRecord.js';
-import { HISTORY_LOCKED } from './scoreConfig.kds-3.js';
+import { HISTORY_LOCKED } from './scoreConfig.kds-4.js';
 
 /**
  * @param {{ db: object, uid: string }} deps
@@ -32,7 +33,12 @@ export function createDayScoreStore({ db, uid }) {
     async write(date, record) {
       if (!isIsoDate(date)) throw new Error('data non valida');
       const payload = encodeDayScoreForRtdb(record);
-      await set(ref(db, dayScorePath(id, date)), payload);
+      const path = dayScorePath(id, date);
+      await withRtdbPermissionLog(set(ref(db, path), payload), {
+        path,
+        version: payload?.version || null,
+        feature: 'focus_day_scores',
+      });
       return decodeDayScoreFromRtdb(payload);
     },
   };

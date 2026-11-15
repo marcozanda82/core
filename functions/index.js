@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const functions = require('firebase-functions');
+const admin = require('firebase-admin');
 const {
   DEFAULT_GEMINI_MODEL,
   sanitizeGeminiModel,
@@ -9,6 +10,24 @@ const {
   extractGeminiUsageStats,
   postGeminiGenerateContent: postGeminiHttp,
 } = require('./lib/geminiHttp');
+const {
+  normalizeCallTag,
+  consumeGeminiQuota,
+  truncatedUidHash,
+} = require('./lib/geminiQuota');
+
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+const {
+  handleKentuMcpHttp,
+} = require('./lib/mcpHttp.cjs');
+const {
+  createMcpTokenForUid,
+  revokeMcpTokenForUid,
+  listMcpTokenMeta,
+} = require('./lib/mcpTokens.cjs');
 
 /** REST v1beta — payload JSON in camelCase (REST Gemini + thinkingConfig). */
 const GEMINI_MODEL = DEFAULT_GEMINI_MODEL;
@@ -162,6 +181,7 @@ async function callGeminiGenerateContent({
   schemaChars = null,
   coldStart = false,
   callTag = null,
+  uidHash = null,
 }) {
   const history = normalizeGeminiContents(historyContents) || [];
   const userTurn = {
@@ -196,6 +216,7 @@ async function callGeminiGenerateContent({
       'Gemini rejected native contents, retrying without history',
       response.status,
       rawBody.slice(0, 400),
+      JSON.stringify({ uidHash: uidHash || null, callTag: callTag || null }),
     );
     try {
       ({ response, rawBody } = await postGeminiHttp({
@@ -215,7 +236,12 @@ async function callGeminiGenerateContent({
   const geminiMs = Date.now() - tGemini0;
 
   if (!response.ok) {
-    console.error('Gemini API HTTP error', response.status, rawBody.slice(0, 1200));
+    console.error(
+      'Gemini API HTTP error',
+      response.status,
+      rawBody.slice(0, 1200),
+      JSON.stringify({ uidHash: uidHash || null, callTag: callTag || null }),
+    );
     throw new functions.https.HttpsError(
       'internal',
       `Gemini API error ${response.status}: ${rawBody.slice(0, 500)}`,
@@ -237,7 +263,11 @@ async function callGeminiGenerateContent({
   const usageStats = extractGeminiUsageStats(usage);
   const text = extractGeminiText(geminiData);
   if (!text) {
-    console.warn('Gemini empty text payload', JSON.stringify(geminiData).slice(0, 800));
+    console.warn('Gemini empty text payload', JSON.stringify({
+      uidHash: uidHash || null,
+      callTag: callTag || null,
+      hasCandidates: Boolean(geminiData?.candidates?.length),
+    }));
   }
 
   const meta = {
@@ -248,6 +278,7 @@ async function callGeminiGenerateContent({
     thinkingLevel,
     thinkingBudget,
     callTag: callTag || null,
+    uidHash: uidHash || null,
     ...usageStats,
   };
   console.info('[callGemini]', JSON.stringify(meta));
@@ -267,12 +298,45 @@ async function callGeminiGenerateContent({
 exports.callGemini = functions
   .region('europe-west1')
   .runWith({ timeoutSeconds: 120, memory: '512MB', secrets: ['GEMINI_API_KEY'] })
-  .https.onCall(async (data) => {
+  .https.onCall(async (data, context) => {
     try {
       const coldStart = !callGeminiInstanceWarm;
       callGeminiInstanceWarm = true;
 
+      const uid = context?.auth?.uid ? String(context.auth.uid) : '';
+      if (!uid) {
+        throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
+      }
+      const uidHash = truncatedUidHash(uid);
+
       const payload = data || {};
+      const tagNorm = normalizeCallTag(payload.callTag);
+      if (!tagNorm.ok) {
+        throw new functions.https.HttpsError('invalid-argument', tagNorm.message);
+      }
+      const callTag = tagNorm.callTag;
+
+      const quota = await consumeGeminiQuota({
+        db: admin.database(),
+        uid,
+        callTag,
+      });
+      if (!quota.ok) {
+        console.info('[callGemini]', JSON.stringify({
+          phase: 'quota_denied',
+          uidHash,
+          callTag,
+          reason: quota.reason || null,
+          day: quota.day || null,
+          total: quota.total ?? null,
+          focus: quota.focus ?? null,
+        }));
+        throw new functions.https.HttpsError(
+          'resource-exhausted',
+          quota.message || 'Limite giornaliero AI raggiunto.',
+        );
+      }
+
       const prompt = String(payload.prompt || '');
       const responseSchema = payload.responseSchema || null;
       let schemaChars = null;
@@ -301,7 +365,6 @@ exports.callGemini = functions
         ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
       });
       const modelName = payload.model || 'gemini-3.8-flash';
-      const callTag = payload.callTag != null ? String(payload.callTag).slice(0, 64) : null;
 
       return await callGeminiGenerateContent({
         prompt,
@@ -314,15 +377,87 @@ exports.callGemini = functions
         schemaChars,
         coldStart,
         callTag,
+        uidHash,
       });
     } catch (error) {
       if (error instanceof functions.https.HttpsError) {
         throw error;
       }
-      console.error('callGemini unhandled error:', error);
+      console.error('callGemini unhandled error:', error?.code || error?.name || 'Error');
       throw new functions.https.HttpsError(
         'internal',
         error?.message || 'Unexpected callGemini failure',
       );
     }
+  });
+
+function mapTokenError(error) {
+  const code = error?.code;
+  if (code === 'unauthenticated') {
+    return new functions.https.HttpsError('unauthenticated', error.message);
+  }
+  if (code === 'invalid-argument') {
+    return new functions.https.HttpsError('invalid-argument', error.message);
+  }
+  if (code === 'not-found') {
+    return new functions.https.HttpsError('not-found', error.message);
+  }
+  return new functions.https.HttpsError('internal', error?.message || 'Errore gettone MCP');
+}
+
+/** Crea gettone MCP (plaintext una sola volta). Solo utente autenticato. */
+exports.createMcpToken = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onCall(async (_data, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
+    }
+    try {
+      return await createMcpTokenForUid(admin.database(), context.auth.uid);
+    } catch (error) {
+      throw mapTokenError(error);
+    }
+  });
+
+/** Revoca gettone MCP per tokenId. */
+exports.revokeMcpToken = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
+    }
+    try {
+      return await revokeMcpTokenForUid(
+        admin.database(),
+        context.auth.uid,
+        data?.tokenId,
+      );
+    } catch (error) {
+      throw mapTokenError(error);
+    }
+  });
+
+/** Metadati gettoni (senza hash) per UI DEV. */
+exports.listMcpTokens = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onCall(async (_data, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
+    }
+    const tokens = await listMcpTokenMeta(admin.database(), context.auth.uid);
+    return { tokens };
+  });
+
+/**
+ * Endpoint MCP Streamable HTTP (stateless).
+ * Auth Bearer obbligatoria su ogni richiesta.
+ */
+exports.kentuMcp = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 120, memory: '1GB' })
+  .https.onRequest(async (req, res) => {
+    await handleKentuMcpHttp(req, res, { db: admin.database() });
   });

@@ -5,6 +5,7 @@
 
 import { get, ref, set } from 'firebase/database';
 import { isIsoDate } from '../../dayStatus/dayStatusRecord.js';
+import { withRtdbPermissionLog } from '../../../services/rtdbPermissionDenied.js';
 import { MOVEMENT_CURVE } from './scoreConfig.kds-3.js';
 
 export const WALK_CHECKIN_OPTIONS = Object.freeze([
@@ -66,7 +67,12 @@ export function createMovementCheckinStore({ db, uid }) {
 
     async write(date, walked) {
       const payload = encodeMovementCheckin({ walked, answeredAt: Date.now() });
-      await set(ref(db, movementCheckinPath(id, date)), payload);
+      const path = movementCheckinPath(id, date);
+      await withRtdbPermissionLog(set(ref(db, path), payload), {
+        path,
+        version: null,
+        feature: 'movement_checkin',
+      });
       return decodeMovementCheckin(payload, date);
     },
   };

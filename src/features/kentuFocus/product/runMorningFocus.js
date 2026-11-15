@@ -1,9 +1,10 @@
 /**
  * Prima apertura della giornata: genera in background i rapporti mancanti
  * e, su Android, programma la notifica. Non blocca la Home.
+ * Lock generazione su RTDB (users/{uid}/focus_ai_locks/{periodId}).
  */
 
-import { get, ref, set } from 'firebase/database';
+import { get, ref, set, runTransaction } from 'firebase/database';
 import { db } from '../../../firebaseConfig.js';
 import { loadKentuDatabases, peekKentuDatabasesSnapshot } from '../../../foodLoader.js';
 import { addCalendarDays } from '../normalize/focusDateUtils.js';
@@ -23,13 +24,13 @@ import {
   loadFocusAiAnalysisFromStore,
   requestFocusAiCoachAnalysis,
 } from './requestFocusAiCoachAnalysis.js';
-import {
-  autoGenerationDecision,
-  autoGenerationKey,
-  isFirstOpenOfDay,
-  periodsToGenerate,
-} from './morningFocus.js';
+import { periodsToGenerate } from './morningFocus.js';
+import { isFirstOpenOfDay } from './morningFocus.js';
 import { patchMorningState, readMorningState } from './morningFocusStore.js';
+import {
+  createFirebaseFocusAiLockStore,
+  createMemoryFocusAiLockStore,
+} from './focusAiLocks.js';
 import {
   listenForFocusNotificationOpen,
   scheduleFocusNotifications,
@@ -37,7 +38,7 @@ import {
 
 let started = false;
 
-export function runMorningFocus({ uid } = {}) {
+export function runMorningFocus({ uid, lockStore: injectedLocks } = {}) {
   const id = String(uid || '').trim();
   if (!id || started) return Promise.resolve();
   const today = focusLocalIsoDate();
@@ -46,10 +47,15 @@ export function runMorningFocus({ uid } = {}) {
   if (first) patchMorningState({ lastOpenDate: today });
   started = true;
   listenForFocusNotificationOpen();
-  return prepare(id, today, first).catch(() => {});
+  return prepare(id, today, first, injectedLocks).catch(() => {});
 }
 
-async function prepare(uid, today, first) {
+/** Solo test: reset flag in-memory. */
+export function __resetMorningFocusStartedForTests() {
+  started = false;
+}
+
+async function prepare(uid, today, first, injectedLocks) {
   try {
     await loadKentuDatabases();
   } catch {
@@ -72,20 +78,17 @@ async function prepare(uid, today, first) {
   });
   if (!first || !snapshot) return;
   const catalogs = peekKentuDatabasesSnapshot();
+  const lockStore = injectedLocks || focusLockStore();
   for (const periodId of periodsToGenerate(today)) {
     try {
-      await generateOne({ uid, today, periodId, snapshot, catalogs });
+      await generateOne({ uid, today, periodId, snapshot, catalogs, lockStore });
     } catch {
-      const key = autoGenerationKey(periodId, 'errore');
-      if (autoGenerationDecision(readMorningState(), key, today) === 'run') {
-        const current = readMorningState();
-        patchMorningState({ auto: { ...current.auto, [key]: { status: 'failed', on: today } } });
-      }
+      /* fallimento già gestito in generateOne / lock finish */
     }
   }
 }
 
-async function generateOne({ uid, today, periodId, snapshot, catalogs }) {
+async function generateOne({ uid, today, periodId, snapshot, catalogs, lockStore }) {
   const window = focusPeriodWindow(periodId, today, 0);
   const session = resolveFocusPageSession({
     uid,
@@ -106,12 +109,18 @@ async function generateOne({ uid, today, periodId, snapshot, catalogs }) {
     { ...session, foodCatalogs: catalogs, movementCheckins },
     { foodCatalogs: catalogs },
   );
-  const key = autoGenerationKey(periodId, built.dataVersion || window.analysisDate);
-  if (autoGenerationDecision(readMorningState(), key, today) !== 'run') return;
   if (!built.ok) {
-    remember(key, 'failed', today);
     return;
   }
+
+  const claim = await lockStore.claimMorning({
+    uid,
+    periodId,
+    dataVersion: built.dataVersion,
+    today,
+  });
+  if (!claim.ok) return;
+
   const persistence = focusPersistence();
   try {
     const existing = await loadFocusAiAnalysisFromStore({
@@ -123,12 +132,19 @@ async function generateOne({ uid, today, periodId, snapshot, catalogs }) {
     });
     if (existing?.ok && existing.record?.analysis?.schema === 'kentu.focusAiCoachAnalysis.v5'
       && existing.record.dataVersion === built.dataVersion) {
-      remember(key, 'done', today);
+      await lockStore.finishMorning({
+        uid,
+        periodId,
+        dataVersion: built.dataVersion,
+        today,
+        status: 'done',
+      });
       return;
     }
   } catch {
     /* si prova la generazione */
   }
+
   try {
     const result = await requestFocusAiCoachAnalysis({
       session: { ...session, foodCatalogs: catalogs },
@@ -136,17 +152,22 @@ async function generateOne({ uid, today, periodId, snapshot, catalogs }) {
       force: false,
       askAiFn: resolveEmulatorFocusAskAi(),
     });
-    remember(key, result?.ok && result.analysis ? 'done' : 'failed', today);
+    await lockStore.finishMorning({
+      uid,
+      periodId,
+      dataVersion: built.dataVersion,
+      today,
+      status: result?.ok && result.analysis ? 'done' : 'failed',
+    });
   } catch {
-    remember(key, 'failed', today);
+    await lockStore.finishMorning({
+      uid,
+      periodId,
+      dataVersion: built.dataVersion,
+      today,
+      status: 'failed',
+    });
   }
-}
-
-function remember(key, status, today) {
-  const current = readMorningState();
-  patchMorningState({
-    auto: { ...current.auto, [key]: { status, on: today } },
-  });
 }
 
 function focusPersistence() {
@@ -156,6 +177,17 @@ function focusPersistence() {
     /* memoria */
   }
   return getDefaultMemoryFocusAiAnalysisStore();
+}
+
+function focusLockStore() {
+  try {
+    if (db) {
+      return createFirebaseFocusAiLockStore({ db, ref, runTransaction, get });
+    }
+  } catch {
+    /* memoria */
+  }
+  return createMemoryFocusAiLockStore();
 }
 
 function collectWakeHours(fullHistory, today) {

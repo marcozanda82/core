@@ -92,6 +92,11 @@ export default function TargetSettingsModal({
   const [deleteError, setDeleteError] = useState('');
   const [focusNotice, setFocusNotice] = useState(() => readMorningState().notification);
   const [forzaOn, setForzaOn] = useState(userProfile?.forzaEnabled === true);
+  const [weeklyGoalDays, setWeeklyGoalDays] = useState(
+    [2, 3, 4].includes(Number(userProfile?.weeklyGoalDays))
+      ? Number(userProfile.weeklyGoalDays)
+      : 2,
+  );
 
   const ageYears = useMemo(() => {
     const direct = Number(userProfile?.age);
@@ -106,8 +111,12 @@ export default function TargetSettingsModal({
     const uid = auth.currentUser?.uid;
     if (!uid) return undefined;
     let cancelled = false;
-    get(ref(db, `users/${uid}/cylinders/forza/enabled`)).then((snap) => {
-      if (!cancelled && snap.exists()) setForzaOn(snap.val() === true);
+    get(ref(db, `users/${uid}/cylinders/forza`)).then((snap) => {
+      if (cancelled || !snap.exists()) return;
+      const val = snap.val() || {};
+      if (typeof val.enabled === 'boolean') setForzaOn(val.enabled === true);
+      const goal = Number(val.weeklyGoalDays);
+      if ([2, 3, 4].includes(goal)) setWeeklyGoalDays(goal);
     }).catch(() => {});
     return () => {
       cancelled = true;
@@ -123,6 +132,15 @@ export default function TargetSettingsModal({
       await set(ref(db, `users/${uid}/cylinders/forza/enabled`), forzaEnabled);
       setForzaOn(forzaEnabled);
     }
+  }, [setUserProfile]);
+
+  const saveWeeklyGoalDays = useCallback(async (days) => {
+    const goal = [2, 3, 4].includes(Number(days)) ? Number(days) : 2;
+    const uid = auth.currentUser?.uid;
+    setWeeklyGoalDays(goal);
+    setUserProfile((prev) => ({ ...(prev || {}), weeklyGoalDays: goal }));
+    if (!uid) return;
+    await set(ref(db, `users/${uid}/cylinders/forza/weeklyGoalDays`), goal);
   }, [setUserProfile]);
 
   const selectedAppMode = useMemo(
@@ -578,7 +596,7 @@ export default function TargetSettingsModal({
               description={ageYears >= 65
                 ? 'Corpo libero, scale, lavori pesanti, pesi, equilibrio. La camminata resta sempre inclusa.'
                 : 'Corpo libero, scale, lavori pesanti, pesi. La camminata resta sempre inclusa.'}
-              last
+              last={!forzaOn}
               control={(
                 <input
                   type="checkbox"
@@ -591,6 +609,27 @@ export default function TargetSettingsModal({
                 />
               )}
             />
+            {forzaOn ? (
+              <SettingsRow
+                title="Giorni di forza a settimana"
+                description="Obiettivo Costanza (lun–dom). Default 2."
+                last
+                control={(
+                  <select
+                    aria-label="Giorni di forza a settimana"
+                    className={CONTROL_CLASS}
+                    value={weeklyGoalDays}
+                    onChange={(event) => {
+                      void saveWeeklyGoalDays(event.target.value);
+                    }}
+                  >
+                    <option value={2}>2</option>
+                    <option value={3}>3</option>
+                    <option value={4}>4</option>
+                  </select>
+                )}
+              />
+            ) : null}
           </SettingsSection>
 
           <SettingsSection title="Focus del mattino">

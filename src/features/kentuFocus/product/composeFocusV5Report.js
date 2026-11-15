@@ -4,7 +4,7 @@
  */
 
 import { lineWithPenaltyCites } from './focusPenaltyCite.js';
-import { PILLAR_STATUS } from '../score/scoreConfig.kds-3.js';
+import { PILLAR_STATUS } from '../score/scoreConfig.kds-4.js';
 
 const LABELS = Object.freeze({
   alimentazione: 'Alimentazione',
@@ -196,9 +196,23 @@ function buildLead(chosen, quiet, low) {
 }
 
 function pillarLine(item, quiet) {
-  const base = quiet ? quietLine(item) : (item.keyFact || statusLine(item));
-  if (quiet) return base;
+  if (quiet) return quietLine(item);
+  if (item.id === 'sonno' && item.keyFact && item.keyFact !== 'non registrato') {
+    return lineWithPenaltyCites(sleepSentence(item), item.penalties);
+  }
+  const base = item.keyFact || statusLine(item);
   return lineWithPenaltyCites(base, item.penalties);
+}
+
+/** Frase Sonno allineata alle altre righe («Hai dormito…»). */
+function sleepSentence(item) {
+  const hours = String(item.keyFact || '').trim();
+  if (!hours) return statusLine(item);
+  const n = Number(String(hours).replace(',', '.').match(/[\d.]+/)?.[0] || 0);
+  if (item.status === 'on_track') return `Hai dormito ${hours}, in fascia.`;
+  if (n > 0 && n < 7) return `Hai dormito ${hours}, sotto le 7 previste.`;
+  if (n > 9) return `Hai dormito ${hours}, oltre le 9 previste.`;
+  return `Hai dormito ${hours}.`;
 }
 
 function quietLine(item) {

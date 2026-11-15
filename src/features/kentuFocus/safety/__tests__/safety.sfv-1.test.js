@@ -173,7 +173,7 @@ test('no_rest_streak è watch a 6 giorni e act a 8', () => {
   assert.equal(run(8).signals.find((item) => item.id === 'no_rest_streak')?.level, 'act');
 });
 
-test('same_district_no_recovery conta due recuperi sotto le 48 ore', () => {
+test('same_district_no_recovery (sfv-3) conta due recuperi sotto le 48 ore sullo stesso muscolo allenato', () => {
   const days = datesBack(DAY, 3);
   const tight = {};
   for (const date of days) {
@@ -183,7 +183,9 @@ test('same_district_no_recovery conta due recuperi sotto le 48 ore', () => {
     });
   }
   const on = computeSafety(DAY, context(tight, { records: close(days) }));
-  assert.equal(on.signals.find((item) => item.id === 'same_district_no_recovery')?.evidence.shortGaps, 2);
+  const sig = on.signals.find((item) => item.id === 'same_district_no_recovery');
+  assert.equal(sig?.evidence.shortGaps, 2);
+  assert.equal(sig?.evidence.district, 'pettorali');
 
   const once = {};
   for (const date of [DAY, addCalendarDays(DAY, -2)]) {
@@ -194,6 +196,18 @@ test('same_district_no_recovery conta due recuperi sotto le 48 ore', () => {
   }
   assert.equal(computeSafety(DAY, context(once, { records: close([DAY, addCalendarDays(DAY, -2)]) }))
     .signals.some((item) => item.id === 'same_district_no_recovery'), false);
+
+  // Coinvolgimento (0.5) non azzera / non conta come stesso distretto allenato
+  const onlySecondary = {};
+  for (const date of days) {
+    add(onlySecondary, date, food(3000));
+    add(onlySecondary, date, {
+      type: 'workout', id: `sec-${date}`, workoutType: 'pesi', muscles: ['Petto'], duration: 40, mealTime: 10,
+    });
+  }
+  const sec = computeSafety(DAY, context(onlySecondary, { records: close(days) }));
+  assert.equal(sec.signals.find((item) => item.id === 'same_district_no_recovery')?.evidence.district, 'pettorali');
+  assert.notEqual(sec.signals.find((item) => item.id === 'same_district_no_recovery')?.evidence.district, 'tricipiti');
 });
 
 test('load_spike confronta la settimana con le quattro precedenti', () => {
@@ -237,7 +251,7 @@ test('overreaching sfv-2: serie senza riposo o picco di carico, più due indizi 
     return computeSafety(DAY, context(history, { records: close(days), systemicFatigue: 0.9 }));
   }
   const on = loaded(5, 2, 4, 6);
-  assert.equal(on.version, 'sfv-2');
+  assert.equal(on.version, 'sfv-3');
   assert.equal(on.signals.find((item) => item.id === 'overreaching')?.level, 'act');
   assert.deepEqual(on.signals.find((item) => item.id === 'overreaching')?.evidence.training, ['no_rest_streak']);
 
@@ -315,7 +329,7 @@ test('la persistenza conserva versione, livello e segnali', async () => {
   for (const date of days) add(history, date, food(2100, 140));
   const fresh = computeSafety(DAY, context(history, { records: close(days) }));
   const encoded = encodeSafetyForRtdb(fresh);
-  assert.equal(encoded.version, 'sfv-2');
+  assert.equal(encoded.version, 'sfv-3');
   assert.equal(encoded.level, 'watch');
   assert.equal(encoded.signals.energy_deficit_sustained.level, 'watch');
   assert.deepEqual(decodeSafetyFromRtdb(encoded).signals.map((item) => item.id), ['energy_deficit_sustained']);

@@ -57,11 +57,14 @@ import {
   NULL_SCORE_STATUSES as NULL_STATUSES_K3,
   MEAL_PENALTY_CAP,
   ON_TRACK_SCORE,
+  pillarStatusFromValue,
   SCORE_VERSION as VERSION_K3,
 } from './scoreConfig.kds-3.js';
+import { SCORE_VERSION as VERSION_K4 } from './scoreConfig.kds-4.js';
 import { forzaEnabled, forceLoad, scoreMovimento } from './scoreMovement.js';
 import { computeSafety } from '../safety/computeSafety.js';
 import { ENERGY_ACT_SCORE_CAP } from '../safety/safetyConfig.sfv-1.js';
+import { resolveDayTargetKcal } from '../../mealEngine/resolveDayTargetKcal.js';
 
 const CYLINDER_KEYS = ['alimentazione', 'sonno', 'forza', 'cardio'];
 const FOOD_TYPES = new Set(['food', 'recipe']);
@@ -84,7 +87,10 @@ export function computeDayScore(date, context = {}) {
     ? VERSION_K1
     : context.scoreVersion === VERSION_K2
       ? VERSION_K2
-      : VERSION_K3;
+      : context.scoreVersion === VERSION_K3
+        ? VERSION_K3
+        : VERSION_K4;
+  const isK3Plus = version === VERSION_K3 || version === VERSION_K4;
   const weights = version === VERSION_K1 ? WEIGHTS_K1 : version === VERSION_K2 ? WEIGHTS_K2 : WEIGHTS_K3;
   const minCylinders = version === VERSION_K1
     ? MIN_CYLINDERS_K1
@@ -95,10 +101,15 @@ export function computeDayScore(date, context = {}) {
   const lowStatuses = version === VERSION_K1
     ? LOW_RELIABILITY_K1
     : version === VERSION_K2 ? LOW_RELIABILITY_K2 : LOW_RELIABILITY_K3;
-  const cylinderKeys = version === VERSION_K3
+  const cylinderKeys = isK3Plus
     ? ['alimentazione', 'sonno', 'movimento']
     : CYLINDER_KEYS;
-  const targetKcal = resolveTargetKcal(context);
+  const dayTarget = version === VERSION_K4
+    ? resolveDayTargetForScore(date, context)
+    : null;
+  const targetKcal = dayTarget?.total > 0
+    ? dayTarget.total
+    : resolveTargetKcal(context);
   const dayStatus = getDayStatus(date, {
     today: context.today,
     fullHistory: context.fullHistory,
@@ -112,23 +123,31 @@ export function computeDayScore(date, context = {}) {
   });
   const facts = readDayFacts(date, context.fullHistory, targetKcal);
   const curveVersion = version === VERSION_K1 ? VERSION_K1 : VERSION_K2;
-  const cylinders = version === VERSION_K3
+  const cylinders = isK3Plus
     ? {
-      alimentazione: scoreAlimentazione(curveVersion, date, context, facts, targetKcal, version),
+      alimentazione: scoreAlimentazione(
+        curveVersion,
+        date,
+        context,
+        facts,
+        targetKcal,
+        version,
+        dayTarget,
+      ),
       sonno: scoreSonno(curveVersion, facts),
       movimento: scoreMovimento(date, context.fullHistory, context),
       forza: forzaEnabled(context)
-        ? scoreForza(curveVersion, date, context.fullHistory)
+        ? scoreForza(curveVersion, date, context.fullHistory, context)
         : cylinder('inactive', 'Forza · non attiva', [], null),
     }
     : {
       alimentazione: scoreAlimentazione(version, date, context, facts, targetKcal),
       sonno: scoreSonno(version, facts),
-      forza: scoreForza(version, date, context.fullHistory),
+      forza: scoreForza(version, date, context.fullHistory, context),
       cardio: scoreCardio(version, date, context.fullHistory),
     };
 
-  const safety = version === VERSION_K3 ? computeSafety(date, context) : null;
+  const safety = isK3Plus ? computeSafety(date, { ...context, targetKcal }) : null;
   const withData = cylinderKeys.filter((key) => cylinders[key].status !== 'no_data' && cylinders[key].status !== 'inactive');
   let score = null;
   if (withData.length >= minCylinders) {
@@ -166,14 +185,39 @@ export function computeDayScore(date, context = {}) {
     result.score = score;
   }
   if (safety?.suppressNumbers) result.suppressNumbers = true;
-  if (version === VERSION_K3) {
-    const load = forzaEnabled(context) ? forceLoad(date, context.fullHistory) : 0;
+  if (isK3Plus) {
+    const load = forzaEnabled(context) ? forceLoad(date, context.fullHistory, context) : 0;
     result.forceIntensity = score != null && score >= ON_TRACK_SCORE ? load : 0;
   }
+  // kds-4: status pilastri e giornata dal value post-penalità (Modello Kentu),
+  // non dalle fasce a gradini delle curve (es. ENERGY_CURVE 10/35).
+  if (version === VERSION_K4) {
+    for (const key of Object.keys(cylinders)) {
+      const cylinder = cylinders[key];
+      if (!cylinder || typeof cylinder !== 'object') continue;
+      if (cylinder.status === 'no_data' || cylinder.status === 'inactive') continue;
+      if (cylinder.value == null || !Number.isFinite(Number(cylinder.value))) continue;
+      cylinders[key] = {
+        ...cylinder,
+        status: pillarStatusFromValue(cylinder.value),
+      };
+    }
+    result.cylinders = cylinders;
+    result.scoreStatus = score == null ? null : pillarStatusFromValue(score);
+  }
+  if (dayTarget) result.dayTarget = dayTarget;
   return result;
 }
 
-function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVersion = version) {
+function scoreAlimentazione(
+  version,
+  date,
+  context,
+  facts,
+  targetKcal,
+  scoreVersion = version,
+  dayTarget = null,
+) {
   const kcal = facts.kcal;
   if (!(kcal > 0) || !(targetKcal > 0)) {
     return cylinder('no_data', `${Math.round(kcal || 0)} kcal`, [], null);
@@ -185,8 +229,9 @@ function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVers
     firstMealHour: facts.firstSubstantialHour,
   });
   if (energy.active) signals.push('energy_low_day');
+  const k3PlusNutrition = scoreVersion === VERSION_K3 || scoreVersion === VERSION_K4;
   if (
-    scoreVersion === VERSION_K3
+    k3PlusNutrition
     && facts.firstSubstantialHour != null
     && facts.firstSubstantialHour >= LATE_FIRST_MEAL_HOUR
   ) {
@@ -216,17 +261,19 @@ function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVers
     value *= ENERGY_CURVE.ultraProcessedFactor;
     signals.push(NOVA4_K2);
   }
-  let fact = energyKeyFact(kcal, targetKcal);
+  let fact = scoreVersion === VERSION_K4
+    ? energyKeyFactDayTarget(kcal, dayTarget || { total: targetKcal })
+    : energyKeyFact(kcal, targetKcal);
   const bedtimeUsable = ENERGY_CURVE.usableBedtimeProvenance.includes(facts.bedtimeProvenance);
   const buffer = facts.sleepBufferH;
   let penalty = 0;
-  if (scoreVersion === VERSION_K3 && heavy.active) penalty += ENERGY_CURVE.lateMealPenalty;
+  if (k3PlusNutrition && heavy.active) penalty += ENERGY_CURVE.lateMealPenalty;
   if (bedtimeUsable && buffer != null && buffer < ENERGY_CURVE.lateMealHours) {
     penalty += ENERGY_CURVE.lateMealPenalty;
     signals.push('late_meal_before_sleep');
     fact = `${fact} · ultimo pasto a ${formatDuration(buffer)}`;
   }
-  if (scoreVersion === VERSION_K3) penalty = Math.min(penalty, MEAL_PENALTY_CAP);
+  if (k3PlusNutrition) penalty = Math.min(penalty, MEAL_PENALTY_CAP);
   value -= penalty;
   return {
     ...cylinder(status, fact, signals, clamp01(value)),
@@ -277,11 +324,14 @@ function scoreSonno(version, facts) {
   };
 }
 
-function scoreForza(version, date, fullHistory) {
+function scoreForza(version, date, fullHistory, context = {}) {
   const cfg = version === VERSION_K1 ? STRENGTH_WINDOW : STRENGTH_CURVE;
   if (!fullHistory || typeof fullHistory !== 'object') {
     return cylinder('no_data', '0 sessioni in 30 giorni', [], null);
   }
+  const todayIso = String(context?.today || '').slice(0, 10);
+  const reportIso = String(date || '').slice(0, 10);
+  const relativeToReportDay = Boolean(todayIso) && reportIso !== todayIso;
 
   const trainedOn = new Map();
   let sessions = 0;
@@ -316,7 +366,7 @@ function scoreForza(version, date, fullHistory) {
 
   const fact = cfg.obligationMacros
     .filter((macroId) => lastSince.has(macroId))
-    .map((macroId) => `${cfg.macroLabels[macroId]} ${agoPhrase(lastSince.get(macroId))}`)
+    .map((macroId) => `${cfg.macroLabels[macroId]} ${agoPhrase(lastSince.get(macroId), { relativeToReportDay })}`)
     .join(' · ');
   const value = version === VERSION_K1
     ? CYLINDER_POINTS[status]
@@ -431,10 +481,18 @@ function obligationMacrosOf(workout, cfg) {
   return [...macros];
 }
 
-function agoPhrase(days) {
-  if (days === 0) return 'oggi';
-  if (days === 1) return '1 giorno fa';
-  return `${days} giorni fa`;
+/**
+ * Date relative al giorno del rapporto.
+ * Su un giorno passato: «quel giorno» / «il giorno prima» (mai «oggi»).
+ * Sul giorno corrente (calendar today): «oggi» / «N giorni fa».
+ * @param {number} days
+ * @param {{ relativeToReportDay?: boolean }} [opts]
+ */
+function agoPhrase(days, opts = {}) {
+  const relative = opts.relativeToReportDay === true;
+  if (days === 0) return relative ? 'quel giorno' : 'oggi';
+  if (days === 1) return relative ? 'il giorno prima' : '1 giorno fa';
+  return relative ? `${days} giorni prima` : `${days} giorni fa`;
 }
 
 function strengthBand(daysSince) {
@@ -574,6 +632,70 @@ function resolveTargetKcal(context) {
     if (Number.isFinite(value) && value > 0) return value;
   }
   return null;
+}
+
+function resolveSettingsBaseKcal(context) {
+  const candidates = [
+    context.settingsBaseKcal,
+    context.userTargets?.baseKcal,
+    context.userTargets?.kcal,
+    context.profile_targets?.targetCalories,
+    context.profile_targets?.targets?.kcal,
+    context.targetKcal,
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) return Math.round(value);
+  }
+  return 0;
+}
+
+/**
+ * Target giorno kds-4: snapshot se presente, altrimenti ricalcolo (e il chiamante può congelare).
+ */
+function resolveDayTargetForScore(date, context) {
+  const settingsBaseKcal = resolveSettingsBaseKcal(context);
+  const liveLog = context.todayLiveLog && String(context.today || '').slice(0, 10) === String(date).slice(0, 10)
+    ? context.todayLiveLog
+    : null;
+  const node = context.fullHistory?.[`trackerStorico_${date}`];
+  const autopilot = node?.autopilotCorrection != null
+    ? Number(node.autopilotCorrection)
+    : (context.autopilotKcal ?? null);
+  return resolveDayTargetKcal({
+    date,
+    fullHistory: context.fullHistory,
+    settingsBaseKcal,
+    userTargets: context.userTargets,
+    strategyDeltaKcal: context.strategyDeltaKcal ?? 0,
+    compensationKcal: context.compensationKcal ?? 0,
+    autopilotKcal: autopilot,
+    liveLog,
+    preferSnapshot: true,
+  });
+}
+
+/**
+ * Copy richiesta: «2954 su 2915 (base 2456 + allenamento 400 + autopilota 59)».
+ * Il burn in parentesi è il grezzo; il target usa il contato.
+ */
+function energyKeyFactDayTarget(kcal, dayTarget) {
+  const intake = Math.round(Number(kcal) || 0);
+  const total = Math.round(Number(dayTarget?.total) || 0);
+  const base = Math.round(Number(dayTarget?.base) || 0);
+  const burnRaw = Math.round(Number(dayTarget?.burnRaw) || 0);
+  const burnCounted = Math.round(Number(dayTarget?.burnCounted) || 0);
+  const autopilot = Math.round(Number(dayTarget?.autopilot) || 0);
+  const strategy = Math.round(Number(dayTarget?.strategy) || 0);
+  const parts = [`base ${base}`];
+  if (burnRaw > 0) {
+    // Mostra il grezzo (come in Calorie di oggi); il totale usa già burnCounted.
+    void burnCounted;
+    parts.push(`allenamento ${burnRaw}`);
+  }
+  if (strategy !== 0) parts.push(`strategia ${strategy > 0 ? '+' : ''}${strategy}`);
+  if (autopilot !== 0) parts.push(`autopilota ${autopilot > 0 ? '+' : ''}${autopilot}`);
+  return `${intake} su ${total} (${parts.join(' + ')})`;
 }
 
 function round3(value) {

@@ -11,7 +11,6 @@ import { getTodayString } from './coreEngine';
 import {
   hypertrophyTriageLabel,
   hypertrophyTriageTone,
-  HYPERTROPHY_DECAY_HORIZON_DAYS,
   HYPERTROPHY_TRIAGE_STIMULATE_MAX,
   HYPERTROPHY_TRIAGE_RECOVERY_MAX,
 } from './utils/hypertrophyMath';
@@ -164,7 +163,7 @@ export default function MetabolicDiagnostics({
     });
   }, [fullHistory, historyDays, state, dailyLog, activeDate]);
 
-  /** SSOT barre = tip odierno della stessa serie del grafico (hypertrophyMath). */
+  /** SSOT barre = tip odierno della stessa serie del grafico (Costanza mm-1). */
   const sortedMuscles = useMemo(() => {
     const todayIso = getTodayString();
     const tip = telemetrySeries.length > 0 ? telemetrySeries[telemetrySeries.length - 1] : null;
@@ -214,7 +213,7 @@ export default function MetabolicDiagnostics({
 
   return (
     <div
-      aria-label="Diagnostica cilindri muscolari"
+      aria-label="Diagnostica muscolare"
       className="relative w-full px-3 pb-10 pt-2"
     >
       <header className="flex items-center justify-between gap-3 border-b border-white/10 pb-2">
@@ -461,10 +460,10 @@ export default function MetabolicDiagnostics({
         />
       </div>
 
-      {/* Sismografi muscolari — stesso SSOT del grafico (hypertrophyMath) */}
+      {/* Sismografi muscolari — stesso SSOT del grafico (Costanza mm-1) */}
       <div className="mt-3 flex flex-col gap-2.5">
         <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">
-          Sismografi muscolari · accumulo dinamico {HYPERTROPHY_DECAY_HORIZON_DAYS}gg · triage
+          Sismografi muscolari · Costanza 7gg · triage
         </p>
 
         {sortedMuscles.map((cyl, index) => {
@@ -516,7 +515,7 @@ export default function MetabolicDiagnostics({
                 </div>
               </div>
 
-              {/* Barra = tip grafico linee (hypertrophyMath) */}
+              {/* Barra = tip grafico linee (Costanza mm-1) */}
               <div className="relative h-8 overflow-hidden rounded-md border border-white/5 bg-black/50">
                 <div
                   className={`absolute inset-y-0 left-0 ${styles.bar} opacity-90 transition-all duration-500`}
@@ -576,7 +575,7 @@ export default function MetabolicDiagnostics({
           Ultimo processamento:{' '}
           <span className="font-mono text-slate-400">{state.lastProcessedDate || '—'}</span>
           {' · '}
-          Stimolo muscolare: accumulo dinamico (+65/sessione, curva {HYPERTROPHY_DECAY_HORIZON_DAYS}gg) · barre = tip grafico.
+          Costanza: copertura gruppi ultimi 7 giorni · barre = tip grafico.
         </p>
       </footer>
     </div>

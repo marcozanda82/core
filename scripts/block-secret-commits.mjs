@@ -15,8 +15,12 @@ const RULES = [
     name: 'gemini-key-assignment',
     // Blocca assegnazioni codice a GEMINI_API_KEY salvo segnaposto esplicito
     // o process.env.GEMINI_API_KEY (con optional fallback al segnaposto).
+    // Non blocca: commenti, esempi shell con "…", sola lettura da process.env.
     test(line) {
-      const code = String(line).replace(/\/\/.*$/, '');
+      let code = String(line);
+      // Commenti riga e linee di blocco JSDoc (` * …`).
+      if (/^\s*(\/\/|\*|\/\*|\*\/)/.test(code)) return false;
+      code = code.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '');
       const m = code.match(/(?:^|[^.\w])GEMINI_API_KEY\s*=\s*(.+)$/);
       if (!m) return false;
       const rhs = m[1].trim().replace(/;+\s*$/, '');
@@ -24,6 +28,8 @@ const RULES = [
       if (/^process\.env\.GEMINI_API_KEY(?:\s*\|\|\s*['"]emulator-placeholder['"])?$/.test(rhs)) {
         return false;
       }
+      // Esempi shell tipo GEMINI_API_KEY=... (senza valore reale).
+      if (/^\.{2,}(?:\s|$)/.test(rhs) || rhs === '…') return false;
       return true;
     },
   },

@@ -9,13 +9,11 @@ import {
   resolveMuscleCylinderId,
 } from '../../salaComandi/engines/fourCylinderEngine';
 import {
-  applySpilloverSession,
   countSufficientlyStimulatedPillars,
   createEmptyMuscleSpilloverStimulus,
-  finalizeMuscleSpilloverTotals,
+  deriveMuscleStimulusFromCostanza,
   foldSpilloverStimulusToPillars,
   resolveSpilloverMuscleKey,
-  MUSCLE_STIMULUS_WINDOW_DAYS,
 } from './muscleSpillover.js';
 import { computeTotali } from '../../../useBiochimico';
 import {
@@ -408,9 +406,6 @@ export function buildSaluteLongevityWindow({
   let pesiSessionCount = 0;
   let pesiDays = 0;
   let daysWithActivity = 0;
-  const muscleStimulus = createEmptyMuscleSpilloverStimulus();
-  // Stimolo muscolare: finestra mobile 7gg (frequenza ipertrofica), indipendente dai 14gg longevità.
-  const muscleWindowDays = Math.min(windowDays, MUSCLE_STIMULUS_WINDOW_DAYS);
 
   for (let i = 0; i < windowDays; i += 1) {
     const dateStr = addDays(today, -i);
@@ -425,12 +420,6 @@ export function buildSaluteLongevityWindow({
         dayCardio += workoutDurationMinutes(entry);
       } else if (isPesiWorkoutEntry(entry)) {
         dayPesi += 1;
-        if (i < muscleWindowDays) {
-          const primaries = longevitySpilloverPrimariesFromWorkout(entry);
-          if (primaries.length > 0) {
-            applySpilloverSession(muscleStimulus, primaries, i);
-          }
-        }
       }
     }
     if (dayCardio > 0) {
@@ -444,8 +433,11 @@ export function buildSaluteLongevityWindow({
     if (dayCardio > 0 || dayPesi > 0) daysWithActivity += 1;
   }
 
-  finalizeMuscleSpilloverTotals(muscleStimulus);
-  const muscleStimulusPillars = foldSpilloverStimulusToPillars(muscleStimulus);
+  // Copertura muscolare: Costanza mm-1 (finestra 7g), non seconda formula spillover.
+  const { muscleStimulus, muscleStimulusPillars } = deriveMuscleStimulusFromCostanza({
+    fullHistory,
+    asOfDate: today,
+  });
   const stimulated = countSufficientlyStimulatedPillars(muscleStimulusPillars);
 
   // Media sonno sulle notti disponibili (storico incompleto OK)

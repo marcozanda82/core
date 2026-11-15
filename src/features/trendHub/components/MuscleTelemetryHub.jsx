@@ -2,10 +2,10 @@ import React from 'react';
 import TelemetryChart from '../../../TelemetryChart';
 import ProgressioneTrendFooter from './ProgressioneTrendFooter';
 import { useMuscleTelemetryModel } from '../utils/muscleTelemetryModel';
-import MuscleStimulusDistrictList from './MuscleStimulusDistrictList';
+import CostanzaPanel from '../../kentuFocus/costanza/CostanzaPanel';
 
 /**
- * Vista autonoma: accumulo stimolo, storico 14g/30g, trend & aderenza.
+ * Vista autonoma: Costanza forza, storico 14g/30g, trend & aderenza.
  */
 export default function MuscleTelemetryHub({
   fourCylinder = null,
@@ -20,7 +20,6 @@ export default function MuscleTelemetryHub({
   onBack = null,
 } = {}) {
   const {
-    muscleRows,
     telemetrySeries,
     historyDays,
     setHistoryDays,
@@ -34,7 +33,7 @@ export default function MuscleTelemetryHub({
   return (
     <section
       className="flex w-full min-w-0 flex-col gap-2.5"
-      aria-label="Telemetria muscolare e volume"
+      aria-label="Costanza forza e volume"
     >
       {typeof onBack === 'function' ? (
         <button
@@ -46,26 +45,20 @@ export default function MuscleTelemetryHub({
         </button>
       ) : null}
 
-      <header className="rounded-2xl border border-violet-500/25 bg-gradient-to-b from-violet-950/40 to-slate-950/90 px-3 py-2.5">
-        <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-violet-300/85">
-          Telemetria muscolare &amp; volume
+      <header className="rounded-2xl border border-cyan-500/25 bg-gradient-to-b from-cyan-950/40 to-slate-950/90 px-3 py-2.5">
+        <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300/85">
+          Costanza
         </p>
         <p className="m-0 mt-1 text-[12px] leading-relaxed text-slate-300">
-          Stato recupero distretti, fatica sistemica e curve a 14g/30g
+          Giorni di forza, copertura gruppi e curve a 14g/30g
         </p>
       </header>
 
       <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/90 to-slate-950/95 px-3 py-3">
-        <p className="m-0 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
-          Accumulo stimolo per distretto
-        </p>
-        <p className="m-0 mt-1 text-[11px] text-slate-400">
-          Card graduate · PRIORITÀ (stimolo più basso) / DA STIMOLARE / IN RECUPERO / OTTIMALE
-        </p>
-
-        <div className="mt-2.5">
-          <MuscleStimulusDistrictList muscleRows={muscleRows} />
-        </div>
+        <CostanzaPanel
+          fullHistory={fullHistory}
+          asOfDate={activeDate}
+        />
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-slate-900/90 to-slate-950/95 px-3 py-3">

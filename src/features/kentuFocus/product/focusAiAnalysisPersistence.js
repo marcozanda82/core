@@ -9,6 +9,8 @@
  * - mese: 365 giorni
  */
 
+import { withRtdbPermissionLog } from '../../../services/rtdbPermissionDenied.js';
+
 export const FOCUS_AI_ANALYSIS_RETENTION_DAYS = Object.freeze({
   ieri: 30,
   settimana: 90,
@@ -233,9 +235,24 @@ export function createFirebaseFocusAiAnalysisStore(firebaseApi) {
         windowLabel: record.windowLabel || null,
       });
       try {
-        await set(ref(db, `${base}/revisions/${revId}`), cleanRecord);
-        await set(ref(db, `${base}/current`), current);
-        await set(ref(db, `${focusAiAnalysisIndexPath(uid)}/${periodId}_${windowKey}`), indexRow);
+        await withRtdbPermissionLog(set(ref(db, `${base}/revisions/${revId}`), cleanRecord), {
+          path: `${base}/revisions/${revId}`,
+          version: record?.schemaVersion || record?.version || null,
+          feature: 'kentu_focus_ai',
+        });
+        await withRtdbPermissionLog(set(ref(db, `${base}/current`), current), {
+          path: `${base}/current`,
+          version: record?.schemaVersion || record?.version || null,
+          feature: 'kentu_focus_ai',
+        });
+        await withRtdbPermissionLog(
+          set(ref(db, `${focusAiAnalysisIndexPath(uid)}/${periodId}_${windowKey}`), indexRow),
+          {
+            path: `${focusAiAnalysisIndexPath(uid)}/${periodId}_${windowKey}`,
+            version: record?.schemaVersion || record?.version || null,
+            feature: 'kentu_focus_ai_index',
+          },
+        );
         return { ok: true, revisionId: revId, reason: null };
       } catch (err) {
         return {

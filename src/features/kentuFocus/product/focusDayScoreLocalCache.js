@@ -1,13 +1,13 @@
 /**
  * Cache locale punteggi giorno chiusi (localStorage, try/catch).
- * Chiave logica: data + versione metodo (kds-3) + contentHash dei dati del giorno.
+ * Chiave logica: data + versione metodo (kds-4) + contentHash dei dati del giorno.
  * Un giorno chiuso e invariato non si ricalcola.
  */
 
 import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
 import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { hashDayFacts } from '../score/dayScoreRecord.js';
-import { SCORE_VERSION } from '../score/scoreConfig.kds-3.js';
+import { SCORE_VERSION } from '../score/scoreConfig.kds-4.js';
 import { forzaEnabled } from '../score/scoreMovement.js';
 
 const SCHEMA = 2;

@@ -380,6 +380,7 @@ export async function generateDynamicTimeline(protocolId, dashboardState) {
     model: PROTOCOL_TIMELINE_MODEL,
     temperature: 0.4,
     timeoutMs: 45_000,
+    callTag: 'protocol_timeline',
   });
   const events = parseProtocolTimelineJson(text);
   const remaining = dropPastTimelineEvents(events, clock);
@@ -443,6 +444,7 @@ export async function renegotiateTimeline(userMessage, currentTimeline, options 
       model: PROTOCOL_TIMELINE_MODEL,
       temperature: 0.3,
       timeoutMs: 45_000,
+      callTag: 'protocol_timeline',
     },
   );
   const events = parseProtocolTimelineJson(text);

@@ -25,6 +25,7 @@ import {
   slimFocusAiCoachDossier,
 } from './slimFocusAiCoachDossier.js';
 import { buildFocusPeriodBrief } from './focusPeriodBrief.js';
+import { computeCostanzaForza } from '../costanza/costanzaForza.js';
 
 /**
  * @param {unknown} value
@@ -344,6 +345,27 @@ export function buildFocusAiCoachDossier(session, options = {}) {
   const muscleGroupFrequency = Array.isArray(exercisePillar?.muscleGroupFrequency)
     ? exercisePillar.muscleGroupFrequency
     : [];
+
+  const asOfForCostanza = String(session.analysisDate || session.publicationDate || '').slice(0, 10);
+  const costanzaSnap = fullHistory && isIsoDateString(asOfForCostanza)
+    ? computeCostanzaForza({
+      fullHistory,
+      asOfDate: asOfForCostanza,
+      weeklyGoalDays: session?.cylinders?.forza?.weeklyGoalDays,
+    })
+    : null;
+  const costanzaSummary = costanzaSnap
+    ? {
+      version: costanzaSnap.version || 'mm-1',
+      forceDaysThisWeek: costanzaSnap.forceDaysThisWeek,
+      weeklyGoalDays: costanzaSnap.weeklyGoalDays,
+      weekStreak: costanzaSnap.weekStreak,
+      groups: Object.fromEntries(
+        Object.entries(costanzaSnap.groups || {}).map(([id, g]) => [id, g?.status || 'vuoto']),
+      ),
+      forceCiCoveredCount: costanzaSnap.forceCiCoveredCount,
+    }
+    : null;
 
   const exerciseSeries = Array.isArray(exercisePillar?.series)
     ? exercisePillar.series
@@ -778,6 +800,7 @@ export function buildFocusAiCoachDossier(session, options = {}) {
       seriesRecorded: exerciseSeries,
       cardio,
       detailNote: exercisePillar?.detailNote || null,
+      costanza: costanzaSummary,
       policy: {
         muscleGroupsAreNotExercises: true,
         noInventedSetsRepsLoads: true,
@@ -785,6 +808,7 @@ export function buildFocusAiCoachDossier(session, options = {}) {
         missingLogNotInactivity: true,
         strengthOnlyIfLogged: true,
         cardioForEveryone: true,
+        costanzaMm1: true,
       },
     },
     sleep: {

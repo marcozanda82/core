@@ -3,18 +3,16 @@ import {
   clamp01,
   createDefaultFourCylinderState,
   fourCylinderFromPhysiologyModel,
-  MUSCLE_CYLINDER_DEFS,
 } from '../../salaComandi/engines/fourCylinderEngine';
 import {
   buildFourCylinderTelemetrySeries,
-  getDaysSinceLastStimulus,
 } from '../../salaComandi/utils/fourCylinderTelemetryHistory';
-import {
-  hypertrophyTriageLabel,
-  hypertrophyTriageTone,
-  HYPERTROPHY_TRIAGE_STIMULATE_MAX,
-} from '../../../utils/hypertrophyMath';
 import { getTodayString } from '../../../coreEngine';
+import { buildCostanzaUiModel } from '../../kentuFocus/costanza/costanzaUiModel.js';
+import {
+  computeCostanzaForza,
+  normalizeWeeklyGoalDays,
+} from '../../kentuFocus/costanza/costanzaForza.js';
 
 /**
  * Rank badge cruscotto: PRIORITÀ / DA STIMOLARE prima di IN RECUPERO / OTTIMALE.
@@ -53,15 +51,17 @@ export function sortMuscleRowsByStimulusPriority(rows) {
   return [...(Array.isArray(rows) ? rows : [])].sort(compareMuscleRowsByStimulusPriority);
 }
 
-/** Target volume normalizzato (100% = stimolo ottimale nel ciclo). */
+/** Target volume normalizzato (100% = gruppo coperto). */
 export const MUSCLE_VOLUME_TARGET = 100;
 
-/** Finestra biologica per lo stimolo residuo usato nel Progression Score. */
+/** Finestra copertura Costanza (7 giorni). */
 export const MUSCLE_STIMULUS_LOOKBACK_DAYS = 7;
 
+/** Compat triage legacy (≤15 → DA STIMOLARE). */
+export const HYPERTROPHY_TRIAGE_STIMULATE_MAX = 15;
+
 /**
- * Media 0–100 dello stimolo attuale sui 5 distretti (Abs, Petto, Braccia, Gambe, Schiena).
- * Stesso modello della Telemetria Muscolare (accumulo 7g), non aderenza da calendario.
+ * Media 0–100 copertura gruppi Costanza (Petto, Schiena, Spalle, Gambe, Core — Braccia inclusa in UI avg).
  *
  * @param {{
  *   fourCylinder?: object | null,
@@ -69,6 +69,7 @@ export const MUSCLE_STIMULUS_LOOKBACK_DAYS = 7;
  *   activeLog?: Array | null,
  *   activeDate?: string | null,
  *   averageStimulus?: number | null,
+ *   weeklyGoalDays?: number,
  * }} [input]
  * @returns {number}
  */
@@ -88,15 +89,12 @@ export function computeAverageMuscleStimulus(input = {}) {
     activeLog: input?.activeLog ?? null,
     activeDate: input?.activeDate ?? input?.todayDate ?? null,
     historyDays: MUSCLE_STIMULUS_LOOKBACK_DAYS,
+    weeklyGoalDays: input?.weeklyGoalDays,
   });
 
-  const byId = new Map(
-    (Array.isArray(muscleRows) ? muscleRows : []).map((row) => [
-      row.id,
-      Math.max(0, Math.min(100, Number(row.pct) || 0)),
-    ]),
-  );
-  const values = MUSCLE_CYLINDER_DEFS.map((cyl) => byId.get(cyl.id) ?? 0);
+  const values = (Array.isArray(muscleRows) ? muscleRows : []).map((row) => (
+    Math.max(0, Math.min(100, Number(row.pct) || 0))
+  ));
   if (values.length === 0) return 0;
   return values.reduce((sum, n) => sum + n, 0) / values.length;
 }
@@ -108,21 +106,21 @@ export function computeAverageMuscleStimulus(input = {}) {
  */
 export function muscleHubTriageLabel(percent0to100, isPriority) {
   if (isPriority) return 'PRIORITÀ';
-  const raw = hypertrophyTriageLabel(percent0to100);
-  if (raw === 'STIMOLO OTTIMALE') return 'OTTIMALE';
-  return raw;
+  const p = Math.round(Number(percent0to100) || 0);
+  if (p >= 100) return 'OTTIMALE';
+  if (p > HYPERTROPHY_TRIAGE_STIMULATE_MAX) return 'IN RECUPERO';
+  return 'DA STIMOLARE';
 }
 
 export function muscleTriageLevel(value) {
-  const tone = hypertrophyTriageTone(clamp01(value) * 100);
-  if (tone === 'good') return 'good';
-  if (tone === 'warning') return 'warning';
+  const pct = clamp01(value) * 100;
+  if (pct >= 100) return 'good';
+  if (pct > HYPERTROPHY_TRIAGE_STIMULATE_MAX) return 'warning';
   return 'critical';
 }
 
 /**
- * Distretti ordinati per priorità reale: badge (PRIORITÀ / DA STIMOLARE → recupero → ottimale),
- * poi percentuale crescente. PRIORITÀ = stimolo minimo nella fascia ≤15%.
+ * Distretti Costanza ordinati per priorità (vuoti / toccati / coperti).
  */
 export function buildMuscleTelemetryRows({
   fourCylinder = null,
@@ -130,6 +128,7 @@ export function buildMuscleTelemetryRows({
   activeLog = null,
   activeDate = null,
   historyDays = 14,
+  weeklyGoalDays = undefined,
 } = {}) {
   const state = fourCylinder && typeof fourCylinder === 'object'
     ? fourCylinderFromPhysiologyModel({ fourCylinder })
@@ -145,61 +144,40 @@ export function buildMuscleTelemetryRows({
     todayLiveLog,
   });
 
-  const tip = telemetrySeries.length > 0 ? telemetrySeries[telemetrySeries.length - 1] : null;
-  const rows = MUSCLE_CYLINDER_DEFS.map((cyl) => {
-    const value = tip ? clamp01(tip[cyl.id]) : 0;
-    const currentVolume = Math.round(value * MUSCLE_VOLUME_TARGET);
-    return {
-      ...cyl,
-      value,
-      currentVolume,
-      targetVolume: MUSCLE_VOLUME_TARGET,
-      completionRatio: currentVolume / MUSCLE_VOLUME_TARGET,
-      pct: currentVolume,
-      triageLabel: hypertrophyTriageLabel(value * 100),
-      level: muscleTriageLevel(value),
-      daysSinceStimulus: getDaysSinceLastStimulus(fullHistory, cyl.id, {
-        todayIso,
-        fourCylinder: state,
-        todayLiveLog,
-      }),
-    };
+  const ui = buildCostanzaUiModel({
+    fullHistory: fullHistory || {},
+    asOfDate: activeIso,
+    weeklyGoalDays: normalizeWeeklyGoalDays(weeklyGoalDays),
   });
 
-  const stimulatePcts = rows
-    .map((row) => Math.round(Number(row.pct) || 0))
-    .filter((pct) => pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX);
-  const minStimulatePct = stimulatePcts.length > 0
-    ? Math.min(...stimulatePcts)
-    : null;
-
-  const labeled = rows.map((row) => {
-    const pct = Math.round(Number(row.pct) || 0);
-    const isPriority = minStimulatePct != null
-      && pct <= HYPERTROPHY_TRIAGE_STIMULATE_MAX
-      && pct === minStimulatePct;
-    return {
-      ...row,
-      isTopPriority: isPriority,
-      hubLabel: muscleHubTriageLabel(pct, isPriority),
-    };
-  });
+  const labeled = ui.groups.map((group) => ({
+    ...group,
+    triageLabel: group.hubLabel,
+    isTopPriority: group.status === 'vuoto',
+    daysSinceStimulus: group.muscles?.[0]?.daysSinceTrained ?? null,
+    currentVolume: group.pct,
+    targetVolume: MUSCLE_VOLUME_TARGET,
+    completionRatio: group.pct / MUSCLE_VOLUME_TARGET,
+    shortLabel: group.label,
+  }));
 
   return {
     state,
     telemetrySeries,
     muscleRows: sortMuscleRowsByStimulusPriority(labeled),
+    costanza: ui,
   };
 }
 
 /**
- * Hook: serie storica + distretti ordinati per priorità.
+ * Hook: serie storica + distretti Costanza.
  */
 export function useMuscleTelemetryModel({
   fourCylinder = null,
   fullHistory = null,
   activeLog = null,
   activeDate = null,
+  weeklyGoalDays = undefined,
 } = {}) {
   const [historyDays, setHistoryDays] = useState(14);
 
@@ -210,8 +188,9 @@ export function useMuscleTelemetryModel({
       activeLog,
       activeDate,
       historyDays,
+      weeklyGoalDays,
     }),
-    [fourCylinder, fullHistory, activeLog, activeDate, historyDays],
+    [fourCylinder, fullHistory, activeLog, activeDate, historyDays, weeklyGoalDays],
   );
 
   return {
@@ -252,4 +231,37 @@ export function muscleLevelClasses(level) {
 
 export function formatMusclePct(value) {
   return `${Math.round(clamp01(value) * 100)}%`;
+}
+
+/**
+ * Giorni dall'ultimo allenamento (peso 1) su un gruppo Costanza / pilastro legacy.
+ * @param {object|null|undefined} fullHistory
+ * @param {string} cylinderOrGroupId
+ * @param {{ todayIso?: string }} [opts]
+ * @returns {number|null}
+ */
+export function getDaysSinceLastStimulus(fullHistory, cylinderOrGroupId, opts = {}) {
+  const todayIso = String(opts.todayIso || getTodayString()).slice(0, 10);
+  const snap = computeCostanzaForza({
+    fullHistory: fullHistory || {},
+    asOfDate: todayIso,
+  });
+  const id = String(cylinderOrGroupId || '').trim().toLowerCase();
+  const groupAlias = {
+    legs: 'gambe',
+    chest: 'petto',
+    back_shoulders: 'schiena',
+    arms: 'braccia',
+    core: 'core',
+  };
+  const groupId = groupAlias[id] || id;
+  const g = snap.groups?.[groupId];
+  if (!g?.muscleIds?.length) return null;
+  let best = null;
+  for (const mid of g.muscleIds) {
+    const d = snap.muscles?.[mid]?.daysSinceTrained;
+    if (d == null) continue;
+    if (best == null || d < best) best = d;
+  }
+  return best;
 }

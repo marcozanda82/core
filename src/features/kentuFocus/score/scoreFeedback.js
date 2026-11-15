@@ -5,6 +5,7 @@
 
 import { get, ref, set } from 'firebase/database';
 import { isIsoDate } from '../../dayStatus/dayStatusRecord.js';
+import { withRtdbPermissionLog } from '../../../services/rtdbPermissionDenied.js';
 
 export const SCORE_FEEDBACK_ANSWERS = Object.freeze({
   yes: 'Sì',
@@ -106,7 +107,12 @@ export function createScoreFeedbackStore({ db, uid }) {
     async write(date, record) {
       if (!isIsoDate(date)) throw new Error('data non valida');
       const payload = encodeScoreFeedback({ ...record, answeredAt: record.answeredAt || Date.now() });
-      await set(ref(db, scoreFeedbackPath(id, date)), payload);
+      const path = scoreFeedbackPath(id, date);
+      await withRtdbPermissionLog(set(ref(db, path), payload), {
+        path,
+        version: payload?.scoreVersion || null,
+        feature: 'score_feedback',
+      });
       return decodeScoreFeedback(payload, date);
     },
   };

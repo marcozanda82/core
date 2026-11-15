@@ -3,8 +3,11 @@
  * Smoke Gemini live limitato (max 3 chiamate) — fixture sintetiche.
  * Non stampa chiavi API né prompt completi.
  *
- * Uso: GEMINI_API_KEY=... node scripts/focusGeminiLiveSmoke.mjs
- * Exit 0 se saltato (no key) o se le chiamate valide/fallback sono coerenti.
+ * Uso: FOCUS_LIVE_AI=1 e GEMINI_API_KEY nell'ambiente, poi:
+ *   node scripts/focusGeminiLiveSmoke.mjs
+ * Exit 0 se saltato (no opt-in / no key) o se le chiamate valide/fallback sono coerenti.
+ * Nessuna chiamata reale senza opt-in esplicito FOCUS_LIVE_AI=1.
+ * La chiave si legge solo da process.env (mai un letterale nel file).
  */
 
 import { buildFocusDossier } from '../src/features/kentuFocus/build/buildFocusDossier.js';
@@ -17,6 +20,11 @@ import {
   buildMissingValuesFixture,
 } from '../src/features/kentuFocus/__tests__/fixtures/focusDayFixtures.js';
 import { buildHistoryBriefSeries } from '../src/features/kentuFocus/__tests__/fixtures/focusHistoryFixtures.js';
+
+if (process.env.FOCUS_LIVE_AI !== '1') {
+  console.log('LIVE_SMOKE_SKIP reason=no_opt_in (set FOCUS_LIVE_AI=1)');
+  process.exit(0);
+}
 
 const keyPresent = Boolean(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim());
 if (!keyPresent) {

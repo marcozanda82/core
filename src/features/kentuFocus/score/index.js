@@ -3,9 +3,11 @@ export {
   HISTORY_LOCKED,
   MOVEMENT_CURVE,
   ON_TRACK_SCORE,
+  PILLAR_STATUS,
+  pillarStatusFromValue,
   SCORE_COLORS,
   SCORE_VERSION,
-} from './scoreConfig.kds-3.js';
+} from './scoreConfig.kds-4.js';
 export { dayScoreColor } from './scoreColor.js';
 export { forceLoad, scoreMovimento } from './scoreMovement.js';
 export {

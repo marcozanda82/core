@@ -44,6 +44,8 @@ function baseContext(history, extra = {}) {
     today: TODAY,
     fullHistory: history,
     targetKcal: TARGET,
+    settingsBaseKcal: TARGET,
+    scoreVersion: 'kds-3',
     record: { confirmed: true, approximate: false, paused: false },
     cylinders: { forza: { enabled: true } },
     ...extra,
@@ -120,7 +122,8 @@ test('la forza non entra nel punteggio e colora solo un giorno già blu', () => 
   add(offHistory, '2026-11-02', night(8));
   const off = computeDayScore('2026-11-01', baseContext(offHistory));
   assert.equal(on.score, off.score);
-  assert.equal(on.forceIntensity, 1);
+  // force-ci-1: 0.5*(1/2)+0.5*(1/5)=0.35 (scale→Gambe; elastici senza chip non conta)
+  assert.equal(on.forceIntensity, 0.35);
   assert.equal(off.forceIntensity, 0);
   assert.match(on.cylinders.forza.keyFact, /parte|sessioni|non attiva|giorno/);
 
@@ -137,7 +140,9 @@ test('la forza non entra nel punteggio e colora solo un giorno già blu', () => 
   add(faded, '2026-11-01', food(2000));
   add(faded, '2026-11-02', night(8));
   for (let i = 0; i < 7; i += 1) add(faded, addCalendarDays('2026-11-01', -i), walk(30, `w-${i}`));
-  assert.equal(computeDayScore('2026-11-01', baseContext(faded)).forceIntensity, 0.585);
+  // alzate_sedia il 29/10: nella settimana del 1/11 (lun 27/10–dom 2/11) è 1 giorno forza;
+  // Gambe coperto nei 7gg → 0.5*(1/2)+0.5*(1/5)=0.35
+  assert.equal(computeDayScore('2026-11-01', baseContext(faded)).forceIntensity, 0.35);
 
   const disabled = computeDayScore('2026-11-01', baseContext(history, {
     cylinders: { forza: { enabled: false } },
@@ -276,7 +281,7 @@ test('kds-3 sul diario reale: punteggi, stati, colori, scie e azione (fixture 20
   assert.equal(oct29.score, 0.703);
   assert.equal(oct29.cylinders.alimentazione.status, 'on_track');
   assert.equal(oct29.cylinders.forza.status, 'on_track');
-  assert.equal(oct29.cylinders.forza.keyFact, 'parte bassa oggi · parte alta 5 giorni fa');
+  assert.equal(oct29.cylinders.forza.keyFact, 'parte bassa quel giorno · parte alta 5 giorni prima');
 
   const oct30 = computeDayScore('2026-10-30', base);
   assert.equal(oct30.score, 0.388);
@@ -287,7 +292,8 @@ test('kds-3 sul diario reale: punteggi, stati, colori, scie e azione (fixture 20
   const nov09 = computeDayScore('2026-11-09', base);
   assert.equal(nov09.score, 0.846);
   assert.equal(dayScoreColor(nov09.score, nov09.forceIntensity ?? 0).tone, 'on_track');
-  assert.equal(nov09.forceIntensity, 0.923);
+  // force-ci-1 (prima hypertrophy 0.923). Punteggi/stati invariati.
+  assert.equal(nov09.forceIntensity, 0.4);
 
   const ieriWin = focusPeriodWindow('ieri', TODAY, 0);
   const ieriPeriod = computePeriodScore(ieriWin.from, ieriWin.to, base);

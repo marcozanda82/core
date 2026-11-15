@@ -77,12 +77,14 @@ export function createAskAiFocusGeminiProvider(opts = {}) {
         let diag = 'network_error';
         if (/timeout|lenta|assente/i.test(msg)) diag = 'timeout';
         else if (/GEMINI_API_KEY|non configurata/i.test(msg)) diag = 'missing_api_key';
-        else if (/429|quota/i.test(msg)) diag = 'http_429';
+        else if (/429|resource-exhausted|limite giornaliero|analisi Focus \(6\)/i.test(msg)) {
+          diag = 'http_429';
+        }
         return {
           ok: false,
           text: null,
           diag,
-          status: null,
+          status: diag === 'http_429' ? 429 : null,
           error: msg,
         };
       }

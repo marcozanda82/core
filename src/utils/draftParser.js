@@ -184,6 +184,7 @@ export async function parseDraftWithGemini(rawText) {
         temperature: 0,
         responseSchema: GEMINI_DRAFT_SPLIT_SCHEMA,
         generationConfig: { temperature: 0, maxOutputTokens: 1024 },
+        callTag: 'draft_parser',
       },
     );
     parsed = parseFoodsJson(raw);

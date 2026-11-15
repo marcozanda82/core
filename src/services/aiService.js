@@ -2,12 +2,15 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebaseConfig';
 import { recordUsage } from './apiUsageDiary';
 import { logSystemError } from '../utils/devToolsPersistence';
+import { AI_CALL_TAGS } from './aiCallTags';
 
 /** Allineato a callGemini CF (timeoutSeconds: 120). Default SDK httpsCallable = 70s. */
 const CALL_GEMINI_CALLABLE_TIMEOUT_MS = 120_000;
 const callAiFunction = httpsCallable(functions, 'callGemini', {
   timeout: CALL_GEMINI_CALLABLE_TIMEOUT_MS,
 });
+
+export const CALL_TAG_REQUIRED_MESSAGE = 'callTag obbligatorio per ogni chiamata AI.';
 
 function extractAiText(data) {
   if (data == null) return '';
@@ -53,6 +56,14 @@ function unwrapCallableError(error) {
 
   if (typeof details === 'string' && details.trim()) {
     throw new Error(details.trim());
+  }
+
+  if (code === 'functions/resource-exhausted') {
+    throw new Error(
+      message && message !== 'resource-exhausted' && message !== 'RESOURCE_EXHAUSTED'
+        ? message
+        : 'Hai raggiunto il limite giornaliero di richieste AI. Riprova domani.',
+    );
   }
 
   if (message && message !== 'internal' && message !== 'INTERNAL') {
@@ -124,7 +135,7 @@ function createTimeoutRace(ms, message) {
  * Chiamata AI centralizzata via Firebase Cloud Function callGemini (Google Gemini nativo).
  * @param {string} prompt
  * @param {string} [systemInstruction]
- * @param {object} [options] — images, image, temperature, responseSchema, generationConfig, contents, model, signal, timeoutMs
+ * @param {object} [options] — callTag (obbligatorio), images, image, temperature, responseSchema, generationConfig, contents, model, signal, timeoutMs
  */
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
@@ -132,6 +143,11 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   const timeoutMs = Number.isFinite(Number(opts.timeoutMs)) && Number(opts.timeoutMs) > 0
     ? Math.floor(Number(opts.timeoutMs))
     : ASK_AI_TIMEOUT_MS;
+
+  const callTag = opts.callTag != null ? String(opts.callTag).trim().slice(0, 64) : '';
+  if (!callTag) {
+    throw new Error(CALL_TAG_REQUIRED_MESSAGE);
+  }
 
   if (signal?.aborted) {
     throw createAbortError();
@@ -145,6 +161,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
     prompt: nativeContents ? String(prompt ?? '') : buildPromptWithHistory(prompt, opts),
     systemInstruction: systemInstruction || opts.systemInstruction || '',
     model: opts.model || 'gemini-3.8-flash',
+    callTag,
   };
 
   if (opts.images?.length) payload.images = opts.images;
@@ -153,7 +170,6 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   if (opts.temperature != null) payload.temperature = opts.temperature;
   if (opts.responseSchema) payload.responseSchema = opts.responseSchema;
   if (opts.generationConfig) payload.generationConfig = opts.generationConfig;
-  if (opts.callTag) payload.callTag = String(opts.callTag).slice(0, 64);
 
   let abortListener = null;
   const abortPromise = signal
@@ -174,10 +190,10 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
   } catch (error) {
     if (isAbortError(error)) throw error;
     if (error?.code === 'ASK_AI_TIMEOUT' || error?.name === 'TimeoutError') {
-      console.warn('[askAI] timeout', timeoutMs, 'ms');
+      console.warn('[askAI] timeout', timeoutMs, 'ms', { callTag });
       throw new Error(ASK_AI_TIMEOUT_MESSAGE);
     }
-    console.error('[askAI] callable error', error?.code, error?.message, error?.details);
+    console.error('[askAI] callable error', error?.code, { callTag });
     void logSystemError(error, 'Gemini API Call');
     unwrapCallableError(error);
   } finally {
@@ -198,7 +214,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
 
   const text = extractAiText(data);
   if (!text) {
-    console.warn('AI response missing text payload', { data });
+    console.warn('AI response missing text payload', { callTag });
   }
   return text;
 }
@@ -206,5 +222,8 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
 /** Retrocompatibilità: stessa firma usata da chat, MealBuilder e modali grafico. */
 export async function callGeminiAPIWithRotation(promptText, options = null) {
   const opts = options || {};
-  return askAI(promptText, opts.systemInstruction || '', opts);
+  return askAI(promptText, opts.systemInstruction || '', {
+    ...opts,
+    callTag: opts.callTag || AI_CALL_TAGS.GENERIC,
+  });
 }

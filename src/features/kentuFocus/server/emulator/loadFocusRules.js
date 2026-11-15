@@ -88,9 +88,7 @@ export async function emulatorRestGet(absolutePath, auth = {}) {
         } catch {
           parsed = data;
         }
-        const denied = res.statusCode === 401 || res.statusCode === 403
-          || (typeof parsed === 'string' && /permission\s*denied/i.test(parsed))
-          || (typeof parsed === 'object' && parsed && parsed.error);
+        const denied = isRestPermissionDenied(res.statusCode, parsed, data);
         resolve({
           statusCode: res.statusCode,
           body: parsed,
@@ -105,6 +103,23 @@ export async function emulatorRestGet(absolutePath, auth = {}) {
     });
     req.on('error', reject);
   });
+}
+
+/**
+ * Un 2xx non è mai deny. Un payload di log con campo `error` non deve sembrare un rifiuto.
+ * @param {number|undefined} statusCode
+ * @param {unknown} parsed
+ * @param {string} raw
+ */
+function isRestPermissionDenied(statusCode, parsed, raw) {
+  if (statusCode && statusCode >= 200 && statusCode < 300) return false;
+  if (statusCode === 401 || statusCode === 403) return true;
+  if (typeof parsed === 'string' && /permission\s*denied/i.test(parsed)) return true;
+  if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string'
+    && /permission\s*denied/i.test(parsed.error)) {
+    return true;
+  }
+  return /permission\s*denied/i.test(String(raw || ''));
 }
 
 /**
@@ -151,10 +166,7 @@ export async function emulatorRestPut(absolutePath, value, auth = {}) {
           } catch {
             parsed = data;
           }
-          const denied = res.statusCode === 401 || res.statusCode === 403
-            || (typeof parsed === 'string' && /permission\s*denied/i.test(String(parsed)))
-            || /permission\s*denied/i.test(data)
-            || (typeof parsed === 'object' && parsed && parsed.error);
+          const denied = isRestPermissionDenied(res.statusCode, parsed, data);
           resolve({
             statusCode: res.statusCode,
             body: parsed,

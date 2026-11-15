@@ -7,16 +7,14 @@ import {
   MUSCLE_CYLINDER_DEFS,
   MUSCLE_CYLINDER_IDS,
 } from '../features/salaComandi/engines/fourCylinderEngine';
-import { buildFourCylinderTelemetrySeries } from '../features/salaComandi/utils/fourCylinderTelemetryHistory';
 import { getTodayString } from '../coreEngine';
 import {
   hypertrophyTriageLabel,
   hypertrophyTriageTone,
-  HYPERTROPHY_DECAY_HORIZON_DAYS,
-  HYPERTROPHY_SESSION_BOOST,
   HYPERTROPHY_TRIAGE_STIMULATE_MAX,
   HYPERTROPHY_TRIAGE_RECOVERY_MAX,
 } from '../utils/hypertrophyMath';
+import { computeCostanzaPillarLevels01 } from '../features/kentuFocus/costanza/costanzaForza.js';
 
 function getToneClasses(percent) {
   const tone = hypertrophyTriageTone(percent);
@@ -109,7 +107,7 @@ function mapFourCylinderPropToDecay(fourCylinderProp) {
 }
 
 /**
- * SSOT: tip della serie telemetria (hypertrophyMath via buildFourCylinderTelemetrySeries).
+ * SSOT: Costanza mm-1 (copertura gruppi → pilastri).
  * @param {object | null | undefined} fourCylinderProp
  * @param {object | null | undefined} fullHistory
  * @param {string} todayIso
@@ -117,21 +115,10 @@ function mapFourCylinderPropToDecay(fourCylinderProp) {
  */
 function resolveHypertrophyLevels01(fourCylinderProp, fullHistory, todayIso) {
   if (fullHistory && typeof fullHistory === 'object' && Object.keys(fullHistory).length > 0) {
-    const series = buildFourCylinderTelemetrySeries(fullHistory, {
-      daysBack: Math.max(14, HYPERTROPHY_DECAY_HORIZON_DAYS + 1),
-      endDate: todayIso,
-      fourCylinder: fourCylinderProp,
+    return computeCostanzaPillarLevels01({
+      fullHistory,
+      asOfDate: todayIso,
     });
-    const last = series[series.length - 1];
-    if (last) {
-      return {
-        legs: clamp01(last.legs),
-        chest: clamp01(last.chest),
-        back_shoulders: clamp01(last.back_shoulders),
-        arms: clamp01(last.arms),
-        core: clamp01(last.core),
-      };
-    }
   }
 
   const mapped = mapFourCylinderPropToDecay(fourCylinderProp);
@@ -155,7 +142,7 @@ function computeGlobalLoad(cylinders) {
 }
 
 /**
- * Score Forza 0–100 per lo swap Home: picco tra i cilindri muscolari (SSOT hypertrophy).
+ * Score Forza 0–100 per lo swap Home: picco tra i pilastri Costanza.
  * @param {object | null | undefined} fourCylinder
  * @param {object | null | undefined} fullHistory
  * @param {string} [todayIso]
@@ -235,12 +222,11 @@ function ProgressBarRow({
 }
 
 /**
- * Widget sismografi muscolari — Accumulo Dinamico (hypertrophyMath SSOT).
+ * Widget sismografi muscolari — Costanza mm-1 (copertura 7g).
  *
  * - `compact` (Home): una barra = picco; tap → onOpenDetail (DIAG).
  * - `detailed`: 5 barre con triage DA STIMOLARE / IN RECUPERO / STIMOLO OTTIMALE.
  *
- * Scala: +65%/sessione, decadimento non-lineare 7gg, cap 100%.
  * @param {{
  *   fourCylinder?: object | null,
  *   fullHistory?: object | null,
@@ -319,7 +305,7 @@ export default function MuscleStimulusWidget({
         >
           <div className="mb-2.5 flex items-center justify-between gap-2">
             <span className={`text-[10px] font-bold tracking-wider ${tone.text}`}>
-              ACCUMULO {HYPERTROPHY_DECAY_HORIZON_DAYS}GG
+              COSTANZA 7GG
             </span>
             <span className="text-[11px] font-bold tabular-nums text-slate-200">
               {fillPercent}
@@ -349,7 +335,7 @@ export default function MuscleStimulusWidget({
 
           <p className="mt-1.5 text-[9px] text-slate-600">
             Picco {globalLoad.peakLabel}
-            {` · +${HYPERTROPHY_SESSION_BOOST}%/sessione · curva ${HYPERTROPHY_DECAY_HORIZON_DAYS}gg`}
+            {' · Costanza 7gg'}
             {clickable ? ' · tocca per i dettagli' : ''}
           </p>
         </div>
@@ -360,7 +346,7 @@ export default function MuscleStimulusWidget({
   return (
     <div className="flex flex-col gap-1.5" role="list" aria-label="Sismografi muscolari">
       <p className="mb-0.5 px-0.5 text-[9px] text-slate-500">
-        Accumulo dinamico · +{HYPERTROPHY_SESSION_BOOST}%/sessione · decadimento {HYPERTROPHY_DECAY_HORIZON_DAYS}gg
+        Costanza · copertura gruppi ultimi 7 giorni
       </p>
       {cylinders.map((cyl) => {
         const tone = getToneClasses(cyl.percent);

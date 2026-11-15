@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { ref, get, set, onValue } from 'firebase/database';
+import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
 import { enrichDbRowWithFoodUnits } from '../../foodUnits';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
 import {
@@ -478,7 +479,11 @@ export function useDiaryFirebaseSync({
         const dbPath = `users/${uid}/tracker_data/${storicoKey}`;
 
         // Cloud sync in background: la UI è già aggiornata via setDailyLog + cache locale.
-        void set(ref(db, dbPath), sanitized)
+        void withRtdbPermissionLog(set(ref(db, dbPath), sanitized), {
+          path: dbPath,
+          version: null,
+          feature: 'tracker_data',
+        })
           .then(() => {
             queueMicrotask(() => {
               setFullHistory((prev) => ({ ...prev, [storicoKey]: sanitized }));

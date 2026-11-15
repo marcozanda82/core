@@ -70,21 +70,25 @@ Il check-in del mattino chiede «Ieri quanto hai camminato?» con tre risposte: 
 
 Il pallino: da 0,75 in su sulla rotta, da 0,40 a 0,75 a metà, sotto fuori rotta. Zero minuti, con un diario leggibile, è un dato: è fuori rotta, non un'assenza.
 
-## Forza, solo se attiva
+## Forza, solo se attiva (Costanza mm-1)
 
 L'impostazione è `users/{uid}/cylinders/forza/enabled`. Se è disattivata, la forza non è una penalità: non entra nel numero e la riga è grigia, «Forza · non attiva».
+
+Obiettivo settimanale opzionale: `users/{uid}/cylinders/forza/weeklyGoalDays` (2|3|4, default **2**).
 
 Se è attiva:
 
 - non entra lo stesso nel punteggio del giorno;
-- il pallino e il fatto restano quelli dei macro-gruppi: parte bassa (Gambe) e parte alta (Petto, Dorso, Spalle, bicipiti, tricipiti, avambracci), finestra 30 giorni, sulla rotta se il più fermo è entro 7 giorni. Il core è facoltativo. Total Body copre alta e bassa;
-- la carica del giorno, `forceIntensity`, parte dal distretto più acceso delle barre dello stimolo. Quelle barre sommano, per ogni distretto, il residuo delle sessioni: 65 il giorno stesso, poi 60, 51, 38, 24, 12, 4, poi 0, con tetto 100. Il cruscotto mostra quel residuo. La carica del Focus è il minimo fra 1 e quel massimo diviso 0,65: una sessione piena vale 1. Scale e alzate dalla sedia, se non hanno muscoli scritti, accendono le gambe.
+- l'UI e il Focus leggono un solo calcolo **Costanza** (`mm-1`): chip del catalogo → muscoli fini con peso 1 (allenato) o 0,5 (coinvolto); merge per sessione `max(pesi)`; Total Body tocca tutti a 0,5; scale/alzate dalla sedia senza chip → Gambe via mappa;
+- header: giorni di forza nella settimana lun–dom / obiettivo + scia di settimane (la settimana in corso non spezza la scia);
+- copertura 7 giorni per gruppo (Petto, Schiena, Spalle, Braccia, Gambe, Core): **coperto** / **toccato** / **vuoto**; «allenato X giorni fa» conta solo peso 1;
+- copy onesta: «Conta i giorni e i gruppi allenati, non le serie.»
 
-Contano anche le forme quotidiane, registrabili accanto ai pesi: corpo libero, elastici, lavori pesanti, scale, alzate dalla sedia. Corpo libero, elastici e lavori pesanti accendono un distretto solo se i muscoli sono scritti nella sessione.
+`forceIntensity` (**force-ci-1**) = `0.5 * min(1, giorniForzaSett / obiettivo) + 0.5 * (gruppiCoperto7g / 5)` con i 5 gruppi del quoziente blu **Petto, Schiena, Spalle, Gambe, Core** (Braccia solo in UI). Gate invariato: forza on e score giorno ≥ 0,75; altrimenti 0. Solo colore.
 
-`forceIntensity` è la carica solo se il punteggio del giorno è almeno 0,75 e la forza è attiva. Altrimenti è 0. Sotto 0,75 le barre restano accese e la tinta del giorno no.
+Salvavita **sfv-3**: `same_district_no_recovery` sullo stesso **muscolo** allenato (peso 1) entro 48h. Fatica sistemica fourCylinder invariata.
 
-Il residuo 0,50 con decadimento 0,15 del motore muscolare non è questa carica e non è quello che mostrano le barre. La fatica sistemica di quel motore resta com'è: servirà al salvavita e qui non si tocca. La proposta, per dopo, è far leggere alla mappa metabolica le stesse barre e smettere di aggiornare il residuo 0,50. Cancellarlo adesso lascerebbe la mappa senza un carico muscolare.
+Contano anche le forme quotidiane, registrabili accanto ai pesi: corpo libero, elastici, lavori pesanti, scale, alzate dalla sedia.
 
 ## Colore
 
@@ -103,3 +107,5 @@ Un giorno è sulla rotta quando il punteggio è almeno 0,75. La media del period
 `users/{uid}/score_feedback/{data}`: il parere «Ti torna?». Non rientra nel calcolo.
 
 `users/{uid}/cylinders/forza/enabled`: se la forza è accesa per quella persona.
+
+`users/{uid}/cylinders/forza/weeklyGoalDays`: obiettivo giorni di forza a settimana (2|3|4).

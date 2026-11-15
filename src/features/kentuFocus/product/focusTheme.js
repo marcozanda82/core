@@ -147,8 +147,14 @@ export async function writeFocusThemeToRtdb(deps) {
   const { uid, pref, set: setFn, ref: refFn, db: database } = deps || {};
   const next = normalizeFocusTheme(pref);
   if (!uid || !next || !setFn || !refFn || !database) return false;
+  const path = focusThemeRtdbPath(uid);
   try {
-    await setFn(refFn(database, focusThemeRtdbPath(uid)), next);
+    const { withRtdbPermissionLog } = await import('../../../services/rtdbPermissionDenied.js');
+    await withRtdbPermissionLog(setFn(refFn(database, path), next), {
+      path,
+      version: null,
+      feature: 'ui_preferences',
+    });
     return true;
   } catch {
     return false;

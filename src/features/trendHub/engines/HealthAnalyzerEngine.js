@@ -422,6 +422,7 @@ export async function requestHealthAnalyzerReport(analysisContext, options = {})
     model: HEALTH_ANALYZER_MODEL,
     temperature: options.temperature ?? 0.25,
     responseSchema: healthReportSchema,
+    callTag: 'health_analyzer_report',
     generationConfig: {
       temperature: options.temperature ?? 0.25,
       response_mime_type: 'application/json',
@@ -466,6 +467,7 @@ export async function requestHealthFoodLabels(analysisContext, options = {}) {
       model: HEALTH_ANALYZER_MODEL,
       temperature: 0.1,
       responseSchema: foodLabelSchema,
+      callTag: 'health_analyzer_labels',
       generationConfig: {
         temperature: 0.1,
         response_mime_type: 'application/json',

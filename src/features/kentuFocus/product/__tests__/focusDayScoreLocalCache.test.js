@@ -7,7 +7,7 @@ import {
   readFocusDayScoreLocalCache,
   writeFocusDayScoreLocalCache,
 } from '../focusDayScoreLocalCache.js';
-import { SCORE_VERSION } from '../../score/scoreConfig.kds-3.js';
+import { SCORE_VERSION } from '../../score/scoreConfig.kds-4.js';
 
 const UID = 'cache-test-uid';
 

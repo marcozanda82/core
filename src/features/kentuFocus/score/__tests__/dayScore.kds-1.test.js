@@ -258,14 +258,14 @@ describe('kds-1 cilindri', () => {
     add(rest, '2026-11-01', strength('s', ['Petto', 'Dorso', 'Gambe', 'Spalle'], '2026-11-01'));
     const restScore = scoreAt('2026-11-03', rest);
     assert.equal(restScore.cylinders.forza.status, 'on_track');
-    assert.equal(restScore.cylinders.forza.keyFact, 'parte bassa 2 giorni fa · parte alta 2 giorni fa');
+    assert.equal(restScore.cylinders.forza.keyFact, 'parte bassa 2 giorni prima · parte alta 2 giorni prima');
 
     const pair = {};
     add(pair, '2026-11-02', strength('s', ['Petto'], 'a'));
     add(pair, '2026-11-03', strength('s', ['Petto'], 'b'));
     const pairScore = scoreAt('2026-11-03', pair);
     assert.equal(pairScore.cylinders.forza.status, 'on_track');
-    assert.equal(pairScore.cylinders.forza.keyFact, 'parte alta oggi');
+    assert.equal(pairScore.cylinders.forza.keyFact, 'parte alta quel giorno');
 
     const fresh = {};
     add(fresh, '2026-11-02', strength('s', ['bicipiti', 'Gambe'], 'fresh'));
@@ -275,7 +275,7 @@ describe('kds-1 cilindri', () => {
     add(idle, '2026-10-26', strength('s', ['Gambe'], 'old'));
     const idleScore = scoreAt('2026-11-03', idle);
     assert.equal(idleScore.cylinders.forza.status, 'halfway');
-    assert.equal(idleScore.cylinders.forza.keyFact, 'parte bassa 8 giorni fa');
+    assert.equal(idleScore.cylinders.forza.keyFact, 'parte bassa 8 giorni prima');
 
     const edge = {};
     add(edge, '2026-10-24', strength('s', ['Spalle'], 'edge'));
@@ -285,7 +285,7 @@ describe('kds-1 cilindri', () => {
     add(late, '2026-10-20', strength('s', ['Dorso'], 'late'));
     const lateScore = scoreAt('2026-11-03', late);
     assert.equal(lateScore.cylinders.forza.status, 'off_track');
-    assert.equal(lateScore.cylinders.forza.keyFact, 'parte alta 14 giorni fa');
+    assert.equal(lateScore.cylinders.forza.keyFact, 'parte alta 14 giorni prima');
 
     const coreOnly = {};
     add(coreOnly, '2026-11-01', strength('s', ['Core'], 'core'));
@@ -296,7 +296,7 @@ describe('kds-1 cilindri', () => {
     add(full, '2026-11-08', strength('s', ['Total Body'], 'tb'));
     assert.equal(
       scoreAt('2026-11-09', full).cylinders.forza.keyFact,
-      'parte bassa 1 giorno fa · parte alta 1 giorno fa',
+      'parte bassa il giorno prima · parte alta il giorno prima',
     );
 
     assert.equal(scoreAt('2026-11-03', {}).cylinders.forza.status, 'no_data');
@@ -541,7 +541,7 @@ describe('kds-1 periodo, memoria, ottobre', () => {
     assert.equal(oct28.cylinders.alimentazione.status, 'halfway');
     assert.equal(oct28.cylinders.sonno.keyFact, '7 h');
     assert.equal(oct29.cylinders.alimentazione.keyFact, '2431 kcal · 25 sotto');
-    assert.equal(oct29.cylinders.forza.keyFact, 'parte bassa oggi · parte alta 5 giorni fa');
+    assert.equal(oct29.cylinders.forza.keyFact, 'parte bassa quel giorno · parte alta 5 giorni prima');
     assert.equal(oct29.cylinders.forza.status, 'on_track');
     assert.equal(oct30.cylinders.alimentazione.status, 'off_track');
     assert.equal(oct30.cylinders.alimentazione.keyFact, '1509 kcal · 947 sotto');

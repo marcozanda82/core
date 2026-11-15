@@ -1,0 +1,31 @@
+{
+  "builtAt": "2026-11-14T22:10:09.846Z",
+  "sourceHash": "a8730f2dc5a072c00ba1daf50b4f38b544e5f5710648b1e9326e63aca597e074",
+  "files": [
+    "functions/mcp/auth.js",
+    "functions/mcp/createServer.js",
+    "functions/mcp/dates.js",
+    "functions/mcp/hashToken.js",
+    "functions/mcp/httpHandler.js",
+    "functions/mcp/instructions.js",
+    "functions/mcp/loadUserContext.js",
+    "functions/mcp/redact.js",
+    "functions/mcp/shims/browserDeny.js",
+    "functions/mcp/shims/draftParser.js",
+    "functions/mcp/shims/empty.js",
+    "functions/mcp/shims/getTrackerDayNode.js",
+    "functions/mcp/tokens.js",
+    "functions/mcp/tools.js",
+    "src/features/kentuFocus/score/computeDayScore.js",
+    "src/features/kentuFocus/score/dayScoreRecord.js",
+    "src/features/kentuFocus/safety/computeSafety.js",
+    "src/features/kentuFocus/score/computePeriodScore.js",
+    "src/features/kentuFocus/product/loadFocusCatalogsNode.js",
+    "src/features/mealBuilder/utils/foodMatchQuality.js",
+    "src/foodSearch.js"
+  ],
+  "outputs": [
+    "lib/mcpHttp.cjs",
+    "lib/mcpTokens.cjs"
+  ]
+}

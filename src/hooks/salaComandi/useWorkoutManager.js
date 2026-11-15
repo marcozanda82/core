@@ -26,6 +26,7 @@ import {
   collectLoggedWorkoutsNewestFirst,
   resolveLastWorkoutMemory,
 } from '../../features/workout/lastWorkoutMemory';
+import { resolveKcalSourceForSave } from '../../features/mealEngine/resolveDayTargetKcal.js';
 import {
   parseDurationMinutesInput,
   WORKOUT_DURATION_DEFAULT,
@@ -107,6 +108,8 @@ export function useWorkoutManager({
   );
   const [workoutType, setWorkoutType] = useState('pesi');
   const [workoutKcal, setWorkoutKcal] = useState(DEFAULT_WORKOUT_KCAL);
+  /** Suggerimento iniziale kcal (per distinguere edit utente → kcalSource=user). */
+  const suggestedWorkoutKcalRef = useRef(DEFAULT_WORKOUT_KCAL);
   const [workoutEndTime, setWorkoutEndTime] = useState(19);
   const [workoutDurationMin, setWorkoutDurationMin] = useState(String(WORKOUT_DURATION_DEFAULT));
   const [workoutStrengthDetail, setWorkoutStrengthDetail] = useState('');
@@ -147,6 +150,7 @@ export function useWorkoutManager({
     });
     setWorkoutDurationMin(String(memory.durationMin));
     setWorkoutKcal(memory.kcal);
+    suggestedWorkoutKcalRef.current = memory.kcal;
     lastAppliedMemorySigRef.current = generateWorkoutComboSignature(typeId, musclesCanon);
     return memory;
   }, [workoutMemoryIndex]);
@@ -597,6 +601,12 @@ export function useWorkoutManager({
         durationMinutes: normalizedDurationMin,
         durationMin: normalizedDurationMin,
         kcal: isCognitive ? cognitiveKcal : workoutKcal,
+        kcalSource: isCognitive
+          ? 'estimated'
+          : resolveKcalSourceForSave({
+            kcal: workoutKcal,
+            suggestedKcal: suggestedWorkoutKcalRef.current,
+          }),
         icon: iconNode,
         subType: workoutType,
         muscles: musclesCanon,
@@ -611,6 +621,12 @@ export function useWorkoutManager({
         name: isCognitive ? desc : isWork ? 'Lavoro' : desc,
         kcal: isCognitive ? cognitiveKcal : workoutKcal,
         cal: isCognitive ? cognitiveKcal : workoutKcal,
+        kcalSource: isCognitive
+          ? 'estimated'
+          : resolveKcalSourceForSave({
+            kcal: workoutKcal,
+            suggestedKcal: suggestedWorkoutKcalRef.current,
+          }),
         duration,
         durationMinutes: normalizedDurationMin,
         durationMin: normalizedDurationMin,

@@ -61,13 +61,27 @@ export const MOVEMENT_CURVE = Object.freeze({
 });
 
 /**
- * Stato del rapporto, dal punteggio continuo.
+ * Stato del rapporto, dal punteggio continuo (Modello Kentu).
  * ≥ 0,75 sulla rotta, da 0,45 a 0,75 a metà, sotto 0,45 fuori.
+ * Si applica al value DOPO le penalità (e al score giornata).
  */
 export const PILLAR_STATUS = Object.freeze({
   onTrackMin: 0.75,
   halfwayMin: 0.45,
 });
+
+/**
+ * @param {number|null|undefined} value
+ * @returns {'on_track'|'halfway'|'off_track'|'no_data'}
+ */
+export function pillarStatusFromValue(value) {
+  if (value == null || value === '') return 'no_data';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'no_data';
+  if (n >= PILLAR_STATUS.onTrackMin) return 'on_track';
+  if (n >= PILLAR_STATUS.halfwayMin) return 'halfway';
+  return 'off_track';
+}
 
 /** Pesi solo per scegliere il pilastro dell'azione. La forza non entra nel punteggio. */
 export const ACTION_PILLAR_WEIGHTS = Object.freeze({

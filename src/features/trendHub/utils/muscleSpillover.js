@@ -1,10 +1,14 @@
 /**
- * Spillover Biomeccanico + Tracker Stimolo Settimanale (ipertrofia / frequenza).
+ * Spillover Biomeccanico — legacy helpers.
+ * SSOT UI/Focus: Costanza mm-1 (`deriveMuscleStimulusFromCostanza`).
  *
- * Scala: 100% = target ipertrofico settimanale (≈ 2 sessioni sul gruppo).
- * Una sessione primaria ≈ +50%. Contributo soggetto a decadimento giornaliero
- * (≈ −18%/giorno di età della sessione) entro la finestra mobile.
+ * Scala legacy: 100% = target ipertrofico settimanale (≈ 2 sessioni sul gruppo).
  */
+
+import {
+  computeCostanzaForza,
+  coverageStatusTo01,
+} from '../../kentuFocus/costanza/costanzaForza.js';
 
 /** Finestra mobile: sessioni oltre 7 giorni non contano più. */
 export const MUSCLE_STIMULUS_WINDOW_DAYS = 7;
@@ -295,4 +299,30 @@ export function muscleStimulusBarSegments(bucket) {
   const indirectPercent = Math.min(100 - directPercent, Math.round(indirect));
   const totalPercent = Math.min(100, directPercent + indirectPercent);
   return { directPercent, indirectPercent, totalPercent };
+}
+
+/**
+ * Deriva bucket spillover IT + pilastri da Costanza mm-1 (un solo calcolo).
+ * @param {{ fullHistory?: object|null, asOfDate?: string|null, weeklyGoalDays?: number }} [input]
+ * @returns {{
+ *   muscleStimulus: Record<SpilloverMuscleKey, { direct: number, indirect: number, total: number }>,
+ *   muscleStimulusPillars: Record<string, { direct: number, indirect: number, total: number }>,
+ * }}
+ */
+export function deriveMuscleStimulusFromCostanza(input = {}) {
+  const snap = computeCostanzaForza({
+    fullHistory: input.fullHistory || {},
+    asOfDate: input.asOfDate,
+    weeklyGoalDays: input.weeklyGoalDays,
+  });
+  const stimulus = createEmptyMuscleSpilloverStimulus();
+  for (const key of SPILLOVER_MUSCLE_KEYS) {
+    const status = snap.groups?.[key]?.status;
+    const pct = Math.round(coverageStatusTo01(status) * 100);
+    stimulus[key] = { direct: pct, indirect: 0, total: pct };
+  }
+  return {
+    muscleStimulus: stimulus,
+    muscleStimulusPillars: foldSpilloverStimulusToPillars(stimulus),
+  };
 }

@@ -511,6 +511,7 @@ export async function processHealthChatMessage(userMessage, options = {}) {
   const rawText = await askAI(message, systemPrompt, {
     temperature: options.temperature ?? 0.2,
     responseSchema: HEALTH_CHAT_RESPONSE_SCHEMA,
+    callTag: options.callTag || 'health_chat',
     signal: options.signal ?? null,
   });
 

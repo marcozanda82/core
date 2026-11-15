@@ -160,7 +160,7 @@ export default function MetabolismoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da Kentu per leggere diario, target e cilindri in sola lettura."
+        body="Accedi da Kentu per leggere diario, target e recupero in sola lettura."
       />
     );
   }

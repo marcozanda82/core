@@ -474,5 +474,5 @@ test('il titolo segue lo stato del periodo e il movimento il punteggio completo'
     safety: { signals: [] },
     pillars: [{ id: 'movimento', status: 'on_track', value: 0.9, active: true, keyFact: 'in linea' }],
   });
-  assert.equal(on.headline, 'Settimana sulla rotta: movimento in linea');
+  assert.equal(on.headline, 'Settimana sulla rotta: movimento al suo posto');
 });

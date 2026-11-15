@@ -4,6 +4,7 @@
  */
 
 import { get, ref, set } from 'firebase/database';
+import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
 import {
   buildDayStatusRecord,
   dayStatusPath,
@@ -30,7 +31,12 @@ export function createDayStatusStore({ db, uid }) {
     async write(date, input) {
       if (!isIsoDate(date)) throw new Error('data non valida');
       const record = buildDayStatusRecord(input);
-      await set(ref(db, dayStatusPath(id, date)), record);
+      const path = dayStatusPath(id, date);
+      await withRtdbPermissionLog(set(ref(db, path), record), {
+        path,
+        version: 'kentu.dayStatus.v1',
+        feature: 'day_status',
+      });
       return record;
     },
   };

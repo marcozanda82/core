@@ -4,6 +4,7 @@
 
 import { get, ref, set } from 'firebase/database';
 import { isIsoDate } from '../../dayStatus/dayStatusRecord.js';
+import { withRtdbPermissionLog } from '../../../services/rtdbPermissionDenied.js';
 import { computeSafety } from './computeSafety.js';
 import {
   decodeSafetyFromRtdb,
@@ -30,7 +31,12 @@ export function createSafetyStore({ db, uid }) {
     async write(date, record) {
       if (!isIsoDate(date)) throw new Error('data non valida');
       const payload = encodeSafetyForRtdb(record);
-      await set(ref(db, safetyStatusPath(id, date)), payload);
+      const path = safetyStatusPath(id, date);
+      await withRtdbPermissionLog(set(ref(db, path), payload), {
+        path,
+        version: payload?.version || null,
+        feature: 'safety_status',
+      });
       return decodeSafetyFromRtdb(payload);
     },
   };

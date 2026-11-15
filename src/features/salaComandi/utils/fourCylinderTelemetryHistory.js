@@ -12,9 +12,9 @@ import {
   resolveCognitivePenaltyPerHour,
 } from '../engines/fourCylinderEngine';
 import {
-  computeHypertrophyLevels01,
-  HYPERTROPHY_DECAY_HORIZON_DAYS,
-} from '../../../utils/hypertrophyMath.js';
+  computeCostanzaForza,
+  computeCostanzaPillarLevels01,
+} from '../../kentuFocus/costanza/costanzaForza.js';
 import { strengthSessionPrimaries } from '../../commandTerminal/context/workoutMovement.js';
 
 /** @typedef {import('../engines/fourCylinderEngine').MuscleCylinderId} MuscleCylinderKey */
@@ -28,7 +28,7 @@ const VALID_CYLINDER_KEYS = new Set(MUSCLE_CYLINDER_IDS);
 /**
  * @typedef {object} FourCylinderTelemetryPoint
  * @property {string} date ISO YYYY-MM-DD (asse X)
- * @property {number} legs stimolo accumulo dinamico 0–1 (SSOT hypertrophyMath)
+ * @property {number} legs copertura Costanza mm-1 0–1 (coperto/toccato/vuoto)
  * @property {number} chest
  * @property {number} back_shoulders
  * @property {number} arms
@@ -189,11 +189,11 @@ function readDecayLevelsFromAfter(after) {
 
 /**
  * Serie storica cilindri da `fullHistory`.
- * Muscoli = Accumulo Dinamico (hypertrophyMath: +65/sessione, curva 7gg) — SSOT barre + grafico.
+ * Muscoli = Costanza mm-1 (copertura 7g) — SSOT barre + grafico.
  * Fatica sistemica = snapshot + decadimento a ore (invariato).
  *
  * @param {object | null | undefined} fullHistory albero tracker_data
- * @param {{ daysBack?: number, endDate?: string, fourCylinder?: object | null, todayLiveLog?: Array | null }} [options]
+ * @param {{ daysBack?: number, endDate?: string, fourCylinder?: object | null, todayLiveLog?: Array | null, weeklyGoalDays?: number }} [options]
  * @returns {FourCylinderTelemetryPoint[]}
  */
 export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
@@ -203,13 +203,7 @@ export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
   const liveRaw = options.fourCylinder && typeof options.fourCylinder === 'object'
     ? options.fourCylinder
     : null;
-
-  // Preload sessioni: serie + orizzonte decadimento (hit oltre horizon = residuo 0).
-  const preloadFrom = addDays(endDate, -(daysBack + HYPERTROPHY_DECAY_HORIZON_DAYS - 1));
-  const sessionByDate = buildSessionPrimariesByDate(tree, preloadFrom, endDate, {
-    todayIso: endDate,
-    todayLiveLog: options.todayLiveLog,
-  });
+  const weeklyGoalDays = options.weeklyGoalDays;
 
   /** @type {FourCylinderTelemetryPoint[]} */
   const rows = [];
@@ -303,20 +297,24 @@ export function buildFourCylinderTelemetrySeries(fullHistory, options = {}) {
       capturedAt = null;
     }
 
-    // Muscoli: Accumulo Dinamico (SSOT hypertrophyMath — stesso valore di barre e linee).
-    const hypertrophy = computeHypertrophyLevels01(sessionByDate, date);
-    const hypertrophyEnergy = muscleDecaySum(hypertrophy);
+    // Muscoli: Costanza mm-1 (copertura gruppi → pilastri 0–1).
+    const costanzaLevels = computeCostanzaPillarLevels01({
+      fullHistory: tree,
+      asOfDate: date,
+      weeklyGoalDays,
+    });
+    const muscleEnergy = muscleDecaySum(costanzaLevels);
 
     /** @type {FourCylinderTelemetryPoint & { capturedAt?: number | null }} */
     let point = {
       date,
-      legs: hypertrophy.legs,
-      chest: hypertrophy.chest,
-      back_shoulders: hypertrophy.back_shoulders,
-      arms: hypertrophy.arms,
-      core: hypertrophy.core,
+      legs: costanzaLevels.legs,
+      chest: costanzaLevels.chest,
+      back_shoulders: costanzaLevels.back_shoulders,
+      arms: costanzaLevels.arms,
+      core: costanzaLevels.core,
       fatigue,
-      hasSnapshot: hasFatigueSnapshot || hypertrophyEnergy > 0,
+      hasSnapshot: hasFatigueSnapshot || muscleEnergy > 0,
       isCarry: isCarry || undefined,
       capturedAt,
     };
@@ -390,51 +388,42 @@ export function getDaysSinceLastStimulus(fullHistory, cylinderKey, options = {})
   const key = String(cylinderKey || '').trim();
   if (!VALID_CYLINDER_KEYS.has(key)) return '∞';
 
-  const fourCylinder = options.fourCylinder && typeof options.fourCylinder === 'object'
-    ? options.fourCylinder
-    : null;
-
-  if (fourCylinder) {
-    const liveLevel = clamp01(fourCylinder.decay?.[key]);
-    if (liveLevel > 0) {
-      const applied = Number(fourCylinder.lastStimulus?.applied?.[key]) || 0;
-      const stimulusDate = String(fourCylinder.lastStimulus?.date || '').slice(0, 10);
-      if (applied > 0 && /^\d{4}-\d{2}-\d{2}$/.test(stimulusDate)) {
-        const diff = diffCalendarDaysUtc(stimulusDate, today);
-        if (diff != null && diff >= 0) return diff;
-      }
-      const refDate = String(
-        fourCylinder.lastUpdatedIso || fourCylinder.lastProcessedDate || today,
-      ).slice(0, 10);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(refDate)) {
-        const diff = diffCalendarDaysUtc(refDate, today);
-        if (diff != null && diff >= 0) return diff;
-      }
-      return 0;
+  const groupAlias = {
+    legs: 'gambe',
+    chest: 'petto',
+    back_shoulders: 'schiena',
+    arms: 'braccia',
+    core: 'core',
+  };
+  const groupId = groupAlias[key] || key;
+  const snap = computeCostanzaForza({
+    fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
+    asOfDate: today,
+  });
+  const g = snap.groups?.[groupId];
+  if (g?.muscleIds?.length) {
+    let best = null;
+    for (const mid of g.muscleIds) {
+      const d = snap.muscles?.[mid]?.daysSinceTrained;
+      if (d == null) continue;
+      if (best == null || d < best) best = d;
     }
+    if (best != null) return best;
+    // Spalle fuse in back_shoulders: prova anche spalle
+    if (key === 'back_shoulders') {
+      const sp = snap.groups?.spalle;
+      let bestSp = null;
+      for (const mid of sp?.muscleIds || []) {
+        const d = snap.muscles?.[mid]?.daysSinceTrained;
+        if (d == null) continue;
+        if (bestSp == null || d < bestSp) bestSp = d;
+      }
+      if (bestSp != null) return bestSp;
+    }
+    return '> 30';
   }
 
-  const tree = fullHistory && typeof fullHistory === 'object' ? fullHistory : {};
-  const maxScan = Math.max(
-    1,
-    Math.min(STIMULUS_SCAN_MAX_DAYS, Math.floor(Number(options.maxScanDays) || STIMULUS_SCAN_MAX_DAYS)),
-  );
-
-  const todayLiveLog = Array.isArray(options.todayLiveLog) ? options.todayLiveLog : null;
-
-  for (let back = 0; back <= maxScan; back += 1) {
-    const date = addDays(today, -back);
-    const log = todayLiveLog && date === today
-      ? todayLiveLog
-      : getLogFromStoricoTree(tree, date);
-    for (const entry of log) {
-      if (readPositiveStimulusForCylinder(entry, key) <= 0) continue;
-      const diff = diffCalendarDaysUtc(date, today);
-      return diff != null && diff >= 0 ? diff : 0;
-    }
-  }
-
-  return maxScan >= 30 ? '> 30' : '∞';
+  return '∞';
 }
 
 /**

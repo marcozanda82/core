@@ -439,11 +439,15 @@ export async function requestFocusAiCoachAnalysis(input) {
 
     if (!raw?.ok || !raw.text) {
       timing.totalMs = Date.now() - t0;
+      const quotaMsg = raw?.diag === 'http_429' && raw?.error
+        ? String(raw.error)
+        : null;
       const msg = raw?.diag === 'timeout'
         ? 'Sta impiegando più del previsto. Attendi un momento e riprova.'
         : raw?.diag === 'aborted'
           ? 'Analisi interrotta.'
-          : 'Non sono riuscito a preparare il rapporto. Puoi riprovare.';
+          : quotaMsg
+            || 'Non sono riuscito a preparare il rapporto. Puoi riprovare.';
       logFocusAiCoachDiag({
         phase: 'provider_failed',
         requestId,

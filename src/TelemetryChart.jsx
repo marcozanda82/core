@@ -103,7 +103,7 @@ export default function TelemetryChart({ data = [], mode = 'lines' }) {
     return (
       <div className="rounded-lg border border-dashed border-white/10 bg-black/30 px-3 py-6 text-center">
         <p className="text-[11px] text-slate-500">
-          Nessuno snapshot cilindri nel periodo. Salva un allenamento per popolare i grafici.
+          Nessuno snapshot muscolare nel periodo. Salva un allenamento per popolare i grafici.
         </p>
       </div>
     );

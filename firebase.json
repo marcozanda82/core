@@ -12,6 +12,10 @@
         "firebase-debug.log",
         "firebase-debug.*.log",
         "*.local"
+      ],
+      "predeploy": [
+        "node functions/scripts/buildMcpBundle.mjs",
+        "node functions/scripts/checkMcpBundle.mjs"
       ]
     }
   ],

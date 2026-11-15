@@ -238,7 +238,8 @@ export function buildBaseline({
   const span = Math.max(dates.length, 1);
 
   return {
-    version: 1,
+    version: 2,
+    scoreVersion: 'kds-4',
     from: dates[0],
     to: dates[dates.length - 1],
     source: calibration.source,

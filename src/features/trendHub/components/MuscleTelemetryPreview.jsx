@@ -33,11 +33,11 @@ export default function MuscleTelemetryPreview({
       aria-label="Anteprima telemetria muscolare"
     >
       <header className="mb-2">
-        <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-violet-300/80">
-          Telemetria muscolare
+        <p className="m-0 text-[10px] font-bold uppercase tracking-[0.16em] text-cyan-300/80">
+          Costanza
         </p>
         <p className="m-0 mt-0.5 text-[11px] text-slate-400">
-          Le 2 aree a priorità più alta (stimolo più basso)
+          Le 2 aree a priorità più alta (meno coperte)
         </p>
       </header>
 

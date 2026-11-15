@@ -24,6 +24,11 @@ import {
   writeGhostAutoPilotToLocalStorage,
   readAutopilotCorrectionForDate,
 } from '../../utils/rollingCalorieBank';
+import {
+  buildDayTargetSnapshot,
+  resolveDayTargetKcal,
+} from '../../features/mealEngine/resolveDayTargetKcal.js';
+import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
 
 /** Chiavi LS globali — indipendenti dal giorno visualizzato nel tracker. */
 export const KENTU_GHOST_SIM_DELTA_LS_KEY = 'kentu_ghost_sim_delta_global';
@@ -258,22 +263,44 @@ export function useGhostSimCompensation({
     lastPersistedAutopilotRef.current = stamp;
 
     const storicoKey = TRACKER_STORICO_KEY(todayIso);
+    const resolved = resolveDayTargetKcal({
+      date: todayIso,
+      fullHistory,
+      settingsBaseKcal: baseKcalForBank,
+      userTargets,
+      autopilotKcal: value,
+      preferSnapshot: false,
+    });
+    const dayTargetSnapshot = buildDayTargetSnapshot({ ...resolved, autopilot: value });
+
     setFullHistory?.((prev) => {
       const node = prev?.[storicoKey] && typeof prev[storicoKey] === 'object'
         ? prev[storicoKey]
         : { data: todayIso };
-      if (Math.round(Number(node.autopilotCorrection) || 0) === value
-        && Object.prototype.hasOwnProperty.call(node, 'autopilotCorrection')) {
-        return prev;
-      }
-      return { ...(prev || {}), [storicoKey]: { ...node, autopilotCorrection: value } };
+      const sameAuto = Math.round(Number(node.autopilotCorrection) || 0) === value
+        && Object.prototype.hasOwnProperty.call(node, 'autopilotCorrection');
+      const sameSnap = node.dayTargetSnapshot?.total === dayTargetSnapshot.total
+        && node.dayTargetSnapshot?.autopilot === dayTargetSnapshot.autopilot;
+      if (sameAuto && sameSnap) return prev;
+      return {
+        ...(prev || {}),
+        [storicoKey]: { ...node, autopilotCorrection: value, dayTargetSnapshot },
+      };
     });
 
     const uid = auth?.currentUser?.uid || user?.uid;
     if (!uid || !db) return;
-    update(ref(db, `users/${uid}/tracker_data/${storicoKey}`), {
-      autopilotCorrection: value,
-    }).catch((err) => console.warn('[Autopilot] snapshot giornaliero non salvato', err));
+    withRtdbPermissionLog(
+      update(ref(db, `users/${uid}/tracker_data/${storicoKey}`), {
+        autopilotCorrection: value,
+        dayTargetSnapshot,
+      }),
+      {
+        path: `users/${uid}/tracker_data/${storicoKey}`,
+        version: dayTargetSnapshot?.rulesVersion || null,
+        feature: 'dayTargetSnapshot',
+      },
+    ).catch((err) => console.warn('[Autopilot] snapshot giornaliero non salvato', err));
   }, [
     isViewingToday,
     isSimulationMode,
@@ -283,6 +310,9 @@ export function useGhostSimCompensation({
     user?.uid,
     auth,
     setFullHistory,
+    fullHistory,
+    baseKcalForBank,
+    userTargets,
   ]);
 
   const effectiveGhostDeltaKcal = useMemo(

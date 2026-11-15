@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, Dumbbell, Moon, Pause, Utensils } from 'lucide-react';
 import { get, ref, set } from 'firebase/database';
 import { db } from '../../../../firebaseConfig.js';
+import { withRtdbPermissionLog } from '../../../../services/rtdbPermissionDenied.js';
 import DayScoreFeedback from '../../score/DayScoreFeedback.jsx';
 import { computePeriodScore } from '../../score/computePeriodScore.js';
-import { PERIOD_RULES, PILLAR_STATUS } from '../../score/scoreConfig.kds-3.js';
+import { PERIOD_RULES, PILLAR_STATUS } from '../../score/scoreConfig.kds-4.js';
 import { WALK_CHECKIN_OPTIONS, createMovementCheckinStore, forzaSettingPath } from '../../score/movementCheckin.js';
 import { loadKentuDatabases, peekKentuDatabasesSnapshot, subscribeKentuDatabases } from '../../../../foodLoader.js';
 import { buildFocusPeriodBrief } from '../focusPeriodBrief.js';
@@ -60,7 +61,14 @@ function shownPillarLine(id, aiLine, codeLine, keyFact) {
   if (keyFact && /eq\s*\/\s*7 giorni/.test(String(aiLine || '')) && String(aiLine) !== keyFact) {
     return keyFact;
   }
-  return aiLine || codeLine || keyFact || 'non registrato';
+  const preferred = aiLine || codeLine || keyFact || 'non registrato';
+  // Se l'AI non ha scritto una frase, non lasciare solo «6 h».
+  if (id === 'sonno' && keyFact && preferred === keyFact && !/^Hai dormito/i.test(String(preferred))) {
+    return codeLine && /^Hai dormito/i.test(String(codeLine))
+      ? codeLine
+      : `Hai dormito ${keyFact}.`;
+  }
+  return preferred;
 }
 
 function scoreStateWord(score) {
@@ -197,7 +205,9 @@ export default function FocusBoard({
     fullHistory: session?.fullHistory,
     userTargets: session?.userTargets,
     targetKcal: session?.userTargets?.kcal ?? null,
+    settingsBaseKcal: session?.userTargets?.kcal ?? null,
     profile_targets: session?.profile_targets || null,
+    scoreVersion: 'kds-4',
     cylinders: { forza: { enabled: forzaOn } },
     movementCheckins: checkins,
     records,
@@ -337,11 +347,19 @@ export default function FocusBoard({
     get(ref(db, path)).then((snap) => {
       if (cancelled) return null;
       const saved = snap.exists() ? snap.val() : null;
-      if (saved && typeof saved === 'object') {
+      const staleMethod = saved
+        && typeof saved === 'object'
+        && (saved.scoreVersion !== 'kds-4' || Number(saved.version) < 2);
+      if (saved && typeof saved === 'object' && !staleMethod) {
         setSavedBaseline({ ...payload, ...saved, dismissed: Boolean(saved.dismissed) });
         return null;
       }
-      return set(ref(db, path), { ...payload, dismissed: false }).then(() => {
+      // kds-4: invalida baseline vecchia e riscrive.
+      return withRtdbPermissionLog(set(ref(db, path), { ...payload, dismissed: false }), {
+        path,
+        version: payload?.scoreVersion || null,
+        feature: 'baseline',
+      }).then(() => {
         if (!cancelled) setSavedBaseline({ ...payload, dismissed: false });
       });
     }).catch(() => {
@@ -357,7 +375,11 @@ export default function FocusBoard({
     const next = { ...shownBaseline, dismissed: true };
     setSavedBaseline(next);
     if (!uid || !db) return;
-    set(ref(db, `users/${uid}/baseline/v1`), next).catch(() => {});
+    withRtdbPermissionLog(set(ref(db, `users/${uid}/baseline/v1`), next), {
+      path: `users/${uid}/baseline/v1`,
+      version: next?.scoreVersion || null,
+      feature: 'baseline',
+    }).catch(() => {});
   };
 
   const showBaselineHero = Boolean(
@@ -429,7 +451,6 @@ export default function FocusBoard({
           <div className="kf-focus-period-copy">
             <strong>{periodWindow?.label}</strong>
             <span>{calibrating ? 'in apprendimento' : statusWord(period, viewingToday)}</span>
-            {import.meta.env.DEV ? <span className="kf-focus-dev">{devLine(period, liveDays[periodWindow?.analysisDate])}</span> : null}
           </div>
         </div>
         <button
@@ -465,7 +486,7 @@ export default function FocusBoard({
         ))}
       </div>
 
-      <p className="kf-focus-legend">Blu: giornata sulla rotta · più intenso: muscoli allenati di recente · nero: giorno non registrato.</p>
+      <p className="kf-focus-legend">Blu: giornata sulla rotta · più intenso: settimana di forza costante · nero: giorno non registrato.</p>
 
       {calibrating ? (
         <p className="kf-focus-kicker">
@@ -767,8 +788,3 @@ function sectionBody(deepDive, id) {
   return text ? <p>{text}</p> : null;
 }
 
-function devLine(period, day) {
-  const periodScore = period?.score == null ? 'senza media' : period.score.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  const dayScore = day?.score == null ? 'giorno senza numero' : day.score.toLocaleString('it-IT', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  return `${periodScore} · ${dayScore}`;
-}

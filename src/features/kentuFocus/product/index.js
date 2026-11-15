@@ -210,6 +210,17 @@ export {
   resolveFocusAiCoachTimeoutMs,
 } from './focusAiCoachTimeouts.js';
 
+export {
+  FOCUS_AI_LOCK_PERIODS,
+  FORCE_CIRCUIT_WINDOW_MS,
+  FORCE_CIRCUIT_USER_MESSAGE,
+  focusAiLockPath,
+  morningLockDecision,
+  forceCircuitDecision,
+  createMemoryFocusAiLockStore,
+  createFirebaseFocusAiLockStore,
+} from './focusAiLocks.js';
+
 export { buildFocusMealRedistributionManeuver } from './buildFocusMealRedistributionManeuver.js';
 
 export { buildFocusWeeklyHabitCompass } from './buildFocusWeeklyHabitCompass.js';

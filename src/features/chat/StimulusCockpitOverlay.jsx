@@ -1,10 +1,9 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ListChecks, X } from 'lucide-react';
-import { getMuscleGroupsForMacro, stashActivitySheetTempTab } from '../../activityCatalog';
+import { stashActivitySheetTempTab } from '../../activityCatalog';
 import CardioProgressBar from '../../components/CardioProgressBar';
-import MuscleStimulusDistrictList from '../trendHub/components/MuscleStimulusDistrictList';
-import { buildMuscleTelemetryRows } from '../trendHub/utils/muscleTelemetryModel';
+import CostanzaPanel from '../kentuFocus/costanza/CostanzaPanel';
 import {
   buildAttivitaWorkoutSummary,
   collectPendingSessionDrafts,
@@ -45,7 +44,7 @@ function OverlayActionButton({ icon, label, onClick, disabled }) {
 export default function StimulusCockpitOverlay({
   open = false,
   onClose = null,
-  fourCylinder = null,
+  fourCylinder: _fourCylinder = null,
   fullHistory = null,
   dailyLog = null,
   disabled = false,
@@ -83,20 +82,6 @@ export default function StimulusCockpitOverlay({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, handleClose]);
 
-  const muscleRows = useMemo(() => {
-    try {
-      const rows = buildMuscleTelemetryRows({
-        fourCylinder: fourCylinder && typeof fourCylinder === 'object' ? fourCylinder : null,
-        fullHistory: fullHistory && typeof fullHistory === 'object' ? fullHistory : {},
-        activeLog: Array.isArray(dailyLog) ? dailyLog : [],
-      })?.muscleRows;
-      return Array.isArray(rows) ? rows : [];
-    } catch (error) {
-      console.warn('[StimulusCockpitOverlay] muscle telemetry failed', error);
-      return [];
-    }
-  }, [fourCylinder, fullHistory, dailyLog]);
-
   const workoutSummary = useMemo(
     () => buildAttivitaWorkoutSummary({
       dailyLog,
@@ -116,15 +101,15 @@ export default function StimulusCockpitOverlay({
     });
   }, [disabled, handleClose, onOpenActivity]);
 
-  const openStimulusCylinder = useCallback((row) => {
-    const groupId = String(row?.id || '').trim();
-    const workoutMuscles = getMuscleGroupsForMacro(groupId).map((d) => d.id);
+  const openCostanzaGroup = useCallback((group) => {
+    const groupId = String(group?.id || '').trim();
+    const chips = Array.isArray(group?.chips) ? group.chips : [];
     openActivity({
-      id: `stimulus-${groupId || 'pesi'}`,
+      id: `costanza-${groupId || 'pesi'}`,
       defaultTab: 'pesi',
       category: 'strength',
       targetMuscle: groupId,
-      muscles: workoutMuscles,
+      muscles: chips,
     });
   }, [openActivity]);
 
@@ -172,7 +157,7 @@ export default function StimulusCockpitOverlay({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Cruscotto dello stimolo muscolare e cardio"
+            aria-label="Cruscotto Costanza forza e cardio"
             className="pointer-events-none fixed inset-0 z-[100041] flex h-[100dvh] items-end justify-center px-3 pb-3 pt-6 sm:items-center sm:px-6 sm:py-6"
           >
             <div
@@ -198,16 +183,14 @@ export default function StimulusCockpitOverlay({
                   Semaforo metabolico
                 </p>
                 <h2 className="mt-0.5 text-base font-semibold text-zinc-50 sm:text-lg">
-                  Cruscotto dello stimolo
+                  Costanza
                 </h2>
               </header>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-                <MuscleStimulusDistrictList
-                  muscleRows={muscleRows}
-                  onSelectRow={openStimulusCylinder}
-                  showLegend={false}
-                  unifiedBars
+                <CostanzaPanel
+                  fullHistory={fullHistory && typeof fullHistory === 'object' ? fullHistory : {}}
+                  onSelectGroup={openCostanzaGroup}
                 />
               </div>
 

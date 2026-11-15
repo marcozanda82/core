@@ -14,9 +14,9 @@ import { collectRecentWorkoutLogs } from '../../commandTerminal/context/recentWo
 import {
   classifyWorkoutByType,
   equivalentAerobicMinutes,
-  strengthSessionPrimaries,
 } from '../../commandTerminal/context/workoutMovement.js';
-import { computeHypertrophyLevels01, HYPERTROPHY_SESSION_BOOST } from '../../../utils/hypertrophyMath.js';
+import { forceLoadConsistency } from '../costanza/forceConsistency.ci-1.js';
+import { normalizeWeeklyGoalDays } from '../costanza/costanzaForza.js';
 import { MOVEMENT_CURVE } from './scoreConfig.kds-3.js';
 
 export function scoreMovimento(date, fullHistory, context = {}) {
@@ -85,33 +85,13 @@ export function scoreMovimento(date, fullHistory, context = {}) {
 }
 
 /**
- * Intensità del blu. Il cruscotto resta sul residuo 0–1.
- * Una sessione piena (0,65 sul distretto) vale 1. Oltre, si ferma a 1.
+ * Intensità del blu — force-ci-1 (Costanza).
+ * 0.5 × giorni forza / obiettivo + 0.5 × gruppi principali coperti / 5.
  */
-export function forceLoad(date, fullHistory) {
-  const byDate = new Map();
-  for (const entry of workoutsByDay(fullHistory, date).values()) {
-    for (const session of entry) {
-      const primaries = strengthSessionPrimaries(session);
-      if (primaries.length === 0) continue;
-      const day = String(session.__dateKey || '').slice(0, 10);
-      if (!day) continue;
-      const sessions = byDate.get(day) || [];
-      sessions.push(primaries);
-      byDate.set(day, sessions);
-    }
-  }
-  const levels = computeHypertrophyLevels01(byDate, date);
-  const max = Math.max(
-    levels.legs,
-    levels.chest,
-    levels.back_shoulders,
-    levels.arms,
-    levels.core,
-  );
-  const fullSession = HYPERTROPHY_SESSION_BOOST / 100;
-  if (!(fullSession > 0)) return 0;
-  return Math.min(1, Math.round((max / fullSession) * 1000) / 1000);
+export function forceLoad(date, fullHistory, context = {}) {
+  return forceLoadConsistency(date, fullHistory, {
+    weeklyGoalDays: normalizeWeeklyGoalDays(context?.cylinders?.forza?.weeklyGoalDays),
+  });
 }
 
 export function forzaEnabled(context) {

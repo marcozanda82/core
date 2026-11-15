@@ -79,6 +79,7 @@ export async function extractMacrosFromImage(base64Image, options = {}) {
     temperature: 0,
     generationConfig: { temperature: 0 },
     responseSchema: MACROS_RESPONSE_SCHEMA,
+    callTag: options.callTag || 'vision_label',
     signal: options.signal,
   });
 

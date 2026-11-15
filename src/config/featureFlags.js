@@ -27,4 +27,9 @@ export const featureFlags = Object.freeze({
   consultoPreview: legacyOn('VITE_FF_CONSULTO'),
   /** Arco del punteggio di longevità nell'intestazione della Home. Spento. */
   homeLongevityArc: legacyOn('VITE_FF_HOME_LONGEVITY_ARC'),
+  /**
+   * UI DEV per creare/revocare gettoni MCP (connettore Claude).
+   * Visibile solo in build non-PROD (import.meta.env.DEV).
+   */
+  mcpDevTokens: Boolean(env.DEV),
 });

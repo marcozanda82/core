@@ -219,6 +219,7 @@ export async function generatePeriodizedTargets(
     const rawText = await askAI(userPrompt, WAVE_NUTRITION_SYSTEM_PROMPT, {
       temperature: 0.25,
       responseSchema: WAVE_NUTRITION_RESPONSE_SCHEMA,
+      callTag: 'wave_nutrition',
       generationConfig: {
         temperature: 0.25,
         maxOutputTokens: 2048,

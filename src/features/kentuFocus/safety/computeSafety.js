@@ -1,5 +1,5 @@
 /**
- * Salvavita sfv-2. Puro: niente UI, niente Firebase.
+ * Salvavita sfv-3. Puro: niente UI, niente Firebase.
  * Legge solo i giorni chiusi. Un giorno in pausa, aperto, bucato o non confermato
  * non produce segnali.
  */
@@ -17,8 +17,8 @@ import {
 import {
   classifyWorkoutByType,
   resolveWorkoutDurationMinutes,
-  strengthSessionPrimaries,
 } from '../../commandTerminal/context/workoutMovement.js';
+import { sessionTrainedMuscleIds } from '../costanza/muscleMap.mm-1.js';
 import { computeTotali } from '../../../utils/computeTotaliCore.js';
 import {
   CLOSED_LOOKBACK_DAYS,
@@ -53,21 +53,12 @@ import {
 
 const FOOD_TYPES = new Set(['food', 'recipe']);
 const WAKE_ENERGY_FIELDS = ['wakeEnergy', 'morningEnergy', 'energyOnWake', 'energiaRisveglio'];
-const DISTRICT_OF = Object.freeze({
-  gambe: 'gambe',
-  petto: 'petto',
-  schiena: 'dorso_spalle',
-  spalle: 'dorso_spalle',
-  braccia: 'braccia',
-  core: 'core',
-});
-const DISTRICTS = Object.freeze(['gambe', 'petto', 'dorso_spalle', 'braccia', 'core']);
 
 /**
  * @param {string} date
  * @param {object} [context]
  * @returns {{
- *   version: 'sfv-2',
+ *   version: 'sfv-3',
  *   level: 'none' | 'watch' | 'act',
  *   signals: Array<{ id: string, area: string, level: 'watch' | 'act', evidence: object }>,
  *   suppressNumbers: boolean,
@@ -394,17 +385,9 @@ function readMorning(node) {
   };
 }
 
+/** sfv-3: distretti = muscoli allenati (peso 1, mm-1). Il coinvolgimento 0.5 non conta. */
 function districtsOf(entry) {
-  const found = new Set();
-  for (const primary of strengthSessionPrimaries(entry)) {
-    if (primary === 'total') {
-      for (const district of DISTRICTS) found.add(district);
-      continue;
-    }
-    const district = DISTRICT_OF[primary];
-    if (district) found.add(district);
-  }
-  return [...found];
+  return sessionTrainedMuscleIds(entry);
 }
 
 function workoutsOf(node) {

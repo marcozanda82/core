@@ -10,6 +10,7 @@ import {
   TRACKER_STORICO_KEY,
 } from '../coreEngine';
 import { computeDayEnergySnapshot } from '../features/energyBalance/energyBalanceMath';
+import { resolveLookbackDayTargetKcal } from '../features/mealEngine/resolveDayTargetKcal.js';
 import { dayHasFoodLog, isDayIntentionalFast } from './dayTrackingStatus';
 
 /** Lookback: ieri, avantieri, 3 giorni fa (cicli chiusi). Mai il giorno in corso. */
@@ -192,12 +193,21 @@ export function resolveAutopilotZoneStrategy(netDebt, maxDailyDelta, deadbandDel
 }
 
 /**
- * Target operativo per il lookback: base dogmatica stabile (senza carryover / burn).
+ * Target operativo lookback per un giorno: base + allenamento contato (senza compensazione).
  * @param {number} settingsBaseKcal
  * @param {object | null | undefined} userTargets
+ * @param {object | null | undefined} fullHistory
+ * @param {string} date
  * @returns {number}
  */
-function resolveLookbackOperationalTarget(settingsBaseKcal, userTargets) {
+function resolveLookbackOperationalTarget(settingsBaseKcal, userTargets, fullHistory, date) {
+  const total = resolveLookbackDayTargetKcal({
+    date,
+    fullHistory,
+    settingsBaseKcal,
+    userTargets,
+  });
+  if (total > 0) return total;
   const fromSettings = Math.round(Number(settingsBaseKcal) || 0);
   if (fromSettings > 0) return fromSettings;
   const fromTargets = Math.round(
@@ -245,10 +255,6 @@ export function computeRollingCalorieDebt(input = {}) {
   const userTargets = input.userTargets && typeof input.userTargets === 'object'
     ? input.userTargets
     : {};
-  const operationalTarget = resolveLookbackOperationalTarget(
-    input.settingsBaseKcal,
-    userTargets,
-  );
   const tdee = resolveAutopilotTdeeKcal({
     tdee: input.tdee,
     userProfile: input.userProfile,
@@ -277,6 +283,12 @@ export function computeRollingCalorieDebt(input = {}) {
     const log = getLogFromStoricoTree(tree, date) || [];
     const intentional = isDayIntentionalFast(dayNode);
     const hasFood = dayHasFoodLog(log);
+    const operationalTarget = resolveLookbackOperationalTarget(
+      input.settingsBaseKcal,
+      userTargets,
+      tree,
+      date,
+    );
     const snapshot = computeDayEnergySnapshot({
       log,
       targetKcal: operationalTarget,

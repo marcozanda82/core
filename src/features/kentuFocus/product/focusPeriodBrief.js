@@ -22,7 +22,7 @@ import {
   isPeriodDataStatus,
   periodDayWeight,
   unconfirmedPeriodNote,
-} from '../score/scoreConfig.kds-3.js';
+} from '../score/scoreConfig.kds-4.js';
 import { SLEEP_CURVE } from '../score/scoreConfig.kds-2.js';
 import { computeSafety } from '../safety/computeSafety.js';
 import { SCORE_PENALTY_IDS } from './focusPenaltyCite.js';

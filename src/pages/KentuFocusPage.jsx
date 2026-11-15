@@ -12,11 +12,16 @@ import {
   Zap,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, runTransaction } from 'firebase/database';
 import { db } from '../firebaseConfig.js';
 import { isFirebaseEmulatorMode } from '../config/emulatorUser.js';
 import { createMovementCheckinStore } from '../features/kentuFocus/score/movementCheckin.js';
 import { resolveEmulatorFocusAskAi } from '../features/kentuFocus/product/emulatorFocusAskAi.js';
+import {
+  createFirebaseFocusAiLockStore,
+  createMemoryFocusAiLockStore,
+  FORCE_CIRCUIT_USER_MESSAGE,
+} from '../features/kentuFocus/product/focusAiLocks.js';
 import DayScoreFeedback from '../features/kentuFocus/score/DayScoreFeedback.jsx';
 import DayScorePanel from '../features/kentuFocus/score/DayScorePanel.jsx';
 import {
@@ -111,6 +116,16 @@ function resolveFocusAskAiFn() {
     ? window.__KENTU_FOCUS_ASK_AI__
     : undefined;
   return resolveEmulatorFocusAskAi(harness);
+}
+
+function resolveFocusAiLockStore(options = {}) {
+  if (options.forceMemory) return createMemoryFocusAiLockStore();
+  try {
+    if (db) return createFirebaseFocusAiLockStore({ db, ref, runTransaction, get });
+  } catch {
+    /* fallback memory */
+  }
+  return createMemoryFocusAiLockStore();
 }
 
 /**
@@ -2305,7 +2320,9 @@ export default function KentuFocusPage() {
     };
   }, [uid, periodId, cursor, authReady, mockEditorial, focusHarness, focusSavedEvidence]);
 
-  const handleGenerateAi = async () => {
+  const handleGenerateAi = async (opts = {}) => {
+    // force:true solo su click Genera/Rigenera; auto-regen usa force:false.
+    const force = opts?.force === true;
     if (!session || session.mode !== FOCUS_PAGE_MODE.real_diary) {
       setAiState({
         status: 'blocked',
@@ -2323,7 +2340,7 @@ export default function KentuFocusPage() {
     }
     if (aiInflightRef.current) return;
 
-    // Dossier solo su Genera/Rigenera: cedi il main thread prima del lavoro pesante.
+    // Dossier solo su Genera/Rigenera / auto: cedi il main thread prima del lavoro pesante.
     await new Promise((resolve) => {
       if (typeof requestIdleCallback === 'function') {
         requestIdleCallback(() => resolve(), { timeout: 120 });
@@ -2336,7 +2353,7 @@ export default function KentuFocusPage() {
     focusOpenPerfMark('ai_dossier_built', {
       ms: Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - tDossier),
       ok: Boolean(built?.ok),
-      reason: 'generate_or_regenerate',
+      reason: force ? 'generate_or_regenerate' : 'auto_regen',
       syncMainThread: true,
     });
     if (!built.ok || !built.binding) {
@@ -2376,13 +2393,38 @@ export default function KentuFocusPage() {
     try {
       const persistence = resolveFocusAiPersistence({ forceMemory: focusHarness });
       const askAiFn = resolveFocusAskAiFn();
-      // Click esplicito Genera/Rigenera: sempre force, anche se esiste cache/RTDB per la stessa dataVersion.
-      focusOpenPerfMark('morning_ai_request_start');
+      if (force) {
+        const lockStore = resolveFocusAiLockStore({ forceMemory: focusHarness });
+        const claim = await lockStore.claimForce({
+          uid: built.binding.uid,
+          periodId: built.binding.periodId,
+          dataVersion: built.dataVersion,
+        });
+        if (!claim.ok) {
+          const prev = previousAiRef.current;
+          setAiState({
+            status: 'error',
+            analysis: prev?.analysis || null,
+            binding: prev?.binding || built.binding,
+            expectedDataVersion: prev?.expectedDataVersion || built.dataVersion,
+            userMessage: claim.userMessage || FORCE_CIRCUIT_USER_MESSAGE,
+            busy: false,
+            diaryStale: Boolean(prev?.diaryStale),
+            record: prev?.record || null,
+            historyRows: prev?.historyRows || [],
+            isHarnessMock: false,
+            isMock: false,
+            regenerateFailed: true,
+          });
+          return;
+        }
+      }
+      focusOpenPerfMark('morning_ai_request_start', { force });
       const result = await requestFocusAiCoachAnalysis({
         session,
         persistence,
         askAiFn,
-        force: true,
+        force,
       });
       focusOpenPerfMark('morning_ai_request_done', {
         ok: Boolean(result?.ok),
@@ -2463,7 +2505,7 @@ export default function KentuFocusPage() {
         return;
       }
 
-      if (result.fromCache) {
+      if (force && result.fromCache) {
         const prev = previousAiRef.current;
         setAiState({
           status: 'error',
@@ -2588,7 +2630,7 @@ export default function KentuFocusPage() {
       periodId,
       analysisDate: session.analysisDate,
     });
-    generateRef.current?.();
+    generateRef.current?.({ force: false });
   }, [
     focusHarness,
     mockEditorial,
@@ -2598,6 +2640,8 @@ export default function KentuFocusPage() {
     periodWindow?.inProgress,
     aiState,
   ]);
+
+  const handleForceGenerateAi = () => handleGenerateAi({ force: true });
 
   const handleOpenAiHistory = async (row) => {
     if (!row || !uid) return;
@@ -2726,7 +2770,7 @@ export default function KentuFocusPage() {
                   setSearchParams(next, { replace: true });
                 }}
                 aiState={aiState}
-                onRegenerate={handleGenerateAi}
+                onRegenerate={handleForceGenerateAi}
                 onOpenHistory={handleOpenAiHistory}
               />
               </>
@@ -2794,7 +2838,7 @@ export default function KentuFocusPage() {
             <FocusEditorialReport
               session={session}
               aiState={aiState}
-              onGenerate={mockEditorial ? () => {} : handleGenerateAi}
+              onGenerate={mockEditorial ? () => {} : handleForceGenerateAi}
               historyRows={aiState?.historyRows || []}
               onOpenHistory={handleOpenAiHistory}
               allowGenerate={!mockEditorial && Boolean(uid)}

@@ -406,6 +406,10 @@ import {
   getDynamicMealTargets,
 } from './coreEngine';
 import { computeEffectiveDailyTargetKcal } from './features/mealEngine/computeEffectiveDailyTargetKcal';
+import {
+  formatWorkoutBurnLabel,
+  resolveDayTargetKcal,
+} from './features/mealEngine/resolveDayTargetKcal';
 import { excludeEditingMealSlotFromLog } from './features/mealEngine/excludeEditingMealSlotFromLog';
 
 import {
@@ -6017,7 +6021,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     }
   });
 
-  // Calcolo Budget Dinamico (Base + Bruciate oggi) — prima di renderDataWithSegments per usare scale nel map
+  // Burn grezzo (display) — il target usa burn contato via resolveDayTargetKcal
   const burnedKcal = (activeLog || []).filter(item => item.type === 'workout').reduce((acc, wk) => acc + (Number(wk.kcal || wk.cal) || 0), 0);
 
   const fastLoggerDailyLogForTargets = useMemo(() => {
@@ -6062,11 +6066,6 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     return fromSettings > 0 ? fromSettings : 0;
   }, [userProfile?.targetCalories]);
 
-  const dogmaticBurnKcal = useMemo(
-    () => Math.max(0, Math.round(Number(burnedKcal) || 0)),
-    [burnedKcal],
-  );
-
   const dogmaticDeltaKcal = useMemo(() => {
     const strategy = normalizeCalorieStrategyTarget(kentuDailyCalorieStrategy);
     const strategyDelta = strategy === 'pari'
@@ -6096,40 +6095,40 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     [userProfile?.activeCompensation, dogmaticCompensationDateIso],
   );
 
-  /** Oggi: calcolo live. Passato: snapshot `autopilotCorrection` sul nodo giorno. */
+  /** Oggi: calcolo live. Passato: snapshot `autopilotCorrection` / dayTargetSnapshot sul nodo giorno. */
   const dogmaticAutoCompensationKcal = useMemo(
     () => Math.round(Number(autoCompensationDelta) || 0),
     [autoCompensationDelta],
   );
 
-  const dogmaticTargetKcal = useMemo(
-    () => computeEffectiveDailyTargetKcal({
-      settingsBaseKcal: dogmaticSettingsBaseKcal,
-      burnKcal: dogmaticBurnKcal,
-      strategyDeltaKcal: dogmaticDeltaKcal,
-      compensationKcal: dogmaticCompensationKcal,
-      autopilotKcal: dogmaticAutoCompensationKcal,
-    }),
-    [
-      dogmaticSettingsBaseKcal,
-      dogmaticBurnKcal,
-      dogmaticDeltaKcal,
-      dogmaticCompensationKcal,
-      dogmaticAutoCompensationKcal,
-    ],
-  );
+  const dogmaticDayTarget = useMemo(() => resolveDayTargetKcal({
+    date: dogmaticCompensationDateIso,
+    fullHistory,
+    settingsBaseKcal: dogmaticSettingsBaseKcal > 0 ? dogmaticSettingsBaseKcal : profileKcalBase,
+    strategyDeltaKcal: dogmaticDeltaKcal,
+    compensationKcal: dogmaticCompensationKcal,
+    autopilotKcal: dogmaticAutoCompensationKcal,
+    liveLog: activeLog,
+    preferSnapshot: dogmaticCompensationDateIso !== getTodayString(),
+  }), [
+    dogmaticCompensationDateIso,
+    fullHistory,
+    dogmaticSettingsBaseKcal,
+    profileKcalBase,
+    dogmaticDeltaKcal,
+    dogmaticCompensationKcal,
+    dogmaticAutoCompensationKcal,
+    activeLog,
+  ]);
 
-  const dynamicDailyKcal = dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcal > 0
+  const dogmaticBurnKcalRaw = dogmaticDayTarget.burnRaw;
+  const dogmaticBurnKcal = dogmaticDayTarget.burnCounted;
+  const dogmaticBurnLabel = formatWorkoutBurnLabel(dogmaticDayTarget);
+  const dogmaticTargetKcal = dogmaticDayTarget.total;
+
+  const dynamicDailyKcal = (dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcalRaw > 0 || profileKcalBase != null)
     ? dogmaticTargetKcal
-    : (profileKcalBase != null
-      ? computeEffectiveDailyTargetKcal({
-        settingsBaseKcal: profileKcalBase,
-        burnKcal: dogmaticBurnKcal,
-        strategyDeltaKcal: dogmaticDeltaKcal,
-        compensationKcal: dogmaticCompensationKcal,
-        autopilotKcal: dogmaticAutoCompensationKcal,
-      })
-      : null);
+    : null;
 
   const getFastLoggerMealTargetsForSlot = useCallback((mealSlot) => {
     const canon = toCanonicalMealType(String(mealSlot || 'pranzo').split('_')[0]);
@@ -10075,6 +10074,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onClose={() => setShowCalorieDetailsSheet(false)}
             tdeeBaseKcal={dogmaticSettingsBaseKcal}
             workoutBurnKcal={dogmaticBurnKcal}
+            workoutBurnLabel={dogmaticBurnLabel}
             deltaKcal={dogmaticDeltaKcal}
             compensationKcal={dogmaticCompensationKcal}
             compensationDaysRemaining={

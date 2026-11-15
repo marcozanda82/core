@@ -94,7 +94,7 @@ export default function RecuperoRoom({ store }) {
     return (
       <GlassNotice
         title="Dati non disponibili"
-        body="Accedi da Kentu per leggere cilindri, SNC e recupero in sola lettura."
+        body="Accedi da Kentu per leggere muscoli, SNC e recupero in sola lettura."
       />
     );
   }
