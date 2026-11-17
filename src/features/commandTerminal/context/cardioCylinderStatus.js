@@ -16,7 +16,7 @@ import {
   chargeMinutesToReach,
   computeMovementBattery,
 } from '../../kentuFocus/score/movementBattery.js';
-import { getTodayString } from '../../../coreEngine.js';
+import { getTodayString } from '../../../coreEngine';
 
 export const CARDIO_WEEKLY_TARGET_MINUTES = BATTERY_WEEKLY_TARGET_EQ_MIN;
 /** I pesi non entrano nel Movimento. Il rapporto resta esportato per i chiamanti vecchi. */
