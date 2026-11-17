@@ -4,7 +4,7 @@
  */
 
 import { computeDayScore } from '../score/computeDayScore.js';
-import { SCORE_VERSION } from '../score/scoreConfig.kds-4.js';
+import { SCORE_VERSION } from '../score/scoreConfig.kds-5.js';
 import { createDayScoreStore } from '../score/dayScoreStore.js';
 import {
   fingerprintFocusDayContent,

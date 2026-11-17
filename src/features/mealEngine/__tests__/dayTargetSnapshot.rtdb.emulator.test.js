@@ -107,6 +107,50 @@ test('dayTargetSnapshot: PUT diretto del solo figlio accettato', async () => {
   assert.equal(res.denied, false, res.raw);
 });
 
+test('focus_day_scores kds-5: write client autenticato accettata', async () => {
+  const payload = {
+    version: 'kds-5',
+    reliability: 'high',
+    dataVersion: 'fnv1a-testkds5',
+    score: 0.72,
+    cylinders: {
+      alimentazione: {
+        status: 'on_track',
+        keyFact: '2400 kcal · target 2456',
+        signals: ['late_first_meal'],
+        value: 0.85,
+      },
+      sonno: {
+        status: 'on_track',
+        keyFact: '7 h 30',
+        signals: [],
+        value: 1,
+      },
+      movimento: {
+        status: 'halfway',
+        keyFact: 'batteria 60% · senza cardio si scarica di circa il 20% al giorno',
+        signals: ['movement_battery'],
+        value: 0.6,
+      },
+      forza: {
+        status: 'on_track',
+        keyFact: 'parte alta quel giorno',
+        signals: [],
+        value: 1,
+      },
+    },
+  };
+  const res = await emulatorRestPut(
+    `users/${UID}/focus_day_scores/${DATE}`,
+    payload,
+    { idToken: token },
+  );
+  assert.equal(res.statusCode, 200, `atteso 200, got ${res.statusCode} ${res.raw}`);
+  assert.equal(res.denied, false, res.raw);
+  const snap = await db.ref(`users/${UID}/focus_day_scores/${DATE}`).get();
+  assert.equal(snap.val()?.version, 'kds-5');
+});
+
 test('focus_day_scores kds-4: write client autenticato accettata', async () => {
   const payload = {
     version: 'kds-4',
@@ -141,13 +185,13 @@ test('focus_day_scores kds-4: write client autenticato accettata', async () => {
     },
   };
   const res = await emulatorRestPut(
-    `users/${UID}/focus_day_scores/${DATE}`,
+    `users/${UID}/focus_day_scores/2026-11-08`,
     payload,
     { idToken: token },
   );
   assert.equal(res.statusCode, 200, `atteso 200, got ${res.statusCode} ${res.raw}`);
   assert.equal(res.denied, false, res.raw);
-  const snap = await db.ref(`users/${UID}/focus_day_scores/${DATE}`).get();
+  const snap = await db.ref(`users/${UID}/focus_day_scores/2026-11-08`).get();
   assert.equal(snap.val()?.version, 'kds-4');
 });
 

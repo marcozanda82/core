@@ -61,7 +61,9 @@ import {
   SCORE_VERSION as VERSION_K3,
 } from './scoreConfig.kds-3.js';
 import { SCORE_VERSION as VERSION_K4 } from './scoreConfig.kds-4.js';
+import { SCORE_VERSION as VERSION_K5 } from './scoreConfig.kds-5.js';
 import { forzaEnabled, forceLoad, scoreMovimento } from './scoreMovement.js';
+import { scoreMovimentoBattery } from './movementBattery.js';
 import { computeSafety } from '../safety/computeSafety.js';
 import { ENERGY_ACT_SCORE_CAP } from '../safety/safetyConfig.sfv-1.js';
 import { resolveDayTargetKcal } from '../../mealEngine/resolveDayTargetKcal.js';
@@ -89,8 +91,13 @@ export function computeDayScore(date, context = {}) {
       ? VERSION_K2
       : context.scoreVersion === VERSION_K3
         ? VERSION_K3
-        : VERSION_K4;
-  const isK3Plus = version === VERSION_K3 || version === VERSION_K4;
+        : context.scoreVersion === VERSION_K4
+          ? VERSION_K4
+          : context.scoreVersion === VERSION_K5
+            ? VERSION_K5
+            : VERSION_K5;
+  const isK3Plus = version === VERSION_K3 || version === VERSION_K4 || version === VERSION_K5;
+  const isK4Plus = version === VERSION_K4 || version === VERSION_K5;
   const weights = version === VERSION_K1 ? WEIGHTS_K1 : version === VERSION_K2 ? WEIGHTS_K2 : WEIGHTS_K3;
   const minCylinders = version === VERSION_K1
     ? MIN_CYLINDERS_K1
@@ -104,7 +111,7 @@ export function computeDayScore(date, context = {}) {
   const cylinderKeys = isK3Plus
     ? ['alimentazione', 'sonno', 'movimento']
     : CYLINDER_KEYS;
-  const dayTarget = version === VERSION_K4
+  const dayTarget = isK4Plus
     ? resolveDayTargetForScore(date, context)
     : null;
   const targetKcal = dayTarget?.total > 0
@@ -135,7 +142,9 @@ export function computeDayScore(date, context = {}) {
         dayTarget,
       ),
       sonno: scoreSonno(curveVersion, facts),
-      movimento: scoreMovimento(date, context.fullHistory, context),
+      movimento: version === VERSION_K5
+        ? scoreMovimentoBattery(date, context.fullHistory, context)
+        : scoreMovimento(date, context.fullHistory, context),
       forza: forzaEnabled(context)
         ? scoreForza(curveVersion, date, context.fullHistory, context)
         : cylinder('inactive', 'Forza · non attiva', [], null),
@@ -178,6 +187,9 @@ export function computeDayScore(date, context = {}) {
       movementCheckin: context.movementCheckins?.[date] ?? null,
       forzaEnabled: forzaEnabled(context),
       safety: safety ? safety.signals.map((item) => `${item.id}:${item.level}`) : null,
+      movementBattery: version === VERSION_K5
+        ? cylinders.movimento?.battery?.level ?? null
+        : null,
     }),
   };
   if (safety?.signals.some((item) => item.area === 'Energia' && item.level === 'act') && score != null) {
@@ -189,14 +201,15 @@ export function computeDayScore(date, context = {}) {
     const load = forzaEnabled(context) ? forceLoad(date, context.fullHistory, context) : 0;
     result.forceIntensity = score != null && score >= ON_TRACK_SCORE ? load : 0;
   }
-  // kds-4: status pilastri e giornata dal value post-penalità (Modello Kentu),
-  // non dalle fasce a gradini delle curve (es. ENERGY_CURVE 10/35).
-  if (version === VERSION_K4) {
+  // kds-4/5: status pilastri e giornata dal value (Modello Kentu).
+  if (isK4Plus) {
     for (const key of Object.keys(cylinders)) {
       const cylinder = cylinders[key];
       if (!cylinder || typeof cylinder !== 'object') continue;
       if (cylinder.status === 'no_data' || cylinder.status === 'inactive') continue;
       if (cylinder.value == null || !Number.isFinite(Number(cylinder.value))) continue;
+      // kds-5 movimento: status già da batteria
+      if (version === VERSION_K5 && key === 'movimento') continue;
       cylinders[key] = {
         ...cylinder,
         status: pillarStatusFromValue(cylinder.value),
@@ -229,7 +242,9 @@ function scoreAlimentazione(
     firstMealHour: facts.firstSubstantialHour,
   });
   if (energy.active) signals.push('energy_low_day');
-  const k3PlusNutrition = scoreVersion === VERSION_K3 || scoreVersion === VERSION_K4;
+  const k3PlusNutrition = scoreVersion === VERSION_K3
+    || scoreVersion === VERSION_K4
+    || scoreVersion === VERSION_K5;
   if (
     k3PlusNutrition
     && facts.firstSubstantialHour != null
@@ -261,7 +276,7 @@ function scoreAlimentazione(
     value *= ENERGY_CURVE.ultraProcessedFactor;
     signals.push(NOVA4_K2);
   }
-  let fact = scoreVersion === VERSION_K4
+  let fact = scoreVersion === VERSION_K4 || scoreVersion === VERSION_K5
     ? energyKeyFactDayTarget(kcal, dayTarget || { total: targetKcal })
     : energyKeyFact(kcal, targetKcal);
   const bedtimeUsable = ENERGY_CURVE.usableBedtimeProvenance.includes(facts.bedtimeProvenance);

@@ -7,7 +7,7 @@
 import { addCalendarDays, isIsoDateString } from '../normalize/focusDateUtils.js';
 import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { hashDayFacts } from '../score/dayScoreRecord.js';
-import { SCORE_VERSION } from '../score/scoreConfig.kds-4.js';
+import { SCORE_VERSION } from '../score/scoreConfig.kds-5.js';
 import { forzaEnabled } from '../score/scoreMovement.js';
 
 const SCHEMA = 2;

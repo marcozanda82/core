@@ -22,8 +22,13 @@ import {
   isPeriodDataStatus,
   periodDayWeight,
   unconfirmedPeriodNote,
-} from '../score/scoreConfig.kds-4.js';
+} from '../score/scoreConfig.kds-5.js';
 import { SLEEP_CURVE } from '../score/scoreConfig.kds-2.js';
+import {
+  BATTERY_ACTION_TARGET,
+  movementBatteryAction,
+  movementBatteryPeriodStats,
+} from '../score/movementBattery.js';
 import { computeSafety } from '../safety/computeSafety.js';
 import { SCORE_PENALTY_IDS } from './focusPenaltyCite.js';
 import { buildBaseline, resolveCalibration } from './calibration.js';
@@ -293,9 +298,13 @@ function movePeriodFact(window, context) {
   const to = scoredWindowEnd(window, context.today);
   const days = inclusiveDays(window.from, to);
   if (days === 0) return '';
-  const current = Math.round(movementMinutes(context.fullHistory, window.from, to));
-  const reference = Math.round(MOVEMENT_CURVE.weeklyEquivalentMinutes * (days / MOVEMENT_CURVE.windowDays));
-  return `${current} min su ${reference}`;
+  const stats = movementBatteryPeriodStats(window.from, to, context.fullHistory, context);
+  if (stats.mean == null) {
+    const current = Math.round(movementMinutes(context.fullHistory, window.from, to));
+    const reference = Math.round(MOVEMENT_CURVE.weeklyEquivalentMinutes * (days / MOVEMENT_CURVE.windowDays));
+    return `${current} min su ${reference}`;
+  }
+  return `batteria media ${Math.round(stats.mean * 100)}% · min ${Math.round(stats.min * 100)}% · ${stats.totalEq} min eq`;
 }
 
 function forcePeriodFact(pool, window, context) {
@@ -470,7 +479,9 @@ function actionCloseFor(actionPillar, pillars, pool, window, context) {
   if (!chosen || chosen.status === 'on_track' || chosen.status === 'no_data' || chosen.status === 'inactive') {
     return null;
   }
-  if (chosen.id === 'movimento') return day ? dayMovementClose(pool) : movementClose(window, context, weekly);
+  if (chosen.id === 'movimento') {
+    return day ? dayMovementClose(pool, context) : movementClose(window, context, weekly);
+  }
   if (chosen.id === 'alimentazione') return foodClose(pool, context, day);
   if (chosen.id === 'sonno') return sleepClose(pool, day);
   if (chosen.id === 'forza') return strengthClose(pool, weekly);
@@ -501,22 +512,18 @@ function scoredWindowEnd(window, today) {
 
 function movementClose(window, context, weekly) {
   const to = scoredWindowEnd(window, context.today);
-  const days = inclusiveDays(window.from, to);
-  const weeks = Math.max(days / MOVEMENT_CURVE.windowDays, 1);
-  const current = movementMinutes(context.fullHistory, window.from, to);
-  const reference = weekly
-    ? MOVEMENT_CURVE.weeklyEquivalentMinutes
-    : MOVEMENT_CURVE.weeklyEquivalentMinutes * weeks;
-  const currentRate = weekly ? current / weeks : current;
-  const gap = Math.max(0, reference - currentRate);
-  const minimum = stepped(gap, 10);
-  if (!minimum) return null;
-  const phrase = weekly ? `${walkPhrase(minimum)} ogni settimana` : walkPhrase(minimum);
+  const stats = movementBatteryPeriodStats(window.from, to, context.fullHistory, context);
+  if (stats.mean == null) return null;
+  const action = movementBatteryAction(stats.mean, {});
+  if (!action) return null;
+  const phrase = weekly
+    ? `${action.phrase.replace(' domani', '')} ogni settimana`
+    : action.phrase;
   return {
     unit: 'min',
-    minimum,
-    current: Math.round(weekly ? currentRate : current),
-    reference: Math.round(reference),
+    minimum: action.minutes,
+    current: Math.round(stats.mean * 100),
+    reference: Math.round(BATTERY_ACTION_TARGET * 100),
     phrase,
   };
 }
@@ -582,17 +589,16 @@ function foodClose(pool, context, day) {
   return { unit: 'kcal', minimum: amount || 0, phrase };
 }
 
-function dayMovementClose(pool) {
-  const acute = Number(pool.at(-1)?.score.cylinders?.movimento?.acuteValue);
-  if (!Number.isFinite(acute)) return null;
-  const today = acute * MOVEMENT_CURVE.dailyWalkMinutes;
-  const amount = stepped(Math.max(0, MOVEMENT_CURVE.dailyWalkMinutes - today), 10);
-  if (!amount) return null;
-  return {
-    unit: 'min',
-    minimum: amount,
-    phrase: `fai una camminata di ${amount} minuti nel pomeriggio`,
-  };
+function dayMovementClose(pool, context = {}) {
+  const snap = pool.at(-1);
+  const level = Number(
+    snap?.score.cylinders?.movimento?.battery?.level
+    ?? snap?.score.cylinders?.movimento?.value,
+  );
+  if (!Number.isFinite(level)) return null;
+  const strengthDay = snap?.score.cylinders?.forza?.status === 'on_track'
+    && Number(snap?.score.cylinders?.forza?.value) >= PILLAR_STATUS.onTrackMin;
+  return movementBatteryAction(level, { strengthDay: Boolean(strengthDay) });
 }
 
 function sleepClose(pool, day) {
@@ -687,13 +693,6 @@ function stepped(gap, step) {
   const proposed = third > 0 ? third : step;
   const amount = Math.min(proposed, halfCap);
   return amount >= step ? amount : null;
-}
-
-function walkPhrase(minimum) {
-  if (minimum <= 45) return `fai una camminata di ${minimum} minuti nel pomeriggio`;
-  const count = Math.min(10, Math.ceil(minimum / 20));
-  const word = ['', 'una', 'due', 'tre', 'quattro', 'cinque', 'sei', 'sette', 'otto', 'nove', 'dieci'][count];
-  return `fai ${word} camminate da 20 minuti nel pomeriggio`;
 }
 
 function movementEstimateNote(window, context) {
@@ -792,9 +791,13 @@ function actionPillarsFor(snap) {
   return PILLAR_ORDER.map((id) => {
     const shown = pillarOf(id, [snap], snap, true);
     if (id !== 'movimento' || shown.value == null) return shown;
-    const acute = snap.score.cylinders?.movimento?.acuteValue;
-    if (acute == null || !Number.isFinite(Number(acute))) return shown;
-    return { ...shown, value: round3(Number(acute)), status: statusFromValue(Number(acute)) };
+    // kds-5: usa il livello batteria (value), non acuteValue «oggi».
+    const level = Number(
+      snap.score.cylinders?.movimento?.battery?.level
+      ?? snap.score.cylinders?.movimento?.value,
+    );
+    if (!Number.isFinite(level)) return shown;
+    return { ...shown, value: round3(level), status: statusFromValue(level) };
   });
 }
 

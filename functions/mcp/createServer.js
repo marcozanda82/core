@@ -21,7 +21,7 @@ export function createKentuMcpServer({ uid, db }) {
     'kentu_get_day',
     {
       description:
-        'Legge lo stato di un giorno Kentu: punteggio kds-3, pilastri, pasti (kcal), sonno, movimento, salvavita e azione. '
+        'Legge lo stato di un giorno Kentu: punteggio kds-5 (batteria movimento), pilastri, pasti (kcal), sonno, salvavita e azione. '
         + 'Parametro date: "today", "yesterday" oppure YYYY-MM-DD (fuso Europe/Rome). Sola lettura.',
       inputSchema: {
         date: z.string().describe('today | yesterday | YYYY-MM-DD'),

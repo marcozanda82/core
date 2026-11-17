@@ -9,8 +9,11 @@ import { getTrackerDayNode } from '../lab/buildFocusLabDossier.js';
 import { expandTrackerLogEntries } from '../normalize/expandTrackerDayLog.js';
 import { normalizeWorkoutEvents } from '../normalize/normalizeWorkoutEvents.js';
 import { normalizeSleepNight } from '../normalize/normalizeSleepNight.js';
-import { equivalentAerobicMinutes } from '../../commandTerminal/context/workoutMovement.js';
 import { STRENGTH_CURVE } from '../score/scoreConfig.kds-2.js';
+import {
+  dayMovementCharge,
+  movementBatteryPeriodStats,
+} from '../score/movementBattery.js';
 
 export const CALIBRATION_DAYS = 14;
 export const CALIBRATION_MAX_CALENDAR_DAYS = 28;
@@ -152,16 +155,8 @@ function sleepHours(fullHistory, date) {
 }
 
 function movementMinutes(fullHistory, date, checkins) {
-  let diary = 0;
-  for (const entry of dayEntries(fullHistory, date)) {
-    const type = String(entry?.type || '').toLowerCase();
-    if (type !== 'workout' && type !== 'cardio' && type !== 'activity') continue;
-    diary += equivalentAerobicMinutes(entry);
-  }
-  if (diary > 0) return diary;
-  const raw = checkins?.[date];
-  const minutes = Number(raw?.minutes ?? raw);
-  return Number.isFinite(minutes) && minutes > 0 ? minutes : 0;
+  const row = dayMovementCharge(date, fullHistory, checkins);
+  return row.charge;
 }
 
 function strengthCounts(fullHistory, dates) {
@@ -236,10 +231,16 @@ export function buildBaseline({
     : 0;
   const mean = (list) => (list.length ? list.reduce((sum, item) => sum + item, 0) / list.length : null);
   const span = Math.max(dates.length, 1);
+  const batteryStats = movementBatteryPeriodStats(
+    dates[0],
+    dates[dates.length - 1],
+    fullHistory,
+    { movementCheckins: checkins },
+  );
 
   return {
-    version: 2,
-    scoreVersion: 'kds-4',
+    version: 3,
+    scoreVersion: 'kds-5',
     from: dates[0],
     to: dates[dates.length - 1],
     source: calibration.source,
@@ -248,6 +249,8 @@ export function buildBaseline({
     daysWithMeals: meals.length,
     meanSleepHours: mean(sleeps) == null ? null : Math.round(mean(sleeps) * 10) / 10,
     weeklyMovementMinutes: Math.round((movement * 7) / span),
+    movementBatteryMean: batteryStats.mean,
+    movementBatteryMin: batteryStats.min,
     strength: strengthCounts(fullHistory, dates),
     meanLastMealHour: mean(lastMeals) == null ? null : Math.round(mean(lastMeals) * 10) / 10,
     coverageDays: meals.length,
@@ -287,7 +290,9 @@ export function baselineWords(row) {
       ? `Pasti intorno a ${kcal} kcal, con ${outside} ${daysWord} fuori fascia.`
       : 'Pasti ancora poco registrati.',
     sleep ? `Sonno medio ${sleep}.` : 'Sonno ancora poco registrato.',
-    `Movimento circa ${move} minuti a settimana.`,
+    Number.isFinite(Number(row.movementBatteryMean))
+      ? `Movimento: batteria media ${Math.round(Number(row.movementBatteryMean) * 100)}% (min ${Math.round(Number(row.movementBatteryMin || 0) * 100)}%), circa ${move} min eq/settimana.`
+      : `Movimento circa ${move} minuti a settimana.`,
     `Forza: parte alta ${upper} ${upperWord}, parte bassa ${lower}.`,
     meal ? `Ultimo pasto verso ${meal}.` : 'Orario dell’ultimo pasto non ancora chiaro.',
     `Pasti registrati in ${row.daysWithMeals || row.coverageDays || 0} giorni su ${row.windowDays || CALIBRATION_DAYS}.`,

@@ -1,7 +1,7 @@
 /**
- * Movimento — finestra mobile 7 giorni (168h).
+ * Movimento — batteria kds-5 (SSOT movementBattery.js).
  * Minuti equivalenti: camminata ×1, vigoroso ×2, pesi esclusi.
- * Nessun reset domenicale: la finestra scorre con Date.now().
+ * La barra Home usa il livello batteria, non più la sola finestra 168h.
  */
 
 import {
@@ -10,11 +10,20 @@ import {
   resolveWorkoutDurationMinutes as movementDurationMinutes,
   VIGOROUS_EQUIVALENT_FACTOR,
 } from './workoutMovement.js';
+import {
+  BATTERY_DECAY_COPY,
+  BATTERY_WEEKLY_TARGET_EQ_MIN,
+  chargeMinutesToReach,
+  computeMovementBattery,
+} from '../../kentuFocus/score/movementBattery.js';
+import { getTodayString } from '../../../coreEngine.js';
 
-export const CARDIO_WEEKLY_TARGET_MINUTES = 150;
+export const CARDIO_WEEKLY_TARGET_MINUTES = BATTERY_WEEKLY_TARGET_EQ_MIN;
 /** I pesi non entrano nel Movimento. Il rapporto resta esportato per i chiamanti vecchi. */
 export const STRENGTH_CARDIO_SPILLOVER_RATIO = 0;
+/** @deprecated kds-5: la barra usa la batteria; resta per breakdown sessioni. */
 export const ROLLING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 168 ore
+export { BATTERY_DECAY_COPY };
 
 const PURE_CARDIO_TYPES = new Set([
   'cardio',
@@ -279,24 +288,19 @@ function mergeWorkoutPools(cardioLogs = [], workoutLogs = []) {
 }
 
 /**
- * Stato del Cilindro Cardio su finestra mobile di 168 ore.
+ * Stato del cilindro Movimento.
+ * Con `fullHistory` usa la batteria kds-5; altrimenti fallback eq su 168h (legacy).
  *
- * @param {Array<object>} cardioLogs — sessioni LISS/HIIT/cardio (o pool misto)
- * @param {Array<object>} workoutLogs — sessioni pesi / generiche (spillover 30%)
- * @param {{ nowMs?: number, weeklyTargetMinutes?: number, spilloverRatio?: number }} [options]
- * @returns {{
- *   windowHours: 168,
- *   windowStartMs: number,
- *   windowEndMs: number,
- *   pureCardioMinutes: number,
- *   strengthMinutes: number,
- *   spilloverMinutes: number,
- *   accumulatedMinutes: number,
- *   weeklyTargetMinutes: number,
- *   fillRatio: number,
- *   fillPercent: number,
- *   remainingMinutes: number,
- * }}
+ * @param {Array<object>} cardioLogs
+ * @param {Array<object>} workoutLogs
+ * @param {{
+ *   nowMs?: number,
+ *   weeklyTargetMinutes?: number,
+ *   spilloverRatio?: number,
+ *   fullHistory?: object|null,
+ *   asOfDate?: string|null,
+ *   movementCheckins?: object|null,
+ * }} [options]
  */
 export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options = {}) {
   const nowMs = Number.isFinite(Number(options.nowMs)) ? Number(options.nowMs) : Date.now();
@@ -327,6 +331,40 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
   }
 
   const spilloverMinutes = 0;
+  const asOfDate = String(options.asOfDate || '').slice(0, 10) || getTodayString();
+  const history = options.fullHistory && typeof options.fullHistory === 'object'
+    ? options.fullHistory
+    : null;
+
+  if (history) {
+    const bat = computeMovementBattery(asOfDate, history, {
+      movementCheckins: options.movementCheckins || null,
+      movementBatteryReady: true,
+    });
+    const fillRatio = clamp01(Number(bat.level) || 0);
+    const fillPercent = Math.round(fillRatio * 100);
+    const remain = fillRatio >= 0.75 ? 0 : chargeMinutesToReach(fillRatio, 0.85);
+    const weekEq = Math.round(
+      (bat.series || []).slice(-7).reduce((sum, row) => sum + Number(row.charge || 0), 0),
+    );
+    return {
+      windowHours: 168,
+      windowStartMs,
+      windowEndMs,
+      pureCardioMinutes: Math.round(pureCardioMinutes * 10) / 10,
+      strengthMinutes: Math.round(strengthMinutes * 10) / 10,
+      spilloverMinutes: 0,
+      accumulatedMinutes: weekEq,
+      weeklyTargetMinutes,
+      fillRatio,
+      fillPercent,
+      remainingMinutes: remain,
+      batteryLevel: fillRatio,
+      batteryCopy: BATTERY_DECAY_COPY,
+      source: 'movement_battery',
+    };
+  }
+
   const accumulatedMinutes = pureCardioMinutes;
   const fillRatio = clamp01(accumulatedMinutes / weeklyTargetMinutes);
   const fillPercent = Math.round(fillRatio * 100);
@@ -344,6 +382,8 @@ export function calculateCardioStatus(cardioLogs = [], workoutLogs = [], options
     fillRatio,
     fillPercent,
     remainingMinutes: Math.round(remainingMinutes * 10) / 10,
+    batteryCopy: BATTERY_DECAY_COPY,
+    source: 'legacy_168h',
   };
 }
 

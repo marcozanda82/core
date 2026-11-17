@@ -90,6 +90,8 @@ export default function CardioProgressBar({
     try {
       return calculateCardioStatus(logPools.cardioLogs, logPools.workoutLogs, {
         nowMs: Date.now(),
+        fullHistory: fullHistory || null,
+        asOfDate: liveDayKey || getTodayString(),
       });
     } catch (error) {
       console.warn('[CardioProgressBar] calculate failed', error);
@@ -99,7 +101,7 @@ export default function CardioProgressBar({
         fillPercent: 0,
       };
     }
-  }, [cardioStatusProp, logPools]);
+  }, [cardioStatusProp, logPools, fullHistory, liveDayKey]);
 
   const breakdown = useMemo(() => {
     try {
@@ -139,7 +141,11 @@ export default function CardioProgressBar({
     <>
       <div
         className={`w-full cursor-pointer transition-transform duration-200 active:scale-[0.99] ${className}`.trim()}
-        aria-label={`Movimento, ultimi 7 giorni: ${accumulated} minuti equivalenti su ${target}, ${remaining} al target. Tocca per l'estratto conto.`}
+        aria-label={
+          status?.source === 'movement_battery'
+            ? `Movimento, batteria ${fillPercent}%. ${status.batteryCopy || 'senza cardio si scarica di circa il 20% al giorno'}. Tocca per l'estratto conto.`
+            : `Movimento, ultimi 7 giorni: ${accumulated} minuti equivalenti su ${target}, ${remaining} al target. Tocca per l'estratto conto.`
+        }
         role="button"
         tabIndex={0}
         onClick={openDetails}
@@ -159,6 +165,8 @@ export default function CardioProgressBar({
           highMinutes={intensity.highMinutes}
           sessionCount={intensity.sessionCount}
           compact={compact || dense || unifiedBars}
+          batteryMode={status?.source === 'movement_battery'}
+          batteryCopy={status?.batteryCopy || null}
           className="transition-colors hover:border-cyan-400/40 hover:bg-slate-900/70"
         />
       </div>

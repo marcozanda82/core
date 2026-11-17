@@ -12,7 +12,7 @@ import {
   decodeDayScoreFromRtdb,
   encodeDayScoreForRtdb,
 } from './dayScoreRecord.js';
-import { HISTORY_LOCKED } from './scoreConfig.kds-4.js';
+import { HISTORY_LOCKED } from './scoreConfig.kds-5.js';
 
 /**
  * @param {{ db: object, uid: string }} deps

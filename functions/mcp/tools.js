@@ -70,6 +70,7 @@ function scoreContext(base) {
     movementCheckins: base.movementCheckins,
     catalogs: base.catalogs,
     forzaEnabled: base.forzaEnabled,
+    scoreVersion: 'kds-5',
   };
 }
 
@@ -84,6 +85,12 @@ function pillarSummary(cylinders) {
       value: c.value ?? null,
       keyFact: c.keyFact ?? null,
       signals: Array.isArray(c.signals) ? c.signals : [],
+      ...(key === 'movimento' && c.battery
+        ? {
+          batteryLevel: c.battery.level ?? c.value ?? null,
+          batteryCopy: c.battery.copy ?? null,
+        }
+        : {}),
     };
   }
   return out;

@@ -35,11 +35,31 @@ export function encodeDayScoreForRtdb(record) {
   const out = {
     version: record.version,
     reliability: record.reliability,
-    cylinders: record.cylinders,
+    cylinders: encodeCylindersForRtdb(record.cylinders),
     dataVersion: record.dataVersion,
   };
   if (record.score == null) out.scoreIsNull = true;
   else out.score = record.score;
+  return out;
+}
+
+/**
+ * Solo i campi del contratto RTDB (niente battery / acuteValue).
+ * @param {unknown} raw
+ */
+function encodeCylindersForRtdb(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  for (const key of Object.keys(source)) {
+    const cylinder = source[key] && typeof source[key] === 'object' ? source[key] : {};
+    const value = Number(cylinder.value);
+    out[key] = {
+      status: cylinder.status ?? 'no_data',
+      keyFact: String(cylinder.keyFact ?? ''),
+      signals: asArray(cylinder.signals),
+      value: Number.isFinite(value) ? value : null,
+    };
+  }
   return out;
 }
 

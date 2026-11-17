@@ -52,10 +52,33 @@ function catalog() {
     rulesVersion: 'dtr-1',
   });
 
+  const kds5Score = encodeDayScoreForRtdb({
+    version: 'kds-5',
+    reliability: 'high',
+    dataVersion: 'fnv1a-client-writes',
+    score: 0.72,
+    cylinders: {
+      alimentazione: {
+        status: 'on_track',
+        keyFact: '2400 kcal',
+        signals: ['late_first_meal'],
+        value: 0.85,
+      },
+      sonno: { status: 'on_track', keyFact: '7 h', signals: [], value: 1 },
+      movimento: {
+        status: 'halfway',
+        keyFact: 'batteria 60% · senza cardio si scarica di circa il 20% al giorno',
+        signals: ['movement_battery'],
+        value: 0.6,
+      },
+      forza: { status: 'on_track', keyFact: 'parte alta', signals: [], value: 1 },
+    },
+  });
+
   const kds4Score = encodeDayScoreForRtdb({
     version: 'kds-4',
     reliability: 'high',
-    dataVersion: 'fnv1a-client-writes',
+    dataVersion: 'fnv1a-client-writes-k4',
     score: 0.72,
     cylinders: {
       alimentazione: {
@@ -120,8 +143,14 @@ function catalog() {
       expect: 'allow',
     },
     {
-      id: 'focus_day_scores.kds-4',
+      id: 'focus_day_scores.kds-5',
       path: `users/${UID}/focus_day_scores/${DATE}`,
+      payload: kds5Score,
+      expect: 'allow',
+    },
+    {
+      id: 'focus_day_scores.kds-4',
+      path: `users/${UID}/focus_day_scores/2026-11-08`,
       payload: kds4Score,
       expect: 'allow',
     },
@@ -148,11 +177,11 @@ function catalog() {
       expect: 'allow',
     },
     {
-      id: 'score_feedback.kds-4',
+      id: 'score_feedback.kds-5',
       path: `users/${UID}/score_feedback/${DATE}`,
       payload: encodeScoreFeedback({
         answer: 'yes',
-        scoreVersion: 'kds-4',
+        scoreVersion: 'kds-5',
         score: 0.72,
         cylinders: {
           alimentazione: { status: 'on_track', keyFact: 'x', signals: [], value: 0.85 },
@@ -217,11 +246,13 @@ function catalog() {
       id: 'baseline.v1',
       path: `users/${UID}/baseline/v1`,
       payload: {
-        version: 2,
-        scoreVersion: 'kds-4',
+        version: 3,
+        scoreVersion: 'kds-5',
         from: '2026-10-27',
         to: '2026-11-09',
         meanKcal: 2400,
+        movementBatteryMean: 0.42,
+        movementBatteryMin: 0.17,
         dismissed: false,
       },
       expect: 'allow',

@@ -4,7 +4,7 @@
  */
 
 import { lineWithPenaltyCites } from './focusPenaltyCite.js';
-import { PILLAR_STATUS } from '../score/scoreConfig.kds-4.js';
+import { PILLAR_STATUS } from '../score/scoreConfig.kds-5.js';
 
 const LABELS = Object.freeze({
   alimentazione: 'Alimentazione',
@@ -177,13 +177,15 @@ function buildAction(brief, chosen, act, quiet) {
   if (chosen.status === 'on_track') return maintainPhrase(chosen.id);
   if (brief?.actionClose?.phrase) return withHorizon(horizon, brief.actionClose.phrase);
   if (chosen.id === 'sonno') return withHorizon(horizon, 'vai a letto 20 minuti prima, stasera');
-  if (chosen.id === 'movimento') return withHorizon(horizon, 'fai una camminata di 10 minuti nel pomeriggio');
+  if (chosen.id === 'movimento') {
+    return withHorizon(horizon, 'aggiungi una camminata domani per ricaricare la batteria');
+  }
   if (chosen.id === 'forza') return withHorizon(horizon, 'fai una sessione di parte alta nel pomeriggio');
   return withHorizon(horizon, 'aggiungi uno spuntino a metà pomeriggio (circa 300 kcal)');
 }
 
 function maintainPhrase(id) {
-  if (id === 'movimento') return 'Continua così con le camminate.';
+  if (id === 'movimento') return 'Continua così: la batteria del movimento è in fascia.';
   if (id === 'sonno') return 'Continua così con il sonno.';
   if (id === 'forza') return 'Continua così con la forza.';
   return 'Continua così con i pasti.';

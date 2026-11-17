@@ -169,13 +169,17 @@ export default function CardioWidget({
   sessionCount = 0,
   compact = false,
   className = '',
+  batteryCopy = null,
+  batteryMode = false,
 } = {}) {
   const accumulated = asMinutes(accumulatedMinutes);
   const target = Math.max(1, asMinutes(weeklyTargetMinutes) || 150);
   const remaining = asMinutes(remainingMinutes);
   const pct = Math.max(0, Math.min(100, Math.round(Number(fillPercent) || (accumulated / target) * 100)));
-  const targetHit = remaining <= 0;
-  const catchUp = buildCatchUpHint(remaining);
+  const targetHit = batteryMode ? pct >= 75 : remaining <= 0;
+  const catchUp = batteryMode
+    ? (batteryCopy || 'senza cardio si scarica di circa il 20% al giorno')
+    : buildCatchUpHint(remaining);
   const ringSize = compact ? 64 : 78;
 
   return (
@@ -196,10 +200,10 @@ export default function CardioWidget({
           </p>
           <p className="m-0 mt-0.5 flex flex-wrap items-baseline gap-x-1.5 leading-tight">
             <span className={`font-bold tabular-nums text-white ${compact ? 'text-lg' : 'text-xl'}`}>
-              {accumulated} min
+              {batteryMode ? `${pct}%` : `${accumulated} min`}
             </span>
             <span className="text-[11px] font-medium text-slate-500">
-              su {target} min settimanali
+              {batteryMode ? 'batteria' : `su ${target} min settimanali`}
             </span>
           </p>
           <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-950/80 ring-1 ring-white/10">
@@ -223,7 +227,9 @@ export default function CardioWidget({
           ].join(' ')}
         >
           <p className={`m-0 pr-3 text-[11px] font-semibold leading-tight ${targetHit ? 'text-emerald-200' : 'text-white'}`}>
-            {targetHit ? 'Target raggiunto' : `${remaining} min al target`}
+            {batteryMode
+              ? (targetHit ? 'Batteria in fascia' : `${remaining} min per l'85%`)
+              : (targetHit ? 'Target raggiunto' : `${remaining} min al target`)}
           </p>
           <p className="m-0 mt-0.5 pr-3 text-[9px] font-medium leading-snug text-slate-400">
             {catchUp}

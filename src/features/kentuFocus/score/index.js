@@ -7,9 +7,16 @@ export {
   pillarStatusFromValue,
   SCORE_COLORS,
   SCORE_VERSION,
-} from './scoreConfig.kds-4.js';
+} from './scoreConfig.kds-5.js';
 export { dayScoreColor } from './scoreColor.js';
 export { forceLoad, scoreMovimento } from './scoreMovement.js';
+export {
+  computeMovementBattery,
+  scoreMovimentoBattery,
+  movementBatteryAction,
+  movementBatteryPeriodStats,
+  BATTERY_DECAY_COPY,
+} from './movementBattery.js';
 export {
   CYLINDER_POINTS,
   ENERGY_BANDS,

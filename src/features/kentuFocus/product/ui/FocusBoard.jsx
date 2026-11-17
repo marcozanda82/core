@@ -5,7 +5,7 @@ import { db } from '../../../../firebaseConfig.js';
 import { withRtdbPermissionLog } from '../../../../services/rtdbPermissionDenied.js';
 import DayScoreFeedback from '../../score/DayScoreFeedback.jsx';
 import { computePeriodScore } from '../../score/computePeriodScore.js';
-import { PERIOD_RULES, PILLAR_STATUS } from '../../score/scoreConfig.kds-4.js';
+import { PERIOD_RULES, PILLAR_STATUS } from '../../score/scoreConfig.kds-5.js';
 import { WALK_CHECKIN_OPTIONS, createMovementCheckinStore, forzaSettingPath } from '../../score/movementCheckin.js';
 import { loadKentuDatabases, peekKentuDatabasesSnapshot, subscribeKentuDatabases } from '../../../../foodLoader.js';
 import { buildFocusPeriodBrief } from '../focusPeriodBrief.js';
@@ -207,7 +207,7 @@ export default function FocusBoard({
     targetKcal: session?.userTargets?.kcal ?? null,
     settingsBaseKcal: session?.userTargets?.kcal ?? null,
     profile_targets: session?.profile_targets || null,
-    scoreVersion: 'kds-4',
+    scoreVersion: 'kds-5',
     cylinders: { forza: { enabled: forzaOn } },
     movementCheckins: checkins,
     records,
@@ -349,12 +349,12 @@ export default function FocusBoard({
       const saved = snap.exists() ? snap.val() : null;
       const staleMethod = saved
         && typeof saved === 'object'
-        && (saved.scoreVersion !== 'kds-4' || Number(saved.version) < 2);
+        && (saved.scoreVersion !== 'kds-5' || Number(saved.version) < 3);
       if (saved && typeof saved === 'object' && !staleMethod) {
         setSavedBaseline({ ...payload, ...saved, dismissed: Boolean(saved.dismissed) });
         return null;
       }
-      // kds-4: invalida baseline vecchia e riscrive.
+      // kds-5: invalida baseline vecchia e riscrive.
       return withRtdbPermissionLog(set(ref(db, path), { ...payload, dismissed: false }), {
         path,
         version: payload?.scoreVersion || null,

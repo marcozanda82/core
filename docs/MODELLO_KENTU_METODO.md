@@ -1,6 +1,6 @@
-# Metodo kds-3
+# Metodo kds-5
 
-Questo è il modo in cui Kentu dà un punteggio al giorno. Il numero è sempre lo stesso a parità di dati: non lo scrive un modello, e un parere «Ti torna?» non lo sposta. La versione si chiama **kds-3** e sostituisce kds-2.
+Questo è il modo in cui Kentu dà un punteggio al giorno. Il numero è sempre lo stesso a parità di dati: non lo scrive un modello, e un parere «Ti torna?» non lo sposta. La versione si chiama **kds-5** e sostituisce kds-4.
 
 Fino al lancio lo storico si ricalcola quando il metodo cambia. Dopo il lancio vale la regola delle versioni: un giorno salvato con un metodo diverso resta com'è finché non si decide di riscriverlo. La funzione di migrazione esiste e non parte da sola.
 
@@ -10,7 +10,16 @@ L'affidabilità è **bassa** se il giorno non è ancora confermato, se è segnat
 
 Le durate si scrivono «6 h 40» e «1 h 35». Sotto un'ora si scrive «58 min», non «0 h 58». Un'ora intera resta «7 h». Se il sonno non è registrato, il fatto è «non registrato».
 
-I pesi stanno in `scoreConfig.kds-3.js`.
+I pesi e le soglie comuni stanno in `scoreConfig.kds-3.js` (riusati da kds-4/5). La batteria del movimento è in `movementBattery.js`.
+
+## Cosa cambia rispetto a kds-4
+
+- **Movimento:** non più metà «oggi» + metà 7 giorni. È una batteria a decadimento esponenziale (vedi sotto).
+- **Home / cruscotto:** la barra Movimento legge la stessa batteria (niente più sola finestra 168h).
+- **Azione:** deficit di batteria, non più `acuteValue` del giorno.
+- **Alimentazione e sonno:** invariati rispetto a kds-4 (day target `dtr-1`, stato dal value dopo le penalità).
+
+kds-4 aveva introdotto: obiettivo kcal del giorno (`resolveDayTargetKcal`) e stato pilastro/giornata dalle soglie 0,75 / 0,45 sul value dopo le penalità.
 
 ## Pilastri sempre attivi
 
@@ -18,13 +27,13 @@ Nell'interfaccia i quattro elementi si chiamano pilastri: Alimentazione, Sonno, 
 
 ### Alimentazione — peso 0,45
 
-Si guarda lo scostamento assoluto dall'obiettivo, sia in meno sia in più.
+Si guarda lo scostamento assoluto dall'obiettivo del giorno (base + burn contato + autopilot + strategia + compensazione), sia in meno sia in più.
 
-- Entro il 10%, 10% compreso: valore 1, pallino sulla rotta.
-- Da lì fino al 35% il valore scende in linea retta fino a 0,15. Il pallino è a metà.
-- Dal 35% in poi il valore resta 0,15 e il pallino è fuori rotta.
+- Entro il 10%, 10% compreso: valore 1.
+- Da lì fino al 35% il valore scende in linea retta fino a 0,15.
+- Dal 35% in poi il valore resta 0,15.
 
-Se c'è almeno un ultra-processato sfavorevole, il valore si moltiplica per 0,8. Il pallino non cambia per questo. È sfavorevole quando il profilo Nutri-Score è D o E, oppure la porzione ha almeno 15 g di zuccheri o 5 g di grassi saturi. Il cioccolato fondente dal 70% in su non conta. Se il profilo non c'è, non si inventa una critica.
+Se c'è almeno un ultra-processato sfavorevole, il valore si moltiplica per 0,8. È sfavorevole quando il profilo Nutri-Score è D o E, oppure la porzione ha almeno 15 g di zuccheri o 5 g di grassi saturi. Il cioccolato fondente dal 70% in su non conta. Se il profilo non c'è, non si inventa una critica.
 
 Il ritmo sta qui. Se l'ultimo pasto dista meno di 2 ore dall'addormentamento, il valore scende di 0,15 e non va sotto zero. L'orario vale se è registrato o ricavato. Se manca, lo sconto non scatta.
 
@@ -32,43 +41,53 @@ Se manca il cibo o manca l'obiettivo, il pilastro non ha un dato.
 
 `energy_low_day` è citato sotto l'obiettivo di più del 25%. `heavy_late_meal` è citato quando la cena è abbondante secondo la regola già in uso. Quei segnali non spostano da soli il valore.
 
+**Stato (kds-4/5):** dopo le penalità, ≥ 0,75 sulla rotta, da 0,45 a 0,75 a metà, sotto 0,45 fuori. Le fasce 10/35 restano solo per costruire il value.
+
 ### Sonno — peso 0,30
 
 La notte del giorno D è quella registrata la mattina dopo, il giorno D+1. Se manca la durata, il fatto è «non registrato». Non si ripesca la notte precedente.
 
-- Fra 7 e 9 ore, estremi compresi: valore 1, pallino sulla rotta.
-- Sotto le 7 ore il valore scende fino a 0,15 a 5 ore. Fra 5 e 7 il pallino è a metà. A 5 ore o meno è fuori rotta.
+- Fra 7 e 9 ore, estremi compresi: valore 1.
+- Sotto le 7 ore il valore scende fino a 0,15 a 5 ore.
 - Sopra le 9 ore lo specchio, fino a 0,15 a 11 ore.
 
 La distanza dall'ultimo pasto non entra nel sonno.
 
 La qualità entra solo se è registrata. Cinque e quattro stelle non muovono il numero. Tre lo moltiplicano per 0,9, due per 0,8, una per 0,7.
 
-### Movimento — peso 0,25
+**Stato:** stesse soglie 0,75 / 0,45 sul value.
+
+### Movimento — peso 0,25 (batteria)
 
 Sostituisce il cardio, anche nel nome della barra in Home, Hub e cruscotto: lì si chiama Movimento. I minuti sono equivalenti moderati, come nell'indicazione OMS: la camminata vale i suoi minuti, un'attività vigorosa vale il doppio. I pesi non entrano.
 
-La definizione è una sola, in `workoutMovement.js`: camminata ×1, corsa, bici, nuoto, ellittica, cardio, HIIT e remo ×2. La barra la applica sulle ultime 168 ore. Il Focus la applica sui giorni chiusi, con la stessa funzione. Il lettore delle sessioni è uno solo, `collectRecentWorkoutLogs`: il log del diario, deduplicato per id, senza `manualNodes`.
+La definizione degli equivalenti è una sola, in `workoutMovement.js`: camminata ×1; corsa, bici, nuoto, ellittica, cardio, HIIT e remo ×2. Il lettore delle sessioni è `collectRecentWorkoutLogs`.
 
-Il tipo della sessione (`workoutType`) decide la classe. Il nome serve solo se il tipo manca. Una sessione senza nome e con tipo `camminata` è una camminata.
+La durata esplicita è `durationMinutes`. Se c'è, si usa quella. Se manca: un numero sopra 5 è in minuti, altrimenti è in ore.
 
-La durata esplicita è `durationMinutes`, e da ora le sessioni nuove la salvano. Se c'è, si usa quella. Se manca, vale la regola già in uso: un numero sopra 5 è in minuti, altrimenti è in ore. Così 0,5 resta mezz'ora, 20 resta venti minuti e 90 resta novanta minuti.
+**Batteria** (`movementBattery.js`, SSOT):
 
-- Camminata, passeggiata, walking: ×1.
-- Corsa, bici, nuoto, ellittica, cardio, HIIT e remo: ×2.
+\[
+B_t = d \cdot B_{t-1} + charge_t,\quad d = 2^{-1/3}
+\]
 
-Il valore del giorno è la somma di due metà:
+(dimezzamento ≈ 3 giorni → circa −20% al giorno senza cardio). Lookback pratico 14 giorni.
 
-- metà è la camminata di oggi divisa per il riferimento giornaliero, mai sopra 1;
-- metà sono i minuti equivalenti degli ultimi 7 giorni, oggi compreso, divisi per 150, mai sopra 1.
+- \(charge_t\) = minuti equivalenti del giorno (diario) + check-in stimato solo se quel giorno non ha già cardio in diario, con tetto **30 min/giorno** per i check-in.
+- Capacità di regime \(C = (150/7)/(1-d)\).
+- Livello \(L = \min(1, B / (0{,}8 \cdot C))\): «piena» all'80% del regime continuo da 150 min eq/settimana.
 
-Il riferimento giornaliero è 30 minuti. Quando per quel giorno ci sono i passi, il riferimento diventa 8.000 passi sotto i 60 anni e 6.500 dai 60 in su. L'età si legge dal profilo. Se l'età manca, si usano gli 8.000. I passi non ci sono ancora nel diario: il campo è pronto (`steps` sul giorno, oppure un log `steps` / `passi`) e, se un giorno è compilato, comanda la camminata di quel giorno.
+Il punteggio movimento del giorno è **L**. Lo stato usa 0,75 / 0,45 come gli altri pilastri.
 
-L'ordine delle fonti, per la camminata di oggi, è: passi, attività registrate, stima del check-in. La stima non entra se quel giorno ha già una camminata o un'attività vigorosa nel diario.
+**Calibrazione (utenti nuovi):** finché dal primo giorno di diario alla data del punteggio non ci sono almeno 7 giorni di calendario, il movimento resta `no_data` e non entra nella media del giorno. Niente warm-start inventato.
 
-Il check-in del mattino chiede «Ieri quanto hai camminato?» con tre risposte: Poco (10 min), Circa mezz'ora (30 min), Un'ora o più (60 min). Il valore è marcato stimato.
+**Home:** livello in percento e copy «senza cardio si scarica di circa il 20% al giorno».
 
-Il pallino: da 0,75 in su sulla rotta, da 0,40 a 0,75 a metà, sotto fuori rotta. Zero minuti, con un diario leggibile, è un dato: è fuori rotta, non un'assenza.
+**Azione:** ricarica proposta solo se \(L < 0{,}75\) oppure se senza cardio domani scende sotto 0,75; frase con minuti concreti (camminata e equivalente corsa). Se \(L \ge 0{,}75\) non si propongono camminate nei giorni di forza.
+
+**Focus settimana/mese:** media e minimo della batteria + minuti equivalenti totali nel periodo.
+
+Il check-in del mattino chiede «Ieri quanto hai camminato?» con tre risposte: Poco (10 min), Circa mezz'ora (30 min), Un'ora o più (60 min, poi tetto 30 in batteria). Il valore è marcato stimato.
 
 ## Forza, solo se attiva (Costanza mm-1)
 
@@ -100,7 +119,9 @@ Un giorno è sulla rotta quando il punteggio è almeno 0,75. La media del period
 
 ## Cosa viene ricordato
 
-`users/{uid}/focus_day_scores/{data}`: versione `kds-3`, punteggio, `forceIntensity`, affidabilità, pilastri, impronta dei fatti. Il campo salvato si chiama ancora `cylinders`: è il nome del record, non quello che si legge nell'interfaccia.
+`users/{uid}/focus_day_scores/{data}`: versione `kds-5`, punteggio, `forceIntensity`, affidabilità, pilastri, impronta dei fatti. Il campo salvato si chiama ancora `cylinders`: è il nome del record, non quello che si legge nell'interfaccia. Deploy delle regole RTDB **prima** dell'app che scrive `kds-5`.
+
+`users/{uid}/baseline/v1`: `version: 3`, `scoreVersion: 'kds-5'`, con media/minimo batteria movimento.
 
 `users/{uid}/movement_checkin/{data}`: la stima della camminata, sempre con `estimated: true`.
 
