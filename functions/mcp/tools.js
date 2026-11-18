@@ -1,10 +1,12 @@
-import { resolveDayRef, resolvePeriodRef } from './dates.js';
+import { resolveDayRef, resolvePeriodRef, isIsoDate } from './dates.js';
 import { redactSensitiveNumbers } from './redact.js';
 import { loadUserFocusContext, readStoredDayScore } from './loadUserContext.js';
-
-function trackerNode(fullHistory, date) {
-  return fullHistory?.[`trackerStorico_${date}`] || null;
-}
+import {
+  buildDayMealsDetail,
+  buildDaySleepDetail,
+  buildEvenings,
+  trackerNode,
+} from './dayDetail.js';
 
 function flattenLog(node) {
   const raw = node?.log || node?.dati?.log || [];
@@ -21,42 +23,20 @@ function flattenLog(node) {
   return out;
 }
 
-function summarizeDayLog(fullHistory, date) {
+function summarizeMovement(fullHistory, date) {
   const entries = flattenLog(trackerNode(fullHistory, date));
-  const meals = [];
-  let sleep = null;
   const movement = [];
-
   for (const entry of entries) {
     const type = String(entry.type || '').toLowerCase();
-    if (type === 'sleep') {
-      sleep = {
-        hours: entry.hours ?? null,
-        wakeTime: entry.wakeTime ?? null,
-        bedtime: entry.bedtime ?? null,
-        quality: entry.quality ?? null,
-      };
-      continue;
-    }
     if (type === 'workout' || type === 'cardio' || type === 'activity') {
       movement.push({
         type,
         name: entry.name || entry.workoutType || entry.activityType || type,
         durationMinutes: entry.durationMinutes ?? entry.duration ?? null,
       });
-      continue;
-    }
-    if (type === 'food' || entry.foodName || entry.kcal != null || entry.condimentKind) {
-      meals.push({
-        name: entry.name || entry.foodName || entry.desc || 'Alimento',
-        kcal: Number.isFinite(Number(entry.kcal)) ? Number(entry.kcal) : null,
-        mealType: entry.mealType || null,
-        grams: entry.grams ?? entry.qta ?? null,
-        condimentKind: entry.condimentKind || null,
-      });
     }
   }
-  return { meals, sleep, movement };
+  return movement;
 }
 
 function scoreContext(base) {
@@ -128,7 +108,8 @@ export async function toolGetDay(db, uid, dateRef) {
     : { ...live, source: 'computed' };
 
   const safety = computeSafety(date, ctx);
-  const log = summarizeDayLog(base.fullHistory, date);
+  const mealsDetail = buildDayMealsDetail(base.fullHistory, date);
+  const sleep = buildDaySleepDetail(base.fullHistory, date);
   const missingDiary = !trackerNode(base.fullHistory, date);
 
   let payload = {
@@ -140,9 +121,12 @@ export async function toolGetDay(db, uid, dateRef) {
     version: score.version,
     scoreSource: score.source,
     pillars: pillarSummary(score.cylinders),
-    meals: log.meals,
-    sleep: log.sleep,
-    movement: log.movement,
+    meals: mealsDetail.meals,
+    liquids: mealsDetail.liquids,
+    caffeineMg: mealsDetail.caffeineMg,
+    nutrientCoverage: mealsDetail.coverage,
+    sleep,
+    movement: summarizeMovement(base.fullHistory, date),
     safety: {
       level: safety.level,
       signals: (safety.signals || []).map((s) => ({
@@ -200,7 +184,6 @@ export async function toolGetPeriod(db, uid, periodRef) {
   const anchor = computeDayScore(period.analysisDate, ctx);
   const safety = computeSafety(period.analysisDate, ctx);
 
-  // Buchi = giorni past senza dati eleggibili
   const holes = Math.max(0, (periodScore.pastDays || 0) - (periodScore.eligibleDays || 0));
 
   let payload = {
@@ -235,6 +218,41 @@ export async function toolGetPeriod(db, uid, periodRef) {
     payload.safety.suppressNumbers = true;
   }
   return payload;
+}
+
+/**
+ * @param {import('firebase-admin/database').Database} db
+ * @param {string} uid
+ * @param {{ from: string, to: string }} range
+ */
+export async function toolGetEvenings(db, uid, range) {
+  const from = String(range?.from || '').trim();
+  const to = String(range?.to || '').trim();
+  if (!isIsoDate(from) || !isIsoDate(to)) {
+    throw new Error('from e to devono essere YYYY-MM-DD');
+  }
+  const base = await loadUserFocusContext(db, uid);
+  const payload = buildEvenings(base.fullHistory, from, to);
+
+  // suppressNumbers: se un giorno della finestra lo richiede, reda tutto il blocco numeri.
+  const { computeSafety } = await import(
+    '../../src/features/kentuFocus/safety/computeSafety.js'
+  );
+  const ctx = scoreContext(base);
+  let suppress = false;
+  for (const row of payload.evenings) {
+    const safety = computeSafety(row.date, ctx);
+    if (safety?.suppressNumbers) {
+      suppress = true;
+      break;
+    }
+  }
+  let out = { ...payload, suppressNumbers: suppress };
+  if (suppress) {
+    out = redactSensitiveNumbers(out);
+    out.suppressNumbers = true;
+  }
+  return out;
 }
 
 /**

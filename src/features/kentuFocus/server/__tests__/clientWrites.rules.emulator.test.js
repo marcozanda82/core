@@ -120,6 +120,29 @@ function catalog() {
       expect: 'allow',
     },
     {
+      id: 'tracker_data.sleep_quality_notes',
+      path: `users/${UID}/tracker_data/trackerStorico_2026-11-07`,
+      payload: {
+        data: '2026-11-07',
+        log: [
+          {
+            type: 'sleep',
+            id: 'sleep_rt_1',
+            hours: 7,
+            wakeTime: 7,
+            sleepStart: 0,
+            bedtime: 0,
+            quality: 2,
+            notes: 'risveglio per sete',
+            deepMin: 60,
+            remMin: 60,
+          },
+        ],
+        mealTimes: {},
+      },
+      expect: 'allow',
+    },
+    {
       id: 'tracker_data.dayTargetSnapshot_child',
       path: `users/${UID}/tracker_data/trackerStorico_${DATE}/dayTargetSnapshot`,
       payload: dayTargetSnapshot,
@@ -335,4 +358,40 @@ test('catalogo scritture client: ogni allow passa, ogni deny intenzionale fallis
     }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
+});
+
+test('tracker_data sleep: round-trip quality + notes su RTDB', async () => {
+  assert.ok(token);
+  assert.ok(db);
+  const sleepDate = '2026-11-06';
+  const pathKey = `users/${UID}/tracker_data/trackerStorico_${sleepDate}`;
+  const payload = {
+    data: sleepDate,
+    log: [
+      {
+        type: 'sleep',
+        id: 'sleep_roundtrip',
+        hours: 7.5,
+        wakeTime: 7,
+        sleepStart: 23.5,
+        bedtime: 23.5,
+        quality: 1,
+        notes: 'tre risvegli per bagno',
+        deepMin: 90,
+        remMin: 80,
+        hr: 52,
+      },
+    ],
+    mealTimes: {},
+  };
+  const res = await emulatorRestPut(pathKey, payload, { idToken: token });
+  assert.equal(res.statusCode, 200, res.raw);
+  assert.equal(res.denied, false, res.raw);
+  const snap = await db.ref(pathKey).get();
+  assert.equal(snap.exists(), true);
+  const sleep = (snap.val()?.log || []).find((e) => e?.type === 'sleep');
+  assert.ok(sleep);
+  assert.equal(sleep.quality, 1);
+  assert.equal(sleep.notes, 'tre risvegli per bagno');
+  assert.equal(sleep.hours, 7.5);
 });

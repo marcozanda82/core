@@ -34,7 +34,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// ../src/features/kentuFocus/product/loadFocusCatalogsNode.js
+// src/features/kentuFocus/product/loadFocusCatalogsNode.js
 var loadFocusCatalogsNode_exports = {};
 __export(loadFocusCatalogsNode_exports, {
   loadFocusCatalogsFromPublic: () => loadFocusCatalogsFromPublic
@@ -98,7 +98,7 @@ function hasUsableKcal(record) {
 }
 var import_promises, import_node_path, PUBLIC_FILES, cached;
 var init_loadFocusCatalogsNode = __esm({
-  "../src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
+  "src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
     import_promises = require("node:fs/promises");
     import_node_path = __toESM(require("node:path"), 1);
     PUBLIC_FILES = Object.freeze({
@@ -110,7 +110,7 @@ var init_loadFocusCatalogsNode = __esm({
   }
 });
 
-// ../src/features/dayStatus/dayStatusRecord.js
+// src/features/dayStatus/dayStatusRecord.js
 function isIsoDate2(value) {
   if (typeof value !== "string" || !ISO_DATE_RE.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
@@ -144,13 +144,13 @@ function finiteEpoch(value) {
 }
 var PAUSE_REASONS, ISO_DATE_RE;
 var init_dayStatusRecord = __esm({
-  "../src/features/dayStatus/dayStatusRecord.js"() {
+  "src/features/dayStatus/dayStatusRecord.js"() {
     PAUSE_REASONS = Object.freeze(["vacanza", "malattia", "altro"]);
     ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   }
 });
 
-// ../src/features/kentuFocus/score/dayScoreRecord.js
+// src/features/kentuFocus/score/dayScoreRecord.js
 var dayScoreRecord_exports = {};
 __export(dayScoreRecord_exports, {
   dayScorePath: () => dayScorePath,
@@ -178,11 +178,26 @@ function encodeDayScoreForRtdb(record) {
   const out = {
     version: record.version,
     reliability: record.reliability,
-    cylinders: record.cylinders,
+    cylinders: encodeCylindersForRtdb(record.cylinders),
     dataVersion: record.dataVersion
   };
   if (record.score == null) out.scoreIsNull = true;
   else out.score = record.score;
+  return out;
+}
+function encodeCylindersForRtdb(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const key of Object.keys(source)) {
+    const cylinder3 = source[key] && typeof source[key] === "object" ? source[key] : {};
+    const value = Number(cylinder3.value);
+    out[key] = {
+      status: cylinder3.status ?? "no_data",
+      keyFact: String(cylinder3.keyFact ?? ""),
+      signals: asArray(cylinder3.signals),
+      value: Number.isFinite(value) ? value : null
+    };
+  }
   return out;
 }
 function decodeDayScoreFromRtdb(raw) {
@@ -231,12 +246,12 @@ function stableStringify(value) {
   return "null";
 }
 var init_dayScoreRecord = __esm({
-  "../src/features/kentuFocus/score/dayScoreRecord.js"() {
+  "src/features/kentuFocus/score/dayScoreRecord.js"() {
     init_dayStatusRecord();
   }
 });
 
-// mcp/shims/getTrackerDayNode.js
+// functions/mcp/shims/getTrackerDayNode.js
 function isIsoDateString(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
@@ -249,24 +264,24 @@ function getTrackerDayNode(fullHistory, date) {
   return node && typeof node === "object" ? node : null;
 }
 var init_getTrackerDayNode = __esm({
-  "mcp/shims/getTrackerDayNode.js"() {
+  "functions/mcp/shims/getTrackerDayNode.js"() {
   }
 });
 
-// mcp/shims/draftParser.js
+// functions/mcp/shims/draftParser.js
 var init_draftParser = __esm({
-  "mcp/shims/draftParser.js"() {
+  "functions/mcp/shims/draftParser.js"() {
   }
 });
 
-// ../src/utils/mealDraftStatus.js
+// src/utils/mealDraftStatus.js
 function isUnresolvedMealDraftItem(item) {
   if (!item || typeof item !== "object") return false;
   return MEAL_DRAFT_UNRESOLVED_STATUSES.has(String(item.status || "").toLowerCase());
 }
 var MEAL_DRAFT_UNRESOLVED_STATUSES;
 var init_mealDraftStatus = __esm({
-  "../src/utils/mealDraftStatus.js"() {
+  "src/utils/mealDraftStatus.js"() {
     init_draftParser();
     MEAL_DRAFT_UNRESOLVED_STATUSES = /* @__PURE__ */ new Set([
       "raw",
@@ -279,7 +294,7 @@ var init_mealDraftStatus = __esm({
   }
 });
 
-// ../src/utils/computeTotaliCore.js
+// src/utils/computeTotaliCore.js
 function readLogItemNutrient(item, key) {
   if (!item || typeof item !== "object") return null;
   if (key === "fatTotal") {
@@ -335,7 +350,7 @@ function computeTotali(dailyLog) {
 }
 var TARGETS, ALL_NUTRIENT_KEYS, LOG_ITEM_NUTRIENT_ALIASES, SALT_G_TO_SODIUM_MG;
 var init_computeTotaliCore = __esm({
-  "../src/utils/computeTotaliCore.js"() {
+  "src/utils/computeTotaliCore.js"() {
     init_mealDraftStatus();
     TARGETS = {
       macro: { prot: 140, carb: 300, fatTotal: 85, fibre: 30 },
@@ -356,7 +371,7 @@ var init_computeTotaliCore = __esm({
   }
 });
 
-// ../src/features/kentuFocus/contracts/focusDossier.v1.js
+// src/features/kentuFocus/contracts/focusDossier.v1.js
 function focusMetric(value, opts) {
   const provenance = opts?.provenance;
   if (!FOCUS_PROVENANCE[provenance]) {
@@ -380,7 +395,7 @@ function missingMetric(unit) {
 }
 var FOCUS_PROVENANCE, FOCUS_CERTAINTY, FOCUS_MEAL_TYPES;
 var init_focusDossier_v1 = __esm({
-  "../src/features/kentuFocus/contracts/focusDossier.v1.js"() {
+  "src/features/kentuFocus/contracts/focusDossier.v1.js"() {
     FOCUS_PROVENANCE = Object.freeze({
       recorded: "recorded",
       /** @deprecated Preferire `derived` per bedtime = wake−hours. */
@@ -407,7 +422,7 @@ var init_focusDossier_v1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/expandTrackerDayLog.js
+// src/features/kentuFocus/normalize/expandTrackerDayLog.js
 function asLogCollectionArray(raw) {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw.filter((e) => e && typeof e === "object");
@@ -470,11 +485,11 @@ function pickDayLogRaw(node) {
   return null;
 }
 var init_expandTrackerDayLog = __esm({
-  "../src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
+  "src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
   }
 });
 
-// ../src/features/kentuFocus/normalize/logUtils.js
+// src/features/kentuFocus/normalize/logUtils.js
 function getLogArray(node) {
   return expandTrackerLogEntries(pickDayLogRaw(node));
 }
@@ -513,12 +528,12 @@ function finiteNumber(n) {
   return Number.isFinite(v) ? v : null;
 }
 var init_logUtils = __esm({
-  "../src/features/kentuFocus/normalize/logUtils.js"() {
+  "src/features/kentuFocus/normalize/logUtils.js"() {
     init_expandTrackerDayLog();
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusDateUtils.js
+// src/features/kentuFocus/normalize/focusDateUtils.js
 function isIsoDateString2(value) {
   if (typeof value !== "string" || !ISO_DATE_RE2.test(value)) return false;
   const d = /* @__PURE__ */ new Date(`${value}T12:00:00`);
@@ -570,7 +585,7 @@ function formatFocusHoursIt(hours) {
 }
 var ISO_DATE_RE2, ISO_WEEKDAY_LABELS_IT, MONTHS_IT;
 var init_focusDateUtils = __esm({
-  "../src/features/kentuFocus/normalize/focusDateUtils.js"() {
+  "src/features/kentuFocus/normalize/focusDateUtils.js"() {
     ISO_DATE_RE2 = /^\d{4}-\d{2}-\d{2}$/;
     ISO_WEEKDAY_LABELS_IT = Object.freeze([
       null,
@@ -599,7 +614,7 @@ var init_focusDateUtils = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusMealSlots.js
+// src/features/kentuFocus/normalize/focusMealSlots.js
 function getMealSlotBase(raw) {
   const str = String(raw ?? "").trim().toLowerCase();
   if (!str) return "";
@@ -653,7 +668,7 @@ function resolveFoodClockHourDetailed(item, mealTimes) {
 }
 var ALIAS_TO_CANONICAL;
 var init_focusMealSlots = __esm({
-  "../src/features/kentuFocus/normalize/focusMealSlots.js"() {
+  "src/features/kentuFocus/normalize/focusMealSlots.js"() {
     init_focusDateUtils();
     ALIAS_TO_CANONICAL = Object.freeze({
       colazione: "colazione",
@@ -670,10 +685,10 @@ var init_focusMealSlots = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusNutritionPlausibility.js
+// src/features/kentuFocus/normalize/focusNutritionPlausibility.js
 var FOCUS_NUTRITION_PLAUSIBILITY;
 var init_focusNutritionPlausibility = __esm({
-  "../src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
+  "src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
     init_logUtils();
     init_mealDraftStatus();
     FOCUS_NUTRITION_PLAUSIBILITY = Object.freeze({
@@ -684,7 +699,7 @@ var init_focusNutritionPlausibility = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeFoodEvents.js
+// src/features/kentuFocus/normalize/normalizeFoodEvents.js
 function collectDayLogForNutrition(analysisDayNode) {
   return collectDayLogForNutritionWithQuality(analysisDayNode).dayLog;
 }
@@ -708,7 +723,7 @@ function collectDayLogForNutritionWithQuality(analysisDayNode) {
   };
 }
 var init_normalizeFoodEvents = __esm({
-  "../src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
+  "src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
     init_computeTotaliCore();
     init_mealDraftStatus();
     init_focusDossier_v1();
@@ -719,7 +734,7 @@ var init_normalizeFoodEvents = __esm({
   }
 });
 
-// ../src/features/dayStatus/dayStatus.js
+// src/features/dayStatus/dayStatus.js
 function getDayStatus(date, context = {}) {
   if (!isIsoDate2(date) || !isIsoDateString2(date)) return null;
   const today = String(context.today || "").slice(0, 10);
@@ -731,10 +746,10 @@ function getDayStatus(date, context = {}) {
   if (date > today) return "future";
   if (date === today) return "in_progress";
   if (record?.approximate) return "approximate";
-  const dayNode3 = getTrackerDayNode(context.fullHistory, date);
-  if (isLoggedLate(date, dayNode3, record)) return "late";
+  const dayNode4 = getTrackerDayNode(context.fullHistory, date);
+  if (isLoggedLate(date, dayNode4, record)) return "late";
   if (record?.confirmed) return "closed";
-  if (dayHasRegistration(dayNode3)) return "unconfirmed";
+  if (dayHasRegistration(dayNode4)) return "unconfirmed";
   return "hole";
 }
 function detectDayGaps(date, context = {}) {
@@ -751,19 +766,19 @@ function detectDayGaps(date, context = {}) {
     hasFood: false
   };
   if (!isIsoDate2(date)) return empty;
-  const dayNode3 = getTrackerDayNode(context.fullHistory, date);
-  const foods = foodEntries(dayNode3);
+  const dayNode4 = getTrackerDayNode(context.fullHistory, date);
+  const foods = foodEntries(dayNode4);
   const mainMeals = [...new Set(
     foods.map((item) => resolveFocusMealIdentity(item).canonicalMealType).filter((meal) => MAIN_MEALS.has(meal))
   )].sort((a, b) => MAIN_MEAL_ORDER.indexOf(a) - MAIN_MEAL_ORDER.indexOf(b));
-  const hours = foods.map((item) => resolveFoodClockHourDetailed(item, dayNode3?.mealTimes).hour).filter((hour) => hour != null && Number.isFinite(hour));
-  const lastMealHour = hours.length ? Math.max(...hours) : null;
+  const hours = foods.map((item) => resolveFoodClockHourDetailed(item, dayNode4?.mealTimes).hour).filter((hour) => hour != null && Number.isFinite(hour));
+  const lastMealHour2 = hours.length ? Math.max(...hours) : null;
   const kcal = Math.round(Number(computeTotali(foods).kcal) || 0);
   const targetKcal = finiteTarget(context.targetKcal);
   const energyRatio = targetKcal != null && targetKcal > 0 ? Math.round(kcal / targetKcal * 1e3) / 1e3 : null;
   const reasons = [];
   if (foods.length > 0 && mainMeals.length === 1) reasons.push("singleMainMeal");
-  if (foods.length > 0 && (lastMealHour == null || lastMealHour <= GAP_EVENING_HOUR)) {
+  if (foods.length > 0 && (lastMealHour2 == null || lastMealHour2 <= GAP_EVENING_HOUR)) {
     reasons.push("noMealAfter17");
   }
   if (foods.length > 0 && energyRatio != null && energyRatio < GAP_ENERGY_RATIO) {
@@ -775,7 +790,7 @@ function detectDayGaps(date, context = {}) {
     reasons,
     mainMeals,
     mainMealCount: mainMeals.length,
-    lastMealHour,
+    lastMealHour: lastMealHour2,
     kcal,
     targetKcal,
     energyRatio,
@@ -786,33 +801,33 @@ function lateThresholdMs(date) {
   const end = /* @__PURE__ */ new Date(`${addCalendarDays(date, 1)}T00:00:00`);
   return end.getTime() + LATE_AFTER_HOURS * 60 * 60 * 1e3;
 }
-function isLoggedLate(date, dayNode3, record) {
+function isLoggedLate(date, dayNode4, record) {
   if (record?.loggedLateAt != null) return true;
-  const earliest = earliestLogEpoch(dayNode3);
+  const earliest = earliestLogEpoch(dayNode4);
   if (earliest == null) return false;
   return earliest > lateThresholdMs(date);
 }
-function earliestLogEpoch(dayNode3) {
+function earliestLogEpoch(dayNode4) {
   let min = null;
-  for (const item of collectDayLogForNutrition(dayNode3)) {
+  for (const item of collectDayLogForNutrition(dayNode4)) {
     const stamp = finiteEpoch(item?.loggedAt ?? item?.createdAt ?? item?.timestamp);
     if (stamp == null) continue;
     if (min == null || stamp < min) min = stamp;
   }
   return min;
 }
-function dayHasRegistration(dayNode3) {
-  if (!dayNode3 || typeof dayNode3 !== "object") return false;
-  if (dayNode3.isIntentionalFast === true) return true;
-  return collectDayLogForNutrition(dayNode3).some((item) => {
+function dayHasRegistration(dayNode4) {
+  if (!dayNode4 || typeof dayNode4 !== "object") return false;
+  if (dayNode4.isIntentionalFast === true) return true;
+  return collectDayLogForNutrition(dayNode4).some((item) => {
     const type = String(item?.type || "").toLowerCase();
     if (REGISTERED_TYPES.has(type)) return true;
     if (!type && (item?.kcal != null || item?.cal != null || item?.desc || item?.name)) return true;
     return false;
   });
 }
-function foodEntries(dayNode3) {
-  return collectDayLogForNutrition(dayNode3).filter((item) => {
+function foodEntries(dayNode4) {
+  return collectDayLogForNutrition(dayNode4).filter((item) => {
     const type = String(item?.type || "food").toLowerCase();
     return type === "food" || type === "recipe";
   });
@@ -824,7 +839,7 @@ function finiteTarget(value) {
 }
 var DAY_STATUSES, MAIN_MEAL_ORDER, MAIN_MEALS, REGISTERED_TYPES, LATE_AFTER_HOURS, GAP_ENERGY_RATIO, GAP_EVENING_HOUR;
 var init_dayStatus = __esm({
-  "../src/features/dayStatus/dayStatus.js"() {
+  "src/features/dayStatus/dayStatus.js"() {
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
     init_focusMealSlots();
@@ -850,7 +865,7 @@ var init_dayStatus = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/resolveMainNightSleep.js
+// src/features/kentuFocus/normalize/resolveMainNightSleep.js
 function sleepHoursFromEntry(entry) {
   return finiteNumber(
     entry?.hours ?? entry?.duration ?? entry?.sleepHours ?? entry?.sleepDuration
@@ -1017,7 +1032,7 @@ function resolveMainNightSleep(sleepEntries) {
 }
 var NIGHT_SLEEP_MIN_HOURS, HOURS_CLEAR_GAP, MAIN_NIGHT_STATUS;
 var init_resolveMainNightSleep = __esm({
-  "../src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
+  "src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
     init_focusDateUtils();
     init_logUtils();
     NIGHT_SLEEP_MIN_HOURS = 3;
@@ -1031,7 +1046,7 @@ var init_resolveMainNightSleep = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeSleepNight.js
+// src/features/kentuFocus/normalize/normalizeSleepNight.js
 function resolveBedtimeProvenance(entry, wakeTime, hours) {
   const explicit = String(
     entry?.bedtimeProvenance ?? entry?.bedtimeSource ?? entry?._bedtimeOrigin ?? ""
@@ -1138,9 +1153,9 @@ function isDefaultSleepStagePlaceholder(entry, deepMin, remMin) {
   const wearableHint = hr != null && hr > 0 || qualityScore != null && qualityScore > 5 || entry?.source === "wearable" || entry?.source === "WEARABLE";
   return !wearableHint;
 }
-function computeDinnerSleepBufferH(bedtime, lastMealHour) {
-  if (!Number.isFinite(bedtime) || !Number.isFinite(lastMealHour)) return null;
-  let delta = bedtime - lastMealHour;
+function computeDinnerSleepBufferH(bedtime, lastMealHour2) {
+  if (!Number.isFinite(bedtime) || !Number.isFinite(lastMealHour2)) return null;
+  let delta = bedtime - lastMealHour2;
   if (delta < 0) delta += 24;
   if (delta > 18) return null;
   return Math.round(delta * 100) / 100;
@@ -1249,7 +1264,7 @@ function normalizeSleepNight(publicationDayNode, opts) {
 }
 var BEDTIME_FORMULA_MATCH_EPS_H, DEFAULT_SLEEP_STAGE_PLACEHOLDER_MIN;
 var init_normalizeSleepNight = __esm({
-  "../src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
+  "src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
     init_focusDossier_v1();
     init_focusDateUtils();
     init_logUtils();
@@ -1259,7 +1274,7 @@ var init_normalizeSleepNight = __esm({
   }
 });
 
-// ../src/activityCatalog.js
+// src/activityCatalog.js
 function normalizeMuscleGroupLabel(raw) {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -1281,7 +1296,7 @@ function normalizeMuscleGroupArray(muscles) {
 }
 var WORKOUT_MUSCLE_GROUP_DEFS, WORKOUT_MUSCLE_MACRO_SECTIONS, WORKOUT_MUSCLE_GROUP_IDS, MUSCLE_ALIAS_TO_ID, WORKOUT_ACTIVITY_TYPE_DEFS, ACTIVITY_BY_ID, WORKOUT_ACTIVITY_SELECTOR_IDS;
 var init_activityCatalog = __esm({
-  "../src/activityCatalog.js"() {
+  "src/activityCatalog.js"() {
     WORKOUT_MUSCLE_GROUP_DEFS = [
       { id: "Petto", label: "Petto", macroGroup: "chest" },
       { id: "Dorso", label: "Dorso", aliases: ["Schiena", "schiena"], macroGroup: "back_shoulders" },
@@ -1456,23 +1471,403 @@ var init_activityCatalog = __esm({
   }
 });
 
-// ../src/features/trendHub/utils/muscleSpillover.js
-function resolveSpilloverMuscleKey(label) {
-  const key = String(label || "").trim().toLowerCase();
-  if (!key) return null;
-  if (key.includes("total") && key.includes("body")) return "total";
-  if (key === "full body" || key === "fullbody" || key === "totalbody") return "total";
-  if (key === "petto" || key === "chest" || key === "torace") return "petto";
-  if (key === "schiena" || key === "dorso" || key === "back") return "schiena";
-  if (key === "gambe" || key === "legs" || key === "lower") return "gambe";
-  if (key === "spalle" || key === "shoulders" || key === "deltoid") return "spalle";
-  if (key === "braccia" || key === "arms" || key === "bicipiti" || key === "bicipite" || key === "tricipiti" || key === "tricipite" || key === "avambracci" || key === "avambraccio") return "braccia";
-  if (key === "core" || key === "abs" || key === "addominali" || key === "addome") return "core";
+// src/features/kentuFocus/costanza/muscleIds.mm-1.js
+var MUSCLE_MAP_VERSION, MUSCLE_IDS, MUSCLE_LABELS, COSTANZA_UI_GROUPS, FORCE_CI_GROUP_IDS, DEFAULT_WEEKLY_GOAL_DAYS, WEEKLY_GOAL_CHOICES;
+var init_muscleIds_mm_1 = __esm({
+  "src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
+    MUSCLE_MAP_VERSION = "mm-1";
+    MUSCLE_IDS = Object.freeze([
+      "pettorali",
+      "dorsali",
+      "trapezi_romboidi",
+      "deltoidi_anteriori",
+      "deltoidi_laterali",
+      "deltoidi_posteriori",
+      "bicipiti",
+      "tricipiti",
+      "avambracci",
+      "addominali",
+      "obliqui",
+      "lombari",
+      "glutei",
+      "quadricipiti",
+      "femorali",
+      "adduttori",
+      "polpacci"
+    ]);
+    MUSCLE_LABELS = Object.freeze({
+      pettorali: "Pettorali",
+      dorsali: "Dorsali",
+      trapezi_romboidi: "Trapezi / romboidi",
+      deltoidi_anteriori: "Deltoidi anteriori",
+      deltoidi_laterali: "Deltoidi laterali",
+      deltoidi_posteriori: "Deltoidi posteriori",
+      bicipiti: "Bicipiti",
+      tricipiti: "Tricipiti",
+      avambracci: "Avambracci",
+      addominali: "Addominali",
+      obliqui: "Obliqui",
+      lombari: "Lombari",
+      glutei: "Glutei",
+      quadricipiti: "Quadricipiti",
+      femorali: "Femorali",
+      adduttori: "Adduttori",
+      polpacci: "Polpacci"
+    });
+    COSTANZA_UI_GROUPS = Object.freeze([
+      {
+        id: "petto",
+        label: "Petto",
+        forceCi: true,
+        muscleIds: Object.freeze(["pettorali"])
+      },
+      {
+        id: "schiena",
+        label: "Schiena",
+        forceCi: true,
+        muscleIds: Object.freeze(["dorsali", "trapezi_romboidi", "lombari"])
+      },
+      {
+        id: "spalle",
+        label: "Spalle",
+        forceCi: true,
+        muscleIds: Object.freeze(["deltoidi_anteriori", "deltoidi_laterali", "deltoidi_posteriori"])
+      },
+      {
+        id: "braccia",
+        label: "Braccia",
+        forceCi: false,
+        muscleIds: Object.freeze(["bicipiti", "tricipiti", "avambracci"])
+      },
+      {
+        id: "gambe",
+        label: "Gambe",
+        forceCi: true,
+        muscleIds: Object.freeze(["quadricipiti", "glutei", "femorali", "adduttori", "polpacci"])
+      },
+      {
+        id: "core",
+        label: "Core",
+        forceCi: true,
+        muscleIds: Object.freeze(["addominali", "obliqui", "lombari"])
+      }
+    ]);
+    FORCE_CI_GROUP_IDS = Object.freeze(
+      COSTANZA_UI_GROUPS.filter((g) => g.forceCi).map((g) => g.id)
+    );
+    DEFAULT_WEEKLY_GOAL_DAYS = 2;
+    WEEKLY_GOAL_CHOICES = Object.freeze([2, 3, 4]);
+  }
+});
+
+// src/features/kentuFocus/costanza/muscleMap.mm-1.js
+function mapChipToMuscles(chipId) {
+  const id = String(chipId || "").trim();
+  if (!id) return Object.freeze([]);
+  const hit = CHIP_MAP[id];
+  if (hit) return hit;
+  if (/^schiena$/i.test(id)) return CHIP_MAP.Dorso;
+  return Object.freeze([]);
+}
+function mergeMuscleWeights(contributions) {
+  const out = {};
+  for (const row of contributions || []) {
+    const id = String(row?.muscleId || "").trim();
+    const w = Number(row?.weight);
+    if (!id || !Number.isFinite(w) || w <= 0) continue;
+    const prev = out[id] || 0;
+    out[id] = Math.max(prev, w >= 1 ? 1 : w);
+  }
+  for (const id of Object.keys(out)) {
+    if (out[id] > 1) out[id] = 1;
+  }
+  return out;
+}
+function resolveSessionChips(entry) {
+  if (!entry || typeof entry !== "object") return [];
+  if (classifyWorkoutByType(entry).kind !== "strength") return [];
+  const raw = entry.muscles ?? entry.muscleGroups ?? entry.groups ?? [];
+  const chips = normalizeMuscleGroupArray(Array.isArray(raw) ? raw : [raw]);
+  if (chips.length > 0) return chips;
+  const typeId = workoutTypeId(entry);
+  const fallback = TYPE_FALLBACK_CHIPS[typeId];
+  return fallback ? [...fallback] : [];
+}
+function sessionMuscleWeights(entry) {
+  const chips = resolveSessionChips(entry);
+  if (chips.length === 0) return {};
+  const rows = [];
+  for (const chip of chips) {
+    for (const row of mapChipToMuscles(chip)) rows.push(row);
+  }
+  return mergeMuscleWeights(rows);
+}
+function sessionTrainedMuscleIds(entry) {
+  const weights = sessionMuscleWeights(entry);
+  return Object.keys(weights).filter((id) => weights[id] >= 1).sort();
+}
+var CHIP_MAP, TYPE_FALLBACK_CHIPS;
+var init_muscleMap_mm_1 = __esm({
+  "src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
+    init_activityCatalog();
+    init_workoutMovement();
+    init_muscleIds_mm_1();
+    CHIP_MAP = Object.freeze({
+      Petto: Object.freeze([
+        { muscleId: "pettorali", weight: 1 },
+        { muscleId: "tricipiti", weight: 0.5 },
+        { muscleId: "deltoidi_anteriori", weight: 0.5 }
+      ]),
+      Dorso: Object.freeze([
+        { muscleId: "dorsali", weight: 1 },
+        { muscleId: "trapezi_romboidi", weight: 1 },
+        { muscleId: "bicipiti", weight: 0.5 },
+        { muscleId: "deltoidi_posteriori", weight: 0.5 },
+        { muscleId: "avambracci", weight: 0.5 },
+        { muscleId: "lombari", weight: 0.5 }
+      ]),
+      Spalle: Object.freeze([
+        { muscleId: "deltoidi_anteriori", weight: 1 },
+        { muscleId: "deltoidi_laterali", weight: 1 },
+        { muscleId: "deltoidi_posteriori", weight: 1 },
+        { muscleId: "tricipiti", weight: 0.5 },
+        { muscleId: "trapezi_romboidi", weight: 0.5 }
+      ]),
+      Gambe: Object.freeze([
+        { muscleId: "quadricipiti", weight: 1 },
+        { muscleId: "glutei", weight: 1 },
+        { muscleId: "femorali", weight: 0.5 },
+        { muscleId: "adduttori", weight: 0.5 },
+        { muscleId: "polpacci", weight: 0.5 },
+        { muscleId: "lombari", weight: 0.5 }
+      ]),
+      bicipiti: Object.freeze([
+        { muscleId: "bicipiti", weight: 1 },
+        { muscleId: "avambracci", weight: 0.5 }
+      ]),
+      tricipiti: Object.freeze([
+        { muscleId: "tricipiti", weight: 1 }
+      ]),
+      avambracci: Object.freeze([
+        { muscleId: "avambracci", weight: 1 }
+      ]),
+      abs: Object.freeze([
+        { muscleId: "addominali", weight: 1 },
+        { muscleId: "obliqui", weight: 1 }
+      ]),
+      Core: Object.freeze([
+        { muscleId: "addominali", weight: 1 },
+        { muscleId: "obliqui", weight: 1 },
+        { muscleId: "lombari", weight: 1 },
+        { muscleId: "glutei", weight: 0.5 }
+      ]),
+      "Total Body": Object.freeze(
+        MUSCLE_IDS.map((muscleId) => Object.freeze({ muscleId, weight: 0.5 }))
+      )
+    });
+    TYPE_FALLBACK_CHIPS = Object.freeze({
+      scale: ["Gambe"],
+      alzate_sedia: ["Gambe"]
+    });
+  }
+});
+
+// src/features/kentuFocus/costanza/costanzaForza.js
+function dayRawLog(fullHistory, dateKey) {
+  const node = fullHistory?.[`trackerStorico_${dateKey}`];
+  if (!node || typeof node !== "object") return [];
+  if (node.log != null) return node.log;
+  if (node.dati && typeof node.dati === "object" && node.dati.log != null) return node.dati.log;
+  return [];
+}
+function normalizeWeeklyGoalDays(raw) {
+  const n = Number(raw);
+  if (WEEKLY_GOAL_CHOICES.includes(n)) return n;
+  return DEFAULT_WEEKLY_GOAL_DAYS;
+}
+function weekMondayOf(iso) {
+  if (!isIsoDateString2(iso)) return null;
+  const d = /* @__PURE__ */ new Date(`${iso}T12:00:00`);
+  const day = d.getDay();
+  const back = day === 0 ? 6 : day - 1;
+  return addCalendarDays(iso, -back);
+}
+function weekSundayOf(monday) {
+  if (!isIsoDateString2(monday)) return null;
+  return addCalendarDays(monday, 6);
+}
+function datesInclusive(from, to) {
+  if (!isIsoDateString2(from) || !isIsoDateString2(to) || from > to) return [];
+  const out = [];
+  let cur = from;
+  while (cur <= to) {
+    out.push(cur);
+    cur = addCalendarDays(cur, 1);
+  }
+  return out;
+}
+function strengthSessionsByDay(fullHistory, asOfDate, lookbackDays = 90) {
+  const map = /* @__PURE__ */ new Map();
+  if (!isIsoDateString2(asOfDate)) return map;
+  const span = Math.max(1, Math.floor(Number(lookbackDays) || 90));
+  const minDate = addCalendarDays(asOfDate, -(span - 1));
+  const byId = /* @__PURE__ */ new Map();
+  let anonymous = 0;
+  for (let back = 0; back < span; back += 1) {
+    const dateKey = addCalendarDays(asOfDate, -back);
+    if (dateKey < minDate) break;
+    for (const entry of expandTrackerLogEntries(dayRawLog(fullHistory, dateKey))) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.isGhost === true) continue;
+      const kind = String(entry.type || "").trim().toLowerCase();
+      if (kind && kind !== "workout") continue;
+      const typed = { ...entry, type: "workout", __dateKey: dateKey };
+      if (classifyWorkoutByType(typed).kind !== "strength") continue;
+      if (resolveSessionChips(typed).length === 0) continue;
+      const id = String(entry.id || entry.nodeId || "").trim();
+      const key = id || `${dateKey}:anon:${anonymous}`;
+      anonymous += 1;
+      if (byId.has(key)) continue;
+      byId.set(key, typed);
+    }
+  }
+  for (const entry of byId.values()) {
+    const day = String(entry.__dateKey || "").slice(0, 10);
+    const list = map.get(day) || [];
+    list.push(entry);
+    map.set(day, list);
+  }
+  return map;
+}
+function strengthDaySet(byDay) {
+  return new Set(byDay.keys());
+}
+function forceDaysInCalendarWeek(strengthDays, asOfDate) {
+  const monday = weekMondayOf(asOfDate);
+  const sunday = weekSundayOf(monday);
+  const days = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d) && d <= asOfDate);
+  return { monday, sunday, days, count: days.length };
+}
+function computeWeekStreak(strengthDays, asOfDate, weeklyGoal) {
+  const goal = normalizeWeeklyGoalDays(weeklyGoal);
+  const thisMonday = weekMondayOf(asOfDate);
+  if (!thisMonday) return 0;
+  const thisSunday = weekSundayOf(thisMonday);
+  const weekClosed = asOfDate >= thisSunday;
+  let streak = 0;
+  let monday = weekClosed ? thisMonday : addCalendarDays(thisMonday, -7);
+  for (let i = 0; i < 52; i += 1) {
+    const sunday = weekSundayOf(monday);
+    const count = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d)).length;
+    if (count >= goal) {
+      streak += 1;
+      monday = addCalendarDays(monday, -7);
+      continue;
+    }
+    break;
+  }
+  return streak;
+}
+function sumMuscleWeightsInRange(byDay, from, to) {
+  const sums = {};
+  for (const id of MUSCLE_IDS) sums[id] = 0;
+  for (const day of datesInclusive(from, to)) {
+    for (const entry of byDay.get(day) || []) {
+      const w = sessionMuscleWeights(entry);
+      for (const [id, weight] of Object.entries(w)) {
+        sums[id] = (sums[id] || 0) + weight;
+      }
+    }
+  }
+  return sums;
+}
+function lastTrainedDate(byDay, muscleId, asOfDate) {
+  const days = [...byDay.keys()].filter((d) => d <= asOfDate).sort().reverse();
+  for (const day of days) {
+    for (const entry of byDay.get(day) || []) {
+      const w = sessionMuscleWeights(entry)[muscleId] || 0;
+      if (w >= 1) return day;
+    }
+  }
   return null;
 }
+function coverageStatusFromSum(sum) {
+  const s = Number(sum) || 0;
+  if (s >= 1) return "coperto";
+  if (s > 0) return "toccato";
+  return "vuoto";
+}
+function computeCostanzaForza(input) {
+  const asOfDate = String(input?.asOfDate || "").slice(0, 10);
+  const weeklyGoal = normalizeWeeklyGoalDays(input?.weeklyGoalDays);
+  const byDay = strengthSessionsByDay(input?.fullHistory, asOfDate);
+  const strengthDays = strengthDaySet(byDay);
+  const week = forceDaysInCalendarWeek(strengthDays, asOfDate);
+  const streak = computeWeekStreak(strengthDays, asOfDate, weeklyGoal);
+  const windowFrom = addCalendarDays(asOfDate, -6);
+  const sums7 = sumMuscleWeightsInRange(byDay, windowFrom, asOfDate);
+  const lookback30From = addCalendarDays(asOfDate, -29);
+  const muscles = {};
+  for (const id of MUSCLE_IDS) {
+    const sum7 = sums7[id] || 0;
+    const last = lastTrainedDate(byDay, id, asOfDate);
+    let daysSince = null;
+    if (last) {
+      const a = /* @__PURE__ */ new Date(`${last}T12:00:00`);
+      const b = /* @__PURE__ */ new Date(`${asOfDate}T12:00:00`);
+      daysSince = Math.round((b - a) / 864e5);
+    }
+    const trainedIn30 = last != null && last >= lookback30From;
+    muscles[id] = {
+      status: coverageStatusFromSum(sum7),
+      sum7,
+      lastTrained: last,
+      daysSinceTrained: daysSince,
+      neverIn30: !trainedIn30
+    };
+  }
+  const groups = {};
+  for (const g of COSTANZA_UI_GROUPS) {
+    let best = "vuoto";
+    for (const mid of g.muscleIds) {
+      const st = muscles[mid]?.status || "vuoto";
+      if (st === "coperto") best = "coperto";
+      else if (st === "toccato" && best === "vuoto") best = "toccato";
+    }
+    groups[g.id] = { status: best, muscleIds: [...g.muscleIds] };
+  }
+  const forceCiCovered = FORCE_CI_GROUP_IDS.filter((gid) => groups[gid]?.status === "coperto").length;
+  return {
+    version: MUSCLE_MAP_VERSION,
+    asOfDate,
+    weeklyGoalDays: weeklyGoal,
+    forceDaysThisWeek: week.count,
+    forceDayDatesThisWeek: week.days,
+    weekMonday: week.monday,
+    weekSunday: week.sunday,
+    weekStreak: streak,
+    muscles,
+    groups,
+    forceCiCoveredCount: forceCiCovered,
+    forceCiGroupTotal: FORCE_CI_GROUP_IDS.length,
+    uiGroups: COSTANZA_UI_GROUPS
+  };
+}
+var init_costanzaForza = __esm({
+  "src/features/kentuFocus/costanza/costanzaForza.js"() {
+    init_focusDateUtils();
+    init_expandTrackerDayLog();
+    init_workoutMovement();
+    init_muscleIds_mm_1();
+    init_muscleMap_mm_1();
+  }
+});
+
+// src/features/trendHub/utils/muscleSpillover.js
 var muscleSpilloverMatrix, SPILLOVER_MUSCLE_KEYS;
 var init_muscleSpillover = __esm({
-  "../src/features/trendHub/utils/muscleSpillover.js"() {
+  "src/features/trendHub/utils/muscleSpillover.js"() {
+    init_costanzaForza();
     muscleSpilloverMatrix = Object.freeze({
       petto: Object.freeze({ petto: 50, spalle: 20, braccia: 25 }),
       schiena: Object.freeze({ schiena: 50, spalle: 15, braccia: 25 }),
@@ -1492,7 +1887,7 @@ var init_muscleSpillover = __esm({
   }
 });
 
-// ../src/features/commandTerminal/context/workoutMovement.js
+// src/features/commandTerminal/context/workoutMovement.js
 function durationAmountToMinutes(amount) {
   const dur = Number(amount);
   if (!Number.isFinite(dur) || dur <= 0) return 0;
@@ -1538,22 +1933,9 @@ function equivalentAerobicMinutes(entry) {
   if (kind === "vigorous") return minutes * VIGOROUS_EQUIVALENT_FACTOR;
   return 0;
 }
-function strengthSessionPrimaries(entry) {
-  if (classifyWorkoutByType(entry).kind !== "strength") return [];
-  const raw = entry?.muscles ?? entry?.muscleGroups ?? entry?.groups ?? [];
-  const labels = normalizeMuscleGroupArray(Array.isArray(raw) ? raw : [raw]);
-  const primaries = [];
-  for (const label of labels) {
-    const key = resolveSpilloverMuscleKey(label);
-    if (key) primaries.push(key);
-  }
-  if (primaries.length > 0) return [...new Set(primaries)];
-  const fallback = STRENGTH_TYPE_PRIMARIES[workoutTypeId(entry)];
-  return fallback ? [...fallback] : [];
-}
 var VIGOROUS_EQUIVALENT_FACTOR, WALK_TYPE_IDS, VIGOROUS_TYPE_IDS, STRENGTH_TYPE_IDS, STRENGTH_TYPE_PRIMARIES, STRENGTH_LABEL, WALK_LABEL, VIGOROUS_LABEL;
 var init_workoutMovement = __esm({
-  "../src/features/commandTerminal/context/workoutMovement.js"() {
+  "src/features/commandTerminal/context/workoutMovement.js"() {
     init_activityCatalog();
     init_muscleSpillover();
     VIGOROUS_EQUIVALENT_FACTOR = 2;
@@ -1622,7 +2004,7 @@ var init_workoutMovement = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
+// src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
 function durationToMinutes(durationRaw) {
   if (durationRaw && typeof durationRaw === "object") {
     const minutes = resolveWorkoutDurationMinutes(durationRaw);
@@ -1875,7 +2257,7 @@ function normalizeWorkoutEvents(analysisDayNode) {
   };
 }
 var init_normalizeWorkoutEvents = __esm({
-  "../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
+  "src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
     init_focusDossier_v1();
     init_logUtils();
     init_activityCatalog();
@@ -1883,7 +2265,7 @@ var init_normalizeWorkoutEvents = __esm({
   }
 });
 
-// ../src/features/kentuFocus/product/assessNova4CritiqueProfile.js
+// src/features/kentuFocus/product/assessNova4CritiqueProfile.js
 function finiteOrNull(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -1994,11 +2376,11 @@ function assessNova4CritiqueProfile(input) {
   };
 }
 var init_assessNova4CritiqueProfile = __esm({
-  "../src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
+  "src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
   }
 });
 
-// ../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
+// src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
 function catalogDbNonEmpty(db, cache) {
   if (!db || typeof db !== "object") return false;
   if (cache instanceof WeakMap && cache.has(db)) return cache.get(db);
@@ -2056,11 +2438,11 @@ function withFocusCatalogLookupSession(catalogs) {
   return { catalogs: next, lookupSession };
 }
 var init_focusAiCoachCatalogLookup = __esm({
-  "../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
+  "src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
   }
 });
 
-// ../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
+// src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
 function finiteOrNull2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -2360,8 +2742,8 @@ function buildDayFoodQuality(fullHistory, date, catalogs, offStatus) {
       offUnresolvedCount: 0
     };
   }
-  const dayLog = collectDayLogForNutrition(node);
-  const foods = dayLog.filter(
+  const dayLog2 = collectDayLogForNutrition(node);
+  const foods = dayLog2.filter(
     (e) => e && (e.type === "food" || e.type === "recipe" || !e.type)
   );
   const nova4Items = [];
@@ -2598,7 +2980,7 @@ function buildFocusFoodQualityBlock(input) {
 }
 var FOOD_QUALITY_PROVENANCE, FOOD_QUALITY_PROVENANCE_CODE, OFF_CATALOG_STATUS, MEAL_LABELS, NAME_ROLE_PATTERNS, SWEET_OR_DRINK_NAME_RE, SWEET_OR_DRINK_CATEGORY_RE;
 var init_buildFocusFoodQualityBlock = __esm({
-  "../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
+  "src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
     init_focusDateUtils();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -2642,7 +3024,7 @@ var init_buildFocusFoodQualityBlock = __esm({
   }
 });
 
-// ../src/features/kentuFocus/product/focusMealEnergySignals.js
+// src/features/kentuFocus/product/focusMealEnergySignals.js
 function assessHeavyLateMeal(dinnerKcal, dayKcal, targetKcal) {
   const dinner = Number(dinnerKcal);
   const day = Number(dayKcal);
@@ -2734,7 +3116,7 @@ function assessEnergyLowDay(dayKcal, targetKcal, opts = {}) {
 }
 var HEAVY_LATE_MEAL_ABS_KCAL, HEAVY_LATE_MEAL_ABS_TARGET_SHARE, HEAVY_LATE_MEAL_DAY_SHARE, ENERGY_LOW_DAY_DEFICIT_RATIO, LATE_FIRST_MEAL_HOUR, SUBSTANTIAL_MEAL_MIN_KCAL;
 var init_focusMealEnergySignals = __esm({
-  "../src/features/kentuFocus/product/focusMealEnergySignals.js"() {
+  "src/features/kentuFocus/product/focusMealEnergySignals.js"() {
     HEAVY_LATE_MEAL_ABS_KCAL = 900;
     HEAVY_LATE_MEAL_ABS_TARGET_SHARE = 0.4;
     HEAVY_LATE_MEAL_DAY_SHARE = 0.45;
@@ -2744,10 +3126,10 @@ var init_focusMealEnergySignals = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-1.js
+// src/features/kentuFocus/score/scoreConfig.kds-1.js
 var SCORE_VERSION, CYLINDER_POINTS, CYLINDER_WEIGHTS, MIN_CYLINDERS_WITH_DATA, NULL_SCORE_STATUSES, LOW_RELIABILITY_STATUSES, PERIOD_MEAN_STATUSES, ENERGY_BANDS, SLEEP_BANDS, STRENGTH_WINDOW, CARDIO_WINDOW, NOVA4_CRITIQUE_SIGNAL_ID;
 var init_scoreConfig_kds_1 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
     SCORE_VERSION = "kds-1";
     CYLINDER_POINTS = Object.freeze({
       /** In linea con la soglia del cilindro. */
@@ -2838,10 +3220,10 @@ var init_scoreConfig_kds_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-2.js
+// src/features/kentuFocus/score/scoreConfig.kds-2.js
 var SCORE_VERSION2, CYLINDER_WEIGHTS2, MIN_CYLINDERS_WITH_DATA2, NULL_SCORE_STATUSES2, LOW_RELIABILITY_STATUSES2, ENERGY_CURVE, SLEEP_CURVE, STRENGTH_CURVE, CARDIO_CURVE, NOVA4_CRITIQUE_SIGNAL_ID2, PERIOD_RULES;
 var init_scoreConfig_kds_2 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
     SCORE_VERSION2 = "kds-2";
     CYLINDER_WEIGHTS2 = Object.freeze({
       alimentazione: 0.4,
@@ -2908,7 +3290,15 @@ var init_scoreConfig_kds_2 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-3.js
+// src/features/kentuFocus/score/scoreConfig.kds-3.js
+function pillarStatusFromValue(value) {
+  if (value == null || value === "") return "no_data";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "no_data";
+  if (n >= PILLAR_STATUS.onTrackMin) return "on_track";
+  if (n >= PILLAR_STATUS.halfwayMin) return "halfway";
+  return "off_track";
+}
 function isPeriodDataStatus(dayStatus) {
   return PERIOD_DATA_STATUSES.includes(dayStatus);
 }
@@ -2917,7 +3307,7 @@ function periodDayWeight(dayStatus) {
 }
 var SCORE_VERSION3, CYLINDER_WEIGHTS3, MIN_CYLINDERS_WITH_DATA3, ON_TRACK_SCORE, NULL_SCORE_STATUSES3, LOW_RELIABILITY_STATUSES3, MOVEMENT_CURVE, PILLAR_STATUS, ACTION_PILLAR_WEIGHTS, PERIOD_RULES2, PERIOD_DATA_STATUSES, UNCONFIRMED_PERIOD_WEIGHT, MEAL_PENALTY_CAP, SCORE_COLORS;
 var init_scoreConfig_kds_3 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
     SCORE_VERSION3 = "kds-3";
     CYLINDER_WEIGHTS3 = Object.freeze({
       alimentazione: 0.45,
@@ -2986,7 +3376,27 @@ var init_scoreConfig_kds_3 = __esm({
   }
 });
 
-// ../src/utils/profileAge.js
+// src/features/kentuFocus/score/scoreConfig.kds-4.js
+var SCORE_VERSION4;
+var init_scoreConfig_kds_4 = __esm({
+  "src/features/kentuFocus/score/scoreConfig.kds-4.js"() {
+    init_scoreConfig_kds_3();
+    init_scoreConfig_kds_2();
+    SCORE_VERSION4 = "kds-4";
+  }
+});
+
+// src/features/kentuFocus/score/scoreConfig.kds-5.js
+var SCORE_VERSION5;
+var init_scoreConfig_kds_5 = __esm({
+  "src/features/kentuFocus/score/scoreConfig.kds-5.js"() {
+    init_scoreConfig_kds_3();
+    init_scoreConfig_kds_2();
+    SCORE_VERSION5 = "kds-5";
+  }
+});
+
+// src/utils/profileAge.js
 function calculateAge(dobString) {
   if (!dobString) return null;
   const today = /* @__PURE__ */ new Date();
@@ -3000,29 +3410,29 @@ function calculateAge(dobString) {
   return age;
 }
 var init_profileAge = __esm({
-  "../src/utils/profileAge.js"() {
+  "src/utils/profileAge.js"() {
   }
 });
 
-// ../src/calendarDateUtils.js
+// src/calendarDateUtils.js
 function addDays(dateStr, n) {
   const d = /* @__PURE__ */ new Date(dateStr + "T12:00:00");
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 var init_calendarDateUtils = __esm({
-  "../src/calendarDateUtils.js"() {
+  "src/calendarDateUtils.js"() {
   }
 });
 
-// ../src/features/commandTerminal/context/recentWorkoutLogs.js
+// src/features/commandTerminal/context/recentWorkoutLogs.js
 function localToday() {
   const now = /* @__PURE__ */ new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${now.getFullYear()}-${month}-${day}`;
 }
-function dayRawLog(fullHistory, dateKey) {
+function dayRawLog2(fullHistory, dateKey) {
   const node = fullHistory?.[`trackerStorico_${dateKey}`];
   if (!node || typeof node !== "object") return [];
   if (node.log != null) return node.log;
@@ -3051,7 +3461,7 @@ function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activeDate =
     if (back === 0 && Array.isArray(activeLog) && activeLog.length > 0) {
       ingestDay(dateKey, activeLog);
     } else {
-      ingestDay(dateKey, dayRawLog(fullHistory, dateKey));
+      ingestDay(dateKey, dayRawLog2(fullHistory, dateKey));
     }
   }
   const all = [...byId.values()];
@@ -3065,127 +3475,40 @@ function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activeDate =
   return { cardioLogs, workoutLogs, all };
 }
 var init_recentWorkoutLogs = __esm({
-  "../src/features/commandTerminal/context/recentWorkoutLogs.js"() {
+  "src/features/commandTerminal/context/recentWorkoutLogs.js"() {
     init_calendarDateUtils();
     init_expandTrackerDayLog();
   }
 });
 
-// ../src/utils/hypertrophyMath.js
-function parseIsoParts(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "").slice(0, 10));
-  if (!m) return null;
-  return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
-}
-function hypertrophyDiffCalendarDays(fromIso, toIso) {
-  const a = parseIsoParts(fromIso);
-  const b = parseIsoParts(toIso);
-  if (!a || !b) return null;
-  const fromMs = Date.UTC(a.y, a.m - 1, a.d);
-  const toMs = Date.UTC(b.y, b.m - 1, b.d);
-  return Math.round((toMs - fromMs) / 864e5);
-}
-function hypertrophySessionResidual(daysElapsed) {
-  const days = Math.floor(Number(daysElapsed));
-  if (!Number.isFinite(days) || days < 0) return 0;
-  if (days === 0) return HYPERTROPHY_SESSION_BOOST;
-  if (days >= HYPERTROPHY_DECAY_HORIZON_DAYS) return 0;
-  let value = HYPERTROPHY_SESSION_BOOST;
-  for (let i = 0; i < days; i += 1) {
-    value -= HYPERTROPHY_DAILY_DECAY[i];
-  }
-  return Math.max(0, value);
-}
-function mapSessionPrimariesToPillars(primaryKeys) {
-  const pillars = /* @__PURE__ */ new Set();
-  for (const raw of primaryKeys || []) {
-    const key = String(raw || "").trim().toLowerCase();
-    if (!key) continue;
-    if (key === "total" || key === "full_body" || key === "fullbody") {
-      HYPERTROPHY_PILLAR_IDS.forEach((id) => pillars.add(id));
-      continue;
-    }
-    const pillar = SPILLOVER_TO_PILLAR[key];
-    if (pillar) pillars.add(pillar);
-  }
-  return pillars;
-}
-function computePillarStimulusPercent(sessionDates, asOfDate) {
-  const asOf = String(asOfDate || "").slice(0, 10);
-  let total = 0;
-  for (const raw of sessionDates || []) {
-    const date = String(raw || "").slice(0, 10);
-    const elapsed = hypertrophyDiffCalendarDays(date, asOf);
-    if (elapsed == null || elapsed < 0) continue;
-    total += hypertrophySessionResidual(elapsed);
-  }
-  return Math.min(HYPERTROPHY_STIMULUS_CAP, Math.round(total));
-}
-function computeHypertrophyLevels01(sessionPrimariesByDate, asOfDate) {
-  const hitsByPillar = {
-    legs: [],
-    chest: [],
-    back_shoulders: [],
-    arms: [],
-    core: []
-  };
-  const asOf = String(asOfDate || "").slice(0, 10);
-  const entries = sessionPrimariesByDate instanceof Map ? sessionPrimariesByDate.entries() : Object.entries(sessionPrimariesByDate || {});
-  for (const [dateRaw, daySessions] of entries) {
-    const date = String(dateRaw || "").slice(0, 10);
-    const elapsed = hypertrophyDiffCalendarDays(date, asOf);
-    if (elapsed == null || elapsed < 0 || elapsed >= HYPERTROPHY_DECAY_HORIZON_DAYS) {
-      continue;
-    }
-    for (const primaries of daySessions || []) {
-      const pillars = mapSessionPrimariesToPillars(primaries);
-      for (const pillar of pillars) {
-        if (hitsByPillar[pillar]) hitsByPillar[pillar].push(date);
-      }
-    }
-  }
-  const pct = (id) => computePillarStimulusPercent(hitsByPillar[id], asOf);
-  return {
-    legs: pct("legs") / 100,
-    chest: pct("chest") / 100,
-    back_shoulders: pct("back_shoulders") / 100,
-    arms: pct("arms") / 100,
-    core: pct("core") / 100
-  };
-}
-var HYPERTROPHY_SESSION_BOOST, HYPERTROPHY_STIMULUS_CAP, HYPERTROPHY_DAILY_DECAY, HYPERTROPHY_DECAY_HORIZON_DAYS, HYPERTROPHY_PILLAR_IDS, SPILLOVER_TO_PILLAR;
-var init_hypertrophyMath = __esm({
-  "../src/utils/hypertrophyMath.js"() {
-    HYPERTROPHY_SESSION_BOOST = 65;
-    HYPERTROPHY_STIMULUS_CAP = 100;
-    HYPERTROPHY_DAILY_DECAY = Object.freeze([5, 9, 13, 14, 12, 8, 4]);
-    HYPERTROPHY_DECAY_HORIZON_DAYS = HYPERTROPHY_DAILY_DECAY.length;
-    HYPERTROPHY_PILLAR_IDS = Object.freeze([
-      "legs",
-      "chest",
-      "back_shoulders",
-      "arms",
-      "core"
-    ]);
-    SPILLOVER_TO_PILLAR = Object.freeze({
-      petto: "chest",
-      chest: "chest",
-      gambe: "legs",
-      legs: "legs",
-      braccia: "arms",
-      arms: "arms",
-      core: "core",
-      abs: "core",
-      schiena: "back_shoulders",
-      spalle: "back_shoulders",
-      back_shoulders: "back_shoulders",
-      back: "back_shoulders",
-      shoulders: "back_shoulders"
-    });
+// src/features/kentuFocus/costanza/versions.js
+var init_versions = __esm({
+  "src/features/kentuFocus/costanza/versions.js"() {
   }
 });
 
-// ../src/features/kentuFocus/score/scoreMovement.js
+// src/features/kentuFocus/costanza/forceConsistency.ci-1.js
+function forceLoadConsistency(date, fullHistory, opts = {}) {
+  const asOf = String(date || "").slice(0, 10);
+  const snap = computeCostanzaForza({
+    fullHistory,
+    asOfDate: asOf,
+    weeklyGoalDays: normalizeWeeklyGoalDays(opts.weeklyGoalDays)
+  });
+  const goal = snap.weeklyGoalDays;
+  const dayPart = goal > 0 ? Math.min(1, snap.forceDaysThisWeek / goal) : 0;
+  const coverPart = snap.forceCiGroupTotal > 0 ? snap.forceCiCoveredCount / snap.forceCiGroupTotal : 0;
+  const value = 0.5 * dayPart + 0.5 * coverPart;
+  return Math.min(1, Math.round(value * 1e3) / 1e3);
+}
+var init_forceConsistency_ci_1 = __esm({
+  "src/features/kentuFocus/costanza/forceConsistency.ci-1.js"() {
+    init_versions();
+    init_costanzaForza();
+  }
+});
+
+// src/features/kentuFocus/score/scoreMovement.js
 function scoreMovimento(date, fullHistory, context = {}) {
   const days = datesEnding(date, MOVEMENT_CURVE.windowDays);
   const byDay = workoutsByDay(fullHistory, date);
@@ -3239,30 +3562,10 @@ function scoreMovimento(date, fullHistory, context = {}) {
     weeklyEquivalentMinutes: Math.round(weeklyEquivalent)
   };
 }
-function forceLoad(date, fullHistory) {
-  const byDate = /* @__PURE__ */ new Map();
-  for (const entry of workoutsByDay(fullHistory, date).values()) {
-    for (const session of entry) {
-      const primaries = strengthSessionPrimaries(session);
-      if (primaries.length === 0) continue;
-      const day = String(session.__dateKey || "").slice(0, 10);
-      if (!day) continue;
-      const sessions = byDate.get(day) || [];
-      sessions.push(primaries);
-      byDate.set(day, sessions);
-    }
-  }
-  const levels = computeHypertrophyLevels01(byDate, date);
-  const max = Math.max(
-    levels.legs,
-    levels.chest,
-    levels.back_shoulders,
-    levels.arms,
-    levels.core
-  );
-  const fullSession = HYPERTROPHY_SESSION_BOOST / 100;
-  if (!(fullSession > 0)) return 0;
-  return Math.min(1, Math.round(max / fullSession * 1e3) / 1e3);
+function forceLoad(date, fullHistory, context = {}) {
+  return forceLoadConsistency(date, fullHistory, {
+    weeklyGoalDays: normalizeWeeklyGoalDays(context?.cylinders?.forza?.weeklyGoalDays)
+  });
 }
 function forzaEnabled(context) {
   return context?.cylinders?.forza?.enabled === true;
@@ -3348,7 +3651,7 @@ function cylinder(status, keyFact, signals, value) {
   return { status, keyFact, signals, value: rounded };
 }
 var init_scoreMovement = __esm({
-  "../src/features/kentuFocus/score/scoreMovement.js"() {
+  "src/features/kentuFocus/score/scoreMovement.js"() {
     init_profileAge();
     init_focusDateUtils();
     init_focusDateUtils();
@@ -3356,16 +3659,198 @@ var init_scoreMovement = __esm({
     init_logUtils();
     init_recentWorkoutLogs();
     init_workoutMovement();
-    init_hypertrophyMath();
+    init_forceConsistency_ci_1();
+    init_costanzaForza();
     init_scoreConfig_kds_3();
   }
 });
 
-// ../src/features/kentuFocus/safety/safetyConfig.sfv-1.js
+// src/features/kentuFocus/score/movementBattery.js
+function stepBattery(battery, charge) {
+  const b = Number.isFinite(battery) && battery > 0 ? battery : 0;
+  const c = Number.isFinite(charge) && charge > 0 ? charge : 0;
+  return b * BATTERY_DECAY + c;
+}
+function batteryLevel(battery) {
+  const b = Number.isFinite(battery) && battery > 0 ? battery : 0;
+  return Math.min(1, b / BATTERY_FULL_LEVEL);
+}
+function batteryStatusFromLevel(level) {
+  return pillarStatusFromValue(level);
+}
+function entryIsDiaryCardio(entry) {
+  const kind = classifyWorkoutByType(entry).kind;
+  return kind === "walk" || kind === "vigorous";
+}
+function dayMovementCharge(date, fullHistory, movementCheckins = null) {
+  if (!isIsoDateString2(date)) {
+    return { charge: 0, diaryEq: 0, checkInMin: 0, usedCheckIn: false, hasDiaryCardio: false };
+  }
+  const { all } = collectRecentWorkoutLogs(fullHistory || {}, [], date);
+  let diaryEq = 0;
+  let hasDiaryCardio = false;
+  for (const entry of all) {
+    if (String(entry?.__dateKey || "").slice(0, 10) !== date) continue;
+    const eq = equivalentAerobicMinutes(entry);
+    if (eq > 0) {
+      diaryEq += eq;
+      hasDiaryCardio = true;
+    } else if (entryIsDiaryCardio(entry)) {
+      hasDiaryCardio = true;
+    }
+  }
+  let checkInMin = 0;
+  let usedCheckIn = false;
+  if (!hasDiaryCardio) {
+    const raw = movementCheckins?.[date] ?? null;
+    const minutes = typeof raw === "number" ? raw : Number(raw?.minutes);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      checkInMin = Math.min(BATTERY_CHECKIN_CAP_MIN, minutes);
+      usedCheckIn = checkInMin > 0;
+    }
+  }
+  return {
+    charge: diaryEq + (usedCheckIn ? checkInMin : 0),
+    diaryEq: Math.round(diaryEq * 10) / 10,
+    checkInMin,
+    usedCheckIn,
+    hasDiaryCardio
+  };
+}
+function chargeSeriesEnding(date, fullHistory, movementCheckins = null, lookback = BATTERY_LOOKBACK_DAYS) {
+  if (!isIsoDateString2(date)) return [];
+  const n = Math.max(1, Math.round(Number(lookback) || BATTERY_LOOKBACK_DAYS));
+  const out = [];
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const day = addCalendarDays(date, -i);
+    const row = dayMovementCharge(day, fullHistory, movementCheckins);
+    out.push({
+      date: day,
+      charge: row.charge,
+      diaryEq: row.diaryEq,
+      usedCheckIn: row.usedCheckIn
+    });
+  }
+  return out;
+}
+function simulateBattery(charges, startBattery = 0) {
+  let B = Number.isFinite(startBattery) && startBattery > 0 ? startBattery : 0;
+  const levels = [];
+  const batteries = [];
+  for (const c of charges) {
+    B = stepBattery(B, c);
+    batteries.push(B);
+    levels.push(batteryLevel(B));
+  }
+  return { battery: B, level: batteryLevel(B), levels, batteries };
+}
+function firstTrackerDate(fullHistory) {
+  if (!fullHistory || typeof fullHistory !== "object") return null;
+  let first = null;
+  for (const key of Object.keys(fullHistory)) {
+    if (!key.startsWith("trackerStorico_")) continue;
+    const date = key.slice("trackerStorico_".length);
+    if (!isIsoDateString2(date)) continue;
+    if (!first || date < first) first = date;
+  }
+  return first;
+}
+function isMovementBatteryReady(fullHistory, date, context = {}) {
+  if (context.calibration?.active === true || context.calibrating === true) return false;
+  if (context.movementBatteryReady === false) return false;
+  if (context.movementBatteryReady === true) return true;
+  if (!isIsoDateString2(date)) return false;
+  const first = firstTrackerDate(fullHistory);
+  if (!first || first > date) return false;
+  let span = 0;
+  for (let d = first; d <= date; d = addCalendarDays(d, 1)) {
+    span += 1;
+    if (span >= BATTERY_READY_MIN_SPAN_DAYS) return true;
+  }
+  return span >= BATTERY_READY_MIN_SPAN_DAYS;
+}
+function computeMovementBattery(date, fullHistory, context = {}) {
+  const checkins = context.movementCheckins || context.walkEstimates || null;
+  const ready = isMovementBatteryReady(fullHistory, date, context);
+  const series = chargeSeriesEnding(date, fullHistory, checkins, BATTERY_LOOKBACK_DAYS);
+  const sim = simulateBattery(series.map((row) => row.charge), 0);
+  const today = series[series.length - 1] || { charge: 0, diaryEq: 0, usedCheckIn: false };
+  const level = ready ? round3(sim.level) : null;
+  const status = level == null ? "no_data" : batteryStatusFromLevel(level);
+  return {
+    ready,
+    level,
+    battery: round3(sim.battery),
+    status,
+    charge: round3(today.charge),
+    diaryEq: today.diaryEq,
+    usedCheckIn: Boolean(today.usedCheckIn),
+    decay: BATTERY_DECAY,
+    fullLevel: round3(BATTERY_FULL_LEVEL),
+    capacity: round3(BATTERY_CAPACITY),
+    lookbackDays: BATTERY_LOOKBACK_DAYS,
+    series,
+    fillPercent: level == null ? null : Math.round(level * 100),
+    copy: BATTERY_DECAY_COPY
+  };
+}
+function scoreMovimentoBattery(date, fullHistory, context = {}) {
+  const bat = computeMovementBattery(date, fullHistory, context);
+  if (!bat.ready || bat.level == null) {
+    return {
+      status: "no_data",
+      keyFact: "in calibrazione",
+      signals: ["battery_calibrating"],
+      value: null,
+      battery: bat
+    };
+  }
+  const pct = Math.round(bat.level * 100);
+  const signals = [];
+  if (bat.usedCheckIn) signals.push("walk_estimated");
+  if (bat.diaryEq > 0) signals.push("diary_movement");
+  signals.push("movement_battery");
+  return {
+    status: bat.status,
+    keyFact: `batteria ${pct}% \xB7 ${BATTERY_DECAY_COPY}`,
+    signals,
+    value: bat.level,
+    acuteValue: null,
+    weeklyEquivalentMinutes: Math.round(
+      bat.series.reduce((sum, row) => sum + row.diaryEq, 0)
+    ),
+    battery: bat
+  };
+}
+function round3(value) {
+  return Math.round(Number(value) * 1e3) / 1e3;
+}
+var BATTERY_HALF_LIFE_DAYS, BATTERY_DECAY, BATTERY_WEEKLY_TARGET_EQ_MIN, BATTERY_DAILY_TARGET_EQ_MIN, BATTERY_CAPACITY, BATTERY_FULL_FRACTION, BATTERY_FULL_LEVEL, BATTERY_LOOKBACK_DAYS, BATTERY_READY_MIN_SPAN_DAYS, BATTERY_CHECKIN_CAP_MIN, BATTERY_DECAY_COPY;
+var init_movementBattery = __esm({
+  "src/features/kentuFocus/score/movementBattery.js"() {
+    init_focusDateUtils();
+    init_recentWorkoutLogs();
+    init_workoutMovement();
+    init_scoreConfig_kds_3();
+    BATTERY_HALF_LIFE_DAYS = 3;
+    BATTERY_DECAY = 2 ** (-1 / BATTERY_HALF_LIFE_DAYS);
+    BATTERY_WEEKLY_TARGET_EQ_MIN = 150;
+    BATTERY_DAILY_TARGET_EQ_MIN = BATTERY_WEEKLY_TARGET_EQ_MIN / 7;
+    BATTERY_CAPACITY = BATTERY_DAILY_TARGET_EQ_MIN / (1 - BATTERY_DECAY);
+    BATTERY_FULL_FRACTION = 0.8;
+    BATTERY_FULL_LEVEL = BATTERY_CAPACITY * BATTERY_FULL_FRACTION;
+    BATTERY_LOOKBACK_DAYS = 14;
+    BATTERY_READY_MIN_SPAN_DAYS = 7;
+    BATTERY_CHECKIN_CAP_MIN = 30;
+    BATTERY_DECAY_COPY = "senza cardio si scarica di circa il 20% al giorno";
+  }
+});
+
+// src/features/kentuFocus/safety/safetyConfig.sfv-1.js
 var SAFETY_VERSION, CLOSED_LOOKBACK_DAYS, ENERGY_WINDOW_DAYS, ENERGY_SUSTAINED_RATIO, ENERGY_VERY_LOW_RATIO, ENERGY_VERY_LOW_DAYS, ENERGY_UNDER_BASAL_DAYS, ENERGY_ACT_SCORE_CAP, WEIGHT_MIN_SAMPLES, WEIGHT_SAMPLE_DAYS, WEIGHT_BLOCK_DAYS, WEIGHT_WEEKLY_LOSS_RATIO, PROTEIN_DEFICIT_RATIO, PROTEIN_GRAMS_PER_KG, REST_STREAK_WATCH_DAYS, REST_STREAK_ACT_DAYS, DISTRICT_RECOVERY_HOURS, DISTRICT_SHORT_RECOVERY_TIMES, TRAINING_WINDOW_DAYS, LOAD_BASELINE_WEEKS, LOAD_SPIKE_RATIO, SHORT_SLEEP_HOURS, LOW_MORNING_SCORE, MORNING_CLUSTER_HITS, MORNING_CLUSTER_DAYS, OVERREACHING_CLUSTERS, RESTRICTIVE_WINDOW_DAYS, RESTRICTIVE_DAYS, SAFETY_AREAS;
 var init_safetyConfig_sfv_1 = __esm({
-  "../src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
-    SAFETY_VERSION = "sfv-2";
+  "src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
+    SAFETY_VERSION = "sfv-3";
     CLOSED_LOOKBACK_DAYS = 28;
     ENERGY_WINDOW_DAYS = 7;
     ENERGY_SUSTAINED_RATIO = 0.75;
@@ -3404,7 +3889,7 @@ var init_safetyConfig_sfv_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/safety/computeSafety.js
+// src/features/kentuFocus/safety/computeSafety.js
 var computeSafety_exports = {};
 __export(computeSafety_exports, {
   computeSafety: () => computeSafety,
@@ -3452,7 +3937,7 @@ function energySignals(date, statusOf, history, targetKcal, basal) {
         days: recent.length,
         meanKcal: Math.round(mean),
         targetKcal: Math.round(targetKcal),
-        ratio: round3(mean / targetKcal)
+        ratio: round32(mean / targetKcal)
       }));
     }
   }
@@ -3492,10 +3977,10 @@ function weightSignal(date, weighIns) {
   }
   return signal("weight_loss_fast", SAFETY_AREAS.peso, "act", {
     weighIns: samples.length,
-    recentKg: round3(recent),
-    previousKg: round3(previous),
-    priorKg: round3(prior),
-    weeklyLoss: round3(lossRecent)
+    recentKg: round32(recent),
+    previousKg: round32(previous),
+    priorKg: round32(prior),
+    weeklyLoss: round32(lossRecent)
   });
 }
 function proteinSignal(date, statusOf, history, targetKcal, profile, weighIns) {
@@ -3514,8 +3999,8 @@ function proteinSignal(date, statusOf, history, targetKcal, profile, weighIns) {
     meanKcal: Math.round(meanKcal),
     targetKcal: Math.round(targetKcal),
     meanProteinG: Math.round(meanProtein),
-    gramsPerKg: round3(gramsPerKg),
-    weightKg: round3(weight)
+    gramsPerKg: round32(gramsPerKg),
+    weightKg: round32(weight)
   });
 }
 function trainingSignals(date, statusOf, days) {
@@ -3663,7 +4148,7 @@ function loadSpike(date, statusOf, days) {
   return {
     weekMinutes: Math.round(current),
     baselineMinutes: Math.round(baseline),
-    ratio: round3(current / baseline)
+    ratio: round32(current / baseline)
   };
 }
 function weekMinutes(date, weeksBack, statusOf, days) {
@@ -3704,16 +4189,7 @@ function readMorning(node) {
   };
 }
 function districtsOf(entry) {
-  const found = /* @__PURE__ */ new Set();
-  for (const primary of strengthSessionPrimaries(entry)) {
-    if (primary === "total") {
-      for (const district2 of DISTRICTS) found.add(district2);
-      continue;
-    }
-    const district = DISTRICT_OF[primary];
-    if (district) found.add(district);
-  }
-  return [...found];
+  return sessionTrainedMuscleIds(entry);
 }
 function workoutsOf(node) {
   const out = [];
@@ -3829,12 +4305,12 @@ function average(values) {
   if (values.length === 0) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
-function round3(value) {
+function round32(value) {
   return Math.round(value * 1e3) / 1e3;
 }
-var FOOD_TYPES, WAKE_ENERGY_FIELDS, DISTRICT_OF, DISTRICTS;
+var FOOD_TYPES, WAKE_ENERGY_FIELDS;
 var init_computeSafety = __esm({
-  "../src/features/kentuFocus/safety/computeSafety.js"() {
+  "src/features/kentuFocus/safety/computeSafety.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -3842,35 +4318,212 @@ var init_computeSafety = __esm({
     init_focusDateUtils();
     init_normalizeSleepNight();
     init_workoutMovement();
+    init_muscleMap_mm_1();
     init_computeTotaliCore();
     init_safetyConfig_sfv_1();
     FOOD_TYPES = /* @__PURE__ */ new Set(["food", "recipe"]);
     WAKE_ENERGY_FIELDS = ["wakeEnergy", "morningEnergy", "energyOnWake", "energiaRisveglio"];
-    DISTRICT_OF = Object.freeze({
-      gambe: "gambe",
-      petto: "petto",
-      schiena: "dorso_spalle",
-      spalle: "dorso_spalle",
-      braccia: "braccia",
-      core: "core"
-    });
-    DISTRICTS = Object.freeze(["gambe", "petto", "dorso_spalle", "braccia", "core"]);
   }
 });
 
-// ../src/features/kentuFocus/score/computeDayScore.js
+// src/features/mealEngine/computeEffectiveDailyTargetKcal.js
+function roundKcal(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n);
+}
+function computeEffectiveDailyTargetKcal(parts = {}) {
+  return Math.max(
+    0,
+    roundKcal(parts.settingsBaseKcal) + roundKcal(parts.burnKcal) + roundKcal(parts.strategyDeltaKcal) + roundKcal(parts.compensationKcal) + roundKcal(parts.autopilotKcal)
+  );
+}
+var init_computeEffectiveDailyTargetKcal = __esm({
+  "src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
+  }
+});
+
+// src/features/mealEngine/resolveDayTargetKcal.js
+function roundKcal2(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+function inferKcalSource(workout) {
+  const raw = String(workout?.kcalSource || workout?.kcal_source || "").trim().toLowerCase();
+  if (raw === KCAL_SOURCE.DEVICE || raw === "health_connect" || raw === "healthconnect") {
+    return KCAL_SOURCE.DEVICE;
+  }
+  if (raw === KCAL_SOURCE.USER || raw === "manual" || raw === "entered") {
+    return KCAL_SOURCE.USER;
+  }
+  if (raw === KCAL_SOURCE.ESTIMATED || raw === "estimate" || raw === "ai" || raw === "default") {
+    return KCAL_SOURCE.ESTIMATED;
+  }
+  return KCAL_SOURCE.ESTIMATED;
+}
+function kcalSourceFactor(source) {
+  const key = String(source || "").trim().toLowerCase();
+  if (key === KCAL_SOURCE.DEVICE) return KCAL_SOURCE_FACTOR[KCAL_SOURCE.DEVICE];
+  if (key === KCAL_SOURCE.USER) return KCAL_SOURCE_FACTOR[KCAL_SOURCE.USER];
+  return KCAL_SOURCE_FACTOR[KCAL_SOURCE.ESTIMATED];
+}
+function countWorkoutBurnKcal(workout) {
+  const raw = Math.max(0, roundKcal2(workout?.kcal ?? workout?.cal ?? workout?.estimatedKcal));
+  const source = inferKcalSource(workout);
+  const factor = kcalSourceFactor(source);
+  return {
+    raw,
+    counted: Math.max(0, Math.round(raw * factor)),
+    source,
+    factor
+  };
+}
+function sumWorkoutBurnFromLog(log) {
+  const sessions = [];
+  let burnRaw = 0;
+  let burnCounted = 0;
+  const list = Array.isArray(log) ? log : [];
+  for (const entry of list) {
+    if (!entry || typeof entry !== "object") continue;
+    const type = String(entry.type || "").trim().toLowerCase();
+    if (type && !WORKOUTISH.has(type)) continue;
+    const hasKcal = entry.kcal != null || entry.cal != null || entry.estimatedKcal != null;
+    if (type !== "workout" && !hasKcal) continue;
+    if (type !== "workout" && type !== "cognitive") continue;
+    const counted = countWorkoutBurnKcal(entry);
+    if (counted.raw <= 0 && type !== "workout") continue;
+    burnRaw += counted.raw;
+    burnCounted += counted.counted;
+    sessions.push({
+      id: String(entry.id || ""),
+      raw: counted.raw,
+      counted: counted.counted,
+      source: counted.source
+    });
+  }
+  let dominantSource = KCAL_SOURCE.ESTIMATED;
+  if (sessions.some((s) => s.source === KCAL_SOURCE.DEVICE)) dominantSource = KCAL_SOURCE.DEVICE;
+  else if (sessions.some((s) => s.source === KCAL_SOURCE.USER)) dominantSource = KCAL_SOURCE.USER;
+  return { burnRaw, burnCounted, sessions, dominantSource };
+}
+function dayNode2(fullHistory, date) {
+  if (!fullHistory || typeof fullHistory !== "object" || !date) return null;
+  return fullHistory[`trackerStorico_${date}`] || null;
+}
+function dayLog(fullHistory, date) {
+  const node = dayNode2(fullHistory, date);
+  if (!node || typeof node !== "object") return [];
+  if (Array.isArray(node.log)) return node.log;
+  if (node.dati && typeof node.dati === "object" && Array.isArray(node.dati.log)) return node.dati.log;
+  return [];
+}
+function readSnapshot(fullHistory, date) {
+  const node = dayNode2(fullHistory, date);
+  const snap = node?.dayTargetSnapshot;
+  if (!snap || typeof snap !== "object") return null;
+  if (!Number.isFinite(Number(snap.total))) return null;
+  return snap;
+}
+function resolveDayTargetKcal(input = {}) {
+  const date = String(input.date || "").slice(0, 10);
+  const preferSnapshot = input.preferSnapshot !== false;
+  if (preferSnapshot && date) {
+    const snap = readSnapshot(input.fullHistory, date);
+    if (snap) {
+      return {
+        ...normalizeSnapshot(snap),
+        fromSnapshot: true,
+        frozen: true
+      };
+    }
+  }
+  const settingsBaseKcal = roundKcal2(
+    input.settingsBaseKcal ?? input.userTargets?.baseKcal ?? input.userTargets?.kcal ?? 0
+  );
+  const log = Array.isArray(input.liveLog) && input.liveLog.length > 0 ? input.liveLog : dayLog(input.fullHistory, date);
+  const burn = sumWorkoutBurnFromLog(log);
+  const strategyDeltaKcal = roundKcal2(input.strategyDeltaKcal);
+  const includeCompensation = input.includeCompensation !== false;
+  const includeAutopilot = input.includeAutopilot !== false;
+  const compensationKcal = includeCompensation ? roundKcal2(input.compensationKcal) : 0;
+  let autopilotKcal = includeAutopilot ? roundKcal2(input.autopilotKcal) : 0;
+  if (includeAutopilot && input.autopilotKcal == null && date) {
+    const node = dayNode2(input.fullHistory, date);
+    if (node && node.autopilotCorrection != null) {
+      autopilotKcal = roundKcal2(node.autopilotCorrection);
+    }
+  }
+  const total = computeEffectiveDailyTargetKcal({
+    settingsBaseKcal,
+    burnKcal: burn.burnCounted,
+    strategyDeltaKcal,
+    compensationKcal,
+    autopilotKcal
+  });
+  return {
+    base: settingsBaseKcal,
+    burnRaw: burn.burnRaw,
+    burnCounted: burn.burnCounted,
+    kcalSource: burn.dominantSource,
+    sessions: burn.sessions,
+    strategy: strategyDeltaKcal,
+    compensation: compensationKcal,
+    autopilot: autopilotKcal,
+    total,
+    rulesVersion: DAY_TARGET_RULES_VERSION,
+    fromSnapshot: false,
+    frozen: false
+  };
+}
+function normalizeSnapshot(snap) {
+  return {
+    base: roundKcal2(snap.base),
+    burnRaw: roundKcal2(snap.burnRaw),
+    burnCounted: roundKcal2(snap.burnCounted),
+    kcalSource: inferKcalSource({ kcalSource: snap.kcalSource }),
+    sessions: Array.isArray(snap.sessions) ? snap.sessions : [],
+    strategy: roundKcal2(snap.strategy),
+    compensation: roundKcal2(snap.compensation),
+    autopilot: roundKcal2(snap.autopilot),
+    total: roundKcal2(snap.total),
+    rulesVersion: String(snap.rulesVersion || DAY_TARGET_RULES_VERSION)
+  };
+}
+var DAY_TARGET_RULES_VERSION, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
+var init_resolveDayTargetKcal = __esm({
+  "src/features/mealEngine/resolveDayTargetKcal.js"() {
+    init_computeEffectiveDailyTargetKcal();
+    DAY_TARGET_RULES_VERSION = "dtr-1";
+    KCAL_SOURCE = Object.freeze({
+      DEVICE: "device",
+      USER: "user",
+      ESTIMATED: "estimated"
+    });
+    KCAL_SOURCE_FACTOR = Object.freeze({
+      [KCAL_SOURCE.DEVICE]: 1,
+      [KCAL_SOURCE.USER]: 0.75,
+      [KCAL_SOURCE.ESTIMATED]: 0.5
+    });
+    WORKOUTISH = /* @__PURE__ */ new Set(["workout", "cognitive", "work"]);
+  }
+});
+
+// src/features/kentuFocus/score/computeDayScore.js
 var computeDayScore_exports = {};
 __export(computeDayScore_exports, {
   computeDayScore: () => computeDayScore
 });
 function computeDayScore(date, context = {}) {
-  const version = context.scoreVersion === SCORE_VERSION ? SCORE_VERSION : context.scoreVersion === SCORE_VERSION2 ? SCORE_VERSION2 : SCORE_VERSION3;
+  const version = context.scoreVersion === SCORE_VERSION ? SCORE_VERSION : context.scoreVersion === SCORE_VERSION2 ? SCORE_VERSION2 : context.scoreVersion === SCORE_VERSION3 ? SCORE_VERSION3 : context.scoreVersion === SCORE_VERSION4 ? SCORE_VERSION4 : context.scoreVersion === SCORE_VERSION5 ? SCORE_VERSION5 : SCORE_VERSION5;
+  const isK3Plus = version === SCORE_VERSION3 || version === SCORE_VERSION4 || version === SCORE_VERSION5;
+  const isK4Plus = version === SCORE_VERSION4 || version === SCORE_VERSION5;
   const weights = version === SCORE_VERSION ? CYLINDER_WEIGHTS : version === SCORE_VERSION2 ? CYLINDER_WEIGHTS2 : CYLINDER_WEIGHTS3;
   const minCylinders = version === SCORE_VERSION ? MIN_CYLINDERS_WITH_DATA : version === SCORE_VERSION2 ? MIN_CYLINDERS_WITH_DATA2 : MIN_CYLINDERS_WITH_DATA3;
   const nullStatuses = version === SCORE_VERSION ? NULL_SCORE_STATUSES : version === SCORE_VERSION2 ? NULL_SCORE_STATUSES2 : NULL_SCORE_STATUSES3;
   const lowStatuses = version === SCORE_VERSION ? LOW_RELIABILITY_STATUSES : version === SCORE_VERSION2 ? LOW_RELIABILITY_STATUSES2 : LOW_RELIABILITY_STATUSES3;
-  const cylinderKeys = version === SCORE_VERSION3 ? ["alimentazione", "sonno", "movimento"] : CYLINDER_KEYS;
-  const targetKcal = resolveTargetKcal2(context);
+  const cylinderKeys = isK3Plus ? ["alimentazione", "sonno", "movimento"] : CYLINDER_KEYS;
+  const dayTarget = isK4Plus ? resolveDayTargetForScore(date, context) : null;
+  const targetKcal = dayTarget?.total > 0 ? dayTarget.total : resolveTargetKcal2(context);
   const dayStatus = getDayStatus(date, {
     today: context.today,
     fullHistory: context.fullHistory,
@@ -3884,18 +4537,26 @@ function computeDayScore(date, context = {}) {
   });
   const facts = readDayFacts(date, context.fullHistory, targetKcal);
   const curveVersion = version === SCORE_VERSION ? SCORE_VERSION : SCORE_VERSION2;
-  const cylinders = version === SCORE_VERSION3 ? {
-    alimentazione: scoreAlimentazione(curveVersion, date, context, facts, targetKcal, version),
+  const cylinders = isK3Plus ? {
+    alimentazione: scoreAlimentazione(
+      curveVersion,
+      date,
+      context,
+      facts,
+      targetKcal,
+      version,
+      dayTarget
+    ),
     sonno: scoreSonno(curveVersion, facts),
-    movimento: scoreMovimento(date, context.fullHistory, context),
-    forza: forzaEnabled(context) ? scoreForza(curveVersion, date, context.fullHistory) : cylinder2("inactive", "Forza \xB7 non attiva", [], null)
+    movimento: version === SCORE_VERSION5 ? scoreMovimentoBattery(date, context.fullHistory, context) : scoreMovimento(date, context.fullHistory, context),
+    forza: forzaEnabled(context) ? scoreForza(curveVersion, date, context.fullHistory, context) : cylinder2("inactive", "Forza \xB7 non attiva", [], null)
   } : {
     alimentazione: scoreAlimentazione(version, date, context, facts, targetKcal),
     sonno: scoreSonno(version, facts),
-    forza: scoreForza(version, date, context.fullHistory),
+    forza: scoreForza(version, date, context.fullHistory, context),
     cardio: scoreCardio(version, date, context.fullHistory)
   };
-  const safety = version === SCORE_VERSION3 ? computeSafety(date, context) : null;
+  const safety = isK3Plus ? computeSafety(date, { ...context, targetKcal }) : null;
   const withData = cylinderKeys.filter((key) => cylinders[key].status !== "no_data" && cylinders[key].status !== "inactive");
   let score = null;
   if (withData.length >= minCylinders) {
@@ -3904,7 +4565,7 @@ function computeDayScore(date, context = {}) {
       const points = version === SCORE_VERSION ? CYLINDER_POINTS[cylinders[key].status] : cylinders[key].value;
       return sum + points * weights[key];
     }, 0);
-    score = round32(weighted / weightSum);
+    score = round33(weighted / weightSum);
   }
   if (nullStatuses.includes(dayStatus)) score = null;
   const reliability = reliabilityOf(version, dayStatus, gaps, lowStatuses);
@@ -3921,7 +4582,8 @@ function computeDayScore(date, context = {}) {
       facts,
       movementCheckin: context.movementCheckins?.[date] ?? null,
       forzaEnabled: forzaEnabled(context),
-      safety: safety ? safety.signals.map((item) => `${item.id}:${item.level}`) : null
+      safety: safety ? safety.signals.map((item) => `${item.id}:${item.level}`) : null,
+      movementBattery: version === SCORE_VERSION5 ? cylinders.movimento?.battery?.level ?? null : null
     })
   };
   if (safety?.signals.some((item) => item.area === "Energia" && item.level === "act") && score != null) {
@@ -3929,13 +4591,29 @@ function computeDayScore(date, context = {}) {
     result.score = score;
   }
   if (safety?.suppressNumbers) result.suppressNumbers = true;
-  if (version === SCORE_VERSION3) {
-    const load = forzaEnabled(context) ? forceLoad(date, context.fullHistory) : 0;
+  if (isK3Plus) {
+    const load = forzaEnabled(context) ? forceLoad(date, context.fullHistory, context) : 0;
     result.forceIntensity = score != null && score >= ON_TRACK_SCORE ? load : 0;
   }
+  if (isK4Plus) {
+    for (const key of Object.keys(cylinders)) {
+      const cylinder3 = cylinders[key];
+      if (!cylinder3 || typeof cylinder3 !== "object") continue;
+      if (cylinder3.status === "no_data" || cylinder3.status === "inactive") continue;
+      if (cylinder3.value == null || !Number.isFinite(Number(cylinder3.value))) continue;
+      if (version === SCORE_VERSION5 && key === "movimento") continue;
+      cylinders[key] = {
+        ...cylinder3,
+        status: pillarStatusFromValue(cylinder3.value)
+      };
+    }
+    result.cylinders = cylinders;
+    result.scoreStatus = score == null ? null : pillarStatusFromValue(score);
+  }
+  if (dayTarget) result.dayTarget = dayTarget;
   return result;
 }
-function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVersion = version) {
+function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVersion = version, dayTarget = null) {
   const kcal = facts.kcal;
   if (!(kcal > 0) || !(targetKcal > 0)) {
     return cylinder2("no_data", `${Math.round(kcal || 0)} kcal`, [], null);
@@ -3946,7 +4624,8 @@ function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVers
     firstMealHour: facts.firstSubstantialHour
   });
   if (energy.active) signals.push("energy_low_day");
-  if (scoreVersion === SCORE_VERSION3 && facts.firstSubstantialHour != null && facts.firstSubstantialHour >= LATE_FIRST_MEAL_HOUR) {
+  const k3PlusNutrition = scoreVersion === SCORE_VERSION3 || scoreVersion === SCORE_VERSION4 || scoreVersion === SCORE_VERSION5;
+  if (k3PlusNutrition && facts.firstSubstantialHour != null && facts.firstSubstantialHour >= LATE_FIRST_MEAL_HOUR) {
     signals.push("late_first_meal");
   }
   const heavy = assessHeavyLateMeal(facts.dinnerKcal, kcal, targetKcal);
@@ -3970,17 +4649,17 @@ function scoreAlimentazione(version, date, context, facts, targetKcal, scoreVers
     value *= ENERGY_CURVE.ultraProcessedFactor;
     signals.push(NOVA4_CRITIQUE_SIGNAL_ID2);
   }
-  let fact = energyKeyFact(kcal, targetKcal);
+  let fact = scoreVersion === SCORE_VERSION4 || scoreVersion === SCORE_VERSION5 ? energyKeyFactDayTarget(kcal, dayTarget || { total: targetKcal }) : energyKeyFact(kcal, targetKcal);
   const bedtimeUsable = ENERGY_CURVE.usableBedtimeProvenance.includes(facts.bedtimeProvenance);
   const buffer = facts.sleepBufferH;
   let penalty = 0;
-  if (scoreVersion === SCORE_VERSION3 && heavy.active) penalty += ENERGY_CURVE.lateMealPenalty;
+  if (k3PlusNutrition && heavy.active) penalty += ENERGY_CURVE.lateMealPenalty;
   if (bedtimeUsable && buffer != null && buffer < ENERGY_CURVE.lateMealHours) {
     penalty += ENERGY_CURVE.lateMealPenalty;
     signals.push("late_meal_before_sleep");
     fact = `${fact} \xB7 ultimo pasto a ${formatDuration(buffer)}`;
   }
-  if (scoreVersion === SCORE_VERSION3) penalty = Math.min(penalty, MEAL_PENALTY_CAP);
+  if (k3PlusNutrition) penalty = Math.min(penalty, MEAL_PENALTY_CAP);
   value -= penalty;
   return {
     ...cylinder2(status, fact, signals, clamp01(value)),
@@ -4025,15 +4704,18 @@ function scoreSonno(version, facts) {
     sleepHours: hours
   };
 }
-function scoreForza(version, date, fullHistory) {
+function scoreForza(version, date, fullHistory, context = {}) {
   const cfg = version === SCORE_VERSION ? STRENGTH_WINDOW : STRENGTH_CURVE;
   if (!fullHistory || typeof fullHistory !== "object") {
     return cylinder2("no_data", "0 sessioni in 30 giorni", [], null);
   }
+  const todayIso = String(context?.today || "").slice(0, 10);
+  const reportIso = String(date || "").slice(0, 10);
+  const relativeToReportDay = Boolean(todayIso) && reportIso !== todayIso;
   const trainedOn = /* @__PURE__ */ new Map();
   let sessions = 0;
   for (const day of datesEnding2(date, cfg.windowDays)) {
-    for (const workout of strengthWorkouts(dayNode2(fullHistory, day))) {
+    for (const workout of strengthWorkouts(dayNode3(fullHistory, day))) {
       sessions += 1;
       for (const macroId of obligationMacrosOf(workout, cfg)) {
         const dates = trainedOn.get(macroId) || [];
@@ -4058,7 +4740,7 @@ function scoreForza(version, date, fullHistory) {
     const band = version === SCORE_VERSION ? strengthBand(since) : strengthBandK2(since);
     if (bandRank(band) > bandRank(status)) status = band;
   }
-  const fact = cfg.obligationMacros.filter((macroId) => lastSince.has(macroId)).map((macroId) => `${cfg.macroLabels[macroId]} ${agoPhrase(lastSince.get(macroId))}`).join(" \xB7 ");
+  const fact = cfg.obligationMacros.filter((macroId) => lastSince.has(macroId)).map((macroId) => `${cfg.macroLabels[macroId]} ${agoPhrase(lastSince.get(macroId), { relativeToReportDay })}`).join(" \xB7 ");
   const value = version === SCORE_VERSION ? CYLINDER_POINTS[status] : strengthCurveValue(worst);
   return cylinder2(status, fact, [], value);
 }
@@ -4069,7 +4751,7 @@ function scoreCardio(version, date, fullHistory) {
   }
   let minutes = 0;
   for (const day of datesEnding2(date, windowDays)) {
-    minutes += cardioMinutesOf(dayNode2(fullHistory, day));
+    minutes += cardioMinutesOf(dayNode3(fullHistory, day));
   }
   minutes = Math.round(minutes * 10) / 10;
   let status = "off_track";
@@ -4081,7 +4763,7 @@ function scoreCardio(version, date, fullHistory) {
   if (minutes >= CARDIO_CURVE.fullMinutes) status = "on_track";
   else if (minutes >= CARDIO_CURVE.halfwayMinMinutes) status = "halfway";
   const value = Math.min(1, minutes / CARDIO_CURVE.fullMinutes);
-  return cylinder2(status, `${formatMinutes2(minutes)} min / 7 giorni`, [], round32(value));
+  return cylinder2(status, `${formatMinutes2(minutes)} min / 7 giorni`, [], round33(value));
 }
 function countAdverseUltraProcessed(date, context) {
   if (!context.fullHistory || !isIsoDateString2(date)) return 0;
@@ -4096,26 +4778,26 @@ function countAdverseUltraProcessed(date, context) {
   return items.filter((item) => item?.critiqueWorthy === true).length;
 }
 function readDayFacts(date, fullHistory, targetKcal) {
-  const node = dayNode2(fullHistory, date);
+  const node = dayNode3(fullHistory, date);
   const foods = foodEntries2(node);
   const kcal = Math.round(Number(computeTotali(foods).kcal) || 0);
   const hours = foods.map((item) => resolveFoodClockHourDetailed(item, node?.mealTimes).hour).filter((hour) => hour != null && Number.isFinite(hour));
-  const lastMealHour = hours.length ? Math.max(...hours) : null;
+  const lastMealHour2 = hours.length ? Math.max(...hours) : null;
   const substantial = foods.filter((item) => Number(item.kcal ?? item.cal) >= SUBSTANTIAL_MEAL_MIN_KCAL).map((item) => resolveFoodClockHourDetailed(item, node?.mealTimes).hour).filter((hour) => hour != null && Number.isFinite(hour));
   const dinnerKcal = Math.round(foods.reduce((sum, item) => {
     const meal = resolveFocusMealIdentity(item).canonicalMealType;
     if (meal !== "cena") return sum;
     return sum + (Number(item.kcal ?? item.cal) || 0);
   }, 0));
-  const night = readNight(fullHistory, date, lastMealHour);
+  const night = readNight(fullHistory, date, lastMealHour2);
   const sleepHours = night?.sleepAvailable ? Number(night.sleep?.hours?.value) : null;
   const bedtimeProvenance = night?.sleep?.bedtime?.provenance ?? null;
   const bedtime = Number(night?.sleep?.bedtime?.value);
-  const sleepBufferH = Number.isFinite(bedtime) ? computeDinnerSleepBufferH(bedtime, lastMealHour) : null;
+  const sleepBufferH = Number.isFinite(bedtime) ? computeDinnerSleepBufferH(bedtime, lastMealHour2) : null;
   return {
     kcal,
     targetKcal: targetKcal ?? null,
-    lastMealHour,
+    lastMealHour: lastMealHour2,
     firstSubstantialHour: substantial.length ? Math.min(...substantial) : null,
     dinnerKcal,
     foodIds: foods.map((item) => String(item.id || item.name || "")).sort(),
@@ -4126,12 +4808,12 @@ function readDayFacts(date, fullHistory, targetKcal) {
     sleepBufferH
   };
 }
-function readNight(fullHistory, date, lastMealHour) {
+function readNight(fullHistory, date, lastMealHour2) {
   if (!isIsoDateString2(date)) return null;
   const publicationDate = addCalendarDays(date, 1);
-  return normalizeSleepNight(dayNode2(fullHistory, publicationDate), {
+  return normalizeSleepNight(dayNode3(fullHistory, publicationDate), {
     publicationDate,
-    lastMealHour
+    lastMealHour: lastMealHour2
   });
 }
 function strengthWorkouts(node) {
@@ -4152,10 +4834,11 @@ function obligationMacrosOf(workout, cfg) {
   }
   return [...macros];
 }
-function agoPhrase(days) {
-  if (days === 0) return "oggi";
-  if (days === 1) return "1 giorno fa";
-  return `${days} giorni fa`;
+function agoPhrase(days, opts = {}) {
+  const relative = opts.relativeToReportDay === true;
+  if (days === 0) return relative ? "quel giorno" : "oggi";
+  if (days === 1) return relative ? "il giorno prima" : "1 giorno fa";
+  return relative ? `${days} giorni prima` : `${days} giorni fa`;
 }
 function strengthBand(daysSince) {
   if (daysSince <= STRENGTH_WINDOW.onTrackMaxDaysSince) return "on_track";
@@ -4189,7 +4872,7 @@ function bandRank(status) {
   return 0;
 }
 function cylinder2(status, keyFact, signals, value) {
-  return { status, keyFact, signals, value: value == null ? null : round32(value) };
+  return { status, keyFact, signals, value: value == null ? null : round33(value) };
 }
 function energyCurveValue(deviation) {
   const { fullCreditDeviation, floorDeviation, floorValue } = ENERGY_CURVE;
@@ -4247,7 +4930,7 @@ function foodEntries2(node) {
     return FOOD_TYPES2.has(type);
   });
 }
-function dayNode2(fullHistory, date) {
+function dayNode3(fullHistory, date) {
   return getTrackerDayNode(fullHistory, date);
 }
 function datesEnding2(date, count) {
@@ -4273,12 +4956,61 @@ function resolveTargetKcal2(context) {
   }
   return null;
 }
-function round32(value) {
+function resolveSettingsBaseKcal(context) {
+  const candidates = [
+    context.settingsBaseKcal,
+    context.userTargets?.baseKcal,
+    context.userTargets?.kcal,
+    context.profile_targets?.targetCalories,
+    context.profile_targets?.targets?.kcal,
+    context.targetKcal
+  ];
+  for (const candidate of candidates) {
+    const value = Number(candidate);
+    if (Number.isFinite(value) && value > 0) return Math.round(value);
+  }
+  return 0;
+}
+function resolveDayTargetForScore(date, context) {
+  const settingsBaseKcal = resolveSettingsBaseKcal(context);
+  const liveLog = context.todayLiveLog && String(context.today || "").slice(0, 10) === String(date).slice(0, 10) ? context.todayLiveLog : null;
+  const node = context.fullHistory?.[`trackerStorico_${date}`];
+  const autopilot = node?.autopilotCorrection != null ? Number(node.autopilotCorrection) : context.autopilotKcal ?? null;
+  return resolveDayTargetKcal({
+    date,
+    fullHistory: context.fullHistory,
+    settingsBaseKcal,
+    userTargets: context.userTargets,
+    strategyDeltaKcal: context.strategyDeltaKcal ?? 0,
+    compensationKcal: context.compensationKcal ?? 0,
+    autopilotKcal: autopilot,
+    liveLog,
+    preferSnapshot: true
+  });
+}
+function energyKeyFactDayTarget(kcal, dayTarget) {
+  const intake = Math.round(Number(kcal) || 0);
+  const total = Math.round(Number(dayTarget?.total) || 0);
+  const base = Math.round(Number(dayTarget?.base) || 0);
+  const burnRaw = Math.round(Number(dayTarget?.burnRaw) || 0);
+  const burnCounted = Math.round(Number(dayTarget?.burnCounted) || 0);
+  const autopilot = Math.round(Number(dayTarget?.autopilot) || 0);
+  const strategy = Math.round(Number(dayTarget?.strategy) || 0);
+  const parts = [`base ${base}`];
+  if (burnRaw > 0) {
+    void burnCounted;
+    parts.push(`allenamento ${burnRaw}`);
+  }
+  if (strategy !== 0) parts.push(`strategia ${strategy > 0 ? "+" : ""}${strategy}`);
+  if (autopilot !== 0) parts.push(`autopilota ${autopilot > 0 ? "+" : ""}${autopilot}`);
+  return `${intake} su ${total} (${parts.join(" + ")})`;
+}
+function round33(value) {
   return Math.round(value * 1e3) / 1e3;
 }
 var CYLINDER_KEYS, FOOD_TYPES2;
 var init_computeDayScore = __esm({
-  "../src/features/kentuFocus/score/computeDayScore.js"() {
+  "src/features/kentuFocus/score/computeDayScore.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_focusDateUtils();
@@ -4294,15 +5026,19 @@ var init_computeDayScore = __esm({
     init_scoreConfig_kds_1();
     init_scoreConfig_kds_2();
     init_scoreConfig_kds_3();
+    init_scoreConfig_kds_4();
+    init_scoreConfig_kds_5();
     init_scoreMovement();
+    init_movementBattery();
     init_computeSafety();
     init_safetyConfig_sfv_1();
+    init_resolveDayTargetKcal();
     CYLINDER_KEYS = ["alimentazione", "sonno", "forza", "cardio"];
     FOOD_TYPES2 = /* @__PURE__ */ new Set(["food", "recipe"]);
   }
 });
 
-// ../src/features/kentuFocus/score/computePeriodScore.js
+// src/features/kentuFocus/score/computePeriodScore.js
 var computePeriodScore_exports = {};
 __export(computePeriodScore_exports, {
   computePeriodScore: () => computePeriodScore
@@ -4333,9 +5069,9 @@ function computePeriodScore(from, to, context = {}) {
   const eligible = pastDays.filter(
     (day) => day.score != null && isPeriodDataStatus(day.dayStatus)
   );
-  const coverage = pastDays.length === 0 ? 0 : round33(eligible.length / pastDays.length);
+  const coverage = pastDays.length === 0 ? 0 : round34(eligible.length / pastDays.length);
   const weight = eligible.reduce((sum, day) => sum + periodDayWeight(day.dayStatus), 0);
-  const score = coverage < PERIOD_COVERAGE_MIN || eligible.length === 0 || weight === 0 ? null : round33(eligible.reduce((sum, day) => sum + day.score * periodDayWeight(day.dayStatus), 0) / weight);
+  const score = coverage < PERIOD_COVERAGE_MIN || eligible.length === 0 || weight === 0 ? null : round34(eligible.reduce((sum, day) => sum + day.score * periodDayWeight(day.dayStatus), 0) / weight);
   const onTrackDays = pastDays.filter(
     (day) => day.score != null && day.score >= ON_TRACK_DAY_SCORE
   ).length;
@@ -4389,12 +5125,12 @@ function isPastDay(date, today, dayStatus) {
   if (isIsoDateString2(today)) return date < today;
   return dayStatus !== "future" && dayStatus !== "in_progress";
 }
-function round33(value) {
+function round34(value) {
   return Math.round(value * 1e3) / 1e3;
 }
 var ON_TRACK_DAY_SCORE, PERIOD_COVERAGE_MIN, STREAK_MAX_PAUSE_DAYS, STREAK_MIN_DAYS, STREAK_PAUSE_SCORE_MIN;
 var init_computePeriodScore = __esm({
-  "../src/features/kentuFocus/score/computePeriodScore.js"() {
+  "src/features/kentuFocus/score/computePeriodScore.js"() {
     init_focusDateUtils();
     init_computeDayScore();
     init_scoreConfig_kds_3();
@@ -4406,7 +5142,7 @@ var init_computePeriodScore = __esm({
   }
 });
 
-// ../src/foodSearch.js
+// src/foodSearch.js
 var foodSearch_exports = {};
 __export(foodSearch_exports, {
   MATCH_TIER_RANK: () => MATCH_TIER_RANK,
@@ -5222,7 +5958,7 @@ function shouldDiscloseSynonymMapping(spokenName, dbName) {
 }
 var RECENT_FOODS_STORAGE_KEY, RECENT_FOOD_HIGH_WINDOW_MS, SEARCH_SYNONYMS, SCORE_EXACT_OR_PREFIX, SCORE_PREFIX, SCORE_COMPOUND_CONTAINED, SCORE_TOKEN_EXACT, SCORE_WORD_BOUNDARY, SCORE_SUBSTRING, SCORE_FUZZY_DIST_1, SCORE_FUZZY_DIST_2, MIN_MATCH_SCORE, DEFAULT_SEARCH_LIMIT, HISTORY_SCORE_WEIGHT, USAGE_COUNT_SCORE_WEIGHT, MATCH_TIER_RANK, SCORE_STEM_GUARANTEED, foodSearch_default;
 var init_foodSearch = __esm({
-  "../src/foodSearch.js"() {
+  "src/foodSearch.js"() {
     RECENT_FOODS_STORAGE_KEY = "recent_foods";
     RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1e3;
     SEARCH_SYNONYMS = {
@@ -5267,7 +6003,7 @@ var init_foodSearch = __esm({
   }
 });
 
-// ../src/features/mealBuilder/utils/foodMatchQuality.js
+// src/features/mealBuilder/utils/foodMatchQuality.js
 var foodMatchQuality_exports = {};
 __export(foodMatchQuality_exports, {
   ENERGY_DENSITY_CONFIRM_RATIO: () => ENERGY_DENSITY_CONFIRM_RATIO,
@@ -5556,7 +6292,7 @@ function findStrongFoodMatchesInCatalog(foodName, foodDb, opts = {}) {
 }
 var FOOD_MATCH_QUALITY, FOOD_MATCH_QUALITY_RANK, ENERGY_DENSITY_CONFIRM_RATIO;
 var init_foodMatchQuality = __esm({
-  "../src/features/mealBuilder/utils/foodMatchQuality.js"() {
+  "src/features/mealBuilder/utils/foodMatchQuality.js"() {
     init_foodSearch();
     FOOD_MATCH_QUALITY = Object.freeze({
       EXACT: "exact",
@@ -5574,7 +6310,7 @@ var init_foodMatchQuality = __esm({
   }
 });
 
-// mcp/httpHandler.js
+// functions/mcp/httpHandler.js
 var httpHandler_exports = {};
 __export(httpHandler_exports, {
   handleKentuMcpHttp: () => handleKentuMcpHttp
@@ -5582,13 +6318,13 @@ __export(httpHandler_exports, {
 module.exports = __toCommonJS(httpHandler_exports);
 var import_streamableHttp = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 
-// mcp/hashToken.js
+// functions/mcp/hashToken.js
 var import_node_crypto = require("node:crypto");
 function sha256Hex(value) {
   return (0, import_node_crypto.createHash)("sha256").update(String(value), "utf8").digest("hex");
 }
 
-// mcp/auth.js
+// functions/mcp/auth.js
 var RATE_LIMIT_PER_HOUR = 60;
 function hourBucket(now = Date.now()) {
   return Math.floor(now / 36e5);
@@ -5664,21 +6400,25 @@ function uidLogTag(uid) {
   return sha256Hex(uid).slice(0, 8);
 }
 
-// mcp/createServer.js
+// functions/mcp/createServer.js
 var import_mcp = require("@modelcontextprotocol/sdk/server/mcp.js");
 var z = __toESM(require("zod/v4"));
 
-// mcp/instructions.js
+// functions/mcp/instructions.js
 var MCP_INSTRUCTIONS = [
   "Sei collegato a Kentu, diario metabolico personale in sola lettura.",
   "Riporta i numeri restituiti dagli strumenti Kentu cos\xEC come sono: non ricalcolarli, non stimarli e non inventarli.",
+  "Un singolo episodio (es. cena salata e risveglio) \xE8 un\u2019ipotesi da verificare, non una prova causale.",
+  "Proponi piccoli esperimenti osservabili invece di conclusioni definitive.",
   "Non fare diagnosi mediche e non prescrivere terapie, diete cliniche o farmaci.",
+  "Se risvegli per bagno o sete sono frequenti e persistenti, suggerisci di parlarne con un medico.",
   "Se i dati mancano o sono incompleti, dillo chiaramente invece di colmare i buchi.",
-  "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso o grammi.",
-  "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori."
+  "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso, grammi, sodio o porzioni.",
+  "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
+  "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day."
 ].join(" ");
 
-// mcp/dates.js
+// functions/mcp/dates.js
 var TZ = "Europe/Rome";
 function partsInRome(now = /* @__PURE__ */ new Date()) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
@@ -5777,8 +6517,8 @@ function todayInRome(now = /* @__PURE__ */ new Date()) {
   return partsInRome(now).iso;
 }
 
-// mcp/redact.js
-var SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal)$/i;
+// functions/mcp/redact.js
+var SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal|prot|carb|fat|fibre|fiber|dinnerKcal|dinnerGrams|dinnerSodiumMg|eveningSodiumMg|liquidsAfter18Ml|alcoholPureG|caffeineMg|caffeineAfter14Mg|ml|pureAlcoholG|abv)$/i;
 function redactSensitiveNumbers(value) {
   if (Array.isArray(value)) {
     return value.map((item) => redactSensitiveNumbers(item));
@@ -5795,7 +6535,7 @@ function redactSensitiveNumbers(value) {
   return out;
 }
 
-// mcp/loadUserContext.js
+// functions/mcp/loadUserContext.js
 var import_node_path2 = __toESM(require("node:path"));
 var import_node_fs = require("node:fs");
 function resolveRepoRoot() {
@@ -5856,10 +6596,349 @@ async function readStoredDayScore(db, uid, date) {
   return decodeDayScoreFromRtdb2(snap.val());
 }
 
-// mcp/tools.js
+// functions/mcp/dayDetail.js
+var DINNER_KEYS = /^(cena|dinner)/i;
+var EVENING_HOUR = 18;
+var CAFFEINE_AFTER_HOUR = 14;
+var MAX_EVENINGS_DAYS = 90;
 function trackerNode(fullHistory, date) {
   return fullHistory?.[`trackerStorico_${date}`] || null;
 }
+function asArray2(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === "object") return Object.values(raw);
+  return [];
+}
+function flattenDiaryEntries(node) {
+  const out = [];
+  for (const entry of asArray2(node?.log || node?.dati?.log)) {
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.type === "meal" && Array.isArray(entry.items)) {
+      for (const item of entry.items) {
+        if (!item || typeof item !== "object") continue;
+        out.push({
+          ...item,
+          mealType: item.mealType || entry.mealId || entry.mealType || null,
+          mealTime: item.mealTime ?? entry.mealTime ?? null
+        });
+      }
+      continue;
+    }
+    out.push(entry);
+  }
+  for (const entry of asArray2(node?.manualNodes)) {
+    if (entry && typeof entry === "object") out.push(entry);
+  }
+  return out;
+}
+function finite(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function round1(value) {
+  const n = finite(value);
+  return n == null ? null : Math.round(n * 10) / 10;
+}
+function hourOf(entry, mealTimes = null) {
+  const direct = finite(entry?.mealTime ?? entry?.time ?? entry?.hour);
+  if (direct != null && direct >= 0 && direct <= 24) return direct;
+  const slot = String(entry?.mealType || entry?.mealId || "").trim();
+  if (slot && mealTimes && mealTimes[slot] != null) {
+    const fromMap = finite(mealTimes[slot]);
+    if (fromMap != null) return fromMap;
+  }
+  return null;
+}
+function readNutrient(entry, key) {
+  if (!entry || typeof entry !== "object") return null;
+  if (key === "prot") {
+    return finite(entry.prot ?? entry.protein ?? entry.proteins);
+  }
+  if (key === "carb") {
+    return finite(entry.carb ?? entry.carbs ?? entry.carbohydrates);
+  }
+  if (key === "fat") {
+    return finite(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
+  }
+  if (key === "fibre") {
+    return finite(entry.fibre ?? entry.fibreTotali ?? entry.fiber);
+  }
+  if (key === "na") {
+    const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
+    if (na != null) return na;
+    const sale = finite(entry.sale);
+    if (sale != null) return Math.round(sale * 393.4 * 10) / 10;
+    return null;
+  }
+  return finite(entry[key]);
+}
+function isFoodLike(entry) {
+  const type = String(entry?.type || "").toLowerCase();
+  if (type === "food" || type === "recipe") return true;
+  if (type === "water" || type === "alcohol" || type === "sleep" || type === "workout") return false;
+  if (entry?.foodName || entry?.kcal != null || entry?.condimentKind) return true;
+  return false;
+}
+function isDinner(entry) {
+  const slot = String(entry?.mealType || entry?.mealId || "").trim();
+  if (DINNER_KEYS.test(slot)) return true;
+  const h = hourOf(entry);
+  return h != null && h >= EVENING_HOUR;
+}
+function buildDayMealsDetail(fullHistory, date) {
+  const node = trackerNode(fullHistory, date);
+  const mealTimes = node?.mealTimes && typeof node.mealTimes === "object" ? node.mealTimes : {};
+  const entries = flattenDiaryEntries(node);
+  const meals = [];
+  const foodsMissingSodium = [];
+  const foodsMissingFibre = [];
+  let caffeineMg = 0;
+  let caffeineKnown = false;
+  for (const entry of entries) {
+    if (!isFoodLike(entry)) continue;
+    const grams = finite(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
+    const kcal = finite(entry.kcal ?? entry.cal);
+    const prot = readNutrient(entry, "prot");
+    const carb = readNutrient(entry, "carb");
+    const fat = readNutrient(entry, "fat");
+    const fibre = readNutrient(entry, "fibre");
+    const sodiumMg = readNutrient(entry, "na");
+    const name = entry.name || entry.foodName || entry.desc || "Alimento";
+    const caffeine = finite(entry.caffeineMg);
+    if (caffeine != null && caffeine > 0) {
+      caffeineMg += caffeine;
+      caffeineKnown = true;
+    }
+    if (sodiumMg == null) foodsMissingSodium.push(name);
+    if (fibre == null) foodsMissingFibre.push(name);
+    meals.push({
+      name,
+      mealType: entry.mealType || entry.mealId || null,
+      time: hourOf(entry, mealTimes),
+      grams,
+      kcal,
+      prot,
+      carb,
+      fat,
+      fibre,
+      sodiumMg,
+      caffeineMg: caffeine,
+      condimentKind: entry.condimentKind || null
+    });
+  }
+  const liquids = [];
+  for (const entry of entries) {
+    const type = String(entry?.type || "").toLowerCase();
+    if (type === "water") {
+      liquids.push({
+        kind: "water",
+        ml: finite(entry.ml),
+        time: hourOf(entry)
+      });
+      continue;
+    }
+    if (type === "alcohol") {
+      liquids.push({
+        kind: "alcohol",
+        ml: finite(entry.ml),
+        abv: finite(entry.abv),
+        pureAlcoholG: finite(entry.pureAlcohol),
+        kcal: finite(entry.kcal ?? entry.cal),
+        time: hourOf(entry),
+        subtype: entry.subtype || null
+      });
+    }
+  }
+  return {
+    meals,
+    liquids,
+    caffeineMg: caffeineKnown ? round1(caffeineMg) : null,
+    coverage: {
+      foodsMissingSodium: foodsMissingSodium.slice(0, 12),
+      foodsMissingFibre: foodsMissingFibre.slice(0, 12),
+      missingSodiumCount: foodsMissingSodium.length,
+      missingFibreCount: foodsMissingFibre.length
+    }
+  };
+}
+function pickMainSleep(entries) {
+  let best = null;
+  let bestHours = -1;
+  for (const entry of entries) {
+    if (String(entry?.type || "").toLowerCase() !== "sleep") continue;
+    const hours = finite(entry.hours ?? entry.duration ?? entry.sleepHours) || 0;
+    if (hours > bestHours) {
+      best = entry;
+      bestHours = hours;
+    }
+  }
+  return best;
+}
+function deriveBedtime(entry) {
+  const recorded = finite(entry?.bedtime ?? entry?.sleepStart);
+  const wake = finite(entry?.wakeTime ?? entry?.sleepEnd);
+  const hours = finite(entry?.hours ?? entry?.duration ?? entry?.sleepHours);
+  if (wake != null && hours != null && hours > 0) {
+    let derived = wake - hours;
+    while (derived < 0) derived += 24;
+    while (derived >= 24) derived -= 24;
+    if (recorded == null) {
+      return { bedtime: round1(derived), bedtimeProvenance: "derived" };
+    }
+    const delta = Math.min(Math.abs(recorded - derived), 24 - Math.abs(recorded - derived));
+    if (delta <= 0.35) {
+      return { bedtime: round1(recorded), bedtimeProvenance: "derived" };
+    }
+    return { bedtime: round1(recorded), bedtimeProvenance: "recorded" };
+  }
+  if (recorded != null) {
+    return { bedtime: round1(recorded), bedtimeProvenance: "recorded" };
+  }
+  return { bedtime: null, bedtimeProvenance: "missing" };
+}
+function buildDaySleepDetail(fullHistory, date) {
+  const node = trackerNode(fullHistory, date);
+  const entries = flattenDiaryEntries(node);
+  const entry = pickMainSleep(entries);
+  if (!entry) return null;
+  const { bedtime, bedtimeProvenance } = deriveBedtime(entry);
+  const notes = String(entry.notes ?? entry.note ?? entry.details ?? "").trim() || null;
+  const quality = finite(entry.quality ?? entry.sleepQuality ?? entry.rating);
+  const qualityStars = quality != null && quality >= 1 && quality <= 5 ? Math.round(quality) : null;
+  const qualityScore = finite(entry.qualityScore);
+  return {
+    hours: finite(entry.hours ?? entry.duration ?? entry.sleepHours),
+    wakeTime: finite(entry.wakeTime ?? entry.sleepEnd),
+    bedtime,
+    bedtimeProvenance,
+    qualityStars,
+    notes,
+    deepMin: finite(entry.deepMin),
+    remMin: finite(entry.remMin),
+    hr: finite(entry.hr),
+    qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null
+  };
+}
+function dinnerStats(meals) {
+  let kcal = 0;
+  let grams = 0;
+  let sodiumMg = 0;
+  let hasDinner = false;
+  for (const meal of meals) {
+    if (!isDinner(meal)) continue;
+    hasDinner = true;
+    if (meal.kcal != null) kcal += meal.kcal;
+    if (meal.grams != null) grams += meal.grams;
+    if (meal.sodiumMg != null) sodiumMg += meal.sodiumMg;
+  }
+  if (!hasDinner) return { kcal: null, grams: null, sodiumMg: null };
+  return {
+    kcal: round1(kcal),
+    grams: round1(grams),
+    sodiumMg: round1(sodiumMg)
+  };
+}
+function lastMealHour(meals) {
+  let last = null;
+  for (const meal of meals) {
+    const h = finite(meal.time);
+    if (h == null) continue;
+    if (last == null || h > last) last = h;
+  }
+  return last;
+}
+function hoursBeforeSleep(lastMeal, bedtime) {
+  if (lastMeal == null || bedtime == null) return null;
+  let delta = bedtime - lastMeal;
+  if (delta < 0) delta += 24;
+  if (delta > 18) return null;
+  return round1(delta);
+}
+function buildEveningRow(fullHistory, date) {
+  const detail = buildDayMealsDetail(fullHistory, date);
+  const sleep = buildDaySleepDetail(fullHistory, date);
+  const dinner = dinnerStats(detail.meals);
+  const lastMeal = lastMealHour(detail.meals);
+  let liquidsAfter18Ml = 0;
+  let alcoholPureG = 0;
+  let hasLiquid = false;
+  let hasAlcohol = false;
+  for (const liq of detail.liquids) {
+    const t = finite(liq.time);
+    if (liq.kind === "water" && t != null && t >= EVENING_HOUR) {
+      hasLiquid = true;
+      liquidsAfter18Ml += liq.ml || 0;
+    }
+    if (liq.kind === "alcohol") {
+      hasAlcohol = true;
+      alcoholPureG += liq.pureAlcoholG || 0;
+    }
+  }
+  let caffeineAfter14 = 0;
+  let caffeineAfter14Known = false;
+  for (const meal of detail.meals) {
+    const t = finite(meal.time);
+    const c = finite(meal.caffeineMg);
+    if (c == null || c <= 0) continue;
+    if (t != null && t >= CAFFEINE_AFTER_HOUR) {
+      caffeineAfter14 += c;
+      caffeineAfter14Known = true;
+    }
+  }
+  let eveningSodium = 0;
+  let eveningSodiumKnown = false;
+  for (const meal of detail.meals) {
+    const t = finite(meal.time);
+    if (t == null || t < EVENING_HOUR) continue;
+    if (meal.sodiumMg != null) {
+      eveningSodium += meal.sodiumMg;
+      eveningSodiumKnown = true;
+    }
+  }
+  return {
+    date,
+    lastMealHour: lastMeal,
+    hoursBeforeSleep: hoursBeforeSleep(lastMeal, sleep?.bedtime ?? null),
+    dinnerKcal: dinner.kcal,
+    dinnerGrams: dinner.grams,
+    dinnerSodiumMg: dinner.sodiumMg,
+    eveningSodiumMg: eveningSodiumKnown ? round1(eveningSodium) : null,
+    liquidsAfter18Ml: hasLiquid ? round1(liquidsAfter18Ml) : null,
+    alcoholPureG: hasAlcohol ? round1(alcoholPureG) : null,
+    caffeineAfter14Mg: caffeineAfter14Known ? round1(caffeineAfter14) : null,
+    night: sleep ? {
+      hours: sleep.hours,
+      qualityStars: sleep.qualityStars,
+      notes: sleep.notes,
+      bedtime: sleep.bedtime,
+      wakeTime: sleep.wakeTime
+    } : null
+  };
+}
+function assertEveningsRange(from, to) {
+  if (!isIsoDate(from) || !isIsoDate(to)) {
+    throw new Error("from/to devono essere YYYY-MM-DD");
+  }
+  if (from > to) throw new Error("from non pu\xF2 essere dopo to");
+  let days = 0;
+  for (let d = from; d <= to; d = addDaysIso(d, 1)) {
+    days += 1;
+    if (days > MAX_EVENINGS_DAYS) {
+      throw new Error(`intervallo massimo ${MAX_EVENINGS_DAYS} giorni`);
+    }
+  }
+  return days;
+}
+function buildEvenings(fullHistory, from, to) {
+  const days = assertEveningsRange(from, to);
+  const rows = [];
+  for (let d = from; d <= to; d = addDaysIso(d, 1)) {
+    rows.push(buildEveningRow(fullHistory, d));
+  }
+  return { from, to, days, evenings: rows };
+}
+
+// functions/mcp/tools.js
 function flattenLog(node) {
   const raw = node?.log || node?.dati?.log || [];
   if (!Array.isArray(raw)) return [];
@@ -5874,41 +6953,20 @@ function flattenLog(node) {
   }
   return out;
 }
-function summarizeDayLog(fullHistory, date) {
+function summarizeMovement(fullHistory, date) {
   const entries = flattenLog(trackerNode(fullHistory, date));
-  const meals = [];
-  let sleep = null;
   const movement = [];
   for (const entry of entries) {
     const type = String(entry.type || "").toLowerCase();
-    if (type === "sleep") {
-      sleep = {
-        hours: entry.hours ?? null,
-        wakeTime: entry.wakeTime ?? null,
-        bedtime: entry.bedtime ?? null,
-        quality: entry.quality ?? null
-      };
-      continue;
-    }
     if (type === "workout" || type === "cardio" || type === "activity") {
       movement.push({
         type,
         name: entry.name || entry.workoutType || entry.activityType || type,
         durationMinutes: entry.durationMinutes ?? entry.duration ?? null
       });
-      continue;
-    }
-    if (type === "food" || entry.foodName || entry.kcal != null || entry.condimentKind) {
-      meals.push({
-        name: entry.name || entry.foodName || entry.desc || "Alimento",
-        kcal: Number.isFinite(Number(entry.kcal)) ? Number(entry.kcal) : null,
-        mealType: entry.mealType || null,
-        grams: entry.grams ?? entry.qta ?? null,
-        condimentKind: entry.condimentKind || null
-      });
     }
   }
-  return { meals, sleep, movement };
+  return movement;
 }
 function scoreContext(base) {
   return {
@@ -5920,7 +6978,8 @@ function scoreContext(base) {
     records: base.records,
     movementCheckins: base.movementCheckins,
     catalogs: base.catalogs,
-    forzaEnabled: base.forzaEnabled
+    forzaEnabled: base.forzaEnabled,
+    scoreVersion: "kds-5"
   };
 }
 function pillarSummary(cylinders) {
@@ -5933,7 +6992,11 @@ function pillarSummary(cylinders) {
       status: c.status ?? null,
       value: c.value ?? null,
       keyFact: c.keyFact ?? null,
-      signals: Array.isArray(c.signals) ? c.signals : []
+      signals: Array.isArray(c.signals) ? c.signals : [],
+      ...key === "movimento" && c.battery ? {
+        batteryLevel: c.battery.level ?? c.value ?? null,
+        batteryCopy: c.battery.copy ?? null
+      } : {}
     };
   }
   return out;
@@ -5955,7 +7018,8 @@ async function toolGetDay(db, uid, dateRef) {
     source: "rtdb"
   } : { ...live, source: "computed" };
   const safety = computeSafety2(date, ctx);
-  const log = summarizeDayLog(base.fullHistory, date);
+  const mealsDetail = buildDayMealsDetail(base.fullHistory, date);
+  const sleep = buildDaySleepDetail(base.fullHistory, date);
   const missingDiary = !trackerNode(base.fullHistory, date);
   let payload = {
     date,
@@ -5966,9 +7030,12 @@ async function toolGetDay(db, uid, dateRef) {
     version: score.version,
     scoreSource: score.source,
     pillars: pillarSummary(score.cylinders),
-    meals: log.meals,
-    sleep: log.sleep,
-    movement: log.movement,
+    meals: mealsDetail.meals,
+    liquids: mealsDetail.liquids,
+    caffeineMg: mealsDetail.caffeineMg,
+    nutrientCoverage: mealsDetail.coverage,
+    sleep,
+    movement: summarizeMovement(base.fullHistory, date),
     safety: {
       level: safety.level,
       signals: (safety.signals || []).map((s) => ({
@@ -6043,6 +7110,31 @@ async function toolGetPeriod(db, uid, periodRef) {
   }
   return payload;
 }
+async function toolGetEvenings(db, uid, range) {
+  const from = String(range?.from || "").trim();
+  const to = String(range?.to || "").trim();
+  if (!isIsoDate(from) || !isIsoDate(to)) {
+    throw new Error("from e to devono essere YYYY-MM-DD");
+  }
+  const base = await loadUserFocusContext(db, uid);
+  const payload = buildEvenings(base.fullHistory, from, to);
+  const { computeSafety: computeSafety2 } = await Promise.resolve().then(() => (init_computeSafety(), computeSafety_exports));
+  const ctx = scoreContext(base);
+  let suppress = false;
+  for (const row of payload.evenings) {
+    const safety = computeSafety2(row.date, ctx);
+    if (safety?.suppressNumbers) {
+      suppress = true;
+      break;
+    }
+  }
+  let out = { ...payload, suppressNumbers: suppress };
+  if (suppress) {
+    out = redactSensitiveNumbers(out);
+    out.suppressNumbers = true;
+  }
+  return out;
+}
 async function toolSearchFood(db, uid, query) {
   const q = String(query || "").trim();
   if (q.length < 2) {
@@ -6071,7 +7163,7 @@ async function toolSearchFood(db, uid, query) {
   };
 }
 
-// mcp/createServer.js
+// functions/mcp/createServer.js
 function createKentuMcpServer({ uid, db }) {
   const server = new import_mcp.McpServer(
     {
@@ -6085,13 +7177,29 @@ function createKentuMcpServer({ uid, db }) {
   server.registerTool(
     "kentu_get_day",
     {
-      description: 'Legge lo stato di un giorno Kentu: punteggio kds-3, pilastri, pasti (kcal), sonno, movimento, salvavita e azione. Parametro date: "today", "yesterday" oppure YYYY-MM-DD (fuso Europe/Rome). Sola lettura.',
+      description: 'Legge un giorno Kentu (kds-5): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), liquidi/alcol con orario, caffeina se presente, notte (letto, sveglia, durata, stelle, note), salvavita e azione. Parametro date: "today", "yesterday" oppure YYYY-MM-DD (Europe/Rome). Sola lettura.',
       inputSchema: {
         date: z.string().describe("today | yesterday | YYYY-MM-DD")
       }
     },
     async ({ date }) => {
       const payload = await toolGetDay(db, uid, date);
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload) }]
+      };
+    }
+  );
+  server.registerTool(
+    "kentu_get_evenings",
+    {
+      description: "Serie compatta sera\u2192notte (max 90 giorni): ultimo pasto, ore prima del sonno, cena (kcal/grammi), sodio serale, liquidi dopo le 18, alcol, caffeina dopo le 14, esito notte (durata, stelle, note). from/to in YYYY-MM-DD (Europe/Rome). Sola lettura. Un episodio \xE8 un\u2019ipotesi, non una prova.",
+      inputSchema: {
+        from: z.string().describe("YYYY-MM-DD inizio (incluso)"),
+        to: z.string().describe("YYYY-MM-DD fine (incluso)")
+      }
+    },
+    async ({ from, to }) => {
+      const payload = await toolGetEvenings(db, uid, { from, to });
       return {
         content: [{ type: "text", text: JSON.stringify(payload) }]
       };
@@ -6130,7 +7238,7 @@ function createKentuMcpServer({ uid, db }) {
   return server;
 }
 
-// mcp/httpHandler.js
+// functions/mcp/httpHandler.js
 function denyCors(res) {
   res.setHeader("Vary", "Origin");
   res.removeHeader("Access-Control-Allow-Origin");

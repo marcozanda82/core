@@ -4,7 +4,8 @@
 
 Endpoint HTTPS Streamable MCP `kentuMcp` (europe-west1) con strumenti:
 
-- `kentu_get_day` — giorno (`today` / `yesterday` / `YYYY-MM-DD`, fuso Europe/Rome)
+- `kentu_get_day` — giorno (`today` / `yesterday` / `YYYY-MM-DD`, fuso Europe/Rome): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), liquidi/alcol, caffeina, notte (letto, sveglia, durata, stelle, note)
+- `kentu_get_evenings` — serie sera→notte (`from`/`to` YYYY-MM-DD, max 90 giorni), risposta compatta
 - `kentu_get_period` — settimana/mese (`this_week` | `last_week` | `this_month` | `last_month`)
 - `kentu_search_food` — ricerca alimenti con `matchQuality`
 

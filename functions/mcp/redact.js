@@ -1,4 +1,4 @@
-const SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal)$/i;
+const SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal|prot|carb|fat|fibre|fiber|dinnerKcal|dinnerGrams|dinnerSodiumMg|eveningSodiumMg|liquidsAfter18Ml|alcoholPureG|caffeineMg|caffeineAfter14Mg|ml|pureAlcoholG|abv)$/i;
 
 /**
  * Rimuove numeri sensibili (calorie, peso, grammi) quando suppressNumbers è attivo.

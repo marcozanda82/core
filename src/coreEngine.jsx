@@ -16,6 +16,7 @@ import {
   serializeUnassignedDraftsForFirebase,
   asCollectionArray,
 } from './utils/mealDraftStatus';
+import { denormalizeSleepEntry } from './utils/denormalizeSleepEntry.js';
 import { getDynamicMealTargets } from './features/mealEngine/getDynamicMealTargets.js';
 
 export { getDynamicMealTargets };
@@ -2465,17 +2466,8 @@ function denormalizeLogForFirebase(flatLog) {
       return;
     }
     if (entry.type === 'sleep') {
-      sleeps.push({
-        type: 'sleep',
-        id: entry.id,
-        wakeTime: entry.wakeTime,
-        sleepStart: entry.sleepStart,
-        sleepEnd: entry.sleepEnd,
-        hours: entry.hours,
-        deepMin: entry.deepMin,
-        remMin: entry.remMin,
-        hr: entry.hr
-      });
+      const sleepRow = denormalizeSleepEntry(entry);
+      if (sleepRow) sleeps.push(sleepRow);
       return;
     }
     if (entry.type === 'workout' || entry.type === 'work') {

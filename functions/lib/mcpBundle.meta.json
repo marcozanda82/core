@@ -1,10 +1,11 @@
 {
-  "builtAt": "2026-11-14T22:10:09.846Z",
-  "sourceHash": "a8730f2dc5a072c00ba1daf50b4f38b544e5f5710648b1e9326e63aca597e074",
+  "builtAt": "2026-11-18T11:56:39.966Z",
+  "sourceHash": "a7367cd0479f9ae21916e8876cbb53a03f6c341a18b5b16423c3ac6d6eccd365",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
     "functions/mcp/dates.js",
+    "functions/mcp/dayDetail.js",
     "functions/mcp/hashToken.js",
     "functions/mcp/httpHandler.js",
     "functions/mcp/instructions.js",
