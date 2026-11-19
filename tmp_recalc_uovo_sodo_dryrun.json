@@ -1,0 +1,680 @@
+{
+  "mode": "DRY-RUN",
+  "uid": "hvPTB7P3DUZ5nlAW7PH08AG4Rqt1",
+  "foodKey": "food_1774101701317_Uovo_sodo",
+  "personalRowPer100": {
+    "kcal": 310,
+    "prot": 25.2,
+    "carb": 2.2,
+    "fat": 21.2,
+    "fibre": 15,
+    "na": 1000,
+    "sale": null
+  },
+  "personalRowDesc": "Uovo sodo",
+  "scannedDays": 120,
+  "matchingEntries": 19,
+  "entriesNeedingUpdate": 3,
+  "touchedDays": [
+    "2026-08-21",
+    "2026-11-07",
+    "2026-11-10"
+  ],
+  "note": "I focus_day_scores dei giorni in touchedDays vanno ricalcolati dopo apply, con lo stesso snapshot del target del giorno (non ricalcolare il target).",
+  "entries": [
+    {
+      "date": "2026-08-06",
+      "mealId": "cena",
+      "path": "log.2.items.3",
+      "itemId": "food_1774101701317_Uovo_sodo",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-08-12",
+      "mealId": "cena",
+      "path": "log.2.items.4",
+      "itemId": "f_1786603782603_4",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-08-19",
+      "mealId": "cena",
+      "path": "log.2.items.3",
+      "itemId": "food_1774101701317_Uovo_sodo",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 50,
+      "before": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-08-21",
+      "mealId": "cena",
+      "path": "log.1.items.6",
+      "itemId": "f_1787349083478_6",
+      "name": "Uovo sodo (1 100 g)",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 50,
+      "before": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "changes": {
+        "fibre": {
+          "before": null,
+          "after": 7.5
+        },
+        "na": {
+          "before": null,
+          "after": 500
+        }
+      },
+      "changed": true
+    },
+    {
+      "date": "2026-08-22",
+      "mealId": "snack_2",
+      "path": "log.2.items.2",
+      "itemId": "food_1774101701317_Uovo_sodo",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 50,
+      "before": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-09-07",
+      "mealId": "cena",
+      "path": "log.2.items.4",
+      "itemId": "food_1774101701317_Uovo_sodo",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 80,
+      "before": {
+        "kcal": 248,
+        "cal": 248,
+        "prot": 20.16,
+        "carb": 1.7600000000000002,
+        "fat": 16.96,
+        "fatTotal": 16.96,
+        "fibre": 12,
+        "na": 800,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 248,
+        "cal": 248,
+        "prot": 20.2,
+        "carb": 1.8,
+        "fat": 17,
+        "fatTotal": 17,
+        "fibre": 12,
+        "na": 800,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-09-14",
+      "mealId": "pranzo",
+      "path": "log.0.items.4",
+      "itemId": "mcdrive_raw_1789388081535_til6ct2",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-09-24",
+      "mealId": "cena_1790282404110",
+      "path": "log.0.items.1",
+      "itemId": "mcdrive_raw_1790282525069_rqbut2j",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-10-01",
+      "mealId": "cena_1790884233718",
+      "path": "log.0.items.1",
+      "itemId": "mcdrive_raw_1790884287317_gzpwn7v",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-10-07",
+      "mealId": "pranzo_1791404199604",
+      "path": "log.1.items.2",
+      "itemId": "f_1791404417416_2",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-10-14",
+      "mealId": "pranzo_1791989105206",
+      "path": "log.2.items.3",
+      "itemId": "f_1791989360883_3",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-10-17",
+      "mealId": "cena_1792266365742",
+      "path": "log.0.items.2",
+      "itemId": "mcdrive_raw_1792266406970_h2eqjcy",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 85,
+      "before": {
+        "kcal": 264,
+        "cal": 264,
+        "prot": 21.4,
+        "carb": 1.9,
+        "fat": 18,
+        "fatTotal": 18,
+        "fibre": 12.8,
+        "na": 850,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 264,
+        "cal": 264,
+        "prot": 21.4,
+        "carb": 1.9,
+        "fat": 18,
+        "fatTotal": 18,
+        "fibre": 12.8,
+        "na": 850,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-10-27",
+      "mealId": "pranzo_1793112922599",
+      "path": "log.1.items.2",
+      "itemId": "mcdrive_raw_1793112984697_4j7to5l",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-11-03",
+      "mealId": "cena_1793770560882",
+      "path": "log.0.items.4",
+      "itemId": "mcdrive_raw_1793770664318_8ozskh8",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-11-07",
+      "mealId": "snack_1794074992476",
+      "path": "log.1.items.1",
+      "itemId": "mcdrive_raw_1794075014278_s9qnwk2",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {
+        "fibre": {
+          "before": null,
+          "after": 15
+        },
+        "na": {
+          "before": null,
+          "after": 1000
+        },
+        "zuccheri": {
+          "before": null,
+          "after": 0
+        }
+      },
+      "changed": true
+    },
+    {
+      "date": "2026-11-10",
+      "mealId": "cena_1794344480354",
+      "path": "log.0.items.4",
+      "itemId": "mcdrive_raw_1794344533566_46ta4va",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {
+        "fibre": {
+          "before": null,
+          "after": 15
+        },
+        "na": {
+          "before": null,
+          "after": 1000
+        },
+        "zuccheri": {
+          "before": null,
+          "after": 0
+        }
+      },
+      "changed": true
+    },
+    {
+      "date": "2026-11-14",
+      "mealId": "snack_1794685268360",
+      "path": "log.1.items.3",
+      "itemId": "mcdrive_raw_1794685296710_1hmqzks",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 50,
+      "before": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-11-14",
+      "mealId": "snack_1794653810919",
+      "path": "log.3.items.3",
+      "itemId": "mcdrive_raw_1794653916470_zl9hwrw",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 50,
+      "before": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 155,
+        "cal": 155,
+        "prot": 12.6,
+        "carb": 1.1,
+        "fat": 10.6,
+        "fatTotal": 10.6,
+        "fibre": 7.5,
+        "na": 500,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    },
+    {
+      "date": "2026-11-17",
+      "mealId": "cena_1794947508862",
+      "path": "log.0.items.1",
+      "itemId": "mcdrive_raw_1794947546173_5fozg0p",
+      "name": "Uovo sodo",
+      "foodDbKey": "food_1774101701317_Uovo_sodo",
+      "grams": 100,
+      "before": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "after": {
+        "kcal": 310,
+        "cal": 310,
+        "prot": 25.2,
+        "carb": 2.2,
+        "fat": 21.2,
+        "fatTotal": 21.2,
+        "fibre": 15,
+        "na": 1000,
+        "zuccheri": 0
+      },
+      "changes": {},
+      "changed": false
+    }
+  ]
+}

@@ -1,0 +1,1017 @@
+{
+  "uid": "hvPTB7P3DUZ5nlAW7PH08AG4Rqt1",
+  "from": "2026-10-20",
+  "to": "2026-11-18",
+  "counts": {
+    "animalWithFibre": 14,
+    "processedSodiumZero": 20,
+    "kcalOutOfRange": 65
+  },
+  "animalWithFibre": [
+    {
+      "date": "2026-10-21",
+      "name": "Chili con carne",
+      "grams": 60,
+      "fibre": 0.84,
+      "fibreField": 0.84,
+      "fibreTotali": null,
+      "foodDbKey": "food_1790798159853_Chili_con_carne"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Italpizza Tonno e Cipolla 26x38",
+      "grams": 285,
+      "fibre": 4.8,
+      "fibreField": null,
+      "fibreTotali": 4.8,
+      "foodDbKey": "italpizza tonno e cipolla 26x38"
+    },
+    {
+      "date": "2026-11-04",
+      "name": "Italpizza Tonno e Cipolla 26x38",
+      "grams": 285,
+      "fibre": 4.8,
+      "fibreField": null,
+      "fibreTotali": 4.8,
+      "foodDbKey": "italpizza tonno e cipolla 26x38"
+    },
+    {
+      "date": "2026-11-05",
+      "name": "Pizza alta al formaggio",
+      "grams": 200,
+      "fibre": 4.4,
+      "fibreField": 4.4,
+      "fibreTotali": 4.4,
+      "foodDbKey": "food_1793913629030_Pizza_alta_al_formaggio"
+    },
+    {
+      "date": "2026-11-06",
+      "name": "Bastoncini di pollo",
+      "grams": 125,
+      "fibre": 1.6,
+      "fibreField": 1.6,
+      "fibreTotali": null,
+      "foodDbKey": "food_1793974299422_Bastoncini_di_pollo"
+    },
+    {
+      "date": "2026-11-09",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-11-13",
+      "name": "Chili con carne",
+      "grams": 110,
+      "fibre": 8.3,
+      "fibreField": 8.3,
+      "fibreTotali": null,
+      "foodDbKey": "recipe_1774463958752_Chili_con_carne"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Uovo sodo",
+      "grams": 50,
+      "fibre": 7.5,
+      "fibreField": 7.5,
+      "fibreTotali": null,
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Uovo sodo",
+      "grams": 50,
+      "fibre": 7.5,
+      "fibreField": 7.5,
+      "fibreTotali": null,
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "fibre": 15,
+      "fibreField": 15,
+      "fibreTotali": null,
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    }
+  ],
+  "processedSodiumZero": [
+    {
+      "date": "2026-10-24",
+      "name": "Pomodorissimo la passata",
+      "grams": 70,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pomodorissimo la passata"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Wudy al Formaggio",
+      "grams": 50,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "wudy al formaggio"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Prosciutto cotto gran biscotti",
+      "grams": 35,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "prosciutto cotto gran biscotti"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Prosciutto San Daniele",
+      "grams": 60,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1793206549543_Prosciutto_San_Daniele"
+    },
+    {
+      "date": "2026-10-30",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Pizza ristorante",
+      "grams": 155,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1779567236862_Pizza_ristorante"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Italpizza Tonno e Cipolla 26x38",
+      "grams": 285,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "italpizza tonno e cipolla 26x38"
+    },
+    {
+      "date": "2026-11-04",
+      "name": "Italpizza Tonno e Cipolla 26x38",
+      "grams": 285,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "italpizza tonno e cipolla 26x38"
+    },
+    {
+      "date": "2026-11-07",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Wudy al Formaggio",
+      "grams": 50,
+      "na": 0,
+      "sale": null,
+      "foodDbKey": "wudy al formaggio"
+    },
+    {
+      "date": "2026-11-09",
+      "name": "Pizza regina alta",
+      "grams": 400,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1778531283737_Pizza_regina_alta"
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Pane integrale con fiocchi d’avena",
+      "grams": 250,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1794344548008_Pane_integrale_con_fiocchi_d_avena"
+    },
+    {
+      "date": "2026-11-12",
+      "name": "Pomodorissimo la passata",
+      "grams": 70,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pomodorissimo la passata"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Sugo biffi",
+      "grams": 100,
+      "na": null,
+      "sale": null,
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Pomodorissimo la passata",
+      "grams": 100,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "pomodorissimo la passata"
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Pesto rosso",
+      "grams": 30,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1776690207536_Pesto_rosso"
+    },
+    {
+      "date": "2026-11-16",
+      "name": "Sugo pronto agli scampi",
+      "grams": 150,
+      "na": null,
+      "sale": null,
+      "foodDbKey": "food_1794862725491_Sugo_pronto_agli_scampi"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Wudy al Formaggio",
+      "grams": 50,
+      "na": 0,
+      "sale": null,
+      "foodDbKey": "wudy al formaggio"
+    }
+  ],
+  "kcalOutOfRange": [
+    {
+      "date": "2026-10-20",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-21",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-21",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-21",
+      "name": "Sardine all'olio di oliva",
+      "grams": 90,
+      "kcal100": 333,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "sardine all'olio di oliva"
+    },
+    {
+      "date": "2026-10-22",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Sardine all'olio di oliva",
+      "grams": 90,
+      "kcal100": 333,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "sardine all'olio di oliva"
+    },
+    {
+      "date": "2026-10-25",
+      "name": "Mandorle",
+      "grams": 10,
+      "kcal100": 0,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-10-25",
+      "name": "Mandorle",
+      "grams": 10,
+      "kcal100": 0,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-10-25",
+      "name": "Excellence 85% Cioccolato Rich Dark",
+      "grams": 10,
+      "kcal100": 0,
+      "range": [
+        20,
+        700
+      ],
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-10-25",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-26",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-26",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "kcal100": 214,
+      "range": [
+        5,
+        120
+      ],
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Pane integrale con semi e noci",
+      "grams": 40,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Pane integrale con semi e noci",
+      "grams": 60,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Filetti di sgombro all'olio d'oliva",
+      "grams": 90,
+      "kcal100": 237,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "food_1776154052298_Filetti_di_sgombro_all_olio_d_"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-30",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-30",
+      "name": "Fagiolini",
+      "grams": 350,
+      "kcal100": 31,
+      "range": [
+        50,
+        450
+      ],
+      "foodDbKey": "fagiolini"
+    },
+    {
+      "date": "2026-10-30",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-31",
+      "name": "Pane integrale con semi e noci",
+      "grams": 200,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-10-31",
+      "name": "Sardine all'olio di oliva",
+      "grams": 90,
+      "kcal100": 333,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "sardine all'olio di oliva"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Filetti di sgombro all'olio d'oliva",
+      "grams": 90,
+      "kcal100": 237,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "food_1776154052298_Filetti_di_sgombro_all_olio_d_"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Pane integrale con semi e noci",
+      "grams": 140,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-02",
+      "name": "Pane integrale con semi e noci",
+      "grams": 40,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-03",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-04",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-06",
+      "name": "Pane integrale con semi e noci",
+      "grams": 40,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-06",
+      "name": "Pane integrale con semi e noci",
+      "grams": 200,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-07",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-07",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-07",
+      "name": "Pane integrale con semi e noci",
+      "grams": 100,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Mela",
+      "grams": 50,
+      "kcal100": 0,
+      "range": [
+        20,
+        700
+      ],
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Sardine all'olio di oliva",
+      "grams": 90,
+      "kcal100": 333,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "sardine all'olio di oliva"
+    },
+    {
+      "date": "2026-11-09",
+      "name": "Pane integrale con semi e noci",
+      "grams": 160,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-09",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "kcal100": 214,
+      "range": [
+        5,
+        120
+      ],
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Ravioli di ricotta e spinaci",
+      "grams": 200,
+      "kcal100": 214,
+      "range": [
+        5,
+        120
+      ],
+      "foodDbKey": "food_1779368604740_Ravioli_di_ricotta_e_spinaci"
+    },
+    {
+      "date": "2026-11-10",
+      "name": "Tonno all'olio d'oliva",
+      "grams": 140,
+      "kcal100": 401,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "food_1794342289032_Tonno_all_olio_d_oliva"
+    },
+    {
+      "date": "2026-11-11",
+      "name": "Pane integrale con semi e noci",
+      "grams": 250,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-11",
+      "name": "Filetti di sgombro all'olio d'oliva",
+      "grams": 90,
+      "kcal100": 237,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "food_1776154052298_Filetti_di_sgombro_all_olio_d_"
+    },
+    {
+      "date": "2026-11-12",
+      "name": "Pane integrale con semi e noci",
+      "grams": 40,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-13",
+      "name": "Pane integrale con semi e noci",
+      "grams": 250,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Uovo sodo",
+      "grams": 50,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Sugo biffi",
+      "grams": 100,
+      "kcal100": 0,
+      "range": [
+        80,
+        550
+      ],
+      "foodDbKey": null
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Pane integrale con semi e noci",
+      "grams": 240,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Sardine all'olio di oliva",
+      "grams": 90,
+      "kcal100": 333,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "sardine all'olio di oliva"
+    },
+    {
+      "date": "2026-11-14",
+      "name": "Uovo sodo",
+      "grams": 50,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Pane integrale con semi e noci",
+      "grams": 180,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Filetti di sgombro all'olio d'oliva",
+      "grams": 90,
+      "kcal100": 237,
+      "range": [
+        500,
+        950
+      ],
+      "foodDbKey": "food_1776154052298_Filetti_di_sgombro_all_olio_d_"
+    },
+    {
+      "date": "2026-11-16",
+      "name": "Pane integrale con semi e noci",
+      "grams": 120,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Uovo sodo",
+      "grams": 100,
+      "kcal100": 310,
+      "range": [
+        100,
+        220
+      ],
+      "foodDbKey": "food_1774101701317_Uovo_sodo"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Pane integrale con semi e noci",
+      "grams": 180,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Pane integrale con semi e noci",
+      "grams": 80,
+      "kcal100": 278,
+      "range": [
+        450,
+        750
+      ],
+      "foodDbKey": "pane integrale con semi e noci"
+    }
+  ]
+}
