@@ -4,6 +4,7 @@ dist
 src/features/kentuFocus/__tests__/fixtures/*.real.json
 src/dev/.sleepCoachTestRun.mjs
 functions/_shared
+functions/data/
 firebase-debug.log
 firebase-debug.*.log
 database-debug.log

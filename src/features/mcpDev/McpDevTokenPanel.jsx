@@ -1,6 +1,34 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../../firebaseConfig.js';
+import { auth, functions } from '../../firebaseConfig.js';
+
+function italianCallableError(err) {
+  const code = String(err?.code || err?.customData?.code || '').replace(/^functions\//, '');
+  const details = String(err?.details || err?.customData?.details || '').trim();
+  const raw = String(err?.message || err || '').trim();
+  if (code === 'unauthenticated' || /unauthenticated/i.test(raw)) {
+    return 'Devi essere autenticato per gestire i gettoni MCP.';
+  }
+  if (code === 'unavailable' || /unavailable|Failed to fetch|network|socket hang up/i.test(raw)) {
+    return 'Servizio Functions non raggiungibile (controlla europe-west1 o l’emulatore Functions/RTDB).';
+  }
+  if (code === 'deadline-exceeded' || /timed out|timeout/i.test(raw)) {
+    return 'Timeout sulla callable MCP. Se usi l’emulatore, verifica che Auth/RTDB/Functions siano avviati insieme.';
+  }
+  if (code === 'not-found' || /not-found/i.test(raw)) {
+    return 'Funzione MCP non trovata sul backend. Verifica il deploy europe-west1.';
+  }
+  if (code === 'permission-denied') {
+    return 'Permesso negato per questa operazione.';
+  }
+  if (code === 'internal' || raw === 'internal') {
+    return details
+      ? `Errore interno MCP: ${details}`
+      : 'Errore interno MCP (spesso RTDB non raggiungibile dall’emulatore Functions).';
+  }
+  if (raw && raw !== '[object Object]') return raw;
+  return 'Operazione MCP fallita.';
+}
 
 /**
  * Pannello DEV: crea/revoca gettoni MCP. Il plaintext si mostra una sola volta.
@@ -14,16 +42,28 @@ export default function McpDevTokenPanel({ onClose }) {
 
   const refresh = useCallback(async () => {
     setError(null);
+    if (!auth.currentUser) {
+      setError('Devi essere autenticato per gestire i gettoni MCP.');
+      setTokens([]);
+      return;
+    }
     try {
       const list = httpsCallable(functions, 'listMcpTokens');
       const res = await list({});
       setTokens(Array.isArray(res?.data?.tokens) ? res.data.tokens : []);
     } catch (err) {
-      setError(String(err?.message || err || 'Errore elenco gettoni'));
+      console.error('[mcp-dev] list tokens error', err);
+      setError(italianCallableError(err));
     }
   }, []);
 
   useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.log('[mcp-dev] open panel', {
+        uid: auth.currentUser?.uid || null,
+        region: 'europe-west1',
+      });
+    }
     refresh();
   }, [refresh]);
 
@@ -31,7 +71,11 @@ export default function McpDevTokenPanel({ onClose }) {
     setBusy(true);
     setError(null);
     setOnceToken(null);
+    if (import.meta.env.DEV) console.log('[mcp-dev] create token start');
     try {
+      if (!auth.currentUser) {
+        throw Object.assign(new Error('unauthenticated'), { code: 'unauthenticated' });
+      }
       const create = httpsCallable(functions, 'createMcpToken');
       const res = await create({});
       const token = res?.data?.token;
@@ -39,9 +83,11 @@ export default function McpDevTokenPanel({ onClose }) {
       if (!token || !tokenId) throw new Error('Risposta senza gettone');
       setOnceToken(String(token));
       setOnceId(String(tokenId));
+      if (import.meta.env.DEV) console.log('[mcp-dev] create token ok', { tokenId });
       await refresh();
     } catch (err) {
-      setError(String(err?.message || err || 'Creazione fallita'));
+      console.error('[mcp-dev] create token error', err);
+      setError(italianCallableError(err));
     } finally {
       setBusy(false);
     }
@@ -58,9 +104,11 @@ export default function McpDevTokenPanel({ onClose }) {
         setOnceToken(null);
         setOnceId(null);
       }
+      if (import.meta.env.DEV) console.log('[mcp-dev] revoke token ok', { tokenId });
       await refresh();
     } catch (err) {
-      setError(String(err?.message || err || 'Revoca fallita'));
+      console.error('[mcp-dev] revoke token error', err);
+      setError(italianCallableError(err));
     } finally {
       setBusy(false);
     }
@@ -73,7 +121,13 @@ export default function McpDevTokenPanel({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100050] flex items-end justify-center bg-black/60 p-4 sm:items-center">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-4 text-slate-100 shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="MCP gettoni DEV"
+        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-4 text-slate-100 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold tracking-wide text-cyan-200">MCP · gettoni DEV</h2>
           <button
@@ -85,8 +139,19 @@ export default function McpDevTokenPanel({ onClose }) {
           </button>
         </div>
         <p className="mb-3 text-xs leading-relaxed text-slate-400">
-          Il gettone viene generato sul server e mostrato una sola volta.
-          Usalo come header Authorization Bearer sul connettore Claude. Non salvarlo in file del repo.
+          Il gettone plaintext viene mostrato una sola volta (non usare il tokenId
+          {' '}
+          <span className="font-mono text-slate-500">t_…</span>
+          {' '}
+          della lista). Su Claude: autenticazione «Nessun accesso», intestazione
+          {' '}
+          <span className="font-mono text-slate-300">authorization</span>
+          {' '}
+          = Bearer &lt;gettone&gt;, oppure
+          {' '}
+          <span className="font-mono text-slate-300">x-api-key</span>
+          {' '}
+          = solo il gettone. Non salvarlo in file del repo.
         </p>
 
         <button
@@ -124,7 +189,7 @@ export default function McpDevTokenPanel({ onClose }) {
         ) : null}
 
         {error ? (
-          <p className="mb-2 text-xs text-red-300">{error}</p>
+          <p className="mb-2 text-xs text-red-300" role="alert">{error}</p>
         ) : null}
 
         <ul className="space-y-2">

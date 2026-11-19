@@ -53,10 +53,15 @@ export const firestore = getFirestore(app);
 /** Cloud Functions (BFF AI) — stessa region del backend legacy. */
 export const functions = getFunctions(app, 'europe-west1');
 
+// Con emulatori Auth/RTDB collega anche Functions (MCP tokens + callables).
+// VITE_EMULATOR_REAL_AI=1 resta supportato come alias esplicito.
 if (
   useFirebaseEmulator
-  && import.meta.env.VITE_EMULATOR_REAL_AI === '1'
   && !globalThis.__KENTU_FUNCTIONS_EMULATOR__
+  && (
+    import.meta.env.VITE_EMULATOR_REAL_AI === '1'
+    || import.meta.env.VITE_USE_FIREBASE_EMULATOR === '1'
+  )
 ) {
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   globalThis.__KENTU_FUNCTIONS_EMULATOR__ = true;

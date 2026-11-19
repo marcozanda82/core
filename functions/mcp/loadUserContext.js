@@ -1,24 +1,21 @@
-import path from 'node:path';
-import { existsSync } from 'node:fs';
 import { todayInRome } from './dates.js';
 
-function resolveRepoRoot() {
-  const candidates = [
-    process.cwd(),
-    path.resolve(process.cwd(), '..'),
-    path.resolve(__dirname, '..'),
-    path.resolve(__dirname, '../..'),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(path.join(candidate, 'public', 'kentu_smart_master_db.json'))) {
-      return candidate;
-    }
-  }
-  return path.resolve(process.cwd(), '..');
+function emptyCatalogs(personalDb = {}) {
+  return {
+    personalDb,
+    kentuItDb: {},
+    globalDb: {},
+    offDb: {},
+    offReady: false,
+    offExcluded: true,
+    warnings: [],
+  };
 }
 
 /**
  * Carica il contesto Focus per un uid (sola lettura Admin).
+ * I cataloghi CREA/USDA sono lazy e non bloccano il contesto se mancano:
+ * pasti/notte restano leggibili dal diario.
  * @param {import('firebase-admin/database').Database} db
  * @param {string} uid
  */
@@ -37,7 +34,7 @@ export async function loadUserFocusContext(db, uid) {
     db.ref(`users/${id}/profile_targets`).get(),
     db.ref(`users/${id}/day_status`).get(),
     db.ref(`users/${id}/movement_checkin`).get(),
-    db.ref(`users/${id}/cylinders/forza/enabled`).get(),
+    db.ref(`users/${id}/cylinders/forza`).get(),
   ]);
 
   const tracker = trackerSnap.val() && typeof trackerSnap.val() === 'object'
@@ -56,11 +53,25 @@ export async function loadUserFocusContext(db, uid) {
     ? profile_targets.targets
     : (profile_targets.profile || {});
 
-  const { loadFocusCatalogsFromPublic } = await import(
-    '../../src/features/kentuFocus/product/loadFocusCatalogsNode.js'
-  );
-  const catalogs = await loadFocusCatalogsFromPublic(resolveRepoRoot());
-  catalogs.personalDb = personalDb;
+  const warnings = [];
+  let catalogs = emptyCatalogs(personalDb);
+  try {
+    const { loadServerCatalogs } = await import('./loadServerCatalogs.js');
+    const loaded = await loadServerCatalogs();
+    catalogs = {
+      ...loaded,
+      personalDb,
+    };
+    for (const w of loaded.warnings || []) warnings.push(w);
+  } catch (error) {
+    const msg = String(error?.message || error).slice(0, 160);
+    warnings.push(
+      `Cataloghi CREA/USDA non caricati (${msg}). `
+      + 'Dettaglio pasti/notte dal diario; classificazione cibo limitata al DB personale.',
+    );
+    console.warn('[kentuMcp] catalogs degrade', msg);
+    catalogs = emptyCatalogs(personalDb);
+  }
 
   return {
     today: todayInRome(),
@@ -74,7 +85,14 @@ export async function loadUserFocusContext(db, uid) {
       ? checkinSnap.val()
       : {},
     catalogs,
-    forzaEnabled: forzaSnap.val() !== false,
+    catalogWarnings: warnings,
+    // Abilitata solo se esplicitamente true (nodo boolean o { enabled: true }).
+    forzaEnabled: (() => {
+      const raw = forzaSnap.val();
+      if (raw === true) return true;
+      if (raw && typeof raw === 'object' && raw.enabled === true) return true;
+      return false;
+    })(),
     personalDb,
   };
 }

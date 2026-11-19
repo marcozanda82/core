@@ -1,6 +1,6 @@
 {
-  "builtAt": "2026-11-18T11:56:39.966Z",
-  "sourceHash": "a7367cd0479f9ae21916e8876cbb53a03f6c341a18b5b16423c3ac6d6eccd365",
+  "builtAt": "2026-11-19T08:23:19.985Z",
+  "sourceHash": "a7c46af496c1ea25cdd4d3a99dd80af95cc835037f769e0a55ba49454693f8a4",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
@@ -9,7 +9,9 @@
     "functions/mcp/hashToken.js",
     "functions/mcp/httpHandler.js",
     "functions/mcp/instructions.js",
+    "functions/mcp/loadServerCatalogs.js",
     "functions/mcp/loadUserContext.js",
+    "functions/mcp/nutrientRead.js",
     "functions/mcp/redact.js",
     "functions/mcp/shims/browserDeny.js",
     "functions/mcp/shims/draftParser.js",
@@ -28,5 +30,19 @@
   "outputs": [
     "lib/mcpHttp.cjs",
     "lib/mcpTokens.cjs"
-  ]
+  ],
+  "catalogs": {
+    "excludeOff": true,
+    "totalBytes": 12683700,
+    "files": {
+      "kentu_smart_master_db.json": {
+        "sha256": "9c533774e10edd34403205311ade41558b7185f04038f0a3abe412a3e2c17ae8",
+        "bytes": 1168022
+      },
+      "kentu_smart_master_usda_FINAL.json": {
+        "sha256": "e2faa0eb43d8c977a8605c8463de5143d6e879529628f424143445da570743fa",
+        "bytes": 11515678
+      }
+    }
+  }
 }

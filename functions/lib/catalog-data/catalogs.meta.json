@@ -1,0 +1,15 @@
+{
+  "builtAt": "2026-11-19T08:23:19.709Z",
+  "excludeOff": true,
+  "files": {
+    "kentu_smart_master_db.json": {
+      "sha256": "9c533774e10edd34403205311ade41558b7185f04038f0a3abe412a3e2c17ae8",
+      "bytes": 1168022
+    },
+    "kentu_smart_master_usda_FINAL.json": {
+      "sha256": "e2faa0eb43d8c977a8605c8463de5143d6e879529628f424143445da570743fa",
+      "bytes": 11515678
+    }
+  },
+  "totalBytes": 12683700
+}

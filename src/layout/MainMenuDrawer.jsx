@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Leaf } from 'lucide-react';
 import AddEventMenuGrid from '../components/AddEventMenuGrid';
@@ -9,7 +9,30 @@ import {
   PRIVACY_POLICY_URL,
 } from '../constants/legalContent.js';
 import { featureFlags } from '../config/featureFlags.js';
-import McpDevTokenPanel from '../features/mcpDev/McpDevTokenPanel.jsx';
+
+const McpDevTokenPanel = lazy(() => import('../features/mcpDev/McpDevTokenPanel.jsx')
+  .catch((err) => {
+    console.error('[mcp-dev] lazy import failed', err);
+    return {
+      default: function McpDevTokenPanelLoadError({ onClose }) {
+        return (
+          <div className="fixed inset-0 z-[100050] flex items-center justify-center bg-black/70 p-4">
+            <div className="max-w-md rounded-2xl border border-red-500/40 bg-slate-950 p-4 text-sm text-red-200">
+              <p className="mb-2 font-semibold">Impossibile caricare il pannello MCP.</p>
+              <p className="mb-3 text-xs text-red-300/90">{String(err?.message || err)}</p>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-600 px-3 py-1.5 text-xs text-slate-200"
+                onClick={onClose}
+              >
+                Chiudi
+              </button>
+            </div>
+          </div>
+        );
+      },
+    };
+  }));
 
 const MENU_BTN_CLASS = [
   'flex items-center justify-center rounded-2xl border',
@@ -178,7 +201,14 @@ export default function MainMenuDrawer({
                         labelClassName="text-[#c4b5fd]"
                         iconFilter="drop-shadow(0 0 8px rgba(167, 139, 250, 0.45))"
                         onClick={() => {
+                          if (import.meta.env.DEV) {
+                            console.log('[mcp-dev] open panel');
+                          }
+                          // Chiudi il menu prima: il pannello è un portal su body,
+                          // altrimenti resta dietro overlay z-[100041] del Menu generale.
                           setShowMcpPanel(true);
+                          setActiveAction(null);
+                          closeDrawer();
                         }}
                       />
                     ) : null}
@@ -325,9 +355,20 @@ export default function MainMenuDrawer({
         )
         : null}
 
-      {showMcpPanel ? (
-        <McpDevTokenPanel onClose={() => setShowMcpPanel(false)} />
-      ) : null}
+      {showMcpPanel && typeof document !== 'undefined'
+        ? createPortal(
+          <Suspense
+            fallback={(
+              <div className="fixed inset-0 z-[100050] flex items-center justify-center bg-black/60 text-sm text-slate-200">
+                Caricamento pannello MCP…
+              </div>
+            )}
+          >
+            <McpDevTokenPanel onClose={() => setShowMcpPanel(false)} />
+          </Suspense>,
+          document.body,
+        )
+        : null}
     </>
   );
 }

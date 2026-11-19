@@ -35,29 +35,30 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/features/kentuFocus/product/loadFocusCatalogsNode.js
-var loadFocusCatalogsNode_exports = {};
-__export(loadFocusCatalogsNode_exports, {
-  loadFocusCatalogsFromPublic: () => loadFocusCatalogsFromPublic
-});
-async function loadFocusCatalogsFromPublic(root = process.cwd()) {
-  if (cached) return cached;
+async function loadFocusCatalogsFromPublic(root = process.cwd(), options = {}) {
+  const includeOff = options.includeOff !== false;
+  const dataDir = options.dataDir ? String(options.dataDir) : null;
+  const cacheKey = `${dataDir || root}|off:${includeOff ? 1 : 0}`;
+  if (cached && cached.key === cacheKey) return cached.value;
+  const resolveFile = (name) => dataDir ? import_node_path.default.join(dataDir, name) : import_node_path.default.join(root, "public", name);
   const [kentuIt, globalDb, offDb] = await Promise.all([
-    readIndex(root, PUBLIC_FILES.kentuIt, "kentu_it"),
-    readIndex(root, PUBLIC_FILES.global, "global"),
-    readIndex(root, PUBLIC_FILES.off, "off")
+    readIndex(resolveFile(FILE_NAMES.kentuIt), "kentu_it"),
+    readIndex(resolveFile(FILE_NAMES.global), "global"),
+    includeOff ? readIndex(resolveFile(FILE_NAMES.off), "off") : Promise.resolve({})
   ]);
   for (const key of Object.keys(kentuIt)) delete globalDb[key];
-  cached = {
+  const value = {
     personalDb: {},
     kentuItDb: kentuIt,
     globalDb,
     offDb,
-    offReady: Object.keys(offDb).length > 0
+    offReady: includeOff && Object.keys(offDb).length > 0
   };
-  return cached;
+  cached = { key: cacheKey, value };
+  return value;
 }
-async function readIndex(root, relativePath, source) {
-  const json = JSON.parse(await (0, import_promises.readFile)(import_node_path.default.join(root, relativePath), "utf8"));
+async function readIndex(absolutePath, source) {
+  const json = JSON.parse(await (0, import_promises.readFile)(absolutePath, "utf8"));
   return indexRecords(extractRecords(json), source);
 }
 function extractRecords(json) {
@@ -96,17 +97,86 @@ function hasUsableKcal(record) {
   const parsed = typeof raw === "number" ? raw : Number(String(raw).trim().replace(",", "."));
   return Number.isFinite(parsed) && parsed > 0;
 }
-var import_promises, import_node_path, PUBLIC_FILES, cached;
+var import_promises, import_node_path, FILE_NAMES, cached;
 var init_loadFocusCatalogsNode = __esm({
   "src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
     import_promises = require("node:fs/promises");
     import_node_path = __toESM(require("node:path"), 1);
-    PUBLIC_FILES = Object.freeze({
-      kentuIt: "public/kentu_smart_master_db.json",
-      global: "public/kentu_smart_master_usda_FINAL.json",
-      off: "public/kentu_off_master_db.json"
+    FILE_NAMES = Object.freeze({
+      kentuIt: "kentu_smart_master_db.json",
+      global: "kentu_smart_master_usda_FINAL.json",
+      off: "kentu_off_master_db.json"
     });
     cached = null;
+  }
+});
+
+// functions/mcp/loadServerCatalogs.js
+var loadServerCatalogs_exports = {};
+__export(loadServerCatalogs_exports, {
+  clearServerCatalogsCache: () => clearServerCatalogsCache,
+  loadServerCatalogs: () => loadServerCatalogs,
+  resolveMcpDataDir: () => resolveMcpDataDir,
+  setMcpDataDirForTests: () => setMcpDataDirForTests
+});
+function setMcpDataDirForTests(absoluteDir) {
+  dataDirOverride = absoluteDir ? String(absoluteDir) : null;
+}
+function resolveMcpDataDir() {
+  if (dataDirOverride) return dataDirOverride;
+  if (typeof __dirname === "string") {
+    const besideBundle = import_node_path2.default.join(__dirname, "catalog-data");
+    if ((0, import_node_fs.existsSync)(import_node_path2.default.join(besideBundle, "kentu_smart_master_db.json"))) {
+      return besideBundle;
+    }
+    const legacy = import_node_path2.default.join(__dirname, "../data");
+    if ((0, import_node_fs.existsSync)(import_node_path2.default.join(legacy, "kentu_smart_master_db.json"))) return legacy;
+    return besideBundle;
+  }
+  throw new Error(
+    "MCP data dir non risolvibile: manca __dirname (bundle CJS) e nessun setMcpDataDirForTests"
+  );
+}
+function clearServerCatalogsCache() {
+  loading = null;
+  cached2 = null;
+}
+async function loadServerCatalogs() {
+  if (cached2) return cached2;
+  if (loading) return loading;
+  loading = (async () => {
+    const dataDir = resolveMcpDataDir();
+    const catalogs = await loadFocusCatalogsFromPublic(process.cwd(), {
+      dataDir,
+      includeOff: false
+    });
+    const result = {
+      ...catalogs,
+      offDb: {},
+      offReady: false,
+      offExcluded: true,
+      warnings: [OFF_WARNING]
+    };
+    cached2 = result;
+    return result;
+  })();
+  try {
+    return await loading;
+  } catch (error) {
+    loading = null;
+    throw error;
+  }
+}
+var import_node_path2, import_node_fs, dataDirOverride, OFF_WARNING, loading, cached2;
+var init_loadServerCatalogs = __esm({
+  "functions/mcp/loadServerCatalogs.js"() {
+    import_node_path2 = __toESM(require("node:path"));
+    import_node_fs = require("node:fs");
+    init_loadFocusCatalogsNode();
+    dataDirOverride = null;
+    OFF_WARNING = "Catalogo OFF non incluso sul server MCP: lookup solo su CREA, USDA e DB personale. Se un alimento del diario esisteva solo in OFF, il match catalogo pu\xF2 mancare.";
+    loading = null;
+    cached2 = null;
   }
 });
 
@@ -251,12 +321,890 @@ var init_dayScoreRecord = __esm({
   }
 });
 
-// functions/mcp/shims/getTrackerDayNode.js
+// src/activityCatalog.js
+function normalizeMuscleGroupLabel(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  return MUSCLE_ALIAS_TO_ID.get(s.toLowerCase()) ?? s;
+}
+function normalizeMuscleGroupArray(muscles) {
+  const list = Array.isArray(muscles) ? muscles : muscles != null && String(muscles).trim() !== "" ? [muscles] : [];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const m of list) {
+    const c = normalizeMuscleGroupLabel(m);
+    if (c && !seen.has(c)) {
+      seen.add(c);
+      out.push(c);
+    }
+  }
+  return out;
+}
+var WORKOUT_MUSCLE_GROUP_DEFS, WORKOUT_MUSCLE_MACRO_SECTIONS, WORKOUT_MUSCLE_GROUP_IDS, MUSCLE_ALIAS_TO_ID, WORKOUT_ACTIVITY_TYPE_DEFS, ACTIVITY_BY_ID, WORKOUT_ACTIVITY_SELECTOR_IDS;
+var init_activityCatalog = __esm({
+  "src/activityCatalog.js"() {
+    WORKOUT_MUSCLE_GROUP_DEFS = [
+      { id: "Petto", label: "Petto", macroGroup: "chest" },
+      { id: "Dorso", label: "Dorso", aliases: ["Schiena", "schiena"], macroGroup: "back_shoulders" },
+      { id: "Gambe", label: "Gambe", macroGroup: "legs" },
+      { id: "Spalle", label: "Spalle", macroGroup: "back_shoulders" },
+      { id: "abs", label: "ABS", macroGroup: "core" },
+      { id: "bicipiti", label: "Bicipiti", macroGroup: "arms" },
+      { id: "tricipiti", label: "Tricipiti", macroGroup: "arms" },
+      { id: "avambracci", label: "Avambracci", macroGroup: "arms" },
+      { id: "Core", label: "Core", aliases: ["Addominali", "addominali"], macroGroup: "core" },
+      { id: "Total Body", label: "Total Body", aliases: ["Full Body", "full body", "totalbody"], macroGroup: "total" }
+    ];
+    WORKOUT_MUSCLE_MACRO_SECTIONS = Object.freeze([
+      { id: "legs", label: "Gambe" },
+      { id: "chest", label: "Petto" },
+      { id: "back_shoulders", label: "Schiena e Spalle" },
+      { id: "arms", label: "Braccia" },
+      { id: "core", label: "Abs e Core" },
+      { id: "total", label: "Full body" }
+    ]);
+    WORKOUT_MUSCLE_GROUP_IDS = WORKOUT_MUSCLE_GROUP_DEFS.map((d) => d.id);
+    MUSCLE_ALIAS_TO_ID = /* @__PURE__ */ new Map();
+    for (const d of WORKOUT_MUSCLE_GROUP_DEFS) {
+      MUSCLE_ALIAS_TO_ID.set(String(d.id).toLowerCase(), d.id);
+      for (const a of d.aliases || []) {
+        MUSCLE_ALIAS_TO_ID.set(String(a).toLowerCase(), d.id);
+      }
+    }
+    WORKOUT_ACTIVITY_TYPE_DEFS = [
+      {
+        id: "pesi",
+        label: "Sollevamento pesi",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1F3CB}\uFE0F",
+        selectorButtonLabel: "\u{1F3CB}\uFE0F PESI",
+        showInActivitySelector: true
+      },
+      {
+        id: "cardio",
+        label: "Cardio",
+        category: "cardio",
+        nodeKind: "workout",
+        icon: "\u{1F493}",
+        selectorButtonLabel: "\u{1F493} CARDIO",
+        showInActivitySelector: true
+      },
+      {
+        id: "hiit",
+        label: "HIIT / Circuito",
+        category: "hiit",
+        nodeKind: "workout",
+        icon: "\u{1F525}",
+        selectorButtonLabel: "\u{1F525} HIIT",
+        showInActivitySelector: true
+      },
+      {
+        id: "camminata",
+        label: "Camminata",
+        category: "cardio",
+        nodeKind: "workout",
+        icon: "\u{1F6B6}",
+        selectorButtonLabel: "\u{1F6B6} CAMMINATA",
+        showInActivitySelector: true
+      },
+      {
+        id: "corsa",
+        label: "Corsa",
+        category: "cardio",
+        nodeKind: "workout",
+        icon: "\u{1F3C3}",
+        selectorButtonLabel: "\u{1F3C3} CORSA",
+        showInActivitySelector: true
+      },
+      {
+        id: "corpo_libero",
+        label: "Corpo libero",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1F938}",
+        selectorButtonLabel: "\u{1F938} CORPO LIBERO",
+        showInActivitySelector: true
+      },
+      {
+        id: "elastici",
+        label: "Elastici",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1FAA2}",
+        selectorButtonLabel: "\u{1FAA2} ELASTICI",
+        showInActivitySelector: true
+      },
+      {
+        id: "lavori_pesanti",
+        label: "Lavori pesanti",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1F9F0}",
+        selectorButtonLabel: "\u{1F9F0} LAVORI PESANTI",
+        showInActivitySelector: true
+      },
+      {
+        id: "scale",
+        label: "Scale",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1FA9C}",
+        selectorButtonLabel: "\u{1FA9C} SCALE",
+        showInActivitySelector: true
+      },
+      {
+        id: "alzate_sedia",
+        label: "Alzate dalla sedia",
+        category: "strength",
+        nodeKind: "workout",
+        icon: "\u{1FA91}",
+        selectorButtonLabel: "\u{1FA91} ALZATE",
+        showInActivitySelector: true
+      },
+      {
+        id: "lavoro",
+        label: "Attivit\xE0 lavorativa",
+        category: "work",
+        nodeKind: "work",
+        icon: "\u{1F4BC}",
+        selectorButtonLabel: "\u{1F4BC} LAVORO",
+        showInActivitySelector: false
+      },
+      {
+        id: "studio",
+        label: "Studio",
+        category: "cognitive",
+        nodeKind: "cognitive",
+        icon: "\u{1F4DA}",
+        selectorButtonLabel: "\u{1F4DA} STUDIO",
+        showInActivitySelector: false,
+        cognitiveMet: 1.3
+      },
+      {
+        id: "lavoro_pc",
+        label: "Lavoro PC",
+        category: "cognitive",
+        nodeKind: "cognitive",
+        icon: "\u{1F4BB}",
+        selectorButtonLabel: "\u{1F4BB} LAVORO PC",
+        showInActivitySelector: false,
+        cognitiveMet: 1.5
+      },
+      {
+        id: "misto",
+        label: "Misto",
+        category: "mixed",
+        nodeKind: "workout",
+        icon: "\u{1F3CB}\uFE0F",
+        selectorButtonLabel: "\u{1F3CB}\uFE0F MISTO",
+        showInActivitySelector: false
+      }
+    ];
+    ACTIVITY_BY_ID = new Map(WORKOUT_ACTIVITY_TYPE_DEFS.map((d) => [d.id, d]));
+    WORKOUT_ACTIVITY_SELECTOR_IDS = Object.freeze([
+      "pesi",
+      "corpo_libero",
+      "elastici",
+      "lavori_pesanti",
+      "scale",
+      "alzate_sedia",
+      "cardio",
+      "hiit",
+      "camminata",
+      "corsa"
+    ]);
+  }
+});
+
+// src/features/kentuFocus/normalize/focusDateUtils.js
 function isIsoDateString(value) {
+  if (typeof value !== "string" || !ISO_DATE_RE2.test(value)) return false;
+  const d = /* @__PURE__ */ new Date(`${value}T12:00:00`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+function addCalendarDays(dateStr, n) {
+  const d = /* @__PURE__ */ new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + Number(n || 0));
+  return d.toISOString().slice(0, 10);
+}
+function wrap24(h) {
+  let x = Number(h);
+  if (!Number.isFinite(x)) return null;
+  x %= 24;
+  if (x < 0) x += 24;
+  return Math.round(x * 1e3) / 1e3;
+}
+function parseDecimalHour(raw) {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "number" && Number.isFinite(raw)) return wrap24(raw);
+  const s = String(raw).trim();
+  if (!s) return null;
+  if (/^\d{1,2}:\d{2}/.test(s)) {
+    const [hh, mm] = s.split(":");
+    const h = Number(hh);
+    const m = Number(mm);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return wrap24(h + m / 60);
+  }
+  const n = Number(s.replace(",", "."));
+  if (!Number.isFinite(n)) return null;
+  return wrap24(n);
+}
+function computeBedtimeFromWakeAndDuration(wakeDec, durationHours) {
+  const wake = Number(wakeDec);
+  const hours = Number(durationHours);
+  if (!Number.isFinite(wake) || !Number.isFinite(hours) || hours <= 0) return null;
+  return wrap24(wake - hours);
+}
+function formatFocusHoursIt(hours) {
+  const n = Number(hours);
+  if (!Number.isFinite(n) || n < 0) return null;
+  const totalMin = Math.round(n * 60);
+  if (totalMin < 60) return `${totalMin} min`;
+  const h = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (mins <= 0) return `${h} h`;
+  return `${h} h ${String(mins).padStart(2, "0")}`;
+}
+var ISO_DATE_RE2, ISO_WEEKDAY_LABELS_IT, MONTHS_IT;
+var init_focusDateUtils = __esm({
+  "src/features/kentuFocus/normalize/focusDateUtils.js"() {
+    ISO_DATE_RE2 = /^\d{4}-\d{2}-\d{2}$/;
+    ISO_WEEKDAY_LABELS_IT = Object.freeze([
+      null,
+      "luned\xEC",
+      "marted\xEC",
+      "mercoled\xEC",
+      "gioved\xEC",
+      "venerd\xEC",
+      "sabato",
+      "domenica"
+    ]);
+    MONTHS_IT = Object.freeze([
+      "gennaio",
+      "febbraio",
+      "marzo",
+      "aprile",
+      "maggio",
+      "giugno",
+      "luglio",
+      "agosto",
+      "settembre",
+      "ottobre",
+      "novembre",
+      "dicembre"
+    ]);
+  }
+});
+
+// src/features/kentuFocus/normalize/expandTrackerDayLog.js
+function asLogCollectionArray(raw) {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw.filter((e) => e && typeof e === "object");
+  if (typeof raw === "object") {
+    return Object.values(raw).filter((e) => e && typeof e === "object");
+  }
+  return [];
+}
+function inferFolderMealType(entry) {
+  const candidate = entry?.mealType ?? entry?.mealId ?? entry?.id ?? "";
+  const s = String(candidate).trim();
+  return s || "unknown";
+}
+function expandTrackerLogEntries(rawLog) {
+  const out = [];
+  const list = asLogCollectionArray(rawLog);
+  list.forEach((entry, index) => {
+    if (!entry || typeof entry !== "object") return;
+    if (entry.type === "meal") {
+      const folderMealType = inferFolderMealType(entry);
+      const items = asLogCollectionArray(entry.items);
+      items.forEach((subItem, subIndex) => {
+        if (!subItem || typeof subItem !== "object") return;
+        const itemType = subItem.type === "recipe" ? "recipe" : "food";
+        const itemMt = subItem.mealType != null && String(subItem.mealType).trim() !== "" ? String(subItem.mealType).trim() : folderMealType;
+        out.push({
+          ...subItem,
+          type: itemType,
+          mealType: itemMt,
+          id: subItem.id != null && String(subItem.id) !== "" ? subItem.id : `food_${index}_${subIndex}_${itemMt}`,
+          kcal: subItem.kcal ?? subItem.cal ?? 0
+        });
+      });
+      return;
+    }
+    if (entry.type === "single" || entry.type == null || entry.type === "") {
+      const mealType = inferFolderMealType(entry);
+      out.push({
+        ...entry,
+        type: "food",
+        mealType,
+        id: entry.id != null && String(entry.id) !== "" ? entry.id : `food_${index}_${mealType}`,
+        kcal: entry.kcal ?? entry.cal ?? 0
+      });
+      return;
+    }
+    out.push({
+      ...entry,
+      kcal: entry.kcal ?? entry.cal ?? 0
+    });
+  });
+  return out;
+}
+function pickDayLogRaw(node) {
+  if (!node || typeof node !== "object") return null;
+  if (node.log != null) return node.log;
+  if (node.dati && typeof node.dati === "object" && node.dati.log != null) {
+    return node.dati.log;
+  }
+  return null;
+}
+var init_expandTrackerDayLog = __esm({
+  "src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
+  }
+});
+
+// src/features/kentuFocus/costanza/muscleIds.mm-1.js
+var MUSCLE_MAP_VERSION, MUSCLE_IDS, MUSCLE_LABELS, COSTANZA_UI_GROUPS, FORCE_CI_GROUP_IDS, DEFAULT_WEEKLY_GOAL_DAYS, WEEKLY_GOAL_CHOICES;
+var init_muscleIds_mm_1 = __esm({
+  "src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
+    MUSCLE_MAP_VERSION = "mm-1";
+    MUSCLE_IDS = Object.freeze([
+      "pettorali",
+      "dorsali",
+      "trapezi_romboidi",
+      "deltoidi_anteriori",
+      "deltoidi_laterali",
+      "deltoidi_posteriori",
+      "bicipiti",
+      "tricipiti",
+      "avambracci",
+      "addominali",
+      "obliqui",
+      "lombari",
+      "glutei",
+      "quadricipiti",
+      "femorali",
+      "adduttori",
+      "polpacci"
+    ]);
+    MUSCLE_LABELS = Object.freeze({
+      pettorali: "Pettorali",
+      dorsali: "Dorsali",
+      trapezi_romboidi: "Trapezi / romboidi",
+      deltoidi_anteriori: "Deltoidi anteriori",
+      deltoidi_laterali: "Deltoidi laterali",
+      deltoidi_posteriori: "Deltoidi posteriori",
+      bicipiti: "Bicipiti",
+      tricipiti: "Tricipiti",
+      avambracci: "Avambracci",
+      addominali: "Addominali",
+      obliqui: "Obliqui",
+      lombari: "Lombari",
+      glutei: "Glutei",
+      quadricipiti: "Quadricipiti",
+      femorali: "Femorali",
+      adduttori: "Adduttori",
+      polpacci: "Polpacci"
+    });
+    COSTANZA_UI_GROUPS = Object.freeze([
+      {
+        id: "petto",
+        label: "Petto",
+        forceCi: true,
+        muscleIds: Object.freeze(["pettorali"])
+      },
+      {
+        id: "schiena",
+        label: "Schiena",
+        forceCi: true,
+        muscleIds: Object.freeze(["dorsali", "trapezi_romboidi", "lombari"])
+      },
+      {
+        id: "spalle",
+        label: "Spalle",
+        forceCi: true,
+        muscleIds: Object.freeze(["deltoidi_anteriori", "deltoidi_laterali", "deltoidi_posteriori"])
+      },
+      {
+        id: "braccia",
+        label: "Braccia",
+        forceCi: false,
+        muscleIds: Object.freeze(["bicipiti", "tricipiti", "avambracci"])
+      },
+      {
+        id: "gambe",
+        label: "Gambe",
+        forceCi: true,
+        muscleIds: Object.freeze(["quadricipiti", "glutei", "femorali", "adduttori", "polpacci"])
+      },
+      {
+        id: "core",
+        label: "Core",
+        forceCi: true,
+        muscleIds: Object.freeze(["addominali", "obliqui", "lombari"])
+      }
+    ]);
+    FORCE_CI_GROUP_IDS = Object.freeze(
+      COSTANZA_UI_GROUPS.filter((g) => g.forceCi).map((g) => g.id)
+    );
+    DEFAULT_WEEKLY_GOAL_DAYS = 2;
+    WEEKLY_GOAL_CHOICES = Object.freeze([2, 3, 4]);
+  }
+});
+
+// src/features/kentuFocus/costanza/muscleMap.mm-1.js
+function mapChipToMuscles(chipId) {
+  const id = String(chipId || "").trim();
+  if (!id) return Object.freeze([]);
+  const hit = CHIP_MAP[id];
+  if (hit) return hit;
+  if (/^schiena$/i.test(id)) return CHIP_MAP.Dorso;
+  return Object.freeze([]);
+}
+function mergeMuscleWeights(contributions) {
+  const out = {};
+  for (const row of contributions || []) {
+    const id = String(row?.muscleId || "").trim();
+    const w = Number(row?.weight);
+    if (!id || !Number.isFinite(w) || w <= 0) continue;
+    const prev = out[id] || 0;
+    out[id] = Math.max(prev, w >= 1 ? 1 : w);
+  }
+  for (const id of Object.keys(out)) {
+    if (out[id] > 1) out[id] = 1;
+  }
+  return out;
+}
+function resolveSessionChips(entry) {
+  if (!entry || typeof entry !== "object") return [];
+  if (classifyWorkoutByType(entry).kind !== "strength") return [];
+  const raw = entry.muscles ?? entry.muscleGroups ?? entry.groups ?? [];
+  const chips = normalizeMuscleGroupArray(Array.isArray(raw) ? raw : [raw]);
+  if (chips.length > 0) return chips;
+  const typeId = workoutTypeId(entry);
+  const fallback = TYPE_FALLBACK_CHIPS[typeId];
+  return fallback ? [...fallback] : [];
+}
+function sessionMuscleWeights(entry) {
+  const chips = resolveSessionChips(entry);
+  if (chips.length === 0) return {};
+  const rows = [];
+  for (const chip of chips) {
+    for (const row of mapChipToMuscles(chip)) rows.push(row);
+  }
+  return mergeMuscleWeights(rows);
+}
+function sessionTrainedMuscleIds(entry) {
+  const weights = sessionMuscleWeights(entry);
+  return Object.keys(weights).filter((id) => weights[id] >= 1).sort();
+}
+var CHIP_MAP, TYPE_FALLBACK_CHIPS;
+var init_muscleMap_mm_1 = __esm({
+  "src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
+    init_activityCatalog();
+    init_workoutMovement();
+    init_muscleIds_mm_1();
+    CHIP_MAP = Object.freeze({
+      Petto: Object.freeze([
+        { muscleId: "pettorali", weight: 1 },
+        { muscleId: "tricipiti", weight: 0.5 },
+        { muscleId: "deltoidi_anteriori", weight: 0.5 }
+      ]),
+      Dorso: Object.freeze([
+        { muscleId: "dorsali", weight: 1 },
+        { muscleId: "trapezi_romboidi", weight: 1 },
+        { muscleId: "bicipiti", weight: 0.5 },
+        { muscleId: "deltoidi_posteriori", weight: 0.5 },
+        { muscleId: "avambracci", weight: 0.5 },
+        { muscleId: "lombari", weight: 0.5 }
+      ]),
+      Spalle: Object.freeze([
+        { muscleId: "deltoidi_anteriori", weight: 1 },
+        { muscleId: "deltoidi_laterali", weight: 1 },
+        { muscleId: "deltoidi_posteriori", weight: 1 },
+        { muscleId: "tricipiti", weight: 0.5 },
+        { muscleId: "trapezi_romboidi", weight: 0.5 }
+      ]),
+      Gambe: Object.freeze([
+        { muscleId: "quadricipiti", weight: 1 },
+        { muscleId: "glutei", weight: 1 },
+        { muscleId: "femorali", weight: 0.5 },
+        { muscleId: "adduttori", weight: 0.5 },
+        { muscleId: "polpacci", weight: 0.5 },
+        { muscleId: "lombari", weight: 0.5 }
+      ]),
+      bicipiti: Object.freeze([
+        { muscleId: "bicipiti", weight: 1 },
+        { muscleId: "avambracci", weight: 0.5 }
+      ]),
+      tricipiti: Object.freeze([
+        { muscleId: "tricipiti", weight: 1 }
+      ]),
+      avambracci: Object.freeze([
+        { muscleId: "avambracci", weight: 1 }
+      ]),
+      abs: Object.freeze([
+        { muscleId: "addominali", weight: 1 },
+        { muscleId: "obliqui", weight: 1 }
+      ]),
+      Core: Object.freeze([
+        { muscleId: "addominali", weight: 1 },
+        { muscleId: "obliqui", weight: 1 },
+        { muscleId: "lombari", weight: 1 },
+        { muscleId: "glutei", weight: 0.5 }
+      ]),
+      "Total Body": Object.freeze(
+        MUSCLE_IDS.map((muscleId) => Object.freeze({ muscleId, weight: 0.5 }))
+      )
+    });
+    TYPE_FALLBACK_CHIPS = Object.freeze({
+      scale: ["Gambe"],
+      alzate_sedia: ["Gambe"]
+    });
+  }
+});
+
+// src/features/kentuFocus/costanza/costanzaForza.js
+function dayRawLog(fullHistory, dateKey) {
+  const node = fullHistory?.[`trackerStorico_${dateKey}`];
+  if (!node || typeof node !== "object") return [];
+  if (node.log != null) return node.log;
+  if (node.dati && typeof node.dati === "object" && node.dati.log != null) return node.dati.log;
+  return [];
+}
+function normalizeWeeklyGoalDays(raw) {
+  const n = Number(raw);
+  if (WEEKLY_GOAL_CHOICES.includes(n)) return n;
+  return DEFAULT_WEEKLY_GOAL_DAYS;
+}
+function weekMondayOf(iso) {
+  if (!isIsoDateString(iso)) return null;
+  const d = /* @__PURE__ */ new Date(`${iso}T12:00:00`);
+  const day = d.getDay();
+  const back = day === 0 ? 6 : day - 1;
+  return addCalendarDays(iso, -back);
+}
+function weekSundayOf(monday) {
+  if (!isIsoDateString(monday)) return null;
+  return addCalendarDays(monday, 6);
+}
+function datesInclusive(from, to) {
+  if (!isIsoDateString(from) || !isIsoDateString(to) || from > to) return [];
+  const out = [];
+  let cur = from;
+  while (cur <= to) {
+    out.push(cur);
+    cur = addCalendarDays(cur, 1);
+  }
+  return out;
+}
+function strengthSessionsByDay(fullHistory, asOfDate, lookbackDays = 90) {
+  const map = /* @__PURE__ */ new Map();
+  if (!isIsoDateString(asOfDate)) return map;
+  const span = Math.max(1, Math.floor(Number(lookbackDays) || 90));
+  const minDate = addCalendarDays(asOfDate, -(span - 1));
+  const byId = /* @__PURE__ */ new Map();
+  let anonymous = 0;
+  for (let back = 0; back < span; back += 1) {
+    const dateKey = addCalendarDays(asOfDate, -back);
+    if (dateKey < minDate) break;
+    for (const entry of expandTrackerLogEntries(dayRawLog(fullHistory, dateKey))) {
+      if (!entry || typeof entry !== "object") continue;
+      if (entry.isGhost === true) continue;
+      const kind = String(entry.type || "").trim().toLowerCase();
+      if (kind && kind !== "workout") continue;
+      const typed = { ...entry, type: "workout", __dateKey: dateKey };
+      if (classifyWorkoutByType(typed).kind !== "strength") continue;
+      if (resolveSessionChips(typed).length === 0) continue;
+      const id = String(entry.id || entry.nodeId || "").trim();
+      const key = id || `${dateKey}:anon:${anonymous}`;
+      anonymous += 1;
+      if (byId.has(key)) continue;
+      byId.set(key, typed);
+    }
+  }
+  for (const entry of byId.values()) {
+    const day = String(entry.__dateKey || "").slice(0, 10);
+    const list = map.get(day) || [];
+    list.push(entry);
+    map.set(day, list);
+  }
+  return map;
+}
+function strengthDaySet(byDay) {
+  return new Set(byDay.keys());
+}
+function forceDaysInCalendarWeek(strengthDays, asOfDate) {
+  const monday = weekMondayOf(asOfDate);
+  const sunday = weekSundayOf(monday);
+  const days = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d) && d <= asOfDate);
+  return { monday, sunday, days, count: days.length };
+}
+function computeWeekStreak(strengthDays, asOfDate, weeklyGoal) {
+  const goal = normalizeWeeklyGoalDays(weeklyGoal);
+  const thisMonday = weekMondayOf(asOfDate);
+  if (!thisMonday) return 0;
+  const thisSunday = weekSundayOf(thisMonday);
+  const weekClosed = asOfDate >= thisSunday;
+  let streak = 0;
+  let monday = weekClosed ? thisMonday : addCalendarDays(thisMonday, -7);
+  for (let i = 0; i < 52; i += 1) {
+    const sunday = weekSundayOf(monday);
+    const count = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d)).length;
+    if (count >= goal) {
+      streak += 1;
+      monday = addCalendarDays(monday, -7);
+      continue;
+    }
+    break;
+  }
+  return streak;
+}
+function sumMuscleWeightsInRange(byDay, from, to) {
+  const sums = {};
+  for (const id of MUSCLE_IDS) sums[id] = 0;
+  for (const day of datesInclusive(from, to)) {
+    for (const entry of byDay.get(day) || []) {
+      const w = sessionMuscleWeights(entry);
+      for (const [id, weight] of Object.entries(w)) {
+        sums[id] = (sums[id] || 0) + weight;
+      }
+    }
+  }
+  return sums;
+}
+function lastTrainedDate(byDay, muscleId, asOfDate) {
+  const days = [...byDay.keys()].filter((d) => d <= asOfDate).sort().reverse();
+  for (const day of days) {
+    for (const entry of byDay.get(day) || []) {
+      const w = sessionMuscleWeights(entry)[muscleId] || 0;
+      if (w >= 1) return day;
+    }
+  }
+  return null;
+}
+function coverageStatusFromSum(sum) {
+  const s = Number(sum) || 0;
+  if (s >= 1) return "coperto";
+  if (s > 0) return "toccato";
+  return "vuoto";
+}
+function computeCostanzaForza(input) {
+  const asOfDate = String(input?.asOfDate || "").slice(0, 10);
+  const weeklyGoal = normalizeWeeklyGoalDays(input?.weeklyGoalDays);
+  const byDay = strengthSessionsByDay(input?.fullHistory, asOfDate);
+  const strengthDays = strengthDaySet(byDay);
+  const week = forceDaysInCalendarWeek(strengthDays, asOfDate);
+  const streak = computeWeekStreak(strengthDays, asOfDate, weeklyGoal);
+  const windowFrom = addCalendarDays(asOfDate, -6);
+  const sums7 = sumMuscleWeightsInRange(byDay, windowFrom, asOfDate);
+  const lookback30From = addCalendarDays(asOfDate, -29);
+  const muscles = {};
+  for (const id of MUSCLE_IDS) {
+    const sum7 = sums7[id] || 0;
+    const last = lastTrainedDate(byDay, id, asOfDate);
+    let daysSince = null;
+    if (last) {
+      const a = /* @__PURE__ */ new Date(`${last}T12:00:00`);
+      const b = /* @__PURE__ */ new Date(`${asOfDate}T12:00:00`);
+      daysSince = Math.round((b - a) / 864e5);
+    }
+    const trainedIn30 = last != null && last >= lookback30From;
+    muscles[id] = {
+      status: coverageStatusFromSum(sum7),
+      sum7,
+      lastTrained: last,
+      daysSinceTrained: daysSince,
+      neverIn30: !trainedIn30
+    };
+  }
+  const groups = {};
+  for (const g of COSTANZA_UI_GROUPS) {
+    let best = "vuoto";
+    for (const mid of g.muscleIds) {
+      const st = muscles[mid]?.status || "vuoto";
+      if (st === "coperto") best = "coperto";
+      else if (st === "toccato" && best === "vuoto") best = "toccato";
+    }
+    groups[g.id] = { status: best, muscleIds: [...g.muscleIds] };
+  }
+  const forceCiCovered = FORCE_CI_GROUP_IDS.filter((gid) => groups[gid]?.status === "coperto").length;
+  return {
+    version: MUSCLE_MAP_VERSION,
+    asOfDate,
+    weeklyGoalDays: weeklyGoal,
+    forceDaysThisWeek: week.count,
+    forceDayDatesThisWeek: week.days,
+    weekMonday: week.monday,
+    weekSunday: week.sunday,
+    weekStreak: streak,
+    muscles,
+    groups,
+    forceCiCoveredCount: forceCiCovered,
+    forceCiGroupTotal: FORCE_CI_GROUP_IDS.length,
+    uiGroups: COSTANZA_UI_GROUPS
+  };
+}
+var init_costanzaForza = __esm({
+  "src/features/kentuFocus/costanza/costanzaForza.js"() {
+    init_focusDateUtils();
+    init_expandTrackerDayLog();
+    init_workoutMovement();
+    init_muscleIds_mm_1();
+    init_muscleMap_mm_1();
+  }
+});
+
+// src/features/trendHub/utils/muscleSpillover.js
+var muscleSpilloverMatrix, SPILLOVER_MUSCLE_KEYS;
+var init_muscleSpillover = __esm({
+  "src/features/trendHub/utils/muscleSpillover.js"() {
+    init_costanzaForza();
+    muscleSpilloverMatrix = Object.freeze({
+      petto: Object.freeze({ petto: 50, spalle: 20, braccia: 25 }),
+      schiena: Object.freeze({ schiena: 50, spalle: 15, braccia: 25 }),
+      gambe: Object.freeze({ gambe: 50, core: 30 }),
+      spalle: Object.freeze({ spalle: 50, braccia: 20, core: 10 }),
+      braccia: Object.freeze({ braccia: 50 }),
+      core: Object.freeze({ core: 50 })
+    });
+    SPILLOVER_MUSCLE_KEYS = Object.freeze([
+      "petto",
+      "schiena",
+      "gambe",
+      "spalle",
+      "braccia",
+      "core"
+    ]);
+  }
+});
+
+// src/features/commandTerminal/context/workoutMovement.js
+function durationAmountToMinutes(amount) {
+  const dur = Number(amount);
+  if (!Number.isFinite(dur) || dur <= 0) return 0;
+  return dur > 5 ? dur : dur * 60;
+}
+function resolveWorkoutDurationMinutes(entry) {
+  if (typeof entry === "number") return durationAmountToMinutes(entry);
+  if (!entry || typeof entry !== "object") return 0;
+  const explicit = Number(entry.durationMinutes ?? entry.durationMin);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  return durationAmountToMinutes(entry.duration ?? entry.minutes ?? entry.hours);
+}
+function workoutTypeId(entry) {
+  if (!entry || typeof entry !== "object") return "";
+  const candidates = [entry.workoutType, entry.subType, entry.activityType];
+  if (typeof entry.activity === "string") candidates.push(entry.activity);
+  for (const raw of candidates) {
+    const id = String(raw || "").trim().toLowerCase();
+    if (id && id !== "workout" && id !== "activity") return id;
+  }
+  return "";
+}
+function workoutLabel(entry) {
+  return String(entry?.name || entry?.desc || entry?.label || entry?.title || "").trim();
+}
+function classifyWorkoutByType(entry) {
+  const typeId = workoutTypeId(entry);
+  if (WALK_TYPE_IDS.has(typeId)) return { kind: "walk", typeId, source: "workoutType" };
+  if (VIGOROUS_TYPE_IDS.has(typeId)) return { kind: "vigorous", typeId, source: "workoutType" };
+  if (STRENGTH_TYPE_IDS.has(typeId)) return { kind: "strength", typeId, source: "workoutType" };
+  const label = workoutLabel(entry);
+  if (!label) return { kind: "other", typeId, source: "none" };
+  if (STRENGTH_LABEL.test(label)) return { kind: "strength", typeId, source: "label" };
+  if (WALK_LABEL.test(label)) return { kind: "walk", typeId, source: "label" };
+  if (VIGOROUS_LABEL.test(label)) return { kind: "vigorous", typeId, source: "label" };
+  return { kind: "other", typeId, source: "label" };
+}
+function equivalentAerobicMinutes(entry) {
+  const minutes = resolveWorkoutDurationMinutes(entry);
+  if (!(minutes > 0)) return 0;
+  const kind = classifyWorkoutByType(entry).kind;
+  if (kind === "walk") return minutes;
+  if (kind === "vigorous") return minutes * VIGOROUS_EQUIVALENT_FACTOR;
+  return 0;
+}
+var VIGOROUS_EQUIVALENT_FACTOR, WALK_TYPE_IDS, VIGOROUS_TYPE_IDS, STRENGTH_TYPE_IDS, STRENGTH_TYPE_PRIMARIES, STRENGTH_LABEL, WALK_LABEL, VIGOROUS_LABEL;
+var init_workoutMovement = __esm({
+  "src/features/commandTerminal/context/workoutMovement.js"() {
+    init_activityCatalog();
+    init_muscleSpillover();
+    VIGOROUS_EQUIVALENT_FACTOR = 2;
+    WALK_TYPE_IDS = /* @__PURE__ */ new Set([
+      "camminata",
+      "walking",
+      "passi",
+      "walk",
+      "passeggio",
+      "liss",
+      "zona2",
+      "z2"
+    ]);
+    VIGOROUS_TYPE_IDS = /* @__PURE__ */ new Set([
+      "corsa",
+      "running",
+      "run",
+      "jog",
+      "jogging",
+      "bici",
+      "bike",
+      "cycling",
+      "ciclismo",
+      "cyclette",
+      "spinning",
+      "indoor_bike",
+      "nuoto",
+      "swim",
+      "swimming",
+      "cardio",
+      "hiit",
+      "ellittica",
+      "elliptical",
+      "remo",
+      "rowing",
+      "rower",
+      "tapis",
+      "tapis_roulant",
+      "treadmill"
+    ]);
+    STRENGTH_TYPE_IDS = /* @__PURE__ */ new Set([
+      "pesi",
+      "corpo_libero",
+      "elastici",
+      "lavori_pesanti",
+      "scale",
+      "alzate_sedia",
+      "spinta",
+      "trazione",
+      "gambe",
+      "push",
+      "pull",
+      "legs",
+      "strength",
+      "hypertrophy",
+      "ipertrofia",
+      "forza"
+    ]);
+    STRENGTH_TYPE_PRIMARIES = Object.freeze({
+      scale: ["gambe"],
+      alzate_sedia: ["gambe"]
+    });
+    STRENGTH_LABEL = /(?:^|[^a-z0-9àèéìòù])(pesi|palestra|squat|corpo libero|elastici|lavori pesanti|scale|alzate|bicipit|tricipit|sollevamento|manubri|bilanciere|strength|ipertrof|forza)(?:[^a-z0-9àèéìòù]|$)/i;
+    WALK_LABEL = new RegExp("(?:^|[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9])(camminat\\p{L}*|passeggiat\\p{L}*|walking|walk)(?=[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9]|$)", "iu");
+    VIGOROUS_LABEL = new RegExp("(?:^|[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9])(hiit|corsa|running|jog\\p{L}*|bici|bike|cicl\\p{L}*|nuoto|swim\\p{L}*|ellitt\\p{L}*|cardio|remo|rowing|rower|tapis|treadmill|cyclette|spinning)(?=[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9]|$)", "iu");
+  }
+});
+
+// functions/mcp/shims/getTrackerDayNode.js
+function isIsoDateString2(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
 function getTrackerDayNode(fullHistory, date) {
-  if (!fullHistory || typeof fullHistory !== "object" || !isIsoDateString(date)) {
+  if (!fullHistory || typeof fullHistory !== "object" || !isIsoDateString2(date)) {
     return null;
   }
   const key = `trackerStorico_${date}`;
@@ -422,73 +1370,6 @@ var init_focusDossier_v1 = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/expandTrackerDayLog.js
-function asLogCollectionArray(raw) {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) return raw.filter((e) => e && typeof e === "object");
-  if (typeof raw === "object") {
-    return Object.values(raw).filter((e) => e && typeof e === "object");
-  }
-  return [];
-}
-function inferFolderMealType(entry) {
-  const candidate = entry?.mealType ?? entry?.mealId ?? entry?.id ?? "";
-  const s = String(candidate).trim();
-  return s || "unknown";
-}
-function expandTrackerLogEntries(rawLog) {
-  const out = [];
-  const list = asLogCollectionArray(rawLog);
-  list.forEach((entry, index) => {
-    if (!entry || typeof entry !== "object") return;
-    if (entry.type === "meal") {
-      const folderMealType = inferFolderMealType(entry);
-      const items = asLogCollectionArray(entry.items);
-      items.forEach((subItem, subIndex) => {
-        if (!subItem || typeof subItem !== "object") return;
-        const itemType = subItem.type === "recipe" ? "recipe" : "food";
-        const itemMt = subItem.mealType != null && String(subItem.mealType).trim() !== "" ? String(subItem.mealType).trim() : folderMealType;
-        out.push({
-          ...subItem,
-          type: itemType,
-          mealType: itemMt,
-          id: subItem.id != null && String(subItem.id) !== "" ? subItem.id : `food_${index}_${subIndex}_${itemMt}`,
-          kcal: subItem.kcal ?? subItem.cal ?? 0
-        });
-      });
-      return;
-    }
-    if (entry.type === "single" || entry.type == null || entry.type === "") {
-      const mealType = inferFolderMealType(entry);
-      out.push({
-        ...entry,
-        type: "food",
-        mealType,
-        id: entry.id != null && String(entry.id) !== "" ? entry.id : `food_${index}_${mealType}`,
-        kcal: entry.kcal ?? entry.cal ?? 0
-      });
-      return;
-    }
-    out.push({
-      ...entry,
-      kcal: entry.kcal ?? entry.cal ?? 0
-    });
-  });
-  return out;
-}
-function pickDayLogRaw(node) {
-  if (!node || typeof node !== "object") return null;
-  if (node.log != null) return node.log;
-  if (node.dati && typeof node.dati === "object" && node.dati.log != null) {
-    return node.dati.log;
-  }
-  return null;
-}
-var init_expandTrackerDayLog = __esm({
-  "src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
-  }
-});
-
 // src/features/kentuFocus/normalize/logUtils.js
 function getLogArray(node) {
   return expandTrackerLogEntries(pickDayLogRaw(node));
@@ -530,87 +1411,6 @@ function finiteNumber(n) {
 var init_logUtils = __esm({
   "src/features/kentuFocus/normalize/logUtils.js"() {
     init_expandTrackerDayLog();
-  }
-});
-
-// src/features/kentuFocus/normalize/focusDateUtils.js
-function isIsoDateString2(value) {
-  if (typeof value !== "string" || !ISO_DATE_RE2.test(value)) return false;
-  const d = /* @__PURE__ */ new Date(`${value}T12:00:00`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
-}
-function addCalendarDays(dateStr, n) {
-  const d = /* @__PURE__ */ new Date(`${dateStr}T12:00:00`);
-  d.setDate(d.getDate() + Number(n || 0));
-  return d.toISOString().slice(0, 10);
-}
-function wrap24(h) {
-  let x = Number(h);
-  if (!Number.isFinite(x)) return null;
-  x %= 24;
-  if (x < 0) x += 24;
-  return Math.round(x * 1e3) / 1e3;
-}
-function parseDecimalHour(raw) {
-  if (raw == null || raw === "") return null;
-  if (typeof raw === "number" && Number.isFinite(raw)) return wrap24(raw);
-  const s = String(raw).trim();
-  if (!s) return null;
-  if (/^\d{1,2}:\d{2}/.test(s)) {
-    const [hh, mm] = s.split(":");
-    const h = Number(hh);
-    const m = Number(mm);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
-    return wrap24(h + m / 60);
-  }
-  const n = Number(s.replace(",", "."));
-  if (!Number.isFinite(n)) return null;
-  return wrap24(n);
-}
-function computeBedtimeFromWakeAndDuration(wakeDec, durationHours) {
-  const wake = Number(wakeDec);
-  const hours = Number(durationHours);
-  if (!Number.isFinite(wake) || !Number.isFinite(hours) || hours <= 0) return null;
-  return wrap24(wake - hours);
-}
-function formatFocusHoursIt(hours) {
-  const n = Number(hours);
-  if (!Number.isFinite(n) || n < 0) return null;
-  const totalMin = Math.round(n * 60);
-  if (totalMin < 60) return `${totalMin} min`;
-  const h = Math.floor(totalMin / 60);
-  const mins = totalMin % 60;
-  if (mins <= 0) return `${h} h`;
-  return `${h} h ${String(mins).padStart(2, "0")}`;
-}
-var ISO_DATE_RE2, ISO_WEEKDAY_LABELS_IT, MONTHS_IT;
-var init_focusDateUtils = __esm({
-  "src/features/kentuFocus/normalize/focusDateUtils.js"() {
-    ISO_DATE_RE2 = /^\d{4}-\d{2}-\d{2}$/;
-    ISO_WEEKDAY_LABELS_IT = Object.freeze([
-      null,
-      "luned\xEC",
-      "marted\xEC",
-      "mercoled\xEC",
-      "gioved\xEC",
-      "venerd\xEC",
-      "sabato",
-      "domenica"
-    ]);
-    MONTHS_IT = Object.freeze([
-      "gennaio",
-      "febbraio",
-      "marzo",
-      "aprile",
-      "maggio",
-      "giugno",
-      "luglio",
-      "agosto",
-      "settembre",
-      "ottobre",
-      "novembre",
-      "dicembre"
-    ]);
   }
 });
 
@@ -736,7 +1536,7 @@ var init_normalizeFoodEvents = __esm({
 
 // src/features/dayStatus/dayStatus.js
 function getDayStatus(date, context = {}) {
-  if (!isIsoDate2(date) || !isIsoDateString2(date)) return null;
+  if (!isIsoDate2(date) || !isIsoDateString(date)) return null;
   const today = String(context.today || "").slice(0, 10);
   if (!isIsoDate2(today)) return null;
   const record = normalizeDayStatusRecord(
@@ -1271,736 +2071,6 @@ var init_normalizeSleepNight = __esm({
     init_resolveMainNightSleep();
     BEDTIME_FORMULA_MATCH_EPS_H = 0.05;
     DEFAULT_SLEEP_STAGE_PLACEHOLDER_MIN = 60;
-  }
-});
-
-// src/activityCatalog.js
-function normalizeMuscleGroupLabel(raw) {
-  if (raw == null) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  return MUSCLE_ALIAS_TO_ID.get(s.toLowerCase()) ?? s;
-}
-function normalizeMuscleGroupArray(muscles) {
-  const list = Array.isArray(muscles) ? muscles : muscles != null && String(muscles).trim() !== "" ? [muscles] : [];
-  const out = [];
-  const seen = /* @__PURE__ */ new Set();
-  for (const m of list) {
-    const c = normalizeMuscleGroupLabel(m);
-    if (c && !seen.has(c)) {
-      seen.add(c);
-      out.push(c);
-    }
-  }
-  return out;
-}
-var WORKOUT_MUSCLE_GROUP_DEFS, WORKOUT_MUSCLE_MACRO_SECTIONS, WORKOUT_MUSCLE_GROUP_IDS, MUSCLE_ALIAS_TO_ID, WORKOUT_ACTIVITY_TYPE_DEFS, ACTIVITY_BY_ID, WORKOUT_ACTIVITY_SELECTOR_IDS;
-var init_activityCatalog = __esm({
-  "src/activityCatalog.js"() {
-    WORKOUT_MUSCLE_GROUP_DEFS = [
-      { id: "Petto", label: "Petto", macroGroup: "chest" },
-      { id: "Dorso", label: "Dorso", aliases: ["Schiena", "schiena"], macroGroup: "back_shoulders" },
-      { id: "Gambe", label: "Gambe", macroGroup: "legs" },
-      { id: "Spalle", label: "Spalle", macroGroup: "back_shoulders" },
-      { id: "abs", label: "ABS", macroGroup: "core" },
-      { id: "bicipiti", label: "Bicipiti", macroGroup: "arms" },
-      { id: "tricipiti", label: "Tricipiti", macroGroup: "arms" },
-      { id: "avambracci", label: "Avambracci", macroGroup: "arms" },
-      { id: "Core", label: "Core", aliases: ["Addominali", "addominali"], macroGroup: "core" },
-      { id: "Total Body", label: "Total Body", aliases: ["Full Body", "full body", "totalbody"], macroGroup: "total" }
-    ];
-    WORKOUT_MUSCLE_MACRO_SECTIONS = Object.freeze([
-      { id: "legs", label: "Gambe" },
-      { id: "chest", label: "Petto" },
-      { id: "back_shoulders", label: "Schiena e Spalle" },
-      { id: "arms", label: "Braccia" },
-      { id: "core", label: "Abs e Core" },
-      { id: "total", label: "Full body" }
-    ]);
-    WORKOUT_MUSCLE_GROUP_IDS = WORKOUT_MUSCLE_GROUP_DEFS.map((d) => d.id);
-    MUSCLE_ALIAS_TO_ID = /* @__PURE__ */ new Map();
-    for (const d of WORKOUT_MUSCLE_GROUP_DEFS) {
-      MUSCLE_ALIAS_TO_ID.set(String(d.id).toLowerCase(), d.id);
-      for (const a of d.aliases || []) {
-        MUSCLE_ALIAS_TO_ID.set(String(a).toLowerCase(), d.id);
-      }
-    }
-    WORKOUT_ACTIVITY_TYPE_DEFS = [
-      {
-        id: "pesi",
-        label: "Sollevamento pesi",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1F3CB}\uFE0F",
-        selectorButtonLabel: "\u{1F3CB}\uFE0F PESI",
-        showInActivitySelector: true
-      },
-      {
-        id: "cardio",
-        label: "Cardio",
-        category: "cardio",
-        nodeKind: "workout",
-        icon: "\u{1F493}",
-        selectorButtonLabel: "\u{1F493} CARDIO",
-        showInActivitySelector: true
-      },
-      {
-        id: "hiit",
-        label: "HIIT / Circuito",
-        category: "hiit",
-        nodeKind: "workout",
-        icon: "\u{1F525}",
-        selectorButtonLabel: "\u{1F525} HIIT",
-        showInActivitySelector: true
-      },
-      {
-        id: "camminata",
-        label: "Camminata",
-        category: "cardio",
-        nodeKind: "workout",
-        icon: "\u{1F6B6}",
-        selectorButtonLabel: "\u{1F6B6} CAMMINATA",
-        showInActivitySelector: true
-      },
-      {
-        id: "corsa",
-        label: "Corsa",
-        category: "cardio",
-        nodeKind: "workout",
-        icon: "\u{1F3C3}",
-        selectorButtonLabel: "\u{1F3C3} CORSA",
-        showInActivitySelector: true
-      },
-      {
-        id: "corpo_libero",
-        label: "Corpo libero",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1F938}",
-        selectorButtonLabel: "\u{1F938} CORPO LIBERO",
-        showInActivitySelector: true
-      },
-      {
-        id: "elastici",
-        label: "Elastici",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1FAA2}",
-        selectorButtonLabel: "\u{1FAA2} ELASTICI",
-        showInActivitySelector: true
-      },
-      {
-        id: "lavori_pesanti",
-        label: "Lavori pesanti",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1F9F0}",
-        selectorButtonLabel: "\u{1F9F0} LAVORI PESANTI",
-        showInActivitySelector: true
-      },
-      {
-        id: "scale",
-        label: "Scale",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1FA9C}",
-        selectorButtonLabel: "\u{1FA9C} SCALE",
-        showInActivitySelector: true
-      },
-      {
-        id: "alzate_sedia",
-        label: "Alzate dalla sedia",
-        category: "strength",
-        nodeKind: "workout",
-        icon: "\u{1FA91}",
-        selectorButtonLabel: "\u{1FA91} ALZATE",
-        showInActivitySelector: true
-      },
-      {
-        id: "lavoro",
-        label: "Attivit\xE0 lavorativa",
-        category: "work",
-        nodeKind: "work",
-        icon: "\u{1F4BC}",
-        selectorButtonLabel: "\u{1F4BC} LAVORO",
-        showInActivitySelector: false
-      },
-      {
-        id: "studio",
-        label: "Studio",
-        category: "cognitive",
-        nodeKind: "cognitive",
-        icon: "\u{1F4DA}",
-        selectorButtonLabel: "\u{1F4DA} STUDIO",
-        showInActivitySelector: false,
-        cognitiveMet: 1.3
-      },
-      {
-        id: "lavoro_pc",
-        label: "Lavoro PC",
-        category: "cognitive",
-        nodeKind: "cognitive",
-        icon: "\u{1F4BB}",
-        selectorButtonLabel: "\u{1F4BB} LAVORO PC",
-        showInActivitySelector: false,
-        cognitiveMet: 1.5
-      },
-      {
-        id: "misto",
-        label: "Misto",
-        category: "mixed",
-        nodeKind: "workout",
-        icon: "\u{1F3CB}\uFE0F",
-        selectorButtonLabel: "\u{1F3CB}\uFE0F MISTO",
-        showInActivitySelector: false
-      }
-    ];
-    ACTIVITY_BY_ID = new Map(WORKOUT_ACTIVITY_TYPE_DEFS.map((d) => [d.id, d]));
-    WORKOUT_ACTIVITY_SELECTOR_IDS = Object.freeze([
-      "pesi",
-      "corpo_libero",
-      "elastici",
-      "lavori_pesanti",
-      "scale",
-      "alzate_sedia",
-      "cardio",
-      "hiit",
-      "camminata",
-      "corsa"
-    ]);
-  }
-});
-
-// src/features/kentuFocus/costanza/muscleIds.mm-1.js
-var MUSCLE_MAP_VERSION, MUSCLE_IDS, MUSCLE_LABELS, COSTANZA_UI_GROUPS, FORCE_CI_GROUP_IDS, DEFAULT_WEEKLY_GOAL_DAYS, WEEKLY_GOAL_CHOICES;
-var init_muscleIds_mm_1 = __esm({
-  "src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
-    MUSCLE_MAP_VERSION = "mm-1";
-    MUSCLE_IDS = Object.freeze([
-      "pettorali",
-      "dorsali",
-      "trapezi_romboidi",
-      "deltoidi_anteriori",
-      "deltoidi_laterali",
-      "deltoidi_posteriori",
-      "bicipiti",
-      "tricipiti",
-      "avambracci",
-      "addominali",
-      "obliqui",
-      "lombari",
-      "glutei",
-      "quadricipiti",
-      "femorali",
-      "adduttori",
-      "polpacci"
-    ]);
-    MUSCLE_LABELS = Object.freeze({
-      pettorali: "Pettorali",
-      dorsali: "Dorsali",
-      trapezi_romboidi: "Trapezi / romboidi",
-      deltoidi_anteriori: "Deltoidi anteriori",
-      deltoidi_laterali: "Deltoidi laterali",
-      deltoidi_posteriori: "Deltoidi posteriori",
-      bicipiti: "Bicipiti",
-      tricipiti: "Tricipiti",
-      avambracci: "Avambracci",
-      addominali: "Addominali",
-      obliqui: "Obliqui",
-      lombari: "Lombari",
-      glutei: "Glutei",
-      quadricipiti: "Quadricipiti",
-      femorali: "Femorali",
-      adduttori: "Adduttori",
-      polpacci: "Polpacci"
-    });
-    COSTANZA_UI_GROUPS = Object.freeze([
-      {
-        id: "petto",
-        label: "Petto",
-        forceCi: true,
-        muscleIds: Object.freeze(["pettorali"])
-      },
-      {
-        id: "schiena",
-        label: "Schiena",
-        forceCi: true,
-        muscleIds: Object.freeze(["dorsali", "trapezi_romboidi", "lombari"])
-      },
-      {
-        id: "spalle",
-        label: "Spalle",
-        forceCi: true,
-        muscleIds: Object.freeze(["deltoidi_anteriori", "deltoidi_laterali", "deltoidi_posteriori"])
-      },
-      {
-        id: "braccia",
-        label: "Braccia",
-        forceCi: false,
-        muscleIds: Object.freeze(["bicipiti", "tricipiti", "avambracci"])
-      },
-      {
-        id: "gambe",
-        label: "Gambe",
-        forceCi: true,
-        muscleIds: Object.freeze(["quadricipiti", "glutei", "femorali", "adduttori", "polpacci"])
-      },
-      {
-        id: "core",
-        label: "Core",
-        forceCi: true,
-        muscleIds: Object.freeze(["addominali", "obliqui", "lombari"])
-      }
-    ]);
-    FORCE_CI_GROUP_IDS = Object.freeze(
-      COSTANZA_UI_GROUPS.filter((g) => g.forceCi).map((g) => g.id)
-    );
-    DEFAULT_WEEKLY_GOAL_DAYS = 2;
-    WEEKLY_GOAL_CHOICES = Object.freeze([2, 3, 4]);
-  }
-});
-
-// src/features/kentuFocus/costanza/muscleMap.mm-1.js
-function mapChipToMuscles(chipId) {
-  const id = String(chipId || "").trim();
-  if (!id) return Object.freeze([]);
-  const hit = CHIP_MAP[id];
-  if (hit) return hit;
-  if (/^schiena$/i.test(id)) return CHIP_MAP.Dorso;
-  return Object.freeze([]);
-}
-function mergeMuscleWeights(contributions) {
-  const out = {};
-  for (const row of contributions || []) {
-    const id = String(row?.muscleId || "").trim();
-    const w = Number(row?.weight);
-    if (!id || !Number.isFinite(w) || w <= 0) continue;
-    const prev = out[id] || 0;
-    out[id] = Math.max(prev, w >= 1 ? 1 : w);
-  }
-  for (const id of Object.keys(out)) {
-    if (out[id] > 1) out[id] = 1;
-  }
-  return out;
-}
-function resolveSessionChips(entry) {
-  if (!entry || typeof entry !== "object") return [];
-  if (classifyWorkoutByType(entry).kind !== "strength") return [];
-  const raw = entry.muscles ?? entry.muscleGroups ?? entry.groups ?? [];
-  const chips = normalizeMuscleGroupArray(Array.isArray(raw) ? raw : [raw]);
-  if (chips.length > 0) return chips;
-  const typeId = workoutTypeId(entry);
-  const fallback = TYPE_FALLBACK_CHIPS[typeId];
-  return fallback ? [...fallback] : [];
-}
-function sessionMuscleWeights(entry) {
-  const chips = resolveSessionChips(entry);
-  if (chips.length === 0) return {};
-  const rows = [];
-  for (const chip of chips) {
-    for (const row of mapChipToMuscles(chip)) rows.push(row);
-  }
-  return mergeMuscleWeights(rows);
-}
-function sessionTrainedMuscleIds(entry) {
-  const weights = sessionMuscleWeights(entry);
-  return Object.keys(weights).filter((id) => weights[id] >= 1).sort();
-}
-var CHIP_MAP, TYPE_FALLBACK_CHIPS;
-var init_muscleMap_mm_1 = __esm({
-  "src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
-    init_activityCatalog();
-    init_workoutMovement();
-    init_muscleIds_mm_1();
-    CHIP_MAP = Object.freeze({
-      Petto: Object.freeze([
-        { muscleId: "pettorali", weight: 1 },
-        { muscleId: "tricipiti", weight: 0.5 },
-        { muscleId: "deltoidi_anteriori", weight: 0.5 }
-      ]),
-      Dorso: Object.freeze([
-        { muscleId: "dorsali", weight: 1 },
-        { muscleId: "trapezi_romboidi", weight: 1 },
-        { muscleId: "bicipiti", weight: 0.5 },
-        { muscleId: "deltoidi_posteriori", weight: 0.5 },
-        { muscleId: "avambracci", weight: 0.5 },
-        { muscleId: "lombari", weight: 0.5 }
-      ]),
-      Spalle: Object.freeze([
-        { muscleId: "deltoidi_anteriori", weight: 1 },
-        { muscleId: "deltoidi_laterali", weight: 1 },
-        { muscleId: "deltoidi_posteriori", weight: 1 },
-        { muscleId: "tricipiti", weight: 0.5 },
-        { muscleId: "trapezi_romboidi", weight: 0.5 }
-      ]),
-      Gambe: Object.freeze([
-        { muscleId: "quadricipiti", weight: 1 },
-        { muscleId: "glutei", weight: 1 },
-        { muscleId: "femorali", weight: 0.5 },
-        { muscleId: "adduttori", weight: 0.5 },
-        { muscleId: "polpacci", weight: 0.5 },
-        { muscleId: "lombari", weight: 0.5 }
-      ]),
-      bicipiti: Object.freeze([
-        { muscleId: "bicipiti", weight: 1 },
-        { muscleId: "avambracci", weight: 0.5 }
-      ]),
-      tricipiti: Object.freeze([
-        { muscleId: "tricipiti", weight: 1 }
-      ]),
-      avambracci: Object.freeze([
-        { muscleId: "avambracci", weight: 1 }
-      ]),
-      abs: Object.freeze([
-        { muscleId: "addominali", weight: 1 },
-        { muscleId: "obliqui", weight: 1 }
-      ]),
-      Core: Object.freeze([
-        { muscleId: "addominali", weight: 1 },
-        { muscleId: "obliqui", weight: 1 },
-        { muscleId: "lombari", weight: 1 },
-        { muscleId: "glutei", weight: 0.5 }
-      ]),
-      "Total Body": Object.freeze(
-        MUSCLE_IDS.map((muscleId) => Object.freeze({ muscleId, weight: 0.5 }))
-      )
-    });
-    TYPE_FALLBACK_CHIPS = Object.freeze({
-      scale: ["Gambe"],
-      alzate_sedia: ["Gambe"]
-    });
-  }
-});
-
-// src/features/kentuFocus/costanza/costanzaForza.js
-function dayRawLog(fullHistory, dateKey) {
-  const node = fullHistory?.[`trackerStorico_${dateKey}`];
-  if (!node || typeof node !== "object") return [];
-  if (node.log != null) return node.log;
-  if (node.dati && typeof node.dati === "object" && node.dati.log != null) return node.dati.log;
-  return [];
-}
-function normalizeWeeklyGoalDays(raw) {
-  const n = Number(raw);
-  if (WEEKLY_GOAL_CHOICES.includes(n)) return n;
-  return DEFAULT_WEEKLY_GOAL_DAYS;
-}
-function weekMondayOf(iso) {
-  if (!isIsoDateString2(iso)) return null;
-  const d = /* @__PURE__ */ new Date(`${iso}T12:00:00`);
-  const day = d.getDay();
-  const back = day === 0 ? 6 : day - 1;
-  return addCalendarDays(iso, -back);
-}
-function weekSundayOf(monday) {
-  if (!isIsoDateString2(monday)) return null;
-  return addCalendarDays(monday, 6);
-}
-function datesInclusive(from, to) {
-  if (!isIsoDateString2(from) || !isIsoDateString2(to) || from > to) return [];
-  const out = [];
-  let cur = from;
-  while (cur <= to) {
-    out.push(cur);
-    cur = addCalendarDays(cur, 1);
-  }
-  return out;
-}
-function strengthSessionsByDay(fullHistory, asOfDate, lookbackDays = 90) {
-  const map = /* @__PURE__ */ new Map();
-  if (!isIsoDateString2(asOfDate)) return map;
-  const span = Math.max(1, Math.floor(Number(lookbackDays) || 90));
-  const minDate = addCalendarDays(asOfDate, -(span - 1));
-  const byId = /* @__PURE__ */ new Map();
-  let anonymous = 0;
-  for (let back = 0; back < span; back += 1) {
-    const dateKey = addCalendarDays(asOfDate, -back);
-    if (dateKey < minDate) break;
-    for (const entry of expandTrackerLogEntries(dayRawLog(fullHistory, dateKey))) {
-      if (!entry || typeof entry !== "object") continue;
-      if (entry.isGhost === true) continue;
-      const kind = String(entry.type || "").trim().toLowerCase();
-      if (kind && kind !== "workout") continue;
-      const typed = { ...entry, type: "workout", __dateKey: dateKey };
-      if (classifyWorkoutByType(typed).kind !== "strength") continue;
-      if (resolveSessionChips(typed).length === 0) continue;
-      const id = String(entry.id || entry.nodeId || "").trim();
-      const key = id || `${dateKey}:anon:${anonymous}`;
-      anonymous += 1;
-      if (byId.has(key)) continue;
-      byId.set(key, typed);
-    }
-  }
-  for (const entry of byId.values()) {
-    const day = String(entry.__dateKey || "").slice(0, 10);
-    const list = map.get(day) || [];
-    list.push(entry);
-    map.set(day, list);
-  }
-  return map;
-}
-function strengthDaySet(byDay) {
-  return new Set(byDay.keys());
-}
-function forceDaysInCalendarWeek(strengthDays, asOfDate) {
-  const monday = weekMondayOf(asOfDate);
-  const sunday = weekSundayOf(monday);
-  const days = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d) && d <= asOfDate);
-  return { monday, sunday, days, count: days.length };
-}
-function computeWeekStreak(strengthDays, asOfDate, weeklyGoal) {
-  const goal = normalizeWeeklyGoalDays(weeklyGoal);
-  const thisMonday = weekMondayOf(asOfDate);
-  if (!thisMonday) return 0;
-  const thisSunday = weekSundayOf(thisMonday);
-  const weekClosed = asOfDate >= thisSunday;
-  let streak = 0;
-  let monday = weekClosed ? thisMonday : addCalendarDays(thisMonday, -7);
-  for (let i = 0; i < 52; i += 1) {
-    const sunday = weekSundayOf(monday);
-    const count = datesInclusive(monday, sunday).filter((d) => strengthDays.has(d)).length;
-    if (count >= goal) {
-      streak += 1;
-      monday = addCalendarDays(monday, -7);
-      continue;
-    }
-    break;
-  }
-  return streak;
-}
-function sumMuscleWeightsInRange(byDay, from, to) {
-  const sums = {};
-  for (const id of MUSCLE_IDS) sums[id] = 0;
-  for (const day of datesInclusive(from, to)) {
-    for (const entry of byDay.get(day) || []) {
-      const w = sessionMuscleWeights(entry);
-      for (const [id, weight] of Object.entries(w)) {
-        sums[id] = (sums[id] || 0) + weight;
-      }
-    }
-  }
-  return sums;
-}
-function lastTrainedDate(byDay, muscleId, asOfDate) {
-  const days = [...byDay.keys()].filter((d) => d <= asOfDate).sort().reverse();
-  for (const day of days) {
-    for (const entry of byDay.get(day) || []) {
-      const w = sessionMuscleWeights(entry)[muscleId] || 0;
-      if (w >= 1) return day;
-    }
-  }
-  return null;
-}
-function coverageStatusFromSum(sum) {
-  const s = Number(sum) || 0;
-  if (s >= 1) return "coperto";
-  if (s > 0) return "toccato";
-  return "vuoto";
-}
-function computeCostanzaForza(input) {
-  const asOfDate = String(input?.asOfDate || "").slice(0, 10);
-  const weeklyGoal = normalizeWeeklyGoalDays(input?.weeklyGoalDays);
-  const byDay = strengthSessionsByDay(input?.fullHistory, asOfDate);
-  const strengthDays = strengthDaySet(byDay);
-  const week = forceDaysInCalendarWeek(strengthDays, asOfDate);
-  const streak = computeWeekStreak(strengthDays, asOfDate, weeklyGoal);
-  const windowFrom = addCalendarDays(asOfDate, -6);
-  const sums7 = sumMuscleWeightsInRange(byDay, windowFrom, asOfDate);
-  const lookback30From = addCalendarDays(asOfDate, -29);
-  const muscles = {};
-  for (const id of MUSCLE_IDS) {
-    const sum7 = sums7[id] || 0;
-    const last = lastTrainedDate(byDay, id, asOfDate);
-    let daysSince = null;
-    if (last) {
-      const a = /* @__PURE__ */ new Date(`${last}T12:00:00`);
-      const b = /* @__PURE__ */ new Date(`${asOfDate}T12:00:00`);
-      daysSince = Math.round((b - a) / 864e5);
-    }
-    const trainedIn30 = last != null && last >= lookback30From;
-    muscles[id] = {
-      status: coverageStatusFromSum(sum7),
-      sum7,
-      lastTrained: last,
-      daysSinceTrained: daysSince,
-      neverIn30: !trainedIn30
-    };
-  }
-  const groups = {};
-  for (const g of COSTANZA_UI_GROUPS) {
-    let best = "vuoto";
-    for (const mid of g.muscleIds) {
-      const st = muscles[mid]?.status || "vuoto";
-      if (st === "coperto") best = "coperto";
-      else if (st === "toccato" && best === "vuoto") best = "toccato";
-    }
-    groups[g.id] = { status: best, muscleIds: [...g.muscleIds] };
-  }
-  const forceCiCovered = FORCE_CI_GROUP_IDS.filter((gid) => groups[gid]?.status === "coperto").length;
-  return {
-    version: MUSCLE_MAP_VERSION,
-    asOfDate,
-    weeklyGoalDays: weeklyGoal,
-    forceDaysThisWeek: week.count,
-    forceDayDatesThisWeek: week.days,
-    weekMonday: week.monday,
-    weekSunday: week.sunday,
-    weekStreak: streak,
-    muscles,
-    groups,
-    forceCiCoveredCount: forceCiCovered,
-    forceCiGroupTotal: FORCE_CI_GROUP_IDS.length,
-    uiGroups: COSTANZA_UI_GROUPS
-  };
-}
-var init_costanzaForza = __esm({
-  "src/features/kentuFocus/costanza/costanzaForza.js"() {
-    init_focusDateUtils();
-    init_expandTrackerDayLog();
-    init_workoutMovement();
-    init_muscleIds_mm_1();
-    init_muscleMap_mm_1();
-  }
-});
-
-// src/features/trendHub/utils/muscleSpillover.js
-var muscleSpilloverMatrix, SPILLOVER_MUSCLE_KEYS;
-var init_muscleSpillover = __esm({
-  "src/features/trendHub/utils/muscleSpillover.js"() {
-    init_costanzaForza();
-    muscleSpilloverMatrix = Object.freeze({
-      petto: Object.freeze({ petto: 50, spalle: 20, braccia: 25 }),
-      schiena: Object.freeze({ schiena: 50, spalle: 15, braccia: 25 }),
-      gambe: Object.freeze({ gambe: 50, core: 30 }),
-      spalle: Object.freeze({ spalle: 50, braccia: 20, core: 10 }),
-      braccia: Object.freeze({ braccia: 50 }),
-      core: Object.freeze({ core: 50 })
-    });
-    SPILLOVER_MUSCLE_KEYS = Object.freeze([
-      "petto",
-      "schiena",
-      "gambe",
-      "spalle",
-      "braccia",
-      "core"
-    ]);
-  }
-});
-
-// src/features/commandTerminal/context/workoutMovement.js
-function durationAmountToMinutes(amount) {
-  const dur = Number(amount);
-  if (!Number.isFinite(dur) || dur <= 0) return 0;
-  return dur > 5 ? dur : dur * 60;
-}
-function resolveWorkoutDurationMinutes(entry) {
-  if (typeof entry === "number") return durationAmountToMinutes(entry);
-  if (!entry || typeof entry !== "object") return 0;
-  const explicit = Number(entry.durationMinutes ?? entry.durationMin);
-  if (Number.isFinite(explicit) && explicit > 0) return explicit;
-  return durationAmountToMinutes(entry.duration ?? entry.minutes ?? entry.hours);
-}
-function workoutTypeId(entry) {
-  if (!entry || typeof entry !== "object") return "";
-  const candidates = [entry.workoutType, entry.subType, entry.activityType];
-  if (typeof entry.activity === "string") candidates.push(entry.activity);
-  for (const raw of candidates) {
-    const id = String(raw || "").trim().toLowerCase();
-    if (id && id !== "workout" && id !== "activity") return id;
-  }
-  return "";
-}
-function workoutLabel(entry) {
-  return String(entry?.name || entry?.desc || entry?.label || entry?.title || "").trim();
-}
-function classifyWorkoutByType(entry) {
-  const typeId = workoutTypeId(entry);
-  if (WALK_TYPE_IDS.has(typeId)) return { kind: "walk", typeId, source: "workoutType" };
-  if (VIGOROUS_TYPE_IDS.has(typeId)) return { kind: "vigorous", typeId, source: "workoutType" };
-  if (STRENGTH_TYPE_IDS.has(typeId)) return { kind: "strength", typeId, source: "workoutType" };
-  const label = workoutLabel(entry);
-  if (!label) return { kind: "other", typeId, source: "none" };
-  if (STRENGTH_LABEL.test(label)) return { kind: "strength", typeId, source: "label" };
-  if (WALK_LABEL.test(label)) return { kind: "walk", typeId, source: "label" };
-  if (VIGOROUS_LABEL.test(label)) return { kind: "vigorous", typeId, source: "label" };
-  return { kind: "other", typeId, source: "label" };
-}
-function equivalentAerobicMinutes(entry) {
-  const minutes = resolveWorkoutDurationMinutes(entry);
-  if (!(minutes > 0)) return 0;
-  const kind = classifyWorkoutByType(entry).kind;
-  if (kind === "walk") return minutes;
-  if (kind === "vigorous") return minutes * VIGOROUS_EQUIVALENT_FACTOR;
-  return 0;
-}
-var VIGOROUS_EQUIVALENT_FACTOR, WALK_TYPE_IDS, VIGOROUS_TYPE_IDS, STRENGTH_TYPE_IDS, STRENGTH_TYPE_PRIMARIES, STRENGTH_LABEL, WALK_LABEL, VIGOROUS_LABEL;
-var init_workoutMovement = __esm({
-  "src/features/commandTerminal/context/workoutMovement.js"() {
-    init_activityCatalog();
-    init_muscleSpillover();
-    VIGOROUS_EQUIVALENT_FACTOR = 2;
-    WALK_TYPE_IDS = /* @__PURE__ */ new Set([
-      "camminata",
-      "walking",
-      "passi",
-      "walk",
-      "passeggio",
-      "liss",
-      "zona2",
-      "z2"
-    ]);
-    VIGOROUS_TYPE_IDS = /* @__PURE__ */ new Set([
-      "corsa",
-      "running",
-      "run",
-      "jog",
-      "jogging",
-      "bici",
-      "bike",
-      "cycling",
-      "ciclismo",
-      "cyclette",
-      "spinning",
-      "indoor_bike",
-      "nuoto",
-      "swim",
-      "swimming",
-      "cardio",
-      "hiit",
-      "ellittica",
-      "elliptical",
-      "remo",
-      "rowing",
-      "rower",
-      "tapis",
-      "tapis_roulant",
-      "treadmill"
-    ]);
-    STRENGTH_TYPE_IDS = /* @__PURE__ */ new Set([
-      "pesi",
-      "corpo_libero",
-      "elastici",
-      "lavori_pesanti",
-      "scale",
-      "alzate_sedia",
-      "spinta",
-      "trazione",
-      "gambe",
-      "push",
-      "pull",
-      "legs",
-      "strength",
-      "hypertrophy",
-      "ipertrofia",
-      "forza"
-    ]);
-    STRENGTH_TYPE_PRIMARIES = Object.freeze({
-      scale: ["gambe"],
-      alzate_sedia: ["gambe"]
-    });
-    STRENGTH_LABEL = /(?:^|[^a-z0-9àèéìòù])(pesi|palestra|squat|corpo libero|elastici|lavori pesanti|scale|alzate|bicipit|tricipit|sollevamento|manubri|bilanciere|strength|ipertrof|forza)(?:[^a-z0-9àèéìòù]|$)/i;
-    WALK_LABEL = new RegExp("(?:^|[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9])(camminat\\p{L}*|passeggiat\\p{L}*|walking|walk)(?=[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9]|$)", "iu");
-    VIGOROUS_LABEL = new RegExp("(?:^|[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9])(hiit|corsa|running|jog\\p{L}*|bici|bike|cicl\\p{L}*|nuoto|swim\\p{L}*|ellitt\\p{L}*|cardio|remo|rowing|rower|tapis|treadmill|cyclette|spinning)(?=[^a-z0-9\xE0\xE8\xE9\xEC\xF2\xF9]|$)", "iu");
   }
 });
 
@@ -2590,9 +2660,9 @@ function resolveFoodItemClassification(item, catalogs, offStatus) {
       catalogLayer: null
     };
   }
-  const cached2 = lookupCatalogRow(catalogs, key);
-  if (cached2?.row) {
-    const hit = classificationFromCatalogRow(cached2.row, cached2.sourceLabel);
+  const cached3 = lookupCatalogRow(catalogs, key);
+  if (cached3?.row) {
+    const hit = classificationFromCatalogRow(cached3.row, cached3.sourceLabel);
     if (hit.provenance) {
       return {
         name,
@@ -2602,8 +2672,8 @@ function resolveFoodItemClassification(item, catalogs, offStatus) {
         provenance: hit.provenance,
         source: hit.source,
         reason: null,
-        catalogRow: cached2.row,
-        catalogLayer: cached2.layer
+        catalogRow: cached3.row,
+        catalogLayer: cached3.layer
       };
     }
     return {
@@ -2612,10 +2682,10 @@ function resolveFoodItemClassification(item, catalogs, offStatus) {
       novaGroup: null,
       semanticTags: hit.semanticTags || diaryTags,
       provenance: FOOD_QUALITY_PROVENANCE.unclassified,
-      source: hit.source || cached2.sourceLabel,
+      source: hit.source || cached3.sourceLabel,
       reason: "catalog_without_nova",
-      catalogRow: cached2.row,
-      catalogLayer: cached2.layer
+      catalogRow: cached3.row,
+      catalogLayer: cached3.layer
     };
   }
   const offConsultable = catalogs.offReady === true || (catalogs.__focusLookupSession?.dbNonEmpty ? catalogs.__focusLookupSession.dbNonEmpty(catalogs.offDb) : catalogDbNonEmpty(catalogs.offDb));
@@ -2871,7 +2941,7 @@ function buildDayFoodQuality(fullHistory, date, catalogs, offStatus) {
 function buildFocusFoodQualityBlock(input) {
   const fullHistory = input?.fullHistory && typeof input.fullHistory === "object" ? input.fullHistory : null;
   const analysisDate = String(input?.analysisDate || "").trim();
-  if (!fullHistory || !isIsoDateString2(analysisDate)) {
+  if (!fullHistory || !isIsoDateString(analysisDate)) {
     return {
       available: false,
       reason: "missing_history_or_date",
@@ -3683,7 +3753,7 @@ function entryIsDiaryCardio(entry) {
   return kind === "walk" || kind === "vigorous";
 }
 function dayMovementCharge(date, fullHistory, movementCheckins = null) {
-  if (!isIsoDateString2(date)) {
+  if (!isIsoDateString(date)) {
     return { charge: 0, diaryEq: 0, checkInMin: 0, usedCheckIn: false, hasDiaryCardio: false };
   }
   const { all } = collectRecentWorkoutLogs(fullHistory || {}, [], date);
@@ -3718,7 +3788,7 @@ function dayMovementCharge(date, fullHistory, movementCheckins = null) {
   };
 }
 function chargeSeriesEnding(date, fullHistory, movementCheckins = null, lookback = BATTERY_LOOKBACK_DAYS) {
-  if (!isIsoDateString2(date)) return [];
+  if (!isIsoDateString(date)) return [];
   const n = Math.max(1, Math.round(Number(lookback) || BATTERY_LOOKBACK_DAYS));
   const out = [];
   for (let i = n - 1; i >= 0; i -= 1) {
@@ -3750,7 +3820,7 @@ function firstTrackerDate(fullHistory) {
   for (const key of Object.keys(fullHistory)) {
     if (!key.startsWith("trackerStorico_")) continue;
     const date = key.slice("trackerStorico_".length);
-    if (!isIsoDateString2(date)) continue;
+    if (!isIsoDateString(date)) continue;
     if (!first || date < first) first = date;
   }
   return first;
@@ -3759,7 +3829,7 @@ function isMovementBatteryReady(fullHistory, date, context = {}) {
   if (context.calibration?.active === true || context.calibrating === true) return false;
   if (context.movementBatteryReady === false) return false;
   if (context.movementBatteryReady === true) return true;
-  if (!isIsoDateString2(date)) return false;
+  if (!isIsoDateString(date)) return false;
   const first = firstTrackerDate(fullHistory);
   if (!first || first > date) return false;
   let span = 0;
@@ -3897,7 +3967,7 @@ __export(computeSafety_exports, {
 });
 function computeSafety(date, context = {}) {
   const empty = blank();
-  if (!isIsoDateString2(date)) return empty;
+  if (!isIsoDateString(date)) return empty;
   const statusOf = makeStatus(date, context);
   if (statusOf(date) !== "closed") return empty;
   const history = context.fullHistory;
@@ -4224,7 +4294,7 @@ function collectWeighIns(context) {
       if (!entry || typeof entry !== "object") continue;
       const day = String(entry.date || entry.effectiveDate || "").slice(0, 10);
       const kg = Number(entry.weight ?? entry.weightKg);
-      if (!isIsoDateString2(day) || !(kg > 0)) continue;
+      if (!isIsoDateString(day) || !(kg > 0)) continue;
       const key = `${day}|${Math.round(kg * 1e3)}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -4285,7 +4355,7 @@ function indexDays(history) {
   for (const [key, node] of Object.entries(history)) {
     if (!key.startsWith("trackerStorico_")) continue;
     const date = key.slice("trackerStorico_".length);
-    if (!isIsoDateString2(date) || !node || typeof node !== "object") continue;
+    if (!isIsoDateString(date) || !node || typeof node !== "object") continue;
     days.set(date, node);
   }
   return days;
@@ -4340,6 +4410,83 @@ function computeEffectiveDailyTargetKcal(parts = {}) {
 }
 var init_computeEffectiveDailyTargetKcal = __esm({
   "src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
+  }
+});
+
+// src/features/kentuFocus/server/reader/resolveFocusProfileData.js
+function isValidIsoDate(value) {
+  if (typeof value !== "string") return false;
+  const iso = value.trim().slice(0, 10);
+  if (!ISO_DATE_RE3.test(iso)) return false;
+  const d = /* @__PURE__ */ new Date(`${iso}T12:00:00`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
+}
+function resolveVerifiableDate(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const candidate = typeof entry.effectiveDate === "string" ? entry.effectiveDate.trim().slice(0, 10) : typeof entry.date === "string" ? entry.date.trim().slice(0, 10) : "";
+  if (isValidIsoDate(candidate)) return candidate;
+  const ts = Number(entry.timestamp);
+  if (Number.isFinite(ts) && ts > 0) {
+    const fromTs = new Date(ts).toISOString().slice(0, 10);
+    if (isValidIsoDate(fromTs)) return fromTs;
+  }
+  return null;
+}
+function resolveTargetsForAnalysisDate(targetsNode, analysisDate) {
+  if (!isIsoDateString(analysisDate)) {
+    return {
+      resolved: {},
+      timelineApplied: 0,
+      lastEffectiveDate: null,
+      skippedUndated: 0
+    };
+  }
+  const history = Array.isArray(targetsNode?.targetHistory) ? targetsNode.targetHistory : [];
+  let skippedUndated = 0;
+  const timeline = history.map((entry) => {
+    if (!entry || typeof entry !== "object") return null;
+    const effectiveDate = resolveVerifiableDate(entry);
+    if (!effectiveDate) {
+      skippedUndated += 1;
+      return null;
+    }
+    return {
+      effectiveDate,
+      targets: entry.targets && typeof entry.targets === "object" ? entry.targets : {},
+      source: entry.source || "targetHistory"
+    };
+  }).filter(Boolean).sort((a, b) => String(a.effectiveDate).localeCompare(String(b.effectiveDate)));
+  let resolved = {};
+  let timelineApplied = 0;
+  let lastEffectiveDate = null;
+  for (const entry of timeline) {
+    if (entry.effectiveDate > analysisDate) break;
+    resolved = { ...resolved, ...entry.targets };
+    timelineApplied += 1;
+    lastEffectiveDate = entry.effectiveDate;
+  }
+  return { resolved, timelineApplied, lastEffectiveDate, skippedUndated };
+}
+var ISO_DATE_RE3, FOCUS_TARGET_WEIGHT_POLICY;
+var init_resolveFocusProfileData = __esm({
+  "src/features/kentuFocus/server/reader/resolveFocusProfileData.js"() {
+    init_focusDateUtils();
+    init_logUtils();
+    ISO_DATE_RE3 = /^\d{4}-\d{2}-\d{2}$/;
+    FOCUS_TARGET_WEIGHT_POLICY = Object.freeze({
+      targets: [
+        "targetHistory con effectiveDate|timestamp verificabile \u2264 analysisDate",
+        "nessuna base da targets correnti non datati",
+        "profile.targetCalories/proteinTarget senza data \u2192 non storici",
+        "assenza storia datata \u2192 missing"
+      ],
+      weight: [
+        "body_metrics date \u2264 analysisDate",
+        "attribution: recorded_on_analysis_date | last_available_on_or_before",
+        "profile.weight non attribuito al giorno",
+        "mai zero silenzioso"
+      ]
+    });
   }
 });
 
@@ -4424,6 +4571,31 @@ function readSnapshot(fullHistory, date) {
   if (!Number.isFinite(Number(snap.total))) return null;
   return snap;
 }
+function resolveSettingsBaseKcalForDate(input = {}) {
+  const explicit = roundKcal2(input.settingsBaseKcal);
+  if (explicit > 0) {
+    return { base: explicit, source: "settingsBaseKcal" };
+  }
+  const date = String(input.date || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { base: null, source: null };
+  }
+  const targetsNode = input.targets || input.profile_targets?.targets || (input.userTargets?.targetHistory ? input.userTargets : null) || null;
+  const { resolved, timelineApplied, lastEffectiveDate } = resolveTargetsForAnalysisDate(
+    targetsNode,
+    date
+  );
+  if (timelineApplied > 0) {
+    const fromHistory = roundKcal2(resolved.kcal ?? resolved.targetKcal);
+    if (fromHistory > 0) {
+      return {
+        base: fromHistory,
+        source: `targetHistory.kcal@${lastEffectiveDate || date}`
+      };
+    }
+  }
+  return { base: null, source: null };
+}
 function resolveDayTargetKcal(input = {}) {
   const date = String(input.date || "").slice(0, 10);
   const preferSnapshot = input.preferSnapshot !== false;
@@ -4433,13 +4605,14 @@ function resolveDayTargetKcal(input = {}) {
       return {
         ...normalizeSnapshot(snap),
         fromSnapshot: true,
-        frozen: true
+        frozen: true,
+        baseMissing: false,
+        baseSource: "dayTargetSnapshot"
       };
     }
   }
-  const settingsBaseKcal = roundKcal2(
-    input.settingsBaseKcal ?? input.userTargets?.baseKcal ?? input.userTargets?.kcal ?? 0
-  );
+  const resolvedBase = resolveSettingsBaseKcalForDate(input);
+  const settingsBaseKcal = resolvedBase.base;
   const log = Array.isArray(input.liveLog) && input.liveLog.length > 0 ? input.liveLog : dayLog(input.fullHistory, date);
   const burn = sumWorkoutBurnFromLog(log);
   const strategyDeltaKcal = roundKcal2(input.strategyDeltaKcal);
@@ -4452,6 +4625,24 @@ function resolveDayTargetKcal(input = {}) {
     if (node && node.autopilotCorrection != null) {
       autopilotKcal = roundKcal2(node.autopilotCorrection);
     }
+  }
+  if (!(settingsBaseKcal > 0)) {
+    return {
+      base: null,
+      burnRaw: burn.burnRaw,
+      burnCounted: burn.burnCounted,
+      kcalSource: burn.dominantSource,
+      sessions: burn.sessions,
+      strategy: strategyDeltaKcal,
+      compensation: compensationKcal,
+      autopilot: autopilotKcal,
+      total: null,
+      rulesVersion: DAY_TARGET_RULES_VERSION,
+      fromSnapshot: false,
+      frozen: false,
+      baseMissing: true,
+      baseSource: null
+    };
   }
   const total = computeEffectiveDailyTargetKcal({
     settingsBaseKcal,
@@ -4472,7 +4663,9 @@ function resolveDayTargetKcal(input = {}) {
     total,
     rulesVersion: DAY_TARGET_RULES_VERSION,
     fromSnapshot: false,
-    frozen: false
+    frozen: false,
+    baseMissing: false,
+    baseSource: resolvedBase.source
   };
 }
 function normalizeSnapshot(snap) {
@@ -4493,6 +4686,7 @@ var DAY_TARGET_RULES_VERSION, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
 var init_resolveDayTargetKcal = __esm({
   "src/features/mealEngine/resolveDayTargetKcal.js"() {
     init_computeEffectiveDailyTargetKcal();
+    init_resolveFocusProfileData();
     DAY_TARGET_RULES_VERSION = "dtr-1";
     KCAL_SOURCE = Object.freeze({
       DEVICE: "device",
@@ -4523,7 +4717,7 @@ function computeDayScore(date, context = {}) {
   const lowStatuses = version === SCORE_VERSION ? LOW_RELIABILITY_STATUSES : version === SCORE_VERSION2 ? LOW_RELIABILITY_STATUSES2 : LOW_RELIABILITY_STATUSES3;
   const cylinderKeys = isK3Plus ? ["alimentazione", "sonno", "movimento"] : CYLINDER_KEYS;
   const dayTarget = isK4Plus ? resolveDayTargetForScore(date, context) : null;
-  const targetKcal = dayTarget?.total > 0 ? dayTarget.total : resolveTargetKcal2(context);
+  const targetKcal = dayTarget?.baseMissing ? null : dayTarget?.total > 0 ? dayTarget.total : resolveTargetKcal2(context);
   const dayStatus = getDayStatus(date, {
     today: context.today,
     fullHistory: context.fullHistory,
@@ -4766,7 +4960,7 @@ function scoreCardio(version, date, fullHistory) {
   return cylinder2(status, `${formatMinutes2(minutes)} min / 7 giorni`, [], round33(value));
 }
 function countAdverseUltraProcessed(date, context) {
-  if (!context.fullHistory || !isIsoDateString2(date)) return 0;
+  if (!context.fullHistory || !isIsoDateString(date)) return 0;
   const block = buildFocusFoodQualityBlock({
     fullHistory: context.fullHistory,
     analysisDate: date,
@@ -4809,7 +5003,7 @@ function readDayFacts(date, fullHistory, targetKcal) {
   };
 }
 function readNight(fullHistory, date, lastMealHour2) {
-  if (!isIsoDateString2(date)) return null;
+  if (!isIsoDateString(date)) return null;
   const publicationDate = addCalendarDays(date, 1);
   return normalizeSleepNight(dayNode3(fullHistory, publicationDate), {
     publicationDate,
@@ -4956,31 +5150,18 @@ function resolveTargetKcal2(context) {
   }
   return null;
 }
-function resolveSettingsBaseKcal(context) {
-  const candidates = [
-    context.settingsBaseKcal,
-    context.userTargets?.baseKcal,
-    context.userTargets?.kcal,
-    context.profile_targets?.targetCalories,
-    context.profile_targets?.targets?.kcal,
-    context.targetKcal
-  ];
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value) && value > 0) return Math.round(value);
-  }
-  return 0;
-}
 function resolveDayTargetForScore(date, context) {
-  const settingsBaseKcal = resolveSettingsBaseKcal(context);
   const liveLog = context.todayLiveLog && String(context.today || "").slice(0, 10) === String(date).slice(0, 10) ? context.todayLiveLog : null;
   const node = context.fullHistory?.[`trackerStorico_${date}`];
   const autopilot = node?.autopilotCorrection != null ? Number(node.autopilotCorrection) : context.autopilotKcal ?? null;
+  const explicitBase = Number(context.settingsBaseKcal);
   return resolveDayTargetKcal({
     date,
     fullHistory: context.fullHistory,
-    settingsBaseKcal,
+    settingsBaseKcal: Number.isFinite(explicitBase) && explicitBase > 0 ? explicitBase : null,
     userTargets: context.userTargets,
+    profile_targets: context.profile_targets,
+    targets: context.targets || context.profile_targets?.targets || null,
     strategyDeltaKcal: context.strategyDeltaKcal ?? 0,
     compensationKcal: context.compensationKcal ?? 0,
     autopilotKcal: autopilot,
@@ -5047,7 +5228,7 @@ function computePeriodScore(from, to, context = {}) {
   const days = [];
   const precomputed = context.precomputedDays && typeof context.precomputedDays === "object" ? context.precomputedDays : null;
   const allowFallback = context.allowComputeFallback !== false;
-  if (isIsoDateString2(from) && isIsoDateString2(to) && from <= to) {
+  if (isIsoDateString(from) && isIsoDateString(to) && from <= to) {
     let cursor = from;
     while (cursor <= to && days.length < 400) {
       let scored = precomputed?.[cursor] || null;
@@ -5122,7 +5303,7 @@ function collectStreaks(pastDays) {
   return streaks;
 }
 function isPastDay(date, today, dayStatus) {
-  if (isIsoDateString2(today)) return date < today;
+  if (isIsoDateString(today)) return date < today;
   return dayStatus !== "future" && dayStatus !== "in_progress";
 }
 function round34(value) {
@@ -6326,55 +6507,91 @@ function sha256Hex(value) {
 
 // functions/mcp/auth.js
 var RATE_LIMIT_PER_HOUR = 60;
+var MIN_TOKEN_LEN = 32;
 function hourBucket(now = Date.now()) {
   return Math.floor(now / 36e5);
 }
-async function resolveMcpBearer(db, authorizationHeader) {
-  const header = String(authorizationHeader || "").trim();
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match) {
-    const err = new Error("Autenticazione richiesta");
-    err.code = "unauthorized";
-    throw err;
+function headerValue(headers, name) {
+  if (!headers) return "";
+  if (typeof headers.get === "function") {
+    return String(headers.get(name) || headers.get(name.toLowerCase()) || "").trim();
   }
-  const token = match[1].trim();
-  if (!token || token.length < 32) {
-    const err = new Error("Gettone non valido");
-    err.code = "unauthorized";
-    throw err;
+  const want = name.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key).toLowerCase() !== want) continue;
+    if (Array.isArray(value)) return String(value[0] || "").trim();
+    return String(value || "").trim();
+  }
+  return "";
+}
+function extractMcpCredential(headersOrAuthorization) {
+  if (typeof headersOrAuthorization === "string") {
+    headersOrAuthorization = { authorization: headersOrAuthorization };
+  }
+  const candidates = [
+    { name: "authorization", value: headerValue(headersOrAuthorization, "authorization") },
+    { name: "x-api-key", value: headerValue(headersOrAuthorization, "x-api-key") },
+    { name: "x-auth-token", value: headerValue(headersOrAuthorization, "x-auth-token") }
+  ];
+  let sawAny = false;
+  for (const { name, value } of candidates) {
+    if (!value) continue;
+    sawAny = true;
+    const bearer = /^Bearer\s+(\S+)\s*$/i.exec(value);
+    if (bearer) {
+      return { token: bearer[1], source: `${name}_bearer`, reason: null };
+    }
+    if (/^Bearer\s*$/i.test(value)) {
+      return { token: null, source: name, reason: "bearer_empty" };
+    }
+    if (!/\s/.test(value)) {
+      return { token: value, source: `${name}_raw`, reason: null };
+    }
+    return { token: null, source: name, reason: "authorization_malformed" };
+  }
+  return {
+    token: null,
+    source: null,
+    reason: sawAny ? "authorization_malformed" : "missing_credential"
+  };
+}
+function authError(message, reason) {
+  const err = new Error(message);
+  err.code = reason === "rate_limited" ? "rate_limited" : "unauthorized";
+  err.reason = reason;
+  return err;
+}
+async function resolveMcpBearer(db, headersOrAuthorization) {
+  const extracted = extractMcpCredential(headersOrAuthorization);
+  if (!extracted.token) {
+    throw authError("Autenticazione richiesta", extracted.reason || "missing_credential");
+  }
+  const token = extracted.token;
+  if (token.length < MIN_TOKEN_LEN) {
+    throw authError("Gettone non valido", "token_too_short");
   }
   const hash = sha256Hex(token);
   const lookupSnap = await db.ref(`mcp_token_lookup/${hash}`).get();
   if (!lookupSnap.exists()) {
-    const err = new Error("Gettone non riconosciuto");
-    err.code = "unauthorized";
-    throw err;
+    throw authError("Gettone non riconosciuto", "token_not_found");
   }
   const lookup = lookupSnap.val() || {};
   const uid = String(lookup.uid || "").trim();
   const tokenId = String(lookup.tokenId || "").trim();
   if (!uid || !tokenId) {
-    const err = new Error("Gettone non valido");
-    err.code = "unauthorized";
-    throw err;
+    throw authError("Gettone non valido", "lookup_incomplete");
   }
   const tokenRef = db.ref(`users/${uid}/mcp_tokens/${tokenId}`);
   const tokenSnap = await tokenRef.get();
   if (!tokenSnap.exists()) {
-    const err = new Error("Gettone revocato o assente");
-    err.code = "unauthorized";
-    throw err;
+    throw authError("Gettone revocato o assente", "token_missing");
   }
   const record = tokenSnap.val() || {};
   if (record.revoked === true) {
-    const err = new Error("Gettone revocato");
-    err.code = "unauthorized";
-    throw err;
+    throw authError("Gettone revocato", "revoked");
   }
   if (String(record.hash || "") !== hash) {
-    const err = new Error("Gettone non valido");
-    err.code = "unauthorized";
-    throw err;
+    throw authError("Gettone non valido", "hash_mismatch");
   }
   const now = Date.now();
   const bucket = hourBucket(now);
@@ -6385,16 +6602,14 @@ async function resolveMcpBearer(db, authorizationHeader) {
     count = 0;
   }
   if (count >= RATE_LIMIT_PER_HOUR) {
-    const err = new Error("Limite richieste orarie superato");
-    err.code = "rate_limited";
-    throw err;
+    throw authError("Limite richieste orarie superato", "rate_limited");
   }
   await tokenRef.update({
     lastUsedAt: now,
     hourBucket: storedBucket,
     requestCountHour: count + 1
   });
-  return { uid, tokenId };
+  return { uid, tokenId, source: extracted.source || "unknown" };
 }
 function uidLogTag(uid) {
   return sha256Hex(uid).slice(0, 8);
@@ -6536,21 +6751,16 @@ function redactSensitiveNumbers(value) {
 }
 
 // functions/mcp/loadUserContext.js
-var import_node_path2 = __toESM(require("node:path"));
-var import_node_fs = require("node:fs");
-function resolveRepoRoot() {
-  const candidates = [
-    process.cwd(),
-    import_node_path2.default.resolve(process.cwd(), ".."),
-    import_node_path2.default.resolve(__dirname, ".."),
-    import_node_path2.default.resolve(__dirname, "../..")
-  ];
-  for (const candidate of candidates) {
-    if ((0, import_node_fs.existsSync)(import_node_path2.default.join(candidate, "public", "kentu_smart_master_db.json"))) {
-      return candidate;
-    }
-  }
-  return import_node_path2.default.resolve(process.cwd(), "..");
+function emptyCatalogs(personalDb = {}) {
+  return {
+    personalDb,
+    kentuItDb: {},
+    globalDb: {},
+    offDb: {},
+    offReady: false,
+    offExcluded: true,
+    warnings: []
+  };
 }
 async function loadUserFocusContext(db, uid) {
   const id = String(uid || "").trim();
@@ -6566,7 +6776,7 @@ async function loadUserFocusContext(db, uid) {
     db.ref(`users/${id}/profile_targets`).get(),
     db.ref(`users/${id}/day_status`).get(),
     db.ref(`users/${id}/movement_checkin`).get(),
-    db.ref(`users/${id}/cylinders/forza/enabled`).get()
+    db.ref(`users/${id}/cylinders/forza`).get()
   ]);
   const tracker = trackerSnap.val() && typeof trackerSnap.val() === "object" ? trackerSnap.val() : {};
   const personalDb = tracker.trackerFoodDatabase && typeof tracker.trackerFoodDatabase === "object" ? tracker.trackerFoodDatabase : {};
@@ -6574,9 +6784,24 @@ async function loadUserFocusContext(db, uid) {
   delete fullHistory.trackerFoodDatabase;
   const profile_targets = profileSnap.val() && typeof profileSnap.val() === "object" ? profileSnap.val() : {};
   const userTargets = profile_targets.targets && typeof profile_targets.targets === "object" ? profile_targets.targets : profile_targets.profile || {};
-  const { loadFocusCatalogsFromPublic: loadFocusCatalogsFromPublic2 } = await Promise.resolve().then(() => (init_loadFocusCatalogsNode(), loadFocusCatalogsNode_exports));
-  const catalogs = await loadFocusCatalogsFromPublic2(resolveRepoRoot());
-  catalogs.personalDb = personalDb;
+  const warnings = [];
+  let catalogs = emptyCatalogs(personalDb);
+  try {
+    const { loadServerCatalogs: loadServerCatalogs2 } = await Promise.resolve().then(() => (init_loadServerCatalogs(), loadServerCatalogs_exports));
+    const loaded = await loadServerCatalogs2();
+    catalogs = {
+      ...loaded,
+      personalDb
+    };
+    for (const w of loaded.warnings || []) warnings.push(w);
+  } catch (error) {
+    const msg = String(error?.message || error).slice(0, 160);
+    warnings.push(
+      `Cataloghi CREA/USDA non caricati (${msg}). Dettaglio pasti/notte dal diario; classificazione cibo limitata al DB personale.`
+    );
+    console.warn("[kentuMcp] catalogs degrade", msg);
+    catalogs = emptyCatalogs(personalDb);
+  }
   return {
     today: todayInRome(),
     fullHistory,
@@ -6585,7 +6810,14 @@ async function loadUserFocusContext(db, uid) {
     records: dayStatusSnap.val() && typeof dayStatusSnap.val() === "object" ? dayStatusSnap.val() : {},
     movementCheckins: checkinSnap.val() && typeof checkinSnap.val() === "object" ? checkinSnap.val() : {},
     catalogs,
-    forzaEnabled: forzaSnap.val() !== false,
+    catalogWarnings: warnings,
+    // Abilitata solo se esplicitamente true (nodo boolean o { enabled: true }).
+    forzaEnabled: (() => {
+      const raw = forzaSnap.val();
+      if (raw === true) return true;
+      if (raw && typeof raw === "object" && raw.enabled === true) return true;
+      return false;
+    })(),
     personalDb
   };
 }
@@ -6594,6 +6826,64 @@ async function readStoredDayScore(db, uid, date) {
   if (!snap.exists()) return null;
   const { decodeDayScoreFromRtdb: decodeDayScoreFromRtdb2 } = await Promise.resolve().then(() => (init_dayScoreRecord(), dayScoreRecord_exports));
   return decodeDayScoreFromRtdb2(snap.val());
+}
+
+// functions/mcp/nutrientRead.js
+var ANIMAL_NO_FIBRE = /(?:^|[^a-z0-9àèéìòù])(merluzzo|pesce|filett|tonno|salmone|pollo|tacchino|manzo|vitello|maiale|carne|bresaola|prosciutto|speck|wurstel|wudy|salsicc|uovo|uova|egg|formaggio|mozzarella|parmigiano|grana|yogurt\s*greco|ricotta|burrata)(?=[^a-z0-9àèéìòù]|$)/iu;
+function finite(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function looksLikeAnimalNoFibre(name) {
+  return ANIMAL_NO_FIBRE.test(String(name || ""));
+}
+function readFibreGrams(entry) {
+  if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
+  const totali = finite(entry.fibreTotali);
+  const fibre = finite(entry.fibre ?? entry.fiber);
+  const name = entry.name || entry.foodName || entry.desc || "";
+  let value = null;
+  let reason = null;
+  if (totali != null) {
+    value = totali;
+  } else if (fibre != null) {
+    value = fibre;
+  } else {
+    return { value: null, reason: "missing" };
+  }
+  if (looksLikeAnimalNoFibre(name) && value > 0.05) {
+    return { value: null, reason: "animal_fibre_suspicious" };
+  }
+  if (value < 0) return { value: null, reason: "missing" };
+  return { value, reason: null };
+}
+function readSodiumMg(entry) {
+  if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
+  const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
+  const sale = finite(entry.sale);
+  const fromSale = sale != null && sale > 0 ? Math.round(sale * 393.4 * 10) / 10 : null;
+  if (na == null || na === 0) {
+    if (fromSale != null) return { value: fromSale, reason: null };
+    return { value: null, reason: "missing" };
+  }
+  if (na > 0 && na < 5) {
+    if (fromSale != null && Math.abs(fromSale - na * 1e3) / fromSale < 0.55) {
+      return { value: Math.round(na * 1e3 * 10) / 10, reason: null };
+    }
+    if (fromSale != null) return { value: fromSale, reason: null };
+    return { value: Math.round(na * 1e3 * 10) / 10, reason: null };
+  }
+  if (fromSale != null && na < fromSale * 0.05) {
+    return { value: fromSale, reason: null };
+  }
+  return { value: na, reason: null };
+}
+function readMacroGrams(entry, key) {
+  if (!entry || typeof entry !== "object") return null;
+  if (key === "prot") return finite(entry.prot ?? entry.protein ?? entry.proteins);
+  if (key === "carb") return finite(entry.carb ?? entry.carbs ?? entry.carbohydrates);
+  if (key === "fat") return finite(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
+  return finite(entry[key]);
 }
 
 // functions/mcp/dayDetail.js
@@ -6631,10 +6921,6 @@ function flattenDiaryEntries(node) {
   }
   return out;
 }
-function finite(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
 function round1(value) {
   const n = finite(value);
   return n == null ? null : Math.round(n * 10) / 10;
@@ -6648,29 +6934,6 @@ function hourOf(entry, mealTimes = null) {
     if (fromMap != null) return fromMap;
   }
   return null;
-}
-function readNutrient(entry, key) {
-  if (!entry || typeof entry !== "object") return null;
-  if (key === "prot") {
-    return finite(entry.prot ?? entry.protein ?? entry.proteins);
-  }
-  if (key === "carb") {
-    return finite(entry.carb ?? entry.carbs ?? entry.carbohydrates);
-  }
-  if (key === "fat") {
-    return finite(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
-  }
-  if (key === "fibre") {
-    return finite(entry.fibre ?? entry.fibreTotali ?? entry.fiber);
-  }
-  if (key === "na") {
-    const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
-    if (na != null) return na;
-    const sale = finite(entry.sale);
-    if (sale != null) return Math.round(sale * 393.4 * 10) / 10;
-    return null;
-  }
-  return finite(entry[key]);
 }
 function isFoodLike(entry) {
   const type = String(entry?.type || "").toLowerCase();
@@ -6698,19 +6961,19 @@ function buildDayMealsDetail(fullHistory, date) {
     if (!isFoodLike(entry)) continue;
     const grams = finite(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
     const kcal = finite(entry.kcal ?? entry.cal);
-    const prot = readNutrient(entry, "prot");
-    const carb = readNutrient(entry, "carb");
-    const fat = readNutrient(entry, "fat");
-    const fibre = readNutrient(entry, "fibre");
-    const sodiumMg = readNutrient(entry, "na");
+    const prot = readMacroGrams(entry, "prot");
+    const carb = readMacroGrams(entry, "carb");
+    const fat = readMacroGrams(entry, "fat");
+    const fibreRead = readFibreGrams(entry);
+    const sodiumRead = readSodiumMg(entry);
     const name = entry.name || entry.foodName || entry.desc || "Alimento";
     const caffeine = finite(entry.caffeineMg);
     if (caffeine != null && caffeine > 0) {
       caffeineMg += caffeine;
       caffeineKnown = true;
     }
-    if (sodiumMg == null) foodsMissingSodium.push(name);
-    if (fibre == null) foodsMissingFibre.push(name);
+    if (sodiumRead.value == null) foodsMissingSodium.push(name);
+    if (fibreRead.value == null) foodsMissingFibre.push(name);
     meals.push({
       name,
       mealType: entry.mealType || entry.mealId || null,
@@ -6720,10 +6983,12 @@ function buildDayMealsDetail(fullHistory, date) {
       prot,
       carb,
       fat,
-      fibre,
-      sodiumMg,
+      fibre: fibreRead.value,
+      sodiumMg: sodiumRead.value,
       caffeineMg: caffeine,
-      condimentKind: entry.condimentKind || null
+      condimentKind: entry.condimentKind || null,
+      foodDbKey: entry.foodDbKey || entry.matchedKey || entry.id || null,
+      source: entry.source || entry.entrySource || null
     });
   }
   const liquids = [];
@@ -6796,11 +7061,14 @@ function deriveBedtime(entry) {
   }
   return { bedtime: null, bedtimeProvenance: "missing" };
 }
-function buildDaySleepDetail(fullHistory, date) {
-  const node = trackerNode(fullHistory, date);
+function buildDaySleepDetail(fullHistory, date, options = {}) {
+  const storageDate = options.sameDay ? date : addDaysIso(date, 1);
+  const node = trackerNode(fullHistory, storageDate);
   const entries = flattenDiaryEntries(node);
   const entry = pickMainSleep(entries);
-  if (!entry) return null;
+  if (!entry) {
+    return null;
+  }
   const { bedtime, bedtimeProvenance } = deriveBedtime(entry);
   const notes = String(entry.notes ?? entry.note ?? entry.details ?? "").trim() || null;
   const quality = finite(entry.quality ?? entry.sleepQuality ?? entry.rating);
@@ -6816,7 +7084,8 @@ function buildDaySleepDetail(fullHistory, date) {
     deepMin: finite(entry.deepMin),
     remMin: finite(entry.remMin),
     hr: finite(entry.hr),
-    qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null
+    qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null,
+    storageDate
   };
 }
 function dinnerStats(meals) {
@@ -6939,46 +7208,50 @@ function buildEvenings(fullHistory, from, to) {
 }
 
 // functions/mcp/tools.js
-function flattenLog(node) {
-  const raw = node?.log || node?.dati?.log || [];
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    if (entry.type === "meal" && Array.isArray(entry.items)) {
-      for (const item of entry.items) out.push(item);
-      continue;
-    }
-    out.push(entry);
-  }
-  return out;
-}
+init_workoutMovement();
 function summarizeMovement(fullHistory, date) {
-  const entries = flattenLog(trackerNode(fullHistory, date));
-  const movement = [];
+  const entries = flattenDiaryEntries(trackerNode(fullHistory, date));
+  const byId = /* @__PURE__ */ new Map();
   for (const entry of entries) {
     const type = String(entry.type || "").toLowerCase();
-    if (type === "workout" || type === "cardio" || type === "activity") {
-      movement.push({
-        type,
-        name: entry.name || entry.workoutType || entry.activityType || type,
-        durationMinutes: entry.durationMinutes ?? entry.duration ?? null
-      });
+    if (type !== "workout" && type !== "cardio" && type !== "activity") continue;
+    const id = String(entry.id || `${entry.name || ""}_${entry.time || ""}`);
+    const prev = byId.get(id);
+    if (!prev || entry.durationMinutes != null && prev.durationMinutes == null) {
+      byId.set(id, entry);
     }
+  }
+  const movement = [];
+  for (const entry of byId.values()) {
+    const minutes = resolveWorkoutDurationMinutes(entry);
+    const kind = classifyWorkoutByType(entry).kind;
+    movement.push({
+      type: entry.workoutType || entry.subType || entry.type || kind,
+      name: entry.name || entry.workoutType || entry.activityType || entry.type,
+      durationMinutes: minutes > 0 ? minutes : null,
+      kind
+    });
   }
   return movement;
 }
 function scoreContext(base) {
+  const forzaOn = base.forzaEnabled === true;
   return {
     today: base.today,
     fullHistory: base.fullHistory,
+    // Niente targetKcal/base correnti inventati: resolveDayTargetKcal usa
+    // dayTargetSnapshot o targetHistory per la data (dtr-1, no fallback 2000).
     userTargets: base.userTargets,
-    targetKcal: Number(base.userTargets?.kcal || base.profile_targets?.targets?.kcal) || null,
     profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null,
     records: base.records,
     movementCheckins: base.movementCheckins,
     catalogs: base.catalogs,
-    forzaEnabled: base.forzaEnabled,
+    forzaEnabled: forzaOn,
+    // computeDayScore.forzaEnabled legge context.cylinders.forza.enabled
+    cylinders: {
+      forza: { enabled: forzaOn }
+    },
     scoreVersion: "kds-5"
   };
 }
@@ -7045,7 +7318,8 @@ async function toolGetDay(db, uid, dateRef) {
       })),
       suppressNumbers: Boolean(safety.suppressNumbers || score.suppressNumbers)
     },
-    action: lowestPillarAction(score.cylinders, safety)
+    action: lowestPillarAction(score.cylinders, safety),
+    warnings: [...base.catalogWarnings || []]
   };
   if (payload.safety.suppressNumbers) {
     payload = redactSensitiveNumbers(payload);
@@ -7061,9 +7335,11 @@ function lowestPillarAction(cylinders, safety) {
   const order = ["alimentazione", "sonno", "movimento", "forza"];
   let best = null;
   for (const id of order) {
+    const status = cylinders?.[id]?.status ?? null;
+    if (status === "inactive" || status === "no_data") continue;
     const value = Number(cylinders?.[id]?.value);
     if (!Number.isFinite(value)) continue;
-    if (!best || value < best.value) best = { id, value, status: cylinders[id]?.status ?? null };
+    if (!best || value < best.value) best = { id, value, status };
   }
   return best ? { kind: "pillar", pillar: best.id, status: best.status, value: best.value } : null;
 }
@@ -7128,7 +7404,11 @@ async function toolGetEvenings(db, uid, range) {
       break;
     }
   }
-  let out = { ...payload, suppressNumbers: suppress };
+  let out = {
+    ...payload,
+    suppressNumbers: suppress,
+    warnings: [...base.catalogWarnings || []]
+  };
   if (suppress) {
     out = redactSensitiveNumbers(out);
     out.suppressNumbers = true;
@@ -7153,6 +7433,7 @@ async function toolSearchFood(db, uid, query) {
   const annotated = annotateCandidatesMatchQuality2(q, hits);
   return {
     query: q,
+    warnings: [...base.catalogWarnings || []],
     results: (annotated || []).slice(0, 12).map((hit) => ({
       name: hit.name || hit.desc || hit.label || null,
       matchQuality: hit.matchQuality || null,
@@ -7251,11 +7532,59 @@ function jsonRpcError(res, status, code, message) {
     id: null
   });
 }
+function requestPath(req) {
+  try {
+    return String(req.path || req.url || "/").split("?")[0];
+  } catch {
+    return "/";
+  }
+}
+function parseBody(raw) {
+  if (raw == null || raw === "") return void 0;
+  if (Buffer.isBuffer(raw)) {
+    const text = raw.toString("utf8").trim();
+    if (!text) return void 0;
+    return JSON.parse(text);
+  }
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (!text) return void 0;
+    return JSON.parse(text);
+  }
+  return raw;
+}
 async function handleKentuMcpHttp(req, res, { db }) {
   const t0 = Date.now();
+  const method = String(req.method || "GET").toUpperCase();
+  const path3 = requestPath(req);
   denyCors(res);
-  if (req.method === "OPTIONS") {
+  if (method === "OPTIONS") {
+    res.setHeader("Allow", "POST, OPTIONS");
     res.status(204).end();
+    return;
+  }
+  if (method === "GET") {
+    console.info("[kentuMcp]", JSON.stringify({
+      method,
+      path: path3,
+      status: 405,
+      ms: Date.now() - t0,
+      reason: "sse_not_supported"
+    }));
+    res.setHeader("Allow", "POST, OPTIONS");
+    jsonRpcError(res, 405, -32e3, "Method Not Allowed");
+    return;
+  }
+  if (method !== "POST") {
+    console.info("[kentuMcp]", JSON.stringify({
+      method,
+      path: path3,
+      status: 405,
+      ms: Date.now() - t0,
+      reason: "method_not_allowed"
+    }));
+    res.setHeader("Allow", "POST, OPTIONS");
+    jsonRpcError(res, 405, -32e3, "Method Not Allowed");
     return;
   }
   if (req.query && (req.query.token || req.query.access_token || req.query.key)) {
@@ -7264,33 +7593,56 @@ async function handleKentuMcpHttp(req, res, { db }) {
   }
   let auth;
   try {
-    auth = await resolveMcpBearer(db, req.get("authorization") || req.headers.authorization);
+    auth = await resolveMcpBearer(db, req.headers);
   } catch (error) {
     const status = error?.code === "rate_limited" ? 429 : 401;
     console.info("[kentuMcp]", JSON.stringify({
+      method,
+      path: path3,
       status,
       ms: Date.now() - t0,
-      reason: error?.code || "unauthorized"
+      reason: error?.reason || error?.code || "unauthorized"
     }));
     jsonRpcError(res, status, -32001, error?.message || "Non autorizzato");
     return;
   }
+  let parsedBody;
+  try {
+    parsedBody = parseBody(req.body);
+  } catch {
+    console.info("[kentuMcp]", JSON.stringify({
+      method,
+      path: path3,
+      status: 400,
+      ms: Date.now() - t0,
+      reason: "invalid_json_body",
+      uid: uidLogTag(auth.uid)
+    }));
+    jsonRpcError(res, 400, -32700, "Parse error");
+    return;
+  }
   const server = createKentuMcpServer({ uid: auth.uid, db });
   const transport = new import_streamableHttp.StreamableHTTPServerTransport({
-    sessionIdGenerator: void 0
+    sessionIdGenerator: void 0,
+    // JSON response mode: adatto a Cloud Functions (niente SSE lungo).
+    enableJsonResponse: true
   });
   try {
     await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await transport.handleRequest(req, res, parsedBody);
     console.info("[kentuMcp]", JSON.stringify({
       uid: uidLogTag(auth.uid),
-      method: req.method,
+      method,
+      path: path3,
       status: res.statusCode || 200,
-      ms: Date.now() - t0
+      ms: Date.now() - t0,
+      authSource: auth.source
     }));
   } catch (error) {
     console.error("[kentuMcp]", JSON.stringify({
       uid: uidLogTag(auth.uid),
+      method,
+      path: path3,
       status: 500,
       ms: Date.now() - t0,
       err: String(error?.message || error).slice(0, 120)

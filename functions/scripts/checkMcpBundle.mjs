@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertMcpCatalogDataFresh } from './mcpCatalogFiles.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FUNCTIONS_ROOT = path.resolve(__dirname, '..');
@@ -66,4 +67,12 @@ if (meta.sourceHash !== current) {
   process.exit(1);
 }
 
+try {
+  assertMcpCatalogDataFresh();
+} catch (error) {
+  console.error(String(error?.message || error));
+  process.exit(1);
+}
+
 console.log(`[mcp-bundle] check ok (${current.slice(0, 12)}…)`);
+console.log('[mcp-catalogs] check ok (allineati a public/, OFF escluso)');

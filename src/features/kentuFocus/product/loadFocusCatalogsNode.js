@@ -1,44 +1,64 @@
 /**
- * Carica CREA, USDA e Open Food Facts dai file in public/.
- * Le chiavi seguono foodLoader.resolveRecordKey, così il lookup del diario
- * trova la stessa riga che trova l'app. Niente enrich delle porzioni:
- * a Focus servono nome, kcal e semanticTags.
+ * Carica CREA, USDA e (opzionale) Open Food Facts.
+ * - Dev/test: da public/ sotto root (default process.cwd()).
+ * - Cloud Functions MCP: da options.dataDir (functions/data/), senza OFF.
  */
 
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const PUBLIC_FILES = Object.freeze({
-  kentuIt: 'public/kentu_smart_master_db.json',
-  global: 'public/kentu_smart_master_usda_FINAL.json',
-  off: 'public/kentu_off_master_db.json',
+const FILE_NAMES = Object.freeze({
+  kentuIt: 'kentu_smart_master_db.json',
+  global: 'kentu_smart_master_usda_FINAL.json',
+  off: 'kentu_off_master_db.json',
 });
 
+/** @type {{ key: string, value: object }|null} */
 let cached = null;
 
 /**
  * @param {string} [root]
+ * @param {{ includeOff?: boolean, dataDir?: string }} [options]
  */
-export async function loadFocusCatalogsFromPublic(root = process.cwd()) {
-  if (cached) return cached;
+export async function loadFocusCatalogsFromPublic(root = process.cwd(), options = {}) {
+  const includeOff = options.includeOff !== false;
+  const dataDir = options.dataDir ? String(options.dataDir) : null;
+  const cacheKey = `${dataDir || root}|off:${includeOff ? 1 : 0}`;
+  if (cached && cached.key === cacheKey) return cached.value;
+
+  const resolveFile = (name) => (
+    dataDir
+      ? path.join(dataDir, name)
+      : path.join(root, 'public', name)
+  );
+
   const [kentuIt, globalDb, offDb] = await Promise.all([
-    readIndex(root, PUBLIC_FILES.kentuIt, 'kentu_it'),
-    readIndex(root, PUBLIC_FILES.global, 'global'),
-    readIndex(root, PUBLIC_FILES.off, 'off'),
+    readIndex(resolveFile(FILE_NAMES.kentuIt), 'kentu_it'),
+    readIndex(resolveFile(FILE_NAMES.global), 'global'),
+    includeOff
+      ? readIndex(resolveFile(FILE_NAMES.off), 'off')
+      : Promise.resolve({}),
   ]);
   for (const key of Object.keys(kentuIt)) delete globalDb[key];
-  cached = {
+  const value = {
     personalDb: {},
     kentuItDb: kentuIt,
     globalDb,
     offDb,
-    offReady: Object.keys(offDb).length > 0,
+    offReady: includeOff && Object.keys(offDb).length > 0,
   };
-  return cached;
+  cached = { key: cacheKey, value };
+  return value;
 }
 
-async function readIndex(root, relativePath, source) {
-  const json = JSON.parse(await readFile(path.join(root, relativePath), 'utf8'));
+export function clearFocusCatalogsCache() {
+  cached = null;
+}
+
+export const FOCUS_CATALOG_FILE_NAMES = FILE_NAMES;
+
+async function readIndex(absolutePath, source) {
+  const json = JSON.parse(await readFile(absolutePath, 'utf8'));
   return indexRecords(extractRecords(json), source);
 }
 

@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { syncMcpCatalogData } from './mcpCatalogFiles.mjs';
 
 const require = createRequire(import.meta.url);
 const esbuild = require('esbuild');
@@ -98,6 +99,11 @@ const common = {
 
 mkdirSync(OUT_DIR, { recursive: true });
 
+const catalogsMeta = syncMcpCatalogData();
+console.log(
+  `[mcp-catalogs] synced ${(catalogsMeta.totalBytes / (1024 * 1024)).toFixed(2)} MB → functions/lib/catalog-data/ (OFF escluso)`,
+);
+
 await esbuild.build({
   ...common,
   entryPoints: [path.join(MCP_DIR, 'httpHandler.js')],
@@ -116,6 +122,11 @@ const meta = {
   sourceHash: hash,
   files,
   outputs: ['lib/mcpHttp.cjs', 'lib/mcpTokens.cjs'],
+  catalogs: {
+    excludeOff: true,
+    totalBytes: catalogsMeta.totalBytes,
+    files: catalogsMeta.files,
+  },
 };
 writeFileSync(path.join(OUT_DIR, 'mcpBundle.meta.json'), `${JSON.stringify(meta, null, 2)}\n`);
 console.log(`[mcp-bundle] ok sourceHash=${hash.slice(0, 12)}… files=${files.length}`);

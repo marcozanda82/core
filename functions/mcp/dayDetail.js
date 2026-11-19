@@ -1,9 +1,18 @@
 /**
  * Dettaglio pasti / liquidi / notte per MCP (sola lettura).
  * Usato da kentu_get_day e kentu_get_evenings.
+ *
+ * Sonno: stessa fonte del pilastro Focus — notte pubblicata su date+1
+ * (normalizeSleepNight / storage mattutino).
  */
 
 import { addDaysIso, isIsoDate } from './dates.js';
+import {
+  finite,
+  readFibreGrams,
+  readMacroGrams,
+  readSodiumMg,
+} from './nutrientRead.js';
 
 const DINNER_KEYS = /^(cena|dinner)/i;
 const EVENING_HOUR = 18;
@@ -43,11 +52,6 @@ function flattenDiaryEntries(node) {
   return out;
 }
 
-function finite(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 function round1(value) {
   const n = finite(value);
   return n == null ? null : Math.round(n * 10) / 10;
@@ -62,30 +66,6 @@ function hourOf(entry, mealTimes = null) {
     if (fromMap != null) return fromMap;
   }
   return null;
-}
-
-function readNutrient(entry, key) {
-  if (!entry || typeof entry !== 'object') return null;
-  if (key === 'prot') {
-    return finite(entry.prot ?? entry.protein ?? entry.proteins);
-  }
-  if (key === 'carb') {
-    return finite(entry.carb ?? entry.carbs ?? entry.carbohydrates);
-  }
-  if (key === 'fat') {
-    return finite(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
-  }
-  if (key === 'fibre') {
-    return finite(entry.fibre ?? entry.fibreTotali ?? entry.fiber);
-  }
-  if (key === 'na') {
-    const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
-    if (na != null) return na;
-    const sale = finite(entry.sale);
-    if (sale != null) return Math.round(sale * 393.4 * 10) / 10;
-    return null;
-  }
-  return finite(entry[key]);
 }
 
 function isFoodLike(entry) {
@@ -121,19 +101,19 @@ export function buildDayMealsDetail(fullHistory, date) {
     if (!isFoodLike(entry)) continue;
     const grams = finite(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
     const kcal = finite(entry.kcal ?? entry.cal);
-    const prot = readNutrient(entry, 'prot');
-    const carb = readNutrient(entry, 'carb');
-    const fat = readNutrient(entry, 'fat');
-    const fibre = readNutrient(entry, 'fibre');
-    const sodiumMg = readNutrient(entry, 'na');
+    const prot = readMacroGrams(entry, 'prot');
+    const carb = readMacroGrams(entry, 'carb');
+    const fat = readMacroGrams(entry, 'fat');
+    const fibreRead = readFibreGrams(entry);
+    const sodiumRead = readSodiumMg(entry);
     const name = entry.name || entry.foodName || entry.desc || 'Alimento';
     const caffeine = finite(entry.caffeineMg);
     if (caffeine != null && caffeine > 0) {
       caffeineMg += caffeine;
       caffeineKnown = true;
     }
-    if (sodiumMg == null) foodsMissingSodium.push(name);
-    if (fibre == null) foodsMissingFibre.push(name);
+    if (sodiumRead.value == null) foodsMissingSodium.push(name);
+    if (fibreRead.value == null) foodsMissingFibre.push(name);
     meals.push({
       name,
       mealType: entry.mealType || entry.mealId || null,
@@ -143,10 +123,12 @@ export function buildDayMealsDetail(fullHistory, date) {
       prot,
       carb,
       fat,
-      fibre,
-      sodiumMg,
+      fibre: fibreRead.value,
+      sodiumMg: sodiumRead.value,
       caffeineMg: caffeine,
       condimentKind: entry.condimentKind || null,
+      foodDbKey: entry.foodDbKey || entry.matchedKey || entry.id || null,
+      source: entry.source || entry.entrySource || null,
     });
   }
 
@@ -225,14 +207,19 @@ function deriveBedtime(entry) {
 }
 
 /**
+ * Sonno del pilastro Focus per `date`: letto da `date+1` (pubblicazione mattutina).
  * @param {object|null|undefined} fullHistory
- * @param {string} date
+ * @param {string} date YYYY-MM-DD del giorno Focus
+ * @param {{ sameDay?: boolean }} [options] sameDay=true → usa il nodo di `date` (solo evenings legacy)
  */
-export function buildDaySleepDetail(fullHistory, date) {
-  const node = trackerNode(fullHistory, date);
+export function buildDaySleepDetail(fullHistory, date, options = {}) {
+  const storageDate = options.sameDay ? date : addDaysIso(date, 1);
+  const node = trackerNode(fullHistory, storageDate);
   const entries = flattenDiaryEntries(node);
   const entry = pickMainSleep(entries);
-  if (!entry) return null;
+  if (!entry) {
+    return null;
+  }
   const { bedtime, bedtimeProvenance } = deriveBedtime(entry);
   const notes = String(entry.notes ?? entry.note ?? entry.details ?? '').trim() || null;
   const quality = finite(entry.quality ?? entry.sleepQuality ?? entry.rating);
@@ -249,6 +236,7 @@ export function buildDaySleepDetail(fullHistory, date) {
     remMin: finite(entry.remMin),
     hr: finite(entry.hr),
     qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null,
+    storageDate,
   };
 }
 
@@ -296,6 +284,7 @@ function hoursBeforeSleep(lastMeal, bedtime) {
  */
 export function buildEveningRow(fullHistory, date) {
   const detail = buildDayMealsDetail(fullHistory, date);
+  // Notte dopo la sera di `date` = storage su date+1 (come il pilastro sonno).
   const sleep = buildDaySleepDetail(fullHistory, date);
   const dinner = dinnerStats(detail.meals);
   const lastMeal = lastMealHour(detail.meals);

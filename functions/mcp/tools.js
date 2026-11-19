@@ -5,51 +5,59 @@ import {
   buildDayMealsDetail,
   buildDaySleepDetail,
   buildEvenings,
+  flattenDiaryEntries,
   trackerNode,
 } from './dayDetail.js';
-
-function flattenLog(node) {
-  const raw = node?.log || node?.dati?.log || [];
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
-    if (entry.type === 'meal' && Array.isArray(entry.items)) {
-      for (const item of entry.items) out.push(item);
-      continue;
-    }
-    out.push(entry);
-  }
-  return out;
-}
+import {
+  classifyWorkoutByType,
+  resolveWorkoutDurationMinutes,
+} from '../../src/features/commandTerminal/context/workoutMovement.js';
 
 function summarizeMovement(fullHistory, date) {
-  const entries = flattenLog(trackerNode(fullHistory, date));
-  const movement = [];
+  const entries = flattenDiaryEntries(trackerNode(fullHistory, date));
+  const byId = new Map();
   for (const entry of entries) {
     const type = String(entry.type || '').toLowerCase();
-    if (type === 'workout' || type === 'cardio' || type === 'activity') {
-      movement.push({
-        type,
-        name: entry.name || entry.workoutType || entry.activityType || type,
-        durationMinutes: entry.durationMinutes ?? entry.duration ?? null,
-      });
+    if (type !== 'workout' && type !== 'cardio' && type !== 'activity') continue;
+    const id = String(entry.id || `${entry.name || ''}_${entry.time || ''}`);
+    const prev = byId.get(id);
+    // Preferisci la copia con durationMinutes esplicito (spesso in manualNodes).
+    if (!prev || (entry.durationMinutes != null && prev.durationMinutes == null)) {
+      byId.set(id, entry);
     }
+  }
+  const movement = [];
+  for (const entry of byId.values()) {
+    const minutes = resolveWorkoutDurationMinutes(entry);
+    const kind = classifyWorkoutByType(entry).kind;
+    movement.push({
+      type: entry.workoutType || entry.subType || entry.type || kind,
+      name: entry.name || entry.workoutType || entry.activityType || entry.type,
+      durationMinutes: minutes > 0 ? minutes : null,
+      kind,
+    });
   }
   return movement;
 }
 
 function scoreContext(base) {
+  const forzaOn = base.forzaEnabled === true;
   return {
     today: base.today,
     fullHistory: base.fullHistory,
+    // Niente targetKcal/base correnti inventati: resolveDayTargetKcal usa
+    // dayTargetSnapshot o targetHistory per la data (dtr-1, no fallback 2000).
     userTargets: base.userTargets,
-    targetKcal: Number(base.userTargets?.kcal || base.profile_targets?.targets?.kcal) || null,
     profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null,
     records: base.records,
     movementCheckins: base.movementCheckins,
     catalogs: base.catalogs,
-    forzaEnabled: base.forzaEnabled,
+    forzaEnabled: forzaOn,
+    // computeDayScore.forzaEnabled legge context.cylinders.forza.enabled
+    cylinders: {
+      forza: { enabled: forzaOn },
+    },
     scoreVersion: 'kds-5',
   };
 }
@@ -137,6 +145,7 @@ export async function toolGetDay(db, uid, dateRef) {
       suppressNumbers: Boolean(safety.suppressNumbers || score.suppressNumbers),
     },
     action: lowestPillarAction(score.cylinders, safety),
+    warnings: [...(base.catalogWarnings || [])],
   };
 
   if (payload.safety.suppressNumbers) {
@@ -154,9 +163,11 @@ function lowestPillarAction(cylinders, safety) {
   const order = ['alimentazione', 'sonno', 'movimento', 'forza'];
   let best = null;
   for (const id of order) {
+    const status = cylinders?.[id]?.status ?? null;
+    if (status === 'inactive' || status === 'no_data') continue;
     const value = Number(cylinders?.[id]?.value);
     if (!Number.isFinite(value)) continue;
-    if (!best || value < best.value) best = { id, value, status: cylinders[id]?.status ?? null };
+    if (!best || value < best.value) best = { id, value, status };
   }
   return best ? { kind: 'pillar', pillar: best.id, status: best.status, value: best.value } : null;
 }
@@ -247,7 +258,11 @@ export async function toolGetEvenings(db, uid, range) {
       break;
     }
   }
-  let out = { ...payload, suppressNumbers: suppress };
+  let out = {
+    ...payload,
+    suppressNumbers: suppress,
+    warnings: [...(base.catalogWarnings || [])],
+  };
   if (suppress) {
     out = redactSensitiveNumbers(out);
     out.suppressNumbers = true;
@@ -282,6 +297,7 @@ export async function toolSearchFood(db, uid, query) {
 
   return {
     query: q,
+    warnings: [...(base.catalogWarnings || [])],
     results: (annotated || []).slice(0, 12).map((hit) => ({
       name: hit.name || hit.desc || hit.label || null,
       matchQuality: hit.matchQuality || null,
