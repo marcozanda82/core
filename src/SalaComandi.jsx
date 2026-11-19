@@ -407,6 +407,7 @@ import {
 } from './coreEngine';
 import { computeEffectiveDailyTargetKcal } from './features/mealEngine/computeEffectiveDailyTargetKcal';
 import {
+  formatEnergyDayKeyFact,
   formatWorkoutBurnLabel,
   resolveDayTargetKcal,
 } from './features/mealEngine/resolveDayTargetKcal';
@@ -6125,6 +6126,15 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const dogmaticBurnKcal = dogmaticDayTarget.burnCounted;
   const dogmaticBurnLabel = formatWorkoutBurnLabel(dogmaticDayTarget);
   const dogmaticTargetKcal = dogmaticDayTarget.total;
+  const dogmaticEnergyKeyFact = formatEnergyDayKeyFact({
+    intake: Math.round(Number(totali?.kcal) || 0),
+    total: dogmaticTargetKcal,
+    base: dogmaticDayTarget.base,
+    burnRaw: dogmaticBurnKcalRaw,
+    burnCounted: dogmaticBurnKcal,
+    autopilot: dogmaticDayTarget.autopilot,
+    strategy: dogmaticDayTarget.strategy,
+  });
 
   const dynamicDailyKcal = (dogmaticSettingsBaseKcal > 0 || dogmaticBurnKcalRaw > 0 || profileKcalBase != null)
     ? dogmaticTargetKcal
@@ -10075,6 +10085,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             tdeeBaseKcal={dogmaticSettingsBaseKcal}
             workoutBurnKcal={dogmaticBurnKcal}
             workoutBurnLabel={dogmaticBurnLabel}
+            equationSummary={dogmaticEnergyKeyFact}
             deltaKcal={dogmaticDeltaKcal}
             compensationKcal={dogmaticCompensationKcal}
             compensationDaysRemaining={

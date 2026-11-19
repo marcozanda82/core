@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   countWorkoutBurnKcal,
+  formatEnergyDayKeyFact,
   formatWorkoutBurnLabel,
   inferKcalSource,
   resolveDayTargetKcal,
@@ -12,6 +13,43 @@ import {
   resolveLookbackDayTargetKcal,
   KCAL_SOURCE,
 } from '../resolveDayTargetKcal.js';
+
+describe('formatEnergyDayKeyFact', () => {
+  it('aggiunge «contate» solo se burn parziale; autopilota con segno', () => {
+    assert.equal(
+      formatEnergyDayKeyFact({
+        intake: 2378,
+        total: 2516,
+        base: 2456,
+        burnRaw: 120,
+        burnCounted: 60,
+      }),
+      '2378 su 2516 (base 2456 + allenamento 120, contate 60)',
+    );
+    assert.equal(
+      formatEnergyDayKeyFact({
+        intake: 2772,
+        total: 2808,
+        base: 2456,
+        burnRaw: 330,
+        burnCounted: 165,
+        autopilot: 187,
+      }),
+      '2772 su 2808 (base 2456 + allenamento 330, contate 165 + autopilota +187)',
+    );
+    assert.equal(
+      formatEnergyDayKeyFact({
+        intake: 2400,
+        total: 2856,
+        base: 2456,
+        burnRaw: 400,
+        burnCounted: 400,
+      }),
+      '2400 su 2856 (base 2456 + allenamento 400)',
+    );
+  });
+});
+
 describe('kcalSource e conteggio burn', () => {
   it('senza fonte esplicita → estimated al 50%', () => {
     assert.equal(inferKcalSource({ kcal: 400 }), KCAL_SOURCE.ESTIMATED);
@@ -111,5 +149,46 @@ describe('Autopilota: surplus → abbassa il target successivo', () => {
       settingsBaseKcal: 2456,
     });
     assert.equal(t, 2456 + 200);
+  });
+
+  it('senza snapshot: base da targetHistory, ignora baseKcal corrente, niente fallback 2000', () => {
+    const history = {
+      'trackerStorico_2026-11-17': {
+        data: '2026-11-17',
+        log: [],
+        autopilotCorrection: 123,
+      },
+    };
+    const targets = {
+      baseKcal: 2210,
+      kcal: 2456,
+      targetHistory: [
+        {
+          effectiveDate: '2026-10-02',
+          targets: { kcal: 2456, prot: 127 },
+        },
+      ],
+    };
+    const resolved = resolveDayTargetKcal({
+      date: '2026-11-17',
+      fullHistory: history,
+      targets,
+      preferSnapshot: true,
+    });
+    assert.equal(resolved.baseMissing, false);
+    assert.equal(resolved.base, 2456);
+    assert.equal(resolved.autopilot, 123);
+    assert.equal(resolved.total, 2456 + 123);
+    assert.match(String(resolved.baseSource || ''), /targetHistory/);
+
+    const missing = resolveDayTargetKcal({
+      date: '2026-11-17',
+      fullHistory: history,
+      targets: { baseKcal: 2210, kcal: 2456, targetHistory: [] },
+      preferSnapshot: true,
+    });
+    assert.equal(missing.baseMissing, true);
+    assert.equal(missing.base, null);
+    assert.equal(missing.total, null);
   });
 });

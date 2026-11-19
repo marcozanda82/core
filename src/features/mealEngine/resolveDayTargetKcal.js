@@ -11,6 +11,7 @@
  */
 
 import { computeEffectiveDailyTargetKcal } from './computeEffectiveDailyTargetKcal.js';
+import { resolveTargetsForAnalysisDate } from '../kentuFocus/server/reader/resolveFocusProfileData.js';
 
 export const DAY_TARGET_RULES_VERSION = 'dtr-1';
 
@@ -159,11 +160,55 @@ export function resolveLookbackDayTargetKcal(input = {}) {
 }
 
 /**
+ * Base impostazioni storica per una data: solo targetHistory datata ≤ date.
+ * Nessun merge da targets.baseKcal/kcal «correnti» e nessun fallback numerico.
+ * @param {{
+ *   date?: string|null,
+ *   settingsBaseKcal?: number|null,
+ *   userTargets?: object|null,
+ *   profile_targets?: object|null,
+ *   targets?: object|null,
+ * }} input
+ * @returns {{ base: number|null, source: string|null }}
+ */
+export function resolveSettingsBaseKcalForDate(input = {}) {
+  const explicit = roundKcal(input.settingsBaseKcal);
+  if (explicit > 0) {
+    return { base: explicit, source: 'settingsBaseKcal' };
+  }
+  const date = String(input.date || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { base: null, source: null };
+  }
+  const targetsNode = input.targets
+    || input.profile_targets?.targets
+    || (input.userTargets?.targetHistory ? input.userTargets : null)
+    || null;
+  const { resolved, timelineApplied, lastEffectiveDate } = resolveTargetsForAnalysisDate(
+    targetsNode,
+    date,
+  );
+  if (timelineApplied > 0) {
+    // Allineato ai keyFact score: «base» = kcal storica (non targets.baseKcal corrente).
+    const fromHistory = roundKcal(resolved.kcal ?? resolved.targetKcal);
+    if (fromHistory > 0) {
+      return {
+        base: fromHistory,
+        source: `targetHistory.kcal@${lastEffectiveDate || date}`,
+      };
+    }
+  }
+  return { base: null, source: null };
+}
+
+/**
  * @param {{
  *   date?: string|null,
  *   fullHistory?: object|null,
  *   settingsBaseKcal?: number|null,
  *   userTargets?: object|null,
+ *   profile_targets?: object|null,
+ *   targets?: object|null,
  *   strategyDeltaKcal?: number|null,
  *   compensationKcal?: number|null,
  *   autopilotKcal?: number|null,
@@ -183,16 +228,14 @@ export function resolveDayTargetKcal(input = {}) {
         ...normalizeSnapshot(snap),
         fromSnapshot: true,
         frozen: true,
+        baseMissing: false,
+        baseSource: 'dayTargetSnapshot',
       };
     }
   }
 
-  const settingsBaseKcal = roundKcal(
-    input.settingsBaseKcal
-    ?? input.userTargets?.baseKcal
-    ?? input.userTargets?.kcal
-    ?? 0,
-  );
+  const resolvedBase = resolveSettingsBaseKcalForDate(input);
+  const settingsBaseKcal = resolvedBase.base;
   const log = Array.isArray(input.liveLog) && input.liveLog.length > 0
     ? input.liveLog
     : dayLog(input.fullHistory, date);
@@ -207,6 +250,25 @@ export function resolveDayTargetKcal(input = {}) {
     if (node && node.autopilotCorrection != null) {
       autopilotKcal = roundKcal(node.autopilotCorrection);
     }
+  }
+
+  if (!(settingsBaseKcal > 0)) {
+    return {
+      base: null,
+      burnRaw: burn.burnRaw,
+      burnCounted: burn.burnCounted,
+      kcalSource: burn.dominantSource,
+      sessions: burn.sessions,
+      strategy: strategyDeltaKcal,
+      compensation: compensationKcal,
+      autopilot: autopilotKcal,
+      total: null,
+      rulesVersion: DAY_TARGET_RULES_VERSION,
+      fromSnapshot: false,
+      frozen: false,
+      baseMissing: true,
+      baseSource: null,
+    };
   }
 
   const total = computeEffectiveDailyTargetKcal({
@@ -230,6 +292,8 @@ export function resolveDayTargetKcal(input = {}) {
     rulesVersion: DAY_TARGET_RULES_VERSION,
     fromSnapshot: false,
     frozen: false,
+    baseMissing: false,
+    baseSource: resolvedBase.source,
   };
 }
 
@@ -265,6 +329,44 @@ export function buildDayTargetSnapshot(resolved) {
     total: roundKcal(r.total),
     rulesVersion: String(r.rulesVersion || DAY_TARGET_RULES_VERSION),
   };
+}
+
+/**
+ * KeyFact alimentazione / riga unica Focus·MCP·Calorie di oggi.
+ * Esempi:
+ *   «2378 su 2516 (base 2456 + allenamento 120, contate 60)»
+ *   «2772 su 2808 (base 2456 + allenamento 330, contate 165 + autopilota +187)»
+ * Se burn grezzo = contato: «allenamento 400» senza «contate».
+ *
+ * @param {{
+ *   intake?: number|null,
+ *   total?: number|null,
+ *   base?: number|null,
+ *   burnRaw?: number|null,
+ *   burnCounted?: number|null,
+ *   autopilot?: number|null,
+ *   strategy?: number|null,
+ * }} parts
+ */
+export function formatEnergyDayKeyFact(parts = {}) {
+  const intake = roundKcal(parts.intake);
+  const total = roundKcal(parts.total);
+  const base = roundKcal(parts.base);
+  const burnRaw = roundKcal(parts.burnRaw);
+  const burnCounted = roundKcal(parts.burnCounted);
+  const autopilot = roundKcal(parts.autopilot);
+  const strategy = roundKcal(parts.strategy);
+  const bits = [`base ${base}`];
+  if (burnRaw > 0) {
+    bits.push(
+      burnCounted !== burnRaw
+        ? `allenamento ${burnRaw}, contate ${burnCounted}`
+        : `allenamento ${burnRaw}`,
+    );
+  }
+  if (strategy !== 0) bits.push(`strategia ${strategy > 0 ? '+' : ''}${strategy}`);
+  if (autopilot !== 0) bits.push(`autopilota ${autopilot > 0 ? '+' : ''}${autopilot}`);
+  return `${intake} su ${total} (${bits.join(' + ')})`;
 }
 
 /**

@@ -130,7 +130,12 @@ export function deriveEffectiveBodyMetricsForDate(history = [], date, fallbackDa
   return latest;
 }
 
-const TARGET_TIMELINE_KEYS = ['kcal', 'prot', 'carb', 'fat', 'fatTotal', 'water', 'fibre'];
+// baseKcal/deltaKcal obbligatori in timeline: ogni cambio base (manuale o blocco)
+// deve restare ricostruibile per data (dtr-1).
+const TARGET_TIMELINE_KEYS = [
+  'kcal', 'prot', 'carb', 'fat', 'fatTotal', 'water', 'fibre',
+  'baseKcal', 'deltaKcal', 'targetKcal',
+];
 
 function pickTargetTimelinePayload(input) {
   const out = {};

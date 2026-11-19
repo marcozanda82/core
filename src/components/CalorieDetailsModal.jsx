@@ -49,6 +49,7 @@ function resolveTacticalCopy(remainingKcal) {
  *   tdeeBaseKcal?: number,
  *   workoutBurnKcal?: number,
  *   workoutBurnLabel?: string | null,
+ *   equationSummary?: string | null,
  *   deltaKcal?: number | null,
  *   compensationKcal?: number | null,
  *   compensationDaysRemaining?: number | null,
@@ -67,6 +68,7 @@ export default function CalorieDetailsModal({
   tdeeBaseKcal = 0,
   workoutBurnKcal = 0,
   workoutBurnLabel = null,
+  equationSummary = null,
   deltaKcal = null,
   compensationKcal = null,
   compensationDaysRemaining = null,
@@ -154,7 +156,8 @@ export default function CalorieDetailsModal({
               Calorie di oggi
             </h2>
             <p className="calorie-details-subtitle">
-              Equazione del target, stato attuale e proiezione tattica.
+              {equationSummary
+                || 'Equazione del target, stato attuale e proiezione tattica.'}
             </p>
           </header>
 

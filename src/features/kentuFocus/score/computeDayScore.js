@@ -66,7 +66,10 @@ import { forzaEnabled, forceLoad, scoreMovimento } from './scoreMovement.js';
 import { scoreMovimentoBattery } from './movementBattery.js';
 import { computeSafety } from '../safety/computeSafety.js';
 import { ENERGY_ACT_SCORE_CAP } from '../safety/safetyConfig.sfv-1.js';
-import { resolveDayTargetKcal } from '../../mealEngine/resolveDayTargetKcal.js';
+import {
+  formatEnergyDayKeyFact,
+  resolveDayTargetKcal,
+} from '../../mealEngine/resolveDayTargetKcal.js';
 
 const CYLINDER_KEYS = ['alimentazione', 'sonno', 'forza', 'cardio'];
 const FOOD_TYPES = new Set(['food', 'recipe']);
@@ -114,9 +117,12 @@ export function computeDayScore(date, context = {}) {
   const dayTarget = isK4Plus
     ? resolveDayTargetForScore(date, context)
     : null;
-  const targetKcal = dayTarget?.total > 0
-    ? dayTarget.total
-    : resolveTargetKcal(context);
+  // dtr-1: senza base storica → niente target inventato (alimentazione no_data).
+  const targetKcal = dayTarget?.baseMissing
+    ? null
+    : (dayTarget?.total > 0
+      ? dayTarget.total
+      : resolveTargetKcal(context));
   const dayStatus = getDayStatus(date, {
     today: context.today,
     fullHistory: context.fullHistory,
@@ -649,27 +655,10 @@ function resolveTargetKcal(context) {
   return null;
 }
 
-function resolveSettingsBaseKcal(context) {
-  const candidates = [
-    context.settingsBaseKcal,
-    context.userTargets?.baseKcal,
-    context.userTargets?.kcal,
-    context.profile_targets?.targetCalories,
-    context.profile_targets?.targets?.kcal,
-    context.targetKcal,
-  ];
-  for (const candidate of candidates) {
-    const value = Number(candidate);
-    if (Number.isFinite(value) && value > 0) return Math.round(value);
-  }
-  return 0;
-}
-
 /**
- * Target giorno kds-4: snapshot se presente, altrimenti ricalcolo (e il chiamante può congelare).
+ * Target giorno kds-4+: snapshot se presente, altrimenti base da targetHistory (niente fallback).
  */
 function resolveDayTargetForScore(date, context) {
-  const settingsBaseKcal = resolveSettingsBaseKcal(context);
   const liveLog = context.todayLiveLog && String(context.today || '').slice(0, 10) === String(date).slice(0, 10)
     ? context.todayLiveLog
     : null;
@@ -677,11 +666,14 @@ function resolveDayTargetForScore(date, context) {
   const autopilot = node?.autopilotCorrection != null
     ? Number(node.autopilotCorrection)
     : (context.autopilotKcal ?? null);
+  const explicitBase = Number(context.settingsBaseKcal);
   return resolveDayTargetKcal({
     date,
     fullHistory: context.fullHistory,
-    settingsBaseKcal,
+    settingsBaseKcal: Number.isFinite(explicitBase) && explicitBase > 0 ? explicitBase : null,
     userTargets: context.userTargets,
+    profile_targets: context.profile_targets,
+    targets: context.targets || context.profile_targets?.targets || null,
     strategyDeltaKcal: context.strategyDeltaKcal ?? 0,
     compensationKcal: context.compensationKcal ?? 0,
     autopilotKcal: autopilot,
@@ -691,26 +683,18 @@ function resolveDayTargetForScore(date, context) {
 }
 
 /**
- * Copy richiesta: «2954 su 2915 (base 2456 + allenamento 400 + autopilota 59)».
- * Il burn in parentesi è il grezzo; il target usa il contato.
+ * Copy unica Focus/MCP: «2378 su 2516 (base 2456 + allenamento 120, contate 60)».
  */
 function energyKeyFactDayTarget(kcal, dayTarget) {
-  const intake = Math.round(Number(kcal) || 0);
-  const total = Math.round(Number(dayTarget?.total) || 0);
-  const base = Math.round(Number(dayTarget?.base) || 0);
-  const burnRaw = Math.round(Number(dayTarget?.burnRaw) || 0);
-  const burnCounted = Math.round(Number(dayTarget?.burnCounted) || 0);
-  const autopilot = Math.round(Number(dayTarget?.autopilot) || 0);
-  const strategy = Math.round(Number(dayTarget?.strategy) || 0);
-  const parts = [`base ${base}`];
-  if (burnRaw > 0) {
-    // Mostra il grezzo (come in Calorie di oggi); il totale usa già burnCounted.
-    void burnCounted;
-    parts.push(`allenamento ${burnRaw}`);
-  }
-  if (strategy !== 0) parts.push(`strategia ${strategy > 0 ? '+' : ''}${strategy}`);
-  if (autopilot !== 0) parts.push(`autopilota ${autopilot > 0 ? '+' : ''}${autopilot}`);
-  return `${intake} su ${total} (${parts.join(' + ')})`;
+  return formatEnergyDayKeyFact({
+    intake: kcal,
+    total: dayTarget?.total,
+    base: dayTarget?.base,
+    burnRaw: dayTarget?.burnRaw,
+    burnCounted: dayTarget?.burnCounted,
+    autopilot: dayTarget?.autopilot,
+    strategy: dayTarget?.strategy,
+  });
 }
 
 function round3(value) {

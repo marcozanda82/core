@@ -200,13 +200,14 @@ export default function FocusBoard({
   }, [uid]);
 
   // Contesto stabile per la cache: i cataloghi non invalidano i giorni chiusi.
+  // dtr-1: non passare settingsBaseKcal/targetKcal «correnti» — per i giorni passati
+  // senza snapshot resolveDayTargetKcal usa solo targetHistory alla data.
   const scoreContextCore = useMemo(() => ({
     today,
     fullHistory: session?.fullHistory,
     userTargets: session?.userTargets,
-    targetKcal: session?.userTargets?.kcal ?? null,
-    settingsBaseKcal: session?.userTargets?.kcal ?? null,
     profile_targets: session?.profile_targets || null,
+    targets: session?.profile_targets?.targets || session?.userTargets || null,
     scoreVersion: 'kds-5',
     cylinders: { forza: { enabled: forzaOn } },
     movementCheckins: checkins,

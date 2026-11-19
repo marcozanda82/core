@@ -23,7 +23,8 @@ export const AUTOPILOT_DEADBAND_FRACTION = 0.05;
 export const AUTOPILOT_MAX_DAILY_TDEE_FRACTION = 0.11;
 
 /** Fallback TDEE se il profilo non lo espone. */
-export const AUTOPILOT_TDEE_FALLBACK_KCAL = 2000;
+/** @deprecated Non usare: niente fallback inventato (dtr-1). */
+export const AUTOPILOT_TDEE_FALLBACK_KCAL = 0;
 
 /** Hard cap legacy (solo display / fallback). */
 export const ROLLING_AUTO_CAP_ABS_KCAL = 600;
@@ -41,9 +42,10 @@ export const AUTOPILOT_ZONE = Object.freeze({
 });
 
 /**
- * TDEE operativo per il tetto die: profilo → baseKcal → settings → 2000.
+ * TDEE operativo per il tetto die: profilo → baseKcal → settings.
+ * Niente fallback numerico inventato (dtr-1 / no 2000).
  * @param {{ tdee?: unknown, userProfile?: object, userTargets?: object, settingsBaseKcal?: unknown }} input
- * @returns {number}
+ * @returns {number} 0 se assente
  */
 export function resolveAutopilotTdeeKcal(input = {}) {
   const candidates = [
@@ -56,7 +58,7 @@ export function resolveAutopilotTdeeKcal(input = {}) {
     const n = Math.round(Number(candidates[i]) || 0);
     if (n > 0) return n;
   }
-  return AUTOPILOT_TDEE_FALLBACK_KCAL;
+  return 0;
 }
 
 /**
@@ -66,8 +68,8 @@ export function resolveAutopilotTdeeKcal(input = {}) {
  */
 export function resolveMaxDailyDelta(tdee) {
   const base = Math.round(Number(tdee) || 0);
-  const safe = base > 0 ? base : AUTOPILOT_TDEE_FALLBACK_KCAL;
-  return Math.max(0, Math.round(safe * AUTOPILOT_MAX_DAILY_TDEE_FRACTION));
+  if (!(base > 0)) return 0;
+  return Math.max(0, Math.round(base * AUTOPILOT_MAX_DAILY_TDEE_FRACTION));
 }
 
 /**
@@ -77,8 +79,8 @@ export function resolveMaxDailyDelta(tdee) {
  */
 export function resolveDeadbandDelta(tdee) {
   const base = Math.round(Number(tdee) || 0);
-  const safe = base > 0 ? base : AUTOPILOT_TDEE_FALLBACK_KCAL;
-  return Math.max(0, Math.round(safe * AUTOPILOT_DEADBAND_FRACTION));
+  if (!(base > 0)) return 0;
+  return Math.max(0, Math.round(base * AUTOPILOT_DEADBAND_FRACTION));
 }
 
 /**
@@ -215,7 +217,7 @@ function resolveLookbackOperationalTarget(settingsBaseKcal, userTargets, fullHis
     || Number(userTargets?.kcal)
     || 0,
   );
-  return fromTargets > 0 ? fromTargets : 2000;
+  return fromTargets > 0 ? fromTargets : 0;
 }
 
 /**
