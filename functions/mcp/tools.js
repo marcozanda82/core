@@ -105,15 +105,28 @@ export async function toolGetDay(db, uid, dateRef) {
   const useStored = stored
     && stored.version === live.version
     && stored.dataVersion === live.dataVersion;
+  const { hydrateAlimentazioneKeyFact } = await import(
+    '../../src/features/mealEngine/resolveDayTargetKcal.js'
+  );
+  // Score/value possono restare da RTDB; keyFact alimentazione sempre da snapshot dtr-1.
+  const baseCylinders = useStored ? (stored.cylinders || live.cylinders) : live.cylinders;
+  const cylinders = hydrateAlimentazioneKeyFact(baseCylinders, {
+    date,
+    fullHistory: base.fullHistory,
+    intakeKcal: live.cylinders?.alimentazione?.intakeKcal,
+    userTargets: base.userTargets,
+    profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null,
+  });
   const score = useStored
     ? {
       ...live,
       score: stored.score,
       reliability: stored.reliability,
-      cylinders: stored.cylinders,
+      cylinders,
       source: 'rtdb',
     }
-    : { ...live, source: 'computed' };
+    : { ...live, cylinders, source: 'computed' };
 
   const safety = computeSafety(date, ctx);
   const mealsDetail = buildDayMealsDetail(base.fullHistory, date);
@@ -194,6 +207,17 @@ export async function toolGetPeriod(db, uid, periodRef) {
   const periodScore = computePeriodScore(period.from, period.to, ctx);
   const anchor = computeDayScore(period.analysisDate, ctx);
   const safety = computeSafety(period.analysisDate, ctx);
+  const { hydrateAlimentazioneKeyFact } = await import(
+    '../../src/features/mealEngine/resolveDayTargetKcal.js'
+  );
+  const anchorCylinders = hydrateAlimentazioneKeyFact(anchor.cylinders, {
+    date: period.analysisDate,
+    fullHistory: base.fullHistory,
+    intakeKcal: anchor.cylinders?.alimentazione?.intakeKcal,
+    userTargets: base.userTargets,
+    profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null,
+  });
 
   const holes = Math.max(0, (periodScore.pastDays || 0) - (periodScore.eligibleDays || 0));
 
@@ -211,7 +235,7 @@ export async function toolGetPeriod(db, uid, periodRef) {
     longestStreak: periodScore.longestStreak,
     streaks: periodScore.streaks,
     reliability: periodScore.coverage != null && periodScore.coverage < 0.6 ? 'low' : 'high',
-    pillars: pillarSummary(anchor.cylinders),
+    pillars: pillarSummary(anchorCylinders),
     safety: {
       level: safety.level,
       signals: (safety.signals || []).map((s) => ({
@@ -221,7 +245,7 @@ export async function toolGetPeriod(db, uid, periodRef) {
       })),
       suppressNumbers: Boolean(safety.suppressNumbers),
     },
-    action: lowestPillarAction(anchor.cylinders, safety),
+    action: lowestPillarAction(anchorCylinders, safety),
   };
 
   if (payload.safety.suppressNumbers) {

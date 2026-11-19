@@ -4491,6 +4491,25 @@ var init_resolveFocusProfileData = __esm({
 });
 
 // src/features/mealEngine/resolveDayTargetKcal.js
+var resolveDayTargetKcal_exports = {};
+__export(resolveDayTargetKcal_exports, {
+  DAY_TARGET_RULES_VERSION: () => DAY_TARGET_RULES_VERSION,
+  DEFAULT_WORKOUT_KCAL: () => DEFAULT_WORKOUT_KCAL,
+  KCAL_SOURCE: () => KCAL_SOURCE,
+  KCAL_SOURCE_FACTOR: () => KCAL_SOURCE_FACTOR,
+  buildDayTargetSnapshot: () => buildDayTargetSnapshot,
+  countWorkoutBurnKcal: () => countWorkoutBurnKcal,
+  formatEnergyDayKeyFact: () => formatEnergyDayKeyFact,
+  formatWorkoutBurnLabel: () => formatWorkoutBurnLabel,
+  hydrateAlimentazioneKeyFact: () => hydrateAlimentazioneKeyFact,
+  inferKcalSource: () => inferKcalSource,
+  kcalSourceFactor: () => kcalSourceFactor,
+  resolveDayTargetKcal: () => resolveDayTargetKcal,
+  resolveKcalSourceForSave: () => resolveKcalSourceForSave,
+  resolveLookbackDayTargetKcal: () => resolveLookbackDayTargetKcal,
+  resolveSettingsBaseKcalForDate: () => resolveSettingsBaseKcalForDate,
+  sumWorkoutBurnFromLog: () => sumWorkoutBurnFromLog
+});
 function roundKcal2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.round(n) : 0;
@@ -4570,6 +4589,14 @@ function readSnapshot(fullHistory, date) {
   if (!snap || typeof snap !== "object") return null;
   if (!Number.isFinite(Number(snap.total))) return null;
   return snap;
+}
+function resolveLookbackDayTargetKcal(input = {}) {
+  const resolved = resolveDayTargetKcal({
+    ...input,
+    includeAutopilot: false,
+    includeCompensation: false
+  });
+  return resolved.total;
 }
 function resolveSettingsBaseKcalForDate(input = {}) {
   const explicit = roundKcal2(input.settingsBaseKcal);
@@ -4682,12 +4709,115 @@ function normalizeSnapshot(snap) {
     rulesVersion: String(snap.rulesVersion || DAY_TARGET_RULES_VERSION)
   };
 }
-var DAY_TARGET_RULES_VERSION, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
+function buildDayTargetSnapshot(resolved) {
+  const r = resolved && typeof resolved === "object" ? resolved : {};
+  return {
+    base: roundKcal2(r.base),
+    burnRaw: roundKcal2(r.burnRaw),
+    burnCounted: roundKcal2(r.burnCounted),
+    kcalSource: inferKcalSource({ kcalSource: r.kcalSource }),
+    autopilot: roundKcal2(r.autopilot),
+    strategy: roundKcal2(r.strategy),
+    compensation: roundKcal2(r.compensation),
+    total: roundKcal2(r.total),
+    rulesVersion: String(r.rulesVersion || DAY_TARGET_RULES_VERSION)
+  };
+}
+function formatEnergyDayKeyFact(parts = {}) {
+  const intake = roundKcal2(parts.intake);
+  const total = roundKcal2(parts.total);
+  const base = roundKcal2(parts.base);
+  const burnRaw = roundKcal2(parts.burnRaw);
+  const burnCounted = roundKcal2(parts.burnCounted);
+  const autopilot = roundKcal2(parts.autopilot);
+  const strategy = roundKcal2(parts.strategy);
+  const bits = [`base ${base}`];
+  if (burnRaw > 0) {
+    bits.push(
+      burnCounted !== burnRaw ? `allenamento ${burnRaw}, contate ${burnCounted}` : `allenamento ${burnRaw}`
+    );
+  }
+  if (strategy !== 0) bits.push(`strategia ${strategy > 0 ? "+" : ""}${strategy}`);
+  if (autopilot !== 0) bits.push(`autopilota ${autopilot > 0 ? "+" : ""}${autopilot}`);
+  return `${intake} su ${total} (${bits.join(" + ")})`;
+}
+function hydrateAlimentazioneKeyFact(cylinders, ctx = {}) {
+  if (!cylinders || typeof cylinders !== "object") return cylinders;
+  const alim = cylinders.alimentazione;
+  if (!alim || typeof alim !== "object") return cylinders;
+  if (alim.status === "no_data" || alim.status === "inactive") return cylinders;
+  const date = String(ctx.date || "").trim();
+  if (!date) return cylinders;
+  const dayTarget = resolveDayTargetKcal({
+    date,
+    fullHistory: ctx.fullHistory,
+    liveLog: ctx.liveLog,
+    settingsBaseKcal: ctx.settingsBaseKcal,
+    userTargets: ctx.userTargets,
+    profile_targets: ctx.profile_targets,
+    targets: ctx.targets,
+    strategyDeltaKcal: ctx.strategyDeltaKcal ?? 0,
+    compensationKcal: ctx.compensationKcal ?? 0,
+    autopilotKcal: ctx.autopilotKcal ?? 0,
+    preferSnapshot: true
+  });
+  let intake = Number(ctx.intakeKcal);
+  if (!(intake > 0)) intake = Number(alim.intakeKcal);
+  if (!(intake > 0)) {
+    const m = String(alim.keyFact || "").match(/^(\d+)\s+su\s+/);
+    if (m) intake = Number(m[1]);
+  }
+  if (!(intake > 0) && !(dayTarget.total > 0)) return cylinders;
+  let fact = formatEnergyDayKeyFact({
+    intake: intake > 0 ? intake : 0,
+    total: dayTarget.total,
+    base: dayTarget.base,
+    burnRaw: dayTarget.burnRaw,
+    burnCounted: dayTarget.burnCounted,
+    autopilot: dayTarget.autopilot,
+    strategy: dayTarget.strategy
+  });
+  const prev = String(alim.keyFact || "");
+  const suffix = prev.match(/\)(\s·\s.+)$/);
+  if (suffix) fact += suffix[1];
+  if (fact === prev) return cylinders;
+  return {
+    ...cylinders,
+    alimentazione: { ...alim, keyFact: fact }
+  };
+}
+function formatWorkoutBurnLabel(parts = {}) {
+  const raw = roundKcal2(parts.burnRaw);
+  const counted = roundKcal2(parts.burnCounted);
+  if (raw <= 0) return "Allenamento 0";
+  const source = inferKcalSource({ kcalSource: parts.kcalSource });
+  if (source === KCAL_SOURCE.DEVICE) {
+    return counted === raw ? `Allenamento ${raw} (dispositivo)` : `Allenamento ${raw} (dispositivo, contate ${counted})`;
+  }
+  if (source === KCAL_SOURCE.USER) {
+    return counted === raw ? `Allenamento ${raw} (inserite)` : `Allenamento ${raw} (inserite, contate ${counted})`;
+  }
+  return counted === raw ? `Allenamento ${raw} (stimate)` : `Allenamento ${raw} (stimate, contate ${counted})`;
+}
+function resolveKcalSourceForSave(input = {}) {
+  if (input.fromDevice) return KCAL_SOURCE.DEVICE;
+  const explicit = String(input.explicitSource || "").trim().toLowerCase();
+  if (explicit === KCAL_SOURCE.DEVICE || explicit === KCAL_SOURCE.USER || explicit === KCAL_SOURCE.ESTIMATED) {
+    return explicit;
+  }
+  if (input.fromChat) return KCAL_SOURCE.ESTIMATED;
+  const kcal = roundKcal2(input.kcal);
+  const suggested = roundKcal2(input.suggestedKcal ?? DEFAULT_WORKOUT_KCAL);
+  if (suggested > 0 && kcal > 0 && kcal !== suggested) return KCAL_SOURCE.USER;
+  return KCAL_SOURCE.ESTIMATED;
+}
+var DAY_TARGET_RULES_VERSION, DEFAULT_WORKOUT_KCAL, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
 var init_resolveDayTargetKcal = __esm({
   "src/features/mealEngine/resolveDayTargetKcal.js"() {
     init_computeEffectiveDailyTargetKcal();
     init_resolveFocusProfileData();
     DAY_TARGET_RULES_VERSION = "dtr-1";
+    DEFAULT_WORKOUT_KCAL = 300;
     KCAL_SOURCE = Object.freeze({
       DEVICE: "device",
       USER: "user",
@@ -5170,21 +5300,15 @@ function resolveDayTargetForScore(date, context) {
   });
 }
 function energyKeyFactDayTarget(kcal, dayTarget) {
-  const intake = Math.round(Number(kcal) || 0);
-  const total = Math.round(Number(dayTarget?.total) || 0);
-  const base = Math.round(Number(dayTarget?.base) || 0);
-  const burnRaw = Math.round(Number(dayTarget?.burnRaw) || 0);
-  const burnCounted = Math.round(Number(dayTarget?.burnCounted) || 0);
-  const autopilot = Math.round(Number(dayTarget?.autopilot) || 0);
-  const strategy = Math.round(Number(dayTarget?.strategy) || 0);
-  const parts = [`base ${base}`];
-  if (burnRaw > 0) {
-    void burnCounted;
-    parts.push(`allenamento ${burnRaw}`);
-  }
-  if (strategy !== 0) parts.push(`strategia ${strategy > 0 ? "+" : ""}${strategy}`);
-  if (autopilot !== 0) parts.push(`autopilota ${autopilot > 0 ? "+" : ""}${autopilot}`);
-  return `${intake} su ${total} (${parts.join(" + ")})`;
+  return formatEnergyDayKeyFact({
+    intake: kcal,
+    total: dayTarget?.total,
+    base: dayTarget?.base,
+    burnRaw: dayTarget?.burnRaw,
+    burnCounted: dayTarget?.burnCounted,
+    autopilot: dayTarget?.autopilot,
+    strategy: dayTarget?.strategy
+  });
 }
 function round33(value) {
   return Math.round(value * 1e3) / 1e3;
@@ -7283,13 +7407,23 @@ async function toolGetDay(db, uid, dateRef) {
   const live = computeDayScore2(date, ctx);
   const stored = await readStoredDayScore(db, uid, date);
   const useStored = stored && stored.version === live.version && stored.dataVersion === live.dataVersion;
+  const { hydrateAlimentazioneKeyFact: hydrateAlimentazioneKeyFact2 } = await Promise.resolve().then(() => (init_resolveDayTargetKcal(), resolveDayTargetKcal_exports));
+  const baseCylinders = useStored ? stored.cylinders || live.cylinders : live.cylinders;
+  const cylinders = hydrateAlimentazioneKeyFact2(baseCylinders, {
+    date,
+    fullHistory: base.fullHistory,
+    intakeKcal: live.cylinders?.alimentazione?.intakeKcal,
+    userTargets: base.userTargets,
+    profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null
+  });
   const score = useStored ? {
     ...live,
     score: stored.score,
     reliability: stored.reliability,
-    cylinders: stored.cylinders,
+    cylinders,
     source: "rtdb"
-  } : { ...live, source: "computed" };
+  } : { ...live, cylinders, source: "computed" };
   const safety = computeSafety2(date, ctx);
   const mealsDetail = buildDayMealsDetail(base.fullHistory, date);
   const sleep = buildDaySleepDetail(base.fullHistory, date);
@@ -7353,6 +7487,15 @@ async function toolGetPeriod(db, uid, periodRef) {
   const periodScore = computePeriodScore2(period.from, period.to, ctx);
   const anchor = computeDayScore2(period.analysisDate, ctx);
   const safety = computeSafety2(period.analysisDate, ctx);
+  const { hydrateAlimentazioneKeyFact: hydrateAlimentazioneKeyFact2 } = await Promise.resolve().then(() => (init_resolveDayTargetKcal(), resolveDayTargetKcal_exports));
+  const anchorCylinders = hydrateAlimentazioneKeyFact2(anchor.cylinders, {
+    date: period.analysisDate,
+    fullHistory: base.fullHistory,
+    intakeKcal: anchor.cylinders?.alimentazione?.intakeKcal,
+    userTargets: base.userTargets,
+    profile_targets: base.profile_targets,
+    targets: base.profile_targets?.targets || base.userTargets || null
+  });
   const holes = Math.max(0, (periodScore.pastDays || 0) - (periodScore.eligibleDays || 0));
   let payload = {
     kind: period.kind,
@@ -7368,7 +7511,7 @@ async function toolGetPeriod(db, uid, periodRef) {
     longestStreak: periodScore.longestStreak,
     streaks: periodScore.streaks,
     reliability: periodScore.coverage != null && periodScore.coverage < 0.6 ? "low" : "high",
-    pillars: pillarSummary(anchor.cylinders),
+    pillars: pillarSummary(anchorCylinders),
     safety: {
       level: safety.level,
       signals: (safety.signals || []).map((s) => ({
@@ -7378,7 +7521,7 @@ async function toolGetPeriod(db, uid, periodRef) {
       })),
       suppressNumbers: Boolean(safety.suppressNumbers)
     },
-    action: lowestPillarAction(anchor.cylinders, safety)
+    action: lowestPillarAction(anchorCylinders, safety)
   };
   if (payload.safety.suppressNumbers) {
     payload = redactSensitiveNumbers(payload);

@@ -7,12 +7,50 @@ import {
   countWorkoutBurnKcal,
   formatEnergyDayKeyFact,
   formatWorkoutBurnLabel,
+  hydrateAlimentazioneKeyFact,
   inferKcalSource,
   resolveDayTargetKcal,
   resolveKcalSourceForSave,
   resolveLookbackDayTargetKcal,
   KCAL_SOURCE,
 } from '../resolveDayTargetKcal.js';
+
+describe('hydrateAlimentazioneKeyFact', () => {
+  it('ricostruisce keyFact dallo snapshot anche se il record è stale', () => {
+    const history = {
+      'trackerStorico_2026-11-17': {
+        data: '2026-11-17',
+        dayTargetSnapshot: {
+          base: 2456,
+          burnRaw: 120,
+          burnCounted: 60,
+          kcalSource: 'estimated',
+          autopilot: 0,
+          strategy: 0,
+          compensation: 0,
+          total: 2516,
+          rulesVersion: 'dtr-1',
+        },
+      },
+    };
+    const out = hydrateAlimentazioneKeyFact({
+      alimentazione: {
+        status: 'on_track',
+        value: 0.85,
+        keyFact: '2378 su 2516 (base 2456 + allenamento 120)',
+        signals: [],
+      },
+    }, {
+      date: '2026-11-17',
+      fullHistory: history,
+      intakeKcal: 2378,
+    });
+    assert.equal(
+      out.alimentazione.keyFact,
+      '2378 su 2516 (base 2456 + allenamento 120, contate 60)',
+    );
+  });
+});
 
 describe('formatEnergyDayKeyFact', () => {
   it('aggiunge «contate» solo se burn parziale; autopilota con segno', () => {

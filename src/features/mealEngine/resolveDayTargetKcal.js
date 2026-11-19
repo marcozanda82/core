@@ -370,6 +370,77 @@ export function formatEnergyDayKeyFact(parts = {}) {
 }
 
 /**
+ * In lettura: keyFact alimentazione sempre da dayTargetSnapshot / dtr-1,
+ * non dal testo salvato in focus_day_scores (può essere stale).
+ * Conserva eventuali suffix « · …» (es. ultimo pasto).
+ *
+ * @param {object|null|undefined} cylinders
+ * @param {{
+ *   date: string,
+ *   fullHistory?: object,
+ *   liveLog?: object[],
+ *   intakeKcal?: number|null,
+ *   settingsBaseKcal?: number|null,
+ *   userTargets?: object,
+ *   profile_targets?: object,
+ *   targets?: object,
+ *   strategyDeltaKcal?: number,
+ *   compensationKcal?: number,
+ *   autopilotKcal?: number,
+ * }} ctx
+ */
+export function hydrateAlimentazioneKeyFact(cylinders, ctx = {}) {
+  if (!cylinders || typeof cylinders !== 'object') return cylinders;
+  const alim = cylinders.alimentazione;
+  if (!alim || typeof alim !== 'object') return cylinders;
+  if (alim.status === 'no_data' || alim.status === 'inactive') return cylinders;
+
+  const date = String(ctx.date || '').trim();
+  if (!date) return cylinders;
+
+  const dayTarget = resolveDayTargetKcal({
+    date,
+    fullHistory: ctx.fullHistory,
+    liveLog: ctx.liveLog,
+    settingsBaseKcal: ctx.settingsBaseKcal,
+    userTargets: ctx.userTargets,
+    profile_targets: ctx.profile_targets,
+    targets: ctx.targets,
+    strategyDeltaKcal: ctx.strategyDeltaKcal ?? 0,
+    compensationKcal: ctx.compensationKcal ?? 0,
+    autopilotKcal: ctx.autopilotKcal ?? 0,
+    preferSnapshot: true,
+  });
+
+  let intake = Number(ctx.intakeKcal);
+  if (!(intake > 0)) intake = Number(alim.intakeKcal);
+  if (!(intake > 0)) {
+    const m = String(alim.keyFact || '').match(/^(\d+)\s+su\s+/);
+    if (m) intake = Number(m[1]);
+  }
+  if (!(intake > 0) && !(dayTarget.total > 0)) return cylinders;
+
+  let fact = formatEnergyDayKeyFact({
+    intake: intake > 0 ? intake : 0,
+    total: dayTarget.total,
+    base: dayTarget.base,
+    burnRaw: dayTarget.burnRaw,
+    burnCounted: dayTarget.burnCounted,
+    autopilot: dayTarget.autopilot,
+    strategy: dayTarget.strategy,
+  });
+  const prev = String(alim.keyFact || '');
+  const suffix = prev.match(/\)(\s·\s.+)$/);
+  if (suffix) fact += suffix[1];
+
+  if (fact === prev) return cylinders;
+  return {
+    ...cylinders,
+    alimentazione: { ...alim, keyFact: fact },
+  };
+}
+
+/**
  * Etichetta Home: «Allenamento 400 (stimate, contate 200)».
  * @param {{ burnRaw: number, burnCounted: number, kcalSource?: string }} parts
  */

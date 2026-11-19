@@ -6,6 +6,7 @@
 import { computeDayScore } from '../score/computeDayScore.js';
 import { SCORE_VERSION } from '../score/scoreConfig.kds-5.js';
 import { createDayScoreStore } from '../score/dayScoreStore.js';
+import { hydrateAlimentazioneKeyFact } from '../../mealEngine/resolveDayTargetKcal.js';
 import {
   fingerprintFocusDayContent,
   focusDayNeedsFreshCompute,
@@ -13,6 +14,21 @@ import {
   writeFocusDayScoreLocalCache,
 } from './focusDayScoreLocalCache.js';
 import { focusOpenPerfMark } from './focusOpenPerf.js';
+
+function withHydratedAlimentazione(rec, date, scoreContext) {
+  if (!rec?.cylinders) return rec;
+  const cylinders = hydrateAlimentazioneKeyFact(rec.cylinders, {
+    date,
+    fullHistory: scoreContext.fullHistory,
+    intakeKcal: rec.cylinders?.alimentazione?.intakeKcal,
+    userTargets: scoreContext.userTargets,
+    profile_targets: scoreContext.profile_targets,
+    targets: scoreContext.targets,
+    settingsBaseKcal: scoreContext.settingsBaseKcal,
+  });
+  if (cylinders === rec.cylinders) return rec;
+  return { ...rec, cylinders };
+}
 
 const CHUNK = 2;
 
@@ -119,7 +135,11 @@ export async function resolveFocusGridScores(input) {
           contentHash,
         });
         if (hit && (hit.score != null || hit.dayStatus)) {
-          const rec = recordFromCacheHit(hit, contentHash);
+          const rec = withHydratedAlimentazione(
+            recordFromCacheHit(hit, contentHash),
+            date,
+            scoreContext,
+          );
           live[date] = rec;
           if (date < today) stored[date] = rec;
           hits += 1;
@@ -177,11 +197,11 @@ export async function resolveFocusGridScores(input) {
       for (const item of slice) {
         const fresh = computeDayScore(item.date, scoreContext);
         computed += 1;
-        const rec = {
+        const rec = withHydratedAlimentazione({
           ...fresh,
           contentHash: item.contentHash,
           fromCache: false,
-        };
+        }, item.date, scoreContext);
         live[item.date] = rec;
         if (item.date < today) {
           stored[item.date] = rec;

@@ -1,6 +1,6 @@
 {
-  "builtAt": "2026-11-19T08:23:19.985Z",
-  "sourceHash": "a7c46af496c1ea25cdd4d3a99dd80af95cc835037f769e0a55ba49454693f8a4",
+  "builtAt": "2026-11-19T09:57:38.625Z",
+  "sourceHash": "c8cd5b1966ec0a770d2ecd24b691babc6b14efc355ffc80020b395698e17d40f",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
