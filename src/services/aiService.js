@@ -99,8 +99,17 @@ export function createAbortError(message = 'Aborted') {
   return error;
 }
 
-/** Timeout client-side per sbloccare l'UI su reti lente/assenti (ms). */
-export const ASK_AI_TIMEOUT_MS = 30_000;
+/**
+ * Timeout client Gemini.
+ * - Interattivo (chat, matchmaker, scanner, voce, draft parser, health chat): 15s default
+ * - Background (Focus, health report, timeline): fino a 90s — non bloccano l’UI principale
+ */
+export const ASK_AI_TIMEOUT_MS = 15_000;
+export const CLIENT_GEMINI_TIMEOUT_MS = ASK_AI_TIMEOUT_MS;
+/** Tetto per generazioni in background (Focus, health report, timeline). */
+export const CLIENT_GEMINI_BACKGROUND_TIMEOUT_MS = 90_000;
+/** Cap assoluto askAI: nessun caller può superare il background. */
+export const CLIENT_GEMINI_TIMEOUT_CAP_MS = CLIENT_GEMINI_BACKGROUND_TIMEOUT_MS;
 
 export const ASK_AI_TIMEOUT_MESSAGE =
   'La connessione è troppo lenta o assente. Riprova.';
@@ -140,9 +149,11 @@ function createTimeoutRace(ms, message) {
 export async function askAI(prompt, systemInstruction = '', options = {}) {
   const opts = options || {};
   const signal = opts.signal instanceof AbortSignal ? opts.signal : null;
-  const timeoutMs = Number.isFinite(Number(opts.timeoutMs)) && Number(opts.timeoutMs) > 0
+  const requestedTimeout = Number.isFinite(Number(opts.timeoutMs)) && Number(opts.timeoutMs) > 0
     ? Math.floor(Number(opts.timeoutMs))
     : ASK_AI_TIMEOUT_MS;
+  // Default interattivo 15s; background può chiedere fino a 90s. Mai oltre il cap.
+  const timeoutMs = Math.min(Math.max(1_000, requestedTimeout), CLIENT_GEMINI_TIMEOUT_CAP_MS);
 
   const callTag = opts.callTag != null ? String(opts.callTag).trim().slice(0, 64) : '';
   if (!callTag) {
@@ -183,7 +194,7 @@ export async function askAI(prompt, systemInstruction = '', options = {}) {
 
   let result;
   try {
-    // httpsCallable non espone AbortSignal nativo: race client-side (abort + timeout 30s).
+    // httpsCallable non espone AbortSignal nativo: race client-side (abort + timeout 15s).
     const racers = [callAiFunction(payload), timeoutRace.promise];
     if (abortPromise) racers.push(abortPromise);
     result = await Promise.race(racers);

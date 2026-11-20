@@ -14,40 +14,42 @@ npmrc` for supported config options.
 
 i  emulators: Starting emulators: auth, database
 i  emulators: Detected demo project ID "demo-kentu-focus", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
-!  emulators: It seems that you are running multiple instances of the emulator suite for project demo-kentu-focus. This may result in unexpected behavior.
 i  database: Database Emulator logging to database-debug.log
 i  Running script: node --test --test-concurrency=1 --test-force-exit src/features/kentuFocus/server/__tests__/clientWrites.rules.emulator.test.js src/features/mealEngine/__tests__/dayTargetSnapshot.rtdb.emulator.test.js src/utils/__tests__/dayNodeWrite.emulator.test.js src/features/kentuFocus/safety/__tests__/safetyRules.sfv-2.emulator.test.js
-✔ sfv-3: write client autenticato accettata dalle regole (1051.3449ms)
-✔ sfv-2: write legacy ancora accettata (8.1265ms)
-✔ sfv-1: write legacy ancora accettata (12.3557ms)
-✔ sfv-9: versione sconosciuta rifiutata (14.2387ms)
-✔ catalogo scritture client: ogni allow passa, ogni deny intenzionale fallisce (652.3183ms)
-✔ external_drafts: update client {status, consumedAt} accettato, poi contenuto invariato (48.0042ms)
-✔ tracker_data sleep: round-trip quality + notes su RTDB (16.0859ms)
-✔ dayTargetSnapshot: scrittura giorno con rev+1 accettata (preserva via nodo intero) (287.8299ms)
-✔ dayTargetSnapshot: PUT del solo figlio senza rev → rifiutato (7.4202ms)
-✔ focus_day_scores kds-5: write client autenticato accettata (10.5174ms)
-✔ focus_day_scores kds-4: write client autenticato accettata (12.5123ms)
-✔ focus_day_scores kds-4: shape legacy cardio senza movimento rifiutata (7.2566ms)
-✔ regole: client vecchio set() senza rev → rifiutato (299.241ms)
-✔ regole: client nuovo crea giorno con rev=1 → ok (15.615ms)
-✔ regole: set senza incrementare rev → rifiutato; rev+1 → ok (24.2373ms)
-✔ regole: PATCH dei soli campi senza rev → rifiutato (11.2693ms)
-✔ writer: salvataggio non cancella dayTargetSnapshot né customTargets (99.7289ms)
-✔ due client in parallelo: uno vince, l'altro confligge poi riapplica (53.1142ms)
-✔ regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato (21.5028ms)
-✔ regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tipo oggi) (15.1846ms)
-✔ client writer: autopilot su giorno a rev=8 (come oggi) senza perdere il log (108.2055ms)
-✔ client writer: salvataggio pasto su oggi (merge log + bump rev) (26.7779ms)
-✔ bozza: consume su external_drafts + pasto sul giorno nello stesso flusso (36.4159ms)
-ℹ tests 23
+✔ sfv-3: write client autenticato accettata dalle regole (989.9689ms)
+✔ sfv-2: write legacy ancora accettata (12.8329ms)
+✔ sfv-1: write legacy ancora accettata (7.8321ms)
+✔ sfv-9: versione sconosciuta rifiutata (10.3367ms)
+✔ catalogo scritture client: ogni allow passa, ogni deny intenzionale fallisce (637.5154ms)
+✔ external_drafts: update client {status, consumedAt} accettato, poi contenuto invariato (72.1159ms)
+✔ tracker_data sleep: round-trip quality + notes su RTDB (24.8395ms)
+✔ dayTargetSnapshot: scrittura giorno con rev+1 accettata (preserva via nodo intero) (271.952ms)
+✔ dayTargetSnapshot: PUT del solo figlio senza rev → rifiutato (5.5447ms)
+✔ focus_day_scores kds-5: write client autenticato accettata (15.648ms)
+✔ focus_day_scores kds-4: write client autenticato accettata (12.612ms)
+✔ focus_day_scores kds-4: shape legacy cardio senza movimento rifiutata (6.0392ms)
+✔ regole: client vecchio set() senza rev → rifiutato (279.0107ms)
+✔ regole: client nuovo crea giorno con rev=1 → ok (22.5816ms)
+✔ regole: set senza incrementare rev → rifiutato; rev+1 → ok (30.6458ms)
+✔ regole: PATCH dei soli campi senza rev → rifiutato (19.9001ms)
+✔ writer: salvataggio non cancella dayTargetSnapshot né customTargets (134.2539ms)
+✔ due client in parallelo: uno vince, l'altro confligge poi riapplica (48.1752ms)
+✔ regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato (20.7863ms)
+✔ regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tipo oggi) (16.9286ms)
+✔ client writer: autopilot su giorno a rev=8 (come oggi) senza perdere il log (130.4512ms)
+✔ client writer: salvataggio pasto su oggi (merge log + bump rev) (24.8223ms)
+✔ bozza: consume su external_drafts + pasto sul giorno nello stesso flusso (41.6424ms)
+✔ caso conflitto: retry riapplica il pasto sul dato fresco (non lo scarta) (21.0582ms)
+✔ caso rifiuto: set senza writeProtocol / senza rev → deny (app vecchia) (17.6892ms)
+✔ caso offline: saveDayNodeWithRev fallisce senza scrivere (10.5049ms)
+ℹ tests 26
 ℹ suites 0
-ℹ pass 23
+ℹ pass 26
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 3828.5904
+ℹ duration_ms 3711.9154
 +  Script exited successfully (code 0)
 i  emulators: Shutting down emulators.
 i  database: Stopping Database Emulator

@@ -25,6 +25,7 @@ export const MEAL_DRAFT_LIMITS = Object.freeze({
   gramsMax: 3000,
   noteMax: 200,
   rawTextMax: 2000,
+  foodDbKeyMax: 160,
   writesPerHour: 10,
   writesPerDay: 30,
   listMax: 50,
@@ -110,7 +111,7 @@ export function validateMealDraftInput(input, now = Date.now()) {
   if (input.items.length > L.maxItems) throw invalid(`items: massimo ${L.maxItems} alimenti.`);
   const items = input.items.map((raw, index) => {
     if (!raw || typeof raw !== 'object') throw invalid(`items[${index}]: oggetto atteso.`);
-    const allowed = new Set(['name', 'grams', 'note']);
+    const allowed = new Set(['name', 'grams', 'note', 'foodDbKey']);
     const extra = Object.keys(raw).filter((key) => !allowed.has(key));
     if (extra.length > 0) throw invalid(`items[${index}]: campi non ammessi (${extra.join(', ')}).`);
     const name = cleanText(raw.name);
@@ -129,7 +130,15 @@ export function validateMealDraftInput(input, now = Date.now()) {
     if (note.length > L.noteMax) {
       throw invalid(`items[${index}].note: massimo ${L.noteMax} caratteri.`);
     }
-    return { name, grams, note };
+    let foodDbKey = null;
+    if (raw.foodDbKey != null && String(raw.foodDbKey).trim() !== '') {
+      const key = cleanText(raw.foodDbKey);
+      if (!key || key.length > L.foodDbKeyMax) {
+        throw invalid(`items[${index}].foodDbKey: massimo ${L.foodDbKeyMax} caratteri.`);
+      }
+      foodDbKey = key;
+    }
+    return { name, grams, note, ...(foodDbKey ? { foodDbKey } : {}) };
   });
 
   const rawText = cleanMultilineText(input.originalText);
@@ -152,7 +161,8 @@ export function newMealDraftId(now = Date.now()) {
 
 /**
  * Forma salvata in external_drafts/meals/{draftId}.
- * Le voci restano `pending`: il riconoscimento alimenti avviene in Kentu alla convalida.
+ * Con foodDbKey+grammi la voce è già risolvibile in Kentu senza lavagna;
+ * altrimenti resta pending e passa dal riconoscimento.
  */
 export function buildExternalMealDraftRecord({ id, normalized, tokenId, now, idemHash }) {
   return {
@@ -163,13 +173,18 @@ export function buildExternalMealDraftRecord({ id, normalized, tokenId, now, ide
     date: normalized.date,
     slotHint: normalized.slot,
     timeHHmm: normalized.time,
-    items: normalized.items.map((item, index) => ({
-      id: `${id}_i${index}`,
-      foodName: item.name,
-      ...(item.grams != null ? { grams: item.grams } : {}),
-      ...(item.note ? { note: item.note } : {}),
-      status: 'pending',
-    })),
+    items: normalized.items.map((item, index) => {
+      const hasKey = Boolean(item.foodDbKey);
+      const hasGrams = item.grams != null;
+      return {
+        id: `${id}_i${index}`,
+        foodName: item.name,
+        ...(hasGrams ? { grams: item.grams } : {}),
+        ...(item.note ? { note: item.note } : {}),
+        ...(hasKey ? { foodDbKey: item.foodDbKey } : {}),
+        status: hasKey && hasGrams ? 'matched' : 'pending',
+      };
+    }),
     rawText: normalized.rawText,
     tokenId: String(tokenId || ''),
     idempotencyKeyHash: idemHash,
@@ -193,9 +208,44 @@ function compactDraft(id, row) {
       name: item?.foodName ?? null,
       grams: item?.grams ?? null,
       ...(item?.note ? { note: item.note } : {}),
+      ...(item?.foodDbKey ? { foodDbKey: item.foodDbKey } : {}),
     })),
     originalText: row?.rawText ?? '',
   };
+}
+
+/**
+ * Verifica che ogni foodDbKey esista in personale / CREA / USDA / OFF.
+ * @param {import('firebase-admin/database').Database} db
+ * @param {string} uid
+ * @param {Array<{ name: string, grams: number|null, note: string, foodDbKey?: string }>} items
+ */
+export async function verifyMealDraftFoodDbKeys(db, uid, items) {
+  const list = Array.isArray(items) ? items : [];
+  const needed = list.filter((item) => item?.foodDbKey);
+  if (needed.length === 0) return list;
+
+  const { loadUserFocusContext } = await import('./loadUserContext.js');
+  const base = await loadUserFocusContext(db, uid);
+  const layers = [
+    base.personalDb,
+    base.catalogs?.kentuItDb,
+    base.catalogs?.globalDb,
+    base.catalogs?.offDb,
+  ];
+
+  list.forEach((item, index) => {
+    const key = item?.foodDbKey;
+    if (!key) return;
+    const found = layers.some((layer) => layer && typeof layer === 'object' && layer[key]);
+    if (!found) {
+      throw invalid(
+        `items[${index}].foodDbKey: "${key}" non trovato nei cataloghi Kentu. `
+        + 'Usa kentu_search_food e passa l’id restituito.',
+      );
+    }
+  });
+  return list;
 }
 
 async function writeAudit(db, uid, entry) {
@@ -280,6 +330,14 @@ export async function toolCreateMealDraft(db, ctx, input, now = Date.now()) {
     throw error;
   }
   const normalized = validateMealDraftInput(input, now);
+  try {
+    normalized.items = await verifyMealDraftFoodDbKeys(db, uid, normalized.items);
+  } catch (error) {
+    await writeAudit(db, uid, {
+      tool: 'kentu_create_meal_draft', tokenId, result: 'rejected', reason: 'invalid_food_db_key',
+    });
+    throw error;
+  }
   const idemHash = sha256Hex(`${uid}:${normalized.idempotencyKey}`);
   const idemRef = db.ref(mcpDraftIdemPath(uid, idemHash));
 

@@ -864,6 +864,8 @@ export class CommandTerminalController {
             carbo: 0,
             fat: 0,
             foodDbKey: null,
+            // Chiave suggerita (es. bozza Claude): usata dal matchmaker, non marca resolved.
+            preferredFoodDbKey: String(f.foodDbKey || f.matchedKey || f.preferredFoodDbKey || '').trim() || null,
             isEstimated: true,
             servingLabel: f.servingLabel || null,
             coffeeShopProductId: f.coffeeShopProductId || null,
@@ -1671,17 +1673,14 @@ export class CommandTerminalController {
     this.mcdriveValidationRunning = true;
     this.mcdriveValidationQueued = false;
     let lastResult = { ok: true };
+    /** Max tempo per singolo alimento: oltre → «da scegliere», non bloccare gli altri. */
+    const MATCH_ITEM_TIMEOUT_MS = 3500;
 
     try {
-      // Loop interno: evita overlap e processa tutti i raw già in draft.
+      // Processa TUTTI i raw: un alimento ambiguo non ferma il resto della bozza.
       // eslint-disable-next-line no-constant-condition
       while (true) {
         const list = Array.isArray(this.pendingMcDriveDraft) ? this.pendingMcDriveDraft : [];
-        if (hasPendingMcDriveEnrichment(list)) {
-          lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
-          break;
-        }
-
         const idx = findNextRawMcDriveIndex(list);
         if (idx < 0) {
           lastResult = this.promptMcdriveSaveConfirm();
@@ -1693,31 +1692,34 @@ export class CommandTerminalController {
         const currentState = this.mcdriveValidationContext?.currentState || this.mcdriveContextState || {};
         this.rememberMcdriveContextState(currentState);
 
-        // Nome vuoto: fallimento immediato, niente delay / lookup.
-        if (!foodName) {
-          const afterEmpty = [...(this.pendingMcDriveDraft || [])];
-          afterEmpty[idx] = {
+        const markNeedsChoice = (extra = {}) => {
+          const after = [...(this.pendingMcDriveDraft || [])];
+          after[idx] = {
             ...item,
             id: item.id,
-            foodName: '',
-            spokenFoodName: '',
+            foodName: foodName || String(item?.foodName || '').trim(),
+            spokenFoodName: foodName || String(item?.spokenFoodName || item?.foodName || '').trim(),
             status: 'requires_disambiguation',
-            candidates: [],
-            alternatives: [],
-            confidenceScore: 0,
-            needsExternalSearch: false,
-            searchLevel: 1,
+            candidates: Array.isArray(extra.candidates) ? extra.candidates : [],
+            alternatives: Array.isArray(extra.alternatives) ? extra.alternatives : [],
+            confidenceScore: Number(extra.confidenceScore) || 0,
+            needsExternalSearch: extra.needsExternalSearch === true,
+            searchLevel: Number(extra.searchLevel) || 1,
             kcal: 0,
             pro: 0,
             carbo: 0,
             fat: 0,
             foodDbKey: null,
+            choiceHint: 'da_scegliere',
           };
-          this.pendingMcDriveDraft = afterEmpty;
+          this.pendingMcDriveDraft = after;
           this.publishMcdriveTraySync();
-          this.openMcdriveDisambiguationForItem(idx);
-          lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
-          break;
+        };
+
+        // Nome vuoto: da scegliere, continua con i successivi.
+        if (!foodName) {
+          markNeedsChoice({ needsExternalSearch: false, searchLevel: 1 });
+          continue;
         }
 
         // Paint minimo "processing" senza timer artificiali.
@@ -1734,28 +1736,64 @@ export class CommandTerminalController {
         });
 
         let resolved = null;
+        const abortMatch = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timeoutId = setTimeout(() => {
+          try { abortMatch?.abort(); } catch { /* ignore */ }
+        }, MATCH_ITEM_TIMEOUT_MS);
         try {
           const dbCtx = this.getFastPathContext(currentState);
-          resolved = await resolveMcdriveFoodViaSemanticMatchmaker(foodName, {
-            personalDb: dbCtx.personalDb,
-            kentuItDb: dbCtx.kentuItDb,
-            globalDb: dbCtx.globalDb,
-            offDb: dbCtx.offDb,
-            userFoodAliases: dbCtx.userFoodAliases,
-            userPortions: currentState?.userPortions || currentState?.nutrition?.userPortions || null,
-            preferredFoodDbKey: item?.preferredFoodDbKey || null,
-          });
+          resolved = await Promise.race([
+            resolveMcdriveFoodViaSemanticMatchmaker(foodName, {
+              personalDb: dbCtx.personalDb,
+              kentuItDb: dbCtx.kentuItDb,
+              globalDb: dbCtx.globalDb,
+              offDb: dbCtx.offDb,
+              userFoodAliases: dbCtx.userFoodAliases,
+              userPortions: currentState?.userPortions || currentState?.nutrition?.userPortions || null,
+              preferredFoodDbKey: item?.preferredFoodDbKey || item?.foodDbKey || null,
+              signal: abortMatch?.signal,
+              skipSemanticAi: true,
+            }),
+            new Promise((resolve) => {
+              setTimeout(() => resolve({
+                match: null,
+                needsDisambiguation: true,
+                candidates: [],
+                alternatives: [],
+                confidenceScore: 0,
+                source: null,
+                timedOut: true,
+                needsExternalSearch: true,
+                searchLevel: 1,
+              }), MATCH_ITEM_TIMEOUT_MS);
+            }),
+          ]);
         } catch (error) {
-          if (isAbortError(error)) throw error;
-          console.warn('[CommandTerminalController] McDrive sequential match failed', error);
-          resolved = {
-            match: null,
-            needsDisambiguation: true,
-            candidates: [],
-            alternatives: [],
-            confidenceScore: 0,
-            source: null,
-          };
+          if (isAbortError(error)) {
+            resolved = {
+              match: null,
+              needsDisambiguation: true,
+              candidates: [],
+              alternatives: [],
+              confidenceScore: 0,
+              source: null,
+              timedOut: true,
+              needsExternalSearch: true,
+              searchLevel: 1,
+            };
+          } else {
+            console.warn('[CommandTerminalController] McDrive sequential match failed', error);
+            resolved = {
+              match: null,
+              needsDisambiguation: true,
+              candidates: [],
+              alternatives: [],
+              confidenceScore: 0,
+              source: null,
+            };
+          }
+        } finally {
+          clearTimeout(timeoutId);
         }
 
         if (resolved?.match && !resolved?.needsDisambiguation) {
@@ -1793,35 +1831,17 @@ export class CommandTerminalController {
           this.pendingMcDriveDraft = after;
           this.publishMcdriveTraySync();
           await Promise.resolve();
-          // Continua col prossimo raw (anche quelli arrivati a metà match).
           continue;
         }
 
-        // Confidenza insufficiente o più candidati simili: scheda disambiguazione.
-        const candidates = Array.isArray(resolved?.candidates) ? resolved.candidates : [];
-        const afterAmbiguous = [...(this.pendingMcDriveDraft || [])];
-        afterAmbiguous[idx] = {
-          ...item,
-          id: item.id,
-          foodName,
-          spokenFoodName: foodName,
-          status: 'requires_disambiguation',
-          candidates,
+        // Ambiguo / timeout / nessun match: marca «da scegliere» e passa al prossimo raw.
+        markNeedsChoice({
+          candidates: Array.isArray(resolved?.candidates) ? resolved.candidates : [],
           alternatives: resolved?.alternatives || [],
           confidenceScore: Number(resolved?.confidenceScore) || 0,
-          needsExternalSearch: resolved?.needsExternalSearch === true,
+          needsExternalSearch: resolved?.needsExternalSearch === true || resolved?.timedOut === true,
           searchLevel: Number(resolved?.searchLevel) || 1,
-          kcal: 0,
-          pro: 0,
-          carbo: 0,
-          fat: 0,
-          foodDbKey: null,
-        };
-        this.pendingMcDriveDraft = afterAmbiguous;
-        this.publishMcdriveTraySync();
-        this.openMcdriveDisambiguationForItem(idx);
-        lastResult = { ok: true, paused: true, reason: 'requires_disambiguation' };
-        break;
+        });
       }
     } catch (error) {
       if (isAbortError(error)) throw error;

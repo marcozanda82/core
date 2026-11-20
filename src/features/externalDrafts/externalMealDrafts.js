@@ -30,17 +30,22 @@ export function externalDraftToInboxBlock(draftId, draft) {
   if (draft.status !== 'pending') return null;
   const date = String(draft.date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
-  const items = asCollectionArray(draft.items).map((item, index) => ({
-    id: String(item?.id || `${id}_i${index}`),
-    foodName: item?.foodName,
-    spokenFoodName: item?.foodName,
-    ...(Number(item?.grams) > 0
-      ? { grams: Number(item.grams), quantitySource: 'explicit' }
-      : {}),
-    ...(item?.note ? { note: item.note } : {}),
-    // `raw`: la lavagna di riconoscimento valida in sequenza solo le voci raw.
-    status: 'raw',
-  }));
+  const items = asCollectionArray(draft.items).map((item, index) => {
+    const foodDbKey = String(item?.foodDbKey || item?.matchedKey || '').trim();
+    const grams = Number(item?.grams);
+    const hasGrams = Number.isFinite(grams) && grams > 0;
+    // Chiave verificata lato MCP + grammi → skip lavagna (status matched).
+    const resolved = Boolean(foodDbKey) && hasGrams;
+    return {
+      id: String(item?.id || `${id}_i${index}`),
+      foodName: item?.foodName,
+      spokenFoodName: item?.foodName,
+      ...(hasGrams ? { grams, quantitySource: 'explicit' } : {}),
+      ...(item?.note ? { note: item.note } : {}),
+      ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
+      status: resolved ? 'matched' : 'raw',
+    };
+  });
   const block = normalizeInboxDraftBlock({
     id: `${EXTERNAL_BLOCK_PREFIX}${id}`,
     createdAt: Number(draft.createdAt) || 0,

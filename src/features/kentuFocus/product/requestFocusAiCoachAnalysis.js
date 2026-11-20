@@ -380,7 +380,7 @@ export async function requestFocusAiCoachAnalysis(input) {
       sizes,
       thinkingLevel: 'low',
       force: Boolean(input.force),
-      note: 'timeouts: CF callGemini=120s; httpsCallable race client-side; OFF wait default 8s; thinkingLevel=low',
+      note: 'timeouts: client askAI background=90s (interactive=15s); CF callGemini=120s; OFF wait default 8s; thinkingLevel=low',
     });
 
     const provider = createAskAiFocusGeminiProvider({

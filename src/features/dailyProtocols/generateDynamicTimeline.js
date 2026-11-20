@@ -379,7 +379,7 @@ export async function generateDynamicTimeline(protocolId, dashboardState) {
   const text = await askAI(userPrompt, buildProtocolTimelineSystemPrompt(clock, todayLoggedEvents), {
     model: PROTOCOL_TIMELINE_MODEL,
     temperature: 0.4,
-    timeoutMs: 45_000,
+    timeoutMs: 90_000,
     callTag: 'protocol_timeline',
   });
   const events = parseProtocolTimelineJson(text);
@@ -443,7 +443,7 @@ export async function renegotiateTimeline(userMessage, currentTimeline, options 
     {
       model: PROTOCOL_TIMELINE_MODEL,
       temperature: 0.3,
-      timeoutMs: 45_000,
+      timeoutMs: 90_000,
       callTag: 'protocol_timeline',
     },
   );

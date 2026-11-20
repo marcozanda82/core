@@ -20,8 +20,9 @@ import {
   __resetFocusAiCoachMemoryForTests,
   __resetFocusAiAnalysisPersistenceForTests,
 } from '../product/index.js';
-/** Valore noto in aiService.js (ASK_AI_TIMEOUT_MS) — non importare aiService in Node (Firebase). */
-const ASK_AI_DEFAULT_TIMEOUT_MS = 30_000;
+/** Valori noti in aiService.js — non importare aiService in Node (Firebase). */
+const ASK_AI_DEFAULT_TIMEOUT_MS = 15_000;
+const ASK_AI_BACKGROUND_TIMEOUT_MS = 90_000;
 
 const DAY = '2026-10-24';
 const PUB = '2026-10-25';
@@ -62,13 +63,13 @@ describe('Focus evidence + timeout P1P', () => {
     __resetFocusAiAnalysisPersistenceForTests();
   });
 
-  it('timeout Focus > askAI default; mese > settimana ≥ ieri; sotto tetto CF 120s', () => {
-    assert.ok(resolveFocusAiCoachTimeoutMs('ieri') > ASK_AI_DEFAULT_TIMEOUT_MS);
-    assert.ok(resolveFocusAiCoachTimeoutMs('settimana') >= resolveFocusAiCoachTimeoutMs('ieri'));
-    assert.ok(resolveFocusAiCoachTimeoutMs('mese') >= resolveFocusAiCoachTimeoutMs('settimana'));
-    assert.ok(resolveFocusAiCoachTimeoutMs('mese') < 120_000);
+  it('timeout Focus = background 90s (> interattivo 15s); sotto tetto CF 120s', () => {
+    assert.ok(ASK_AI_BACKGROUND_TIMEOUT_MS > ASK_AI_DEFAULT_TIMEOUT_MS);
+    assert.equal(resolveFocusAiCoachTimeoutMs('ieri'), ASK_AI_BACKGROUND_TIMEOUT_MS);
+    assert.equal(resolveFocusAiCoachTimeoutMs('settimana'), ASK_AI_BACKGROUND_TIMEOUT_MS);
+    assert.equal(resolveFocusAiCoachTimeoutMs('mese'), ASK_AI_BACKGROUND_TIMEOUT_MS);
     assert.equal(FOCUS_AI_COACH_TIMEOUT_MS.ieri, resolveFocusAiCoachTimeoutMs('ieri'));
-    // Nota: questo non dimostra assenza di timeout su Gemini reale.
+    assert.ok(ASK_AI_BACKGROUND_TIMEOUT_MS < 120_000);
   });
 
   it('4 ref reali + 1 irrisolvibile vuoto → conteggio e testi leggibili', () => {

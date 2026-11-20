@@ -113,7 +113,8 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     'kentu_search_food',
     {
       description:
-        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce nome, matchQuality e kcal/100g. Sola lettura.',
+        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (da usare come foodDbKey in kentu_create_meal_draft), '
+        + 'nome, matchQuality e kcal/100g. In caso di ambiguità chiedi all’utente quale voce. Sola lettura.',
       inputSchema: {
         query: z.string().describe('Testo di ricerca (almeno 2 caratteri)'),
       },
@@ -127,7 +128,8 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     {
       description:
         'Crea una BOZZA di pasto in Kentu, da convalidare dall’utente nell’app. Non scrive nel diario e non cambia '
-        + 'i punteggi. Prima di chiamarlo: chiedi quantità e condimenti mancanti, mostra un riepilogo e attendi conferma. '
+        + 'i punteggi. Preferisci passare foodDbKey (id da kentu_search_food) + grammi per ogni voce: così in Kentu '
+        + 'si salta la lavagna di riconoscimento. Prima: chiedi quantità/condimenti mancanti, mostra riepilogo, attendi conferma. '
         + 'Richiede il permesso "drafts:write" sul gettone. Limite: 10 scritture/ora, 30/giorno. '
         + 'Ripetere con la stessa idempotencyKey non crea doppioni.',
       inputSchema: {
@@ -142,6 +144,8 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
             .describe('Grammi se noti; null se l’utente non li sa'),
           note: z.string().trim().max(L.noteMax).optional()
             .describe('Nota breve (es. "condita con 1 cucchiaio d’olio")'),
+          foodDbKey: z.string().trim().min(1).max(L.foodDbKeyMax).optional()
+            .describe('id restituito da kentu_search_food (CREA/USDA/personale). Se presente con grammi, in Kentu si salta la lavagna per questa voce.'),
         })).min(1).max(L.maxItems),
         originalText: z.string().trim().min(1).max(L.rawTextMax)
           .describe('Il testo originale scritto dall’utente, senza riformularlo'),

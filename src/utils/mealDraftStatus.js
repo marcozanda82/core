@@ -89,19 +89,25 @@ export function serializeInboxDraftItem(item) {
   const quantitySource = String(item.quantitySource || '').trim();
   const note = String(item.note || '').trim().slice(0, MAX_NOTE_LEN);
   const knownSources = new Set(['explicit', 'household', 'user-history', 'database', 'estimated']);
+  const dbKeyRaw = item.foodDbKey ?? item.matchedKey ?? item.dbKey ?? null;
+  const foodDbKey = dbKeyRaw != null && String(dbKeyRaw).trim()
+    ? String(dbKeyRaw).trim().slice(0, 160)
+    : '';
+  const unresolved = MEAL_DRAFT_UNRESOLVED_STATUSES.has(status);
   return {
     foodName,
     name: foodName,
     desc: foodName,
     ...(hasGrams ? { grams, qta: grams, weight: grams, qty: grams } : {}),
     status,
-    kcal: 0,
-    cal: 0,
-    prot: 0,
-    carb: 0,
-    fat: 0,
+    // Macro a 0 solo sulle voci ancora da risolvere: le matched con foodDbKey
+    // lasciano il lookup al commit (estraiDatiFoodDb).
+    ...(unresolved
+      ? { kcal: 0, cal: 0, prot: 0, carb: 0, fat: 0 }
+      : {}),
     spokenFoodName: String(item.spokenFoodName || foodName),
     ...(itemId ? { id: itemId } : {}),
+    ...(foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {}),
     ...(item.servingLabel ? { servingLabel: String(item.servingLabel) } : {}),
     ...(item.coffeeShopProductId
       ? { coffeeShopProductId: String(item.coffeeShopProductId).trim() }

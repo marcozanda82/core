@@ -91,6 +91,24 @@ test('buildExternalMealDraftRecord: forma salvata con origine claude e voci pend
   assert.ok(record.items.every((item) => item.status === 'pending'));
 });
 
+test('validate + build: foodDbKey+grammi → voce matched', () => {
+  const normalized = validateMealDraftInput(validInput({
+    items: [
+      { name: 'pasta integrale', grams: 80, foodDbKey: 'pasta integrale cruda' },
+      { name: 'merluzzo', grams: null },
+    ],
+  }), NOW);
+  assert.equal(normalized.items[0].foodDbKey, 'pasta integrale cruda');
+  assert.equal(normalized.items[1].foodDbKey, undefined);
+  const record = buildExternalMealDraftRecord({
+    id: 'cd_abc_12345678', normalized, tokenId: 't_1', now: NOW, idemHash: 'h',
+  });
+  assert.equal(record.items[0].status, 'matched');
+  assert.equal(record.items[0].foodDbKey, 'pasta integrale cruda');
+  assert.equal(record.items[1].status, 'pending');
+  assert.equal(record.items[1].foodDbKey, undefined);
+});
+
 test('scope mancante: create/delete rifiutati prima di toccare il database', async () => {
   const ctx = { uid: 'u1', tokenId: 't1', scopes: ['read'] };
   await assert.rejects(

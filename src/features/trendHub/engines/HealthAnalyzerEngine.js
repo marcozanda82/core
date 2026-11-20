@@ -423,6 +423,7 @@ export async function requestHealthAnalyzerReport(analysisContext, options = {})
     temperature: options.temperature ?? 0.25,
     responseSchema: healthReportSchema,
     callTag: 'health_analyzer_report',
+    timeoutMs: options.timeoutMs ?? 90_000,
     generationConfig: {
       temperature: options.temperature ?? 0.25,
       response_mime_type: 'application/json',
@@ -468,6 +469,7 @@ export async function requestHealthFoodLabels(analysisContext, options = {}) {
       temperature: 0.1,
       responseSchema: foodLabelSchema,
       callTag: 'health_analyzer_labels',
+      timeoutMs: options.timeoutMs ?? 90_000,
       generationConfig: {
         temperature: 0.1,
         response_mime_type: 'application/json',

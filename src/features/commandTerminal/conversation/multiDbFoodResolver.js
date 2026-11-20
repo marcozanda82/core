@@ -529,36 +529,38 @@ export async function collectLevel1LocalCandidates(foodName, ctx = {}) {
     return finalize(ranked);
   }
 
-  // Semantic solo su archivi locali (niente inventare da cataloghi esterni).
-  if (personalDb && Object.keys(personalDb).length > 0) {
-    try {
-      const personalSemantic = await findSemanticKentuMatches(name, {
-        personalDb,
-        kentuItDb: null,
-      }, { signal });
-      (Array.isArray(personalSemantic) ? personalSemantic : []).forEach((m) => {
-        const c = semanticMatchToCandidate(m, 'personal');
-        if (c) mergeCandidatePool(pool, c);
-      });
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      console.warn('[multiDbFoodResolver] L1 personal semantic failed', error);
+  // Semantic (Gemini) opzionale: sulla lavagna bozze va disattivato (rete lenta → hang).
+  if (ctx.skipSemanticAi !== true) {
+    if (personalDb && Object.keys(personalDb).length > 0) {
+      try {
+        const personalSemantic = await findSemanticKentuMatches(name, {
+          personalDb,
+          kentuItDb: null,
+        }, { signal });
+        (Array.isArray(personalSemantic) ? personalSemantic : []).forEach((m) => {
+          const c = semanticMatchToCandidate(m, 'personal');
+          if (c) mergeCandidatePool(pool, c);
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn('[multiDbFoodResolver] L1 personal semantic failed', error);
+      }
     }
-  }
 
-  if (kentuItDb && Object.keys(kentuItDb).length > 0) {
-    try {
-      const kentuSemantic = await findSemanticKentuMatches(name, {
-        kentuItDb,
-        personalDb: null,
-      }, { signal });
-      (Array.isArray(kentuSemantic) ? kentuSemantic : []).forEach((m) => {
-        const c = semanticMatchToCandidate(m, 'kentu');
-        if (c) mergeCandidatePool(pool, c);
-      });
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      console.warn('[multiDbFoodResolver] L1 kentu semantic failed', error);
+    if (kentuItDb && Object.keys(kentuItDb).length > 0) {
+      try {
+        const kentuSemantic = await findSemanticKentuMatches(name, {
+          kentuItDb,
+          personalDb: null,
+        }, { signal });
+        (Array.isArray(kentuSemantic) ? kentuSemantic : []).forEach((m) => {
+          const c = semanticMatchToCandidate(m, 'kentu');
+          if (c) mergeCandidatePool(pool, c);
+        });
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn('[multiDbFoodResolver] L1 kentu semantic failed', error);
+      }
     }
   }
 

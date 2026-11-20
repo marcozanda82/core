@@ -56,9 +56,40 @@ test('una bozza Claude in attesa diventa un blocco Inbox con origine, ora, pasto
   assert.equal(pasta.quantitySource, 'explicit');
   assert.equal(pasta.note, 'olio non specificato');
   assert.equal(pasta.status, 'raw');
-  assert.equal(isUnresolvedMealDraftItem(pasta), true, 'passa sempre dalla lavagna di riconoscimento');
+  assert.equal(isUnresolvedMealDraftItem(pasta), true, 'senza foodDbKey passa dalla lavagna');
   assert.equal(insalata.grams, undefined);
   assert.equal(insalata.quantitySource, undefined);
+});
+
+test('foodDbKey+grammi → matched (skip lavagna); senza grammi resta raw', () => {
+  const block = externalDraftToInboxBlock('cd_abc_0123abcd', claudeDraft({
+    items: [
+      {
+        id: 'cd_abc_0123abcd_i0',
+        foodName: 'Pasta al pomodoro',
+        grams: 90,
+        foodDbKey: 'pasta al pomodoro',
+        status: 'matched',
+      },
+      {
+        id: 'cd_abc_0123abcd_i1',
+        foodName: 'Insalata',
+        foodDbKey: 'insalata mista',
+        status: 'pending',
+      },
+    ],
+  }));
+  const [pasta, insalata] = block.items;
+  assert.equal(pasta.status, 'matched');
+  assert.equal(pasta.foodDbKey, 'pasta al pomodoro');
+  assert.equal(isUnresolvedMealDraftItem(pasta), false);
+  assert.equal(insalata.status, 'raw');
+  assert.equal(insalata.foodDbKey, 'insalata mista');
+  assert.equal(isUnresolvedMealDraftItem(insalata), true);
+
+  const normalized = normalizeInboxDraftBlock(block);
+  assert.equal(normalized.items[0].foodDbKey, 'pasta al pomodoro');
+  assert.equal(normalized.items[0].status, 'matched');
 });
 
 test('le bozze già convalidate o eliminate non entrano nell\'Inbox', () => {

@@ -59,6 +59,7 @@ export async function transcribeVoiceNote(base64Data, mimeType = 'audio/webm', o
     generationConfig: { temperature: 0, maxOutputTokens: 2048 },
     callTag: options.callTag || 'voice_transcribe',
     signal: options.signal,
+    timeoutMs: options.timeoutMs ?? 15_000,
   });
 
   const transcription = sanitizeTranscriptionText(text);

@@ -526,7 +526,22 @@ export default function FocusBoard({
 
       {!viewingToday && (aiState?.status === 'loading' || aiState?.busy) ? (
         <p className="kf-focus-preparing" aria-live="polite">
-          Sto preparando il rapporto di ieri…
+          Sto preparando il rapporto…
+        </p>
+      ) : null}
+
+      {!viewingToday && aiState?.status === 'error' && aiState?.userMessage ? (
+        <p className="kf-focus-preparing" role="status">
+          {aiState.userMessage}
+          {' '}
+          <button
+            type="button"
+            className="kf-focus-regen"
+            disabled={aiState?.busy}
+            onClick={onRegenerate}
+          >
+            Riprova
+          </button>
         </p>
       ) : null}
 

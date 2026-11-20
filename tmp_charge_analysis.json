@@ -1,0 +1,714 @@
+﻿{
+  "params": {
+    "halfLifeDays": 3,
+    "decayPerDay": 0.793701,
+    "lookback": 21
+  },
+  "fixture": [
+    {
+      "date": "2026-10-28",
+      "score": 0.583,
+      "forceCi1Raw": 0,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.097,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.194,
+      "groups": {
+        "petto": 0.198,
+        "schiena": 0.198,
+        "spalle": 0.198,
+        "gambe": 0.178,
+        "core": 0.198
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "score": 0.583,
+      "forceCi1Raw": 0.35,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.513,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.526,
+      "groups": {
+        "petto": 0.157,
+        "schiena": 0.657,
+        "spalle": 0.157,
+        "gambe": 1,
+        "core": 0.657
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "score": 0.583,
+      "forceCi1Raw": 0.35,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.459,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.418,
+      "groups": {
+        "petto": 0.125,
+        "schiena": 0.522,
+        "spalle": 0.125,
+        "gambe": 0.794,
+        "core": 0.522
+      }
+    },
+    {
+      "date": "2026-11-05",
+      "score": 0.414,
+      "forceCi1Raw": 0.2,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.115,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.229,
+      "groups": {
+        "petto": 0.315,
+        "schiena": 0.13,
+        "spalle": 0.189,
+        "gambe": 0.198,
+        "core": 0.315
+      }
+    },
+    {
+      "date": "2026-11-09",
+      "score": 0.842,
+      "forceCi1Raw": 0.4,
+      "forceCi1Gated": 0.4,
+      "forceCi2Raw": 0.365,
+      "forceCi2Gated": 0.365,
+      "dayPart": 0,
+      "coverPart": 0.73,
+      "groups": {
+        "petto": 0.794,
+        "schiena": 0.794,
+        "spalle": 0.794,
+        "gambe": 0.476,
+        "core": 0.794
+      }
+    }
+  ],
+  "prod30Summary": {
+    "asOf": "2026-11-20",
+    "daysLoaded": 30,
+    "rowsWithScore": 26,
+    "meanCi1Gated": 0.078,
+    "meanCi2Gated": 0.065,
+    "meanCi1Raw": 0.445,
+    "meanCi2Raw": 0.384
+  },
+  "prod30": [
+    {
+      "date": "2026-10-24",
+      "score": 0.545,
+      "forceCi1Raw": 0.25,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.25,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0,
+      "groups": {
+        "petto": 0,
+        "schiena": 0,
+        "spalle": 0,
+        "gambe": 0,
+        "core": 0
+      }
+    },
+    {
+      "date": "2026-10-25",
+      "score": 0.545,
+      "forceCi1Raw": 0.25,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.25,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0,
+      "groups": {
+        "petto": 0,
+        "schiena": 0,
+        "spalle": 0,
+        "gambe": 0,
+        "core": 0
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "score": 0.773,
+      "forceCi1Raw": 0,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0,
+      "groups": {
+        "petto": 0,
+        "schiena": 0,
+        "spalle": 0,
+        "gambe": 0,
+        "core": 0
+      }
+    },
+    {
+      "date": "2026-10-29",
+      "score": 0.583,
+      "forceCi1Raw": 0.35,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.45,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.4,
+      "groups": {
+        "petto": 0,
+        "schiena": 0.5,
+        "spalle": 0,
+        "gambe": 1,
+        "core": 0.5
+      }
+    },
+    {
+      "date": "2026-10-30",
+      "score": 0.583,
+      "forceCi1Raw": 0.35,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.409,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.318,
+      "groups": {
+        "petto": 0,
+        "schiena": 0.397,
+        "spalle": 0,
+        "gambe": 0.794,
+        "core": 0.397
+      }
+    },
+    {
+      "date": "2026-10-31",
+      "score": 0.583,
+      "forceCi1Raw": 0.8,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.845,
+      "forceCi2Gated": 0,
+      "dayPart": 1,
+      "coverPart": 0.689,
+      "groups": {
+        "petto": 1,
+        "schiena": 0.315,
+        "spalle": 0.5,
+        "gambe": 0.63,
+        "core": 1
+      }
+    },
+    {
+      "date": "2026-11-01",
+      "score": 0.856,
+      "forceCi1Raw": 0.8,
+      "forceCi1Gated": 0.8,
+      "forceCi2Raw": 0.774,
+      "forceCi2Gated": 0.774,
+      "dayPart": 1,
+      "coverPart": 0.547,
+      "groups": {
+        "petto": 0.794,
+        "schiena": 0.25,
+        "spalle": 0.397,
+        "gambe": 0.5,
+        "core": 0.794
+      }
+    },
+    {
+      "date": "2026-11-02",
+      "score": 0.541,
+      "forceCi1Raw": 0.3,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.217,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.434,
+      "groups": {
+        "petto": 0.63,
+        "schiena": 0.198,
+        "spalle": 0.315,
+        "gambe": 0.397,
+        "core": 0.63
+      }
+    },
+    {
+      "date": "2026-11-03",
+      "score": null,
+      "forceCi1Raw": 0.3,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.172,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.344,
+      "groups": {
+        "petto": 0.5,
+        "schiena": 0.157,
+        "spalle": 0.25,
+        "gambe": 0.315,
+        "core": 0.5
+      }
+    },
+    {
+      "date": "2026-11-04",
+      "score": 0.645,
+      "forceCi1Raw": 0.3,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.137,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.273,
+      "groups": {
+        "petto": 0.397,
+        "schiena": 0.125,
+        "spalle": 0.198,
+        "gambe": 0.25,
+        "core": 0.397
+      }
+    },
+    {
+      "date": "2026-11-05",
+      "score": 0.414,
+      "forceCi1Raw": 0.2,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.108,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.217,
+      "groups": {
+        "petto": 0.315,
+        "schiena": 0.099,
+        "spalle": 0.157,
+        "gambe": 0.198,
+        "core": 0.315
+      }
+    },
+    {
+      "date": "2026-11-06",
+      "score": null,
+      "forceCi1Raw": 0.2,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.086,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.172,
+      "groups": {
+        "petto": 0.25,
+        "schiena": 0.079,
+        "spalle": 0.125,
+        "gambe": 0.157,
+        "core": 0.25
+      }
+    },
+    {
+      "date": "2026-11-07",
+      "score": 0.645,
+      "forceCi1Raw": 0.45,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.539,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.577,
+      "groups": {
+        "petto": 0.198,
+        "schiena": 1,
+        "spalle": 1,
+        "gambe": 0.125,
+        "core": 0.563
+      }
+    },
+    {
+      "date": "2026-11-08",
+      "score": 0.368,
+      "forceCi1Raw": 0.9,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.96,
+      "forceCi2Gated": 0,
+      "dayPart": 1,
+      "coverPart": 0.92,
+      "groups": {
+        "petto": 1,
+        "schiena": 1,
+        "spalle": 1,
+        "gambe": 0.599,
+        "core": 1
+      }
+    },
+    {
+      "date": "2026-11-09",
+      "score": 0.842,
+      "forceCi1Raw": 0.4,
+      "forceCi1Gated": 0.4,
+      "forceCi2Raw": 0.365,
+      "forceCi2Gated": 0.365,
+      "dayPart": 0,
+      "coverPart": 0.73,
+      "groups": {
+        "petto": 0.794,
+        "schiena": 0.794,
+        "spalle": 0.794,
+        "gambe": 0.476,
+        "core": 0.794
+      }
+    },
+    {
+      "date": "2026-11-10",
+      "score": 0.748,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.676,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.852,
+      "groups": {
+        "petto": 0.63,
+        "schiena": 1,
+        "spalle": 0.63,
+        "gambe": 1,
+        "core": 1
+      }
+    },
+    {
+      "date": "2026-11-11",
+      "score": 0.568,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.588,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.676,
+      "groups": {
+        "petto": 0.5,
+        "schiena": 0.794,
+        "spalle": 0.5,
+        "gambe": 0.794,
+        "core": 0.794
+      }
+    },
+    {
+      "date": "2026-11-12",
+      "score": 0.589,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.518,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.537,
+      "groups": {
+        "petto": 0.397,
+        "schiena": 0.63,
+        "spalle": 0.397,
+        "gambe": 0.63,
+        "core": 0.63
+      }
+    },
+    {
+      "date": "2026-11-13",
+      "score": 0.8,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0.75,
+      "forceCi2Raw": 0.463,
+      "forceCi2Gated": 0.463,
+      "dayPart": 0.5,
+      "coverPart": 0.426,
+      "groups": {
+        "petto": 0.315,
+        "schiena": 0.5,
+        "spalle": 0.315,
+        "gambe": 0.5,
+        "core": 0.5
+      }
+    },
+    {
+      "date": "2026-11-14",
+      "score": 0.455,
+      "forceCi1Raw": 0.9,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.85,
+      "forceCi2Gated": 0,
+      "dayPart": 1,
+      "coverPart": 0.7,
+      "groups": {
+        "petto": 0.25,
+        "schiena": 1,
+        "spalle": 0.25,
+        "gambe": 1,
+        "core": 1
+      }
+    },
+    {
+      "date": "2026-11-15",
+      "score": 0.455,
+      "forceCi1Raw": 0.9,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.949,
+      "forceCi2Gated": 0,
+      "dayPart": 1,
+      "coverPart": 0.898,
+      "groups": {
+        "petto": 1,
+        "schiena": 1,
+        "spalle": 0.698,
+        "gambe": 0.794,
+        "core": 1
+      }
+    },
+    {
+      "date": "2026-11-16",
+      "score": 0.877,
+      "forceCi1Raw": 0.4,
+      "forceCi1Gated": 0.4,
+      "forceCi2Raw": 0.357,
+      "forceCi2Gated": 0.357,
+      "dayPart": 0,
+      "coverPart": 0.713,
+      "groups": {
+        "petto": 0.794,
+        "schiena": 0.794,
+        "spalle": 0.554,
+        "gambe": 0.63,
+        "core": 0.794
+      }
+    },
+    {
+      "date": "2026-11-17",
+      "score": 0.676,
+      "forceCi1Raw": 0.4,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.283,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.566,
+      "groups": {
+        "petto": 0.63,
+        "schiena": 0.63,
+        "spalle": 0.44,
+        "gambe": 0.5,
+        "core": 0.63
+      }
+    },
+    {
+      "date": "2026-11-18",
+      "score": 0.382,
+      "forceCi1Raw": 0.4,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.225,
+      "forceCi2Gated": 0,
+      "dayPart": 0,
+      "coverPart": 0.449,
+      "groups": {
+        "petto": 0.5,
+        "schiena": 0.5,
+        "spalle": 0.349,
+        "gambe": 0.397,
+        "core": 0.5
+      }
+    },
+    {
+      "date": "2026-11-19",
+      "score": null,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.551,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.601,
+      "groups": {
+        "petto": 0.397,
+        "schiena": 0.897,
+        "spalle": 1,
+        "gambe": 0.315,
+        "core": 0.397
+      }
+    },
+    {
+      "date": "2026-11-20",
+      "score": null,
+      "forceCi1Raw": 0.75,
+      "forceCi1Gated": 0,
+      "forceCi2Raw": 0.489,
+      "forceCi2Gated": 0,
+      "dayPart": 0.5,
+      "coverPart": 0.477,
+      "groups": {
+        "petto": 0.315,
+        "schiena": 0.712,
+        "spalle": 0.794,
+        "gambe": 0.25,
+        "core": 0.315
+      }
+    }
+  ],
+  "uiChargesAsOf": {
+    "asOf": "2026-11-19",
+    "groups": [
+      {
+        "id": "petto",
+        "label": "Petto",
+        "charge": 0.397,
+        "pct": 40,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "pettorali",
+            "charge": 0.397,
+            "legacy": "coperto",
+            "daysSince": 4
+          }
+        ]
+      },
+      {
+        "id": "schiena",
+        "label": "Schiena",
+        "charge": 0.897,
+        "pct": 90,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "dorsali",
+            "charge": 0.397,
+            "legacy": "coperto",
+            "daysSince": 4
+          },
+          {
+            "id": "trapezi_romboidi",
+            "charge": 0.897,
+            "legacy": "coperto",
+            "daysSince": 4
+          },
+          {
+            "id": "lombari",
+            "charge": 0.397,
+            "legacy": "coperto",
+            "daysSince": 5
+          }
+        ]
+      },
+      {
+        "id": "spalle",
+        "label": "Spalle",
+        "charge": 1,
+        "pct": 100,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "deltoidi_anteriori",
+            "charge": 1,
+            "legacy": "coperto",
+            "daysSince": 0
+          },
+          {
+            "id": "deltoidi_laterali",
+            "charge": 1,
+            "legacy": "coperto",
+            "daysSince": 0
+          },
+          {
+            "id": "deltoidi_posteriori",
+            "charge": 1,
+            "legacy": "coperto",
+            "daysSince": 0
+          }
+        ]
+      },
+      {
+        "id": "braccia",
+        "label": "Braccia",
+        "charge": 1,
+        "pct": 100,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "bicipiti",
+            "charge": 1,
+            "legacy": "coperto",
+            "daysSince": 0
+          },
+          {
+            "id": "tricipiti",
+            "charge": 1,
+            "legacy": "coperto",
+            "daysSince": 0
+          },
+          {
+            "id": "avambracci",
+            "charge": 0.745,
+            "legacy": "coperto",
+            "daysSince": 18
+          }
+        ]
+      },
+      {
+        "id": "gambe",
+        "label": "Gambe",
+        "charge": 0.315,
+        "pct": 32,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "quadricipiti",
+            "charge": 0.315,
+            "legacy": "coperto",
+            "daysSince": 5
+          },
+          {
+            "id": "glutei",
+            "charge": 0.315,
+            "legacy": "coperto",
+            "daysSince": 5
+          },
+          {
+            "id": "femorali",
+            "charge": 0.22,
+            "legacy": "toccato",
+            "daysSince": null
+          },
+          {
+            "id": "adduttori",
+            "charge": 0.22,
+            "legacy": "toccato",
+            "daysSince": null
+          },
+          {
+            "id": "polpacci",
+            "charge": 0.22,
+            "legacy": "toccato",
+            "daysSince": null
+          }
+        ]
+      },
+      {
+        "id": "core",
+        "label": "Core",
+        "charge": 0.397,
+        "pct": 40,
+        "legacyStatus": "coperto",
+        "muscles": [
+          {
+            "id": "addominali",
+            "charge": 0.315,
+            "legacy": "coperto",
+            "daysSince": 5
+          },
+          {
+            "id": "obliqui",
+            "charge": 0.315,
+            "legacy": "coperto",
+            "daysSince": 5
+          },
+          {
+            "id": "lombari",
+            "charge": 0.397,
+            "legacy": "coperto",
+            "daysSince": 5
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -34,7 +34,111 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/features/kentuFocus/product/loadFocusCatalogsNode.js
+// mcp/dates.js
+function partsInRome(now = /* @__PURE__ */ new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short"
+  });
+  const bag = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
+  return {
+    iso: `${bag.year}-${bag.month}-${bag.day}`,
+    year: Number(bag.year),
+    month: Number(bag.month),
+    day: Number(bag.day),
+    weekday: bag.weekday
+    // Mon, Tue, …
+  };
+}
+function addDaysIso(iso, days) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const utc = Date.UTC(y, m - 1, d) + days * 864e5;
+  const dt = new Date(utc);
+  const yyyy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+function mondayOfWeek(iso, weekdayShort) {
+  const offset = WEEKDAY_TO_OFFSET[weekdayShort];
+  if (offset == null) throw new Error(`weekday sconosciuto: ${weekdayShort}`);
+  return addDaysIso(iso, -offset);
+}
+function isIsoDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+function resolveDayRef(ref, now = /* @__PURE__ */ new Date()) {
+  const raw = String(ref || "").trim().toLowerCase();
+  const { iso } = partsInRome(now);
+  if (raw === "today" || raw === "oggi") return { date: iso };
+  if (raw === "yesterday" || raw === "ieri") return { date: addDaysIso(iso, -1) };
+  if (isIsoDate(ref)) return { date: String(ref).trim() };
+  throw new Error(`data non valida: usa today, yesterday o YYYY-MM-DD`);
+}
+function resolvePeriodRef(kind, now = /* @__PURE__ */ new Date()) {
+  const key = String(kind || "").trim().toLowerCase();
+  const rome = partsInRome(now);
+  const today = rome.iso;
+  if (key === "this_week" || key === "last_week") {
+    const thisMonday = mondayOfWeek(today, rome.weekday);
+    const monday = key === "this_week" ? thisMonday : addDaysIso(thisMonday, -7);
+    const sunday = addDaysIso(monday, 6);
+    const analysisDate = key === "this_week" ? today : sunday;
+    return {
+      kind: "week",
+      periodId: "settimana",
+      analysisDate,
+      from: monday,
+      to: sunday
+    };
+  }
+  if (key === "this_month" || key === "last_month") {
+    let year = rome.year;
+    let month = rome.month;
+    if (key === "last_month") {
+      month -= 1;
+      if (month < 1) {
+        month = 12;
+        year -= 1;
+      }
+    }
+    const from = `${year}-${String(month).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const analysisDate = key === "this_month" ? today : to;
+    return {
+      kind: "month",
+      periodId: "mese",
+      analysisDate,
+      from,
+      to
+    };
+  }
+  throw new Error("periodo non valido: this_week, last_week, this_month, last_month");
+}
+function todayInRome(now = /* @__PURE__ */ new Date()) {
+  return partsInRome(now).iso;
+}
+var TZ, WEEKDAY_TO_OFFSET;
+var init_dates = __esm({
+  "mcp/dates.js"() {
+    TZ = "Europe/Rome";
+    WEEKDAY_TO_OFFSET = {
+      Mon: 0,
+      Tue: 1,
+      Wed: 2,
+      Thu: 3,
+      Fri: 4,
+      Sat: 5,
+      Sun: 6
+    };
+  }
+});
+
+// ../src/features/kentuFocus/product/loadFocusCatalogsNode.js
 async function loadFocusCatalogsFromPublic(root = process.cwd(), options = {}) {
   const includeOff = options.includeOff !== false;
   const dataDir = options.dataDir ? String(options.dataDir) : null;
@@ -99,7 +203,7 @@ function hasUsableKcal(record) {
 }
 var import_promises, import_node_path, FILE_NAMES, cached;
 var init_loadFocusCatalogsNode = __esm({
-  "src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
+  "../src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
     import_promises = require("node:fs/promises");
     import_node_path = __toESM(require("node:path"), 1);
     FILE_NAMES = Object.freeze({
@@ -111,7 +215,7 @@ var init_loadFocusCatalogsNode = __esm({
   }
 });
 
-// functions/mcp/loadServerCatalogs.js
+// mcp/loadServerCatalogs.js
 var loadServerCatalogs_exports = {};
 __export(loadServerCatalogs_exports, {
   clearServerCatalogsCache: () => clearServerCatalogsCache,
@@ -169,7 +273,7 @@ async function loadServerCatalogs() {
 }
 var import_node_path2, import_node_fs, dataDirOverride, OFF_WARNING, loading, cached2;
 var init_loadServerCatalogs = __esm({
-  "functions/mcp/loadServerCatalogs.js"() {
+  "mcp/loadServerCatalogs.js"() {
     import_node_path2 = __toESM(require("node:path"));
     import_node_fs = require("node:fs");
     init_loadFocusCatalogsNode();
@@ -180,7 +284,7 @@ var init_loadServerCatalogs = __esm({
   }
 });
 
-// src/features/dayStatus/dayStatusRecord.js
+// ../src/features/dayStatus/dayStatusRecord.js
 function isIsoDate2(value) {
   if (typeof value !== "string" || !ISO_DATE_RE.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
@@ -214,13 +318,13 @@ function finiteEpoch(value) {
 }
 var PAUSE_REASONS, ISO_DATE_RE;
 var init_dayStatusRecord = __esm({
-  "src/features/dayStatus/dayStatusRecord.js"() {
+  "../src/features/dayStatus/dayStatusRecord.js"() {
     PAUSE_REASONS = Object.freeze(["vacanza", "malattia", "altro"]);
     ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   }
 });
 
-// src/features/kentuFocus/score/dayScoreRecord.js
+// ../src/features/kentuFocus/score/dayScoreRecord.js
 var dayScoreRecord_exports = {};
 __export(dayScoreRecord_exports, {
   dayScorePath: () => dayScorePath,
@@ -316,12 +420,100 @@ function stableStringify(value) {
   return "null";
 }
 var init_dayScoreRecord = __esm({
-  "src/features/kentuFocus/score/dayScoreRecord.js"() {
+  "../src/features/kentuFocus/score/dayScoreRecord.js"() {
     init_dayStatusRecord();
   }
 });
 
-// src/activityCatalog.js
+// mcp/loadUserContext.js
+var loadUserContext_exports = {};
+__export(loadUserContext_exports, {
+  loadUserFocusContext: () => loadUserFocusContext,
+  readStoredDayScore: () => readStoredDayScore
+});
+function emptyCatalogs(personalDb = {}) {
+  return {
+    personalDb,
+    kentuItDb: {},
+    globalDb: {},
+    offDb: {},
+    offReady: false,
+    offExcluded: true,
+    warnings: []
+  };
+}
+async function loadUserFocusContext(db, uid) {
+  const id = String(uid || "").trim();
+  if (!id) throw new Error("uid mancante");
+  const [
+    trackerSnap,
+    profileSnap,
+    dayStatusSnap,
+    checkinSnap,
+    forzaSnap
+  ] = await Promise.all([
+    db.ref(`users/${id}/tracker_data`).get(),
+    db.ref(`users/${id}/profile_targets`).get(),
+    db.ref(`users/${id}/day_status`).get(),
+    db.ref(`users/${id}/movement_checkin`).get(),
+    db.ref(`users/${id}/cylinders/forza`).get()
+  ]);
+  const tracker = trackerSnap.val() && typeof trackerSnap.val() === "object" ? trackerSnap.val() : {};
+  const personalDb = tracker.trackerFoodDatabase && typeof tracker.trackerFoodDatabase === "object" ? tracker.trackerFoodDatabase : {};
+  const fullHistory = { ...tracker };
+  delete fullHistory.trackerFoodDatabase;
+  const profile_targets = profileSnap.val() && typeof profileSnap.val() === "object" ? profileSnap.val() : {};
+  const userTargets = profile_targets.targets && typeof profile_targets.targets === "object" ? profile_targets.targets : profile_targets.profile || {};
+  const warnings = [];
+  let catalogs = emptyCatalogs(personalDb);
+  try {
+    const { loadServerCatalogs: loadServerCatalogs2 } = await Promise.resolve().then(() => (init_loadServerCatalogs(), loadServerCatalogs_exports));
+    const loaded = await loadServerCatalogs2();
+    catalogs = {
+      ...loaded,
+      personalDb
+    };
+    for (const w of loaded.warnings || []) warnings.push(w);
+  } catch (error) {
+    const msg = String(error?.message || error).slice(0, 160);
+    warnings.push(
+      `Cataloghi CREA/USDA non caricati (${msg}). Dettaglio pasti/notte dal diario; classificazione cibo limitata al DB personale.`
+    );
+    console.warn("[kentuMcp] catalogs degrade", msg);
+    catalogs = emptyCatalogs(personalDb);
+  }
+  return {
+    today: todayInRome(),
+    fullHistory,
+    userTargets,
+    profile_targets,
+    records: dayStatusSnap.val() && typeof dayStatusSnap.val() === "object" ? dayStatusSnap.val() : {},
+    movementCheckins: checkinSnap.val() && typeof checkinSnap.val() === "object" ? checkinSnap.val() : {},
+    catalogs,
+    catalogWarnings: warnings,
+    // Abilitata solo se esplicitamente true (nodo boolean o { enabled: true }).
+    forzaEnabled: (() => {
+      const raw = forzaSnap.val();
+      if (raw === true) return true;
+      if (raw && typeof raw === "object" && raw.enabled === true) return true;
+      return false;
+    })(),
+    personalDb
+  };
+}
+async function readStoredDayScore(db, uid, date) {
+  const snap = await db.ref(`users/${uid}/focus_day_scores/${date}`).get();
+  if (!snap.exists()) return null;
+  const { decodeDayScoreFromRtdb: decodeDayScoreFromRtdb2 } = await Promise.resolve().then(() => (init_dayScoreRecord(), dayScoreRecord_exports));
+  return decodeDayScoreFromRtdb2(snap.val());
+}
+var init_loadUserContext = __esm({
+  "mcp/loadUserContext.js"() {
+    init_dates();
+  }
+});
+
+// ../src/activityCatalog.js
 function normalizeMuscleGroupLabel(raw) {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -343,7 +535,7 @@ function normalizeMuscleGroupArray(muscles) {
 }
 var WORKOUT_MUSCLE_GROUP_DEFS, WORKOUT_MUSCLE_MACRO_SECTIONS, WORKOUT_MUSCLE_GROUP_IDS, MUSCLE_ALIAS_TO_ID, WORKOUT_ACTIVITY_TYPE_DEFS, ACTIVITY_BY_ID, WORKOUT_ACTIVITY_SELECTOR_IDS;
 var init_activityCatalog = __esm({
-  "src/activityCatalog.js"() {
+  "../src/activityCatalog.js"() {
     WORKOUT_MUSCLE_GROUP_DEFS = [
       { id: "Petto", label: "Petto", macroGroup: "chest" },
       { id: "Dorso", label: "Dorso", aliases: ["Schiena", "schiena"], macroGroup: "back_shoulders" },
@@ -518,7 +710,7 @@ var init_activityCatalog = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/focusDateUtils.js
+// ../src/features/kentuFocus/normalize/focusDateUtils.js
 function isIsoDateString(value) {
   if (typeof value !== "string" || !ISO_DATE_RE2.test(value)) return false;
   const d = /* @__PURE__ */ new Date(`${value}T12:00:00`);
@@ -570,7 +762,7 @@ function formatFocusHoursIt(hours) {
 }
 var ISO_DATE_RE2, ISO_WEEKDAY_LABELS_IT, MONTHS_IT;
 var init_focusDateUtils = __esm({
-  "src/features/kentuFocus/normalize/focusDateUtils.js"() {
+  "../src/features/kentuFocus/normalize/focusDateUtils.js"() {
     ISO_DATE_RE2 = /^\d{4}-\d{2}-\d{2}$/;
     ISO_WEEKDAY_LABELS_IT = Object.freeze([
       null,
@@ -599,7 +791,7 @@ var init_focusDateUtils = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/expandTrackerDayLog.js
+// ../src/features/kentuFocus/normalize/expandTrackerDayLog.js
 function asLogCollectionArray(raw) {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw.filter((e) => e && typeof e === "object");
@@ -662,14 +854,14 @@ function pickDayLogRaw(node) {
   return null;
 }
 var init_expandTrackerDayLog = __esm({
-  "src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
+  "../src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
   }
 });
 
-// src/features/kentuFocus/costanza/muscleIds.mm-1.js
+// ../src/features/kentuFocus/costanza/muscleIds.mm-1.js
 var MUSCLE_MAP_VERSION, MUSCLE_IDS, MUSCLE_LABELS, COSTANZA_UI_GROUPS, FORCE_CI_GROUP_IDS, DEFAULT_WEEKLY_GOAL_DAYS, WEEKLY_GOAL_CHOICES;
 var init_muscleIds_mm_1 = __esm({
-  "src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
+  "../src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
     MUSCLE_MAP_VERSION = "mm-1";
     MUSCLE_IDS = Object.freeze([
       "pettorali",
@@ -755,7 +947,7 @@ var init_muscleIds_mm_1 = __esm({
   }
 });
 
-// src/features/kentuFocus/costanza/muscleMap.mm-1.js
+// ../src/features/kentuFocus/costanza/muscleMap.mm-1.js
 function mapChipToMuscles(chipId) {
   const id = String(chipId || "").trim();
   if (!id) return Object.freeze([]);
@@ -803,7 +995,7 @@ function sessionTrainedMuscleIds(entry) {
 }
 var CHIP_MAP, TYPE_FALLBACK_CHIPS;
 var init_muscleMap_mm_1 = __esm({
-  "src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
+  "../src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
     init_activityCatalog();
     init_workoutMovement();
     init_muscleIds_mm_1();
@@ -867,7 +1059,7 @@ var init_muscleMap_mm_1 = __esm({
   }
 });
 
-// src/features/kentuFocus/costanza/costanzaForza.js
+// ../src/features/kentuFocus/costanza/costanzaForza.js
 function dayRawLog(fullHistory, dateKey) {
   const node = fullHistory?.[`trackerStorico_${dateKey}`];
   if (!node || typeof node !== "object") return [];
@@ -1049,7 +1241,7 @@ function computeCostanzaForza(input) {
   };
 }
 var init_costanzaForza = __esm({
-  "src/features/kentuFocus/costanza/costanzaForza.js"() {
+  "../src/features/kentuFocus/costanza/costanzaForza.js"() {
     init_focusDateUtils();
     init_expandTrackerDayLog();
     init_workoutMovement();
@@ -1058,10 +1250,10 @@ var init_costanzaForza = __esm({
   }
 });
 
-// src/features/trendHub/utils/muscleSpillover.js
+// ../src/features/trendHub/utils/muscleSpillover.js
 var muscleSpilloverMatrix, SPILLOVER_MUSCLE_KEYS;
 var init_muscleSpillover = __esm({
-  "src/features/trendHub/utils/muscleSpillover.js"() {
+  "../src/features/trendHub/utils/muscleSpillover.js"() {
     init_costanzaForza();
     muscleSpilloverMatrix = Object.freeze({
       petto: Object.freeze({ petto: 50, spalle: 20, braccia: 25 }),
@@ -1082,7 +1274,7 @@ var init_muscleSpillover = __esm({
   }
 });
 
-// src/features/commandTerminal/context/workoutMovement.js
+// ../src/features/commandTerminal/context/workoutMovement.js
 function durationAmountToMinutes(amount) {
   const dur = Number(amount);
   if (!Number.isFinite(dur) || dur <= 0) return 0;
@@ -1130,7 +1322,7 @@ function equivalentAerobicMinutes(entry) {
 }
 var VIGOROUS_EQUIVALENT_FACTOR, WALK_TYPE_IDS, VIGOROUS_TYPE_IDS, STRENGTH_TYPE_IDS, STRENGTH_TYPE_PRIMARIES, STRENGTH_LABEL, WALK_LABEL, VIGOROUS_LABEL;
 var init_workoutMovement = __esm({
-  "src/features/commandTerminal/context/workoutMovement.js"() {
+  "../src/features/commandTerminal/context/workoutMovement.js"() {
     init_activityCatalog();
     init_muscleSpillover();
     VIGOROUS_EQUIVALENT_FACTOR = 2;
@@ -1199,7 +1391,7 @@ var init_workoutMovement = __esm({
   }
 });
 
-// functions/mcp/shims/getTrackerDayNode.js
+// mcp/shims/getTrackerDayNode.js
 function isIsoDateString2(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
@@ -1212,24 +1404,24 @@ function getTrackerDayNode(fullHistory, date) {
   return node && typeof node === "object" ? node : null;
 }
 var init_getTrackerDayNode = __esm({
-  "functions/mcp/shims/getTrackerDayNode.js"() {
+  "mcp/shims/getTrackerDayNode.js"() {
   }
 });
 
-// functions/mcp/shims/draftParser.js
+// mcp/shims/draftParser.js
 var init_draftParser = __esm({
-  "functions/mcp/shims/draftParser.js"() {
+  "mcp/shims/draftParser.js"() {
   }
 });
 
-// src/utils/mealDraftStatus.js
+// ../src/utils/mealDraftStatus.js
 function isUnresolvedMealDraftItem(item) {
   if (!item || typeof item !== "object") return false;
   return MEAL_DRAFT_UNRESOLVED_STATUSES.has(String(item.status || "").toLowerCase());
 }
 var MEAL_DRAFT_UNRESOLVED_STATUSES;
 var init_mealDraftStatus = __esm({
-  "src/utils/mealDraftStatus.js"() {
+  "../src/utils/mealDraftStatus.js"() {
     init_draftParser();
     MEAL_DRAFT_UNRESOLVED_STATUSES = /* @__PURE__ */ new Set([
       "raw",
@@ -1242,7 +1434,7 @@ var init_mealDraftStatus = __esm({
   }
 });
 
-// src/utils/computeTotaliCore.js
+// ../src/utils/computeTotaliCore.js
 function readLogItemNutrient(item, key) {
   if (!item || typeof item !== "object") return null;
   if (key === "fatTotal") {
@@ -1298,7 +1490,7 @@ function computeTotali(dailyLog) {
 }
 var TARGETS, ALL_NUTRIENT_KEYS, LOG_ITEM_NUTRIENT_ALIASES, SALT_G_TO_SODIUM_MG;
 var init_computeTotaliCore = __esm({
-  "src/utils/computeTotaliCore.js"() {
+  "../src/utils/computeTotaliCore.js"() {
     init_mealDraftStatus();
     TARGETS = {
       macro: { prot: 140, carb: 300, fatTotal: 85, fibre: 30 },
@@ -1319,7 +1511,7 @@ var init_computeTotaliCore = __esm({
   }
 });
 
-// src/features/kentuFocus/contracts/focusDossier.v1.js
+// ../src/features/kentuFocus/contracts/focusDossier.v1.js
 function focusMetric(value, opts) {
   const provenance = opts?.provenance;
   if (!FOCUS_PROVENANCE[provenance]) {
@@ -1343,7 +1535,7 @@ function missingMetric(unit) {
 }
 var FOCUS_PROVENANCE, FOCUS_CERTAINTY, FOCUS_MEAL_TYPES;
 var init_focusDossier_v1 = __esm({
-  "src/features/kentuFocus/contracts/focusDossier.v1.js"() {
+  "../src/features/kentuFocus/contracts/focusDossier.v1.js"() {
     FOCUS_PROVENANCE = Object.freeze({
       recorded: "recorded",
       /** @deprecated Preferire `derived` per bedtime = wake−hours. */
@@ -1370,7 +1562,7 @@ var init_focusDossier_v1 = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/logUtils.js
+// ../src/features/kentuFocus/normalize/logUtils.js
 function getLogArray(node) {
   return expandTrackerLogEntries(pickDayLogRaw(node));
 }
@@ -1409,12 +1601,12 @@ function finiteNumber(n) {
   return Number.isFinite(v) ? v : null;
 }
 var init_logUtils = __esm({
-  "src/features/kentuFocus/normalize/logUtils.js"() {
+  "../src/features/kentuFocus/normalize/logUtils.js"() {
     init_expandTrackerDayLog();
   }
 });
 
-// src/features/kentuFocus/normalize/focusMealSlots.js
+// ../src/features/kentuFocus/normalize/focusMealSlots.js
 function getMealSlotBase(raw) {
   const str = String(raw ?? "").trim().toLowerCase();
   if (!str) return "";
@@ -1468,7 +1660,7 @@ function resolveFoodClockHourDetailed(item, mealTimes) {
 }
 var ALIAS_TO_CANONICAL;
 var init_focusMealSlots = __esm({
-  "src/features/kentuFocus/normalize/focusMealSlots.js"() {
+  "../src/features/kentuFocus/normalize/focusMealSlots.js"() {
     init_focusDateUtils();
     ALIAS_TO_CANONICAL = Object.freeze({
       colazione: "colazione",
@@ -1485,10 +1677,10 @@ var init_focusMealSlots = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/focusNutritionPlausibility.js
+// ../src/features/kentuFocus/normalize/focusNutritionPlausibility.js
 var FOCUS_NUTRITION_PLAUSIBILITY;
 var init_focusNutritionPlausibility = __esm({
-  "src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
+  "../src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
     init_logUtils();
     init_mealDraftStatus();
     FOCUS_NUTRITION_PLAUSIBILITY = Object.freeze({
@@ -1499,7 +1691,7 @@ var init_focusNutritionPlausibility = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/normalizeFoodEvents.js
+// ../src/features/kentuFocus/normalize/normalizeFoodEvents.js
 function collectDayLogForNutrition(analysisDayNode) {
   return collectDayLogForNutritionWithQuality(analysisDayNode).dayLog;
 }
@@ -1523,7 +1715,7 @@ function collectDayLogForNutritionWithQuality(analysisDayNode) {
   };
 }
 var init_normalizeFoodEvents = __esm({
-  "src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
+  "../src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
     init_computeTotaliCore();
     init_mealDraftStatus();
     init_focusDossier_v1();
@@ -1534,7 +1726,7 @@ var init_normalizeFoodEvents = __esm({
   }
 });
 
-// src/features/dayStatus/dayStatus.js
+// ../src/features/dayStatus/dayStatus.js
 function getDayStatus(date, context = {}) {
   if (!isIsoDate2(date) || !isIsoDateString(date)) return null;
   const today = String(context.today || "").slice(0, 10);
@@ -1639,7 +1831,7 @@ function finiteTarget(value) {
 }
 var DAY_STATUSES, MAIN_MEAL_ORDER, MAIN_MEALS, REGISTERED_TYPES, LATE_AFTER_HOURS, GAP_ENERGY_RATIO, GAP_EVENING_HOUR;
 var init_dayStatus = __esm({
-  "src/features/dayStatus/dayStatus.js"() {
+  "../src/features/dayStatus/dayStatus.js"() {
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
     init_focusMealSlots();
@@ -1665,7 +1857,7 @@ var init_dayStatus = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/resolveMainNightSleep.js
+// ../src/features/kentuFocus/normalize/resolveMainNightSleep.js
 function sleepHoursFromEntry(entry) {
   return finiteNumber(
     entry?.hours ?? entry?.duration ?? entry?.sleepHours ?? entry?.sleepDuration
@@ -1832,7 +2024,7 @@ function resolveMainNightSleep(sleepEntries) {
 }
 var NIGHT_SLEEP_MIN_HOURS, HOURS_CLEAR_GAP, MAIN_NIGHT_STATUS;
 var init_resolveMainNightSleep = __esm({
-  "src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
+  "../src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
     init_focusDateUtils();
     init_logUtils();
     NIGHT_SLEEP_MIN_HOURS = 3;
@@ -1846,7 +2038,7 @@ var init_resolveMainNightSleep = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/normalizeSleepNight.js
+// ../src/features/kentuFocus/normalize/normalizeSleepNight.js
 function resolveBedtimeProvenance(entry, wakeTime, hours) {
   const explicit = String(
     entry?.bedtimeProvenance ?? entry?.bedtimeSource ?? entry?._bedtimeOrigin ?? ""
@@ -2064,7 +2256,7 @@ function normalizeSleepNight(publicationDayNode, opts) {
 }
 var BEDTIME_FORMULA_MATCH_EPS_H, DEFAULT_SLEEP_STAGE_PLACEHOLDER_MIN;
 var init_normalizeSleepNight = __esm({
-  "src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
+  "../src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
     init_focusDossier_v1();
     init_focusDateUtils();
     init_logUtils();
@@ -2074,7 +2266,7 @@ var init_normalizeSleepNight = __esm({
   }
 });
 
-// src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
+// ../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
 function durationToMinutes(durationRaw) {
   if (durationRaw && typeof durationRaw === "object") {
     const minutes = resolveWorkoutDurationMinutes(durationRaw);
@@ -2327,7 +2519,7 @@ function normalizeWorkoutEvents(analysisDayNode) {
   };
 }
 var init_normalizeWorkoutEvents = __esm({
-  "src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
+  "../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
     init_focusDossier_v1();
     init_logUtils();
     init_activityCatalog();
@@ -2335,7 +2527,7 @@ var init_normalizeWorkoutEvents = __esm({
   }
 });
 
-// src/features/kentuFocus/product/assessNova4CritiqueProfile.js
+// ../src/features/kentuFocus/product/assessNova4CritiqueProfile.js
 function finiteOrNull(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -2446,11 +2638,11 @@ function assessNova4CritiqueProfile(input) {
   };
 }
 var init_assessNova4CritiqueProfile = __esm({
-  "src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
+  "../src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
   }
 });
 
-// src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
+// ../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
 function catalogDbNonEmpty(db, cache) {
   if (!db || typeof db !== "object") return false;
   if (cache instanceof WeakMap && cache.has(db)) return cache.get(db);
@@ -2508,11 +2700,11 @@ function withFocusCatalogLookupSession(catalogs) {
   return { catalogs: next, lookupSession };
 }
 var init_focusAiCoachCatalogLookup = __esm({
-  "src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
+  "../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
   }
 });
 
-// src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
+// ../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
 function finiteOrNull2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -3050,7 +3242,7 @@ function buildFocusFoodQualityBlock(input) {
 }
 var FOOD_QUALITY_PROVENANCE, FOOD_QUALITY_PROVENANCE_CODE, OFF_CATALOG_STATUS, MEAL_LABELS, NAME_ROLE_PATTERNS, SWEET_OR_DRINK_NAME_RE, SWEET_OR_DRINK_CATEGORY_RE;
 var init_buildFocusFoodQualityBlock = __esm({
-  "src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
+  "../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
     init_focusDateUtils();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -3094,7 +3286,7 @@ var init_buildFocusFoodQualityBlock = __esm({
   }
 });
 
-// src/features/kentuFocus/product/focusMealEnergySignals.js
+// ../src/features/kentuFocus/product/focusMealEnergySignals.js
 function assessHeavyLateMeal(dinnerKcal, dayKcal, targetKcal) {
   const dinner = Number(dinnerKcal);
   const day = Number(dayKcal);
@@ -3186,7 +3378,7 @@ function assessEnergyLowDay(dayKcal, targetKcal, opts = {}) {
 }
 var HEAVY_LATE_MEAL_ABS_KCAL, HEAVY_LATE_MEAL_ABS_TARGET_SHARE, HEAVY_LATE_MEAL_DAY_SHARE, ENERGY_LOW_DAY_DEFICIT_RATIO, LATE_FIRST_MEAL_HOUR, SUBSTANTIAL_MEAL_MIN_KCAL;
 var init_focusMealEnergySignals = __esm({
-  "src/features/kentuFocus/product/focusMealEnergySignals.js"() {
+  "../src/features/kentuFocus/product/focusMealEnergySignals.js"() {
     HEAVY_LATE_MEAL_ABS_KCAL = 900;
     HEAVY_LATE_MEAL_ABS_TARGET_SHARE = 0.4;
     HEAVY_LATE_MEAL_DAY_SHARE = 0.45;
@@ -3196,10 +3388,10 @@ var init_focusMealEnergySignals = __esm({
   }
 });
 
-// src/features/kentuFocus/score/scoreConfig.kds-1.js
+// ../src/features/kentuFocus/score/scoreConfig.kds-1.js
 var SCORE_VERSION, CYLINDER_POINTS, CYLINDER_WEIGHTS, MIN_CYLINDERS_WITH_DATA, NULL_SCORE_STATUSES, LOW_RELIABILITY_STATUSES, PERIOD_MEAN_STATUSES, ENERGY_BANDS, SLEEP_BANDS, STRENGTH_WINDOW, CARDIO_WINDOW, NOVA4_CRITIQUE_SIGNAL_ID;
 var init_scoreConfig_kds_1 = __esm({
-  "src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
+  "../src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
     SCORE_VERSION = "kds-1";
     CYLINDER_POINTS = Object.freeze({
       /** In linea con la soglia del cilindro. */
@@ -3290,10 +3482,10 @@ var init_scoreConfig_kds_1 = __esm({
   }
 });
 
-// src/features/kentuFocus/score/scoreConfig.kds-2.js
+// ../src/features/kentuFocus/score/scoreConfig.kds-2.js
 var SCORE_VERSION2, CYLINDER_WEIGHTS2, MIN_CYLINDERS_WITH_DATA2, NULL_SCORE_STATUSES2, LOW_RELIABILITY_STATUSES2, ENERGY_CURVE, SLEEP_CURVE, STRENGTH_CURVE, CARDIO_CURVE, NOVA4_CRITIQUE_SIGNAL_ID2, PERIOD_RULES;
 var init_scoreConfig_kds_2 = __esm({
-  "src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
+  "../src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
     SCORE_VERSION2 = "kds-2";
     CYLINDER_WEIGHTS2 = Object.freeze({
       alimentazione: 0.4,
@@ -3360,7 +3552,7 @@ var init_scoreConfig_kds_2 = __esm({
   }
 });
 
-// src/features/kentuFocus/score/scoreConfig.kds-3.js
+// ../src/features/kentuFocus/score/scoreConfig.kds-3.js
 function pillarStatusFromValue(value) {
   if (value == null || value === "") return "no_data";
   const n = Number(value);
@@ -3377,7 +3569,7 @@ function periodDayWeight(dayStatus) {
 }
 var SCORE_VERSION3, CYLINDER_WEIGHTS3, MIN_CYLINDERS_WITH_DATA3, ON_TRACK_SCORE, NULL_SCORE_STATUSES3, LOW_RELIABILITY_STATUSES3, MOVEMENT_CURVE, PILLAR_STATUS, ACTION_PILLAR_WEIGHTS, PERIOD_RULES2, PERIOD_DATA_STATUSES, UNCONFIRMED_PERIOD_WEIGHT, MEAL_PENALTY_CAP, SCORE_COLORS;
 var init_scoreConfig_kds_3 = __esm({
-  "src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
+  "../src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
     SCORE_VERSION3 = "kds-3";
     CYLINDER_WEIGHTS3 = Object.freeze({
       alimentazione: 0.45,
@@ -3446,27 +3638,27 @@ var init_scoreConfig_kds_3 = __esm({
   }
 });
 
-// src/features/kentuFocus/score/scoreConfig.kds-4.js
+// ../src/features/kentuFocus/score/scoreConfig.kds-4.js
 var SCORE_VERSION4;
 var init_scoreConfig_kds_4 = __esm({
-  "src/features/kentuFocus/score/scoreConfig.kds-4.js"() {
+  "../src/features/kentuFocus/score/scoreConfig.kds-4.js"() {
     init_scoreConfig_kds_3();
     init_scoreConfig_kds_2();
     SCORE_VERSION4 = "kds-4";
   }
 });
 
-// src/features/kentuFocus/score/scoreConfig.kds-5.js
+// ../src/features/kentuFocus/score/scoreConfig.kds-5.js
 var SCORE_VERSION5;
 var init_scoreConfig_kds_5 = __esm({
-  "src/features/kentuFocus/score/scoreConfig.kds-5.js"() {
+  "../src/features/kentuFocus/score/scoreConfig.kds-5.js"() {
     init_scoreConfig_kds_3();
     init_scoreConfig_kds_2();
     SCORE_VERSION5 = "kds-5";
   }
 });
 
-// src/utils/profileAge.js
+// ../src/utils/profileAge.js
 function calculateAge(dobString) {
   if (!dobString) return null;
   const today = /* @__PURE__ */ new Date();
@@ -3480,22 +3672,22 @@ function calculateAge(dobString) {
   return age;
 }
 var init_profileAge = __esm({
-  "src/utils/profileAge.js"() {
+  "../src/utils/profileAge.js"() {
   }
 });
 
-// src/calendarDateUtils.js
+// ../src/calendarDateUtils.js
 function addDays(dateStr, n) {
   const d = /* @__PURE__ */ new Date(dateStr + "T12:00:00");
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 var init_calendarDateUtils = __esm({
-  "src/calendarDateUtils.js"() {
+  "../src/calendarDateUtils.js"() {
   }
 });
 
-// src/features/commandTerminal/context/recentWorkoutLogs.js
+// ../src/features/commandTerminal/context/recentWorkoutLogs.js
 function localToday() {
   const now = /* @__PURE__ */ new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -3545,19 +3737,19 @@ function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activeDate =
   return { cardioLogs, workoutLogs, all };
 }
 var init_recentWorkoutLogs = __esm({
-  "src/features/commandTerminal/context/recentWorkoutLogs.js"() {
+  "../src/features/commandTerminal/context/recentWorkoutLogs.js"() {
     init_calendarDateUtils();
     init_expandTrackerDayLog();
   }
 });
 
-// src/features/kentuFocus/costanza/versions.js
+// ../src/features/kentuFocus/costanza/versions.js
 var init_versions = __esm({
-  "src/features/kentuFocus/costanza/versions.js"() {
+  "../src/features/kentuFocus/costanza/versions.js"() {
   }
 });
 
-// src/features/kentuFocus/costanza/forceConsistency.ci-1.js
+// ../src/features/kentuFocus/costanza/forceConsistency.ci-1.js
 function forceLoadConsistency(date, fullHistory, opts = {}) {
   const asOf = String(date || "").slice(0, 10);
   const snap = computeCostanzaForza({
@@ -3572,13 +3764,13 @@ function forceLoadConsistency(date, fullHistory, opts = {}) {
   return Math.min(1, Math.round(value * 1e3) / 1e3);
 }
 var init_forceConsistency_ci_1 = __esm({
-  "src/features/kentuFocus/costanza/forceConsistency.ci-1.js"() {
+  "../src/features/kentuFocus/costanza/forceConsistency.ci-1.js"() {
     init_versions();
     init_costanzaForza();
   }
 });
 
-// src/features/kentuFocus/score/scoreMovement.js
+// ../src/features/kentuFocus/score/scoreMovement.js
 function scoreMovimento(date, fullHistory, context = {}) {
   const days = datesEnding(date, MOVEMENT_CURVE.windowDays);
   const byDay = workoutsByDay(fullHistory, date);
@@ -3721,7 +3913,7 @@ function cylinder(status, keyFact, signals, value) {
   return { status, keyFact, signals, value: rounded };
 }
 var init_scoreMovement = __esm({
-  "src/features/kentuFocus/score/scoreMovement.js"() {
+  "../src/features/kentuFocus/score/scoreMovement.js"() {
     init_profileAge();
     init_focusDateUtils();
     init_focusDateUtils();
@@ -3735,7 +3927,7 @@ var init_scoreMovement = __esm({
   }
 });
 
-// src/features/kentuFocus/score/movementBattery.js
+// ../src/features/kentuFocus/score/movementBattery.js
 function stepBattery(battery, charge) {
   const b = Number.isFinite(battery) && battery > 0 ? battery : 0;
   const c = Number.isFinite(charge) && charge > 0 ? charge : 0;
@@ -3897,7 +4089,7 @@ function round3(value) {
 }
 var BATTERY_HALF_LIFE_DAYS, BATTERY_DECAY, BATTERY_WEEKLY_TARGET_EQ_MIN, BATTERY_DAILY_TARGET_EQ_MIN, BATTERY_CAPACITY, BATTERY_FULL_FRACTION, BATTERY_FULL_LEVEL, BATTERY_LOOKBACK_DAYS, BATTERY_READY_MIN_SPAN_DAYS, BATTERY_CHECKIN_CAP_MIN, BATTERY_DECAY_COPY;
 var init_movementBattery = __esm({
-  "src/features/kentuFocus/score/movementBattery.js"() {
+  "../src/features/kentuFocus/score/movementBattery.js"() {
     init_focusDateUtils();
     init_recentWorkoutLogs();
     init_workoutMovement();
@@ -3916,10 +4108,10 @@ var init_movementBattery = __esm({
   }
 });
 
-// src/features/kentuFocus/safety/safetyConfig.sfv-1.js
+// ../src/features/kentuFocus/safety/safetyConfig.sfv-1.js
 var SAFETY_VERSION, CLOSED_LOOKBACK_DAYS, ENERGY_WINDOW_DAYS, ENERGY_SUSTAINED_RATIO, ENERGY_VERY_LOW_RATIO, ENERGY_VERY_LOW_DAYS, ENERGY_UNDER_BASAL_DAYS, ENERGY_ACT_SCORE_CAP, WEIGHT_MIN_SAMPLES, WEIGHT_SAMPLE_DAYS, WEIGHT_BLOCK_DAYS, WEIGHT_WEEKLY_LOSS_RATIO, PROTEIN_DEFICIT_RATIO, PROTEIN_GRAMS_PER_KG, REST_STREAK_WATCH_DAYS, REST_STREAK_ACT_DAYS, DISTRICT_RECOVERY_HOURS, DISTRICT_SHORT_RECOVERY_TIMES, TRAINING_WINDOW_DAYS, LOAD_BASELINE_WEEKS, LOAD_SPIKE_RATIO, SHORT_SLEEP_HOURS, LOW_MORNING_SCORE, MORNING_CLUSTER_HITS, MORNING_CLUSTER_DAYS, OVERREACHING_CLUSTERS, RESTRICTIVE_WINDOW_DAYS, RESTRICTIVE_DAYS, SAFETY_AREAS;
 var init_safetyConfig_sfv_1 = __esm({
-  "src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
+  "../src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
     SAFETY_VERSION = "sfv-3";
     CLOSED_LOOKBACK_DAYS = 28;
     ENERGY_WINDOW_DAYS = 7;
@@ -3959,7 +4151,7 @@ var init_safetyConfig_sfv_1 = __esm({
   }
 });
 
-// src/features/kentuFocus/safety/computeSafety.js
+// ../src/features/kentuFocus/safety/computeSafety.js
 var computeSafety_exports = {};
 __export(computeSafety_exports, {
   computeSafety: () => computeSafety,
@@ -4380,7 +4572,7 @@ function round32(value) {
 }
 var FOOD_TYPES, WAKE_ENERGY_FIELDS;
 var init_computeSafety = __esm({
-  "src/features/kentuFocus/safety/computeSafety.js"() {
+  "../src/features/kentuFocus/safety/computeSafety.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -4396,7 +4588,7 @@ var init_computeSafety = __esm({
   }
 });
 
-// src/features/mealEngine/computeEffectiveDailyTargetKcal.js
+// ../src/features/mealEngine/computeEffectiveDailyTargetKcal.js
 function roundKcal(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -4409,11 +4601,11 @@ function computeEffectiveDailyTargetKcal(parts = {}) {
   );
 }
 var init_computeEffectiveDailyTargetKcal = __esm({
-  "src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
+  "../src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
   }
 });
 
-// src/features/kentuFocus/server/reader/resolveFocusProfileData.js
+// ../src/features/kentuFocus/server/reader/resolveFocusProfileData.js
 function isValidIsoDate(value) {
   if (typeof value !== "string") return false;
   const iso = value.trim().slice(0, 10);
@@ -4469,7 +4661,7 @@ function resolveTargetsForAnalysisDate(targetsNode, analysisDate) {
 }
 var ISO_DATE_RE3, FOCUS_TARGET_WEIGHT_POLICY;
 var init_resolveFocusProfileData = __esm({
-  "src/features/kentuFocus/server/reader/resolveFocusProfileData.js"() {
+  "../src/features/kentuFocus/server/reader/resolveFocusProfileData.js"() {
     init_focusDateUtils();
     init_logUtils();
     ISO_DATE_RE3 = /^\d{4}-\d{2}-\d{2}$/;
@@ -4490,7 +4682,7 @@ var init_resolveFocusProfileData = __esm({
   }
 });
 
-// src/features/mealEngine/resolveDayTargetKcal.js
+// ../src/features/mealEngine/resolveDayTargetKcal.js
 var resolveDayTargetKcal_exports = {};
 __export(resolveDayTargetKcal_exports, {
   DAY_TARGET_RULES_VERSION: () => DAY_TARGET_RULES_VERSION,
@@ -4813,7 +5005,7 @@ function resolveKcalSourceForSave(input = {}) {
 }
 var DAY_TARGET_RULES_VERSION, DEFAULT_WORKOUT_KCAL, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
 var init_resolveDayTargetKcal = __esm({
-  "src/features/mealEngine/resolveDayTargetKcal.js"() {
+  "../src/features/mealEngine/resolveDayTargetKcal.js"() {
     init_computeEffectiveDailyTargetKcal();
     init_resolveFocusProfileData();
     DAY_TARGET_RULES_VERSION = "dtr-1";
@@ -4832,7 +5024,7 @@ var init_resolveDayTargetKcal = __esm({
   }
 });
 
-// src/features/kentuFocus/score/computeDayScore.js
+// ../src/features/kentuFocus/score/computeDayScore.js
 var computeDayScore_exports = {};
 __export(computeDayScore_exports, {
   computeDayScore: () => computeDayScore
@@ -5315,7 +5507,7 @@ function round33(value) {
 }
 var CYLINDER_KEYS, FOOD_TYPES2;
 var init_computeDayScore = __esm({
-  "src/features/kentuFocus/score/computeDayScore.js"() {
+  "../src/features/kentuFocus/score/computeDayScore.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_focusDateUtils();
@@ -5343,7 +5535,7 @@ var init_computeDayScore = __esm({
   }
 });
 
-// src/features/kentuFocus/score/computePeriodScore.js
+// ../src/features/kentuFocus/score/computePeriodScore.js
 var computePeriodScore_exports = {};
 __export(computePeriodScore_exports, {
   computePeriodScore: () => computePeriodScore
@@ -5435,7 +5627,7 @@ function round34(value) {
 }
 var ON_TRACK_DAY_SCORE, PERIOD_COVERAGE_MIN, STREAK_MAX_PAUSE_DAYS, STREAK_MIN_DAYS, STREAK_PAUSE_SCORE_MIN;
 var init_computePeriodScore = __esm({
-  "src/features/kentuFocus/score/computePeriodScore.js"() {
+  "../src/features/kentuFocus/score/computePeriodScore.js"() {
     init_focusDateUtils();
     init_computeDayScore();
     init_scoreConfig_kds_3();
@@ -5447,7 +5639,7 @@ var init_computePeriodScore = __esm({
   }
 });
 
-// src/foodSearch.js
+// ../src/foodSearch.js
 var foodSearch_exports = {};
 __export(foodSearch_exports, {
   MATCH_TIER_RANK: () => MATCH_TIER_RANK,
@@ -6263,7 +6455,7 @@ function shouldDiscloseSynonymMapping(spokenName, dbName) {
 }
 var RECENT_FOODS_STORAGE_KEY, RECENT_FOOD_HIGH_WINDOW_MS, SEARCH_SYNONYMS, SCORE_EXACT_OR_PREFIX, SCORE_PREFIX, SCORE_COMPOUND_CONTAINED, SCORE_TOKEN_EXACT, SCORE_WORD_BOUNDARY, SCORE_SUBSTRING, SCORE_FUZZY_DIST_1, SCORE_FUZZY_DIST_2, MIN_MATCH_SCORE, DEFAULT_SEARCH_LIMIT, HISTORY_SCORE_WEIGHT, USAGE_COUNT_SCORE_WEIGHT, MATCH_TIER_RANK, SCORE_STEM_GUARANTEED, foodSearch_default;
 var init_foodSearch = __esm({
-  "src/foodSearch.js"() {
+  "../src/foodSearch.js"() {
     RECENT_FOODS_STORAGE_KEY = "recent_foods";
     RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1e3;
     SEARCH_SYNONYMS = {
@@ -6308,7 +6500,7 @@ var init_foodSearch = __esm({
   }
 });
 
-// src/features/mealBuilder/utils/foodMatchQuality.js
+// ../src/features/mealBuilder/utils/foodMatchQuality.js
 var foodMatchQuality_exports = {};
 __export(foodMatchQuality_exports, {
   ENERGY_DENSITY_CONFIRM_RATIO: () => ENERGY_DENSITY_CONFIRM_RATIO,
@@ -6597,7 +6789,7 @@ function findStrongFoodMatchesInCatalog(foodName, foodDb, opts = {}) {
 }
 var FOOD_MATCH_QUALITY, FOOD_MATCH_QUALITY_RANK, ENERGY_DENSITY_CONFIRM_RATIO;
 var init_foodMatchQuality = __esm({
-  "src/features/mealBuilder/utils/foodMatchQuality.js"() {
+  "../src/features/mealBuilder/utils/foodMatchQuality.js"() {
     init_foodSearch();
     FOOD_MATCH_QUALITY = Object.freeze({
       EXACT: "exact",
@@ -6615,7 +6807,7 @@ var init_foodMatchQuality = __esm({
   }
 });
 
-// functions/mcp/httpHandler.js
+// mcp/httpHandler.js
 var httpHandler_exports = {};
 __export(httpHandler_exports, {
   handleKentuMcpHttp: () => handleKentuMcpHttp
@@ -6623,13 +6815,13 @@ __export(httpHandler_exports, {
 module.exports = __toCommonJS(httpHandler_exports);
 var import_streamableHttp = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 
-// functions/mcp/hashToken.js
+// mcp/hashToken.js
 var import_node_crypto = require("node:crypto");
 function sha256Hex(value) {
   return (0, import_node_crypto.createHash)("sha256").update(String(value), "utf8").digest("hex");
 }
 
-// functions/mcp/scopes.js
+// mcp/scopes.js
 var MCP_SCOPE_READ = "read";
 var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
 var KNOWN_SCOPES = /* @__PURE__ */ new Set([MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE]);
@@ -6648,7 +6840,7 @@ function hasMcpScope(scopes, scope) {
   return normalizeMcpScopes(scopes).includes(scope);
 }
 
-// functions/mcp/auth.js
+// mcp/auth.js
 var RATE_LIMIT_PER_HOUR = 60;
 var MIN_TOKEN_LEN = 32;
 function hourBucket(now = Date.now()) {
@@ -6763,11 +6955,11 @@ function uidLogTag(uid) {
   return sha256Hex(uid).slice(0, 8);
 }
 
-// functions/mcp/createServer.js
+// mcp/createServer.js
 var import_mcp = require("@modelcontextprotocol/sdk/server/mcp.js");
 var z = __toESM(require("zod/v4"));
 
-// functions/mcp/instructions.js
+// mcp/instructions.js
 var MCP_INSTRUCTIONS = [
   "Sei collegato a Kentu, diario metabolico personale. Leggi i dati con gli strumenti di sola lettura.",
   "Riporta i numeri restituiti dagli strumenti Kentu cos\xEC come sono: non ricalcolarli, non stimarli e non inventarli.",
@@ -6780,114 +6972,20 @@ var MCP_INSTRUCTIONS = [
   "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
   "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day.",
   "BOZZE PASTI: non scrivi mai nel diario. Con kentu_create_meal_draft crei solo una bozza che l\u2019utente convalida in Kentu.",
-  "Prima di creare una bozza: chiedi le quantit\xE0 mancanti (grammi o porzione) e i condimenti mancanti (olio, sale, burro, sughi) per i piatti che di solito si condiscono;",
+  "Prima di creare una bozza: per ogni alimento usa kentu_search_food e passa foodDbKey = id del risultato scelto;",
+  "se i risultati sono ambigui, chiedi all\u2019utente quale voce; non inventare foodDbKey.",
+  "Chiedi le quantit\xE0 mancanti (grammi o porzione) e i condimenti mancanti (olio, sale, burro, sughi) per i piatti che di solito si condiscono;",
   "se l\u2019utente non li sa, lascia grams a null e scrivilo nella nota invece di inventare.",
-  "Poi mostra un riepilogo (giorno, pasto, orario, alimenti con grammi e note) e crea la bozza solo dopo la conferma dell\u2019utente.",
+  "Poi mostra un riepilogo (giorno, pasto, orario, alimenti con grammi, foodDbKey e note) e crea la bozza solo dopo la conferma dell\u2019utente.",
   "Mantieni i nomi degli alimenti come li ha detti l\u2019utente, uno per voce; passa in originalText il suo testo originale senza riformularlo.",
   "Usa una idempotencyKey stabile per lo stesso pasto: se ripeti la chiamata non si crea un doppione.",
   "Dopo la creazione ricorda che la bozza va convalidata nell\u2019app Kentu. Se il gettone non ha il permesso bozze, dillo e non insistere."
 ].join(" ");
 
-// functions/mcp/dates.js
-var TZ = "Europe/Rome";
-function partsInRome(now = /* @__PURE__ */ new Date()) {
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short"
-  });
-  const bag = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
-  return {
-    iso: `${bag.year}-${bag.month}-${bag.day}`,
-    year: Number(bag.year),
-    month: Number(bag.month),
-    day: Number(bag.day),
-    weekday: bag.weekday
-    // Mon, Tue, …
-  };
-}
-function addDaysIso(iso, days) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const utc = Date.UTC(y, m - 1, d) + days * 864e5;
-  const dt = new Date(utc);
-  const yyyy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-var WEEKDAY_TO_OFFSET = {
-  Mon: 0,
-  Tue: 1,
-  Wed: 2,
-  Thu: 3,
-  Fri: 4,
-  Sat: 5,
-  Sun: 6
-};
-function mondayOfWeek(iso, weekdayShort) {
-  const offset = WEEKDAY_TO_OFFSET[weekdayShort];
-  if (offset == null) throw new Error(`weekday sconosciuto: ${weekdayShort}`);
-  return addDaysIso(iso, -offset);
-}
-function isIsoDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-}
-function resolveDayRef(ref, now = /* @__PURE__ */ new Date()) {
-  const raw = String(ref || "").trim().toLowerCase();
-  const { iso } = partsInRome(now);
-  if (raw === "today" || raw === "oggi") return { date: iso };
-  if (raw === "yesterday" || raw === "ieri") return { date: addDaysIso(iso, -1) };
-  if (isIsoDate(ref)) return { date: String(ref).trim() };
-  throw new Error(`data non valida: usa today, yesterday o YYYY-MM-DD`);
-}
-function resolvePeriodRef(kind, now = /* @__PURE__ */ new Date()) {
-  const key = String(kind || "").trim().toLowerCase();
-  const rome = partsInRome(now);
-  const today = rome.iso;
-  if (key === "this_week" || key === "last_week") {
-    const thisMonday = mondayOfWeek(today, rome.weekday);
-    const monday = key === "this_week" ? thisMonday : addDaysIso(thisMonday, -7);
-    const sunday = addDaysIso(monday, 6);
-    const analysisDate = key === "this_week" ? today : sunday;
-    return {
-      kind: "week",
-      periodId: "settimana",
-      analysisDate,
-      from: monday,
-      to: sunday
-    };
-  }
-  if (key === "this_month" || key === "last_month") {
-    let year = rome.year;
-    let month = rome.month;
-    if (key === "last_month") {
-      month -= 1;
-      if (month < 1) {
-        month = 12;
-        year -= 1;
-      }
-    }
-    const from = `${year}-${String(month).padStart(2, "0")}-01`;
-    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-    const to = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-    const analysisDate = key === "this_month" ? today : to;
-    return {
-      kind: "month",
-      periodId: "mese",
-      analysisDate,
-      from,
-      to
-    };
-  }
-  throw new Error("periodo non valido: this_week, last_week, this_month, last_month");
-}
-function todayInRome(now = /* @__PURE__ */ new Date()) {
-  return partsInRome(now).iso;
-}
+// mcp/tools.js
+init_dates();
 
-// functions/mcp/redact.js
+// mcp/redact.js
 var SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal|prot|carb|fat|fibre|fiber|dinnerKcal|dinnerGrams|dinnerSodiumMg|eveningSodiumMg|liquidsAfter18Ml|alcoholPureG|caffeineMg|caffeineAfter14Mg|ml|pureAlcoholG|abv)$/i;
 function redactSensitiveNumbers(value) {
   if (Array.isArray(value)) {
@@ -6905,85 +7003,13 @@ function redactSensitiveNumbers(value) {
   return out;
 }
 
-// functions/mcp/loadUserContext.js
-function emptyCatalogs(personalDb = {}) {
-  return {
-    personalDb,
-    kentuItDb: {},
-    globalDb: {},
-    offDb: {},
-    offReady: false,
-    offExcluded: true,
-    warnings: []
-  };
-}
-async function loadUserFocusContext(db, uid) {
-  const id = String(uid || "").trim();
-  if (!id) throw new Error("uid mancante");
-  const [
-    trackerSnap,
-    profileSnap,
-    dayStatusSnap,
-    checkinSnap,
-    forzaSnap
-  ] = await Promise.all([
-    db.ref(`users/${id}/tracker_data`).get(),
-    db.ref(`users/${id}/profile_targets`).get(),
-    db.ref(`users/${id}/day_status`).get(),
-    db.ref(`users/${id}/movement_checkin`).get(),
-    db.ref(`users/${id}/cylinders/forza`).get()
-  ]);
-  const tracker = trackerSnap.val() && typeof trackerSnap.val() === "object" ? trackerSnap.val() : {};
-  const personalDb = tracker.trackerFoodDatabase && typeof tracker.trackerFoodDatabase === "object" ? tracker.trackerFoodDatabase : {};
-  const fullHistory = { ...tracker };
-  delete fullHistory.trackerFoodDatabase;
-  const profile_targets = profileSnap.val() && typeof profileSnap.val() === "object" ? profileSnap.val() : {};
-  const userTargets = profile_targets.targets && typeof profile_targets.targets === "object" ? profile_targets.targets : profile_targets.profile || {};
-  const warnings = [];
-  let catalogs = emptyCatalogs(personalDb);
-  try {
-    const { loadServerCatalogs: loadServerCatalogs2 } = await Promise.resolve().then(() => (init_loadServerCatalogs(), loadServerCatalogs_exports));
-    const loaded = await loadServerCatalogs2();
-    catalogs = {
-      ...loaded,
-      personalDb
-    };
-    for (const w of loaded.warnings || []) warnings.push(w);
-  } catch (error) {
-    const msg = String(error?.message || error).slice(0, 160);
-    warnings.push(
-      `Cataloghi CREA/USDA non caricati (${msg}). Dettaglio pasti/notte dal diario; classificazione cibo limitata al DB personale.`
-    );
-    console.warn("[kentuMcp] catalogs degrade", msg);
-    catalogs = emptyCatalogs(personalDb);
-  }
-  return {
-    today: todayInRome(),
-    fullHistory,
-    userTargets,
-    profile_targets,
-    records: dayStatusSnap.val() && typeof dayStatusSnap.val() === "object" ? dayStatusSnap.val() : {},
-    movementCheckins: checkinSnap.val() && typeof checkinSnap.val() === "object" ? checkinSnap.val() : {},
-    catalogs,
-    catalogWarnings: warnings,
-    // Abilitata solo se esplicitamente true (nodo boolean o { enabled: true }).
-    forzaEnabled: (() => {
-      const raw = forzaSnap.val();
-      if (raw === true) return true;
-      if (raw && typeof raw === "object" && raw.enabled === true) return true;
-      return false;
-    })(),
-    personalDb
-  };
-}
-async function readStoredDayScore(db, uid, date) {
-  const snap = await db.ref(`users/${uid}/focus_day_scores/${date}`).get();
-  if (!snap.exists()) return null;
-  const { decodeDayScoreFromRtdb: decodeDayScoreFromRtdb2 } = await Promise.resolve().then(() => (init_dayScoreRecord(), dayScoreRecord_exports));
-  return decodeDayScoreFromRtdb2(snap.val());
-}
+// mcp/tools.js
+init_loadUserContext();
 
-// functions/mcp/nutrientRead.js
+// mcp/dayDetail.js
+init_dates();
+
+// mcp/nutrientRead.js
 var ANIMAL_NO_FIBRE = /(?:^|[^a-z0-9àèéìòù])(merluzzo|pesce|filett|tonno|salmone|pollo|tacchino|manzo|vitello|maiale|carne|bresaola|prosciutto|speck|wurstel|wudy|salsicc|uovo|uova|egg|formaggio|mozzarella|parmigiano|grana|yogurt\s*greco|ricotta|burrata)(?=[^a-z0-9àèéìòù]|$)/iu;
 function finite(value) {
   const n = Number(value);
@@ -7041,7 +7067,7 @@ function readMacroGrams(entry, key) {
   return finite(entry[key]);
 }
 
-// functions/mcp/dayDetail.js
+// mcp/dayDetail.js
 var DINNER_KEYS = /^(cena|dinner)/i;
 var EVENING_HOUR = 18;
 var CAFFEINE_AFTER_HOUR = 14;
@@ -7362,7 +7388,7 @@ function buildEvenings(fullHistory, from, to) {
   return { from, to, days, evenings: rows };
 }
 
-// functions/mcp/tools.js
+// mcp/tools.js
 init_workoutMovement();
 function summarizeMovement(fullHistory, date) {
   const entries = flattenDiaryEntries(trackerNode(fullHistory, date));
@@ -7618,8 +7644,9 @@ async function toolSearchFood(db, uid, query) {
   };
 }
 
-// functions/mcp/mealDrafts.js
+// mcp/mealDrafts.js
 var import_node_crypto2 = require("node:crypto");
+init_dates();
 var MEAL_DRAFT_SLOTS = Object.freeze(["colazione", "snack", "pranzo", "cena"]);
 var MEAL_DRAFT_STATUSES = Object.freeze(["pending", "consumed", "deleted"]);
 var MEAL_DRAFT_LIMITS = Object.freeze({
@@ -7631,6 +7658,7 @@ var MEAL_DRAFT_LIMITS = Object.freeze({
   gramsMax: 3e3,
   noteMax: 200,
   rawTextMax: 2e3,
+  foodDbKeyMax: 160,
   writesPerHour: 10,
   writesPerDay: 30,
   listMax: 50
@@ -7691,7 +7719,7 @@ function validateMealDraftInput(input, now = Date.now()) {
   if (input.items.length > L.maxItems) throw invalid(`items: massimo ${L.maxItems} alimenti.`);
   const items = input.items.map((raw, index) => {
     if (!raw || typeof raw !== "object") throw invalid(`items[${index}]: oggetto atteso.`);
-    const allowed = /* @__PURE__ */ new Set(["name", "grams", "note"]);
+    const allowed = /* @__PURE__ */ new Set(["name", "grams", "note", "foodDbKey"]);
     const extra = Object.keys(raw).filter((key) => !allowed.has(key));
     if (extra.length > 0) throw invalid(`items[${index}]: campi non ammessi (${extra.join(", ")}).`);
     const name = cleanText(raw.name);
@@ -7710,7 +7738,15 @@ function validateMealDraftInput(input, now = Date.now()) {
     if (note.length > L.noteMax) {
       throw invalid(`items[${index}].note: massimo ${L.noteMax} caratteri.`);
     }
-    return { name, grams, note };
+    let foodDbKey = null;
+    if (raw.foodDbKey != null && String(raw.foodDbKey).trim() !== "") {
+      const key = cleanText(raw.foodDbKey);
+      if (!key || key.length > L.foodDbKeyMax) {
+        throw invalid(`items[${index}].foodDbKey: massimo ${L.foodDbKeyMax} caratteri.`);
+      }
+      foodDbKey = key;
+    }
+    return { name, grams, note, ...foodDbKey ? { foodDbKey } : {} };
   });
   const rawText = cleanMultilineText(input.originalText);
   if (!rawText) throw invalid("originalText: serve il testo originale scritto dall\u2019utente.");
@@ -7735,13 +7771,18 @@ function buildExternalMealDraftRecord({ id, normalized, tokenId, now, idemHash }
     date: normalized.date,
     slotHint: normalized.slot,
     timeHHmm: normalized.time,
-    items: normalized.items.map((item, index) => ({
-      id: `${id}_i${index}`,
-      foodName: item.name,
-      ...item.grams != null ? { grams: item.grams } : {},
-      ...item.note ? { note: item.note } : {},
-      status: "pending"
-    })),
+    items: normalized.items.map((item, index) => {
+      const hasKey = Boolean(item.foodDbKey);
+      const hasGrams = item.grams != null;
+      return {
+        id: `${id}_i${index}`,
+        foodName: item.name,
+        ...hasGrams ? { grams: item.grams } : {},
+        ...item.note ? { note: item.note } : {},
+        ...hasKey ? { foodDbKey: item.foodDbKey } : {},
+        status: hasKey && hasGrams ? "matched" : "pending"
+      };
+    }),
     rawText: normalized.rawText,
     tokenId: String(tokenId || ""),
     idempotencyKeyHash: idemHash,
@@ -7763,10 +7804,35 @@ function compactDraft(id, row) {
     items: items.map((item) => ({
       name: item?.foodName ?? null,
       grams: item?.grams ?? null,
-      ...item?.note ? { note: item.note } : {}
+      ...item?.note ? { note: item.note } : {},
+      ...item?.foodDbKey ? { foodDbKey: item.foodDbKey } : {}
     })),
     originalText: row?.rawText ?? ""
   };
+}
+async function verifyMealDraftFoodDbKeys(db, uid, items) {
+  const list = Array.isArray(items) ? items : [];
+  const needed = list.filter((item) => item?.foodDbKey);
+  if (needed.length === 0) return list;
+  const { loadUserFocusContext: loadUserFocusContext2 } = await Promise.resolve().then(() => (init_loadUserContext(), loadUserContext_exports));
+  const base = await loadUserFocusContext2(db, uid);
+  const layers = [
+    base.personalDb,
+    base.catalogs?.kentuItDb,
+    base.catalogs?.globalDb,
+    base.catalogs?.offDb
+  ];
+  list.forEach((item, index) => {
+    const key = item?.foodDbKey;
+    if (!key) return;
+    const found = layers.some((layer) => layer && typeof layer === "object" && layer[key]);
+    if (!found) {
+      throw invalid(
+        `items[${index}].foodDbKey: "${key}" non trovato nei cataloghi Kentu. Usa kentu_search_food e passa l\u2019id restituito.`
+      );
+    }
+  });
+  return list;
 }
 async function writeAudit(db, uid, entry) {
   try {
@@ -7836,6 +7902,17 @@ async function toolCreateMealDraft(db, ctx, input, now = Date.now()) {
     throw error;
   }
   const normalized = validateMealDraftInput(input, now);
+  try {
+    normalized.items = await verifyMealDraftFoodDbKeys(db, uid, normalized.items);
+  } catch (error) {
+    await writeAudit(db, uid, {
+      tool: "kentu_create_meal_draft",
+      tokenId,
+      result: "rejected",
+      reason: "invalid_food_db_key"
+    });
+    throw error;
+  }
   const idemHash = sha256Hex(`${uid}:${normalized.idempotencyKey}`);
   const idemRef = db.ref(mcpDraftIdemPath(uid, idemHash));
   const duplicateResponse = async (claim2) => {
@@ -7998,7 +8075,7 @@ async function toolDeleteDraft(db, ctx, input, now = Date.now()) {
   return { deleted: true, draftId };
 }
 
-// functions/mcp/createServer.js
+// mcp/createServer.js
 var READ_ONLY = Object.freeze({
   readOnlyHint: true,
   destructiveHint: false,
@@ -8071,7 +8148,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_search_food",
     {
-      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce nome, matchQuality e kcal/100g. Sola lettura.",
+      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (da usare come foodDbKey in kentu_create_meal_draft), nome, matchQuality e kcal/100g. In caso di ambiguit\xE0 chiedi all\u2019utente quale voce. Sola lettura.",
       inputSchema: {
         query: z.string().describe("Testo di ricerca (almeno 2 caratteri)")
       },
@@ -8082,7 +8159,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_create_meal_draft",
     {
-      description: 'Crea una BOZZA di pasto in Kentu, da convalidare dall\u2019utente nell\u2019app. Non scrive nel diario e non cambia i punteggi. Prima di chiamarlo: chiedi quantit\xE0 e condimenti mancanti, mostra un riepilogo e attendi conferma. Richiede il permesso "drafts:write" sul gettone. Limite: 10 scritture/ora, 30/giorno. Ripetere con la stessa idempotencyKey non crea doppioni.',
+      description: 'Crea una BOZZA di pasto in Kentu, da convalidare dall\u2019utente nell\u2019app. Non scrive nel diario e non cambia i punteggi. Preferisci passare foodDbKey (id da kentu_search_food) + grammi per ogni voce: cos\xEC in Kentu si salta la lavagna di riconoscimento. Prima: chiedi quantit\xE0/condimenti mancanti, mostra riepilogo, attendi conferma. Richiede il permesso "drafts:write" sul gettone. Limite: 10 scritture/ora, 30/giorno. Ripetere con la stessa idempotencyKey non crea doppioni.',
       inputSchema: {
         date: z.string().trim().regex(DAY_REF_RE).describe(`today | yesterday | YYYY-MM-DD (Europe/Rome, entro ${L.dateWindowDays} giorni da oggi)`),
         slot: z.enum(MEAL_DRAFT_SLOTS).describe("colazione | snack | pranzo | cena"),
@@ -8090,7 +8167,8 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
         items: z.array(z.strictObject({
           name: z.string().trim().min(L.nameMin).max(L.nameMax).describe('Nome alimento come l\u2019ha detto l\u2019utente (es. "pasta integrale")'),
           grams: z.number().int().min(L.gramsMin).max(L.gramsMax).nullable().optional().describe("Grammi se noti; null se l\u2019utente non li sa"),
-          note: z.string().trim().max(L.noteMax).optional().describe('Nota breve (es. "condita con 1 cucchiaio d\u2019olio")')
+          note: z.string().trim().max(L.noteMax).optional().describe('Nota breve (es. "condita con 1 cucchiaio d\u2019olio")'),
+          foodDbKey: z.string().trim().min(1).max(L.foodDbKeyMax).optional().describe("id restituito da kentu_search_food (CREA/USDA/personale). Se presente con grammi, in Kentu si salta la lavagna per questa voce.")
         })).min(1).max(L.maxItems),
         originalText: z.string().trim().min(1).max(L.rawTextMax).describe("Il testo originale scritto dall\u2019utente, senza riformularlo"),
         idempotencyKey: z.string().trim().regex(IDEMPOTENCY_KEY_RE).describe("Chiave anti-doppione stabile per questo pasto (8\u2013128 caratteri: lettere, cifre, . _ : -)")
@@ -8135,7 +8213,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   return server;
 }
 
-// functions/mcp/httpHandler.js
+// mcp/httpHandler.js
 function denyCors(res) {
   res.setHeader("Vary", "Origin");
   res.removeHeader("Access-Control-Allow-Origin");

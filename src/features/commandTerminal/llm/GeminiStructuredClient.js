@@ -1634,6 +1634,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
       generationConfig,
       contents: contents.length > 0 ? contents : undefined,
       callTag: 'chat_structured',
+      timeoutMs: 15_000,
       ...(signal ? { signal } : {}),
     });
     console.log('RAW_GEMINI_RESPONSE:', rawText);
@@ -1694,6 +1695,7 @@ REGOLA TASSATIVA: Il campo foodName (name) DEVE contenere SOLO il nome dell'alim
         generationConfig,
         contents: contents.length > 0 ? contents : undefined,
         callTag: 'chat_consultant',
+        timeoutMs: 15_000,
         ...(signal ? { signal } : {}),
       },
     );

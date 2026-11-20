@@ -9,6 +9,13 @@ import {
 import { estimateStandardMacrosPer100g } from '../../../utils/getFoodIcon.js';
 import { requestCameraPermissionsAsync, launchCameraAsync } from '../../../platform/expoNativeCamera.js';
 import { processFoodImage } from '../../foodResolution/processFoodImage.js';
+import {
+  peekKentuDatabasesSnapshot,
+  whenKentuOffReady,
+} from '../../../foodLoader.js';
+
+/** Se OFF non è pronto, non restare in loading oltre questo tempo. */
+const OFF_WAIT_MS = 4000;
 
 /**
  * Converte un risultato UniversalSearch nel formato match atteso da resume / onSelectMatch.
@@ -192,8 +199,8 @@ export default function ChatFoodEnrichmentModal({
         matches = await collectLevel2ExternalCandidates(foodName, dbCtx);
         if (controller.signal.aborted) return;
 
-        const filtered = filterAcceptableDisambiguationCandidates(foodName, matches);
-        // OFF ancora in background: non chiudere con "nessuna corrispondenza" definitiva.
+        let filtered = filterAcceptableDisambiguationCandidates(foodName, matches);
+        // OFF ancora in background: attendi al massimo OFF_WAIT_MS, poi sblocca la UI.
         if (filtered.length === 0 && offStillLoading) {
           setLocalSession({
             foodName,
@@ -204,14 +211,30 @@ export default function ChatFoodEnrichmentModal({
             searchPhase: 'external',
             canInterrupt: true,
           });
-          return;
+          await Promise.race([
+            whenKentuOffReady().catch(() => null),
+            new Promise((resolve) => {
+              setTimeout(resolve, OFF_WAIT_MS);
+            }),
+          ]);
+          if (controller.signal.aborted) return;
+          const snap = peekKentuDatabasesSnapshot();
+          const freshOff = snap?.offDb && typeof snap.offDb === 'object' ? snap.offDb : dbCtx.offDb;
+          matches = await collectLevel2ExternalCandidates(foodName, {
+            ...dbCtx,
+            offDb: freshOff,
+          });
+          if (controller.signal.aborted) return;
+          filtered = filterAcceptableDisambiguationCandidates(foodName, matches);
         }
 
         setLocalSession({
           foodName,
           isLoading: false,
           matches: filtered,
-          error: '',
+          error: filtered.length === 0
+            ? 'Nessuna corrispondenza automatica. Usa ricerca, scanner o crea al volo.'
+            : '',
           loadingMessage: '',
           searchPhase: null,
           canInterrupt: false,

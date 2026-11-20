@@ -81,6 +81,7 @@ export async function extractMacrosFromImage(base64Image, options = {}) {
     responseSchema: MACROS_RESPONSE_SCHEMA,
     callTag: options.callTag || 'vision_label',
     signal: options.signal,
+    timeoutMs: options.timeoutMs ?? 15_000,
   });
 
   const macros = parseMacrosJson(text);

@@ -1,26 +1,60 @@
-﻿i  emulators: Starting emulators: auth, database
-i  emulators: Detected demo project ID "demo-kentu-focus", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
-i  database: Database Emulator logging to database-debug.log
-i  Running script: node --test --test-concurrency=1 --test-timeout=30000 --test-force-exit src/utils/__tests__/dayNodeWrite.emulator.test.js
-✔ regole: client vecchio set() senza rev → rifiutato (879.1293ms)
-✔ regole: client nuovo crea giorno con rev=1 → ok (104.1424ms)
-✔ regole: set senza incrementare rev → rifiutato; rev+1 → ok (42.8547ms)
-✔ regole: PATCH dei soli campi senza rev → rifiutato (39.0083ms)
-✔ writer: salvataggio non cancella dayTargetSnapshot né customTargets (111.3955ms)
-✔ due client in parallelo: uno vince, l'altro confligge poi riapplica (56.0396ms)
-✔ regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato (28.9252ms)
-✔ regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tipo oggi) (19.1722ms)
-✔ client writer: autopilot su giorno a rev=8 (come oggi) senza perdere il log (140.4158ms)
-✔ client writer: salvataggio pasto su oggi (merge log + bump rev) (33.2172ms)
-✔ bozza: consume su external_drafts + pasto sul giorno nello stesso flusso (71.3985ms)
-ℹ tests 11
+﻿node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+In riga:1 car:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+npm warn Unknown project config "unsafe-perm". This will stop working in the next major version of npm. See `npm help 
+npmrc` for supported config options.
+
+> ghost-mode-dashboard@1.0.0 test:day-rev
+> node --test src/utils/__tests__/dayNodeWrite.test.js && firebase emulators:exec --only "auth,database" --project demo-kentu-focus "node --test --test-concurrency=1 --test-force-exit src/utils/__tests__/dayNodeWrite.emulator.test.js"
+
+✔ sanitizeDayPatch toglie rev* e lascia snapshot/customTargets (1.0343ms)
+✔ merge: nodo nuovo → rev 1, senza cancellare nulla di esterno (non c’è ancora) (0.2732ms)
+✔ merge: preserva dayTargetSnapshot e customTargets (0.8716ms)
+✔ merge: rev non allineata → conflitto (client con dati vecchi) (0.1655ms)
+✔ merge: nodo con rev, client senza rev → conflitto (0.1599ms)
+✔ merge: null (prima passata transazione) non abortisce anche con expectedRev (0.2564ms)
+✔ merge: nodo legacy senza rev, client senza rev → accettato e timbra rev 1 (0.8036ms)
+✔ isDayNodePermissionDenied riconosce il codice Firebase (0.3435ms)
+✔ classifyDayWriteError: conflict / offline / outdated (0.4363ms)
+ℹ tests 9
 ℹ suites 0
-ℹ pass 11
+ℹ pass 9
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 1867.7957
+ℹ duration_ms 202.8275
+i  emulators: Starting emulators: auth, database
+i  emulators: Detected demo project ID "demo-kentu-focus", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+i  database: Database Emulator logging to database-debug.log
+i  Running script: node --test --test-concurrency=1 --test-force-exit src/utils/__tests__/dayNodeWrite.emulator.test.js
+✔ regole: client vecchio set() senza rev → rifiutato (1646.3882ms)
+✔ regole: client nuovo crea giorno con rev=1 → ok (124.2909ms)
+✔ regole: set senza incrementare rev → rifiutato; rev+1 → ok (45.3204ms)
+✔ regole: PATCH dei soli campi senza rev → rifiutato (39.6511ms)
+✔ writer: salvataggio non cancella dayTargetSnapshot né customTargets (123.146ms)
+✔ due client in parallelo: uno vince, l'altro confligge poi riapplica (160.8582ms)
+✔ regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato (25.5215ms)
+✔ regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tipo oggi) (19.4136ms)
+✔ client writer: autopilot su giorno a rev=8 (come oggi) senza perdere il log (146.6543ms)
+✔ client writer: salvataggio pasto su oggi (merge log + bump rev) (52.5268ms)
+✔ bozza: consume su external_drafts + pasto sul giorno nello stesso flusso (170.2914ms)
+✔ caso conflitto: retry riapplica il pasto sul dato fresco (non lo scarta) (41.8345ms)
+✔ caso rifiuto: set senza writeProtocol / senza rev → deny (app vecchia) (24.1187ms)
+✔ caso offline: saveDayNodeWithRev fallisce senza scrivere (14.2352ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2935.7066
 +  Script exited successfully (code 0)
 i  emulators: Shutting down emulators.
 i  database: Stopping Database Emulator

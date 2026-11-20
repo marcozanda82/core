@@ -1186,6 +1186,11 @@ function LiveMealTray({
                         title={name}
                       >
                         <span className="min-w-0 truncate">{name}</span>
+                        {isPending ? (
+                          <span className="ml-1 shrink-0 rounded-md bg-amber-500/20 px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-amber-200">
+                            da scegliere
+                          </span>
+                        ) : null}
                         {canEditName ? (
                           <button
                             type="button"

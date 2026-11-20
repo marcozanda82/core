@@ -1015,7 +1015,7 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
     };
   }
 
-  // L1 subito; L2 deferito alla UI di disambiguazione (feedback + Interrompi).
+  // L1 lessicale subito (niente Gemini: hang su rete); L2 deferito alla UI.
   const decision = await resolveFoodAcrossDatabases(name, {
     personalDb: ctx.personalDb,
     kentuItDb: ctx.kentuItDb,
@@ -1027,6 +1027,7 @@ export async function resolveMcdriveFoodViaSemanticMatchmaker(foodName, ctx = {}
     preferredFoodDbKey: ctx.preferredFoodDbKey,
     signal: ctx.signal,
     deferExternalSearch: ctx.deferExternalSearch !== false,
+    skipSemanticAi: ctx.skipSemanticAi !== false,
     onProgress: ctx.onProgress,
   });
 

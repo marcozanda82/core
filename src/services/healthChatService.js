@@ -513,6 +513,7 @@ export async function processHealthChatMessage(userMessage, options = {}) {
     responseSchema: HEALTH_CHAT_RESPONSE_SCHEMA,
     callTag: options.callTag || 'health_chat',
     signal: options.signal ?? null,
+    timeoutMs: options.timeoutMs ?? 15_000,
   });
 
   let data = parseHealthChatAiJson(rawText);

@@ -133,6 +133,7 @@ export async function normalizeIngredientSpellingWithGemini(rawText, opts = {}) 
         responseSchema: SPELLING_NORMALIZE_SCHEMA,
         callTag: 'semantic_spell',
         signal: opts.signal,
+        timeoutMs: opts.timeoutMs,
       },
     );
 
@@ -546,6 +547,7 @@ export async function rankKentuCandidatesWithGemini(productName, candidates, opt
     responseSchema: SEMANTIC_MATCH_RESPONSE_SCHEMA,
     callTag: 'semantic_match',
     signal: opts.signal,
+    timeoutMs: opts.timeoutMs,
   });
 
   const allowed = new Set(compact.map((c) => c.fdcId));

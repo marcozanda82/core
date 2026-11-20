@@ -47,7 +47,9 @@ export function createAskAiFocusGeminiProvider(opts = {}) {
           : (await import('../../../../services/aiService.js')).askAI;
         const callTimeout = Number.isFinite(Number(prompt?.timeoutMs)) && Number(prompt.timeoutMs) > 0
           ? Math.floor(Number(prompt.timeoutMs))
-          : opts.timeoutMs;
+          : (Number.isFinite(Number(opts.timeoutMs)) && Number(opts.timeoutMs) > 0
+            ? Math.floor(Number(opts.timeoutMs))
+            : 15_000);
         const baseGen = opts.generationConfig && typeof opts.generationConfig === 'object'
           ? { ...opts.generationConfig }
           : {};

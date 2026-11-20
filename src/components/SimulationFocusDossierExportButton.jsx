@@ -393,7 +393,7 @@ export default function SimulationFocusDossierExportButton({
     try {
       const provider = createAskAiFocusGeminiProvider({
         signal: abort.signal,
-        timeoutMs: 45_000,
+        timeoutMs: 90_000,
       });
       const result = await runFocusGeminiPreview({
         selection: gate.selection,

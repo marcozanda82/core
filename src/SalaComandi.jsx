@@ -3697,12 +3697,16 @@ export default function SalaComandi() {
             batchId: batchIdFood,
           };
 
-          const alreadyHasPortion = Number.isFinite(Number(item?.kcal ?? item?.cal ?? item?.prot ?? item?.pro));
+          // Porzione già calcolata (kcal/prot > 0 o row /100g). foodDbKey da solo
+          // non basta: altrimenti bozze matched senza macro finirebbero a 0 kcal.
+          const alreadyHasPortion = Number(item?.kcal ?? item?.cal) > 0
+            || Number(item?.prot ?? item?.pro) > 0
+            || (item?.row && typeof item.row === 'object');
           if (
             !isUnresolvedMealDraftItem(item)
             && Number.isFinite(qtyRaw)
             && qtyRaw > 0
-            && (preferredKey || alreadyHasPortion)
+            && alreadyHasPortion
           ) {
             const canonical = toCanonicalDiaryFoodItem({
               food: {
