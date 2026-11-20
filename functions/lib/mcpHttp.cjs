@@ -1419,7 +1419,7 @@ function isUnresolvedMealDraftItem(item) {
   if (!item || typeof item !== "object") return false;
   return MEAL_DRAFT_UNRESOLVED_STATUSES.has(String(item.status || "").toLowerCase());
 }
-var MEAL_DRAFT_UNRESOLVED_STATUSES;
+var MEAL_DRAFT_UNRESOLVED_STATUSES, UNASSIGNED_DRAFTS_TYPE, INBOX_DRAFT_TYPE;
 var init_mealDraftStatus = __esm({
   "../src/utils/mealDraftStatus.js"() {
     init_draftParser();
@@ -1431,6 +1431,8 @@ var init_mealDraftStatus = __esm({
       "processing",
       "validating"
     ]);
+    UNASSIGNED_DRAFTS_TYPE = "unassigned_drafts";
+    INBOX_DRAFT_TYPE = "inbox_draft";
   }
 });
 
@@ -1447,7 +1449,7 @@ function readLogItemNutrient(item, key) {
     const raw = item[alias];
     if (raw == null || typeof raw !== "number" || !Number.isFinite(raw)) continue;
     if (key === "na" && alias === "sale") {
-      return Math.round(raw * SALT_G_TO_SODIUM_MG * 100) / 100;
+      return Math.round(raw * SALT_G_TO_SODIUM_MG2 * 100) / 100;
     }
     return raw;
   }
@@ -1488,7 +1490,7 @@ function computeTotali(dailyLog) {
   totali.workout = workoutKcal;
   return totali;
 }
-var TARGETS, ALL_NUTRIENT_KEYS, LOG_ITEM_NUTRIENT_ALIASES, SALT_G_TO_SODIUM_MG;
+var TARGETS, ALL_NUTRIENT_KEYS, LOG_ITEM_NUTRIENT_ALIASES, SALT_G_TO_SODIUM_MG2;
 var init_computeTotaliCore = __esm({
   "../src/utils/computeTotaliCore.js"() {
     init_mealDraftStatus();
@@ -1507,7 +1509,7 @@ var init_computeTotaliCore = __esm({
       na: ["sodium", "sale"],
       fatTotal: ["fat", "fatTot"]
     };
-    SALT_G_TO_SODIUM_MG = 393.4;
+    SALT_G_TO_SODIUM_MG2 = 393.4;
   }
 });
 
@@ -6807,6 +6809,849 @@ var init_foodMatchQuality = __esm({
   }
 });
 
+// mcp/habits.js
+var habits_exports = {};
+__export(habits_exports, {
+  loadRecentFoodUsageScores: () => loadRecentFoodUsageScores,
+  rankSearchResultsByRecentUsage: () => rankSearchResultsByRecentUsage,
+  toolGetHabits: () => toolGetHabits
+});
+function finite3(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v : null;
+}
+function mealSlotOf(mealId, item) {
+  const raw = String(item?.mealType || mealId || "").trim().toLowerCase();
+  const base = raw.split("_")[0];
+  if (["colazione", "snack", "pranzo", "cena"].includes(base)) return base;
+  return null;
+}
+function decimalToHHmm(dec) {
+  const n = Number(dec);
+  if (!Number.isFinite(n)) return null;
+  const h = Math.floor(n) % 24;
+  const m = Math.round((n - Math.floor(n)) * 60) % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function modeOrMedian(nums) {
+  const list = (nums || []).filter((n) => Number.isFinite(n) && n > 0);
+  if (!list.length) return null;
+  const freq = /* @__PURE__ */ new Map();
+  for (const n of list) {
+    const k = Math.round(n);
+    freq.set(k, (freq.get(k) || 0) + 1);
+  }
+  let best = null;
+  let bestC = 0;
+  for (const [k, c] of freq) {
+    if (c > bestC) {
+      best = k;
+      bestC = c;
+    }
+  }
+  if (best != null && bestC >= 2) return best;
+  const sorted = [...list].sort((a, b) => a - b);
+  return Math.round(sorted[Math.floor(sorted.length / 2)]);
+}
+function modeString(values) {
+  const freq = /* @__PURE__ */ new Map();
+  for (const v of values || []) {
+    if (!v) continue;
+    freq.set(v, (freq.get(v) || 0) + 1);
+  }
+  let best = null;
+  let bestC = 0;
+  for (const [k, c] of freq) {
+    if (c > bestC) {
+      best = k;
+      bestC = c;
+    }
+  }
+  return best;
+}
+async function toolGetHabits(db, uid, opts = {}) {
+  const id = String(uid || "").trim();
+  const limit = Math.min(MAX_HABITS, Math.max(1, Number(opts.limit) || 25));
+  const today = todayInRome(/* @__PURE__ */ new Date());
+  const start = addDaysIso(today, -(LOOKBACK_DAYS - 1));
+  const byKey = /* @__PURE__ */ new Map();
+  const trackerSnap = await db.ref(`users/${id}/tracker_data`).get();
+  const tracker = trackerSnap.exists() ? trackerSnap.val() : {};
+  for (const [dayKey, day] of Object.entries(tracker || {})) {
+    if (!String(dayKey).startsWith("trackerStorico_")) continue;
+    const date = String(dayKey).slice("trackerStorico_".length);
+    if (date < start || date > today) continue;
+    const log = Array.isArray(day?.log) ? day.log : Object.values(day?.log || {});
+    const mealTimes = day?.mealTimes && typeof day.mealTimes === "object" ? day.mealTimes : {};
+    for (const meal of log) {
+      if (!meal || typeof meal !== "object") continue;
+      const mealId = String(meal.mealId || meal.id || "");
+      const items = Array.isArray(meal.items) ? meal.items : meal.type === "food" || meal.type === "recipe" || meal.foodName || meal.desc ? [meal] : [];
+      const mealTime = finite3(mealTimes[mealId]) ?? finite3(items[0]?.mealTime);
+      for (const item of items) {
+        if (!item || typeof item !== "object") continue;
+        if (item.condimentKind || item.condimentOf) continue;
+        const foodDbKey = String(item.foodDbKey || item.matchedKey || "").trim();
+        if (!foodDbKey) continue;
+        const grams = finite3(item.grams ?? item.qta ?? item.weight ?? item.qty);
+        if (grams == null || grams <= 0) continue;
+        const name = String(item.name || item.desc || item.foodName || foodDbKey).trim();
+        const slot = mealSlotOf(mealId, item);
+        const prev = byKey.get(foodDbKey) || {
+          foodDbKey,
+          name,
+          grams: [],
+          slots: [],
+          times: [],
+          lastUsed: 0
+        };
+        prev.grams.push(grams);
+        if (slot) prev.slots.push(slot);
+        if (mealTime != null) prev.times.push(mealTime);
+        prev.lastUsed = Math.max(prev.lastUsed, Date.parse(`${date}T12:00:00Z`) || 0);
+        if (name) prev.name = name;
+        byKey.set(foodDbKey, prev);
+      }
+    }
+  }
+  const habits = [...byKey.values()].map((row) => ({
+    foodDbKey: row.foodDbKey,
+    name: row.name,
+    usageCount: row.grams.length,
+    typicalGrams: modeOrMedian(row.grams),
+    typicalSlot: modeString(row.slots),
+    typicalTime: decimalToHHmm(modeOrMedian(row.times)),
+    lastUsed: row.lastUsed || null
+  })).filter((row) => row.typicalGrams != null && row.usageCount >= 1).sort((a, b) => b.usageCount - a.usageCount || (b.lastUsed || 0) - (a.lastUsed || 0)).slice(0, limit);
+  return {
+    lookbackDays: LOOKBACK_DAYS,
+    count: habits.length,
+    habits,
+    note: "Usa foodDbKey + typicalGrams per proporre porzioni abituali prima di chiedere conferma."
+  };
+}
+function rankSearchResultsByRecentUsage(results, recentScores) {
+  const scores = recentScores instanceof Map ? recentScores : new Map(Object.entries(recentScores || {}));
+  return [...results || []].sort((a, b) => {
+    const sa = scores.get(String(a?.id || "")) || 0;
+    const sb = scores.get(String(b?.id || "")) || 0;
+    if (sb !== sa) return sb - sa;
+    return 0;
+  });
+}
+async function loadRecentFoodUsageScores(db, uid) {
+  const habits = await toolGetHabits(db, uid, { limit: 80 });
+  const map = /* @__PURE__ */ new Map();
+  for (const h of habits.habits || []) {
+    map.set(h.foodDbKey, (h.usageCount || 0) * 10 + Math.min(50, Math.floor((h.lastUsed || 0) / 1e10)));
+  }
+  return map;
+}
+var LOOKBACK_DAYS, MAX_HABITS;
+var init_habits = __esm({
+  "mcp/habits.js"() {
+    init_dates();
+    LOOKBACK_DAYS = 60;
+    MAX_HABITS = 40;
+  }
+});
+
+// ../src/useBiochimico.js
+var import_react;
+var init_useBiochimico = __esm({
+  "../src/useBiochimico.js"() {
+    import_react = require("react");
+    init_mealDraftStatus();
+    init_computeTotaliCore();
+    init_computeTotaliCore();
+  }
+});
+
+// ../src/utils/foodVisualResolver.js
+function isPortionLikeParenInner(inner) {
+  const body = String(inner || "").trim();
+  if (!body) return true;
+  if (PORTION_HINT_RE.test(body)) return true;
+  if (/[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\b/i.test(body)) return true;
+  if (/^\d+[.,]?\d*(?:\s+\d+[.,]?\d*)+\s*$/.test(body)) return true;
+  return false;
+}
+function splitTrailingBalancedParen(s) {
+  const t = String(s || "").trimEnd();
+  if (!t.endsWith(")")) return null;
+  let depth = 0;
+  for (let i = t.length - 1; i >= 0; i -= 1) {
+    const ch = t[i];
+    if (ch === ")") depth += 1;
+    else if (ch === "(") {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          before: t.slice(0, i).trimEnd(),
+          inner: t.slice(i + 1, t.length - 1)
+        };
+      }
+    }
+  }
+  return null;
+}
+function sanitizeFoodDisplayName(raw, fallback = "Alimento") {
+  let s = String(raw || "").trim();
+  if (!s) return fallback;
+  s = s.replace(/\s+/g, " ");
+  let prev = "";
+  let guard = 0;
+  while (s !== prev && guard < 16) {
+    prev = s;
+    s = s.replace(/\s*\(\d*\s*Porzione.*?\)/gi, " ");
+    s = s.replace(/\s*\(\d*\s*\d*\s*fett[ae].*?\)/gi, " ");
+    s = s.replace(
+      /\s*\(\s*(?:\d+[.,]?\d*\s+)?(?:porzion[ei]|porz\.?|serving|servings|unita|unità|pezzo|pezzi)\b[^)]*\)/gi,
+      " "
+    );
+    s = s.replace(
+      /\s*\(\s*(?:\d+\s+)?[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\s*\)/gi,
+      " "
+    );
+    s = s.replace(/\s*\(\s*[~≈]?\s*\d+[.,]?\d*\s*g\s*\)/gi, " ");
+    const trail = splitTrailingBalancedParen(s);
+    if (trail && isPortionLikeParenInner(trail.inner)) {
+      s = trail.before;
+    }
+    s = s.replace(/\s+/g, " ").trim();
+    guard += 1;
+  }
+  s = s.replace(/\s*[-–—,]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi)\s*$/i, " ");
+  s = s.replace(/\)\s*\)+/g, ")");
+  s = s.replace(/\s+\)/g, ")");
+  s = s.replace(/\(\s*\)/g, "");
+  {
+    let open = 0;
+    let cleaned = "";
+    for (const ch of s) {
+      if (ch === "(") {
+        open += 1;
+        cleaned += ch;
+      } else if (ch === ")") {
+        if (open > 0) {
+          open -= 1;
+          cleaned += ch;
+        }
+      } else {
+        cleaned += ch;
+      }
+    }
+    s = cleaned.replace(/\(\s*$/g, "").trim();
+  }
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return fallback;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+var FOOD_VISUAL_RULES, PORTION_HINT_RE;
+var init_foodVisualResolver = __esm({
+  "../src/utils/foodVisualResolver.js"() {
+    FOOD_VISUAL_RULES = Object.freeze([
+      // Salse / conserve pomodoro (prima del pomodoro fresco)
+      { emoji: "\u{1F96B}", keywords: ["passata", "passato", "pelati", "sugo", "salsa di pomodoro", "concentrato di pomodoro"] },
+      { emoji: "\u{1F345}", keywords: ["pomodoro", "pomodori", "ciliegino", "ciliegini", "datterino", "datterini", "tomato"] },
+      { emoji: "\u{1F346}", keywords: ["melanzana", "melanzane", "eggplant"] },
+      { emoji: "\u{1FAD1}", keywords: ["peperone", "peperoni", "pepper"] },
+      { emoji: "\u{1F952}", keywords: ["zucchina", "zucchine", "cetriolo", "cetrioli", "zucchini", "cucumber"] },
+      { emoji: "\u{1F96C}", keywords: ["spinaci", "spinacio", "lattuga", "rucola", "biete", "bietola", "cicoria", "radicchio", "foglie"] },
+      { emoji: "\u{1F957}", keywords: ["insalata", "insalatone", "verdura a foglia", "misticanza", "salad"] },
+      { emoji: "\u{1F955}", keywords: ["carota", "carote", "carrot"] },
+      { emoji: "\u{1F966}", keywords: ["broccolo", "broccoli", "cavolfiore", "cavolfiori", "broccolini"] },
+      { emoji: "\u{1F344}", keywords: ["funghi", "fungo", "champignon", "porcini", "mushroom"] },
+      { emoji: "\u{1F954}", keywords: ["patata", "patate", "potato", "patatine"] },
+      { emoji: "\u{1F990}", keywords: ["gamberi", "gambero", "gamberetti", "calamari", "calamaro", "frutti di mare", "cozze", "vongole", "seafood", "shrimp"] },
+      { emoji: "\u{1F41F}", keywords: ["merluzzo", "tonno", "salmone", "branzino", "orata", "pesce", "sgombro", "alici", "sardine", "trota", "fish", "tuna", "salmon"] },
+      { emoji: "\u{1F969}", keywords: ["manzo", "bistecca", "macinato", "vitello", "maiale", "carne", "hamburger", "prosciutto", "bresaola", "beef", "pork", "steak"] },
+      { emoji: "\u{1F357}", keywords: ["pollo", "tacchino", "coniglio", "pollame", "petto di pollo", "chicken", "turkey"] },
+      { emoji: "\u{1F373}", keywords: ["omelette", "frittata", "uovo", "uova", "albume", "egg", "eggs"] },
+      { emoji: "\u{1F95B}", keywords: ["latte", "yogurt", "yoghurt", "kefir", "skyr", "milk"] },
+      { emoji: "\u{1F9C0}", keywords: ["formaggio", "parmigiano", "ricotta", "mozzarella", "feta", "grana", "pecorino", "cheese"] },
+      { emoji: "\u{1F35A}", keywords: ["risotto", "basmati", "riso", "rice"] },
+      { emoji: "\u{1F35D}", keywords: ["spaghetti", "penne", "fusilli", "rigatoni", "tagliatelle", "lasagne", "semola", "pasta", "noodle"] },
+      { emoji: "\u{1F956}", keywords: ["bauletto", "baguette", "filone"] },
+      { emoji: "\u{1F35E}", keywords: ["pane", "panino", "toast", "focaccia", "piadina", "bread"] },
+      { emoji: "\u{1F358}", keywords: ["gallette", "galletta", "cracker", "crackers", "gallett"] },
+      { emoji: "\u{1F96A}", keywords: ["fette biscottate", "fetta biscottata", "biscottate"] },
+      { emoji: "\u{1F963}", keywords: ["cereali", "fiocchi", "muesli", "cornflakes", "avena", "porridge"] },
+      { emoji: "\u{1F36A}", keywords: ["biscotti", "biscotto", "frollini", "frollino", "cookie", "cookies"] },
+      { emoji: "\u{1F950}", keywords: ["croissant", "cornetto", "brioche", "bombolone", "krapfen"] },
+      { emoji: "\u{1FAD2}", keywords: ["olio evo", "olio extravergine", "olio di oliva", "olio", "olive oil"] },
+      { emoji: "\u{1F9C8}", keywords: ["burro", "butter", "margarina"] },
+      { emoji: "\u{1F34E}", keywords: ["mela", "mele", "apple"] },
+      { emoji: "\u{1F34C}", keywords: ["banana", "banane"] },
+      { emoji: "\u{1F34A}", keywords: ["arancia", "arance", "mandarino", "clementina", "orange"] },
+      { emoji: "\u{1F353}", keywords: ["fragole", "fragola", "strawberry"] },
+      { emoji: "\u{1F951}", keywords: ["avocado"] },
+      { emoji: "\u{1F34B}", keywords: ["limone", "limoni", "lime", "lemon"] },
+      { emoji: "\u2615", keywords: ["cappuccino", "espresso", "macchiato", "caff\xE8", "caffe", "coffee"] }
+    ]);
+    PORTION_HINT_RE = /\b(?:porzion[ei]|porz\.?|servings?|unita|unità|pezzo|pezzi|fett[ae]|slices?|cucchiaio|cucchiai|cucchiaino|bicchiere|tazza|scoop)\b/i;
+  }
+});
+
+// ../src/features/nutrition/condiments.js
+function foodLabel(food) {
+  return String(food?.name || food?.foodName || food?.desc || food?.label || "").trim();
+}
+function normalizeName(name) {
+  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+function ingredientText(food) {
+  const lists = [food?.ingredients, food?.recipeIngredients, food?.components];
+  const parts = [];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      parts.push(typeof item === "string" ? item : item?.name || item?.desc || item?.label || "");
+    }
+  }
+  return parts.join(" ").toLowerCase();
+}
+function readMemory() {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MEMORY_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+function rememberedCondiment(name) {
+  const hit = readMemory()[normalizeName(name)];
+  if (!hit || typeof hit !== "object") return null;
+  if (!OIL_GRAMS.some((item) => item.id === hit.oil)) return null;
+  if (!SALT_LEVELS.some((item) => item.id === hit.salt)) return null;
+  if (!OIL_TYPES[hit.oilType]) return null;
+  return { oil: hit.oil, salt: hit.salt, oilType: hit.oilType };
+}
+function classifyCondiment(food) {
+  if (!food || food.condimentKind) return null;
+  const name = normalizeName(foodLabel(food));
+  if (!name) return null;
+  if (SKIP_NAME.test(name)) return null;
+  if (/bevanda|drink|beverage/.test(String(food.type || food.category || "").toLowerCase())) return null;
+  const ingredients = ingredientText(food);
+  if (/\bolio\b/.test(ingredients)) return null;
+  if (Number(food.novaScore) === 4 && /pronto|sugo|pesto|condit|surgelat/.test(name)) return null;
+  for (const category of CATEGORIES) {
+    if (!category.test.test(name)) continue;
+    if (category.id === "carne" || category.id === "pesce") {
+      if (!PAN_OR_GRILL.test(name) || NOT_PAN.test(name)) return null;
+    }
+    return {
+      category: category.id,
+      defaults: { oil: category.oil, salt: category.salt, oilType: "evo" }
+    };
+  }
+  return null;
+}
+function resolveCondimentChoice(food) {
+  const offer = classifyCondiment(food);
+  if (!offer) return null;
+  const stored = food?.condiment && rememberedShape(food.condiment) ? rememberedShape(food.condiment) : rememberedCondiment(foodLabel(food));
+  return stored || offer.defaults;
+}
+function rememberedShape(choice) {
+  if (!choice) return null;
+  if (!OIL_GRAMS.some((item) => item.id === choice.oil)) return null;
+  if (!SALT_LEVELS.some((item) => item.id === choice.salt)) return null;
+  return { oil: choice.oil, salt: choice.salt, oilType: OIL_TYPES[choice.oilType] ? choice.oilType : "evo" };
+}
+function oilEntry(parent, choice) {
+  const level = OIL_GRAMS.find((item) => item.id === choice.oil);
+  if (!level || !(level.grams > 0)) return null;
+  const type = OIL_TYPES[choice.oilType] || OIL_TYPES.evo;
+  const grams = level.grams;
+  return {
+    id: `${parent.id}::olio`,
+    type: "food",
+    condimentOf: parent.id,
+    condimentKind: "oil",
+    estimated: true,
+    stimato: true,
+    name: type.name,
+    foodName: type.name,
+    desc: `${type.name} (stimato)`,
+    grams,
+    qta: grams,
+    kcal: Math.round(type.kcalPerG * grams),
+    prot: 0,
+    carb: 0,
+    fat: grams,
+    fatTotal: grams,
+    inflammationFactor: type.inflammationFactor,
+    novaScore: 1,
+    mealType: parent.mealType,
+    mealTime: parent.mealTime ?? parent.time,
+    time: parent.mealTime ?? parent.time
+  };
+}
+function saltEntry(parent, choice) {
+  const level = SALT_LEVELS.find((item) => item.id === choice.salt);
+  if (!level || !(level.grams > 0)) return null;
+  return {
+    id: `${parent.id}::sale`,
+    type: "food",
+    condimentOf: parent.id,
+    condimentKind: "salt",
+    estimated: true,
+    stimato: true,
+    name: "Sale",
+    foodName: "Sale",
+    desc: "Sale (stimato)",
+    grams: level.grams,
+    qta: level.grams,
+    kcal: 0,
+    prot: 0,
+    carb: 0,
+    fat: 0,
+    salt: level.grams,
+    salt_100g: 100,
+    na: level.sodiumMg,
+    sodium: level.sodiumMg,
+    sodiumMg: level.sodiumMg,
+    mealType: parent.mealType,
+    mealTime: parent.mealTime ?? parent.time,
+    time: parent.mealTime ?? parent.time
+  };
+}
+function buildCondimentEntries(parent, choice) {
+  if (!parent?.id || !choice) return [];
+  return [oilEntry(parent, choice), saltEntry(parent, choice)].filter(Boolean);
+}
+function condimentEntriesFor(food) {
+  const choice = resolveCondimentChoice(food);
+  if (!choice || !food?.id) return [];
+  return buildCondimentEntries({ ...food, condiment: choice }, choice);
+}
+function withCondiments(items) {
+  const list = Array.isArray(items) ? items : [];
+  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
+  const out = [];
+  for (const item of list) {
+    out.push(item);
+    if (!item || item.condimentKind || linked.has(item.id)) continue;
+    const extras = condimentEntriesFor(item);
+    for (const extra of extras) {
+      linked.add(item.id);
+      out.push(extra);
+    }
+  }
+  return out;
+}
+var MEMORY_KEY, OIL_GRAMS, SALT_LEVELS, OIL_TYPES, CATEGORIES, PAN_OR_GRILL, NOT_PAN, SKIP_NAME;
+var init_condiments = __esm({
+  "../src/features/nutrition/condiments.js"() {
+    MEMORY_KEY = "kentu.condiment.last.v1";
+    OIL_GRAMS = Object.freeze([
+      { id: "0", grams: 0, label: "niente" },
+      { id: "5", grams: 5, label: "mezzo cucchiaio (5 g)" },
+      { id: "10", grams: 10, label: "un cucchiaio (10 g)" },
+      { id: "20", grams: 20, label: "due cucchiai (20 g)" }
+    ]);
+    SALT_LEVELS = Object.freeze([
+      { id: "none", grams: 0, sodiumMg: 0, label: "niente" },
+      { id: "little", grams: 0.5, sodiumMg: 200, label: "poco" },
+      { id: "normal", grams: 1.5, sodiumMg: 600, label: "normale" }
+    ]);
+    OIL_TYPES = Object.freeze({
+      evo: { id: "evo", name: "Olio extravergine", kcalPerG: 8.84, inflammationFactor: -1 },
+      olive: { id: "olive", name: "Olio di oliva", kcalPerG: 8.84, inflammationFactor: 0 },
+      seed: { id: "seed", name: "Olio di semi", kcalPerG: 8.84, inflammationFactor: 1 }
+    });
+    CATEGORIES = Object.freeze([
+      { id: "pasta", test: /pasta|spaghetti|penne|fusilli|rigatoni|tagliatelle|fettuccine|linguine|maccheroni|couscous|cous cous/, oil: "10", salt: "normal" },
+      { id: "riso", test: /\briso\b|basmati|risotto/, oil: "10", salt: "normal" },
+      { id: "insalata", test: /insalata|lattuga|rucola|songino/, oil: "10", salt: "little" },
+      { id: "legumi", test: /ceci|lenticchie|fagioli|legumi|piselli|fave|edamame/, oil: "5", salt: "normal" },
+      { id: "verdure", test: /verdur|zucchin|broccoli|spinaci|carot|melanzan|peperon|cavol|finocch|asparag|pomodor|bietol|fagiolin|radicchio/, oil: "5", salt: "little" },
+      { id: "pesce", test: /pesce|salmone|merluzzo|tonno|orata|branzino|sgombro|acciug|sogliola|gamber|calamar|seppia|trota|spigola/, oil: "5", salt: "little" },
+      { id: "carne", test: /pollo|manzo|maiale|tacchino|bistecca|carne|hamburger|fettina|coscia|petto|agnello|vitello|salsiccia/, oil: "5", salt: "normal" }
+    ]);
+    PAN_OR_GRILL = /padella|grigliat|griglia|piastra|saltat|brasat|scottat/;
+    NOT_PAN = /lesso|bollit|vapore|al forno|forno|crudo/;
+    SKIP_NAME = /olio\b|sale\b|aceto|sugo|pesto|pizza|lasagne|piadina|panino|biscott|merend|patatine|cracker|snack|bevanda|bibita|succo|caff|t[eè]\b|acqua|vino|birra|cola|frutta|mela|banana|arancia|pera|pesca|uva|fragol|kiwi|ananas|melone|confezion|già condit|piatto pronto/;
+  }
+});
+
+// ../src/features/mealEngine/canonicalMealCommit.js
+var canonicalMealCommit_exports = {};
+__export(canonicalMealCommit_exports, {
+  ALL_DIARY_NUTRIENT_KEYS: () => ALL_DIARY_NUTRIENT_KEYS,
+  buildCanonicalMealCommitPayload: () => buildCanonicalMealCommitPayload,
+  canonicalNutritionFingerprint: () => canonicalNutritionFingerprint,
+  collectCanonicalPortionNutrients: () => collectCanonicalPortionNutrients,
+  isCanonicalPersistableResolvedFood: () => isCanonicalPersistableResolvedFood,
+  isLegacyGrams1Placeholder: () => isLegacyGrams1Placeholder,
+  nutritionPayloadEquals: () => nutritionPayloadEquals,
+  pickCanonicalNutrientFields: () => pickCanonicalNutrientFields,
+  toCanonicalDiaryFoodItem: () => toCanonicalDiaryFoodItem,
+  toMcDriveUpsertItem: () => toMcDriveUpsertItem,
+  withCondimentsOnResolved: () => withCondimentsOnResolved
+});
+function asFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function roundKcal3(value) {
+  const n = asFiniteNumber(value);
+  if (n == null) return 0;
+  return Math.round(n);
+}
+function roundMacro(value) {
+  const n = asFiniteNumber(value);
+  if (n == null) return 0;
+  return Math.round(n * 10) / 10;
+}
+function readGrams(food, gramsOverride) {
+  if (gramsOverride != null && gramsOverride !== "") {
+    const fromArg = asFiniteNumber(gramsOverride);
+    if (fromArg != null) return fromArg;
+  }
+  return asFiniteNumber(food?.grams ?? food?.qta ?? food?.weight ?? food?.qty ?? food?.qtyG);
+}
+function readName(food) {
+  return sanitizeFoodDisplayName(
+    food?.desc || food?.name || food?.foodName || food?.label || "",
+    ""
+  );
+}
+function readFoodDbKey(food) {
+  const raw = food?.foodDbKey ?? food?.matchedKey ?? food?.dbKey ?? null;
+  const key = raw != null ? String(raw).trim() : "";
+  return key || null;
+}
+function isInboxLike(food) {
+  const t = String(food?.type || "");
+  return t === INBOX_DRAFT_TYPE || t === UNASSIGNED_DRAFTS_TYPE;
+}
+function isLegacyGrams1Placeholder(food, grams) {
+  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
+  if (g !== 1) return false;
+  if (readFoodDbKey(food)) return false;
+  if (isUnresolvedMealDraftItem(food) || isInboxLike(food)) return true;
+  const kcal = asFiniteNumber(food?.kcal ?? food?.cal) || 0;
+  const status = String(food?.status || "").toLowerCase();
+  if (status && status !== "resolved") return true;
+  return kcal <= 0;
+}
+function isCanonicalPersistableResolvedFood(food, grams) {
+  if (!food || typeof food !== "object") return false;
+  if (isUnresolvedMealDraftItem(food)) return false;
+  if (isInboxLike(food)) return false;
+  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
+  if (g == null || g <= 0) return false;
+  if (isLegacyGrams1Placeholder(food, g)) return false;
+  const name = readName(food);
+  if (!name) return false;
+  return true;
+}
+function parseRowNumeric(raw) {
+  if (raw === null || raw === void 0) return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t || t.toLowerCase() === "tr") return null;
+    const n = Number(t.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+function nutrientsFromRow(row, grams) {
+  if (!row || typeof row !== "object") return {};
+  const factor = grams / 100;
+  if (!Number.isFinite(factor)) return {};
+  const out = {};
+  const kcalPer100 = parseRowNumeric(row.kcal ?? row.cal);
+  if (kcalPer100 != null) {
+    out.kcal = roundKcal3(kcalPer100 * factor);
+    out.cal = out.kcal;
+  }
+  const protPer100 = parseRowNumeric(row.prot ?? row.pro);
+  if (protPer100 != null) out.prot = roundMacro(protPer100 * factor);
+  const carbPer100 = parseRowNumeric(row.carb ?? row.carbo ?? row.cho);
+  if (carbPer100 != null) out.carb = roundMacro(carbPer100 * factor);
+  const fatPer100 = parseRowNumeric(row.fatTotal ?? row.fat ?? row.fatTot);
+  if (fatPer100 != null) {
+    out.fat = roundMacro(fatPer100 * factor);
+    out.fatTotal = out.fat;
+  }
+  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
+  keys.forEach((key) => {
+    if (key === "kcal" || key === "cal" || key === "prot" || key === "carb" || key === "fat" || key === "fatTotal" || key === "fatTot") {
+      return;
+    }
+    if (out[key] != null) return;
+    const per100 = parseRowNumeric(row[key]);
+    if (per100 == null) return;
+    out[key] = roundMacro(per100 * factor);
+  });
+  const fibrePer100 = parseRowNumeric(row.fibre) ?? parseRowNumeric(row.fiber);
+  if (fibrePer100 != null && out.fibre == null) {
+    out.fibre = roundMacro(fibrePer100 * factor);
+  }
+  return out;
+}
+function nutrientsFromPortionItem(food) {
+  const out = {};
+  const kcal = asFiniteNumber(food?.kcal ?? food?.cal ?? food?.estKcal);
+  if (kcal != null) {
+    out.kcal = roundKcal3(kcal);
+    out.cal = out.kcal;
+  }
+  const prot = asFiniteNumber(food?.prot ?? food?.pro ?? food?.estPro ?? food?.proteine);
+  if (prot != null) out.prot = roundMacro(prot);
+  const carb = asFiniteNumber(food?.carb ?? food?.carbo ?? food?.cho ?? food?.estCar ?? food?.carboidrati);
+  if (carb != null) out.carb = roundMacro(carb);
+  const fat = asFiniteNumber(food?.fatTotal ?? food?.fat ?? food?.fatTot ?? food?.estFat ?? food?.grassi);
+  if (fat != null) {
+    out.fat = roundMacro(fat);
+    out.fatTotal = out.fat;
+  }
+  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
+  keys.forEach((key) => {
+    if (out[key] != null) return;
+    const n = asFiniteNumber(food?.[key]);
+    if (n == null) return;
+    out[key] = key === "kcal" || key === "cal" ? roundKcal3(n) : roundMacro(n);
+  });
+  return out;
+}
+function collectCanonicalPortionNutrients(food, grams) {
+  const fromRow = nutrientsFromRow(food?.row, grams);
+  const fromItem = nutrientsFromPortionItem(food);
+  const merged = { ...fromItem, ...fromRow };
+  if (merged.kcal == null && merged.cal != null) merged.kcal = merged.cal;
+  if (merged.cal == null && merged.kcal != null) merged.cal = merged.kcal;
+  if (merged.fat == null && merged.fatTotal != null) merged.fat = merged.fatTotal;
+  if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = merged.fat;
+  if (merged.kcal == null) merged.kcal = 0;
+  if (merged.cal == null) merged.cal = merged.kcal;
+  if (merged.prot == null) merged.prot = 0;
+  if (merged.carb == null) merged.carb = 0;
+  if (merged.fat == null) merged.fat = 0;
+  if (merged.fatTotal == null) merged.fatTotal = merged.fat;
+  return merged;
+}
+function pickCanonicalNutrientFields(item) {
+  if (!item || typeof item !== "object") return {};
+  const out = {};
+  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
+  keys.forEach((key) => {
+    const n = asFiniteNumber(item[key]);
+    if (n == null) return;
+    out[key] = n;
+  });
+  return out;
+}
+function canonicalNutritionFingerprint(item) {
+  const nutrients = pickCanonicalNutrientFields(item);
+  const grams = asFiniteNumber(item?.qta ?? item?.weight ?? item?.grams ?? item?.qty);
+  return {
+    foodDbKey: readFoodDbKey(item),
+    grams,
+    type: item?.type === "recipe" ? "recipe" : "food",
+    nutrients
+  };
+}
+function nutritionPayloadEquals(a, b) {
+  const fa = canonicalNutritionFingerprint(a);
+  const fb = canonicalNutritionFingerprint(b);
+  if (fa.foodDbKey !== fb.foodDbKey) return false;
+  if (fa.grams !== fb.grams) return false;
+  if (fa.type !== fb.type) return false;
+  const keys = /* @__PURE__ */ new Set([
+    ...Object.keys(fa.nutrients),
+    ...Object.keys(fb.nutrients)
+  ]);
+  for (const key of keys) {
+    const va = asFiniteNumber(fa.nutrients[key]) ?? 0;
+    const vb = asFiniteNumber(fb.nutrients[key]) ?? 0;
+    if (va !== vb) return false;
+  }
+  return true;
+}
+function toCanonicalDiaryFoodItem({
+  food,
+  grams,
+  mealContext = {},
+  sourceMetadata = {}
+} = {}) {
+  const g = readGrams(food, grams);
+  if (!isCanonicalPersistableResolvedFood(food, g)) return null;
+  const name = readName(food);
+  const foodDbKey = readFoodDbKey(food);
+  const nutrients = collectCanonicalPortionNutrients(food, g);
+  const mealType = mealContext.mealType != null && String(mealContext.mealType).trim() ? mealContext.mealType : food.mealType != null ? food.mealType : void 0;
+  const mealTime = mealContext.mealTime != null ? mealContext.mealTime : food.mealTime ?? food.time;
+  const id = mealContext.id != null && String(mealContext.id).trim() ? String(mealContext.id).trim() : food.id != null && String(food.id).trim() ? String(food.id).trim() : void 0;
+  const entrySource = sourceMetadata.entrySource || food.entrySource || "ui";
+  const item = {
+    type: food.type === "recipe" || food.isRecipe === true ? "recipe" : "food",
+    desc: name,
+    name,
+    label: name,
+    foodName: name,
+    qta: g,
+    weight: g,
+    grams: g,
+    qty: g,
+    ...nutrients,
+    status: "resolved",
+    entrySource
+  };
+  if (foodDbKey) {
+    item.foodDbKey = foodDbKey;
+    item.matchedKey = foodDbKey;
+  }
+  if (mealType != null) item.mealType = mealType;
+  if (mealTime != null) item.mealTime = mealTime;
+  if (mealTime != null) item.time = mealTime;
+  if (id) item.id = id;
+  if (mealContext.batchId) item.batchId = mealContext.batchId;
+  if (food.isRecipe === true || item.type === "recipe") item.isRecipe = true;
+  if (Array.isArray(food.ingredients) && food.ingredients.length > 0) {
+    item.ingredients = food.ingredients;
+  }
+  if (food.servingLabel) item.servingLabel = String(food.servingLabel);
+  if (food.coffeeShopProductId) {
+    item.coffeeShopProductId = String(food.coffeeShopProductId).trim();
+    item.isCoffeeShopItem = true;
+  }
+  if (food.icon) item.icon = food.icon;
+  if (food.spokenFoodName) item.spokenFoodName = String(food.spokenFoodName);
+  if (food.sourceText) item.sourceText = String(food.sourceText).trim();
+  if (food.matchQuality) {
+    const mq = String(food.matchQuality).trim().toLowerCase();
+    if (mq === "exact" || mq === "prefix" || mq === "contains" || mq === "fuzzy") {
+      item.matchQuality = mq;
+    }
+  }
+  if (typeof food.isFastingSafe === "boolean") item.isFastingSafe = food.isFastingSafe;
+  if (asFiniteNumber(food.caffeineMg) != null && item.caffeineMg == null) {
+    item.caffeineMg = asFiniteNumber(food.caffeineMg);
+  }
+  Object.keys(item).forEach((key) => {
+    if (UI_ONLY_KEYS.has(key)) delete item[key];
+  });
+  return item;
+}
+function buildCanonicalMealCommitPayload({
+  resolvedItems,
+  mealType = null,
+  slotId = null,
+  mealTime = null,
+  timeString = null,
+  sourceMetadata = {}
+} = {}) {
+  const list = Array.isArray(resolvedItems) ? resolvedItems : [];
+  const items = [];
+  list.forEach((food, index) => {
+    const canonical = toCanonicalDiaryFoodItem({
+      food,
+      grams: food?.grams ?? food?.qta ?? food?.weight ?? food?.qty,
+      mealContext: {
+        mealType: slotId || food?.mealType || mealType,
+        mealTime: mealTime ?? food?.mealTime ?? food?.time,
+        id: food?.id,
+        batchId: food?.batchId,
+        index
+      },
+      sourceMetadata
+    });
+    if (!canonical) return;
+    if (food?.condiment) canonical.condiment = food.condiment;
+    if (!canonical.id) canonical.id = `condiment-host-${index}`;
+    items.push(canonical);
+  });
+  return {
+    mealType: mealType || null,
+    slotId: slotId || null,
+    mealTime: mealTime ?? null,
+    timeString: timeString || null,
+    items: withCondiments(items),
+    sourceMetadata: { ...sourceMetadata }
+  };
+}
+function withCondimentsOnResolved(items) {
+  const list = Array.isArray(items) ? items : [];
+  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
+  const out = [];
+  for (const item of list) {
+    out.push(item);
+    if (!item?.id || item.condimentKind || linked.has(item.id)) continue;
+    if (isUnresolvedMealDraftItem(item)) continue;
+    const extras = condimentEntriesFor(item);
+    if (extras.length > 0) linked.add(item.id);
+    out.push(...extras);
+  }
+  return out;
+}
+function toMcDriveUpsertItem(canonical) {
+  if (!canonical) return null;
+  const foodDbKey = readFoodDbKey(canonical);
+  const nutrients = pickCanonicalNutrientFields(canonical);
+  return {
+    foodName: canonical.name || canonical.foodName,
+    name: canonical.name || canonical.foodName,
+    grams: canonical.qta,
+    qty: canonical.qta,
+    status: "resolved",
+    ...nutrients,
+    pro: nutrients.prot,
+    carbo: nutrients.carb,
+    fat: nutrients.fat ?? nutrients.fatTotal,
+    ...canonical.id ? { id: canonical.id } : {},
+    ...foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {},
+    ...canonical.spokenFoodName ? { spokenFoodName: canonical.spokenFoodName } : {},
+    ...canonical.servingLabel ? { servingLabel: canonical.servingLabel } : {},
+    ...canonical.coffeeShopProductId ? { coffeeShopProductId: canonical.coffeeShopProductId } : {},
+    ...canonical.icon ? { icon: canonical.icon } : {}
+  };
+}
+var ALL_DIARY_NUTRIENT_KEYS, EXTRA_DIARY_NUTRIENT_KEYS, UI_ONLY_KEYS;
+var init_canonicalMealCommit = __esm({
+  "../src/features/mealEngine/canonicalMealCommit.js"() {
+    init_useBiochimico();
+    init_mealDraftStatus();
+    init_foodVisualResolver();
+    init_condiments();
+    ALL_DIARY_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
+    EXTRA_DIARY_NUTRIENT_KEYS = [
+      "kcal",
+      "cal",
+      "fat",
+      "fatTot",
+      "fibreTotali",
+      "fibreSolubili",
+      "fibreInsolubili",
+      "zuccheri",
+      "sale",
+      "sodium",
+      "caffeineMg"
+    ];
+    UI_ONLY_KEYS = /* @__PURE__ */ new Set([
+      "row",
+      "units",
+      "defaultUnit",
+      "multiplier",
+      "selectedUnit",
+      "qtyLabel",
+      "_searchSource",
+      "quantitySource",
+      "estimateBasis",
+      "alternatives",
+      "matchCandidates",
+      "candidates",
+      "searchHits"
+    ]);
+  }
+});
+
 // mcp/httpHandler.js
 var httpHandler_exports = {};
 __export(httpHandler_exports, {
@@ -6824,7 +7669,12 @@ function sha256Hex(value) {
 // mcp/scopes.js
 var MCP_SCOPE_READ = "read";
 var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
-var KNOWN_SCOPES = /* @__PURE__ */ new Set([MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE]);
+var MCP_SCOPE_MEALS_WRITE = "meals:write";
+var KNOWN_SCOPES = /* @__PURE__ */ new Set([
+  MCP_SCOPE_READ,
+  MCP_SCOPE_DRAFTS_WRITE,
+  MCP_SCOPE_MEALS_WRITE
+]);
 function normalizeMcpScopes(raw) {
   let list = [];
   if (Array.isArray(raw)) list = raw;
@@ -6971,15 +7821,13 @@ var MCP_INSTRUCTIONS = [
   "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso, grammi, sodio o porzioni.",
   "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
   "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day.",
-  "BOZZE PASTI: non scrivi mai nel diario. Con kentu_create_meal_draft crei solo una bozza che l\u2019utente convalida in Kentu.",
-  "Prima di creare una bozza: per ogni alimento usa kentu_search_food e passa foodDbKey = id del risultato scelto;",
-  "se i risultati sono ambigui, chiedi all\u2019utente quale voce; non inventare foodDbKey.",
-  "Chiedi le quantit\xE0 mancanti (grammi o porzione) e i condimenti mancanti (olio, sale, burro, sughi) per i piatti che di solito si condiscono;",
-  "se l\u2019utente non li sa, lascia grams a null e scrivilo nella nota invece di inventare.",
-  "Poi mostra un riepilogo (giorno, pasto, orario, alimenti con grammi, foodDbKey e note) e crea la bozza solo dopo la conferma dell\u2019utente.",
-  "Mantieni i nomi degli alimenti come li ha detti l\u2019utente, uno per voce; passa in originalText il suo testo originale senza riformularlo.",
-  "Usa una idempotencyKey stabile per lo stesso pasto: se ripeti la chiamata non si crea un doppione.",
-  "Dopo la creazione ricorda che la bozza va convalidata nell\u2019app Kentu. Se il gettone non ha il permesso bozze, dillo e non insistere."
+  "PASTI \u2014 percorso preferito: kentu_get_habits + kentu_search_food \u2192 scegli foodDbKey e proponi typicalGrams;",
+  "chiedi all\u2019utente solo se l\u2019alimento \xE8 nuovo o ambiguo, o se i grammi non sono chiari.",
+  "Mostra un riepilogo (giorno, pasto, orario, alimenti con foodDbKey e grammi) e attendi conferma esplicita;",
+  "poi kentu_log_meal (tutte le voci con foodDbKey valido e grams > 0). Dopo la scrittura conferma cosa \xE8 stato registrato e come annullare con kentu_undo_meal.",
+  "RIPIEGO BOZZE: se manca foodDbKey o grams, non inventare: usa kentu_create_meal_draft (non scrive nel diario).",
+  "Mantieni i nomi come li ha detti l\u2019utente; passa originalText senza riformularlo; usa idempotencyKey stabile.",
+  "Se il gettone non ha meals:write o drafts:write, dillo e non insistere."
 ].join(" ");
 
 // mcp/tools.js
@@ -7009,9 +7857,54 @@ init_loadUserContext();
 // mcp/dayDetail.js
 init_dates();
 
+// ../src/utils/sodiumUnits.js
+var SALT_G_TO_SODIUM_MG = 393.4;
+function parseSodiumUnit(raw) {
+  const u = String(raw ?? "").trim().toLowerCase();
+  if (!u) return null;
+  if (u === "mg" || u === "milligram" || u === "milligrams" || u === "mg/100g") return "mg";
+  if (u === "g" || u === "gram" || u === "grams" || u === "g/100g") return "g";
+  return null;
+}
+function readDeclaredSodiumUnit(source) {
+  if (!source || typeof source !== "object") return null;
+  const direct = parseSodiumUnit(
+    source.naUnit ?? source.sodiumUnit ?? source.na_unit ?? source.sodium_unit
+  );
+  if (direct) return direct;
+  const nested = source.nutrientUnits && typeof source.nutrientUnits === "object" ? source.nutrientUnits : null;
+  if (nested) {
+    return parseSodiumUnit(nested.na ?? nested.sodium ?? nested.Na);
+  }
+  return null;
+}
+function finite(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function sodiumValueToMg(value, unit) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return NaN;
+  if (unit === "g") return Math.round(n * 1e3 * 100) / 100;
+  return Math.round(n * 100) / 100;
+}
+function readSodiumMgFromDiaryEntry(entry) {
+  if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
+  const unit = readDeclaredSodiumUnit(entry);
+  const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
+  const sale = finite(entry.sale);
+  const fromSale = sale != null && sale > 0 ? Math.round(sale * SALT_G_TO_SODIUM_MG * 10) / 10 : null;
+  if (na == null || na === 0) {
+    if (fromSale != null) return { value: fromSale, reason: null };
+    return { value: null, reason: "missing" };
+  }
+  const asMg = sodiumValueToMg(na, unit);
+  return { value: asMg, reason: null };
+}
+
 // mcp/nutrientRead.js
 var ANIMAL_NO_FIBRE = /(?:^|[^a-z0-9àèéìòù])(merluzzo|pesce|filett|tonno|salmone|pollo|tacchino|manzo|vitello|maiale|carne|bresaola|prosciutto|speck|wurstel|wudy|salsicc|uovo|uova|egg|formaggio|mozzarella|parmigiano|grana|yogurt\s*greco|ricotta|burrata)(?=[^a-z0-9àèéìòù]|$)/iu;
-function finite(value) {
+function finite2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -7020,11 +7913,10 @@ function looksLikeAnimalNoFibre(name) {
 }
 function readFibreGrams(entry) {
   if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
-  const totali = finite(entry.fibreTotali);
-  const fibre = finite(entry.fibre ?? entry.fiber);
+  const totali = finite2(entry.fibreTotali);
+  const fibre = finite2(entry.fibre ?? entry.fiber);
   const name = entry.name || entry.foodName || entry.desc || "";
   let value = null;
-  let reason = null;
   if (totali != null) {
     value = totali;
   } else if (fibre != null) {
@@ -7039,32 +7931,14 @@ function readFibreGrams(entry) {
   return { value, reason: null };
 }
 function readSodiumMg(entry) {
-  if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
-  const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
-  const sale = finite(entry.sale);
-  const fromSale = sale != null && sale > 0 ? Math.round(sale * 393.4 * 10) / 10 : null;
-  if (na == null || na === 0) {
-    if (fromSale != null) return { value: fromSale, reason: null };
-    return { value: null, reason: "missing" };
-  }
-  if (na > 0 && na < 5) {
-    if (fromSale != null && Math.abs(fromSale - na * 1e3) / fromSale < 0.55) {
-      return { value: Math.round(na * 1e3 * 10) / 10, reason: null };
-    }
-    if (fromSale != null) return { value: fromSale, reason: null };
-    return { value: Math.round(na * 1e3 * 10) / 10, reason: null };
-  }
-  if (fromSale != null && na < fromSale * 0.05) {
-    return { value: fromSale, reason: null };
-  }
-  return { value: na, reason: null };
+  return readSodiumMgFromDiaryEntry(entry);
 }
 function readMacroGrams(entry, key) {
   if (!entry || typeof entry !== "object") return null;
-  if (key === "prot") return finite(entry.prot ?? entry.protein ?? entry.proteins);
-  if (key === "carb") return finite(entry.carb ?? entry.carbs ?? entry.carbohydrates);
-  if (key === "fat") return finite(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
-  return finite(entry[key]);
+  if (key === "prot") return finite2(entry.prot ?? entry.protein ?? entry.proteins);
+  if (key === "carb") return finite2(entry.carb ?? entry.carbs ?? entry.carbohydrates);
+  if (key === "fat") return finite2(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
+  return finite2(entry[key]);
 }
 
 // mcp/dayDetail.js
@@ -7103,15 +7977,15 @@ function flattenDiaryEntries(node) {
   return out;
 }
 function round1(value) {
-  const n = finite(value);
+  const n = finite2(value);
   return n == null ? null : Math.round(n * 10) / 10;
 }
 function hourOf(entry, mealTimes = null) {
-  const direct = finite(entry?.mealTime ?? entry?.time ?? entry?.hour);
+  const direct = finite2(entry?.mealTime ?? entry?.time ?? entry?.hour);
   if (direct != null && direct >= 0 && direct <= 24) return direct;
   const slot = String(entry?.mealType || entry?.mealId || "").trim();
   if (slot && mealTimes && mealTimes[slot] != null) {
-    const fromMap = finite(mealTimes[slot]);
+    const fromMap = finite2(mealTimes[slot]);
     if (fromMap != null) return fromMap;
   }
   return null;
@@ -7140,15 +8014,15 @@ function buildDayMealsDetail(fullHistory, date) {
   let caffeineKnown = false;
   for (const entry of entries) {
     if (!isFoodLike(entry)) continue;
-    const grams = finite(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
-    const kcal = finite(entry.kcal ?? entry.cal);
+    const grams = finite2(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
+    const kcal = finite2(entry.kcal ?? entry.cal);
     const prot = readMacroGrams(entry, "prot");
     const carb = readMacroGrams(entry, "carb");
     const fat = readMacroGrams(entry, "fat");
     const fibreRead = readFibreGrams(entry);
     const sodiumRead = readSodiumMg(entry);
     const name = entry.name || entry.foodName || entry.desc || "Alimento";
-    const caffeine = finite(entry.caffeineMg);
+    const caffeine = finite2(entry.caffeineMg);
     if (caffeine != null && caffeine > 0) {
       caffeineMg += caffeine;
       caffeineKnown = true;
@@ -7178,7 +8052,7 @@ function buildDayMealsDetail(fullHistory, date) {
     if (type === "water") {
       liquids.push({
         kind: "water",
-        ml: finite(entry.ml),
+        ml: finite2(entry.ml),
         time: hourOf(entry)
       });
       continue;
@@ -7186,10 +8060,10 @@ function buildDayMealsDetail(fullHistory, date) {
     if (type === "alcohol") {
       liquids.push({
         kind: "alcohol",
-        ml: finite(entry.ml),
-        abv: finite(entry.abv),
-        pureAlcoholG: finite(entry.pureAlcohol),
-        kcal: finite(entry.kcal ?? entry.cal),
+        ml: finite2(entry.ml),
+        abv: finite2(entry.abv),
+        pureAlcoholG: finite2(entry.pureAlcohol),
+        kcal: finite2(entry.kcal ?? entry.cal),
         time: hourOf(entry),
         subtype: entry.subtype || null
       });
@@ -7212,7 +8086,7 @@ function pickMainSleep(entries) {
   let bestHours = -1;
   for (const entry of entries) {
     if (String(entry?.type || "").toLowerCase() !== "sleep") continue;
-    const hours = finite(entry.hours ?? entry.duration ?? entry.sleepHours) || 0;
+    const hours = finite2(entry.hours ?? entry.duration ?? entry.sleepHours) || 0;
     if (hours > bestHours) {
       best = entry;
       bestHours = hours;
@@ -7221,9 +8095,9 @@ function pickMainSleep(entries) {
   return best;
 }
 function deriveBedtime(entry) {
-  const recorded = finite(entry?.bedtime ?? entry?.sleepStart);
-  const wake = finite(entry?.wakeTime ?? entry?.sleepEnd);
-  const hours = finite(entry?.hours ?? entry?.duration ?? entry?.sleepHours);
+  const recorded = finite2(entry?.bedtime ?? entry?.sleepStart);
+  const wake = finite2(entry?.wakeTime ?? entry?.sleepEnd);
+  const hours = finite2(entry?.hours ?? entry?.duration ?? entry?.sleepHours);
   if (wake != null && hours != null && hours > 0) {
     let derived = wake - hours;
     while (derived < 0) derived += 24;
@@ -7252,19 +8126,19 @@ function buildDaySleepDetail(fullHistory, date, options = {}) {
   }
   const { bedtime, bedtimeProvenance } = deriveBedtime(entry);
   const notes = String(entry.notes ?? entry.note ?? entry.details ?? "").trim() || null;
-  const quality = finite(entry.quality ?? entry.sleepQuality ?? entry.rating);
+  const quality = finite2(entry.quality ?? entry.sleepQuality ?? entry.rating);
   const qualityStars = quality != null && quality >= 1 && quality <= 5 ? Math.round(quality) : null;
-  const qualityScore = finite(entry.qualityScore);
+  const qualityScore = finite2(entry.qualityScore);
   return {
-    hours: finite(entry.hours ?? entry.duration ?? entry.sleepHours),
-    wakeTime: finite(entry.wakeTime ?? entry.sleepEnd),
+    hours: finite2(entry.hours ?? entry.duration ?? entry.sleepHours),
+    wakeTime: finite2(entry.wakeTime ?? entry.sleepEnd),
     bedtime,
     bedtimeProvenance,
     qualityStars,
     notes,
-    deepMin: finite(entry.deepMin),
-    remMin: finite(entry.remMin),
-    hr: finite(entry.hr),
+    deepMin: finite2(entry.deepMin),
+    remMin: finite2(entry.remMin),
+    hr: finite2(entry.hr),
     qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null,
     storageDate
   };
@@ -7291,7 +8165,7 @@ function dinnerStats(meals) {
 function lastMealHour(meals) {
   let last = null;
   for (const meal of meals) {
-    const h = finite(meal.time);
+    const h = finite2(meal.time);
     if (h == null) continue;
     if (last == null || h > last) last = h;
   }
@@ -7314,7 +8188,7 @@ function buildEveningRow(fullHistory, date) {
   let hasLiquid = false;
   let hasAlcohol = false;
   for (const liq of detail.liquids) {
-    const t = finite(liq.time);
+    const t = finite2(liq.time);
     if (liq.kind === "water" && t != null && t >= EVENING_HOUR) {
       hasLiquid = true;
       liquidsAfter18Ml += liq.ml || 0;
@@ -7327,8 +8201,8 @@ function buildEveningRow(fullHistory, date) {
   let caffeineAfter14 = 0;
   let caffeineAfter14Known = false;
   for (const meal of detail.meals) {
-    const t = finite(meal.time);
-    const c = finite(meal.caffeineMg);
+    const t = finite2(meal.time);
+    const c = finite2(meal.caffeineMg);
     if (c == null || c <= 0) continue;
     if (t != null && t >= CAFFEINE_AFTER_HOUR) {
       caffeineAfter14 += c;
@@ -7338,7 +8212,7 @@ function buildEveningRow(fullHistory, date) {
   let eveningSodium = 0;
   let eveningSodiumKnown = false;
   for (const meal of detail.meals) {
-    const t = finite(meal.time);
+    const t = finite2(meal.time);
     if (t == null || t < EVENING_HOUR) continue;
     if (meal.sodiumMg != null) {
       eveningSodium += meal.sodiumMg;
@@ -7629,12 +8503,20 @@ async function toolSearchFood(db, uid, query) {
     ...base.catalogs?.kentuItDb || {},
     ...base.personalDb || {}
   };
-  const hits = searchFoodsDetailed2(foodDb, q, { limit: 12 });
+  const hits = searchFoodsDetailed2(foodDb, q, { limit: 16 });
   const annotated = annotateCandidatesMatchQuality2(q, hits);
+  const { loadRecentFoodUsageScores: loadRecentFoodUsageScores2, rankSearchResultsByRecentUsage: rankSearchResultsByRecentUsage2 } = await Promise.resolve().then(() => (init_habits(), habits_exports));
+  let ranked = annotated || [];
+  try {
+    const recent = await loadRecentFoodUsageScores2(db, uid);
+    ranked = rankSearchResultsByRecentUsage2(ranked, recent);
+  } catch (err) {
+    console.warn("[kentuMcp] recent food rank skipped", String(err?.message || err).slice(0, 80));
+  }
   return {
     query: q,
     warnings: [...base.catalogWarnings || []],
-    results: (annotated || []).slice(0, 12).map((hit) => ({
+    results: ranked.slice(0, 12).map((hit) => ({
       name: hit.name || hit.desc || hit.label || null,
       matchQuality: hit.matchQuality || null,
       kcal100: hit.kcal ?? hit.calories ?? null,
@@ -8075,7 +8957,594 @@ async function toolDeleteDraft(db, ctx, input, now = Date.now()) {
   return { deleted: true, draftId };
 }
 
+// mcp/mealLog.js
+init_dates();
+
+// ../src/utils/dayNodeWriteCore.js
+var REV_META_KEYS = /* @__PURE__ */ new Set(["rev", "revBy", "revAt", "writeProtocol"]);
+var MERGE_CONTROL_KEYS = /* @__PURE__ */ new Set(["logDeleteIds", "manualNodesDeleteIds"]);
+var ENTRY_LIST_KEYS = Object.freeze({
+  log: "logDeleteIds",
+  manualNodes: "manualNodesDeleteIds"
+});
+var DAY_WRITE_PROTOCOL = 1;
+var CLIENT_MANAGED_DAY_FIELDS = Object.freeze([
+  "data",
+  "log",
+  "mealTimes",
+  "manualNodes",
+  "hasEditedNodes",
+  "isIntentionalFast",
+  "autopilotCorrection",
+  "dayTargetSnapshot",
+  "customTargets"
+]);
+function dayEntryKey(row) {
+  if (!row || typeof row !== "object") return null;
+  const mealId = row.mealId;
+  if (mealId != null && String(mealId).trim()) return String(mealId).trim();
+  const id = row.id;
+  if (id != null && String(id).trim()) return String(id).trim();
+  return null;
+}
+function coerceEntryList(list) {
+  if (Array.isArray(list)) return list.filter((row) => row && typeof row === "object");
+  if (list && typeof list === "object") {
+    return Object.values(list).filter((row) => row && typeof row === "object");
+  }
+  return [];
+}
+function mergeEntryListsById(serverList, clientList, deleteIds = null) {
+  const del = new Set(
+    (Array.isArray(deleteIds) ? deleteIds : []).map((id) => String(id || "").trim()).filter(Boolean)
+  );
+  const byId = /* @__PURE__ */ new Map();
+  const order = [];
+  const anon = [];
+  const take = (row, preferClient) => {
+    const key = dayEntryKey(row);
+    if (!key) {
+      anon.push(row);
+      return;
+    }
+    if (del.has(key)) return;
+    if (byId.has(key)) {
+      byId.set(key, preferClient ? { ...byId.get(key), ...row } : byId.get(key));
+      return;
+    }
+    byId.set(key, row);
+    order.push(key);
+  };
+  for (const row of coerceEntryList(serverList)) take(row, false);
+  for (const row of coerceEntryList(clientList)) take(row, true);
+  return [...order.map((key) => byId.get(key)), ...anon];
+}
+function sanitizeDayPatch(payload) {
+  const src = payload && typeof payload === "object" ? payload : {};
+  const out = {};
+  for (const [key, value] of Object.entries(src)) {
+    if (REV_META_KEYS.has(key) || key.startsWith("_") || value === void 0) continue;
+    if ((key === "log" || key === "manualNodes") && value == null) continue;
+    out[key] = value;
+  }
+  return out;
+}
+function mergeDayNodeWrite(current, patchFields, opts = {}) {
+  const managed = sanitizeDayPatch(patchFields);
+  const uid = String(opts.uid || "").trim();
+  const now = Number.isFinite(Number(opts.now)) ? Number(opts.now) : Date.now();
+  const expectedRaw = opts.expectedRev;
+  const expectedRev = expectedRaw == null || expectedRaw === "" ? null : Number(expectedRaw);
+  if (current == null || typeof current !== "object") {
+    const seedRev = expectedRev != null && Number.isFinite(expectedRev) && expectedRev > 0 ? Math.floor(expectedRev) + 1 : 1;
+    const seed = { ...managed };
+    for (const [listKey, deleteKey] of Object.entries(ENTRY_LIST_KEYS)) {
+      if (!Object.prototype.hasOwnProperty.call(managed, listKey)) continue;
+      seed[listKey] = mergeEntryListsById(null, managed[listKey], managed[deleteKey]);
+    }
+    for (const key of MERGE_CONTROL_KEYS) delete seed[key];
+    return {
+      ok: true,
+      next: {
+        ...seed,
+        rev: seedRev,
+        revBy: uid || null,
+        revAt: now,
+        writeProtocol: DAY_WRITE_PROTOCOL
+      }
+    };
+  }
+  const currentRevNum = Number(current.rev);
+  const hasRev = Number.isFinite(currentRevNum) && currentRevNum > 0;
+  if (hasRev) {
+    if (expectedRev == null || !Number.isFinite(expectedRev) || expectedRev !== currentRevNum) {
+      return { ok: false, conflict: true, currentRev: currentRevNum };
+    }
+  } else if (expectedRev != null && Number.isFinite(expectedRev) && expectedRev > 0) {
+    return { ok: false, conflict: true, currentRev: null };
+  }
+  const nextRev = hasRev ? currentRevNum + 1 : 1;
+  const applied = { ...managed };
+  for (const [listKey, deleteKey] of Object.entries(ENTRY_LIST_KEYS)) {
+    if (!Object.prototype.hasOwnProperty.call(managed, listKey)) continue;
+    applied[listKey] = mergeEntryListsById(
+      current[listKey],
+      managed[listKey],
+      managed[deleteKey]
+    );
+  }
+  for (const key of MERGE_CONTROL_KEYS) {
+    delete applied[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(managed, "mealTimes") && managed.mealTimes && typeof managed.mealTimes === "object" && !Array.isArray(managed.mealTimes)) {
+    const prevTimes = current.mealTimes && typeof current.mealTimes === "object" && !Array.isArray(current.mealTimes) ? current.mealTimes : {};
+    applied.mealTimes = { ...prevTimes, ...managed.mealTimes };
+    const logDeletes = Array.isArray(managed.logDeleteIds) ? managed.logDeleteIds : [];
+    for (const id of logDeletes) {
+      const k = String(id || "").trim();
+      if (k && Object.prototype.hasOwnProperty.call(applied.mealTimes, k)) {
+        delete applied.mealTimes[k];
+      }
+    }
+  }
+  return {
+    ok: true,
+    next: {
+      ...current,
+      ...applied,
+      rev: nextRev,
+      revBy: uid || current.revBy || null,
+      revAt: now,
+      writeProtocol: DAY_WRITE_PROTOCOL
+    }
+  };
+}
+
+// mcp/dayWriteAdmin.js
+async function saveDayNodeWithRevAdmin(db, uid, dateStr, managedFields, opts = {}) {
+  const id = String(uid || "").trim();
+  const date = String(dateStr || "").trim();
+  if (!id || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("uid/date non validi per scrittura giorno");
+  }
+  const maxRetries = Number.isFinite(Number(opts.maxRetries)) ? Math.max(1, Math.floor(Number(opts.maxRetries))) : 5;
+  const now = Number.isFinite(Number(opts.now)) ? Number(opts.now) : Date.now();
+  const path3 = `users/${id}/tracker_data/trackerStorico_${date}`;
+  const ref = db.ref(path3);
+  let attempts = 0;
+  let lastConflict = null;
+  while (attempts < maxRetries) {
+    attempts += 1;
+    const snap = await ref.get();
+    const current = snap.exists() ? snap.val() : null;
+    const expectedRev = current && Number.isFinite(Number(current.rev)) ? Number(current.rev) : null;
+    const tx = await ref.transaction((live) => {
+      const merged = mergeDayNodeWrite(live, managedFields, {
+        expectedRev,
+        uid: id,
+        now
+      });
+      if (!merged.ok) {
+        lastConflict = merged;
+        return void 0;
+      }
+      return merged.next;
+    });
+    if (tx.committed) {
+      const node = tx.snapshot.exists() ? tx.snapshot.val() : {};
+      return { node, rev: Number(node.rev) || 0, attempts };
+    }
+  }
+  const err = new Error(
+    lastConflict?.conflict ? "Conflitto rev sul giorno: riprova." : "Scrittura giorno non riuscita."
+  );
+  err.code = lastConflict?.conflict ? "day_rev_conflict" : "day_write_failed";
+  throw err;
+}
+
+// mcp/mealLog.js
+init_loadUserContext();
+var mcpMealIdemPath = (uid, hash) => `mcp_meal_idem/${uid}/${hash}`;
+var CLAUDE_MEAL_ORIGIN = "claude";
+var CLAUDE_MEAL_UNDO_WINDOW_MS = 24 * 60 * 60 * 1e3;
+var MEAL_LABELS2 = Object.freeze({
+  colazione: "Colazione",
+  snack: "Spuntino",
+  pranzo: "Pranzo",
+  cena: "Cena"
+});
+function invalid2(message) {
+  return new McpToolError("invalid_input", message);
+}
+function cleanText2(value) {
+  return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+}
+function cleanMultilineText2(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+function hhmmToDecimal(hhmm) {
+  const m = String(hhmm || "").match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return null;
+  return Number(m[1]) + Number(m[2]) / 60;
+}
+async function writeAudit2(db, uid, entry) {
+  try {
+    await db.ref(mcpAuditPath(uid)).push({ at: Date.now(), ...entry });
+  } catch (error) {
+    console.warn("[kentuMcp] audit write failed", String(error?.message || error).slice(0, 120));
+  }
+}
+function requireMealsScope(ctx) {
+  if (!hasMcpScope(ctx?.scopes, MCP_SCOPE_MEALS_WRITE)) {
+    throw new McpToolError(
+      "missing_scope",
+      'Questo gettone non pu\xF2 scrivere pasti. Attiva il permesso "meals:write" sul gettone in Kentu.'
+    );
+  }
+}
+function validateMealLogInput(input, now = Date.now()) {
+  if (!input || typeof input !== "object") throw invalid2("Dati pasto mancanti.");
+  const L = MEAL_DRAFT_LIMITS;
+  let date;
+  try {
+    ({ date } = resolveDayRef(String(input.date || ""), new Date(now)));
+  } catch {
+    throw invalid2("date: usa today, yesterday oppure YYYY-MM-DD.");
+  }
+  if (!isIsoDate(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) {
+    throw invalid2("date: data non valida.");
+  }
+  const today = todayInRome(new Date(now));
+  const min = addDaysIso(today, -L.dateWindowDays);
+  const max = addDaysIso(today, L.dateWindowDays);
+  if (date < min || date > max) {
+    throw invalid2(`date: deve essere entro ${L.dateWindowDays} giorni da oggi (${min} \u2026 ${max}).`);
+  }
+  const slot = String(input.slot || "").trim().toLowerCase();
+  if (!MEAL_DRAFT_SLOTS.includes(slot)) {
+    throw invalid2(`slot: uno tra ${MEAL_DRAFT_SLOTS.join(", ")}.`);
+  }
+  const time = String(input.time || "").trim();
+  if (!TIME_HHMM_RE.test(time)) throw invalid2("time: formato HH:MM (00:00\u201323:59).");
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw invalid2("items: serve almeno un alimento.");
+  }
+  if (input.items.length > L.maxItems) throw invalid2(`items: massimo ${L.maxItems} alimenti.`);
+  const items = input.items.map((raw, index) => {
+    if (!raw || typeof raw !== "object") throw invalid2(`items[${index}]: oggetto atteso.`);
+    const allowed = /* @__PURE__ */ new Set(["name", "foodDbKey", "grams"]);
+    const extra = Object.keys(raw).filter((key) => !allowed.has(key));
+    if (extra.length > 0) throw invalid2(`items[${index}]: campi non ammessi (${extra.join(", ")}).`);
+    const name = cleanText2(raw.name);
+    if (name.length < L.nameMin || name.length > L.nameMax) {
+      throw invalid2(`items[${index}].name: da ${L.nameMin} a ${L.nameMax} caratteri.`);
+    }
+    const foodDbKey = cleanText2(raw.foodDbKey);
+    if (!foodDbKey || foodDbKey.length > L.foodDbKeyMax) {
+      throw invalid2(
+        `items[${index}].foodDbKey obbligatorio e valido. Se manca, usa kentu_create_meal_draft invece di kentu_log_meal.`
+      );
+    }
+    const g = Number(raw.grams);
+    if (!Number.isInteger(g) || g < L.gramsMin || g > L.gramsMax) {
+      throw invalid2(
+        `items[${index}].grams: intero > 0 obbligatorio. Se i grammi non sono certi, usa kentu_create_meal_draft.`
+      );
+    }
+    return { name, foodDbKey, grams: g };
+  });
+  const rawText = cleanMultilineText2(input.originalText);
+  if (!rawText) throw invalid2("originalText: serve il testo originale scritto dall\u2019utente.");
+  if (rawText.length > L.rawTextMax) {
+    throw invalid2(`originalText: massimo ${L.rawTextMax} caratteri.`);
+  }
+  const idempotencyKey = String(input.idempotencyKey || "").trim();
+  if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    throw invalid2("idempotencyKey: 8\u2013128 caratteri tra lettere, cifre, . _ : -");
+  }
+  return { date, slot, time, items, rawText, idempotencyKey };
+}
+function lookupFoodRow(catalogs, personalDb, key) {
+  const layers = [
+    personalDb,
+    catalogs?.kentuItDb,
+    catalogs?.globalDb,
+    catalogs?.offDb
+  ];
+  for (const layer of layers) {
+    if (layer && typeof layer === "object" && layer[key]) return layer[key];
+  }
+  return null;
+}
+async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
+  const { toCanonicalDiaryFoodItem: toCanonicalDiaryFoodItem2, withCondimentsOnResolved: withCondimentsOnResolved2 } = await Promise.resolve().then(() => (init_canonicalMealCommit(), canonicalMealCommit_exports));
+  const resolved = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    const row = lookupFoodRow(foodCtx.catalogs, foodCtx.personalDb, item.foodDbKey);
+    if (!row) {
+      throw invalid2(
+        `items[${index}].foodDbKey: "${item.foodDbKey}" non trovato. Usa kentu_search_food oppure kentu_create_meal_draft.`
+      );
+    }
+    const id = `${mealCtx.mealId}_i${index}`;
+    const canonical = toCanonicalDiaryFoodItem2({
+      food: {
+        name: item.name,
+        desc: item.name,
+        foodName: item.name,
+        foodDbKey: item.foodDbKey,
+        matchedKey: item.foodDbKey,
+        row,
+        status: "resolved"
+      },
+      grams: item.grams,
+      mealContext: {
+        mealType: mealCtx.mealId,
+        mealTime: mealCtx.mealTime,
+        id,
+        batchId: mealCtx.mealId
+      },
+      sourceMetadata: { entrySource: CLAUDE_MEAL_ORIGIN }
+    });
+    if (!canonical) {
+      throw invalid2(`items[${index}]: impossibile costruire la voce canonica.`);
+    }
+    canonical.origin = CLAUDE_MEAL_ORIGIN;
+    canonical.entrySource = CLAUDE_MEAL_ORIGIN;
+    canonical.grams = item.grams;
+    canonical.qta = item.grams;
+    canonical.weight = item.grams;
+    canonical.qty = item.grams;
+    resolved.push(canonical);
+  }
+  const withExtras = withCondimentsOnResolved2(resolved).map((row) => ({
+    ...row,
+    origin: row.origin || CLAUDE_MEAL_ORIGIN,
+    entrySource: row.entrySource || CLAUDE_MEAL_ORIGIN,
+    mealType: mealCtx.mealId,
+    mealTime: mealCtx.mealTime
+  }));
+  return withExtras;
+}
+function buildNestedMeal(mealId, slot, items) {
+  return {
+    type: "meal",
+    mealId,
+    desc: MEAL_LABELS2[slot] || slot,
+    origin: CLAUDE_MEAL_ORIGIN,
+    items: items.map((it) => ({ ...it }))
+  };
+}
+async function toolLogMeal(db, ctx, input, now = Date.now()) {
+  const uid = String(ctx?.uid || "").trim();
+  const tokenId = String(ctx?.tokenId || "").trim();
+  try {
+    requireMealsScope(ctx);
+  } catch (error) {
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "rejected",
+      reason: "missing_scope"
+    });
+    throw error;
+  }
+  let normalized;
+  try {
+    normalized = validateMealLogInput(input, now);
+  } catch (error) {
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "rejected",
+      reason: "invalid_input"
+    });
+    throw error;
+  }
+  const idemHash = sha256Hex(`${uid}:meal:${normalized.idempotencyKey}`);
+  const idemRef = db.ref(mcpMealIdemPath(uid, idemHash));
+  const existing = await idemRef.get();
+  if (existing.exists()) {
+    const claim2 = existing.val() || {};
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "duplicate",
+      mealId: claim2.mealId
+    });
+    return {
+      created: false,
+      duplicate: true,
+      mealId: claim2.mealId || null,
+      date: claim2.date || normalized.date,
+      note: "Pasto gi\xE0 registrato con questa idempotencyKey: nessuna nuova scrittura."
+    };
+  }
+  try {
+    await consumeMcpWriteQuota(db, uid, now);
+  } catch (error) {
+    if (error?.code === "rate_limited") {
+      await writeAudit2(db, uid, {
+        tool: "kentu_log_meal",
+        tokenId,
+        result: "rejected",
+        reason: "rate_limited"
+      });
+    }
+    throw error;
+  }
+  const mealId = `claude_${normalized.slot}_${idemHash.slice(0, 10)}`;
+  const mealTime = hhmmToDecimal(normalized.time) ?? 13;
+  const foodCtx = await loadUserFocusContext(db, uid);
+  let foodItems;
+  try {
+    foodItems = await buildClaudeMealEntries(normalized.items, foodCtx, {
+      mealId,
+      slot: normalized.slot,
+      mealTime,
+      now
+    });
+  } catch (error) {
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "rejected",
+      reason: error?.code || "invalid_food"
+    });
+    throw error;
+  }
+  const mealRow = buildNestedMeal(mealId, normalized.slot, foodItems);
+  const claim = await idemRef.transaction((current) => {
+    if (current) return void 0;
+    return {
+      mealId,
+      date: normalized.date,
+      createdAt: now,
+      tokenId,
+      slot: normalized.slot,
+      time: normalized.time
+    };
+  });
+  if (!claim.committed) {
+    const prev = claim.snapshot.val() || {};
+    return {
+      created: false,
+      duplicate: true,
+      mealId: prev.mealId || mealId,
+      date: prev.date || normalized.date,
+      note: "Pasto gi\xE0 registrato con questa idempotencyKey: nessuna nuova scrittura."
+    };
+  }
+  try {
+    const { rev } = await saveDayNodeWithRevAdmin(db, uid, normalized.date, {
+      data: normalized.date,
+      log: [mealRow],
+      mealTimes: { [mealId]: mealTime },
+      hasEditedNodes: true
+    }, { now });
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "created",
+      mealId,
+      date: normalized.date,
+      slot: normalized.slot,
+      itemsCount: normalized.items.length,
+      rev
+    });
+    return {
+      created: true,
+      duplicate: false,
+      mealId,
+      date: normalized.date,
+      slot: normalized.slot,
+      time: normalized.time,
+      rev,
+      items: foodItems.map((it) => ({
+        name: it.name || it.desc,
+        grams: it.grams ?? it.qta,
+        foodDbKey: it.foodDbKey || null,
+        kcal: it.kcal ?? it.cal ?? null
+      })),
+      note: `Pasto registrato nel diario. Per annullare entro 24h: kentu_undo_meal con mealId "${mealId}".`,
+      undoHint: `kentu_undo_meal({ mealId: "${mealId}" })`
+    };
+  } catch (error) {
+    await idemRef.set(null).catch(() => {
+    });
+    await writeAudit2(db, uid, {
+      tool: "kentu_log_meal",
+      tokenId,
+      result: "rejected",
+      reason: "write_failed"
+    });
+    throw error;
+  }
+}
+async function toolUndoMeal(db, ctx, input, now = Date.now()) {
+  const uid = String(ctx?.uid || "").trim();
+  const tokenId = String(ctx?.tokenId || "").trim();
+  try {
+    requireMealsScope(ctx);
+  } catch (error) {
+    await writeAudit2(db, uid, {
+      tool: "kentu_undo_meal",
+      tokenId,
+      result: "rejected",
+      reason: "missing_scope"
+    });
+    throw error;
+  }
+  const mealId = String(input?.mealId || "").trim();
+  if (!mealId || !mealId.startsWith("claude_")) {
+    throw invalid2("mealId: deve essere un pasto creato da Claude (prefisso claude_).");
+  }
+  const today = todayInRome(new Date(now));
+  const dates = [today, addDaysIso(today, -1)];
+  let foundDate = null;
+  let foundMeal = null;
+  let createdAt = null;
+  for (const date of dates) {
+    const snap = await db.ref(`users/${uid}/tracker_data/trackerStorico_${date}`).get();
+    if (!snap.exists()) continue;
+    const log = Array.isArray(snap.val()?.log) ? snap.val().log : Object.values(snap.val()?.log || {});
+    const meal = log.find((row) => String(row?.mealId || "") === mealId);
+    if (meal) {
+      foundDate = date;
+      foundMeal = meal;
+      createdAt = Number(meal.createdAt) || null;
+      break;
+    }
+  }
+  if (!foundDate) {
+    const idemSnap = await db.ref(`mcp_meal_idem/${uid}`).get();
+    const rows = idemSnap.exists() ? Object.values(idemSnap.val() || {}) : [];
+    const hit = rows.find((row) => String(row?.mealId || "") === mealId);
+    if (hit?.date) {
+      foundDate = String(hit.date);
+      createdAt = Number(hit.createdAt) || null;
+      const snap = await db.ref(`users/${uid}/tracker_data/trackerStorico_${foundDate}`).get();
+      const log = Array.isArray(snap.val()?.log) ? snap.val().log : Object.values(snap.val()?.log || {});
+      foundMeal = log.find((row) => String(row?.mealId || "") === mealId) || null;
+    }
+  }
+  if (!foundDate || !foundMeal) {
+    throw new McpToolError("not_found", "Pasto Claude non trovato negli ultimi giorni.");
+  }
+  if (foundMeal.origin && foundMeal.origin !== CLAUDE_MEAL_ORIGIN) {
+    throw new McpToolError("not_deletable", "Si possono annullare solo pasti creati da Claude.");
+  }
+  const originOk = foundMeal.origin === CLAUDE_MEAL_ORIGIN || String(foundMeal.mealId || "").startsWith("claude_") || Array.isArray(foundMeal.items) && foundMeal.items.some((i) => i?.origin === CLAUDE_MEAL_ORIGIN || i?.entrySource === CLAUDE_MEAL_ORIGIN);
+  if (!originOk) {
+    throw new McpToolError("not_deletable", "Si possono annullare solo pasti creati da Claude.");
+  }
+  if (createdAt != null && now - createdAt > CLAUDE_MEAL_UNDO_WINDOW_MS) {
+    throw new McpToolError("not_deletable", "Annullamento consentito solo entro 24 ore dalla registrazione.");
+  }
+  const { rev } = await saveDayNodeWithRevAdmin(db, uid, foundDate, {
+    log: [],
+    logDeleteIds: [mealId]
+  }, { now });
+  await writeAudit2(db, uid, {
+    tool: "kentu_undo_meal",
+    tokenId,
+    result: "deleted",
+    mealId,
+    date: foundDate,
+    rev
+  });
+  return {
+    deleted: true,
+    mealId,
+    date: foundDate,
+    rev,
+    note: "Pasto Claude rimosso dal diario (cancellazione esplicita, senza shrink dell\u2019array)."
+  };
+}
+
 // mcp/createServer.js
+init_habits();
 var READ_ONLY = Object.freeze({
   readOnlyHint: true,
   destructiveHint: false,
@@ -8148,13 +9617,24 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_search_food",
     {
-      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (da usare come foodDbKey in kentu_create_meal_draft), nome, matchQuality e kcal/100g. In caso di ambiguit\xE0 chiedi all\u2019utente quale voce. Sola lettura.",
+      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality e kcal/100g. I risultati usati di recente compaiono prima. In caso di ambiguit\xE0 chiedi all\u2019utente. Sola lettura.",
       inputSchema: {
         query: z.string().describe("Testo di ricerca (almeno 2 caratteri)")
       },
       annotations: READ_ONLY
     },
     async ({ query }) => jsonResult(await toolSearchFood(db, uid, query))
+  );
+  server.registerTool(
+    "kentu_get_habits",
+    {
+      description: "Alimenti pi\xF9 usati negli ultimi 60 giorni: foodDbKey, porzione tipica, pasto e orario abituali. Usalo prima di chiedere i grammi. Sola lettura.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(40).optional().describe("Max voci (default 25)")
+      },
+      annotations: READ_ONLY
+    },
+    async (args) => jsonResult(await toolGetHabits(db, uid, args))
   );
   server.registerTool(
     "kentu_create_meal_draft",
@@ -8209,6 +9689,47 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
       }
     },
     async (args) => guarded(() => toolDeleteDraft(db, ctx, args))
+  );
+  server.registerTool(
+    "kentu_log_meal",
+    {
+      description: 'Registra un pasto DIRETTAMENTE nel diario Kentu. Ogni voce deve avere foodDbKey valido e grams > 0; altrimenti usa kentu_create_meal_draft. Prima: riepilogo e conferma esplicita dell\u2019utente. Richiede "meals:write". Limite 10/ora, 30/giorno. IdempotencyKey anti-doppione.',
+      inputSchema: {
+        date: z.string().trim().regex(DAY_REF_RE).describe("today | yesterday | YYYY-MM-DD"),
+        slot: z.enum(MEAL_DRAFT_SLOTS).describe("colazione | snack | pranzo | cena"),
+        time: z.string().trim().regex(TIME_HHMM_RE).describe("Orario HH:MM"),
+        items: z.array(z.strictObject({
+          name: z.string().trim().min(L.nameMin).max(L.nameMax),
+          foodDbKey: z.string().trim().min(1).max(L.foodDbKeyMax).describe("id da kentu_search_food / kentu_get_habits"),
+          grams: z.number().int().min(L.gramsMin).max(L.gramsMax).describe("Grammi confermati (> 0)")
+        })).min(1).max(L.maxItems),
+        originalText: z.string().trim().min(1).max(L.rawTextMax),
+        idempotencyKey: z.string().trim().regex(IDEMPOTENCY_KEY_RE)
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => guarded(() => toolLogMeal(db, ctx, args))
+  );
+  server.registerTool(
+    "kentu_undo_meal",
+    {
+      description: 'Annulla un pasto creato da Claude (mealId claude_\u2026) entro 24 ore. Cancellazione esplicita, senza shrink del log. Richiede "meals:write".',
+      inputSchema: {
+        mealId: z.string().trim().min(8).max(80).describe("mealId restituito da kentu_log_meal")
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => guarded(() => toolUndoMeal(db, ctx, args))
   );
   return server;
 }

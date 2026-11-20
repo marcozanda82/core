@@ -1,17 +1,20 @@
 {
-  "builtAt": "2026-11-20T18:05:53.441Z",
-  "sourceHash": "e92e435ebe826bd4ef2df0de6d06f65cfe07660ff3e8cd7e8712fe8c0fc78ab3",
+  "builtAt": "2026-11-20T19:13:23.660Z",
+  "sourceHash": "81facab37dccd3af689bd9b667e320b6932ec28b2b7006e0ac105b498070b092",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
     "functions/mcp/dates.js",
     "functions/mcp/dayDetail.js",
+    "functions/mcp/dayWriteAdmin.js",
+    "functions/mcp/habits.js",
     "functions/mcp/hashToken.js",
     "functions/mcp/httpHandler.js",
     "functions/mcp/instructions.js",
     "functions/mcp/loadServerCatalogs.js",
     "functions/mcp/loadUserContext.js",
     "functions/mcp/mealDrafts.js",
+    "functions/mcp/mealLog.js",
     "functions/mcp/nutrientRead.js",
     "functions/mcp/redact.js",
     "functions/mcp/scopes.js",
@@ -27,6 +30,9 @@
     "src/features/kentuFocus/score/computePeriodScore.js",
     "src/features/kentuFocus/product/loadFocusCatalogsNode.js",
     "src/features/mealBuilder/utils/foodMatchQuality.js",
+    "src/features/mealEngine/canonicalMealCommit.js",
+    "src/utils/dayNodeWriteCore.js",
+    "src/utils/sodiumUnits.js",
     "src/foodSearch.js"
   ],
   "outputs": [

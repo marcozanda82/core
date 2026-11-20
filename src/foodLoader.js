@@ -3,6 +3,7 @@ import { resolveIconTagId } from './features/mealBuilder/utils/FoodIcons';
 import { enrichDbRowWithFoodUnits } from './foodUnits';
 import { ensureMasterDbVersion } from './features/mealBuilder/utils/masterFoodResync';
 import { KENTU_MASTER_DB_VERSION, USDA_DB_VERSION } from './constants/foodDbVersion';
+import { readSodiumMgPer100FromCatalogRow } from './utils/sodiumUnits.js';
 
 const USDA_DB_FILENAME = 'kentu_smart_master_usda_FINAL.json';
 const KENTU_IT_DB_URL = '/kentu_smart_master_db.json';
@@ -29,9 +30,6 @@ function pickFiniteOrNull(value) {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
 }
-
-/** g sale / 100g → mg sodio (Na in NaCl). */
-const SALT_G_TO_SODIUM_MG = 393.4;
 
 function pickFirst(row, keys, fallback = '') {
   for (const key of keys) {
@@ -223,14 +221,9 @@ function applyCanonicalNutrientKeys(normalized, record) {
     ?? pickFiniteOrNull(record.fiber);
   if (fibre != null) normalized.fibre = fibre;
 
-  let na = pickFiniteOrNull(record.na) ?? pickFiniteOrNull(record.sodium);
-  if (na == null) {
-    const saleG = pickFiniteOrNull(record.sale);
-    if (saleG != null) {
-      na = Math.round(saleG * SALT_G_TO_SODIUM_MG * 100) / 100;
-    }
-  }
-  if (na != null) normalized.na = na;
+  // Sodio sempre in mg/100g (unità dichiarata / sale→Na / na come mg — mai ×1000 cieco).
+  const naMg = readSodiumMgPer100FromCatalogRow(record);
+  if (naMg != null) normalized.na = naMg;
 }
 
 /**

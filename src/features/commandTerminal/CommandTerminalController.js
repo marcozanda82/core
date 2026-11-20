@@ -593,6 +593,7 @@ export class CommandTerminalController {
   }
 
   clearMcdriveWizard() {
+    this.mcdriveExternalDraftId = null;
     this.activeWizard = null;
     this.pendingMcDriveDraft = [];
     this.pendingMcDriveUnknown = null;
@@ -785,6 +786,7 @@ export class CommandTerminalController {
     // Bozza Inbox convalidata: orario della bozza e condimenti come nel commit canonico.
     const fromInboxDraft = options?.fromInboxDraft === true;
     this.mcdriveFromInboxDraft = fromInboxDraft;
+    this.mcdriveExternalDraftId = String(options?.externalDraftId || '').trim() || null;
 
     const fromOptions = normalizeMcdriveMealType(
       options?.mealTypeHint || options?.mealType || null,
@@ -2116,6 +2118,9 @@ export class CommandTerminalController {
         ...(isNewIndependentMeal && !draftPersisted ? {} : { targetNodeId: sessionSlotId }),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
         ...(this.mcdriveFromInboxDraft ? { applyCondiments: true } : {}),
+        ...(this.mcdriveExternalDraftId
+          ? { externalDraftId: this.mcdriveExternalDraftId }
+          : {}),
         ...(exactTime ? {
           exactTime,
           timeString: exactTime,
@@ -2146,6 +2151,7 @@ export class CommandTerminalController {
       saved: true,
       mealType: resolvedMealType,
       itemCount: itemsForCommit.length,
+      externalDraftId: this.mcdriveExternalDraftId || null,
     };
   }
 

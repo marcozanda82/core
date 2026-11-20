@@ -13,8 +13,11 @@ test('fibre: animale con fibre>0 → null', () => {
   assert.equal(r.reason, 'animal_fibre_suspicious');
 });
 
-test('sodio: 0 → null; sale; na in grammi', () => {
+test('sodio: 0 → null; sale; unità dichiarata (niente na<5 ×1000)', () => {
   assert.equal(readSodiumMg({ name: 'Wudy', na: 0 }).value, null);
   assert.ok(readSodiumMg({ name: 'Pane', na: 0, sale: 0.7 }).value > 200);
-  assert.ok(readSodiumMg({ name: 'Pesto', na: 0.3, sale: 0.7 }).value > 200);
+  // na già in mg (frutta): non moltiplicare ×1000
+  assert.equal(readSodiumMg({ name: 'Mela', na: 0.75 }).value, 0.75);
+  // unità g dichiarata → mg
+  assert.equal(readSodiumMg({ name: 'Pesto', na: 0.3, naUnit: 'g' }).value, 300);
 });

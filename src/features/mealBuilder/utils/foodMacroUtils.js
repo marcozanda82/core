@@ -1,5 +1,9 @@
 import { TARGETS } from '../../../useBiochimico';
 import { withCondiments } from '../../nutrition/condiments.js';
+import {
+  SALT_G_TO_SODIUM_MG as SALT_G_TO_SODIUM_MG_SHARED,
+  readSodiumMgPer100FromCatalogRow,
+} from '../../../utils/sodiumUnits.js';
 
 /** Espande olio/sale collegati senza duplicare voci già presenti nel draft. */
 export function expandDraftWithCondiments(draftFoods) {
@@ -7,7 +11,7 @@ export function expandDraftWithCondiments(draftFoods) {
 }
 
 /** g sale / 100g → mg sodio (NaCl → frazione Na ~0,3934). */
-export const SALT_G_TO_SODIUM_MG = 393.4;
+export const SALT_G_TO_SODIUM_MG = SALT_G_TO_SODIUM_MG_SHARED;
 
 const ALL_TARGET_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
 
@@ -80,15 +84,18 @@ export function readCanonicalNutrient(source, key) {
     return pickFiniteNumber(source.fatTotal ?? source.fatTot ?? source.fat);
   }
 
+  if (key === 'na') {
+    const fromCatalog = readSodiumMgPer100FromCatalogRow(source);
+    if (fromCatalog != null) return roundNutrientValue(fromCatalog);
+    return null;
+  }
+
   const direct = pickFiniteNumber(source[key]);
   if (direct != null) return direct;
 
   for (const alias of CANONICAL_READ_ALIASES[key] || []) {
     const raw = pickFiniteNumber(source[alias]);
     if (raw == null) continue;
-    if (key === 'na' && alias === 'sale') {
-      return roundNutrientValue(raw * SALT_G_TO_SODIUM_MG);
-    }
     return raw;
   }
 

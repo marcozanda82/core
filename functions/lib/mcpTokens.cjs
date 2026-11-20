@@ -41,7 +41,12 @@ function generateMcpToken() {
 // mcp/scopes.js
 var MCP_SCOPE_READ = "read";
 var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
-var KNOWN_SCOPES = /* @__PURE__ */ new Set([MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE]);
+var MCP_SCOPE_MEALS_WRITE = "meals:write";
+var KNOWN_SCOPES = /* @__PURE__ */ new Set([
+  MCP_SCOPE_READ,
+  MCP_SCOPE_DRAFTS_WRITE,
+  MCP_SCOPE_MEALS_WRITE
+]);
 function normalizeMcpScopes(raw) {
   let list = [];
   if (Array.isArray(raw)) list = raw;
@@ -53,8 +58,13 @@ function normalizeMcpScopes(raw) {
   }
   return out;
 }
-function buildMcpScopes(draftsWrite) {
-  return draftsWrite ? [MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE] : [MCP_SCOPE_READ];
+function buildMcpScopes(opts = {}) {
+  const draftsWrite = typeof opts === "boolean" ? opts : opts?.draftsWrite === true;
+  const mealsWrite = typeof opts === "boolean" ? false : opts?.mealsWrite === true;
+  const out = [MCP_SCOPE_READ];
+  if (draftsWrite) out.push(MCP_SCOPE_DRAFTS_WRITE);
+  if (mealsWrite) out.push(MCP_SCOPE_MEALS_WRITE);
+  return out;
 }
 
 // mcp/tokens.js
@@ -75,7 +85,7 @@ async function createMcpTokenForUid(db, uid) {
     revoked: false,
     hourBucket: null,
     requestCountHour: 0,
-    scopes: buildMcpScopes(false)
+    scopes: buildMcpScopes({ draftsWrite: false, mealsWrite: false })
   };
   await db.ref(`users/${id}/mcp_tokens/${tokenId}`).set(tokenRecord);
   await db.ref(`mcp_token_lookup/${hash}`).set({ uid: id, tokenId });
@@ -125,7 +135,7 @@ async function listMcpTokenMeta(db, uid) {
     scopes: normalizeMcpScopes(row?.scopes)
   }));
 }
-async function setMcpTokenScopesForUid(db, uid, tokenId, { draftsWrite } = {}) {
+async function setMcpTokenScopesForUid(db, uid, tokenId, options = {}) {
   const id = String(uid || "").trim();
   const tid = String(tokenId || "").trim();
   if (!id) {
@@ -138,8 +148,8 @@ async function setMcpTokenScopesForUid(db, uid, tokenId, { draftsWrite } = {}) {
     err.code = "invalid-argument";
     throw err;
   }
-  if (typeof draftsWrite !== "boolean") {
-    const err = new Error("draftsWrite deve essere true o false");
+  if (typeof options?.draftsWrite !== "boolean" && typeof options?.mealsWrite !== "boolean") {
+    const err = new Error("Serve almeno draftsWrite o mealsWrite (boolean)");
     err.code = "invalid-argument";
     throw err;
   }
@@ -155,7 +165,10 @@ async function setMcpTokenScopesForUid(db, uid, tokenId, { draftsWrite } = {}) {
     err.code = "invalid-argument";
     throw err;
   }
-  const scopes = buildMcpScopes(draftsWrite);
+  const prev = normalizeMcpScopes(snap.val()?.scopes);
+  const draftsWrite = typeof options.draftsWrite === "boolean" ? options.draftsWrite : prev.includes("drafts:write");
+  const mealsWrite = typeof options.mealsWrite === "boolean" ? options.mealsWrite : prev.includes("meals:write");
+  const scopes = buildMcpScopes({ draftsWrite, mealsWrite });
   await tokenRef.update({ scopes, scopesUpdatedAt: Date.now() });
   return { tokenId: tid, scopes };
 }

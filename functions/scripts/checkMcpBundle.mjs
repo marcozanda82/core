@@ -24,6 +24,9 @@ const EXTRA_HASH_PATHS = [
   path.join(REPO_ROOT, 'src/features/kentuFocus/score/computePeriodScore.js'),
   path.join(REPO_ROOT, 'src/features/kentuFocus/product/loadFocusCatalogsNode.js'),
   path.join(REPO_ROOT, 'src/features/mealBuilder/utils/foodMatchQuality.js'),
+  path.join(REPO_ROOT, 'src/features/mealEngine/canonicalMealCommit.js'),
+  path.join(REPO_ROOT, 'src/utils/dayNodeWriteCore.js'),
+  path.join(REPO_ROOT, 'src/utils/sodiumUnits.js'),
   path.join(REPO_ROOT, 'src/foodSearch.js'),
 ];
 

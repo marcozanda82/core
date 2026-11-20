@@ -14,6 +14,8 @@ import {
   toolDeleteDraft,
   toolListDrafts,
 } from './mealDrafts.js';
+import { toolLogMeal, toolUndoMeal } from './mealLog.js';
+import { toolGetHabits } from './habits.js';
 
 const READ_ONLY = Object.freeze({
   readOnlyHint: true,
@@ -113,14 +115,28 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     'kentu_search_food',
     {
       description:
-        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (da usare come foodDbKey in kentu_create_meal_draft), '
-        + 'nome, matchQuality e kcal/100g. In caso di ambiguità chiedi all’utente quale voce. Sola lettura.',
+        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality e kcal/100g. '
+        + 'I risultati usati di recente compaiono prima. In caso di ambiguità chiedi all’utente. Sola lettura.',
       inputSchema: {
         query: z.string().describe('Testo di ricerca (almeno 2 caratteri)'),
       },
       annotations: READ_ONLY,
     },
     async ({ query }) => jsonResult(await toolSearchFood(db, uid, query)),
+  );
+
+  server.registerTool(
+    'kentu_get_habits',
+    {
+      description:
+        'Alimenti più usati negli ultimi 60 giorni: foodDbKey, porzione tipica, pasto e orario abituali. '
+        + 'Usalo prima di chiedere i grammi. Sola lettura.',
+      inputSchema: {
+        limit: z.number().int().min(1).max(40).optional().describe('Max voci (default 25)'),
+      },
+      annotations: READ_ONLY,
+    },
+    async (args) => jsonResult(await toolGetHabits(db, uid, args)),
   );
 
   server.registerTool(
@@ -194,6 +210,58 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
       },
     },
     async (args) => guarded(() => toolDeleteDraft(db, ctx, args)),
+  );
+
+  server.registerTool(
+    'kentu_log_meal',
+    {
+      description:
+        'Registra un pasto DIRETTAMENTE nel diario Kentu. Ogni voce deve avere foodDbKey valido e grams > 0; '
+        + 'altrimenti usa kentu_create_meal_draft. Prima: riepilogo e conferma esplicita dell’utente. '
+        + 'Richiede "meals:write". Limite 10/ora, 30/giorno. IdempotencyKey anti-doppione.',
+      inputSchema: {
+        date: z.string().trim().regex(DAY_REF_RE)
+          .describe('today | yesterday | YYYY-MM-DD'),
+        slot: z.enum(MEAL_DRAFT_SLOTS).describe('colazione | snack | pranzo | cena'),
+        time: z.string().trim().regex(TIME_HHMM_RE).describe('Orario HH:MM'),
+        items: z.array(z.strictObject({
+          name: z.string().trim().min(L.nameMin).max(L.nameMax),
+          foodDbKey: z.string().trim().min(1).max(L.foodDbKeyMax)
+            .describe('id da kentu_search_food / kentu_get_habits'),
+          grams: z.number().int().min(L.gramsMin).max(L.gramsMax)
+            .describe('Grammi confermati (> 0)'),
+        })).min(1).max(L.maxItems),
+        originalText: z.string().trim().min(1).max(L.rawTextMax),
+        idempotencyKey: z.string().trim().regex(IDEMPOTENCY_KEY_RE),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args) => guarded(() => toolLogMeal(db, ctx, args)),
+  );
+
+  server.registerTool(
+    'kentu_undo_meal',
+    {
+      description:
+        'Annulla un pasto creato da Claude (mealId claude_…) entro 24 ore. Cancellazione esplicita, senza shrink del log. '
+        + 'Richiede "meals:write".',
+      inputSchema: {
+        mealId: z.string().trim().min(8).max(80)
+          .describe('mealId restituito da kentu_log_meal'),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async (args) => guarded(() => toolUndoMeal(db, ctx, args)),
   );
 
   return server;

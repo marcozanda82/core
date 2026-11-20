@@ -5350,14 +5350,13 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       : (block.rawText ? [{ foodName: block.rawText, name: block.rawText, status: 'raw' }] : []);
     if (!sourceItems.length) return;
 
-    // Rimuovi bozza Inbox prima del commit (undo ripristina il blocco nell'Inbox del giorno).
-    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
-    else writeAssignedInboxLog(without);
+    // Inbox locale: rimuovi subito. Bozza Claude esterna: consumed SOLO dopo save riuscito.
+    if (!external) writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     setShowDiarySheet(false);
     const mealLabel = MEAL_LABELS_SAVE[baseType] || baseType;
 
-    // Unresolved: niente kcal:0 in diario → lavagna McDrive.
+    // Unresolved: niente kcal:0 in diario → lavagna McDrive (bozza resta pending finché non salva).
     if (countUnresolvedMealDraftItems(sourceItems) > 0) {
       armInboxUndo({ originalBlock, assignedItemIds: [] }, `Bozza aperta in lavagna`);
       openChat();
@@ -5374,9 +5373,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? null,
             quantitySource: item?.quantitySource || null,
             isEstimated: item?.isEstimated === true,
+            externalDraftId: external ? block.externalDraftId : null,
           })).filter((row) => row.foodName),
           editingExactTime: timeHHmm,
           fromInboxDraft: true,
+          externalDraftId: external ? block.externalDraftId : null,
           skipUserBubble: true,
         });
       }
@@ -5391,18 +5392,24 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         .map((item) => (item?.id != null ? String(item.id) : ''))
         .filter(Boolean),
     );
-    commitAddFoodCommandRef.current({
-      mealType: baseType,
-      items: commitItems,
-      timeString: timeHHmm,
-      exactTime: timeHHmm,
-      mealTime: mealDec,
-      forceNewMealSlot: true,
-      action: 'append',
-      upsertAction: 'append',
-      source: 'inbox_triage',
-      applyCondiments: true,
-    });
+    try {
+      commitAddFoodCommandRef.current({
+        mealType: baseType,
+        items: commitItems,
+        timeString: timeHHmm,
+        exactTime: timeHHmm,
+        mealTime: mealDec,
+        forceNewMealSlot: true,
+        action: 'append',
+        upsertAction: 'append',
+        source: 'inbox_triage',
+        applyCondiments: true,
+      });
+    } catch (err) {
+      console.warn('[inbox] commit failed; draft left pending', err);
+      return;
+    }
+    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
     const assigned = (dailyLogRef.current || []).filter((item) => {
       const id = item?.id != null ? String(item.id) : '';
       return id && !idsBefore.has(id) && (item.type === 'food' || item.type === 'recipe' || !item.type);
@@ -5449,8 +5456,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const sourceItems = Array.isArray(block.items) ? block.items : [];
     if (!sourceItems.length) return false;
 
-    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
-    else writeAssignedInboxLog(without);
+    if (!external) writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     const mealLabel = String(meal.label || meal.title || meal.mealTypeBase || 'pasto').split(' - ')[0];
 
@@ -5471,9 +5477,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               itemId: item?.id ?? item?.itemId ?? `inbox_${index}`,
               spokenFoodName: item?.spokenFoodName || item?.foodName || item?.name || '',
               foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? null,
+              externalDraftId: external ? block.externalDraftId : null,
             })).filter((row) => row.foodName),
             editingExactTime: timeHHmm,
             fromInboxDraft: true,
+            externalDraftId: external ? block.externalDraftId : null,
             skipUserBubble: true,
           });
         }
@@ -5489,18 +5497,24 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         .map((item) => (item?.id != null ? String(item.id) : ''))
         .filter(Boolean),
     );
-    commitAddFoodCommandRef.current({
-      mealType: mealTypeCanon,
-      items: commitItems,
-      targetNodeId: slotKey,
-      action: 'merge',
-      upsertAction: 'merge',
-      timeString: timeHHmm,
-      exactTime: timeHHmm,
-      mealTime,
-      source: 'inbox_triage',
-      applyCondiments: true,
-    });
+    try {
+      commitAddFoodCommandRef.current({
+        mealType: mealTypeCanon,
+        items: commitItems,
+        targetNodeId: slotKey,
+        action: 'merge',
+        upsertAction: 'merge',
+        timeString: timeHHmm,
+        exactTime: timeHHmm,
+        mealTime,
+        source: 'inbox_triage',
+        applyCondiments: true,
+      });
+    } catch (err) {
+      console.warn('[inbox] merge commit failed; draft left pending', err);
+      return false;
+    }
+    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
     const assignedItemIds = (dailyLogRef.current || [])
       .filter((item) => {
         const id = item?.id != null ? String(item.id) : '';

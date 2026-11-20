@@ -553,6 +553,16 @@ export function useCommandTerminal({
         onMealCommitSuccess: (envelope) => {
           const skipCloseId = String(envelope?.meta?.correlationId || '');
           if (skipCloseId === 'mcdrive_save_confirm') {
+            const externalDraftId = String(
+              envelope?.payload?.externalDraftId
+              || controller.mcdriveExternalDraftId
+              || '',
+            ).trim();
+            if (externalDraftId) {
+              void import('../../externalDrafts/externalDraftsStore.js')
+                .then((mod) => mod.markExternalDraftStatus?.(externalDraftId, 'consumed'))
+                .catch(() => {});
+            }
             if (typeof controller.clearMcdriveWizard === 'function') {
               controller.clearMcdriveWizard();
             }
@@ -1346,9 +1356,12 @@ export function useCommandTerminal({
         }
 
         const imageOnly = !resolvedText && attachedImages.length > 0;
-        const fallbackText =
-          resolvedText ||
-          'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.';
+        // Solo con immagine allegata: altrimenti un sendMessage('', { intent: McDrive… })
+        // finiva nel prompt LOG_SLEEP (imageCount 0) senza azione utente sul sonno.
+        const fallbackText = resolvedText
+          || (imageOnly
+            ? 'Analizza lo screenshot allegato dell app fitness/sonno (es. Xiaomi Fitness) ed estrai i dati per LOG_SLEEP.'
+            : '');
         let forcedIntent = String(options?.intent || '').trim().toUpperCase() || undefined;
         const reportMatchEarly = earlyReportMatch || matchReportCommand(resolvedText, {
           intent: forcedIntent,

@@ -748,6 +748,10 @@ export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, cur
   ).trim();
   const source = String(itemOrParsed?.quantitySource || '').trim();
   const existingGrams = Number(itemOrParsed?.grams);
+  // Grammi espliciti dell’utente: mai sostituiti da porzioni abituali.
+  if (source === 'explicit' && Number.isFinite(existingGrams) && existingGrams > 0) {
+    return Math.round(existingGrams);
+  }
   const recent = lookupRecentFoodPortionGrams({
     id: matchInfo?.foodDbKey,
     name: foodName,
@@ -778,9 +782,15 @@ export function resolveMcdriveGramsWithHistory(itemOrParsed, matchInfo = {}, cur
     userHistory: history > 0 ? history : null,
     userPortions: currentState?.userPortions || null,
     quantitySourceHint: source || null,
-    existingGrams,
+    existingGrams: Number.isFinite(existingGrams) && existingGrams > 0 ? existingGrams : null,
   });
-  return resolved.grams;
+  // Mai 1 g come placeholder: se non c’è stima, porzione standard ≥ 10 (da confermare in UI).
+  const grams = Number(resolved?.grams);
+  if (!Number.isFinite(grams) || grams <= 1) {
+    const serving = Math.round(Number(matchInfo?.row?.servingSize || matchInfo?.row?.defaultQty) || 0);
+    return serving >= 10 ? serving : 100;
+  }
+  return Math.round(grams);
 }
 
 /**

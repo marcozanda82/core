@@ -5,8 +5,13 @@
 
 export const MCP_SCOPE_READ = 'read';
 export const MCP_SCOPE_DRAFTS_WRITE = 'drafts:write';
+export const MCP_SCOPE_MEALS_WRITE = 'meals:write';
 
-const KNOWN_SCOPES = new Set([MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE]);
+const KNOWN_SCOPES = new Set([
+  MCP_SCOPE_READ,
+  MCP_SCOPE_DRAFTS_WRITE,
+  MCP_SCOPE_MEALS_WRITE,
+]);
 
 /**
  * RTDB può restituire gli array come `{0: 'read', 1: 'drafts:write'}`.
@@ -33,7 +38,14 @@ export function hasMcpScope(scopes, scope) {
   return normalizeMcpScopes(scopes).includes(scope);
 }
 
-/** @param {boolean} draftsWrite */
-export function buildMcpScopes(draftsWrite) {
-  return draftsWrite ? [MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE] : [MCP_SCOPE_READ];
+/**
+ * @param {{ draftsWrite?: boolean, mealsWrite?: boolean }} [opts]
+ */
+export function buildMcpScopes(opts = {}) {
+  const draftsWrite = typeof opts === 'boolean' ? opts : opts?.draftsWrite === true;
+  const mealsWrite = typeof opts === 'boolean' ? false : opts?.mealsWrite === true;
+  const out = [MCP_SCOPE_READ];
+  if (draftsWrite) out.push(MCP_SCOPE_DRAFTS_WRITE);
+  if (mealsWrite) out.push(MCP_SCOPE_MEALS_WRITE);
+  return out;
 }

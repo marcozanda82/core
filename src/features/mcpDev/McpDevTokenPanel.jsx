@@ -123,14 +123,14 @@ export default function McpDevTokenPanel({ onClose }) {
     }
   };
 
-  const setDraftsWrite = async (tokenId, draftsWrite) => {
-    if (!tokenId) return;
+  const setTokenScope = async (tokenId, patch) => {
+    if (!tokenId || !patch || typeof patch !== 'object') return;
     setBusy(true);
     setError(null);
     try {
       const call = httpsCallable(functions, 'setMcpTokenScopes');
-      await call({ tokenId, draftsWrite: draftsWrite === true });
-      if (import.meta.env.DEV) console.log('[mcp-dev] token scopes ok', { tokenId, draftsWrite });
+      await call({ tokenId, ...patch });
+      if (import.meta.env.DEV) console.log('[mcp-dev] token scopes ok', { tokenId, ...patch });
       await refresh();
     } catch (err) {
       console.error('[mcp-dev] token scopes error', err);
@@ -225,6 +225,12 @@ export default function McpDevTokenPanel({ onClose }) {
             tokens.map((row) => {
               const scopes = Array.isArray(row.scopes) ? row.scopes : ['read'];
               const draftsWrite = scopes.includes('drafts:write');
+              const mealsWrite = scopes.includes('meals:write');
+              const permLabel = [
+                'lettura',
+                draftsWrite ? 'bozze' : null,
+                mealsWrite ? 'pasti' : null,
+              ].filter(Boolean).join(' + ');
               return (
                 <li
                   key={row.tokenId}
@@ -237,7 +243,7 @@ export default function McpDevTokenPanel({ onClose }) {
                       {row.createdAt ? ` · creato ${new Date(row.createdAt).toLocaleString()}` : ''}
                     </p>
                     <p className="text-[10px] text-slate-400">
-                      Permessi: {draftsWrite ? 'lettura + bozze pasti' : 'solo lettura'}
+                      Permessi: {permLabel}
                     </p>
                   </div>
                   {!row.revoked ? (
@@ -247,9 +253,18 @@ export default function McpDevTokenPanel({ onClose }) {
                           type="checkbox"
                           checked={draftsWrite}
                           disabled={busy}
-                          onChange={(event) => setDraftsWrite(row.tokenId, event.target.checked)}
+                          onChange={(event) => setTokenScope(row.tokenId, { draftsWrite: event.target.checked })}
                         />
-                        Bozze pasti
+                        Bozze
+                      </label>
+                      <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={mealsWrite}
+                          disabled={busy}
+                          onChange={(event) => setTokenScope(row.tokenId, { mealsWrite: event.target.checked })}
+                        />
+                        Pasti
                       </label>
                       <button
                         type="button"

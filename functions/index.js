@@ -452,7 +452,7 @@ exports.listMcpTokens = functions
     return { tokens };
   });
 
-/** Attiva/revoca il permesso bozze pasti (`drafts:write`) su un gettone. */
+/** Attiva/revoca `drafts:write` e/o `meals:write` su un gettone. */
 exports.setMcpTokenScopes = functions
   .region('europe-west1')
   .runWith({ timeoutSeconds: 30, memory: '256MB' })
@@ -465,7 +465,10 @@ exports.setMcpTokenScopes = functions
         admin.database(),
         context.auth.uid,
         data?.tokenId,
-        { draftsWrite: data?.draftsWrite },
+        {
+          ...(typeof data?.draftsWrite === 'boolean' ? { draftsWrite: data.draftsWrite } : {}),
+          ...(typeof data?.mealsWrite === 'boolean' ? { mealsWrite: data.mealsWrite } : {}),
+        },
       );
     } catch (error) {
       throw mapTokenError(error);

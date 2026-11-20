@@ -316,13 +316,21 @@ export async function toolSearchFood(db, uid, query) {
     ...(base.catalogs?.kentuItDb || {}),
     ...(base.personalDb || {}),
   };
-  const hits = searchFoodsDetailed(foodDb, q, { limit: 12 });
+  const hits = searchFoodsDetailed(foodDb, q, { limit: 16 });
   const annotated = annotateCandidatesMatchQuality(q, hits);
+  const { loadRecentFoodUsageScores, rankSearchResultsByRecentUsage } = await import('./habits.js');
+  let ranked = annotated || [];
+  try {
+    const recent = await loadRecentFoodUsageScores(db, uid);
+    ranked = rankSearchResultsByRecentUsage(ranked, recent);
+  } catch (err) {
+    console.warn('[kentuMcp] recent food rank skipped', String(err?.message || err).slice(0, 80));
+  }
 
   return {
     query: q,
     warnings: [...(base.catalogWarnings || [])],
-    results: (annotated || []).slice(0, 12).map((hit) => ({
+    results: ranked.slice(0, 12).map((hit) => ({
       name: hit.name || hit.desc || hit.label || null,
       matchQuality: hit.matchQuality || null,
       kcal100: hit.kcal ?? hit.calories ?? null,

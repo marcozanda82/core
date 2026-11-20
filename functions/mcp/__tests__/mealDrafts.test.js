@@ -38,6 +38,11 @@ test('scopes: gettoni senza campo restano solo read', () => {
   assert.equal(hasMcpScope(undefined, 'drafts:write'), false);
   assert.deepEqual(buildMcpScopes(false), ['read']);
   assert.deepEqual(buildMcpScopes(true), ['read', 'drafts:write']);
+  assert.deepEqual(buildMcpScopes({ mealsWrite: true }), ['read', 'meals:write']);
+  assert.deepEqual(
+    buildMcpScopes({ draftsWrite: true, mealsWrite: true }),
+    ['read', 'drafts:write', 'meals:write'],
+  );
 });
 
 test('validateMealDraftInput: normalizza un input valido', () => {
