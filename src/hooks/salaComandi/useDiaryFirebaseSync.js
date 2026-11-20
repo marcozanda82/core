@@ -33,10 +33,15 @@ import {
   savePersonalDbToCache,
 } from '../../utils/offlineCacheUtils';
 import {
-  DayNodeConflictError,
+  classifyDayWriteError,
+  collectDayEntryIds,
   sanitizeDayPatch,
-  saveDayNodeWithRev,
+  saveDayNodeWithRevRetry,
 } from '../../utils/dayNodeWrite.js';
+import {
+  publishDaySaveFailure,
+  userMessageForDaySaveFailure,
+} from '../../utils/daySaveFeedback.js';
 import {
   TRACKER_STORICO_KEY,
   normalizeLogData,
@@ -81,6 +86,8 @@ export function useDiaryFirebaseSync({
   const lastLogFromFirebaseRef = useRef(null);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [isProfileHydrated, setIsProfileHydrated] = useState(false);
+  /** Id voci log/nodi non ancora confermate su RTDB (pending fail). */
+  const [unsavedEntryIds, setUnsavedEntryIds] = useState(() => new Set());
   /**
    * Bootstrap dello storico completo (albero tracker_data), distinto da isInitialLoadComplete
    * (oggi+profile). Usato dal laboratorio Focus per non spacciare la cache 15g come d30 completo.
@@ -593,6 +600,7 @@ export function useDiaryFirebaseSync({
         }
         const managed = sanitizeDayPatch(stripUndefined(payload));
         const expectedRev = existingNode?.rev ?? null;
+        const entryIds = collectDayEntryIds(nuovoLog, nuoviNodi);
 
         writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
 
@@ -601,9 +609,9 @@ export function useDiaryFirebaseSync({
 
         const dbPath = `users/${uid}/tracker_data/${storicoKey}`;
 
-        // Cloud sync in background: la UI è già aggiornata via setDailyLog + cache locale.
-        void withRtdbPermissionLog(
-          saveDayNodeWithRev({
+        // Attende il salvataggio reale (con riapplicazione su conflitto). Non scarta la modifica.
+        return withRtdbPermissionLog(
+          saveDayNodeWithRevRetry({
             db,
             uid,
             dateStr,
@@ -618,45 +626,37 @@ export function useDiaryFirebaseSync({
         )
           .then((result) => {
             const node = result?.node;
-            if (!node) return;
+            if (!node) return true;
             patchRecentHistoryDay(uid, dateStr, node);
+            setUnsavedEntryIds((prev) => {
+              if (!prev.size) return prev;
+              const next = new Set(prev);
+              entryIds.forEach((id) => next.delete(id));
+              return next;
+            });
             queueMicrotask(() => {
               setFullHistory((prev) => ({ ...prev, [storicoKey]: node }));
               setFullStorico((prev) => ({ ...(prev || {}), [storicoKey]: node }));
             });
+            return true;
           })
-          .catch(async (err) => {
-            if (err instanceof DayNodeConflictError || err?.code === 'day_rev_conflict') {
-              console.warn('[diary] conflitto rev: rileggo il giorno', dateStr, err?.currentRev);
-              try {
-                const snap = await get(ref(db, dbPath));
-                const remote = snap.exists() ? snap.val() : null;
-                if (remote) {
-                  setFullHistory((prev) => ({ ...(prev || {}), [storicoKey]: remote }));
-                  setFullStorico((prev) => ({ ...(prev || {}), [storicoKey]: remote }));
-                  const incomingLog = remote?.log ?? [];
-                  const normalized = normalizeLogData(
-                    Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
-                  );
-                  lastLogFromFirebaseRef.current = JSON.stringify(normalized);
-                  if (currentTrackerDateRef.current === dateStr) {
-                    setDailyLog(applyMealTimes(normalized, remote?.mealTimes ?? {}));
-                  }
-                }
-                if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-                  window.alert(
-                    'Questo giorno è stato aggiornato da un altro dispositivo. Ho ricaricato i dati freschi: ripeti la modifica.',
-                  );
-                }
-              } catch (reloadErr) {
-                console.error('[diary] reload dopo conflitto fallito', reloadErr);
-              }
-              return;
-            }
-            console.error('❌ Errore critico durante il salvataggio Firebase:', err);
+          .catch((err) => {
+            const kind = classifyDayWriteError(err);
+            console.error('[diary] salvataggio giorno fallito', kind, err);
+            setUnsavedEntryIds((prev) => {
+              const next = new Set(prev);
+              entryIds.forEach((id) => next.add(id));
+              return next;
+            });
+            publishDaySaveFailure({
+              kind,
+              message: userMessageForDaySaveFailure(kind),
+              dateStr,
+              feature: 'tracker_data',
+              unsavedIds: entryIds,
+            });
+            throw err;
           });
-
-        return Promise.resolve(true);
       } catch (error) {
         console.error('❌ Errore durante la preparazione del payload Firebase:', error);
         return Promise.reject(error);
@@ -712,6 +712,8 @@ export function useDiaryFirebaseSync({
     /** Carica range oltre 90g on-demand (stimulus=365g). */
     ensureDeepHistory,
     lastLogFromFirebaseRef,
+    /** Voci locali non confermate su RTDB (conflitto/deny/offline). */
+    unsavedEntryIds,
   };
 }
 

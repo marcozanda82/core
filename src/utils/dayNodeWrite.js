@@ -4,17 +4,21 @@
  * Tutte le scritture client sul giorno devono passare da qui: la transazione fonde
  * solo i campi indicati, incrementa `rev` e lascia intatto il resto.
  * Le regole RTDB accettano: nodo nuovo → rev===1; legacy senza rev → rev===1;
- * aggiornamento → rev === data.rev + 1. Un set() senza rev resta rifiutato.
+ * aggiornamento → rev === data.rev + 1. Serve anche writeProtocol === DAY_WRITE_PROTOCOL.
+ * Un set() senza rev/protocol resta rifiutato.
  */
 
 import { get, ref, runTransaction } from 'firebase/database';
 
 const trackerStoricoKey = (date) => `trackerStorico_${String(date || '').trim()}`;
-const REV_META_KEYS = new Set(['rev', 'revBy', 'revAt']);
+const REV_META_KEYS = new Set(['rev', 'revBy', 'revAt', 'writeProtocol']);
+
+/** Protocollo scritture giorno richiesto dalle regole RTDB. */
+export const DAY_WRITE_PROTOCOL = 1;
 
 /**
  * Campi tipici del diario (documentazione / sync). Il patch può includere anche
- * dayTargetSnapshot, customTargets, ecc.: tutto tranne rev/revBy/revAt.
+ * dayTargetSnapshot, customTargets, ecc.: tutto tranne rev/revBy/revAt/writeProtocol.
  */
 export const CLIENT_MANAGED_DAY_FIELDS = Object.freeze([
   'data',
@@ -57,7 +61,39 @@ export function isDayNodePermissionDenied(error) {
 }
 
 /**
- * Patch sicuro: niente rev* (li scrive solo il merge) e niente undefined.
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isDayNodeOfflineError(error) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || error || '').toLowerCase();
+  return code.includes('unavailable')
+    || code.includes('network-request-failed')
+    || message.includes('network error')
+    || message.includes('offline')
+    || message.includes('failed to fetch')
+    || message.includes('socket hang up');
+}
+
+/**
+ * @param {unknown} error
+ * @returns {'conflict'|'permission'|'offline'|'outdated'|'unknown'}
+ */
+export function classifyDayWriteError(error) {
+  if (error instanceof DayNodeConflictError || error?.code === 'day_rev_conflict') {
+    return 'conflict';
+  }
+  if (isDayNodeOfflineError(error)) return 'offline';
+  if (isDayNodePermissionDenied(error)) {
+    // Dopo il deploy del writeProtocol, un deny tipico = client troppo vecchio.
+    return 'outdated';
+  }
+  return 'unknown';
+}
+
+/**
+ * Patch sicuro: niente meta rev/writeProtocol (li scrive solo il merge) e niente undefined.
  * @param {Record<string, unknown>} payload
  */
 export function sanitizeDayPatch(payload) {
@@ -65,7 +101,7 @@ export function sanitizeDayPatch(payload) {
   /** @type {Record<string, unknown>} */
   const out = {};
   for (const [key, value] of Object.entries(src)) {
-    if (REV_META_KEYS.has(key) || value === undefined) continue;
+    if (REV_META_KEYS.has(key) || key.startsWith('_') || value === undefined) continue;
     out[key] = value;
   }
   return out;
@@ -115,6 +151,7 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
         rev: seedRev,
         revBy: uid || null,
         revAt: now,
+        writeProtocol: DAY_WRITE_PROTOCOL,
       },
     };
   }
@@ -139,6 +176,7 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
       rev: nextRev,
       revBy: uid || current.revBy || null,
       revAt: now,
+      writeProtocol: DAY_WRITE_PROTOCOL,
     },
   };
 }
@@ -158,6 +196,11 @@ export async function saveDayNodeWithRev({
   const date = String(dateStr || '').trim();
   if (!db || !id || !date) {
     throw new Error('saveDayNodeWithRev: parametri mancanti');
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    const err = new Error('offline');
+    err.code = 'unavailable';
+    throw err;
   }
   const dbPath = `users/${id}/tracker_data/${trackerStoricoKey(date)}`;
   const dayRef = ref(db, dbPath);
@@ -215,29 +258,39 @@ export async function saveDayNodeWithRev({
 }
 
 /**
- * Come saveDayNodeWithRev, ma in caso di conflitto o permission_denied
- * (rev ottimistica rifiutata dalle regole) rilegge e ritenta una volta.
+ * In caso di conflitto o permission_denied rilegge e **riapplica lo stesso patch**
+ * con la rev fresca (la modifica utente non viene scartata).
  * @param {{ db: import('firebase/database').Database, uid: string, dateStr: string, managedFields: object, expectedRev?: number|null }} input
+ * @param {{ maxAttempts?: number }} [opts]
  */
-export async function saveDayNodeWithRevRetry(input) {
-  try {
-    return await saveDayNodeWithRev(input);
-  } catch (err) {
-    const conflict = err instanceof DayNodeConflictError || err?.code === 'day_rev_conflict';
-    const denied = isDayNodePermissionDenied(err);
-    if (!conflict && !denied) throw err;
+export async function saveDayNodeWithRevRetry(input, opts = {}) {
+  const maxAttempts = Math.max(1, Math.min(8, Number(opts.maxAttempts) || 3));
+  let expectedRev = input.expectedRev;
+  let lastErr = null;
 
-    const remote = (conflict && err.remote) || await fetchDayNode({
-      db: input.db,
-      uid: input.uid,
-      dateStr: input.dateStr,
-    });
-    const nextExpected = remote?.rev ?? null;
-    return saveDayNodeWithRev({
-      ...input,
-      expectedRev: nextExpected,
-    });
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      return await saveDayNodeWithRev({
+        ...input,
+        expectedRev,
+      });
+    } catch (err) {
+      lastErr = err;
+      if (isDayNodeOfflineError(err)) throw err;
+      const conflict = err instanceof DayNodeConflictError || err?.code === 'day_rev_conflict';
+      const denied = isDayNodePermissionDenied(err);
+      if (!conflict && !denied) throw err;
+
+      const remote = (conflict && err.remote) || await fetchDayNode({
+        db: input.db,
+        uid: input.uid,
+        dateStr: input.dateStr,
+      });
+      expectedRev = remote?.rev ?? null;
+      // stesso managedFields → riapplicazione sul dato fresco
+    }
   }
+  throw lastErr;
 }
 
 /**
@@ -250,4 +303,29 @@ export async function fetchDayNode({ db, uid, dateStr }) {
   if (!db || !id || !date) return null;
   const snap = await get(ref(db, `users/${id}/tracker_data/${trackerStoricoKey(date)}`));
   return snap.exists() ? snap.val() : null;
+}
+
+/**
+ * Id di voci log / nodi da marcare non salvati.
+ * @param {unknown} log
+ * @param {unknown} manualNodes
+ * @returns {string[]}
+ */
+export function collectDayEntryIds(log, manualNodes) {
+  const ids = [];
+  const pushId = (row) => {
+    const id = row?.id ?? row?.mealId;
+    if (id != null && String(id).trim()) ids.push(String(id));
+    if (Array.isArray(row?.items)) {
+      for (const item of row.items) {
+        const itemId = item?.id;
+        if (itemId != null && String(itemId).trim()) ids.push(String(itemId));
+      }
+    }
+  };
+  const rows = Array.isArray(log) ? log : Object.values(log || {});
+  rows.forEach(pushId);
+  const nodes = Array.isArray(manualNodes) ? manualNodes : Object.values(manualNodes || {});
+  nodes.forEach(pushId);
+  return [...new Set(ids)];
 }

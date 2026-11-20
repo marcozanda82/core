@@ -22,7 +22,15 @@ function sumMacro(items, pick) {
   return items.reduce((sum, item) => sum + (Number(pick(item)) || 0), 0);
 }
 
-function buildDailyMeals(groupedFoods, decimalToTimeStr) {
+function entryUnsaved(item, unsavedEntryIds) {
+  if (!unsavedEntryIds || typeof unsavedEntryIds.has !== 'function') return false;
+  if (item?.id != null && unsavedEntryIds.has(String(item.id))) return true;
+  if (item?.mealId != null && unsavedEntryIds.has(String(item.mealId))) return true;
+  if (item?.mealType != null && unsavedEntryIds.has(String(item.mealType))) return true;
+  return false;
+}
+
+function buildDailyMeals(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
   return Object.keys(groupedFoods || {})
     .map((slotKey) => {
       const items = (groupedFoods[slotKey] || []).filter(
@@ -34,6 +42,8 @@ function buildDailyMeals(groupedFoods, decimalToTimeStr) {
       const sortTime = Number.isFinite(mealTimeRaw) ? mealTimeRaw : 12;
       const pendingCount = items.filter(isUnresolvedMealDraftItem).length;
       const resolved = items.filter((item) => !isUnresolvedMealDraftItem(item));
+      const unsaved = items.some((item) => entryUnsaved(item, unsavedEntryIds))
+        || (unsavedEntryIds?.has?.(String(slotKey)) === true);
       return {
         slotKey,
         mealType,
@@ -43,6 +53,7 @@ function buildDailyMeals(groupedFoods, decimalToTimeStr) {
           : '',
         sortTime,
         pendingCount,
+        unsaved,
         kcal: Math.round(sumMacro(resolved, (item) => item.kcal ?? item.cal)),
         prot: Math.round(sumMacro(resolved, (item) => item.prot ?? item.pro)),
         carb: Math.round(sumMacro(resolved, (item) => item.carb ?? item.carbo ?? item.cho)),
@@ -59,10 +70,11 @@ function DailyMealsList({
   decimalToTimeStr = null,
   onEditMeal = null,
   onDeleteMeal = null,
+  unsavedEntryIds = null,
 }) {
   const meals = useMemo(
-    () => buildDailyMeals(groupedFoods, decimalToTimeStr),
-    [groupedFoods, decimalToTimeStr],
+    () => buildDailyMeals(groupedFoods, decimalToTimeStr, unsavedEntryIds),
+    [groupedFoods, decimalToTimeStr, unsavedEntryIds],
   );
 
   return (
@@ -86,8 +98,10 @@ function DailyMealsList({
                   <h3 className="m-0 truncate text-sm font-semibold text-slate-50">
                     {meal.label}
                   </h3>
-                  <span className="shrink-0 text-xs tabular-nums text-slate-400">
-                    {meal.pendingCount > 0 ? 'Da calcolare' : (meal.timeLabel || 'Registrato')}
+                  <span className={`shrink-0 text-xs tabular-nums ${meal.unsaved ? 'font-semibold text-amber-300' : 'text-slate-400'}`}>
+                    {meal.unsaved
+                      ? 'Non salvato'
+                      : (meal.pendingCount > 0 ? 'Da calcolare' : (meal.timeLabel || 'Registrato'))}
                   </span>
                 </div>
                 <p className="m-0 mt-0.5 truncate text-xs tabular-nums text-slate-300">

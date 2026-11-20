@@ -28,7 +28,14 @@ import {
   resolveDayTargetKcal,
 } from '../../features/mealEngine/resolveDayTargetKcal.js';
 import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
-import { saveDayNodeWithRevRetry } from '../../utils/dayNodeWrite.js';
+import {
+  classifyDayWriteError,
+  saveDayNodeWithRevRetry,
+} from '../../utils/dayNodeWrite.js';
+import {
+  publishDaySaveFailure,
+  userMessageForDaySaveFailure,
+} from '../../utils/daySaveFeedback.js';
 
 /** Chiavi LS globali — indipendenti dal giorno visualizzato nel tracker. */
 export const KENTU_GHOST_SIM_DELTA_LS_KEY = 'kentu_ghost_sim_delta_global';
@@ -315,7 +322,20 @@ export function useGhostSimCompensation({
         version: dayTargetSnapshot?.rulesVersion || null,
         feature: 'dayTargetSnapshot',
       },
-    ).catch((err) => console.warn('[Autopilot] snapshot giornaliero non salvato', err));
+    ).catch((err) => {
+      // Consenti un nuovo tentativo sul prossimo tick (non lasciare lo stamp “ok”).
+      if (lastPersistedAutopilotRef.current === stamp) {
+        lastPersistedAutopilotRef.current = null;
+      }
+      const kind = classifyDayWriteError(err);
+      console.warn('[Autopilot] snapshot giornaliero non salvato', kind, err);
+      publishDaySaveFailure({
+        kind,
+        message: userMessageForDaySaveFailure(kind),
+        dateStr: todayIso,
+        feature: 'dayTargetSnapshot',
+      });
+    });
   }, [
     isViewingToday,
     isSimulationMode,

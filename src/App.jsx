@@ -9,6 +9,7 @@ import AuthLoadingScreen from './components/auth/AuthLoadingScreen';
 import KentuWebSplash from './components/KentuWebSplash.jsx';
 import UserOnboardingWizard from './components/onboarding/UserOnboardingWizard';
 import MealSavingOverlayHost from './components/MealSavingOverlayHost';
+import DaySaveAlertHost from './components/DaySaveAlertHost';
 import NativeAndroidBackHandler from './platform/NativeAndroidBackHandler.jsx';
 import GoogleAssistantInboxListener from './platform/GoogleAssistantInboxListener.jsx';
 import { requestOpenInboxComposer } from './platform/inboxComposerFocusBus';
@@ -187,6 +188,7 @@ function AuthenticatedApp() {
       </Suspense>
       <GlobalChatOverlay />
       <MealSavingOverlayHost />
+      <DaySaveAlertHost />
     </>
   );
 }

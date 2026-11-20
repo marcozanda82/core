@@ -1746,6 +1746,7 @@ export default function SalaComandi() {
     isProfileHydrated,
     fullHistoryLoadState,
     ensureDeepHistory,
+    unsavedEntryIds,
   } = useDiaryFirebaseSync({
     db,
     auth,
@@ -4075,12 +4076,13 @@ export default function SalaComandi() {
   const commitDiaryLogWrite = useCallback((nextLog) => {
     if (isSimulationMode) {
       setSimulatedLog(nextLog);
-      return;
+      return Promise.resolve(true);
     }
-    // Un solo aggiornamento React state; cloud sync non blocca la UI.
+    // UI subito; la Promise risolve solo dopo conferma RTDB (o reject se non salvato).
     setDailyLog(nextLog);
-    void syncDatiFirebase(nextLog, manualNodesRef.current).catch((err) => {
-      console.error('[commitDiaryLogWrite] background sync failed', err);
+    return syncDatiFirebase(nextLog, manualNodesRef.current).catch((err) => {
+      console.error('[commitDiaryLogWrite] sync failed', err);
+      throw err;
     });
   }, [isSimulationMode, setSimulatedLog, setDailyLog, syncDatiFirebase]);
 
@@ -8933,6 +8935,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             selectedDate={currentTrackerDate || getTodayString()}
             isToday={!isViewingPastDate}
             fullHistory={fullHistory}
+            unsavedEntryIds={unsavedEntryIds}
             isIntentionalFast={currentDayIntentionalFast}
             onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
             onClearIntentionalFast={() => handleSetIntentionalFast(false)}
@@ -9031,6 +9034,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             fullHistory,
             fourCylinder: userModel?.fourCylinder ?? null,
             isDiabetesAppMode,
+            unsavedEntryIds,
           }}
         />
       )}
@@ -10089,6 +10093,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             selectedDate={currentTrackerDate || getTodayString()}
             isToday={!isViewingPastDate}
             fullHistory={fullHistory}
+            unsavedEntryIds={unsavedEntryIds}
             isIntentionalFast={currentDayIntentionalFast}
             onMarkIntentionalFast={() => handleSetIntentionalFast(true)}
             onClearIntentionalFast={() => handleSetIntentionalFast(false)}

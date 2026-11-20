@@ -128,7 +128,18 @@ function resolveWorkoutName(workout) {
   return getWorkoutActivityLogDescription(typeId || 'pesi', muscles);
 }
 
-function buildMealSections(groupedFoods, decimalToTimeStr) {
+function mealSectionUnsaved(items, slotKey, unsavedEntryIds) {
+  if (!unsavedEntryIds || typeof unsavedEntryIds.has !== 'function') return false;
+  if (unsavedEntryIds.has(String(slotKey))) return true;
+  return (items || []).some((item) => {
+    if (item?.id != null && unsavedEntryIds.has(String(item.id))) return true;
+    if (item?.mealId != null && unsavedEntryIds.has(String(item.mealId))) return true;
+    if (item?.mealType != null && unsavedEntryIds.has(String(item.mealType))) return true;
+    return false;
+  });
+}
+
+function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
   return Object.keys(groupedFoods || {})
     .map((slotKey) => {
       const items = groupedFoods[slotKey] || [];
@@ -141,6 +152,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
       const label = formatMealSlotLabel(mealType);
       const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
       const pendingCount = countUnresolvedMealDraftItems(items);
+      const unsaved = mealSectionUnsaved(items, slotKey, unsavedEntryIds);
       const resolvedItems = items.filter((f) => !isUnresolvedMealDraftItem(f));
       const subtotalKcal = resolvedItems.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
       const subtotalProt = resolvedItems.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
@@ -158,6 +170,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr) {
         subtotalCarb,
         subtotalFat,
         pendingCount,
+        unsaved,
         items,
         sortTime,
         stimulantOnly: items.length > 0 && items.every((f) => f?.type === 'stimulant'),
@@ -442,6 +455,7 @@ export default function DiaryDetailsSheet({
   selectedDate = '',
   isToday = true,
   fullHistory = null,
+  unsavedEntryIds = null,
   isIntentionalFast = false,
   onMarkIntentionalFast,
   onClearIntentionalFast,
@@ -473,8 +487,8 @@ export default function DiaryDetailsSheet({
   }, [isOpen]);
 
   const mealSections = useMemo(
-    () => buildMealSections(groupedFoods, decimalToTimeStr),
-    [groupedFoods, decimalToTimeStr],
+    () => buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds),
+    [groupedFoods, decimalToTimeStr, unsavedEntryIds],
   );
 
   const workoutEntries = useMemo(
@@ -643,7 +657,11 @@ export default function DiaryDetailsSheet({
                           {section.timeLabel ? (
                             <span className="diary-details-meal__time"> · {section.timeLabel}</span>
                           ) : null}
-                          {section.pendingCount > 0 ? (
+                          {section.unsaved ? (
+                            <span className="diary-badge ml-0 inline-flex rounded-full bg-amber-500/25 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-300">
+                              Non salvato
+                            </span>
+                          ) : section.pendingCount > 0 ? (
                             <span className="diary-badge diary-badge--pending ml-0 inline-flex rounded-full bg-amber-500/20 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-400">
                               {section.pendingCount} da calcolare
                             </span>

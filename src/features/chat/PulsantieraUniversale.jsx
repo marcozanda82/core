@@ -627,6 +627,7 @@ export default function PulsantieraUniversale({
   isDiabetesAppMode = false,
   isAiGuidedModeActive = false,
   embedded = false,
+  unsavedEntryIds = null,
 }) {
   const [activeCategory, setActiveCategory] = useState(null);
   const [guidedMealOrigin, setGuidedMealOrigin] = useState(null);
@@ -1589,6 +1590,7 @@ export default function PulsantieraUniversale({
             decimalToTimeStr={decimalToTimeStr}
             onEditMeal={reloadLoggedMealInMcDrive}
             onDeleteMeal={deleteLoggedMeal}
+            unsavedEntryIds={unsavedEntryIds}
           />
         </div>
       ) : null}

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DAY_WRITE_PROTOCOL,
+  classifyDayWriteError,
   mergeDayNodeWrite,
   sanitizeDayPatch,
 } from '../dayNodeWrite.js';
+import { DayNodeConflictError } from '../dayNodeWrite.js';
 
 test('sanitizeDayPatch toglie rev* e lascia snapshot/customTargets', () => {
   const picked = sanitizeDayPatch({
@@ -17,9 +20,13 @@ test('sanitizeDayPatch toglie rev* e lascia snapshot/customTargets', () => {
     rev: 9,
     revBy: 'x',
     revAt: 1,
+    writeProtocol: 99,
+    _syncStatus: 'failed',
   });
   assert.equal(picked.rev, undefined);
   assert.equal(picked.revBy, undefined);
+  assert.equal(picked.writeProtocol, undefined);
+  assert.equal(picked._syncStatus, undefined);
   assert.equal(picked.dayTargetSnapshot.total, 2456);
   assert.equal(picked.customTargets.kcal, 2600);
 });
@@ -36,6 +43,7 @@ test('merge: nodo nuovo → rev 1, senza cancellare nulla di esterno (non c’è
   assert.equal(next.rev, 1);
   assert.equal(next.revBy, 'u1');
   assert.equal(next.revAt, 1000);
+  assert.equal(next.writeProtocol, DAY_WRITE_PROTOCOL);
 });
 
 test('merge: preserva dayTargetSnapshot e customTargets', () => {
@@ -58,6 +66,7 @@ test('merge: preserva dayTargetSnapshot e customTargets', () => {
   assert.deepEqual(next.log, [{ id: 'new' }]);
   assert.equal(next.rev, 4);
   assert.equal(next.revBy, 'u2');
+  assert.equal(next.writeProtocol, DAY_WRITE_PROTOCOL);
 });
 
 test('merge: rev non allineata → conflitto (client con dati vecchi)', () => {
@@ -104,4 +113,10 @@ test('isDayNodePermissionDenied riconosce il codice Firebase', async () => {
   assert.equal(isDayNodePermissionDenied({ code: 'permission-denied' }), true);
   assert.equal(isDayNodePermissionDenied({ message: 'transaction failed: permission_denied' }), true);
   assert.equal(isDayNodePermissionDenied({ code: 'unavailable' }), false);
+});
+
+test('classifyDayWriteError: conflict / offline / outdated', () => {
+  assert.equal(classifyDayWriteError(new DayNodeConflictError({ currentRev: 2 })), 'conflict');
+  assert.equal(classifyDayWriteError({ code: 'unavailable', message: 'offline' }), 'offline');
+  assert.equal(classifyDayWriteError({ code: 'PERMISSION_DENIED' }), 'outdated');
 });

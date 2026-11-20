@@ -117,6 +117,7 @@ test('regole: client nuovo crea giorno con rev=1 → ok', async () => {
       mealTimes: {},
       dayTargetSnapshot: { total: 2516 },
       rev: 1,
+      writeProtocol: 1,
       revBy: UID,
       revAt: Date.now(),
     },
@@ -166,6 +167,7 @@ test('regole: set senza incrementare rev → rifiutato; rev+1 → ok', async () 
       dayTargetSnapshot: { total: 2456 },
       customTargets: { kcal: 2600 },
       rev: 4,
+      writeProtocol: 1,
       revBy: UID,
       revAt: Date.now(),
     },
@@ -304,6 +306,7 @@ test('regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato'
       autopilotCorrection: -100,
       dayTargetSnapshot: { ...live0.dayTargetSnapshot, autopilot: -100, total: 1900 },
       rev: 1,
+      writeProtocol: 1,
       revBy: UID,
       revAt: Date.now(),
     },
@@ -335,6 +338,7 @@ test('regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tip
       autopilotCorrection: -120,
       dayTargetSnapshot: { total: 1880, autopilot: -120, rulesVersion: 'dtr-1' },
       rev: 1,
+      writeProtocol: 1,
       revBy: UID,
       revAt: Date.now(),
     },
@@ -475,4 +479,137 @@ test('bozza: consume su external_drafts + pasto sul giorno nello stesso flusso',
   assert.equal(draft.status, 'consumed');
   assert.equal(draft.rawText, 'yogurt 150g');
   assert.equal(draft.items[0].foodName, 'Yogurt');
+});
+
+test('caso conflitto: retry riapplica il pasto sul dato fresco (non lo scarta)', async () => {
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [{ type: 'sleep', id: 'sleep_keep', hours: 7 }],
+    mealTimes: {},
+    dayTargetSnapshot: { total: 2000 },
+    rev: 6,
+    writeProtocol: 1,
+    revBy: UID,
+    revAt: Date.now(),
+  });
+
+  const mealPatch = {
+    data: DATE,
+    log: [
+      { type: 'sleep', id: 'sleep_keep', hours: 7 },
+      {
+        type: 'meal',
+        mealId: 'race_meal',
+        desc: 'Pranzo',
+        items: [{ id: 'f_race', foodName: 'Pane', grams: 100 }],
+      },
+    ],
+    mealTimes: { race_meal: 7.28 },
+    hasEditedNodes: true,
+  };
+
+  // expectedRev stantia (5 vs 6): prima passata confligge, retry rilegge e riapplica.
+  const retried = await saveDayNodeWithRevRetry({
+    db: clientDb,
+    uid: UID,
+    dateStr: DATE,
+    managedFields: mealPatch,
+    expectedRev: 5,
+  });
+
+  assert.equal(retried.node.rev, 7);
+  assert.ok(retried.node.log.some((row) => row.mealId === 'race_meal'));
+  assert.equal(retried.node.log.find((row) => row.mealId === 'race_meal').items[0].foodName, 'Pane');
+  assert.equal(retried.node.writeProtocol, 1);
+  assert.equal(retried.node.dayTargetSnapshot.total, 2000);
+});
+
+test('caso rifiuto: set senza writeProtocol / senza rev → deny (app vecchia)', async () => {
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [],
+    rev: 2,
+    writeProtocol: 1,
+  });
+
+  const noProtocol = await emulatorRestPut(
+    DAY_PATH,
+    {
+      data: DATE,
+      log: [{ id: 'old', type: 'food', foodName: 'Mela' }],
+      mealTimes: {},
+      rev: 3,
+      revBy: UID,
+      revAt: Date.now(),
+    },
+    { idToken: token },
+  );
+  assert.equal(noProtocol.denied, true, noProtocol.raw);
+
+  const noRev = await emulatorRestPut(
+    DAY_PATH,
+    {
+      data: DATE,
+      log: [{ id: 'old', type: 'food', foodName: 'Mela' }],
+      mealTimes: {},
+      writeProtocol: 1,
+    },
+    { idToken: token },
+  );
+  assert.equal(noRev.denied, true, noRev.raw);
+  assert.equal((await adminDb.ref(DAY_PATH).get()).val().rev, 2);
+});
+
+test('caso offline: saveDayNodeWithRev fallisce senza scrivere', async () => {
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [{ id: 'keep', type: 'food', foodName: 'Yogurt' }],
+    rev: 3,
+    writeProtocol: 1,
+  });
+
+  const desc = Object.getOwnPropertyDescriptor(globalThis.navigator || {}, 'onLine');
+  const hadNav = typeof globalThis.navigator !== 'undefined';
+  if (!hadNav) {
+    globalThis.navigator = { onLine: false };
+  } else {
+    Object.defineProperty(globalThis.navigator, 'onLine', {
+      configurable: true,
+      get: () => false,
+    });
+  }
+
+  let err = null;
+  try {
+    await saveDayNodeWithRev({
+      db: clientDb,
+      uid: UID,
+      dateStr: DATE,
+      managedFields: {
+        log: [{ id: 'keep', type: 'food', foodName: 'Yogurt' }, { id: 'new', type: 'food', foodName: 'Pane' }],
+      },
+      expectedRev: 3,
+    });
+  } catch (e) {
+    err = e;
+  } finally {
+    if (!hadNav) {
+      delete globalThis.navigator;
+    } else if (desc) {
+      Object.defineProperty(globalThis.navigator, 'onLine', desc);
+    } else {
+      Object.defineProperty(globalThis.navigator, 'onLine', {
+        configurable: true,
+        writable: true,
+        value: true,
+      });
+    }
+  }
+
+  assert.ok(err);
+  assert.equal(String(err.code || '').includes('unavailable') || /offline/i.test(String(err.message)), true);
+  const live = (await adminDb.ref(DAY_PATH).get()).val();
+  assert.equal(live.rev, 3);
+  assert.equal(live.log.length, 1);
+  assert.equal(live.log[0].foodName, 'Yogurt');
 });

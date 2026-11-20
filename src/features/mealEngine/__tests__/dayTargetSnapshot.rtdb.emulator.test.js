@@ -76,6 +76,7 @@ test('dayTargetSnapshot: scrittura giorno con rev+1 accettata (preserva via nodo
       autopilotCorrection: 40,
       dayTargetSnapshot,
       rev: 2,
+      writeProtocol: 1,
       revBy: UID,
       revAt: Date.now(),
     },

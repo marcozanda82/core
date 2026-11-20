@@ -386,7 +386,9 @@ export function useTimelineDiaryActions({
           await Promise.resolve(syncDatiFirebase(nuovoLog, manualNodes || []));
         }
       } catch (err) {
-        console.error('[handleFastLoggerSave] sync fallita, pasto comunque in locale', err);
+        // Pasto resta in UI locale come non salvato; non segnalare successo all'overlay.
+        console.error('[handleFastLoggerSave] sync fallita', err);
+        throw err;
       }
 
       return true;
