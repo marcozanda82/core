@@ -12,6 +12,13 @@ import { get, ref, runTransaction } from 'firebase/database';
 
 const trackerStoricoKey = (date) => `trackerStorico_${String(date || '').trim()}`;
 const REV_META_KEYS = new Set(['rev', 'revBy', 'revAt', 'writeProtocol']);
+/** Chiavi di controllo merge: non vanno persistite sul nodo. */
+const MERGE_CONTROL_KEYS = new Set(['logDeleteIds', 'manualNodesDeleteIds']);
+/** Liste voci: mai sostituire con un array più corto senza delete espliciti. */
+const ENTRY_LIST_KEYS = Object.freeze({
+  log: 'logDeleteIds',
+  manualNodes: 'manualNodesDeleteIds',
+});
 
 /** Protocollo scritture giorno richiesto dalle regole RTDB. */
 export const DAY_WRITE_PROTOCOL = 1;
@@ -93,7 +100,160 @@ export function classifyDayWriteError(error) {
 }
 
 /**
+ * Id stabile di una voce log / manualNode (meal → mealId, altrimenti id).
+ * @param {unknown} row
+ * @returns {string|null}
+ */
+export function dayEntryKey(row) {
+  if (!row || typeof row !== 'object') return null;
+  const mealId = row.mealId;
+  if (mealId != null && String(mealId).trim()) return String(mealId).trim();
+  const id = row.id;
+  if (id != null && String(id).trim()) return String(id).trim();
+  return null;
+}
+
+/**
+ * Normalizza una lista voci (array o mappa Firebase) in array.
+ * @param {unknown} list
+ * @returns {object[]}
+ */
+export function coerceEntryList(list) {
+  if (Array.isArray(list)) return list.filter((row) => row && typeof row === 'object');
+  if (list && typeof list === 'object') {
+    return Object.values(list).filter((row) => row && typeof row === 'object');
+  }
+  return [];
+}
+
+/**
+ * Merge per id: server ∪ client (client vince sui campi della stessa voce).
+ * Le voci solo sul server restano. Remozioni solo via deleteIds espliciti.
+ * @param {unknown} serverList
+ * @param {unknown} clientList
+ * @param {unknown} deleteIds
+ * @returns {object[]}
+ */
+export function mergeEntryListsById(serverList, clientList, deleteIds = null) {
+  const del = new Set(
+    (Array.isArray(deleteIds) ? deleteIds : [])
+      .map((id) => String(id || '').trim())
+      .filter(Boolean),
+  );
+  /** @type {Map<string, object>} */
+  const byId = new Map();
+  /** @type {string[]} */
+  const order = [];
+  /** @type {object[]} */
+  const anon = [];
+
+  const take = (row, preferClient) => {
+    const key = dayEntryKey(row);
+    if (!key) {
+      anon.push(row);
+      return;
+    }
+    if (del.has(key)) return;
+    if (byId.has(key)) {
+      byId.set(key, preferClient ? { ...byId.get(key), ...row } : byId.get(key));
+      return;
+    }
+    byId.set(key, row);
+    order.push(key);
+  };
+
+  for (const row of coerceEntryList(serverList)) take(row, false);
+  for (const row of coerceEntryList(clientList)) take(row, true);
+
+  return [...order.map((key) => byId.get(key)), ...anon];
+}
+
+/**
+ * Confronto profondo stabile (ordine chiavi irrilevante).
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {boolean}
+ */
+export function dayValuesEqual(a, b) {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return a === b;
+  return stableDayJson(a) === stableDayJson(b);
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function stableDayJson(value) {
+  if (value === undefined) return 'null';
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableDayJson(item)).join(',')}]`;
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableDayJson(value[k])}`).join(',')}}`;
+}
+
+/**
+ * True se applicare `patchFields` sul nodo server non cambierebbe nessun campo gestito
+ * (merge-by-id per log/manualNodes). Usato per non bumpare `rev` a vuoto.
+ * @param {Record<string, unknown>|null|undefined} current
+ * @param {Record<string, unknown>} patchFields
+ * @returns {boolean}
+ */
+export function managedPatchIsNoop(current, patchFields) {
+  if (current == null || typeof current !== 'object') return false;
+  const managed = sanitizeDayPatch(patchFields);
+  const keys = Object.keys(managed);
+  if (keys.length === 0) return true;
+
+  const logDeletes = Array.isArray(managed.logDeleteIds)
+    ? managed.logDeleteIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  const manualDeletes = Array.isArray(managed.manualNodesDeleteIds)
+    ? managed.manualNodesDeleteIds.map((id) => String(id || '').trim()).filter(Boolean)
+    : [];
+  if (logDeletes.length > 0 || manualDeletes.length > 0) return false;
+
+  for (const [key, value] of Object.entries(managed)) {
+    if (MERGE_CONTROL_KEYS.has(key)) continue;
+
+    if (key === 'log' || key === 'manualNodes') {
+      const deleteKey = ENTRY_LIST_KEYS[key];
+      const merged = mergeEntryListsById(current[key], value, managed[deleteKey]);
+      if (!dayValuesEqual(merged, coerceEntryList(current[key]))) return false;
+      continue;
+    }
+
+    if (key === 'mealTimes') {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        if (!dayValuesEqual(value, current.mealTimes)) return false;
+        continue;
+      }
+      const prev = current.mealTimes && typeof current.mealTimes === 'object' && !Array.isArray(current.mealTimes)
+        ? current.mealTimes
+        : {};
+      const next = { ...prev, ...value };
+      if (!dayValuesEqual(next, prev)) return false;
+      continue;
+    }
+
+    // null in patch = delete chiave RTDB
+    if (value === null) {
+      if (current[key] != null) return false;
+      continue;
+    }
+
+    if (!dayValuesEqual(value, current[key])) return false;
+  }
+  return true;
+}
+
+/**
  * Patch sicuro: niente meta rev/writeProtocol (li scrive solo il merge) e niente undefined.
+ * Consente logDeleteIds / manualNodesDeleteIds (strip al merge, non persistiti).
  * @param {Record<string, unknown>} payload
  */
 export function sanitizeDayPatch(payload) {
@@ -102,6 +262,8 @@ export function sanitizeDayPatch(payload) {
   const out = {};
   for (const [key, value] of Object.entries(src)) {
     if (REV_META_KEYS.has(key) || key.startsWith('_') || value === undefined) continue;
+    // null su liste voci = ometti (non cancellare la chiave sul server via spread)
+    if ((key === 'log' || key === 'manualNodes') && value == null) continue;
     out[key] = value;
   }
   return out;
@@ -144,10 +306,17 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
     const seedRev = expectedRev != null && Number.isFinite(expectedRev) && expectedRev > 0
       ? Math.floor(expectedRev) + 1
       : 1;
+    /** @type {Record<string, unknown>} */
+    const seed = { ...managed };
+    for (const [listKey, deleteKey] of Object.entries(ENTRY_LIST_KEYS)) {
+      if (!Object.prototype.hasOwnProperty.call(managed, listKey)) continue;
+      seed[listKey] = mergeEntryListsById(null, managed[listKey], managed[deleteKey]);
+    }
+    for (const key of MERGE_CONTROL_KEYS) delete seed[key];
     return {
       ok: true,
       next: {
-        ...managed,
+        ...seed,
         rev: seedRev,
         revBy: uid || null,
         revAt: now,
@@ -168,11 +337,45 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
   }
 
   const nextRev = hasRev ? currentRevNum + 1 : 1;
+  /** @type {Record<string, unknown>} */
+  const applied = { ...managed };
+  for (const [listKey, deleteKey] of Object.entries(ENTRY_LIST_KEYS)) {
+    if (!Object.prototype.hasOwnProperty.call(managed, listKey)) continue;
+    applied[listKey] = mergeEntryListsById(
+      current[listKey],
+      managed[listKey],
+      managed[deleteKey],
+    );
+  }
+  for (const key of MERGE_CONTROL_KEYS) {
+    delete applied[key];
+  }
+
+  // mealTimes: unione per chiave (non azzerare orari presenti sul server)
+  if (
+    Object.prototype.hasOwnProperty.call(managed, 'mealTimes')
+    && managed.mealTimes
+    && typeof managed.mealTimes === 'object'
+    && !Array.isArray(managed.mealTimes)
+  ) {
+    const prevTimes = current.mealTimes && typeof current.mealTimes === 'object' && !Array.isArray(current.mealTimes)
+      ? current.mealTimes
+      : {};
+    applied.mealTimes = { ...prevTimes, ...managed.mealTimes };
+    const logDeletes = Array.isArray(managed.logDeleteIds) ? managed.logDeleteIds : [];
+    for (const id of logDeletes) {
+      const k = String(id || '').trim();
+      if (k && Object.prototype.hasOwnProperty.call(applied.mealTimes, k)) {
+        delete applied.mealTimes[k];
+      }
+    }
+  }
+
   return {
     ok: true,
     next: {
       ...current,
-      ...managed,
+      ...applied,
       rev: nextRev,
       revBy: uid || current.revBy || null,
       revAt: now,
@@ -183,7 +386,7 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
 
 /**
  * @param {{ db: import('firebase/database').Database, uid: string, dateStr: string, managedFields: object, expectedRev?: number|null }} input
- * @returns {Promise<{ node: object, rev: number, conflict: false }>}
+ * @returns {Promise<{ node: object, rev: number, conflict: false, skipped?: boolean }>}
  */
 export async function saveDayNodeWithRev({
   db,
@@ -220,10 +423,24 @@ export async function saveDayNodeWithRev({
     effectiveExpected = warmedRevNum;
   }
 
+  // Nessun bump rev se i campi gestiti sono già allineati al server.
+  if (warmed && managedPatchIsNoop(warmed, managedFields)) {
+    return {
+      node: warmed,
+      rev: warmedHasRev ? warmedRevNum : 1,
+      conflict: false,
+      skipped: true,
+    };
+  }
+
   let conflictRemote = null;
   let conflictRev = null;
 
   const result = await runTransaction(dayRef, (current) => {
+    // Race: tra get() e txn il nodo può essere già allineato.
+    if (current && typeof current === 'object' && managedPatchIsNoop(current, managedFields)) {
+      return; // abort senza scrivere
+    }
     const merged = mergeDayNodeWrite(current, managedFields, {
       expectedRev: effectiveExpected,
       uid: id,
@@ -241,6 +458,15 @@ export async function saveDayNodeWithRev({
     const remote = conflictRemote
       || (result.snapshot?.exists?.() ? result.snapshot.val() : null)
       || warmed;
+    // Abort per noop in-txn: non è un conflitto.
+    if (remote && managedPatchIsNoop(remote, managedFields)) {
+      return {
+        node: remote,
+        rev: Number(remote?.rev) || 1,
+        conflict: false,
+        skipped: true,
+      };
+    }
     throw new DayNodeConflictError({
       dateStr: date,
       currentRev: conflictRev ?? (remote?.rev ?? null),
@@ -254,12 +480,14 @@ export async function saveDayNodeWithRev({
     node,
     rev: Number(node?.rev) || 1,
     conflict: false,
+    skipped: false,
   };
 }
 
 /**
  * In caso di conflitto o permission_denied rilegge e **riapplica lo stesso patch**
- * con la rev fresca (la modifica utente non viene scartata).
+ * con la rev fresca. Per log/manualNodes il merge è per id sul dato fresco
+ * (non sostituzione dell'array completo → niente wipe di voci altrui).
  * @param {{ db: import('firebase/database').Database, uid: string, dateStr: string, managedFields: object, expectedRev?: number|null }} input
  * @param {{ maxAttempts?: number }} [opts]
  */
@@ -287,7 +515,7 @@ export async function saveDayNodeWithRevRetry(input, opts = {}) {
         dateStr: input.dateStr,
       });
       expectedRev = remote?.rev ?? null;
-      // stesso managedFields → riapplicazione sul dato fresco
+      // stesso managedFields → merge-by-id sul dato fresco (log/manualNodes)
     }
   }
   throw lastErr;
@@ -303,6 +531,24 @@ export async function fetchDayNode({ db, uid, dateStr }) {
   if (!db || !id || !date) return null;
   const snap = await get(ref(db, `users/${id}/tracker_data/${trackerStoricoKey(date)}`));
   return snap.exists() ? snap.val() : null;
+}
+
+/**
+ * Id presenti in `before` e assenti in `after` (cancellazione esplicita da passare al writer).
+ * @param {unknown} beforeList
+ * @param {unknown} afterList
+ * @returns {string[]}
+ */
+export function diffRemovedEntryIds(beforeList, afterList) {
+  const afterKeys = new Set(
+    coerceEntryList(afterList).map((row) => dayEntryKey(row)).filter(Boolean),
+  );
+  const out = [];
+  for (const row of coerceEntryList(beforeList)) {
+    const key = dayEntryKey(row);
+    if (key && !afterKeys.has(key)) out.push(key);
+  }
+  return [...new Set(out)];
 }
 
 /**

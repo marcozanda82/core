@@ -3,7 +3,10 @@ import test from 'node:test';
 import {
   DAY_WRITE_PROTOCOL,
   classifyDayWriteError,
+  diffRemovedEntryIds,
+  managedPatchIsNoop,
   mergeDayNodeWrite,
+  mergeEntryListsById,
   sanitizeDayPatch,
 } from '../dayNodeWrite.js';
 import { DayNodeConflictError } from '../dayNodeWrite.js';
@@ -46,7 +49,7 @@ test('merge: nodo nuovo → rev 1, senza cancellare nulla di esterno (non c’è
   assert.equal(next.writeProtocol, DAY_WRITE_PROTOCOL);
 });
 
-test('merge: preserva dayTargetSnapshot e customTargets', () => {
+test('merge: preserva dayTargetSnapshot e customTargets; log merge per id', () => {
   const current = {
     data: '2026-11-10',
     log: [{ id: 'old' }],
@@ -63,10 +66,106 @@ test('merge: preserva dayTargetSnapshot e customTargets', () => {
   assert.equal(ok, true);
   assert.deepEqual(next.dayTargetSnapshot, { total: 2516, rulesVersion: 'dtr-1' });
   assert.deepEqual(next.customTargets, { kcal: 2600 });
-  assert.deepEqual(next.log, [{ id: 'new' }]);
+  // senza logDeleteIds la voce solo-server resta
+  assert.deepEqual(next.log, [{ id: 'old' }, { id: 'new' }]);
   assert.equal(next.rev, 4);
   assert.equal(next.revBy, 'u2');
   assert.equal(next.writeProtocol, DAY_WRITE_PROTOCOL);
+});
+
+test('mergeEntryListsById: non shrink senza delete; delete esplicito ok', () => {
+  const merged = mergeEntryListsById(
+    [{ id: 'a' }, { id: 'b', label: 'server' }],
+    [{ id: 'b', label: 'client' }, { id: 'c' }],
+  );
+  assert.deepEqual(merged, [
+    { id: 'a' },
+    { id: 'b', label: 'client' },
+    { id: 'c' },
+  ]);
+  const afterDelete = mergeEntryListsById(
+    [{ id: 'a' }, { id: 'b' }],
+    [{ id: 'b' }],
+    ['a'],
+  );
+  assert.deepEqual(afterDelete, [{ id: 'b' }]);
+});
+
+test('merge: array log vuoto senza deleteIds non cancella voci server', () => {
+  const current = {
+    data: '2026-11-20',
+    log: [{ id: 'sleep_1', type: 'sleep' }],
+    manualNodes: [{ id: 'c1', type: 'stimulant', label: 'Caffè' }],
+    rev: 10,
+  };
+  const { ok, next } = mergeDayNodeWrite(current, {
+    data: '2026-11-20',
+    log: [{ id: 'sleep_1', type: 'sleep' }],
+    manualNodes: [],
+    hasEditedNodes: true,
+  }, { expectedRev: 10, uid: 'u', now: 1 });
+  assert.equal(ok, true);
+  assert.equal(next.manualNodes.length, 1);
+  assert.equal(next.manualNodes[0].id, 'c1');
+  assert.equal(next.logDeleteIds, undefined);
+});
+
+test('merge: logDeleteIds / manualNodesDeleteIds rimuovono e non restano sul nodo', () => {
+  const current = {
+    data: '2026-11-20',
+    log: [{ id: 'sleep_1' }, { mealId: 'pranzo_1', type: 'meal' }],
+    manualNodes: [{ id: 'c1' }, { id: 'c2' }],
+    mealTimes: { pranzo_1: 13 },
+    rev: 2,
+  };
+  const { ok, next } = mergeDayNodeWrite(current, {
+    data: '2026-11-20',
+    log: [{ id: 'sleep_1' }],
+    manualNodes: [{ id: 'c2' }],
+    mealTimes: {},
+    logDeleteIds: ['pranzo_1'],
+    manualNodesDeleteIds: ['c1'],
+  }, { expectedRev: 2, uid: 'u', now: 2 });
+  assert.equal(ok, true);
+  assert.deepEqual(next.log.map((r) => r.id || r.mealId), ['sleep_1']);
+  assert.deepEqual(next.manualNodes.map((r) => r.id), ['c2']);
+  assert.equal(next.mealTimes.pranzo_1, undefined);
+  assert.equal(next.logDeleteIds, undefined);
+  assert.equal(next.manualNodesDeleteIds, undefined);
+});
+
+test('diffRemovedEntryIds', () => {
+  assert.deepEqual(
+    diffRemovedEntryIds([{ id: 'a' }, { mealId: 'm1' }], [{ id: 'a' }]),
+    ['m1'],
+  );
+});
+
+test('managedPatchIsNoop: autopilot/snapshot invariati → true; cambio → false', () => {
+  const current = {
+    data: '2026-11-20',
+    log: [{ id: 'sleep_1', type: 'sleep' }],
+    manualNodes: [{ id: 'c1', label: 'Caffè' }],
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+    rev: 53,
+  };
+  assert.equal(managedPatchIsNoop(current, {
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+  }), true);
+  assert.equal(managedPatchIsNoop(current, {
+    autopilotCorrection: 200,
+    dayTargetSnapshot: { total: 2657, autopilot: 200, rulesVersion: 'dtr-1' },
+  }), false);
+  assert.equal(managedPatchIsNoop(current, {
+    log: [{ id: 'sleep_1', type: 'sleep' }],
+    manualNodes: [{ id: 'c1', label: 'Caffè' }],
+  }), true);
+  assert.equal(managedPatchIsNoop(current, {
+    manualNodes: [],
+    manualNodesDeleteIds: ['c1'],
+  }), false);
 });
 
 test('merge: rev non allineata → conflitto (client con dati vecchi)', () => {

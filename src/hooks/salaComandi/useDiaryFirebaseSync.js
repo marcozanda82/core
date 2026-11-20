@@ -35,6 +35,7 @@ import {
 import {
   classifyDayWriteError,
   collectDayEntryIds,
+  managedPatchIsNoop,
   sanitizeDayPatch,
   saveDayNodeWithRevRetry,
 } from '../../utils/dayNodeWrite.js';
@@ -545,9 +546,16 @@ export function useDiaryFirebaseSync({
     return () => document.removeEventListener('visibilitychange', refreshHistoryOnForeground);
   }, [user?.uid, db, isSimulationMode, setFullHistory, setFullStorico]);
 
-  /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */
+  /**
+   * Sincronizzazione esplicita su Firebase.
+   * @param {object[]} nuovoLog
+   * @param {object[]} nuoviNodi
+   * @param {{ logDeleteIds?: string[], manualNodesDeleteIds?: string[] }} [opts]
+   *   Cancellazioni esplicite: senza queste, il merge server-side conserva le voci
+   *   presenti sul nodo anche se assenti dallo snapshot locale (anti-wipe).
+   */
   const syncDatiFirebase = useCallback(
-    (nuovoLog, nuoviNodi) => {
+    (nuovoLog, nuoviNodi, opts = {}) => {
       if (isSimulationMode) return Promise.resolve(false);
       const currentUser = auth.currentUser;
       if (!currentUser) {
@@ -587,12 +595,20 @@ export function useDiaryFirebaseSync({
         const existingNode = fullHistory?.[storicoKey];
         const keepIntentionalFast =
           !dayHasFoodLog(sanitizedLog) && existingNode?.isIntentionalFast === true;
+        const logDeleteIds = Array.isArray(opts?.logDeleteIds)
+          ? opts.logDeleteIds.map((id) => String(id || '').trim()).filter(Boolean)
+          : [];
+        const manualNodesDeleteIds = Array.isArray(opts?.manualNodesDeleteIds)
+          ? opts.manualNodesDeleteIds.map((id) => String(id || '').trim()).filter(Boolean)
+          : [];
         const payload = withPreservedAutopilotCorrection({
           data: dateStr,
           log: sanitizedLog,
           mealTimes,
           manualNodes: sanitizedNodes,
           hasEditedNodes: true,
+          ...(logDeleteIds.length ? { logDeleteIds } : {}),
+          ...(manualNodesDeleteIds.length ? { manualNodesDeleteIds } : {}),
           ...(keepIntentionalFast ? { isIntentionalFast: true } : { isIntentionalFast: null }),
         }, existingNode);
         if (dateStr === today && autopilotCorrectionRef) {
@@ -601,6 +617,16 @@ export function useDiaryFirebaseSync({
         const managed = sanitizeDayPatch(stripUndefined(payload));
         const expectedRev = existingNode?.rev ?? null;
         const entryIds = collectDayEntryIds(nuovoLog, nuoviNodi);
+
+        // Nessuna azione utente effettiva vs cache giorno → non bumpare rev.
+        if (
+          existingNode
+          && !logDeleteIds.length
+          && !manualNodesDeleteIds.length
+          && managedPatchIsNoop(existingNode, managed)
+        ) {
+          return Promise.resolve(true);
+        }
 
         writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
 

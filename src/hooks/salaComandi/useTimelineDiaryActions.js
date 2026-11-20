@@ -11,6 +11,7 @@ import { toCanonicalDiaryFoodItem } from '../../features/mealEngine/canonicalMea
 import { applyCondimentToFoods, withCondiments } from '../../features/nutrition/condiments.js';
 import { rememberRecentFoodPortion } from '../../features/commandTerminal/conversation/userPortionsMemory.js';
 import { coerceDiaryMealTime, getFoodItemsForMealSlotFromLog, parseCompositeMealSlotId } from '../../utils/mealProposalBuilders';
+import { diffRemovedEntryIds } from '../../utils/dayNodeWrite';
 
 /**
  * Undo/redo timeline, drag & drop nodi, salvataggio FastLogger, edit nodi manuali.
@@ -195,7 +196,9 @@ export function useTimelineDiaryActions({
         const idSet = new Set(itemIds.map((x) => String(x)));
         const newLog = dlSnap.filter((item) => !idSet.has(String(item.id)));
         setDailyLog(newLog);
-        syncDatiFirebase(newLog, mnSnap);
+        syncDatiFirebase(newLog, mnSnap, {
+          logDeleteIds: [slotId, ...itemIds.map(String)],
+        });
         pushTimelineUndoSnapshot(newLog, mnSnap);
       } else {
         const removed = dlSnap.find((item) => idMatch(item.id, dragId))
@@ -204,7 +207,12 @@ export function useTimelineDiaryActions({
         const newNodes = mnSnap.filter((n) => !idMatch(n.id, dragId));
         setDailyLog(newLog);
         setManualNodes(newNodes);
-        syncDatiFirebase(newLog, newNodes);
+        const inLog = Boolean(removed && dlSnap.some((item) => idMatch(item.id, dragId)));
+        const inManual = Boolean(removed && mnSnap.some((n) => idMatch(n.id, dragId)));
+        syncDatiFirebase(newLog, newNodes, {
+          ...(inLog ? { logDeleteIds: [String(dragId)] } : {}),
+          ...(inManual ? { manualNodesDeleteIds: [String(dragId)] } : {}),
+        });
         pushTimelineUndoSnapshot(newLog, newNodes);
         triggerFourCylinderRebuild(removed, newLog, newNodes);
       }
@@ -217,24 +225,38 @@ export function useTimelineDiaryActions({
     const newIndex = historyIndex - 1;
     const prev = historyStack[newIndex];
     if (!prev) return;
+    const curLog = dailyLogRef.current || [];
+    const curNodes = manualNodesRef.current || [];
     setHistoryIndex(newIndex);
     setDailyLog(prev.dailyLog);
     setManualNodes(prev.manualNodes);
-    syncDatiFirebase(prev.dailyLog, prev.manualNodes);
+    const logDeleteIds = diffRemovedEntryIds(curLog, prev.dailyLog);
+    const manualNodesDeleteIds = diffRemovedEntryIds(curNodes, prev.manualNodes);
+    syncDatiFirebase(prev.dailyLog, prev.manualNodes, {
+      ...(logDeleteIds.length ? { logDeleteIds } : {}),
+      ...(manualNodesDeleteIds.length ? { manualNodesDeleteIds } : {}),
+    });
     setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase, setDailyLog, setManualNodes]);
+  }, [historyIndex, historyStack, syncDatiFirebase, setDailyLog, setManualNodes, dailyLogRef, manualNodesRef]);
 
   const handleRedo = useCallback(() => {
     if (historyIndex >= historyStack.length - 1) return;
     const newIndex = historyIndex + 1;
     const next = historyStack[newIndex];
     if (!next) return;
+    const curLog = dailyLogRef.current || [];
+    const curNodes = manualNodesRef.current || [];
     setHistoryIndex(newIndex);
     setDailyLog(next.dailyLog);
     setManualNodes(next.manualNodes);
-    syncDatiFirebase(next.dailyLog, next.manualNodes);
+    const logDeleteIds = diffRemovedEntryIds(curLog, next.dailyLog);
+    const manualNodesDeleteIds = diffRemovedEntryIds(curNodes, next.manualNodes);
+    syncDatiFirebase(next.dailyLog, next.manualNodes, {
+      ...(logDeleteIds.length ? { logDeleteIds } : {}),
+      ...(manualNodesDeleteIds.length ? { manualNodesDeleteIds } : {}),
+    });
     setShowUndoToast(false);
-  }, [historyIndex, historyStack, syncDatiFirebase, setDailyLog, setManualNodes]);
+  }, [historyIndex, historyStack, syncDatiFirebase, setDailyLog, setManualNodes, dailyLogRef, manualNodesRef]);
 
   const handleFastLoggerSave = useCallback(
     async (draftFoods, targetMealType, editMealId, customMealTime) => {
@@ -420,7 +442,12 @@ export function useTimelineDiaryActions({
       const newNodes = manualNodes.filter((n) => n.id !== id);
       setDailyLog(newLog);
       setManualNodes(newNodes);
-      syncDatiFirebase(newLog, newNodes);
+      const inLog = dailyLog.some((item) => item.id === id);
+      const inManual = manualNodes.some((n) => n.id === id);
+      syncDatiFirebase(newLog, newNodes, {
+        ...(inLog ? { logDeleteIds: [String(id)] } : {}),
+        ...(inManual ? { manualNodesDeleteIds: [String(id)] } : {}),
+      });
       triggerFourCylinderRebuild(removed, newLog, newNodes);
     },
     [isSimulationMode, dailyLog, manualNodes, syncDatiFirebase, setDailyLog, setManualNodes, setSimulatedLog, triggerFourCylinderRebuild],
@@ -609,12 +636,12 @@ export function useTimelineDiaryActions({
     if (dragType === 'ghost_meal') {
       const nextLog = dl.filter((e) => e.id !== nodeId);
       setDailyLog(nextLog);
-      syncDatiFirebase(nextLog, mn);
+      syncDatiFirebase(nextLog, mn, { logDeleteIds: [String(nodeId)] });
       pushTimelineUndoSnapshot(nextLog, mn);
     } else {
       const nextNodes = mn.filter((n) => n.id !== nodeId);
       setManualNodes(nextNodes);
-      syncDatiFirebase(dl, nextNodes);
+      syncDatiFirebase(dl, nextNodes, { manualNodesDeleteIds: [String(nodeId)] });
       pushTimelineUndoSnapshot(dl, nextNodes);
     }
   }, [ghostProgramDeleteModal, dailyLogRef, manualNodesRef, syncDatiFirebase, pushTimelineUndoSnapshot, setDailyLog, setManualNodes]);
@@ -623,11 +650,22 @@ export function useTimelineDiaryActions({
     setGhostProgramDeleteModal(null);
     const dl = dailyLogRef.current || [];
     const mn = manualNodesRef.current || [];
+    const removedLogIds = dl
+      .filter((e) => e.isGhost === true || e.type === 'ghost_meal')
+      .map((e) => String(e.id))
+      .filter(Boolean);
+    const removedNodeIds = mn
+      .filter((n) => n.isGhost === true || n.type === 'ghost_workout')
+      .map((n) => String(n.id))
+      .filter(Boolean);
     const nextLog = dl.filter((e) => !(e.isGhost === true || e.type === 'ghost_meal'));
     const nextNodes = mn.filter((n) => !(n.isGhost === true || n.type === 'ghost_workout'));
     setDailyLog(nextLog);
     setManualNodes(nextNodes);
-    syncDatiFirebase(nextLog, nextNodes);
+    syncDatiFirebase(nextLog, nextNodes, {
+      ...(removedLogIds.length ? { logDeleteIds: removedLogIds } : {}),
+      ...(removedNodeIds.length ? { manualNodesDeleteIds: removedNodeIds } : {}),
+    });
     pushTimelineUndoSnapshot(nextLog, nextNodes);
     setProgrammingRemovedToast(true);
     setTimeout(() => setProgrammingRemovedToast(false), 4000);

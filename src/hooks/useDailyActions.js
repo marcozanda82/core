@@ -205,7 +205,12 @@ export default function useDailyActions({
     const newNodes = manualNodes.filter((n) => n.id !== id);
     setDailyLog(newLog);
     setManualNodes(newNodes);
-    syncDatiFirebase(newLog, newNodes);
+    const inLog = dailyLog.some((item) => item.id === id);
+    const inManual = manualNodes.some((n) => n.id === id);
+    syncDatiFirebase(newLog, newNodes, {
+      ...(inLog ? { logDeleteIds: [String(id)] } : {}),
+      ...(inManual ? { manualNodesDeleteIds: [String(id)] } : {}),
+    });
   }, [isSimulationMode, setSimulatedLog, dailyLog, manualNodes, setDailyLog, setManualNodes, syncDatiFirebase]);
 
   const handleSaveChoiceStimulant = useCallback(() => {

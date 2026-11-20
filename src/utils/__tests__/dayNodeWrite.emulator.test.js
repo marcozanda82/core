@@ -217,7 +217,10 @@ test('writer: salvataggio non cancella dayTargetSnapshot né customTargets', asy
   }, 1);
 
   assert.equal(committed, true);
-  assert.equal(node.log[0].foodName, 'Pera');
+  // merge-by-id: voce solo-server (Mela) resta; Pera si aggiunge
+  assert.equal(node.log.length, 2);
+  assert.ok(node.log.some((row) => row.foodName === 'Mela'));
+  assert.ok(node.log.some((row) => row.foodName === 'Pera'));
   assert.equal(node.dayTargetSnapshot.total, 2516);
   assert.equal(node.customTargets.kcal, 2600);
   assert.equal(node.secretServerField, 'keep-me');
@@ -524,6 +527,68 @@ test('caso conflitto: retry riapplica il pasto sul dato fresco (non lo scarta)',
   assert.equal(retried.node.dayTargetSnapshot.total, 2000);
 });
 
+test('conflitto: client con stato vecchio non cancella caffè / voci solo-server', async () => {
+  // Server fresco: sonno + 2 caffè (come oggi 2026-11-20 mattina).
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [
+      { type: 'sleep', id: 'sleep_keep' },
+      {
+        type: 'meal',
+        mealId: 'other_client_meal',
+        desc: 'Snack',
+        items: [{ id: 'f_other', foodName: 'Mela', grams: 100 }],
+      },
+    ],
+    manualNodes: [
+      { id: 'coffee_645', type: 'stimulant', subtype: 'caffè', label: 'Caffè espresso amaro', time: 6.75 },
+      { id: 'coffee_930', type: 'stimulant', subtype: 'caffè', label: 'Caffè espresso amaro', time: 9.5 },
+    ],
+    mealTimes: { other_client_meal: 11 },
+    dayTargetSnapshot: { total: 2000 },
+    rev: 20,
+    writeProtocol: 1,
+    revBy: UID,
+    revAt: Date.now(),
+  });
+
+  // Client stantio: solo sonno, manualNodes vuoto, rev attesa 19; aggiunge un pasto.
+  // Prima: sostituzione array → wipe caffè + meal altrui. Ora: merge per id.
+  const stalePatch = {
+    data: DATE,
+    log: [
+      { type: 'sleep', id: 'sleep_keep' },
+      {
+        type: 'meal',
+        mealId: 'stale_client_meal',
+        desc: 'Pranzo',
+        items: [{ id: 'f_stale', foodName: 'Pane', grams: 80 }],
+      },
+    ],
+    mealTimes: { stale_client_meal: 13 },
+    manualNodes: [],
+    hasEditedNodes: true,
+  };
+
+  const { node } = await saveDayNodeWithRevRetry({
+    db: clientDb,
+    uid: UID,
+    dateStr: DATE,
+    managedFields: stalePatch,
+    expectedRev: 19,
+  });
+
+  assert.equal(node.rev, 21);
+  assert.ok(node.log.some((row) => row.id === 'sleep_keep'));
+  assert.ok(node.log.some((row) => row.mealId === 'other_client_meal'), 'pasto dell’altro client conservato');
+  assert.ok(node.log.some((row) => row.mealId === 'stale_client_meal'), 'pasto del client stantio aggiunto');
+  assert.equal(node.manualNodes.length, 2);
+  assert.ok(node.manualNodes.some((n) => n.id === 'coffee_645'));
+  assert.ok(node.manualNodes.some((n) => n.id === 'coffee_930'));
+  assert.equal(node.mealTimes.other_client_meal, 11);
+  assert.equal(node.mealTimes.stale_client_meal, 13);
+});
+
 test('caso rifiuto: set senza writeProtocol / senza rev → deny (app vecchia)', async () => {
   await adminDb.ref(DAY_PATH).set({
     data: DATE,
@@ -558,6 +623,89 @@ test('caso rifiuto: set senza writeProtocol / senza rev → deny (app vecchia)',
   );
   assert.equal(noRev.denied, true, noRev.raw);
   assert.equal((await adminDb.ref(DAY_PATH).get()).val().rev, 2);
+});
+
+test('noop: secondo salvataggio identico non bumpa rev (skip)', async () => {
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [{ type: 'sleep', id: 'sleep_1' }],
+    manualNodes: [{ id: 'c1', type: 'stimulant', label: 'Caffè' }],
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+    rev: 12,
+    writeProtocol: 1,
+    revBy: UID,
+    revAt: Date.now(),
+  });
+
+  const patch = {
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+  };
+  const first = await saveDayNodeWithRev({
+    db: clientDb,
+    uid: UID,
+    dateStr: DATE,
+    managedFields: patch,
+    expectedRev: 12,
+  });
+  assert.equal(first.skipped, true);
+  assert.equal(first.rev, 12);
+
+  const second = await saveDayNodeWithRevRetry({
+    db: clientDb,
+    uid: UID,
+    dateStr: DATE,
+    managedFields: patch,
+    expectedRev: 12,
+  });
+  assert.equal(second.skipped, true);
+  assert.equal(second.rev, 12);
+  assert.equal((await adminDb.ref(DAY_PATH).get()).val().rev, 12);
+});
+
+test('idle 10 min senza azioni: zero scritture sul giorno (simulato)', async () => {
+  // Non aspettiamo 10 minuti reali: N ritentativi identici come effect/timer idle.
+  await adminDb.ref(DAY_PATH).set({
+    data: DATE,
+    log: [
+      { type: 'sleep', id: 'sleep_1' },
+      { type: 'sleep', id: 'sleep_2' },
+    ],
+    manualNodes: [
+      { id: 'coffee_a', type: 'stimulant', label: 'Caffè', time: 6.75 },
+      { id: 'coffee_b', type: 'stimulant', label: 'Caffè', time: 9.5 },
+    ],
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+    rev: 40,
+    writeProtocol: 1,
+    revBy: UID,
+    revAt: Date.now(),
+  });
+
+  const idlePatch = {
+    autopilotCorrection: 201,
+    dayTargetSnapshot: { total: 2657, autopilot: 201, rulesVersion: 'dtr-1' },
+  };
+  // ~1 tick / 30s per 10 min ≈ 20; usiamo 24 per margine.
+  const ticks = 24;
+  let writes = 0;
+  for (let i = 0; i < ticks; i += 1) {
+    const result = await saveDayNodeWithRevRetry({
+      db: clientDb,
+      uid: UID,
+      dateStr: DATE,
+      managedFields: idlePatch,
+      expectedRev: 40,
+    });
+    if (!result.skipped) writes += 1;
+  }
+  assert.equal(writes, 0);
+  const live = (await adminDb.ref(DAY_PATH).get()).val();
+  assert.equal(live.rev, 40);
+  assert.equal(live.manualNodes.length, 2);
+  assert.equal(live.log.length, 2);
 });
 
 test('caso offline: saveDayNodeWithRev fallisce senza scrivere', async () => {

@@ -30,6 +30,7 @@ import {
 import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
 import {
   classifyDayWriteError,
+  managedPatchIsNoop,
   saveDayNodeWithRevRetry,
 } from '../../utils/dayNodeWrite.js';
 import {
@@ -267,7 +268,6 @@ export function useGhostSimCompensation({
     const value = liveAutoCompensationDelta;
     const stamp = `${todayIso}:${value}`;
     if (lastPersistedAutopilotRef.current === stamp) return;
-    lastPersistedAutopilotRef.current = stamp;
 
     const storicoKey = TRACKER_STORICO_KEY(todayIso);
     const resolved = resolveDayTargetKcal({
@@ -279,16 +279,20 @@ export function useGhostSimCompensation({
       preferSnapshot: false,
     });
     const dayTargetSnapshot = buildDayTargetSnapshot({ ...resolved, autopilot: value });
+    const managedFields = { autopilotCorrection: value, dayTargetSnapshot };
+    const localNode = fullHistory?.[storicoKey];
+
+    // Evita scrittura (e bump rev) se i campi autopilota sono già allineati in cache.
+    if (localNode && managedPatchIsNoop(localNode, managedFields)) {
+      lastPersistedAutopilotRef.current = stamp;
+      return;
+    }
 
     setFullHistory?.((prev) => {
       const node = prev?.[storicoKey] && typeof prev[storicoKey] === 'object'
         ? prev[storicoKey]
         : { data: todayIso };
-      const sameAuto = Math.round(Number(node.autopilotCorrection) || 0) === value
-        && Object.prototype.hasOwnProperty.call(node, 'autopilotCorrection');
-      const sameSnap = node.dayTargetSnapshot?.total === dayTargetSnapshot.total
-        && node.dayTargetSnapshot?.autopilot === dayTargetSnapshot.autopilot;
-      if (sameAuto && sameSnap) return prev;
+      if (managedPatchIsNoop(node, managedFields)) return prev;
       return {
         ...(prev || {}),
         [storicoKey]: { ...node, autopilotCorrection: value, dayTargetSnapshot },
@@ -303,13 +307,11 @@ export function useGhostSimCompensation({
         db,
         uid,
         dateStr: todayIso,
-        managedFields: {
-          autopilotCorrection: value,
-          dayTargetSnapshot,
-        },
+        managedFields,
         expectedRev,
       }).then((result) => {
-        if (result?.node) {
+        lastPersistedAutopilotRef.current = stamp;
+        if (result?.node && !result?.skipped) {
           setFullHistory?.((prev) => ({
             ...(prev || {}),
             [storicoKey]: result.node,
