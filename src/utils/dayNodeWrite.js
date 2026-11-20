@@ -3,8 +3,8 @@
  *
  * Tutte le scritture client sul giorno devono passare da qui: la transazione fonde
  * solo i campi indicati, incrementa `rev` e lascia intatto il resto.
- * Le regole RTDB accettano la scrittura solo se newData.rev === (data.rev||0)+1
- * (oppure nodo nuovo con rev === 1).
+ * Le regole RTDB accettano: nodo nuovo → rev===1; legacy senza rev → rev===1;
+ * aggiornamento → rev === data.rev + 1. Un set() senza rev resta rifiutato.
  */
 
 import { get, ref, runTransaction } from 'firebase/database';
@@ -41,6 +41,19 @@ export class DayNodeConflictError extends Error {
     this.expectedRev = info.expectedRev ?? null;
     this.remote = info.remote ?? null;
   }
+}
+
+/**
+ * @param {unknown} error
+ * @returns {boolean}
+ */
+export function isDayNodePermissionDenied(error) {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || error || '').toLowerCase();
+  return code.includes('permission_denied')
+    || code.includes('permission-denied')
+    || message.includes('permission_denied')
+    || message.includes('permission denied');
 }
 
 /**
@@ -90,6 +103,8 @@ export function mergeDayNodeWrite(current, patchFields, opts = {}) {
   if (current == null || typeof current !== 'object') {
     // Prima invocazione della transazione: spesso `null` anche se il nodo esiste.
     // Non abortire: il protocollo ritenta con i dati reali.
+    // saveDayNodeWithRev fa get() prima per scaldare la cache e ridurre
+    // permission_denied (rev proposta incompatibile con le regole).
     const seedRev = expectedRev != null && Number.isFinite(expectedRev) && expectedRev > 0
       ? Math.floor(expectedRev) + 1
       : 1;
@@ -146,12 +161,28 @@ export async function saveDayNodeWithRev({
   }
   const dbPath = `users/${id}/tracker_data/${trackerStoricoKey(date)}`;
   const dayRef = ref(db, dbPath);
+
+  // Scalda la cache locale: senza get(), la prima passata della transazione vede
+  // spesso `null` e propone rev=1 (o expected+1) contro un nodo già a rev N →
+  // le regole rispondono permission_denied e l'SDK non ritenta.
+  const warm = await get(dayRef);
+  const warmed = warm.exists() ? warm.val() : null;
+  const warmedRevNum = Number(warmed?.rev);
+  const warmedHasRev = Number.isFinite(warmedRevNum) && warmedRevNum > 0;
+  let effectiveExpected = expectedRev;
+  if (
+    (effectiveExpected == null || effectiveExpected === '')
+    && warmedHasRev
+  ) {
+    effectiveExpected = warmedRevNum;
+  }
+
   let conflictRemote = null;
   let conflictRev = null;
 
   const result = await runTransaction(dayRef, (current) => {
     const merged = mergeDayNodeWrite(current, managedFields, {
-      expectedRev,
+      expectedRev: effectiveExpected,
       uid: id,
       now: Date.now(),
     });
@@ -165,11 +196,12 @@ export async function saveDayNodeWithRev({
 
   if (!result.committed) {
     const remote = conflictRemote
-      || (result.snapshot?.exists?.() ? result.snapshot.val() : null);
+      || (result.snapshot?.exists?.() ? result.snapshot.val() : null)
+      || warmed;
     throw new DayNodeConflictError({
       dateStr: date,
       currentRev: conflictRev ?? (remote?.rev ?? null),
-      expectedRev,
+      expectedRev: effectiveExpected,
       remote,
     });
   }
@@ -183,15 +215,19 @@ export async function saveDayNodeWithRev({
 }
 
 /**
- * Come saveDayNodeWithRev, ma in caso di conflitto rilegge e ritenta una volta.
+ * Come saveDayNodeWithRev, ma in caso di conflitto o permission_denied
+ * (rev ottimistica rifiutata dalle regole) rilegge e ritenta una volta.
  * @param {{ db: import('firebase/database').Database, uid: string, dateStr: string, managedFields: object, expectedRev?: number|null }} input
  */
 export async function saveDayNodeWithRevRetry(input) {
   try {
     return await saveDayNodeWithRev(input);
   } catch (err) {
-    if (!(err instanceof DayNodeConflictError) && err?.code !== 'day_rev_conflict') throw err;
-    const remote = err.remote || await fetchDayNode({
+    const conflict = err instanceof DayNodeConflictError || err?.code === 'day_rev_conflict';
+    const denied = isDayNodePermissionDenied(err);
+    if (!conflict && !denied) throw err;
+
+    const remote = (conflict && err.remote) || await fetchDayNode({
       db: input.db,
       uid: input.uid,
       dateStr: input.dateStr,

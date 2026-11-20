@@ -104,7 +104,7 @@
         },
         "tracker_data": {
           "$key": {
-            ".validate": "!$key.matches(/^trackerStorico_/) || !newData.exists() || ((!data.exists() && newData.hasChild('rev') && newData.child('rev').isNumber() && newData.child('rev').val() === 1) || (data.exists() && newData.hasChild('rev') && newData.child('rev').isNumber() && newData.child('rev').val() === (data.child('rev').val() == null ? 0 : data.child('rev').val()) + 1))"
+            ".validate": "!$key.matches(/^trackerStorico_/) || !newData.exists() || (newData.hasChild('rev') && newData.child('rev').isNumber() && ((!data.exists() && newData.child('rev').val() === 1) || (data.exists() && !data.hasChild('rev') && newData.child('rev').val() === 1) || (data.exists() && data.hasChild('rev') && newData.child('rev').val() === data.child('rev').val() + 1)))"
           }
         }
       }

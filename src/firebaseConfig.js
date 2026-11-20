@@ -50,19 +50,25 @@ if (useFirebaseEmulator && !globalThis.__KENTU_EMULATORS_CONNECTED__) {
 }
 /** Firestore — diario salute / eccezioni terapia (motore diabete). */
 export const firestore = getFirestore(app);
-/** Cloud Functions (BFF AI) — stessa region del backend legacy. */
+/** Cloud Functions (BFF AI / MCP callables) — stessa region del backend legacy. */
 export const functions = getFunctions(app, 'europe-west1');
 
-// Con emulatori Auth/RTDB collega anche Functions (MCP tokens + callables).
-// VITE_EMULATOR_REAL_AI=1 resta supportato come alias esplicito.
-if (
-  useFirebaseEmulator
-  && !globalThis.__KENTU_FUNCTIONS_EMULATOR__
-  && (
-    import.meta.env.VITE_EMULATOR_REAL_AI === '1'
-    || import.meta.env.VITE_USE_FIREBASE_EMULATOR === '1'
-  )
-) {
+/**
+ * Functions emulator: solo con flag esplicito.
+ * `npm run dev` (account reale) → sempre produzione europe-west1.
+ * `VITE_USE_FIREBASE_EMULATOR=1` da solo NON reindirizza le callable (Auth/RTDB sì).
+ * Emulator Functions: VITE_USE_FUNCTIONS_EMULATOR=1
+ * (alias: VITE_EMULATOR_REAL_AI=1 insieme a VITE_USE_FIREBASE_EMULATOR=1).
+ */
+const useFunctionsEmulator =
+  import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === '1'
+  || (useFirebaseEmulator && import.meta.env.VITE_EMULATOR_REAL_AI === '1');
+
+if (useFunctionsEmulator && !globalThis.__KENTU_FUNCTIONS_EMULATOR__) {
   connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   globalThis.__KENTU_FUNCTIONS_EMULATOR__ = true;
 }
+
+export const functionsTarget = useFunctionsEmulator
+  ? 'emulator:127.0.0.1:5001'
+  : 'production:europe-west1';

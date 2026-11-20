@@ -97,3 +97,11 @@ test('merge: nodo legacy senza rev, client senza rev → accettato e timbra rev 
   assert.equal(next.rev, 1);
   assert.deepEqual(next.dayTargetSnapshot, { total: 9 });
 });
+
+test('isDayNodePermissionDenied riconosce il codice Firebase', async () => {
+  const { isDayNodePermissionDenied } = await import('../dayNodeWrite.js');
+  assert.equal(isDayNodePermissionDenied({ code: 'PERMISSION_DENIED' }), true);
+  assert.equal(isDayNodePermissionDenied({ code: 'permission-denied' }), true);
+  assert.equal(isDayNodePermissionDenied({ message: 'transaction failed: permission_denied' }), true);
+  assert.equal(isDayNodePermissionDenied({ code: 'unavailable' }), false);
+});

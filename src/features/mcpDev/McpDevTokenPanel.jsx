@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { auth, functions } from '../../firebaseConfig.js';
+import { auth, functions, functionsTarget } from '../../firebaseConfig.js';
+
+const USING_FUNCTIONS_EMULATOR = functionsTarget.startsWith('emulator:');
 
 function italianCallableError(err) {
   const code = String(err?.code || err?.customData?.code || '').replace(/^functions\//, '');
@@ -10,21 +12,28 @@ function italianCallableError(err) {
     return 'Devi essere autenticato per gestire i gettoni MCP.';
   }
   if (code === 'unavailable' || /unavailable|Failed to fetch|network|socket hang up/i.test(raw)) {
-    return 'Servizio Functions non raggiungibile (controlla europe-west1 o l’emulatore Functions/RTDB).';
+    return USING_FUNCTIONS_EMULATOR
+      ? 'Emulatore Functions non raggiungibile (127.0.0.1:5001). Avvialo o togli VITE_USE_FUNCTIONS_EMULATOR.'
+      : 'Cloud Functions europe-west1 non raggiungibile. Controlla rete / deploy.';
   }
   if (code === 'deadline-exceeded' || /timed out|timeout/i.test(raw)) {
-    return 'Timeout sulla callable MCP. Se usi l’emulatore, verifica che Auth/RTDB/Functions siano avviati insieme.';
+    return USING_FUNCTIONS_EMULATOR
+      ? 'Timeout sulla callable MCP (emulatore). Verifica Auth/RTDB/Functions avviati insieme.'
+      : 'Timeout sulla callable MCP (produzione europe-west1).';
   }
   if (code === 'not-found' || /not-found/i.test(raw)) {
-    return 'Funzione MCP non trovata sul backend. Verifica il deploy europe-west1.';
+    return USING_FUNCTIONS_EMULATOR
+      ? 'Funzione MCP assente sull’emulatore Functions.'
+      : 'Funzione MCP non trovata in produzione (europe-west1). Serve deploy di setMcpTokenScopes / create / list / revoke.';
   }
   if (code === 'permission-denied') {
     return 'Permesso negato per questa operazione.';
   }
   if (code === 'internal' || raw === 'internal') {
-    return details
-      ? `Errore interno MCP: ${details}`
-      : 'Errore interno MCP (spesso RTDB non raggiungibile dall’emulatore Functions).';
+    if (details) return `Errore interno MCP: ${details}`;
+    return USING_FUNCTIONS_EMULATOR
+      ? 'Errore interno MCP sull’emulatore (spesso RTDB emulatore non raggiungibile dalle Functions).'
+      : 'Errore interno MCP sul backend di produzione (europe-west1). Controlla i log di setMcpTokenScopes.';
   }
   if (raw && raw !== '[object Object]') return raw;
   return 'Operazione MCP fallita.';
@@ -61,7 +70,7 @@ export default function McpDevTokenPanel({ onClose }) {
     if (import.meta.env.DEV) {
       console.log('[mcp-dev] open panel', {
         uid: auth.currentUser?.uid || null,
-        region: 'europe-west1',
+        functionsTarget,
       });
     }
     refresh();

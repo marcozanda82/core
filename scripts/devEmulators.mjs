@@ -99,6 +99,8 @@ try {
 vite = start('npx', ['vite', '--port', '5173', '--strictPort'], {
   ...process.env,
   VITE_USE_FIREBASE_EMULATOR: '1',
+  // Callable MCP → produzione di default; emulator Functions solo se avviato (realAi).
+  ...(realAi ? { VITE_USE_FUNCTIONS_EMULATOR: '1' } : {}),
 });
 
 vite.on('exit', (code) => {

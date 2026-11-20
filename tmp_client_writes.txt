@@ -1,0 +1,57 @@
+﻿node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+In riga:1 car:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+npm warn Unknown project config "unsafe-perm". This will stop working in the next major version of npm. See `npm help 
+npmrc` for supported config options.
+
+> ghost-mode-dashboard@1.0.0 test:rtdb:client-writes
+> firebase emulators:exec --only "auth,database" --project demo-kentu-focus "node --test --test-concurrency=1 --test-force-exit src/features/kentuFocus/server/__tests__/clientWrites.rules.emulator.test.js src/features/mealEngine/__tests__/dayTargetSnapshot.rtdb.emulator.test.js src/utils/__tests__/dayNodeWrite.emulator.test.js src/features/kentuFocus/safety/__tests__/safetyRules.sfv-2.emulator.test.js"
+
+i  emulators: Starting emulators: auth, database
+i  emulators: Detected demo project ID "demo-kentu-focus", emulated services will use a demo configuration and attempts to access non-emulated services for this project will fail.
+!  emulators: It seems that you are running multiple instances of the emulator suite for project demo-kentu-focus. This may result in unexpected behavior.
+i  database: Database Emulator logging to database-debug.log
+i  Running script: node --test --test-concurrency=1 --test-force-exit src/features/kentuFocus/server/__tests__/clientWrites.rules.emulator.test.js src/features/mealEngine/__tests__/dayTargetSnapshot.rtdb.emulator.test.js src/utils/__tests__/dayNodeWrite.emulator.test.js src/features/kentuFocus/safety/__tests__/safetyRules.sfv-2.emulator.test.js
+✔ sfv-3: write client autenticato accettata dalle regole (1051.3449ms)
+✔ sfv-2: write legacy ancora accettata (8.1265ms)
+✔ sfv-1: write legacy ancora accettata (12.3557ms)
+✔ sfv-9: versione sconosciuta rifiutata (14.2387ms)
+✔ catalogo scritture client: ogni allow passa, ogni deny intenzionale fallisce (652.3183ms)
+✔ external_drafts: update client {status, consumedAt} accettato, poi contenuto invariato (48.0042ms)
+✔ tracker_data sleep: round-trip quality + notes su RTDB (16.0859ms)
+✔ dayTargetSnapshot: scrittura giorno con rev+1 accettata (preserva via nodo intero) (287.8299ms)
+✔ dayTargetSnapshot: PUT del solo figlio senza rev → rifiutato (7.4202ms)
+✔ focus_day_scores kds-5: write client autenticato accettata (10.5174ms)
+✔ focus_day_scores kds-4: write client autenticato accettata (12.5123ms)
+✔ focus_day_scores kds-4: shape legacy cardio senza movimento rifiutata (7.2566ms)
+✔ regole: client vecchio set() senza rev → rifiutato (299.241ms)
+✔ regole: client nuovo crea giorno con rev=1 → ok (15.615ms)
+✔ regole: set senza incrementare rev → rifiutato; rev+1 → ok (24.2373ms)
+✔ regole: PATCH dei soli campi senza rev → rifiutato (11.2693ms)
+✔ writer: salvataggio non cancella dayTargetSnapshot né customTargets (99.7289ms)
+✔ due client in parallelo: uno vince, l'altro confligge poi riapplica (53.1142ms)
+✔ regole: giorno legacy senza rev → primo salvataggio con rev=1 accettato (21.5028ms)
+✔ regole: nodo a rev=8, scrittura con rev=1 → permission_denied (stato tipo oggi) (15.1846ms)
+✔ client writer: autopilot su giorno a rev=8 (come oggi) senza perdere il log (108.2055ms)
+✔ client writer: salvataggio pasto su oggi (merge log + bump rev) (26.7779ms)
+✔ bozza: consume su external_drafts + pasto sul giorno nello stesso flusso (36.4159ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3828.5904
++  Script exited successfully (code 0)
+i  emulators: Shutting down emulators.
+i  database: Stopping Database Emulator
+!  Database Emulator has exited upon receiving signal: SIGINT
+i  auth: Stopping Authentication Emulator
+i  hub: Stopping emulator hub
+i  logging: Stopping Logging Emulator
