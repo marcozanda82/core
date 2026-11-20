@@ -143,16 +143,21 @@ export function useMealTrash({
         const safeMealKey = String(food.mealType || 'meal').replace(/[.#$/[\]]/g, '_');
         return { ...acc, [safeMealKey]: food.mealTime ?? 12 };
       }, { ...(node.mealTimes || {}) });
-    const payload = stripUndefined({
-      ...node,
-      data: targetDate,
-      log: denormalizeLogForFirebase(nextLog),
-      mealTimes,
-      manualNodes: node.manualNodes || [],
-      hasEditedNodes: true,
+    const { saveDayNodeWithRev } = await import('../../utils/dayNodeWrite.js');
+    const { node: saved } = await saveDayNodeWithRev({
+      db,
+      uid: userUid,
+      dateStr: targetDate,
+      managedFields: stripUndefined({
+        data: targetDate,
+        log: denormalizeLogForFirebase(nextLog),
+        mealTimes,
+        manualNodes: node.manualNodes || [],
+        hasEditedNodes: true,
+      }),
+      expectedRev: node.rev ?? null,
     });
-    await set(ref(db, path), payload);
-    setFullHistory?.((prev) => ({ ...(prev || {}), [storicoKey]: payload }));
+    setFullHistory?.((prev) => ({ ...(prev || {}), [storicoKey]: saved }));
     return true;
   }, [currentTrackerDate, dailyLogRef, db, setFullHistory, userUid, writeCurrentDayLog]);
 

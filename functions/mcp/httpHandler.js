@@ -126,7 +126,12 @@ export async function handleKentuMcpHttp(req, res, { db }) {
     return;
   }
 
-  const server = createKentuMcpServer({ uid: auth.uid, db });
+  const server = createKentuMcpServer({
+    uid: auth.uid,
+    db,
+    tokenId: auth.tokenId,
+    scopes: auth.scopes,
+  });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     // JSON response mode: adatto a Cloud Functions (niente SSE lungo).

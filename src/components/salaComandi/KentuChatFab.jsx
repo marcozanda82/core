@@ -276,6 +276,7 @@ export default function KentuChatFab({
         status: 'pending',
         timeString: currentTimeHHmm(),
         items: inboxItems,
+        source: 'voice',
       });
       resetVoiceSession();
       showToast(inboxItems.length > 1 ? `Inbox: ${inboxItems.length} alimenti` : 'Bozza salvata in Inbox');

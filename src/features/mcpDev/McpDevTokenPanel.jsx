@@ -114,6 +114,23 @@ export default function McpDevTokenPanel({ onClose }) {
     }
   };
 
+  const setDraftsWrite = async (tokenId, draftsWrite) => {
+    if (!tokenId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const call = httpsCallable(functions, 'setMcpTokenScopes');
+      await call({ tokenId, draftsWrite: draftsWrite === true });
+      if (import.meta.env.DEV) console.log('[mcp-dev] token scopes ok', { tokenId, draftsWrite });
+      await refresh();
+    } catch (err) {
+      console.error('[mcp-dev] token scopes error', err);
+      setError(italianCallableError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const copyOnce = async () => {
     if (!onceToken || !navigator?.clipboard?.writeText) return;
     await navigator.clipboard.writeText(onceToken);
@@ -196,30 +213,48 @@ export default function McpDevTokenPanel({ onClose }) {
           {tokens.length === 0 ? (
             <li className="text-xs text-slate-500">Nessun gettone.</li>
           ) : (
-            tokens.map((row) => (
-              <li
-                key={row.tokenId}
-                className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-mono text-[11px] text-slate-300">{row.tokenId}</p>
-                  <p className="text-[10px] text-slate-500">
-                    {row.revoked ? 'revocato' : 'attivo'}
-                    {row.createdAt ? ` · creato ${new Date(row.createdAt).toLocaleString()}` : ''}
-                  </p>
-                </div>
-                {!row.revoked ? (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => revoke(row.tokenId)}
-                    className="shrink-0 rounded-lg border border-red-500/40 px-2 py-1 text-[11px] text-red-200"
-                  >
-                    Revoca
-                  </button>
-                ) : null}
-              </li>
-            ))
+            tokens.map((row) => {
+              const scopes = Array.isArray(row.scopes) ? row.scopes : ['read'];
+              const draftsWrite = scopes.includes('drafts:write');
+              return (
+                <li
+                  key={row.tokenId}
+                  className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-mono text-[11px] text-slate-300">{row.tokenId}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {row.revoked ? 'revocato' : 'attivo'}
+                      {row.createdAt ? ` · creato ${new Date(row.createdAt).toLocaleString()}` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Permessi: {draftsWrite ? 'lettura + bozze pasti' : 'solo lettura'}
+                    </p>
+                  </div>
+                  {!row.revoked ? (
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <label className="flex items-center gap-1 text-[11px] text-slate-300">
+                        <input
+                          type="checkbox"
+                          checked={draftsWrite}
+                          disabled={busy}
+                          onChange={(event) => setDraftsWrite(row.tokenId, event.target.checked)}
+                        />
+                        Bozze pasti
+                      </label>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => revoke(row.tokenId)}
+                        className="rounded-lg border border-red-500/40 px-2 py-1 text-[11px] text-red-200"
+                      >
+                        Revoca
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })
           )}
         </ul>
       </div>

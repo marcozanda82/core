@@ -73,7 +73,52 @@
             ".write": false,
             ".validate": "false"
           }
+        },
+        "external_drafts": {
+          ".validate": "newData.hasChildren()",
+          "$kind": {
+            ".validate": "$kind === 'meals' && newData.hasChildren()",
+            ".indexOn": ["status", "createdAt"],
+            "$draftId": {
+              ".validate": "data.exists() && newData.hasChildren()",
+              "status": {
+                ".validate": "data.val() === 'pending' && newData.isString() && (newData.val() === 'consumed' || newData.val() === 'deleted')"
+              },
+              "consumedAt": {
+                ".validate": "!data.exists() && newData.isNumber() && newData.parent().child('status').val() === 'consumed'"
+              },
+              "deletedAt": {
+                ".validate": "!data.exists() && newData.isNumber() && newData.parent().child('status').val() === 'deleted'"
+              },
+              "$other": {
+                ".validate": "false"
+              }
+            }
+          }
+        },
+        "mcp_audit": {
+          ".validate": "false",
+          "$entryId": {
+            ".validate": "false"
+          }
+        },
+        "tracker_data": {
+          "$key": {
+            ".validate": "!$key.matches(/^trackerStorico_/) || !newData.exists() || ((!data.exists() && newData.hasChild('rev') && newData.child('rev').isNumber() && newData.child('rev').val() === 1) || (data.exists() && newData.hasChild('rev') && newData.child('rev').isNumber() && newData.child('rev').val() === (data.child('rev').val() == null ? 0 : data.child('rev').val()) + 1))"
+          }
         }
+      }
+    },
+    "mcp_write_quota": {
+      "$uid": {
+        ".read": false,
+        ".write": false
+      }
+    },
+    "mcp_draft_idem": {
+      "$uid": {
+        ".read": false,
+        ".write": false
       }
     },
     "mcp_token_lookup": {

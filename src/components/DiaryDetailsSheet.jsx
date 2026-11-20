@@ -10,6 +10,7 @@ import {
 } from '../utils/salaComandiUtils';
 import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, extractUnassignedDraftBlocks } from '../utils/mealDraftStatus';
 import InboxDraftsSection from './InboxDraftsSection';
+import { useExternalMealDrafts } from '../features/externalDrafts/externalDraftsStore.js';
 import MealTrashSection from './MealTrashSection';
 import {
   computeMaxCompletedFastForDate,
@@ -514,12 +515,15 @@ export default function DiaryDetailsSheet({
     return null;
   }, [activePillarTab, mealSections]);
 
+  const externalDrafts = useExternalMealDrafts();
+
   if (!isOpen) return null;
 
   const consumedKcal = Math.round(Number(totali?.kcal) || 0);
   const targetKcal = Math.round(Number(dynamicDailyKcal) || 0);
   const hasMeals = mealSections.length > 0;
-  const hasInboxDrafts = extractUnassignedDraftBlocks(activeLog).length > 0;
+  const hasInboxDrafts = externalDrafts.blocks.length > 0
+    || extractUnassignedDraftBlocks(activeLog).length > 0;
   const hasWorkouts = workoutEntries.length > 0;
 
   const resolveFoodRowKey = (food, section) => (

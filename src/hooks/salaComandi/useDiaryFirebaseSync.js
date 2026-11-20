@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ref, get, set, onValue } from 'firebase/database';
+import { ref, get, onValue } from 'firebase/database';
 import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
 import { enrichDbRowWithFoodUnits } from '../../foodUnits';
 import { mergeProfileNutritionFromServer } from '../../userNutritionGoals';
@@ -10,6 +10,7 @@ import {
   patchRecentHistoryDay,
 } from '../../utils/trackerCacheUtils';
 import {
+  clearTrackerHistoryMemory,
   ensureTrackerHistoryRange,
   homeHistoryWindow,
   loadTrackerHistoryRange,
@@ -31,6 +32,11 @@ import {
   personalFoodDbSnapshotsEqual,
   savePersonalDbToCache,
 } from '../../utils/offlineCacheUtils';
+import {
+  DayNodeConflictError,
+  sanitizeDayPatch,
+  saveDayNodeWithRev,
+} from '../../utils/dayNodeWrite.js';
 import {
   TRACKER_STORICO_KEY,
   normalizeLogData,
@@ -401,6 +407,10 @@ export function useDiaryFirebaseSync({
 
   // Allinea dailyLog al giorno visualizzato (cambio data o primo idrata da storico).
   const dailyLogBoundDateRef = useRef(null);
+  /** Giorni passati: niente scrittura finché non abbiamo riletto il nodo da Firebase. */
+  const viewedDayReadyRef = useRef({ date: '', ready: false });
+  const [viewedDayReady, setViewedDayReady] = useState(true);
+
   useEffect(() => {
     if (!fullHistory || typeof fullHistory !== 'object' || !currentTrackerDate) return;
 
@@ -423,6 +433,111 @@ export function useDiaryFirebaseSync({
     dailyLogBoundDateRef.current = currentTrackerDate;
   }, [fullHistory, currentTrackerDate, setDailyLog]);
 
+  // Ascolto / rilettura del giorno visualizzato (oggi ha già il listener dedicato).
+  useEffect(() => {
+    if (!user?.uid || !db || !currentTrackerDate || isSimulationMode) return undefined;
+    const today = getTodayString();
+    const dateStr = currentTrackerDate;
+    const storicoKey = TRACKER_STORICO_KEY(dateStr);
+
+    if (dateStr === today) {
+      viewedDayReadyRef.current = { date: dateStr, ready: true };
+      setViewedDayReady(true);
+      return undefined;
+    }
+
+    let cancelled = false;
+    viewedDayReadyRef.current = { date: dateStr, ready: false };
+    setViewedDayReady(false);
+
+    const applyRemoteNode = (val) => {
+      if (cancelled || currentTrackerDateRef.current !== dateStr) return;
+      const node = val && typeof val === 'object'
+        ? val
+        : { data: dateStr, log: [], mealTimes: {}, manualNodes: [] };
+      setFullHistory((prev) => {
+        const prevNode = prev?.[storicoKey];
+        if (prevNode && JSON.stringify(prevNode) === JSON.stringify(node)) return prev;
+        return { ...(prev || {}), [storicoKey]: node };
+      });
+      setFullStorico((prev) => ({ ...(prev || {}), [storicoKey]: node }));
+      const incomingLog = node?.log ?? [];
+      const normalized = normalizeLogData(
+        Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+      );
+      const mealTimes = node?.mealTimes ?? {};
+      lastLogFromFirebaseRef.current = JSON.stringify(normalized);
+      setDailyLog(applyMealTimes(normalized, mealTimes));
+      viewedDayReadyRef.current = { date: dateStr, ready: true };
+      setViewedDayReady(true);
+    };
+
+    const dayRef = ref(db, `users/${user.uid}/tracker_data/${storicoKey}`);
+    get(dayRef)
+      .then((snap) => {
+        if (cancelled) return;
+        applyRemoteNode(snap.exists() ? snap.val() : null);
+      })
+      .catch((err) => {
+        console.warn('[diary] rilettura giorno visualizzato fallita', err?.code || err?.message || err);
+        // Sblocca comunque: meglio un avviso in scrittura che un diario bloccato.
+        viewedDayReadyRef.current = { date: dateStr, ready: true };
+        setViewedDayReady(true);
+      });
+
+    const unsub = onValue(dayRef, (liveSnap) => {
+      if (cancelled || currentTrackerDateRef.current !== dateStr) return;
+      applyRemoteNode(liveSnap.exists() ? liveSnap.val() : null);
+    }, (error) => {
+      console.warn('[diary] listener giorno visualizzato', error?.code || error?.message || error);
+    });
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [
+    user?.uid,
+    db,
+    currentTrackerDate,
+    isSimulationMode,
+    currentTrackerDateRef,
+    setFullHistory,
+    setFullStorico,
+    setDailyLog,
+  ]);
+
+  // Torna in primo piano: svuota lo storico in RAM e riscarica la finestra Home.
+  useEffect(() => {
+    if (!user?.uid || !db || isSimulationMode) return undefined;
+    const uid = user.uid;
+    const refreshHistoryOnForeground = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      clearTrackerHistoryMemory(uid);
+      const todayIso = getTodayString();
+      const win = homeHistoryWindow(todayIso);
+      void loadTrackerHistoryRange({
+        db,
+        uid,
+        from: win.from,
+        to: win.to,
+        existing: {},
+      }).then((loaded) => {
+        if (!loaded?.ok) return;
+        const tree = loaded.tree || {};
+        stashTrackerHistoryMemory(uid, tree, win);
+        setFullStorico(tree);
+        setFullHistory(tree);
+        writeRecentHistoryCache(uid, tree, todayIso);
+        setFullHistoryLoadState('ready');
+      }).catch((err) => {
+        console.warn('[diary] refresh storico foreground', err?.code || err?.message || err);
+      });
+    };
+    document.addEventListener('visibilitychange', refreshHistoryOnForeground);
+    return () => document.removeEventListener('visibilitychange', refreshHistoryOnForeground);
+  }, [user?.uid, db, isSimulationMode, setFullHistory, setFullStorico]);
+
   /** Sincronizzazione esplicita su Firebase. Legge uid da auth.currentUser per evitare stale closures. In modalità simulazione non scrive mai. */
   const syncDatiFirebase = useCallback(
     (nuovoLog, nuoviNodi) => {
@@ -433,9 +548,17 @@ export function useDiaryFirebaseSync({
         return Promise.resolve(false);
       }
       const uid = currentUser.uid;
+      const dateStr = currentTrackerDate;
+      const today = getTodayString();
+      if (
+        dateStr !== today
+        && !(viewedDayReadyRef.current.date === dateStr && viewedDayReadyRef.current.ready)
+      ) {
+        console.warn('[diary] scrittura rimandata: giorno passato non ancora riletto', dateStr);
+        return Promise.resolve(false);
+      }
 
       try {
-        const dateStr = currentTrackerDate;
         const logForFirebase = denormalizeLogForFirebase(nuovoLog || []);
         // 🔥 FIX FIREBASE KEY: Sanitizza mealType rimuovendo caratteri illegali per Firebase
         const mealTimes = (nuovoLog || [])
@@ -453,7 +576,8 @@ export function useDiaryFirebaseSync({
           );
         const sanitizedLog = stripUndefined(logForFirebase);
         const sanitizedNodes = stripUndefined(nuoviNodi || []);
-        const existingNode = fullHistory?.[TRACKER_STORICO_KEY(dateStr)];
+        const storicoKey = TRACKER_STORICO_KEY(dateStr);
+        const existingNode = fullHistory?.[storicoKey];
         const keepIntentionalFast =
           !dayHasFoodLog(sanitizedLog) && existingNode?.isIntentionalFast === true;
         const payload = withPreservedAutopilotCorrection({
@@ -462,16 +586,15 @@ export function useDiaryFirebaseSync({
           mealTimes,
           manualNodes: sanitizedNodes,
           hasEditedNodes: true,
-          ...(keepIntentionalFast ? { isIntentionalFast: true } : {}),
+          ...(keepIntentionalFast ? { isIntentionalFast: true } : { isIntentionalFast: null }),
         }, existingNode);
-        if (dateStr === getTodayString() && autopilotCorrectionRef) {
+        if (dateStr === today && autopilotCorrectionRef) {
           payload.autopilotCorrection = Math.round(Number(autopilotCorrectionRef.current) || 0);
         }
-        const sanitized = stripUndefined(payload);
-        const storicoKey = TRACKER_STORICO_KEY(dateStr);
+        const managed = sanitizeDayPatch(stripUndefined(payload));
+        const expectedRev = existingNode?.rev ?? null;
 
         writeTodayTrackerLocalCache(dateStr, sanitizedLog, mealTimes);
-        patchRecentHistoryDay(uid, dateStr, sanitized);
 
         const normalizedLocal = normalizeLogData(nuovoLog || []);
         lastLogFromFirebaseRef.current = JSON.stringify(normalizedLocal);
@@ -479,17 +602,57 @@ export function useDiaryFirebaseSync({
         const dbPath = `users/${uid}/tracker_data/${storicoKey}`;
 
         // Cloud sync in background: la UI è già aggiornata via setDailyLog + cache locale.
-        void withRtdbPermissionLog(set(ref(db, dbPath), sanitized), {
-          path: dbPath,
-          version: null,
-          feature: 'tracker_data',
-        })
-          .then(() => {
+        void withRtdbPermissionLog(
+          saveDayNodeWithRev({
+            db,
+            uid,
+            dateStr,
+            managedFields: managed,
+            expectedRev,
+          }),
+          {
+            path: dbPath,
+            version: expectedRev,
+            feature: 'tracker_data',
+          },
+        )
+          .then((result) => {
+            const node = result?.node;
+            if (!node) return;
+            patchRecentHistoryDay(uid, dateStr, node);
             queueMicrotask(() => {
-              setFullHistory((prev) => ({ ...prev, [storicoKey]: sanitized }));
+              setFullHistory((prev) => ({ ...prev, [storicoKey]: node }));
+              setFullStorico((prev) => ({ ...(prev || {}), [storicoKey]: node }));
             });
           })
-          .catch((err) => {
+          .catch(async (err) => {
+            if (err instanceof DayNodeConflictError || err?.code === 'day_rev_conflict') {
+              console.warn('[diary] conflitto rev: rileggo il giorno', dateStr, err?.currentRev);
+              try {
+                const snap = await get(ref(db, dbPath));
+                const remote = snap.exists() ? snap.val() : null;
+                if (remote) {
+                  setFullHistory((prev) => ({ ...(prev || {}), [storicoKey]: remote }));
+                  setFullStorico((prev) => ({ ...(prev || {}), [storicoKey]: remote }));
+                  const incomingLog = remote?.log ?? [];
+                  const normalized = normalizeLogData(
+                    Array.isArray(incomingLog) ? incomingLog : Object.values(incomingLog || {}),
+                  );
+                  lastLogFromFirebaseRef.current = JSON.stringify(normalized);
+                  if (currentTrackerDateRef.current === dateStr) {
+                    setDailyLog(applyMealTimes(normalized, remote?.mealTimes ?? {}));
+                  }
+                }
+                if (typeof window !== 'undefined' && typeof window.alert === 'function') {
+                  window.alert(
+                    'Questo giorno è stato aggiornato da un altro dispositivo. Ho ricaricato i dati freschi: ripeti la modifica.',
+                  );
+                }
+              } catch (reloadErr) {
+                console.error('[diary] reload dopo conflitto fallito', reloadErr);
+              }
+              return;
+            }
             console.error('❌ Errore critico durante il salvataggio Firebase:', err);
           });
 
@@ -499,7 +662,18 @@ export function useDiaryFirebaseSync({
         return Promise.reject(error);
       }
     },
-    [currentTrackerDate, isSimulationMode, auth, setFullHistory, fullHistory, autopilotCorrectionRef],
+    [
+      currentTrackerDate,
+      isSimulationMode,
+      auth,
+      db,
+      setFullHistory,
+      setFullStorico,
+      setDailyLog,
+      fullHistory,
+      autopilotCorrectionRef,
+      currentTrackerDateRef,
+    ],
   );
 
   /**
@@ -533,6 +707,8 @@ export function useDiaryFirebaseSync({
     isProfileHydrated,
     /** idle | loading | ready | error — bootstrap albero tracker_data completo */
     fullHistoryLoadState,
+    /** false finché un giorno passato non è stato riletto da Firebase. */
+    viewedDayReady,
     /** Carica range oltre 90g on-demand (stimulus=365g). */
     ensureDeepHistory,
     lastLogFromFirebaseRef,

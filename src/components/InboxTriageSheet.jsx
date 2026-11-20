@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import {
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
+  isClaudeDraftBlock,
 } from '../utils/mealDraftStatus';
+import { isExternalInboxBlock } from '../features/externalDrafts/externalMealDrafts.js';
 
 const NEW_MEAL_TYPES = [
   { id: 'colazione', label: 'Colazione' },
@@ -62,8 +64,11 @@ export default function InboxTriageSheet({
   }, [block?.id]);
 
   const otherDrafts = useMemo(() => {
+    // Le bozze esterne vivono fuori dal log del giorno: niente accorpamenti da o verso di loro.
+    if (isExternalInboxBlock(block)) return [];
     const sourceId = String(block?.id || '').trim();
-    const fromProp = Array.isArray(inboxDrafts) ? inboxDrafts : [];
+    const fromProp = (Array.isArray(inboxDrafts) ? inboxDrafts : [])
+      .filter((draft) => !isExternalInboxBlock(draft));
     const fromLog = extractUnassignedDraftBlocks(dailyLog);
     const merged = [...fromProp, ...fromLog];
     const seen = new Set();
@@ -75,13 +80,17 @@ export default function InboxTriageSheet({
       seen.add(id);
       return true;
     });
-  }, [block?.id, inboxDrafts, dailyLog]);
+  }, [block, inboxDrafts, dailyLog]);
 
   if (!block || typeof document === 'undefined') return null;
 
   const meals = Array.isArray(todayMeals) ? todayMeals : [];
   const items = Array.isArray(block.items) ? block.items : [];
   const hasMeals = meals.length > 0;
+  const fromClaude = isClaudeDraftBlock(block);
+  const rawText = String(block.rawText || '').trim();
+  const suggestedType = NEW_MEAL_TYPES.find((mealType) => mealType.id === block.slotHint) || null;
+  const suggestedTime = String(block.timeHHmm || '').trim();
 
   const closeFromBackdrop = (event) => {
     event.preventDefault();
@@ -109,19 +118,27 @@ export default function InboxTriageSheet({
         <div className="inbox-triage-sheet__handle" aria-hidden />
         <h2 id="inbox-triage-title" className="inbox-triage-sheet__title">
           Smista bozza
+          {fromClaude ? <span className="inbox-triage-sheet__badge">da Claude</span> : null}
         </h2>
         <p className="inbox-triage-sheet__summary">{formatInboxDraftCardLabel(block)}</p>
+        {fromClaude && rawText ? (
+          <p className="inbox-triage-sheet__raw">
+            Avevi scritto: «{rawText}»
+          </p>
+        ) : null}
 
         <ul className="inbox-triage-sheet__preview">
           {items.map((item, index) => {
             const name = String(item?.foodName || item?.name || item?.desc || '').trim() || 'Alimento';
             const grams = Number(item?.grams ?? item?.qta ?? item?.weight);
+            const note = String(item?.note || '').trim();
             return (
               <li key={item?.id || `${name}-${index}`}>
                 <span>{name}</span>
                 {Number.isFinite(grams) && grams > 0 ? (
                   <span className="inbox-triage-sheet__grams">{Math.round(grams)}g</span>
                 ) : null}
+                {note ? <span className="inbox-triage-sheet__note">{note}</span> : null}
               </li>
             );
           })}
@@ -129,6 +146,17 @@ export default function InboxTriageSheet({
 
         {step === 'home' || step === 'create' ? (
           <>
+            {suggestedType ? (
+              <button
+                type="button"
+                className="inbox-triage-sheet__btn inbox-triage-sheet__btn--primary"
+                onClick={() => onCreateNewMeal?.(block, suggestedType.id)}
+              >
+                Crea come {suggestedType.label.toLowerCase()}
+                {suggestedTime ? ` ${suggestedTime}` : ''}
+              </button>
+            ) : null}
+
             <OtherDraftButtons
               drafts={otherDrafts}
               sourceBlock={block}
@@ -136,7 +164,9 @@ export default function InboxTriageSheet({
             />
 
             <div className="inbox-triage-sheet__meals">
-              <p className="inbox-triage-sheet__hint">Crea nuovo pasto</p>
+              <p className="inbox-triage-sheet__hint">
+                {suggestedType ? 'Oppure crea come' : 'Crea nuovo pasto'}
+              </p>
               <div className="inbox-triage-sheet__types">
                 {NEW_MEAL_TYPES.map((mealType) => (
                   <button

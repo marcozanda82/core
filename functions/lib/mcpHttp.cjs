@@ -6629,6 +6629,25 @@ function sha256Hex(value) {
   return (0, import_node_crypto.createHash)("sha256").update(String(value), "utf8").digest("hex");
 }
 
+// functions/mcp/scopes.js
+var MCP_SCOPE_READ = "read";
+var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
+var KNOWN_SCOPES = /* @__PURE__ */ new Set([MCP_SCOPE_READ, MCP_SCOPE_DRAFTS_WRITE]);
+function normalizeMcpScopes(raw) {
+  let list = [];
+  if (Array.isArray(raw)) list = raw;
+  else if (raw && typeof raw === "object") list = Object.values(raw);
+  const out = [MCP_SCOPE_READ];
+  for (const value of list) {
+    const scope = String(value || "").trim();
+    if (KNOWN_SCOPES.has(scope) && !out.includes(scope)) out.push(scope);
+  }
+  return out;
+}
+function hasMcpScope(scopes, scope) {
+  return normalizeMcpScopes(scopes).includes(scope);
+}
+
 // functions/mcp/auth.js
 var RATE_LIMIT_PER_HOUR = 60;
 var MIN_TOKEN_LEN = 32;
@@ -6733,7 +6752,12 @@ async function resolveMcpBearer(db, headersOrAuthorization) {
     hourBucket: storedBucket,
     requestCountHour: count + 1
   });
-  return { uid, tokenId, source: extracted.source || "unknown" };
+  return {
+    uid,
+    tokenId,
+    source: extracted.source || "unknown",
+    scopes: normalizeMcpScopes(record.scopes)
+  };
 }
 function uidLogTag(uid) {
   return sha256Hex(uid).slice(0, 8);
@@ -6745,7 +6769,7 @@ var z = __toESM(require("zod/v4"));
 
 // functions/mcp/instructions.js
 var MCP_INSTRUCTIONS = [
-  "Sei collegato a Kentu, diario metabolico personale in sola lettura.",
+  "Sei collegato a Kentu, diario metabolico personale. Leggi i dati con gli strumenti di sola lettura.",
   "Riporta i numeri restituiti dagli strumenti Kentu cos\xEC come sono: non ricalcolarli, non stimarli e non inventarli.",
   "Un singolo episodio (es. cena salata e risveglio) \xE8 un\u2019ipotesi da verificare, non una prova causale.",
   "Proponi piccoli esperimenti osservabili invece di conclusioni definitive.",
@@ -6754,7 +6778,14 @@ var MCP_INSTRUCTIONS = [
   "Se i dati mancano o sono incompleti, dillo chiaramente invece di colmare i buchi.",
   "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso, grammi, sodio o porzioni.",
   "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
-  "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day."
+  "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day.",
+  "BOZZE PASTI: non scrivi mai nel diario. Con kentu_create_meal_draft crei solo una bozza che l\u2019utente convalida in Kentu.",
+  "Prima di creare una bozza: chiedi le quantit\xE0 mancanti (grammi o porzione) e i condimenti mancanti (olio, sale, burro, sughi) per i piatti che di solito si condiscono;",
+  "se l\u2019utente non li sa, lascia grams a null e scrivilo nella nota invece di inventare.",
+  "Poi mostra un riepilogo (giorno, pasto, orario, alimenti con grammi e note) e crea la bozza solo dopo la conferma dell\u2019utente.",
+  "Mantieni i nomi degli alimenti come li ha detti l\u2019utente, uno per voce; passa in originalText il suo testo originale senza riformularlo.",
+  "Usa una idempotencyKey stabile per lo stesso pasto: se ripeti la chiamata non si crea un doppione.",
+  "Dopo la creazione ricorda che la bozza va convalidata nell\u2019app Kentu. Se il gettone non ha il permesso bozze, dillo e non insistere."
 ].join(" ");
 
 // functions/mcp/dates.js
@@ -7587,12 +7618,417 @@ async function toolSearchFood(db, uid, query) {
   };
 }
 
+// functions/mcp/mealDrafts.js
+var import_node_crypto2 = require("node:crypto");
+var MEAL_DRAFT_SLOTS = Object.freeze(["colazione", "snack", "pranzo", "cena"]);
+var MEAL_DRAFT_STATUSES = Object.freeze(["pending", "consumed", "deleted"]);
+var MEAL_DRAFT_LIMITS = Object.freeze({
+  dateWindowDays: 7,
+  maxItems: 20,
+  nameMin: 2,
+  nameMax: 80,
+  gramsMin: 1,
+  gramsMax: 3e3,
+  noteMax: 200,
+  rawTextMax: 2e3,
+  writesPerHour: 10,
+  writesPerDay: 30,
+  listMax: 50
+});
+var TIME_HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+var IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9._:-]{8,128}$/;
+var DRAFT_ID_RE = /^cd_[a-z0-9]+_[a-f0-9]{8}$/;
+var externalMealDraftsPath = (uid) => `users/${uid}/external_drafts/meals`;
+var mcpAuditPath = (uid) => `users/${uid}/mcp_audit`;
+var mcpWriteQuotaPath = (uid) => `mcp_write_quota/${uid}`;
+var mcpDraftIdemPath = (uid, hash) => `mcp_draft_idem/${uid}/${hash}`;
+var McpToolError = class extends Error {
+  /**
+   * @param {'invalid_input'|'missing_scope'|'rate_limited'|'not_found'|'not_deletable'} code
+   * @param {string} message
+   */
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+};
+function cleanText(value) {
+  return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+}
+function cleanMultilineText(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, " ").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+}
+function invalid(message) {
+  return new McpToolError("invalid_input", message);
+}
+function validateMealDraftInput(input, now = Date.now()) {
+  if (!input || typeof input !== "object") throw invalid("Dati bozza mancanti.");
+  const L = MEAL_DRAFT_LIMITS;
+  let date;
+  try {
+    ({ date } = resolveDayRef(String(input.date || ""), new Date(now)));
+  } catch {
+    throw invalid("date: usa today, yesterday oppure YYYY-MM-DD.");
+  }
+  if (!isIsoDate(date) || Number.isNaN(Date.parse(`${date}T12:00:00Z`))) {
+    throw invalid("date: data non valida.");
+  }
+  const today = todayInRome(new Date(now));
+  const min = addDaysIso(today, -L.dateWindowDays);
+  const max = addDaysIso(today, L.dateWindowDays);
+  if (date < min || date > max) {
+    throw invalid(`date: deve essere entro ${L.dateWindowDays} giorni da oggi (${min} \u2026 ${max}).`);
+  }
+  const slot = String(input.slot || "").trim().toLowerCase();
+  if (!MEAL_DRAFT_SLOTS.includes(slot)) {
+    throw invalid(`slot: uno tra ${MEAL_DRAFT_SLOTS.join(", ")}.`);
+  }
+  const time = String(input.time || "").trim();
+  if (!TIME_HHMM_RE.test(time)) throw invalid("time: formato HH:MM (00:00\u201323:59).");
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    throw invalid("items: serve almeno un alimento.");
+  }
+  if (input.items.length > L.maxItems) throw invalid(`items: massimo ${L.maxItems} alimenti.`);
+  const items = input.items.map((raw, index) => {
+    if (!raw || typeof raw !== "object") throw invalid(`items[${index}]: oggetto atteso.`);
+    const allowed = /* @__PURE__ */ new Set(["name", "grams", "note"]);
+    const extra = Object.keys(raw).filter((key) => !allowed.has(key));
+    if (extra.length > 0) throw invalid(`items[${index}]: campi non ammessi (${extra.join(", ")}).`);
+    const name = cleanText(raw.name);
+    if (name.length < L.nameMin || name.length > L.nameMax) {
+      throw invalid(`items[${index}].name: da ${L.nameMin} a ${L.nameMax} caratteri.`);
+    }
+    let grams = null;
+    if (raw.grams != null) {
+      const g = Number(raw.grams);
+      if (!Number.isInteger(g) || g < L.gramsMin || g > L.gramsMax) {
+        throw invalid(`items[${index}].grams: intero tra ${L.gramsMin} e ${L.gramsMax}, oppure null.`);
+      }
+      grams = g;
+    }
+    const note = raw.note == null ? "" : cleanText(raw.note);
+    if (note.length > L.noteMax) {
+      throw invalid(`items[${index}].note: massimo ${L.noteMax} caratteri.`);
+    }
+    return { name, grams, note };
+  });
+  const rawText = cleanMultilineText(input.originalText);
+  if (!rawText) throw invalid("originalText: serve il testo originale scritto dall\u2019utente.");
+  if (rawText.length > L.rawTextMax) {
+    throw invalid(`originalText: massimo ${L.rawTextMax} caratteri.`);
+  }
+  const idempotencyKey = String(input.idempotencyKey || "").trim();
+  if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    throw invalid("idempotencyKey: 8\u2013128 caratteri tra lettere, cifre, . _ : -");
+  }
+  return { date, slot, time, items, rawText, idempotencyKey };
+}
+function newMealDraftId(now = Date.now()) {
+  return `cd_${now.toString(36)}_${(0, import_node_crypto2.randomBytes)(4).toString("hex")}`;
+}
+function buildExternalMealDraftRecord({ id, normalized, tokenId, now, idemHash }) {
+  return {
+    id,
+    schemaVersion: 1,
+    origin: "claude",
+    source: "claude",
+    date: normalized.date,
+    slotHint: normalized.slot,
+    timeHHmm: normalized.time,
+    items: normalized.items.map((item, index) => ({
+      id: `${id}_i${index}`,
+      foodName: item.name,
+      ...item.grams != null ? { grams: item.grams } : {},
+      ...item.note ? { note: item.note } : {},
+      status: "pending"
+    })),
+    rawText: normalized.rawText,
+    tokenId: String(tokenId || ""),
+    idempotencyKeyHash: idemHash,
+    createdAt: now,
+    status: "pending"
+  };
+}
+function compactDraft(id, row) {
+  const items = Array.isArray(row?.items) ? row.items : Object.values(row?.items || {});
+  return {
+    draftId: id,
+    date: row?.date ?? null,
+    slot: row?.slotHint ?? null,
+    time: row?.timeHHmm ?? null,
+    status: row?.status ?? null,
+    createdAt: row?.createdAt ?? null,
+    ...row?.consumedAt ? { consumedAt: row.consumedAt } : {},
+    ...row?.deletedAt ? { deletedAt: row.deletedAt } : {},
+    items: items.map((item) => ({
+      name: item?.foodName ?? null,
+      grams: item?.grams ?? null,
+      ...item?.note ? { note: item.note } : {}
+    })),
+    originalText: row?.rawText ?? ""
+  };
+}
+async function writeAudit(db, uid, entry) {
+  try {
+    await db.ref(mcpAuditPath(uid)).push({ at: Date.now(), ...entry });
+  } catch (error) {
+    console.warn("[kentuMcp] audit write failed", String(error?.message || error).slice(0, 120));
+  }
+}
+function requireDraftsScope(ctx) {
+  if (!hasMcpScope(ctx?.scopes, MCP_SCOPE_DRAFTS_WRITE)) {
+    throw new McpToolError(
+      "missing_scope",
+      'Questo gettone \xE8 in sola lettura. Per creare o eliminare bozze attiva il permesso "Bozze pasti" sul gettone in Kentu (menu MCP Claude).'
+    );
+  }
+}
+function hourBucket2(now) {
+  return Math.floor(now / 36e5);
+}
+async function consumeMcpWriteQuota(db, uid, now = Date.now()) {
+  const L = MEAL_DRAFT_LIMITS;
+  const hour = hourBucket2(now);
+  const day = todayInRome(new Date(now));
+  let denied = null;
+  const result = await db.ref(mcpWriteQuotaPath(uid)).transaction((current) => {
+    const cur = current && typeof current === "object" ? current : {};
+    const hourCount = cur.hourBucket === hour ? Number(cur.hourCount) || 0 : 0;
+    const dayCount = cur.dayKey === day ? Number(cur.dayCount) || 0 : 0;
+    denied = null;
+    if (hourCount >= L.writesPerHour) {
+      denied = "hour";
+      return void 0;
+    }
+    if (dayCount >= L.writesPerDay) {
+      denied = "day";
+      return void 0;
+    }
+    return {
+      hourBucket: hour,
+      hourCount: hourCount + 1,
+      dayKey: day,
+      dayCount: dayCount + 1,
+      updatedAt: now
+    };
+  });
+  if (!result.committed) {
+    throw new McpToolError(
+      "rate_limited",
+      denied === "day" ? `Limite di ${L.writesPerDay} scritture bozze al giorno raggiunto. Riprova domani.` : `Limite di ${L.writesPerHour} scritture bozze all'ora raggiunto. Riprova pi\xF9 tardi.`
+    );
+  }
+  const val = result.snapshot.val() || {};
+  return { hourCount: Number(val.hourCount) || 0, dayCount: Number(val.dayCount) || 0 };
+}
+async function toolCreateMealDraft(db, ctx, input, now = Date.now()) {
+  const uid = String(ctx?.uid || "").trim();
+  const tokenId = String(ctx?.tokenId || "").trim();
+  try {
+    requireDraftsScope(ctx);
+  } catch (error) {
+    await writeAudit(db, uid, {
+      tool: "kentu_create_meal_draft",
+      tokenId,
+      result: "rejected",
+      reason: "missing_scope"
+    });
+    throw error;
+  }
+  const normalized = validateMealDraftInput(input, now);
+  const idemHash = sha256Hex(`${uid}:${normalized.idempotencyKey}`);
+  const idemRef = db.ref(mcpDraftIdemPath(uid, idemHash));
+  const duplicateResponse = async (claim2) => {
+    const draftId2 = String(claim2?.draftId || "");
+    const snap = draftId2 ? await db.ref(`${externalMealDraftsPath(uid)}/${draftId2}`).get() : null;
+    await writeAudit(db, uid, {
+      tool: "kentu_create_meal_draft",
+      tokenId,
+      result: "duplicate",
+      draftId: draftId2
+    });
+    return {
+      created: false,
+      duplicate: true,
+      draft: snap?.exists() ? compactDraft(draftId2, snap.val()) : { draftId: draftId2 },
+      note: "Bozza gi\xE0 creata con questa idempotencyKey: nessuna nuova bozza."
+    };
+  };
+  const existing = await idemRef.get();
+  if (existing.exists()) return duplicateResponse(existing.val());
+  try {
+    await consumeMcpWriteQuota(db, uid, now);
+  } catch (error) {
+    if (error?.code === "rate_limited") {
+      await writeAudit(db, uid, {
+        tool: "kentu_create_meal_draft",
+        tokenId,
+        result: "rejected",
+        reason: "rate_limited"
+      });
+    }
+    throw error;
+  }
+  const draftId = newMealDraftId(now);
+  const claim = await idemRef.transaction((current) => {
+    if (current) return void 0;
+    return { draftId, createdAt: now, tokenId };
+  });
+  if (!claim.committed) return duplicateResponse(claim.snapshot.val());
+  const record = buildExternalMealDraftRecord({
+    id: draftId,
+    normalized,
+    tokenId,
+    now,
+    idemHash
+  });
+  try {
+    await db.ref(`${externalMealDraftsPath(uid)}/${draftId}`).set(record);
+  } catch (error) {
+    await idemRef.set(null).catch(() => {
+    });
+    throw error;
+  }
+  await writeAudit(db, uid, {
+    tool: "kentu_create_meal_draft",
+    tokenId,
+    result: "created",
+    draftId,
+    date: normalized.date,
+    slot: normalized.slot,
+    itemsCount: normalized.items.length
+  });
+  return {
+    created: true,
+    duplicate: false,
+    draft: compactDraft(draftId, record),
+    note: "Bozza salvata in Kentu: l\u2019utente la convalida nell\u2019app. Non \xE8 nel diario."
+  };
+}
+async function toolListDrafts(db, ctx, filters = {}) {
+  const uid = String(ctx?.uid || "").trim();
+  const status = filters?.status ? String(filters.status).trim() : "";
+  if (status && !MEAL_DRAFT_STATUSES.includes(status)) {
+    throw invalid(`status: uno tra ${MEAL_DRAFT_STATUSES.join(", ")}.`);
+  }
+  let date = "";
+  if (filters?.date) {
+    try {
+      ({ date } = resolveDayRef(String(filters.date)));
+    } catch {
+      throw invalid("date: usa today, yesterday oppure YYYY-MM-DD.");
+    }
+  }
+  const snap = await db.ref(externalMealDraftsPath(uid)).orderByChild("createdAt").limitToLast(200).get();
+  const rows = [];
+  snap.forEach((child) => {
+    const row = child.val();
+    if (row?.origin !== "claude") return;
+    if (status && row.status !== status) return;
+    if (date && row.date !== date) return;
+    rows.push(compactDraft(child.key, row));
+  });
+  rows.sort((a, b) => (Number(b.createdAt) || 0) - (Number(a.createdAt) || 0));
+  return {
+    drafts: rows.slice(0, MEAL_DRAFT_LIMITS.listMax),
+    total: rows.length,
+    note: "pending = da convalidare in Kentu; consumed = convalidata dall\u2019utente; deleted = eliminata."
+  };
+}
+async function toolDeleteDraft(db, ctx, input, now = Date.now()) {
+  const uid = String(ctx?.uid || "").trim();
+  const tokenId = String(ctx?.tokenId || "").trim();
+  try {
+    requireDraftsScope(ctx);
+  } catch (error) {
+    await writeAudit(db, uid, {
+      tool: "kentu_delete_draft",
+      tokenId,
+      result: "rejected",
+      reason: "missing_scope"
+    });
+    throw error;
+  }
+  const draftId = String(input?.draftId || "").trim();
+  if (!DRAFT_ID_RE.test(draftId)) throw invalid("draftId non valido.");
+  const draftRef = db.ref(`${externalMealDraftsPath(uid)}/${draftId}`);
+  const snap = await draftRef.get();
+  const row = snap.val();
+  if (!snap.exists() || row?.origin !== "claude") {
+    throw new McpToolError("not_found", "Bozza non trovata tra quelle create da Claude.");
+  }
+  if (row.status !== "pending") {
+    throw new McpToolError(
+      "not_deletable",
+      `La bozza \xE8 "${row.status}": solo le bozze in attesa si possono eliminare.`
+    );
+  }
+  try {
+    await consumeMcpWriteQuota(db, uid, now);
+  } catch (error) {
+    if (error?.code === "rate_limited") {
+      await writeAudit(db, uid, {
+        tool: "kentu_delete_draft",
+        tokenId,
+        result: "rejected",
+        reason: "rate_limited",
+        draftId
+      });
+    }
+    throw error;
+  }
+  const tx = await draftRef.child("status").transaction((current) => {
+    if (current === null) return null;
+    return current === "pending" ? "deleted" : void 0;
+  });
+  const finalStatus = tx.snapshot.val();
+  if (!tx.committed || finalStatus !== "deleted") {
+    throw new McpToolError(
+      "not_deletable",
+      `La bozza \xE8 "${finalStatus || "assente"}": solo le bozze in attesa si possono eliminare.`
+    );
+  }
+  await draftRef.update({ deletedAt: now, deletedBy: "claude" });
+  await writeAudit(db, uid, {
+    tool: "kentu_delete_draft",
+    tokenId,
+    result: "deleted",
+    draftId
+  });
+  return { deleted: true, draftId };
+}
+
 // functions/mcp/createServer.js
-function createKentuMcpServer({ uid, db }) {
+var READ_ONLY = Object.freeze({
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false
+});
+var DAY_REF_RE = /^(today|yesterday|\d{4}-\d{2}-\d{2})$/;
+function jsonResult(payload) {
+  return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+}
+async function guarded(run) {
+  try {
+    return jsonResult(await run());
+  } catch (error) {
+    if (error instanceof McpToolError) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: JSON.stringify({ error: error.code, message: error.message }) }]
+      };
+    }
+    throw error;
+  }
+}
+function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
+  const ctx = { uid, tokenId, scopes };
+  const L = MEAL_DRAFT_LIMITS;
   const server = new import_mcp.McpServer(
     {
       name: "kentu",
-      version: "1.0.0"
+      version: "1.1.0"
     },
     {
       instructions: MCP_INSTRUCTIONS
@@ -7604,14 +8040,10 @@ function createKentuMcpServer({ uid, db }) {
       description: 'Legge un giorno Kentu (kds-5): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), liquidi/alcol con orario, caffeina se presente, notte (letto, sveglia, durata, stelle, note), salvavita e azione. Parametro date: "today", "yesterday" oppure YYYY-MM-DD (Europe/Rome). Sola lettura.',
       inputSchema: {
         date: z.string().describe("today | yesterday | YYYY-MM-DD")
-      }
+      },
+      annotations: READ_ONLY
     },
-    async ({ date }) => {
-      const payload = await toolGetDay(db, uid, date);
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }]
-      };
-    }
+    async ({ date }) => jsonResult(await toolGetDay(db, uid, date))
   );
   server.registerTool(
     "kentu_get_evenings",
@@ -7620,14 +8052,10 @@ function createKentuMcpServer({ uid, db }) {
       inputSchema: {
         from: z.string().describe("YYYY-MM-DD inizio (incluso)"),
         to: z.string().describe("YYYY-MM-DD fine (incluso)")
-      }
+      },
+      annotations: READ_ONLY
     },
-    async ({ from, to }) => {
-      const payload = await toolGetEvenings(db, uid, { from, to });
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }]
-      };
-    }
+    async ({ from, to }) => jsonResult(await toolGetEvenings(db, uid, { from, to }))
   );
   server.registerTool(
     "kentu_get_period",
@@ -7635,14 +8063,10 @@ function createKentuMcpServer({ uid, db }) {
       description: "Aggregati Focus su una settimana o un mese: copertura, pilastri, scie/buchi, salvavita e azione. Parametro period: this_week | last_week | this_month | last_month (Europe/Rome). Sola lettura.",
       inputSchema: {
         period: z.string().describe("this_week | last_week | this_month | last_month")
-      }
+      },
+      annotations: READ_ONLY
     },
-    async ({ period }) => {
-      const payload = await toolGetPeriod(db, uid, period);
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }]
-      };
-    }
+    async ({ period }) => jsonResult(await toolGetPeriod(db, uid, period))
   );
   server.registerTool(
     "kentu_search_food",
@@ -7650,14 +8074,63 @@ function createKentuMcpServer({ uid, db }) {
       description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce nome, matchQuality e kcal/100g. Sola lettura.",
       inputSchema: {
         query: z.string().describe("Testo di ricerca (almeno 2 caratteri)")
+      },
+      annotations: READ_ONLY
+    },
+    async ({ query }) => jsonResult(await toolSearchFood(db, uid, query))
+  );
+  server.registerTool(
+    "kentu_create_meal_draft",
+    {
+      description: 'Crea una BOZZA di pasto in Kentu, da convalidare dall\u2019utente nell\u2019app. Non scrive nel diario e non cambia i punteggi. Prima di chiamarlo: chiedi quantit\xE0 e condimenti mancanti, mostra un riepilogo e attendi conferma. Richiede il permesso "drafts:write" sul gettone. Limite: 10 scritture/ora, 30/giorno. Ripetere con la stessa idempotencyKey non crea doppioni.',
+      inputSchema: {
+        date: z.string().trim().regex(DAY_REF_RE).describe(`today | yesterday | YYYY-MM-DD (Europe/Rome, entro ${L.dateWindowDays} giorni da oggi)`),
+        slot: z.enum(MEAL_DRAFT_SLOTS).describe("colazione | snack | pranzo | cena"),
+        time: z.string().trim().regex(TIME_HHMM_RE).describe("Orario del pasto HH:MM"),
+        items: z.array(z.strictObject({
+          name: z.string().trim().min(L.nameMin).max(L.nameMax).describe('Nome alimento come l\u2019ha detto l\u2019utente (es. "pasta integrale")'),
+          grams: z.number().int().min(L.gramsMin).max(L.gramsMax).nullable().optional().describe("Grammi se noti; null se l\u2019utente non li sa"),
+          note: z.string().trim().max(L.noteMax).optional().describe('Nota breve (es. "condita con 1 cucchiaio d\u2019olio")')
+        })).min(1).max(L.maxItems),
+        originalText: z.string().trim().min(1).max(L.rawTextMax).describe("Il testo originale scritto dall\u2019utente, senza riformularlo"),
+        idempotencyKey: z.string().trim().regex(IDEMPOTENCY_KEY_RE).describe("Chiave anti-doppione stabile per questo pasto (8\u2013128 caratteri: lettere, cifre, . _ : -)")
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
       }
     },
-    async ({ query }) => {
-      const payload = await toolSearchFood(db, uid, query);
-      return {
-        content: [{ type: "text", text: JSON.stringify(payload) }]
-      };
-    }
+    async (args) => guarded(() => toolCreateMealDraft(db, ctx, args))
+  );
+  server.registerTool(
+    "kentu_list_drafts",
+    {
+      description: "Elenca le bozze pasto create da Claude (non quelle create dall\u2019utente in Kentu): stato pending (da convalidare), consumed (convalidata), deleted. Filtri facoltativi status e date. Sola lettura.",
+      inputSchema: {
+        status: z.enum(MEAL_DRAFT_STATUSES).optional().describe("pending | consumed | deleted"),
+        date: z.string().trim().regex(DAY_REF_RE).optional().describe("today | yesterday | YYYY-MM-DD")
+      },
+      annotations: READ_ONLY
+    },
+    async (args) => guarded(() => toolListDrafts(db, ctx, args))
+  );
+  server.registerTool(
+    "kentu_delete_draft",
+    {
+      description: 'Elimina una bozza pasto creata da Claude e ancora in attesa (pending). Non tocca bozze gi\xE0 convalidate, bozze create dall\u2019utente n\xE9 il diario. Richiede il permesso "drafts:write".',
+      inputSchema: {
+        draftId: z.string().trim().regex(DRAFT_ID_RE).describe("draftId restituito da kentu_create_meal_draft")
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false
+      }
+    },
+    async (args) => guarded(() => toolDeleteDraft(db, ctx, args))
   );
   return server;
 }
@@ -7764,7 +8237,12 @@ async function handleKentuMcpHttp(req, res, { db }) {
     jsonRpcError(res, 400, -32700, "Parse error");
     return;
   }
-  const server = createKentuMcpServer({ uid: auth.uid, db });
+  const server = createKentuMcpServer({
+    uid: auth.uid,
+    db,
+    tokenId: auth.tokenId,
+    scopes: auth.scopes
+  });
   const transport = new import_streamableHttp.StreamableHTTPServerTransport({
     sessionIdGenerator: void 0,
     // JSON response mode: adatto a Cloud Functions (niente SSE lungo).

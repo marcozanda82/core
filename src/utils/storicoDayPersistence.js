@@ -1,4 +1,3 @@
-import { ref, set, update } from 'firebase/database';
 import {
   TRACKER_STORICO_KEY,
   denormalizeLogForFirebase,
@@ -6,9 +5,15 @@ import {
 import { stripUndefined } from './firebasePayloadUtils';
 import { dayHasFoodLog } from './dayTrackingStatus';
 import { withPreservedAutopilotCorrection } from './rollingCalorieBank';
+import {
+  fetchDayNode,
+  sanitizeDayPatch,
+  saveDayNodeWithRev,
+} from './dayNodeWrite.js';
 
 /**
  * Salva il log di un giorno specifico su Firebase (oggi o passato).
+ * Usa una transazione: non cancella dayTargetSnapshot / customTargets / altri campi.
  */
 export async function saveDiaryLogForDate({
   db,
@@ -19,6 +24,7 @@ export async function saveDiaryLogForDate({
   mealTimes = {},
   isIntentionalFast,
   existingDayNode = null,
+  expectedRev = null,
 }) {
   if (!db || !uid || !dateStr) {
     throw new Error('saveDiaryLogForDate: parametri mancanti');
@@ -28,7 +34,6 @@ export async function saveDiaryLogForDate({
   const sanitizedLog = stripUndefined(logForFirebase);
   const sanitizedNodes = stripUndefined(manualNodes || []);
 
-  // Pasti reali annullano il digiuno intenzionale; altrimenti preserva il flag esistente.
   let intentionalFlag = existingDayNode?.isIntentionalFast === true;
   if (typeof isIntentionalFast === 'boolean') {
     intentionalFlag = isIntentionalFast;
@@ -46,13 +51,28 @@ export async function saveDiaryLogForDate({
     ...(intentionalFlag ? { isIntentionalFast: true } : {}),
   }, existingDayNode));
 
-  const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
-  await set(ref(db, dbPath), payload);
-  return payload;
+  const managed = sanitizeDayPatch(payload);
+  if (!intentionalFlag) {
+    managed.isIntentionalFast = null;
+  }
+
+  const revHint = expectedRev != null
+    ? expectedRev
+    : (existingDayNode?.rev ?? null);
+
+  const { node } = await saveDayNodeWithRev({
+    db,
+    uid,
+    dateStr,
+    managedFields: managed,
+    expectedRev: revHint,
+  });
+  return node;
 }
 
 /**
- * Imposta/rimuove il flag digiuno intenzionale 24h su un giorno (anche senza pasti).
+ * Imposta/rimuove il flag digiuno intenzionale 24h su un giorno.
+ * Passa sempre dalla transazione con rev (niente update parziale senza rev).
  */
 export async function setDayIntentionalFastFlag({
   db,
@@ -60,46 +80,55 @@ export async function setDayIntentionalFastFlag({
   dateStr,
   value,
   existingDayNode = null,
+  expectedRev = null,
 }) {
   if (!db || !uid || !dateStr) {
     throw new Error('setDayIntentionalFastFlag: parametri mancanti');
   }
 
-  const dbPath = `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(dateStr)}`;
-  const existing = existingDayNode && typeof existingDayNode === 'object' ? existingDayNode : {};
+  const existing = existingDayNode && typeof existingDayNode === 'object'
+    ? existingDayNode
+    : (await fetchDayNode({ db, uid, dateStr })) || {};
   const nextFlag = Boolean(value);
+  const revHint = expectedRev != null ? expectedRev : (existing.rev ?? null);
 
   if (!existing.log && !existing.data) {
-    const payload = stripUndefined(withPreservedAutopilotCorrection({
-      data: dateStr,
-      log: [],
-      mealTimes: {},
-      manualNodes: [],
-      hasEditedNodes: true,
-      ...(nextFlag ? { isIntentionalFast: true } : {}),
-    }, existing));
-    await set(ref(db, dbPath), payload);
-    return payload;
+    const { node } = await saveDayNodeWithRev({
+      db,
+      uid,
+      dateStr,
+      managedFields: stripUndefined({
+        data: dateStr,
+        log: [],
+        mealTimes: {},
+        manualNodes: [],
+        hasEditedNodes: true,
+        ...(nextFlag ? { isIntentionalFast: true } : { isIntentionalFast: null }),
+      }),
+      expectedRev: revHint,
+    });
+    return node;
   }
 
-  if (nextFlag) {
-    await update(ref(db, dbPath), { isIntentionalFast: true });
-  } else {
-    await update(ref(db, dbPath), { isIntentionalFast: null });
-  }
-
+  const { node } = await saveDayNodeWithRev({
+    db,
+    uid,
+    dateStr,
+    managedFields: {
+      isIntentionalFast: nextFlag ? true : null,
+    },
+    expectedRev: revHint,
+  });
   return {
-    ...existing,
-    data: existing.data || dateStr,
+    ...node,
     isIntentionalFast: nextFlag || undefined,
   };
 }
 
 export function extractMealTimesFromLog(log) {
   return (Array.isArray(log) ? log : [])
-    .filter((item) => item?.type === 'food' || item?.type === 'recipe')
+    .filter((item) => item?.type === 'food' || item.type === 'recipe')
     .reduce((acc, food) => {
-      // 🔥 FIX FIREBASE KEY: Sanitizza mealType rimuovendo caratteri illegali per Firebase
       const safeMealKey = String(food.mealType || 'pranzo').replace(/[.#$/[\]]/g, '_');
       const mealTime = Number(food.mealTime ?? food.time);
       if (Number.isFinite(mealTime)) {

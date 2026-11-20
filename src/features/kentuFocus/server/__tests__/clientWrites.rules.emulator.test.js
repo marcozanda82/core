@@ -15,6 +15,7 @@ import {
 } from '../emulator/createEmulatorAdmin.js';
 import { createEmulatorIdToken } from '../emulator/createEmulatorAuthToken.js';
 import {
+  emulatorRestPatch,
   emulatorRestPut,
   loadFocusLocalRules,
 } from '../emulator/loadFocusRules.js';
@@ -116,8 +117,21 @@ function catalog() {
         mealTimes: { colazione: 8 },
         autopilotCorrection: 40,
         dayTargetSnapshot,
+        rev: 1,
+        revBy: UID,
+        revAt: Date.now(),
       },
       expect: 'allow',
+    },
+    {
+      id: 'tracker_data.day_node_without_rev',
+      path: `users/${UID}/tracker_data/trackerStorico_2026-11-05`,
+      payload: {
+        data: '2026-11-05',
+        log: [],
+        mealTimes: {},
+      },
+      expect: 'deny',
     },
     {
       id: 'tracker_data.sleep_quality_notes',
@@ -139,6 +153,9 @@ function catalog() {
           },
         ],
         mealTimes: {},
+        rev: 1,
+        revBy: UID,
+        revAt: Date.now(),
       },
       expect: 'allow',
     },
@@ -146,7 +163,8 @@ function catalog() {
       id: 'tracker_data.dayTargetSnapshot_child',
       path: `users/${UID}/tracker_data/trackerStorico_${DATE}/dayTargetSnapshot`,
       payload: dayTargetSnapshot,
-      expect: 'allow',
+      // Senza incrementare rev sul nodo giorno: le regole rifiutano.
+      expect: 'deny',
     },
     {
       id: 'tracker_data.food_db',
@@ -324,7 +342,115 @@ function catalog() {
       payload: { token: 'x' },
       expect: 'deny',
     },
+    {
+      id: 'external_drafts.client_create_denied',
+      path: `users/${UID}/external_drafts/meals/cd_client_00000001`,
+      payload: externalDraftSeed('cd_client_00000001'),
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.client_create_status_only_denied',
+      path: `users/${UID}/external_drafts/meals/cd_client_00000002/status`,
+      payload: 'consumed',
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.status_consumed',
+      path: `users/${UID}/external_drafts/meals/${SEED_CONSUME}/status`,
+      payload: 'consumed',
+      expect: 'allow',
+    },
+    {
+      id: 'external_drafts.consumedAt',
+      path: `users/${UID}/external_drafts/meals/${SEED_CONSUME}/consumedAt`,
+      payload: Date.now(),
+      expect: 'allow',
+    },
+    {
+      id: 'external_drafts.status_back_to_pending_denied',
+      path: `users/${UID}/external_drafts/meals/${SEED_CONSUME}/status`,
+      payload: 'pending',
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.status_deleted',
+      path: `users/${UID}/external_drafts/meals/${SEED_DELETE}/status`,
+      payload: 'deleted',
+      expect: 'allow',
+    },
+    {
+      id: 'external_drafts.status_other_value_denied',
+      path: `users/${UID}/external_drafts/meals/${SEED_OTHER}/status`,
+      payload: 'validated',
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.items_edit_denied',
+      path: `users/${UID}/external_drafts/meals/${SEED_OTHER}/items/0/foodName`,
+      payload: 'pizza',
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.whole_overwrite_denied',
+      path: `users/${UID}/external_drafts/meals/${SEED_OTHER}`,
+      payload: { ...externalDraftSeed(SEED_OTHER), status: 'consumed' },
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.origin_edit_denied',
+      path: `users/${UID}/external_drafts/meals/${SEED_OTHER}/origin`,
+      payload: 'kentu',
+      expect: 'deny',
+    },
+    {
+      id: 'external_drafts.other_kind_denied',
+      path: `users/${UID}/external_drafts/sleep/cd_sleep_00000001`,
+      payload: { status: 'pending' },
+      expect: 'deny',
+    },
+    {
+      id: 'mcp_audit.client_denied',
+      path: `users/${UID}/mcp_audit/a1`,
+      payload: { tool: 'kentu_create_meal_draft', result: 'created', at: Date.now() },
+      expect: 'deny',
+    },
+    {
+      id: 'mcp_write_quota.client_denied',
+      path: `mcp_write_quota/${UID}`,
+      payload: { hourCount: 0, dayCount: 0 },
+      expect: 'deny',
+    },
+    {
+      id: 'mcp_draft_idem.client_denied',
+      path: `mcp_draft_idem/${UID}/h1`,
+      payload: { draftId: 'cd_x_00000000' },
+      expect: 'deny',
+    },
   ];
+}
+
+const SEED_CONSUME = 'cd_seed_00000001';
+const SEED_DELETE = 'cd_seed_00000002';
+const SEED_OTHER = 'cd_seed_00000003';
+const SEED_PATCH = 'cd_seed_00000004';
+
+/** Bozza come la scrive il server MCP (Admin). */
+function externalDraftSeed(id) {
+  return {
+    id,
+    schemaVersion: 1,
+    origin: 'claude',
+    source: 'claude',
+    date: DATE,
+    slotHint: 'pranzo',
+    timeHHmm: '13:00',
+    items: [{ id: `${id}_i0`, foodName: 'pasta integrale', grams: 80, status: 'pending' }],
+    rawText: 'pasta integrale 80 g',
+    tokenId: 't_seed',
+    idempotencyKeyHash: 'seed',
+    createdAt: Date.now(),
+    status: 'pending',
+  };
 }
 
 before(async () => {
@@ -338,6 +464,9 @@ before(async () => {
   token = await createEmulatorIdToken(UID);
   await db.ref(`users/${UID}`).set(null);
   await db.ref('logs/system_errors').set(null);
+  for (const id of [SEED_CONSUME, SEED_DELETE, SEED_OTHER, SEED_PATCH]) {
+    await db.ref(`users/${UID}/external_drafts/meals/${id}`).set(externalDraftSeed(id));
+  }
 });
 
 after(async () => {
@@ -358,6 +487,24 @@ test('catalogo scritture client: ogni allow passa, ogni deny intenzionale fallis
     }
   }
   assert.deepEqual(failures, [], failures.join('\n'));
+});
+
+test('external_drafts: update client {status, consumedAt} accettato, poi contenuto invariato', async () => {
+  assert.ok(token);
+  assert.ok(db);
+  const draftPath = `users/${UID}/external_drafts/meals/${SEED_PATCH}`;
+  const before = (await db.ref(draftPath).get()).val();
+  const sneaky = await emulatorRestPatch(draftPath, { status: 'consumed', rawText: 'modificato' }, { idToken: token });
+  assert.equal(sneaky.denied, true, sneaky.raw);
+  const res = await emulatorRestPatch(draftPath, { status: 'consumed', consumedAt: Date.now() }, { idToken: token });
+  assert.equal(res.statusCode, 200, res.raw);
+  assert.equal(res.denied, false, res.raw);
+  const after = (await db.ref(draftPath).get()).val();
+  assert.equal(after.status, 'consumed');
+  assert.equal(typeof after.consumedAt, 'number');
+  const { status: _s1, consumedAt: _c1, ...restAfter } = after;
+  const { status: _s2, ...restBefore } = before;
+  assert.deepEqual(restAfter, restBefore);
 });
 
 test('tracker_data sleep: round-trip quality + notes su RTDB', async () => {
@@ -383,6 +530,9 @@ test('tracker_data sleep: round-trip quality + notes su RTDB', async () => {
       },
     ],
     mealTimes: {},
+    rev: 1,
+    revBy: UID,
+    revAt: Date.now(),
   };
   const res = await emulatorRestPut(pathKey, payload, { idToken: token });
   assert.equal(res.statusCode, 200, res.raw);

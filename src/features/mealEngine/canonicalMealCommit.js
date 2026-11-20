@@ -1,7 +1,7 @@
 import { TARGETS } from '../../useBiochimico.js';
 import { isUnresolvedMealDraftItem, INBOX_DRAFT_TYPE, UNASSIGNED_DRAFTS_TYPE } from '../../utils/mealDraftStatus.js';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver.js';
-import { withCondiments } from '../nutrition/condiments.js';
+import { condimentEntriesFor, withCondiments } from '../nutrition/condiments.js';
 
 export const ALL_DIARY_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
 
@@ -367,6 +367,26 @@ export function buildCanonicalMealCommitPayload({
     items: withCondiments(items),
     sourceMetadata: { ...sourceMetadata },
   };
+}
+
+/**
+ * Come `withCondiments` del commit canonico, ma per voci diario già mappate:
+ * olio e sale stimati solo sui piatti risolti (le voci in sospeso non hanno ancora un alimento),
+ * senza duplicare condimenti già agganciati allo stesso piatto.
+ */
+export function withCondimentsOnResolved(items) {
+  const list = Array.isArray(items) ? items : [];
+  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
+  const out = [];
+  for (const item of list) {
+    out.push(item);
+    if (!item?.id || item.condimentKind || linked.has(item.id)) continue;
+    if (isUnresolvedMealDraftItem(item)) continue;
+    const extras = condimentEntriesFor(item);
+    if (extras.length > 0) linked.add(item.id);
+    out.push(...extras);
+  }
+  return out;
 }
 
 export function toMcDriveUpsertItem(canonical) {

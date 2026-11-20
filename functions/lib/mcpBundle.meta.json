@@ -1,6 +1,6 @@
 {
-  "builtAt": "2026-11-19T10:15:49.857Z",
-  "sourceHash": "c8cd5b1966ec0a770d2ecd24b691babc6b14efc355ffc80020b395698e17d40f",
+  "builtAt": "2026-11-19T17:42:38.663Z",
+  "sourceHash": "6509fb72d9299ffef4cfc9c6c9a70704fa7107e1c95545724bcabace588034e5",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
@@ -11,8 +11,10 @@
     "functions/mcp/instructions.js",
     "functions/mcp/loadServerCatalogs.js",
     "functions/mcp/loadUserContext.js",
+    "functions/mcp/mealDrafts.js",
     "functions/mcp/nutrientRead.js",
     "functions/mcp/redact.js",
+    "functions/mcp/scopes.js",
     "functions/mcp/shims/browserDeny.js",
     "functions/mcp/shims/draftParser.js",
     "functions/mcp/shims/empty.js",

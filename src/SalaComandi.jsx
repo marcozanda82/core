@@ -72,7 +72,15 @@ import { ensureRecipeDiaryFields } from './utils/recipeDiaryFields.js';
 import {
   toCanonicalDiaryFoodItem,
   pickCanonicalNutrientFields,
+  withCondimentsOnResolved,
 } from './features/mealEngine/canonicalMealCommit.js';
+import { isExternalInboxBlock } from './features/externalDrafts/externalMealDrafts.js';
+import {
+  markExternalDraftStatus,
+  registerExternalDraftDateNavigator,
+  setExternalDraftsViewDate,
+  startExternalDraftsSync,
+} from './features/externalDrafts/externalDraftsStore.js';
 import {
   learnUserPortionsFromConfirmedMeal,
   sanitizeUserPortionsDict,
@@ -1011,6 +1019,20 @@ export default function SalaComandi() {
     return new Date(currentDateObj.getTime() - offset).toISOString().slice(0, 10);
   }, [currentDateObj]);
 
+  useEffect(() => {
+    if (!db || !userUid) return undefined;
+    return startExternalDraftsSync({ db, uid: userUid });
+  }, [db, userUid]);
+
+  useEffect(() => {
+    setExternalDraftsViewDate(currentTrackerDate);
+  }, [currentTrackerDate]);
+
+  useEffect(() => registerExternalDraftDateNavigator((dateKey) => {
+    const target = new Date(`${dateKey}T12:00:00`);
+    if (!Number.isNaN(target.getTime())) setCurrentDateObj(target);
+  }), []);
+
   /** Deep-link Focus audit / altri: apri il diario sul giorno ISO indicato. */
   useEffect(() => {
     const raw = String(location.state?.openDiaryDate || '').trim();
@@ -1868,13 +1890,26 @@ export default function SalaComandi() {
         }
         await update(ref(db, `users/${uid}/profile_targets`), firebasePatch);
         try {
-          await update(ref(db, `users/${uid}/tracker_data/${TRACKER_STORICO_KEY(effectiveDate)}`), {
-            customTargets: {
-              ...patch,
-              source,
-              appliedAt: Date.now(),
+          const dayKey = TRACKER_STORICO_KEY(effectiveDate);
+          const existing = fullHistoryRef.current?.[dayKey] || fullStoricoRef.current?.[dayKey] || null;
+          const { saveDayNodeWithRevRetry } = await import('./utils/dayNodeWrite.js');
+          const { node } = await saveDayNodeWithRevRetry({
+            db,
+            uid,
+            dateStr: effectiveDate,
+            managedFields: {
+              customTargets: {
+                ...patch,
+                source,
+                appliedAt: Date.now(),
+              },
             },
+            expectedRev: existing?.rev ?? null,
           });
+          if (node) {
+            setFullHistory((prev) => ({ ...(prev || {}), [dayKey]: node }));
+            setFullStorico((prev) => ({ ...(prev || {}), [dayKey]: node }));
+          }
         } catch (err) {
           console.warn('[applyTrainingBlockDailyTargets] day node:', err);
         }
@@ -4086,6 +4121,8 @@ export default function SalaComandi() {
       rawText,
       inferredType: payload?.inferredType,
       status: payload?.status || 'pending',
+      source: payload?.source,
+      slotHint: payload?.slotHint,
     });
     dailyLogRef.current = nextLog;
     if (isSimulationMode) {
@@ -4109,14 +4146,18 @@ export default function SalaComandi() {
         items: addFoodItems,
         mealType: targetMealType,
         forcedMealSlot = null,
+        applyCondiments = false,
       } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
-      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
+      const mappedFoods = mapProposalItemsToDiaryFoods(
         addFoodItems,
         mealDecFood,
         targetMealType,
         forcedMealSlot,
       );
+      const alimentiProcessatiFood = applyCondiments
+        ? withCondimentsOnResolved(mappedFoods)
+        : mappedFoods;
       if (!alimentiProcessatiFood.length) return null;
 
       const totKcal = Math.round(
@@ -4188,6 +4229,7 @@ export default function SalaComandi() {
         timeString: oraStringFood,
         mealDec: mealDecFood,
         items: addFoodItems,
+        applyCondiments = false,
       } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
 
@@ -4208,12 +4250,15 @@ export default function SalaComandi() {
           ? existing[0].mealTime
           : mealDecFood,
       };
-      const incomingFoods = mapProposalItemsToDiaryFoods(
+      const mappedIncoming = mapProposalItemsToDiaryFoods(
         addFoodItems,
         forcedMealSlot.mealTime,
         toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
         forcedMealSlot,
       );
+      const incomingFoods = applyCondiments
+        ? withCondimentsOnResolved(mappedIncoming)
+        : mappedIncoming;
       if (!incomingFoods.length) return null;
 
       const mergedEntries = [...existing, ...incomingFoods];
@@ -4261,6 +4306,7 @@ Slot esistente aggiornato (nessun ghost).`;
         mealDec: mealDecFood,
         items: addFoodItems,
         mealType: mealTypeHint,
+        applyCondiments = false,
       } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
 
@@ -4286,12 +4332,15 @@ Slot esistente aggiornato (nessun ghost).`;
         mealType: mealTypeToWrite,
         mealTime: mealTimeToWrite,
       };
-      const alimentiProcessatiFood = mapProposalItemsToDiaryFoods(
+      const mappedFoods = mapProposalItemsToDiaryFoods(
         addFoodItems,
         mealTimeToWrite,
         toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
         forcedMealSlot,
       ).map((food) => ({ ...food, mealTime: mealTimeToWrite }));
+      const alimentiProcessatiFood = applyCondiments
+        ? withCondimentsOnResolved(mappedFoods)
+        : mappedFoods;
       if (!alimentiProcessatiFood.length) return null;
 
       const totKcal = Math.round(
@@ -4345,6 +4394,7 @@ Slot esistente aggiornato (nessun ghost).`;
         timeString: oraStringFood,
         mealDec: mealDecFood,
         items: addFoodItems,
+        applyCondiments = false,
       } = payload || {};
       if (!Array.isArray(addFoodItems) || addFoodItems.length === 0) return null;
 
@@ -4361,6 +4411,7 @@ Slot esistente aggiornato (nessun ghost).`;
           mealDec: mealDecFood,
           items: addFoodItems,
           mealType: mealTypeHint,
+          applyCondiments,
           ...(slotId ? { forcedMealSlot: { mealType: slotId, mealTime: mealDecFood } } : {}),
         });
       }
@@ -4374,12 +4425,15 @@ Slot esistente aggiornato (nessun ghost).`;
         mealType: existing[0]?.mealType || slotId,
         mealTime: mealTimeToWrite,
       };
-      const incomingFoods = mapProposalItemsToDiaryFoods(
+      const mappedIncoming = mapProposalItemsToDiaryFoods(
         addFoodItems,
         forcedMealSlot.mealTime,
         toCanonicalMealType(String(forcedMealSlot.mealType || '').split('_')[0]),
         forcedMealSlot,
       );
+      const incomingFoods = applyCondiments
+        ? withCondimentsOnResolved(mappedIncoming)
+        : mappedIncoming;
       if (!incomingFoods.length) return null;
 
       const usedIncoming = new Set();
@@ -5277,8 +5331,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const handleCreateMealFromInbox = useCallback((block, mealTypeRaw = 'snack') => {
     if (!block) return;
     const originalBlock = normalizeInboxDraftBlock(block);
+    const external = isExternalInboxBlock(block);
     const logSnap = dailyLogRef.current || [];
-    const without = removeUnassignedDraftBlock(logSnap, block);
+    const without = external ? logSnap : removeUnassignedDraftBlock(logSnap, block);
     const mealDec = parseTimeStringToDecimalHour(block.timeHHmm)
       ?? parseFlexibleTimeToDecimal(String(block.timeHHmm || ''))
       ?? getCurrentTimeRoundedTo15Min();
@@ -5289,8 +5344,9 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       : (block.rawText ? [{ foodName: block.rawText, name: block.rawText, status: 'raw' }] : []);
     if (!sourceItems.length) return;
 
-    // Rimuovi bozza Inbox prima del commit (undo ripristina il blocco).
-    writeAssignedInboxLog(without);
+    // Rimuovi bozza Inbox prima del commit (undo ripristina il blocco nell'Inbox del giorno).
+    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
+    else writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     setShowDiarySheet(false);
     const mealLabel = MEAL_LABELS_SAVE[baseType] || baseType;
@@ -5314,6 +5370,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             isEstimated: item?.isEstimated === true,
           })).filter((row) => row.foodName),
           editingExactTime: timeHHmm,
+          fromInboxDraft: true,
           skipUserBubble: true,
         });
       }
@@ -5338,6 +5395,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       action: 'append',
       upsertAction: 'append',
       source: 'inbox_triage',
+      applyCondiments: true,
     });
     const assigned = (dailyLogRef.current || []).filter((item) => {
       const id = item?.id != null ? String(item.id) : '';
@@ -5367,9 +5425,10 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
   const assignInboxDraftToExistingMeal = useCallback((block, meal, { openTray = true } = {}) => {
     if (!block || !(meal?.slotKey || meal.slotId)) return false;
     const originalBlock = normalizeInboxDraftBlock(block);
+    const external = isExternalInboxBlock(block);
     const slotKey = String(meal.slotKey || meal.slotId);
     const logSnap = dailyLogRef.current || [];
-    const without = removeUnassignedDraftBlock(logSnap, block);
+    const without = external ? logSnap : removeUnassignedDraftBlock(logSnap, block);
     let existing = getFoodItemsForMealSlot(without, slotKey);
     if (!existing.length && Array.isArray(meal.foods) && meal.foods.length > 0) {
       existing = meal.foods.filter((item) => item && (item.type === 'food' || item.type === 'recipe' || !item.type));
@@ -5384,7 +5443,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const sourceItems = Array.isArray(block.items) ? block.items : [];
     if (!sourceItems.length) return false;
 
-    writeAssignedInboxLog(without);
+    if (external) void markExternalDraftStatus(block.externalDraftId, 'consumed');
+    else writeAssignedInboxLog(without);
     setInboxTriageBlock(null);
     const mealLabel = String(meal.label || meal.title || meal.mealTypeBase || 'pasto').split(' - ')[0];
 
@@ -5407,6 +5467,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
               foodDbKey: item?.foodDbKey ?? item?.matchedKey ?? null,
             })).filter((row) => row.foodName),
             editingExactTime: timeHHmm,
+            fromInboxDraft: true,
             skipUserBubble: true,
           });
         }
@@ -5432,6 +5493,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       exactTime: timeHHmm,
       mealTime,
       source: 'inbox_triage',
+      applyCondiments: true,
     });
     const assignedItemIds = (dailyLogRef.current || [])
       .filter((item) => {
@@ -5470,6 +5532,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     const sourceId = String(sourceBlock?.id || sourceBlock || '').trim();
     const targetId = String(targetBlock?.id || targetBlock || '').trim();
     if (!sourceId || !targetId || sourceId === targetId) return false;
+    // Le bozze esterne non sono nel log del giorno: si convalidano, non si accorpano.
+    if (isExternalInboxBlock(sourceBlock) || isExternalInboxBlock(targetBlock)) return false;
     const logSnap = dailyLogRef.current || [];
     const nextLog = mergeUnassignedDraftBlocks(logSnap, sourceId, targetId);
     if (nextLog === logSnap) return false;
@@ -5480,6 +5544,11 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleDeleteInboxDraft = useCallback((block) => {
     if (!block?.id) return;
+    if (isExternalInboxBlock(block)) {
+      void markExternalDraftStatus(block.externalDraftId, 'deleted');
+      setInboxTriageBlock(null);
+      return;
+    }
     const logSnap = dailyLogRef.current || [];
     writeAssignedInboxLog(removeUnassignedDraftBlock(logSnap, block));
     setInboxTriageBlock(null);
@@ -6965,6 +7034,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
       }
 
       const targetNodeId = String(commitPayload?.targetNodeId || '').trim();
+      // Convalida da bozza: olio e sale stimati come nel commit canonico.
+      const applyCondiments = payload?.applyCondiments === true;
 
       if (payload?.upsertById === true || String(payload?.source || '') === 'mcdrive_draft_persist') {
         const persistSlot = targetNodeId || sessionMealSlot;
@@ -6976,6 +7047,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             timeString,
             mealDec,
             items,
+            applyCondiments,
           });
           if (message) return message;
         }
@@ -6990,6 +7062,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             mealDec,
             items,
             mealType: mealTypeCanonical,
+            applyCondiments,
           });
           if (message) return message;
         }
@@ -7003,6 +7076,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             timeString,
             mealDec,
             items,
+            applyCondiments,
           });
           if (message) return message;
         }
@@ -7021,6 +7095,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
         mealDec,
         items,
         mealType: mealTypeCanonical,
+        applyCondiments,
         ...(newSlotId
           ? { forcedMealSlot: { mealType: newSlotId, mealTime: mealDec } }
           : {}),

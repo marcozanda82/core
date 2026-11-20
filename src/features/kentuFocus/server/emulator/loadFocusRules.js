@@ -128,6 +128,26 @@ function isRestPermissionDenied(statusCode, parsed, raw) {
  * @param {{ uid?: string|null, idToken?: string|null }} [auth]
  */
 export async function emulatorRestPut(absolutePath, value, auth = {}) {
+  return emulatorRestWrite('PUT', absolutePath, value, auth);
+}
+
+/**
+ * Come `update()` del client: scrive solo le chiavi indicate.
+ * @param {string} absolutePath
+ * @param {Record<string, unknown>} value
+ * @param {{ uid?: string|null, idToken?: string|null }} [auth]
+ */
+export async function emulatorRestPatch(absolutePath, value, auth = {}) {
+  return emulatorRestWrite('PATCH', absolutePath, value, auth);
+}
+
+/**
+ * @param {'PUT'|'PATCH'} method
+ * @param {string} absolutePath
+ * @param {unknown} value
+ * @param {{ uid?: string|null, idToken?: string|null }} [auth]
+ */
+async function emulatorRestWrite(method, absolutePath, value, auth = {}) {
   const host = getFocusEmulatorHost();
   const [hostname, portStr] = host.split(':');
   const port = Number(portStr) || 9000;
@@ -149,7 +169,7 @@ export async function emulatorRestPut(absolutePath, value, auth = {}) {
         hostname,
         port,
         path: pathUrl,
-        method: 'PUT',
+        method,
         timeout: 10_000,
         headers: {
           'Content-Type': 'application/json',
@@ -178,7 +198,7 @@ export async function emulatorRestPut(absolutePath, value, auth = {}) {
     );
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error(`emulatorRestPut timeout: ${absolutePath}`));
+      reject(new Error(`emulatorRest${method} timeout: ${absolutePath}`));
     });
     req.on('error', reject);
     req.write(body);

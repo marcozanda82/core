@@ -3,7 +3,6 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ref, update } from 'firebase/database';
 import {
   getTodayString,
   normalizeCalorieStrategyTarget,
@@ -29,6 +28,7 @@ import {
   resolveDayTargetKcal,
 } from '../../features/mealEngine/resolveDayTargetKcal.js';
 import { withRtdbPermissionLog } from '../../services/rtdbPermissionDenied.js';
+import { saveDayNodeWithRevRetry } from '../../utils/dayNodeWrite.js';
 
 /** Chiavi LS globali — indipendenti dal giorno visualizzato nel tracker. */
 export const KENTU_GHOST_SIM_DELTA_LS_KEY = 'kentu_ghost_sim_delta_global';
@@ -290,10 +290,25 @@ export function useGhostSimCompensation({
 
     const uid = auth?.currentUser?.uid || user?.uid;
     if (!uid || !db) return;
+    const expectedRev = fullHistory?.[storicoKey]?.rev ?? null;
     withRtdbPermissionLog(
-      update(ref(db, `users/${uid}/tracker_data/${storicoKey}`), {
-        autopilotCorrection: value,
-        dayTargetSnapshot,
+      saveDayNodeWithRevRetry({
+        db,
+        uid,
+        dateStr: todayIso,
+        managedFields: {
+          autopilotCorrection: value,
+          dayTargetSnapshot,
+        },
+        expectedRev,
+      }).then((result) => {
+        if (result?.node) {
+          setFullHistory?.((prev) => ({
+            ...(prev || {}),
+            [storicoKey]: result.node,
+          }));
+        }
+        return result;
       }),
       {
         path: `users/${uid}/tracker_data/${storicoKey}`,

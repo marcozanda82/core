@@ -11,8 +11,12 @@ import {
   countUnresolvedMealDraftItems,
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
+  isClaudeDraftBlock,
   isUnresolvedMealDraftItem,
 } from '../../utils/mealDraftStatus';
+import { ExternalDraftsOtherDays } from '../../components/InboxDraftsSection';
+import { useExternalMealDrafts } from '../externalDrafts/externalDraftsStore.js';
+import { isExternalInboxBlock } from '../externalDrafts/externalMealDrafts.js';
 import DailyMealsList from '../../components/salaComandi/DailyMealsList';
 import PendingMealDrafts from '../../components/salaComandi/PendingMealDrafts';
 import { useWipMealOptional } from '../wipMealBuilder/context/WipMealContext.jsx';
@@ -1015,6 +1019,12 @@ export default function PulsantieraUniversale({
   }, [onTrashMeal]);
 
   const inboxBlocks = useMemo(() => extractUnassignedDraftBlocks(dailyLog), [dailyLog]);
+  const externalDrafts = useExternalMealDrafts();
+  // Le bozze esterne si smistano solo dal foglio di smistamento (niente trascinamento né «Riprendi»).
+  const triageBlocks = useMemo(
+    () => [...externalDrafts.blocks, ...inboxBlocks],
+    [externalDrafts.blocks, inboxBlocks],
+  );
   const wipMeal = useWipMealOptional();
 
   const pendingMealDrafts = useMemo(() => {
@@ -1109,8 +1119,8 @@ export default function PulsantieraUniversale({
     () => countPendingMealDrafts({
       dailyLog,
       extraDrafts: extraPendingMealDrafts,
-    }),
-    [dailyLog, extraPendingMealDrafts],
+    }) + externalDrafts.totalPending,
+    [dailyLog, extraPendingMealDrafts, externalDrafts.totalPending],
   );
   const activityDraftsCount = useMemo(
     () => collectPendingSessionDrafts({
@@ -1125,14 +1135,18 @@ export default function PulsantieraUniversale({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     if (disabled) return;
-    if (inboxBlocks.length === 1 && typeof onSelectInboxDraft === 'function') {
+    if (
+      triageBlocks.length === 1
+      && externalDrafts.otherDays.length === 0
+      && typeof onSelectInboxDraft === 'function'
+    ) {
       closeMenus();
-      onSelectInboxDraft(inboxBlocks[0]);
+      onSelectInboxDraft(triageBlocks[0]);
       return;
     }
     closeMenus();
     setActiveCategory('pasti');
-  }, [closeMenus, disabled, inboxBlocks, onSelectInboxDraft]);
+  }, [closeMenus, disabled, triageBlocks, externalDrafts.otherDays.length, onSelectInboxDraft]);
 
   const handleActivityDraftsBadgeClick = useCallback((event) => {
     event?.preventDefault?.();
@@ -1340,13 +1354,30 @@ export default function PulsantieraUniversale({
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
               <section className="inbox-pasti-top mb-3 max-h-[42%] shrink-0 overflow-y-auto overscroll-contain">
                 <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
-                {inboxBlocks.length > 0 ? (
+                {triageBlocks.length > 0 ? (
                   <>
                   <p className="mb-2 text-[0.68rem] text-slate-500">
                     Tocco per smistare · trascina dalla maniglia su un pasto o su un'altra bozza
                   </p>
                   <div className="inbox-drafts__list">
-                    {inboxBlocks.map((block) => {
+                    {triageBlocks.map((block) => {
+                      if (isExternalInboxBlock(block)) {
+                        return (
+                          <div key={block.id} className="inbox-drafts__card inbox-drafts__card--external">
+                            <button
+                              type="button"
+                              className="inbox-drafts__card-main"
+                              onClick={(event) => onInboxCardClick(event, block)}
+                            >
+                              <span className="inbox-drafts__card-label">
+                                {formatInboxDraftCardLabel(block)}
+                              </span>
+                              <span className="inbox-drafts__badge">da Claude</span>
+                              <span className="inbox-drafts__card-cta">Smista</span>
+                            </button>
+                          </div>
+                        );
+                      }
                       const isDragging = inboxDrag?.block?.id === block.id;
                       const isDraftDropTarget = !isDragging
                         && inboxDrag?.dropTarget?.kind === 'draft'
@@ -1382,6 +1413,9 @@ export default function PulsantieraUniversale({
                           <span className="inbox-drafts__card-label">
                             {formatInboxDraftCardLabel(block)}
                           </span>
+                          {isClaudeDraftBlock(block) ? (
+                            <span className="inbox-drafts__badge">da Claude</span>
+                          ) : null}
                           <span className="inbox-drafts__card-cta">Smista</span>
                         </button>
                       </div>
@@ -1394,6 +1428,7 @@ export default function PulsantieraUniversale({
                     Nessuna bozza in sospeso. Tieni premuto Kentu AI per dettare.
                   </p>
                 )}
+                <ExternalDraftsOtherDays otherDays={externalDrafts.otherDays} />
               </section>
 
               <section className="flex min-h-0 flex-1 flex-col overflow-hidden">

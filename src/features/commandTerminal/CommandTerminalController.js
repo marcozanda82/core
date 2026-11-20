@@ -483,6 +483,7 @@ export class CommandTerminalController {
     this.mcdriveValidationContext = null;
     /** @type {string|null} Slot diario in editing (McDrive). */
     this.mcdriveEditingMealId = null;
+    this.mcdriveFromInboxDraft = false;
     /** @type {string|null} Id univoco di sessione (`snack_1757…`) per non fondere spuntini. */
     this.mcdriveSessionSlotId = null;
     /** Bozze raw già scritte sul Diario: il Salva aggiorna per id, non crea un nuovo slot. */
@@ -565,6 +566,7 @@ export class CommandTerminalController {
     this.mcdriveDisambiguationIndex = null;
     this.mcdriveDraftPersisted = false;
     this.mcdriveEditingMealId = null;
+    this.mcdriveFromInboxDraft = false;
     this.mcdriveSessionSlotId = null;
   }
 
@@ -596,6 +598,7 @@ export class CommandTerminalController {
     this.pendingMcDriveUnknown = null;
     this.mcdriveMealType = null;
     this.mcdriveEditingMealId = null;
+    this.mcdriveFromInboxDraft = false;
     this.mcdriveSessionSlotId = null;
     this.mcdriveExactTime = null;
     this.mcdriveTimeString = null;
@@ -779,6 +782,9 @@ export class CommandTerminalController {
       : null;
     const isEditing = Boolean(editingMealId);
     this.mcdriveEditingMealId = editingMealId;
+    // Bozza Inbox convalidata: orario della bozza e condimenti come nel commit canonico.
+    const fromInboxDraft = options?.fromInboxDraft === true;
+    this.mcdriveFromInboxDraft = fromInboxDraft;
 
     const fromOptions = normalizeMcdriveMealType(
       options?.mealTypeHint || options?.mealType || null,
@@ -792,7 +798,7 @@ export class CommandTerminalController {
 
     const timeCtx = formatCurrentSystemTimeContext();
     const nextTime = normalizeMcdriveExactTimeHHmm(
-      isEditing
+      isEditing || fromInboxDraft
         ? (options?.editingExactTime
           || options?.exactTime
           || options?.timeString
@@ -845,11 +851,13 @@ export class CommandTerminalController {
           const hydratedStatus = status === 'requires_disambiguation' && alternatives.length === 0
             ? 'raw'
             : (status || 'raw');
+          // Grammi ignoti restano 0: la validazione userà la porzione standard dell'alimento.
+          const rawGrams = Math.round(Number(f.grams ?? f.qta ?? f.weight ?? f.qty ?? 0) || 0);
           return {
             id,
             foodName,
             spokenFoodName: String(f.spokenFoodName || foodName).trim(),
-            grams,
+            grams: rawGrams > 0 ? rawGrams : 0,
             status: hydratedStatus,
             kcal: 0,
             pro: 0,
@@ -2087,6 +2095,7 @@ export class CommandTerminalController {
         forceNewMealSlot: isNewIndependentMeal && !draftPersisted,
         ...(isNewIndependentMeal && !draftPersisted ? {} : { targetNodeId: sessionSlotId }),
         source: isEditingLoggedMeal ? 'mcdrive_wizard_edit' : 'mcdrive_wizard',
+        ...(this.mcdriveFromInboxDraft ? { applyCondiments: true } : {}),
         ...(exactTime ? {
           exactTime,
           timeString: exactTime,

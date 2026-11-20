@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { ref, get, onValue, set } from 'firebase/database';
+import { saveDayNodeWithRev } from '../utils/dayNodeWrite.js';
 
 export default function useFirebaseSync({
   auth,
@@ -220,14 +221,22 @@ export default function useFirebaseSync({
       };
       const sanitized = stripUndefined(payload);
       const key = TRACKER_STORICO_KEY(dateStr);
-      const dbPath = `users/${uid}/tracker_data/${key}`;
-      set(ref(db, dbPath), sanitized).then(() => {
-        setHistoryLocal((prev) => ({ ...prev, [key]: sanitized }));
+      const expectedRev = fullHistory?.[key]?.rev ?? null;
+      void saveDayNodeWithRev({
+        db,
+        uid,
+        dateStr,
+        managedFields: sanitized,
+        expectedRev,
+      }).then(({ node }) => {
+        setHistoryLocal((prev) => ({ ...prev, [key]: node }));
+      }).catch(() => {
+        // no-op: mantiene comportamento non bloccante della UI
       });
     } catch {
       // no-op: mantiene comportamento non bloccante della UI
     }
-  }, [isSimulationMode, auth, currentTrackerDate, stripUndefined, TRACKER_STORICO_KEY, db]);
+  }, [isSimulationMode, auth, currentTrackerDate, stripUndefined, TRACKER_STORICO_KEY, db, fullHistory]);
 
   const saveProfileToFirebase = useCallback((newProfile, newTargets, { setShowProfile }) => {
     const currentUser = auth.currentUser;

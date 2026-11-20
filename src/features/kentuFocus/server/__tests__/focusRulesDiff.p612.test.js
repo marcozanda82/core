@@ -73,12 +73,15 @@ test('P6.12 diff: database.rules.json users senza nested kentu_focus_ai (non anc
   assert.deepEqual(keys, [
     'cylinders',
     'day_status',
+    'external_drafts',
     'focus_ai_locks',
     'focus_day_scores',
+    'mcp_audit',
     'mcp_tokens',
     'movement_checkin',
     'safety_status',
     'score_feedback',
+    'tracker_data',
     'ui_preferences',
   ]);
 });

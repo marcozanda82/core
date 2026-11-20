@@ -68,7 +68,8 @@ test('giornata completa: totals, coverage, validazione, dedupe cibo', () => {
   assert.equal(dossier.sleep.hours.value, 7.2);
   const expectedBed = computeBedtimeFromWakeAndDuration(7.0, 7.2);
   assert.equal(dossier.sleep.bedtime.value, expectedBed);
-  assert.equal(dossier.sleep.bedtime.provenance, FOCUS_PROVENANCE.calculated);
+  // bedtime da wake−hours: provenance «derived» (calculated resta alias storico nei score)
+  assert.equal(dossier.sleep.bedtime.provenance, FOCUS_PROVENANCE.derived);
   assert.ok(expectedBed > 20, 'bedtime dopo mezzanotte wrap in fascia serale');
 });
 

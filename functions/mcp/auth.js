@@ -1,4 +1,5 @@
 import { sha256Hex } from './hashToken.js';
+import { normalizeMcpScopes } from './scopes.js';
 
 const RATE_LIMIT_PER_HOUR = 60;
 const MIN_TOKEN_LEN = 32;
@@ -74,7 +75,7 @@ function authError(message, reason) {
 /**
  * @param {import('firebase-admin/database').Database} db
  * @param {Headers|Record<string, string|string[]|undefined>|string|undefined} headersOrAuthorization
- * @returns {Promise<{ uid: string, tokenId: string, source: string }>}
+ * @returns {Promise<{ uid: string, tokenId: string, source: string, scopes: string[] }>}
  */
 export async function resolveMcpBearer(db, headersOrAuthorization) {
   const extracted = extractMcpCredential(headersOrAuthorization);
@@ -130,7 +131,12 @@ export async function resolveMcpBearer(db, headersOrAuthorization) {
     requestCountHour: count + 1,
   });
 
-  return { uid, tokenId, source: extracted.source || 'unknown' };
+  return {
+    uid,
+    tokenId,
+    source: extracted.source || 'unknown',
+    scopes: normalizeMcpScopes(record.scopes),
+  };
 }
 
 export function uidLogTag(uid) {

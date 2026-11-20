@@ -113,18 +113,17 @@ test('ipotesi buffer cena non diventa concern né feature', () => {
 
 test('ripetizione lead: cooldown memoria esclude stesso topic', () => {
   const dossier = buildRichDossier(30);
-  const first = selectFocusEditorial({ dossier, memory: null });
+  // `memory: null` non è «prima scoperta» (gate sonno conservativo): serve uno store vuoto.
+  const first = selectFocusEditorial({ dossier, memory: createEmptyEditorialMemory() });
   assert.ok(first.lead);
-  let memory = applyEditorialMemoryAfterPublish(null, {
+  const memory = applyEditorialMemoryAfterPublish(null, {
     publicationDate: PUBLICATION_DATE,
     revision: 1,
     selection: first,
     updatedAt: '2026-10-17T09:00:00.000Z',
   });
   const second = selectFocusEditorial({ dossier, memory });
-  if (first.lead?.topicId) {
-    assert.notEqual(second.lead?.topicId, first.lead.topicId);
-  }
+  assert.notEqual(second.lead?.topicId, first.lead.topicId);
 });
 
 test('cooldown coach: stesso template non riproposto', () => {

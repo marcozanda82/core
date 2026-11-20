@@ -46,13 +46,14 @@ after(async () => {
   await deleteEmulatorAdminApp();
 });
 
-test('dayTargetSnapshot: update client su trackerStorico accettato (nessuna validate campo giorno)', async () => {
+test('dayTargetSnapshot: scrittura giorno con rev+1 accettata (preserva via nodo intero)', async () => {
   assert.ok(token);
   const dayPath = `users/${UID}/tracker_data/${STORICO}`;
   await db.ref(dayPath).set({
     data: DATE,
     log: [],
     autopilotCorrection: 0,
+    rev: 1,
   });
 
   const dayTargetSnapshot = buildDayTargetSnapshot({
@@ -67,7 +68,6 @@ test('dayTargetSnapshot: update client su trackerStorico accettato (nessuna vali
     rulesVersion: 'dtr-1',
   });
 
-  // Stesso shape del client: update parziale su autopilotCorrection + dayTargetSnapshot.
   const res = await emulatorRestPut(
     dayPath,
     {
@@ -75,6 +75,9 @@ test('dayTargetSnapshot: update client su trackerStorico accettato (nessuna vali
       log: [],
       autopilotCorrection: 40,
       dayTargetSnapshot,
+      rev: 2,
+      revBy: UID,
+      revAt: Date.now(),
     },
     { idToken: token },
   );
@@ -87,7 +90,7 @@ test('dayTargetSnapshot: update client su trackerStorico accettato (nessuna vali
   assert.equal(snap.val()?.kcalSource, 'estimated');
 });
 
-test('dayTargetSnapshot: PUT diretto del solo figlio accettato', async () => {
+test('dayTargetSnapshot: PUT del solo figlio senza rev → rifiutato', async () => {
   const payload = buildDayTargetSnapshot({
     base: 2456,
     burnRaw: 0,
@@ -103,8 +106,7 @@ test('dayTargetSnapshot: PUT diretto del solo figlio accettato', async () => {
     payload,
     { idToken: token },
   );
-  assert.equal(res.statusCode, 200, `atteso 200, got ${res.statusCode} ${res.raw}`);
-  assert.equal(res.denied, false, res.raw);
+  assert.equal(res.denied, true, `atteso deny, got ${res.statusCode} ${res.raw}`);
 });
 
 test('focus_day_scores kds-5: write client autenticato accettata', async () => {

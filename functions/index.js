@@ -27,6 +27,7 @@ const {
   createMcpTokenForUid,
   revokeMcpTokenForUid,
   listMcpTokenMeta,
+  setMcpTokenScopesForUid,
 } = require('./lib/mcpTokens.cjs');
 
 /** REST v1beta — payload JSON in camelCase (REST Gemini + thinkingConfig). */
@@ -449,6 +450,26 @@ exports.listMcpTokens = functions
     }
     const tokens = await listMcpTokenMeta(admin.database(), context.auth.uid);
     return { tokens };
+  });
+
+/** Attiva/revoca il permesso bozze pasti (`drafts:write`) su un gettone. */
+exports.setMcpTokenScopes = functions
+  .region('europe-west1')
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth?.uid) {
+      throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
+    }
+    try {
+      return await setMcpTokenScopesForUid(
+        admin.database(),
+        context.auth.uid,
+        data?.tokenId,
+        { draftsWrite: data?.draftsWrite },
+      );
+    } catch (error) {
+      throw mapTokenError(error);
+    }
   });
 
 /**

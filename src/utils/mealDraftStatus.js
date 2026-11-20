@@ -19,6 +19,21 @@ export const MEAL_DRAFT_UNRESOLVED_STATUSES = new Set([
 
 export const UNASSIGNED_DRAFTS_TYPE = 'unassigned_drafts';
 export const INBOX_DRAFT_TYPE = 'inbox_draft';
+export const CLAUDE_DRAFT_SOURCE = 'claude';
+
+const DRAFT_SLOT_HINTS = new Set(['colazione', 'snack', 'pranzo', 'cena']);
+const MAX_SOURCE_LEN = 40;
+const MAX_NOTE_LEN = 200;
+
+function cleanDraftSource(value) {
+  const source = String(value || '').trim().slice(0, MAX_SOURCE_LEN);
+  return /^[a-z0-9_:-]+$/i.test(source) ? source : '';
+}
+
+function cleanSlotHint(value) {
+  const slot = String(value || '').trim().toLowerCase();
+  return DRAFT_SLOT_HINTS.has(slot) ? slot : '';
+}
 
 export function isUnresolvedMealDraftItem(item) {
   if (!item || typeof item !== 'object') return false;
@@ -72,6 +87,7 @@ export function serializeInboxDraftItem(item) {
     || '';
   const status = String(item.status || 'raw').toLowerCase() || 'raw';
   const quantitySource = String(item.quantitySource || '').trim();
+  const note = String(item.note || '').trim().slice(0, MAX_NOTE_LEN);
   const knownSources = new Set(['explicit', 'household', 'user-history', 'database', 'estimated']);
   return {
     foodName,
@@ -92,6 +108,7 @@ export function serializeInboxDraftItem(item) {
       : {}),
     ...(item.icon ? { icon: item.icon } : {}),
     ...(knownSources.has(quantitySource) ? { quantitySource } : {}),
+    ...(note ? { note } : {}),
   };
 }
 
@@ -126,6 +143,8 @@ export function normalizeInboxDraftBlock(block, fallbackIndex = 0) {
     ? block.inferredType
     : inferDraftType(resolvedRawText);
   const status = String(block.status || 'pending').toLowerCase() || 'pending';
+  const source = cleanDraftSource(block.source);
+  const slotHint = cleanSlotHint(block.slotHint);
   return {
     type: INBOX_DRAFT_TYPE,
     id,
@@ -137,6 +156,8 @@ export function normalizeInboxDraftBlock(block, fallbackIndex = 0) {
     inferredType,
     status,
     kcal: 0,
+    ...(source ? { source } : {}),
+    ...(slotHint ? { slotHint } : {}),
   };
 }
 
@@ -175,6 +196,8 @@ export function appendUnassignedDraftBlock(log, {
   timestamp,
   status,
   id,
+  source,
+  slotHint,
 } = {}) {
   const stamp = Number(timestamp ?? createdAt) || Date.now();
   const block = normalizeInboxDraftBlock({
@@ -186,6 +209,8 @@ export function appendUnassignedDraftBlock(log, {
     rawText,
     inferredType,
     status: status || 'pending',
+    source,
+    slotHint,
   });
   if (!block) return Array.isArray(log) ? [...log] : [];
   return [...(Array.isArray(log) ? log : []), block];
@@ -289,6 +314,8 @@ export function mergeUnassignedDraftBlocks(log, sourceDraftId, targetDraftId) {
     createdAt: Math.max(sourceCreated, targetCreated) || Date.now(),
     timeHHmm: String(newer.timeHHmm || older.timeHHmm || '').trim(),
     items: mergedItems,
+    source: target.source || source.source,
+    slotHint: target.slotHint || source.slotHint,
   }, 0);
   if (!merged) return current;
 
@@ -310,20 +337,27 @@ export function removeLogItemsByIds(log, ids) {
 
 export const INBOX_UNDO_TOAST_MS = 4500;
 
+export function isClaudeDraftBlock(block) {
+  return String(block?.source || '') === CLAUDE_DRAFT_SOURCE;
+}
+
 export function formatInboxDraftCardLabel(block) {
   const time = String(block?.timeHHmm || '').trim() || '—';
   const names = (Array.isArray(block?.items) ? block.items : [])
     .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
     .filter(Boolean);
-  const foods = String(block?.rawText || '').trim()
-    || (names.length > 0 ? names.join(', ') : 'appunti');
+  const fromClaude = isClaudeDraftBlock(block);
+  // Da Claude il testo originale va in «Avevi scritto»: in scheda le voci strutturate.
+  const foods = fromClaude && names.length > 0
+    ? names.join(', ')
+    : (String(block?.rawText || '').trim() || (names.length > 0 ? names.join(', ') : 'appunti'));
   const typeTag = block?.inferredType === 'meal'
     ? 'pasto'
     : block?.inferredType === 'workout'
       ? 'allenamento'
       : '';
   const prefix = typeTag ? `Bozza ${typeTag}` : 'Bozza';
-  return `${prefix} ${time} - ${foods}`;
+  return `${prefix}${fromClaude ? ' da Claude' : ''} ${time} - ${foods}`;
 }
 
 /**
@@ -355,6 +389,8 @@ export function serializeUnassignedDraftsForFirebase(log) {
     rawText: block.rawText || '',
     inferredType: block.inferredType || 'unknown',
     status: block.status || 'pending',
+    ...(block.source ? { source: block.source } : {}),
+    ...(block.slotHint ? { slotHint: block.slotHint } : {}),
   }));
   if (blocks.length === 0) return null;
   return {
