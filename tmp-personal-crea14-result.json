@@ -1,0 +1,160 @@
+{
+  "apply": true,
+  "count": 14,
+  "results": [
+    {
+      "key": "avocado",
+      "beforeNa": 2,
+      "beforeSale": 0.005,
+      "afterNa": 2,
+      "afterSale": 0.005,
+      "method": "CREA Avocado fresco 007490 Na 2",
+      "apply": true,
+      "verifiedNa": 2,
+      "verifiedSale": 0.005
+    },
+    {
+      "key": "fagiolini",
+      "beforeNa": 2,
+      "beforeSale": 0.005,
+      "afterNa": 2,
+      "afterSale": 0.005,
+      "method": "CREA Fagiolini freschi 004310 Na 2",
+      "apply": true,
+      "verifiedNa": 2,
+      "verifiedSale": 0.005
+    },
+    {
+      "key": "fagiolini fini surgelati",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 8,
+      "afterSale": 0.02,
+      "method": "CREA Fagiolini surgelati cotti bolliti 004325 Na 8",
+      "apply": true,
+      "verifiedNa": 8,
+      "verifiedSale": 0.02
+    },
+    {
+      "key": "food_1775248196820_Carciofi",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 133,
+      "afterSale": 0.338,
+      "method": "CREA Carciofi crudi 005120 Na 133",
+      "apply": true,
+      "verifiedNa": 133,
+      "verifiedSale": 0.338
+    },
+    {
+      "key": "food_1777924611418_Bieta_erbetta_a_cubetti",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 10,
+      "afterSale": 0.025,
+      "method": "CREA Bieta cruda 005080 Na 10",
+      "apply": true,
+      "verifiedNa": 10,
+      "verifiedSale": 0.025
+    },
+    {
+      "key": "food_1780951288487_Pesche__fresche__con_buccia",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 3,
+      "afterSale": 0.008,
+      "method": "CREA Pesche fresche senza buccia 007280 Na 3 (proxy)",
+      "apply": true,
+      "verifiedNa": 3,
+      "verifiedSale": 0.008
+    },
+    {
+      "key": "food_1781039889587_Zucchine_chiare__cotte__al_vapore",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 1,
+      "afterSale": 0.003,
+      "method": "CREA Zucchine chiare cotte al vapore 005741 Na 1",
+      "apply": true,
+      "verifiedNa": 1,
+      "verifiedSale": 0.003
+    },
+    {
+      "key": "food_1781713043433_Cocomero__fresco",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 3,
+      "afterSale": 0.008,
+      "method": "CREA Cocomero fresco 007040 Na 3",
+      "apply": true,
+      "verifiedNa": 3,
+      "verifiedSale": 0.008
+    },
+    {
+      "key": "mandorle",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 14,
+      "afterSale": 0.036,
+      "method": "CREA Mandorle dolci secche 008540 Na 14",
+      "apply": true,
+      "verifiedNa": 14,
+      "verifiedSale": 0.036
+    },
+    {
+      "key": "patate",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 7,
+      "afterSale": 0.018,
+      "method": "CREA Patate crude 006500 Na 7",
+      "apply": true,
+      "verifiedNa": 7,
+      "verifiedSale": 0.018
+    },
+    {
+      "key": "patate lesse",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 7,
+      "afterSale": 0.018,
+      "method": "CREA Patate senza buccia bollite 006515 Na 7",
+      "apply": true,
+      "verifiedNa": 7,
+      "verifiedSale": 0.018
+    },
+    {
+      "key": "peperone rosso",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 16,
+      "afterSale": 0.041,
+      "method": "CREA Peperoni rossi crudi 005630 Na 16",
+      "apply": true,
+      "verifiedNa": 16,
+      "verifiedSale": 0.041
+    },
+    {
+      "key": "peperoni",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 2,
+      "afterSale": 0.005,
+      "method": "CREA Peperoni crudi 005600 Na 2",
+      "apply": true,
+      "verifiedNa": 2,
+      "verifiedSale": 0.005
+    },
+    {
+      "key": "pesca",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": 3,
+      "afterSale": 0.008,
+      "method": "CREA Pesche fresche senza buccia 007280 Na 3",
+      "apply": true,
+      "verifiedNa": 3,
+      "verifiedSale": 0.008
+    }
+  ]
+}

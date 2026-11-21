@@ -1,0 +1,98 @@
+[
+  {
+    "label": "uovo sodo",
+    "key": "food_1774101701317_Uovo_sodo",
+    "name": "Uovo sodo",
+    "macros": {
+      "kcal": 128,
+      "prot": 12.4,
+      "carb": 0,
+      "fat": 8.7
+    },
+    "micros": {
+      "fibre": 0,
+      "fibreTotali": "(absent)",
+      "vitB1": "(absent)",
+      "vitB2": "(absent)",
+      "vitB3": "(absent)",
+      "vitB5": "(absent)",
+      "vitB6": "(absent)",
+      "se": "(absent)",
+      "colest": 358,
+      "omega3": 228,
+      "ca": 100,
+      "fe": 2.4,
+      "mg": 20,
+      "k": 1700,
+      "na": 137,
+      "vitc": 0,
+      "sale": "(absent)"
+    },
+    "inventedLeft": [],
+    "ok": true
+  },
+  {
+    "label": "ceci Selex",
+    "key": "ceci lessati in barattolo selex",
+    "name": "Ceci lessati in barattolo selex",
+    "macros": {
+      "kcal": 120,
+      "prot": 7.5,
+      "carb": 18,
+      "fat": 2.5
+    },
+    "micros": {
+      "fibre": "(absent)",
+      "fibreTotali": 8,
+      "vitB1": "(absent)",
+      "vitB2": "(absent)",
+      "vitB3": "(absent)",
+      "vitB5": "(absent)",
+      "vitB6": "(absent)",
+      "se": "(absent)",
+      "colest": "(absent)",
+      "omega3": 0.01,
+      "ca": 80,
+      "fe": 3,
+      "mg": 180,
+      "k": 400,
+      "na": "(absent)",
+      "vitc": 10,
+      "sale": "(absent)"
+    },
+    "inventedLeft": [],
+    "ok": true
+  },
+  {
+    "label": "merluzzo",
+    "key": "filetti di merluzzo",
+    "name": "Filetti di merluzzo",
+    "macros": {
+      "kcal": 77,
+      "prot": 16,
+      "carb": 0,
+      "fat": 1.1
+    },
+    "micros": {
+      "fibre": 0,
+      "fibreTotali": 0,
+      "vitB1": "(absent)",
+      "vitB2": "(absent)",
+      "vitB3": "(absent)",
+      "vitB5": "(absent)",
+      "vitB6": "(absent)",
+      "se": "(absent)",
+      "colest": "(absent)",
+      "omega3": 0.3,
+      "ca": 10,
+      "fe": 0.5,
+      "mg": 20,
+      "k": 300,
+      "na": "(absent)",
+      "vitc": 0,
+      "sale": "(absent)"
+    },
+    "inventedLeft": [],
+    "ok": true
+  }
+]

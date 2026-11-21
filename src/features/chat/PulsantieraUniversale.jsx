@@ -8,7 +8,6 @@ import { METABOLIC_FOCUS_LABEL } from './metabolicFocus';
 import { decimalToTimeStr, toCanonicalMealType } from '../../coreEngine';
 import {
   countPendingMealDrafts,
-  countUnresolvedMealDraftItems,
   extractUnassignedDraftBlocks,
   formatInboxDraftCardLabel,
   isClaudeDraftBlock,
@@ -19,6 +18,7 @@ import { useExternalMealDrafts } from '../externalDrafts/externalDraftsStore.js'
 import { isExternalInboxBlock } from '../externalDrafts/externalMealDrafts.js';
 import DailyMealsList from '../../components/salaComandi/DailyMealsList';
 import PendingMealDrafts from '../../components/salaComandi/PendingMealDrafts';
+import PendingDraftsReminder from '../../components/PendingDraftsReminder';
 import { useWipMealOptional } from '../wipMealBuilder/context/WipMealContext.jsx';
 import { subscribeInboxComposerFocus } from '../../platform/inboxComposerFocusBus';
 import { subscribeMealEntryOpen } from '../../platform/mealEntryOpenBus';
@@ -114,6 +114,15 @@ function mealTypeFromClock(timeLabel) {
   if (hour < 16) return 'pranzo';
   if (hour < 18) return 'snack';
   return 'cena';
+}
+
+function cleanSlotHintOrClock(slotHint, timeLabel) {
+  const slot = String(slotHint || '').trim().toLowerCase();
+  if (slot === 'colazione' || slot === 'pranzo' || slot === 'cena' || slot === 'snack'
+    || slot === 'spuntino' || slot === 'merenda') {
+    return toCanonicalMealType(slot) || mealTypeFromClock(timeLabel);
+  }
+  return mealTypeFromClock(timeLabel);
 }
 
 function draftMealLabel(mealType) {
@@ -604,6 +613,7 @@ export default function PulsantieraUniversale({
   onManualShortcut,
   onSendChatMessage,
   onSelectInboxDraft = null,
+  onResumeInboxDraft = null,
   onDropInboxOntoMeal = null,
   onDropInboxOntoDraft = null,
   onTrashMeal = null,
@@ -933,9 +943,11 @@ export default function PulsantieraUniversale({
 
   const pastiToday = useMemo(() => {
     const log = Array.isArray(dailyLog) ? dailyLog : [];
+    // Solo pasti consolidati: le bozze unresolved restano in "Bozze da convalidare".
     const items = log.filter(
       (e) => (e?.type === 'food' || e?.type === 'recipe')
-        && String(e?.mealType || '').trim().length > 0,
+        && String(e?.mealType || '').trim().length > 0
+        && !isUnresolvedMealDraftItem(e),
     );
 
     const labelByBase = {
@@ -973,7 +985,7 @@ export default function PulsantieraUniversale({
       .sort((a, b) => (Number(b.mealTime) || 0) - (Number(a.mealTime) || 0))
       .map((g) => ({
         ...g,
-        pendingCount: countUnresolvedMealDraftItems(g.foods),
+        pendingCount: 0,
         timeStr: decimalToTimeStr(g.mealTime),
         label: labelByBase[g.mealTypeBase] || g.mealTypeBase,
         title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
@@ -1039,46 +1051,106 @@ export default function PulsantieraUniversale({
       rows.push({
         id: 'wip-meal',
         kind: 'wip',
+        origin: 'mine',
         mealType,
         label: draftMealLabel(mealType),
         timeLabel,
         summary: draftSummary(wipItems),
+        originalText: '',
         items: wipItems,
       });
     }
-    inboxBlocks
+    // Claude MCP + inbox locali (stesso elenco della schermata caricamento pasti).
+    [...externalDrafts.blocks, ...inboxBlocks]
       .filter((block) => block?.inferredType !== 'workout')
       .forEach((block) => {
-        const mealType = mealTypeFromClock(block.timeHHmm);
+        const external = isExternalInboxBlock(block) || isClaudeDraftBlock(block);
+        const mealType = cleanSlotHintOrClock(block.slotHint, block.timeHHmm);
+        const names = (Array.isArray(block.items) ? block.items : [])
+          .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
+          .filter(Boolean);
+        const rawText = String(block.rawText || '').trim();
         rows.push({
-          id: `inbox:${block.id}`,
-          kind: 'inbox',
+          id: external ? `external:${block.externalDraftId || block.id}` : `inbox:${block.id}`,
+          kind: external ? 'external' : 'inbox',
+          origin: external ? 'claude' : 'mine',
+          fromClaude: external,
           mealType,
           label: draftMealLabel(mealType),
           timeLabel: String(block.timeHHmm || '').trim(),
           summary: draftSummary(block.items),
+          originalText: rawText || names.join(', '),
           items: block.items,
           source: block,
         });
       });
+    // Voci raw già agganciate a uno slot pasto (persist McDrive) → elenco bozze, non diario.
+    const slotGroups = new Map();
+    (Array.isArray(dailyLog) ? dailyLog : []).forEach((entry) => {
+      if (!entry || (entry.type !== 'food' && entry.type !== 'recipe')) return;
+      if (!isUnresolvedMealDraftItem(entry)) return;
+      const mealTypeRaw = String(entry.mealType || '').trim();
+      if (!mealTypeRaw) return;
+      const mealTypeBase = toCanonicalMealType(mealTypeRaw.split('_')[0]) || mealTypeRaw.split('_')[0];
+      const mealTime = Number(entry.mealTime);
+      const timeKey = Number.isFinite(mealTime) ? String(mealTime) : '';
+      const slotId = `${mealTypeRaw}_${timeKey}`;
+      if (!slotGroups.has(slotId)) {
+        slotGroups.set(slotId, {
+          slotId,
+          mealType: mealTypeBase,
+          mealTime: Number.isFinite(mealTime) ? mealTime : null,
+          items: [],
+        });
+      }
+      slotGroups.get(slotId).items.push(entry);
+    });
+    slotGroups.forEach((group) => {
+      const fromClaude = group.items.some(
+        (item) => item?.externalDraftId || item?.fromClaude || item?.source === 'claude',
+      );
+      const names = group.items
+        .map((item) => String(item?.foodName || item?.name || item?.desc || '').trim())
+        .filter(Boolean);
+      const rawText = group.items
+        .map((item) => String(item?.spokenFoodName || item?.rawText || '').trim())
+        .filter(Boolean)
+        .join(', ');
+      rows.push({
+        id: `slot:${group.slotId}`,
+        kind: 'slot',
+        origin: fromClaude ? 'claude' : 'mine',
+        fromClaude,
+        mealType: group.mealType,
+        label: draftMealLabel(group.mealType),
+        timeLabel: group.mealTime != null ? decimalToTimeStr(group.mealTime) : '',
+        summary: draftSummary(group.items),
+        originalText: rawText || names.join(', '),
+        items: group.items,
+        source: group,
+      });
+    });
     (Array.isArray(extraPendingMealDrafts) ? extraPendingMealDrafts : []).forEach((entry) => {
       const payload = entry?.mealDraft?.payload || entry?.mealDraft || {};
       const items = foodsOfExtraDraft(entry);
       if (items.length === 0 && !payload.title) return;
       const mealType = toCanonicalMealType(payload.mealType) || mealTypeFromClock(payload.exactTime || payload.timeString);
+      const rawText = String(payload.originalText || payload.rawText || payload.title || '').trim();
       rows.push({
         id: `extra:${entry.id}`,
         kind: entry.kind || 'extra',
+        origin: 'mine',
         mealType,
         label: draftMealLabel(mealType),
         timeLabel: String(payload.exactTime || payload.timeString || '').trim(),
         summary: draftSummary(items.length > 0 ? items : [{ foodName: payload.title }]),
+        originalText: rawText,
         items,
         source: entry,
       });
     });
     return rows;
-  }, [extraPendingMealDrafts, inboxBlocks, wipMeal]);
+  }, [dailyLog, extraPendingMealDrafts, externalDrafts.blocks, inboxBlocks, wipMeal]);
 
   const foodsForDraftTray = useCallback((items) => (
     toEditingFoods(items).map((row) => {
@@ -1094,19 +1166,42 @@ export default function PulsantieraUniversale({
   ), []);
 
   const resumePendingDraft = useCallback((draft) => {
+    if (!draft) return;
+    if (draft.kind === 'inbox' || draft.kind === 'external') {
+      closeMenus();
+      const block = draft.source || draft;
+      if (typeof onResumeInboxDraft === 'function') {
+        onResumeInboxDraft(block, draft.mealType || 'pranzo');
+        return;
+      }
+      if (typeof onSelectInboxDraft === 'function') {
+        onSelectInboxDraft(block);
+        return;
+      }
+    }
     const editingFoods = foodsForDraftTray(draft?.items);
     if (editingFoods.length === 0) return;
     if (draft?.kind === 'wip') wipMeal?.clearWipMeal?.();
-    onDismissPendingMealDraft?.(draft);
+    // Slot raw: riprendi in costruttore sullo stesso pasto (non cancellare dal log).
+    if (draft?.kind !== 'slot') onDismissPendingMealDraft?.(draft);
     closeMenus();
     void onSendChatMessage?.('', {
       intent: 'START_MCDRIVE_WIZARD',
       mealType: draft.mealType || 'pranzo',
+      editingMealId: draft.kind === 'slot' ? draft.source?.slotId : undefined,
       editingFoods,
       editingExactTime: draft.timeLabel || undefined,
       skipUserBubble: true,
     });
-  }, [closeMenus, foodsForDraftTray, onDismissPendingMealDraft, onSendChatMessage, wipMeal]);
+  }, [
+    closeMenus,
+    foodsForDraftTray,
+    onDismissPendingMealDraft,
+    onResumeInboxDraft,
+    onSelectInboxDraft,
+    onSendChatMessage,
+    wipMeal,
+  ]);
 
   const deletePendingDraft = useCallback((draft) => {
     if (!draft) return;
@@ -1114,8 +1209,19 @@ export default function PulsantieraUniversale({
       wipMeal?.clearWipMeal?.();
       return;
     }
+    if (draft.kind === 'slot') {
+      onTrashMeal?.({
+        slotKey: draft.source?.slotId,
+        slotId: draft.source?.slotId,
+        mealType: draft.mealType,
+        mealTime: draft.source?.mealTime,
+        foods: draft.items,
+        label: draft.label,
+      });
+      return;
+    }
     onDismissPendingMealDraft?.(draft);
-  }, [onDismissPendingMealDraft, wipMeal]);
+  }, [onDismissPendingMealDraft, onTrashMeal, wipMeal]);
   const mealDraftsCount = useMemo(
     () => countPendingMealDrafts({
       dailyLog,
@@ -1136,18 +1242,9 @@ export default function PulsantieraUniversale({
     event?.preventDefault?.();
     event?.stopPropagation?.();
     if (disabled) return;
-    if (
-      triageBlocks.length === 1
-      && externalDrafts.otherDays.length === 0
-      && typeof onSelectInboxDraft === 'function'
-    ) {
-      closeMenus();
-      onSelectInboxDraft(triageBlocks[0]);
-      return;
-    }
     closeMenus();
-    setActiveCategory('pasti');
-  }, [closeMenus, disabled, triageBlocks, externalDrafts.otherDays.length, onSelectInboxDraft]);
+    openPreferredMealEntry();
+  }, [closeMenus, disabled, openPreferredMealEntry]);
 
   const handleActivityDraftsBadgeClick = useCallback((event) => {
     event?.preventDefault?.();
@@ -1353,83 +1450,14 @@ export default function PulsantieraUniversale({
             </div>
 
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
-              <section className="inbox-pasti-top mb-3 max-h-[42%] shrink-0 overflow-y-auto overscroll-contain">
-                <h3 className="inbox-drafts__title">📥 Inbox (Bozze in sospeso)</h3>
-                {triageBlocks.length > 0 ? (
-                  <>
-                  <p className="mb-2 text-[0.68rem] text-slate-500">
-                    Tocco per smistare · trascina dalla maniglia su un pasto o su un'altra bozza
-                  </p>
-                  <div className="inbox-drafts__list">
-                    {triageBlocks.map((block) => {
-                      if (isExternalInboxBlock(block)) {
-                        return (
-                          <div key={block.id} className="inbox-drafts__card inbox-drafts__card--external">
-                            <button
-                              type="button"
-                              className="inbox-drafts__card-main"
-                              onClick={(event) => onInboxCardClick(event, block)}
-                            >
-                              <span className="inbox-drafts__card-label">
-                                {formatInboxDraftCardLabel(block)}
-                              </span>
-                              <span className="inbox-drafts__badge">da Claude</span>
-                              <span className="inbox-drafts__card-cta">Smista</span>
-                            </button>
-                          </div>
-                        );
-                      }
-                      const isDragging = inboxDrag?.block?.id === block.id;
-                      const isDraftDropTarget = !isDragging
-                        && inboxDrag?.dropTarget?.kind === 'draft'
-                        && inboxDrag.dropTarget.id === block.id;
-                      return (
-                      <div
-                        key={block.id}
-                        data-inbox-drop-kind="draft"
-                        data-inbox-drop-id={block.id}
-                        className={[
-                          'inbox-drafts__card',
-                          isDragging ? 'inbox-drafts__card--dragging' : '',
-                          isDraftDropTarget ? 'inbox-drafts__card--drop-target' : '',
-                        ].join(' ')}
-                      >
-                        <button
-                          type="button"
-                          className="inbox-drafts__drag-handle"
-                          aria-label="Trascina bozza su un pasto o su un'altra bozza"
-                          onPointerDown={(event) => startInboxHandleDrag(event, block)}
-                          onTouchStart={(event) => startInboxHandleDrag(event, block)}
-                          onContextMenu={(event) => event.preventDefault()}
-                        >
-                          <span className="inbox-drafts__grip" aria-hidden>
-                            <span /><span /><span /><span /><span /><span />
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="inbox-drafts__card-main"
-                          onClick={(event) => onInboxCardClick(event, block)}
-                        >
-                          <span className="inbox-drafts__card-label">
-                            {formatInboxDraftCardLabel(block)}
-                          </span>
-                          {isClaudeDraftBlock(block) ? (
-                            <span className="inbox-drafts__badge">da Claude</span>
-                          ) : null}
-                          <span className="inbox-drafts__card-cta">Smista</span>
-                        </button>
-                      </div>
-                      );
-                    })}
-                  </div>
-                  </>
-                ) : (
-                  <p className="mb-2 text-[0.68rem] text-slate-500">
-                    Nessuna bozza in sospeso. Tieni premuto Kentu AI per dettare.
-                  </p>
-                )}
-                <ExternalDraftsOtherDays otherDays={externalDrafts.otherDays} />
+              <section className="mb-3 shrink-0">
+                <PendingDraftsReminder
+                  count={mealDraftsCount}
+                  onOpen={() => {
+                    closeMenus();
+                    openPreferredMealEntry();
+                  }}
+                />
               </section>
 
               <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1585,6 +1613,7 @@ export default function PulsantieraUniversale({
             onEditDraft={resumePendingDraft}
             onDeleteDraft={deletePendingDraft}
           />
+          <ExternalDraftsOtherDays otherDays={externalDrafts.otherDays} />
           <DailyMealsList
             groupedFoods={loggedMealsGrouped}
             decimalToTimeStr={decimalToTimeStr}

@@ -71,6 +71,7 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     {
       description:
         'Legge un giorno Kentu (kds-5): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), '
+        + 'nutrientTotals sodio/fibre con Coverage e Incomplete (totale null se dati insufficienti), '
         + 'liquidi/alcol con orario, caffeina se presente, notte (letto, sveglia, durata, stelle, note), salvavita e azione. '
         + 'Parametro date: "today", "yesterday" oppure YYYY-MM-DD (Europe/Rome). Sola lettura.',
       inputSchema: {
@@ -86,8 +87,10 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     {
       description:
         'Serie compatta sera→notte (max 90 giorni): ultimo pasto, ore prima del sonno, cena (kcal/grammi), '
-        + 'sodio serale, liquidi dopo le 18, alcol, caffeina dopo le 14, esito notte (durata, stelle, note). '
-        + 'from/to in YYYY-MM-DD (Europe/Rome). Sola lettura. Un episodio è un’ipotesi, non una prova.',
+        + 'sodio/fibre cena e sodio serale con Coverage/Incomplete (null se dati insufficienti), '
+        + 'liquidi dopo le 18, alcol, caffeina dopo le 14, esito notte (durata, stelle, note). '
+        + 'from/to in YYYY-MM-DD (Europe/Rome). Sola lettura. Un episodio è un’ipotesi, non una prova. '
+        + 'Non concludere da totali incompleti.',
       inputSchema: {
         from: z.string().describe('YYYY-MM-DD inizio (incluso)'),
         to: z.string().describe('YYYY-MM-DD fine (incluso)'),

@@ -16,7 +16,7 @@ var __copyProps = (to, from, except, desc) => {
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// mcp/tokens.js
+// functions/mcp/tokens.js
 var tokens_exports = {};
 __export(tokens_exports, {
   createMcpTokenForUid: () => createMcpTokenForUid,
@@ -26,7 +26,7 @@ __export(tokens_exports, {
 });
 module.exports = __toCommonJS(tokens_exports);
 
-// mcp/hashToken.js
+// functions/mcp/hashToken.js
 var import_node_crypto = require("node:crypto");
 var TOKEN_BYTES = 32;
 function sha256Hex(value) {
@@ -38,7 +38,7 @@ function generateMcpToken() {
   return { token, hash: sha256Hex(token) };
 }
 
-// mcp/scopes.js
+// functions/mcp/scopes.js
 var MCP_SCOPE_READ = "read";
 var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
 var MCP_SCOPE_MEALS_WRITE = "meals:write";
@@ -67,7 +67,7 @@ function buildMcpScopes(opts = {}) {
   return out;
 }
 
-// mcp/tokens.js
+// functions/mcp/tokens.js
 async function createMcpTokenForUid(db, uid) {
   const id = String(uid || "").trim();
   if (!id) {

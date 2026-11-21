@@ -341,6 +341,7 @@ import {
   useSmartKentuTriggers,
 } from './useSmartKentuTriggers';
 import { TARGETS, DEFAULT_TARGETS, useBiochimico, computeTotali, getDefaultNutrientValue } from './useBiochimico';
+import { fillMissingPersonalFoodNutrients } from './utils/personalFoodNutrientDefaults.js';
 import { stashFocusDiaryForUser } from './features/kentuFocus/product/focusDiaryHandoff.js';
 import {
   DEFAULT_NO_SLEEP_ENERGY,
@@ -1428,6 +1429,17 @@ export default function SalaComandi() {
     setActiveBottomTab('analisi');
     setIsDrawerOpen(false);
     setActiveAction(null);
+  }, []);
+
+  /** Richiamo bozze dal diario → Home + schermata caricamento pasti. */
+  const handleOpenPendingDrafts = useCallback(() => {
+    setShowDiarySheet(false);
+    setActiveBottomTab('oggi');
+    setIsDrawerOpen(false);
+    setActiveAction(null);
+    void Promise.resolve().then(() => {
+      requestOpenMealEntry(PREFERRED_MEAL_MODE.AI);
+    });
   }, []);
 
   const openMetabolicTimeline = useCallback(() => {
@@ -4504,9 +4516,12 @@ Slot esistente aggiornato (nessun ghost).`;
       isRecipe: true,
       ingredients: Array.isArray(ingredients) ? ingredients : [],
     });
-    Object.keys(TARGETS).forEach(g => Object.keys(TARGETS[g] || {}).forEach(k => {
-      if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
-    }));
+    // Sodio: se sconosciuto resta null (mai 2000/4=500 inventato).
+    fillMissingPersonalFoodNutrients(
+      entryPer100,
+      (k) => getDefaultNutrientValue(k, fullHistory),
+      TARGETS,
+    );
     await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entryPer100);
     setFoodDb(prev => ({ ...(prev || {}), [dbKey]: entryPer100 }));
     return dbKey;
@@ -4716,10 +4731,11 @@ Slot esistente aggiornato (nessun ghost).`;
         carb: per100.carb,
         fatTotal: per100.fat,
       };
-      Object.keys(TARGETS).forEach((g) =>
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (merged[k] == null) merged[k] = getDefaultNutrientValue(k, fullHistory);
-        })
+      // Sodio: se sconosciuto resta null (mai 2000/4=500 inventato).
+      fillMissingPersonalFoodNutrients(
+        merged,
+        (k) => getDefaultNutrientValue(k, fullHistory),
+        TARGETS,
       );
       if (merged.kcal == null || Number(merged.kcal) === 0) {
         merged.kcal = getDefaultNutrientValue('kcal', fullHistory);
@@ -5576,7 +5592,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
 
   const handleDismissPendingMealDraft = useCallback((draft) => {
     if (!draft || draft.kind === 'wip') return;
-    if (draft.kind === 'inbox') {
+    if (draft.kind === 'inbox' || draft.kind === 'external') {
       handleDeleteInboxDraft(draft.source || draft);
       return;
     }
@@ -8966,6 +8982,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
             onSaveSleep={handleSaveSleepFromDiary}
             onSelectInboxDraft={handleSelectInboxDraft}
+            onOpenPendingDrafts={handleOpenPendingDrafts}
             onReturnRawToInbox={handleReturnRawToDiaryInbox}
             onTrashMeal={handleTrashMeal}
             trashMeals={trashMeals}
@@ -9032,6 +9049,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onManualShortcut: handleHomeManualShortcut,
             onSendChatMessage: handleHomeActionSend,
             onSelectInboxDraft: handleSelectInboxDraft,
+            onResumeInboxDraft: handleCreateMealFromInbox,
             onDismissPendingMealDraft: handleDismissPendingMealDraft,
             onDropInboxOntoMeal: handleDropInboxOntoMeal,
             onDropInboxOntoDraft: handleMergeInboxDrafts,
@@ -9629,6 +9647,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onOpenActivityView={handleOpenActivityFromChat}
             onOpenPlanView={handleOpenPlanFromChat}
             onSelectInboxDraft={handleSelectInboxDraft}
+            onResumeInboxDraft={handleCreateMealFromInbox}
             onDismissPendingMealDraft={handleDismissPendingMealDraft}
             onDropInboxOntoMeal={handleDropInboxOntoMeal}
             onDropInboxOntoDraft={handleMergeInboxDrafts}
@@ -10125,6 +10144,7 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             onUpdateWorkoutQuestionnaire={handleUpdateWorkoutQuestionnaire}
             onSaveSleep={handleSaveSleepFromDiary}
             onSelectInboxDraft={handleSelectInboxDraft}
+            onOpenPendingDrafts={handleOpenPendingDrafts}
             onReturnRawToInbox={handleReturnRawToDiaryInbox}
             onTrashMeal={handleTrashMeal}
             trashMeals={trashMeals}

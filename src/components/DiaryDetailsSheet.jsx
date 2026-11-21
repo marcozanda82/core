@@ -8,9 +8,10 @@ import {
   computeBedtimeFromWakeAndDuration,
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
-import { isUnresolvedMealDraftItem, countUnresolvedMealDraftItems, extractUnassignedDraftBlocks } from '../utils/mealDraftStatus';
-import InboxDraftsSection from './InboxDraftsSection';
+import { isUnresolvedMealDraftItem, countPendingMealDrafts } from '../utils/mealDraftStatus';
+import PendingDraftsReminder from './PendingDraftsReminder';
 import { useExternalMealDrafts } from '../features/externalDrafts/externalDraftsStore.js';
+import { requestOpenMealEntry } from '../platform/mealEntryOpenBus.js';
 import MealTrashSection from './MealTrashSection';
 import {
   computeMaxCompletedFastForDate,
@@ -142,7 +143,9 @@ function mealSectionUnsaved(items, slotKey, unsavedEntryIds) {
 function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
   return Object.keys(groupedFoods || {})
     .map((slotKey) => {
-      const items = groupedFoods[slotKey] || [];
+      const rawItems = groupedFoods[slotKey] || [];
+      // Bozze unresolved → solo in schermata pasti, non come voci diario.
+      const items = rawItems.filter((f) => !isUnresolvedMealDraftItem(f));
       if (items.length === 0) return null;
       const mealType = items[0]?.mealType || slotKey.split('_')[0];
       const baseType = String(mealType).split('_')[0];
@@ -151,13 +154,11 @@ function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
       const sortTime = Number.isFinite(mealTime) ? mealTime : 12;
       const label = formatMealSlotLabel(mealType);
       const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
-      const pendingCount = countUnresolvedMealDraftItems(items);
       const unsaved = mealSectionUnsaved(items, slotKey, unsavedEntryIds);
-      const resolvedItems = items.filter((f) => !isUnresolvedMealDraftItem(f));
-      const subtotalKcal = resolvedItems.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
-      const subtotalProt = resolvedItems.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
-      const subtotalCarb = resolvedItems.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
-      const subtotalFat = resolvedItems.reduce(
+      const subtotalKcal = items.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
+      const subtotalProt = items.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
+      const subtotalCarb = items.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
+      const subtotalFat = items.reduce(
         (sum, f) => sum + (Number(f.fatTotal ?? f.fat) || 0),
         0,
       );
@@ -169,7 +170,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
         subtotalProt,
         subtotalCarb,
         subtotalFat,
-        pendingCount,
+        pendingCount: 0,
         unsaved,
         items,
         sortTime,
@@ -465,6 +466,7 @@ export default function DiaryDetailsSheet({
   onInspectFood,
   onSaveSleep,
   onSelectInboxDraft = null,
+  onOpenPendingDrafts = null,
   onReturnRawToInbox = null,
   onTrashMeal = null,
   trashMeals = [],
@@ -530,14 +532,14 @@ export default function DiaryDetailsSheet({
   }, [activePillarTab, mealSections]);
 
   const externalDrafts = useExternalMealDrafts();
+  const pendingDraftsCount = countPendingMealDrafts({ dailyLog: activeLog })
+    + (externalDrafts.totalPending || 0);
 
   if (!isOpen) return null;
 
   const consumedKcal = Math.round(Number(totali?.kcal) || 0);
   const targetKcal = Math.round(Number(dynamicDailyKcal) || 0);
   const hasMeals = mealSections.length > 0;
-  const hasInboxDrafts = externalDrafts.blocks.length > 0
-    || extractUnassignedDraftBlocks(activeLog).length > 0;
   const hasWorkouts = workoutEntries.length > 0;
 
   const resolveFoodRowKey = (food, section) => (
@@ -629,11 +631,19 @@ export default function DiaryDetailsSheet({
       <div className="diary-details-scroll">
         {activePillarTab === 'NUTRITION' ? (
           <>
-            <InboxDraftsSection
-              log={activeLog}
-              onSelectDraft={onSelectInboxDraft}
+            <PendingDraftsReminder
+              count={pendingDraftsCount}
+              className="mb-3"
+              onOpen={() => {
+                onClose?.();
+                if (typeof onOpenPendingDrafts === 'function') {
+                  onOpenPendingDrafts();
+                  return;
+                }
+                requestOpenMealEntry('ai');
+              }}
             />
-            {!hasMeals && !hasInboxDrafts ? (
+            {!hasMeals && pendingDraftsCount === 0 ? (
               <EmptyDayTrackingPrompt
                 isIntentionalFast={isIntentionalFast}
                 onMarkIntentionalFast={onMarkIntentionalFast}

@@ -357,6 +357,7 @@ function HomeOggiDialSection({
               ?? userTargets?.fat
               ?? 65
             }
+            activeLog={activeLog}
             onProteinClick={() => setShowProteinSheet?.(true)}
             onCarbsClick={() => setShowCarbsSheet?.(true)}
             onFatClick={() => setShowFatSheet?.(true)}

@@ -1,0 +1,315 @@
+{
+  "apply": true,
+  "hitCount": 23,
+  "daysPlanned": 20,
+  "daysWritten": 20,
+  "itemsWritten": 23,
+  "hits": [
+    {
+      "date": "2026-11-20",
+      "name": "Mandorle",
+      "g": 22,
+      "before": 110,
+      "after": 3.08,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-20",
+      "name": "Fagiolini",
+      "g": 250,
+      "before": 1250,
+      "after": 5,
+      "key": "fagiolini"
+    },
+    {
+      "date": "2026-11-17",
+      "name": "Mandorle",
+      "g": 22,
+      "before": 110,
+      "after": 3.08,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-16",
+      "name": "Mandorle",
+      "g": 20,
+      "before": 100,
+      "after": 2.8,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-15",
+      "name": "Mandorle",
+      "g": 11,
+      "before": 55,
+      "after": 1.54,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-12",
+      "name": "Mandorle",
+      "g": 24,
+      "before": 120,
+      "after": 3.36,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-11",
+      "name": "Mandorle",
+      "g": 20,
+      "before": 100,
+      "after": 2.8,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-09",
+      "name": "Mandorle",
+      "g": 20,
+      "before": 100,
+      "after": 2.8,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Mandorle",
+      "g": 20,
+      "before": 100,
+      "after": 2.8,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-08",
+      "name": "Mandorle",
+      "g": 19,
+      "before": 95,
+      "after": 2.66,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-07",
+      "name": "Mandorle",
+      "g": 16,
+      "before": 80,
+      "after": 2.24,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-05",
+      "name": "Mandorle",
+      "g": 28,
+      "before": 140,
+      "after": 3.92,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-04",
+      "name": "Mandorle",
+      "g": 21,
+      "before": 105,
+      "after": 2.94,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-02",
+      "name": "Mandorle",
+      "g": 16,
+      "before": 80,
+      "after": 2.24,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-11-01",
+      "name": "Mandorle",
+      "g": 21,
+      "before": 105,
+      "after": 2.94,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-10-31",
+      "name": "Avocado",
+      "g": 83,
+      "before": 415,
+      "after": 1.66,
+      "key": "avocado"
+    },
+    {
+      "date": "2026-10-30",
+      "name": "Fagiolini",
+      "g": 350,
+      "before": null,
+      "after": 7,
+      "key": "fagiolini"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Avocado",
+      "g": 85,
+      "before": null,
+      "after": 1.7,
+      "key": "avocado"
+    },
+    {
+      "date": "2026-10-29",
+      "name": "Mandorle",
+      "g": 21,
+      "before": 105,
+      "after": 2.94,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-10-28",
+      "name": "Mandorle",
+      "g": 21,
+      "before": 105,
+      "after": 2.94,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-10-27",
+      "name": "Mandorle",
+      "g": 21,
+      "before": 105,
+      "after": 2.94,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-10-24",
+      "name": "Mandorle",
+      "g": 25,
+      "before": 125,
+      "after": 3.5,
+      "key": "mandorle"
+    },
+    {
+      "date": "2026-10-23",
+      "name": "Mandorle",
+      "g": 25,
+      "before": 125,
+      "after": 3.5,
+      "key": "mandorle"
+    }
+  ],
+  "results": [
+    {
+      "date": "2026-10-23",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-10-24",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-27",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-10-28",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-10-29",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 3
+    },
+    {
+      "date": "2026-10-30",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-10-31",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-01",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-02",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-04",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-05",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-07",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-08",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-09",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-11",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-12",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-15",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-16",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-17",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 3
+    },
+    {
+      "date": "2026-11-20",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 110
+    }
+  ]
+}

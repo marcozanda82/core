@@ -1,0 +1,566 @@
+{
+  "apply": false,
+  "count": 56,
+  "rows": [
+    {
+      "key": "anelli di cipolla",
+      "name": "Anelli Di Cipolla",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "bonroll classico",
+      "name": "BonRoll Classico",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "ceci lessati in barattolo selex",
+      "name": "Ceci lessati in barattolo selex",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "chicken crunchies",
+      "name": "Chicken crunchies",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "cotoletta viennese",
+      "name": "Cotoletta Viennese",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "cotti al vapore selex piselli e carote",
+      "name": "Cotti al vapore Selex piselli e carote",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "excellence 85% cioccolato rich dark",
+      "name": "Excellence 85% Cioccolato Rich Dark",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "filetti di merluzzo",
+      "name": "Filetti di merluzzo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": 0,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1773065279070_Bon_Roll",
+      "name": "Bon Roll",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1773339638220_Miele",
+      "name": "Miele",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1773583936671_Carne_di_maiale__magra__cruda",
+      "name": "Carne di maiale, magra, cruda",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1774041861218_Orata",
+      "name": "Orata",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1774100062616_Okonomiyaki_alle_zucchine",
+      "name": "Okonomiyaki alle zucchine",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1774100390395_Gamberi_in_tempura",
+      "name": "Gamberi in tempura",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775220452704_Filetti_gustosi_di_merluzzo_d_",
+      "name": "Filetti gustosi di merluzzo d’alaska",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775508974027_Fettina_di_manzo",
+      "name": "Fettina di manzo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775510265063_Barcode_8056324087045",
+      "name": "Barcode 8056324087045",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775510329661_Pizza_alle_verdure_grigliate",
+      "name": "Pizza alle verdure grigliate",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775914367324_Pane_integrale",
+      "name": "Pane integrale",
+      "category": "bread",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1775944514061_Pane_integrale",
+      "name": "Pane integrale",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1776628254317_Italiano_pizza_diavola",
+      "name": "Italiano pizza diavola",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1776628285961_Filetti_di_branzino",
+      "name": "Filetti di branzino",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1776864384192_Filetti_di_branzino",
+      "name": "Filetti di branzino",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1777039870760_Vegetable_Tempura",
+      "name": "Vegetable Tempura",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1777149451720_Barcode_4335619146594",
+      "name": "Focaccia ripiena mozzarella, porcini e salsa tartufo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1777815849128_Barcode_000404404855",
+      "name": "Barcode 000404404855",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1777815958279_Barcode_047005370066",
+      "name": "Barcode 047005370066",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1777815964852_Barcode_9004045770066",
+      "name": "Barcode 9004045770066",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1779368597625_Barcode_044546444416",
+      "name": "Barcode 044546444416",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1780213094934_Caffe__tostato",
+      "name": "Caffe' tostato",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1781212826054_Hamburger_piccolo__solo_carne__fast_food",
+      "name": "Hamburger piccolo, solo carne, fast food",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1781707152757_Pesto_alla_genovese",
+      "name": "Pesto alla genovese",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1781733794280_Gamberetti_con_funghi_e_bamb_",
+      "name": "Gamberetti con funghi e bambù",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "food_1782075353194_Prosciutto_crudo_DOP__di_Parma",
+      "name": "Prosciutto crudo DOP, di Parma",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "hamburger di pollo il vegetariano mudu",
+      "name": "hamburger di pollo il vegetariano Mudu",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "hamburger il vegetariano mudu",
+      "name": "hamburger il vegetariano Mudu",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "minestrone tradizione",
+      "name": "Minestrone tradizione",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "mix mediterraneo",
+      "name": "Mix Mediterraneo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "pasta  sfoglia",
+      "name": "Pasta sfoglia",
+      "category": "pasta",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "pasta fresca di semola di grano duro",
+      "name": "Pasta fresca di semola di grano duro",
+      "category": "pasta",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "petto di pollo",
+      "name": "Petto di pollo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "piadina romagnola igp alla riminese",
+      "name": "Piadina romagnola IGP alla riminese",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "pizza regina gran gusto tonno cipolle e olive",
+      "name": "Pizza regina gran gusto tonno cipolle e olive",
+      "category": "canned",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "pizza ristorante",
+      "name": "Pizza ristorante",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "quinoa cotti al vapore valfrutta",
+      "name": "quinoa cotti al vapore valfrutta (1 1 unità (~120 g)) (1 1 unità (~120 g))",
+      "category": "fruit",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "ravioli con patate e formaggio",
+      "name": "Ravioli con patate e formaggio",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "recipe_1774444671349_Pollo_al_curry",
+      "name": "Pollo al curry",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "recipe_1774463958752_Chili_con_carne",
+      "name": "Chili con carne",
+      "category": null,
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "salmone",
+      "name": "Salmone",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "tonno all'olio di oliva",
+      "name": "Tonno all'olio di oliva",
+      "category": "oil",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "tuorlo d'uovo",
+      "name": "Tuorlo d'uovo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "uova",
+      "name": "Uova",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "uovo",
+      "name": "Uovo",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "viennese",
+      "name": "Viennese",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "wudy classico",
+      "name": "Wudy classico",
+      "category": "generic",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    },
+    {
+      "key": "yogurt greco bianco 0% grassi",
+      "name": "Yogurt greco bianco 0% grassi",
+      "category": "dairy",
+      "beforeNa": 500,
+      "beforeSale": null,
+      "afterNa": null,
+      "afterSale": null,
+      "reason": "na=500 default inventato (2000mg/4); senza CREA → dato mancante"
+    }
+  ]
+}

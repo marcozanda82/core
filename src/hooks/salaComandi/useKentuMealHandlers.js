@@ -1,7 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { ref, set, push } from 'firebase/database';
 import { callGeminiAPIWithRotation } from '../../services/aiService';
-import { TARGETS, getDefaultNutrientValue } from '../../useBiochimico';
 import {
   getTodayString,
   getGhostMealType,
@@ -120,13 +119,7 @@ export function useKentuMealHandlers({
         fat,
         entrySource: 'other',
       };
-      Object.keys(TARGETS).forEach((g) => {
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (newItem[k] == null) {
-            newItem[k] = getDefaultNutrientValue(k, fullHistory);
-          }
-        });
-      });
+      // Nessun micro inventato (target/4): se non noto resta assente.
       if (isSimulationMode) {
         setSimulatedLog((prev) => [...(prev || []), newItem]);
         setChatHistory((prev) => [...prev, { sender: 'ai', text: 'Cena salvata nel diario! (sandbox)' }]);

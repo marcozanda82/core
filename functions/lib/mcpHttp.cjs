@@ -34,7 +34,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// mcp/dates.js
+// functions/mcp/dates.js
 function partsInRome(now = /* @__PURE__ */ new Date()) {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: TZ,
@@ -124,7 +124,7 @@ function todayInRome(now = /* @__PURE__ */ new Date()) {
 }
 var TZ, WEEKDAY_TO_OFFSET;
 var init_dates = __esm({
-  "mcp/dates.js"() {
+  "functions/mcp/dates.js"() {
     TZ = "Europe/Rome";
     WEEKDAY_TO_OFFSET = {
       Mon: 0,
@@ -138,7 +138,7 @@ var init_dates = __esm({
   }
 });
 
-// ../src/features/kentuFocus/product/loadFocusCatalogsNode.js
+// src/features/kentuFocus/product/loadFocusCatalogsNode.js
 async function loadFocusCatalogsFromPublic(root = process.cwd(), options = {}) {
   const includeOff = options.includeOff !== false;
   const dataDir = options.dataDir ? String(options.dataDir) : null;
@@ -203,7 +203,7 @@ function hasUsableKcal(record) {
 }
 var import_promises, import_node_path, FILE_NAMES, cached;
 var init_loadFocusCatalogsNode = __esm({
-  "../src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
+  "src/features/kentuFocus/product/loadFocusCatalogsNode.js"() {
     import_promises = require("node:fs/promises");
     import_node_path = __toESM(require("node:path"), 1);
     FILE_NAMES = Object.freeze({
@@ -215,7 +215,7 @@ var init_loadFocusCatalogsNode = __esm({
   }
 });
 
-// mcp/loadServerCatalogs.js
+// functions/mcp/loadServerCatalogs.js
 var loadServerCatalogs_exports = {};
 __export(loadServerCatalogs_exports, {
   clearServerCatalogsCache: () => clearServerCatalogsCache,
@@ -273,7 +273,7 @@ async function loadServerCatalogs() {
 }
 var import_node_path2, import_node_fs, dataDirOverride, OFF_WARNING, loading, cached2;
 var init_loadServerCatalogs = __esm({
-  "mcp/loadServerCatalogs.js"() {
+  "functions/mcp/loadServerCatalogs.js"() {
     import_node_path2 = __toESM(require("node:path"));
     import_node_fs = require("node:fs");
     init_loadFocusCatalogsNode();
@@ -284,7 +284,7 @@ var init_loadServerCatalogs = __esm({
   }
 });
 
-// ../src/features/dayStatus/dayStatusRecord.js
+// src/features/dayStatus/dayStatusRecord.js
 function isIsoDate2(value) {
   if (typeof value !== "string" || !ISO_DATE_RE.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number);
@@ -318,13 +318,13 @@ function finiteEpoch(value) {
 }
 var PAUSE_REASONS, ISO_DATE_RE;
 var init_dayStatusRecord = __esm({
-  "../src/features/dayStatus/dayStatusRecord.js"() {
+  "src/features/dayStatus/dayStatusRecord.js"() {
     PAUSE_REASONS = Object.freeze(["vacanza", "malattia", "altro"]);
     ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   }
 });
 
-// ../src/features/kentuFocus/score/dayScoreRecord.js
+// src/features/kentuFocus/score/dayScoreRecord.js
 var dayScoreRecord_exports = {};
 __export(dayScoreRecord_exports, {
   dayScorePath: () => dayScorePath,
@@ -420,12 +420,12 @@ function stableStringify(value) {
   return "null";
 }
 var init_dayScoreRecord = __esm({
-  "../src/features/kentuFocus/score/dayScoreRecord.js"() {
+  "src/features/kentuFocus/score/dayScoreRecord.js"() {
     init_dayStatusRecord();
   }
 });
 
-// mcp/loadUserContext.js
+// functions/mcp/loadUserContext.js
 var loadUserContext_exports = {};
 __export(loadUserContext_exports, {
   loadUserFocusContext: () => loadUserFocusContext,
@@ -508,12 +508,76 @@ async function readStoredDayScore(db, uid, date) {
   return decodeDayScoreFromRtdb2(snap.val());
 }
 var init_loadUserContext = __esm({
-  "mcp/loadUserContext.js"() {
+  "functions/mcp/loadUserContext.js"() {
     init_dates();
   }
 });
 
-// ../src/activityCatalog.js
+// src/utils/nutrientTotalCoverage.js
+function finite(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function round1(value) {
+  const n = finite(value);
+  return n == null ? null : Math.round(n * 10) / 10;
+}
+function summarizeNutrientTotalByGrams(items, opts) {
+  const minCoverage = Number.isFinite(opts?.minCoverage) ? opts.minCoverage : MIN_NUTRIENT_GRAMS_COVERAGE;
+  const list = Array.isArray(items) ? items : [];
+  let known = 0;
+  let missing = 0;
+  let knownGrams = 0;
+  let missingGrams = 0;
+  let sum = 0;
+  let totalWeight = 0;
+  for (const item of list) {
+    if (!item || typeof item !== "object") continue;
+    const g = finite(opts.getGrams(item));
+    const weight = g != null && g > 0 ? g : 1;
+    totalWeight += weight;
+    const value = finite(opts.getValue(item));
+    if (value != null) {
+      known += 1;
+      knownGrams += weight;
+      sum += value;
+    } else {
+      missing += 1;
+      missingGrams += weight;
+    }
+  }
+  if (known + missing === 0) {
+    return {
+      value: null,
+      coverage: { known: 0, missing: 0, knownGrams: 0, missingGrams: 0, ratio: 0 },
+      incomplete: false,
+      note: null
+    };
+  }
+  const ratio = totalWeight > 0 ? knownGrams / totalWeight : 0;
+  const incomplete = ratio < minCoverage;
+  return {
+    value: incomplete ? null : round1(sum),
+    coverage: {
+      known,
+      missing,
+      knownGrams: round1(knownGrams) ?? 0,
+      missingGrams: round1(missingGrams) ?? 0,
+      ratio: Math.round(ratio * 1e3) / 1e3
+    },
+    incomplete,
+    note: incomplete ? "dati insufficienti" : null
+  };
+}
+var MIN_NUTRIENT_GRAMS_COVERAGE;
+var init_nutrientTotalCoverage = __esm({
+  "src/utils/nutrientTotalCoverage.js"() {
+    MIN_NUTRIENT_GRAMS_COVERAGE = 0.7;
+  }
+});
+
+// src/activityCatalog.js
 function normalizeMuscleGroupLabel(raw) {
   if (raw == null) return null;
   const s = String(raw).trim();
@@ -535,7 +599,7 @@ function normalizeMuscleGroupArray(muscles) {
 }
 var WORKOUT_MUSCLE_GROUP_DEFS, WORKOUT_MUSCLE_MACRO_SECTIONS, WORKOUT_MUSCLE_GROUP_IDS, MUSCLE_ALIAS_TO_ID, WORKOUT_ACTIVITY_TYPE_DEFS, ACTIVITY_BY_ID, WORKOUT_ACTIVITY_SELECTOR_IDS;
 var init_activityCatalog = __esm({
-  "../src/activityCatalog.js"() {
+  "src/activityCatalog.js"() {
     WORKOUT_MUSCLE_GROUP_DEFS = [
       { id: "Petto", label: "Petto", macroGroup: "chest" },
       { id: "Dorso", label: "Dorso", aliases: ["Schiena", "schiena"], macroGroup: "back_shoulders" },
@@ -710,7 +774,7 @@ var init_activityCatalog = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusDateUtils.js
+// src/features/kentuFocus/normalize/focusDateUtils.js
 function isIsoDateString(value) {
   if (typeof value !== "string" || !ISO_DATE_RE2.test(value)) return false;
   const d = /* @__PURE__ */ new Date(`${value}T12:00:00`);
@@ -762,7 +826,7 @@ function formatFocusHoursIt(hours) {
 }
 var ISO_DATE_RE2, ISO_WEEKDAY_LABELS_IT, MONTHS_IT;
 var init_focusDateUtils = __esm({
-  "../src/features/kentuFocus/normalize/focusDateUtils.js"() {
+  "src/features/kentuFocus/normalize/focusDateUtils.js"() {
     ISO_DATE_RE2 = /^\d{4}-\d{2}-\d{2}$/;
     ISO_WEEKDAY_LABELS_IT = Object.freeze([
       null,
@@ -791,7 +855,7 @@ var init_focusDateUtils = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/expandTrackerDayLog.js
+// src/features/kentuFocus/normalize/expandTrackerDayLog.js
 function asLogCollectionArray(raw) {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw.filter((e) => e && typeof e === "object");
@@ -854,14 +918,14 @@ function pickDayLogRaw(node) {
   return null;
 }
 var init_expandTrackerDayLog = __esm({
-  "../src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
+  "src/features/kentuFocus/normalize/expandTrackerDayLog.js"() {
   }
 });
 
-// ../src/features/kentuFocus/costanza/muscleIds.mm-1.js
+// src/features/kentuFocus/costanza/muscleIds.mm-1.js
 var MUSCLE_MAP_VERSION, MUSCLE_IDS, MUSCLE_LABELS, COSTANZA_UI_GROUPS, FORCE_CI_GROUP_IDS, DEFAULT_WEEKLY_GOAL_DAYS, WEEKLY_GOAL_CHOICES;
 var init_muscleIds_mm_1 = __esm({
-  "../src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
+  "src/features/kentuFocus/costanza/muscleIds.mm-1.js"() {
     MUSCLE_MAP_VERSION = "mm-1";
     MUSCLE_IDS = Object.freeze([
       "pettorali",
@@ -947,7 +1011,7 @@ var init_muscleIds_mm_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/costanza/muscleMap.mm-1.js
+// src/features/kentuFocus/costanza/muscleMap.mm-1.js
 function mapChipToMuscles(chipId) {
   const id = String(chipId || "").trim();
   if (!id) return Object.freeze([]);
@@ -995,7 +1059,7 @@ function sessionTrainedMuscleIds(entry) {
 }
 var CHIP_MAP, TYPE_FALLBACK_CHIPS;
 var init_muscleMap_mm_1 = __esm({
-  "../src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
+  "src/features/kentuFocus/costanza/muscleMap.mm-1.js"() {
     init_activityCatalog();
     init_workoutMovement();
     init_muscleIds_mm_1();
@@ -1059,7 +1123,7 @@ var init_muscleMap_mm_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/costanza/costanzaForza.js
+// src/features/kentuFocus/costanza/costanzaForza.js
 function dayRawLog(fullHistory, dateKey) {
   const node = fullHistory?.[`trackerStorico_${dateKey}`];
   if (!node || typeof node !== "object") return [];
@@ -1241,7 +1305,7 @@ function computeCostanzaForza(input) {
   };
 }
 var init_costanzaForza = __esm({
-  "../src/features/kentuFocus/costanza/costanzaForza.js"() {
+  "src/features/kentuFocus/costanza/costanzaForza.js"() {
     init_focusDateUtils();
     init_expandTrackerDayLog();
     init_workoutMovement();
@@ -1250,10 +1314,10 @@ var init_costanzaForza = __esm({
   }
 });
 
-// ../src/features/trendHub/utils/muscleSpillover.js
+// src/features/trendHub/utils/muscleSpillover.js
 var muscleSpilloverMatrix, SPILLOVER_MUSCLE_KEYS;
 var init_muscleSpillover = __esm({
-  "../src/features/trendHub/utils/muscleSpillover.js"() {
+  "src/features/trendHub/utils/muscleSpillover.js"() {
     init_costanzaForza();
     muscleSpilloverMatrix = Object.freeze({
       petto: Object.freeze({ petto: 50, spalle: 20, braccia: 25 }),
@@ -1274,7 +1338,7 @@ var init_muscleSpillover = __esm({
   }
 });
 
-// ../src/features/commandTerminal/context/workoutMovement.js
+// src/features/commandTerminal/context/workoutMovement.js
 function durationAmountToMinutes(amount) {
   const dur = Number(amount);
   if (!Number.isFinite(dur) || dur <= 0) return 0;
@@ -1322,7 +1386,7 @@ function equivalentAerobicMinutes(entry) {
 }
 var VIGOROUS_EQUIVALENT_FACTOR, WALK_TYPE_IDS, VIGOROUS_TYPE_IDS, STRENGTH_TYPE_IDS, STRENGTH_TYPE_PRIMARIES, STRENGTH_LABEL, WALK_LABEL, VIGOROUS_LABEL;
 var init_workoutMovement = __esm({
-  "../src/features/commandTerminal/context/workoutMovement.js"() {
+  "src/features/commandTerminal/context/workoutMovement.js"() {
     init_activityCatalog();
     init_muscleSpillover();
     VIGOROUS_EQUIVALENT_FACTOR = 2;
@@ -1391,7 +1455,7 @@ var init_workoutMovement = __esm({
   }
 });
 
-// mcp/shims/getTrackerDayNode.js
+// functions/mcp/shims/getTrackerDayNode.js
 function isIsoDateString2(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
 }
@@ -1404,24 +1468,24 @@ function getTrackerDayNode(fullHistory, date) {
   return node && typeof node === "object" ? node : null;
 }
 var init_getTrackerDayNode = __esm({
-  "mcp/shims/getTrackerDayNode.js"() {
+  "functions/mcp/shims/getTrackerDayNode.js"() {
   }
 });
 
-// mcp/shims/draftParser.js
+// functions/mcp/shims/draftParser.js
 var init_draftParser = __esm({
-  "mcp/shims/draftParser.js"() {
+  "functions/mcp/shims/draftParser.js"() {
   }
 });
 
-// ../src/utils/mealDraftStatus.js
+// src/utils/mealDraftStatus.js
 function isUnresolvedMealDraftItem(item) {
   if (!item || typeof item !== "object") return false;
   return MEAL_DRAFT_UNRESOLVED_STATUSES.has(String(item.status || "").toLowerCase());
 }
 var MEAL_DRAFT_UNRESOLVED_STATUSES, UNASSIGNED_DRAFTS_TYPE, INBOX_DRAFT_TYPE;
 var init_mealDraftStatus = __esm({
-  "../src/utils/mealDraftStatus.js"() {
+  "src/utils/mealDraftStatus.js"() {
     init_draftParser();
     MEAL_DRAFT_UNRESOLVED_STATUSES = /* @__PURE__ */ new Set([
       "raw",
@@ -1436,7 +1500,7 @@ var init_mealDraftStatus = __esm({
   }
 });
 
-// ../src/utils/computeTotaliCore.js
+// src/utils/computeTotaliCore.js
 function readLogItemNutrient(item, key) {
   if (!item || typeof item !== "object") return null;
   if (key === "fatTotal") {
@@ -1492,7 +1556,7 @@ function computeTotali(dailyLog) {
 }
 var TARGETS, ALL_NUTRIENT_KEYS, LOG_ITEM_NUTRIENT_ALIASES, SALT_G_TO_SODIUM_MG2;
 var init_computeTotaliCore = __esm({
-  "../src/utils/computeTotaliCore.js"() {
+  "src/utils/computeTotaliCore.js"() {
     init_mealDraftStatus();
     TARGETS = {
       macro: { prot: 140, carb: 300, fatTotal: 85, fibre: 30 },
@@ -1513,7 +1577,7 @@ var init_computeTotaliCore = __esm({
   }
 });
 
-// ../src/features/kentuFocus/contracts/focusDossier.v1.js
+// src/features/kentuFocus/contracts/focusDossier.v1.js
 function focusMetric(value, opts) {
   const provenance = opts?.provenance;
   if (!FOCUS_PROVENANCE[provenance]) {
@@ -1537,7 +1601,7 @@ function missingMetric(unit) {
 }
 var FOCUS_PROVENANCE, FOCUS_CERTAINTY, FOCUS_MEAL_TYPES;
 var init_focusDossier_v1 = __esm({
-  "../src/features/kentuFocus/contracts/focusDossier.v1.js"() {
+  "src/features/kentuFocus/contracts/focusDossier.v1.js"() {
     FOCUS_PROVENANCE = Object.freeze({
       recorded: "recorded",
       /** @deprecated Preferire `derived` per bedtime = wake−hours. */
@@ -1564,7 +1628,7 @@ var init_focusDossier_v1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/logUtils.js
+// src/features/kentuFocus/normalize/logUtils.js
 function getLogArray(node) {
   return expandTrackerLogEntries(pickDayLogRaw(node));
 }
@@ -1603,12 +1667,12 @@ function finiteNumber(n) {
   return Number.isFinite(v) ? v : null;
 }
 var init_logUtils = __esm({
-  "../src/features/kentuFocus/normalize/logUtils.js"() {
+  "src/features/kentuFocus/normalize/logUtils.js"() {
     init_expandTrackerDayLog();
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusMealSlots.js
+// src/features/kentuFocus/normalize/focusMealSlots.js
 function getMealSlotBase(raw) {
   const str = String(raw ?? "").trim().toLowerCase();
   if (!str) return "";
@@ -1662,7 +1726,7 @@ function resolveFoodClockHourDetailed(item, mealTimes) {
 }
 var ALIAS_TO_CANONICAL;
 var init_focusMealSlots = __esm({
-  "../src/features/kentuFocus/normalize/focusMealSlots.js"() {
+  "src/features/kentuFocus/normalize/focusMealSlots.js"() {
     init_focusDateUtils();
     ALIAS_TO_CANONICAL = Object.freeze({
       colazione: "colazione",
@@ -1679,10 +1743,10 @@ var init_focusMealSlots = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/focusNutritionPlausibility.js
+// src/features/kentuFocus/normalize/focusNutritionPlausibility.js
 var FOCUS_NUTRITION_PLAUSIBILITY;
 var init_focusNutritionPlausibility = __esm({
-  "../src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
+  "src/features/kentuFocus/normalize/focusNutritionPlausibility.js"() {
     init_logUtils();
     init_mealDraftStatus();
     FOCUS_NUTRITION_PLAUSIBILITY = Object.freeze({
@@ -1693,7 +1757,7 @@ var init_focusNutritionPlausibility = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeFoodEvents.js
+// src/features/kentuFocus/normalize/normalizeFoodEvents.js
 function collectDayLogForNutrition(analysisDayNode) {
   return collectDayLogForNutritionWithQuality(analysisDayNode).dayLog;
 }
@@ -1717,9 +1781,10 @@ function collectDayLogForNutritionWithQuality(analysisDayNode) {
   };
 }
 var init_normalizeFoodEvents = __esm({
-  "../src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
+  "src/features/kentuFocus/normalize/normalizeFoodEvents.js"() {
     init_computeTotaliCore();
     init_mealDraftStatus();
+    init_nutrientTotalCoverage();
     init_focusDossier_v1();
     init_logUtils();
     init_focusMealSlots();
@@ -1728,7 +1793,7 @@ var init_normalizeFoodEvents = __esm({
   }
 });
 
-// ../src/features/dayStatus/dayStatus.js
+// src/features/dayStatus/dayStatus.js
 function getDayStatus(date, context = {}) {
   if (!isIsoDate2(date) || !isIsoDateString(date)) return null;
   const today = String(context.today || "").slice(0, 10);
@@ -1833,7 +1898,7 @@ function finiteTarget(value) {
 }
 var DAY_STATUSES, MAIN_MEAL_ORDER, MAIN_MEALS, REGISTERED_TYPES, LATE_AFTER_HOURS, GAP_ENERGY_RATIO, GAP_EVENING_HOUR;
 var init_dayStatus = __esm({
-  "../src/features/dayStatus/dayStatus.js"() {
+  "src/features/dayStatus/dayStatus.js"() {
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
     init_focusMealSlots();
@@ -1859,7 +1924,7 @@ var init_dayStatus = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/resolveMainNightSleep.js
+// src/features/kentuFocus/normalize/resolveMainNightSleep.js
 function sleepHoursFromEntry(entry) {
   return finiteNumber(
     entry?.hours ?? entry?.duration ?? entry?.sleepHours ?? entry?.sleepDuration
@@ -2026,7 +2091,7 @@ function resolveMainNightSleep(sleepEntries) {
 }
 var NIGHT_SLEEP_MIN_HOURS, HOURS_CLEAR_GAP, MAIN_NIGHT_STATUS;
 var init_resolveMainNightSleep = __esm({
-  "../src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
+  "src/features/kentuFocus/normalize/resolveMainNightSleep.js"() {
     init_focusDateUtils();
     init_logUtils();
     NIGHT_SLEEP_MIN_HOURS = 3;
@@ -2040,7 +2105,7 @@ var init_resolveMainNightSleep = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeSleepNight.js
+// src/features/kentuFocus/normalize/normalizeSleepNight.js
 function resolveBedtimeProvenance(entry, wakeTime, hours) {
   const explicit = String(
     entry?.bedtimeProvenance ?? entry?.bedtimeSource ?? entry?._bedtimeOrigin ?? ""
@@ -2258,7 +2323,7 @@ function normalizeSleepNight(publicationDayNode, opts) {
 }
 var BEDTIME_FORMULA_MATCH_EPS_H, DEFAULT_SLEEP_STAGE_PLACEHOLDER_MIN;
 var init_normalizeSleepNight = __esm({
-  "../src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
+  "src/features/kentuFocus/normalize/normalizeSleepNight.js"() {
     init_focusDossier_v1();
     init_focusDateUtils();
     init_logUtils();
@@ -2268,7 +2333,7 @@ var init_normalizeSleepNight = __esm({
   }
 });
 
-// ../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
+// src/features/kentuFocus/normalize/normalizeWorkoutEvents.js
 function durationToMinutes(durationRaw) {
   if (durationRaw && typeof durationRaw === "object") {
     const minutes = resolveWorkoutDurationMinutes(durationRaw);
@@ -2521,7 +2586,7 @@ function normalizeWorkoutEvents(analysisDayNode) {
   };
 }
 var init_normalizeWorkoutEvents = __esm({
-  "../src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
+  "src/features/kentuFocus/normalize/normalizeWorkoutEvents.js"() {
     init_focusDossier_v1();
     init_logUtils();
     init_activityCatalog();
@@ -2529,7 +2594,7 @@ var init_normalizeWorkoutEvents = __esm({
   }
 });
 
-// ../src/features/kentuFocus/product/assessNova4CritiqueProfile.js
+// src/features/kentuFocus/product/assessNova4CritiqueProfile.js
 function finiteOrNull(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -2640,11 +2705,11 @@ function assessNova4CritiqueProfile(input) {
   };
 }
 var init_assessNova4CritiqueProfile = __esm({
-  "../src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
+  "src/features/kentuFocus/product/assessNova4CritiqueProfile.js"() {
   }
 });
 
-// ../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
+// src/features/kentuFocus/product/focusAiCoachCatalogLookup.js
 function catalogDbNonEmpty(db, cache) {
   if (!db || typeof db !== "object") return false;
   if (cache instanceof WeakMap && cache.has(db)) return cache.get(db);
@@ -2702,11 +2767,11 @@ function withFocusCatalogLookupSession(catalogs) {
   return { catalogs: next, lookupSession };
 }
 var init_focusAiCoachCatalogLookup = __esm({
-  "../src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
+  "src/features/kentuFocus/product/focusAiCoachCatalogLookup.js"() {
   }
 });
 
-// ../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
+// src/features/kentuFocus/product/buildFocusFoodQualityBlock.js
 function finiteOrNull2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
@@ -3244,7 +3309,7 @@ function buildFocusFoodQualityBlock(input) {
 }
 var FOOD_QUALITY_PROVENANCE, FOOD_QUALITY_PROVENANCE_CODE, OFF_CATALOG_STATUS, MEAL_LABELS, NAME_ROLE_PATTERNS, SWEET_OR_DRINK_NAME_RE, SWEET_OR_DRINK_CATEGORY_RE;
 var init_buildFocusFoodQualityBlock = __esm({
-  "../src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
+  "src/features/kentuFocus/product/buildFocusFoodQualityBlock.js"() {
     init_focusDateUtils();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -3288,7 +3353,7 @@ var init_buildFocusFoodQualityBlock = __esm({
   }
 });
 
-// ../src/features/kentuFocus/product/focusMealEnergySignals.js
+// src/features/kentuFocus/product/focusMealEnergySignals.js
 function assessHeavyLateMeal(dinnerKcal, dayKcal, targetKcal) {
   const dinner = Number(dinnerKcal);
   const day = Number(dayKcal);
@@ -3380,7 +3445,7 @@ function assessEnergyLowDay(dayKcal, targetKcal, opts = {}) {
 }
 var HEAVY_LATE_MEAL_ABS_KCAL, HEAVY_LATE_MEAL_ABS_TARGET_SHARE, HEAVY_LATE_MEAL_DAY_SHARE, ENERGY_LOW_DAY_DEFICIT_RATIO, LATE_FIRST_MEAL_HOUR, SUBSTANTIAL_MEAL_MIN_KCAL;
 var init_focusMealEnergySignals = __esm({
-  "../src/features/kentuFocus/product/focusMealEnergySignals.js"() {
+  "src/features/kentuFocus/product/focusMealEnergySignals.js"() {
     HEAVY_LATE_MEAL_ABS_KCAL = 900;
     HEAVY_LATE_MEAL_ABS_TARGET_SHARE = 0.4;
     HEAVY_LATE_MEAL_DAY_SHARE = 0.45;
@@ -3390,10 +3455,10 @@ var init_focusMealEnergySignals = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-1.js
+// src/features/kentuFocus/score/scoreConfig.kds-1.js
 var SCORE_VERSION, CYLINDER_POINTS, CYLINDER_WEIGHTS, MIN_CYLINDERS_WITH_DATA, NULL_SCORE_STATUSES, LOW_RELIABILITY_STATUSES, PERIOD_MEAN_STATUSES, ENERGY_BANDS, SLEEP_BANDS, STRENGTH_WINDOW, CARDIO_WINDOW, NOVA4_CRITIQUE_SIGNAL_ID;
 var init_scoreConfig_kds_1 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-1.js"() {
     SCORE_VERSION = "kds-1";
     CYLINDER_POINTS = Object.freeze({
       /** In linea con la soglia del cilindro. */
@@ -3484,10 +3549,10 @@ var init_scoreConfig_kds_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-2.js
+// src/features/kentuFocus/score/scoreConfig.kds-2.js
 var SCORE_VERSION2, CYLINDER_WEIGHTS2, MIN_CYLINDERS_WITH_DATA2, NULL_SCORE_STATUSES2, LOW_RELIABILITY_STATUSES2, ENERGY_CURVE, SLEEP_CURVE, STRENGTH_CURVE, CARDIO_CURVE, NOVA4_CRITIQUE_SIGNAL_ID2, PERIOD_RULES;
 var init_scoreConfig_kds_2 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-2.js"() {
     SCORE_VERSION2 = "kds-2";
     CYLINDER_WEIGHTS2 = Object.freeze({
       alimentazione: 0.4,
@@ -3554,7 +3619,7 @@ var init_scoreConfig_kds_2 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-3.js
+// src/features/kentuFocus/score/scoreConfig.kds-3.js
 function pillarStatusFromValue(value) {
   if (value == null || value === "") return "no_data";
   const n = Number(value);
@@ -3571,7 +3636,7 @@ function periodDayWeight(dayStatus) {
 }
 var SCORE_VERSION3, CYLINDER_WEIGHTS3, MIN_CYLINDERS_WITH_DATA3, ON_TRACK_SCORE, NULL_SCORE_STATUSES3, LOW_RELIABILITY_STATUSES3, MOVEMENT_CURVE, PILLAR_STATUS, ACTION_PILLAR_WEIGHTS, PERIOD_RULES2, PERIOD_DATA_STATUSES, UNCONFIRMED_PERIOD_WEIGHT, MEAL_PENALTY_CAP, SCORE_COLORS;
 var init_scoreConfig_kds_3 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-3.js"() {
     SCORE_VERSION3 = "kds-3";
     CYLINDER_WEIGHTS3 = Object.freeze({
       alimentazione: 0.45,
@@ -3640,27 +3705,27 @@ var init_scoreConfig_kds_3 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-4.js
+// src/features/kentuFocus/score/scoreConfig.kds-4.js
 var SCORE_VERSION4;
 var init_scoreConfig_kds_4 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-4.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-4.js"() {
     init_scoreConfig_kds_3();
     init_scoreConfig_kds_2();
     SCORE_VERSION4 = "kds-4";
   }
 });
 
-// ../src/features/kentuFocus/score/scoreConfig.kds-5.js
+// src/features/kentuFocus/score/scoreConfig.kds-5.js
 var SCORE_VERSION5;
 var init_scoreConfig_kds_5 = __esm({
-  "../src/features/kentuFocus/score/scoreConfig.kds-5.js"() {
+  "src/features/kentuFocus/score/scoreConfig.kds-5.js"() {
     init_scoreConfig_kds_3();
     init_scoreConfig_kds_2();
     SCORE_VERSION5 = "kds-5";
   }
 });
 
-// ../src/utils/profileAge.js
+// src/utils/profileAge.js
 function calculateAge(dobString) {
   if (!dobString) return null;
   const today = /* @__PURE__ */ new Date();
@@ -3674,22 +3739,22 @@ function calculateAge(dobString) {
   return age;
 }
 var init_profileAge = __esm({
-  "../src/utils/profileAge.js"() {
+  "src/utils/profileAge.js"() {
   }
 });
 
-// ../src/calendarDateUtils.js
+// src/calendarDateUtils.js
 function addDays(dateStr, n) {
   const d = /* @__PURE__ */ new Date(dateStr + "T12:00:00");
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
 var init_calendarDateUtils = __esm({
-  "../src/calendarDateUtils.js"() {
+  "src/calendarDateUtils.js"() {
   }
 });
 
-// ../src/features/commandTerminal/context/recentWorkoutLogs.js
+// src/features/commandTerminal/context/recentWorkoutLogs.js
 function localToday() {
   const now = /* @__PURE__ */ new Date();
   const month = String(now.getMonth() + 1).padStart(2, "0");
@@ -3739,19 +3804,19 @@ function collectRecentWorkoutLogs(fullHistory = {}, activeLog = [], activeDate =
   return { cardioLogs, workoutLogs, all };
 }
 var init_recentWorkoutLogs = __esm({
-  "../src/features/commandTerminal/context/recentWorkoutLogs.js"() {
+  "src/features/commandTerminal/context/recentWorkoutLogs.js"() {
     init_calendarDateUtils();
     init_expandTrackerDayLog();
   }
 });
 
-// ../src/features/kentuFocus/costanza/versions.js
+// src/features/kentuFocus/costanza/versions.js
 var init_versions = __esm({
-  "../src/features/kentuFocus/costanza/versions.js"() {
+  "src/features/kentuFocus/costanza/versions.js"() {
   }
 });
 
-// ../src/features/kentuFocus/costanza/forceConsistency.ci-1.js
+// src/features/kentuFocus/costanza/forceConsistency.ci-1.js
 function forceLoadConsistency(date, fullHistory, opts = {}) {
   const asOf = String(date || "").slice(0, 10);
   const snap = computeCostanzaForza({
@@ -3766,13 +3831,13 @@ function forceLoadConsistency(date, fullHistory, opts = {}) {
   return Math.min(1, Math.round(value * 1e3) / 1e3);
 }
 var init_forceConsistency_ci_1 = __esm({
-  "../src/features/kentuFocus/costanza/forceConsistency.ci-1.js"() {
+  "src/features/kentuFocus/costanza/forceConsistency.ci-1.js"() {
     init_versions();
     init_costanzaForza();
   }
 });
 
-// ../src/features/kentuFocus/score/scoreMovement.js
+// src/features/kentuFocus/score/scoreMovement.js
 function scoreMovimento(date, fullHistory, context = {}) {
   const days = datesEnding(date, MOVEMENT_CURVE.windowDays);
   const byDay = workoutsByDay(fullHistory, date);
@@ -3915,7 +3980,7 @@ function cylinder(status, keyFact, signals, value) {
   return { status, keyFact, signals, value: rounded };
 }
 var init_scoreMovement = __esm({
-  "../src/features/kentuFocus/score/scoreMovement.js"() {
+  "src/features/kentuFocus/score/scoreMovement.js"() {
     init_profileAge();
     init_focusDateUtils();
     init_focusDateUtils();
@@ -3929,7 +3994,7 @@ var init_scoreMovement = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/movementBattery.js
+// src/features/kentuFocus/score/movementBattery.js
 function stepBattery(battery, charge) {
   const b = Number.isFinite(battery) && battery > 0 ? battery : 0;
   const c = Number.isFinite(charge) && charge > 0 ? charge : 0;
@@ -4091,7 +4156,7 @@ function round3(value) {
 }
 var BATTERY_HALF_LIFE_DAYS, BATTERY_DECAY, BATTERY_WEEKLY_TARGET_EQ_MIN, BATTERY_DAILY_TARGET_EQ_MIN, BATTERY_CAPACITY, BATTERY_FULL_FRACTION, BATTERY_FULL_LEVEL, BATTERY_LOOKBACK_DAYS, BATTERY_READY_MIN_SPAN_DAYS, BATTERY_CHECKIN_CAP_MIN, BATTERY_DECAY_COPY;
 var init_movementBattery = __esm({
-  "../src/features/kentuFocus/score/movementBattery.js"() {
+  "src/features/kentuFocus/score/movementBattery.js"() {
     init_focusDateUtils();
     init_recentWorkoutLogs();
     init_workoutMovement();
@@ -4110,10 +4175,10 @@ var init_movementBattery = __esm({
   }
 });
 
-// ../src/features/kentuFocus/safety/safetyConfig.sfv-1.js
+// src/features/kentuFocus/safety/safetyConfig.sfv-1.js
 var SAFETY_VERSION, CLOSED_LOOKBACK_DAYS, ENERGY_WINDOW_DAYS, ENERGY_SUSTAINED_RATIO, ENERGY_VERY_LOW_RATIO, ENERGY_VERY_LOW_DAYS, ENERGY_UNDER_BASAL_DAYS, ENERGY_ACT_SCORE_CAP, WEIGHT_MIN_SAMPLES, WEIGHT_SAMPLE_DAYS, WEIGHT_BLOCK_DAYS, WEIGHT_WEEKLY_LOSS_RATIO, PROTEIN_DEFICIT_RATIO, PROTEIN_GRAMS_PER_KG, REST_STREAK_WATCH_DAYS, REST_STREAK_ACT_DAYS, DISTRICT_RECOVERY_HOURS, DISTRICT_SHORT_RECOVERY_TIMES, TRAINING_WINDOW_DAYS, LOAD_BASELINE_WEEKS, LOAD_SPIKE_RATIO, SHORT_SLEEP_HOURS, LOW_MORNING_SCORE, MORNING_CLUSTER_HITS, MORNING_CLUSTER_DAYS, OVERREACHING_CLUSTERS, RESTRICTIVE_WINDOW_DAYS, RESTRICTIVE_DAYS, SAFETY_AREAS;
 var init_safetyConfig_sfv_1 = __esm({
-  "../src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
+  "src/features/kentuFocus/safety/safetyConfig.sfv-1.js"() {
     SAFETY_VERSION = "sfv-3";
     CLOSED_LOOKBACK_DAYS = 28;
     ENERGY_WINDOW_DAYS = 7;
@@ -4153,7 +4218,7 @@ var init_safetyConfig_sfv_1 = __esm({
   }
 });
 
-// ../src/features/kentuFocus/safety/computeSafety.js
+// src/features/kentuFocus/safety/computeSafety.js
 var computeSafety_exports = {};
 __export(computeSafety_exports, {
   computeSafety: () => computeSafety,
@@ -4574,7 +4639,7 @@ function round32(value) {
 }
 var FOOD_TYPES, WAKE_ENERGY_FIELDS;
 var init_computeSafety = __esm({
-  "../src/features/kentuFocus/safety/computeSafety.js"() {
+  "src/features/kentuFocus/safety/computeSafety.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_normalizeFoodEvents();
@@ -4590,7 +4655,7 @@ var init_computeSafety = __esm({
   }
 });
 
-// ../src/features/mealEngine/computeEffectiveDailyTargetKcal.js
+// src/features/mealEngine/computeEffectiveDailyTargetKcal.js
 function roundKcal(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
@@ -4603,11 +4668,11 @@ function computeEffectiveDailyTargetKcal(parts = {}) {
   );
 }
 var init_computeEffectiveDailyTargetKcal = __esm({
-  "../src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
+  "src/features/mealEngine/computeEffectiveDailyTargetKcal.js"() {
   }
 });
 
-// ../src/features/kentuFocus/server/reader/resolveFocusProfileData.js
+// src/features/kentuFocus/server/reader/resolveFocusProfileData.js
 function isValidIsoDate(value) {
   if (typeof value !== "string") return false;
   const iso = value.trim().slice(0, 10);
@@ -4663,7 +4728,7 @@ function resolveTargetsForAnalysisDate(targetsNode, analysisDate) {
 }
 var ISO_DATE_RE3, FOCUS_TARGET_WEIGHT_POLICY;
 var init_resolveFocusProfileData = __esm({
-  "../src/features/kentuFocus/server/reader/resolveFocusProfileData.js"() {
+  "src/features/kentuFocus/server/reader/resolveFocusProfileData.js"() {
     init_focusDateUtils();
     init_logUtils();
     ISO_DATE_RE3 = /^\d{4}-\d{2}-\d{2}$/;
@@ -4684,7 +4749,7 @@ var init_resolveFocusProfileData = __esm({
   }
 });
 
-// ../src/features/mealEngine/resolveDayTargetKcal.js
+// src/features/mealEngine/resolveDayTargetKcal.js
 var resolveDayTargetKcal_exports = {};
 __export(resolveDayTargetKcal_exports, {
   DAY_TARGET_RULES_VERSION: () => DAY_TARGET_RULES_VERSION,
@@ -5007,7 +5072,7 @@ function resolveKcalSourceForSave(input = {}) {
 }
 var DAY_TARGET_RULES_VERSION, DEFAULT_WORKOUT_KCAL, KCAL_SOURCE, KCAL_SOURCE_FACTOR, WORKOUTISH;
 var init_resolveDayTargetKcal = __esm({
-  "../src/features/mealEngine/resolveDayTargetKcal.js"() {
+  "src/features/mealEngine/resolveDayTargetKcal.js"() {
     init_computeEffectiveDailyTargetKcal();
     init_resolveFocusProfileData();
     DAY_TARGET_RULES_VERSION = "dtr-1";
@@ -5026,7 +5091,7 @@ var init_resolveDayTargetKcal = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/computeDayScore.js
+// src/features/kentuFocus/score/computeDayScore.js
 var computeDayScore_exports = {};
 __export(computeDayScore_exports, {
   computeDayScore: () => computeDayScore
@@ -5509,7 +5574,7 @@ function round33(value) {
 }
 var CYLINDER_KEYS, FOOD_TYPES2;
 var init_computeDayScore = __esm({
-  "../src/features/kentuFocus/score/computeDayScore.js"() {
+  "src/features/kentuFocus/score/computeDayScore.js"() {
     init_dayStatus();
     init_getTrackerDayNode();
     init_focusDateUtils();
@@ -5537,7 +5602,7 @@ var init_computeDayScore = __esm({
   }
 });
 
-// ../src/features/kentuFocus/score/computePeriodScore.js
+// src/features/kentuFocus/score/computePeriodScore.js
 var computePeriodScore_exports = {};
 __export(computePeriodScore_exports, {
   computePeriodScore: () => computePeriodScore
@@ -5629,7 +5694,7 @@ function round34(value) {
 }
 var ON_TRACK_DAY_SCORE, PERIOD_COVERAGE_MIN, STREAK_MAX_PAUSE_DAYS, STREAK_MIN_DAYS, STREAK_PAUSE_SCORE_MIN;
 var init_computePeriodScore = __esm({
-  "../src/features/kentuFocus/score/computePeriodScore.js"() {
+  "src/features/kentuFocus/score/computePeriodScore.js"() {
     init_focusDateUtils();
     init_computeDayScore();
     init_scoreConfig_kds_3();
@@ -5641,7 +5706,7 @@ var init_computePeriodScore = __esm({
   }
 });
 
-// ../src/foodSearch.js
+// src/foodSearch.js
 var foodSearch_exports = {};
 __export(foodSearch_exports, {
   MATCH_TIER_RANK: () => MATCH_TIER_RANK,
@@ -6457,7 +6522,7 @@ function shouldDiscloseSynonymMapping(spokenName, dbName) {
 }
 var RECENT_FOODS_STORAGE_KEY, RECENT_FOOD_HIGH_WINDOW_MS, SEARCH_SYNONYMS, SCORE_EXACT_OR_PREFIX, SCORE_PREFIX, SCORE_COMPOUND_CONTAINED, SCORE_TOKEN_EXACT, SCORE_WORD_BOUNDARY, SCORE_SUBSTRING, SCORE_FUZZY_DIST_1, SCORE_FUZZY_DIST_2, MIN_MATCH_SCORE, DEFAULT_SEARCH_LIMIT, HISTORY_SCORE_WEIGHT, USAGE_COUNT_SCORE_WEIGHT, MATCH_TIER_RANK, SCORE_STEM_GUARANTEED, foodSearch_default;
 var init_foodSearch = __esm({
-  "../src/foodSearch.js"() {
+  "src/foodSearch.js"() {
     RECENT_FOODS_STORAGE_KEY = "recent_foods";
     RECENT_FOOD_HIGH_WINDOW_MS = 24 * 60 * 60 * 1e3;
     SEARCH_SYNONYMS = {
@@ -6502,7 +6567,7 @@ var init_foodSearch = __esm({
   }
 });
 
-// ../src/features/mealBuilder/utils/foodMatchQuality.js
+// src/features/mealBuilder/utils/foodMatchQuality.js
 var foodMatchQuality_exports = {};
 __export(foodMatchQuality_exports, {
   ENERGY_DENSITY_CONFIRM_RATIO: () => ENERGY_DENSITY_CONFIRM_RATIO,
@@ -6791,7 +6856,7 @@ function findStrongFoodMatchesInCatalog(foodName, foodDb, opts = {}) {
 }
 var FOOD_MATCH_QUALITY, FOOD_MATCH_QUALITY_RANK, ENERGY_DENSITY_CONFIRM_RATIO;
 var init_foodMatchQuality = __esm({
-  "../src/features/mealBuilder/utils/foodMatchQuality.js"() {
+  "src/features/mealBuilder/utils/foodMatchQuality.js"() {
     init_foodSearch();
     FOOD_MATCH_QUALITY = Object.freeze({
       EXACT: "exact",
@@ -6809,14 +6874,14 @@ var init_foodMatchQuality = __esm({
   }
 });
 
-// mcp/habits.js
+// functions/mcp/habits.js
 var habits_exports = {};
 __export(habits_exports, {
   loadRecentFoodUsageScores: () => loadRecentFoodUsageScores,
   rankSearchResultsByRecentUsage: () => rankSearchResultsByRecentUsage,
   toolGetHabits: () => toolGetHabits
 });
-function finite3(n) {
+function finite4(n) {
   const v = Number(n);
   return Number.isFinite(v) ? v : null;
 }
@@ -6887,13 +6952,13 @@ async function toolGetHabits(db, uid, opts = {}) {
       if (!meal || typeof meal !== "object") continue;
       const mealId = String(meal.mealId || meal.id || "");
       const items = Array.isArray(meal.items) ? meal.items : meal.type === "food" || meal.type === "recipe" || meal.foodName || meal.desc ? [meal] : [];
-      const mealTime = finite3(mealTimes[mealId]) ?? finite3(items[0]?.mealTime);
+      const mealTime = finite4(mealTimes[mealId]) ?? finite4(items[0]?.mealTime);
       for (const item of items) {
         if (!item || typeof item !== "object") continue;
         if (item.condimentKind || item.condimentOf) continue;
         const foodDbKey = String(item.foodDbKey || item.matchedKey || "").trim();
         if (!foodDbKey) continue;
-        const grams = finite3(item.grams ?? item.qta ?? item.weight ?? item.qty);
+        const grams = finite4(item.grams ?? item.qta ?? item.weight ?? item.qty);
         if (grams == null || grams <= 0) continue;
         const name = String(item.name || item.desc || item.foodName || foodDbKey).trim();
         const slot = mealSlotOf(mealId, item);
@@ -6949,17 +7014,17 @@ async function loadRecentFoodUsageScores(db, uid) {
 }
 var LOOKBACK_DAYS, MAX_HABITS;
 var init_habits = __esm({
-  "mcp/habits.js"() {
+  "functions/mcp/habits.js"() {
     init_dates();
     LOOKBACK_DAYS = 60;
     MAX_HABITS = 40;
   }
 });
 
-// ../src/useBiochimico.js
+// src/useBiochimico.js
 var import_react;
 var init_useBiochimico = __esm({
-  "../src/useBiochimico.js"() {
+  "src/useBiochimico.js"() {
     import_react = require("react");
     init_mealDraftStatus();
     init_computeTotaliCore();
@@ -6967,7 +7032,7 @@ var init_useBiochimico = __esm({
   }
 });
 
-// ../src/utils/foodVisualResolver.js
+// src/utils/foodVisualResolver.js
 function isPortionLikeParenInner(inner) {
   const body = String(inner || "").trim();
   if (!body) return true;
@@ -7049,7 +7114,7 @@ function sanitizeFoodDisplayName(raw, fallback = "Alimento") {
 }
 var FOOD_VISUAL_RULES, PORTION_HINT_RE;
 var init_foodVisualResolver = __esm({
-  "../src/utils/foodVisualResolver.js"() {
+  "src/utils/foodVisualResolver.js"() {
     FOOD_VISUAL_RULES = Object.freeze([
       // Salse / conserve pomodoro (prima del pomodoro fresco)
       { emoji: "\u{1F96B}", keywords: ["passata", "passato", "pelati", "sugo", "salsa di pomodoro", "concentrato di pomodoro"] },
@@ -7093,7 +7158,7 @@ var init_foodVisualResolver = __esm({
   }
 });
 
-// ../src/features/nutrition/condiments.js
+// src/features/nutrition/condiments.js
 function foodLabel(food) {
   return String(food?.name || food?.foodName || food?.desc || food?.label || "").trim();
 }
@@ -7245,7 +7310,7 @@ function withCondiments(items) {
 }
 var MEMORY_KEY, OIL_GRAMS, SALT_LEVELS, OIL_TYPES, CATEGORIES, PAN_OR_GRILL, NOT_PAN, SKIP_NAME;
 var init_condiments = __esm({
-  "../src/features/nutrition/condiments.js"() {
+  "src/features/nutrition/condiments.js"() {
     MEMORY_KEY = "kentu.condiment.last.v1";
     OIL_GRAMS = Object.freeze([
       { id: "0", grams: 0, label: "niente" },
@@ -7278,7 +7343,7 @@ var init_condiments = __esm({
   }
 });
 
-// ../src/features/mealEngine/canonicalMealCommit.js
+// src/features/mealEngine/canonicalMealCommit.js
 var canonicalMealCommit_exports = {};
 __export(canonicalMealCommit_exports, {
   ALL_DIARY_NUTRIENT_KEYS: () => ALL_DIARY_NUTRIENT_KEYS,
@@ -7615,7 +7680,7 @@ function toMcDriveUpsertItem(canonical) {
 }
 var ALL_DIARY_NUTRIENT_KEYS, EXTRA_DIARY_NUTRIENT_KEYS, UI_ONLY_KEYS;
 var init_canonicalMealCommit = __esm({
-  "../src/features/mealEngine/canonicalMealCommit.js"() {
+  "src/features/mealEngine/canonicalMealCommit.js"() {
     init_useBiochimico();
     init_mealDraftStatus();
     init_foodVisualResolver();
@@ -7652,7 +7717,7 @@ var init_canonicalMealCommit = __esm({
   }
 });
 
-// mcp/httpHandler.js
+// functions/mcp/httpHandler.js
 var httpHandler_exports = {};
 __export(httpHandler_exports, {
   handleKentuMcpHttp: () => handleKentuMcpHttp
@@ -7660,13 +7725,13 @@ __export(httpHandler_exports, {
 module.exports = __toCommonJS(httpHandler_exports);
 var import_streamableHttp = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 
-// mcp/hashToken.js
+// functions/mcp/hashToken.js
 var import_node_crypto = require("node:crypto");
 function sha256Hex(value) {
   return (0, import_node_crypto.createHash)("sha256").update(String(value), "utf8").digest("hex");
 }
 
-// mcp/scopes.js
+// functions/mcp/scopes.js
 var MCP_SCOPE_READ = "read";
 var MCP_SCOPE_DRAFTS_WRITE = "drafts:write";
 var MCP_SCOPE_MEALS_WRITE = "meals:write";
@@ -7690,7 +7755,7 @@ function hasMcpScope(scopes, scope) {
   return normalizeMcpScopes(scopes).includes(scope);
 }
 
-// mcp/auth.js
+// functions/mcp/auth.js
 var RATE_LIMIT_PER_HOUR = 60;
 var MIN_TOKEN_LEN = 32;
 function hourBucket(now = Date.now()) {
@@ -7805,19 +7870,22 @@ function uidLogTag(uid) {
   return sha256Hex(uid).slice(0, 8);
 }
 
-// mcp/createServer.js
+// functions/mcp/createServer.js
 var import_mcp = require("@modelcontextprotocol/sdk/server/mcp.js");
 var z = __toESM(require("zod/v4"));
 
-// mcp/instructions.js
+// functions/mcp/instructions.js
 var MCP_INSTRUCTIONS = [
   "Sei collegato a Kentu, diario metabolico personale. Leggi i dati con gli strumenti di sola lettura.",
   "Riporta i numeri restituiti dagli strumenti Kentu cos\xEC come sono: non ricalcolarli, non stimarli e non inventarli.",
+  "sodiumMg \xE8 sempre milligrammi di sodio della porzione: non moltiplicare per 1000 e non trattarlo come grammi.",
   "Un singolo episodio (es. cena salata e risveglio) \xE8 un\u2019ipotesi da verificare, non una prova causale.",
   "Proponi piccoli esperimenti osservabili invece di conclusioni definitive.",
   "Non fare diagnosi mediche e non prescrivere terapie, diete cliniche o farmaci.",
   "Se risvegli per bagno o sete sono frequenti e persistenti, suggerisci di parlarne con un medico.",
   "Se i dati mancano o sono incompleti, dillo chiaramente invece di colmare i buchi.",
+  "Totali sodio/fibre: se *Incomplete \xE8 true o *Note \xE8 \xABdati insufficienti\xBB (copertura grammi insufficiente), non usare il numero (sar\xE0 null) e non trarre conclusioni su basso/alto/assente.",
+  "Usa *Coverage {known, missing} per spiegare quanti alimenti hanno il dato; non sommare a mano i singoli pasti per \xABcompletare\xBB un totale incompleto.",
   "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso, grammi, sodio o porzioni.",
   "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
   "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day.",
@@ -7830,10 +7898,10 @@ var MCP_INSTRUCTIONS = [
   "Se il gettone non ha meals:write o drafts:write, dillo e non insistere."
 ].join(" ");
 
-// mcp/tools.js
+// functions/mcp/tools.js
 init_dates();
 
-// mcp/redact.js
+// functions/mcp/redact.js
 var SENSITIVE_KEY = /^(kcal|cal|calorie|calories|peso|weight|grams|grammi|qta|qty|sodium|na|sodiumMg|fatTotal|prot|carb|fat|fibre|fiber|dinnerKcal|dinnerGrams|dinnerSodiumMg|eveningSodiumMg|liquidsAfter18Ml|alcoholPureG|caffeineMg|caffeineAfter14Mg|ml|pureAlcoholG|abv)$/i;
 function redactSensitiveNumbers(value) {
   if (Array.isArray(value)) {
@@ -7851,13 +7919,14 @@ function redactSensitiveNumbers(value) {
   return out;
 }
 
-// mcp/tools.js
+// functions/mcp/tools.js
 init_loadUserContext();
 
-// mcp/dayDetail.js
+// functions/mcp/dayDetail.js
+init_nutrientTotalCoverage();
 init_dates();
 
-// ../src/utils/sodiumUnits.js
+// src/utils/sodiumUnits.js
 var SALT_G_TO_SODIUM_MG = 393.4;
 function parseSodiumUnit(raw) {
   const u = String(raw ?? "").trim().toLowerCase();
@@ -7878,7 +7947,7 @@ function readDeclaredSodiumUnit(source) {
   }
   return null;
 }
-function finite(value) {
+function finite2(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -7891,8 +7960,8 @@ function sodiumValueToMg(value, unit) {
 function readSodiumMgFromDiaryEntry(entry) {
   if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
   const unit = readDeclaredSodiumUnit(entry);
-  const na = finite(entry.na ?? entry.sodium ?? entry.sodiumMg);
-  const sale = finite(entry.sale);
+  const na = finite2(entry.na ?? entry.sodium ?? entry.sodiumMg);
+  const sale = finite2(entry.sale);
   const fromSale = sale != null && sale > 0 ? Math.round(sale * SALT_G_TO_SODIUM_MG * 10) / 10 : null;
   if (na == null || na === 0) {
     if (fromSale != null) return { value: fromSale, reason: null };
@@ -7902,9 +7971,9 @@ function readSodiumMgFromDiaryEntry(entry) {
   return { value: asMg, reason: null };
 }
 
-// mcp/nutrientRead.js
+// functions/mcp/nutrientRead.js
 var ANIMAL_NO_FIBRE = /(?:^|[^a-z0-9àèéìòù])(merluzzo|pesce|filett|tonno|salmone|pollo|tacchino|manzo|vitello|maiale|carne|bresaola|prosciutto|speck|wurstel|wudy|salsicc|uovo|uova|egg|formaggio|mozzarella|parmigiano|grana|yogurt\s*greco|ricotta|burrata)(?=[^a-z0-9àèéìòù]|$)/iu;
-function finite2(value) {
+function finite3(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
 }
@@ -7913,8 +7982,8 @@ function looksLikeAnimalNoFibre(name) {
 }
 function readFibreGrams(entry) {
   if (!entry || typeof entry !== "object") return { value: null, reason: "missing" };
-  const totali = finite2(entry.fibreTotali);
-  const fibre = finite2(entry.fibre ?? entry.fiber);
+  const totali = finite3(entry.fibreTotali);
+  const fibre = finite3(entry.fibre ?? entry.fiber);
   const name = entry.name || entry.foodName || entry.desc || "";
   let value = null;
   if (totali != null) {
@@ -7935,17 +8004,42 @@ function readSodiumMg(entry) {
 }
 function readMacroGrams(entry, key) {
   if (!entry || typeof entry !== "object") return null;
-  if (key === "prot") return finite2(entry.prot ?? entry.protein ?? entry.proteins);
-  if (key === "carb") return finite2(entry.carb ?? entry.carbs ?? entry.carbohydrates);
-  if (key === "fat") return finite2(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
-  return finite2(entry[key]);
+  if (key === "prot") return finite3(entry.prot ?? entry.protein ?? entry.proteins);
+  if (key === "carb") return finite3(entry.carb ?? entry.carbs ?? entry.carbohydrates);
+  if (key === "fat") return finite3(entry.fat ?? entry.fatTotal ?? entry.fatTot ?? entry.fats);
+  return finite3(entry[key]);
 }
 
-// mcp/dayDetail.js
+// functions/mcp/dayDetail.js
 var DINNER_KEYS = /^(cena|dinner)/i;
 var EVENING_HOUR = 18;
 var CAFFEINE_AFTER_HOUR = 14;
 var MAX_EVENINGS_DAYS = 90;
+function mealGrams(meal) {
+  return finite3(meal?.grams);
+}
+function coverageFields(prefix, summary) {
+  return {
+    [`${prefix}Mg`]: summary.value,
+    [`${prefix}Coverage`]: {
+      known: summary.coverage.known,
+      missing: summary.coverage.missing
+    },
+    [`${prefix}Incomplete`]: summary.incomplete,
+    [`${prefix}Note`]: summary.note
+  };
+}
+function coverageFieldsFibre(prefix, summary) {
+  return {
+    [`${prefix}G`]: summary.value,
+    [`${prefix}Coverage`]: {
+      known: summary.coverage.known,
+      missing: summary.coverage.missing
+    },
+    [`${prefix}Incomplete`]: summary.incomplete,
+    [`${prefix}Note`]: summary.note
+  };
+}
 function trackerNode(fullHistory, date) {
   return fullHistory?.[`trackerStorico_${date}`] || null;
 }
@@ -7976,16 +8070,16 @@ function flattenDiaryEntries(node) {
   }
   return out;
 }
-function round1(value) {
-  const n = finite2(value);
+function round12(value) {
+  const n = finite3(value);
   return n == null ? null : Math.round(n * 10) / 10;
 }
 function hourOf(entry, mealTimes = null) {
-  const direct = finite2(entry?.mealTime ?? entry?.time ?? entry?.hour);
+  const direct = finite3(entry?.mealTime ?? entry?.time ?? entry?.hour);
   if (direct != null && direct >= 0 && direct <= 24) return direct;
   const slot = String(entry?.mealType || entry?.mealId || "").trim();
   if (slot && mealTimes && mealTimes[slot] != null) {
-    const fromMap = finite2(mealTimes[slot]);
+    const fromMap = finite3(mealTimes[slot]);
     if (fromMap != null) return fromMap;
   }
   return null;
@@ -8014,15 +8108,15 @@ function buildDayMealsDetail(fullHistory, date) {
   let caffeineKnown = false;
   for (const entry of entries) {
     if (!isFoodLike(entry)) continue;
-    const grams = finite2(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
-    const kcal = finite2(entry.kcal ?? entry.cal);
+    const grams = finite3(entry.grams ?? entry.qta ?? entry.weight ?? entry.qty);
+    const kcal = finite3(entry.kcal ?? entry.cal);
     const prot = readMacroGrams(entry, "prot");
     const carb = readMacroGrams(entry, "carb");
     const fat = readMacroGrams(entry, "fat");
     const fibreRead = readFibreGrams(entry);
     const sodiumRead = readSodiumMg(entry);
     const name = entry.name || entry.foodName || entry.desc || "Alimento";
-    const caffeine = finite2(entry.caffeineMg);
+    const caffeine = finite3(entry.caffeineMg);
     if (caffeine != null && caffeine > 0) {
       caffeineMg += caffeine;
       caffeineKnown = true;
@@ -8039,7 +8133,9 @@ function buildDayMealsDetail(fullHistory, date) {
       carb,
       fat,
       fibre: fibreRead.value,
+      // Sempre mg della porzione (mai g, mai ×1000 euristico).
       sodiumMg: sodiumRead.value,
+      sodiumUnit: sodiumRead.value == null ? null : "mg",
       caffeineMg: caffeine,
       condimentKind: entry.condimentKind || null,
       foodDbKey: entry.foodDbKey || entry.matchedKey || entry.id || null,
@@ -8052,7 +8148,7 @@ function buildDayMealsDetail(fullHistory, date) {
     if (type === "water") {
       liquids.push({
         kind: "water",
-        ml: finite2(entry.ml),
+        ml: finite3(entry.ml),
         time: hourOf(entry)
       });
       continue;
@@ -8060,24 +8156,48 @@ function buildDayMealsDetail(fullHistory, date) {
     if (type === "alcohol") {
       liquids.push({
         kind: "alcohol",
-        ml: finite2(entry.ml),
-        abv: finite2(entry.abv),
-        pureAlcoholG: finite2(entry.pureAlcohol),
-        kcal: finite2(entry.kcal ?? entry.cal),
+        ml: finite3(entry.ml),
+        abv: finite3(entry.abv),
+        pureAlcoholG: finite3(entry.pureAlcohol),
+        kcal: finite3(entry.kcal ?? entry.cal),
         time: hourOf(entry),
         subtype: entry.subtype || null
       });
     }
   }
+  const sodiumTotal = summarizeNutrientTotalByGrams(meals, {
+    getGrams: mealGrams,
+    getValue: (m) => m.sodiumMg == null ? null : finite3(m.sodiumMg)
+  });
+  const fibreTotal = summarizeNutrientTotalByGrams(meals, {
+    getGrams: mealGrams,
+    getValue: (m) => m.fibre == null ? null : finite3(m.fibre)
+  });
   return {
     meals,
     liquids,
-    caffeineMg: caffeineKnown ? round1(caffeineMg) : null,
+    caffeineMg: caffeineKnown ? round12(caffeineMg) : null,
+    totals: {
+      ...coverageFields("sodium", sodiumTotal),
+      ...coverageFieldsFibre("fibre", fibreTotal)
+    },
     coverage: {
       foodsMissingSodium: foodsMissingSodium.slice(0, 12),
       foodsMissingFibre: foodsMissingFibre.slice(0, 12),
       missingSodiumCount: foodsMissingSodium.length,
-      missingFibreCount: foodsMissingFibre.length
+      missingFibreCount: foodsMissingFibre.length,
+      sodium: {
+        known: sodiumTotal.coverage.known,
+        missing: sodiumTotal.coverage.missing,
+        incomplete: sodiumTotal.incomplete,
+        note: sodiumTotal.note
+      },
+      fibre: {
+        known: fibreTotal.coverage.known,
+        missing: fibreTotal.coverage.missing,
+        incomplete: fibreTotal.incomplete,
+        note: fibreTotal.note
+      }
     }
   };
 }
@@ -8086,7 +8206,7 @@ function pickMainSleep(entries) {
   let bestHours = -1;
   for (const entry of entries) {
     if (String(entry?.type || "").toLowerCase() !== "sleep") continue;
-    const hours = finite2(entry.hours ?? entry.duration ?? entry.sleepHours) || 0;
+    const hours = finite3(entry.hours ?? entry.duration ?? entry.sleepHours) || 0;
     if (hours > bestHours) {
       best = entry;
       bestHours = hours;
@@ -8095,24 +8215,24 @@ function pickMainSleep(entries) {
   return best;
 }
 function deriveBedtime(entry) {
-  const recorded = finite2(entry?.bedtime ?? entry?.sleepStart);
-  const wake = finite2(entry?.wakeTime ?? entry?.sleepEnd);
-  const hours = finite2(entry?.hours ?? entry?.duration ?? entry?.sleepHours);
+  const recorded = finite3(entry?.bedtime ?? entry?.sleepStart);
+  const wake = finite3(entry?.wakeTime ?? entry?.sleepEnd);
+  const hours = finite3(entry?.hours ?? entry?.duration ?? entry?.sleepHours);
   if (wake != null && hours != null && hours > 0) {
     let derived = wake - hours;
     while (derived < 0) derived += 24;
     while (derived >= 24) derived -= 24;
     if (recorded == null) {
-      return { bedtime: round1(derived), bedtimeProvenance: "derived" };
+      return { bedtime: round12(derived), bedtimeProvenance: "derived" };
     }
     const delta = Math.min(Math.abs(recorded - derived), 24 - Math.abs(recorded - derived));
     if (delta <= 0.35) {
-      return { bedtime: round1(recorded), bedtimeProvenance: "derived" };
+      return { bedtime: round12(recorded), bedtimeProvenance: "derived" };
     }
-    return { bedtime: round1(recorded), bedtimeProvenance: "recorded" };
+    return { bedtime: round12(recorded), bedtimeProvenance: "recorded" };
   }
   if (recorded != null) {
-    return { bedtime: round1(recorded), bedtimeProvenance: "recorded" };
+    return { bedtime: round12(recorded), bedtimeProvenance: "recorded" };
   }
   return { bedtime: null, bedtimeProvenance: "missing" };
 }
@@ -8126,46 +8246,66 @@ function buildDaySleepDetail(fullHistory, date, options = {}) {
   }
   const { bedtime, bedtimeProvenance } = deriveBedtime(entry);
   const notes = String(entry.notes ?? entry.note ?? entry.details ?? "").trim() || null;
-  const quality = finite2(entry.quality ?? entry.sleepQuality ?? entry.rating);
+  const quality = finite3(entry.quality ?? entry.sleepQuality ?? entry.rating);
   const qualityStars = quality != null && quality >= 1 && quality <= 5 ? Math.round(quality) : null;
-  const qualityScore = finite2(entry.qualityScore);
+  const qualityScore = finite3(entry.qualityScore);
   return {
-    hours: finite2(entry.hours ?? entry.duration ?? entry.sleepHours),
-    wakeTime: finite2(entry.wakeTime ?? entry.sleepEnd),
+    hours: finite3(entry.hours ?? entry.duration ?? entry.sleepHours),
+    wakeTime: finite3(entry.wakeTime ?? entry.sleepEnd),
     bedtime,
     bedtimeProvenance,
     qualityStars,
     notes,
-    deepMin: finite2(entry.deepMin),
-    remMin: finite2(entry.remMin),
-    hr: finite2(entry.hr),
+    deepMin: finite3(entry.deepMin),
+    remMin: finite3(entry.remMin),
+    hr: finite3(entry.hr),
     qualityScore: qualityScore != null && qualityScore > 5 ? Math.round(qualityScore) : null,
     storageDate
   };
 }
 function dinnerStats(meals) {
+  const dinnerMeals = [];
   let kcal = 0;
   let grams = 0;
-  let sodiumMg = 0;
   let hasDinner = false;
   for (const meal of meals) {
     if (!isDinner(meal)) continue;
     hasDinner = true;
+    dinnerMeals.push(meal);
     if (meal.kcal != null) kcal += meal.kcal;
     if (meal.grams != null) grams += meal.grams;
-    if (meal.sodiumMg != null) sodiumMg += meal.sodiumMg;
   }
-  if (!hasDinner) return { kcal: null, grams: null, sodiumMg: null };
+  if (!hasDinner) {
+    return {
+      kcal: null,
+      grams: null,
+      sodium: summarizeNutrientTotalByGrams([], {
+        getGrams: mealGrams,
+        getValue: () => null
+      }),
+      fibre: summarizeNutrientTotalByGrams([], {
+        getGrams: mealGrams,
+        getValue: () => null
+      })
+    };
+  }
   return {
-    kcal: round1(kcal),
-    grams: round1(grams),
-    sodiumMg: round1(sodiumMg)
+    kcal: round12(kcal),
+    grams: round12(grams),
+    sodium: summarizeNutrientTotalByGrams(dinnerMeals, {
+      getGrams: mealGrams,
+      getValue: (m) => m.sodiumMg == null ? null : finite3(m.sodiumMg)
+    }),
+    fibre: summarizeNutrientTotalByGrams(dinnerMeals, {
+      getGrams: mealGrams,
+      getValue: (m) => m.fibre == null ? null : finite3(m.fibre)
+    })
   };
 }
 function lastMealHour(meals) {
   let last = null;
   for (const meal of meals) {
-    const h = finite2(meal.time);
+    const h = finite3(meal.time);
     if (h == null) continue;
     if (last == null || h > last) last = h;
   }
@@ -8176,7 +8316,7 @@ function hoursBeforeSleep(lastMeal, bedtime) {
   let delta = bedtime - lastMeal;
   if (delta < 0) delta += 24;
   if (delta > 18) return null;
-  return round1(delta);
+  return round12(delta);
 }
 function buildEveningRow(fullHistory, date) {
   const detail = buildDayMealsDetail(fullHistory, date);
@@ -8188,7 +8328,7 @@ function buildEveningRow(fullHistory, date) {
   let hasLiquid = false;
   let hasAlcohol = false;
   for (const liq of detail.liquids) {
-    const t = finite2(liq.time);
+    const t = finite3(liq.time);
     if (liq.kind === "water" && t != null && t >= EVENING_HOUR) {
       hasLiquid = true;
       liquidsAfter18Ml += liq.ml || 0;
@@ -8201,35 +8341,52 @@ function buildEveningRow(fullHistory, date) {
   let caffeineAfter14 = 0;
   let caffeineAfter14Known = false;
   for (const meal of detail.meals) {
-    const t = finite2(meal.time);
-    const c = finite2(meal.caffeineMg);
+    const t = finite3(meal.time);
+    const c = finite3(meal.caffeineMg);
     if (c == null || c <= 0) continue;
     if (t != null && t >= CAFFEINE_AFTER_HOUR) {
       caffeineAfter14 += c;
       caffeineAfter14Known = true;
     }
   }
-  let eveningSodium = 0;
-  let eveningSodiumKnown = false;
-  for (const meal of detail.meals) {
-    const t = finite2(meal.time);
-    if (t == null || t < EVENING_HOUR) continue;
-    if (meal.sodiumMg != null) {
-      eveningSodium += meal.sodiumMg;
-      eveningSodiumKnown = true;
-    }
-  }
+  const eveningMeals = detail.meals.filter((meal) => {
+    const t = finite3(meal.time);
+    return t != null && t >= EVENING_HOUR;
+  });
+  const eveningSodium = summarizeNutrientTotalByGrams(eveningMeals, {
+    getGrams: mealGrams,
+    getValue: (m) => m.sodiumMg == null ? null : finite3(m.sodiumMg)
+  });
   return {
     date,
     lastMealHour: lastMeal,
     hoursBeforeSleep: hoursBeforeSleep(lastMeal, sleep?.bedtime ?? null),
     dinnerKcal: dinner.kcal,
     dinnerGrams: dinner.grams,
-    dinnerSodiumMg: dinner.sodiumMg,
-    eveningSodiumMg: eveningSodiumKnown ? round1(eveningSodium) : null,
-    liquidsAfter18Ml: hasLiquid ? round1(liquidsAfter18Ml) : null,
-    alcoholPureG: hasAlcohol ? round1(alcoholPureG) : null,
-    caffeineAfter14Mg: caffeineAfter14Known ? round1(caffeineAfter14) : null,
+    dinnerSodiumMg: dinner.sodium.value,
+    dinnerSodiumCoverage: {
+      known: dinner.sodium.coverage.known,
+      missing: dinner.sodium.coverage.missing
+    },
+    dinnerSodiumIncomplete: dinner.sodium.incomplete,
+    dinnerSodiumNote: dinner.sodium.note,
+    dinnerFibreG: dinner.fibre.value,
+    dinnerFibreCoverage: {
+      known: dinner.fibre.coverage.known,
+      missing: dinner.fibre.coverage.missing
+    },
+    dinnerFibreIncomplete: dinner.fibre.incomplete,
+    dinnerFibreNote: dinner.fibre.note,
+    eveningSodiumMg: eveningSodium.value,
+    eveningSodiumCoverage: {
+      known: eveningSodium.coverage.known,
+      missing: eveningSodium.coverage.missing
+    },
+    eveningSodiumIncomplete: eveningSodium.incomplete,
+    eveningSodiumNote: eveningSodium.note,
+    liquidsAfter18Ml: hasLiquid ? round12(liquidsAfter18Ml) : null,
+    alcoholPureG: hasAlcohol ? round12(alcoholPureG) : null,
+    caffeineAfter14Mg: caffeineAfter14Known ? round12(caffeineAfter14) : null,
     night: sleep ? {
       hours: sleep.hours,
       qualityStars: sleep.qualityStars,
@@ -8262,7 +8419,7 @@ function buildEvenings(fullHistory, from, to) {
   return { from, to, days, evenings: rows };
 }
 
-// mcp/tools.js
+// functions/mcp/tools.js
 init_workoutMovement();
 function summarizeMovement(fullHistory, date) {
   const entries = flattenDiaryEntries(trackerNode(fullHistory, date));
@@ -8371,6 +8528,7 @@ async function toolGetDay(db, uid, dateRef) {
     meals: mealsDetail.meals,
     liquids: mealsDetail.liquids,
     caffeineMg: mealsDetail.caffeineMg,
+    nutrientTotals: mealsDetail.totals,
     nutrientCoverage: mealsDetail.coverage,
     sleep,
     movement: summarizeMovement(base.fullHistory, date),
@@ -8526,7 +8684,7 @@ async function toolSearchFood(db, uid, query) {
   };
 }
 
-// mcp/mealDrafts.js
+// functions/mcp/mealDrafts.js
 var import_node_crypto2 = require("node:crypto");
 init_dates();
 var MEAL_DRAFT_SLOTS = Object.freeze(["colazione", "snack", "pranzo", "cena"]);
@@ -8957,10 +9115,10 @@ async function toolDeleteDraft(db, ctx, input, now = Date.now()) {
   return { deleted: true, draftId };
 }
 
-// mcp/mealLog.js
+// functions/mcp/mealLog.js
 init_dates();
 
-// ../src/utils/dayNodeWriteCore.js
+// src/utils/dayNodeWriteCore.js
 var REV_META_KEYS = /* @__PURE__ */ new Set(["rev", "revBy", "revAt", "writeProtocol"]);
 var MERGE_CONTROL_KEYS = /* @__PURE__ */ new Set(["logDeleteIds", "manualNodesDeleteIds"]);
 var ENTRY_LIST_KEYS = Object.freeze({
@@ -9100,7 +9258,7 @@ function mergeDayNodeWrite(current, patchFields, opts = {}) {
   };
 }
 
-// mcp/dayWriteAdmin.js
+// functions/mcp/dayWriteAdmin.js
 async function saveDayNodeWithRevAdmin(db, uid, dateStr, managedFields, opts = {}) {
   const id = String(uid || "").trim();
   const date = String(dateStr || "").trim();
@@ -9142,7 +9300,7 @@ async function saveDayNodeWithRevAdmin(db, uid, dateStr, managedFields, opts = {
   throw err;
 }
 
-// mcp/mealLog.js
+// functions/mcp/mealLog.js
 init_loadUserContext();
 var mcpMealIdemPath = (uid, hash) => `mcp_meal_idem/${uid}/${hash}`;
 var CLAUDE_MEAL_ORIGIN = "claude";
@@ -9543,7 +9701,7 @@ async function toolUndoMeal(db, ctx, input, now = Date.now()) {
   };
 }
 
-// mcp/createServer.js
+// functions/mcp/createServer.js
 init_habits();
 var READ_ONLY = Object.freeze({
   readOnlyHint: true,
@@ -9583,7 +9741,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_get_day",
     {
-      description: 'Legge un giorno Kentu (kds-5): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), liquidi/alcol con orario, caffeina se presente, notte (letto, sveglia, durata, stelle, note), salvavita e azione. Parametro date: "today", "yesterday" oppure YYYY-MM-DD (Europe/Rome). Sola lettura.',
+      description: 'Legge un giorno Kentu (kds-5): pilastri, pasti dettagliati (orario, grammi, kcal, P/C/F, fibre, sodio), nutrientTotals sodio/fibre con Coverage e Incomplete (totale null se dati insufficienti), liquidi/alcol con orario, caffeina se presente, notte (letto, sveglia, durata, stelle, note), salvavita e azione. Parametro date: "today", "yesterday" oppure YYYY-MM-DD (Europe/Rome). Sola lettura.',
       inputSchema: {
         date: z.string().describe("today | yesterday | YYYY-MM-DD")
       },
@@ -9594,7 +9752,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_get_evenings",
     {
-      description: "Serie compatta sera\u2192notte (max 90 giorni): ultimo pasto, ore prima del sonno, cena (kcal/grammi), sodio serale, liquidi dopo le 18, alcol, caffeina dopo le 14, esito notte (durata, stelle, note). from/to in YYYY-MM-DD (Europe/Rome). Sola lettura. Un episodio \xE8 un\u2019ipotesi, non una prova.",
+      description: "Serie compatta sera\u2192notte (max 90 giorni): ultimo pasto, ore prima del sonno, cena (kcal/grammi), sodio/fibre cena e sodio serale con Coverage/Incomplete (null se dati insufficienti), liquidi dopo le 18, alcol, caffeina dopo le 14, esito notte (durata, stelle, note). from/to in YYYY-MM-DD (Europe/Rome). Sola lettura. Un episodio \xE8 un\u2019ipotesi, non una prova. Non concludere da totali incompleti.",
       inputSchema: {
         from: z.string().describe("YYYY-MM-DD inizio (incluso)"),
         to: z.string().describe("YYYY-MM-DD fine (incluso)")
@@ -9734,7 +9892,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   return server;
 }
 
-// mcp/httpHandler.js
+// functions/mcp/httpHandler.js
 function denyCors(res) {
   res.setHeader("Vary", "Origin");
   res.removeHeader("Access-Control-Allow-Origin");

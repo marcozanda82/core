@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { TARGETS } from '../useBiochimico';
+import {
+  mineralsDataComplete,
+  vitaminsDataComplete,
+} from '../utils/microNutrientCompleteness.js';
 
 /** Stesso identico shell dei macro originali — 3 card visibili + peek 4ª/5ª. */
 const CHIP_CLASS =
@@ -44,7 +48,17 @@ function blockTabSwipeBubble(e) {
  *   onClick: () => void,
  * }} props
  */
-function NutrientChip({ label, emoji, color, borderClass, value, target, unit, onClick }) {
+function NutrientChip({
+  label,
+  emoji,
+  color,
+  borderClass,
+  value,
+  target,
+  unit,
+  onClick,
+  incomplete = false,
+}) {
   const blockTouchStartEnd = useCallback((e) => {
     blockTabSwipeBubble(e);
   }, []);
@@ -55,13 +69,14 @@ function NutrientChip({ label, emoji, color, borderClass, value, target, unit, o
 
   const numValue = Number(value) || 0;
   const numTarget = Number(target) || 1;
-  const pct = Math.min(100, (numValue / numTarget) * 100);
+  const pct = incomplete ? 0 : Math.min(100, (numValue / numTarget) * 100);
 
   return (
     <div
       role="button"
       tabIndex={0}
       className={`${CHIP_CLASS} ${borderClass} relative`}
+      aria-label={incomplete ? `${label}: dati incompleti` : undefined}
       onKeyDown={(ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
           ev.preventDefault();
@@ -98,12 +113,27 @@ function NutrientChip({ label, emoji, color, borderClass, value, target, unit, o
       </div>
 
       {/* Value */}
-      <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap', marginBottom: '8px' }}>
-        {value}{' '}
-        <span style={{ color: '#555', fontSize: '0.75rem' }}>
-          / {target} {unit}
-        </span>
-      </div>
+      {incomplete ? (
+        <div
+          style={{
+            color: '#fbbf24',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            lineHeight: 1.25,
+            marginBottom: '8px',
+            textAlign: 'left',
+          }}
+        >
+          dati incompleti
+        </div>
+      ) : (
+        <div style={{ color: '#fff', fontSize: '1rem', fontWeight: 'bold', whiteSpace: 'nowrap', marginBottom: '8px' }}>
+          {value}{' '}
+          <span style={{ color: '#555', fontSize: '0.75rem' }}>
+            / {target} {unit}
+          </span>
+        </div>
+      )}
 
       {/* Progress bar (footer) */}
       <div
@@ -114,8 +144,8 @@ function NutrientChip({ label, emoji, color, borderClass, value, target, unit, o
           className="h-full rounded-full transition-all duration-300"
           style={{
             width: `${pct}%`,
-            backgroundColor: color,
-            boxShadow: `0 0 6px ${color}99`,
+            backgroundColor: incomplete ? '#f59e0b66' : color,
+            boxShadow: incomplete ? 'none' : `0 0 6px ${color}99`,
           }}
         />
       </div>
@@ -137,6 +167,7 @@ function NutrientChip({ label, emoji, color, borderClass, value, target, unit, o
  *   onFatClick: () => void,
  *   onMineralsClick: () => void,
  *   onVitaminsClick: () => void,
+ *   activeLog?: unknown[],
  * }} props
  */
 export default function HomeNutrientStrip({
@@ -150,8 +181,12 @@ export default function HomeNutrientStrip({
   onFatClick,
   onMineralsClick,
   onVitaminsClick,
+  activeLog = [],
 }) {
   const stripRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+
+  const mineralsComplete = useMemo(() => mineralsDataComplete(activeLog), [activeLog]);
+  const vitaminsComplete = useMemo(() => vitaminsDataComplete(activeLog), [activeLog]);
 
   const na = Number(totali.na) || 0;
   const k = Number(totali.k) || 0;
@@ -160,7 +195,10 @@ export default function HomeNutrientStrip({
     return Math.round((k / na) * 100) / 100;
   }, [na, k]);
 
-  const vitaminPct = useMemo(() => vitaminCompletionPct(totali, targets), [totali, targets]);
+  const vitaminPct = useMemo(
+    () => (vitaminsComplete ? vitaminCompletionPct(totali, targets) : 0),
+    [totali, targets, vitaminsComplete],
+  );
 
   const blockTouchStartEnd = useCallback((e) => {
     blockTabSwipeBubble(e);
@@ -233,6 +271,7 @@ export default function HomeNutrientStrip({
         value={naKRatio}
         target={2}
         unit="Na/K"
+        incomplete={!mineralsComplete}
         onClick={onMineralsClick}
       />
       <NutrientChip
@@ -243,6 +282,7 @@ export default function HomeNutrientStrip({
         value={vitaminPct}
         target={100}
         unit="%"
+        incomplete={!vitaminsComplete}
         onClick={onVitaminsClick}
       />
     </div>

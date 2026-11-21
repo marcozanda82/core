@@ -6,6 +6,7 @@
  * (normalizeSleepNight / storage mattutino).
  */
 
+import { summarizeNutrientTotalByGrams } from '../../src/utils/nutrientTotalCoverage.js';
 import { addDaysIso, isIsoDate } from './dates.js';
 import {
   finite,
@@ -18,6 +19,34 @@ const DINNER_KEYS = /^(cena|dinner)/i;
 const EVENING_HOUR = 18;
 const CAFFEINE_AFTER_HOUR = 14;
 const MAX_EVENINGS_DAYS = 90;
+
+function mealGrams(meal) {
+  return finite(meal?.grams);
+}
+
+function coverageFields(prefix, summary) {
+  return {
+    [`${prefix}Mg`]: summary.value,
+    [`${prefix}Coverage`]: {
+      known: summary.coverage.known,
+      missing: summary.coverage.missing,
+    },
+    [`${prefix}Incomplete`]: summary.incomplete,
+    [`${prefix}Note`]: summary.note,
+  };
+}
+
+function coverageFieldsFibre(prefix, summary) {
+  return {
+    [`${prefix}G`]: summary.value,
+    [`${prefix}Coverage`]: {
+      known: summary.coverage.known,
+      missing: summary.coverage.missing,
+    },
+    [`${prefix}Incomplete`]: summary.incomplete,
+    [`${prefix}Note`]: summary.note,
+  };
+}
 
 function trackerNode(fullHistory, date) {
   return fullHistory?.[`trackerStorico_${date}`] || null;
@@ -124,7 +153,9 @@ export function buildDayMealsDetail(fullHistory, date) {
       carb,
       fat,
       fibre: fibreRead.value,
+      // Sempre mg della porzione (mai g, mai ×1000 euristico).
       sodiumMg: sodiumRead.value,
+      sodiumUnit: sodiumRead.value == null ? null : 'mg',
       caffeineMg: caffeine,
       condimentKind: entry.condimentKind || null,
       foodDbKey: entry.foodDbKey || entry.matchedKey || entry.id || null,
@@ -156,15 +187,40 @@ export function buildDayMealsDetail(fullHistory, date) {
     }
   }
 
+  const sodiumTotal = summarizeNutrientTotalByGrams(meals, {
+    getGrams: mealGrams,
+    getValue: (m) => (m.sodiumMg == null ? null : finite(m.sodiumMg)),
+  });
+  const fibreTotal = summarizeNutrientTotalByGrams(meals, {
+    getGrams: mealGrams,
+    getValue: (m) => (m.fibre == null ? null : finite(m.fibre)),
+  });
+
   return {
     meals,
     liquids,
     caffeineMg: caffeineKnown ? round1(caffeineMg) : null,
+    totals: {
+      ...coverageFields('sodium', sodiumTotal),
+      ...coverageFieldsFibre('fibre', fibreTotal),
+    },
     coverage: {
       foodsMissingSodium: foodsMissingSodium.slice(0, 12),
       foodsMissingFibre: foodsMissingFibre.slice(0, 12),
       missingSodiumCount: foodsMissingSodium.length,
       missingFibreCount: foodsMissingFibre.length,
+      sodium: {
+        known: sodiumTotal.coverage.known,
+        missing: sodiumTotal.coverage.missing,
+        incomplete: sodiumTotal.incomplete,
+        note: sodiumTotal.note,
+      },
+      fibre: {
+        known: fibreTotal.coverage.known,
+        missing: fibreTotal.coverage.missing,
+        incomplete: fibreTotal.incomplete,
+        note: fibreTotal.note,
+      },
     },
   };
 }
@@ -241,22 +297,42 @@ export function buildDaySleepDetail(fullHistory, date, options = {}) {
 }
 
 function dinnerStats(meals) {
+  const dinnerMeals = [];
   let kcal = 0;
   let grams = 0;
-  let sodiumMg = 0;
   let hasDinner = false;
   for (const meal of meals) {
     if (!isDinner(meal)) continue;
     hasDinner = true;
+    dinnerMeals.push(meal);
     if (meal.kcal != null) kcal += meal.kcal;
     if (meal.grams != null) grams += meal.grams;
-    if (meal.sodiumMg != null) sodiumMg += meal.sodiumMg;
   }
-  if (!hasDinner) return { kcal: null, grams: null, sodiumMg: null };
+  if (!hasDinner) {
+    return {
+      kcal: null,
+      grams: null,
+      sodium: summarizeNutrientTotalByGrams([], {
+        getGrams: mealGrams,
+        getValue: () => null,
+      }),
+      fibre: summarizeNutrientTotalByGrams([], {
+        getGrams: mealGrams,
+        getValue: () => null,
+      }),
+    };
+  }
   return {
     kcal: round1(kcal),
     grams: round1(grams),
-    sodiumMg: round1(sodiumMg),
+    sodium: summarizeNutrientTotalByGrams(dinnerMeals, {
+      getGrams: mealGrams,
+      getValue: (m) => (m.sodiumMg == null ? null : finite(m.sodiumMg)),
+    }),
+    fibre: summarizeNutrientTotalByGrams(dinnerMeals, {
+      getGrams: mealGrams,
+      getValue: (m) => (m.fibre == null ? null : finite(m.fibre)),
+    }),
   };
 }
 
@@ -317,16 +393,14 @@ export function buildEveningRow(fullHistory, date) {
     }
   }
 
-  let eveningSodium = 0;
-  let eveningSodiumKnown = false;
-  for (const meal of detail.meals) {
+  const eveningMeals = detail.meals.filter((meal) => {
     const t = finite(meal.time);
-    if (t == null || t < EVENING_HOUR) continue;
-    if (meal.sodiumMg != null) {
-      eveningSodium += meal.sodiumMg;
-      eveningSodiumKnown = true;
-    }
-  }
+    return t != null && t >= EVENING_HOUR;
+  });
+  const eveningSodium = summarizeNutrientTotalByGrams(eveningMeals, {
+    getGrams: mealGrams,
+    getValue: (m) => (m.sodiumMg == null ? null : finite(m.sodiumMg)),
+  });
 
   return {
     date,
@@ -334,8 +408,27 @@ export function buildEveningRow(fullHistory, date) {
     hoursBeforeSleep: hoursBeforeSleep(lastMeal, sleep?.bedtime ?? null),
     dinnerKcal: dinner.kcal,
     dinnerGrams: dinner.grams,
-    dinnerSodiumMg: dinner.sodiumMg,
-    eveningSodiumMg: eveningSodiumKnown ? round1(eveningSodium) : null,
+    dinnerSodiumMg: dinner.sodium.value,
+    dinnerSodiumCoverage: {
+      known: dinner.sodium.coverage.known,
+      missing: dinner.sodium.coverage.missing,
+    },
+    dinnerSodiumIncomplete: dinner.sodium.incomplete,
+    dinnerSodiumNote: dinner.sodium.note,
+    dinnerFibreG: dinner.fibre.value,
+    dinnerFibreCoverage: {
+      known: dinner.fibre.coverage.known,
+      missing: dinner.fibre.coverage.missing,
+    },
+    dinnerFibreIncomplete: dinner.fibre.incomplete,
+    dinnerFibreNote: dinner.fibre.note,
+    eveningSodiumMg: eveningSodium.value,
+    eveningSodiumCoverage: {
+      known: eveningSodium.coverage.known,
+      missing: eveningSodium.coverage.missing,
+    },
+    eveningSodiumIncomplete: eveningSodium.incomplete,
+    eveningSodiumNote: eveningSodium.note,
     liquidsAfter18Ml: hasLiquid ? round1(liquidsAfter18Ml) : null,
     alcoholPureG: hasAlcohol ? round1(alcoholPureG) : null,
     caffeineAfter14Mg: caffeineAfter14Known ? round1(caffeineAfter14) : null,

@@ -1,0 +1,1658 @@
+{
+  "apply": true,
+  "dbHits": 153,
+  "diaryHits": 224,
+  "diaryDates": [
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+    "2026-10-26",
+    "2026-10-27",
+    "2026-10-28",
+    "2026-10-29",
+    "2026-10-30",
+    "2026-10-31",
+    "2026-11-01",
+    "2026-11-02",
+    "2026-11-03",
+    "2026-11-04",
+    "2026-11-05",
+    "2026-11-06",
+    "2026-11-07",
+    "2026-11-08",
+    "2026-11-09",
+    "2026-11-10",
+    "2026-11-11",
+    "2026-11-12",
+    "2026-11-13",
+    "2026-11-14",
+    "2026-11-15",
+    "2026-11-16",
+    "2026-11-17",
+    "2026-11-18",
+    "2026-11-19",
+    "2026-11-20"
+  ],
+  "sampleDb": [
+    {
+      "foodKey": "anelli di cipolla",
+      "name": "Anelli Di Cipolla",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "avocado",
+      "name": "Avocado",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "bonroll classico",
+      "name": "BonRoll Classico",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "cavolfiore",
+      "name": "Cavolfiore",
+      "invented": [
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "ceci lessati in barattolo selex",
+      "name": "Ceci lessati in barattolo selex",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "thr",
+          "value": 278,
+          "quarter": 275
+        },
+        {
+          "key": "trp",
+          "value": 75,
+          "quarter": 75
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "thr": null,
+        "trp": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "thr",
+        "trp",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "chicken crunchies",
+      "name": "Chicken crunchies",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "cortado espresso macchiato caffè macchiato capsule",
+      "name": "Cortado espresso macchiato caffè macchiato capsule",
+      "invented": [
+        {
+          "key": "vitA",
+          "value": 225,
+          "quarter": 225
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "b9",
+          "value": 100,
+          "quarter": 100
+        },
+        {
+          "key": "vitB12",
+          "value": 0.6,
+          "quarter": 0.6
+        },
+        {
+          "key": "vitE",
+          "value": 3.75,
+          "quarter": 3.75
+        },
+        {
+          "key": "vitK",
+          "value": 30,
+          "quarter": 30
+        },
+        {
+          "key": "p",
+          "value": 175,
+          "quarter": 175
+        },
+        {
+          "key": "zn",
+          "value": 2.75,
+          "quarter": 2.75
+        },
+        {
+          "key": "cu",
+          "value": 0.225,
+          "quarter": 0.225
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "fatTrans",
+          "value": 0.5,
+          "quarter": 0.5
+        },
+        {
+          "key": "fatMono",
+          "value": 11.25,
+          "quarter": 11.25
+        },
+        {
+          "key": "fatPoly",
+          "value": 5,
+          "quarter": 5
+        },
+        {
+          "key": "omega6",
+          "value": 2.5,
+          "quarter": 2.5
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitA": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "b9": null,
+        "vitB12": null,
+        "vitE": null,
+        "vitK": null,
+        "p": null,
+        "zn": null,
+        "cu": null,
+        "se": null,
+        "fatTrans": null,
+        "fatMono": null,
+        "fatPoly": null,
+        "omega6": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitA",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "b9",
+        "vitB12",
+        "vitE",
+        "vitK",
+        "p",
+        "zn",
+        "cu",
+        "se",
+        "fatTrans",
+        "fatMono",
+        "fatPoly",
+        "omega6",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "cotoletta alla viennese",
+      "name": "Cotoletta Alla Viennese",
+      "invented": [
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "fatTrans",
+          "value": 0.5,
+          "quarter": 0.5
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "fatTrans": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "fatTrans",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "cotoletta viennese",
+      "name": "Cotoletta Viennese",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "foodKey": "cotti a vapore quinoa",
+      "name": "Cotti a Vapore Quinoa",
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.325,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "omega3",
+          "value": 0.5,
+          "quarter": 0.5
+        },
+        {
+          "key": "omega6",
+          "value": 2.5,
+          "quarter": 2.5
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "omega3": null,
+        "omega6": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "omega3",
+        "omega6",
+        "colest"
+      ]
+    }
+  ],
+  "sampleDiary": [
+    {
+      "date": "2026-11-20",
+      "mealId": "snack_1795196898269",
+      "itemId": "mcdrive_raw_1795196913939_lmicnns",
+      "name": "Excellence 85% Cioccolato Rich Dark",
+      "foodDbKey": "excellence 85% cioccolato rich dark",
+      "grams": 10,
+      "invented": [
+        {
+          "key": "vitB3",
+          "value": 0.4,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "na",
+          "value": 50,
+          "per100": 500,
+          "quarter": 500
+        },
+        {
+          "key": "se",
+          "value": 1.4,
+          "per100": 14,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 7.5,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB3": null,
+        "na": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB3",
+        "na",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "pranzo_1795196779355",
+      "itemId": "mcdrive_raw_1795196832341_xuipe9p",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "grams": 70,
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 5.3,
+          "per100": 7.571,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.2,
+          "per100": 0.286,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB3",
+          "value": 2.8,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "se",
+          "value": 9.6,
+          "per100": 13.714,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 52.5,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB3": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB3",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "pranzo_1795196779355",
+      "itemId": "mcdrive_raw_1795196832341_4gsscfv",
+      "name": "Merluzzo Gratinato con Rosmarino e Limone",
+      "foodDbKey": "food_1776628227772_Merluzzo_Gratinato_con_Rosmari",
+      "grams": 360,
+      "invented": [
+        {
+          "key": "leu",
+          "value": 2610,
+          "per100": 725,
+          "quarter": 725
+        },
+        {
+          "key": "iso",
+          "value": 1350,
+          "per100": 375,
+          "quarter": 375
+        },
+        {
+          "key": "val",
+          "value": 1710,
+          "per100": 475,
+          "quarter": 475
+        },
+        {
+          "key": "lys",
+          "value": 1980,
+          "per100": 550,
+          "quarter": 550
+        },
+        {
+          "key": "met",
+          "value": 990,
+          "per100": 275,
+          "quarter": 275
+        },
+        {
+          "key": "phe",
+          "value": 1620,
+          "per100": 450,
+          "quarter": 450
+        },
+        {
+          "key": "thr",
+          "value": 990,
+          "per100": 275,
+          "quarter": 275
+        },
+        {
+          "key": "trp",
+          "value": 270,
+          "per100": 75,
+          "quarter": 75
+        },
+        {
+          "key": "his",
+          "value": 675,
+          "per100": 187.5,
+          "quarter": 187.5
+        },
+        {
+          "key": "vitA",
+          "value": 810,
+          "per100": 225,
+          "quarter": 225
+        },
+        {
+          "key": "vitB1",
+          "value": 1.1,
+          "per100": 0.306,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 1.2,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 14.4,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 4.5,
+          "per100": 1.25,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 1.2,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "b9",
+          "value": 360,
+          "per100": 100,
+          "quarter": 100
+        },
+        {
+          "key": "vitB12",
+          "value": 2.2,
+          "per100": 0.611,
+          "quarter": 0.6
+        },
+        {
+          "key": "vitc",
+          "value": 81,
+          "per100": 22.5,
+          "quarter": 22.5
+        },
+        {
+          "key": "vitD",
+          "value": 13.5,
+          "per100": 3.75,
+          "quarter": 3.75
+        },
+        {
+          "key": "vitE",
+          "value": 13.5,
+          "per100": 3.75,
+          "quarter": 3.75
+        },
+        {
+          "key": "vitK",
+          "value": 108,
+          "per100": 30,
+          "quarter": 30
+        },
+        {
+          "key": "ca",
+          "value": 900,
+          "per100": 250,
+          "quarter": 250
+        },
+        {
+          "key": "fe",
+          "value": 16.2,
+          "per100": 4.5,
+          "quarter": 4.5
+        },
+        {
+          "key": "mg",
+          "value": 378,
+          "per100": 105,
+          "quarter": 105
+        },
+        {
+          "key": "p",
+          "value": 630,
+          "per100": 175,
+          "quarter": 175
+        },
+        {
+          "key": "k",
+          "value": 3060,
+          "per100": 850,
+          "quarter": 850
+        },
+        {
+          "key": "zn",
+          "value": 9.9,
+          "per100": 2.75,
+          "quarter": 2.75
+        },
+        {
+          "key": "cu",
+          "value": 0.8,
+          "per100": 0.222,
+          "quarter": 0.225
+        },
+        {
+          "key": "se",
+          "value": 49.5,
+          "per100": 13.75,
+          "quarter": 13.75
+        },
+        {
+          "key": "fatTrans",
+          "value": 1.8,
+          "per100": 0.5,
+          "quarter": 0.5
+        },
+        {
+          "key": "fatMono",
+          "value": 40.5,
+          "per100": 11.25,
+          "quarter": 11.25
+        },
+        {
+          "key": "fatPoly",
+          "value": 18,
+          "per100": 5,
+          "quarter": 5
+        },
+        {
+          "key": "omega3",
+          "value": 1.8,
+          "per100": 0.5,
+          "quarter": 0.5
+        },
+        {
+          "key": "omega6",
+          "value": 9,
+          "per100": 2.5,
+          "quarter": 2.5
+        },
+        {
+          "key": "colest",
+          "value": 270,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "leu": null,
+        "iso": null,
+        "val": null,
+        "lys": null,
+        "met": null,
+        "phe": null,
+        "thr": null,
+        "trp": null,
+        "his": null,
+        "vitA": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "b9": null,
+        "vitB12": null,
+        "vitc": null,
+        "vitD": null,
+        "vitE": null,
+        "vitK": null,
+        "ca": null,
+        "fe": null,
+        "mg": null,
+        "p": null,
+        "k": null,
+        "zn": null,
+        "cu": null,
+        "se": null,
+        "fatTrans": null,
+        "fatMono": null,
+        "fatPoly": null,
+        "omega3": null,
+        "omega6": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "leu",
+        "iso",
+        "val",
+        "lys",
+        "met",
+        "phe",
+        "thr",
+        "trp",
+        "his",
+        "vitA",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "b9",
+        "vitB12",
+        "vitc",
+        "vitD",
+        "vitE",
+        "vitK",
+        "ca",
+        "fe",
+        "mg",
+        "p",
+        "k",
+        "zn",
+        "cu",
+        "se",
+        "fatTrans",
+        "fatMono",
+        "fatPoly",
+        "omega3",
+        "omega6",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "snack_1795196844453",
+      "itemId": "mcdrive_raw_1795196854922_nxppiry",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "grams": 150,
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 11.3,
+          "per100": 7.533,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB2",
+          "value": 0.5,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 6,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 1.9,
+          "per100": 1.267,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.5,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 20.6,
+          "per100": 13.733,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 112.5,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "snack_1795196844453",
+      "itemId": "mcdrive_raw_1795196854922_8bg93vc",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "grams": 100,
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 7.5,
+          "per100": 7.5,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "per100": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB3",
+          "value": 4,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "se",
+          "value": 13.8,
+          "per100": 13.8,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 75,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB3": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB3",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "cena_1795206317507",
+      "itemId": "mcdrive_raw_1795206359125_oa2nwml",
+      "name": "Fagiolini",
+      "foodDbKey": "fagiolini",
+      "grams": 250,
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 18.8,
+          "per100": 7.52,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB2",
+          "value": 0.8,
+          "per100": 0.32,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 10,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 3.1,
+          "per100": 1.24,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.8,
+          "per100": 0.32,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitK",
+          "value": 75,
+          "per100": 30,
+          "quarter": 30
+        },
+        {
+          "key": "se",
+          "value": 34.4,
+          "per100": 13.76,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 187.5,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "vitK": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "vitK",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "cena_1795206317507",
+      "itemId": "mcdrive_raw_1795206359126_in0wyhe",
+      "name": "Olio evo",
+      "foodDbKey": "olio evo",
+      "grams": 5,
+      "invented": [
+        {
+          "key": "vitB3",
+          "value": 0.2,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "se",
+          "value": 0.7,
+          "per100": 14,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 3.8,
+          "per100": 76,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB3": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB3",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "cena_1795206317507",
+      "itemId": "mcdrive_raw_1795206359127_kwnjg63",
+      "name": "Filetti di merluzzo",
+      "foodDbKey": "filetti di merluzzo",
+      "grams": 220,
+      "invented": [
+        {
+          "key": "vitB1",
+          "value": 0.7,
+          "per100": 0.318,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.7,
+          "per100": 0.318,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 8.8,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 2.8,
+          "per100": 1.273,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 0.7,
+          "per100": 0.318,
+          "quarter": 0.325
+        },
+        {
+          "key": "na",
+          "value": 1100,
+          "per100": 500,
+          "quarter": 500
+        },
+        {
+          "key": "se",
+          "value": 30.3,
+          "per100": 13.773,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 165,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "na": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "na",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "cena_1795206317507",
+      "itemId": "mcdrive_raw_1795206359128_k59nd4y",
+      "name": "Cavolfiore",
+      "foodDbKey": "cavolfiore",
+      "grams": 300,
+      "invented": [
+        {
+          "key": "vitB1",
+          "value": 0.9,
+          "per100": 0.3,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 1,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 12,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB5",
+          "value": 3.8,
+          "per100": 1.267,
+          "quarter": 1.25
+        },
+        {
+          "key": "vitB6",
+          "value": 1,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "se",
+          "value": 41.3,
+          "per100": 13.767,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 225,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB5": null,
+        "vitB6": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB5",
+        "vitB6",
+        "se",
+        "colest"
+      ]
+    },
+    {
+      "date": "2026-11-19",
+      "mealId": "snack_1795120514867",
+      "itemId": "mcdrive_raw_1795121266262_bwuwfjq",
+      "name": "Filetti di Sgombro al naturale",
+      "foodDbKey": "filetti di sgombro al naturale",
+      "grams": 90,
+      "invented": [
+        {
+          "key": "fibre",
+          "value": 6.8,
+          "per100": 7.556,
+          "quarter": 7.5
+        },
+        {
+          "key": "vitB1",
+          "value": 0.3,
+          "per100": 0.333,
+          "quarter": 0.3
+        },
+        {
+          "key": "vitB2",
+          "value": 0.3,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitB3",
+          "value": 3.6,
+          "per100": 4,
+          "quarter": 4
+        },
+        {
+          "key": "vitB6",
+          "value": 0.3,
+          "per100": 0.333,
+          "quarter": 0.325
+        },
+        {
+          "key": "vitD",
+          "value": 4.5,
+          "per100": 5,
+          "quarter": 5
+        },
+        {
+          "key": "se",
+          "value": 12.4,
+          "per100": 13.778,
+          "quarter": 13.75
+        },
+        {
+          "key": "colest",
+          "value": 67.5,
+          "per100": 75,
+          "quarter": 75
+        }
+      ],
+      "after": {
+        "fibre": null,
+        "vitB1": null,
+        "vitB2": null,
+        "vitB3": null,
+        "vitB6": null,
+        "vitD": null,
+        "se": null,
+        "colest": null
+      },
+      "nullKeys": [
+        "fibre",
+        "vitB1",
+        "vitB2",
+        "vitB3",
+        "vitB6",
+        "vitD",
+        "se",
+        "colest"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-20",
+  "dinnerFoods": [
+    {
+      "name": "Noci",
+      "grams": 22,
+      "sodiumMg": null,
+      "fibre": 1.5
+    },
+    {
+      "name": "Excellence 85% Cioccolato Rich Dark",
+      "grams": 10,
+      "sodiumMg": null,
+      "fibre": 1.2
+    },
+    {
+      "name": "Fagiolini",
+      "grams": 250,
+      "sodiumMg": 5,
+      "fibre": 6.8
+    },
+    {
+      "name": "Olio evo",
+      "grams": 5,
+      "sodiumMg": null,
+      "fibre": 0
+    },
+    {
+      "name": "Filetti di merluzzo",
+      "grams": 220,
+      "sodiumMg": null,
+      "fibre": 0
+    },
+    {
+      "name": "Cavolfiore",
+      "grams": 300,
+      "sodiumMg": null,
+      "fibre": 7.5
+    },
+    {
+      "name": "Riso integrale Venere precotto",
+      "grams": 125,
+      "sodiumMg": null,
+      "fibre": null
+    }
+  ],
+  "nutrientTotals": {
+    "sodiumMg": null,
+    "sodiumCoverage": {
+      "known": 7,
+      "missing": 8
+    },
+    "sodiumIncomplete": true,
+    "sodiumNote": "dati insufficienti",
+    "fibreG": 32,
+    "fibreCoverage": {
+      "known": 12,
+      "missing": 3
+    },
+    "fibreIncomplete": false,
+    "fibreNote": null
+  },
+  "eveningRow": {
+    "dinnerSodiumMg": null,
+    "dinnerSodiumCoverage": {
+      "known": 1,
+      "missing": 6
+    },
+    "dinnerSodiumIncomplete": true,
+    "dinnerSodiumNote": "dati insufficienti",
+    "dinnerFibreG": 17,
+    "dinnerFibreCoverage": {
+      "known": 6,
+      "missing": 1
+    },
+    "dinnerFibreIncomplete": false,
+    "dinnerFibreNote": null,
+    "eveningSodiumMg": null,
+    "eveningSodiumCoverage": {
+      "known": 1,
+      "missing": 6
+    },
+    "eveningSodiumIncomplete": true,
+    "eveningSodiumNote": "dati insufficienti"
+  }
+}

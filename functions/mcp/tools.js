@@ -145,6 +145,7 @@ export async function toolGetDay(db, uid, dateRef) {
     meals: mealsDetail.meals,
     liquids: mealsDetail.liquids,
     caffeineMg: mealsDetail.caffeineMg,
+    nutrientTotals: mealsDetail.totals,
     nutrientCoverage: mealsDetail.coverage,
     sleep,
     movement: summarizeMovement(base.fullHistory, date),

@@ -1,0 +1,52 @@
+[
+  {
+    "key": "mela",
+    "na": 2,
+    "sale": 0.005
+  },
+  {
+    "key": "kiwi",
+    "na": 5,
+    "sale": 0.013
+  },
+  {
+    "key": "melanzana",
+    "na": 3,
+    "sale": 0.008
+  },
+  {
+    "key": "melanzane",
+    "na": 3,
+    "sale": 0.008
+  },
+  {
+    "key": "pomodoro",
+    "na": 3,
+    "sale": 0.008
+  },
+  {
+    "key": "pomodorissimo la passata",
+    "na": 16,
+    "sale": 0.041
+  },
+  {
+    "key": "food_1777149590373_Barcode_053126161001",
+    "na": 775,
+    "sale": 1.97
+  },
+  {
+    "key": "recipe_1789662948410_Pane_integrale_con_sardine_e_pomodoro",
+    "na": 203.44,
+    "sale": 0.517
+  },
+  {
+    "key": "recipe_1789755622020_Insalatissime_Rio_Mare_Messicana",
+    "na": 169.71,
+    "sale": 0.431
+  },
+  {
+    "key": "recipe_1790517453430_Panino_pomodoro_e_sgombro",
+    "na": 243.49,
+    "sale": 0.619
+  }
+]

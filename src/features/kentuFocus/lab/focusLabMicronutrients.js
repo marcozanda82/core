@@ -12,6 +12,10 @@
 
 import { TARGETS } from '../../../utils/computeTotaliCore.js';
 import {
+  MIN_NUTRIENT_GRAMS_COVERAGE,
+  summarizeNutrientTotalByGrams,
+} from '../../../utils/nutrientTotalCoverage.js';
+import {
   FOCUS_PROVENANCE,
   focusMetric,
   missingMetric,
@@ -239,6 +243,7 @@ export function buildFoodItemCatalogRef(item) {
 
 /**
  * Aggrega micronutrienti giorno: somma solo present + real_zero.
+ * Se i grammi con dato noto sono &lt; 70%, value = null (dati insufficienti).
  * @param {object[]} foodItems
  */
 export function aggregateDayMicronutrients(foodItems) {
@@ -250,38 +255,55 @@ export function aggregateDayMicronutrients(foodItems) {
 
   for (const key of FOCUS_LAB_MICRONUTRIENT_KEYS) {
     const unit = FOCUS_LAB_MICRONUTRIENT_UNITS[key] || undefined;
-    let sum = 0;
     let itemsKnown = 0;
     let itemsAbsent = 0;
     let itemsUnverifiedZero = 0;
 
+    const contributing = [];
     for (const item of items) {
       const resolved = resolveMicronutrientPresence(item, key);
       if (resolved.availability === FOCUS_NUTRIENT_AVAILABILITY.absent) {
         itemsAbsent += 1;
+        contributing.push({ item, value: null });
         continue;
       }
       if (resolved.availability === FOCUS_NUTRIENT_AVAILABILITY.unverified_zero) {
         itemsUnverifiedZero += 1;
+        contributing.push({ item, value: null });
         continue;
       }
       if (resolved.contributesToSum && resolved.metric?.value != null) {
-        sum += Number(resolved.metric.value) || 0;
         itemsKnown += 1;
+        contributing.push({ item, value: Number(resolved.metric.value) || 0 });
+      } else {
+        contributing.push({ item, value: null });
       }
     }
 
-    const completenessRatio = itemsTotal > 0
-      ? Math.round((itemsKnown / itemsTotal) * 1000) / 1000
-      : 0;
+    const gramsSummary = summarizeNutrientTotalByGrams(contributing, {
+      getGrams: (row) => {
+        const g = Number(row.item?.grams ?? row.item?.qta ?? row.item?.weight ?? row.item?.qty);
+        return Number.isFinite(g) && g > 0 ? g : null;
+      },
+      getValue: (row) => row.value,
+      minCoverage: MIN_NUTRIENT_GRAMS_COVERAGE,
+    });
 
-    const base = itemsKnown > 0
-      ? focusMetric(roundMicro(sum), {
+    const completenessRatio = gramsSummary.coverage.ratio;
+
+    let base;
+    if (gramsSummary.incomplete || gramsSummary.value == null) {
+      base = {
+        ...missingMetric(unit),
+        note: gramsSummary.note || (itemsKnown === 0 ? undefined : 'dati insufficienti'),
+      };
+    } else {
+      base = focusMetric(roundMicro(gramsSummary.value), {
         unit,
         provenance: FOCUS_PROVENANCE.calculated,
         source: 'focusLabMicronutrients',
-      })
-      : missingMetric(unit);
+      });
+    }
 
     totals[key] = {
       ...base,
@@ -290,8 +312,13 @@ export function aggregateDayMicronutrients(foodItems) {
       itemsAbsent,
       itemsUnverifiedZero,
       completenessRatio,
+      coverage: {
+        known: gramsSummary.coverage.known,
+        missing: gramsSummary.coverage.missing,
+      },
+      incomplete: gramsSummary.incomplete,
       sumIncludesOnly: ['present', 'real_zero'],
-      limits: 'missing_and_unverified_zero_excluded_from_sum',
+      limits: 'missing_and_unverified_zero_excluded_from_sum; null_if_grams_coverage_below_70pct',
       /** Nessun giudizio clinico in questa fase. */
       judgement: null,
     };
@@ -300,7 +327,7 @@ export function aggregateDayMicronutrients(foodItems) {
   return {
     keys: [...FOCUS_LAB_MICRONUTRIENT_KEYS],
     byKey: totals,
-    note: 'Totali micro: solo valori present/real_zero. Nessuna etichetta carenza/adeguato/eccessivo.',
+    note: 'Totali micro: solo valori present/real_zero; null se copertura grammi < 70%. Nessuna etichetta carenza/adeguato/eccessivo.',
   };
 }
 

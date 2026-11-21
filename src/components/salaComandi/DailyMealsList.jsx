@@ -33,15 +33,15 @@ function entryUnsaved(item, unsavedEntryIds) {
 function buildDailyMeals(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
   return Object.keys(groupedFoods || {})
     .map((slotKey) => {
-      const items = (groupedFoods[slotKey] || []).filter(
+      const rawItems = (groupedFoods[slotKey] || []).filter(
         (item) => item && item.type !== 'stimulant',
       );
+      // Solo pasti convalidati: le bozze stanno in «Bozze da convalidare».
+      const items = rawItems.filter((item) => !isUnresolvedMealDraftItem(item));
       if (items.length === 0) return null;
       const mealType = items[0]?.mealType || slotKey.split('_')[0];
       const mealTimeRaw = Number(items[0]?.mealTime ?? items[0]?.time);
       const sortTime = Number.isFinite(mealTimeRaw) ? mealTimeRaw : 12;
-      const pendingCount = items.filter(isUnresolvedMealDraftItem).length;
-      const resolved = items.filter((item) => !isUnresolvedMealDraftItem(item));
       const unsaved = items.some((item) => entryUnsaved(item, unsavedEntryIds))
         || (unsavedEntryIds?.has?.(String(slotKey)) === true);
       return {
@@ -52,12 +52,12 @@ function buildDailyMeals(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
           ? decimalToTimeStr(mealTimeRaw)
           : '',
         sortTime,
-        pendingCount,
+        pendingCount: 0,
         unsaved,
-        kcal: Math.round(sumMacro(resolved, (item) => item.kcal ?? item.cal)),
-        prot: Math.round(sumMacro(resolved, (item) => item.prot ?? item.pro)),
-        carb: Math.round(sumMacro(resolved, (item) => item.carb ?? item.carbo ?? item.cho)),
-        fat: Math.round(sumMacro(resolved, (item) => item.fatTotal ?? item.fat)),
+        kcal: Math.round(sumMacro(items, (item) => item.kcal ?? item.cal)),
+        prot: Math.round(sumMacro(items, (item) => item.prot ?? item.pro)),
+        carb: Math.round(sumMacro(items, (item) => item.carb ?? item.carbo ?? item.cho)),
+        fat: Math.round(sumMacro(items, (item) => item.fatTotal ?? item.fat)),
         items,
       };
     })

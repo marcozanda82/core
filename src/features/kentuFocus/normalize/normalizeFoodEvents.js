@@ -3,8 +3,9 @@
  * Totali macro allineati a computeTotali (nucleo puro in utils/computeTotaliCore.js).
  */
 
-import { computeTotali } from '../../../utils/computeTotaliCore.js';
+import { computeTotali, readLogItemNutrient } from '../../../utils/computeTotaliCore.js';
 import { isUnresolvedMealDraftItem } from '../../../utils/mealDraftStatus.js';
+import { summarizeNutrientTotalByGrams } from '../../../utils/nutrientTotalCoverage.js';
 import {
   FOCUS_PROVENANCE,
   focusMetric,
@@ -183,8 +184,16 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
   const proteinG = Number(totali.prot) || 0;
   const carbG = Number(totali.carb) || 0;
   const fatG = Number(totali.fatTotal) || 0;
-  const fiberG = Number(totali.fibre) || 0;
-  const hasNutritionTotals = hasFood || kcal > 0 || proteinG > 0 || carbG > 0 || fatG > 0 || fiberG > 0;
+  // Fibre: null se copertura grammi insufficiente (non confondere parziale con totale).
+  const fibreSummary = summarizeNutrientTotalByGrams(foods, {
+    getGrams: (f) => {
+      const g = Number(f?.grams ?? f?.qta ?? f?.weight ?? f?.qty);
+      return Number.isFinite(g) && g > 0 ? g : null;
+    },
+    getValue: (f) => readLogItemNutrient(f, 'fibre'),
+  });
+  const fiberG = fibreSummary.value;
+  const hasNutritionTotals = hasFood || kcal > 0 || proteinG > 0 || carbG > 0 || fatG > 0 || (fiberG != null && fiberG > 0);
 
   const targetKcal = finiteNumber(opts.targets?.kcal);
   const targetProtein = finiteNumber(opts.targets?.proteinG);
@@ -250,13 +259,21 @@ export function normalizeFoodEvents(analysisDayNode, opts = {}) {
             source: 'computeTotali',
           })
           : missingMetric('g'),
-        fiberG: hasNutritionTotals
-          ? focusMetric(round1(fiberG), {
+        fiberG: fiberG == null
+          ? {
+            ...missingMetric('g'),
+            note: fibreSummary.note || undefined,
+            incomplete: fibreSummary.incomplete,
+            coverage: {
+              known: fibreSummary.coverage.known,
+              missing: fibreSummary.coverage.missing,
+            },
+          }
+          : focusMetric(round1(fiberG), {
             unit: 'g',
             provenance: FOCUS_PROVENANCE.calculated,
             source: 'computeTotali',
-          })
-          : missingMetric('g'),
+          }),
       },
       targets: {
         kcal: targetKcal == null

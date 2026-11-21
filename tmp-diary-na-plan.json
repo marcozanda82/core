@@ -1,0 +1,1423 @@
+{
+  "hitCount": 56,
+  "hits": [
+    {
+      "date": "2026-11-20",
+      "mealId": "pranzo_1795196779355",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1795196832341_xuipe9p",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "snack_1795196844453",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1795196854922_nxppiry",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "matchedKey": "mela",
+      "resolvedKey": "mela",
+      "grams": 150,
+      "naBefore": 750,
+      "naAfter": 3,
+      "per100Before": 500,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-20",
+      "mealId": "snack_1795196844453",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1795196854922_8bg93vc",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-19",
+      "mealId": "snack_1795120514867",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1795120554906_t6s0umb",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": null,
+      "naAfter": 6,
+      "per100Before": 0,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-19",
+      "mealId": "snack_1795090411689",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1795090436863_39la7v5",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 150,
+      "naBefore": 7.5,
+      "naAfter": 4.5,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-18",
+      "mealId": "snack_1795037946077",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1795037969748_wy96ssa",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-18",
+      "mealId": "cena_1795038007393",
+      "mealDesc": "Cena",
+      "itemId": "assisted_1795038007392_3",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 180,
+      "naBefore": 9,
+      "naAfter": 5.4,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-17",
+      "mealId": "pranzo_1794928083257",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794928133989_lfookbx",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 16,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-11-16",
+      "mealId": "snack_1794893470108",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794893482615_rm8hvfo",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-16",
+      "mealId": "pranzo_1794844562547",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794844620335_908jk2h",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 200,
+      "naBefore": 1000,
+      "naAfter": 32,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.08
+    },
+    {
+      "date": "2026-11-15",
+      "mealId": "snack_1794768282739",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794768312338_n88hcc8",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-15",
+      "mealId": "snack_1794752450762",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794752488959_1nwvrxy",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 130,
+      "naBefore": 6.5,
+      "naAfter": 3.9,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-15",
+      "mealId": "pranzo_1794752294391",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794752353228_ju8z0mv",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": null,
+      "naAfter": 16,
+      "per100Before": 0,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-11-14",
+      "mealId": "pranzo_1794671343372",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794671465722_964jq89",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 50,
+      "naBefore": 250,
+      "naAfter": 8,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-14",
+      "mealId": "snack_1794653810919",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794653916469_hfqnfyr",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-13",
+      "mealId": "pranzo_1794597724653",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794597776699_masi5en",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-12",
+      "mealId": "pranzo_1794500215697",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794500244466_tdk35n0",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": null,
+      "naAfter": 11.2,
+      "per100Before": 0,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-12",
+      "mealId": "pranzo_1794500215697",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794504071350_xz9xyy7",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-11",
+      "mealId": "cena_1794462019881",
+      "mealDesc": "Cena",
+      "itemId": "mcdrive_raw_1794462082233_pb546wf",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-11",
+      "mealId": "snack_1794422745111",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794422763652_v29rotl",
+      "name": "Kiwi",
+      "foodDbKey": "kiwi",
+      "matchedKey": "kiwi",
+      "resolvedKey": "kiwi",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 5,
+      "per100Before": 500,
+      "per100After": 5,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-11",
+      "mealId": "pranzo_1794422697533",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794422736135_pm5so3f",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-10",
+      "mealId": "pranzo_1794342345906",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794342369482_1bf1n4k",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 50,
+      "naBefore": 250,
+      "naAfter": 8,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-09",
+      "mealId": "pranzo_1794250819493",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794250894616_ylr9xvp",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 16,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-11-08",
+      "mealId": "pranzo_1794164481566",
+      "mealDesc": "Pranzo",
+      "itemId": "f_1794164757063_2",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 16,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-11-08",
+      "mealId": "pranzo_1794164481566",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794167560367_kfuu646",
+      "name": "Mela",
+      "foodDbKey": null,
+      "matchedKey": null,
+      "resolvedKey": "mela",
+      "grams": 50,
+      "naBefore": null,
+      "naAfter": 1,
+      "per100Before": 0,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0
+    },
+    {
+      "date": "2026-11-08",
+      "mealId": "snack_1794164597472",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794164617284_9hs213m",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-07",
+      "mealId": "snack_1794074992476",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1794075873042_8egkg7t",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "matchedKey": "mela",
+      "resolvedKey": "mela",
+      "grams": 150,
+      "naBefore": 750,
+      "naAfter": 3,
+      "per100Before": 500,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-07",
+      "mealId": "pranzo_1794060117008",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1794061052305_ztzjvu8",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 60,
+      "naBefore": 300,
+      "naAfter": 9.6,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-06",
+      "mealId": "pranzo_1793974219105",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793974285511_udy2wrc",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-06",
+      "mealId": "pranzo_1793974219105",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793974285512_30xlbj3",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 250,
+      "naBefore": 12.5,
+      "naAfter": 7.5,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-05",
+      "mealId": "snack_1793912858558",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793912875234_jowdb7q",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "matchedKey": "mela",
+      "resolvedKey": "mela",
+      "grams": 200,
+      "naBefore": 1000,
+      "naAfter": 4,
+      "per100Before": 500,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-05",
+      "mealId": "pranzo_1793912699235",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793912786065_uqoglup",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-04",
+      "mealId": "pranzo_1793813931762",
+      "mealDesc": "Pranzo",
+      "itemId": "f_1793814016920_2",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 16,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-11-03",
+      "mealId": "pranzo_1793728421634",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793728470828_ixb5j4a",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 150,
+      "naBefore": 750,
+      "naAfter": 24,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.06
+    },
+    {
+      "date": "2026-11-02",
+      "mealId": "pranzo_1793684242287",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793684320110_6mz16yg",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 80,
+      "naBefore": 400,
+      "naAfter": 12.8,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-11-01",
+      "mealId": "snack_1793563200750",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793563206688_dfk1atd",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "matchedKey": "mela",
+      "resolvedKey": "mela",
+      "grams": 150,
+      "naBefore": 750,
+      "naAfter": 3,
+      "per100Before": 500,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-11-01",
+      "mealId": "snack_1793559893992",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793559915659_b6npchr",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 250,
+      "naBefore": 12.5,
+      "naAfter": 7.5,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-11-01",
+      "mealId": "pranzo_1793548421546",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793548500890_pugr9yv",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 300,
+      "naBefore": 1500,
+      "naAfter": 48,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.12
+    },
+    {
+      "date": "2026-10-31",
+      "mealId": "snack_1793474756189",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793474790534_9ghyew4",
+      "name": "Mela",
+      "foodDbKey": "mela",
+      "matchedKey": "mela",
+      "resolvedKey": "mela",
+      "grams": 140,
+      "naBefore": 700,
+      "naAfter": 2.8,
+      "per100Before": 500,
+      "per100After": 2,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-31",
+      "mealId": "pranzo_1793454453181",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793454492343_hdnpbii",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-10-31",
+      "mealId": "snack_1793454381045",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793454421468_sn11sq5",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-10-30",
+      "mealId": "cena_1793433337249",
+      "mealDesc": "Cena",
+      "itemId": "mcdrive_raw_1793433407251_mcdba7t",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": null,
+      "naAfter": 6,
+      "per100Before": 0,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-10-30",
+      "mealId": "pranzo_1793371896995",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793371956277_niw637s",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 80,
+      "naBefore": 400,
+      "naAfter": 12.8,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-10-29",
+      "mealId": "snack_1793306681342",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1793306714409_8tnodzt",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 200,
+      "naBefore": 10,
+      "naAfter": 6,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-10-29",
+      "mealId": "pranzo_1793290693151",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793290747170_qqt9pg2",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-10-28",
+      "mealId": "pranzo_1793206366859",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793206449250_lhaic5h",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 100,
+      "naBefore": 500,
+      "naAfter": 16,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.04
+    },
+    {
+      "date": "2026-10-27",
+      "mealId": "cena_1793166844827",
+      "mealDesc": "Cena",
+      "itemId": "mcdrive_raw_1793166881549_l7i2olt",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 180,
+      "naBefore": null,
+      "naAfter": 5.4,
+      "per100Before": 0,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-27",
+      "mealId": "pranzo_1793112922599",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793112984696_uijakld",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 60,
+      "naBefore": 300,
+      "naAfter": 9.6,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    },
+    {
+      "date": "2026-10-26",
+      "mealId": "cena_1793047378420",
+      "mealDesc": "Cena",
+      "itemId": "mcdrive_raw_1793047430841_355ta1h",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 189,
+      "naBefore": 9.5,
+      "naAfter": 5.67,
+      "per100Before": 5.03,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-26",
+      "mealId": "pranzo_1793042753012",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1793042789468_ceusv58",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 150,
+      "naBefore": 750,
+      "naAfter": 24,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.06
+    },
+    {
+      "date": "2026-10-25",
+      "mealId": "snack_1792953341376",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1792953382097_nt4ucwn",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 150,
+      "naBefore": 7.5,
+      "naAfter": 4.5,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-24",
+      "mealId": "cena_1792874418644",
+      "mealDesc": "Cena",
+      "itemId": "mcdrive_raw_1792875649884_amue2jg",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 150,
+      "naBefore": 7.5,
+      "naAfter": 4.5,
+      "per100Before": 5,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-24",
+      "mealId": "pranzo_1792847844791",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1792847874052_2y1iqmr",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": "pomodorissimo la passata",
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": null,
+      "naAfter": 11.2,
+      "per100Before": 0,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-10-24",
+      "mealId": "snack_1792847733370",
+      "mealDesc": "Spuntino",
+      "itemId": "mcdrive_raw_1792847786394_y5ihwqk",
+      "name": "Pomodoro",
+      "foodDbKey": "pomodoro",
+      "matchedKey": "pomodoro",
+      "resolvedKey": "pomodoro",
+      "grams": 150,
+      "naBefore": null,
+      "naAfter": 4.5,
+      "per100Before": 0,
+      "per100After": 3,
+      "saleAfter": 0.01,
+      "saleBefore": null,
+      "saleAfterItem": 0.01
+    },
+    {
+      "date": "2026-10-23",
+      "mealId": "pranzo_1792785143774",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1792785198684_do5jy6n",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": null,
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 70,
+      "naBefore": 350,
+      "naAfter": 11.2,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.03
+    },
+    {
+      "date": "2026-10-22",
+      "mealId": "pranzo_1792700227606",
+      "mealDesc": "Pranzo",
+      "itemId": "mcdrive_raw_1792700256699_3mebcrj",
+      "name": "Pomodorissimo la passata",
+      "foodDbKey": "pomodorissimo la passata",
+      "matchedKey": null,
+      "resolvedKey": "pomodorissimo la passata",
+      "grams": 50,
+      "naBefore": 250,
+      "naAfter": 8,
+      "per100Before": 500,
+      "per100After": 16,
+      "saleAfter": 0.04,
+      "saleBefore": null,
+      "saleAfterItem": 0.02
+    }
+  ],
+  "datesAffected": [
+    "2026-11-20",
+    "2026-11-19",
+    "2026-11-18",
+    "2026-11-17",
+    "2026-11-16",
+    "2026-11-15",
+    "2026-11-14",
+    "2026-11-13",
+    "2026-11-12",
+    "2026-11-11",
+    "2026-11-10",
+    "2026-11-09",
+    "2026-11-08",
+    "2026-11-07",
+    "2026-11-06",
+    "2026-11-05",
+    "2026-11-04",
+    "2026-11-03",
+    "2026-11-02",
+    "2026-11-01",
+    "2026-10-31",
+    "2026-10-30",
+    "2026-10-29",
+    "2026-10-28",
+    "2026-10-27",
+    "2026-10-26",
+    "2026-10-25",
+    "2026-10-24",
+    "2026-10-23",
+    "2026-10-22"
+  ],
+  "mealsByDate": {
+    "2026-11-20": [
+      {
+        "mealId": "pranzo_1795196779355",
+        "itemIds": [
+          "mcdrive_raw_1795196832341_xuipe9p"
+        ]
+      },
+      {
+        "mealId": "snack_1795196844453",
+        "itemIds": [
+          "mcdrive_raw_1795196854922_nxppiry",
+          "mcdrive_raw_1795196854922_8bg93vc"
+        ]
+      }
+    ],
+    "2026-11-19": [
+      {
+        "mealId": "snack_1795120514867",
+        "itemIds": [
+          "mcdrive_raw_1795120554906_t6s0umb"
+        ]
+      },
+      {
+        "mealId": "snack_1795090411689",
+        "itemIds": [
+          "mcdrive_raw_1795090436863_39la7v5"
+        ]
+      }
+    ],
+    "2026-11-18": [
+      {
+        "mealId": "snack_1795037946077",
+        "itemIds": [
+          "mcdrive_raw_1795037969748_wy96ssa"
+        ]
+      },
+      {
+        "mealId": "cena_1795038007393",
+        "itemIds": [
+          "assisted_1795038007392_3"
+        ]
+      }
+    ],
+    "2026-11-17": [
+      {
+        "mealId": "pranzo_1794928083257",
+        "itemIds": [
+          "mcdrive_raw_1794928133989_lfookbx"
+        ]
+      }
+    ],
+    "2026-11-16": [
+      {
+        "mealId": "snack_1794893470108",
+        "itemIds": [
+          "mcdrive_raw_1794893482615_rm8hvfo"
+        ]
+      },
+      {
+        "mealId": "pranzo_1794844562547",
+        "itemIds": [
+          "mcdrive_raw_1794844620335_908jk2h"
+        ]
+      }
+    ],
+    "2026-11-15": [
+      {
+        "mealId": "snack_1794768282739",
+        "itemIds": [
+          "mcdrive_raw_1794768312338_n88hcc8"
+        ]
+      },
+      {
+        "mealId": "snack_1794752450762",
+        "itemIds": [
+          "mcdrive_raw_1794752488959_1nwvrxy"
+        ]
+      },
+      {
+        "mealId": "pranzo_1794752294391",
+        "itemIds": [
+          "mcdrive_raw_1794752353228_ju8z0mv"
+        ]
+      }
+    ],
+    "2026-11-14": [
+      {
+        "mealId": "pranzo_1794671343372",
+        "itemIds": [
+          "mcdrive_raw_1794671465722_964jq89"
+        ]
+      },
+      {
+        "mealId": "snack_1794653810919",
+        "itemIds": [
+          "mcdrive_raw_1794653916469_hfqnfyr"
+        ]
+      }
+    ],
+    "2026-11-13": [
+      {
+        "mealId": "pranzo_1794597724653",
+        "itemIds": [
+          "mcdrive_raw_1794597776699_masi5en"
+        ]
+      }
+    ],
+    "2026-11-12": [
+      {
+        "mealId": "pranzo_1794500215697",
+        "itemIds": [
+          "mcdrive_raw_1794500244466_tdk35n0",
+          "mcdrive_raw_1794504071350_xz9xyy7"
+        ]
+      }
+    ],
+    "2026-11-11": [
+      {
+        "mealId": "cena_1794462019881",
+        "itemIds": [
+          "mcdrive_raw_1794462082233_pb546wf"
+        ]
+      },
+      {
+        "mealId": "snack_1794422745111",
+        "itemIds": [
+          "mcdrive_raw_1794422763652_v29rotl"
+        ]
+      },
+      {
+        "mealId": "pranzo_1794422697533",
+        "itemIds": [
+          "mcdrive_raw_1794422736135_pm5so3f"
+        ]
+      }
+    ],
+    "2026-11-10": [
+      {
+        "mealId": "pranzo_1794342345906",
+        "itemIds": [
+          "mcdrive_raw_1794342369482_1bf1n4k"
+        ]
+      }
+    ],
+    "2026-11-09": [
+      {
+        "mealId": "pranzo_1794250819493",
+        "itemIds": [
+          "mcdrive_raw_1794250894616_ylr9xvp"
+        ]
+      }
+    ],
+    "2026-11-08": [
+      {
+        "mealId": "pranzo_1794164481566",
+        "itemIds": [
+          "f_1794164757063_2",
+          "mcdrive_raw_1794167560367_kfuu646"
+        ]
+      },
+      {
+        "mealId": "snack_1794164597472",
+        "itemIds": [
+          "mcdrive_raw_1794164617284_9hs213m"
+        ]
+      }
+    ],
+    "2026-11-07": [
+      {
+        "mealId": "snack_1794074992476",
+        "itemIds": [
+          "mcdrive_raw_1794075873042_8egkg7t"
+        ]
+      },
+      {
+        "mealId": "pranzo_1794060117008",
+        "itemIds": [
+          "mcdrive_raw_1794061052305_ztzjvu8"
+        ]
+      }
+    ],
+    "2026-11-06": [
+      {
+        "mealId": "pranzo_1793974219105",
+        "itemIds": [
+          "mcdrive_raw_1793974285511_udy2wrc",
+          "mcdrive_raw_1793974285512_30xlbj3"
+        ]
+      }
+    ],
+    "2026-11-05": [
+      {
+        "mealId": "snack_1793912858558",
+        "itemIds": [
+          "mcdrive_raw_1793912875234_jowdb7q"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793912699235",
+        "itemIds": [
+          "mcdrive_raw_1793912786065_uqoglup"
+        ]
+      }
+    ],
+    "2026-11-04": [
+      {
+        "mealId": "pranzo_1793813931762",
+        "itemIds": [
+          "f_1793814016920_2"
+        ]
+      }
+    ],
+    "2026-11-03": [
+      {
+        "mealId": "pranzo_1793728421634",
+        "itemIds": [
+          "mcdrive_raw_1793728470828_ixb5j4a"
+        ]
+      }
+    ],
+    "2026-11-02": [
+      {
+        "mealId": "pranzo_1793684242287",
+        "itemIds": [
+          "mcdrive_raw_1793684320110_6mz16yg"
+        ]
+      }
+    ],
+    "2026-11-01": [
+      {
+        "mealId": "snack_1793563200750",
+        "itemIds": [
+          "mcdrive_raw_1793563206688_dfk1atd"
+        ]
+      },
+      {
+        "mealId": "snack_1793559893992",
+        "itemIds": [
+          "mcdrive_raw_1793559915659_b6npchr"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793548421546",
+        "itemIds": [
+          "mcdrive_raw_1793548500890_pugr9yv"
+        ]
+      }
+    ],
+    "2026-10-31": [
+      {
+        "mealId": "snack_1793474756189",
+        "itemIds": [
+          "mcdrive_raw_1793474790534_9ghyew4"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793454453181",
+        "itemIds": [
+          "mcdrive_raw_1793454492343_hdnpbii"
+        ]
+      },
+      {
+        "mealId": "snack_1793454381045",
+        "itemIds": [
+          "mcdrive_raw_1793454421468_sn11sq5"
+        ]
+      }
+    ],
+    "2026-10-30": [
+      {
+        "mealId": "cena_1793433337249",
+        "itemIds": [
+          "mcdrive_raw_1793433407251_mcdba7t"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793371896995",
+        "itemIds": [
+          "mcdrive_raw_1793371956277_niw637s"
+        ]
+      }
+    ],
+    "2026-10-29": [
+      {
+        "mealId": "snack_1793306681342",
+        "itemIds": [
+          "mcdrive_raw_1793306714409_8tnodzt"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793290693151",
+        "itemIds": [
+          "mcdrive_raw_1793290747170_qqt9pg2"
+        ]
+      }
+    ],
+    "2026-10-28": [
+      {
+        "mealId": "pranzo_1793206366859",
+        "itemIds": [
+          "mcdrive_raw_1793206449250_lhaic5h"
+        ]
+      }
+    ],
+    "2026-10-27": [
+      {
+        "mealId": "cena_1793166844827",
+        "itemIds": [
+          "mcdrive_raw_1793166881549_l7i2olt"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793112922599",
+        "itemIds": [
+          "mcdrive_raw_1793112984696_uijakld"
+        ]
+      }
+    ],
+    "2026-10-26": [
+      {
+        "mealId": "cena_1793047378420",
+        "itemIds": [
+          "mcdrive_raw_1793047430841_355ta1h"
+        ]
+      },
+      {
+        "mealId": "pranzo_1793042753012",
+        "itemIds": [
+          "mcdrive_raw_1793042789468_ceusv58"
+        ]
+      }
+    ],
+    "2026-10-25": [
+      {
+        "mealId": "snack_1792953341376",
+        "itemIds": [
+          "mcdrive_raw_1792953382097_nt4ucwn"
+        ]
+      }
+    ],
+    "2026-10-24": [
+      {
+        "mealId": "cena_1792874418644",
+        "itemIds": [
+          "mcdrive_raw_1792875649884_amue2jg"
+        ]
+      },
+      {
+        "mealId": "pranzo_1792847844791",
+        "itemIds": [
+          "mcdrive_raw_1792847874052_2y1iqmr"
+        ]
+      },
+      {
+        "mealId": "snack_1792847733370",
+        "itemIds": [
+          "mcdrive_raw_1792847786394_y5ihwqk"
+        ]
+      }
+    ],
+    "2026-10-23": [
+      {
+        "mealId": "pranzo_1792785143774",
+        "itemIds": [
+          "mcdrive_raw_1792785198684_do5jy6n"
+        ]
+      }
+    ],
+    "2026-10-22": [
+      {
+        "mealId": "pranzo_1792700227606",
+        "itemIds": [
+          "mcdrive_raw_1792700256699_3mebcrj"
+        ]
+      }
+    ]
+  }
+}

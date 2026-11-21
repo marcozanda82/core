@@ -131,7 +131,7 @@ test('buildDayMealsDetail: fibre/sodio — fibreTotali, sale, niente 0 sentinell
             name: 'Pesto rosso',
             grams: 50,
             fibre: 0.8,
-            na: 0.3,
+            na: 0,
             sale: 0.7,
           },
           {
@@ -205,9 +205,56 @@ test('buildEvenings: max 90 giorni e riga compatta', () => {
   assert.equal(out.days, 1);
   const row = out.evenings[0];
   assert.equal(row.dinnerKcal, 400);
+  assert.equal(row.dinnerSodiumMg, 900);
+  assert.equal(row.dinnerSodiumIncomplete, false);
+  assert.equal(row.dinnerSodiumCoverage.known, 1);
   assert.equal(row.liquidsAfter18Ml, 400);
   assert.equal(row.night.qualityStars, 3);
   assert.equal(row.night.notes, 'bagno');
   assert.equal(row.night.hours, 6.5);
   assert.ok(row.hoursBeforeSleep != null);
+});
+
+test('buildEvenings: sodio cena null se copertura grammi < 70%', () => {
+  const hist = historyWithDay('2026-11-20', {
+    log: [
+      {
+        type: 'meal',
+        mealId: 'cena',
+        items: [
+          { type: 'food', name: 'Fagiolini', mealType: 'cena', mealTime: 20, grams: 80, na: 5, fibre: 2 },
+          { type: 'food', name: 'Merluzzo', mealType: 'cena', mealTime: 20, grams: 200 },
+          { type: 'food', name: 'Cavolfiore', mealType: 'cena', mealTime: 20, grams: 150 },
+          { type: 'food', name: 'Riso', mealType: 'cena', mealTime: 20, grams: 80 },
+          { type: 'food', name: 'Olio', mealType: 'cena', mealTime: 20, grams: 10 },
+        ],
+      },
+    ],
+  });
+  const detail = buildDayMealsDetail(hist, '2026-11-20');
+  assert.equal(detail.totals.sodiumMg, null);
+  assert.equal(detail.totals.sodiumIncomplete, true);
+  assert.equal(detail.totals.sodiumNote, 'dati insufficienti');
+  assert.equal(detail.totals.sodiumCoverage.known, 1);
+  assert.equal(detail.totals.sodiumCoverage.missing, 4);
+
+  const out = buildEvenings(hist, '2026-11-20', '2026-11-20');
+  const row = out.evenings[0];
+  assert.equal(row.dinnerSodiumMg, null);
+  assert.equal(row.dinnerSodiumIncomplete, true);
+  assert.equal(row.dinnerSodiumNote, 'dati insufficienti');
+  assert.equal(row.dinnerSodiumCoverage.known, 1);
+  assert.equal(row.dinnerSodiumCoverage.missing, 4);
+});
+
+test('minerals Home: sodio parziale → incompleto', async () => {
+  const { mineralsDataComplete } = await import('../../../src/utils/microNutrientCompleteness.js');
+  const log = [
+    { type: 'food', name: 'Fagiolini', grams: 80, na: 5, k: 100 },
+    { type: 'food', name: 'Merluzzo', grams: 200 },
+    { type: 'food', name: 'Cavolfiore', grams: 150 },
+    { type: 'food', name: 'Riso', grams: 80 },
+    { type: 'food', name: 'Olio', grams: 10 },
+  ];
+  assert.equal(mineralsDataComplete(log), false);
 });

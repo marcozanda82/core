@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { ref, set, remove } from 'firebase/database';
 import { TARGETS, getDefaultNutrientValue } from '../useBiochimico';
+import { fillMissingPersonalFoodNutrients } from '../utils/personalFoodNutrientDefaults.js';
 import { recordMealFoodCooccurrence } from '../foodCooccurrence';
 import { recordMealSuggestionHabits } from '../mealSuggestionHabits';
 import {
@@ -265,10 +266,10 @@ Ottimo! Diario aggiornato. 🥗`;
         isRecipe: true,
         ingredients: Array.isArray(ingredients) ? ingredients : [],
       };
-      Object.keys(TARGETS).forEach((g) =>
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (entryPer100[k] == null) entryPer100[k] = getDefaultNutrientValue(k, fullHistory);
-        })
+      fillMissingPersonalFoodNutrients(
+        entryPer100,
+        (k) => getDefaultNutrientValue(k, fullHistory),
+        TARGETS,
       );
       await set(ref(db, `${basePath}/trackerFoodDatabase/${dbKey}`), entryPer100);
       setFoodDb((prev) => ({ ...(prev || {}), [dbKey]: entryPer100 }));
@@ -287,10 +288,10 @@ Ottimo! Diario aggiornato. 🥗`;
       const payload = { ...entry, desc: name, isRecipe: false };
       delete payload.ingredients;
       delete payload.type;
-      Object.keys(TARGETS).forEach((g) =>
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (payload[k] == null) payload[k] = getDefaultNutrientValue(k, fullHistory);
-        })
+      fillMissingPersonalFoodNutrients(
+        payload,
+        (k) => getDefaultNutrientValue(k, fullHistory),
+        TARGETS,
       );
       if (payload.kcal == null || Number(payload.kcal) === 0) {
         payload.kcal = getDefaultNutrientValue('kcal', fullHistory);
@@ -327,10 +328,10 @@ Ottimo! Diario aggiornato. 🥗`;
         carb: per100.carb,
         fatTotal: per100.fat,
       };
-      Object.keys(TARGETS).forEach((g) =>
-        Object.keys(TARGETS[g] || {}).forEach((k) => {
-          if (merged[k] == null) merged[k] = getDefaultNutrientValue(k, fullHistory);
-        })
+      fillMissingPersonalFoodNutrients(
+        merged,
+        (k) => getDefaultNutrientValue(k, fullHistory),
+        TARGETS,
       );
       if (merged.kcal == null || Number(merged.kcal) === 0) {
         merged.kcal = getDefaultNutrientValue('kcal', fullHistory);

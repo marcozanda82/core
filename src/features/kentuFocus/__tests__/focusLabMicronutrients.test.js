@@ -50,17 +50,34 @@ describe('focusLabMicronutrients', () => {
 
   it('aggregato non somma unverified/absent come zeri; judgement null', () => {
     const agg = aggregateDayMicronutrients([
-      { omega3: 1, dbProvidedNutrientKeys: ['omega3'] },
-      { omega3: 0, dbProvidedNutrientKeys: ['omega3'] },
-      { omega3: 0 },
-      {},
+      { omega3: 1, grams: 100, dbProvidedNutrientKeys: ['omega3'] },
+      { omega3: 0, grams: 50, dbProvidedNutrientKeys: ['omega3'] },
+      { omega3: 0, grams: 10 },
+      { grams: 10 },
     ]);
     const o = agg.byKey.omega3;
     assert.equal(o.value, 1);
     assert.equal(o.itemsKnown, 2);
     assert.equal(o.itemsUnverifiedZero, 1);
     assert.equal(o.itemsAbsent, 1);
+    assert.equal(o.incomplete, false);
     assert.equal(o.judgement, null);
+  });
+
+  it('aggregato null se copertura grammi < 70%', () => {
+    const agg = aggregateDayMicronutrients([
+      { na: 5, grams: 50, dbProvidedNutrientKeys: ['na'] },
+      { grams: 100 },
+      { grams: 80 },
+      { grams: 70 },
+      { grams: 60 },
+    ]);
+    const na = agg.byKey.na;
+    assert.equal(na.value, null);
+    assert.equal(na.incomplete, true);
+    assert.equal(na.coverage.known, 1);
+    assert.equal(na.coverage.missing, 4);
+    assert.equal(na.note, 'dati insufficienti');
   });
 
   it('catalogRef controllato: foodDbKey sì, path Firebase no; dbSource solo se noto', () => {

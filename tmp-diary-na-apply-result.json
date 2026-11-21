@@ -1,0 +1,165 @@
+{
+  "apply": true,
+  "corruptHits": 34,
+  "daysPlanned": 26,
+  "daysWritten": 26,
+  "itemsWritten": 34,
+  "results": [
+    {
+      "date": "2026-10-22",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-10-23",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-26",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-10-27",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-28",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-29",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-30",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-10-31",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-01",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-02",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-03",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-04",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-05",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-06",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-07",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-08",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-09",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-10",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-11",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-12",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-14",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-15",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-16",
+      "itemsTouched": 2,
+      "meals": 2,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-17",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 2
+    },
+    {
+      "date": "2026-11-18",
+      "itemsTouched": 1,
+      "meals": 1,
+      "rev": 1
+    },
+    {
+      "date": "2026-11-20",
+      "itemsTouched": 3,
+      "meals": 2,
+      "rev": 109
+    }
+  ]
+}
