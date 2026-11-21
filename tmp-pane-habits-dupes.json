@@ -1,0 +1,115 @@
+{
+  "paneHabits": [
+    {
+      "foodDbKey": "pane integrale con semi e noci",
+      "name": "Pane integrale con semi e noci",
+      "usageCount": 81,
+      "usedTimesLabel": "usato 81 volte negli ultimi 60 giorni",
+      "typicalGrams": 160,
+      "typicalSlot": "pranzo",
+      "typicalTime": "15:00",
+      "lastUsed": 1795262400000
+    },
+    {
+      "foodDbKey": "pane bauletto integrale",
+      "name": "Pane Bauletto Integrale",
+      "usageCount": 6,
+      "usedTimesLabel": "usato 6 volte negli ultimi 60 giorni",
+      "typicalGrams": 100,
+      "typicalSlot": "cena",
+      "typicalTime": "22:00",
+      "lastUsed": 1791720000000
+    }
+  ],
+  "searchPaneIntegrale": [
+    {
+      "name": "Pane integrale con semi e noci",
+      "id": "pane integrale con semi e noci",
+      "matchQuality": "prefix",
+      "usageCount": 81,
+      "usedTimesLabel": "usato 81 volte negli ultimi 60 giorni"
+    },
+    {
+      "name": "Pane Bauletto Integrale",
+      "id": "pane bauletto integrale",
+      "matchQuality": "contains",
+      "usageCount": 6,
+      "usedTimesLabel": "usato 6 volte negli ultimi 60 giorni"
+    },
+    {
+      "name": "Pane integrale",
+      "id": "food_1775914367324_Pane_integrale",
+      "matchQuality": "exact",
+      "usageCount": 0,
+      "usedTimesLabel": null
+    },
+    {
+      "name": "Pane integrale",
+      "id": "food_1775944514061_Pane_integrale",
+      "matchQuality": "exact",
+      "usageCount": 0,
+      "usedTimesLabel": null
+    },
+    {
+      "name": "Pane integrale con fiocchi d’avena",
+      "id": "food_1794344548008_Pane_integrale_con_fiocchi_d_avena",
+      "matchQuality": "prefix",
+      "usageCount": 0,
+      "usedTimesLabel": null
+    },
+    {
+      "name": "Pane Saraceno Integrale",
+      "id": "pane saraceno integrale",
+      "matchQuality": "contains",
+      "usageCount": 0,
+      "usedTimesLabel": null
+    },
+    {
+      "name": "Panino con sardine e pomodoro",
+      "id": "recipe_1789662948410_Pane_integrale_con_sardine_e_pomodoro",
+      "matchQuality": "fuzzy",
+      "usageCount": 0,
+      "usedTimesLabel": null
+    }
+  ],
+  "paneNameDuplicates": [
+    {
+      "normalizedName": "pane integrale",
+      "count": 2,
+      "proposeKeep": "food_1775914367324_Pane_integrale",
+      "proposeKeepReason": "primo per aggiornamento/valori (nessun uso recente)",
+      "entries": [
+        {
+          "key": "food_1775914367324_Pane_integrale",
+          "name": "Pane integrale",
+          "usageCount": 0,
+          "lastUsed": null,
+          "kcal": 247,
+          "prot": 13,
+          "carb": 49,
+          "fat": 2.5,
+          "fibre": 6,
+          "na": null,
+          "sale": null,
+          "source": null,
+          "updatedAt": null
+        },
+        {
+          "key": "food_1775944514061_Pane_integrale",
+          "name": "Pane integrale",
+          "usageCount": 0,
+          "lastUsed": null,
+          "kcal": 247,
+          "prot": 13,
+          "carb": 49,
+          "fat": 2.5,
+          "fibre": 6,
+          "na": null,
+          "sale": null,
+          "source": null,
+          "updatedAt": null
+        }
+      ]
+    }
+  ]
+}

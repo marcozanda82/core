@@ -125,15 +125,19 @@ export async function toolGetHabits(db, uid, opts = {}) {
   }
 
   const habits = [...byKey.values()]
-    .map((row) => ({
-      foodDbKey: row.foodDbKey,
-      name: row.name,
-      usageCount: row.grams.length,
-      typicalGrams: modeOrMedian(row.grams),
-      typicalSlot: modeString(row.slots),
-      typicalTime: decimalToHHmm(modeOrMedian(row.times)),
-      lastUsed: row.lastUsed || null,
-    }))
+    .map((row) => {
+      const usageCount = row.grams.length;
+      return {
+        foodDbKey: row.foodDbKey,
+        name: row.name,
+        usageCount,
+        usedTimesLabel: `usato ${usageCount} volt${usageCount === 1 ? 'a' : 'e'} negli ultimi ${LOOKBACK_DAYS} giorni`,
+        typicalGrams: modeOrMedian(row.grams),
+        typicalSlot: modeString(row.slots),
+        typicalTime: decimalToHHmm(modeOrMedian(row.times)),
+        lastUsed: row.lastUsed || null,
+      };
+    })
     .filter((row) => row.typicalGrams != null && row.usageCount >= 1)
     .sort((a, b) => b.usageCount - a.usageCount || (b.lastUsed || 0) - (a.lastUsed || 0))
     .slice(0, limit);
@@ -142,37 +146,60 @@ export async function toolGetHabits(db, uid, opts = {}) {
     lookbackDays: LOOKBACK_DAYS,
     count: habits.length,
     habits,
-    note: 'Usa foodDbKey + typicalGrams per proporre porzioni abituali prima di chiedere conferma.',
+    note: 'Preferisci il foodDbKey con usageCount più alto. Usa typicalGrams prima di chiedere conferma.',
   };
 }
 
+function hitFoodDbKey(hit) {
+  return String(hit?.foodDbKey || hit?.id || hit?.key || hit?.matchedKey || '').trim();
+}
+
 /**
- * Ordina i risultati search mettendo prima le chiavi usate di recente.
+ * Ordina i risultati search: prima i più usati (usageCount), poi match quality.
  * @param {Array<object>} results
- * @param {Map<string, number>|Record<string, number>} recentScores
+ * @param {Map<string, { score: number, usageCount: number }>|Record<string, number>} recentScores
  */
 export function rankSearchResultsByRecentUsage(results, recentScores) {
   const scores = recentScores instanceof Map
     ? recentScores
     : new Map(Object.entries(recentScores || {}));
-  return [...(results || [])].sort((a, b) => {
-    const sa = scores.get(String(a?.id || '')) || 0;
-    const sb = scores.get(String(b?.id || '')) || 0;
-    if (sb !== sa) return sb - sa;
-    return 0;
-  });
+  const qualityRank = { exact: 4, prefix: 3, contains: 2, fuzzy: 1 };
+  return [...(results || [])]
+    .map((hit) => {
+      const key = hitFoodDbKey(hit);
+      const raw = scores.get(key);
+      const usageCount = typeof raw === 'object' && raw
+        ? Number(raw.usageCount) || 0
+        : 0;
+      const score = typeof raw === 'object' && raw
+        ? Number(raw.score) || 0
+        : Number(raw) || 0;
+      return { ...hit, foodDbKey: key || hit?.foodDbKey || null, usageCount, _usageScore: score };
+    })
+    .sort((a, b) => {
+      if ((b.usageCount || 0) !== (a.usageCount || 0)) return (b.usageCount || 0) - (a.usageCount || 0);
+      if ((b._usageScore || 0) !== (a._usageScore || 0)) return (b._usageScore || 0) - (a._usageScore || 0);
+      const qa = qualityRank[String(a?.matchQuality || '').toLowerCase()] || 0;
+      const qb = qualityRank[String(b?.matchQuality || '').toLowerCase()] || 0;
+      if (qb !== qa) return qb - qa;
+      return 0;
+    });
 }
 
 /**
  * @param {import('firebase-admin/database').Database} db
  * @param {string} uid
- * @returns {Promise<Map<string, number>>}
+ * @returns {Promise<Map<string, { score: number, usageCount: number }>>}
  */
 export async function loadRecentFoodUsageScores(db, uid) {
   const habits = await toolGetHabits(db, uid, { limit: 80 });
   const map = new Map();
   for (const h of habits.habits || []) {
-    map.set(h.foodDbKey, (h.usageCount || 0) * 10 + Math.min(50, Math.floor((h.lastUsed || 0) / 1e10)));
+    const usageCount = Number(h.usageCount) || 0;
+    map.set(h.foodDbKey, {
+      usageCount,
+      score: usageCount * 100 + Math.min(50, Math.floor((h.lastUsed || 0) / 1e10)),
+    });
   }
   return map;
 }

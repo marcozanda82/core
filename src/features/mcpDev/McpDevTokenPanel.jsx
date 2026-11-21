@@ -4,39 +4,59 @@ import { auth, functions, functionsTarget } from '../../firebaseConfig.js';
 
 const USING_FUNCTIONS_EMULATOR = functionsTarget.startsWith('emulator:');
 
-function italianCallableError(err) {
+function callableErrorParts(err) {
   const code = String(err?.code || err?.customData?.code || '').replace(/^functions\//, '');
-  const details = String(err?.details || err?.customData?.details || '').trim();
+  const details = err?.details ?? err?.customData?.details;
+  const detailsText = details == null || details === ''
+    ? ''
+    : typeof details === 'string'
+      ? details
+      : (() => {
+        try { return JSON.stringify(details); } catch { return String(details); }
+      })();
   const raw = String(err?.message || err || '').trim();
+  return { code, details: detailsText, raw };
+}
+
+/** Messaggio UI + dump tecnico (code/message/details) per debug in pannello. */
+function italianCallableError(err) {
+  const { code, details, raw } = callableErrorParts(err);
+  let human = 'Operazione MCP fallita.';
   if (code === 'unauthenticated' || /unauthenticated/i.test(raw)) {
-    return 'Devi essere autenticato per gestire i gettoni MCP.';
-  }
-  if (code === 'unavailable' || /unavailable|Failed to fetch|network|socket hang up/i.test(raw)) {
-    return USING_FUNCTIONS_EMULATOR
+    human = 'Devi essere autenticato per gestire i gettoni MCP.';
+  } else if (code === 'unavailable' || /unavailable|Failed to fetch|network|socket hang up/i.test(raw)) {
+    human = USING_FUNCTIONS_EMULATOR
       ? 'Emulatore Functions non raggiungibile (127.0.0.1:5001). Avvialo o togli VITE_USE_FUNCTIONS_EMULATOR.'
       : 'Cloud Functions europe-west1 non raggiungibile. Controlla rete / deploy.';
-  }
-  if (code === 'deadline-exceeded' || /timed out|timeout/i.test(raw)) {
-    return USING_FUNCTIONS_EMULATOR
+  } else if (code === 'deadline-exceeded' || /timed out|timeout/i.test(raw)) {
+    human = USING_FUNCTIONS_EMULATOR
       ? 'Timeout sulla callable MCP (emulatore). Verifica Auth/RTDB/Functions avviati insieme.'
       : 'Timeout sulla callable MCP (produzione europe-west1).';
-  }
-  if (code === 'not-found' || /not-found/i.test(raw)) {
-    return USING_FUNCTIONS_EMULATOR
+  } else if (code === 'not-found' || /not-found/i.test(raw)) {
+    human = USING_FUNCTIONS_EMULATOR
       ? 'Funzione MCP assente sull’emulatore Functions.'
       : 'Funzione MCP non trovata in produzione (europe-west1). Serve deploy di setMcpTokenScopes / create / list / revoke.';
+  } else if (code === 'permission-denied') {
+    human = 'Permesso negato per questa operazione.';
+  } else if (code === 'invalid-argument') {
+    human = raw && raw !== '[object Object]'
+      ? raw
+      : 'Argomento non valido per setMcpTokenScopes (attesi draftsWrite / mealsWrite boolean).';
+  } else if (code === 'internal' || raw === 'internal') {
+    human = details
+      ? `Errore interno MCP: ${details}`
+      : USING_FUNCTIONS_EMULATOR
+        ? 'Errore interno MCP sull’emulatore (spesso RTDB emulatore non raggiungibile dalle Functions).'
+        : 'Errore interno MCP sul backend di produzione (europe-west1). Controlla i log di setMcpTokenScopes.';
+  } else if (raw && raw !== '[object Object]') {
+    human = raw;
   }
-  if (code === 'permission-denied') {
-    return 'Permesso negato per questa operazione.';
-  }
-  if (code === 'internal' || raw === 'internal') {
-    if (details) return `Errore interno MCP: ${details}`;
-    return USING_FUNCTIONS_EMULATOR
-      ? 'Errore interno MCP sull’emulatore (spesso RTDB emulatore non raggiungibile dalle Functions).'
-      : 'Errore interno MCP sul backend di produzione (europe-west1). Controlla i log di setMcpTokenScopes.';
-  }
-  if (raw && raw !== '[object Object]') return raw;
-  return 'Operazione MCP fallita.';
+  const tech = [
+    code ? `code=${code}` : null,
+    raw ? `message=${raw}` : null,
+    details ? `details=${details}` : null,
+  ].filter(Boolean).join(' · ');
+  return tech ? `${human}\n${tech}` : human;
 }
 
 /**
@@ -133,7 +153,15 @@ export default function McpDevTokenPanel({ onClose }) {
       if (import.meta.env.DEV) console.log('[mcp-dev] token scopes ok', { tokenId, ...patch });
       await refresh();
     } catch (err) {
-      console.error('[mcp-dev] token scopes error', err);
+      const parts = callableErrorParts(err);
+      console.error('[mcp-dev] token scopes error', {
+        tokenId,
+        patch,
+        code: parts.code,
+        message: parts.raw,
+        details: parts.details,
+        err,
+      });
       setError(italianCallableError(err));
     } finally {
       setBusy(false);
@@ -215,7 +243,12 @@ export default function McpDevTokenPanel({ onClose }) {
         ) : null}
 
         {error ? (
-          <p className="mb-2 text-xs text-red-300" role="alert">{error}</p>
+          <pre
+            className="mb-2 whitespace-pre-wrap break-words rounded-lg border border-red-500/30 bg-red-950/40 px-2 py-2 text-[11px] leading-relaxed text-red-200"
+            role="alert"
+          >
+            {error}
+          </pre>
         ) : null}
 
         <ul className="space-y-2">

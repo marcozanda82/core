@@ -452,7 +452,11 @@ exports.listMcpTokens = functions
     return { tokens };
   });
 
-/** Attiva/revoca `drafts:write` e/o `meals:write` su un gettone. */
+/**
+ * Attiva/revoca `drafts:write` e/o `meals:write` su un gettone.
+ * Payload UI: `{ tokenId, draftsWrite?: boolean, mealsWrite?: boolean }`
+ * → scopes RTDB: `drafts:write` / `meals:write` (più `read` sempre).
+ */
 exports.setMcpTokenScopes = functions
   .region('europe-west1')
   .runWith({ timeoutSeconds: 30, memory: '256MB' })
@@ -461,14 +465,16 @@ exports.setMcpTokenScopes = functions
       throw new functions.https.HttpsError('unauthenticated', 'Accesso richiesto');
     }
     try {
+      // Alias espliciti dal pannello DEV (mealsWrite → meals:write in buildMcpScopes).
+      const patch = {
+        ...(typeof data?.draftsWrite === 'boolean' ? { draftsWrite: data.draftsWrite } : {}),
+        ...(typeof data?.mealsWrite === 'boolean' ? { mealsWrite: data.mealsWrite } : {}),
+      };
       return await setMcpTokenScopesForUid(
         admin.database(),
         context.auth.uid,
         data?.tokenId,
-        {
-          ...(typeof data?.draftsWrite === 'boolean' ? { draftsWrite: data.draftsWrite } : {}),
-          ...(typeof data?.mealsWrite === 'boolean' ? { mealsWrite: data.mealsWrite } : {}),
-        },
+        patch,
       );
     } catch (error) {
       throw mapTokenError(error);

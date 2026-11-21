@@ -87,6 +87,11 @@ import {
 } from './features/commandTerminal/conversation/userPortionsMemory.js';
 import { sanitizeFoodDisplayName } from './utils/foodVisualResolver';
 import {
+  buildClaudeReviewedAtPatches,
+  listUnreadClaudeMealIds,
+  resolveClaudeMealId,
+} from './utils/claudeLoggedMeals.js';
+import {
   sanitizeUserFoodAliasesDict,
   saveUserFoodAliasesToCache,
 } from './features/commandTerminal/conversation/userFoodAliases.js';
@@ -4123,6 +4128,71 @@ export default function SalaComandi() {
     onRemoveLiveMealIds: (ids) => revertMcDriveAssignedIdsRef.current?.(ids),
   });
 
+  /** Inbox Claude: reviewedAt su cartella meal (merge-by-id, rev+1). */
+  const markClaudeMealsReviewed = useCallback(async (mealIds) => {
+    const ids = [...new Set(
+      (Array.isArray(mealIds) ? mealIds : [mealIds])
+        .map((id) => String(id || '').trim())
+        .filter(Boolean),
+    )];
+    if (ids.length === 0) return;
+    const at = Date.now();
+    const idSet = new Set(ids);
+    const patchFlat = (log) => (Array.isArray(log) ? log : []).map((entry) => {
+      const mid = resolveClaudeMealId(entry);
+      if (mid && idSet.has(mid)) return { ...entry, reviewedAt: at };
+      return entry;
+    });
+
+    if (isSimulationMode) {
+      setSimulatedLog((prev) => patchFlat(prev));
+      return;
+    }
+
+    setDailyLog((prev) => patchFlat(prev));
+
+    if (!userUid || !db) return;
+    const dateStr = currentTrackerDate || getTodayString();
+    const dayKey = TRACKER_STORICO_KEY(dateStr);
+    const existing = fullHistoryRef.current?.[dayKey]
+      || fullStoricoRef.current?.[dayKey]
+      || null;
+    try {
+      const { saveDayNodeWithRevRetry } = await import('./utils/dayNodeWrite.js');
+      const { node } = await saveDayNodeWithRevRetry({
+        db,
+        uid: userUid,
+        dateStr,
+        managedFields: {
+          log: buildClaudeReviewedAtPatches(ids, at),
+        },
+        expectedRev: existing?.rev ?? null,
+      });
+      if (node) {
+        setFullHistory((prev) => ({ ...(prev || {}), [dayKey]: node }));
+        setFullStorico((prev) => ({ ...(prev || {}), [dayKey]: node }));
+      }
+    } catch (err) {
+      console.warn('[markClaudeMealsReviewed]', err);
+    }
+  }, [
+    currentTrackerDate,
+    db,
+    getTodayString,
+    isSimulationMode,
+    setDailyLog,
+    setFullHistory,
+    setFullStorico,
+    setSimulatedLog,
+    userUid,
+  ]);
+
+  const markAllClaudeMealsReviewed = useCallback(async () => {
+    const log = isSimulationMode ? (simulatedLog || []) : (dailyLogRef.current || dailyLog || []);
+    const ids = listUnreadClaudeMealIds(log);
+    await markClaudeMealsReviewed(ids);
+  }, [dailyLog, isSimulationMode, markClaudeMealsReviewed, simulatedLog]);
+
   const commitAppendInboxDraft = useCallback((payload = {}) => {
     const items = Array.isArray(payload?.items) ? payload.items : [];
     const rawText = String(payload?.rawText || '').trim();
@@ -7740,6 +7810,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     trashMeals,
     onRestoreTrashMeal: handleRestoreTrashMeal,
     onPurgeTrashMeal: handlePurgeTrashMeal,
+    onMarkClaudeMealReviewed: markClaudeMealsReviewed,
+    onMarkAllClaudeMealsReviewed: markAllClaudeMealsReviewed,
     onDeleteWorkout: removeLogItem,
     onLoadPreviousMessages: loadPreviousMessages,
     canLoadPreviousMessages: canLoadPrevious,
@@ -7800,6 +7872,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
     trashMeals,
     handleRestoreTrashMeal,
     handlePurgeTrashMeal,
+    markClaudeMealsReviewed,
+    markAllClaudeMealsReviewed,
     removeLogItem,
     loadPreviousMessages,
     canLoadPrevious,
@@ -8988,6 +9062,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             trashMeals={trashMeals}
             onRestoreTrashMeal={handleRestoreTrashMeal}
             onPurgeTrashMeal={handlePurgeTrashMeal}
+            onMarkClaudeMealReviewed={markClaudeMealsReviewed}
+            onMarkAllClaudeMealsReviewed={markAllClaudeMealsReviewed}
           />
         </Suspense>
       )}
@@ -9057,6 +9133,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             trashMeals,
             onRestoreTrashMeal: handleRestoreTrashMeal,
             onPurgeTrashMeal: handlePurgeTrashMeal,
+            onMarkClaudeMealReviewed: markClaudeMealsReviewed,
+            onMarkAllClaudeMealsReviewed: markAllClaudeMealsReviewed,
             onDeleteWorkout: removeLogItem,
             extraPendingDrafts: extraPendingSessionDrafts,
             extraPendingMealDrafts,
@@ -9655,6 +9733,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             trashMeals={trashMeals}
             onRestoreTrashMeal={handleRestoreTrashMeal}
             onPurgeTrashMeal={handlePurgeTrashMeal}
+            onMarkClaudeMealReviewed={markClaudeMealsReviewed}
+            onMarkAllClaudeMealsReviewed={markAllClaudeMealsReviewed}
             onDeleteWorkout={removeLogItem}
             extraPendingDrafts={extraPendingSessionDrafts}
             extraPendingMealDrafts={extraPendingMealDrafts}
@@ -10150,6 +10230,8 @@ RISPONDI SOLO CON UN OGGETTO JSON VALIDO, senza markdown, con queste esatte chia
             trashMeals={trashMeals}
             onRestoreTrashMeal={handleRestoreTrashMeal}
             onPurgeTrashMeal={handlePurgeTrashMeal}
+            onMarkClaudeMealReviewed={markClaudeMealsReviewed}
+            onMarkAllClaudeMealsReviewed={markAllClaudeMealsReviewed}
           />
         </Suspense>
       ) : null}

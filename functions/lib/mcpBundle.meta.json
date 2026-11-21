@@ -1,6 +1,6 @@
 {
-  "builtAt": "2026-11-21T09:37:12.004Z",
-  "sourceHash": "71617db09c48ac90c7f9b4330b9d9146ef1aad343e448db55366e9edfbeb4bfb",
+  "builtAt": "2026-11-21T11:58:32.073Z",
+  "sourceHash": "cec8f1f063e3a598d1b6731d44ebc9805de247667405997a8053e18e6a921896",
   "files": [
     "functions/mcp/auth.js",
     "functions/mcp/createServer.js",
@@ -31,6 +31,7 @@
     "src/features/kentuFocus/product/loadFocusCatalogsNode.js",
     "src/features/mealBuilder/utils/foodMatchQuality.js",
     "src/features/mealEngine/canonicalMealCommit.js",
+    "src/utils/computeTotaliCore.js",
     "src/utils/dayNodeWriteCore.js",
     "src/utils/sodiumUnits.js",
     "src/foodSearch.js"

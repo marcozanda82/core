@@ -9,6 +9,12 @@ import {
   formatSleepDurationParts,
 } from '../utils/salaComandiUtils';
 import { isUnresolvedMealDraftItem, countPendingMealDrafts } from '../utils/mealDraftStatus';
+import {
+  isClaudeLoggedMealEntry,
+  isUnreadClaudeLoggedMeal,
+  resolveClaudeMealId,
+  countUnreadClaudeLoggedMeals,
+} from '../utils/claudeLoggedMeals';
 import PendingDraftsReminder from './PendingDraftsReminder';
 import { useExternalMealDrafts } from '../features/externalDrafts/externalDraftsStore.js';
 import { requestOpenMealEntry } from '../platform/mealEntryOpenBus.js';
@@ -155,6 +161,13 @@ function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
       const label = formatMealSlotLabel(mealType);
       const timeLabel = typeof decimalToTimeStr === 'function' ? decimalToTimeStr(sortTime) : '';
       const unsaved = mealSectionUnsaved(items, slotKey, unsavedEntryIds);
+      const fromClaude = items.some((f) => isClaudeLoggedMealEntry(f));
+      const unreadClaude = fromClaude && items.some((f) => isUnreadClaudeLoggedMeal(f));
+      const claudeMealId = resolveClaudeMealId(items[0]) || null;
+      const slotHint = items[0]?.mealSlot;
+      const labelResolved = slotHint
+        ? formatMealSlotLabel(slotHint)
+        : label;
       const subtotalKcal = items.reduce((sum, f) => sum + (Number(f.kcal ?? f.cal) || 0), 0);
       const subtotalProt = items.reduce((sum, f) => sum + (Number(f.prot) || 0), 0);
       const subtotalCarb = items.reduce((sum, f) => sum + (Number(f.carb) || 0), 0);
@@ -164,7 +177,7 @@ function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
       );
       return {
         slotKey,
-        label,
+        label: labelResolved,
         timeLabel,
         subtotalKcal,
         subtotalProt,
@@ -172,10 +185,13 @@ function buildMealSections(groupedFoods, decimalToTimeStr, unsavedEntryIds) {
         subtotalFat,
         pendingCount: 0,
         unsaved,
+        fromClaude,
+        unreadClaude,
+        claudeMealId,
         items,
         sortTime,
         stimulantOnly: items.length > 0 && items.every((f) => f?.type === 'stimulant'),
-        mealKind: toCanonicalMealType(baseType) || 'snack',
+        mealKind: toCanonicalMealType(slotHint || baseType) || 'snack',
       };
     })
     .filter(Boolean)
@@ -472,6 +488,8 @@ export default function DiaryDetailsSheet({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onMarkClaudeMealReviewed = null,
+  onMarkAllClaudeMealsReviewed = null,
 }) {
   const [activePillarTab, setActivePillarTab] = useState('NUTRITION');
 
@@ -534,6 +552,17 @@ export default function DiaryDetailsSheet({
   const externalDrafts = useExternalMealDrafts();
   const pendingDraftsCount = countPendingMealDrafts({ dailyLog: activeLog })
     + (externalDrafts.totalPending || 0);
+  const unreadClaudeCount = useMemo(
+    () => countUnreadClaudeLoggedMeals(activeLog),
+    [activeLog],
+  );
+
+  const openMealSection = (section) => {
+    if (section?.fromClaude && section?.claudeMealId) {
+      onMarkClaudeMealReviewed?.(section.claudeMealId);
+    }
+    onEditMeal?.(section.slotKey);
+  };
 
   if (!isOpen) return null;
 
@@ -643,6 +672,22 @@ export default function DiaryDetailsSheet({
                 requestOpenMealEntry('ai');
               }}
             />
+            {unreadClaudeCount > 0 ? (
+              <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-violet-500/30 bg-violet-950/35 px-3 py-2">
+                <p className="m-0 text-xs text-violet-100">
+                  {unreadClaudeCount === 1
+                    ? '1 pasto nuovo da Claude'
+                    : `${unreadClaudeCount} pasti nuovi da Claude`}
+                </p>
+                <button
+                  type="button"
+                  className="shrink-0 rounded-lg border border-violet-400/40 px-2 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/20"
+                  onClick={() => onMarkAllClaudeMealsReviewed?.()}
+                >
+                  Segna tutti come visti
+                </button>
+              </div>
+            ) : null}
             {!hasMeals && pendingDraftsCount === 0 ? (
               <EmptyDayTrackingPrompt
                 isIntentionalFast={isIntentionalFast}
@@ -658,14 +703,26 @@ export default function DiaryDetailsSheet({
                   >
                     <header
                       className="diary-details-meal__header"
-                      onClick={!section.stimulantOnly ? () => onEditMeal?.(section.slotKey) : undefined}
+                      onClick={!section.stimulantOnly ? () => openMealSection(section) : undefined}
                       style={!section.stimulantOnly ? { cursor: 'pointer' } : undefined}
                     >
                       <div className="diary-details-meal__title-wrap">
                         <h3 className="diary-details-meal__title">
+                          {section.unreadClaude ? (
+                            <span
+                              className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-400 align-middle shadow-[0_0_8px_rgba(251,191,36,0.85)]"
+                              aria-label="Nuovo"
+                              title="Nuovo"
+                            />
+                          ) : null}
                           {section.label}
                           {section.timeLabel ? (
                             <span className="diary-details-meal__time"> · {section.timeLabel}</span>
+                          ) : null}
+                          {section.fromClaude ? (
+                            <span className="diary-badge ml-1.5 inline-flex rounded-full bg-violet-500/25 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-violet-200">
+                              da Claude
+                            </span>
                           ) : null}
                           {section.unsaved ? (
                             <span className="diary-badge ml-0 inline-flex rounded-full bg-amber-500/25 px-2 py-0.5 text-[0.65rem] font-bold tracking-wide text-amber-300">
@@ -692,7 +749,7 @@ export default function DiaryDetailsSheet({
                             className="diary-details-meal__edit"
                             onClick={(event) => {
                               event.stopPropagation();
-                              onEditMeal?.(section.slotKey);
+                              openMealSection(section);
                             }}
                             aria-label={`Modifica ${section.label}`}
                           >

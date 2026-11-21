@@ -226,6 +226,9 @@ function retargetSessionMealSlotId(slotId, nextBaseType) {
 /** Base mealType senza suffisso ghost/orario/sessione (`snack_2` → `snack`, `snack_16.5` → `snack`). */
 function getMealTypeBase(mealType) {
   const str = String(mealType || '').trim();
+  // MCP: claude_pranzo_<hash> → pranzo (non "claude")
+  const claudeSlot = str.match(/^claude_([a-z]+)_/i);
+  if (claudeSlot) return claudeSlot[1].toLowerCase();
   if (!str.includes('_')) return str;
   return str.slice(0, str.indexOf('_'));
 }
@@ -1781,6 +1784,10 @@ function normalizeLogData(rawLog) {
     }
     if (entry.type === 'meal') {
       const folderMealType = inferMealType(entry);
+      const folderSource = entry.source != null ? entry.source : entry.origin;
+      const folderReviewedAt = Object.prototype.hasOwnProperty.call(entry, 'reviewedAt')
+        ? entry.reviewedAt
+        : undefined;
       (entry.items || []).forEach(subItem => {
         const itemType = subItem.type === 'recipe' ? 'recipe' : 'food';
         // Item-level mealType (snack_2) ha priorità sul folder se presente — evita fusione al reload.
@@ -1788,9 +1795,22 @@ function normalizeLogData(rawLog) {
           ? String(subItem.mealType).trim()
           : folderMealType;
         out.push({
-          ...subItem, type: itemType, mealType: itemMt,
+          ...subItem,
+          type: itemType,
+          mealType: itemMt,
           id: subItem.id || `food_${index}_${itemMt}`,
-          kcal: subItem.kcal ?? subItem.cal ?? 0
+          kcal: subItem.kcal ?? subItem.cal ?? 0,
+          // Metadati cartella (Claude inbox / reviewedAt) propagati alle voci piatte.
+          ...(entry.mealId != null ? { mealId: entry.mealId } : {}),
+          ...(entry.slot != null ? { mealSlot: entry.slot } : {}),
+          ...(entry.desc != null ? { mealDesc: entry.desc } : {}),
+          ...(folderSource != null ? { source: subItem.source ?? folderSource, origin: subItem.origin ?? folderSource } : {}),
+          ...(entry.entrySource != null || folderSource != null
+            ? { entrySource: subItem.entrySource ?? entry.entrySource ?? folderSource }
+            : {}),
+          ...(folderReviewedAt !== undefined ? { reviewedAt: folderReviewedAt } : {}),
+          ...(entry.createdAt != null ? { createdAt: entry.createdAt } : {}),
+          ...(entry.originalText != null ? { originalText: entry.originalText } : {}),
         });
       });
     } else if (entry.type === 'single' || !entry.type) {
@@ -2531,20 +2551,44 @@ function denormalizeLogForFirebase(flatLog) {
   
   [...order, ...otherMeals].forEach(mealId => {
     if (!meals[mealId] || meals[mealId].length === 0) return;
+    const folderItems = meals[mealId];
+    const head = folderItems[0] || {};
+    const folderMeta = {};
+    const src = head.source || head.origin || head.entrySource;
+    if (src) {
+      folderMeta.source = src;
+      folderMeta.origin = head.origin || src;
+      folderMeta.entrySource = head.entrySource || src;
+    }
+    if (Object.prototype.hasOwnProperty.call(head, 'reviewedAt')) {
+      folderMeta.reviewedAt = head.reviewedAt;
+    }
+    if (head.createdAt != null) folderMeta.createdAt = head.createdAt;
+    if (head.mealSlot != null) folderMeta.slot = head.mealSlot;
+    else if (head.slot != null) folderMeta.slot = head.slot;
+    if (head.originalText != null) folderMeta.originalText = head.originalText;
     result.push({
       type: 'meal',
       mealId,
-      desc: formatMealSlotLabel(mealId),
-      items: meals[mealId].map(it => ({ 
-        id: it.id, 
-        desc: it.desc || it.name, 
-        qta: it.qta ?? it.weight, 
-        weight: it.weight ?? it.qta, 
-        prot: it.prot, 
-        kcal: it.kcal, 
-        cal: it.cal, 
-        ...it 
-      }))
+      desc: head.mealDesc || formatMealSlotLabel(head.mealSlot || mealId),
+      ...folderMeta,
+      items: folderItems.map(it => {
+        const {
+          mealDesc, mealSlot, mealId: _mid, reviewedAt: _rev, createdAt: _ca,
+          originalText: _ot, ...rest
+        } = it;
+        void mealDesc; void mealSlot; void _mid; void _rev; void _ca; void _ot;
+        return {
+          id: rest.id,
+          desc: rest.desc || rest.name,
+          qta: rest.qta ?? rest.weight,
+          weight: rest.weight ?? rest.qta,
+          prot: rest.prot,
+          kcal: rest.kcal,
+          cal: rest.cal,
+          ...rest,
+        };
+      }),
     });
   });
   result.push(...workouts);

@@ -25,6 +25,7 @@ const EXTRA_HASH_PATHS = [
   path.join(REPO_ROOT, 'src/features/kentuFocus/product/loadFocusCatalogsNode.js'),
   path.join(REPO_ROOT, 'src/features/mealBuilder/utils/foodMatchQuality.js'),
   path.join(REPO_ROOT, 'src/features/mealEngine/canonicalMealCommit.js'),
+  path.join(REPO_ROOT, 'src/utils/computeTotaliCore.js'),
   path.join(REPO_ROOT, 'src/utils/dayNodeWriteCore.js'),
   path.join(REPO_ROOT, 'src/utils/sodiumUnits.js'),
   path.join(REPO_ROOT, 'src/foodSearch.js'),
@@ -75,6 +76,23 @@ try {
 } catch (error) {
   console.error(String(error?.message || error));
   process.exit(1);
+}
+
+const BROWSER_REQUIRE_RE = /require\((['"])(react|react-dom|react\/[^'"]+|react-dom\/[^'"]+)\1\)/g;
+const BROWSER_IMPORT_RE = /from\s+(['"])(react|react-dom|react\/[^'"]+|react-dom\/[^'"]+)\1/g;
+for (const outPath of OUTS) {
+  const src = readFileSync(outPath, 'utf8');
+  const hits = new Set();
+  for (const re of [BROWSER_REQUIRE_RE, BROWSER_IMPORT_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src))) hits.add(m[2]);
+  }
+  if (hits.size > 0) {
+    console.error(`[mcp-bundle] ${path.relative(REPO_ROOT, outPath)} richiede moduli browser: ${[...hits].join(', ')}`);
+    console.error('Estrai la logica in moduli puri (niente React/DOM) e ricostruisci il bundle.');
+    process.exit(1);
+  }
 }
 
 console.log(`[mcp-bundle] check ok (${current.slice(0, 12)}…)`);

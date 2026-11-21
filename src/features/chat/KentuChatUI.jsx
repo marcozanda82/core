@@ -96,6 +96,8 @@ export default function KentuChatUI({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onMarkClaudeMealReviewed = null,
+  onMarkAllClaudeMealsReviewed = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
   extraPendingMealDrafts = [],
@@ -242,6 +244,8 @@ export default function KentuChatUI({
         trashMeals={trashMeals}
         onRestoreTrashMeal={onRestoreTrashMeal}
         onPurgeTrashMeal={onPurgeTrashMeal}
+        onMarkClaudeMealReviewed={onMarkClaudeMealReviewed}
+        onMarkAllClaudeMealsReviewed={onMarkAllClaudeMealsReviewed}
         onDeleteWorkout={onDeleteWorkout}
         extraPendingDrafts={extraPendingDrafts}
         extraPendingMealDrafts={extraPendingMealDrafts}

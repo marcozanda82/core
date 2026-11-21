@@ -25,6 +25,7 @@ const EXTRA_HASH_PATHS = [
   path.join(REPO_ROOT, 'src/features/kentuFocus/product/loadFocusCatalogsNode.js'),
   path.join(REPO_ROOT, 'src/features/mealBuilder/utils/foodMatchQuality.js'),
   path.join(REPO_ROOT, 'src/features/mealEngine/canonicalMealCommit.js'),
+  path.join(REPO_ROOT, 'src/utils/computeTotaliCore.js'),
   path.join(REPO_ROOT, 'src/utils/dayNodeWriteCore.js'),
   path.join(REPO_ROOT, 'src/utils/sodiumUnits.js'),
   path.join(REPO_ROOT, 'src/foodSearch.js'),
@@ -69,8 +70,16 @@ const stubLabPlugin = {
   setup(build) {
     build.onResolve({ filter: /buildFocusLabDossier(\.js)?$/ }, () => ({ path: labShim }));
     build.onResolve({ filter: /draftParser(\.js)?$/ }, () => ({ path: draftShim }));
+    // React/DOM: fallisce il build (mai external → require a runtime).
+    build.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (args) => ({
+      path: args.path,
+      namespace: 'mcp-forbid-browser',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'mcp-forbid-browser' }, (args) => ({
+      errors: [{ text: `MCP bundle non può importare "${args.path}" (estrai logica pura senza React/DOM)` }],
+    }));
     build.onResolve({
-      filter: /(firebaseConfig|coreEngine|aiService|devToolsPersistence|HabitEngine|predictiveGreeting|avatarMood|conversationState|mealLogIntent|assistedMealPipeline|userFoodPreferenceContext|mealSmartDefaults|workoutRegistrationSlots)(\.(js|jsx))?$/,
+      filter: /(firebaseConfig|coreEngine|aiService|devToolsPersistence|HabitEngine|predictiveGreeting|avatarMood|conversationState|mealLogIntent|assistedMealPipeline|userFoodPreferenceContext|mealSmartDefaults|workoutRegistrationSlots|useBiochimico)(\.(js|jsx))?$/,
     }, () => ({ path: denyShim }));
   },
 };
@@ -94,9 +103,6 @@ const common = {
     '@modelcontextprotocol/sdk/*',
     'zod',
     'zod/*',
-    'react',
-    'react-dom',
-    'react/*',
   ],
 };
 

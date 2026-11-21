@@ -331,12 +331,22 @@ export async function toolSearchFood(db, uid, query) {
   return {
     query: q,
     warnings: [...(base.catalogWarnings || [])],
-    results: ranked.slice(0, 12).map((hit) => ({
-      name: hit.name || hit.desc || hit.label || null,
-      matchQuality: hit.matchQuality || null,
-      kcal100: hit.kcal ?? hit.calories ?? null,
-      source: hit.source || hit._source || null,
-      id: hit.id || hit.key || hit.foodDbKey || null,
-    })),
+    results: ranked.slice(0, 12).map((hit) => {
+      const usageCount = Number(hit.usageCount) || 0;
+      const id = hit.id || hit.key || hit.foodDbKey || null;
+      return {
+        name: hit.name || hit.desc || hit.label || null,
+        matchQuality: hit.matchQuality || null,
+        kcal100: hit.kcal ?? hit.calories ?? null,
+        source: hit.source || hit._source || null,
+        id,
+        foodDbKey: hit.foodDbKey || id,
+        usageCount,
+        usedTimesLabel: usageCount > 0
+          ? `usato ${usageCount} volt${usageCount === 1 ? 'a' : 'e'} negli ultimi 60 giorni`
+          : null,
+      };
+    }),
+    note: 'I risultati sono ordinati per uso recente (usageCount). Preferisci il primo con usageCount più alto.',
   };
 }

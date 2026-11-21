@@ -9,7 +9,7 @@
     "serve": "firebase emulators:start --only functions",
     "build:mcp": "node scripts/buildMcpBundle.mjs",
     "check:mcp": "node scripts/checkMcpBundle.mjs",
-    "deploy": "firebase deploy --only functions:callGemini,functions:kentuMcp,functions:createMcpToken,functions:revokeMcpToken,functions:listMcpTokens,functions:setMcpTokenScopes"
+    "deploy": "firebase deploy --only functions:default:callGemini,functions:default:kentuMcp,functions:default:createMcpToken,functions:default:revokeMcpToken,functions:default:listMcpTokens,functions:default:setMcpTokenScopes"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

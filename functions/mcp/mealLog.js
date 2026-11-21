@@ -18,6 +18,10 @@ import {
 } from './mealDrafts.js';
 import { saveDayNodeWithRevAdmin } from './dayWriteAdmin.js';
 import { loadUserFocusContext } from './loadUserContext.js';
+import {
+  toCanonicalDiaryFoodItem,
+  withCondimentsOnResolved,
+} from '../../src/features/mealEngine/canonicalMealCommit.js';
 
 export const mcpMealIdemPath = (uid, hash) => `mcp_meal_idem/${uid}/${hash}`;
 export const CLAUDE_MEAL_ORIGIN = 'claude';
@@ -171,10 +175,6 @@ function lookupFoodRow(catalogs, personalDb, key) {
  * @param {{ mealId: string, slot: string, mealTime: number, now: number }} mealCtx
  */
 export async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
-  const { toCanonicalDiaryFoodItem, withCondimentsOnResolved } = await import(
-    '../../src/features/mealEngine/canonicalMealCommit.js'
-  );
-
   const resolved = [];
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
@@ -228,13 +228,26 @@ export async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
   return withExtras;
 }
 
-function buildNestedMeal(mealId, slot, items) {
+function buildNestedMeal(mealId, slot, items, { now, originalText } = {}) {
+  const createdAt = Number(now) || Date.now();
   return {
     type: 'meal',
     mealId,
     desc: MEAL_LABELS[slot] || slot,
+    slot,
+    // Inbox “posta in arrivo”: definitivo nel diario, da aprire → reviewedAt.
+    source: CLAUDE_MEAL_ORIGIN,
     origin: CLAUDE_MEAL_ORIGIN,
-    items: items.map((it) => ({ ...it })),
+    entrySource: CLAUDE_MEAL_ORIGIN,
+    createdAt,
+    reviewedAt: null,
+    ...(originalText ? { originalText: String(originalText).slice(0, 2000) } : {}),
+    items: items.map((it) => ({
+      ...it,
+      source: it.source || CLAUDE_MEAL_ORIGIN,
+      origin: it.origin || CLAUDE_MEAL_ORIGIN,
+      entrySource: it.entrySource || CLAUDE_MEAL_ORIGIN,
+    })),
   };
 }
 
@@ -311,7 +324,10 @@ export async function toolLogMeal(db, ctx, input, now = Date.now()) {
     throw error;
   }
 
-  const mealRow = buildNestedMeal(mealId, normalized.slot, foodItems);
+  const mealRow = buildNestedMeal(mealId, normalized.slot, foodItems, {
+    now,
+    originalText: normalized.rawText,
+  });
   const claim = await idemRef.transaction((current) => {
     if (current) return undefined;
     return {

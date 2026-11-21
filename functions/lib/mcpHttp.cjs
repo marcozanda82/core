@@ -6979,28 +6979,44 @@ async function toolGetHabits(db, uid, opts = {}) {
       }
     }
   }
-  const habits = [...byKey.values()].map((row) => ({
-    foodDbKey: row.foodDbKey,
-    name: row.name,
-    usageCount: row.grams.length,
-    typicalGrams: modeOrMedian(row.grams),
-    typicalSlot: modeString(row.slots),
-    typicalTime: decimalToHHmm(modeOrMedian(row.times)),
-    lastUsed: row.lastUsed || null
-  })).filter((row) => row.typicalGrams != null && row.usageCount >= 1).sort((a, b) => b.usageCount - a.usageCount || (b.lastUsed || 0) - (a.lastUsed || 0)).slice(0, limit);
+  const habits = [...byKey.values()].map((row) => {
+    const usageCount = row.grams.length;
+    return {
+      foodDbKey: row.foodDbKey,
+      name: row.name,
+      usageCount,
+      usedTimesLabel: `usato ${usageCount} volt${usageCount === 1 ? "a" : "e"} negli ultimi ${LOOKBACK_DAYS} giorni`,
+      typicalGrams: modeOrMedian(row.grams),
+      typicalSlot: modeString(row.slots),
+      typicalTime: decimalToHHmm(modeOrMedian(row.times)),
+      lastUsed: row.lastUsed || null
+    };
+  }).filter((row) => row.typicalGrams != null && row.usageCount >= 1).sort((a, b) => b.usageCount - a.usageCount || (b.lastUsed || 0) - (a.lastUsed || 0)).slice(0, limit);
   return {
     lookbackDays: LOOKBACK_DAYS,
     count: habits.length,
     habits,
-    note: "Usa foodDbKey + typicalGrams per proporre porzioni abituali prima di chiedere conferma."
+    note: "Preferisci il foodDbKey con usageCount pi\xF9 alto. Usa typicalGrams prima di chiedere conferma."
   };
+}
+function hitFoodDbKey(hit) {
+  return String(hit?.foodDbKey || hit?.id || hit?.key || hit?.matchedKey || "").trim();
 }
 function rankSearchResultsByRecentUsage(results, recentScores) {
   const scores = recentScores instanceof Map ? recentScores : new Map(Object.entries(recentScores || {}));
-  return [...results || []].sort((a, b) => {
-    const sa = scores.get(String(a?.id || "")) || 0;
-    const sb = scores.get(String(b?.id || "")) || 0;
-    if (sb !== sa) return sb - sa;
+  const qualityRank = { exact: 4, prefix: 3, contains: 2, fuzzy: 1 };
+  return [...results || []].map((hit) => {
+    const key = hitFoodDbKey(hit);
+    const raw = scores.get(key);
+    const usageCount = typeof raw === "object" && raw ? Number(raw.usageCount) || 0 : 0;
+    const score = typeof raw === "object" && raw ? Number(raw.score) || 0 : Number(raw) || 0;
+    return { ...hit, foodDbKey: key || hit?.foodDbKey || null, usageCount, _usageScore: score };
+  }).sort((a, b) => {
+    if ((b.usageCount || 0) !== (a.usageCount || 0)) return (b.usageCount || 0) - (a.usageCount || 0);
+    if ((b._usageScore || 0) !== (a._usageScore || 0)) return (b._usageScore || 0) - (a._usageScore || 0);
+    const qa = qualityRank[String(a?.matchQuality || "").toLowerCase()] || 0;
+    const qb = qualityRank[String(b?.matchQuality || "").toLowerCase()] || 0;
+    if (qb !== qa) return qb - qa;
     return 0;
   });
 }
@@ -7008,7 +7024,11 @@ async function loadRecentFoodUsageScores(db, uid) {
   const habits = await toolGetHabits(db, uid, { limit: 80 });
   const map = /* @__PURE__ */ new Map();
   for (const h of habits.habits || []) {
-    map.set(h.foodDbKey, (h.usageCount || 0) * 10 + Math.min(50, Math.floor((h.lastUsed || 0) / 1e10)));
+    const usageCount = Number(h.usageCount) || 0;
+    map.set(h.foodDbKey, {
+      usageCount,
+      score: usageCount * 100 + Math.min(50, Math.floor((h.lastUsed || 0) / 1e10))
+    });
   }
   return map;
 }
@@ -7018,702 +7038,6 @@ var init_habits = __esm({
     init_dates();
     LOOKBACK_DAYS = 60;
     MAX_HABITS = 40;
-  }
-});
-
-// src/useBiochimico.js
-var import_react;
-var init_useBiochimico = __esm({
-  "src/useBiochimico.js"() {
-    import_react = require("react");
-    init_mealDraftStatus();
-    init_computeTotaliCore();
-    init_computeTotaliCore();
-  }
-});
-
-// src/utils/foodVisualResolver.js
-function isPortionLikeParenInner(inner) {
-  const body = String(inner || "").trim();
-  if (!body) return true;
-  if (PORTION_HINT_RE.test(body)) return true;
-  if (/[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\b/i.test(body)) return true;
-  if (/^\d+[.,]?\d*(?:\s+\d+[.,]?\d*)+\s*$/.test(body)) return true;
-  return false;
-}
-function splitTrailingBalancedParen(s) {
-  const t = String(s || "").trimEnd();
-  if (!t.endsWith(")")) return null;
-  let depth = 0;
-  for (let i = t.length - 1; i >= 0; i -= 1) {
-    const ch = t[i];
-    if (ch === ")") depth += 1;
-    else if (ch === "(") {
-      depth -= 1;
-      if (depth === 0) {
-        return {
-          before: t.slice(0, i).trimEnd(),
-          inner: t.slice(i + 1, t.length - 1)
-        };
-      }
-    }
-  }
-  return null;
-}
-function sanitizeFoodDisplayName(raw, fallback = "Alimento") {
-  let s = String(raw || "").trim();
-  if (!s) return fallback;
-  s = s.replace(/\s+/g, " ");
-  let prev = "";
-  let guard = 0;
-  while (s !== prev && guard < 16) {
-    prev = s;
-    s = s.replace(/\s*\(\d*\s*Porzione.*?\)/gi, " ");
-    s = s.replace(/\s*\(\d*\s*\d*\s*fett[ae].*?\)/gi, " ");
-    s = s.replace(
-      /\s*\(\s*(?:\d+[.,]?\d*\s+)?(?:porzion[ei]|porz\.?|serving|servings|unita|unità|pezzo|pezzi)\b[^)]*\)/gi,
-      " "
-    );
-    s = s.replace(
-      /\s*\(\s*(?:\d+\s+)?[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\s*\)/gi,
-      " "
-    );
-    s = s.replace(/\s*\(\s*[~≈]?\s*\d+[.,]?\d*\s*g\s*\)/gi, " ");
-    const trail = splitTrailingBalancedParen(s);
-    if (trail && isPortionLikeParenInner(trail.inner)) {
-      s = trail.before;
-    }
-    s = s.replace(/\s+/g, " ").trim();
-    guard += 1;
-  }
-  s = s.replace(/\s*[-–—,]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi)\s*$/i, " ");
-  s = s.replace(/\)\s*\)+/g, ")");
-  s = s.replace(/\s+\)/g, ")");
-  s = s.replace(/\(\s*\)/g, "");
-  {
-    let open = 0;
-    let cleaned = "";
-    for (const ch of s) {
-      if (ch === "(") {
-        open += 1;
-        cleaned += ch;
-      } else if (ch === ")") {
-        if (open > 0) {
-          open -= 1;
-          cleaned += ch;
-        }
-      } else {
-        cleaned += ch;
-      }
-    }
-    s = cleaned.replace(/\(\s*$/g, "").trim();
-  }
-  s = s.replace(/\s+/g, " ").trim();
-  if (!s) return fallback;
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-var FOOD_VISUAL_RULES, PORTION_HINT_RE;
-var init_foodVisualResolver = __esm({
-  "src/utils/foodVisualResolver.js"() {
-    FOOD_VISUAL_RULES = Object.freeze([
-      // Salse / conserve pomodoro (prima del pomodoro fresco)
-      { emoji: "\u{1F96B}", keywords: ["passata", "passato", "pelati", "sugo", "salsa di pomodoro", "concentrato di pomodoro"] },
-      { emoji: "\u{1F345}", keywords: ["pomodoro", "pomodori", "ciliegino", "ciliegini", "datterino", "datterini", "tomato"] },
-      { emoji: "\u{1F346}", keywords: ["melanzana", "melanzane", "eggplant"] },
-      { emoji: "\u{1FAD1}", keywords: ["peperone", "peperoni", "pepper"] },
-      { emoji: "\u{1F952}", keywords: ["zucchina", "zucchine", "cetriolo", "cetrioli", "zucchini", "cucumber"] },
-      { emoji: "\u{1F96C}", keywords: ["spinaci", "spinacio", "lattuga", "rucola", "biete", "bietola", "cicoria", "radicchio", "foglie"] },
-      { emoji: "\u{1F957}", keywords: ["insalata", "insalatone", "verdura a foglia", "misticanza", "salad"] },
-      { emoji: "\u{1F955}", keywords: ["carota", "carote", "carrot"] },
-      { emoji: "\u{1F966}", keywords: ["broccolo", "broccoli", "cavolfiore", "cavolfiori", "broccolini"] },
-      { emoji: "\u{1F344}", keywords: ["funghi", "fungo", "champignon", "porcini", "mushroom"] },
-      { emoji: "\u{1F954}", keywords: ["patata", "patate", "potato", "patatine"] },
-      { emoji: "\u{1F990}", keywords: ["gamberi", "gambero", "gamberetti", "calamari", "calamaro", "frutti di mare", "cozze", "vongole", "seafood", "shrimp"] },
-      { emoji: "\u{1F41F}", keywords: ["merluzzo", "tonno", "salmone", "branzino", "orata", "pesce", "sgombro", "alici", "sardine", "trota", "fish", "tuna", "salmon"] },
-      { emoji: "\u{1F969}", keywords: ["manzo", "bistecca", "macinato", "vitello", "maiale", "carne", "hamburger", "prosciutto", "bresaola", "beef", "pork", "steak"] },
-      { emoji: "\u{1F357}", keywords: ["pollo", "tacchino", "coniglio", "pollame", "petto di pollo", "chicken", "turkey"] },
-      { emoji: "\u{1F373}", keywords: ["omelette", "frittata", "uovo", "uova", "albume", "egg", "eggs"] },
-      { emoji: "\u{1F95B}", keywords: ["latte", "yogurt", "yoghurt", "kefir", "skyr", "milk"] },
-      { emoji: "\u{1F9C0}", keywords: ["formaggio", "parmigiano", "ricotta", "mozzarella", "feta", "grana", "pecorino", "cheese"] },
-      { emoji: "\u{1F35A}", keywords: ["risotto", "basmati", "riso", "rice"] },
-      { emoji: "\u{1F35D}", keywords: ["spaghetti", "penne", "fusilli", "rigatoni", "tagliatelle", "lasagne", "semola", "pasta", "noodle"] },
-      { emoji: "\u{1F956}", keywords: ["bauletto", "baguette", "filone"] },
-      { emoji: "\u{1F35E}", keywords: ["pane", "panino", "toast", "focaccia", "piadina", "bread"] },
-      { emoji: "\u{1F358}", keywords: ["gallette", "galletta", "cracker", "crackers", "gallett"] },
-      { emoji: "\u{1F96A}", keywords: ["fette biscottate", "fetta biscottata", "biscottate"] },
-      { emoji: "\u{1F963}", keywords: ["cereali", "fiocchi", "muesli", "cornflakes", "avena", "porridge"] },
-      { emoji: "\u{1F36A}", keywords: ["biscotti", "biscotto", "frollini", "frollino", "cookie", "cookies"] },
-      { emoji: "\u{1F950}", keywords: ["croissant", "cornetto", "brioche", "bombolone", "krapfen"] },
-      { emoji: "\u{1FAD2}", keywords: ["olio evo", "olio extravergine", "olio di oliva", "olio", "olive oil"] },
-      { emoji: "\u{1F9C8}", keywords: ["burro", "butter", "margarina"] },
-      { emoji: "\u{1F34E}", keywords: ["mela", "mele", "apple"] },
-      { emoji: "\u{1F34C}", keywords: ["banana", "banane"] },
-      { emoji: "\u{1F34A}", keywords: ["arancia", "arance", "mandarino", "clementina", "orange"] },
-      { emoji: "\u{1F353}", keywords: ["fragole", "fragola", "strawberry"] },
-      { emoji: "\u{1F951}", keywords: ["avocado"] },
-      { emoji: "\u{1F34B}", keywords: ["limone", "limoni", "lime", "lemon"] },
-      { emoji: "\u2615", keywords: ["cappuccino", "espresso", "macchiato", "caff\xE8", "caffe", "coffee"] }
-    ]);
-    PORTION_HINT_RE = /\b(?:porzion[ei]|porz\.?|servings?|unita|unità|pezzo|pezzi|fett[ae]|slices?|cucchiaio|cucchiai|cucchiaino|bicchiere|tazza|scoop)\b/i;
-  }
-});
-
-// src/features/nutrition/condiments.js
-function foodLabel(food) {
-  return String(food?.name || food?.foodName || food?.desc || food?.label || "").trim();
-}
-function normalizeName(name) {
-  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-function ingredientText(food) {
-  const lists = [food?.ingredients, food?.recipeIngredients, food?.components];
-  const parts = [];
-  for (const list of lists) {
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      parts.push(typeof item === "string" ? item : item?.name || item?.desc || item?.label || "");
-    }
-  }
-  return parts.join(" ").toLowerCase();
-}
-function readMemory() {
-  if (typeof localStorage === "undefined") return {};
-  try {
-    const raw = JSON.parse(localStorage.getItem(MEMORY_KEY) || "{}");
-    return raw && typeof raw === "object" ? raw : {};
-  } catch {
-    return {};
-  }
-}
-function rememberedCondiment(name) {
-  const hit = readMemory()[normalizeName(name)];
-  if (!hit || typeof hit !== "object") return null;
-  if (!OIL_GRAMS.some((item) => item.id === hit.oil)) return null;
-  if (!SALT_LEVELS.some((item) => item.id === hit.salt)) return null;
-  if (!OIL_TYPES[hit.oilType]) return null;
-  return { oil: hit.oil, salt: hit.salt, oilType: hit.oilType };
-}
-function classifyCondiment(food) {
-  if (!food || food.condimentKind) return null;
-  const name = normalizeName(foodLabel(food));
-  if (!name) return null;
-  if (SKIP_NAME.test(name)) return null;
-  if (/bevanda|drink|beverage/.test(String(food.type || food.category || "").toLowerCase())) return null;
-  const ingredients = ingredientText(food);
-  if (/\bolio\b/.test(ingredients)) return null;
-  if (Number(food.novaScore) === 4 && /pronto|sugo|pesto|condit|surgelat/.test(name)) return null;
-  for (const category of CATEGORIES) {
-    if (!category.test.test(name)) continue;
-    if (category.id === "carne" || category.id === "pesce") {
-      if (!PAN_OR_GRILL.test(name) || NOT_PAN.test(name)) return null;
-    }
-    return {
-      category: category.id,
-      defaults: { oil: category.oil, salt: category.salt, oilType: "evo" }
-    };
-  }
-  return null;
-}
-function resolveCondimentChoice(food) {
-  const offer = classifyCondiment(food);
-  if (!offer) return null;
-  const stored = food?.condiment && rememberedShape(food.condiment) ? rememberedShape(food.condiment) : rememberedCondiment(foodLabel(food));
-  return stored || offer.defaults;
-}
-function rememberedShape(choice) {
-  if (!choice) return null;
-  if (!OIL_GRAMS.some((item) => item.id === choice.oil)) return null;
-  if (!SALT_LEVELS.some((item) => item.id === choice.salt)) return null;
-  return { oil: choice.oil, salt: choice.salt, oilType: OIL_TYPES[choice.oilType] ? choice.oilType : "evo" };
-}
-function oilEntry(parent, choice) {
-  const level = OIL_GRAMS.find((item) => item.id === choice.oil);
-  if (!level || !(level.grams > 0)) return null;
-  const type = OIL_TYPES[choice.oilType] || OIL_TYPES.evo;
-  const grams = level.grams;
-  return {
-    id: `${parent.id}::olio`,
-    type: "food",
-    condimentOf: parent.id,
-    condimentKind: "oil",
-    estimated: true,
-    stimato: true,
-    name: type.name,
-    foodName: type.name,
-    desc: `${type.name} (stimato)`,
-    grams,
-    qta: grams,
-    kcal: Math.round(type.kcalPerG * grams),
-    prot: 0,
-    carb: 0,
-    fat: grams,
-    fatTotal: grams,
-    inflammationFactor: type.inflammationFactor,
-    novaScore: 1,
-    mealType: parent.mealType,
-    mealTime: parent.mealTime ?? parent.time,
-    time: parent.mealTime ?? parent.time
-  };
-}
-function saltEntry(parent, choice) {
-  const level = SALT_LEVELS.find((item) => item.id === choice.salt);
-  if (!level || !(level.grams > 0)) return null;
-  return {
-    id: `${parent.id}::sale`,
-    type: "food",
-    condimentOf: parent.id,
-    condimentKind: "salt",
-    estimated: true,
-    stimato: true,
-    name: "Sale",
-    foodName: "Sale",
-    desc: "Sale (stimato)",
-    grams: level.grams,
-    qta: level.grams,
-    kcal: 0,
-    prot: 0,
-    carb: 0,
-    fat: 0,
-    salt: level.grams,
-    salt_100g: 100,
-    na: level.sodiumMg,
-    sodium: level.sodiumMg,
-    sodiumMg: level.sodiumMg,
-    mealType: parent.mealType,
-    mealTime: parent.mealTime ?? parent.time,
-    time: parent.mealTime ?? parent.time
-  };
-}
-function buildCondimentEntries(parent, choice) {
-  if (!parent?.id || !choice) return [];
-  return [oilEntry(parent, choice), saltEntry(parent, choice)].filter(Boolean);
-}
-function condimentEntriesFor(food) {
-  const choice = resolveCondimentChoice(food);
-  if (!choice || !food?.id) return [];
-  return buildCondimentEntries({ ...food, condiment: choice }, choice);
-}
-function withCondiments(items) {
-  const list = Array.isArray(items) ? items : [];
-  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
-  const out = [];
-  for (const item of list) {
-    out.push(item);
-    if (!item || item.condimentKind || linked.has(item.id)) continue;
-    const extras = condimentEntriesFor(item);
-    for (const extra of extras) {
-      linked.add(item.id);
-      out.push(extra);
-    }
-  }
-  return out;
-}
-var MEMORY_KEY, OIL_GRAMS, SALT_LEVELS, OIL_TYPES, CATEGORIES, PAN_OR_GRILL, NOT_PAN, SKIP_NAME;
-var init_condiments = __esm({
-  "src/features/nutrition/condiments.js"() {
-    MEMORY_KEY = "kentu.condiment.last.v1";
-    OIL_GRAMS = Object.freeze([
-      { id: "0", grams: 0, label: "niente" },
-      { id: "5", grams: 5, label: "mezzo cucchiaio (5 g)" },
-      { id: "10", grams: 10, label: "un cucchiaio (10 g)" },
-      { id: "20", grams: 20, label: "due cucchiai (20 g)" }
-    ]);
-    SALT_LEVELS = Object.freeze([
-      { id: "none", grams: 0, sodiumMg: 0, label: "niente" },
-      { id: "little", grams: 0.5, sodiumMg: 200, label: "poco" },
-      { id: "normal", grams: 1.5, sodiumMg: 600, label: "normale" }
-    ]);
-    OIL_TYPES = Object.freeze({
-      evo: { id: "evo", name: "Olio extravergine", kcalPerG: 8.84, inflammationFactor: -1 },
-      olive: { id: "olive", name: "Olio di oliva", kcalPerG: 8.84, inflammationFactor: 0 },
-      seed: { id: "seed", name: "Olio di semi", kcalPerG: 8.84, inflammationFactor: 1 }
-    });
-    CATEGORIES = Object.freeze([
-      { id: "pasta", test: /pasta|spaghetti|penne|fusilli|rigatoni|tagliatelle|fettuccine|linguine|maccheroni|couscous|cous cous/, oil: "10", salt: "normal" },
-      { id: "riso", test: /\briso\b|basmati|risotto/, oil: "10", salt: "normal" },
-      { id: "insalata", test: /insalata|lattuga|rucola|songino/, oil: "10", salt: "little" },
-      { id: "legumi", test: /ceci|lenticchie|fagioli|legumi|piselli|fave|edamame/, oil: "5", salt: "normal" },
-      { id: "verdure", test: /verdur|zucchin|broccoli|spinaci|carot|melanzan|peperon|cavol|finocch|asparag|pomodor|bietol|fagiolin|radicchio/, oil: "5", salt: "little" },
-      { id: "pesce", test: /pesce|salmone|merluzzo|tonno|orata|branzino|sgombro|acciug|sogliola|gamber|calamar|seppia|trota|spigola/, oil: "5", salt: "little" },
-      { id: "carne", test: /pollo|manzo|maiale|tacchino|bistecca|carne|hamburger|fettina|coscia|petto|agnello|vitello|salsiccia/, oil: "5", salt: "normal" }
-    ]);
-    PAN_OR_GRILL = /padella|grigliat|griglia|piastra|saltat|brasat|scottat/;
-    NOT_PAN = /lesso|bollit|vapore|al forno|forno|crudo/;
-    SKIP_NAME = /olio\b|sale\b|aceto|sugo|pesto|pizza|lasagne|piadina|panino|biscott|merend|patatine|cracker|snack|bevanda|bibita|succo|caff|t[eè]\b|acqua|vino|birra|cola|frutta|mela|banana|arancia|pera|pesca|uva|fragol|kiwi|ananas|melone|confezion|già condit|piatto pronto/;
-  }
-});
-
-// src/features/mealEngine/canonicalMealCommit.js
-var canonicalMealCommit_exports = {};
-__export(canonicalMealCommit_exports, {
-  ALL_DIARY_NUTRIENT_KEYS: () => ALL_DIARY_NUTRIENT_KEYS,
-  buildCanonicalMealCommitPayload: () => buildCanonicalMealCommitPayload,
-  canonicalNutritionFingerprint: () => canonicalNutritionFingerprint,
-  collectCanonicalPortionNutrients: () => collectCanonicalPortionNutrients,
-  isCanonicalPersistableResolvedFood: () => isCanonicalPersistableResolvedFood,
-  isLegacyGrams1Placeholder: () => isLegacyGrams1Placeholder,
-  nutritionPayloadEquals: () => nutritionPayloadEquals,
-  pickCanonicalNutrientFields: () => pickCanonicalNutrientFields,
-  toCanonicalDiaryFoodItem: () => toCanonicalDiaryFoodItem,
-  toMcDriveUpsertItem: () => toMcDriveUpsertItem,
-  withCondimentsOnResolved: () => withCondimentsOnResolved
-});
-function asFiniteNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-function roundKcal3(value) {
-  const n = asFiniteNumber(value);
-  if (n == null) return 0;
-  return Math.round(n);
-}
-function roundMacro(value) {
-  const n = asFiniteNumber(value);
-  if (n == null) return 0;
-  return Math.round(n * 10) / 10;
-}
-function readGrams(food, gramsOverride) {
-  if (gramsOverride != null && gramsOverride !== "") {
-    const fromArg = asFiniteNumber(gramsOverride);
-    if (fromArg != null) return fromArg;
-  }
-  return asFiniteNumber(food?.grams ?? food?.qta ?? food?.weight ?? food?.qty ?? food?.qtyG);
-}
-function readName(food) {
-  return sanitizeFoodDisplayName(
-    food?.desc || food?.name || food?.foodName || food?.label || "",
-    ""
-  );
-}
-function readFoodDbKey(food) {
-  const raw = food?.foodDbKey ?? food?.matchedKey ?? food?.dbKey ?? null;
-  const key = raw != null ? String(raw).trim() : "";
-  return key || null;
-}
-function isInboxLike(food) {
-  const t = String(food?.type || "");
-  return t === INBOX_DRAFT_TYPE || t === UNASSIGNED_DRAFTS_TYPE;
-}
-function isLegacyGrams1Placeholder(food, grams) {
-  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
-  if (g !== 1) return false;
-  if (readFoodDbKey(food)) return false;
-  if (isUnresolvedMealDraftItem(food) || isInboxLike(food)) return true;
-  const kcal = asFiniteNumber(food?.kcal ?? food?.cal) || 0;
-  const status = String(food?.status || "").toLowerCase();
-  if (status && status !== "resolved") return true;
-  return kcal <= 0;
-}
-function isCanonicalPersistableResolvedFood(food, grams) {
-  if (!food || typeof food !== "object") return false;
-  if (isUnresolvedMealDraftItem(food)) return false;
-  if (isInboxLike(food)) return false;
-  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
-  if (g == null || g <= 0) return false;
-  if (isLegacyGrams1Placeholder(food, g)) return false;
-  const name = readName(food);
-  if (!name) return false;
-  return true;
-}
-function parseRowNumeric(raw) {
-  if (raw === null || raw === void 0) return null;
-  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!t || t.toLowerCase() === "tr") return null;
-    const n = Number(t.replace(",", "."));
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
-}
-function nutrientsFromRow(row, grams) {
-  if (!row || typeof row !== "object") return {};
-  const factor = grams / 100;
-  if (!Number.isFinite(factor)) return {};
-  const out = {};
-  const kcalPer100 = parseRowNumeric(row.kcal ?? row.cal);
-  if (kcalPer100 != null) {
-    out.kcal = roundKcal3(kcalPer100 * factor);
-    out.cal = out.kcal;
-  }
-  const protPer100 = parseRowNumeric(row.prot ?? row.pro);
-  if (protPer100 != null) out.prot = roundMacro(protPer100 * factor);
-  const carbPer100 = parseRowNumeric(row.carb ?? row.carbo ?? row.cho);
-  if (carbPer100 != null) out.carb = roundMacro(carbPer100 * factor);
-  const fatPer100 = parseRowNumeric(row.fatTotal ?? row.fat ?? row.fatTot);
-  if (fatPer100 != null) {
-    out.fat = roundMacro(fatPer100 * factor);
-    out.fatTotal = out.fat;
-  }
-  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
-  keys.forEach((key) => {
-    if (key === "kcal" || key === "cal" || key === "prot" || key === "carb" || key === "fat" || key === "fatTotal" || key === "fatTot") {
-      return;
-    }
-    if (out[key] != null) return;
-    const per100 = parseRowNumeric(row[key]);
-    if (per100 == null) return;
-    out[key] = roundMacro(per100 * factor);
-  });
-  const fibrePer100 = parseRowNumeric(row.fibre) ?? parseRowNumeric(row.fiber);
-  if (fibrePer100 != null && out.fibre == null) {
-    out.fibre = roundMacro(fibrePer100 * factor);
-  }
-  return out;
-}
-function nutrientsFromPortionItem(food) {
-  const out = {};
-  const kcal = asFiniteNumber(food?.kcal ?? food?.cal ?? food?.estKcal);
-  if (kcal != null) {
-    out.kcal = roundKcal3(kcal);
-    out.cal = out.kcal;
-  }
-  const prot = asFiniteNumber(food?.prot ?? food?.pro ?? food?.estPro ?? food?.proteine);
-  if (prot != null) out.prot = roundMacro(prot);
-  const carb = asFiniteNumber(food?.carb ?? food?.carbo ?? food?.cho ?? food?.estCar ?? food?.carboidrati);
-  if (carb != null) out.carb = roundMacro(carb);
-  const fat = asFiniteNumber(food?.fatTotal ?? food?.fat ?? food?.fatTot ?? food?.estFat ?? food?.grassi);
-  if (fat != null) {
-    out.fat = roundMacro(fat);
-    out.fatTotal = out.fat;
-  }
-  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
-  keys.forEach((key) => {
-    if (out[key] != null) return;
-    const n = asFiniteNumber(food?.[key]);
-    if (n == null) return;
-    out[key] = key === "kcal" || key === "cal" ? roundKcal3(n) : roundMacro(n);
-  });
-  return out;
-}
-function collectCanonicalPortionNutrients(food, grams) {
-  const fromRow = nutrientsFromRow(food?.row, grams);
-  const fromItem = nutrientsFromPortionItem(food);
-  const merged = { ...fromItem, ...fromRow };
-  if (merged.kcal == null && merged.cal != null) merged.kcal = merged.cal;
-  if (merged.cal == null && merged.kcal != null) merged.cal = merged.kcal;
-  if (merged.fat == null && merged.fatTotal != null) merged.fat = merged.fatTotal;
-  if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = merged.fat;
-  if (merged.kcal == null) merged.kcal = 0;
-  if (merged.cal == null) merged.cal = merged.kcal;
-  if (merged.prot == null) merged.prot = 0;
-  if (merged.carb == null) merged.carb = 0;
-  if (merged.fat == null) merged.fat = 0;
-  if (merged.fatTotal == null) merged.fatTotal = merged.fat;
-  return merged;
-}
-function pickCanonicalNutrientFields(item) {
-  if (!item || typeof item !== "object") return {};
-  const out = {};
-  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
-  keys.forEach((key) => {
-    const n = asFiniteNumber(item[key]);
-    if (n == null) return;
-    out[key] = n;
-  });
-  return out;
-}
-function canonicalNutritionFingerprint(item) {
-  const nutrients = pickCanonicalNutrientFields(item);
-  const grams = asFiniteNumber(item?.qta ?? item?.weight ?? item?.grams ?? item?.qty);
-  return {
-    foodDbKey: readFoodDbKey(item),
-    grams,
-    type: item?.type === "recipe" ? "recipe" : "food",
-    nutrients
-  };
-}
-function nutritionPayloadEquals(a, b) {
-  const fa = canonicalNutritionFingerprint(a);
-  const fb = canonicalNutritionFingerprint(b);
-  if (fa.foodDbKey !== fb.foodDbKey) return false;
-  if (fa.grams !== fb.grams) return false;
-  if (fa.type !== fb.type) return false;
-  const keys = /* @__PURE__ */ new Set([
-    ...Object.keys(fa.nutrients),
-    ...Object.keys(fb.nutrients)
-  ]);
-  for (const key of keys) {
-    const va = asFiniteNumber(fa.nutrients[key]) ?? 0;
-    const vb = asFiniteNumber(fb.nutrients[key]) ?? 0;
-    if (va !== vb) return false;
-  }
-  return true;
-}
-function toCanonicalDiaryFoodItem({
-  food,
-  grams,
-  mealContext = {},
-  sourceMetadata = {}
-} = {}) {
-  const g = readGrams(food, grams);
-  if (!isCanonicalPersistableResolvedFood(food, g)) return null;
-  const name = readName(food);
-  const foodDbKey = readFoodDbKey(food);
-  const nutrients = collectCanonicalPortionNutrients(food, g);
-  const mealType = mealContext.mealType != null && String(mealContext.mealType).trim() ? mealContext.mealType : food.mealType != null ? food.mealType : void 0;
-  const mealTime = mealContext.mealTime != null ? mealContext.mealTime : food.mealTime ?? food.time;
-  const id = mealContext.id != null && String(mealContext.id).trim() ? String(mealContext.id).trim() : food.id != null && String(food.id).trim() ? String(food.id).trim() : void 0;
-  const entrySource = sourceMetadata.entrySource || food.entrySource || "ui";
-  const item = {
-    type: food.type === "recipe" || food.isRecipe === true ? "recipe" : "food",
-    desc: name,
-    name,
-    label: name,
-    foodName: name,
-    qta: g,
-    weight: g,
-    grams: g,
-    qty: g,
-    ...nutrients,
-    status: "resolved",
-    entrySource
-  };
-  if (foodDbKey) {
-    item.foodDbKey = foodDbKey;
-    item.matchedKey = foodDbKey;
-  }
-  if (mealType != null) item.mealType = mealType;
-  if (mealTime != null) item.mealTime = mealTime;
-  if (mealTime != null) item.time = mealTime;
-  if (id) item.id = id;
-  if (mealContext.batchId) item.batchId = mealContext.batchId;
-  if (food.isRecipe === true || item.type === "recipe") item.isRecipe = true;
-  if (Array.isArray(food.ingredients) && food.ingredients.length > 0) {
-    item.ingredients = food.ingredients;
-  }
-  if (food.servingLabel) item.servingLabel = String(food.servingLabel);
-  if (food.coffeeShopProductId) {
-    item.coffeeShopProductId = String(food.coffeeShopProductId).trim();
-    item.isCoffeeShopItem = true;
-  }
-  if (food.icon) item.icon = food.icon;
-  if (food.spokenFoodName) item.spokenFoodName = String(food.spokenFoodName);
-  if (food.sourceText) item.sourceText = String(food.sourceText).trim();
-  if (food.matchQuality) {
-    const mq = String(food.matchQuality).trim().toLowerCase();
-    if (mq === "exact" || mq === "prefix" || mq === "contains" || mq === "fuzzy") {
-      item.matchQuality = mq;
-    }
-  }
-  if (typeof food.isFastingSafe === "boolean") item.isFastingSafe = food.isFastingSafe;
-  if (asFiniteNumber(food.caffeineMg) != null && item.caffeineMg == null) {
-    item.caffeineMg = asFiniteNumber(food.caffeineMg);
-  }
-  Object.keys(item).forEach((key) => {
-    if (UI_ONLY_KEYS.has(key)) delete item[key];
-  });
-  return item;
-}
-function buildCanonicalMealCommitPayload({
-  resolvedItems,
-  mealType = null,
-  slotId = null,
-  mealTime = null,
-  timeString = null,
-  sourceMetadata = {}
-} = {}) {
-  const list = Array.isArray(resolvedItems) ? resolvedItems : [];
-  const items = [];
-  list.forEach((food, index) => {
-    const canonical = toCanonicalDiaryFoodItem({
-      food,
-      grams: food?.grams ?? food?.qta ?? food?.weight ?? food?.qty,
-      mealContext: {
-        mealType: slotId || food?.mealType || mealType,
-        mealTime: mealTime ?? food?.mealTime ?? food?.time,
-        id: food?.id,
-        batchId: food?.batchId,
-        index
-      },
-      sourceMetadata
-    });
-    if (!canonical) return;
-    if (food?.condiment) canonical.condiment = food.condiment;
-    if (!canonical.id) canonical.id = `condiment-host-${index}`;
-    items.push(canonical);
-  });
-  return {
-    mealType: mealType || null,
-    slotId: slotId || null,
-    mealTime: mealTime ?? null,
-    timeString: timeString || null,
-    items: withCondiments(items),
-    sourceMetadata: { ...sourceMetadata }
-  };
-}
-function withCondimentsOnResolved(items) {
-  const list = Array.isArray(items) ? items : [];
-  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
-  const out = [];
-  for (const item of list) {
-    out.push(item);
-    if (!item?.id || item.condimentKind || linked.has(item.id)) continue;
-    if (isUnresolvedMealDraftItem(item)) continue;
-    const extras = condimentEntriesFor(item);
-    if (extras.length > 0) linked.add(item.id);
-    out.push(...extras);
-  }
-  return out;
-}
-function toMcDriveUpsertItem(canonical) {
-  if (!canonical) return null;
-  const foodDbKey = readFoodDbKey(canonical);
-  const nutrients = pickCanonicalNutrientFields(canonical);
-  return {
-    foodName: canonical.name || canonical.foodName,
-    name: canonical.name || canonical.foodName,
-    grams: canonical.qta,
-    qty: canonical.qta,
-    status: "resolved",
-    ...nutrients,
-    pro: nutrients.prot,
-    carbo: nutrients.carb,
-    fat: nutrients.fat ?? nutrients.fatTotal,
-    ...canonical.id ? { id: canonical.id } : {},
-    ...foodDbKey ? { foodDbKey, matchedKey: foodDbKey } : {},
-    ...canonical.spokenFoodName ? { spokenFoodName: canonical.spokenFoodName } : {},
-    ...canonical.servingLabel ? { servingLabel: canonical.servingLabel } : {},
-    ...canonical.coffeeShopProductId ? { coffeeShopProductId: canonical.coffeeShopProductId } : {},
-    ...canonical.icon ? { icon: canonical.icon } : {}
-  };
-}
-var ALL_DIARY_NUTRIENT_KEYS, EXTRA_DIARY_NUTRIENT_KEYS, UI_ONLY_KEYS;
-var init_canonicalMealCommit = __esm({
-  "src/features/mealEngine/canonicalMealCommit.js"() {
-    init_useBiochimico();
-    init_mealDraftStatus();
-    init_foodVisualResolver();
-    init_condiments();
-    ALL_DIARY_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
-    EXTRA_DIARY_NUTRIENT_KEYS = [
-      "kcal",
-      "cal",
-      "fat",
-      "fatTot",
-      "fibreTotali",
-      "fibreSolubili",
-      "fibreInsolubili",
-      "zuccheri",
-      "sale",
-      "sodium",
-      "caffeineMg"
-    ];
-    UI_ONLY_KEYS = /* @__PURE__ */ new Set([
-      "row",
-      "units",
-      "defaultUnit",
-      "multiplier",
-      "selectedUnit",
-      "qtyLabel",
-      "_searchSource",
-      "quantitySource",
-      "estimateBasis",
-      "alternatives",
-      "matchCandidates",
-      "candidates",
-      "searchHits"
-    ]);
   }
 });
 
@@ -7889,8 +7213,8 @@ var MCP_INSTRUCTIONS = [
   "Se suppressNumbers \xE8 attivo (pattern restrittivo), non citare calorie, peso, grammi, sodio o porzioni.",
   "Usa gli strumenti per ogni fatto quantitativo; non basarti sulla memoria della conversazione per i valori.",
   "Per ragionare su sera e sonno preferisci kentu_get_evenings; per un giorno singolo usa kentu_get_day.",
-  "PASTI \u2014 percorso preferito: kentu_get_habits + kentu_search_food \u2192 scegli foodDbKey e proponi typicalGrams;",
-  "chiedi all\u2019utente solo se l\u2019alimento \xE8 nuovo o ambiguo, o se i grammi non sono chiari.",
+  "PASTI \u2014 percorso preferito: kentu_get_habits + kentu_search_food \u2192 scegli il foodDbKey con usageCount pi\xF9 alto (usedTimesLabel) e proponi typicalGrams;",
+  "se search restituisce pi\xF9 \xABPane integrale\xBB, preferisci quello gi\xE0 abituale; chiedi all\u2019utente solo se nuovo/ambiguo o grammi poco chiari.",
   "Mostra un riepilogo (giorno, pasto, orario, alimenti con foodDbKey e grammi) e attendi conferma esplicita;",
   "poi kentu_log_meal (tutte le voci con foodDbKey valido e grams > 0). Dopo la scrittura conferma cosa \xE8 stato registrato e come annullare con kentu_undo_meal.",
   "RIPIEGO BOZZE: se manca foodDbKey o grams, non inventare: usa kentu_create_meal_draft (non scrive nel diario).",
@@ -8674,13 +7998,21 @@ async function toolSearchFood(db, uid, query) {
   return {
     query: q,
     warnings: [...base.catalogWarnings || []],
-    results: ranked.slice(0, 12).map((hit) => ({
-      name: hit.name || hit.desc || hit.label || null,
-      matchQuality: hit.matchQuality || null,
-      kcal100: hit.kcal ?? hit.calories ?? null,
-      source: hit.source || hit._source || null,
-      id: hit.id || hit.key || hit.foodDbKey || null
-    }))
+    results: ranked.slice(0, 12).map((hit) => {
+      const usageCount = Number(hit.usageCount) || 0;
+      const id = hit.id || hit.key || hit.foodDbKey || null;
+      return {
+        name: hit.name || hit.desc || hit.label || null,
+        matchQuality: hit.matchQuality || null,
+        kcal100: hit.kcal ?? hit.calories ?? null,
+        source: hit.source || hit._source || null,
+        id,
+        foodDbKey: hit.foodDbKey || id,
+        usageCount,
+        usedTimesLabel: usageCount > 0 ? `usato ${usageCount} volt${usageCount === 1 ? "a" : "e"} negli ultimi 60 giorni` : null
+      };
+    }),
+    note: "I risultati sono ordinati per uso recente (usageCount). Preferisci il primo con usageCount pi\xF9 alto."
   };
 }
 
@@ -9302,6 +8634,552 @@ async function saveDayNodeWithRevAdmin(db, uid, dateStr, managedFields, opts = {
 
 // functions/mcp/mealLog.js
 init_loadUserContext();
+
+// src/features/mealEngine/canonicalMealCommit.js
+init_computeTotaliCore();
+init_mealDraftStatus();
+
+// src/utils/foodVisualResolver.js
+var FOOD_VISUAL_RULES = Object.freeze([
+  // Salse / conserve pomodoro (prima del pomodoro fresco)
+  { emoji: "\u{1F96B}", keywords: ["passata", "passato", "pelati", "sugo", "salsa di pomodoro", "concentrato di pomodoro"] },
+  { emoji: "\u{1F345}", keywords: ["pomodoro", "pomodori", "ciliegino", "ciliegini", "datterino", "datterini", "tomato"] },
+  { emoji: "\u{1F346}", keywords: ["melanzana", "melanzane", "eggplant"] },
+  { emoji: "\u{1FAD1}", keywords: ["peperone", "peperoni", "pepper"] },
+  { emoji: "\u{1F952}", keywords: ["zucchina", "zucchine", "cetriolo", "cetrioli", "zucchini", "cucumber"] },
+  { emoji: "\u{1F96C}", keywords: ["spinaci", "spinacio", "lattuga", "rucola", "biete", "bietola", "cicoria", "radicchio", "foglie"] },
+  { emoji: "\u{1F957}", keywords: ["insalata", "insalatone", "verdura a foglia", "misticanza", "salad"] },
+  { emoji: "\u{1F955}", keywords: ["carota", "carote", "carrot"] },
+  { emoji: "\u{1F966}", keywords: ["broccolo", "broccoli", "cavolfiore", "cavolfiori", "broccolini"] },
+  { emoji: "\u{1F344}", keywords: ["funghi", "fungo", "champignon", "porcini", "mushroom"] },
+  { emoji: "\u{1F954}", keywords: ["patata", "patate", "potato", "patatine"] },
+  { emoji: "\u{1F990}", keywords: ["gamberi", "gambero", "gamberetti", "calamari", "calamaro", "frutti di mare", "cozze", "vongole", "seafood", "shrimp"] },
+  { emoji: "\u{1F41F}", keywords: ["merluzzo", "tonno", "salmone", "branzino", "orata", "pesce", "sgombro", "alici", "sardine", "trota", "fish", "tuna", "salmon"] },
+  { emoji: "\u{1F969}", keywords: ["manzo", "bistecca", "macinato", "vitello", "maiale", "carne", "hamburger", "prosciutto", "bresaola", "beef", "pork", "steak"] },
+  { emoji: "\u{1F357}", keywords: ["pollo", "tacchino", "coniglio", "pollame", "petto di pollo", "chicken", "turkey"] },
+  { emoji: "\u{1F373}", keywords: ["omelette", "frittata", "uovo", "uova", "albume", "egg", "eggs"] },
+  { emoji: "\u{1F95B}", keywords: ["latte", "yogurt", "yoghurt", "kefir", "skyr", "milk"] },
+  { emoji: "\u{1F9C0}", keywords: ["formaggio", "parmigiano", "ricotta", "mozzarella", "feta", "grana", "pecorino", "cheese"] },
+  { emoji: "\u{1F35A}", keywords: ["risotto", "basmati", "riso", "rice"] },
+  { emoji: "\u{1F35D}", keywords: ["spaghetti", "penne", "fusilli", "rigatoni", "tagliatelle", "lasagne", "semola", "pasta", "noodle"] },
+  { emoji: "\u{1F956}", keywords: ["bauletto", "baguette", "filone"] },
+  { emoji: "\u{1F35E}", keywords: ["pane", "panino", "toast", "focaccia", "piadina", "bread"] },
+  { emoji: "\u{1F358}", keywords: ["gallette", "galletta", "cracker", "crackers", "gallett"] },
+  { emoji: "\u{1F96A}", keywords: ["fette biscottate", "fetta biscottata", "biscottate"] },
+  { emoji: "\u{1F963}", keywords: ["cereali", "fiocchi", "muesli", "cornflakes", "avena", "porridge"] },
+  { emoji: "\u{1F36A}", keywords: ["biscotti", "biscotto", "frollini", "frollino", "cookie", "cookies"] },
+  { emoji: "\u{1F950}", keywords: ["croissant", "cornetto", "brioche", "bombolone", "krapfen"] },
+  { emoji: "\u{1FAD2}", keywords: ["olio evo", "olio extravergine", "olio di oliva", "olio", "olive oil"] },
+  { emoji: "\u{1F9C8}", keywords: ["burro", "butter", "margarina"] },
+  { emoji: "\u{1F34E}", keywords: ["mela", "mele", "apple"] },
+  { emoji: "\u{1F34C}", keywords: ["banana", "banane"] },
+  { emoji: "\u{1F34A}", keywords: ["arancia", "arance", "mandarino", "clementina", "orange"] },
+  { emoji: "\u{1F353}", keywords: ["fragole", "fragola", "strawberry"] },
+  { emoji: "\u{1F951}", keywords: ["avocado"] },
+  { emoji: "\u{1F34B}", keywords: ["limone", "limoni", "lime", "lemon"] },
+  { emoji: "\u2615", keywords: ["cappuccino", "espresso", "macchiato", "caff\xE8", "caffe", "coffee"] }
+]);
+var PORTION_HINT_RE = /\b(?:porzion[ei]|porz\.?|servings?|unita|unità|pezzo|pezzi|fett[ae]|slices?|cucchiaio|cucchiai|cucchiaino|bicchiere|tazza|scoop)\b/i;
+function isPortionLikeParenInner(inner) {
+  const body = String(inner || "").trim();
+  if (!body) return true;
+  if (PORTION_HINT_RE.test(body)) return true;
+  if (/[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\b/i.test(body)) return true;
+  if (/^\d+[.,]?\d*(?:\s+\d+[.,]?\d*)+\s*$/.test(body)) return true;
+  return false;
+}
+function splitTrailingBalancedParen(s) {
+  const t = String(s || "").trimEnd();
+  if (!t.endsWith(")")) return null;
+  let depth = 0;
+  for (let i = t.length - 1; i >= 0; i -= 1) {
+    const ch = t[i];
+    if (ch === ")") depth += 1;
+    else if (ch === "(") {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          before: t.slice(0, i).trimEnd(),
+          inner: t.slice(i + 1, t.length - 1)
+        };
+      }
+    }
+  }
+  return null;
+}
+function sanitizeFoodDisplayName(raw, fallback = "Alimento") {
+  let s = String(raw || "").trim();
+  if (!s) return fallback;
+  s = s.replace(/\s+/g, " ");
+  let prev = "";
+  let guard = 0;
+  while (s !== prev && guard < 16) {
+    prev = s;
+    s = s.replace(/\s*\(\d*\s*Porzione.*?\)/gi, " ");
+    s = s.replace(/\s*\(\d*\s*\d*\s*fett[ae].*?\)/gi, " ");
+    s = s.replace(
+      /\s*\(\s*(?:\d+[.,]?\d*\s+)?(?:porzion[ei]|porz\.?|serving|servings|unita|unità|pezzo|pezzi)\b[^)]*\)/gi,
+      " "
+    );
+    s = s.replace(
+      /\s*\(\s*(?:\d+\s+)?[~≈]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi|grams?|kg|ml)\s*\)/gi,
+      " "
+    );
+    s = s.replace(/\s*\(\s*[~≈]?\s*\d+[.,]?\d*\s*g\s*\)/gi, " ");
+    const trail = splitTrailingBalancedParen(s);
+    if (trail && isPortionLikeParenInner(trail.inner)) {
+      s = trail.before;
+    }
+    s = s.replace(/\s+/g, " ").trim();
+    guard += 1;
+  }
+  s = s.replace(/\s*[-–—,]?\s*\d+[.,]?\d*\s*(?:g|gr|grammi)\s*$/i, " ");
+  s = s.replace(/\)\s*\)+/g, ")");
+  s = s.replace(/\s+\)/g, ")");
+  s = s.replace(/\(\s*\)/g, "");
+  {
+    let open = 0;
+    let cleaned = "";
+    for (const ch of s) {
+      if (ch === "(") {
+        open += 1;
+        cleaned += ch;
+      } else if (ch === ")") {
+        if (open > 0) {
+          open -= 1;
+          cleaned += ch;
+        }
+      } else {
+        cleaned += ch;
+      }
+    }
+    s = cleaned.replace(/\(\s*$/g, "").trim();
+  }
+  s = s.replace(/\s+/g, " ").trim();
+  if (!s) return fallback;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// src/features/nutrition/condiments.js
+var MEMORY_KEY = "kentu.condiment.last.v1";
+var OIL_GRAMS = Object.freeze([
+  { id: "0", grams: 0, label: "niente" },
+  { id: "5", grams: 5, label: "mezzo cucchiaio (5 g)" },
+  { id: "10", grams: 10, label: "un cucchiaio (10 g)" },
+  { id: "20", grams: 20, label: "due cucchiai (20 g)" }
+]);
+var SALT_LEVELS = Object.freeze([
+  { id: "none", grams: 0, sodiumMg: 0, label: "niente" },
+  { id: "little", grams: 0.5, sodiumMg: 200, label: "poco" },
+  { id: "normal", grams: 1.5, sodiumMg: 600, label: "normale" }
+]);
+var OIL_TYPES = Object.freeze({
+  evo: { id: "evo", name: "Olio extravergine", kcalPerG: 8.84, inflammationFactor: -1 },
+  olive: { id: "olive", name: "Olio di oliva", kcalPerG: 8.84, inflammationFactor: 0 },
+  seed: { id: "seed", name: "Olio di semi", kcalPerG: 8.84, inflammationFactor: 1 }
+});
+var CATEGORIES = Object.freeze([
+  { id: "pasta", test: /pasta|spaghetti|penne|fusilli|rigatoni|tagliatelle|fettuccine|linguine|maccheroni|couscous|cous cous/, oil: "10", salt: "normal" },
+  { id: "riso", test: /\briso\b|basmati|risotto/, oil: "10", salt: "normal" },
+  { id: "insalata", test: /insalata|lattuga|rucola|songino/, oil: "10", salt: "little" },
+  { id: "legumi", test: /ceci|lenticchie|fagioli|legumi|piselli|fave|edamame/, oil: "5", salt: "normal" },
+  { id: "verdure", test: /verdur|zucchin|broccoli|spinaci|carot|melanzan|peperon|cavol|finocch|asparag|pomodor|bietol|fagiolin|radicchio/, oil: "5", salt: "little" },
+  { id: "pesce", test: /pesce|salmone|merluzzo|tonno|orata|branzino|sgombro|acciug|sogliola|gamber|calamar|seppia|trota|spigola/, oil: "5", salt: "little" },
+  { id: "carne", test: /pollo|manzo|maiale|tacchino|bistecca|carne|hamburger|fettina|coscia|petto|agnello|vitello|salsiccia/, oil: "5", salt: "normal" }
+]);
+var PAN_OR_GRILL = /padella|grigliat|griglia|piastra|saltat|brasat|scottat/;
+var NOT_PAN = /lesso|bollit|vapore|al forno|forno|crudo/;
+var SKIP_NAME = /olio\b|sale\b|aceto|sugo|pesto|pizza|lasagne|piadina|panino|biscott|merend|patatine|cracker|snack|bevanda|bibita|succo|caff|t[eè]\b|acqua|vino|birra|cola|frutta|mela|banana|arancia|pera|pesca|uva|fragol|kiwi|ananas|melone|confezion|già condit|piatto pronto/;
+function foodLabel(food) {
+  return String(food?.name || food?.foodName || food?.desc || food?.label || "").trim();
+}
+function normalizeName(name) {
+  return String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+function ingredientText(food) {
+  const lists = [food?.ingredients, food?.recipeIngredients, food?.components];
+  const parts = [];
+  for (const list of lists) {
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      parts.push(typeof item === "string" ? item : item?.name || item?.desc || item?.label || "");
+    }
+  }
+  return parts.join(" ").toLowerCase();
+}
+function readMemory() {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(MEMORY_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+function rememberedCondiment(name) {
+  const hit = readMemory()[normalizeName(name)];
+  if (!hit || typeof hit !== "object") return null;
+  if (!OIL_GRAMS.some((item) => item.id === hit.oil)) return null;
+  if (!SALT_LEVELS.some((item) => item.id === hit.salt)) return null;
+  if (!OIL_TYPES[hit.oilType]) return null;
+  return { oil: hit.oil, salt: hit.salt, oilType: hit.oilType };
+}
+function classifyCondiment(food) {
+  if (!food || food.condimentKind) return null;
+  const name = normalizeName(foodLabel(food));
+  if (!name) return null;
+  if (SKIP_NAME.test(name)) return null;
+  if (/bevanda|drink|beverage/.test(String(food.type || food.category || "").toLowerCase())) return null;
+  const ingredients = ingredientText(food);
+  if (/\bolio\b/.test(ingredients)) return null;
+  if (Number(food.novaScore) === 4 && /pronto|sugo|pesto|condit|surgelat/.test(name)) return null;
+  for (const category of CATEGORIES) {
+    if (!category.test.test(name)) continue;
+    if (category.id === "carne" || category.id === "pesce") {
+      if (!PAN_OR_GRILL.test(name) || NOT_PAN.test(name)) return null;
+    }
+    return {
+      category: category.id,
+      defaults: { oil: category.oil, salt: category.salt, oilType: "evo" }
+    };
+  }
+  return null;
+}
+function resolveCondimentChoice(food) {
+  const offer = classifyCondiment(food);
+  if (!offer) return null;
+  const stored = food?.condiment && rememberedShape(food.condiment) ? rememberedShape(food.condiment) : rememberedCondiment(foodLabel(food));
+  return stored || offer.defaults;
+}
+function rememberedShape(choice) {
+  if (!choice) return null;
+  if (!OIL_GRAMS.some((item) => item.id === choice.oil)) return null;
+  if (!SALT_LEVELS.some((item) => item.id === choice.salt)) return null;
+  return { oil: choice.oil, salt: choice.salt, oilType: OIL_TYPES[choice.oilType] ? choice.oilType : "evo" };
+}
+function oilEntry(parent, choice) {
+  const level = OIL_GRAMS.find((item) => item.id === choice.oil);
+  if (!level || !(level.grams > 0)) return null;
+  const type = OIL_TYPES[choice.oilType] || OIL_TYPES.evo;
+  const grams = level.grams;
+  return {
+    id: `${parent.id}::olio`,
+    type: "food",
+    condimentOf: parent.id,
+    condimentKind: "oil",
+    estimated: true,
+    stimato: true,
+    name: type.name,
+    foodName: type.name,
+    desc: `${type.name} (stimato)`,
+    grams,
+    qta: grams,
+    kcal: Math.round(type.kcalPerG * grams),
+    prot: 0,
+    carb: 0,
+    fat: grams,
+    fatTotal: grams,
+    inflammationFactor: type.inflammationFactor,
+    novaScore: 1,
+    mealType: parent.mealType,
+    mealTime: parent.mealTime ?? parent.time,
+    time: parent.mealTime ?? parent.time
+  };
+}
+function saltEntry(parent, choice) {
+  const level = SALT_LEVELS.find((item) => item.id === choice.salt);
+  if (!level || !(level.grams > 0)) return null;
+  return {
+    id: `${parent.id}::sale`,
+    type: "food",
+    condimentOf: parent.id,
+    condimentKind: "salt",
+    estimated: true,
+    stimato: true,
+    name: "Sale",
+    foodName: "Sale",
+    desc: "Sale (stimato)",
+    grams: level.grams,
+    qta: level.grams,
+    kcal: 0,
+    prot: 0,
+    carb: 0,
+    fat: 0,
+    salt: level.grams,
+    salt_100g: 100,
+    na: level.sodiumMg,
+    sodium: level.sodiumMg,
+    sodiumMg: level.sodiumMg,
+    mealType: parent.mealType,
+    mealTime: parent.mealTime ?? parent.time,
+    time: parent.mealTime ?? parent.time
+  };
+}
+function buildCondimentEntries(parent, choice) {
+  if (!parent?.id || !choice) return [];
+  return [oilEntry(parent, choice), saltEntry(parent, choice)].filter(Boolean);
+}
+function condimentEntriesFor(food) {
+  const choice = resolveCondimentChoice(food);
+  if (!choice || !food?.id) return [];
+  return buildCondimentEntries({ ...food, condiment: choice }, choice);
+}
+
+// src/features/mealEngine/canonicalMealCommit.js
+var ALL_DIARY_NUTRIENT_KEYS = Object.values(TARGETS).flatMap((g) => Object.keys(g || {}));
+var EXTRA_DIARY_NUTRIENT_KEYS = [
+  "kcal",
+  "cal",
+  "fat",
+  "fatTot",
+  "fibreTotali",
+  "fibreSolubili",
+  "fibreInsolubili",
+  "zuccheri",
+  "sale",
+  "sodium",
+  "caffeineMg"
+];
+var UI_ONLY_KEYS = /* @__PURE__ */ new Set([
+  "row",
+  "units",
+  "defaultUnit",
+  "multiplier",
+  "selectedUnit",
+  "qtyLabel",
+  "_searchSource",
+  "quantitySource",
+  "estimateBasis",
+  "alternatives",
+  "matchCandidates",
+  "candidates",
+  "searchHits"
+]);
+function asFiniteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+function roundKcal3(value) {
+  const n = asFiniteNumber(value);
+  if (n == null) return 0;
+  return Math.round(n);
+}
+function roundMacro(value) {
+  const n = asFiniteNumber(value);
+  if (n == null) return 0;
+  return Math.round(n * 10) / 10;
+}
+function readGrams(food, gramsOverride) {
+  if (gramsOverride != null && gramsOverride !== "") {
+    const fromArg = asFiniteNumber(gramsOverride);
+    if (fromArg != null) return fromArg;
+  }
+  return asFiniteNumber(food?.grams ?? food?.qta ?? food?.weight ?? food?.qty ?? food?.qtyG);
+}
+function readName(food) {
+  return sanitizeFoodDisplayName(
+    food?.desc || food?.name || food?.foodName || food?.label || "",
+    ""
+  );
+}
+function readFoodDbKey(food) {
+  const raw = food?.foodDbKey ?? food?.matchedKey ?? food?.dbKey ?? null;
+  const key = raw != null ? String(raw).trim() : "";
+  return key || null;
+}
+function isInboxLike(food) {
+  const t = String(food?.type || "");
+  return t === INBOX_DRAFT_TYPE || t === UNASSIGNED_DRAFTS_TYPE;
+}
+function isLegacyGrams1Placeholder(food, grams) {
+  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
+  if (g !== 1) return false;
+  if (readFoodDbKey(food)) return false;
+  if (isUnresolvedMealDraftItem(food) || isInboxLike(food)) return true;
+  const kcal = asFiniteNumber(food?.kcal ?? food?.cal) || 0;
+  const status = String(food?.status || "").toLowerCase();
+  if (status && status !== "resolved") return true;
+  return kcal <= 0;
+}
+function isCanonicalPersistableResolvedFood(food, grams) {
+  if (!food || typeof food !== "object") return false;
+  if (isUnresolvedMealDraftItem(food)) return false;
+  if (isInboxLike(food)) return false;
+  const g = grams != null ? asFiniteNumber(grams) : readGrams(food);
+  if (g == null || g <= 0) return false;
+  if (isLegacyGrams1Placeholder(food, g)) return false;
+  const name = readName(food);
+  if (!name) return false;
+  return true;
+}
+function parseRowNumeric(raw) {
+  if (raw === null || raw === void 0) return null;
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!t || t.toLowerCase() === "tr") return null;
+    const n = Number(t.replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+function nutrientsFromRow(row, grams) {
+  if (!row || typeof row !== "object") return {};
+  const factor = grams / 100;
+  if (!Number.isFinite(factor)) return {};
+  const out = {};
+  const kcalPer100 = parseRowNumeric(row.kcal ?? row.cal);
+  if (kcalPer100 != null) {
+    out.kcal = roundKcal3(kcalPer100 * factor);
+    out.cal = out.kcal;
+  }
+  const protPer100 = parseRowNumeric(row.prot ?? row.pro);
+  if (protPer100 != null) out.prot = roundMacro(protPer100 * factor);
+  const carbPer100 = parseRowNumeric(row.carb ?? row.carbo ?? row.cho);
+  if (carbPer100 != null) out.carb = roundMacro(carbPer100 * factor);
+  const fatPer100 = parseRowNumeric(row.fatTotal ?? row.fat ?? row.fatTot);
+  if (fatPer100 != null) {
+    out.fat = roundMacro(fatPer100 * factor);
+    out.fatTotal = out.fat;
+  }
+  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
+  keys.forEach((key) => {
+    if (key === "kcal" || key === "cal" || key === "prot" || key === "carb" || key === "fat" || key === "fatTotal" || key === "fatTot") {
+      return;
+    }
+    if (out[key] != null) return;
+    const per100 = parseRowNumeric(row[key]);
+    if (per100 == null) return;
+    out[key] = roundMacro(per100 * factor);
+  });
+  const fibrePer100 = parseRowNumeric(row.fibre) ?? parseRowNumeric(row.fiber);
+  if (fibrePer100 != null && out.fibre == null) {
+    out.fibre = roundMacro(fibrePer100 * factor);
+  }
+  return out;
+}
+function nutrientsFromPortionItem(food) {
+  const out = {};
+  const kcal = asFiniteNumber(food?.kcal ?? food?.cal ?? food?.estKcal);
+  if (kcal != null) {
+    out.kcal = roundKcal3(kcal);
+    out.cal = out.kcal;
+  }
+  const prot = asFiniteNumber(food?.prot ?? food?.pro ?? food?.estPro ?? food?.proteine);
+  if (prot != null) out.prot = roundMacro(prot);
+  const carb = asFiniteNumber(food?.carb ?? food?.carbo ?? food?.cho ?? food?.estCar ?? food?.carboidrati);
+  if (carb != null) out.carb = roundMacro(carb);
+  const fat = asFiniteNumber(food?.fatTotal ?? food?.fat ?? food?.fatTot ?? food?.estFat ?? food?.grassi);
+  if (fat != null) {
+    out.fat = roundMacro(fat);
+    out.fatTotal = out.fat;
+  }
+  const keys = /* @__PURE__ */ new Set([...ALL_DIARY_NUTRIENT_KEYS, ...EXTRA_DIARY_NUTRIENT_KEYS]);
+  keys.forEach((key) => {
+    if (out[key] != null) return;
+    const n = asFiniteNumber(food?.[key]);
+    if (n == null) return;
+    out[key] = key === "kcal" || key === "cal" ? roundKcal3(n) : roundMacro(n);
+  });
+  return out;
+}
+function collectCanonicalPortionNutrients(food, grams) {
+  const fromRow = nutrientsFromRow(food?.row, grams);
+  const fromItem = nutrientsFromPortionItem(food);
+  const merged = { ...fromItem, ...fromRow };
+  if (merged.kcal == null && merged.cal != null) merged.kcal = merged.cal;
+  if (merged.cal == null && merged.kcal != null) merged.cal = merged.kcal;
+  if (merged.fat == null && merged.fatTotal != null) merged.fat = merged.fatTotal;
+  if (merged.fatTotal == null && merged.fat != null) merged.fatTotal = merged.fat;
+  if (merged.kcal == null) merged.kcal = 0;
+  if (merged.cal == null) merged.cal = merged.kcal;
+  if (merged.prot == null) merged.prot = 0;
+  if (merged.carb == null) merged.carb = 0;
+  if (merged.fat == null) merged.fat = 0;
+  if (merged.fatTotal == null) merged.fatTotal = merged.fat;
+  return merged;
+}
+function toCanonicalDiaryFoodItem({
+  food,
+  grams,
+  mealContext = {},
+  sourceMetadata = {}
+} = {}) {
+  const g = readGrams(food, grams);
+  if (!isCanonicalPersistableResolvedFood(food, g)) return null;
+  const name = readName(food);
+  const foodDbKey = readFoodDbKey(food);
+  const nutrients = collectCanonicalPortionNutrients(food, g);
+  const mealType = mealContext.mealType != null && String(mealContext.mealType).trim() ? mealContext.mealType : food.mealType != null ? food.mealType : void 0;
+  const mealTime = mealContext.mealTime != null ? mealContext.mealTime : food.mealTime ?? food.time;
+  const id = mealContext.id != null && String(mealContext.id).trim() ? String(mealContext.id).trim() : food.id != null && String(food.id).trim() ? String(food.id).trim() : void 0;
+  const entrySource = sourceMetadata.entrySource || food.entrySource || "ui";
+  const item = {
+    type: food.type === "recipe" || food.isRecipe === true ? "recipe" : "food",
+    desc: name,
+    name,
+    label: name,
+    foodName: name,
+    qta: g,
+    weight: g,
+    grams: g,
+    qty: g,
+    ...nutrients,
+    status: "resolved",
+    entrySource
+  };
+  if (foodDbKey) {
+    item.foodDbKey = foodDbKey;
+    item.matchedKey = foodDbKey;
+  }
+  if (mealType != null) item.mealType = mealType;
+  if (mealTime != null) item.mealTime = mealTime;
+  if (mealTime != null) item.time = mealTime;
+  if (id) item.id = id;
+  if (mealContext.batchId) item.batchId = mealContext.batchId;
+  if (food.isRecipe === true || item.type === "recipe") item.isRecipe = true;
+  if (Array.isArray(food.ingredients) && food.ingredients.length > 0) {
+    item.ingredients = food.ingredients;
+  }
+  if (food.servingLabel) item.servingLabel = String(food.servingLabel);
+  if (food.coffeeShopProductId) {
+    item.coffeeShopProductId = String(food.coffeeShopProductId).trim();
+    item.isCoffeeShopItem = true;
+  }
+  if (food.icon) item.icon = food.icon;
+  if (food.spokenFoodName) item.spokenFoodName = String(food.spokenFoodName);
+  if (food.sourceText) item.sourceText = String(food.sourceText).trim();
+  if (food.matchQuality) {
+    const mq = String(food.matchQuality).trim().toLowerCase();
+    if (mq === "exact" || mq === "prefix" || mq === "contains" || mq === "fuzzy") {
+      item.matchQuality = mq;
+    }
+  }
+  if (typeof food.isFastingSafe === "boolean") item.isFastingSafe = food.isFastingSafe;
+  if (asFiniteNumber(food.caffeineMg) != null && item.caffeineMg == null) {
+    item.caffeineMg = asFiniteNumber(food.caffeineMg);
+  }
+  Object.keys(item).forEach((key) => {
+    if (UI_ONLY_KEYS.has(key)) delete item[key];
+  });
+  return item;
+}
+function withCondimentsOnResolved(items) {
+  const list = Array.isArray(items) ? items : [];
+  const linked = new Set(list.map((item) => item?.condimentOf).filter(Boolean));
+  const out = [];
+  for (const item of list) {
+    out.push(item);
+    if (!item?.id || item.condimentKind || linked.has(item.id)) continue;
+    if (isUnresolvedMealDraftItem(item)) continue;
+    const extras = condimentEntriesFor(item);
+    if (extras.length > 0) linked.add(item.id);
+    out.push(...extras);
+  }
+  return out;
+}
+
+// functions/mcp/mealLog.js
 var mcpMealIdemPath = (uid, hash) => `mcp_meal_idem/${uid}/${hash}`;
 var CLAUDE_MEAL_ORIGIN = "claude";
 var CLAUDE_MEAL_UNDO_WINDOW_MS = 24 * 60 * 60 * 1e3;
@@ -9415,7 +9293,6 @@ function lookupFoodRow(catalogs, personalDb, key) {
   return null;
 }
 async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
-  const { toCanonicalDiaryFoodItem: toCanonicalDiaryFoodItem2, withCondimentsOnResolved: withCondimentsOnResolved2 } = await Promise.resolve().then(() => (init_canonicalMealCommit(), canonicalMealCommit_exports));
   const resolved = [];
   for (let index = 0; index < items.length; index += 1) {
     const item = items[index];
@@ -9426,7 +9303,7 @@ async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
       );
     }
     const id = `${mealCtx.mealId}_i${index}`;
-    const canonical = toCanonicalDiaryFoodItem2({
+    const canonical = toCanonicalDiaryFoodItem({
       food: {
         name: item.name,
         desc: item.name,
@@ -9456,7 +9333,7 @@ async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
     canonical.qty = item.grams;
     resolved.push(canonical);
   }
-  const withExtras = withCondimentsOnResolved2(resolved).map((row) => ({
+  const withExtras = withCondimentsOnResolved(resolved).map((row) => ({
     ...row,
     origin: row.origin || CLAUDE_MEAL_ORIGIN,
     entrySource: row.entrySource || CLAUDE_MEAL_ORIGIN,
@@ -9465,13 +9342,26 @@ async function buildClaudeMealEntries(items, foodCtx, mealCtx) {
   }));
   return withExtras;
 }
-function buildNestedMeal(mealId, slot, items) {
+function buildNestedMeal(mealId, slot, items, { now, originalText } = {}) {
+  const createdAt = Number(now) || Date.now();
   return {
     type: "meal",
     mealId,
     desc: MEAL_LABELS2[slot] || slot,
+    slot,
+    // Inbox “posta in arrivo”: definitivo nel diario, da aprire → reviewedAt.
+    source: CLAUDE_MEAL_ORIGIN,
     origin: CLAUDE_MEAL_ORIGIN,
-    items: items.map((it) => ({ ...it }))
+    entrySource: CLAUDE_MEAL_ORIGIN,
+    createdAt,
+    reviewedAt: null,
+    ...originalText ? { originalText: String(originalText).slice(0, 2e3) } : {},
+    items: items.map((it) => ({
+      ...it,
+      source: it.source || CLAUDE_MEAL_ORIGIN,
+      origin: it.origin || CLAUDE_MEAL_ORIGIN,
+      entrySource: it.entrySource || CLAUDE_MEAL_ORIGIN
+    }))
   };
 }
 async function toolLogMeal(db, ctx, input, now = Date.now()) {
@@ -9552,7 +9442,10 @@ async function toolLogMeal(db, ctx, input, now = Date.now()) {
     });
     throw error;
   }
-  const mealRow = buildNestedMeal(mealId, normalized.slot, foodItems);
+  const mealRow = buildNestedMeal(mealId, normalized.slot, foodItems, {
+    now,
+    originalText: normalized.rawText
+  });
   const claim = await idemRef.transaction((current) => {
     if (current) return void 0;
     return {
@@ -9775,7 +9668,7 @@ function createKentuMcpServer({ uid, db, tokenId = "", scopes = ["read"] }) {
   server.registerTool(
     "kentu_search_food",
     {
-      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality e kcal/100g. I risultati usati di recente compaiono prima. In caso di ambiguit\xE0 chiedi all\u2019utente. Sola lettura.",
+      description: "Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality, usageCount / usedTimesLabel e kcal/100g. Ordinati per uso recente (pi\xF9 usato prima). In caso di ambiguit\xE0 preferisci usageCount pi\xF9 alto; chiedi all\u2019utente solo se ancora dubbio. Sola lettura.",
       inputSchema: {
         query: z.string().describe("Testo di ricerca (almeno 2 caratteri)")
       },

@@ -200,6 +200,8 @@ export default function AiCluster({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onMarkClaudeMealReviewed = null,
+  onMarkAllClaudeMealsReviewed = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
   extraPendingMealDrafts = [],
@@ -2246,6 +2248,8 @@ export default function AiCluster({
             trashMeals={trashMeals}
             onRestoreTrashMeal={onRestoreTrashMeal}
             onPurgeTrashMeal={onPurgeTrashMeal}
+            onMarkClaudeMealReviewed={onMarkClaudeMealReviewed}
+            onMarkAllClaudeMealsReviewed={onMarkAllClaudeMealsReviewed}
             onDeleteWorkout={onDeleteWorkout}
             extraPendingDrafts={extraPendingDrafts}
             extraPendingMealDrafts={extraPendingMealDrafts}

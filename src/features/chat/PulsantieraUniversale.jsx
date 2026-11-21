@@ -13,6 +13,13 @@ import {
   isClaudeDraftBlock,
   isUnresolvedMealDraftItem,
 } from '../../utils/mealDraftStatus';
+import {
+  countUnreadClaudeLoggedMeals,
+  isClaudeLoggedMealEntry,
+  isUnreadClaudeLoggedMeal,
+  resolveClaudeMealId,
+  claudeMealSlotFromId,
+} from '../../utils/claudeLoggedMeals';
 import { ExternalDraftsOtherDays } from '../../components/InboxDraftsSection';
 import { useExternalMealDrafts } from '../externalDrafts/externalDraftsStore.js';
 import { isExternalInboxBlock } from '../externalDrafts/externalMealDrafts.js';
@@ -360,6 +367,7 @@ function PillarButton({
   badgeCount = 0,
   badgeDot = false,
   badgeDotLabel = '',
+  badgeAriaLabel = '',
   onBadgeClick = null,
   large = false,
 }) {
@@ -367,6 +375,8 @@ function PillarButton({
   const showDot = Boolean(badgeDot) && count <= 0;
   const canOpenBadge = (count > 0 || showDot) && typeof onBadgeClick === 'function';
   const caption = String(sigla || actionSigla({ label, sigla }) || label).toUpperCase();
+  const countAria = String(badgeAriaLabel || '').trim()
+    || `${count} ${count === 1 ? 'bozza in attesa' : 'bozze in attesa'}`;
   return (
     <div
       className="relative mx-auto min-w-0 flex-1 overflow-visible"
@@ -409,8 +419,8 @@ function PillarButton({
             if (canOpenBadge) onBadgeClick(event);
             else onClick?.(event);
           }}
-          aria-label={`${count} ${count === 1 ? 'bozza in attesa' : 'bozze in attesa'}`}
-          title="Apri bozze in attesa"
+          aria-label={countAria}
+          title={countAria}
           className={[
             'absolute z-50 flex items-center justify-center rounded-full',
             large ? '-right-1 -top-1 h-6 w-6 text-[11px]' : '-right-1.5 -top-1.5 h-5 w-5 text-[10px]',
@@ -620,6 +630,8 @@ export default function PulsantieraUniversale({
   trashMeals = [],
   onRestoreTrashMeal = null,
   onPurgeTrashMeal = null,
+  onMarkClaudeMealReviewed = null,
+  onMarkAllClaudeMealsReviewed = null,
   onDismissPendingMealDraft = null,
   onDeleteWorkout = null,
   extraPendingDrafts = [],
@@ -962,8 +974,10 @@ export default function PulsantieraUniversale({
     // quindi emettiamo `editingMealId` nello stesso formato.
     const groups = new Map();
     items.forEach((it) => {
-      const mealTypeBase = toCanonicalMealType(String(it.mealType || '').split('_')[0])
-        || String(it.mealType || '').split('_')[0].trim().toLowerCase();
+      const rawBase = String(it.mealType || '').split('_')[0].trim().toLowerCase();
+      const fromClaudeId = claudeMealSlotFromId(it.mealType) || claudeMealSlotFromId(it.mealId);
+      const mealTypeBase = toCanonicalMealType(it.mealSlot || fromClaudeId || rawBase)
+        || (fromClaudeId || rawBase);
       const t = typeof it.mealTime === 'number' && Number.isFinite(it.mealTime)
         ? Number(it.mealTime)
         : 12;
@@ -983,13 +997,22 @@ export default function PulsantieraUniversale({
 
     return Array.from(groups.values())
       .sort((a, b) => (Number(b.mealTime) || 0) - (Number(a.mealTime) || 0))
-      .map((g) => ({
-        ...g,
-        pendingCount: 0,
-        timeStr: decimalToTimeStr(g.mealTime),
-        label: labelByBase[g.mealTypeBase] || g.mealTypeBase,
-        title: `${(labelByBase[g.mealTypeBase] || g.mealTypeBase)} - ${decimalToTimeStr(g.mealTime)}`,
-      }));
+      .map((g) => {
+        const fromClaude = g.foods.some((f) => isClaudeLoggedMealEntry(f));
+        const unreadClaude = fromClaude && g.foods.some((f) => isUnreadClaudeLoggedMeal(f));
+        const claudeMealId = resolveClaudeMealId(g.foods[0]) || null;
+        const label = labelByBase[g.mealTypeBase] || g.mealTypeBase;
+        return {
+          ...g,
+          pendingCount: 0,
+          fromClaude,
+          unreadClaude,
+          claudeMealId,
+          timeStr: decimalToTimeStr(g.mealTime),
+          label,
+          title: `${label} - ${decimalToTimeStr(g.mealTime)}`,
+        };
+      });
   }, [dailyLog]);
 
   const loggedMealsGrouped = useMemo(() => {
@@ -1005,8 +1028,17 @@ export default function PulsantieraUniversale({
     const editingFoods = toEditingFoods(foods);
     if (editingFoods.length === 0) return;
     const slotKey = String(meal?.slotKey || meal?.slotId || '');
+    const claudeId = meal?.claudeMealId || resolveClaudeMealId(foods[0]);
+    if (claudeId) onMarkClaudeMealReviewed?.(claudeId);
     const mealType = toCanonicalMealType(
-      String(meal?.mealType || meal?.mealTypeBase || foods[0]?.mealType || slotKey).split('_')[0],
+      String(
+        meal?.mealTypeBase
+        || foods[0]?.mealSlot
+        || claudeMealSlotFromId(foods[0]?.mealType)
+        || meal?.mealType
+        || foods[0]?.mealType
+        || slotKey,
+      ).split('_')[0],
     ) || 'pranzo';
     closeMenus();
     onSendChatMessage?.('', {
@@ -1017,7 +1049,7 @@ export default function PulsantieraUniversale({
       editingExactTime: meal?.timeLabel || meal?.timeStr || undefined,
       skipUserBubble: true,
     });
-  }, [closeMenus, onSendChatMessage]);
+  }, [closeMenus, onMarkClaudeMealReviewed, onSendChatMessage]);
 
   const deleteLoggedMeal = useCallback((meal) => {
     const foods = meal?.items || meal?.foods || [];
@@ -1229,6 +1261,11 @@ export default function PulsantieraUniversale({
     }) + externalDrafts.totalPending,
     [dailyLog, extraPendingMealDrafts, externalDrafts.totalPending],
   );
+  const unreadClaudeMealsCount = useMemo(
+    () => countUnreadClaudeLoggedMeals(dailyLog),
+    [dailyLog],
+  );
+  const pastiBadgeCount = mealDraftsCount + unreadClaudeMealsCount;
   const activityDraftsCount = useMemo(
     () => collectPendingSessionDrafts({
       dailyLog,
@@ -1450,7 +1487,7 @@ export default function PulsantieraUniversale({
             </div>
 
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pb-1">
-              <section className="mb-3 shrink-0">
+              <section className="mb-3 shrink-0 space-y-2">
                 <PendingDraftsReminder
                   count={mealDraftsCount}
                   onOpen={() => {
@@ -1458,6 +1495,22 @@ export default function PulsantieraUniversale({
                     openPreferredMealEntry();
                   }}
                 />
+                {unreadClaudeMealsCount > 0 ? (
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-violet-500/30 bg-violet-950/40 px-3 py-2">
+                    <p className="m-0 text-xs text-violet-100">
+                      {unreadClaudeMealsCount === 1
+                        ? '1 pasto nuovo da Claude'
+                        : `${unreadClaudeMealsCount} pasti nuovi da Claude`}
+                    </p>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-lg border border-violet-400/40 px-2 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-500/20"
+                      onClick={() => onMarkAllClaudeMealsReviewed?.()}
+                    >
+                      Segna tutti come visti
+                    </button>
+                  </div>
+                ) : null}
               </section>
 
               <section className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1486,11 +1539,27 @@ export default function PulsantieraUniversale({
                                 : 'border-slate-800/80',
                             ].join(' ')}
                           >
-                            <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              className="min-w-0 flex-1 text-left"
+                              onClick={() => reloadLoggedMealInMcDrive(meal)}
+                            >
                               <div className="flex min-w-0 items-baseline gap-2">
+                                {meal.unreadClaude ? (
+                                  <span
+                                    className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.85)]"
+                                    aria-label="Nuovo"
+                                    title="Nuovo"
+                                  />
+                                ) : null}
                                 <div className="truncate text-sm font-semibold text-slate-100">
                                   {meal.label}
                                 </div>
+                                {meal.fromClaude ? (
+                                  <span className="shrink-0 rounded-full bg-violet-500/20 px-1.5 py-0.5 text-[0.62rem] font-semibold tracking-wide text-violet-200">
+                                    da Claude
+                                  </span>
+                                ) : null}
                                 <span className="shrink-0 text-xs tabular-nums text-slate-400">
                                   {summary.pending ? 'Da calcolare' : meal.timeStr}
                                 </span>
@@ -1498,7 +1567,7 @@ export default function PulsantieraUniversale({
                               <p className="m-0 mt-0.5 truncate text-xs tabular-nums text-slate-300">
                                 {`${summary.kcal} kcal · P ${summary.prot}g · C ${summary.carb}g · G ${summary.fat}g`}
                               </p>
-                            </div>
+                            </button>
                             <button
                               type="button"
                               onClick={() => reloadLoggedMealInMcDrive(meal)}
@@ -1620,6 +1689,7 @@ export default function PulsantieraUniversale({
             onEditMeal={reloadLoggedMealInMcDrive}
             onDeleteMeal={deleteLoggedMeal}
             unsavedEntryIds={unsavedEntryIds}
+            onOpenClaudeMeal={onMarkClaudeMealReviewed}
           />
         </div>
       ) : null}
@@ -1663,10 +1733,32 @@ export default function PulsantieraUniversale({
             large={embedded}
             badgeCount={
               pillar.id === 'pasti'
-                ? mealDraftsCount
+                ? pastiBadgeCount
                 : pillar.id === 'attivita'
                   ? activityDraftsCount
                   : 0
+            }
+            badgeDot={pillar.id === 'pasti' && unreadClaudeMealsCount > 0 && mealDraftsCount === 0}
+            badgeDotLabel={
+              unreadClaudeMealsCount > 0
+                ? (unreadClaudeMealsCount === 1
+                  ? '1 pasto nuovo da Claude'
+                  : `${unreadClaudeMealsCount} pasti nuovi da Claude`)
+                : ''
+            }
+            badgeAriaLabel={
+              pillar.id === 'pasti'
+                ? [
+                  unreadClaudeMealsCount > 0
+                    ? (unreadClaudeMealsCount === 1
+                      ? '1 pasto nuovo da Claude'
+                      : `${unreadClaudeMealsCount} pasti nuovi da Claude`)
+                    : null,
+                  mealDraftsCount > 0
+                    ? (mealDraftsCount === 1 ? '1 bozza in attesa' : `${mealDraftsCount} bozze in attesa`)
+                    : null,
+                ].filter(Boolean).join(', ') || undefined
+                : undefined
             }
             onClick={() => handlePillarClick(pillar.id)}
             onBadgeClick={

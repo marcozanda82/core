@@ -1,4 +1,4 @@
-import { TARGETS } from '../../useBiochimico.js';
+import { TARGETS } from '../../utils/computeTotaliCore.js';
 import { isUnresolvedMealDraftItem, INBOX_DRAFT_TYPE, UNASSIGNED_DRAFTS_TYPE } from '../../utils/mealDraftStatus.js';
 import { sanitizeFoodDisplayName } from '../../utils/foodVisualResolver.js';
 import { condimentEntriesFor, withCondiments } from '../nutrition/condiments.js';

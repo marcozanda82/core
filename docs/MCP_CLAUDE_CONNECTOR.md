@@ -54,7 +54,7 @@ Il server genera ≥32 byte casuali, salva solo l’hash in RTDB (`users/{uid}/m
 
    ```bash
    firebase deploy --only database
-   firebase deploy --only functions:kentuMcp,functions:createMcpToken,functions:revokeMcpToken,functions:listMcpTokens,functions:setMcpTokenScopes
+   firebase deploy --only functions:default:kentuMcp,functions:default:createMcpToken,functions:default:revokeMcpToken,functions:default:listMcpTokens,functions:default:setMcpTokenScopes
    ```
 
 2. URL tipico:

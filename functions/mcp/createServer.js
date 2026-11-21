@@ -118,8 +118,9 @@ export function createKentuMcpServer({ uid, db, tokenId = '', scopes = ['read'] 
     'kentu_search_food',
     {
       description:
-        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality e kcal/100g. '
-        + 'I risultati usati di recente compaiono prima. In caso di ambiguità chiedi all’utente. Sola lettura.',
+        'Cerca alimenti nei cataloghi Kentu e nel DB personale. Restituisce id (foodDbKey), nome, matchQuality, '
+        + 'usageCount / usedTimesLabel e kcal/100g. Ordinati per uso recente (più usato prima). '
+        + 'In caso di ambiguità preferisci usageCount più alto; chiedi all’utente solo se ancora dubbio. Sola lettura.',
       inputSchema: {
         query: z.string().describe('Testo di ricerca (almeno 2 caratteri)'),
       },

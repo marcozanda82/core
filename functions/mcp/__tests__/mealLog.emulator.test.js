@@ -94,6 +94,7 @@ test('emulator: Claude meal + app meal same minute both present', async () => {
   assert.ok(items.length >= 1);
   assert.equal(items[0].grams, 90);
   assert.equal(items[0].origin, CLAUDE_MEAL_ORIGIN);
+  assert.equal(items[0].source || items[0].entrySource, CLAUDE_MEAL_ORIGIN);
 
   const claudeMeal = {
     type: 'meal',
